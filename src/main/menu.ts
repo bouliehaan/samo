@@ -52,7 +52,7 @@ export default class MenuBuilder {
             label: 'Electron',
             submenu: [
                 {
-                    label: 'About Samo',
+                    label: 'About samo',
                     selector: 'orderFrontStandardAboutPanel:',
                 },
                 { type: 'separator' },
@@ -83,7 +83,7 @@ export default class MenuBuilder {
                 { type: 'separator' },
                 {
                     accelerator: 'Command+H',
-                    label: 'Hide Samo',
+                    label: 'Hide samo',
                     selector: 'hide:',
                 },
                 {

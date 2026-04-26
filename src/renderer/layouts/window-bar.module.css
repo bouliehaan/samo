@@ -112,36 +112,52 @@
     overflow: hidden;
 }
 
+
 .macos-button-group {
     position: absolute;
-    top: 5px;
-    left: 0.5rem;
-    display: grid;
-    grid-template-columns: repeat(3, 20px);
-    height: 100%;
+    top: 50%;
+    left: 14px;
+    transform: translateY(-50%);
+    display: flex;
+    gap: 9px;
+    align-items: center;
     -webkit-app-region: no-drag;
 }
 
 .macos-button {
-    grid-row: 1 / span 1;
-    grid-column: 1;
+    display: flex;
     align-items: center;
     justify-content: center;
-    width: 100%;
-    height: 100%;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    cursor: pointer;
     user-select: none;
+    flex-shrink: 0;
+}
 
-    img {
-        width: 18px;
-        height: 18px;
-    }
+.macos-button.close-button {
+    background: #ff5f57;
+    border: 0.5px solid #e0443e;
 }
 
 .macos-button.min-button {
-    grid-column: 2;
+    background: #ffbd2e;
+    border: 0.5px solid #dfa01a;
 }
 
-.macos-button.max-button,
-.macos-button.restore-button {
-    grid-column: 3;
+.macos-button.max-button {
+    background: #28c840;
+    border: 0.5px solid #14ae2c;
+}
+
+.macos-icon {
+    width: 8px;
+    height: 8px;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.macos-button-group:hover .macos-icon {
+    opacity: 1;
 }

@@ -5,12 +5,6 @@ import { useTranslation } from 'react-i18next';
 import { RiCheckboxBlankLine, RiCloseLine, RiSubtractLine } from 'react-icons/ri';
 
 import appIcon from '../../../assets/icons/32x32.png';
-import macCloseHover from './assets/close-mac-hover.png';
-import macClose from './assets/close-mac.png';
-import macMaxHover from './assets/max-mac-hover.png';
-import macMax from './assets/max-mac.png';
-import macMinHover from './assets/min-mac-hover.png';
-import macMin from './assets/min-mac.png';
 import styles from './window-bar.module.css';
 
 import { useRadioPlayer } from '/@/renderer/features/radio/hooks/use-radio-player';
@@ -68,54 +62,38 @@ const WindowsControls = ({ controls, title }: WindowBarControlsProps) => {
 const MacOsControls = ({ controls, title }: WindowBarControlsProps) => {
     const { handleClose, handleMaximize, handleMinimize } = controls;
 
-    const [hoverMin, setHoverMin] = useState(false);
-    const [hoverMax, setHoverMax] = useState(false);
-    const [hoverClose, setHoverClose] = useState(false);
-
     return (
         <div className={styles.macosContainer}>
             <div className={styles.macosButtonGroup}>
                 <div
+                    className={clsx(styles.macosButton, styles.closeButton)}
+                    id="close-button"
+                    onClick={handleClose}
+                    role="button"
+                >
+                    <svg className={styles.macosIcon} viewBox="0 0 10 10" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M2 2L8 8M8 2L2 8" stroke="rgba(0,0,0,0.5)" strokeWidth="1.5" strokeLinecap="round"/>
+                    </svg>
+                </div>
+                <div
                     className={clsx(styles.macosButton, styles.minButton)}
                     id="min-button"
                     onClick={handleMinimize}
-                    onMouseLeave={() => setHoverMin(false)}
-                    onMouseOver={() => setHoverMin(true)}
+                    role="button"
                 >
-                    <img
-                        alt=""
-                        className="icon"
-                        draggable="false"
-                        src={hoverMin ? macMinHover : macMin}
-                    />
+                    <svg className={styles.macosIcon} viewBox="0 0 10 10" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M2 5H8" stroke="rgba(0,0,0,0.5)" strokeWidth="1.5" strokeLinecap="round"/>
+                    </svg>
                 </div>
                 <div
                     className={clsx(styles.macosButton, styles.maxButton)}
                     id="max-button"
                     onClick={handleMaximize}
-                    onMouseLeave={() => setHoverMax(false)}
-                    onMouseOver={() => setHoverMax(true)}
+                    role="button"
                 >
-                    <img
-                        alt=""
-                        className="icon"
-                        draggable="false"
-                        src={hoverMax ? macMaxHover : macMax}
-                    />
-                </div>
-                <div
-                    className={clsx(styles.macosButton)}
-                    id="close-button"
-                    onClick={handleClose}
-                    onMouseLeave={() => setHoverClose(false)}
-                    onMouseOver={() => setHoverClose(true)}
-                >
-                    <img
-                        alt=""
-                        className="icon"
-                        draggable="false"
-                        src={hoverClose ? macCloseHover : macClose}
-                    />
+                    <svg className={styles.macosIcon} viewBox="0 0 10 10" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M7 2H2V7M3 8H8V3" fill="rgba(0,0,0,0.5)" stroke="none"/>
+                    </svg>
                 </div>
             </div>
             <div className={styles.playerStatusContainer}>
@@ -132,7 +110,7 @@ export const WindowBar = () => {
     const { windowBarStyle } = useWindowSettings();
     const playerStatus = usePlayerStatus();
     const privateMode = useAppStore((state) => state.privateMode);
-    const handleMinimize = () => minimize();
+    const handleMinimize = useCallback(() => minimize(), []);
 
     const { currentSong, index, queueLength } = usePlayerData();
     const { isPlaying: isRadioPlaying, metadata, stationName } = useRadioPlayer();
@@ -153,12 +131,10 @@ export const WindowBar = () => {
     const title = useMemo(() => {
         const privateModeString = privateMode ? t('page.windowBar.privateMode') : '';
 
-        // Show radio information if radio is active
         if (isRadioActive) {
             const radioStatusString = !isRadioPlaying ? t('page.windowBar.paused') : '';
             const radioTitle = stationName;
 
-            // Format metadata: show title, or combine artist and title if both available
             let radioMetadata = '';
             if (metadata) {
                 if (metadata.title && metadata.artist) {
@@ -170,16 +146,15 @@ export const WindowBar = () => {
                 }
             }
 
-            return `${radioStatusString}${radioTitle}${radioMetadata} — Samo${privateMode ? ` ${privateModeString}` : ''}`;
+            return `${radioStatusString}${radioTitle}${radioMetadata} — samo${privateMode ? ` ${privateModeString}` : ''}`;
         }
 
-        // Show regular song information
         const statusString = playerStatus === PlayerStatus.PAUSED ? t('page.windowBar.paused') : '';
         const queueString = queueLength ? `(${index + 1} / ${queueLength}) ` : '';
         const title = `${
             queueLength
-                ? `${statusString}${queueString}${currentSong?.name}${currentSong?.artistName ? ` — ${currentSong?.artistName} — Samo` : ''}`
-                : 'Samo'
+                ? `${statusString}${queueString}${currentSong?.name}${currentSong?.artistName ? ` — ${currentSong?.artistName} — samo` : ''}`
+                : 'samo'
         }${privateMode ? ` ${privateModeString}` : ''}`;
         return title;
     }, [

@@ -472,7 +472,7 @@ const createTray = () => {
         });
     }
 
-    tray.setToolTip('Samo');
+    tray.setToolTip('samo');
     tray.setContextMenu(contextMenu);
 };
 
