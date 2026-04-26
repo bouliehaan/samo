@@ -170,7 +170,7 @@ export const WindowBar = () => {
                 }
             }
 
-            return `${radioStatusString}${radioTitle}${radioMetadata} — Feishin${privateMode ? ` ${privateModeString}` : ''}`;
+            return `${radioStatusString}${radioTitle}${radioMetadata} — Samo${privateMode ? ` ${privateModeString}` : ''}`;
         }
 
         // Show regular song information
@@ -178,8 +178,8 @@ export const WindowBar = () => {
         const queueString = queueLength ? `(${index + 1} / ${queueLength}) ` : '';
         const title = `${
             queueLength
-                ? `${statusString}${queueString}${currentSong?.name}${currentSong?.artistName ? ` — ${currentSong?.artistName} — Feishin` : ''}`
-                : 'Feishin'
+                ? `${statusString}${queueString}${currentSong?.name}${currentSong?.artistName ? ` — ${currentSong?.artistName} — Samo` : ''}`
+                : 'Samo'
         }${privateMode ? ` ${privateModeString}` : ''}`;
         return title;
     }, [

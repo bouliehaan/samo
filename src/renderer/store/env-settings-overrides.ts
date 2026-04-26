@@ -36,7 +36,7 @@ const APP_THEMES = new Set([
     'vscodeLightPlus',
 ]);
 
-const DISCORD_DISPLAY_TYPES = new Set(['artist', 'feishin', 'song']);
+const DISCORD_DISPLAY_TYPES = new Set(['artist', 'samo', 'song']);
 const DISCORD_LINK_TYPES = new Set(['last_fm', 'musicbrainz', 'musicbrainz_last_fm', 'none']);
 const LYRICS_ALIGNMENTS = new Set(['center', 'left', 'right']);
 const FONT_TYPES = new Set(['builtIn', 'custom', 'system']);

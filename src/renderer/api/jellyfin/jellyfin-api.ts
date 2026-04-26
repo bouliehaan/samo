@@ -398,7 +398,7 @@ const parsePath = (fullPath: string) => {
 };
 
 export const createAuthHeader = (): string => {
-    return `MediaBrowser Client="Feishin", Device="${getClientType()}", DeviceId="${
+    return `MediaBrowser Client="Samo", Device="${getClientType()}", DeviceId="${
         useAuthStore.getState().deviceId
     }", Version="${packageJson.version}"`;
 };

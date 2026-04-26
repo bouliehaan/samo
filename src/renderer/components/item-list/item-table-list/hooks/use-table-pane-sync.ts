@@ -63,7 +63,7 @@ export const useTablePaneSync = ({
                 autoHide: 'leave',
                 autoHideDelay: 500,
                 pointers: ['mouse', 'pen', 'touch'],
-                theme: 'feishin-os-scrollbar',
+                theme: 'samo-os-scrollbar',
             },
         },
     });
@@ -85,7 +85,7 @@ export const useTablePaneSync = ({
                 autoHide: 'leave',
                 autoHideDelay: 500,
                 pointers: ['mouse', 'pen', 'touch'],
-                theme: 'feishin-os-scrollbar',
+                theme: 'samo-os-scrollbar',
             },
         },
     });

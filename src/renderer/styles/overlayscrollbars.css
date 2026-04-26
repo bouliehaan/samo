@@ -1,4 +1,4 @@
-.feishin.os-scrollbar {
+.samo.os-scrollbar {
     --os-size: var(--scrollbar-size);
     --os-handle-bg: var(--scrollbar-thumb-bg);
     --os-handle-bg-hover: var(--scrollbar-thumb-bg-hover);
@@ -12,8 +12,8 @@
     --os-handle-border-radius: 0;
 }
 
-.feishin.os-scrollbar,
-.feishin .os-scrollbar-track,
-.feishin .os-scrollbar-handle {
+.samo.os-scrollbar,
+.samo .os-scrollbar-track,
+.samo .os-scrollbar-handle {
     z-index: 200;
 }

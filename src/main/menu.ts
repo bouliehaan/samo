@@ -52,7 +52,7 @@ export default class MenuBuilder {
             label: 'Electron',
             submenu: [
                 {
-                    label: 'About Feishin',
+                    label: 'About Samo',
                     selector: 'orderFrontStandardAboutPanel:',
                 },
                 { type: 'separator' },
@@ -83,7 +83,7 @@ export default class MenuBuilder {
                 { type: 'separator' },
                 {
                     accelerator: 'Command+H',
-                    label: 'Hide Feishin',
+                    label: 'Hide Samo',
                     selector: 'hide:',
                 },
                 {
@@ -289,27 +289,27 @@ export default class MenuBuilder {
             submenu: [
                 {
                     click() {
-                        shell.openExternal('https://github.com/jeffvli/feishin');
+                        shell.openExternal('https://github.com/bouliehaan/samo');
                     },
                     label: 'Learn More',
                 },
                 {
                     click() {
                         shell.openExternal(
-                            'https://github.com/jeffvli/feishin?tab=readme-ov-file#getting-started',
+                            'https://github.com/bouliehaan/samo?tab=readme-ov-file#getting-started',
                         );
                     },
                     label: 'Documentation',
                 },
                 {
                     click() {
-                        shell.openExternal('https://github.com/jeffvli/feishin/discussions');
+                        shell.openExternal('https://github.com/bouliehaan/samo/discussions');
                     },
                     label: 'Community Discussions',
                 },
                 {
                     click() {
-                        shell.openExternal('https://github.com/jeffvli/feishin/issues');
+                        shell.openExternal('https://github.com/bouliehaan/samo/issues');
                     },
                     label: 'Search Issues',
                 },
@@ -410,27 +410,27 @@ export default class MenuBuilder {
                 submenu: [
                     {
                         click() {
-                            shell.openExternal('https://github.com/jeffvli/feishin');
+                            shell.openExternal('https://github.com/bouliehaan/samo');
                         },
                         label: 'Learn More',
                     },
                     {
                         click() {
                             shell.openExternal(
-                                'https://github.com/jeffvli/feishin?tab=readme-ov-file#getting-started',
+                                'https://github.com/bouliehaan/samo?tab=readme-ov-file#getting-started',
                             );
                         },
                         label: 'Documentation',
                     },
                     {
                         click() {
-                            shell.openExternal('https://github.com/jeffvli/feishin/discussions');
+                            shell.openExternal('https://github.com/bouliehaan/samo/discussions');
                         },
                         label: 'Community Discussions',
                     },
                     {
                         click() {
-                            shell.openExternal('https://github.com/jeffvli/feishin/issues');
+                            shell.openExternal('https://github.com/bouliehaan/samo/issues');
                         },
                         label: 'Search Issues',
                     },

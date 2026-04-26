@@ -39,7 +39,7 @@ export const ScrollArea = forwardRef((props: ScrollAreaProps, ref: Ref<HTMLDivEl
                 autoHide: 'leave',
                 autoHideDelay: scrollHideDelay || 500,
                 pointers: ['mouse', 'pen', 'touch'],
-                theme: 'feishin-os-scrollbar',
+                theme: 'samo-os-scrollbar',
                 visibility: 'visible',
             },
         },

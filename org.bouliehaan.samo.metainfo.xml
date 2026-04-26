@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <component type="desktop-application">
-  <id>org.jeffvli.feishin</id>
-  <name>Feishin</name>
+  <id>org.bouliehaan.samo</id>
+  <name>Samo</name>
   <summary>Jellyfin, Navidrome, and OpenSubsonic Compatible Music Player</summary>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>GPL-3.0-only</project_license>
@@ -21,23 +21,23 @@
       <li>Synchronized and unsynchronized lyrics support</li>
     </ul>
   </description>
-  <developer id="org.jeffvli">
-    <name>jeffvli</name>
+  <developer id="org.bouliehaan">
+    <name>bouliehaan</name>
   </developer>
-  <launchable type="desktop-id">org.jeffvli.feishin.desktop</launchable>
-  <url type="homepage">https://github.com/jeffvli/feishin</url>
+  <launchable type="desktop-id">org.bouliehaan.samo.desktop</launchable>
+  <url type="homepage">https://github.com/bouliehaan/samo</url>
   <screenshots>
     <screenshot type="default">
       <caption>The main menu</caption>
-      <image type="source">https://raw.githubusercontent.com/jeffvli/feishin/development/media/preview_home.png</image>
+      <image type="source">https://raw.githubusercontent.com/bouliehaan/samo/development/media/preview_home.png</image>
     </screenshot>
     <screenshot>
       <caption>Browsing an album</caption>
-      <image type="source">https://raw.githubusercontent.com/jeffvli/feishin/development/media/preview_album_detail.png</image>
+      <image type="source">https://raw.githubusercontent.com/bouliehaan/samo/development/media/preview_album_detail.png</image>
     </screenshot>
     <screenshot>
       <caption>Smart playlist creation</caption>
-      <image type="source">https://raw.githubusercontent.com/jeffvli/feishin/development/media/preview_smart_playlist.png</image>
+      <image type="source">https://raw.githubusercontent.com/bouliehaan/samo/development/media/preview_smart_playlist.png</image>
     </screenshot>
   </screenshots>
   <categories>

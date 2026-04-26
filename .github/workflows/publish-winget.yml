@@ -15,6 +15,6 @@ jobs:
     steps:
       - uses: vedantmgoyal9/winget-releaser@main
         with:
-          identifier: jeffvli.Feishin
-          installers-regex: 'Feishin-*-win-(x64|arm64)\.exe'
+          identifier: bouliehaan.Samo
+          installers-regex: 'Samo-*-win-(x64|arm64)\.exe'
           token: ${{ secrets.WINGET_ACC_TOKEN }}

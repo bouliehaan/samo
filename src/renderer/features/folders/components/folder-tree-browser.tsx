@@ -309,7 +309,7 @@ export const FolderTreeBrowser = ({ fetchFolder, rootFolderQuery }: FolderTreeBr
                 autoHide: 'leave',
                 autoHideDelay: 500,
                 pointers: ['mouse', 'pen', 'touch'],
-                theme: 'feishin-os-scrollbar',
+                theme: 'samo-os-scrollbar',
                 visibility: 'visible',
             },
         },

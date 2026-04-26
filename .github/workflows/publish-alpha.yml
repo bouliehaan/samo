@@ -110,7 +110,7 @@ jobs:
         steps:
             - name: Delete all objects in R2 bucket
               run: |
-                  aws s3 rm s3://feishin-nightly --recursive --endpoint-url $R2_ENDPOINT_URL
+                  aws s3 rm s3://samo-nightly --recursive --endpoint-url $R2_ENDPOINT_URL
 
     publish:
         needs: [prepare, cleanup]

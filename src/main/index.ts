@@ -52,14 +52,14 @@ const ALPHA_UPDATER_CONFIG: {
 } = {
     bucket: '',
     channel: 'alpha',
-    endpoint: 'https://feishin-nightly-bucket.jeffvli.org',
+    endpoint: 'https://samo-nightly-bucket.bouliehaan.org',
     provider: 's3',
 };
 
 const GITHUB_UPDATER_CONFIG = {
-    owner: 'jeffvli',
+    owner: 'bouliehaan',
     provider: 'github' as const,
-    repo: 'feishin',
+    repo: 'samo',
 };
 
 type UpdaterInstance = AppImageUpdater | MacUpdater | NsisUpdater | typeof autoUpdater;
@@ -257,7 +257,7 @@ function createAlphaUpdaterInstance(): AppImageUpdater | MacUpdater | NsisUpdate
     return new NsisUpdater(ALPHA_UPDATER_CONFIG);
 }
 
-protocol.registerSchemesAsPrivileged([{ privileges: { bypassCSP: true }, scheme: 'feishin' }]);
+protocol.registerSchemesAsPrivileged([{ privileges: { bypassCSP: true }, scheme: 'samo' }]);
 
 process.on('uncaughtException', (error: any) => {
     console.error('Error in main process', error);
@@ -472,7 +472,7 @@ const createTray = () => {
         });
     }
 
-    tray.setToolTip('Feishin');
+    tray.setToolTip('Samo');
     tray.setContextMenu(contextMenu);
 };
 
@@ -715,7 +715,7 @@ async function createWindow(first = true): Promise<void> {
     });
 
     if (isWindows()) {
-        app.setAppUserModelId('org.jeffvli.feishin');
+        app.setAppUserModelId('org.bouliehaan.samo');
     }
 
     if (isMacOS()) {
@@ -787,7 +787,7 @@ const shouldDisableMediaFeatures =
     isLinux() || !enableMediaSession || playbackType !== PlayerType.WEB;
 
 const chromiumDisabledFeatures: string[] = [];
-// Fractional scaling on Wayland: https://github.com/jeffvli/feishin/issues/1271#issuecomment-4063326712
+// Fractional scaling on Wayland: https://github.com/bouliehaan/samo/issues/1271#issuecomment-4063326712
 if (isLinux()) {
     chromiumDisabledFeatures.push('WaylandFractionalScaleV1');
 }
@@ -992,8 +992,8 @@ if (!singleInstance) {
 
     app.whenReady()
         .then(() => {
-            protocol.handle('feishin', async (request) => {
-                const filePath = `file:${request.url.slice('feishin:'.length)}`;
+            protocol.handle('samo', async (request) => {
+                const filePath = `file:${request.url.slice('samo:'.length)}`;
                 const response = await net.fetch(filePath);
                 const contentType = response.headers.get('content-type');
 

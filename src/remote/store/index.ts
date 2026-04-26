@@ -300,7 +300,7 @@ export const useRemoteStore = createWithEqualityFn<SettingsSlice>()(
                                         category: LogCategory.REMOTE,
                                     });
                                     toast.warn({
-                                        message: 'Feishin remote server is down',
+                                        message: 'Samo remote server is down',
                                         title: 'Connection closed',
                                     });
                                 } else if (reason.code !== 4001 && !socket.natural) {
