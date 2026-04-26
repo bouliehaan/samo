@@ -64,7 +64,11 @@ const MacOsControls = ({ controls, title }: WindowBarControlsProps) => {
 
     return (
         <div className={styles.macosContainer}>
-            <div className={styles.macosButtonGroup}>
+            <div
+                    className={styles.macosButtonGroup}
+                    onMouseEnter={() => browser?.setIgnoreMouseEvents(false)}
+                    onMouseLeave={() => browser?.setIgnoreMouseEvents(true)}
+                >
                 <div
                     className={clsx(styles.macosButton, styles.closeButton)}
                     id="close-button"
@@ -188,10 +192,13 @@ export const WindowBar = () => {
                 />
             )}
             {windowBarStyle === Platform.MACOS && (
-                <MacOsControls
-                    controls={{ handleClose, handleMaximize, handleMinimize }}
-                    title={title}
-                />
+                <div className={styles.macosContainer}>
+                    <div className={styles.playerStatusContainer}>
+                        <Text className={styles.playerStatusText} overflow="hidden" size="sm">
+                            {title}
+                        </Text>
+                    </div>
+                </div>
             )}
         </div>
     );

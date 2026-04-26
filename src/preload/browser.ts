@@ -34,6 +34,9 @@ export const browser = {
     exit,
     maximize,
     minimize,
+    setIgnoreMouseEvents: (ignore: boolean) => {
+        ipcRenderer.send('set-ignore-mouse-events', ignore);
+    },
     quit,
     unmaximize,
 };

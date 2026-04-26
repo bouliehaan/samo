@@ -22,7 +22,6 @@ import { WebAudio } from '/@/shared/types/types';
 import '/@/shared/styles/global.css';
 import { PlayerProvider } from '/@/renderer/features/player/context/player-context';
 import { AudioPlayers } from '/@/renderer/features/player/components/audio-players';
-import { ReleaseNotesModal } from '/@/renderer/release-notes-modal';
 
 const UpdateAvailableDialog = lazy(() =>
     import('./update-available-dialog').then((module) => ({
@@ -77,7 +76,6 @@ const AppShell = memo(function AppShell() {
                     <AppRouter />
                 </PlayerProvider>
             </WebAudioContext.Provider>
-            <ReleaseNotesModal />
             <Suspense fallback={null}>
                 <UpdateAvailableDialog />
             </Suspense>

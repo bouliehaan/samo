@@ -158,6 +158,7 @@
     pointer-events: none;
 }
 
-.macos-button-group:hover .macos-icon {
+.macos-button-group:hover .macos-icon,
+.macos-button:hover .macos-icon {
     opacity: 1;
 }

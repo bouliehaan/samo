@@ -503,8 +503,10 @@ async function createWindow(first = true): Promise<void> {
 
     // Create the browser window.
     mainWindow = new BrowserWindow({
+        acceptFirstMouse: true,
         autoHideMenuBar: true,
         frame: false,
+        ...(isMacOS() && { frame: true, titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 14, y: 8 } }),
         height: 900,
         icon: isWindows() ? getAssetPath('icons/icon.ico') : getAssetPath('icons/icon.png'),
         minHeight: 120,
@@ -568,6 +570,10 @@ async function createWindow(first = true): Promise<void> {
 
     ipcMain.on('window-close', () => {
         mainWindow?.close();
+    });
+
+    ipcMain.on('set-ignore-mouse-events', (_event, ignore: boolean) => {
+        mainWindow?.setIgnoreMouseEvents(ignore, { forward: true });
     });
 
     ipcMain.on('window-quit', () => {
