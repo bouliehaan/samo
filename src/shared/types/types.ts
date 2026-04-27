@@ -54,6 +54,7 @@ export enum Platform {
 }
 
 export enum ServerType {
+    AUDIOBOOKSHELF = 'audiobookshelf',
     JELLYFIN = 'jellyfin',
     NAVIDROME = 'navidrome',
     SUBSONIC = 'subsonic',

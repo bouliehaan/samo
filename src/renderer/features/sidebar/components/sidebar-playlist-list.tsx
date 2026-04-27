@@ -357,6 +357,7 @@ export const SidebarPlaylistList = () => {
     const player = usePlayer();
     const { t } = useTranslation();
     const server = useCurrentServer();
+    const serverId = server.id;
     const sidebarPlaylistSorting = useSidebarPlaylistSorting();
     const filterRegex = useSidebarPlaylistListFilterRegex();
 
@@ -367,15 +368,17 @@ export const SidebarPlaylistList = () => {
                 sortOrder: SortOrder.ASC,
                 startIndex: 0,
             },
-            serverId: server?.id,
+            serverId,
         }),
     );
 
     const handlePlayPlaylist = useCallback(
         (id: string, playType: Play) => {
-            player.addToQueueByFetch(server.id, [id], LibraryItem.PLAYLIST, playType);
+            if (!serverId) return;
+
+            player.addToQueueByFetch(serverId, [id], LibraryItem.PLAYLIST, playType);
         },
-        [player, server.id],
+        [player, serverId],
     );
 
     const handleContextMenu = useCallback(
@@ -392,13 +395,13 @@ export const SidebarPlaylistList = () => {
 
     const [playlistOrder, setPlaylistOrder] = useLocalStorage<string[]>({
         defaultValue: [],
-        key: getPlaylistOrderKey(server.id, 'owned'),
+        key: getPlaylistOrderKey(serverId, 'owned'),
     });
 
     const playlistItems = useMemo(() => {
         const base = { handlePlay: handlePlayPlaylist };
 
-        if (!server?.type || !server?.username || !playlistsQuery.data?.items) {
+        if (!server.type || !server.username || !playlistsQuery.data?.items) {
             return { ...base, items: playlistsQuery.data?.items };
         }
 
@@ -446,6 +449,10 @@ export const SidebarPlaylistList = () => {
         playlistOrder,
         filterRegex,
     ]);
+
+    if (!server) {
+        return null;
+    }
 
     const handleReorder = (
         sourceIds: string[],
@@ -548,6 +555,7 @@ export const SidebarSharedPlaylistList = () => {
     const player = usePlayer();
     const { t } = useTranslation();
     const server = useCurrentServer();
+    const serverId = server.id;
     const sidebarPlaylistSorting = useSidebarPlaylistSorting();
     const filterRegex = useSidebarPlaylistListFilterRegex();
 
@@ -558,16 +566,17 @@ export const SidebarSharedPlaylistList = () => {
                 sortOrder: SortOrder.ASC,
                 startIndex: 0,
             },
-            serverId: server?.id,
+            serverId,
         }),
     );
 
     const handlePlayPlaylist = useCallback(
         (id: string, playType: Play) => {
-            if (!server?.id) return;
-            player.addToQueueByFetch(server.id, [id], LibraryItem.PLAYLIST, playType);
+            if (!serverId) return;
+
+            player.addToQueueByFetch(serverId, [id], LibraryItem.PLAYLIST, playType);
         },
-        [player, server.id],
+        [player, serverId],
     );
 
     const handleContextMenu = useCallback(
@@ -587,13 +596,13 @@ export const SidebarSharedPlaylistList = () => {
 
     const [playlistOrder, setPlaylistOrder] = useLocalStorage<string[]>({
         defaultValue: [],
-        key: getPlaylistOrderKey(server.id, 'shared'),
+        key: getPlaylistOrderKey(serverId, 'shared'),
     });
 
     const playlistItems = useMemo(() => {
         const base = { handlePlay: handlePlayPlaylist };
 
-        if (!server?.type || !server?.username || !playlistsQuery.data?.items) {
+        if (!server.type || !server.username || !playlistsQuery.data?.items) {
             return { ...base, items: playlistsQuery.data?.items };
         }
 
@@ -641,6 +650,10 @@ export const SidebarSharedPlaylistList = () => {
         playlistOrder,
         filterRegex,
     ]);
+
+    if (!server) {
+        return null;
+    }
 
     const handleReorder = (
         sourceIds: string[],

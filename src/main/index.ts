@@ -956,6 +956,36 @@ ipcMain.on(
     },
 );
 
+ipcMain.handle(
+    'audiobookshelf-login',
+    async (
+        _event,
+        data: {
+            password: string;
+            url: string;
+            username: string;
+        },
+    ) => {
+        const baseUrl = data.url.replace(/\/+$/, '');
+        const response = await fetch(`${baseUrl}/login`, {
+            body: JSON.stringify({
+                password: data.password,
+                username: data.username,
+            }),
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            method: 'POST',
+        });
+
+        if (!response.ok) {
+            throw new Error(`Audiobookshelf authentication failed: ${response.status}`);
+        }
+
+        return response.json();
+    },
+);
+
 ipcMain.handle('power-save-blocker-start', () => {
     if (powerSaveBlockerId !== null) {
         return powerSaveBlockerId;

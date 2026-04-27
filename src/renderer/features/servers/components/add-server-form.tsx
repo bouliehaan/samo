@@ -71,6 +71,10 @@ function useAutodiscovery() {
 }
 
 const SERVER_TYPES: Record<ServerType, ServerDetails> = {
+    [ServerType.AUDIOBOOKSHELF]: {
+        icon: SubsonicIcon,
+        name: 'Audiobookshelf',
+    },
     [ServerType.JELLYFIN]: {
         icon: JellyfinIcon,
         name: 'Jellyfin',
@@ -123,6 +127,21 @@ export const AddServerForm = ({ onCancel }: AddServerFormProps) => {
     });
 
     const isSubmitDisabled = !form.values.name || !form.values.url || !form.values.username;
+
+    const handleServerTypeChange = (type: string) => {
+        const nextType = type as ServerType;
+        const currentTypeName = SERVER_TYPES[form.values.type].name;
+        const shouldUseTypeName =
+            !form.values.name ||
+            form.values.name === 'My Server' ||
+            form.values.name === currentTypeName;
+
+        form.setFieldValue('type', nextType);
+
+        if (shouldUseTypeName) {
+            form.setFieldValue('name', SERVER_TYPES[nextType].name);
+        }
+    };
 
     const fillServerDetails = (server: DiscoveredServerItem) => {
         form.setValues({ ...server });
@@ -194,7 +213,10 @@ export const AddServerForm = ({ onCancel }: AddServerFormProps) => {
             }
 
             addServer(serverItem);
-            setCurrentServer(serverItem);
+
+            if (serverItem.type !== ServerType.AUDIOBOOKSHELF) {
+                setCurrentServer(serverItem);
+            }
             closeAllModals();
 
             toast.success({
@@ -245,9 +267,10 @@ export const AddServerForm = ({ onCancel }: AddServerFormProps) => {
                     <SegmentedControl
                         data={ALL_SERVERS}
                         disabled={serverLock}
+                        onChange={handleServerTypeChange}
                         p="md"
+                        value={form.values.type}
                         withItemsBorders={false}
-                        {...form.getInputProps('type')}
                     />
                     <Group grow>
                         <TextInput

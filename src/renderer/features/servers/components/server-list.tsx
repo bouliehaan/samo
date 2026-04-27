@@ -54,7 +54,9 @@ export const ServerList = () => {
                                                     ? NavidromeLogo
                                                     : server.type === ServerType.JELLYFIN
                                                       ? JellyfinLogo
-                                                      : OpenSubsonicLogo
+                                                      : server.type === ServerType.AUDIOBOOKSHELF
+                                                        ? OpenSubsonicLogo
+                                                        : OpenSubsonicLogo
                                             }
                                             style={{
                                                 height: 'var(--theme-font-size-lg)',

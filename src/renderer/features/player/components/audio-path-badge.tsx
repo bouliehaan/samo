@@ -9,7 +9,7 @@ type AudioPathBadgeProps = {
     song?: QueueSong;
 };
 
-const LOSSLESS_CONTAINERS = new Set([
+const PREMIUM_QUALITY_CONTAINERS = new Set([
     'aif',
     'aiff',
     'alac',
@@ -17,7 +17,6 @@ const LOSSLESS_CONTAINERS = new Set([
     'dsd',
     'dsf',
     'flac',
-    'm4a',
     'wav',
 ]);
 
@@ -60,13 +59,13 @@ export const AudioPathBadge = ({ compact = false, song }: AudioPathBadgeProps) =
     }
 
     const rawContainer = transcode.enabled ? transcode.format : song.container;
-    const isLosslessDirect =
-        !transcode.enabled && LOSSLESS_CONTAINERS.has(rawContainer?.toLowerCase() ?? '');
+    const isPremiumQualityDirect =
+        !transcode.enabled && PREMIUM_QUALITY_CONTAINERS.has(rawContainer?.toLowerCase() ?? '');
 
     const pathLabel = transcode.enabled ? 'Transcoded' : compact ? 'Direct' : 'Direct Play';
     const container = formatContainer(rawContainer);
-    const bitDepth = transcode.enabled ? null : formatBitDepth(song.bitDepth, compact);
-    const sampleRate = transcode.enabled ? null : formatSampleRate(song.sampleRate, compact);
+    const bitDepth = isPremiumQualityDirect ? formatBitDepth(song.bitDepth, compact) : null;
+    const sampleRate = isPremiumQualityDirect ? formatSampleRate(song.sampleRate, compact) : null;
     const bitRate = transcode.enabled
         ? formatBitRate(transcode.bitrate)
         : formatBitRate(song.bitRate);
@@ -81,12 +80,12 @@ export const AudioPathBadge = ({ compact = false, song }: AudioPathBadgeProps) =
         <Group gap={compact ? 4 : 'xs'} justify={compact ? 'flex-start' : 'center'} wrap="nowrap">
             {items.map((item) => (
                 <Badge
-                    color={isLosslessDirect ? undefined : undefined}
+                    color={isPremiumQualityDirect ? undefined : undefined}
                     key={item}
                     radius="sm"
                     size={compact ? 'xs' : 'lg'}
                     styles={
-                        isLosslessDirect
+                        isPremiumQualityDirect
                             ? {
                                   root: {
                                       backgroundColor: 'rgba(184, 134, 11, 0.22)',
@@ -96,7 +95,7 @@ export const AudioPathBadge = ({ compact = false, song }: AudioPathBadgeProps) =
                               }
                             : undefined
                     }
-                    variant={isLosslessDirect ? 'outline' : 'light'}
+                    variant={isPremiumQualityDirect ? 'outline' : 'light'}
                 >
                     {item}
                 </Badge>
