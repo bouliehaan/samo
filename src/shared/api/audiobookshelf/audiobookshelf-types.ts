@@ -19,6 +19,7 @@ export interface AudiobookshelfLibraryItem {
         duration?: number;
         episodes?: AudiobookshelfPodcastEpisode[];
         explicit?: boolean;
+        metadata?: AudiobookshelfMetadata;
         narratorName?: string;
         publishedYear?: string;
         publisher?: string;
@@ -44,6 +45,34 @@ export interface AudiobookshelfLoginResponse {
         type?: string;
         username: string;
     };
+}
+
+export interface AudiobookshelfMetadata {
+    author?: string;
+    authorName?: string;
+    authors?: Array<{ id?: string; name: string }>;
+    description?: string;
+    explicit?: boolean;
+    genres?: string[];
+    imageUrl?: string;
+    narratorName?: string;
+    narrators?: string[];
+    publishedYear?: string;
+    publisher?: string;
+    subtitle?: string;
+    title?: string;
+}
+
+export interface AudiobookshelfPlaybackAudioTrack {
+    contentUrl?: string;
+    index?: number;
+    mimeType?: string;
+}
+
+export interface AudiobookshelfPlaybackSessionResponse {
+    audioTracks?: AudiobookshelfPlaybackAudioTrack[];
+    id?: string;
+    libraryItemId?: string;
 }
 
 export interface AudiobookshelfPodcastEpisode {

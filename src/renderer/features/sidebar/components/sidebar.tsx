@@ -45,7 +45,7 @@ import { Tooltip } from '/@/shared/components/tooltip/tooltip';
 import { ExplicitStatus, LibraryItem } from '/@/shared/types/domain-types';
 import { Platform } from '/@/shared/types/types';
 
-const primarySidebarItemIds = ['Home', 'Radio', 'Search'];
+const primarySidebarItemIds = ['Home', 'Radio', 'Audiobooks', 'Podcasts', 'Search'];
 
 const librarySidebarItemIds = [
     'Favorites',
@@ -72,6 +72,7 @@ export const Sidebar = () => {
             Albums: t('page.sidebar.albums', { postProcess: 'titleCase' }),
             Artists: t('page.sidebar.albumArtists', { postProcess: 'titleCase' }),
             'Artists-all': t('page.sidebar.artists', { postProcess: 'titleCase' }),
+            Audiobooks: 'Audiobooks',
             Collections: t('page.sidebar.collections', { postProcess: 'titleCase' }),
             Favorites: t('page.sidebar.favorites', { postProcess: 'titleCase' }),
             Folders: t('page.sidebar.folders', { postProcess: 'titleCase' }),
@@ -79,6 +80,7 @@ export const Sidebar = () => {
             Home: t('page.sidebar.home', { postProcess: 'titleCase' }),
             'Now Playing': t('page.sidebar.nowPlaying', { postProcess: 'titleCase' }),
             Playlists: t('page.sidebar.playlists', { postProcess: 'titleCase' }),
+            Podcasts: 'Podcasts',
             Radio: t('page.sidebar.radio', { postProcess: 'titleCase' }),
             Search: t('page.sidebar.search', { postProcess: 'titleCase' }),
             Settings: t('page.sidebar.settings', { postProcess: 'titleCase' }),

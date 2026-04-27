@@ -1,5 +1,6 @@
 export enum AppRoute {
     ACTION_REQUIRED = '/action-required',
+    AUDIOBOOKS = '/audiobooks',
     EXPLORE = '/explore',
     FAKE_LIBRARY_ALBUM_DETAILS = '/library/albums/dummy/:albumId',
     FAVORITES = '/favorites',
@@ -28,6 +29,7 @@ export enum AppRoute {
     PLAYING = '/playing',
     PLAYLISTS = '/playlists',
     PLAYLISTS_DETAIL_SONGS = '/playlists/:playlistId/songs',
+    PODCASTS = '/podcasts',
     RADIO = '/radio',
     SEARCH = '/search/:itemType',
     SERVERS = '/servers',

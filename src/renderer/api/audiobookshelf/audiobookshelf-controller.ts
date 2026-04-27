@@ -4,6 +4,7 @@ import {
     AudiobookshelfLibrariesResponse,
     AudiobookshelfLibraryItemsResponse,
     AudiobookshelfLoginResponse,
+    AudiobookshelfPlaybackSessionResponse,
 } from '/@/shared/api/audiobookshelf/audiobookshelf-types';
 import { AuthenticationResponse, ServerListItemWithCredential } from '/@/shared/types/domain-types';
 
@@ -100,6 +101,72 @@ const getLibraryItemsWithMainProcess = async (
     }) as Promise<AudiobookshelfLibraryItemsResponse>;
 };
 
+const getItemCoverDataUrlWithFetch = async (
+    server: ServerListItemWithCredential,
+    itemId: string,
+): Promise<string> => {
+    const response = await fetch(`${normalizeBaseUrl(server.url)}/api/items/${itemId}/cover`, {
+        headers: getAuthHeaders(server.credential),
+        method: 'GET',
+    });
+
+    if (!response.ok) {
+        throw new Error(`Audiobookshelf cover request failed: ${response.status}`);
+    }
+
+    const blob = await response.blob();
+
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+
+        reader.onerror = () => reject(reader.error);
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.readAsDataURL(blob);
+    });
+};
+
+const getItemCoverDataUrlWithMainProcess = async (
+    server: ServerListItemWithCredential,
+    itemId: string,
+): Promise<string> => {
+    return window.api.ipc.invoke('audiobookshelf-get-item-cover-data-url', {
+        itemId,
+        token: server.credential,
+        url: server.url,
+    }) as Promise<string>;
+};
+
+const playItemWithFetch = async (
+    server: ServerListItemWithCredential,
+    itemId: string,
+): Promise<AudiobookshelfPlaybackSessionResponse> => {
+    const response = await fetch(`${normalizeBaseUrl(server.url)}/api/items/${itemId}/play`, {
+        body: JSON.stringify({}),
+        headers: {
+            ...getAuthHeaders(server.credential),
+            'Content-Type': 'application/json',
+        },
+        method: 'POST',
+    });
+
+    if (!response.ok) {
+        throw new Error(`Audiobookshelf play request failed: ${response.status}`);
+    }
+
+    return response.json() as Promise<AudiobookshelfPlaybackSessionResponse>;
+};
+
+const playItemWithMainProcess = async (
+    server: ServerListItemWithCredential,
+    itemId: string,
+): Promise<AudiobookshelfPlaybackSessionResponse> => {
+    return window.api.ipc.invoke('audiobookshelf-play-item', {
+        itemId,
+        token: server.credential,
+        url: server.url,
+    }) as Promise<AudiobookshelfPlaybackSessionResponse>;
+};
+
 export const audiobookshelfController = {
     authenticate: async (
         url: string,
@@ -123,6 +190,12 @@ export const audiobookshelfController = {
         };
     },
 
+    getItemCoverDataUrl: async (server: ServerListItemWithCredential, itemId: string) => {
+        return isElectron()
+            ? getItemCoverDataUrlWithMainProcess(server, itemId)
+            : getItemCoverDataUrlWithFetch(server, itemId);
+    },
+
     getLibraries: async (server: ServerListItemWithCredential) => {
         return isElectron() ? getLibrariesWithMainProcess(server) : getLibrariesWithFetch(server);
     },
@@ -131,5 +204,11 @@ export const audiobookshelfController = {
         return isElectron()
             ? getLibraryItemsWithMainProcess(server, libraryId)
             : getLibraryItemsWithFetch(server, libraryId);
+    },
+
+    playItem: async (server: ServerListItemWithCredential, itemId: string) => {
+        return isElectron()
+            ? playItemWithMainProcess(server, itemId)
+            : playItemWithFetch(server, itemId);
     },
 };

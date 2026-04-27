@@ -1,6 +1,8 @@
 import {
     RiAlbumFill,
     RiAlbumLine,
+    RiBookOpenFill,
+    RiBookOpenLine,
     RiFlag2Fill,
     RiFlag2Line,
     RiFolder3Fill,
@@ -9,6 +11,8 @@ import {
     RiHeartLine,
     RiHome6Fill,
     RiHome6Line,
+    RiMicFill,
+    RiMicLine,
     RiMusic2Fill,
     RiMusic2Line,
     RiPlayFill,
@@ -42,6 +46,9 @@ export const SidebarIcon = ({ active, route, size }: SidebarIconProps) => {
     const isActive = active !== undefined ? active : location.pathname === route;
     const renderIcon = () => {
         switch (route) {
+            case AppRoute.AUDIOBOOKS:
+                if (isActive) return <RiBookOpenFill size={size} />;
+                return <RiBookOpenLine size={size} />;
             case AppRoute.HOME:
                 if (isActive) return <RiHome6Fill size={size} />;
                 return <RiHome6Line size={size} />;
@@ -69,6 +76,9 @@ export const SidebarIcon = ({ active, route, size }: SidebarIconProps) => {
             case AppRoute.PLAYLISTS:
                 if (isActive) return <RiPlayListFill size={size} />;
                 return <RiPlayListLine size={size} />;
+            case AppRoute.PODCASTS:
+                if (isActive) return <RiMicFill size={size} />;
+                return <RiMicLine size={size} />;
             case AppRoute.RADIO:
                 if (isActive) return <RiRadioFill size={size} />;
                 return <RiRadioLine size={size} />;
