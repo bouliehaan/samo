@@ -7,6 +7,7 @@ import { generatePath, Link } from 'react-router';
 import styles from './full-screen-player-image.module.css';
 
 import { useItemImageUrl } from '/@/renderer/components/item-image/item-image';
+import { AudioPathBadge } from '/@/renderer/features/player/components/audio-path-badge';
 import {
     useIsRadioActive,
     useRadioPlayer,
@@ -315,9 +316,12 @@ export const FullScreenPlayerImage = () => {
                     </Text>
                 )}
                 {!isPlayingRadio && (
-                    <Group justify="center" mt="sm">
-                        {playerItems.map((i) => !i.disabled && builtDataItems[i.id])}
-                    </Group>
+                    <>
+                        <AudioPathBadge song={currentSong} />
+                        <Group justify="center" mt="sm">
+                            {playerItems.map((i) => !i.disabled && builtDataItems[i.id])}
+                        </Group>
+                    </>
                 )}
             </Stack>
         </Flex>
