@@ -45,6 +45,12 @@ export const getActiveMusicServer = (state: AuthState) => {
     return Object.values(state.serverList).find(isMusicServer) ?? null;
 };
 
+export const getAudiobookshelfServers = (state: AuthState) =>
+    Object.values(state.serverList).filter((server) => server.type === ServerType.AUDIOBOOKSHELF);
+
+export const getPrimaryAudiobookshelfServer = (state: AuthState) =>
+    getAudiobookshelfServers(state)[0] ?? null;
+
 export const useAuthStore = createWithEqualityFn<AuthSlice>()(
     persist(
         devtools(
@@ -168,6 +174,12 @@ export const useIsAdmin = () =>
 
 export const useCurrentServerWithCredential = () =>
     useAuthStore((state) => getActiveMusicServer(state)) as ServerListItemWithCredential;
+
+export const useAudiobookshelfServers = () =>
+    useAuthStore((state) => getAudiobookshelfServers(state), shallow);
+
+export const useAudiobookshelfServer = () =>
+    useAuthStore((state) => getPrimaryAudiobookshelfServer(state), shallow);
 
 export const useServerList = () => useAuthStore((state) => state.serverList);
 

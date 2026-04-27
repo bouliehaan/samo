@@ -957,6 +957,57 @@ ipcMain.on(
 );
 
 ipcMain.handle(
+    'audiobookshelf-get-libraries',
+    async (
+        _event,
+        data: {
+            token: string;
+            url: string;
+        },
+    ) => {
+        const baseUrl = data.url.replace(/\/+$/, '');
+        const response = await fetch(`${baseUrl}/api/libraries`, {
+            headers: {
+                Authorization: `Bearer ${data.token}`,
+            },
+            method: 'GET',
+        });
+
+        if (!response.ok) {
+            throw new Error(`Audiobookshelf libraries request failed: ${response.status}`);
+        }
+
+        return response.json();
+    },
+);
+
+ipcMain.handle(
+    'audiobookshelf-get-library-items',
+    async (
+        _event,
+        data: {
+            libraryId: string;
+            token: string;
+            url: string;
+        },
+    ) => {
+        const baseUrl = data.url.replace(/\/+$/, '');
+        const response = await fetch(`${baseUrl}/api/libraries/${data.libraryId}/items`, {
+            headers: {
+                Authorization: `Bearer ${data.token}`,
+            },
+            method: 'GET',
+        });
+
+        if (!response.ok) {
+            throw new Error(`Audiobookshelf library items request failed: ${response.status}`);
+        }
+
+        return response.json();
+    },
+);
+
+ipcMain.handle(
     'audiobookshelf-login',
     async (
         _event,
