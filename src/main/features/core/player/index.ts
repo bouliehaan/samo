@@ -191,13 +191,16 @@ const setAudioPlayerFallback = (isError: boolean) => {
 
 ipcMain.on('player-set-properties', async (_event, data: Record<string, any>) => {
     mpvLog({ action: `Setting properties: ${JSON.stringify(data)}` });
-    if (data.length === 0) {
+
+    const entries = Object.entries(data);
+
+    if (entries.length === 0) {
         return;
     }
 
     try {
-        if (data.length === 1) {
-            getMpvInstance()?.setProperty(Object.keys(data)[0], Object.values(data)[0]);
+        if (entries.length === 1) {
+            getMpvInstance()?.setProperty(entries[0][0], entries[0][1]);
         } else {
             getMpvInstance()?.setMultipleProperties(data);
         }
