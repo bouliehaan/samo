@@ -1,9 +1,9 @@
 import { Box, SimpleGrid, Stack } from '@mantine/core';
 import { useQueries, useQuery } from '@tanstack/react-query';
 
-import { audiobookshelfController } from '/@/renderer/api/audiobookshelf/audiobookshelf-controller';
 import { AnimatedPage } from '/@/renderer/features/shared/components/animated-page';
 import { PageErrorBoundary } from '/@/renderer/features/shared/components/page-error-boundary';
+import { useAudiobookActions } from '/@/renderer/store/audiobook.store';
 import { useAudiobookshelfServer } from '/@/renderer/store';
 import { AudiobookshelfLibraryItem } from '/@/shared/api/audiobookshelf/audiobookshelf-types';
 import { Image } from '/@/shared/components/image/image';
@@ -97,6 +97,7 @@ const AudiobookCard = ({
 
 const AudiobooksRoute = () => {
     const server = useAudiobookshelfServer();
+    const { play: playAudiobook } = useAudiobookActions();
 
     const librariesQuery = useQuery({
         enabled: Boolean(server),
@@ -119,23 +120,20 @@ const AudiobooksRoute = () => {
     const isLoading =
         librariesQuery.isLoading || itemQueries.some((query) => query.isLoading || query.isPending);
 
-    const handlePlay = async (item: AudiobookshelfLibraryItem) => {
+    const handlePlay = (item: AudiobookshelfLibraryItem) => {
+        console.log('[audiobooks-route] handlePlay clicked', {
+            hasServer: Boolean(server),
+            itemId: item.id,
+            title: item.media?.metadata?.title || item.name,
+        });
+
         if (!server) {
+            console.warn('[audiobooks-route] no audiobookshelf server configured');
             return;
         }
 
-        const playbackSession = await audiobookshelfController.playItem(server, item.id);
-        const contentUrl = playbackSession.audioTracks?.[0]?.contentUrl;
-
-        if (!contentUrl) {
-            throw new Error('Audiobookshelf playback did not return an audio URL');
-        }
-
-        console.log('Audiobook playback session', {
-            item,
-            playbackSession,
-            contentUrl,
-        });
+        // Delegates session fetch, arbiter claim, and resume-position resolution to the store.
+        playAudiobook(server, item);
     };
 
     return (

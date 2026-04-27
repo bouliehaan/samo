@@ -8,6 +8,7 @@ import { MainPlayerListenerHook } from '/@/renderer/features/player/audio-player
 import { MpvPlayer } from '/@/renderer/features/player/audio-player/mpv-player';
 import { WebPlayer } from '/@/renderer/features/player/audio-player/web-player';
 import { SleepTimerHook } from '/@/renderer/features/player/components/sleep-timer-button';
+import { AudiobookWebPlayer } from '/@/renderer/features/audiobooks/components/audiobook-web-player';
 import { AutoDJHook } from '/@/renderer/features/player/hooks/use-auto-dj';
 import { AutosaveHook } from '/@/renderer/features/player/hooks/use-autosave';
 import { MediaSessionHook } from '/@/renderer/features/player/hooks/use-media-session';
@@ -175,6 +176,10 @@ const AudioPlayersContent = ({
     const source = usePlaybackSource();
 
     useEffect(() => {
+        console.log('[AudioPlayersContent] source changed →', source);
+    }, [source]);
+
+    useEffect(() => {
         if (webAudio && 'AudioContext' in window) {
             let context: AudioContext;
 
@@ -262,8 +267,12 @@ const AudioPlayersContent = ({
         return <RadioWebPlayer />;
     }
 
-    // 'music', null (idle at boot), and future sources that render their own engine
-    // all fall through here. Audiobook and podcast engines are added in Phase 2.
+    if (source === 'audiobook') {
+        // MPV path for audiobooks is Phase 3; fall back to WebPlayer for now if LOCAL is set.
+        return <AudiobookWebPlayer />;
+    }
+
+    // 'music', null (idle at boot), and future sources fall through here.
     return (
         <>
             {playbackType === PlayerType.WEB && <WebPlayer />}

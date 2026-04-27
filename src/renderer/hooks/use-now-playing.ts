@@ -3,12 +3,15 @@ import {
     useRadioPlayer,
     useRadioStore,
 } from '/@/renderer/features/radio/hooks/use-radio-player';
+import { useAudiobookItem, useAudiobookServer, useAudiobookStore } from '/@/renderer/store/audiobook.store';
 import {
     usePlaybackOwnerStore,
     usePlaybackSource,
     type PlaybackSource,
 } from '/@/renderer/store/playback-owner.store';
 import { usePlayerSong, usePlayerStoreBase } from '/@/renderer/store';
+import { AudiobookshelfLibraryItem } from '/@/shared/api/audiobookshelf/audiobookshelf-types';
+import { ServerListItemWithCredential } from '/@/shared/types/domain-types';
 import { LibraryItem } from '/@/shared/types/domain-types';
 
 export type NowPlaying = {
@@ -19,10 +22,30 @@ export type NowPlaying = {
     canSkipNext: boolean;
     canSkipPrevious: boolean;
     source: PlaybackSource | null;
-    // Album for music, station name for radio, chapter title for audiobook.
+    // Album for music, station name for radio, narrator/series for audiobook.
     subtitle: string;
     title: string;
 };
+
+// Builds a direct cover URL for ABS items using the token query param.
+// ABS supports /api/items/:id/cover?token=<token> for browser-side art fetching.
+function audiobookArtworkUrl(
+    server: ServerListItemWithCredential,
+    item: AudiobookshelfLibraryItem,
+): string | undefined {
+    if (!item.id || !server.url || !server.credential) return undefined;
+    const base = server.url.replace(/\/+$/, '');
+    return `${base}/api/items/${item.id}/cover?token=${encodeURIComponent(server.credential)}`;
+}
+
+function audiobookTitle(item: AudiobookshelfLibraryItem): string {
+    return item.media?.metadata?.title || item.name || 'Untitled audiobook';
+}
+
+function audiobookAuthor(item: AudiobookshelfLibraryItem): string {
+    const meta = item.media?.metadata;
+    return meta?.author || meta?.authors?.map((a) => a.name).join(', ') || '';
+}
 
 // Reads current now-playing state directly from store snapshots.
 // Safe to call outside React (Zustand subscriptions, event handlers).
@@ -43,9 +66,22 @@ export function getNowPlayingSnapshot(): NowPlaying {
         };
     }
 
-    // 'audiobook' and 'podcast' will be handled here in Phase 2.
-    // For now they fall through to the music path, which returns empty metadata
-    // until their stores are wired in.
+    if (source === 'audiobook') {
+        const ab = useAudiobookStore.getState();
+        const { item, server } = ab;
+        return {
+            artwork: item && server ? audiobookArtworkUrl(server, item) : undefined,
+            artist: item ? audiobookAuthor(item) : '',
+            canSeek: true,
+            canSkipNext: false,
+            canSkipPrevious: false,
+            source: 'audiobook',
+            subtitle: '',
+            title: item ? audiobookTitle(item) : 'Audiobook',
+        };
+    }
+
+    // 'podcast' falls through here in Phase 3.
 
     const song = usePlayerStoreBase.getState().getCurrentSong();
     const artwork = song
@@ -74,6 +110,8 @@ export function useNowPlaying(): NowPlaying {
     const source = usePlaybackSource();
     const song = usePlayerSong();
     const { isPlaying: isRadioPlaying, metadata: radioMetadata, stationName } = useRadioPlayer();
+    const audiobookItem = useAudiobookItem();
+    const audiobookServer = useAudiobookServer();
 
     if (source === 'radio' && isRadioPlaying) {
         return {
@@ -85,6 +123,22 @@ export function useNowPlaying(): NowPlaying {
             source: 'radio',
             subtitle: stationName || '',
             title: radioMetadata?.title || stationName || 'Radio',
+        };
+    }
+
+    if (source === 'audiobook' && audiobookItem) {
+        return {
+            artwork:
+                audiobookItem && audiobookServer
+                    ? audiobookArtworkUrl(audiobookServer, audiobookItem)
+                    : undefined,
+            artist: audiobookAuthor(audiobookItem),
+            canSeek: true,
+            canSkipNext: false,
+            canSkipPrevious: false,
+            source: 'audiobook',
+            subtitle: '',
+            title: audiobookTitle(audiobookItem),
         };
     }
 

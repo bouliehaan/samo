@@ -71,6 +71,8 @@ export interface AudiobookshelfPlaybackAudioTrack {
 
 export interface AudiobookshelfPlaybackSessionResponse {
     audioTracks?: AudiobookshelfPlaybackAudioTrack[];
+    // Server-side resume position in seconds.
+    currentTime?: number;
     id?: string;
     libraryItemId?: string;
 }
