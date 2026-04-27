@@ -1,20 +1,43 @@
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useNavigate } from 'react-router';
+import { generatePath, useNavigate } from 'react-router';
 
 import styles from './action-bar.module.css';
 
 import { AppMenu } from '/@/renderer/features/titlebar/components/app-menu';
-import { useCommandPalette } from '/@/renderer/store';
+import { AppRoute } from '/@/renderer/router/routes';
 import { Button } from '/@/shared/components/button/button';
 import { DropdownMenu } from '/@/shared/components/dropdown-menu/dropdown-menu';
 import { Grid } from '/@/shared/components/grid/grid';
 import { Group } from '/@/shared/components/group/group';
 import { Icon } from '/@/shared/components/icon/icon';
 import { TextInput } from '/@/shared/components/text-input/text-input';
+import { LibraryItem } from '/@/shared/types/domain-types';
 
 export const ActionBar = () => {
     const { t } = useTranslation();
-    const { open } = useCommandPalette();
+    const navigate = useNavigate();
+    const [searchValue, setSearchValue] = useState('');
+
+    const goToSearch = (value: string) => {
+        const searchPath = generatePath(AppRoute.SEARCH, { itemType: LibraryItem.SONG });
+        const query = value.trim();
+
+        if (!query) {
+            return;
+        }
+
+        navigate(`${searchPath}?query=${encodeURIComponent(query)}`);
+    };
+
+    const handleSearchChange = (value: string) => {
+        setSearchValue(value);
+        goToSearch(value);
+    };
+
+    const handleSearchFocus = () => {
+        goToSearch(searchValue);
+    };
 
     return (
         <div className={styles.container}>
@@ -27,14 +50,14 @@ export const ActionBar = () => {
                 <Grid.Col span={7}>
                     <TextInput
                         leftSection={<Icon icon="search" />}
-                        onClick={open}
-                        onKeyDown={(e) => {
-                            if (e.key === 'Enter' || e.key === ' ') {
-                                open();
-                            }
+                        onChange={(event) => handleSearchChange(event.currentTarget.value)}
+                        onClick={handleSearchFocus}
+                        onFocus={handleSearchFocus}
+                        onKeyDown={(event) => {
+                            event.stopPropagation();
                         }}
                         placeholder={t('common.search', { postProcess: 'titleCase' })}
-                        readOnly
+                        value={searchValue}
                     />
                 </Grid.Col>
                 <Grid.Col span={5}>

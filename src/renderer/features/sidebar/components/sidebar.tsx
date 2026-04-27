@@ -45,6 +45,23 @@ import { Tooltip } from '/@/shared/components/tooltip/tooltip';
 import { ExplicitStatus, LibraryItem } from '/@/shared/types/domain-types';
 import { Platform } from '/@/shared/types/types';
 
+const primarySidebarItemIds = ['Home', 'Radio', 'Search'];
+
+const librarySidebarItemIds = [
+    'Favorites',
+    'Albums',
+    'Tracks',
+    'Artists',
+    'Artists-all',
+    'Genres',
+    'Folders',
+];
+
+const getSidebarItemsById = (items: SidebarItemType[], ids: string[]) =>
+    ids
+        .map((id) => items.find((item) => item.id === id && item.route))
+        .filter(Boolean) as SidebarItemType[];
+
 export const Sidebar = () => {
     const { t } = useTranslation();
 
@@ -90,9 +107,13 @@ export const Sidebar = () => {
         return items;
     }, [sidebarItems, translatedSidebarItemMap]);
 
-    /* Library accordion: only items with a route (exclude Collections section) */
+    const primaryItemsWithRoute = useMemo(
+        () => getSidebarItemsById(sidebarItemsWithRoute, primarySidebarItemIds),
+        [sidebarItemsWithRoute],
+    );
+
     const libraryItemsWithRoute = useMemo(
-        () => sidebarItemsWithRoute.filter((item) => item.id !== 'Collections' && item.route),
+        () => getSidebarItemsById(sidebarItemsWithRoute, librarySidebarItemIds),
         [sidebarItemsWithRoute],
     );
 
@@ -110,6 +131,17 @@ export const Sidebar = () => {
                 <ActionBar />
             </Group>
             <ScrollArea allowDragScroll className={styles.scrollArea}>
+                {primaryItemsWithRoute.map((item) => {
+                    return (
+                        <SidebarItem key={`sidebar-${item.route}`} to={item.route}>
+                            <Group gap="md">
+                                <SidebarIcon route={item.route} />
+                                {item.label}
+                            </Group>
+                        </SidebarItem>
+                    );
+                })}
+
                 <Accordion
                     classNames={{
                         content: styles.accordionContent,
@@ -117,15 +149,13 @@ export const Sidebar = () => {
                         item: styles.accordionItem,
                         root: styles.accordionRoot,
                     }}
-                    defaultValue={['library', 'collections', 'playlists']}
+                    defaultValue={['collections', 'playlists']}
                     multiple
                 >
                     <Accordion.Item value="library">
                         <Accordion.Control>
                             <Text fw={500} variant="secondary">
-                                {t('page.sidebar.myLibrary', {
-                                    postProcess: 'titleCase',
-                                })}
+                                Library
                             </Text>
                         </Accordion.Control>
                         <Accordion.Panel>

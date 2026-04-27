@@ -836,6 +836,15 @@ enum BindingActions {
     VOLUME_UP = 'volumeUp',
 }
 
+const textEntryMenuAcceleratorHotkeys = new Set([
+    'backspace',
+    'delete',
+    'enter',
+    'escape',
+    'space',
+    'tab',
+]);
+
 const getMenuAccelerator = (
     data: Record<BindingActions, { allowGlobal: boolean; hotkey: string; isGlobal: boolean }>,
     action: BindingActions,
@@ -843,6 +852,12 @@ const getMenuAccelerator = (
     const hotkey = data[action]?.hotkey;
 
     if (!hotkey) return undefined;
+
+    // Plain text-entry keys should stay renderer hotkeys only. Registering them
+    // as native Electron menu accelerators bypasses focused input fields.
+    if (textEntryMenuAcceleratorHotkeys.has(hotkey.toLowerCase())) {
+        return undefined;
+    }
 
     return hotkeyToElectronAccelerator(hotkey);
 };
