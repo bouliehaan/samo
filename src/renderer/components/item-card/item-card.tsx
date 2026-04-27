@@ -226,7 +226,6 @@ const ItemCardStandardImageArea = memo(function ItemCardStandardImageArea({
         [styles.isRound]: isRound,
     });
 
-    const isFavorite = 'userFavorite' in data && (data as { userFavorite: boolean }).userFavorite;
     const userRating =
         'userRating' in data &&
         typeof (data as { userRating: null | number }).userRating === 'number'
@@ -259,7 +258,6 @@ const ItemCardStandardImageArea = memo(function ItemCardStandardImageArea({
                     type="itemCard"
                 />
             )}
-            {isFavorite && <div className={styles.favoriteBadge} />}
             {hasRating && <div className={styles.ratingBadge}>{userRating}</div>}
             <AnimatePresence>
                 {withControls && showControls && (
@@ -359,7 +357,6 @@ const CompactItemCardImageArea = memo(function CompactItemCardImageArea({
         [styles.isRound]: isRound,
     });
 
-    const isFavorite = 'userFavorite' in data && (data as { userFavorite: boolean }).userFavorite;
     const userRating =
         'userRating' in data &&
         typeof (data as { userRating: null | number }).userRating === 'number'
@@ -393,7 +390,6 @@ const CompactItemCardImageArea = memo(function CompactItemCardImageArea({
                     type="itemCard"
                 />
             )}
-            {isFavorite && <div className={styles.favoriteBadge} />}
             {hasRating && <div className={styles.ratingBadge}>{userRating}</div>}
             <AnimatePresence>
                 {withControls && showControls && data && (

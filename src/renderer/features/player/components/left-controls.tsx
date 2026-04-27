@@ -13,6 +13,7 @@ import {
     JoinedArtists,
 } from '/@/renderer/features/albums/components/joined-artists';
 import { ContextMenuController } from '/@/renderer/features/context-menu/context-menu-controller';
+import { AudioPathBadge } from '/@/renderer/features/player/components/audio-path-badge';
 import { RadioMetadataDisplay } from '/@/renderer/features/player/components/radio-metadata-display';
 import {
     useIsRadioActive,
@@ -278,6 +279,9 @@ export const LeftControls = () => {
                                         size: 'md',
                                     }}
                                 />
+                            </div>
+                            <div className={styles.lineItem} onClick={stopPropagation}>
+                                <AudioPathBadge compact song={currentSong} />
                             </div>
                             <div
                                 className={clsx(

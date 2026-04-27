@@ -5,8 +5,21 @@ import { Badge, Group } from '@mantine/core';
 import { usePlaybackSettings } from '/@/renderer/store';
 
 type AudioPathBadgeProps = {
+    compact?: boolean;
     song?: QueueSong;
 };
+
+const LOSSLESS_CONTAINERS = new Set([
+    'aif',
+    'aiff',
+    'alac',
+    'ape',
+    'dsd',
+    'dsf',
+    'flac',
+    'm4a',
+    'wav',
+]);
 
 const formatContainer = (container?: null | string) => {
     if (!container) return null;
@@ -14,18 +27,19 @@ const formatContainer = (container?: null | string) => {
     return container.toUpperCase();
 };
 
-const formatBitDepth = (bitDepth?: null | number) => {
+const formatBitDepth = (bitDepth?: null | number, compact?: boolean) => {
     if (!bitDepth) return null;
 
-    return `${bitDepth}-bit`;
+    return compact ? `${bitDepth}` : `${bitDepth}-bit`;
 };
 
-const formatSampleRate = (sampleRate?: null | number) => {
+const formatSampleRate = (sampleRate?: null | number, compact?: boolean) => {
     if (!sampleRate) return null;
 
     const khz = sampleRate / 1000;
+    const formatted = Number.isInteger(khz) ? khz.toFixed(0) : khz.toFixed(1);
 
-    return `${Number.isInteger(khz) ? khz.toFixed(0) : khz.toFixed(1)} kHz`;
+    return compact ? formatted : `${formatted} kHz`;
 };
 
 const formatBitRate = (bitRate?: null | number) => {
@@ -38,29 +52,52 @@ const formatBitRate = (bitRate?: null | number) => {
     return `${kbps} kbps`;
 };
 
-export const AudioPathBadge = ({ song }: AudioPathBadgeProps) => {
+export const AudioPathBadge = ({ compact = false, song }: AudioPathBadgeProps) => {
     const { transcode } = usePlaybackSettings();
 
     if (!song) {
         return null;
     }
 
-    const pathLabel = transcode.enabled ? 'Transcoded' : 'Direct Play';
-    const container = transcode.enabled
-        ? formatContainer(transcode.format)
-        : formatContainer(song.container);
-    const bitDepth = transcode.enabled ? null : formatBitDepth(song.bitDepth);
-    const sampleRate = transcode.enabled ? null : formatSampleRate(song.sampleRate);
+    const rawContainer = transcode.enabled ? transcode.format : song.container;
+    const isLosslessDirect =
+        !transcode.enabled && LOSSLESS_CONTAINERS.has(rawContainer?.toLowerCase() ?? '');
+
+    const pathLabel = transcode.enabled ? 'Transcoded' : compact ? 'Direct' : 'Direct Play';
+    const container = formatContainer(rawContainer);
+    const bitDepth = transcode.enabled ? null : formatBitDepth(song.bitDepth, compact);
+    const sampleRate = transcode.enabled ? null : formatSampleRate(song.sampleRate, compact);
     const bitRate = transcode.enabled
         ? formatBitRate(transcode.bitrate)
         : formatBitRate(song.bitRate);
 
-    const items = [pathLabel, container, bitDepth, sampleRate, bitRate].filter(Boolean);
+    const sourceQuality = compact && bitDepth && sampleRate ? `${bitDepth}/${sampleRate}` : null;
+
+    const items = compact
+        ? [pathLabel, container, sourceQuality, transcode.enabled ? bitRate : null].filter(Boolean)
+        : [pathLabel, container, bitDepth, sampleRate, bitRate].filter(Boolean);
 
     return (
-        <Group gap="xs" justify="center">
+        <Group gap={compact ? 4 : 'xs'} justify={compact ? 'flex-start' : 'center'} wrap="nowrap">
             {items.map((item) => (
-                <Badge key={item} radius="sm" size="lg" variant="light">
+                <Badge
+                    color={isLosslessDirect ? undefined : undefined}
+                    key={item}
+                    radius="sm"
+                    size={compact ? 'xs' : 'lg'}
+                    styles={
+                        isLosslessDirect
+                            ? {
+                                  root: {
+                                      backgroundColor: 'rgba(184, 134, 11, 0.22)',
+                                      border: '1px solid rgba(218, 165, 32, 0.36)',
+                                      color: '#d6b25e',
+                                  },
+                              }
+                            : undefined
+                    }
+                    variant={isLosslessDirect ? 'outline' : 'light'}
+                >
                     {item}
                 </Badge>
             ))}
