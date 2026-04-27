@@ -321,11 +321,19 @@ const initialState: State = {
     },
 };
 
+const clearRadioPlayback = () => {
+    if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('samo:clear-radio'));
+    }
+};
+
 export const usePlayerStoreBase = createWithEqualityFn<PlayerState>()(
     persist(
         subscribeWithSelector(
             immer((set, get) => ({
                 addToQueueByType: (items, playType, playSongId) => {
+                    clearRadioPlayback();
+
                     const newItems = items.map(toQueueSong);
                     const newUniqueIds = newItems.map((item) => item._uniqueId);
 
@@ -1004,6 +1012,10 @@ export const usePlayerStoreBase = createWithEqualityFn<PlayerState>()(
                     });
                 },
                 mediaPlay: (id?: string) => {
+                    if (id) {
+                        clearRadioPlayback();
+                    }
+
                     let playIndex: number | undefined;
 
                     set((state) => {
@@ -1050,6 +1062,8 @@ export const usePlayerStoreBase = createWithEqualityFn<PlayerState>()(
                     }
                 },
                 mediaPlayByIndex: (index: number) => {
+                    clearRadioPlayback();
+
                     let playIndex: number | undefined;
                     let songId: string | undefined;
 
@@ -1300,6 +1314,8 @@ export const usePlayerStoreBase = createWithEqualityFn<PlayerState>()(
                     });
                 },
                 setQueue: (items, index, position) => {
+                    clearRadioPlayback();
+
                     const newItems = items.map(toQueueSong);
                     const newUniqueIds = newItems.map((item) => item._uniqueId);
 
@@ -1666,6 +1682,8 @@ export type AddToQueueByUniqueId = {
 export type AddToQueueType = AddToQueueByPlayType | AddToQueueByUniqueId;
 
 export async function addToQueueByData(type: AddToQueueType, data: Song[]) {
+    clearRadioPlayback();
+
     const items = data.map(toQueueSong);
 
     if (typeof type === 'string') {

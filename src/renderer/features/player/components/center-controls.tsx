@@ -27,21 +27,23 @@ export const CenterControls = () => {
     const skip = useSkipButtons();
 
     const isRadioActive = useIsRadioActive();
+    const { id: currentSongId } = usePlayerSongProperties(['id']) ?? {};
+    const shouldShowRadioControls = isRadioActive && currentSongId === undefined;
 
-    if (isRadioActive) {
+    if (shouldShowRadioControls) {
         return (
             <>
                 <div className={styles.controlsContainer}>
                     <div className={styles.buttonsContainer}>
                         <RadioStopButton />
-                        <ShuffleButton disabled={isRadioActive} />
-                        <PreviousButton disabled={isRadioActive} />
-                        {skip?.enabled && <SkipBackwardButton disabled={isRadioActive} />}
+                        <ShuffleButton disabled={shouldShowRadioControls} />
+                        <PreviousButton disabled={shouldShowRadioControls} />
+                        {skip?.enabled && <SkipBackwardButton disabled={shouldShowRadioControls} />}
                         <RadioCenterPlayButton />
-                        {skip?.enabled && <SkipForwardButton disabled={isRadioActive} />}
-                        <NextButton disabled={isRadioActive} />
-                        <RepeatButton disabled={isRadioActive} />
-                        <ShuffleAllButton disabled={isRadioActive} />
+                        {skip?.enabled && <SkipForwardButton disabled={shouldShowRadioControls} />}
+                        <NextButton disabled={shouldShowRadioControls} />
+                        <RepeatButton disabled={shouldShowRadioControls} />
+                        <ShuffleAllButton disabled={shouldShowRadioControls} />
                     </div>
                 </div>
             </>

@@ -94,8 +94,8 @@ const getMetadata = async () => {
     return ipcRenderer.invoke('player-metadata');
 };
 
-const getStreamMetadata = async () => {
-    return ipcRenderer.invoke('player-stream-metadata');
+const getStreamMetadata = async (streamUrl?: string) => {
+    return ipcRenderer.invoke('player-stream-metadata', streamUrl);
 };
 
 const getAudioDevices = async () => {

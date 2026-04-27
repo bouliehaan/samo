@@ -94,10 +94,8 @@ export const useRadioStore = createWithEqualityFn<RadioStore>((set) => ({
                 stationName: null,
             });
 
-            // When stopping radio with mpv, just pause instead of calling mediaStop
-            // This prevents mpv from quitting
             if (playbackType === PlayerType.LOCAL && mpvPlayer) {
-                mpvPlayer.pause();
+                usePlayerStoreBase.getState().mediaStop();
             } else {
                 usePlayerStoreBase.getState().mediaStop();
             }
@@ -112,7 +110,20 @@ export const useRadioStore = createWithEqualityFn<RadioStore>((set) => ({
 
 export const useIsPlayingRadio = () => useRadioStore((state) => state.isPlaying);
 
+if (typeof window !== 'undefined') {
+    window.addEventListener('samo:clear-radio', () => {
+        useRadioStore.setState({
+            currentStationArt: null,
+            currentStreamUrl: null,
+            isPlaying: false,
+            metadata: null,
+            stationName: null,
+        });
+    });
+}
+
 export const useIsRadioActive = () => useRadioStore((state) => Boolean(state.currentStreamUrl));
+
 
 export const useRadioPlayer = () => {
     const currentStationArt = useRadioStore((state) => state.currentStationArt);
@@ -141,6 +152,7 @@ export const useRadioControls = () => {
 };
 
 const mpvPlayer = isElectron() ? window.api.mpvPlayer : null;
+const shouldUseMpvRadioMetadata = Boolean(mpvPlayer?.getStreamMetadata);
 const mpvPlayerListener = isElectron() ? window.api.mpvPlayerListener : null;
 const ipc = isElectron() ? window.api.ipc : null;
 
@@ -231,48 +243,53 @@ export const useRadioAudioInstance = () => {
 };
 
 export const useRadioMetadata = () => {
-    const { actions, currentStreamUrl } = useRadioStore();
-    const { setMetadata } = actions;
-    const playbackType = usePlaybackType();
-    const isUsingMpv = playbackType === PlayerType.LOCAL && mpvPlayer;
+    const currentStreamUrl = useRadioStore((state) => state.currentStreamUrl);
+    const isPlaying = useRadioStore((state) => state.isPlaying);
+    const setMetadata = useRadioStore((state) => state.actions.setMetadata);
 
     useEffect(() => {
-        if (!currentStreamUrl) {
+        if (!currentStreamUrl || !isPlaying) {
             setMetadata(null);
             return;
         }
 
-        // If using mpv, fetch metadata from mpv periodically
-        if (isUsingMpv && mpvPlayer) {
-            let intervalId: NodeJS.Timeout | null = null;
+        // Electron/local mode: prefer MPV metadata because browser-side ICY fetches
+        // are commonly blocked by CORS.
+        if (shouldUseMpvRadioMetadata && mpvPlayer) {
+            let stopped = false;
 
-            const fetchMpvMetadata = async () => {
+            const pollMetadata = async () => {
                 try {
-                    const metadata = await mpvPlayer.getStreamMetadata();
-                    setMetadata(metadata);
-                } catch {
-                    // Ignore error
+                    const metadata = await mpvPlayer.getStreamMetadata(currentStreamUrl);
+
+                    if (!stopped) {
+                        setMetadata(metadata);
+                    }
+                } catch (error) {
+                    if (!stopped) {
+                        setMetadata(null);
+                    }
                 }
             };
 
-            intervalId = setInterval(fetchMpvMetadata, 5000);
+            pollMetadata();
+            const interval = window.setInterval(pollMetadata, 5000);
 
             return () => {
-                if (intervalId) {
-                    clearInterval(intervalId);
-                }
+                stopped = true;
+                window.clearInterval(interval);
                 setMetadata(null);
             };
         }
 
-        // Otherwise, use IcecastMetadataStats for web player
+        // Web fallback: use IcecastMetadataStats. This can fail under browser CORS,
+        // but is still useful outside Electron/MPV mode.
         let statsListener: IcecastMetadataStats | null = null;
 
         try {
             statsListener = new IcecastMetadataStats(currentStreamUrl, {
                 interval: 12,
                 onStats: (stats) => {
-                    // Parse ICY metadata - typically in format "Artist - Title" or just "Title"
                     let streamTitle: null | string = null;
 
                     if (stats.StreamTitle) {
@@ -281,18 +298,16 @@ export const useRadioMetadata = () => {
                         streamTitle = stats.icy.StreamTitle;
                     }
 
-                    // Parse the combined format into title and artist
                     let artist: null | string = null;
                     let title: null | string = null;
 
                     if (streamTitle) {
-                        // Try to parse "Artist - Title" format
                         const match = streamTitle.match(/^(.*?)\s*[-–—]\s*(.+)$/);
+
                         if (match) {
                             artist = match[1].trim() || null;
                             title = match[2].trim() || null;
                         } else {
-                            // If no separator found, treat the whole thing as title
                             title = streamTitle;
                         }
                     }
@@ -311,9 +326,10 @@ export const useRadioMetadata = () => {
             if (statsListener) {
                 statsListener.stop();
             }
+
             setMetadata(null);
         };
-    }, [currentStreamUrl, setMetadata, isUsingMpv]);
+    }, [currentStreamUrl, isPlaying, setMetadata]);
 };
 
 const RadioAudioInstanceHookInner = () => {

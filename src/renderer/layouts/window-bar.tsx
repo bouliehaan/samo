@@ -59,55 +59,6 @@ const WindowsControls = ({ controls, title }: WindowBarControlsProps) => {
     );
 };
 
-const MacOsControls = ({ controls, title }: WindowBarControlsProps) => {
-    const { handleClose, handleMaximize, handleMinimize } = controls;
-
-    return (
-        <div className={styles.macosContainer}>
-            <div
-                    className={styles.macosButtonGroup}
-                    onMouseEnter={() => browser?.setIgnoreMouseEvents(false)}
-                    onMouseLeave={() => browser?.setIgnoreMouseEvents(true)}
-                >
-                <div
-                    className={clsx(styles.macosButton, styles.closeButton)}
-                    id="close-button"
-                    onClick={handleClose}
-                    role="button"
-                >
-                    <svg className={styles.macosIcon} viewBox="0 0 10 10" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M2 2L8 8M8 2L2 8" stroke="rgba(0,0,0,0.5)" strokeWidth="1.5" strokeLinecap="round"/>
-                    </svg>
-                </div>
-                <div
-                    className={clsx(styles.macosButton, styles.minButton)}
-                    id="min-button"
-                    onClick={handleMinimize}
-                    role="button"
-                >
-                    <svg className={styles.macosIcon} viewBox="0 0 10 10" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M2 5H8" stroke="rgba(0,0,0,0.5)" strokeWidth="1.5" strokeLinecap="round"/>
-                    </svg>
-                </div>
-                <div
-                    className={clsx(styles.macosButton, styles.maxButton)}
-                    id="max-button"
-                    onClick={handleMaximize}
-                    role="button"
-                >
-                    <svg className={styles.macosIcon} viewBox="0 0 10 10" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M7 2H2V7M3 8H8V3" fill="rgba(0,0,0,0.5)" stroke="none"/>
-                    </svg>
-                </div>
-            </div>
-            <div className={styles.playerStatusContainer}>
-                <Text className={styles.playerStatusText} overflow="hidden" size="sm">
-                    {title}
-                </Text>
-            </div>
-        </div>
-    );
-};
 
 export const WindowBar = () => {
     const { t } = useTranslation();

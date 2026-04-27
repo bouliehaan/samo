@@ -530,13 +530,18 @@ const normalizeInternetRadioStation = (
     item: z.infer<typeof ndType._response.radioStation>,
 ): InternetRadioStation => {
     const homepageUrl = item.homePageUrl?.trim() ? item.homePageUrl : null;
+    const fallbackUrl = homepageUrl || item.streamUrl || null;
     const imageId = navidromeImageIdWithCacheBust(item.id, item.uploadedImage, item.updatedAt);
 
     return {
         homepageUrl,
         id: item.id,
         imageId,
-        imageUrl: null,
+        imageUrl: imageId
+            ? null
+            : fallbackUrl
+              ? `https://www.google.com/s2/favicons?sz=128&domain_url=${encodeURIComponent(fallbackUrl)}`
+              : null,
         name: item.name,
         streamUrl: item.streamUrl,
         uploadedImage: item.uploadedImage || null,

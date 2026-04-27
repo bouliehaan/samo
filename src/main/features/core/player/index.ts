@@ -1,3 +1,5 @@
+import http from 'node:http';
+import https from 'node:https';
 import console from 'console';
 import { app, ipcMain } from 'electron';
 import { rm } from 'fs/promises';
@@ -463,72 +465,174 @@ ipcMain.handle('player-metadata', async (): Promise<null | PlayerData> => {
 });
 
 // Returns the stream metadata from mpv (for radio streams)
+
+const parseIcyStreamTitle = (raw: string): null | { artist: null | string; title: null | string } => {
+    const streamTitleMatch = raw.match(/StreamTitle='([^']*)'/i) || raw.match(/StreamTitle="([^"]*)"/i);
+    const streamTitle = streamTitleMatch?.[1]?.trim();
+
+    if (!streamTitle) {
+        return null;
+    }
+
+    const splitMatch = streamTitle.match(/^(.*?)\s*[-–—]\s*(.+)$/);
+
+    if (splitMatch) {
+        return {
+            artist: splitMatch[1].trim() || null,
+            title: splitMatch[2].trim() || null,
+        };
+    }
+
+    return {
+        artist: null,
+        title: streamTitle,
+    };
+};
+
+const fetchIcyMetadata = (
+    streamUrl: string,
+    redirectCount = 0,
+): Promise<null | { artist: null | string; title: null | string }> => {
+    return new Promise((resolve) => {
+        let settled = false;
+
+        const finish = (value: null | { artist: null | string; title: null | string }) => {
+            if (settled) return;
+            settled = true;
+            resolve(value);
+        };
+
+        try {
+            const url = new URL(streamUrl);
+            const client = url.protocol === 'https:' ? https : http;
+
+            const request = client.request(
+                url,
+                {
+                    headers: {
+                        'Icy-MetaData': '1',
+                        'User-Agent': 'samo',
+                    },
+                    timeout: 12000,
+                },
+                (response) => {
+                    const location = response.headers.location;
+
+                    if (
+                        location &&
+                        response.statusCode &&
+                        response.statusCode >= 300 &&
+                        response.statusCode < 400 &&
+                        redirectCount < 5
+                    ) {
+                        response.destroy();
+                        const redirectedUrl = new URL(location, streamUrl).toString();
+                        fetchIcyMetadata(redirectedUrl, redirectCount + 1).then(finish);
+                        return;
+                    }
+
+                    const metaintHeader = response.headers['icy-metaint'];
+                    const metaint = Array.isArray(metaintHeader)
+                        ? Number(metaintHeader[0])
+                        : Number(metaintHeader);
+
+                    const icyName = Array.isArray(response.headers['icy-name'])
+                        ? response.headers['icy-name'][0]
+                        : response.headers['icy-name'];
+
+                    if (!Number.isFinite(metaint) || metaint <= 0) {
+                        response.destroy();
+                        finish(
+                            typeof icyName === 'string' && icyName.trim()
+                                ? { artist: null, title: icyName.trim() }
+                                : null,
+                        );
+                        return;
+                    }
+
+                    let audioBytesUntilMetadata = metaint;
+                    let metadataLength: null | number = null;
+                    let metadataBuffer = Buffer.alloc(0);
+
+                    response.on('data', (chunk: Buffer) => {
+                        let offset = 0;
+
+                        while (offset < chunk.length) {
+                            if (audioBytesUntilMetadata > 0) {
+                                const consume = Math.min(audioBytesUntilMetadata, chunk.length - offset);
+                                audioBytesUntilMetadata -= consume;
+                                offset += consume;
+                                continue;
+                            }
+
+                            if (metadataLength === null) {
+                                metadataLength = chunk[offset] * 16;
+                                offset += 1;
+
+                                if (metadataLength === 0) {
+                                    audioBytesUntilMetadata = metaint;
+                                    metadataLength = null;
+                                }
+
+                                continue;
+                            }
+
+                            const remainingMetadataBytes = metadataLength - metadataBuffer.length;
+                            const consume = Math.min(remainingMetadataBytes, chunk.length - offset);
+
+                            metadataBuffer = Buffer.concat([
+                                metadataBuffer,
+                                chunk.subarray(offset, offset + consume),
+                            ]);
+
+                            offset += consume;
+
+                            if (metadataBuffer.length >= metadataLength) {
+                                const rawMetadata = metadataBuffer.toString('utf8').replace(/\0+$/g, '').trim();
+
+                                response.destroy();
+
+                                const parsedMetadata = parseIcyStreamTitle(rawMetadata);
+
+                                finish(
+                                    parsedMetadata ||
+                                        (typeof icyName === 'string' && icyName.trim()
+                                            ? { artist: null, title: icyName.trim() }
+                                            : null),
+                                );
+                                return;
+                            }
+                        }
+                    });
+
+                    response.on('end', () => finish(null));
+                    response.on('error', () => finish(null));
+                },
+            );
+
+            request.on('timeout', () => {
+                request.destroy();
+                finish(null);
+            });
+
+            request.on('error', () => finish(null));
+            request.end();
+        } catch {
+            finish(null);
+        }
+    });
+};
+
+
 ipcMain.handle(
     'player-stream-metadata',
-    async (): Promise<null | { artist: null | string; title: null | string }> => {
+    async (_event, streamUrl?: string): Promise<null | { artist: null | string; title: null | string }> => {
         try {
-            const metadata = await getMpvInstance()?.getProperty('metadata');
-            if (metadata && typeof metadata === 'object') {
-                // Try to get separate title and artist fields first
-                let artist: null | string =
-                    (metadata['artist'] as string) ||
-                    (metadata['ARTIST'] as string) ||
-                    (metadata['icy-artist'] as string) ||
-                    null;
-                let title: null | string =
-                    (metadata['title'] as string) || (metadata['TITLE'] as string) || null;
-
-                // If we don't have separate fields, try to parse from combined formats
-                if (!title && !artist) {
-                    const combinedTitle =
-                        (metadata['icy-title'] as string) ||
-                        (metadata['StreamTitle'] as string) ||
-                        (metadata['stream-title'] as string) ||
-                        null;
-
-                    if (combinedTitle && typeof combinedTitle === 'string') {
-                        // Try to parse "Artist - Title" format
-                        const match = combinedTitle.match(/^(.*?)\s*[-–—]\s*(.+)$/);
-                        if (match) {
-                            artist = match[1].trim() || null;
-                            title = match[2].trim() || null;
-                        } else {
-                            // If no separator found, treat the whole thing as title
-                            title = combinedTitle;
-                        }
-                    }
-                } else if (!title) {
-                    // If we have artist but no title, try to get from combined format
-                    const combinedTitle =
-                        (metadata['icy-title'] as string) ||
-                        (metadata['StreamTitle'] as string) ||
-                        (metadata['stream-title'] as string) ||
-                        null;
-                    if (combinedTitle && typeof combinedTitle === 'string') {
-                        title = combinedTitle;
-                    }
-                } else if (!artist) {
-                    // If we have title but no artist, try to get from combined format
-                    const combinedTitle =
-                        (metadata['icy-title'] as string) ||
-                        (metadata['StreamTitle'] as string) ||
-                        (metadata['stream-title'] as string) ||
-                        null;
-                    if (
-                        combinedTitle &&
-                        typeof combinedTitle === 'string' &&
-                        combinedTitle !== title
-                    ) {
-                        // Try to parse artist from combined format
-                        const match = combinedTitle.match(/^(.*?)\s*[-–—]\s*(.+)$/);
-                        if (match && match[2].trim() === title) {
-                            artist = match[1].trim() || null;
-                        }
-                    }
-                }
-
-                return { artist, title };
+            if (streamUrl) {
+                const metadata = await fetchIcyMetadata(streamUrl);
+                return metadata;
             }
+
             return null;
         } catch (err: any | NodeMpvError) {
             mpvLog({ action: `Failed to get stream metadata` }, err);
