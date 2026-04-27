@@ -22,7 +22,6 @@ import { RadioWebPlayer } from '/@/renderer/features/radio/components/radio-web-
 import {
     RadioAudioInstanceHook,
     RadioMetadataHook,
-    useIsRadioActive,
 } from '/@/renderer/features/radio/hooks/use-radio-player';
 import { RemoteHook } from '/@/renderer/features/remote/hooks/use-remote';
 import { VisualizerSystemAudioBridgeHook } from '/@/renderer/features/visualizer/components/visualizer-system-audio-bridge';
@@ -34,6 +33,7 @@ import {
     usePlaybackType,
     useSettingsStoreActions,
 } from '/@/renderer/store';
+import { usePlaybackSource } from '/@/renderer/store/playback-owner.store';
 import { logFn } from '/@/renderer/utils/logger';
 import { toast } from '/@/shared/components/toast/toast';
 import { LibraryItem } from '/@/shared/types/domain-types';
@@ -172,7 +172,7 @@ const AudioPlayersContent = ({
     setWebAudio: ReturnType<typeof useWebAudio>['setWebAudio'];
     webAudio: boolean;
 }) => {
-    const isRadioActive = useIsRadioActive();
+    const source = usePlaybackSource();
 
     useEffect(() => {
         if (webAudio && 'AudioContext' in window) {
@@ -257,14 +257,13 @@ const AudioPlayersContent = ({
         };
     }, [serverId]);
 
-    if (isRadioActive && playbackType === PlayerType.LOCAL) {
-        return <MpvPlayer />;
-    }
-
-    if (isRadioActive && playbackType === PlayerType.WEB) {
+    if (source === 'radio') {
+        if (playbackType === PlayerType.LOCAL) return <MpvPlayer />;
         return <RadioWebPlayer />;
     }
 
+    // 'music', null (idle at boot), and future sources that render their own engine
+    // all fall through here. Audiobook and podcast engines are added in Phase 2.
     return (
         <>
             {playbackType === PlayerType.WEB && <WebPlayer />}

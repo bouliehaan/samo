@@ -8,6 +8,7 @@ import { createWithEqualityFn } from 'zustand/traditional';
 
 import { eventEmitter } from '/@/renderer/events/event-emitter';
 import { createSelectors } from '/@/renderer/lib/zustand';
+import { usePlaybackOwnerStore } from '/@/renderer/store/playback-owner.store';
 import { useSettingsStore } from '/@/renderer/store/settings.store';
 import {
     setTimestamp as setTimestampStore,
@@ -321,10 +322,8 @@ const initialState: State = {
     },
 };
 
-const clearRadioPlayback = () => {
-    if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('samo:clear-radio'));
-    }
+const claimMusicPlayback = () => {
+    usePlaybackOwnerStore.getState().claim('music');
 };
 
 export const usePlayerStoreBase = createWithEqualityFn<PlayerState>()(
@@ -332,7 +331,7 @@ export const usePlayerStoreBase = createWithEqualityFn<PlayerState>()(
         subscribeWithSelector(
             immer((set, get) => ({
                 addToQueueByType: (items, playType, playSongId) => {
-                    clearRadioPlayback();
+                    claimMusicPlayback();
 
                     const newItems = items.map(toQueueSong);
                     const newUniqueIds = newItems.map((item) => item._uniqueId);
@@ -1013,7 +1012,7 @@ export const usePlayerStoreBase = createWithEqualityFn<PlayerState>()(
                 },
                 mediaPlay: (id?: string) => {
                     if (id) {
-                        clearRadioPlayback();
+                        claimMusicPlayback();
                     }
 
                     let playIndex: number | undefined;
@@ -1062,7 +1061,7 @@ export const usePlayerStoreBase = createWithEqualityFn<PlayerState>()(
                     }
                 },
                 mediaPlayByIndex: (index: number) => {
-                    clearRadioPlayback();
+                    claimMusicPlayback();
 
                     let playIndex: number | undefined;
                     let songId: string | undefined;
@@ -1314,7 +1313,7 @@ export const usePlayerStoreBase = createWithEqualityFn<PlayerState>()(
                     });
                 },
                 setQueue: (items, index, position) => {
-                    clearRadioPlayback();
+                    claimMusicPlayback();
 
                     const newItems = items.map(toQueueSong);
                     const newUniqueIds = newItems.map((item) => item._uniqueId);
@@ -1682,7 +1681,7 @@ export type AddToQueueByUniqueId = {
 export type AddToQueueType = AddToQueueByPlayType | AddToQueueByUniqueId;
 
 export async function addToQueueByData(type: AddToQueueType, data: Song[]) {
-    clearRadioPlayback();
+    claimMusicPlayback();
 
     const items = data.map(toQueueSong);
 
