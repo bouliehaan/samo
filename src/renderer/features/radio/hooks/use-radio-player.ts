@@ -124,7 +124,6 @@ if (typeof window !== 'undefined') {
 
 export const useIsRadioActive = () => useRadioStore((state) => Boolean(state.currentStreamUrl));
 
-
 export const useRadioPlayer = () => {
     const currentStationArt = useRadioStore((state) => state.currentStationArt);
     const currentStreamUrl = useRadioStore((state) => state.currentStreamUrl);
@@ -265,7 +264,7 @@ export const useRadioMetadata = () => {
                     if (!stopped) {
                         setMetadata(metadata);
                     }
-                } catch (error) {
+                } catch {
                     if (!stopped) {
                         setMetadata(null);
                     }

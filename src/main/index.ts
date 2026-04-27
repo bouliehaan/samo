@@ -506,7 +506,11 @@ async function createWindow(first = true): Promise<void> {
         acceptFirstMouse: true,
         autoHideMenuBar: true,
         frame: false,
-        ...(isMacOS() && { frame: true, titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 14, y: 8 } }),
+        ...(isMacOS() && {
+            frame: true,
+            titleBarStyle: 'hiddenInset',
+            trafficLightPosition: { x: 14, y: 8 },
+        }),
         height: 900,
         icon: isWindows() ? getAssetPath('icons/icon.ico') : getAssetPath('icons/icon.png'),
         minHeight: 120,

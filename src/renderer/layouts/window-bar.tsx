@@ -59,7 +59,6 @@ const WindowsControls = ({ controls, title }: WindowBarControlsProps) => {
     );
 };
 
-
 export const WindowBar = () => {
     const { t } = useTranslation();
     const { windowBarStyle } = useWindowSettings();

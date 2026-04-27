@@ -1,10 +1,10 @@
-import http from 'node:http';
-import https from 'node:https';
 import console from 'console';
 import { app, ipcMain } from 'electron';
 import { rm } from 'fs/promises';
 import uniq from 'lodash/uniq';
 import MpvAPI from 'node-mpv';
+import http from 'node:http';
+import https from 'node:https';
 import { pid } from 'node:process';
 import process from 'process';
 
@@ -466,8 +466,11 @@ ipcMain.handle('player-metadata', async (): Promise<null | PlayerData> => {
 
 // Returns the stream metadata from mpv (for radio streams)
 
-const parseIcyStreamTitle = (raw: string): null | { artist: null | string; title: null | string } => {
-    const streamTitleMatch = raw.match(/StreamTitle='([^']*)'/i) || raw.match(/StreamTitle="([^"]*)"/i);
+const parseIcyStreamTitle = (
+    raw: string,
+): null | { artist: null | string; title: null | string } => {
+    const streamTitleMatch =
+        raw.match(/StreamTitle='([^']*)'/i) || raw.match(/StreamTitle="([^"]*)"/i);
     const streamTitle = streamTitleMatch?.[1]?.trim();
 
     if (!streamTitle) {
@@ -559,7 +562,10 @@ const fetchIcyMetadata = (
 
                         while (offset < chunk.length) {
                             if (audioBytesUntilMetadata > 0) {
-                                const consume = Math.min(audioBytesUntilMetadata, chunk.length - offset);
+                                const consume = Math.min(
+                                    audioBytesUntilMetadata,
+                                    chunk.length - offset,
+                                );
                                 audioBytesUntilMetadata -= consume;
                                 offset += consume;
                                 continue;
@@ -588,7 +594,10 @@ const fetchIcyMetadata = (
                             offset += consume;
 
                             if (metadataBuffer.length >= metadataLength) {
-                                const rawMetadata = metadataBuffer.toString('utf8').replace(/\0+$/g, '').trim();
+                                const rawMetadata = metadataBuffer
+                                    .toString('utf8')
+                                    .replace(/\0+$/g, '')
+                                    .trim();
 
                                 response.destroy();
 
@@ -623,10 +632,12 @@ const fetchIcyMetadata = (
     });
 };
 
-
 ipcMain.handle(
     'player-stream-metadata',
-    async (_event, streamUrl?: string): Promise<null | { artist: null | string; title: null | string }> => {
+    async (
+        _event,
+        streamUrl?: string,
+    ): Promise<null | { artist: null | string; title: null | string }> => {
         try {
             if (streamUrl) {
                 const metadata = await fetchIcyMetadata(streamUrl);
