@@ -1,6 +1,7 @@
 import { Box, SimpleGrid, Stack } from '@mantine/core';
 import { useQueries, useQuery } from '@tanstack/react-query';
 
+import { audiobookshelfController } from '/@/renderer/api/audiobookshelf/audiobookshelf-controller';
 import { AnimatedPage } from '/@/renderer/features/shared/components/animated-page';
 import { PageErrorBoundary } from '/@/renderer/features/shared/components/page-error-boundary';
 import { useAudiobookActions } from '/@/renderer/store/audiobook.store';
