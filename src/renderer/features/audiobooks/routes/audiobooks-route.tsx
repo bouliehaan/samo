@@ -36,12 +36,14 @@ const AudiobookCover = ({ item }: { item: AudiobookshelfLibraryItem }) => {
             enableViewport
             imageContainerProps={{
                 style: {
-                    aspectRatio: '2 / 3',
+                    aspectRatio: '1 / 1',
+                    background: 'var(--theme-colors-surface)',
                     borderRadius: '0.75rem',
                     overflow: 'hidden',
                 },
             }}
             src={coverQuery.data}
+            style={{ objectFit: 'cover', objectPosition: 'center' }}
             unloaderIcon="album"
         />
     );

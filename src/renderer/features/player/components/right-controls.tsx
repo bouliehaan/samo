@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState, WheelEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { PopoverPlayQueue } from '/@/renderer/features/now-playing/components/popover-play-queue';
+import { AudiobookChapterListButton } from '/@/renderer/features/player/components/audiobook-chapter-list-button';
 import { AudioPathBadge } from '/@/renderer/features/player/components/audio-path-badge';
 import { PlayerConfig } from '/@/renderer/features/player/components/player-config';
 import { CustomPlayerbarSlider } from '/@/renderer/features/player/components/playerbar-slider';
@@ -82,6 +83,7 @@ export const RightControls = () => {
                 {(source === 'music' || source == null) && (
                     <AudioPathBadge compact inline song={badgeSong} />
                 )}
+                <AudiobookChapterListButton />
                 <SleepTimerButton />
                 <PlayerConfig />
                 <LyricsButton />

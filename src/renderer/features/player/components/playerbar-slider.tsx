@@ -10,6 +10,7 @@ import {
     usePlayerSong,
     usePlayerTimestamp,
 } from '/@/renderer/store';
+import { useIsPlayingRadio } from '/@/renderer/features/radio/hooks/use-radio-player';
 import {
     useAudiobookDuration,
     useAudiobookPosition,
@@ -37,9 +38,11 @@ export const PlayerbarSlider = () => {
     const podcastPosition = usePodcastPosition();
     const podcastDuration = usePodcastDuration();
     const musicTimestamp = usePlayerTimestamp();
+    const isPlayingRadio = useIsPlayingRadio();
 
     const isAudiobookMode = source === 'audiobook';
     const isPodcastMode = source === 'podcast';
+    const isRadioMode = source === 'radio';
     const isLongFormMode = isAudiobookMode || isPodcastMode;
     const songDuration = currentSong?.duration ? currentSong.duration / 1000 : 0;
     // In long-form mode (audiobook/podcast), the playerbar reports absolute
@@ -55,16 +58,21 @@ export const PlayerbarSlider = () => {
           ? podcastDuration
           : songDuration;
 
-    const formattedDuration = formatDuration(totalDuration * 1000 || 0);
-    const formattedTimeRemaining = formatDuration((currentTime - totalDuration) * 1000 || 0);
-    const formattedTime = formatDuration(currentTime * 1000 || 0);
+    const radioDurationLabel = isPlayingRadio ? 'LIVE' : 'RADIO';
+    const formattedDuration = isRadioMode
+        ? radioDurationLabel
+        : formatDuration(totalDuration * 1000 || 0);
+    const formattedTimeRemaining = isRadioMode
+        ? radioDurationLabel
+        : formatDuration((currentTime - totalDuration) * 1000 || 0);
+    const formattedTime = isRadioMode ? '' : formatDuration(currentTime * 1000 || 0);
 
     const showTimeRemaining = useAppStore((state) => state.showTimeRemaining);
     const { setShowTimeRemaining } = useAppStoreActions();
 
     // Waveform UI is music-track-specific; never use it for audiobooks/podcasts.
     const isWaveform =
-        !isLongFormMode && playerbarSlider?.type === PlayerbarSliderType.WAVEFORM;
+        !isLongFormMode && !isRadioMode && playerbarSlider?.type === PlayerbarSliderType.WAVEFORM;
 
     return (
         <>
@@ -96,10 +104,17 @@ export const PlayerbarSlider = () => {
                         fw={600}
                         isMuted
                         isNoSelect
-                        onClick={() => setShowTimeRemaining(!showTimeRemaining)}
-                        role="button"
+                        onClick={
+                            isRadioMode
+                                ? undefined
+                                : () => setShowTimeRemaining(!showTimeRemaining)
+                        }
+                        role={isRadioMode ? undefined : 'button'}
                         size="xs"
-                        style={{ cursor: 'pointer', userSelect: 'none' }}
+                        style={{
+                            cursor: isRadioMode ? 'default' : 'pointer',
+                            userSelect: 'none',
+                        }}
                     >
                         {showTimeRemaining ? formattedTimeRemaining : formattedDuration}
                     </Text>

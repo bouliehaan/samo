@@ -4,7 +4,9 @@ import { lazy, memo, Suspense } from 'react';
 import styles from './mobile-fullscreen-player.module.css';
 
 import { PlayerbarSeekSlider } from '/@/renderer/features/player/components/playerbar-seek-slider';
+import { useIsPlayingRadio } from '/@/renderer/features/radio/hooks/use-radio-player';
 import { usePlayerTimestamp } from '/@/renderer/store';
+import { usePlaybackSource } from '/@/renderer/store/playback-owner.store';
 import { PlayerbarSliderType, usePlayerbarSlider } from '/@/renderer/store/settings.store';
 import { Spinner } from '/@/shared/components/spinner/spinner';
 import { Text } from '/@/shared/components/text/text';
@@ -25,11 +27,18 @@ export const MobileFullscreenPlayerProgress = memo(
     ({ currentSong }: MobileFullscreenPlayerProgressProps) => {
         const currentTime = usePlayerTimestamp();
         const playerbarSlider = usePlayerbarSlider();
+        const source = usePlaybackSource();
+        const isRadioMode = source === 'radio';
+        const isPlayingRadio = useIsPlayingRadio();
         const songDuration = currentSong?.duration ? currentSong.duration / 1000 : 0;
-        const formattedDuration = formatDuration(songDuration * 1000 || 0);
-        const formattedTime = formatDuration(currentTime * 1000 || 0);
+        const formattedDuration = isRadioMode
+            ? isPlayingRadio
+                ? 'LIVE'
+                : 'RADIO'
+            : formatDuration(songDuration * 1000 || 0);
+        const formattedTime = isRadioMode ? '' : formatDuration(currentTime * 1000 || 0);
 
-        const isWaveform = playerbarSlider?.type === PlayerbarSliderType.WAVEFORM;
+        const isWaveform = !isRadioMode && playerbarSlider?.type === PlayerbarSliderType.WAVEFORM;
 
         return (
             <div className={styles.progressContainer}>

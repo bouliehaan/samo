@@ -4,16 +4,18 @@ import { persist, subscribeWithSelector } from 'zustand/middleware';
 import { audiobookshelfController } from '/@/renderer/api/audiobookshelf/audiobookshelf-controller';
 import { useLastPlaybackSessionStore } from '/@/renderer/store/last-playback-session.store';
 import { usePlaybackOwnerStore } from '/@/renderer/store/playback-owner.store';
-import { usePlayerStoreBase } from '/@/renderer/store/player.store';
+import { subscribePlayerStatus, usePlayerStoreBase } from '/@/renderer/store/player.store';
 import {
     AudiobookshelfLibraryItem,
     AudiobookshelfPodcastEpisode,
 } from '/@/shared/api/audiobookshelf/audiobookshelf-types';
 import { toast } from '/@/shared/components/toast/toast';
 import { ServerListItemWithCredential } from '/@/shared/types/domain-types';
+import { PlayerStatus } from '/@/shared/types/types';
 
 // How often (in seconds of drift) to flush position to the persisted resume map.
 const POSITION_PERSIST_DEBOUNCE_S = 10;
+const SERVER_PROGRESS_SYNC_INTERVAL_S = 30;
 
 /**
  * Persisted resume position is keyed by `${itemId}::${episodeId}` so each
@@ -55,6 +57,9 @@ interface PodcastState {
 
 // Internal: tracks the last position value flushed to resumeByEpisodeKey.
 let lastFlushedPosition = 0;
+let lastServerSyncedPosition = 0;
+let lastServerSyncAtMs = 0;
+let hasLoggedMissingSessionId = false;
 
 const rememberPodcastPlaybackSession = (
     server: ServerListItemWithCredential,
@@ -71,12 +76,124 @@ const rememberPodcastPlaybackSession = (
     });
 };
 
+const resetAudiobookshelfProgressSync = (position: number) => {
+    lastServerSyncedPosition = position;
+    lastServerSyncAtMs = Date.now();
+};
+
+const syncAudiobookshelfProgress = (options: {
+    closeSession?: boolean;
+    countListeningTime?: boolean;
+    force?: boolean;
+    reason: 'close' | 'pause' | 'progress' | 'seek';
+}) => {
+    const { duration, episode, item, position, server, sessionId } = usePodcastStore.getState();
+
+    if (!item || !episode || !server) return;
+    if (!sessionId) {
+        if (!hasLoggedMissingSessionId) {
+            console.info('[podcast.store] Audiobookshelf progress sync unavailable', {
+                episodeId: episode.id,
+                itemId: item.id,
+                reason: 'missing-session-id',
+                trigger: options.reason,
+            });
+            hasLoggedMissingSessionId = true;
+        }
+        return;
+    }
+
+    const currentTime = clampPosition(position, duration);
+    const drift = Math.abs(currentTime - lastServerSyncedPosition);
+    if (!options.force && !options.closeSession && drift < SERVER_PROGRESS_SYNC_INTERVAL_S) {
+        return;
+    }
+
+    const now = Date.now();
+    const timeListened =
+        options.countListeningTime && lastServerSyncAtMs > 0
+            ? Math.max(0, (now - lastServerSyncAtMs) / 1000)
+            : 0;
+
+    resetAudiobookshelfProgressSync(currentTime);
+
+    const payload = {
+        currentTime,
+        duration: Math.max(0, duration),
+        timeListened,
+    };
+
+    console.info('[podcast.store] Audiobookshelf progress sync request', {
+        closeSession: options.closeSession,
+        episodeId: episode.id,
+        itemId: item.id,
+        payload,
+        reason: options.reason,
+        sessionId,
+    });
+
+    const request = options.closeSession
+        ? audiobookshelfController.closePlaybackSession(server, sessionId, payload)
+        : audiobookshelfController.syncPlaybackSession(server, sessionId, payload);
+
+    void request
+        .then(() => {
+            console.info('[podcast.store] Audiobookshelf progress sync succeeded', {
+                closeSession: options.closeSession,
+                currentTime,
+                episodeId: episode.id,
+                itemId: item.id,
+                reason: options.reason,
+                sessionId,
+            });
+        })
+        .catch((error) => {
+            console.warn('[podcast.store] Audiobookshelf progress sync failed', {
+                closeSession: options.closeSession,
+                episodeId: episode.id,
+                error,
+                itemId: item.id,
+                reason: options.reason,
+                sessionId,
+            });
+        });
+};
+
 export const usePodcastStore = create<PodcastState>()(
     subscribeWithSelector(
         persist(
             (set, get) => ({
                 actions: {
                     play: async (server, item, episode) => {
+                        const current = get();
+                        if (current.item && current.episode) {
+                            const currentItem = current.item;
+                            const currentEpisode = current.episode;
+                            set((state) => ({
+                                resumeByEpisodeKey: {
+                                    ...state.resumeByEpisodeKey,
+                                    [resumeKey(currentItem.id, currentEpisode.id)]:
+                                        current.position,
+                                },
+                            }));
+                            if (current.server) {
+                                rememberPodcastPlaybackSession(
+                                    current.server,
+                                    currentItem,
+                                    currentEpisode,
+                                    current.position,
+                                );
+                            }
+                            syncAudiobookshelfProgress({
+                                closeSession: true,
+                                countListeningTime:
+                                    usePlayerStoreBase.getState().player.status ===
+                                    PlayerStatus.PLAYING,
+                                force: true,
+                                reason: 'close',
+                            });
+                        }
+
                         usePlaybackOwnerStore.getState().claim('podcast');
                         rememberPodcastPlaybackSession(server, item, episode, 0);
 
@@ -132,6 +249,8 @@ export const usePodcastStore = create<PodcastState>()(
                             );
 
                             lastFlushedPosition = clampedResumePosition;
+                            resetAudiobookshelfProgressSync(clampedResumePosition);
+                            hasLoggedMissingSessionId = false;
 
                             set({
                                 contentUrl,
@@ -176,7 +295,14 @@ export const usePodcastStore = create<PodcastState>()(
                             }
                         }
 
-                        usePlaybackOwnerStore.getState().release('podcast');
+                        syncAudiobookshelfProgress({
+                            closeSession: true,
+                            countListeningTime:
+                                usePlayerStoreBase.getState().player.status ===
+                                PlayerStatus.PLAYING,
+                            force: true,
+                            reason: 'close',
+                        });
 
                         set({
                             contentUrl: null,
@@ -191,6 +317,9 @@ export const usePodcastStore = create<PodcastState>()(
                         });
 
                         lastFlushedPosition = 0;
+                        resetAudiobookshelfProgressSync(0);
+                        hasLoggedMissingSessionId = false;
+                        usePlaybackOwnerStore.getState().release('podcast');
                     },
 
                     seekTo: (seconds) => {
@@ -215,6 +344,14 @@ export const usePodcastStore = create<PodcastState>()(
                                 );
                             }
                         }
+
+                        syncAudiobookshelfProgress({
+                            countListeningTime:
+                                usePlayerStoreBase.getState().player.status ===
+                                PlayerStatus.PLAYING,
+                            force: true,
+                            reason: 'seek',
+                        });
                     },
 
                     setError: (error) => {
@@ -247,6 +384,11 @@ export const usePodcastStore = create<PodcastState>()(
                                 }
                             }
                         }
+
+                        syncAudiobookshelfProgress({
+                            countListeningTime: true,
+                            reason: 'progress',
+                        });
                     },
                 },
                 contentUrl: null,
@@ -275,7 +417,7 @@ usePlaybackOwnerStore.subscribe(
     (state) => state.source,
     (source) => {
         if (source !== 'podcast') {
-            const { episode, item, position } = usePodcastStore.getState();
+            const { episode, item, position, server } = usePodcastStore.getState();
 
             if (item && episode) {
                 usePodcastStore.setState((state) => ({
@@ -284,6 +426,16 @@ usePlaybackOwnerStore.subscribe(
                         [resumeKey(item.id, episode.id)]: position,
                     },
                 }));
+                if (server) {
+                    rememberPodcastPlaybackSession(server, item, episode, position);
+                }
+                syncAudiobookshelfProgress({
+                    closeSession: true,
+                    countListeningTime:
+                        usePlayerStoreBase.getState().player.status === PlayerStatus.PLAYING,
+                    force: true,
+                    reason: 'close',
+                });
             }
 
             usePodcastStore.setState({
@@ -299,9 +451,25 @@ usePlaybackOwnerStore.subscribe(
             });
 
             lastFlushedPosition = 0;
+            resetAudiobookshelfProgressSync(0);
+            hasLoggedMissingSessionId = false;
         }
     },
 );
+
+subscribePlayerStatus(({ status }, prev) => {
+    if (
+        prev.status === PlayerStatus.PLAYING &&
+        status === PlayerStatus.PAUSED &&
+        usePlaybackOwnerStore.getState().source === 'podcast'
+    ) {
+        syncAudiobookshelfProgress({
+            countListeningTime: true,
+            force: true,
+            reason: 'pause',
+        });
+    }
+});
 
 export const usePodcastContentUrl = () => usePodcastStore((state) => state.contentUrl);
 export const usePodcastItem = () => usePodcastStore((state) => state.item);
