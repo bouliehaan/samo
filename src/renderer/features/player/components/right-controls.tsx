@@ -79,7 +79,9 @@ export const RightControls = () => {
                 <AutoDJButton />
             </Group>
             <Group align="center" gap="xs" wrap="nowrap">
-                {source !== 'audiobook' && <AudioPathBadge compact inline song={badgeSong} />}
+                {(source === 'music' || source == null) && (
+                    <AudioPathBadge compact inline song={badgeSong} />
+                )}
                 <SleepTimerButton />
                 <PlayerConfig />
                 <LyricsButton />

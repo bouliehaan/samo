@@ -19,6 +19,7 @@ import {
     usePlayerData,
     usePlayerSong,
 } from '/@/renderer/store';
+import { usePlaybackSource } from '/@/renderer/store/playback-owner.store';
 import { Badge } from '/@/shared/components/badge/badge';
 import { Center } from '/@/shared/components/center/center';
 import { Flex } from '/@/shared/components/flex/flex';
@@ -104,8 +105,12 @@ export const FullScreenPlayerImage = () => {
     const currentSong = usePlayerSong();
     const { nextSong } = usePlayerData();
     const { blurExplicitImages, playerItems } = useGeneralSettings();
+    const playbackSource = usePlaybackSource();
 
     const isPlayingRadio = isRadioActive && isRadioPlaying;
+    // Quality badge only makes sense for music playback. Radio (no decode) and
+    // audiobook (HLS/per-book) do not have meaningful track-quality fields.
+    const showAudioPathBadge = playbackSource === 'music' || playbackSource == null;
 
     const currentImageUrl = useItemImageUrl({
         id: currentSong?.imageId || undefined,
@@ -317,7 +322,7 @@ export const FullScreenPlayerImage = () => {
                 )}
                 {!isPlayingRadio && (
                     <>
-                        <AudioPathBadge song={currentSong} />
+                        {showAudioPathBadge && <AudioPathBadge song={currentSong} />}
                         <Group justify="center" mt="sm">
                             {playerItems.map((i) => !i.disabled && builtDataItems[i.id])}
                         </Group>

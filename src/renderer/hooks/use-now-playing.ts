@@ -2,7 +2,9 @@ import { getItemImageUrl } from '/@/renderer/components/item-image/item-image';
 import { useRadioPlayer, useRadioStore } from '/@/renderer/features/radio/hooks/use-radio-player';
 import { usePlayerSong, usePlayerStoreBase } from '/@/renderer/store';
 import {
+    getCurrentChapterIndex,
     useAudiobookChapters,
+    useAudiobookDuration,
     useAudiobookItem,
     useAudiobookPosition,
     useAudiobookServer,
@@ -51,15 +53,18 @@ export function getNowPlayingSnapshot(): NowPlaying {
 
     if (source === 'audiobook') {
         const ab = useAudiobookStore.getState();
-        const { item, server } = ab;
+        const { chapters, duration, item, position, server } = ab;
+        const chapterIndex = getCurrentChapterIndex(chapters, position, duration);
+        const chapterTitle =
+            chapterIndex >= 0 ? chapters[chapterIndex].title || '' : '';
         return {
             artist: item ? audiobookAuthor(item) : '',
             artwork: item && server ? audiobookArtworkUrl(server, item) : undefined,
             canSeek: true,
-            canSkipNext: false,
-            canSkipPrevious: false,
+            canSkipNext: chapters.length > 0,
+            canSkipPrevious: chapters.length > 0,
             source: 'audiobook',
-            subtitle: 'Audiobook',
+            subtitle: chapterTitle || 'Audiobook',
             title: item ? audiobookTitle(item) : 'Audiobook',
         };
     }
@@ -96,6 +101,7 @@ export function useNowPlaying(): NowPlaying {
     const audiobookItem = useAudiobookItem();
     const audiobookPosition = useAudiobookPosition();
     const audiobookChapters = useAudiobookChapters();
+    const audiobookDuration = useAudiobookDuration();
     const audiobookServer = useAudiobookServer();
 
     if (source === 'radio' && isRadioPlaying) {
@@ -111,14 +117,14 @@ export function useNowPlaying(): NowPlaying {
         };
     }
 
-    const currentAudiobookChapter = audiobookChapters.find((chapter, index) => {
-        const nextChapter = audiobookChapters[index + 1];
-        const end = chapter.end ?? nextChapter?.start ?? Number.POSITIVE_INFINITY;
-
-        return audiobookPosition >= chapter.start && audiobookPosition < end;
-    });
-
     if (source === 'audiobook' && audiobookItem) {
+        const chapterIndex = getCurrentChapterIndex(
+            audiobookChapters,
+            audiobookPosition,
+            audiobookDuration,
+        );
+        const currentChapterTitle =
+            chapterIndex >= 0 ? audiobookChapters[chapterIndex].title || '' : '';
         return {
             artist: audiobookAuthor(audiobookItem),
             artwork:
@@ -126,10 +132,10 @@ export function useNowPlaying(): NowPlaying {
                     ? audiobookArtworkUrl(audiobookServer, audiobookItem)
                     : undefined,
             canSeek: true,
-            canSkipNext: false,
-            canSkipPrevious: false,
+            canSkipNext: audiobookChapters.length > 0,
+            canSkipPrevious: audiobookChapters.length > 0,
             source: 'audiobook',
-            subtitle: currentAudiobookChapter?.title || 'Audiobook',
+            subtitle: currentChapterTitle || 'Audiobook',
             title: audiobookTitle(audiobookItem),
         };
     }

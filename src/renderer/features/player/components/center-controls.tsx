@@ -7,7 +7,11 @@ import { PlayerbarSlider } from '/@/renderer/features/player/components/playerba
 import { openShuffleAllModal } from '/@/renderer/features/player/components/shuffle-all-modal';
 import { usePlayer } from '/@/renderer/features/player/context/player-context';
 import { usePlaybackSource } from '/@/renderer/store/playback-owner.store';
-import { useAudiobookContentUrl, useAudiobookItem } from '/@/renderer/store/audiobook.store';
+import {
+    useAudiobookActions,
+    useAudiobookContentUrl,
+    useAudiobookItem,
+} from '/@/renderer/store/audiobook.store';
 import {
     useIsPlayingRadio,
     useIsRadioActive,
@@ -163,14 +167,23 @@ const PreviousButton = ({ disabled }: { disabled?: boolean }) => {
     const { t } = useTranslation();
     const buttonSize = useButtonSize();
     const { mediaPrevious } = usePlayer();
+    const source = usePlaybackSource();
+    const { seekToPreviousChapter } = useAudiobookActions();
+
+    const isAudiobookMode = source === 'audiobook';
+    const handleClick = isAudiobookMode ? seekToPreviousChapter : mediaPrevious;
+    const tooltipLabel = isAudiobookMode
+        ? t('player.previous', { context: 'chapter', postProcess: 'sentenceCase' }) ||
+          'Previous chapter'
+        : t('player.previous', { postProcess: 'sentenceCase' });
 
     return (
         <PlayerButton
             disabled={disabled}
             icon={<Icon fill="default" icon="mediaPrevious" size={buttonSize} />}
-            onClick={mediaPrevious}
+            onClick={handleClick}
             tooltip={{
-                label: t('player.previous', { postProcess: 'sentenceCase' }),
+                label: tooltipLabel,
                 openDelay: 0,
             }}
             variant="secondary"
@@ -250,14 +263,23 @@ const NextButton = ({ disabled }: { disabled?: boolean }) => {
     const { t } = useTranslation();
     const buttonSize = useButtonSize();
     const { mediaNext } = usePlayer();
+    const source = usePlaybackSource();
+    const { seekToNextChapter } = useAudiobookActions();
+
+    const isAudiobookMode = source === 'audiobook';
+    const handleClick = isAudiobookMode ? seekToNextChapter : mediaNext;
+    const tooltipLabel = isAudiobookMode
+        ? t('player.next', { context: 'chapter', postProcess: 'sentenceCase' }) ||
+          'Next chapter'
+        : t('player.next', { postProcess: 'sentenceCase' });
 
     return (
         <PlayerButton
             disabled={disabled}
             icon={<Icon fill="default" icon="mediaNext" size={buttonSize} />}
-            onClick={mediaNext}
+            onClick={handleClick}
             tooltip={{
-                label: t('player.next', { postProcess: 'sentenceCase' }),
+                label: tooltipLabel,
                 openDelay: 0,
             }}
             variant="secondary"

@@ -10,6 +10,11 @@ import {
     usePlayerSong,
     usePlayerTimestamp,
 } from '/@/renderer/store';
+import {
+    useAudiobookDuration,
+    useAudiobookPosition,
+} from '/@/renderer/store/audiobook.store';
+import { usePlaybackSource } from '/@/renderer/store/playback-owner.store';
 import { PlayerbarSliderType, usePlayerbarSlider } from '/@/renderer/store/settings.store';
 import { Slider, SliderProps } from '/@/shared/components/slider/slider';
 import { Spinner } from '/@/shared/components/spinner/spinner';
@@ -25,18 +30,28 @@ const PlayerbarWaveform = lazy(() =>
 export const PlayerbarSlider = () => {
     const currentSong = usePlayerSong();
     const playerbarSlider = usePlayerbarSlider();
+    const source = usePlaybackSource();
+    const audiobookPosition = useAudiobookPosition();
+    const audiobookDuration = useAudiobookDuration();
+    const musicTimestamp = usePlayerTimestamp();
 
+    const isAudiobookMode = source === 'audiobook';
     const songDuration = currentSong?.duration ? currentSong.duration / 1000 : 0;
-    const currentTime = usePlayerTimestamp();
+    // In audiobook mode, the playerbar reports the absolute audiobook position
+    // and the full audiobook duration (NOT the per-track HLS values).
+    const currentTime = isAudiobookMode ? audiobookPosition : musicTimestamp;
+    const totalDuration = isAudiobookMode ? audiobookDuration : songDuration;
 
-    const formattedDuration = formatDuration(songDuration * 1000 || 0);
-    const formattedTimeRemaining = formatDuration((currentTime - songDuration) * 1000 || 0);
+    const formattedDuration = formatDuration(totalDuration * 1000 || 0);
+    const formattedTimeRemaining = formatDuration((currentTime - totalDuration) * 1000 || 0);
     const formattedTime = formatDuration(currentTime * 1000 || 0);
 
     const showTimeRemaining = useAppStore((state) => state.showTimeRemaining);
     const { setShowTimeRemaining } = useAppStoreActions();
 
-    const isWaveform = playerbarSlider?.type === PlayerbarSliderType.WAVEFORM;
+    // Waveform UI is music-track-specific; never use it for audiobooks.
+    const isWaveform =
+        !isAudiobookMode && playerbarSlider?.type === PlayerbarSliderType.WAVEFORM;
 
     return (
         <>
@@ -59,7 +74,7 @@ export const PlayerbarSlider = () => {
                             <PlayerbarWaveform />
                         </Suspense>
                     ) : (
-                        <PlayerbarSeekSlider max={songDuration} min={0} />
+                        <PlayerbarSeekSlider max={totalDuration} min={0} />
                     )}
                 </div>
                 <div className={styles.sliderValueWrapper}>

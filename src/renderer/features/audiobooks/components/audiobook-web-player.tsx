@@ -29,7 +29,7 @@ export function AudiobookWebPlayer() {
     const playerRef = useRef<null | WebPlayerEngineHandle>(null);
     const contentUrl = useAudiobookContentUrl();
     const resumePosition = useAudiobookPosition();
-    const { release, seekTo, setDuration, setPosition } = useAudiobookActions();
+    const { release, seekTo, setPosition } = useAudiobookActions();
     const isMuted = usePlayerMuted();
     const volume = usePlayerVolume();
     const { preservePitch } = usePlaybackSettings();
@@ -141,16 +141,13 @@ export function AudiobookWebPlayer() {
                 }
             }
 
-            // Capture total duration once the player is ready.
-            const duration = player.getDuration();
+            // Note: we intentionally do NOT call player.getDuration() here. The
+            // authoritative audiobook duration comes from media.duration in the store
+            // (set in audiobook.store#play). HLS-derived duration is unreliable.
             console.log('[AudiobookWebPlayer] player ready', {
-                duration,
                 hasSeeded: hasSeededRef.current,
                 resumePosition,
             });
-            if (duration && isFinite(duration)) {
-                setDuration(duration);
-            }
 
             // Seek to resume position on first play of this URL.
             if (!hasSeededRef.current && resumePosition > 0) {
@@ -158,7 +155,7 @@ export function AudiobookWebPlayer() {
                 hasSeededRef.current = true;
             }
         },
-        [webAudio, resumePosition, setDuration],
+        [webAudio, resumePosition],
     );
 
     const handleProgress = useCallback(
