@@ -3,33 +3,33 @@
 }
 
 .header {
-    align-items: center;
     display: flex;
+    align-items: center;
     justify-content: space-between;
     margin-bottom: 0.75rem;
 }
 
 .grid {
     display: grid;
-    gap: 0.9rem;
     grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 0.9rem;
 }
 
 .card {
+    position: relative;
+    width: 100%;
+    min-width: 0;
+    padding: 0.75rem;
+    overflow: hidden;
+    text-align: left;
+    cursor: pointer;
     background: color-mix(in srgb, var(--theme-colors-surface), transparent 8%);
     border: 1px solid color-mix(in srgb, var(--theme-colors-border), transparent 30%);
     border-radius: var(--theme-radius-md);
-    cursor: pointer;
-    min-width: 0;
-    overflow: hidden;
-    padding: 0.75rem;
-    position: relative;
-    text-align: left;
     transition:
         background-color 150ms ease,
         border-color 150ms ease,
         transform 150ms ease;
-    width: 100%;
 }
 
 .card:hover {
@@ -43,24 +43,24 @@
 }
 
 .image-wrap {
-    aspect-ratio: 1;
-    border-radius: var(--theme-radius-md);
-    margin-bottom: 0.75rem;
-    overflow: hidden;
     position: relative;
     width: 100%;
+    aspect-ratio: 1;
+    margin-bottom: 0.75rem;
+    overflow: hidden;
+    border-radius: var(--theme-radius-md);
 }
 
 .image-container {
-    height: 100%;
     width: 100%;
+    height: 100%;
 }
 
 .play-overlay {
-    bottom: 0.5rem;
-    opacity: 0;
     position: absolute;
     right: 0.5rem;
+    bottom: 0.5rem;
+    opacity: 0;
     transform: translateY(4px);
     transition:
         opacity 150ms ease,
@@ -87,15 +87,15 @@
 
 .image {
     display: block;
+    width: 100%;
     height: 100%;
     object-fit: cover;
-    width: 100%;
 }
 
 .placeholder {
-    background: color-mix(in srgb, var(--theme-colors-surface), white 4%);
-    height: 100%;
     width: 100%;
+    height: 100%;
+    background: color-mix(in srgb, var(--theme-colors-surface), white 4%);
 }
 
 .play-symbol {

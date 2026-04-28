@@ -9,12 +9,6 @@ import {
 import { PlayerOnProgressProps } from '/@/renderer/features/player/audio-player/types';
 import { useWebAudio } from '/@/renderer/features/player/hooks/use-webaudio';
 import {
-    useAudiobookActions,
-    useAudiobookContentUrl,
-    useAudiobookPosition,
-    useAudiobookStore,
-} from '/@/renderer/store/audiobook.store';
-import {
     subscribePlayerSeekToTimestamp,
     subscribePlayerStatus,
     usePlaybackSettings,
@@ -22,6 +16,12 @@ import {
     usePlayerStoreBase,
     usePlayerVolume,
 } from '/@/renderer/store';
+import {
+    useAudiobookActions,
+    useAudiobookContentUrl,
+    useAudiobookPosition,
+    useAudiobookStore,
+} from '/@/renderer/store/audiobook.store';
 import { toast } from '/@/shared/components/toast/toast';
 import { PlayerStatus } from '/@/shared/types/types';
 
@@ -29,7 +29,7 @@ export function AudiobookWebPlayer() {
     const playerRef = useRef<null | WebPlayerEngineHandle>(null);
     const contentUrl = useAudiobookContentUrl();
     const resumePosition = useAudiobookPosition();
-    const { setPosition, setDuration, seekTo, release } = useAudiobookActions();
+    const { release, seekTo, setDuration, setPosition } = useAudiobookActions();
     const isMuted = usePlayerMuted();
     const volume = usePlayerVolume();
     const { preservePitch } = usePlaybackSettings();
@@ -145,8 +145,8 @@ export function AudiobookWebPlayer() {
             const duration = player.getDuration();
             console.log('[AudiobookWebPlayer] player ready', {
                 duration,
-                resumePosition,
                 hasSeeded: hasSeededRef.current,
+                resumePosition,
             });
             if (duration && isFinite(duration)) {
                 setDuration(duration);
@@ -168,7 +168,7 @@ export function AudiobookWebPlayer() {
         [setPosition],
     );
 
-    const handleNoOp = useCallback((_player: ReactPlayer) => {}, []);
+    const handleNoOp = useCallback(() => {}, []);
 
     const handleEnded = useCallback(() => {
         // Book finished — save position at 0 so next play starts from beginning.

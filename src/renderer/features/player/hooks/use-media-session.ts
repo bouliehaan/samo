@@ -9,8 +9,8 @@ import { getNowPlayingSnapshot } from '/@/renderer/hooks/use-now-playing';
 import {
     subscribePlayerStatus,
     usePlaybackSettings,
-    useSkipButtons,
     useSettingsStore,
+    useSkipButtons,
     useTimestampStoreBase,
 } from '/@/renderer/store';
 import { usePlaybackOwnerStore } from '/@/renderer/store/playback-owner.store';

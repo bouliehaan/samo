@@ -1,12 +1,12 @@
-import { subscribeWithSelector } from 'zustand/middleware';
 import { create } from 'zustand';
+import { subscribeWithSelector } from 'zustand/middleware';
 
 export type PlaybackSource = 'audiobook' | 'music' | 'podcast' | 'radio';
 
 interface PlaybackOwnerState {
-    source: PlaybackSource | null;
     claim: (source: PlaybackSource) => void;
     release: (source: PlaybackSource) => void;
+    source: null | PlaybackSource;
 }
 
 export const usePlaybackOwnerStore = create<PlaybackOwnerState>()(

@@ -3,12 +3,12 @@ import { useEffect } from 'react';
 
 import { eventEmitter } from '/@/renderer/events/event-emitter';
 import { UserFavoriteEventPayload, UserRatingEventPayload } from '/@/renderer/events/events';
+import { AudiobookWebPlayer } from '/@/renderer/features/audiobooks/components/audiobook-web-player';
 import { DiscordRpcHook } from '/@/renderer/features/discord-rpc/use-discord-rpc';
 import { MainPlayerListenerHook } from '/@/renderer/features/player/audio-player/hooks/use-main-player-listener';
 import { MpvPlayer } from '/@/renderer/features/player/audio-player/mpv-player';
 import { WebPlayer } from '/@/renderer/features/player/audio-player/web-player';
 import { SleepTimerHook } from '/@/renderer/features/player/components/sleep-timer-button';
-import { AudiobookWebPlayer } from '/@/renderer/features/audiobooks/components/audiobook-web-player';
 import { AutoDJHook } from '/@/renderer/features/player/hooks/use-auto-dj';
 import { AutosaveHook } from '/@/renderer/features/player/hooks/use-autosave';
 import { MediaSessionHook } from '/@/renderer/features/player/hooks/use-media-session';
@@ -174,10 +174,6 @@ const AudioPlayersContent = ({
     webAudio: boolean;
 }) => {
     const source = usePlaybackSource();
-
-    useEffect(() => {
-        console.log('[AudioPlayersContent] source changed →', source);
-    }, [source]);
 
     useEffect(() => {
         if (webAudio && 'AudioContext' in window) {

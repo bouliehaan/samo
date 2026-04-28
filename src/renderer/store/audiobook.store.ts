@@ -4,8 +4,8 @@ import { persist, subscribeWithSelector } from 'zustand/middleware';
 import { audiobookshelfController } from '/@/renderer/api/audiobookshelf/audiobookshelf-controller';
 import { usePlaybackOwnerStore } from '/@/renderer/store/playback-owner.store';
 import { usePlayerStoreBase } from '/@/renderer/store/player.store';
-import { toast } from '/@/shared/components/toast/toast';
 import { AudiobookshelfLibraryItem } from '/@/shared/api/audiobookshelf/audiobookshelf-types';
+import { toast } from '/@/shared/components/toast/toast';
 import { ServerListItemWithCredential } from '/@/shared/types/domain-types';
 
 // How often (in seconds of drift) to flush position to the persisted resume map.
@@ -13,7 +13,10 @@ const POSITION_PERSIST_DEBOUNCE_S = 10;
 
 interface AudiobookState {
     actions: {
-        play: (server: ServerListItemWithCredential, item: AudiobookshelfLibraryItem) => Promise<void>;
+        play: (
+            server: ServerListItemWithCredential,
+            item: AudiobookshelfLibraryItem,
+        ) => Promise<void>;
         release: () => void;
         seekTo: (seconds: number) => void;
         setDuration: (seconds: number) => void;
@@ -93,10 +96,9 @@ export const useAudiobookStore = create<AudiobookState>()(
                                 sessionId: session.id ?? null,
                             });
 
-                            console.log(
-                                '[audiobook.store] state set → calling mediaPlay()',
-                                { resumePosition },
-                            );
+                            console.log('[audiobook.store] state set → calling mediaPlay()', {
+                                resumePosition,
+                            });
                             usePlayerStoreBase.getState().mediaPlay();
                             console.log('[audiobook.store] mediaPlay() called');
                         } catch (err) {
