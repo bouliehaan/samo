@@ -1111,13 +1111,18 @@ ipcMain.handle(
     async (
         _event,
         data: {
+            // Optional — when present, /play/:episodeId is hit (podcasts).
+            episodeId?: string;
             itemId: string;
             token: string;
             url: string;
         },
     ) => {
         const baseUrl = data.url.replace(/\/+$/, '');
-        const response = await fetch(`${baseUrl}/api/items/${data.itemId}/play`, {
+        const playPath = data.episodeId
+            ? `/api/items/${data.itemId}/play/${data.episodeId}`
+            : `/api/items/${data.itemId}/play`;
+        const response = await fetch(`${baseUrl}${playPath}`, {
             body: JSON.stringify({}),
             headers: {
                 Authorization: `Bearer ${data.token}`,
@@ -1172,6 +1177,10 @@ ipcMain.handle(
             },
             method: 'GET',
         });
+
+        if (response.status === 404) {
+            return null;
+        }
 
         if (!response.ok) {
             throw new Error(`Audiobookshelf cover request failed: ${response.status}`);
@@ -1230,6 +1239,33 @@ ipcMain.handle(
 
         if (!response.ok) {
             throw new Error(`Audiobookshelf library items request failed: ${response.status}`);
+        }
+
+        return response.json();
+    },
+);
+
+ipcMain.handle(
+    'audiobookshelf-get-item',
+    async (
+        _event,
+        data: {
+            itemId: string;
+            token: string;
+            url: string;
+        },
+    ) => {
+        const baseUrl = data.url.replace(/\/+$/, '');
+        // ?expanded=1 ensures media.episodes / media.chapters are returned.
+        const response = await fetch(`${baseUrl}/api/items/${data.itemId}?expanded=1`, {
+            headers: {
+                Authorization: `Bearer ${data.token}`,
+            },
+            method: 'GET',
+        });
+
+        if (!response.ok) {
+            throw new Error(`Audiobookshelf item request failed: ${response.status}`);
         }
 
         return response.json();

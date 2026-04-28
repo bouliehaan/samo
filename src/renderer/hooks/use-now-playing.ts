@@ -15,6 +15,12 @@ import {
     usePlaybackOwnerStore,
     usePlaybackSource,
 } from '/@/renderer/store/playback-owner.store';
+import {
+    usePodcastEpisode,
+    usePodcastItem,
+    usePodcastServer,
+    usePodcastStore,
+} from '/@/renderer/store/podcast.store';
 import { AudiobookshelfLibraryItem } from '/@/shared/api/audiobookshelf/audiobookshelf-types';
 import { ServerListItemWithCredential } from '/@/shared/types/domain-types';
 import { LibraryItem } from '/@/shared/types/domain-types';
@@ -69,7 +75,23 @@ export function getNowPlayingSnapshot(): NowPlaying {
         };
     }
 
-    // 'podcast' falls through here in Phase 3.
+    if (source === 'podcast') {
+        const pc = usePodcastStore.getState();
+        const { episode, item, server } = pc;
+        return {
+            // Show the podcast/show title as the artist line — it's what users
+            // recognise (e.g. "The Daily") on the macOS Now Playing widget.
+            artist: item ? podcastShowTitle(item) : '',
+            artwork: item && server ? podcastArtworkUrl(server, item) : undefined,
+            canSeek: true,
+            // No queue UI yet → no episode-level skip controls.
+            canSkipNext: false,
+            canSkipPrevious: false,
+            source: 'podcast',
+            subtitle: item ? podcastAuthor(item) : '',
+            title: episode?.title || item?.name || 'Podcast',
+        };
+    }
 
     const song = usePlayerStoreBase.getState().getCurrentSong();
     const artwork = song
@@ -97,14 +119,22 @@ export function getNowPlayingSnapshot(): NowPlaying {
 export function useNowPlaying(): NowPlaying {
     const source = usePlaybackSource();
     const song = usePlayerSong();
-    const { isPlaying: isRadioPlaying, metadata: radioMetadata, stationName } = useRadioPlayer();
+    const {
+        currentStreamUrl: radioStreamUrl,
+        isPlaying: isRadioPlaying,
+        metadata: radioMetadata,
+        stationName,
+    } = useRadioPlayer();
     const audiobookItem = useAudiobookItem();
     const audiobookPosition = useAudiobookPosition();
     const audiobookChapters = useAudiobookChapters();
     const audiobookDuration = useAudiobookDuration();
     const audiobookServer = useAudiobookServer();
+    const podcastItem = usePodcastItem();
+    const podcastEpisode = usePodcastEpisode();
+    const podcastServer = usePodcastServer();
 
-    if (source === 'radio' && isRadioPlaying) {
+    if (source === 'radio' && (isRadioPlaying || radioStreamUrl || stationName)) {
         return {
             artist: radioMetadata?.artist || stationName || '',
             artwork: undefined,
@@ -140,6 +170,21 @@ export function useNowPlaying(): NowPlaying {
         };
     }
 
+    if (source === 'podcast' && podcastItem) {
+        return {
+            artist: podcastShowTitle(podcastItem),
+            artwork: podcastServer
+                ? podcastArtworkUrl(podcastServer, podcastItem)
+                : undefined,
+            canSeek: true,
+            canSkipNext: false,
+            canSkipPrevious: false,
+            source: 'podcast',
+            subtitle: podcastAuthor(podcastItem),
+            title: podcastEpisode?.title || podcastItem.name || 'Podcast',
+        };
+    }
+
     const artwork = song
         ? getItemImageUrl({
               id: song.imageId || undefined,
@@ -172,6 +217,13 @@ function audiobookArtworkUrl(
     return `${base}/api/items/${item.id}/cover?token=${encodeURIComponent(server.credential)}`;
 }
 
+function podcastArtworkUrl(
+    server: ServerListItemWithCredential,
+    item: AudiobookshelfLibraryItem,
+): string | undefined {
+    return item.media?.metadata?.imageUrl || audiobookArtworkUrl(server, item);
+}
+
 function audiobookAuthor(item: AudiobookshelfLibraryItem): string {
     const meta = item.media?.metadata;
 
@@ -186,4 +238,20 @@ function audiobookAuthor(item: AudiobookshelfLibraryItem): string {
 
 function audiobookTitle(item: AudiobookshelfLibraryItem): string {
     return item.media?.metadata?.title || item.name || 'Untitled audiobook';
+}
+
+// Podcast show name (e.g. "The Daily"). Distinct from audiobookAuthor because
+// for podcasts, what feels like "title" to a user is the episode, not the show.
+function podcastShowTitle(item: AudiobookshelfLibraryItem): string {
+    return item.media?.metadata?.title || item.name || 'Podcast';
+}
+
+function podcastAuthor(item: AudiobookshelfLibraryItem): string {
+    const meta = item.media?.metadata;
+    return (
+        meta?.author ||
+        meta?.authorName ||
+        meta?.authors?.map((a) => a.name).join(', ') ||
+        ''
+    );
 }

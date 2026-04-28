@@ -10,6 +10,11 @@ import {
     useAudiobookPosition,
 } from '/@/renderer/store/audiobook.store';
 import { usePlaybackSource } from '/@/renderer/store/playback-owner.store';
+import {
+    usePodcastActions,
+    usePodcastDuration,
+    usePodcastPosition,
+} from '/@/renderer/store/podcast.store';
 import { usePlayerTimestamp } from '/@/renderer/store';
 
 interface PlayerbarSeekSliderProps {
@@ -25,18 +30,38 @@ export const PlayerbarSeekSlider = ({ max, min }: PlayerbarSeekSliderProps) => {
     const audiobookPosition = useAudiobookPosition();
     const audiobookDuration = useAudiobookDuration();
     const audiobookActions = useAudiobookActions();
+    const podcastPosition = usePodcastPosition();
+    const podcastDuration = usePodcastDuration();
+    const podcastActions = usePodcastActions();
     const seekTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     const lastSeekValueRef = useRef<null | number>(null);
 
     const { mediaSeekToTimestamp } = usePlayer();
 
     const isAudiobookMode = source === 'audiobook';
-    const currentTime = isAudiobookMode ? audiobookPosition : musicCurrentTime;
-    const sliderMax = isAudiobookMode && audiobookDuration > 0 ? audiobookDuration : max;
+    const isPodcastMode = source === 'podcast';
+    const currentTime = isAudiobookMode
+        ? audiobookPosition
+        : isPodcastMode
+          ? podcastPosition
+          : musicCurrentTime;
+    const sliderMax = isAudiobookMode
+        ? audiobookDuration > 0
+            ? audiobookDuration
+            : max
+        : isPodcastMode
+          ? podcastDuration > 0
+              ? podcastDuration
+              : max
+          : max;
 
     const handleSeekToTimestamp = (timestamp: number) => {
+        // Optimistically update the per-source store position so the slider
+        // doesn't snap back while the engine catches up.
         if (isAudiobookMode) {
             audiobookActions.seekTo(timestamp);
+        } else if (isPodcastMode) {
+            podcastActions.seekTo(timestamp);
         }
 
         mediaSeekToTimestamp(timestamp);

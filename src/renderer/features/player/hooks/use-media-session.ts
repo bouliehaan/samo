@@ -13,11 +13,40 @@ import {
     useSkipButtons,
     useTimestampStoreBase,
 } from '/@/renderer/store';
+import { useAudiobookStore } from '/@/renderer/store/audiobook.store';
+import { usePodcastStore } from '/@/renderer/store/podcast.store';
 import { usePlaybackOwnerStore } from '/@/renderer/store/playback-owner.store';
 import { subscribeCurrentTrack } from '/@/renderer/store/player.store';
 import { PlayerStatus, PlayerType } from '/@/shared/types/types';
 
 const mediaSession = navigator.mediaSession;
+
+const getSeekPosition = () => {
+    const source = usePlaybackOwnerStore.getState().source;
+
+    if (source === 'audiobook') {
+        return useAudiobookStore.getState().position;
+    }
+
+    if (source === 'podcast') {
+        return usePodcastStore.getState().position;
+    }
+
+    return useTimestampStoreBase.getState().timestamp;
+};
+
+const clampSeekPosition = (target: number) => {
+    const source = usePlaybackOwnerStore.getState().source;
+    const duration =
+        source === 'audiobook'
+            ? useAudiobookStore.getState().duration
+            : source === 'podcast'
+              ? usePodcastStore.getState().duration
+              : 0;
+    const floor = Math.max(0, target);
+
+    return duration > 0 ? Math.min(duration, floor) : floor;
+};
 
 export const useMediaSession = () => {
     const { mediaSession: mediaSessionEnabled } = usePlaybackSettings();
@@ -87,11 +116,12 @@ export const useMediaSession = () => {
         mediaSession.setActionHandler('seekto', (e) => {
             if (!getNowPlayingSnapshot().canSeek) return;
 
-            if (e.seekTime) {
-                playerRef.current.mediaSeekToTimestamp(e.seekTime);
+            if (typeof e.seekTime === 'number') {
+                playerRef.current.mediaSeekToTimestamp(clampSeekPosition(e.seekTime));
             } else if (e.seekOffset) {
-                const currentTimestamp = useTimestampStoreBase.getState().timestamp;
-                playerRef.current.mediaSeekToTimestamp(currentTimestamp + e.seekOffset);
+                playerRef.current.mediaSeekToTimestamp(
+                    clampSeekPosition(getSeekPosition() + e.seekOffset),
+                );
             }
         });
 
@@ -102,18 +132,20 @@ export const useMediaSession = () => {
         mediaSession.setActionHandler('seekbackward', (e) => {
             if (!getNowPlayingSnapshot().canSeek) return;
 
-            const currentTimestamp = useTimestampStoreBase.getState().timestamp;
             playerRef.current.mediaSeekToTimestamp(
-                currentTimestamp - (e.seekOffset || skipRef.current?.skipBackwardSeconds || 5),
+                clampSeekPosition(
+                    getSeekPosition() - (e.seekOffset || skipRef.current?.skipBackwardSeconds || 5),
+                ),
             );
         });
 
         mediaSession.setActionHandler('seekforward', (e) => {
             if (!getNowPlayingSnapshot().canSeek) return;
 
-            const currentTimestamp = useTimestampStoreBase.getState().timestamp;
             playerRef.current.mediaSeekToTimestamp(
-                currentTimestamp + (e.seekOffset || skipRef.current?.skipForwardSeconds || 5),
+                clampSeekPosition(
+                    getSeekPosition() + (e.seekOffset || skipRef.current?.skipForwardSeconds || 5),
+                ),
             );
         });
 
@@ -181,6 +213,16 @@ export const useMediaSession = () => {
             debouncedUpdateMetadata();
         });
 
+        const unsubscribePodcast = usePodcastStore.subscribe(
+            (state) =>
+                `${state.item?.id ?? ''}:${state.episode?.id ?? ''}:${state.episode?.title ?? ''}`,
+            () => {
+                if (!isMediaSessionEnabledRef.current) return;
+                if (usePlaybackOwnerStore.getState().source !== 'podcast') return;
+                debouncedUpdateMetadata();
+            },
+        );
+
         const unsubscribeStatus = subscribePlayerStatus(({ status }) => {
             if (!isMediaSessionEnabledRef.current) return;
             mediaSession.playbackState = status === PlayerStatus.PLAYING ? 'playing' : 'paused';
@@ -189,6 +231,7 @@ export const useMediaSession = () => {
         return () => {
             unsubscribeSource();
             unsubscribeCurrentSong();
+            unsubscribePodcast();
             unsubscribeStatus();
         };
     }, [debouncedUpdateMetadata]);

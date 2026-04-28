@@ -15,6 +15,7 @@ import {
     useAudiobookPosition,
 } from '/@/renderer/store/audiobook.store';
 import { usePlaybackSource } from '/@/renderer/store/playback-owner.store';
+import { usePodcastDuration, usePodcastPosition } from '/@/renderer/store/podcast.store';
 import { PlayerbarSliderType, usePlayerbarSlider } from '/@/renderer/store/settings.store';
 import { Slider, SliderProps } from '/@/shared/components/slider/slider';
 import { Spinner } from '/@/shared/components/spinner/spinner';
@@ -33,14 +34,26 @@ export const PlayerbarSlider = () => {
     const source = usePlaybackSource();
     const audiobookPosition = useAudiobookPosition();
     const audiobookDuration = useAudiobookDuration();
+    const podcastPosition = usePodcastPosition();
+    const podcastDuration = usePodcastDuration();
     const musicTimestamp = usePlayerTimestamp();
 
     const isAudiobookMode = source === 'audiobook';
+    const isPodcastMode = source === 'podcast';
+    const isLongFormMode = isAudiobookMode || isPodcastMode;
     const songDuration = currentSong?.duration ? currentSong.duration / 1000 : 0;
-    // In audiobook mode, the playerbar reports the absolute audiobook position
-    // and the full audiobook duration (NOT the per-track HLS values).
-    const currentTime = isAudiobookMode ? audiobookPosition : musicTimestamp;
-    const totalDuration = isAudiobookMode ? audiobookDuration : songDuration;
+    // In long-form mode (audiobook/podcast), the playerbar reports absolute
+    // position + full duration from the per-source store, not music's timestamp.
+    const currentTime = isAudiobookMode
+        ? audiobookPosition
+        : isPodcastMode
+          ? podcastPosition
+          : musicTimestamp;
+    const totalDuration = isAudiobookMode
+        ? audiobookDuration
+        : isPodcastMode
+          ? podcastDuration
+          : songDuration;
 
     const formattedDuration = formatDuration(totalDuration * 1000 || 0);
     const formattedTimeRemaining = formatDuration((currentTime - totalDuration) * 1000 || 0);
@@ -49,9 +62,9 @@ export const PlayerbarSlider = () => {
     const showTimeRemaining = useAppStore((state) => state.showTimeRemaining);
     const { setShowTimeRemaining } = useAppStoreActions();
 
-    // Waveform UI is music-track-specific; never use it for audiobooks.
+    // Waveform UI is music-track-specific; never use it for audiobooks/podcasts.
     const isWaveform =
-        !isAudiobookMode && playerbarSlider?.type === PlayerbarSliderType.WAVEFORM;
+        !isLongFormMode && playerbarSlider?.type === PlayerbarSliderType.WAVEFORM;
 
     return (
         <>

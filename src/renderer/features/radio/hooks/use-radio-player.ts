@@ -4,6 +4,7 @@ import React, { useEffect } from 'react';
 import { createWithEqualityFn } from 'zustand/traditional';
 
 import { usePlayerEvents } from '/@/renderer/features/player/audio-player/hooks/use-player-events';
+import { useLastPlaybackSessionStore } from '/@/renderer/store/last-playback-session.store';
 import { usePlaybackType, usePlayerStoreBase } from '/@/renderer/store';
 import { usePlaybackOwnerStore } from '/@/renderer/store/playback-owner.store';
 import { PlayerStatus, PlayerType } from '/@/shared/types/types';
@@ -41,7 +42,7 @@ interface RadioStore {
     stationName: null | string;
 }
 
-export const useRadioStore = createWithEqualityFn<RadioStore>((set) => ({
+export const useRadioStore = createWithEqualityFn<RadioStore>((set, get) => ({
     actions: {
         pause: () => {
             set({ isPlaying: false });
@@ -71,6 +72,17 @@ export const useRadioStore = createWithEqualityFn<RadioStore>((set) => ({
 
                 usePlaybackOwnerStore.getState().claim('radio');
                 usePlayerStoreBase.getState().mediaPlay();
+                if (nextStationArt?.id && nextStationArt.serverId) {
+                    useLastPlaybackSessionStore.getState().actions.setSession({
+                        metadata: isSwitchingStation ? null : state.metadata,
+                        serverId: nextStationArt.serverId,
+                        source: 'radio',
+                        stationArt: nextStationArt,
+                        stationId: nextStationArt.id,
+                        stationName: newStationName,
+                        streamUrl: newStreamUrl,
+                    });
+                }
 
                 return {
                     currentStationArt: nextStationArt,
@@ -83,7 +95,22 @@ export const useRadioStore = createWithEqualityFn<RadioStore>((set) => ({
         },
         setCurrentStreamUrl: (currentStreamUrl) => set({ currentStreamUrl }),
         setIsPlaying: (isPlaying) => set({ isPlaying }),
-        setMetadata: (metadata) => set({ metadata }),
+        setMetadata: (metadata) => {
+            set({ metadata });
+            const state = get();
+            const stationArt = state.currentStationArt;
+            if (stationArt?.id && stationArt.serverId && state.currentStreamUrl) {
+                useLastPlaybackSessionStore.getState().actions.setSession({
+                    metadata,
+                    serverId: stationArt.serverId,
+                    source: 'radio',
+                    stationArt,
+                    stationId: stationArt.id,
+                    stationName: state.stationName,
+                    streamUrl: state.currentStreamUrl,
+                });
+            }
+        },
         setStationName: (stationName) => set({ stationName }),
         stop: () => {
             set({

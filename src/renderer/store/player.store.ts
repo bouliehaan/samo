@@ -8,6 +8,7 @@ import { createWithEqualityFn } from 'zustand/traditional';
 
 import { eventEmitter } from '/@/renderer/events/event-emitter';
 import { createSelectors } from '/@/renderer/lib/zustand';
+import { rememberMusicPlaybackSession } from '/@/renderer/store/last-playback-session.store';
 import { usePlaybackOwnerStore } from '/@/renderer/store/playback-owner.store';
 import { useSettingsStore } from '/@/renderer/store/settings.store';
 import {
@@ -324,6 +325,7 @@ const initialState: State = {
 
 const claimMusicPlayback = () => {
     usePlaybackOwnerStore.getState().claim('music');
+    rememberMusicPlaybackSession();
 };
 
 export const usePlayerStoreBase = createWithEqualityFn<PlayerState>()(

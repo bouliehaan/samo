@@ -5,6 +5,7 @@ import { eventEmitter } from '/@/renderer/events/event-emitter';
 import { UserFavoriteEventPayload, UserRatingEventPayload } from '/@/renderer/events/events';
 import { AudiobookWebPlayer } from '/@/renderer/features/audiobooks/components/audiobook-web-player';
 import { DiscordRpcHook } from '/@/renderer/features/discord-rpc/use-discord-rpc';
+import { PodcastWebPlayer } from '/@/renderer/features/podcasts/components/podcast-web-player';
 import { MainPlayerListenerHook } from '/@/renderer/features/player/audio-player/hooks/use-main-player-listener';
 import { MpvPlayer } from '/@/renderer/features/player/audio-player/mpv-player';
 import { WebPlayer } from '/@/renderer/features/player/audio-player/web-player';
@@ -16,6 +17,7 @@ import { MPRISHook } from '/@/renderer/features/player/hooks/use-mpris';
 import { PlaybackHotkeysHook } from '/@/renderer/features/player/hooks/use-playback-hotkeys';
 import { PowerSaveBlockerHook } from '/@/renderer/features/player/hooks/use-power-save-blocker';
 import { QueueRestoreTimestampHook } from '/@/renderer/features/player/hooks/use-queue-restore';
+import { RestoreLastPlaybackSessionHook } from '/@/renderer/features/player/hooks/use-restore-last-playback-session';
 import { ScrobbleHook } from '/@/renderer/features/player/hooks/use-scrobble';
 import { UpdateCurrentSongHook } from '/@/renderer/features/player/hooks/use-update-current-song';
 import { useWebAudio } from '/@/renderer/features/player/hooks/use-webaudio';
@@ -134,6 +136,7 @@ export const AudioPlayers = () => {
             <PlaybackHotkeysHook />
             <RemoteHook />
             <AutoDJHook />
+            <RestoreLastPlaybackSessionHook />
             <QueueRestoreTimestampHook />
             <UpdateCurrentSongHook />
             <RadioAudioInstanceHook />
@@ -266,6 +269,11 @@ const AudioPlayersContent = ({
     if (source === 'audiobook') {
         // MPV path for audiobooks is Phase 3; fall back to WebPlayer for now if LOCAL is set.
         return <AudiobookWebPlayer />;
+    }
+
+    if (source === 'podcast') {
+        // Podcasts always go through the web player engine; no MPV path yet.
+        return <PodcastWebPlayer />;
     }
 
     // 'music', null (idle at boot), and future sources fall through here.

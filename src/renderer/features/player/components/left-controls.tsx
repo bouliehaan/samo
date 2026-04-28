@@ -59,10 +59,12 @@ export const LeftControls = () => {
     const nowPlaying = useNowPlaying();
 
     const isAudiobookMode = nowPlaying.source === 'audiobook';
-    const audiobookTitle = nowPlaying.title;
-    const audiobookAuthor = nowPlaying.artist;
-    const audiobookSubtitle = nowPlaying.subtitle;
-    const audiobookCoverUrl = nowPlaying.artwork ?? '';
+    const isPodcastMode = nowPlaying.source === 'podcast';
+    const isLongFormMode = isAudiobookMode || isPodcastMode;
+    const longFormTitle = nowPlaying.title;
+    const longFormArtist = nowPlaying.artist;
+    const longFormSubtitle = nowPlaying.subtitle;
+    const longFormCoverUrl = nowPlaying.artwork ?? '';
     const isRadioActive = useIsRadioActive();
     const { currentStationArt } = useRadioPlayer();
     const { bindings } = useHotkeySettings();
@@ -70,7 +72,7 @@ export const LeftControls = () => {
     const isRadioMode = isRadioActive;
     const hasRadioStationImage = Boolean(currentStationArt?.imageId || currentStationArt?.imageUrl);
     const hideImage = image && !collapsed;
-    const isSongDefined = Boolean(currentSong?.id) && !isRadioMode;
+    const isSongDefined = Boolean(currentSong?.id) && !isRadioMode && !isLongFormMode;
     const title = currentSong?.name;
     const artists = currentSong?.artists;
 
@@ -168,14 +170,14 @@ export const LeftControls = () => {
                                         >
                                             <Icon color="muted" icon="radio" size="40%" />
                                         </Center>
-                                    ) : isAudiobookMode && audiobookCoverUrl ? (
+                                    ) : isLongFormMode && longFormCoverUrl ? (
                                         <img
-                                            alt={audiobookTitle || 'Audiobook cover'}
+                                            alt={longFormTitle || 'Cover art'}
                                             className={clsx(
                                                 styles.playerbarImage,
                                                 PlaybackSelectors.playerCoverArt,
                                             )}
-                                            src={audiobookCoverUrl}
+                                            src={longFormCoverUrl}
                                         />
                                     ) : (
                                         <ItemImage
@@ -226,7 +228,7 @@ export const LeftControls = () => {
                             onStopPropagation={stopPropagation}
                             onToggleContextMenu={handleToggleContextMenu}
                         />
-                    ) : isAudiobookMode ? (
+                    ) : isLongFormMode ? (
                         <>
                             <div className={styles.lineItem} onClick={stopPropagation}>
                                 <Group align="center" gap="xs" wrap="nowrap">
@@ -236,7 +238,7 @@ export const LeftControls = () => {
                                         onContextMenu={handleToggleContextMenu}
                                         overflow="hidden"
                                     >
-                                        {audiobookTitle || '—'}
+                                        {longFormTitle || '—'}
                                     </Text>
                                 </Group>
                             </div>
@@ -250,7 +252,8 @@ export const LeftControls = () => {
                                 onClick={stopPropagation}
                             >
                                 <Text isMuted overflow="hidden" size="sm">
-                                    {audiobookAuthor || 'Unknown author'}
+                                    {longFormArtist ||
+                                        (isPodcastMode ? 'Podcast' : 'Unknown author')}
                                 </Text>
                             </div>
 
@@ -263,7 +266,7 @@ export const LeftControls = () => {
                                 onClick={stopPropagation}
                             >
                                 <Text isMuted overflow="hidden" size="sm">
-                                    {audiobookSubtitle || 'Audiobook'}
+                                    {longFormSubtitle || (isPodcastMode ? 'Podcast' : 'Audiobook')}
                                 </Text>
                             </div>
                         </>

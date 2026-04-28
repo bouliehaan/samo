@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist, subscribeWithSelector } from 'zustand/middleware';
 
 import { audiobookshelfController } from '/@/renderer/api/audiobookshelf/audiobookshelf-controller';
+import { useLastPlaybackSessionStore } from '/@/renderer/store/last-playback-session.store';
 import { usePlaybackOwnerStore } from '/@/renderer/store/playback-owner.store';
 import { usePlayerStoreBase } from '/@/renderer/store/player.store';
 import { AudiobookshelfChapter, AudiobookshelfLibraryItem } from '/@/shared/api/audiobookshelf/audiobookshelf-types';
@@ -65,6 +66,19 @@ interface AudiobookState {
 // Internal: tracks the last position value that was flushed to resumeByItemId.
 let lastFlushedPosition = 0;
 
+const rememberAudiobookPlaybackSession = (
+    server: ServerListItemWithCredential,
+    item: AudiobookshelfLibraryItem,
+    position?: number,
+) => {
+    useLastPlaybackSessionStore.getState().actions.setSession({
+        itemId: item.id,
+        position,
+        serverId: server.id,
+        source: 'audiobook',
+    });
+};
+
 export const useAudiobookStore = create<AudiobookState>()(
     subscribeWithSelector(
         persist(
@@ -78,6 +92,7 @@ export const useAudiobookStore = create<AudiobookState>()(
 
                         usePlaybackOwnerStore.getState().claim('audiobook');
                         console.log('[audiobook.store] arbiter claimed → source=audiobook');
+                        rememberAudiobookPlaybackSession(server, item, 0);
 
                         // Seed chapters/duration from the library item up-front so the
                         // playerbar can render immediately without waiting on /play.
@@ -138,6 +153,7 @@ export const useAudiobookStore = create<AudiobookState>()(
                                 position: resumePosition,
                                 sessionId: session.id ?? null,
                             });
+                            rememberAudiobookPlaybackSession(server, item, resumePosition);
 
                             console.log('[audiobook.store] state set → calling mediaPlay()', {
                                 resumePosition,
@@ -160,11 +176,14 @@ export const useAudiobookStore = create<AudiobookState>()(
 
                     release: () => {
                         // Save current position before clearing.
-                        const { item, position } = get();
+                        const { item, position, server } = get();
                         if (item) {
                             set((state) => ({
                                 resumeByItemId: { ...state.resumeByItemId, [item.id]: position },
                             }));
+                            if (server) {
+                                rememberAudiobookPlaybackSession(server, item, position);
+                            }
                         }
 
                         usePlaybackOwnerStore.getState().release('audiobook');
@@ -188,11 +207,14 @@ export const useAudiobookStore = create<AudiobookState>()(
                         set({ position: seconds });
                         lastFlushedPosition = seconds;
 
-                        const { item } = get();
+                        const { item, server } = get();
                         if (item) {
                             set((state) => ({
                                 resumeByItemId: { ...state.resumeByItemId, [item.id]: seconds },
                             }));
+                            if (server) {
+                                rememberAudiobookPlaybackSession(server, item, seconds);
+                            }
                         }
                     },
 
@@ -255,6 +277,10 @@ export const useAudiobookStore = create<AudiobookState>()(
                                     },
                                 }));
                                 lastFlushedPosition = seconds;
+                                const { server } = get();
+                                if (server) {
+                                    rememberAudiobookPlaybackSession(server, item, seconds);
+                                }
                             }
                         }
                     },
