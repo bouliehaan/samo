@@ -1,51 +1,32 @@
 import { getItemImageUrl } from '/@/renderer/components/item-image/item-image';
+import { useRadioPlayer, useRadioStore } from '/@/renderer/features/radio/hooks/use-radio-player';
+import { usePlayerSong, usePlayerStoreBase } from '/@/renderer/store';
 import {
-    useRadioPlayer,
-    useRadioStore,
-} from '/@/renderer/features/radio/hooks/use-radio-player';
-import { useAudiobookItem, useAudiobookServer, useAudiobookStore } from '/@/renderer/store/audiobook.store';
+    useAudiobookItem,
+    useAudiobookServer,
+    useAudiobookStore,
+} from '/@/renderer/store/audiobook.store';
 import {
+    type PlaybackSource,
     usePlaybackOwnerStore,
     usePlaybackSource,
-    type PlaybackSource,
 } from '/@/renderer/store/playback-owner.store';
-import { usePlayerSong, usePlayerStoreBase } from '/@/renderer/store';
 import { AudiobookshelfLibraryItem } from '/@/shared/api/audiobookshelf/audiobookshelf-types';
 import { ServerListItemWithCredential } from '/@/shared/types/domain-types';
 import { LibraryItem } from '/@/shared/types/domain-types';
 
 export type NowPlaying = {
+    artist: string;
     // Absolute URL suitable for MediaMetadata artwork / MPRIS. Undefined when not available.
     artwork: string | undefined;
-    artist: string;
     canSeek: boolean;
     canSkipNext: boolean;
     canSkipPrevious: boolean;
-    source: PlaybackSource | null;
+    source: null | PlaybackSource;
     // Album for music, station name for radio, narrator/series for audiobook.
     subtitle: string;
     title: string;
 };
-
-// Builds a direct cover URL for ABS items using the token query param.
-// ABS supports /api/items/:id/cover?token=<token> for browser-side art fetching.
-function audiobookArtworkUrl(
-    server: ServerListItemWithCredential,
-    item: AudiobookshelfLibraryItem,
-): string | undefined {
-    if (!item.id || !server.url || !server.credential) return undefined;
-    const base = server.url.replace(/\/+$/, '');
-    return `${base}/api/items/${item.id}/cover?token=${encodeURIComponent(server.credential)}`;
-}
-
-function audiobookTitle(item: AudiobookshelfLibraryItem): string {
-    return item.media?.metadata?.title || item.name || 'Untitled audiobook';
-}
-
-function audiobookAuthor(item: AudiobookshelfLibraryItem): string {
-    const meta = item.media?.metadata;
-    return meta?.author || meta?.authors?.map((a) => a.name).join(', ') || '';
-}
 
 // Reads current now-playing state directly from store snapshots.
 // Safe to call outside React (Zustand subscriptions, event handlers).
@@ -55,8 +36,8 @@ export function getNowPlayingSnapshot(): NowPlaying {
     if (source === 'radio') {
         const radio = useRadioStore.getState();
         return {
-            artwork: undefined,
             artist: radio.metadata?.artist || radio.stationName || '',
+            artwork: undefined,
             canSeek: false,
             canSkipNext: false,
             canSkipPrevious: false,
@@ -70,13 +51,13 @@ export function getNowPlayingSnapshot(): NowPlaying {
         const ab = useAudiobookStore.getState();
         const { item, server } = ab;
         return {
-            artwork: item && server ? audiobookArtworkUrl(server, item) : undefined,
             artist: item ? audiobookAuthor(item) : '',
+            artwork: item && server ? audiobookArtworkUrl(server, item) : undefined,
             canSeek: true,
             canSkipNext: false,
             canSkipPrevious: false,
             source: 'audiobook',
-            subtitle: '',
+            subtitle: 'Audiobook',
             title: item ? audiobookTitle(item) : 'Audiobook',
         };
     }
@@ -94,8 +75,8 @@ export function getNowPlayingSnapshot(): NowPlaying {
         : undefined;
 
     return {
-        artwork,
         artist: song?.artistName ?? '',
+        artwork,
         canSeek: true,
         canSkipNext: true,
         canSkipPrevious: true,
@@ -115,8 +96,8 @@ export function useNowPlaying(): NowPlaying {
 
     if (source === 'radio' && isRadioPlaying) {
         return {
-            artwork: undefined,
             artist: radioMetadata?.artist || stationName || '',
+            artwork: undefined,
             canSeek: false,
             canSkipNext: false,
             canSkipPrevious: false,
@@ -128,16 +109,16 @@ export function useNowPlaying(): NowPlaying {
 
     if (source === 'audiobook' && audiobookItem) {
         return {
+            artist: audiobookAuthor(audiobookItem),
             artwork:
                 audiobookItem && audiobookServer
                     ? audiobookArtworkUrl(audiobookServer, audiobookItem)
                     : undefined,
-            artist: audiobookAuthor(audiobookItem),
             canSeek: true,
             canSkipNext: false,
             canSkipPrevious: false,
             source: 'audiobook',
-            subtitle: '',
+            subtitle: 'Audiobook',
             title: audiobookTitle(audiobookItem),
         };
     }
@@ -152,8 +133,8 @@ export function useNowPlaying(): NowPlaying {
         : undefined;
 
     return {
-        artwork,
         artist: song?.artistName ?? '',
+        artwork,
         canSeek: true,
         canSkipNext: true,
         canSkipPrevious: true,
@@ -161,4 +142,31 @@ export function useNowPlaying(): NowPlaying {
         subtitle: song?.album ?? '',
         title: song?.name ?? '',
     };
+}
+
+// Builds a direct cover URL for ABS items using the token query param.
+// ABS supports /api/items/:id/cover?token=<token> for browser-side art fetching.
+function audiobookArtworkUrl(
+    server: ServerListItemWithCredential,
+    item: AudiobookshelfLibraryItem,
+): string | undefined {
+    if (!item.id || !server.url || !server.credential) return undefined;
+    const base = server.url.replace(/\/+$/, '');
+    return `${base}/api/items/${item.id}/cover?token=${encodeURIComponent(server.credential)}`;
+}
+
+function audiobookAuthor(item: AudiobookshelfLibraryItem): string {
+    const meta = item.media?.metadata;
+
+    return (
+        meta?.authorName ||
+        meta?.narratorName ||
+        meta?.author ||
+        meta?.authors?.map((a) => a.name).join(', ') ||
+        ''
+    );
+}
+
+function audiobookTitle(item: AudiobookshelfLibraryItem): string {
+    return item.media?.metadata?.title || item.name || 'Untitled audiobook';
 }

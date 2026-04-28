@@ -13,7 +13,6 @@ import {
     JoinedArtists,
 } from '/@/renderer/features/albums/components/joined-artists';
 import { ContextMenuController } from '/@/renderer/features/context-menu/context-menu-controller';
-import { AudioPathBadge } from '/@/renderer/features/player/components/audio-path-badge';
 import { RadioMetadataDisplay } from '/@/renderer/features/player/components/radio-metadata-display';
 import {
     useIsRadioActive,
@@ -37,6 +36,7 @@ import { Tooltip } from '/@/shared/components/tooltip/tooltip';
 import { PlaybackSelectors } from '/@/shared/constants/playback-selectors';
 import { useHotkeys } from '/@/shared/hooks/use-hotkeys';
 import { LibraryItem } from '/@/shared/types/domain-types';
+import { useNowPlaying } from '/@/renderer/hooks/use-now-playing';
 
 export const LeftControls = () => {
     const { t } = useTranslation();
@@ -56,6 +56,12 @@ export const LeftControls = () => {
     );
 
     const currentSong = usePlayerSong();
+    const nowPlaying = useNowPlaying();
+
+    const isAudiobookMode = nowPlaying.source === 'audiobook';
+    const audiobookTitle = nowPlaying.title;
+    const audiobookAuthor = nowPlaying.artist;
+    const audiobookCoverUrl = nowPlaying.artwork ?? '';
     const isRadioActive = useIsRadioActive();
     const { currentStationArt } = useRadioPlayer();
     const { bindings } = useHotkeySettings();
@@ -161,6 +167,15 @@ export const LeftControls = () => {
                                         >
                                             <Icon color="muted" icon="radio" size="40%" />
                                         </Center>
+                                    ) : isAudiobookMode && audiobookCoverUrl ? (
+                                        <img
+                                            alt={audiobookTitle || 'Audiobook cover'}
+                                            className={clsx(
+                                                styles.playerbarImage,
+                                                PlaybackSelectors.playerCoverArt,
+                                            )}
+                                            src={audiobookCoverUrl}
+                                        />
                                     ) : (
                                         <ItemImage
                                             className={clsx(
@@ -210,6 +225,34 @@ export const LeftControls = () => {
                             onStopPropagation={stopPropagation}
                             onToggleContextMenu={handleToggleContextMenu}
                         />
+                    ) : isAudiobookMode ? (
+                        <>
+                            <div className={styles.lineItem} onClick={stopPropagation}>
+                                <Group align="center" gap="xs" wrap="nowrap">
+                                    <Text
+                                        className={PlaybackSelectors.songTitle}
+                                        fw={500}
+                                        onContextMenu={handleToggleContextMenu}
+                                        overflow="hidden"
+                                    >
+                                        {audiobookTitle || '—'}
+                                    </Text>
+                                </Group>
+                            </div>
+
+                            <div
+                                className={clsx(
+                                    styles.lineItem,
+                                    styles.secondary,
+                                    PlaybackSelectors.songArtist,
+                                )}
+                                onClick={stopPropagation}
+                            >
+                                <Text isMuted overflow="hidden" size="sm">
+                                    {audiobookAuthor || 'Audiobook'}
+                                </Text>
+                            </div>
+                        </>
                     ) : (
                         <>
                             <div className={styles.lineItem} onClick={stopPropagation}>
@@ -279,9 +322,6 @@ export const LeftControls = () => {
                                         size: 'md',
                                     }}
                                 />
-                            </div>
-                            <div className={styles.lineItem} onClick={stopPropagation}>
-                                <AudioPathBadge compact song={currentSong} />
                             </div>
                             <div
                                 className={clsx(

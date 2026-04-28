@@ -6,6 +6,7 @@ import { usePlaybackSettings } from '/@/renderer/store';
 
 type AudioPathBadgeProps = {
     compact?: boolean;
+    inline?: boolean;
     song?: QueueSong;
 };
 
@@ -51,7 +52,7 @@ const formatBitRate = (bitRate?: null | number) => {
     return `${kbps} kbps`;
 };
 
-export const AudioPathBadge = ({ compact = false, song }: AudioPathBadgeProps) => {
+export const AudioPathBadge = ({ compact = false, inline = false, song }: AudioPathBadgeProps) => {
     const { transcode } = usePlaybackSettings();
 
     if (!song) {
@@ -72,18 +73,24 @@ export const AudioPathBadge = ({ compact = false, song }: AudioPathBadgeProps) =
 
     const sourceQuality = compact && bitDepth && sampleRate ? `${bitDepth}/${sampleRate}` : null;
 
-    const items = compact
-        ? [pathLabel, container, sourceQuality, transcode.enabled ? bitRate : null].filter(Boolean)
-        : [pathLabel, container, bitDepth, sampleRate, bitRate].filter(Boolean);
+    const items = inline
+        ? [container, sourceQuality, transcode.enabled ? bitRate : null].filter(Boolean)
+        : compact
+          ? [pathLabel, container, sourceQuality, transcode.enabled ? bitRate : null].filter(Boolean)
+          : [pathLabel, container, bitDepth, sampleRate, bitRate].filter(Boolean);
 
     return (
-        <Group gap={compact ? 4 : 'xs'} justify={compact ? 'flex-start' : 'center'} wrap="nowrap">
+        <Group
+            gap={inline ? 3 : compact ? 4 : 'xs'}
+            justify={compact || inline ? 'flex-start' : 'center'}
+            wrap="nowrap"
+        >
             {items.map((item) => (
                 <Badge
                     color={isPremiumQualityDirect ? undefined : undefined}
                     key={item}
-                    radius="sm"
-                    size={compact ? 'xs' : 'lg'}
+                    radius={inline ? 'xs' : 'sm'}
+                    size={compact || inline ? 'xs' : 'lg'}
                     styles={
                         isPremiumQualityDirect
                             ? {
