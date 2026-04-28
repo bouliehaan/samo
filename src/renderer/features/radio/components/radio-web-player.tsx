@@ -42,6 +42,10 @@ export function RadioWebPlayer() {
         setPlayerStatus(isPlaying ? PlayerStatus.PLAYING : PlayerStatus.PAUSED);
     }, [isPlaying]);
 
+    useEffect(() => {
+        playerRef.current?.setVolume(volume);
+    }, [volume]);
+
     // Cleanup source only on unmount
     useEffect(() => {
         return () => {

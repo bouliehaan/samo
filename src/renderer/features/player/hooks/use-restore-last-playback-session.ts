@@ -90,22 +90,23 @@ const restoreRadioSession = (
     const station = useRadioStationStore
         .getState()
         .actions.getStation(session.serverId, session.stationId);
-    if (!station) return false;
+    const streamUrl = station?.streamUrl || session.streamUrl || null;
+    if (!streamUrl) return false;
     if (usePlaybackOwnerStore.getState().source) return true;
 
     const stationArt = {
-        id: station.id,
-        imageId: station.imageId,
-        imageUrl: station.imageUrl,
+        id: station?.id ?? session.stationId,
+        imageId: station?.imageId ?? session.stationArt?.imageId ?? null,
+        imageUrl: station?.imageUrl ?? session.stationArt?.imageUrl ?? null,
         serverId: session.serverId,
     };
 
     useRadioPlayerStore.setState({
         currentStationArt: stationArt,
-        currentStreamUrl: station.streamUrl || session.streamUrl || null,
+        currentStreamUrl: streamUrl,
         isPlaying: false,
         metadata: session.metadata ?? null,
-        stationName: station.name || session.stationName || null,
+        stationName: station?.name || session.stationName || null,
     });
     usePlaybackOwnerStore.getState().claim('radio');
     return true;

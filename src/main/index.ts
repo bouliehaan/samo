@@ -1161,6 +1161,76 @@ ipcMain.handle(
 );
 
 ipcMain.handle(
+    'audiobookshelf-sync-playback-session',
+    async (
+        _event,
+        data: {
+            body: {
+                currentTime: number;
+                duration: number;
+                timeListened: number;
+            };
+            sessionId: string;
+            token: string;
+            url: string;
+        },
+    ) => {
+        const baseUrl = data.url.replace(/\/+$/, '');
+        const response = await fetch(
+            `${baseUrl}/api/session/${encodeURIComponent(data.sessionId)}/sync`,
+            {
+                body: JSON.stringify(data.body),
+                headers: {
+                    Authorization: `Bearer ${data.token}`,
+                    'Content-Type': 'application/json',
+                },
+                method: 'POST',
+            },
+        );
+
+        if (!response.ok) {
+            throw new Error(`Audiobookshelf session sync failed: ${response.status}`);
+        }
+
+        await response.text();
+    },
+);
+
+ipcMain.handle(
+    'audiobookshelf-close-playback-session',
+    async (
+        _event,
+        data: {
+            body: {
+                currentTime: number;
+                duration: number;
+                timeListened: number;
+            };
+            sessionId: string;
+            token: string;
+            url: string;
+        },
+    ) => {
+        const baseUrl = data.url.replace(/\/+$/, '');
+        const response = await fetch(
+            `${baseUrl}/api/session/${encodeURIComponent(data.sessionId)}/close`,
+            {
+                body: JSON.stringify(data.body),
+                headers: {
+                    Authorization: `Bearer ${data.token}`,
+                    'Content-Type': 'application/json',
+                },
+                method: 'POST',
+            },
+        );
+
+        if (!response.ok) {
+            throw new Error(`Audiobookshelf session close failed: ${response.status}`);
+        }
+    },
+);
+
+ipcMain.handle(
     'audiobookshelf-get-item-cover-data-url',
     async (
         _event,

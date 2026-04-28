@@ -6,6 +6,7 @@ import {
     AudiobookshelfLibraryItemsResponse,
     AudiobookshelfLoginResponse,
     AudiobookshelfPlaybackSessionResponse,
+    AudiobookshelfPlaybackSessionSyncRequest,
 } from '/@/shared/api/audiobookshelf/audiobookshelf-types';
 import { AuthenticationResponse, ServerListItemWithCredential } from '/@/shared/types/domain-types';
 
@@ -208,6 +209,78 @@ const getItemWithMainProcess = async (
     }) as Promise<AudiobookshelfLibraryItem>;
 };
 
+const syncPlaybackSessionWithFetch = async (
+    server: ServerListItemWithCredential,
+    sessionId: string,
+    body: AudiobookshelfPlaybackSessionSyncRequest,
+): Promise<void> => {
+    const response = await fetch(
+        `${normalizeBaseUrl(server.url)}/api/session/${encodeURIComponent(sessionId)}/sync`,
+        {
+            body: JSON.stringify(body),
+            headers: {
+                ...getAuthHeaders(server.credential),
+                'Content-Type': 'application/json',
+            },
+            method: 'POST',
+        },
+    );
+
+    if (!response.ok) {
+        throw new Error(`Audiobookshelf session sync failed: ${response.status}`);
+    }
+
+    await response.text();
+};
+
+const syncPlaybackSessionWithMainProcess = async (
+    server: ServerListItemWithCredential,
+    sessionId: string,
+    body: AudiobookshelfPlaybackSessionSyncRequest,
+): Promise<void> => {
+    await window.api.ipc.invoke('audiobookshelf-sync-playback-session', {
+        body,
+        sessionId,
+        token: server.credential,
+        url: server.url,
+    });
+};
+
+const closePlaybackSessionWithFetch = async (
+    server: ServerListItemWithCredential,
+    sessionId: string,
+    body: AudiobookshelfPlaybackSessionSyncRequest,
+): Promise<void> => {
+    const response = await fetch(
+        `${normalizeBaseUrl(server.url)}/api/session/${encodeURIComponent(sessionId)}/close`,
+        {
+            body: JSON.stringify(body),
+            headers: {
+                ...getAuthHeaders(server.credential),
+                'Content-Type': 'application/json',
+            },
+            method: 'POST',
+        },
+    );
+
+    if (!response.ok) {
+        throw new Error(`Audiobookshelf session close failed: ${response.status}`);
+    }
+};
+
+const closePlaybackSessionWithMainProcess = async (
+    server: ServerListItemWithCredential,
+    sessionId: string,
+    body: AudiobookshelfPlaybackSessionSyncRequest,
+): Promise<void> => {
+    await window.api.ipc.invoke('audiobookshelf-close-playback-session', {
+        body,
+        sessionId,
+        token: server.credential,
+        url: server.url,
+    });
+};
+
 export const audiobookshelfController = {
     authenticate: async (
         url: string,
@@ -229,6 +302,16 @@ export const audiobookshelfController = {
             userId: user.id,
             username: user.username,
         };
+    },
+
+    closePlaybackSession: async (
+        server: ServerListItemWithCredential,
+        sessionId: string,
+        body: AudiobookshelfPlaybackSessionSyncRequest,
+    ) => {
+        return isElectron()
+            ? closePlaybackSessionWithMainProcess(server, sessionId, body)
+            : closePlaybackSessionWithFetch(server, sessionId, body);
     },
 
     getItem: async (server: ServerListItemWithCredential, itemId: string) => {
@@ -266,5 +349,15 @@ export const audiobookshelfController = {
         return isElectron()
             ? playItemWithMainProcess(server, itemId, episodeId)
             : playItemWithFetch(server, itemId, episodeId);
+    },
+
+    syncPlaybackSession: async (
+        server: ServerListItemWithCredential,
+        sessionId: string,
+        body: AudiobookshelfPlaybackSessionSyncRequest,
+    ) => {
+        return isElectron()
+            ? syncPlaybackSessionWithMainProcess(server, sessionId, body)
+            : syncPlaybackSessionWithFetch(server, sessionId, body);
     },
 };

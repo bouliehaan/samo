@@ -4,13 +4,21 @@ import { persist, subscribeWithSelector } from 'zustand/middleware';
 import { audiobookshelfController } from '/@/renderer/api/audiobookshelf/audiobookshelf-controller';
 import { useLastPlaybackSessionStore } from '/@/renderer/store/last-playback-session.store';
 import { usePlaybackOwnerStore } from '/@/renderer/store/playback-owner.store';
-import { usePlayerStoreBase } from '/@/renderer/store/player.store';
+import { subscribePlayerStatus, usePlayerStoreBase } from '/@/renderer/store/player.store';
 import { AudiobookshelfChapter, AudiobookshelfLibraryItem } from '/@/shared/api/audiobookshelf/audiobookshelf-types';
 import { toast } from '/@/shared/components/toast/toast';
 import { ServerListItemWithCredential } from '/@/shared/types/domain-types';
+import { PlayerStatus } from '/@/shared/types/types';
 
 // How often (in seconds of drift) to flush position to the persisted resume map.
 const POSITION_PERSIST_DEBOUNCE_S = 10;
+const SERVER_PROGRESS_SYNC_INTERVAL_S = 30;
+
+const clampPosition = (seconds: number, duration: number) => {
+    if (!Number.isFinite(seconds)) return 0;
+    const floor = Math.max(0, seconds);
+    return duration > 0 ? Math.min(floor, duration) : floor;
+};
 
 /**
  * Single source of truth for "which chapter is the listener currently in?".
@@ -65,6 +73,9 @@ interface AudiobookState {
 
 // Internal: tracks the last position value that was flushed to resumeByItemId.
 let lastFlushedPosition = 0;
+let lastServerSyncedPosition = 0;
+let lastServerSyncAtMs = 0;
+let hasLoggedMissingSessionId = false;
 
 const rememberAudiobookPlaybackSession = (
     server: ServerListItemWithCredential,
@@ -79,6 +90,85 @@ const rememberAudiobookPlaybackSession = (
     });
 };
 
+const resetAudiobookshelfProgressSync = (position: number) => {
+    lastServerSyncedPosition = position;
+    lastServerSyncAtMs = Date.now();
+};
+
+const syncAudiobookshelfProgress = (options: {
+    closeSession?: boolean;
+    countListeningTime?: boolean;
+    force?: boolean;
+    reason: 'close' | 'pause' | 'progress' | 'seek';
+}) => {
+    const { duration, item, position, server, sessionId } = useAudiobookStore.getState();
+
+    if (!item || !server) return;
+    if (!sessionId) {
+        if (!hasLoggedMissingSessionId) {
+            console.info('[audiobook.store] Audiobookshelf progress sync unavailable', {
+                itemId: item.id,
+                reason: 'missing-session-id',
+                trigger: options.reason,
+            });
+            hasLoggedMissingSessionId = true;
+        }
+        return;
+    }
+
+    const currentTime = clampPosition(position, duration);
+    const drift = Math.abs(currentTime - lastServerSyncedPosition);
+    if (!options.force && !options.closeSession && drift < SERVER_PROGRESS_SYNC_INTERVAL_S) {
+        return;
+    }
+
+    const now = Date.now();
+    const timeListened =
+        options.countListeningTime && lastServerSyncAtMs > 0
+            ? Math.max(0, (now - lastServerSyncAtMs) / 1000)
+            : 0;
+
+    resetAudiobookshelfProgressSync(currentTime);
+
+    const payload = {
+        currentTime,
+        duration: Math.max(0, duration),
+        timeListened,
+    };
+
+    console.info('[audiobook.store] Audiobookshelf progress sync request', {
+        closeSession: options.closeSession,
+        itemId: item.id,
+        payload,
+        reason: options.reason,
+        sessionId,
+    });
+
+    const request = options.closeSession
+        ? audiobookshelfController.closePlaybackSession(server, sessionId, payload)
+        : audiobookshelfController.syncPlaybackSession(server, sessionId, payload);
+
+    void request
+        .then(() => {
+            console.info('[audiobook.store] Audiobookshelf progress sync succeeded', {
+                closeSession: options.closeSession,
+                currentTime,
+                itemId: item.id,
+                reason: options.reason,
+                sessionId,
+            });
+        })
+        .catch((error) => {
+            console.warn('[audiobook.store] Audiobookshelf progress sync failed', {
+                closeSession: options.closeSession,
+                error,
+                itemId: item.id,
+                reason: options.reason,
+                sessionId,
+            });
+        });
+};
+
 export const useAudiobookStore = create<AudiobookState>()(
     subscribeWithSelector(
         persist(
@@ -89,6 +179,32 @@ export const useAudiobookStore = create<AudiobookState>()(
                             itemId: item.id,
                             title: item.media?.metadata?.title || item.name,
                         });
+
+                        const current = get();
+                        const currentItem = current.item;
+                        if (currentItem) {
+                            set((state) => ({
+                                resumeByItemId: {
+                                    ...state.resumeByItemId,
+                                    [currentItem.id]: current.position,
+                                },
+                            }));
+                            if (current.server) {
+                                rememberAudiobookPlaybackSession(
+                                    current.server,
+                                    currentItem,
+                                    current.position,
+                                );
+                            }
+                            syncAudiobookshelfProgress({
+                                closeSession: true,
+                                countListeningTime:
+                                    usePlayerStoreBase.getState().player.status ===
+                                    PlayerStatus.PLAYING,
+                                force: true,
+                                reason: 'close',
+                            });
+                        }
 
                         usePlaybackOwnerStore.getState().claim('audiobook');
                         console.log('[audiobook.store] arbiter claimed → source=audiobook');
@@ -117,6 +233,7 @@ export const useAudiobookStore = create<AudiobookState>()(
                             console.log('[audiobook.store] session fetched', {
                                 contentUrl: session.audioTracks?.[0]?.contentUrl,
                                 currentTime: session.currentTime,
+                                sessionId: session.id,
                                 trackCount: session.audioTracks?.length,
                             });
 
@@ -142,21 +259,31 @@ export const useAudiobookStore = create<AudiobookState>()(
                             const serverResume = session.currentTime ?? 0;
                             const resumePosition =
                                 localResume !== undefined ? localResume : serverResume;
+                            const clampedResumePosition = clampPosition(
+                                resumePosition,
+                                duration,
+                            );
 
-                            lastFlushedPosition = resumePosition;
+                            lastFlushedPosition = clampedResumePosition;
+                            resetAudiobookshelfProgressSync(clampedResumePosition);
+                            hasLoggedMissingSessionId = false;
 
                             set({
                                 chapters,
                                 contentUrl,
                                 duration,
                                 isLoading: false,
-                                position: resumePosition,
+                                position: clampedResumePosition,
                                 sessionId: session.id ?? null,
                             });
-                            rememberAudiobookPlaybackSession(server, item, resumePosition);
+                            rememberAudiobookPlaybackSession(
+                                server,
+                                item,
+                                clampedResumePosition,
+                            );
 
                             console.log('[audiobook.store] state set → calling mediaPlay()', {
-                                resumePosition,
+                                resumePosition: clampedResumePosition,
                             });
                             usePlayerStoreBase.getState().mediaPlay();
                             console.log('[audiobook.store] mediaPlay() called');
@@ -186,7 +313,14 @@ export const useAudiobookStore = create<AudiobookState>()(
                             }
                         }
 
-                        usePlaybackOwnerStore.getState().release('audiobook');
+                        syncAudiobookshelfProgress({
+                            closeSession: true,
+                            countListeningTime:
+                                usePlayerStoreBase.getState().player.status ===
+                                PlayerStatus.PLAYING,
+                            force: true,
+                            reason: 'close',
+                        });
 
                         set({
                             chapters: [],
@@ -201,21 +335,36 @@ export const useAudiobookStore = create<AudiobookState>()(
                         });
 
                         lastFlushedPosition = 0;
+                        resetAudiobookshelfProgressSync(0);
+                        hasLoggedMissingSessionId = false;
+                        usePlaybackOwnerStore.getState().release('audiobook');
                     },
 
                     seekTo: (seconds) => {
-                        set({ position: seconds });
-                        lastFlushedPosition = seconds;
+                        const nextPosition = clampPosition(seconds, get().duration);
+                        set({ position: nextPosition });
+                        lastFlushedPosition = nextPosition;
 
                         const { item, server } = get();
                         if (item) {
                             set((state) => ({
-                                resumeByItemId: { ...state.resumeByItemId, [item.id]: seconds },
+                                resumeByItemId: {
+                                    ...state.resumeByItemId,
+                                    [item.id]: nextPosition,
+                                },
                             }));
                             if (server) {
-                                rememberAudiobookPlaybackSession(server, item, seconds);
+                                rememberAudiobookPlaybackSession(server, item, nextPosition);
                             }
                         }
+
+                        syncAudiobookshelfProgress({
+                            countListeningTime:
+                                usePlayerStoreBase.getState().player.status ===
+                                PlayerStatus.PLAYING,
+                            force: true,
+                            reason: 'seek',
+                        });
                     },
 
                     seekToNextChapter: () => {
@@ -263,26 +412,36 @@ export const useAudiobookStore = create<AudiobookState>()(
                     },
 
                     setPosition: (seconds) => {
-                        set({ position: seconds });
+                        const nextPosition = clampPosition(seconds, get().duration);
+                        set({ position: nextPosition });
 
                         // Flush to resumeByItemId only when position has drifted enough.
-                        const drift = Math.abs(seconds - lastFlushedPosition);
+                        const drift = Math.abs(nextPosition - lastFlushedPosition);
                         if (drift >= POSITION_PERSIST_DEBOUNCE_S) {
                             const { item } = get();
                             if (item) {
                                 set((state) => ({
                                     resumeByItemId: {
                                         ...state.resumeByItemId,
-                                        [item.id]: seconds,
+                                        [item.id]: nextPosition,
                                     },
                                 }));
-                                lastFlushedPosition = seconds;
+                                lastFlushedPosition = nextPosition;
                                 const { server } = get();
                                 if (server) {
-                                    rememberAudiobookPlaybackSession(server, item, seconds);
+                                    rememberAudiobookPlaybackSession(
+                                        server,
+                                        item,
+                                        nextPosition,
+                                    );
                                 }
                             }
                         }
+
+                        syncAudiobookshelfProgress({
+                            countListeningTime: true,
+                            reason: 'progress',
+                        });
                     },
                 },
                 chapters: [],
@@ -317,6 +476,13 @@ usePlaybackOwnerStore.subscribe(
                 useAudiobookStore.setState((state) => ({
                     resumeByItemId: { ...state.resumeByItemId, [item.id]: position },
                 }));
+                syncAudiobookshelfProgress({
+                    closeSession: true,
+                    countListeningTime:
+                        usePlayerStoreBase.getState().player.status === PlayerStatus.PLAYING,
+                    force: true,
+                    reason: 'close',
+                });
             }
 
             useAudiobookStore.setState({
@@ -331,9 +497,25 @@ usePlaybackOwnerStore.subscribe(
             });
 
             lastFlushedPosition = 0;
+            resetAudiobookshelfProgressSync(0);
+            hasLoggedMissingSessionId = false;
         }
     },
 );
+
+subscribePlayerStatus(({ status }, prev) => {
+    if (
+        prev.status === PlayerStatus.PLAYING &&
+        status === PlayerStatus.PAUSED &&
+        usePlaybackOwnerStore.getState().source === 'audiobook'
+    ) {
+        syncAudiobookshelfProgress({
+            countListeningTime: true,
+            force: true,
+            reason: 'pause',
+        });
+    }
+});
 
 // Convenience selectors for use in components.
 export const useAudiobookContentUrl = () => useAudiobookStore((state) => state.contentUrl);

@@ -86,6 +86,12 @@ export interface AudiobookshelfPlaybackSessionResponse {
     libraryItemId?: string;
 }
 
+export interface AudiobookshelfPlaybackSessionSyncRequest {
+    currentTime: number;
+    duration: number;
+    timeListened: number;
+}
+
 export interface AudiobookshelfPodcastEpisode {
     audioFile?: {
         duration?: number;
