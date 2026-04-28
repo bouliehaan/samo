@@ -4,7 +4,7 @@ import { persist, subscribeWithSelector } from 'zustand/middleware';
 import { audiobookshelfController } from '/@/renderer/api/audiobookshelf/audiobookshelf-controller';
 import { usePlaybackOwnerStore } from '/@/renderer/store/playback-owner.store';
 import { usePlayerStoreBase } from '/@/renderer/store/player.store';
-import { AudiobookshelfLibraryItem } from '/@/shared/api/audiobookshelf/audiobookshelf-types';
+import { AudiobookshelfChapter, AudiobookshelfLibraryItem } from '/@/shared/api/audiobookshelf/audiobookshelf-types';
 import { toast } from '/@/shared/components/toast/toast';
 import { ServerListItemWithCredential } from '/@/shared/types/domain-types';
 
@@ -23,6 +23,7 @@ interface AudiobookState {
         setError: (error: null | string) => void;
         setPosition: (seconds: number) => void;
     };
+    chapters: AudiobookshelfChapter[];
     contentUrl: null | string;
     duration: number;
     error: null | string;
@@ -53,6 +54,7 @@ export const useAudiobookStore = create<AudiobookState>()(
                         console.log('[audiobook.store] arbiter claimed → source=audiobook');
 
                         set({
+                            chapters: [],
                             contentUrl: null,
                             duration: 0,
                             error: null,
@@ -76,6 +78,8 @@ export const useAudiobookStore = create<AudiobookState>()(
                             });
 
                             const contentUrl = session.audioTracks?.[0]?.contentUrl;
+                            const chapters = session.libraryItem?.media?.chapters ?? [];
+
                             if (!contentUrl) {
                                 throw new Error('Audiobookshelf did not return an audio URL');
                             }
@@ -90,6 +94,7 @@ export const useAudiobookStore = create<AudiobookState>()(
                             lastFlushedPosition = resumePosition;
 
                             set({
+                                chapters,
                                 contentUrl,
                                 isLoading: false,
                                 position: resumePosition,
@@ -127,6 +132,7 @@ export const useAudiobookStore = create<AudiobookState>()(
                         usePlaybackOwnerStore.getState().release('audiobook');
 
                         set({
+                            chapters: [],
                             contentUrl: null,
                             duration: 0,
                             error: null,
@@ -179,6 +185,7 @@ export const useAudiobookStore = create<AudiobookState>()(
                         }
                     },
                 },
+                chapters: [],
                 contentUrl: null,
                 duration: 0,
                 error: null,
@@ -234,6 +241,7 @@ export const useAudiobookItem = () => useAudiobookStore((state) => state.item);
 export const useAudiobookIsLoading = () => useAudiobookStore((state) => state.isLoading);
 export const useAudiobookPosition = () => useAudiobookStore((state) => state.position);
 export const useAudiobookDuration = () => useAudiobookStore((state) => state.duration);
+export const useAudiobookChapters = () => useAudiobookStore((state) => state.chapters);
 export const useAudiobookError = () => useAudiobookStore((state) => state.error);
 export const useAudiobookServer = () => useAudiobookStore((state) => state.server);
 export const useAudiobookActions = () => useAudiobookStore((state) => state.actions);

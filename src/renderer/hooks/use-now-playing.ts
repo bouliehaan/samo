@@ -2,7 +2,9 @@ import { getItemImageUrl } from '/@/renderer/components/item-image/item-image';
 import { useRadioPlayer, useRadioStore } from '/@/renderer/features/radio/hooks/use-radio-player';
 import { usePlayerSong, usePlayerStoreBase } from '/@/renderer/store';
 import {
+    useAudiobookChapters,
     useAudiobookItem,
+    useAudiobookPosition,
     useAudiobookServer,
     useAudiobookStore,
 } from '/@/renderer/store/audiobook.store';
@@ -92,6 +94,8 @@ export function useNowPlaying(): NowPlaying {
     const song = usePlayerSong();
     const { isPlaying: isRadioPlaying, metadata: radioMetadata, stationName } = useRadioPlayer();
     const audiobookItem = useAudiobookItem();
+    const audiobookPosition = useAudiobookPosition();
+    const audiobookChapters = useAudiobookChapters();
     const audiobookServer = useAudiobookServer();
 
     if (source === 'radio' && isRadioPlaying) {
@@ -107,6 +111,13 @@ export function useNowPlaying(): NowPlaying {
         };
     }
 
+    const currentAudiobookChapter = audiobookChapters.find((chapter, index) => {
+        const nextChapter = audiobookChapters[index + 1];
+        const end = chapter.end ?? nextChapter?.start ?? Number.POSITIVE_INFINITY;
+
+        return audiobookPosition >= chapter.start && audiobookPosition < end;
+    });
+
     if (source === 'audiobook' && audiobookItem) {
         return {
             artist: audiobookAuthor(audiobookItem),
@@ -118,7 +129,7 @@ export function useNowPlaying(): NowPlaying {
             canSkipNext: false,
             canSkipPrevious: false,
             source: 'audiobook',
-            subtitle: 'Audiobook',
+            subtitle: currentAudiobookChapter?.title || 'Audiobook',
             title: audiobookTitle(audiobookItem),
         };
     }

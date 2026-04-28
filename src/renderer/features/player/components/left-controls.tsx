@@ -61,6 +61,7 @@ export const LeftControls = () => {
     const isAudiobookMode = nowPlaying.source === 'audiobook';
     const audiobookTitle = nowPlaying.title;
     const audiobookAuthor = nowPlaying.artist;
+    const audiobookSubtitle = nowPlaying.subtitle;
     const audiobookCoverUrl = nowPlaying.artwork ?? '';
     const isRadioActive = useIsRadioActive();
     const { currentStationArt } = useRadioPlayer();
@@ -249,7 +250,20 @@ export const LeftControls = () => {
                                 onClick={stopPropagation}
                             >
                                 <Text isMuted overflow="hidden" size="sm">
-                                    {audiobookAuthor || 'Audiobook'}
+                                    {audiobookAuthor || 'Unknown author'}
+                                </Text>
+                            </div>
+
+                            <div
+                                className={clsx(
+                                    styles.lineItem,
+                                    styles.secondary,
+                                    PlaybackSelectors.songAlbum,
+                                )}
+                                onClick={stopPropagation}
+                            >
+                                <Text isMuted overflow="hidden" size="sm">
+                                    {audiobookSubtitle || 'Audiobook'}
                                 </Text>
                             </div>
                         </>

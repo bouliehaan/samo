@@ -13,6 +13,7 @@ export interface AudiobookshelfLibraryItem {
     libraryId: string;
     media?: {
         authorName?: string;
+        chapters?: AudiobookshelfChapter[];
         authors?: Array<{ id?: string; name: string }>;
         coverPath?: string;
         description?: string;
@@ -63,6 +64,13 @@ export interface AudiobookshelfMetadata {
     title?: string;
 }
 
+export interface AudiobookshelfChapter {
+    end?: number;
+    id?: string;
+    start: number;
+    title?: string;
+}
+
 export interface AudiobookshelfPlaybackAudioTrack {
     contentUrl?: string;
     index?: number;
@@ -71,6 +79,7 @@ export interface AudiobookshelfPlaybackAudioTrack {
 
 export interface AudiobookshelfPlaybackSessionResponse {
     audioTracks?: AudiobookshelfPlaybackAudioTrack[];
+    libraryItem?: AudiobookshelfLibraryItem;
     // Server-side resume position in seconds.
     currentTime?: number;
     id?: string;
