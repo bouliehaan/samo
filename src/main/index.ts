@@ -118,12 +118,28 @@ const ensureAudiobookshelfProxyServer = async () => {
                 return;
             }
 
-            const upstreamUrl = `${session.baseUrl}${upstreamPath}${requestUrl.search}`;
-            const upstreamResponse = await fetch(upstreamUrl, {
-                headers: {
-                    Authorization: `Bearer ${session.token}`,
-                },
-            });
+            const fetchUpstream = (path: string) =>
+                fetch(`${session.baseUrl}${path}${requestUrl.search}`, {
+                    headers: {
+                        Authorization: `Bearer ${session.token}`,
+                    },
+                });
+
+            let upstreamResponse = await fetchUpstream(upstreamPath);
+
+            if (!upstreamResponse.ok && upstreamPath.endsWith('.ts')) {
+                await new Promise((resolve) => setTimeout(resolve, 250));
+                upstreamResponse = await fetchUpstream(upstreamPath);
+            }
+
+            if (
+                !upstreamResponse.ok &&
+                upstreamPath.endsWith('.ts') &&
+                upstreamPath.startsWith('/hls/')
+            ) {
+                const pathWithoutHlsPrefix = upstreamPath.replace(/^\/hls\//, '/');
+                upstreamResponse = await fetchUpstream(pathWithoutHlsPrefix);
+            }
 
             if (!upstreamResponse.ok) {
                 sendAudiobookshelfProxyResponse(
@@ -146,7 +162,7 @@ const ensureAudiobookshelfProxyServer = async () => {
                 const localPrefix = `http://127.0.0.1:${audiobookshelfProxyPort}/audiobookshelf-hls/${sessionId}`;
                 const rewritten = text
                     .replace(new RegExp(escapeRegExp(session.baseUrl), 'g'), localPrefix)
-                    .replace(/^\/hls\//gm, `${localPrefix}/hls/`);
+                    .replace(/^\/hls\//gm, `${localPrefix}/`);
 
                 response.end(rewritten);
                 return;

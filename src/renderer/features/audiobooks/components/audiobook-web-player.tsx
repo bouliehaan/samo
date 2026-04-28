@@ -187,15 +187,8 @@ export function AudiobookWebPlayer() {
     }, [release]);
 
     if (!contentUrl) {
-        console.log('[AudiobookWebPlayer] render: no contentUrl yet, returning null');
         return null;
     }
-
-    console.log('[AudiobookWebPlayer] render: WebPlayerEngine', {
-        contentUrl,
-        playerStatus,
-        playing: playerStatus === PlayerStatus.PLAYING,
-    });
 
     return (
         <WebPlayerEngine

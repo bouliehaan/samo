@@ -5,7 +5,7 @@ import { createWithEqualityFn } from 'zustand/traditional';
 
 import { usePlayerEvents } from '/@/renderer/features/player/audio-player/hooks/use-player-events';
 import { usePlaybackOwnerStore } from '/@/renderer/store/playback-owner.store';
-import { usePlaybackType, usePlayerStoreBase, useSettingsStore } from '/@/renderer/store';
+import { usePlaybackType, usePlayerStoreBase } from '/@/renderer/store';
 import { PlayerStatus, PlayerType } from '/@/shared/types/types';
 
 export type RadioCurrentStationArt = {
