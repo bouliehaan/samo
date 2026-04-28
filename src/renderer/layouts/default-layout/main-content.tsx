@@ -8,6 +8,7 @@ import styles from './main-content.module.css';
 
 import { ExpandedListContainer } from '/@/renderer/components/item-list/expanded-list-container';
 import { ExpandedListItem } from '/@/renderer/components/item-list/expanded-list-item';
+import { GlobalSearchBar } from '/@/renderer/features/search/components/global-search-bar';
 import { FullScreenOverlay } from '/@/renderer/layouts/default-layout/full-screen-overlay';
 import { FullScreenVisualizerOverlay } from '/@/renderer/layouts/default-layout/full-screen-visualizer-overlay';
 import { LeftSidebar } from '/@/renderer/layouts/default-layout/left-sidebar';
@@ -235,6 +236,7 @@ function GlobalExpandedPanel() {
 function MainContentBody() {
     return (
         <div className={styles.mainContentBody}>
+            <GlobalSearchBar />
             <div className={styles.mainContentBodyScroll}>
                 <Suspense fallback={<Spinner container />}>
                     <Outlet />
