@@ -4,6 +4,12 @@ import { useEffect, useRef, useState } from 'react';
 import { CustomPlayerbarSlider } from './playerbar-slider';
 
 import { usePlayer } from '/@/renderer/features/player/context/player-context';
+import {
+    useAudiobookActions,
+    useAudiobookDuration,
+    useAudiobookPosition,
+} from '/@/renderer/store/audiobook.store';
+import { usePlaybackSource } from '/@/renderer/store/playback-owner.store';
 import { usePlayerTimestamp } from '/@/renderer/store';
 
 interface PlayerbarSeekSliderProps {
@@ -14,13 +20,25 @@ interface PlayerbarSeekSliderProps {
 export const PlayerbarSeekSlider = ({ max, min }: PlayerbarSeekSliderProps) => {
     const [isSeeking, setIsSeeking] = useState(false);
     const [seekValue, setSeekValue] = useState(0);
-    const currentTime = usePlayerTimestamp();
+    const musicCurrentTime = usePlayerTimestamp();
+    const source = usePlaybackSource();
+    const audiobookPosition = useAudiobookPosition();
+    const audiobookDuration = useAudiobookDuration();
+    const audiobookActions = useAudiobookActions();
     const seekTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     const lastSeekValueRef = useRef<null | number>(null);
 
     const { mediaSeekToTimestamp } = usePlayer();
 
+    const isAudiobookMode = source === 'audiobook';
+    const currentTime = isAudiobookMode ? audiobookPosition : musicCurrentTime;
+    const sliderMax = isAudiobookMode && audiobookDuration > 0 ? audiobookDuration : max;
+
     const handleSeekToTimestamp = (timestamp: number) => {
+        if (isAudiobookMode) {
+            audiobookActions.seekTo(timestamp);
+        }
+
         mediaSeekToTimestamp(timestamp);
     };
 
@@ -50,7 +68,7 @@ export const PlayerbarSeekSlider = ({ max, min }: PlayerbarSeekSliderProps) => {
     return (
         <CustomPlayerbarSlider
             label={(value) => formatDuration(value * 1000)}
-            max={max}
+            max={sliderMax}
             min={min}
             onChange={(e) => {
                 // Cancel any pending timeout if user starts seeking again

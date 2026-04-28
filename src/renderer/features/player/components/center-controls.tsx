@@ -6,6 +6,8 @@ import { MainPlayButton, PlayerButton } from '/@/renderer/features/player/compon
 import { PlayerbarSlider } from '/@/renderer/features/player/components/playerbar-slider';
 import { openShuffleAllModal } from '/@/renderer/features/player/components/shuffle-all-modal';
 import { usePlayer } from '/@/renderer/features/player/context/player-context';
+import { usePlaybackSource } from '/@/renderer/store/playback-owner.store';
+import { useAudiobookContentUrl, useAudiobookItem } from '/@/renderer/store/audiobook.store';
 import {
     useIsPlayingRadio,
     useIsRadioActive,
@@ -200,13 +202,22 @@ const SkipBackwardButton = ({ disabled }: { disabled?: boolean }) => {
 
 const CenterPlayButton = ({ disabled }: { disabled?: boolean }) => {
     const { id: currentSongId } = usePlayerSongProperties(['id']) ?? {};
+    const source = usePlaybackSource();
+    const audiobookItem = useAudiobookItem();
+    const audiobookContentUrl = useAudiobookContentUrl();
 
     const status = usePlayerStatus();
     const { mediaTogglePlayPause } = usePlayer();
 
+    const isAudiobookMode = source === 'audiobook';
+    const canPlayAudiobook = Boolean(audiobookItem || audiobookContentUrl);
+
     return (
         <MainPlayButton
-            disabled={disabled || currentSongId === undefined}
+            disabled={
+                disabled ||
+                (isAudiobookMode ? !canPlayAudiobook : currentSongId === undefined)
+            }
             isPaused={status === PlayerStatus.PAUSED}
             onClick={mediaTogglePlayPause}
         />
