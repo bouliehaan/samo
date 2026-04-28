@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState, WheelEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { PopoverPlayQueue } from '/@/renderer/features/now-playing/components/popover-play-queue';
+import { AudioPathBadge } from '/@/renderer/features/player/components/audio-path-badge';
 import { PlayerConfig } from '/@/renderer/features/player/components/player-config';
 import { CustomPlayerbarSlider } from '/@/renderer/features/player/components/playerbar-slider';
 import { SleepTimerButton } from '/@/renderer/features/player/components/sleep-timer-button';
@@ -29,6 +30,7 @@ import {
     useVolumeWidth,
 } from '/@/renderer/store';
 import { useFullScreenPlayerStoreActions } from '/@/renderer/store/full-screen-player.store';
+import { usePlaybackSource } from '/@/renderer/store/playback-owner.store';
 import { ActionIcon } from '/@/shared/components/action-icon/action-icon';
 import { Button } from '/@/shared/components/button/button';
 import { Flex } from '/@/shared/components/flex/flex';
@@ -65,6 +67,10 @@ const calculateVolumeDown = (volume: number, volumeWheelStep: number) => {
 };
 
 export const RightControls = () => {
+    const currentSong = usePlayerSong();
+    const { currentSong: currentSongData } = usePlayerData();
+    const badgeSong = currentSong ?? currentSongData;
+    const source = usePlaybackSource();
     const { showRatings } = useGeneralSettings();
     return (
         <Flex align="flex-end" direction="column" h="100%" px="1rem" py="0.5rem">
@@ -73,6 +79,9 @@ export const RightControls = () => {
                 <AutoDJButton />
             </Group>
             <Group align="center" gap="xs" wrap="nowrap">
+                {(source === 'music' || source == null) && (
+                    <AudioPathBadge compact inline song={badgeSong} />
+                )}
                 <SleepTimerButton />
                 <PlayerConfig />
                 <LyricsButton />

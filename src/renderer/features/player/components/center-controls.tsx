@@ -6,6 +6,24 @@ import { MainPlayButton, PlayerButton } from '/@/renderer/features/player/compon
 import { PlayerbarSlider } from '/@/renderer/features/player/components/playerbar-slider';
 import { openShuffleAllModal } from '/@/renderer/features/player/components/shuffle-all-modal';
 import { usePlayer } from '/@/renderer/features/player/context/player-context';
+import { usePlaybackSource } from '/@/renderer/store/playback-owner.store';
+import {
+    useAudiobookActions,
+    useAudiobookContentUrl,
+    useAudiobookDuration,
+    useAudiobookItem,
+    useAudiobookPosition,
+    useAudiobookServer,
+} from '/@/renderer/store/audiobook.store';
+import {
+    usePodcastActions,
+    usePodcastContentUrl,
+    usePodcastDuration,
+    usePodcastEpisode,
+    usePodcastItem,
+    usePodcastPosition,
+    usePodcastServer,
+} from '/@/renderer/store/podcast.store';
 import {
     useIsPlayingRadio,
     useIsRadioActive,
@@ -161,14 +179,23 @@ const PreviousButton = ({ disabled }: { disabled?: boolean }) => {
     const { t } = useTranslation();
     const buttonSize = useButtonSize();
     const { mediaPrevious } = usePlayer();
+    const source = usePlaybackSource();
+    const { seekToPreviousChapter } = useAudiobookActions();
+
+    const isAudiobookMode = source === 'audiobook';
+    const handleClick = isAudiobookMode ? seekToPreviousChapter : mediaPrevious;
+    const tooltipLabel = isAudiobookMode
+        ? t('player.previous', { context: 'chapter', postProcess: 'sentenceCase' }) ||
+          'Previous chapter'
+        : t('player.previous', { postProcess: 'sentenceCase' });
 
     return (
         <PlayerButton
             disabled={disabled}
             icon={<Icon fill="default" icon="mediaPrevious" size={buttonSize} />}
-            onClick={mediaPrevious}
+            onClick={handleClick}
             tooltip={{
-                label: t('player.previous', { postProcess: 'sentenceCase' }),
+                label: tooltipLabel,
                 openDelay: 0,
             }}
             variant="secondary"
@@ -179,13 +206,39 @@ const PreviousButton = ({ disabled }: { disabled?: boolean }) => {
 const SkipBackwardButton = ({ disabled }: { disabled?: boolean }) => {
     const { t } = useTranslation();
     const buttonSize = useButtonSize();
-    const { mediaSkipBackward } = usePlayer();
+    const source = usePlaybackSource();
+    const skip = useSkipButtons();
+    const audiobookPosition = useAudiobookPosition();
+    const audiobookActions = useAudiobookActions();
+    const podcastPosition = usePodcastPosition();
+    const podcastActions = usePodcastActions();
+    const { mediaSeekToTimestamp, mediaSkipBackward } = usePlayer();
+
+    const handleClick = () => {
+        const seconds = skip?.skipBackwardSeconds ?? 5;
+
+        if (source === 'audiobook') {
+            const target = Math.max(0, audiobookPosition - seconds);
+            audiobookActions.seekTo(target);
+            mediaSeekToTimestamp(target);
+            return;
+        }
+
+        if (source === 'podcast') {
+            const target = Math.max(0, podcastPosition - seconds);
+            podcastActions.seekTo(target);
+            mediaSeekToTimestamp(target);
+            return;
+        }
+
+        mediaSkipBackward();
+    };
 
     return (
         <PlayerButton
             disabled={disabled}
             icon={<Icon fill="default" icon="mediaStepBackward" size={buttonSize} />}
-            onClick={mediaSkipBackward}
+            onClick={handleClick}
             tooltip={{
                 label: t('player.skip', {
                     context: 'back',
@@ -200,15 +253,57 @@ const SkipBackwardButton = ({ disabled }: { disabled?: boolean }) => {
 
 const CenterPlayButton = ({ disabled }: { disabled?: boolean }) => {
     const { id: currentSongId } = usePlayerSongProperties(['id']) ?? {};
+    const source = usePlaybackSource();
+    const audiobookItem = useAudiobookItem();
+    const audiobookContentUrl = useAudiobookContentUrl();
+    const audiobookServer = useAudiobookServer();
+    const audiobookActions = useAudiobookActions();
+    const podcastItem = usePodcastItem();
+    const podcastEpisode = usePodcastEpisode();
+    const podcastContentUrl = usePodcastContentUrl();
+    const podcastServer = usePodcastServer();
+    const podcastActions = usePodcastActions();
 
     const status = usePlayerStatus();
     const { mediaTogglePlayPause } = usePlayer();
 
+    const isAudiobookMode = source === 'audiobook';
+    const isPodcastMode = source === 'podcast';
+    const canPlayAudiobook = Boolean(audiobookItem && audiobookServer);
+    const canPlayPodcast = Boolean(podcastItem && podcastEpisode && podcastServer);
+
+    const handleClick = () => {
+        if (isAudiobookMode && !audiobookContentUrl && audiobookServer && audiobookItem) {
+            audiobookActions.play(audiobookServer, audiobookItem);
+            return;
+        }
+
+        if (
+            isPodcastMode &&
+            !podcastContentUrl &&
+            podcastServer &&
+            podcastItem &&
+            podcastEpisode
+        ) {
+            podcastActions.play(podcastServer, podcastItem, podcastEpisode);
+            return;
+        }
+
+        mediaTogglePlayPause();
+    };
+
     return (
         <MainPlayButton
-            disabled={disabled || currentSongId === undefined}
+            disabled={
+                disabled ||
+                (isAudiobookMode
+                    ? !canPlayAudiobook
+                    : isPodcastMode
+                      ? !canPlayPodcast
+                      : currentSongId === undefined)
+            }
             isPaused={status === PlayerStatus.PAUSED}
-            onClick={mediaTogglePlayPause}
+            onClick={handleClick}
         />
     );
 };
@@ -216,13 +311,48 @@ const CenterPlayButton = ({ disabled }: { disabled?: boolean }) => {
 const SkipForwardButton = ({ disabled }: { disabled?: boolean }) => {
     const { t } = useTranslation();
     const buttonSize = useButtonSize();
-    const { mediaSkipForward } = usePlayer();
+    const source = usePlaybackSource();
+    const skip = useSkipButtons();
+    const audiobookPosition = useAudiobookPosition();
+    const audiobookDuration = useAudiobookDuration();
+    const audiobookActions = useAudiobookActions();
+    const podcastPosition = usePodcastPosition();
+    const podcastDuration = usePodcastDuration();
+    const podcastActions = usePodcastActions();
+    const { mediaSeekToTimestamp, mediaSkipForward } = usePlayer();
+
+    const handleLongFormSkip = (
+        position: number,
+        duration: number,
+        seekTo: (seconds: number) => void,
+    ) => {
+        const seconds = skip?.skipForwardSeconds ?? 10;
+        const unclampedTarget = position + seconds;
+        const target = duration > 0 ? Math.min(duration, unclampedTarget) : unclampedTarget;
+
+        seekTo(target);
+        mediaSeekToTimestamp(target);
+    };
+
+    const handleClick = () => {
+        if (source === 'audiobook') {
+            handleLongFormSkip(audiobookPosition, audiobookDuration, audiobookActions.seekTo);
+            return;
+        }
+
+        if (source === 'podcast') {
+            handleLongFormSkip(podcastPosition, podcastDuration, podcastActions.seekTo);
+            return;
+        }
+
+        mediaSkipForward();
+    };
 
     return (
         <PlayerButton
             disabled={disabled}
             icon={<Icon fill="default" icon="mediaStepForward" size={buttonSize} />}
-            onClick={mediaSkipForward}
+            onClick={handleClick}
             tooltip={{
                 label: t('player.skip', {
                     context: 'forward',
@@ -239,14 +369,23 @@ const NextButton = ({ disabled }: { disabled?: boolean }) => {
     const { t } = useTranslation();
     const buttonSize = useButtonSize();
     const { mediaNext } = usePlayer();
+    const source = usePlaybackSource();
+    const { seekToNextChapter } = useAudiobookActions();
+
+    const isAudiobookMode = source === 'audiobook';
+    const handleClick = isAudiobookMode ? seekToNextChapter : mediaNext;
+    const tooltipLabel = isAudiobookMode
+        ? t('player.next', { context: 'chapter', postProcess: 'sentenceCase' }) ||
+          'Next chapter'
+        : t('player.next', { postProcess: 'sentenceCase' });
 
     return (
         <PlayerButton
             disabled={disabled}
             icon={<Icon fill="default" icon="mediaNext" size={buttonSize} />}
-            onClick={mediaNext}
+            onClick={handleClick}
             tooltip={{
-                label: t('player.next', { postProcess: 'sentenceCase' }),
+                label: tooltipLabel,
                 openDelay: 0,
             }}
             variant="secondary"

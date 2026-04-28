@@ -1034,6 +1034,18 @@ export const sidebarItems: SidebarItemType[] = [
         route: AppRoute.RADIO,
     },
     {
+        disabled: false,
+        id: 'Audiobooks',
+        label: 'Audiobooks',
+        route: AppRoute.AUDIOBOOKS,
+    },
+    {
+        disabled: false,
+        id: 'Podcasts',
+        label: 'Podcasts',
+        route: AppRoute.PODCASTS,
+    },
+    {
         disabled: true,
         id: 'Settings',
         label: i18n.t('page.sidebar.settings'),

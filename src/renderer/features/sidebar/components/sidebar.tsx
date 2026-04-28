@@ -45,6 +45,23 @@ import { Tooltip } from '/@/shared/components/tooltip/tooltip';
 import { ExplicitStatus, LibraryItem } from '/@/shared/types/domain-types';
 import { Platform } from '/@/shared/types/types';
 
+const primarySidebarItemIds = ['Home', 'Radio', 'Audiobooks', 'Podcasts', 'Search'];
+
+const librarySidebarItemIds = [
+    'Favorites',
+    'Albums',
+    'Tracks',
+    'Artists',
+    'Artists-all',
+    'Genres',
+    'Folders',
+];
+
+const getSidebarItemsById = (items: SidebarItemType[], ids: string[]) =>
+    ids
+        .map((id) => items.find((item) => item.id === id && item.route))
+        .filter(Boolean) as SidebarItemType[];
+
 export const Sidebar = () => {
     const { t } = useTranslation();
 
@@ -55,6 +72,7 @@ export const Sidebar = () => {
             Albums: t('page.sidebar.albums', { postProcess: 'titleCase' }),
             Artists: t('page.sidebar.albumArtists', { postProcess: 'titleCase' }),
             'Artists-all': t('page.sidebar.artists', { postProcess: 'titleCase' }),
+            Audiobooks: 'Audiobooks',
             Collections: t('page.sidebar.collections', { postProcess: 'titleCase' }),
             Favorites: t('page.sidebar.favorites', { postProcess: 'titleCase' }),
             Folders: t('page.sidebar.folders', { postProcess: 'titleCase' }),
@@ -62,6 +80,7 @@ export const Sidebar = () => {
             Home: t('page.sidebar.home', { postProcess: 'titleCase' }),
             'Now Playing': t('page.sidebar.nowPlaying', { postProcess: 'titleCase' }),
             Playlists: t('page.sidebar.playlists', { postProcess: 'titleCase' }),
+            Podcasts: 'Podcasts',
             Radio: t('page.sidebar.radio', { postProcess: 'titleCase' }),
             Search: t('page.sidebar.search', { postProcess: 'titleCase' }),
             Settings: t('page.sidebar.settings', { postProcess: 'titleCase' }),
@@ -90,9 +109,13 @@ export const Sidebar = () => {
         return items;
     }, [sidebarItems, translatedSidebarItemMap]);
 
-    /* Library accordion: only items with a route (exclude Collections section) */
+    const primaryItemsWithRoute = useMemo(
+        () => getSidebarItemsById(sidebarItemsWithRoute, primarySidebarItemIds),
+        [sidebarItemsWithRoute],
+    );
+
     const libraryItemsWithRoute = useMemo(
-        () => sidebarItemsWithRoute.filter((item) => item.id !== 'Collections' && item.route),
+        () => getSidebarItemsById(sidebarItemsWithRoute, librarySidebarItemIds),
         [sidebarItemsWithRoute],
     );
 
@@ -110,6 +133,17 @@ export const Sidebar = () => {
                 <ActionBar />
             </Group>
             <ScrollArea allowDragScroll className={styles.scrollArea}>
+                {primaryItemsWithRoute.map((item) => {
+                    return (
+                        <SidebarItem key={`sidebar-${item.route}`} to={item.route}>
+                            <Group gap="md">
+                                <SidebarIcon route={item.route} />
+                                {item.label}
+                            </Group>
+                        </SidebarItem>
+                    );
+                })}
+
                 <Accordion
                     classNames={{
                         content: styles.accordionContent,
@@ -117,15 +151,13 @@ export const Sidebar = () => {
                         item: styles.accordionItem,
                         root: styles.accordionRoot,
                     }}
-                    defaultValue={['library', 'collections', 'playlists']}
+                    defaultValue={['collections', 'playlists']}
                     multiple
                 >
                     <Accordion.Item value="library">
                         <Accordion.Control>
                             <Text fw={500} variant="secondary">
-                                {t('page.sidebar.myLibrary', {
-                                    postProcess: 'titleCase',
-                                })}
+                                Library
                             </Text>
                         </Accordion.Control>
                         <Accordion.Panel>

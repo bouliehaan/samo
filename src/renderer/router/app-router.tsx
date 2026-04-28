@@ -19,6 +19,13 @@ const AlbumListRoute = lazy(() => import('/@/renderer/features/albums/routes/alb
 
 const SongListRoute = lazy(() => import('/@/renderer/features/songs/routes/song-list-route'));
 
+const AudiobooksRoute = lazy(
+    () => import('/@/renderer/features/audiobooks/routes/audiobooks-route'),
+);
+const PodcastsRoute = lazy(() => import('/@/renderer/features/podcasts/routes/podcasts-route'));
+const PodcastDetailRoute = lazy(
+    () => import('/@/renderer/features/podcasts/routes/podcast-detail-route'),
+);
 const PlaylistDetailSongListRoute = lazy(
     () => import('/@/renderer/features/playlists/routes/playlist-detail-song-list-route'),
 );
@@ -271,6 +278,18 @@ export const AppRouter = () => {
                                             path={AppRoute.PLAYLISTS}
                                         />
                                         <Route element={<RadioListRoute />} path={AppRoute.RADIO} />
+                                        <Route
+                                            element={<AudiobooksRoute />}
+                                            path={AppRoute.AUDIOBOOKS}
+                                        />
+                                        <Route
+                                            element={<PodcastsRoute />}
+                                            path={AppRoute.PODCASTS}
+                                        />
+                                        <Route
+                                            element={<PodcastDetailRoute />}
+                                            path={AppRoute.PODCASTS_DETAIL}
+                                        />
                                         <Route
                                             element={<PlaylistDetailSongListRoute />}
                                             path={AppRoute.PLAYLISTS_DETAIL_SONGS}

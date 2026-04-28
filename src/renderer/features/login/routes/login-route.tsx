@@ -40,12 +40,14 @@ import { ServerType, toServerType } from '/@/shared/types/types';
 const localSettings = isElectron() ? window.api.localSettings : null;
 
 const SERVER_ICONS: Record<ServerType, string> = {
+    [ServerType.AUDIOBOOKSHELF]: SubsonicIcon,
     [ServerType.JELLYFIN]: JellyfinIcon,
     [ServerType.NAVIDROME]: NavidromeIcon,
     [ServerType.SUBSONIC]: SubsonicIcon,
 };
 
 const SERVER_NAMES: Record<ServerType, string> = {
+    [ServerType.AUDIOBOOKSHELF]: 'Audiobookshelf',
     [ServerType.JELLYFIN]: 'Jellyfin',
     [ServerType.NAVIDROME]: 'Navidrome',
     [ServerType.SUBSONIC]: 'OpenSubsonic',

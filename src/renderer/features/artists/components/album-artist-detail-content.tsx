@@ -185,6 +185,7 @@ const AlbumArtistMetadataGenres = ({ genres, order }: AlbumArtistMetadataGenresP
                                 albumId: null,
                                 artistId: null,
                                 genreId: genre.id,
+                                itemId: null,
                                 itemType: null,
                                 playlistId: null,
                             })}

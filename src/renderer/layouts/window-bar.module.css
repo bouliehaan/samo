@@ -117,23 +117,23 @@
     position: absolute;
     top: 50%;
     left: 14px;
-    transform: translateY(-50%);
     display: flex;
     gap: 9px;
     align-items: center;
+    transform: translateY(-50%);
     -webkit-app-region: no-drag;
 }
 
 .macos-button {
     display: flex;
+    flex-shrink: 0;
     align-items: center;
     justify-content: center;
     width: 14px;
     height: 14px;
-    border-radius: 50%;
     cursor: pointer;
     user-select: none;
-    flex-shrink: 0;
+    border-radius: 50%;
 }
 
 .macos-button.close-button {
@@ -154,8 +154,8 @@
 .macos-icon {
     width: 8px;
     height: 8px;
-    opacity: 0;
     pointer-events: none;
+    opacity: 0;
 }
 
 .macos-button-group:hover .macos-icon,

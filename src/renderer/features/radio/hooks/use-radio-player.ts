@@ -4,7 +4,9 @@ import React, { useEffect } from 'react';
 import { createWithEqualityFn } from 'zustand/traditional';
 
 import { usePlayerEvents } from '/@/renderer/features/player/audio-player/hooks/use-player-events';
-import { usePlaybackType, usePlayerStoreBase, useSettingsStore } from '/@/renderer/store';
+import { useLastPlaybackSessionStore } from '/@/renderer/store/last-playback-session.store';
+import { usePlaybackType, usePlayerStoreBase } from '/@/renderer/store';
+import { usePlaybackOwnerStore } from '/@/renderer/store/playback-owner.store';
 import { PlayerStatus, PlayerType } from '/@/shared/types/types';
 
 export type RadioCurrentStationArt = {
@@ -40,7 +42,7 @@ interface RadioStore {
     stationName: null | string;
 }
 
-export const useRadioStore = createWithEqualityFn<RadioStore>((set) => ({
+export const useRadioStore = createWithEqualityFn<RadioStore>((set, get) => ({
     actions: {
         pause: () => {
             set({ isPlaying: false });
@@ -68,7 +70,19 @@ export const useRadioStore = createWithEqualityFn<RadioStore>((set) => ({
                     nextStationArt = stationArt ?? null;
                 }
 
+                usePlaybackOwnerStore.getState().claim('radio');
                 usePlayerStoreBase.getState().mediaPlay();
+                if (nextStationArt?.id && nextStationArt.serverId) {
+                    useLastPlaybackSessionStore.getState().actions.setSession({
+                        metadata: isSwitchingStation ? null : state.metadata,
+                        serverId: nextStationArt.serverId,
+                        source: 'radio',
+                        stationArt: nextStationArt,
+                        stationId: nextStationArt.id,
+                        stationName: newStationName,
+                        streamUrl: newStreamUrl,
+                    });
+                }
 
                 return {
                     currentStationArt: nextStationArt,
@@ -81,11 +95,24 @@ export const useRadioStore = createWithEqualityFn<RadioStore>((set) => ({
         },
         setCurrentStreamUrl: (currentStreamUrl) => set({ currentStreamUrl }),
         setIsPlaying: (isPlaying) => set({ isPlaying }),
-        setMetadata: (metadata) => set({ metadata }),
+        setMetadata: (metadata) => {
+            set({ metadata });
+            const state = get();
+            const stationArt = state.currentStationArt;
+            if (stationArt?.id && stationArt.serverId && state.currentStreamUrl) {
+                useLastPlaybackSessionStore.getState().actions.setSession({
+                    metadata,
+                    serverId: stationArt.serverId,
+                    source: 'radio',
+                    stationArt,
+                    stationId: stationArt.id,
+                    stationName: state.stationName,
+                    streamUrl: state.currentStreamUrl,
+                });
+            }
+        },
         setStationName: (stationName) => set({ stationName }),
         stop: () => {
-            const playbackType = useSettingsStore.getState().playback.type;
-
             set({
                 currentStationArt: null,
                 currentStreamUrl: null,
@@ -94,11 +121,8 @@ export const useRadioStore = createWithEqualityFn<RadioStore>((set) => ({
                 stationName: null,
             });
 
-            if (playbackType === PlayerType.LOCAL && mpvPlayer) {
-                usePlayerStoreBase.getState().mediaStop();
-            } else {
-                usePlayerStoreBase.getState().mediaStop();
-            }
+            usePlaybackOwnerStore.getState().release('radio');
+            usePlayerStoreBase.getState().mediaStop();
         },
     },
     currentStationArt: null,
@@ -110,20 +134,23 @@ export const useRadioStore = createWithEqualityFn<RadioStore>((set) => ({
 
 export const useIsPlayingRadio = () => useRadioStore((state) => state.isPlaying);
 
-if (typeof window !== 'undefined') {
-    window.addEventListener('samo:clear-radio', () => {
-        useRadioStore.setState({
-            currentStationArt: null,
-            currentStreamUrl: null,
-            isPlaying: false,
-            metadata: null,
-            stationName: null,
-        });
-    });
-}
+// When another source claims ownership, clear radio state so the radio engine unmounts cleanly.
+usePlaybackOwnerStore.subscribe(
+    (state) => state.source,
+    (source) => {
+        if (source !== 'radio') {
+            useRadioStore.setState({
+                currentStationArt: null,
+                currentStreamUrl: null,
+                isPlaying: false,
+                metadata: null,
+                stationName: null,
+            });
+        }
+    },
+);
 
 export const useIsRadioActive = () => useRadioStore((state) => Boolean(state.currentStreamUrl));
-
 
 export const useRadioPlayer = () => {
     const currentStationArt = useRadioStore((state) => state.currentStationArt);
@@ -265,7 +292,7 @@ export const useRadioMetadata = () => {
                     if (!stopped) {
                         setMetadata(metadata);
                     }
-                } catch (error) {
+                } catch {
                     if (!stopped) {
                         setMetadata(null);
                     }

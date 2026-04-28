@@ -5,7 +5,11 @@ import { immer } from 'zustand/middleware/immer';
 import { shallow } from 'zustand/shallow';
 import { createWithEqualityFn } from 'zustand/traditional';
 
-import { ServerListItem, ServerListItemWithCredential } from '/@/shared/types/domain-types';
+import {
+    ServerListItem,
+    ServerListItemWithCredential,
+    ServerType,
+} from '/@/shared/types/domain-types';
 
 export interface AuthSlice extends AuthState {
     actions: {
@@ -23,6 +27,29 @@ export interface AuthState {
     deviceId: string;
     serverList: Record<string, ServerListItemWithCredential>;
 }
+
+const MUSIC_SERVER_TYPES = new Set<ServerType>([
+    ServerType.JELLYFIN,
+    ServerType.NAVIDROME,
+    ServerType.SUBSONIC,
+]);
+
+const isMusicServer = (server: null | ServerListItemWithCredential | undefined) =>
+    Boolean(server && MUSIC_SERVER_TYPES.has(server.type));
+
+export const getActiveMusicServer = (state: AuthState) => {
+    if (isMusicServer(state.currentServer)) {
+        return state.currentServer;
+    }
+
+    return Object.values(state.serverList).find(isMusicServer) ?? null;
+};
+
+export const getAudiobookshelfServers = (state: AuthState) =>
+    Object.values(state.serverList).filter((server) => server.type === ServerType.AUDIOBOOKSHELF);
+
+export const getPrimaryAudiobookshelfServer = (state: AuthState) =>
+    getAudiobookshelfServers(state)[0] ?? null;
 
 export const useAuthStore = createWithEqualityFn<AuthSlice>()(
     persist(
@@ -102,7 +129,7 @@ export const useAuthStore = createWithEqualityFn<AuthSlice>()(
 
 export const useCurrentServerId = (): string =>
     useAuthStore((state) => {
-        const currentServer = state.currentServer;
+        const currentServer = getActiveMusicServer(state);
 
         if (!currentServer) {
             return '';
@@ -113,25 +140,27 @@ export const useCurrentServerId = (): string =>
 
 export const useCurrentServer = () =>
     useAuthStore((state) => {
-        if (!state.currentServer) {
+        const currentServer = getActiveMusicServer(state);
+
+        if (!currentServer) {
             return null;
         }
 
         return {
-            features: state.currentServer?.features,
-            id: state.currentServer?.id,
-            isAdmin: state.currentServer?.isAdmin,
-            musicFolderId: state.currentServer?.musicFolderId,
-            name: state.currentServer?.name,
-            preferInstantMix: state.currentServer?.preferInstantMix,
-            preferRemoteUrl: state.currentServer?.preferRemoteUrl,
-            remoteUrl: state.currentServer?.remoteUrl,
-            savePassword: state.currentServer?.savePassword,
-            type: state.currentServer?.type,
-            url: state.currentServer?.url,
-            userId: state.currentServer?.userId,
-            username: state.currentServer?.username,
-            version: state.currentServer?.version,
+            features: currentServer.features,
+            id: currentServer.id,
+            isAdmin: currentServer.isAdmin,
+            musicFolderId: currentServer.musicFolderId,
+            name: currentServer.name,
+            preferInstantMix: currentServer.preferInstantMix,
+            preferRemoteUrl: currentServer.preferRemoteUrl,
+            remoteUrl: currentServer.remoteUrl,
+            savePassword: currentServer.savePassword,
+            type: currentServer.type,
+            url: currentServer.url,
+            userId: currentServer.userId,
+            username: currentServer.username,
+            version: currentServer.version,
         };
     }, shallow) as ServerListItem;
 
@@ -144,7 +173,13 @@ export const useIsAdmin = () =>
     }, shallow);
 
 export const useCurrentServerWithCredential = () =>
-    useAuthStore((state) => state.currentServer) as ServerListItemWithCredential;
+    useAuthStore((state) => getActiveMusicServer(state)) as ServerListItemWithCredential;
+
+export const useAudiobookshelfServers = () =>
+    useAuthStore((state) => getAudiobookshelfServers(state), shallow);
+
+export const useAudiobookshelfServer = () =>
+    useAuthStore((state) => getPrimaryAudiobookshelfServer(state), shallow);
 
 export const useServerList = () => useAuthStore((state) => state.serverList);
 

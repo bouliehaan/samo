@@ -23,6 +23,7 @@ import electronLocalShortcut from 'electron-localshortcut';
 import log from 'electron-log/main';
 import { AppImageUpdater, autoUpdater, MacUpdater, NsisUpdater } from 'electron-updater';
 import { access, constants } from 'fs';
+import { createServer, Server } from 'http';
 import path, { join } from 'path';
 import semver from 'semver';
 
@@ -60,6 +61,155 @@ const GITHUB_UPDATER_CONFIG = {
     owner: 'bouliehaan',
     provider: 'github' as const,
     repo: 'samo',
+};
+
+type AudiobookshelfProxySession = {
+    baseUrl: string;
+    token: string;
+};
+
+const audiobookshelfProxySessions = new Map<string, AudiobookshelfProxySession>();
+let audiobookshelfProxyServer: null | Server = null;
+let audiobookshelfProxyPort: null | number = null;
+
+const sendAudiobookshelfProxyResponse = (
+    response: import('http').ServerResponse,
+    statusCode: number,
+    body: string,
+) => {
+    response.writeHead(statusCode, {
+        'Access-Control-Allow-Origin': '*',
+        'Content-Type': 'text/plain',
+    });
+    response.end(body);
+};
+
+const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const ensureAudiobookshelfProxyServer = async () => {
+    if (audiobookshelfProxyServer && audiobookshelfProxyPort) {
+        return audiobookshelfProxyPort;
+    }
+
+    audiobookshelfProxyServer = createServer(async (request, response) => {
+        try {
+            if (!request.url) {
+                sendAudiobookshelfProxyResponse(response, 400, 'Missing request URL');
+                return;
+            }
+
+            const requestUrl = new URL(request.url, 'http://127.0.0.1');
+            const match = requestUrl.pathname.match(/^\/audiobookshelf-hls\/([^/]+)(\/.*)$/);
+
+            if (!match) {
+                sendAudiobookshelfProxyResponse(response, 404, 'Not found');
+                return;
+            }
+
+            const [, sessionId, upstreamPath] = match;
+            const session = audiobookshelfProxySessions.get(sessionId);
+
+            if (!session) {
+                sendAudiobookshelfProxyResponse(
+                    response,
+                    404,
+                    'Unknown Audiobookshelf proxy session',
+                );
+                return;
+            }
+
+            const fetchUpstream = (path: string) =>
+                fetch(`${session.baseUrl}${path}${requestUrl.search}`, {
+                    headers: {
+                        Authorization: `Bearer ${session.token}`,
+                    },
+                });
+
+            let upstreamResponse = await fetchUpstream(upstreamPath);
+
+            if (!upstreamResponse.ok && upstreamPath.endsWith('.ts')) {
+                await new Promise((resolve) => setTimeout(resolve, 250));
+                upstreamResponse = await fetchUpstream(upstreamPath);
+            }
+
+            if (
+                !upstreamResponse.ok &&
+                upstreamPath.endsWith('.ts') &&
+                upstreamPath.startsWith('/hls/')
+            ) {
+                const pathWithoutHlsPrefix = upstreamPath.replace(/^\/hls\//, '/');
+                upstreamResponse = await fetchUpstream(pathWithoutHlsPrefix);
+            }
+
+            if (!upstreamResponse.ok) {
+                sendAudiobookshelfProxyResponse(
+                    response,
+                    upstreamResponse.status,
+                    `Audiobookshelf proxy request failed: ${upstreamResponse.status}`,
+                );
+                return;
+            }
+
+            const contentType =
+                upstreamResponse.headers.get('content-type') ?? 'application/octet-stream';
+
+            response.setHeader('Access-Control-Allow-Origin', '*');
+            response.setHeader('Cache-Control', 'no-store');
+            response.setHeader('Content-Type', contentType);
+
+            if (contentType.includes('mpegurl') || upstreamPath.endsWith('.m3u8')) {
+                const text = await upstreamResponse.text();
+                const localPrefix = `http://127.0.0.1:${audiobookshelfProxyPort}/audiobookshelf-hls/${sessionId}`;
+                const rewritten = text
+                    .replace(new RegExp(escapeRegExp(session.baseUrl), 'g'), localPrefix)
+                    .replace(/^\/hls\//gm, `${localPrefix}/`);
+
+                response.end(rewritten);
+                return;
+            }
+
+            const arrayBuffer = await upstreamResponse.arrayBuffer();
+            response.end(Buffer.from(arrayBuffer));
+        } catch (error) {
+            log.error('Audiobookshelf proxy error', error);
+            sendAudiobookshelfProxyResponse(response, 500, 'Audiobookshelf proxy error');
+        }
+    });
+
+    await new Promise<void>((resolve) => {
+        audiobookshelfProxyServer?.listen(0, '127.0.0.1', () => {
+            const address = audiobookshelfProxyServer?.address();
+
+            if (typeof address === 'object' && address) {
+                audiobookshelfProxyPort = address.port;
+            }
+
+            resolve();
+        });
+    });
+
+    if (!audiobookshelfProxyPort) {
+        throw new Error('Failed to start Audiobookshelf proxy server');
+    }
+
+    return audiobookshelfProxyPort;
+};
+
+const createAudiobookshelfProxyUrl = async (baseUrl: string, token: string, contentUrl: string) => {
+    const port = await ensureAudiobookshelfProxyServer();
+    const sessionId = crypto.randomUUID();
+    const normalizedBaseUrl = baseUrl.replace(/\/+$/, '');
+    const url =
+        contentUrl.startsWith('http://') || contentUrl.startsWith('https://')
+            ? new URL(contentUrl)
+            : new URL(contentUrl, normalizedBaseUrl);
+
+    audiobookshelfProxySessions.set(sessionId, {
+        baseUrl: normalizedBaseUrl,
+        token,
+    });
+
+    return `http://127.0.0.1:${port}/audiobookshelf-hls/${sessionId}${url.pathname}${url.search}`;
 };
 
 type UpdaterInstance = AppImageUpdater | MacUpdater | NsisUpdater | typeof autoUpdater;
@@ -506,7 +656,11 @@ async function createWindow(first = true): Promise<void> {
         acceptFirstMouse: true,
         autoHideMenuBar: true,
         frame: false,
-        ...(isMacOS() && { frame: true, titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 14, y: 8 } }),
+        ...(isMacOS() && {
+            frame: true,
+            titleBarStyle: 'hiddenInset',
+            trafficLightPosition: { x: 14, y: 8 },
+        }),
         height: 900,
         icon: isWindows() ? getAssetPath('icons/icon.ico') : getAssetPath('icons/icon.png'),
         minHeight: 120,
@@ -832,6 +986,15 @@ enum BindingActions {
     VOLUME_UP = 'volumeUp',
 }
 
+const textEntryMenuAcceleratorHotkeys = new Set([
+    'backspace',
+    'delete',
+    'enter',
+    'escape',
+    'space',
+    'tab',
+]);
+
 const getMenuAccelerator = (
     data: Record<BindingActions, { allowGlobal: boolean; hotkey: string; isGlobal: boolean }>,
     action: BindingActions,
@@ -839,6 +1002,12 @@ const getMenuAccelerator = (
     const hotkey = data[action]?.hotkey;
 
     if (!hotkey) return undefined;
+
+    // Plain text-entry keys should stay renderer hotkeys only. Registering them
+    // as native Electron menu accelerators bypasses focused input fields.
+    if (textEntryMenuAcceleratorHotkeys.has(hotkey.toLowerCase())) {
+        return undefined;
+    }
 
     return hotkeyToElectronAccelerator(hotkey);
 };
@@ -934,6 +1103,202 @@ ipcMain.on(
         },
     ) => {
         createLog(data);
+    },
+);
+
+ipcMain.handle(
+    'audiobookshelf-play-item',
+    async (
+        _event,
+        data: {
+            // Optional — when present, /play/:episodeId is hit (podcasts).
+            episodeId?: string;
+            itemId: string;
+            token: string;
+            url: string;
+        },
+    ) => {
+        const baseUrl = data.url.replace(/\/+$/, '');
+        const playPath = data.episodeId
+            ? `/api/items/${data.itemId}/play/${data.episodeId}`
+            : `/api/items/${data.itemId}/play`;
+        const response = await fetch(`${baseUrl}${playPath}`, {
+            body: JSON.stringify({}),
+            headers: {
+                Authorization: `Bearer ${data.token}`,
+                'Content-Type': 'application/json',
+            },
+            method: 'POST',
+        });
+
+        if (!response.ok) {
+            throw new Error(`Audiobookshelf play request failed: ${response.status}`);
+        }
+
+        const playbackSession = await response.json();
+
+        if (Array.isArray(playbackSession.audioTracks)) {
+            playbackSession.audioTracks = await Promise.all(
+                playbackSession.audioTracks.map(async (track: { contentUrl?: string }) => {
+                    if (!track.contentUrl) {
+                        return track;
+                    }
+
+                    return {
+                        ...track,
+                        contentUrl: await createAudiobookshelfProxyUrl(
+                            baseUrl,
+                            data.token,
+                            track.contentUrl,
+                        ),
+                    };
+                }),
+            );
+        }
+
+        return playbackSession;
+    },
+);
+
+ipcMain.handle(
+    'audiobookshelf-get-item-cover-data-url',
+    async (
+        _event,
+        data: {
+            itemId: string;
+            token: string;
+            url: string;
+        },
+    ) => {
+        const baseUrl = data.url.replace(/\/+$/, '');
+        const response = await fetch(`${baseUrl}/api/items/${data.itemId}/cover`, {
+            headers: {
+                Authorization: `Bearer ${data.token}`,
+            },
+            method: 'GET',
+        });
+
+        if (response.status === 404) {
+            return null;
+        }
+
+        if (!response.ok) {
+            throw new Error(`Audiobookshelf cover request failed: ${response.status}`);
+        }
+
+        const contentType = response.headers.get('content-type') ?? 'image/jpeg';
+        const arrayBuffer = await response.arrayBuffer();
+        const base64 = Buffer.from(arrayBuffer).toString('base64');
+
+        return `data:${contentType};base64,${base64}`;
+    },
+);
+
+ipcMain.handle(
+    'audiobookshelf-get-libraries',
+    async (
+        _event,
+        data: {
+            token: string;
+            url: string;
+        },
+    ) => {
+        const baseUrl = data.url.replace(/\/+$/, '');
+        const response = await fetch(`${baseUrl}/api/libraries`, {
+            headers: {
+                Authorization: `Bearer ${data.token}`,
+            },
+            method: 'GET',
+        });
+
+        if (!response.ok) {
+            throw new Error(`Audiobookshelf libraries request failed: ${response.status}`);
+        }
+
+        return response.json();
+    },
+);
+
+ipcMain.handle(
+    'audiobookshelf-get-library-items',
+    async (
+        _event,
+        data: {
+            libraryId: string;
+            token: string;
+            url: string;
+        },
+    ) => {
+        const baseUrl = data.url.replace(/\/+$/, '');
+        const response = await fetch(`${baseUrl}/api/libraries/${data.libraryId}/items`, {
+            headers: {
+                Authorization: `Bearer ${data.token}`,
+            },
+            method: 'GET',
+        });
+
+        if (!response.ok) {
+            throw new Error(`Audiobookshelf library items request failed: ${response.status}`);
+        }
+
+        return response.json();
+    },
+);
+
+ipcMain.handle(
+    'audiobookshelf-get-item',
+    async (
+        _event,
+        data: {
+            itemId: string;
+            token: string;
+            url: string;
+        },
+    ) => {
+        const baseUrl = data.url.replace(/\/+$/, '');
+        // ?expanded=1 ensures media.episodes / media.chapters are returned.
+        const response = await fetch(`${baseUrl}/api/items/${data.itemId}?expanded=1`, {
+            headers: {
+                Authorization: `Bearer ${data.token}`,
+            },
+            method: 'GET',
+        });
+
+        if (!response.ok) {
+            throw new Error(`Audiobookshelf item request failed: ${response.status}`);
+        }
+
+        return response.json();
+    },
+);
+
+ipcMain.handle(
+    'audiobookshelf-login',
+    async (
+        _event,
+        data: {
+            password: string;
+            url: string;
+            username: string;
+        },
+    ) => {
+        const baseUrl = data.url.replace(/\/+$/, '');
+        const response = await fetch(`${baseUrl}/login`, {
+            body: JSON.stringify({
+                password: data.password,
+                username: data.username,
+            }),
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            method: 'POST',
+        });
+
+        if (!response.ok) {
+            throw new Error(`Audiobookshelf authentication failed: ${response.status}`);
+        }
+
+        return response.json();
     },
 );
 

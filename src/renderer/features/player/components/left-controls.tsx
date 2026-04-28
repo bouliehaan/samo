@@ -36,6 +36,7 @@ import { Tooltip } from '/@/shared/components/tooltip/tooltip';
 import { PlaybackSelectors } from '/@/shared/constants/playback-selectors';
 import { useHotkeys } from '/@/shared/hooks/use-hotkeys';
 import { LibraryItem } from '/@/shared/types/domain-types';
+import { useNowPlaying } from '/@/renderer/hooks/use-now-playing';
 
 export const LeftControls = () => {
     const { t } = useTranslation();
@@ -55,6 +56,15 @@ export const LeftControls = () => {
     );
 
     const currentSong = usePlayerSong();
+    const nowPlaying = useNowPlaying();
+
+    const isAudiobookMode = nowPlaying.source === 'audiobook';
+    const isPodcastMode = nowPlaying.source === 'podcast';
+    const isLongFormMode = isAudiobookMode || isPodcastMode;
+    const longFormTitle = nowPlaying.title;
+    const longFormArtist = nowPlaying.artist;
+    const longFormSubtitle = nowPlaying.subtitle;
+    const longFormCoverUrl = nowPlaying.artwork ?? '';
     const isRadioActive = useIsRadioActive();
     const { currentStationArt } = useRadioPlayer();
     const { bindings } = useHotkeySettings();
@@ -62,7 +72,7 @@ export const LeftControls = () => {
     const isRadioMode = isRadioActive;
     const hasRadioStationImage = Boolean(currentStationArt?.imageId || currentStationArt?.imageUrl);
     const hideImage = image && !collapsed;
-    const isSongDefined = Boolean(currentSong?.id) && !isRadioMode;
+    const isSongDefined = Boolean(currentSong?.id) && !isRadioMode && !isLongFormMode;
     const title = currentSong?.name;
     const artists = currentSong?.artists;
 
@@ -160,6 +170,15 @@ export const LeftControls = () => {
                                         >
                                             <Icon color="muted" icon="radio" size="40%" />
                                         </Center>
+                                    ) : isLongFormMode && longFormCoverUrl ? (
+                                        <img
+                                            alt={longFormTitle || 'Cover art'}
+                                            className={clsx(
+                                                styles.playerbarImage,
+                                                PlaybackSelectors.playerCoverArt,
+                                            )}
+                                            src={longFormCoverUrl}
+                                        />
                                     ) : (
                                         <ItemImage
                                             className={clsx(
@@ -209,6 +228,48 @@ export const LeftControls = () => {
                             onStopPropagation={stopPropagation}
                             onToggleContextMenu={handleToggleContextMenu}
                         />
+                    ) : isLongFormMode ? (
+                        <>
+                            <div className={styles.lineItem} onClick={stopPropagation}>
+                                <Group align="center" gap="xs" wrap="nowrap">
+                                    <Text
+                                        className={PlaybackSelectors.songTitle}
+                                        fw={500}
+                                        onContextMenu={handleToggleContextMenu}
+                                        overflow="hidden"
+                                    >
+                                        {longFormTitle || '—'}
+                                    </Text>
+                                </Group>
+                            </div>
+
+                            <div
+                                className={clsx(
+                                    styles.lineItem,
+                                    styles.secondary,
+                                    PlaybackSelectors.songArtist,
+                                )}
+                                onClick={stopPropagation}
+                            >
+                                <Text isMuted overflow="hidden" size="sm">
+                                    {longFormArtist ||
+                                        (isPodcastMode ? 'Podcast' : 'Unknown author')}
+                                </Text>
+                            </div>
+
+                            <div
+                                className={clsx(
+                                    styles.lineItem,
+                                    styles.secondary,
+                                    PlaybackSelectors.songAlbum,
+                                )}
+                                onClick={stopPropagation}
+                            >
+                                <Text isMuted overflow="hidden" size="sm">
+                                    {longFormSubtitle || (isPodcastMode ? 'Podcast' : 'Audiobook')}
+                                </Text>
+                            </div>
+                        </>
                     ) : (
                         <>
                             <div className={styles.lineItem} onClick={stopPropagation}>

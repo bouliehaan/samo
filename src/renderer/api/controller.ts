@@ -1,4 +1,5 @@
 import i18n from '/@/i18n/i18n';
+import { audiobookshelfController } from '/@/renderer/api/audiobookshelf/audiobookshelf-controller';
 import { JellyfinController } from '/@/renderer/api/jellyfin/jellyfin-controller';
 import { NavidromeController } from '/@/renderer/api/navidrome/navidrome-controller';
 import { SubsonicController } from '/@/renderer/api/subsonic/subsonic-controller';
@@ -14,16 +15,13 @@ import {
     SetPlaylistSongsResponse,
 } from '/@/shared/types/domain-types';
 
-type ApiController = {
-    jellyfin: InternalControllerEndpoint;
-    navidrome: InternalControllerEndpoint;
-    subsonic: InternalControllerEndpoint;
-};
+type ApiController = Record<ServerType, Partial<InternalControllerEndpoint>>;
 
 const endpoints: ApiController = {
-    jellyfin: JellyfinController,
-    navidrome: NavidromeController,
-    subsonic: SubsonicController,
+    [ServerType.AUDIOBOOKSHELF]: audiobookshelfController,
+    [ServerType.JELLYFIN]: JellyfinController,
+    [ServerType.NAVIDROME]: NavidromeController,
+    [ServerType.SUBSONIC]: SubsonicController,
 };
 
 const apiController = <K extends keyof ControllerEndpoint>(
@@ -59,7 +57,7 @@ const apiController = <K extends keyof ControllerEndpoint>(
         );
     }
 
-    return controllerFn;
+    return controllerFn as NonNullable<InternalControllerEndpoint[K]>;
 };
 
 const getPathReplaceSettings = () => {

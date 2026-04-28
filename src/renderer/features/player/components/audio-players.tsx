@@ -3,7 +3,9 @@ import { useEffect } from 'react';
 
 import { eventEmitter } from '/@/renderer/events/event-emitter';
 import { UserFavoriteEventPayload, UserRatingEventPayload } from '/@/renderer/events/events';
+import { AudiobookWebPlayer } from '/@/renderer/features/audiobooks/components/audiobook-web-player';
 import { DiscordRpcHook } from '/@/renderer/features/discord-rpc/use-discord-rpc';
+import { PodcastWebPlayer } from '/@/renderer/features/podcasts/components/podcast-web-player';
 import { MainPlayerListenerHook } from '/@/renderer/features/player/audio-player/hooks/use-main-player-listener';
 import { MpvPlayer } from '/@/renderer/features/player/audio-player/mpv-player';
 import { WebPlayer } from '/@/renderer/features/player/audio-player/web-player';
@@ -15,6 +17,7 @@ import { MPRISHook } from '/@/renderer/features/player/hooks/use-mpris';
 import { PlaybackHotkeysHook } from '/@/renderer/features/player/hooks/use-playback-hotkeys';
 import { PowerSaveBlockerHook } from '/@/renderer/features/player/hooks/use-power-save-blocker';
 import { QueueRestoreTimestampHook } from '/@/renderer/features/player/hooks/use-queue-restore';
+import { RestoreLastPlaybackSessionHook } from '/@/renderer/features/player/hooks/use-restore-last-playback-session';
 import { ScrobbleHook } from '/@/renderer/features/player/hooks/use-scrobble';
 import { UpdateCurrentSongHook } from '/@/renderer/features/player/hooks/use-update-current-song';
 import { useWebAudio } from '/@/renderer/features/player/hooks/use-webaudio';
@@ -22,7 +25,6 @@ import { RadioWebPlayer } from '/@/renderer/features/radio/components/radio-web-
 import {
     RadioAudioInstanceHook,
     RadioMetadataHook,
-    useIsRadioActive,
 } from '/@/renderer/features/radio/hooks/use-radio-player';
 import { RemoteHook } from '/@/renderer/features/remote/hooks/use-remote';
 import { VisualizerSystemAudioBridgeHook } from '/@/renderer/features/visualizer/components/visualizer-system-audio-bridge';
@@ -34,6 +36,7 @@ import {
     usePlaybackType,
     useSettingsStoreActions,
 } from '/@/renderer/store';
+import { usePlaybackSource } from '/@/renderer/store/playback-owner.store';
 import { logFn } from '/@/renderer/utils/logger';
 import { toast } from '/@/shared/components/toast/toast';
 import { LibraryItem } from '/@/shared/types/domain-types';
@@ -133,6 +136,7 @@ export const AudioPlayers = () => {
             <PlaybackHotkeysHook />
             <RemoteHook />
             <AutoDJHook />
+            <RestoreLastPlaybackSessionHook />
             <QueueRestoreTimestampHook />
             <UpdateCurrentSongHook />
             <RadioAudioInstanceHook />
@@ -172,7 +176,7 @@ const AudioPlayersContent = ({
     setWebAudio: ReturnType<typeof useWebAudio>['setWebAudio'];
     webAudio: boolean;
 }) => {
-    const isRadioActive = useIsRadioActive();
+    const source = usePlaybackSource();
 
     useEffect(() => {
         if (webAudio && 'AudioContext' in window) {
@@ -257,14 +261,22 @@ const AudioPlayersContent = ({
         };
     }, [serverId]);
 
-    if (isRadioActive && playbackType === PlayerType.LOCAL) {
-        return <MpvPlayer />;
-    }
-
-    if (isRadioActive && playbackType === PlayerType.WEB) {
+    if (source === 'radio') {
+        if (playbackType === PlayerType.LOCAL) return <MpvPlayer />;
         return <RadioWebPlayer />;
     }
 
+    if (source === 'audiobook') {
+        // MPV path for audiobooks is Phase 3; fall back to WebPlayer for now if LOCAL is set.
+        return <AudiobookWebPlayer />;
+    }
+
+    if (source === 'podcast') {
+        // Podcasts always go through the web player engine; no MPV path yet.
+        return <PodcastWebPlayer />;
+    }
+
+    // 'music', null (idle at boot), and future sources fall through here.
     return (
         <>
             {playbackType === PlayerType.WEB && <WebPlayer />}

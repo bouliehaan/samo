@@ -4,6 +4,7 @@ import z from 'zod';
 import { api } from '/@/renderer/api';
 import {
     GeneralSettingsSchema,
+    getActiveMusicServer,
     getServerById,
     useAuthStore,
     useCurrentServerId,
@@ -162,7 +163,7 @@ export const useItemImageRequest = (args: UseItemImageUrlProps) => {
 export function getItemImageRequest(args: UseItemImageUrlProps) {
     const { id, imageUrl, itemType, size, type, useRemoteUrl } = args;
     const authStore = useAuthStore.getState();
-    const currentServerId = authStore.currentServer?.id;
+    const currentServerId = getActiveMusicServer(authStore)?.id;
     const serverId = (args.serverId || currentServerId) as string;
 
     const imageRes = useSettingsStore.getState().general.imageRes;
@@ -198,7 +199,7 @@ export function getItemImageRequest(args: UseItemImageUrlProps) {
 export function getItemImageUrl(args: UseItemImageUrlProps) {
     const { id, imageUrl, itemType, size, type, useRemoteUrl } = args;
     const authStore = useAuthStore.getState();
-    const currentServerId = authStore.currentServer?.id;
+    const currentServerId = getActiveMusicServer(authStore)?.id;
     const serverId = (args.serverId || currentServerId) as string;
 
     const imageRes = useSettingsStore.getState().general.imageRes;
