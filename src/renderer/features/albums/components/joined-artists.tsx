@@ -2,6 +2,7 @@ import { Fragment, memo } from 'react';
 import { generatePath, Link } from 'react-router';
 
 import { AppRoute } from '/@/renderer/router/routes';
+import { recordRecentArtist, useCurrentServer } from '/@/renderer/store';
 import { Text, TextProps } from '/@/shared/components/text/text';
 import { AlbumArtist, RelatedAlbumArtist, RelatedArtist } from '/@/shared/types/domain-types';
 
@@ -25,6 +26,11 @@ const JoinedArtistsComponent = ({
     readOnly = false,
     rootTextProps,
 }: JoinedArtistsProps) => {
+    const server = useCurrentServer();
+    const recordArtistClick = (artist: AlbumArtist | RelatedAlbumArtist | RelatedArtist) => {
+        recordRecentArtist(artist, { serverId: server?.id, serverType: server?.type });
+    };
+
     const parts: (
         | string
         | {
@@ -123,6 +129,7 @@ const JoinedArtistsComponent = ({
                                 component={Link}
                                 fw={500}
                                 isLink
+                                onClick={() => recordArtistClick(artist)}
                                 to={generatePath(AppRoute.LIBRARY_ALBUM_ARTISTS_DETAIL, {
                                     albumArtistId: artist.id,
                                 })}
@@ -166,6 +173,7 @@ const JoinedArtistsComponent = ({
                             fw={500}
                             isLink
                             key={`${artist.id}-${index}`}
+                            onClick={() => recordArtistClick(artist)}
                             to={generatePath(AppRoute.LIBRARY_ALBUM_ARTISTS_DETAIL, {
                                 albumArtistId: artist.id,
                             })}
@@ -192,6 +200,7 @@ const JoinedArtistsComponent = ({
                                     component={Link}
                                     fw={500}
                                     isLink
+                                    onClick={() => recordArtistClick(artist)}
                                     to={generatePath(AppRoute.LIBRARY_ALBUM_ARTISTS_DETAIL, {
                                         albumArtistId: artist.id,
                                     })}

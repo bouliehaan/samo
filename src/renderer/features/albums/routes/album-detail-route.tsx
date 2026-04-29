@@ -16,7 +16,7 @@ import { LibraryContainer } from '/@/renderer/features/shared/components/library
 import { LibraryHeaderBar } from '/@/renderer/features/shared/components/library-header-bar';
 import { PageErrorBoundary } from '/@/renderer/features/shared/components/page-error-boundary';
 import { useFastAverageColor } from '/@/renderer/hooks';
-import { useAlbumBackground, useCurrentServerId } from '/@/renderer/store';
+import { recordRecentAlbum, useAlbumBackground, useCurrentServerId } from '/@/renderer/store';
 import { LibraryItem } from '/@/shared/types/domain-types';
 
 const ALBUM_DETAIL_BG_FALLBACK = 'var(--theme-colors-foreground-muted)';
@@ -60,6 +60,7 @@ const AlbumDetailRoute = () => {
                             <LibraryHeaderBar.PlayButton
                                 ids={[albumId]}
                                 itemType={LibraryItem.ALBUM}
+                                onBeforePlay={() => recordRecentAlbum(detailQuery.data)}
                                 variant="default"
                             />
                             <LibraryHeaderBar.Title>{detailQuery.data.name}</LibraryHeaderBar.Title>

@@ -5,6 +5,7 @@ import { usePlayerEvents } from '/@/renderer/features/player/audio-player/hooks/
 import { useSendScrobble } from '/@/renderer/features/player/mutations/scrobble-mutation';
 import {
     useAppStore,
+    usePlaybackOwnerStore,
     usePlaybackSettings,
     usePlayerSong,
     usePlayerStore,
@@ -62,6 +63,10 @@ const checkScrobbleConditions = (args: {
     return shouldScrobbleBasedOnPercetange || shouldScrobbleBasedOnDuration;
 };
 
+const getSongSessionKey = (song: QueueSong) => `${song._uniqueId}:${song.id}`;
+
+const isMusicPlaybackSource = () => usePlaybackOwnerStore.getState().source === 'music';
+
 export const useScrobble = () => {
     const scrobbleSettings = usePlaybackSettings().scrobble;
     const isScrobbleEnabled = scrobbleSettings?.enabled;
@@ -82,6 +87,7 @@ export const useScrobble = () => {
     const previousTimestampRef = useRef<number>(0);
     const lastProgressEventRef = useRef<number>(0);
     const lastSeekEventRef = useRef<number>(0);
+    const scrobbledSessionKeyRef = useRef<string | undefined>(undefined);
     const songChangeTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
     const notifyTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
@@ -91,7 +97,7 @@ export const useScrobble = () => {
 
     const handleScrobbleFromProgress = useCallback(
         (properties: { timestamp: number }, prev: { timestamp: number }) => {
-            if (!isScrobbleEnabled || isPrivateModeEnabled) return;
+            if (!isScrobbleEnabled || isPrivateModeEnabled || !isMusicPlaybackSource()) return;
 
             const currentSong = usePlayerStore.getState().getCurrentSong();
             const currentStatus = usePlayerStore.getState().player.status;
@@ -108,6 +114,7 @@ export const useScrobble = () => {
                 previousTime >= 10 // Was playing for at least 10 seconds
             ) {
                 setIsCurrentSongScrobbled(false);
+                scrobbledSessionKeyRef.current = undefined;
                 lastProgressEventRef.current = 0;
                 previousTimestampRef.current = 0;
                 return;
@@ -145,7 +152,12 @@ export const useScrobble = () => {
             }
 
             // Check if we should submit scrobble based on conditions
-            if (!isCurrentSongScrobbled) {
+            const currentSongSessionKey = getSongSessionKey(currentSong);
+
+            if (
+                !isCurrentSongScrobbled &&
+                scrobbledSessionKeyRef.current !== currentSongSessionKey
+            ) {
                 const shouldSubmitScrobble = checkScrobbleConditions({
                     scrobbleAtDurationMs: (scrobbleSettings?.scrobbleAtDuration ?? 0) * 1000,
                     scrobbleAtPercentage: scrobbleSettings?.scrobbleAtPercentage,
@@ -154,6 +166,8 @@ export const useScrobble = () => {
                 });
 
                 if (shouldSubmitScrobble) {
+                    scrobbledSessionKeyRef.current = currentSongSessionKey;
+
                     // Since jellyfin-plugin-lastfm uses the submission Position to determine if the song should actually scrobble
                     // we just send the full duration of the song when it matches the local scrobble conditions
                     const position =
@@ -169,9 +183,15 @@ export const useScrobble = () => {
                                 id: currentSong.id,
                                 position,
                                 submission: true,
+                                time: Date.now(),
                             },
                         },
                         {
+                            onError: () => {
+                                if (scrobbledSessionKeyRef.current === currentSongSessionKey) {
+                                    scrobbledSessionKeyRef.current = undefined;
+                                }
+                            },
                             onSuccess: () => {
                                 logFn.debug(logMsg[LogCategory.SCROBBLE].scrobbledSubmission, {
                                     category: LogCategory.SCROBBLE,
@@ -244,6 +264,7 @@ export const useScrobble = () => {
             }
 
             setIsCurrentSongScrobbled(false);
+            scrobbledSessionKeyRef.current = undefined;
             lastProgressEventRef.current = 0;
 
             // Use a timeout to prevent spamming the server when switching songs quickly
@@ -252,7 +273,11 @@ export const useScrobble = () => {
                 const currentStatus = usePlayerStore.getState().player.status;
 
                 // Send start scrobble when song changes and the new song is playing
-                if (currentStatus === PlayerStatus.PLAYING && currentSong?.id) {
+                if (
+                    currentStatus === PlayerStatus.PLAYING &&
+                    currentSong?.id &&
+                    isMusicPlaybackSource()
+                ) {
                     sendScrobble.mutate(
                         {
                             apiClientProps: { serverId: currentSong._serverId || '' },
@@ -287,7 +312,7 @@ export const useScrobble = () => {
     const handleScrobbleFromSeek = useCallback(
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
         (properties: { timestamp: number }, _prev: { timestamp: number }) => {
-            if (!isScrobbleEnabled || isPrivateModeEnabled) {
+            if (!isScrobbleEnabled || isPrivateModeEnabled || !isMusicPlaybackSource()) {
                 return;
             }
 
@@ -343,7 +368,7 @@ export const useScrobble = () => {
 
     const handleScrobbleFromStatus = useCallback(
         (properties: { status: PlayerStatus }, prev: { status: PlayerStatus }) => {
-            if (!isScrobbleEnabled || isPrivateModeEnabled) {
+            if (!isScrobbleEnabled || isPrivateModeEnabled || !isMusicPlaybackSource()) {
                 return;
             }
 
@@ -417,7 +442,7 @@ export const useScrobble = () => {
     );
 
     const handleScrobbleFromRepeat = useCallback(() => {
-        if (!isScrobbleEnabled || isPrivateModeEnabled) {
+        if (!isScrobbleEnabled || isPrivateModeEnabled || !isMusicPlaybackSource()) {
             return;
         }
 
@@ -429,6 +454,7 @@ export const useScrobble = () => {
         }
 
         setIsCurrentSongScrobbled(false);
+        scrobbledSessionKeyRef.current = undefined;
         lastProgressEventRef.current = 0;
         previousTimestampRef.current = 0;
 

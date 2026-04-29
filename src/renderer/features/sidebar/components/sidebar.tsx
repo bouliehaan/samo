@@ -1,6 +1,6 @@
 import clsx from 'clsx';
 import { AnimatePresence, motion } from 'motion/react';
-import { CSSProperties, MouseEvent, useMemo } from 'react';
+import { CSSProperties, MouseEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import styles from './sidebar.module.css';
@@ -11,14 +11,7 @@ import {
     useIsRadioActive,
     useRadioPlayer,
 } from '/@/renderer/features/radio/hooks/use-radio-player';
-import { ActionBar } from '/@/renderer/features/sidebar/components/action-bar';
-import { SidebarCollectionList } from '/@/renderer/features/sidebar/components/sidebar-collection-list';
-import { SidebarIcon } from '/@/renderer/features/sidebar/components/sidebar-icon';
-import { SidebarItem } from '/@/renderer/features/sidebar/components/sidebar-item';
-import {
-    SidebarPlaylistList,
-    SidebarSharedPlaylistList,
-} from '/@/renderer/features/sidebar/components/sidebar-playlist-list';
+import { LibrarySidebar } from '/@/renderer/features/sidebar/components/library-sidebar';
 import {
     useAppStore,
     useAppStoreActions,
@@ -27,97 +20,19 @@ import {
     usePlayerSong,
     useSetFullScreenPlayerStore,
 } from '/@/renderer/store';
-import {
-    SidebarItemType,
-    useSidebarItems,
-    useSidebarPlaylistList,
-    useWindowSettings,
-} from '/@/renderer/store/settings.store';
-import { Accordion } from '/@/shared/components/accordion/accordion';
+import { useWindowSettings } from '/@/renderer/store/settings.store';
 import { ActionIcon } from '/@/shared/components/action-icon/action-icon';
 import { Center } from '/@/shared/components/center/center';
-import { Group } from '/@/shared/components/group/group';
 import { Icon } from '/@/shared/components/icon/icon';
 import { ImageUnloader } from '/@/shared/components/image/image';
-import { ScrollArea } from '/@/shared/components/scroll-area/scroll-area';
-import { Text } from '/@/shared/components/text/text';
 import { Tooltip } from '/@/shared/components/tooltip/tooltip';
 import { ExplicitStatus, LibraryItem } from '/@/shared/types/domain-types';
 import { Platform } from '/@/shared/types/types';
 
-const primarySidebarItemIds = ['Home', 'Radio', 'Audiobooks', 'Podcasts', 'Search'];
-
-const librarySidebarItemIds = [
-    'Favorites',
-    'Albums',
-    'Tracks',
-    'Artists',
-    'Artists-all',
-    'Genres',
-    'Folders',
-];
-
-const getSidebarItemsById = (items: SidebarItemType[], ids: string[]) =>
-    ids
-        .map((id) => items.find((item) => item.id === id && item.route))
-        .filter(Boolean) as SidebarItemType[];
-
 export const Sidebar = () => {
-    const { t } = useTranslation();
-
-    const sidebarPlaylistList = useSidebarPlaylistList();
-
-    const translatedSidebarItemMap = useMemo(
-        () => ({
-            Albums: t('page.sidebar.albums', { postProcess: 'titleCase' }),
-            Artists: t('page.sidebar.albumArtists', { postProcess: 'titleCase' }),
-            'Artists-all': t('page.sidebar.artists', { postProcess: 'titleCase' }),
-            Audiobooks: 'Audiobooks',
-            Collections: t('page.sidebar.collections', { postProcess: 'titleCase' }),
-            Favorites: t('page.sidebar.favorites', { postProcess: 'titleCase' }),
-            Folders: t('page.sidebar.folders', { postProcess: 'titleCase' }),
-            Genres: t('page.sidebar.genres', { postProcess: 'titleCase' }),
-            Home: t('page.sidebar.home', { postProcess: 'titleCase' }),
-            'Now Playing': t('page.sidebar.nowPlaying', { postProcess: 'titleCase' }),
-            Playlists: t('page.sidebar.playlists', { postProcess: 'titleCase' }),
-            Podcasts: 'Podcasts',
-            Radio: t('page.sidebar.radio', { postProcess: 'titleCase' }),
-            Search: t('page.sidebar.search', { postProcess: 'titleCase' }),
-            Settings: t('page.sidebar.settings', { postProcess: 'titleCase' }),
-            Tracks: t('page.sidebar.tracks', { postProcess: 'titleCase' }),
-        }),
-        [t],
-    );
-
-    const sidebarItems = useSidebarItems();
     const { windowBarStyle } = useWindowSettings();
     const sidebarImageEnabled = useAppStore((state) => state.sidebar.image);
     const showImage = sidebarImageEnabled;
-
-    const sidebarItemsWithRoute: SidebarItemType[] = useMemo(() => {
-        if (!sidebarItems) return [];
-
-        const items = sidebarItems
-            .filter((item) => !item.disabled)
-            .map((item) => ({
-                ...item,
-                label:
-                    translatedSidebarItemMap[item.id as keyof typeof translatedSidebarItemMap] ??
-                    item.label,
-            }));
-
-        return items;
-    }, [sidebarItems, translatedSidebarItemMap]);
-
-    const primaryItemsWithRoute = useMemo(
-        () => getSidebarItemsById(sidebarItemsWithRoute, primarySidebarItemIds),
-        [sidebarItemsWithRoute],
-    );
-
-    const libraryItemsWithRoute = useMemo(
-        () => getSidebarItemsById(sidebarItemsWithRoute, librarySidebarItemIds),
-        [sidebarItemsWithRoute],
-    );
 
     const isCustomWindowBar =
         windowBarStyle === Platform.WINDOWS || windowBarStyle === Platform.MACOS;
@@ -129,59 +44,7 @@ export const Sidebar = () => {
             })}
             id="left-sidebar"
         >
-            <Group grow id="global-search-container" style={{ flexShrink: 0 }}>
-                <ActionBar />
-            </Group>
-            <ScrollArea allowDragScroll className={styles.scrollArea}>
-                {primaryItemsWithRoute.map((item) => {
-                    return (
-                        <SidebarItem key={`sidebar-${item.route}`} to={item.route}>
-                            <Group gap="md">
-                                <SidebarIcon route={item.route} />
-                                {item.label}
-                            </Group>
-                        </SidebarItem>
-                    );
-                })}
-
-                <Accordion
-                    classNames={{
-                        content: styles.accordionContent,
-                        control: styles.accordionControl,
-                        item: styles.accordionItem,
-                        root: styles.accordionRoot,
-                    }}
-                    defaultValue={['collections', 'playlists']}
-                    multiple
-                >
-                    <Accordion.Item value="library">
-                        <Accordion.Control>
-                            <Text fw={500} variant="secondary">
-                                Library
-                            </Text>
-                        </Accordion.Control>
-                        <Accordion.Panel>
-                            {libraryItemsWithRoute.map((item) => {
-                                return (
-                                    <SidebarItem key={`sidebar-${item.route}`} to={item.route}>
-                                        <Group gap="md">
-                                            <SidebarIcon route={item.route} />
-                                            {item.label}
-                                        </Group>
-                                    </SidebarItem>
-                                );
-                            })}
-                        </Accordion.Panel>
-                    </Accordion.Item>
-                    <SidebarCollectionList />
-                    {sidebarPlaylistList && (
-                        <>
-                            <SidebarPlaylistList />
-                            <SidebarSharedPlaylistList />
-                        </>
-                    )}
-                </Accordion>
-            </ScrollArea>
+            <LibrarySidebar />
             <AnimatePresence initial={false} mode="popLayout">
                 {showImage && <SidebarImage />}
             </AnimatePresence>

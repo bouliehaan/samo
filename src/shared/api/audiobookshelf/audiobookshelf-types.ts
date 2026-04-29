@@ -1,3 +1,10 @@
+export interface AudiobookshelfChapter {
+    end?: number;
+    id?: string;
+    start: number;
+    title?: string;
+}
+
 export interface AudiobookshelfLibrariesResponse {
     libraries: AudiobookshelfLibrary[];
 }
@@ -13,8 +20,8 @@ export interface AudiobookshelfLibraryItem {
     libraryId: string;
     media?: {
         authorName?: string;
-        chapters?: AudiobookshelfChapter[];
         authors?: Array<{ id?: string; name: string }>;
+        chapters?: AudiobookshelfChapter[];
         coverPath?: string;
         description?: string;
         duration?: number;
@@ -27,6 +34,7 @@ export interface AudiobookshelfLibraryItem {
         subtitle?: string;
         title?: string;
     };
+    mediaProgress?: AudiobookshelfMediaProgress;
     mediaType?: string;
     name?: string;
     numEpisodes?: number;
@@ -48,6 +56,17 @@ export interface AudiobookshelfLoginResponse {
     };
 }
 
+export interface AudiobookshelfMediaProgress {
+    currentTime?: number;
+    duration?: number;
+    finishedAt?: number;
+    isFinished?: boolean;
+    lastUpdate?: number;
+    progress?: number;
+    startedAt?: number;
+    updatedAt?: number;
+}
+
 export interface AudiobookshelfMetadata {
     author?: string;
     authorName?: string;
@@ -64,13 +83,6 @@ export interface AudiobookshelfMetadata {
     title?: string;
 }
 
-export interface AudiobookshelfChapter {
-    end?: number;
-    id?: string;
-    start: number;
-    title?: string;
-}
-
 export interface AudiobookshelfPlaybackAudioTrack {
     contentUrl?: string;
     index?: number;
@@ -79,10 +91,10 @@ export interface AudiobookshelfPlaybackAudioTrack {
 
 export interface AudiobookshelfPlaybackSessionResponse {
     audioTracks?: AudiobookshelfPlaybackAudioTrack[];
-    libraryItem?: AudiobookshelfLibraryItem;
     // Server-side resume position in seconds.
     currentTime?: number;
     id?: string;
+    libraryItem?: AudiobookshelfLibraryItem;
     libraryItemId?: string;
 }
 

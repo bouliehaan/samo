@@ -8,7 +8,12 @@ import { useNavigate } from 'react-router';
 import { api } from '/@/renderer/api';
 import { controller } from '/@/renderer/api/controller';
 import { AppRoute } from '/@/renderer/router/routes';
-import { getServerById, useAuthStoreActions, useCurrentServerId } from '/@/renderer/store';
+import {
+    getServerById,
+    useAuthStore,
+    useAuthStoreActions,
+    useCurrentServerId,
+} from '/@/renderer/store';
 import { LogCategory, logFn } from '/@/renderer/utils/logger';
 import { logMsg } from '/@/renderer/utils/logger-message';
 import { toast } from '/@/shared/components/toast/toast';
@@ -342,7 +347,9 @@ export const useServerAuthenticated = () => {
                 });
 
                 // Log the user out by setting current server to null
-                setCurrentServer(null);
+                if (useAuthStore.getState().currentServer?.id === serverWithAuth.id) {
+                    setCurrentServer(null);
+                }
                 setReady(AuthState.INVALID);
             }
         },

@@ -4,9 +4,11 @@ import React, { useEffect } from 'react';
 import { createWithEqualityFn } from 'zustand/traditional';
 
 import { usePlayerEvents } from '/@/renderer/features/player/audio-player/hooks/use-player-events';
-import { useLastPlaybackSessionStore } from '/@/renderer/store/last-playback-session.store';
 import { usePlaybackType, usePlayerStoreBase } from '/@/renderer/store';
+import { useLastPlaybackSessionStore } from '/@/renderer/store/last-playback-session.store';
+import { recordRecentItem } from '/@/renderer/store/play-history.store';
 import { usePlaybackOwnerStore } from '/@/renderer/store/playback-owner.store';
+import { LibraryItem } from '/@/shared/types/domain-types';
 import { PlayerStatus, PlayerType } from '/@/shared/types/types';
 
 export type RadioCurrentStationArt = {
@@ -73,6 +75,21 @@ export const useRadioStore = createWithEqualityFn<RadioStore>((set, get) => ({
                 usePlaybackOwnerStore.getState().claim('radio');
                 usePlayerStoreBase.getState().mediaPlay();
                 if (nextStationArt?.id && nextStationArt.serverId) {
+                    recordRecentItem({
+                        artwork: {
+                            imageId: nextStationArt.imageId,
+                            imageItemType: LibraryItem.RADIO_STATION,
+                            imageUrl: nextStationArt.imageUrl,
+                            kind: 'music',
+                            serverId: nextStationArt.serverId,
+                        },
+                        itemId: nextStationArt.id,
+                        mediaType: 'radio',
+                        radioStreamUrl: newStreamUrl,
+                        serverId: nextStationArt.serverId,
+                        subtitle: 'Radio • Internet station',
+                        title: newStationName ?? 'Radio station',
+                    });
                     useLastPlaybackSessionStore.getState().actions.setSession({
                         metadata: isSwitchingStation ? null : state.metadata,
                         serverId: nextStationArt.serverId,

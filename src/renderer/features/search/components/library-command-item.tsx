@@ -9,7 +9,7 @@ import {
     PlayTooltip,
 } from '/@/renderer/features/shared/components/play-button-group';
 import { usePlayButtonClick } from '/@/renderer/features/shared/hooks/use-play-button-click';
-import { useCurrentServer } from '/@/renderer/store';
+import { recordRecentItem, recordRecentSong, useCurrentServer } from '/@/renderer/store';
 import { ActionIcon, ActionIconGroup } from '/@/shared/components/action-icon/action-icon';
 import { Flex } from '/@/shared/components/flex/flex';
 import { Text } from '/@/shared/components/text/text';
@@ -68,12 +68,51 @@ export const LibraryCommandItem = ({
 
             // Use addToQueueByData for songs when we have the song data
             if (itemType === LibraryItem.SONG && song) {
+                recordRecentSong(song);
                 addToQueueByData([song], playType);
             } else {
+                const mediaType =
+                    itemType === LibraryItem.ALBUM
+                        ? 'album'
+                        : itemType === LibraryItem.ALBUM_ARTIST || itemType === LibraryItem.ARTIST
+                          ? 'artist'
+                          : itemType === LibraryItem.PLAYLIST
+                            ? 'playlist'
+                            : undefined;
+
+                if (mediaType) {
+                    recordRecentItem({
+                        artwork: {
+                            imageId,
+                            imageItemType:
+                                mediaType === 'artist' ? LibraryItem.ALBUM_ARTIST : itemType,
+                            imageUrl,
+                            kind: 'music',
+                            serverId: server.id,
+                            shape: mediaType === 'artist' ? 'circle' : undefined,
+                        },
+                        itemId: id,
+                        mediaType,
+                        serverId: server.id,
+                        subtitle: subtitle ?? mediaType,
+                        title: title ?? 'Untitled',
+                    });
+                }
                 addToQueueByFetch(server.id, [id], itemType, playType);
             }
         },
-        [addToQueueByData, addToQueueByFetch, id, itemType, server.id, song],
+        [
+            addToQueueByData,
+            addToQueueByFetch,
+            id,
+            imageId,
+            imageUrl,
+            itemType,
+            server.id,
+            song,
+            subtitle,
+            title,
+        ],
     );
 
     const handlePlayNext = usePlayButtonClick({

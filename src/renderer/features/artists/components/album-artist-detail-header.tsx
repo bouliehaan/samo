@@ -19,7 +19,12 @@ import {
 import { useSetFavorite } from '/@/renderer/features/shared/hooks/use-set-favorite';
 import { useSetRating } from '/@/renderer/features/shared/hooks/use-set-rating';
 import { AppRoute } from '/@/renderer/router/routes';
-import { useAppStore, useCurrentServer, useShowRatings } from '/@/renderer/store';
+import {
+    recordRecentArtist,
+    useAppStore,
+    useCurrentServer,
+    useShowRatings,
+} from '/@/renderer/store';
 import { useArtistReleaseTypeItems, usePlayButtonBehavior } from '/@/renderer/store/settings.store';
 import { formatDurationString } from '/@/renderer/utils';
 import { hasFeature, SEPARATOR_STRING, sortAlbumList } from '/@/shared/api/utils';
@@ -154,6 +159,9 @@ export const AlbumArtistDetailHeader = forwardRef<HTMLDivElement, AlbumArtistDet
         const handlePlay = useCallback(
             (type?: Play) => {
                 if (!server?.id || !routeId) return;
+                if (detailQuery.data) {
+                    recordRecentArtist(detailQuery.data);
+                }
 
                 const albums = albumsQuery.data?.items || [];
                 const sortedAlbums = sortAlbumList(albums, sortBy, sortOrder);
@@ -177,14 +185,15 @@ export const AlbumArtistDetailHeader = forwardRef<HTMLDivElement, AlbumArtistDet
             },
             [
                 addToQueueByFetch,
+                albumsQuery.data?.items,
+                artistReleaseTypeItems,
+                detailQuery.data,
+                groupingType,
                 playButtonBehavior,
                 routeId,
                 server.id,
-                albumsQuery.data?.items,
                 sortBy,
                 sortOrder,
-                groupingType,
-                artistReleaseTypeItems,
                 t,
             ],
         );

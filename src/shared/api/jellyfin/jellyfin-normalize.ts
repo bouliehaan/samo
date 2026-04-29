@@ -410,6 +410,7 @@ const normalizePlaylist = (
         _itemType: LibraryItem.PLAYLIST,
         _serverId: server?.id || '',
         _serverType: ServerType.JELLYFIN,
+        createdAt: item.DateCreated,
         description: item.Overview || null,
         duration: item.RunTimeTicks / TICKS_PER_MS,
         genres: item.GenreItems?.map((entry) => ({
@@ -434,6 +435,7 @@ const normalizePlaylist = (
         size: null,
         songCount: item?.ChildCount || null,
         sync: null,
+        updatedAt: item.DateCreated,
     };
 };
 

@@ -337,7 +337,7 @@ const normalizeAlbum = (
         imageId: item.coverArt?.toString() || null,
         imageUrl: null,
         isCompilation: null,
-        lastPlayedAt: null,
+        lastPlayedAt: item.played || null,
         mbzId: null,
         mbzReleaseGroupId: null,
         name: item.name,
@@ -375,6 +375,7 @@ const normalizePlaylist = (
         _itemType: LibraryItem.PLAYLIST,
         _serverId: server?.id || 'unknown',
         _serverType: ServerType.SUBSONIC,
+        createdAt: item.created,
         description: item.comment || null,
         duration: item.duration * 1000,
         genres: [],
@@ -387,6 +388,7 @@ const normalizePlaylist = (
         public: item.public,
         size: null,
         songCount: item.songCount,
+        updatedAt: item.changed ?? item.created,
     };
 };
 

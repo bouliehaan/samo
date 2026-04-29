@@ -1,13 +1,15 @@
 .container {
     z-index: 200;
     grid-area: player;
+    background: #050505;
+    border-top: 1px solid rgb(255 255 255 / 7%);
 
     @mixin light {
-        background: darken(var(--theme-colors-background), 5%);
+        background: #050505;
     }
 
     @mixin dark {
-        background: darken(var(--theme-colors-background), 10%);
+        background: #050505;
     }
 
     transition: background 0.5s;

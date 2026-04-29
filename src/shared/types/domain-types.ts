@@ -334,6 +334,7 @@ export type Playlist = {
     _itemType: LibraryItem.PLAYLIST;
     _serverId: string;
     _serverType: ServerType;
+    createdAt?: null | string;
     description: null | string;
     duration: null | number;
     genres: Genre[];
@@ -348,6 +349,7 @@ export type Playlist = {
     size: null | number;
     songCount: null | number;
     sync?: boolean | null;
+    updatedAt?: null | string;
     uploadedImage?: string;
 };
 
@@ -1367,6 +1369,7 @@ export type ScrobbleQuery = {
     id: string;
     position?: number;
     submission: boolean;
+    time?: number;
 };
 
 // Scrobble

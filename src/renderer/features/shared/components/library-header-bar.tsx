@@ -35,6 +35,7 @@ interface HeaderPlayButtonProps {
     ids?: string[];
     itemType: LibraryItem;
     listQuery?: Record<string, any>;
+    onBeforePlay?: () => void;
     songs?: Song[];
     variant?: 'default' | 'filled';
 }
@@ -49,6 +50,7 @@ const HeaderPlayButton = ({
     ids,
     itemType,
     listQuery,
+    onBeforePlay,
     songs,
     variant = 'filled',
     ...props
@@ -58,6 +60,7 @@ const HeaderPlayButton = ({
 
     const handlePlay = useCallback(
         (playType: Play) => {
+            onBeforePlay?.();
             if (listQuery) {
                 player.addToQueueByListQuery(serverId, listQuery, itemType, playType);
             } else if (ids) {
@@ -68,7 +71,7 @@ const HeaderPlayButton = ({
 
             closeAllModals();
         },
-        [listQuery, ids, songs, player, serverId, itemType],
+        [ids, itemType, listQuery, onBeforePlay, player, serverId, songs],
     );
 
     const isPlayerFetching = useIsPlayerFetching();

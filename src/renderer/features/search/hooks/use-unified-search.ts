@@ -1,4 +1,4 @@
-import { useQueries, useQuery } from '@tanstack/react-query';
+import { useQueries, useQuery, type UseQueryResult } from '@tanstack/react-query';
 import { useMemo } from 'react';
 
 import { api } from '/@/renderer/api';
@@ -13,6 +13,7 @@ import {
 } from '/@/renderer/features/search/utils/relevance';
 import { useAudiobookshelfServer, useCurrentServer } from '/@/renderer/store';
 import {
+    AudiobookshelfLibraryItemsResponse,
     AudiobookshelfLibraryItem,
     AudiobookshelfPodcastEpisode,
 } from '/@/shared/api/audiobookshelf/audiobookshelf-types';
@@ -31,6 +32,7 @@ const BEST_MATCHES_LIMIT = 4;
 const SHORT_QUERY_THRESHOLD = 3;
 const ENTITY_TYPE_BUMP = 50;
 
+const MUSIC_SEARCH_STALE_TIME_MS = 1000 * 60;
 const ABS_LIBRARY_STALE_TIME_MS = 1000 * 60 * 5;
 const ABS_LIBRARY_GC_TIME_MS = 1000 * 60 * 30;
 
@@ -99,13 +101,16 @@ export interface UnifiedSearchResults {
     songs: RankedSong[];
 }
 
+export type UnifiedSearchSourceKey = 'abs' | 'music' | 'playlists' | 'radio';
+export type UnifiedSearchSourceErrors = Partial<Record<UnifiedSearchSourceKey, string>>;
+
 export interface UnifiedSearchState {
     bestMatches: RankedResult[];
-    error: null | string;
     groupOrder: ResultGroupKey[];
     hasAnyResults: boolean;
-    isFetching: boolean;
+    isLoading: boolean;
     results: UnifiedSearchResults;
+    sourceErrors: UnifiedSearchSourceErrors;
     totalCount: number;
 }
 
@@ -313,6 +318,27 @@ const collectBestMatches = (results: UnifiedSearchResults): RankedResult[] => {
     return all.sort((a, b) => b.score - a.score).slice(0, BEST_MATCHES_LIMIT);
 };
 
+const getErrorMessage = (error: unknown): string | undefined => {
+    if (!error) return undefined;
+    if (error instanceof Error) return error.message;
+    if (typeof error === 'string') return error;
+    return 'Search source unavailable.';
+};
+
+interface AudiobookshelfItemsQueryState {
+    error: null | string;
+    isPending: boolean;
+    items: AudiobookshelfLibraryItem[];
+}
+
+const combineAudiobookshelfItemsQueries = (
+    queries: UseQueryResult<AudiobookshelfLibraryItemsResponse, Error>[],
+): AudiobookshelfItemsQueryState => ({
+    error: getErrorMessage(queries.find((query) => query.error)?.error) ?? null,
+    isPending: queries.some((query) => query.isPending),
+    items: queries.flatMap((query) => query.data?.results ?? []),
+});
+
 /**
  * Unified search across the music server (Navidrome/Subsonic/Jellyfin),
  * radio stations, and Audiobookshelf libraries (audiobooks, podcasts, episodes).
@@ -339,7 +365,7 @@ export const useUnifiedSearch = (rawQuery: string): UnifiedSearchState => {
         }),
         enabled: enabled && Boolean(musicServer?.id),
         gcTime: 1000 * 60 * 5,
-        staleTime: 1000 * 30,
+        staleTime: MUSIC_SEARCH_STALE_TIME_MS,
     });
 
     const playlistsQuery = useQuery({
@@ -355,7 +381,7 @@ export const useUnifiedSearch = (rawQuery: string): UnifiedSearchState => {
         }),
         enabled: enabled && Boolean(musicServer?.id),
         gcTime: 1000 * 60 * 5,
-        staleTime: 1000 * 30,
+        staleTime: MUSIC_SEARCH_STALE_TIME_MS,
     });
 
     const radioStationsQuery = useQuery({
@@ -379,7 +405,8 @@ export const useUnifiedSearch = (rawQuery: string): UnifiedSearchState => {
 
     const audiobookshelfLibraries = audiobookshelfLibrariesQuery.data?.libraries ?? [];
 
-    const audiobookshelfItemsQueries = useQueries({
+    const audiobookshelfItemsQueryState = useQueries({
+        combine: combineAudiobookshelfItemsQueries,
         queries: audiobookshelfLibraries.map((library) => ({
             enabled: enabled && Boolean(audiobookshelfServer?.id),
             gcTime: ABS_LIBRARY_GC_TIME_MS,
@@ -390,26 +417,37 @@ export const useUnifiedSearch = (rawQuery: string): UnifiedSearchState => {
         })),
     });
 
-    const audiobookshelfItems = useMemo(
-        () => audiobookshelfItemsQueries.flatMap((query) => query.data?.results ?? []),
-        [audiobookshelfItemsQueries],
-    );
+    const audiobookshelfItems = audiobookshelfItemsQueryState.items;
 
-    const isFetching =
+    const hasMusicServer = Boolean(musicServer?.id);
+    const hasAudiobookshelfServer = Boolean(audiobookshelfServer?.id);
+
+    const isLoading =
         enabled &&
-        (musicSearchQuery.isFetching ||
-            playlistsQuery.isFetching ||
-            radioStationsQuery.isFetching ||
-            audiobookshelfLibrariesQuery.isFetching ||
-            audiobookshelfItemsQueries.some((query) => query.isFetching));
+        ((hasMusicServer && musicSearchQuery.isPending) ||
+            (hasMusicServer && playlistsQuery.isPending) ||
+            (hasMusicServer && radioStationsQuery.isPending) ||
+            (hasAudiobookshelfServer && audiobookshelfLibrariesQuery.isPending) ||
+            (hasAudiobookshelfServer && audiobookshelfItemsQueryState.isPending));
 
-    const error =
-        musicSearchQuery.error?.message ??
-        playlistsQuery.error?.message ??
-        radioStationsQuery.error?.message ??
-        audiobookshelfLibrariesQuery.error?.message ??
-        audiobookshelfItemsQueries.find((query) => query.error)?.error?.message ??
-        null;
+    const sourceErrors = useMemo<UnifiedSearchSourceErrors>(
+        () => ({
+            abs:
+                getErrorMessage(audiobookshelfLibrariesQuery.error) ??
+                audiobookshelfItemsQueryState.error ??
+                undefined,
+            music: getErrorMessage(musicSearchQuery.error),
+            playlists: getErrorMessage(playlistsQuery.error),
+            radio: getErrorMessage(radioStationsQuery.error),
+        }),
+        [
+            audiobookshelfItemsQueryState.error,
+            audiobookshelfLibrariesQuery.error,
+            musicSearchQuery.error,
+            playlistsQuery.error,
+            radioStationsQuery.error,
+        ],
+    );
 
     const results = useMemo<UnifiedSearchResults>(() => {
         if (!enabled) return EMPTY_RESULTS;
@@ -448,11 +486,11 @@ export const useUnifiedSearch = (rawQuery: string): UnifiedSearchState => {
 
     return {
         bestMatches,
-        error,
         groupOrder,
         hasAnyResults: totalCount > 0,
-        isFetching: Boolean(isFetching),
+        isLoading: Boolean(isLoading),
         results,
+        sourceErrors,
         totalCount,
     };
 };

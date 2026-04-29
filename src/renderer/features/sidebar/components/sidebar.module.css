@@ -5,11 +5,11 @@
     width: 100%;
     height: 100%;
     max-height: calc(100vh - 90px);
-    background: var(--theme-colors-background-alternate);
+    background: transparent;
 }
 
 .container.custom-bar {
-    max-height: calc(100vh - 120px);
+    max-height: calc(100vh - 90px);
 }
 
 .scroll-area {
@@ -77,7 +77,7 @@
 
 .accordion-content {
     padding: 0;
-    background: var(--theme-colors-background-alternate);
+    background: transparent;
 }
 
 .accordion-content:last-child {

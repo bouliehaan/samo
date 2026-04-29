@@ -29,10 +29,20 @@ import {
     RankedSong,
     ResultGroupKey,
     UnifiedPodcastEpisodeResult,
+    type UnifiedSearchSourceKey,
     useUnifiedSearch,
 } from '/@/renderer/features/search/hooks/use-unified-search';
 import { AppRoute } from '/@/renderer/router/routes';
-import { useAudiobookshelfServer, useCurrentServer, usePlayButtonBehavior } from '/@/renderer/store';
+import {
+    recordRecentArtist,
+    recordRecentAudiobook,
+    recordRecentPlaylist,
+    recordRecentPodcast,
+    recordRecentSong,
+    useAudiobookshelfServer,
+    useCurrentServer,
+    usePlayButtonBehavior,
+} from '/@/renderer/store';
 import { useAudiobookActions } from '/@/renderer/store/audiobook.store';
 import { usePodcastActions } from '/@/renderer/store/podcast.store';
 import {
@@ -52,16 +62,9 @@ import {
 
 const DEBOUNCE_MS = 200;
 
-type ResultClickHandler = () => void;
+type FallbackIcon = 'album' | 'artist' | 'metadata' | 'microphone' | 'playlist' | 'radio' | 'track';
 
-type FallbackIcon =
-    | 'album'
-    | 'artist'
-    | 'metadata'
-    | 'microphone'
-    | 'playlist'
-    | 'radio'
-    | 'track';
+type ResultClickHandler = () => void;
 
 interface ResultRowProps {
     artImageId?: null | string;
@@ -174,6 +177,13 @@ const GROUP_TITLES: Record<ResultGroupKey, string> = {
     podcastShows: 'Podcasts',
     radioStations: 'Radio',
     songs: 'Tracks',
+};
+
+const SOURCE_WARNING_LABELS: Record<UnifiedSearchSourceKey, string> = {
+    abs: 'Audiobookshelf',
+    music: 'Music',
+    playlists: 'Playlists',
+    radio: 'Radio',
 };
 
 interface GlobalSearchBarProps {
@@ -342,6 +352,30 @@ const renderRow = (entry: RankedResult, deps: RowFactoryDeps): ReactNode => {
     }
 };
 
+interface SourceWarningsProps {
+    errors: Partial<Record<UnifiedSearchSourceKey, string>>;
+}
+
+const SourceWarnings = ({ errors }: SourceWarningsProps) => {
+    const sourceKeys = Object.keys(SOURCE_WARNING_LABELS) as UnifiedSearchSourceKey[];
+    const activeWarnings = sourceKeys.filter((sourceKey) => errors[sourceKey]);
+
+    if (activeWarnings.length === 0) return null;
+
+    return (
+        <div className={styles.warningList}>
+            {activeWarnings.map((sourceKey) => (
+                <div className={styles.sourceWarning} key={sourceKey}>
+                    <Icon icon="warn" size="sm" />
+                    <span>
+                        {SOURCE_WARNING_LABELS[sourceKey]} unavailable: {errors[sourceKey]}
+                    </span>
+                </div>
+            ))}
+        </div>
+    );
+};
+
 export const GlobalSearchBar = ({ className }: GlobalSearchBarProps) => {
     const { t } = useTranslation();
     const navigate = useNavigate();
@@ -354,12 +388,13 @@ export const GlobalSearchBar = ({ className }: GlobalSearchBarProps) => {
     const [debouncedQuery] = useDebouncedValue(query, DEBOUNCE_MS);
     const debounced = (debouncedQuery ?? '').trim();
 
-    const { bestMatches, error, groupOrder, hasAnyResults, isFetching, results } =
+    const { bestMatches, groupOrder, hasAnyResults, isLoading, results, sourceErrors } =
         useUnifiedSearch(debounced);
 
     const player = usePlayer();
     const playButtonBehavior = usePlayButtonBehavior();
     const musicServer = useCurrentServer();
+    const musicServerId = musicServer?.id;
     const audiobookshelfServer = useAudiobookshelfServer();
     const audiobookActions = useAudiobookActions();
     const podcastActions = usePodcastActions();
@@ -404,8 +439,14 @@ export const GlobalSearchBar = ({ className }: GlobalSearchBarProps) => {
         closeDropdown();
     }, [closeDropdown, navigate, query]);
 
+    const handleHomeClick = useCallback(() => {
+        navigate(AppRoute.HOME);
+        closeDropdown();
+    }, [closeDropdown, navigate]);
+
     const handleSongSelect = useCallback(
         (song: Song) => {
+            recordRecentSong(song);
             player.addToQueueByData([song], playButtonBehavior);
             closeDropdown();
         },
@@ -422,6 +463,7 @@ export const GlobalSearchBar = ({ className }: GlobalSearchBarProps) => {
 
     const handleArtistSelect = useCallback(
         (artist: AlbumArtist) => {
+            recordRecentArtist(artist);
             navigate(
                 generatePath(AppRoute.LIBRARY_ALBUM_ARTISTS_DETAIL, {
                     albumArtistId: artist.id,
@@ -434,6 +476,7 @@ export const GlobalSearchBar = ({ className }: GlobalSearchBarProps) => {
 
     const handlePlaylistSelect = useCallback(
         (playlist: Playlist) => {
+            recordRecentPlaylist(playlist);
             navigate(generatePath(AppRoute.PLAYLISTS_DETAIL_SONGS, { playlistId: playlist.id }));
             closeDropdown();
         },
@@ -442,21 +485,22 @@ export const GlobalSearchBar = ({ className }: GlobalSearchBarProps) => {
 
     const handleRadioSelect = useCallback(
         (station: InternetRadioStation) => {
-            if (!musicServer?.id) return;
+            if (!musicServerId) return;
             radioControls.play(station.streamUrl, station.name, {
                 id: station.id,
                 imageId: station.imageId,
                 imageUrl: station.imageUrl,
-                serverId: musicServer.id,
+                serverId: musicServerId,
             });
             closeDropdown();
         },
-        [closeDropdown, musicServer?.id, radioControls],
+        [closeDropdown, musicServerId, radioControls],
     );
 
     const handleAudiobookSelect = useCallback(
         (item: AudiobookshelfLibraryItem) => {
             if (!audiobookshelfServer) return;
+            recordRecentAudiobook(item, audiobookshelfServer.id);
             audiobookActions.play(audiobookshelfServer, item);
             closeDropdown();
         },
@@ -465,16 +509,20 @@ export const GlobalSearchBar = ({ className }: GlobalSearchBarProps) => {
 
     const handlePodcastShowSelect = useCallback(
         (item: AudiobookshelfLibraryItem) => {
+            if (audiobookshelfServer) {
+                recordRecentPodcast(item, audiobookshelfServer.id);
+            }
             navigate(generatePath(AppRoute.PODCASTS_DETAIL, { itemId: item.id }));
             closeDropdown();
         },
-        [closeDropdown, navigate],
+        [audiobookshelfServer, closeDropdown, navigate],
     );
 
     const handlePodcastEpisodeSelect = useCallback(
         ({ episode, show }: UnifiedPodcastEpisodeResult) => {
             navigate(generatePath(AppRoute.PODCASTS_DETAIL, { itemId: show.id }));
             if (audiobookshelfServer) {
+                recordRecentPodcast(show, audiobookshelfServer.id);
                 void podcastActions.play(audiobookshelfServer, show, episode);
             }
             closeDropdown();
@@ -484,7 +532,7 @@ export const GlobalSearchBar = ({ className }: GlobalSearchBarProps) => {
 
     const rowDeps: RowFactoryDeps = useMemo(
         () => ({
-            musicServerId: musicServer?.id ?? null,
+            musicServerId: musicServerId ?? null,
             onSelectAlbum: handleAlbumSelect,
             onSelectArtist: handleArtistSelect,
             onSelectAudiobook: handleAudiobookSelect,
@@ -503,7 +551,7 @@ export const GlobalSearchBar = ({ className }: GlobalSearchBarProps) => {
             handlePodcastShowSelect,
             handleRadioSelect,
             handleSongSelect,
-            musicServer?.id,
+            musicServerId,
         ],
     );
 
@@ -518,23 +566,25 @@ export const GlobalSearchBar = ({ className }: GlobalSearchBarProps) => {
                 </div>
             );
         }
-        if (error) {
-            return <div className={styles.error}>{error}</div>;
-        }
-        if (!hasAnyResults && !isFetching) {
+        if (!hasAnyResults && !isLoading) {
             return (
-                <div className={styles.empty}>
-                    {t('common.noResults', {
-                        defaultValue: 'No matches.',
-                        postProcess: 'sentenceCase',
-                    })}
-                </div>
+                <>
+                    <SourceWarnings errors={sourceErrors} />
+                    <div className={styles.empty}>
+                        {t('common.noResults', {
+                            defaultValue: 'No matches.',
+                            postProcess: 'sentenceCase',
+                        })}
+                    </div>
+                </>
             );
         }
 
         return (
             <>
-                {isFetching ? (
+                <SourceWarnings errors={sourceErrors} />
+
+                {!hasAnyResults && isLoading ? (
                     <div className={styles.loading}>
                         {t('common.loading', { postProcess: 'sentenceCase' })}…
                     </div>
@@ -560,64 +610,77 @@ export const GlobalSearchBar = ({ className }: GlobalSearchBarProps) => {
     }, [
         bestMatches,
         debounced,
-        error,
         groupOrder,
         hasAnyResults,
-        isFetching,
+        isLoading,
         results,
         rowDeps,
+        sourceErrors,
         t,
     ]);
 
     return (
         <div className={`${styles.topBar}${className ? ` ${className}` : ''}`}>
-            <div className={styles.inputWrapper} ref={wrapperRef}>
-                <span className={styles.leftIcon}>
-                    <Icon icon="search" size="lg" />
-                </span>
-                <input
-                    aria-controls={`${inputId}-results`}
-                    aria-expanded={isOpen}
-                    autoComplete="off"
-                    className={styles.input}
-                    id={inputId}
-                    onChange={(event) => {
-                        setQuery(event.currentTarget.value);
-                        setIsOpen(true);
-                    }}
-                    onFocus={handleFocus}
-                    onKeyDown={(event) => {
-                        if (event.key === 'Enter') {
-                            event.preventDefault();
-                            handleSubmit();
-                        }
-                    }}
-                    placeholder={t('page.sidebar.searchPlaceholder', {
-                        defaultValue: 'Search music, audiobooks, podcasts, and radio',
+            <div className={styles.chromeGroup}>
+                <button
+                    aria-label={t('page.sidebar.home', {
+                        defaultValue: 'Home',
+                        postProcess: 'titleCase',
                     })}
-                    ref={inputRef}
-                    spellCheck={false}
-                    type="text"
-                    value={query}
-                />
-                {query ? (
-                    <button
-                        aria-label={t('common.clear', {
-                            defaultValue: 'Clear',
-                            postProcess: 'titleCase',
+                    className={styles.homeButton}
+                    onClick={handleHomeClick}
+                    type="button"
+                >
+                    <Icon icon="home" size="lg" />
+                </button>
+                <div className={styles.inputWrapper} ref={wrapperRef}>
+                    <span className={styles.leftIcon}>
+                        <Icon icon="search" size="lg" />
+                    </span>
+                    <input
+                        aria-controls={`${inputId}-results`}
+                        aria-expanded={isOpen}
+                        autoComplete="off"
+                        className={styles.input}
+                        id={inputId}
+                        onChange={(event) => {
+                            setQuery(event.currentTarget.value);
+                            setIsOpen(true);
+                        }}
+                        onFocus={handleFocus}
+                        onKeyDown={(event) => {
+                            if (event.key === 'Enter') {
+                                event.preventDefault();
+                                handleSubmit();
+                            }
+                        }}
+                        placeholder={t('page.sidebar.searchPlaceholder', {
+                            defaultValue: 'Search music, audiobooks, podcasts, and radio',
                         })}
-                        className={styles.clearButton}
-                        onClick={handleClear}
-                        type="button"
-                    >
-                        <Icon icon="x" size="md" />
-                    </button>
-                ) : null}
-                {isOpen ? (
-                    <div className={styles.dropdown} id={`${inputId}-results`} role="listbox">
-                        {dropdownBody}
-                    </div>
-                ) : null}
+                        ref={inputRef}
+                        spellCheck={false}
+                        type="text"
+                        value={query}
+                    />
+                    {query ? (
+                        <button
+                            aria-label={t('common.clear', {
+                                defaultValue: 'Clear',
+                                postProcess: 'titleCase',
+                            })}
+                            className={styles.clearButton}
+                            onClick={handleClear}
+                            type="button"
+                        >
+                            <Icon icon="x" size="md" />
+                        </button>
+                    ) : null}
+                    {isOpen ? (
+                        <div className={styles.dropdown} id={`${inputId}-results`} role="listbox">
+                            {dropdownBody}
+                        </div>
+                    ) : null}
+                </div>
             </div>
         </div>
     );

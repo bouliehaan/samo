@@ -4,12 +4,10 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { RiCheckboxBlankLine, RiCloseLine, RiSubtractLine } from 'react-icons/ri';
 
-import appIcon from '../../../assets/icons/32x32.png';
 import styles from './window-bar.module.css';
 
 import { useRadioPlayer } from '/@/renderer/features/radio/hooks/use-radio-player';
 import { useAppStore, usePlayerData, usePlayerStatus, useWindowSettings } from '/@/renderer/store';
-import { Text } from '/@/shared/components/text/text';
 import { Platform, PlayerStatus } from '/@/shared/types/types';
 
 const localSettings = isElectron() ? window.api.localSettings : null;
@@ -26,20 +24,13 @@ interface WindowBarControlsProps {
         handleMaximize: () => void;
         handleMinimize: () => void;
     };
-    title: string;
 }
 
-const WindowsControls = ({ controls, title }: WindowBarControlsProps) => {
+const WindowsControls = ({ controls }: WindowBarControlsProps) => {
     const { handleClose, handleMaximize, handleMinimize } = controls;
 
     return (
         <div className={styles.windowsContainer}>
-            <div className={styles.playerStatusContainer}>
-                <img alt="" height={16} src={appIcon} style={{ flexShrink: 0 }} width={16} />
-                <Text className={styles.playerStatusText} overflow="hidden" size="sm">
-                    {title}
-                </Text>
-            </div>
             <div className={styles.windowsButtonGroup}>
                 <div className={styles.windowsButton} onClick={handleMinimize} role="button">
                     <RiSubtractLine size={19} />
@@ -136,19 +127,7 @@ export const WindowBar = () => {
     return (
         <div className={styles.windowBar}>
             {windowBarStyle === Platform.WINDOWS && (
-                <WindowsControls
-                    controls={{ handleClose, handleMaximize, handleMinimize }}
-                    title={title}
-                />
-            )}
-            {windowBarStyle === Platform.MACOS && (
-                <div className={styles.macosContainer}>
-                    <div className={styles.playerStatusContainer}>
-                        <Text className={styles.playerStatusText} overflow="hidden" size="sm">
-                            {title}
-                        </Text>
-                    </div>
-                </div>
+                <WindowsControls controls={{ handleClose, handleMaximize, handleMinimize }} />
             )}
         </div>
     );

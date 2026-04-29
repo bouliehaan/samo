@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { generatePath, useNavigate } from 'react-router';
 
 import { AppRoute } from '/@/renderer/router/routes';
+import { recordRecentArtist } from '/@/renderer/store';
 import { ContextMenu } from '/@/shared/components/context-menu/context-menu';
 import {
     Album,
@@ -57,9 +58,24 @@ export const GoToAction = ({ items }: GoToActionProps) => {
 
     const handleGoToAlbumArtist = useCallback(
         (albumArtistId: string) => {
+            const firstItem = items[0];
+            const artist =
+                firstItem._itemType === LibraryItem.ARTIST ||
+                firstItem._itemType === LibraryItem.ALBUM_ARTIST
+                    ? firstItem
+                    : firstItem._itemType === LibraryItem.SONG
+                      ? firstItem.albumArtists.find((item) => item.id === albumArtistId)
+                      : undefined;
+
+            if (artist) {
+                recordRecentArtist(artist, {
+                    serverId: firstItem._serverId,
+                    serverType: firstItem._serverType,
+                });
+            }
             navigate(generatePath(AppRoute.LIBRARY_ALBUM_ARTISTS_DETAIL, { albumArtistId }));
         },
-        [navigate],
+        [items, navigate],
     );
 
     const hasAlbum = !!albumId;

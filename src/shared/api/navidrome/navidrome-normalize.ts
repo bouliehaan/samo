@@ -479,6 +479,7 @@ const normalizePlaylist = (
         _itemType: LibraryItem.PLAYLIST,
         _serverId: server?.id || 'unknown',
         _serverType: ServerType.NAVIDROME,
+        createdAt: item.createdAt,
         description: item.comment,
         duration: item.duration * 1000,
         genres: [],
@@ -493,6 +494,7 @@ const normalizePlaylist = (
         size: item.size,
         songCount: item.songCount,
         sync: item.sync,
+        updatedAt: item.updatedAt,
         uploadedImage: item.uploadedImage,
     };
 };

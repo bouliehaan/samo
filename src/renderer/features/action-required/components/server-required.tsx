@@ -56,8 +56,8 @@ function ServerSelector() {
     const { setCurrentServer } = useAuthStoreActions();
 
     const handleSetCurrentServer = (server: ServerListItemWithCredential) => {
-        navigate(AppRoute.HOME);
         setCurrentServer(server);
+        navigate(AppRoute.HOME, { replace: true });
     };
 
     const handleCredentialsModal = async (server: ServerListItem) => {

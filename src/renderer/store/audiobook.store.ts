@@ -3,9 +3,13 @@ import { persist, subscribeWithSelector } from 'zustand/middleware';
 
 import { audiobookshelfController } from '/@/renderer/api/audiobookshelf/audiobookshelf-controller';
 import { useLastPlaybackSessionStore } from '/@/renderer/store/last-playback-session.store';
+import { recordRecentAudiobook } from '/@/renderer/store/play-history.store';
 import { usePlaybackOwnerStore } from '/@/renderer/store/playback-owner.store';
 import { subscribePlayerStatus, usePlayerStoreBase } from '/@/renderer/store/player.store';
-import { AudiobookshelfChapter, AudiobookshelfLibraryItem } from '/@/shared/api/audiobookshelf/audiobookshelf-types';
+import {
+    AudiobookshelfChapter,
+    AudiobookshelfLibraryItem,
+} from '/@/shared/api/audiobookshelf/audiobookshelf-types';
 import { toast } from '/@/shared/components/toast/toast';
 import { ServerListItemWithCredential } from '/@/shared/types/domain-types';
 import { PlayerStatus } from '/@/shared/types/types';
@@ -26,6 +30,57 @@ export interface AudiobookChapterListItem {
     end: number;
     originalIndex: number;
     start: number;
+}
+
+interface AudiobookState {
+    actions: {
+        play: (
+            server: ServerListItemWithCredential,
+            item: AudiobookshelfLibraryItem,
+        ) => Promise<void>;
+        release: () => void;
+        seekTo: (seconds: number) => void;
+        seekToNextChapter: () => void;
+        seekToPreviousChapter: () => void;
+        setDuration: (seconds: number) => void;
+        setError: (error: null | string) => void;
+        setPosition: (seconds: number) => void;
+    };
+    chapters: AudiobookshelfChapter[];
+    contentUrl: null | string;
+    duration: number;
+    error: null | string;
+    isLoading: boolean;
+    item: AudiobookshelfLibraryItem | null;
+    position: number;
+    // Persisted: last-known position (seconds) per library item ID.
+    resumeByItemId: Record<string, number>;
+    server: null | ServerListItemWithCredential;
+    sessionId: null | string;
+}
+
+/**
+ * Single source of truth for "which chapter is the listener currently in?".
+ * Used by playerbar metadata, next/previous chapter navigation, and the macOS
+ * Now Playing surface so they can never disagree.
+ *
+ * Returns -1 when the audiobook has no chapter data; otherwise returns the
+ * highest index whose `start <= position`. Position is clamped to [0, duration]
+ * when duration is known so an overshoot at end-of-book doesn't return -1.
+ */
+export function getCurrentChapterIndex(
+    chapters: AudiobookshelfChapter[],
+    position: number,
+    duration: number,
+): number {
+    if (chapters.length === 0) return -1;
+    const max = duration > 0 ? duration : Number.POSITIVE_INFINITY;
+    const clamped = Math.min(Math.max(position, 0), max);
+    for (let i = chapters.length - 1; i >= 0; i--) {
+        if (chapters[i].start <= clamped) return i;
+    }
+    // Position is before chapter 0's start (rare) — clamp to first chapter.
+    return 0;
 }
 
 export function getOrderedAudiobookChapters(
@@ -69,57 +124,6 @@ export function getOrderedAudiobookChapters(
             };
         })
         .filter((chapter): chapter is AudiobookChapterListItem => chapter !== null);
-}
-
-/**
- * Single source of truth for "which chapter is the listener currently in?".
- * Used by playerbar metadata, next/previous chapter navigation, and the macOS
- * Now Playing surface so they can never disagree.
- *
- * Returns -1 when the audiobook has no chapter data; otherwise returns the
- * highest index whose `start <= position`. Position is clamped to [0, duration]
- * when duration is known so an overshoot at end-of-book doesn't return -1.
- */
-export function getCurrentChapterIndex(
-    chapters: AudiobookshelfChapter[],
-    position: number,
-    duration: number,
-): number {
-    if (chapters.length === 0) return -1;
-    const max = duration > 0 ? duration : Number.POSITIVE_INFINITY;
-    const clamped = Math.min(Math.max(position, 0), max);
-    for (let i = chapters.length - 1; i >= 0; i--) {
-        if (chapters[i].start <= clamped) return i;
-    }
-    // Position is before chapter 0's start (rare) — clamp to first chapter.
-    return 0;
-}
-
-interface AudiobookState {
-    actions: {
-        play: (
-            server: ServerListItemWithCredential,
-            item: AudiobookshelfLibraryItem,
-        ) => Promise<void>;
-        release: () => void;
-        seekTo: (seconds: number) => void;
-        seekToNextChapter: () => void;
-        seekToPreviousChapter: () => void;
-        setDuration: (seconds: number) => void;
-        setError: (error: null | string) => void;
-        setPosition: (seconds: number) => void;
-    };
-    chapters: AudiobookshelfChapter[];
-    contentUrl: null | string;
-    duration: number;
-    error: null | string;
-    isLoading: boolean;
-    item: AudiobookshelfLibraryItem | null;
-    position: number;
-    // Persisted: last-known position (seconds) per library item ID.
-    resumeByItemId: Record<string, number>;
-    server: null | ServerListItemWithCredential;
-    sessionId: null | string;
 }
 
 // Internal: tracks the last position value that was flushed to resumeByItemId.
@@ -260,6 +264,7 @@ export const useAudiobookStore = create<AudiobookState>()(
                         usePlaybackOwnerStore.getState().claim('audiobook');
                         console.log('[audiobook.store] arbiter claimed → source=audiobook');
                         rememberAudiobookPlaybackSession(server, item, 0);
+                        recordRecentAudiobook(item, server.id);
 
                         // Seed chapters/duration from the library item up-front so the
                         // playerbar can render immediately without waiting on /play.
@@ -292,13 +297,9 @@ export const useAudiobookStore = create<AudiobookState>()(
                             // Prefer the playback session's media (it's authoritative for the
                             // current playback) and fall back to the library item we already had.
                             const chapters =
-                                session.libraryItem?.media?.chapters ??
-                                item.media?.chapters ??
-                                [];
+                                session.libraryItem?.media?.chapters ?? item.media?.chapters ?? [];
                             const duration =
-                                session.libraryItem?.media?.duration ??
-                                item.media?.duration ??
-                                0;
+                                session.libraryItem?.media?.duration ?? item.media?.duration ?? 0;
 
                             if (!contentUrl) {
                                 throw new Error('Audiobookshelf did not return an audio URL');
@@ -310,10 +311,7 @@ export const useAudiobookStore = create<AudiobookState>()(
                             const serverResume = session.currentTime ?? 0;
                             const resumePosition =
                                 localResume !== undefined ? localResume : serverResume;
-                            const clampedResumePosition = clampPosition(
-                                resumePosition,
-                                duration,
-                            );
+                            const clampedResumePosition = clampPosition(resumePosition, duration);
 
                             lastFlushedPosition = clampedResumePosition;
                             resetAudiobookshelfProgressSync(clampedResumePosition);
@@ -327,11 +325,7 @@ export const useAudiobookStore = create<AudiobookState>()(
                                 position: clampedResumePosition,
                                 sessionId: session.id ?? null,
                             });
-                            rememberAudiobookPlaybackSession(
-                                server,
-                                item,
-                                clampedResumePosition,
-                            );
+                            rememberAudiobookPlaybackSession(server, item, clampedResumePosition);
 
                             console.log('[audiobook.store] state set → calling mediaPlay()', {
                                 resumePosition: clampedResumePosition,
@@ -420,11 +414,7 @@ export const useAudiobookStore = create<AudiobookState>()(
 
                     seekToNextChapter: () => {
                         const { chapters, duration, position } = get();
-                        const currentIndex = getCurrentChapterIndex(
-                            chapters,
-                            position,
-                            duration,
-                        );
+                        const currentIndex = getCurrentChapterIndex(chapters, position, duration);
                         if (currentIndex === -1) return;
                         const nextIndex = currentIndex + 1;
                         if (nextIndex >= chapters.length) return; // already in last chapter
@@ -434,11 +424,7 @@ export const useAudiobookStore = create<AudiobookState>()(
 
                     seekToPreviousChapter: () => {
                         const { chapters, duration, position } = get();
-                        const currentIndex = getCurrentChapterIndex(
-                            chapters,
-                            position,
-                            duration,
-                        );
+                        const currentIndex = getCurrentChapterIndex(chapters, position, duration);
                         if (currentIndex === -1) return;
                         const currentStart = chapters[currentIndex].start;
                         // >5s into chapter → restart current; otherwise go to previous chapter
@@ -480,11 +466,7 @@ export const useAudiobookStore = create<AudiobookState>()(
                                 lastFlushedPosition = nextPosition;
                                 const { server } = get();
                                 if (server) {
-                                    rememberAudiobookPlaybackSession(
-                                        server,
-                                        item,
-                                        nextPosition,
-                                    );
+                                    rememberAudiobookPlaybackSession(server, item, nextPosition);
                                 }
                             }
                         }

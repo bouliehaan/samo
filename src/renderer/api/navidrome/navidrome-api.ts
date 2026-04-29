@@ -12,7 +12,7 @@ import { getServerUrl } from '/@/renderer/utils/normalize-server-url';
 import { ndType } from '/@/shared/api/navidrome/navidrome-types';
 import { resultWithHeaders } from '/@/shared/api/utils';
 import { toast } from '/@/shared/components/toast/toast';
-import { ServerListItemWithCredential } from '/@/shared/types/domain-types';
+import { ServerListItemWithCredential, ServerType } from '/@/shared/types/domain-types';
 
 const localSettings = isElectron() ? window.api.localSettings : null;
 
@@ -350,10 +350,50 @@ const waitForResult = async (count = 0): Promise<void> => {
 
 const limitedFail = debounce(authenticationFailure, RETRY_DELAY_MS);
 const TIMEOUT_ERROR = Error();
+const REQUEST_SERVER_ID_KEY = '__samoNavidromeServerId';
+
+const getRequestServerId = (config?: unknown) => {
+    if (!config || typeof config !== 'object') return undefined;
+
+    return (config as Record<string, unknown>)[REQUEST_SERVER_ID_KEY] as string | undefined;
+};
+
+const getRequestServer = (config?: unknown) => {
+    const serverId = getRequestServerId(config);
+    const server = serverId ? useAuthStore.getState().actions.getServer(serverId) : null;
+
+    if (server?.type === ServerType.NAVIDROME) {
+        return server;
+    }
+
+    return null;
+};
+
+const setRequestCredential = (config: any, credential?: string) => {
+    if (!credential) return;
+
+    config.headers = {
+        ...config.headers,
+        'x-nd-authorization': `Bearer ${credential}`,
+    };
+};
+
+const clearServerCredentials = (serverId: string) => {
+    const { actions, currentServer } = useAuthStore.getState();
+
+    actions.updateServer(serverId, {
+        credential: undefined,
+        ndCredential: undefined,
+    });
+
+    if (currentServer?.id === serverId) {
+        actions.setCurrentServer(null);
+    }
+};
 
 axiosClient.interceptors.response.use(
     (response) => {
-        const serverId = useAuthStore.getState().currentServer?.id;
+        const serverId = getRequestServerId(response.config);
 
         if (serverId) {
             const headerCredential = response.headers['x-nd-authorization'] as string | undefined;
@@ -371,11 +411,11 @@ axiosClient.interceptors.response.use(
     },
     (error) => {
         if (error.response && error.response.status === 401) {
-            const currentServer = useAuthStore.getState().currentServer;
+            const requestServer = getRequestServer(error.config);
 
-            if (localSettings && currentServer?.savePassword) {
+            if (localSettings && requestServer?.savePassword) {
                 return localSettings
-                    .passwordGet(currentServer.id)
+                    .passwordGet(requestServer.id)
                     .then(async (password: null | string) => {
                         authSuccess = false;
 
@@ -389,6 +429,12 @@ axiosClient.interceptors.response.use(
                             // Hopefully the delay was sufficient for authentication.
                             // Otherwise, it will require manual intervention
                             if (authSuccess) {
+                                const latestServer =
+                                    useAuthStore.getState().actions.getServer(requestServer.id) ??
+                                    requestServer;
+
+                                setRequestCredential(error.config, latestServer.ndCredential);
+
                                 return axiosClient.request(error.config);
                             }
 
@@ -397,10 +443,18 @@ axiosClient.interceptors.response.use(
 
                         shouldDelay = true;
 
-                        // Do not use axiosClient. Instead, manually make a post
-                        const res = await axios.post(`${currentServer.url}/auth/login`, {
+                        const serverUrl = getServerUrl(requestServer);
+
+                        if (!serverUrl) {
+                            throw error;
+                        }
+
+                        // Do not use axiosClient. Instead, manually make a post.
+                        // Use the server from the failed Navidrome request. currentServer can be
+                        // Audiobookshelf, and Navidrome must never reauth against that service.
+                        const res = await axios.post(`${serverUrl}/auth/login`, {
                             password,
-                            username: currentServer.username,
+                            username: requestServer.username,
                         });
 
                         if (res.status === 429) {
@@ -413,12 +467,7 @@ axiosClient.interceptors.response.use(
                                 }) as string,
                             });
 
-                            const serverId = currentServer.id;
-                            useAuthStore.getState().actions.updateServer(serverId, {
-                                credential: undefined,
-                                ndCredential: undefined,
-                            });
-                            useAuthStore.getState().actions.setCurrentServer(null);
+                            clearServerCredentials(requestServer.id);
 
                             // special error to prevent sending a second message, and stop other messages that could be enqueued
                             limitedFail.cancel();
@@ -433,14 +482,14 @@ axiosClient.interceptors.response.use(
                         }
 
                         const newCredential = res.data.token;
-                        const subsonicCredential = `u=${currentServer.username}&s=${res.data.subsonicSalt}&t=${res.data.subsonicToken}`;
+                        const subsonicCredential = `u=${requestServer.username}&s=${res.data.subsonicSalt}&t=${res.data.subsonicToken}`;
 
-                        useAuthStore.getState().actions.updateServer(currentServer.id, {
+                        useAuthStore.getState().actions.updateServer(requestServer.id, {
                             credential: subsonicCredential,
                             ndCredential: newCredential,
                         });
 
-                        error.config.headers['x-nd-authorization'] = `Bearer ${newCredential}`;
+                        setRequestCredential(error.config, newCredential);
 
                         authSuccess = true;
 
@@ -455,7 +504,7 @@ axiosClient.interceptors.response.use(
                                     'Network error during reauthentication - preserving credentials',
                                 );
                             } else {
-                                limitedFail(currentServer);
+                                limitedFail(requestServer);
                             }
                         }
 
@@ -470,7 +519,7 @@ axiosClient.interceptors.response.use(
             if (isAxiosError(error) && error.code === 'ERR_NETWORK') {
                 console.log('Network error during authentication - preserving credentials');
             } else {
-                limitedFail(currentServer);
+                limitedFail(requestServer);
             }
         }
 
@@ -488,14 +537,12 @@ export const ndApiClient = (args: {
     return initClient(contract, {
         api: async ({ body, headers, method, path }) => {
             let baseUrl: string | undefined;
-            let token: string | undefined;
 
             const { params, path: api } = parsePath(path);
 
             if (server) {
                 const serverUrl = getServerUrl(server);
                 baseUrl = serverUrl ? `${serverUrl}/api` : undefined;
-                token = server?.ndCredential;
             } else {
                 baseUrl = url;
             }
@@ -503,7 +550,13 @@ export const ndApiClient = (args: {
             try {
                 if (shouldDelay) await waitForResult();
 
-                const result = await axiosClient.request({
+                const latestServer = server?.id
+                    ? (useAuthStore.getState().actions.getServer(server.id) ?? server)
+                    : server;
+
+                const token = latestServer?.ndCredential ?? server?.ndCredential;
+
+                const requestConfig: any = {
                     data: body,
                     headers: {
                         ...headers,
@@ -513,7 +566,14 @@ export const ndApiClient = (args: {
                     params,
                     signal,
                     url: `${baseUrl}/${api}`,
-                });
+                };
+
+                if (server?.id) {
+                    requestConfig[REQUEST_SERVER_ID_KEY] = server.id;
+                }
+
+                const result = await axiosClient.request(requestConfig);
+
                 return {
                     body: { data: result.data, headers: result.headers },
                     headers: result.headers as any,

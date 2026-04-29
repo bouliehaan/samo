@@ -1834,7 +1834,7 @@ const initialState: SettingsState = {
             enabled: true,
             notify: false,
             scrobbleAtDuration: 240,
-            scrobbleAtPercentage: 75,
+            scrobbleAtPercentage: 50,
         },
         transcode: {
             enabled: false,

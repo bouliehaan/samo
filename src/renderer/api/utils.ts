@@ -11,7 +11,12 @@ export const authenticationFailure = (currentServer: null | ServerListItem) => {
         const serverId = currentServer.id;
         const token = currentServer.ndCredential;
         console.error(`token is expired: ${token}`);
-        useAuthStore.getState().actions.updateServer(serverId, { ndCredential: undefined });
-        useAuthStore.getState().actions.setCurrentServer(null);
+        const { actions, currentServer: activeServer } = useAuthStore.getState();
+
+        actions.updateServer(serverId, { ndCredential: undefined });
+
+        if (activeServer?.id === serverId) {
+            actions.setCurrentServer(null);
+        }
     }
 };

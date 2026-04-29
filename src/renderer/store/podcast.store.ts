@@ -3,6 +3,7 @@ import { persist, subscribeWithSelector } from 'zustand/middleware';
 
 import { audiobookshelfController } from '/@/renderer/api/audiobookshelf/audiobookshelf-controller';
 import { useLastPlaybackSessionStore } from '/@/renderer/store/last-playback-session.store';
+import { recordRecentPodcast } from '/@/renderer/store/play-history.store';
 import { usePlaybackOwnerStore } from '/@/renderer/store/playback-owner.store';
 import { subscribePlayerStatus, usePlayerStoreBase } from '/@/renderer/store/player.store';
 import {
@@ -196,11 +197,11 @@ export const usePodcastStore = create<PodcastState>()(
 
                         usePlaybackOwnerStore.getState().claim('podcast');
                         rememberPodcastPlaybackSession(server, item, episode, 0);
+                        recordRecentPodcast(item, server.id);
 
                         // Episode duration is on the episode itself; seed it up-front so the
                         // playerbar shows the right length before /play resolves.
-                        const seedDuration =
-                            episode.duration ?? episode.audioFile?.duration ?? 0;
+                        const seedDuration = episode.duration ?? episode.audioFile?.duration ?? 0;
 
                         set({
                             contentUrl: null,
@@ -243,10 +244,7 @@ export const usePodcastStore = create<PodcastState>()(
                                 playSessionEpisode?.duration ??
                                 playSessionEpisode?.audioFile?.duration ??
                                 seedDuration;
-                            const clampedResumePosition = clampPosition(
-                                resumePosition,
-                                duration,
-                            );
+                            const clampedResumePosition = clampPosition(resumePosition, duration);
 
                             lastFlushedPosition = clampedResumePosition;
                             resetAudiobookshelfProgressSync(clampedResumePosition);
@@ -336,12 +334,7 @@ export const usePodcastStore = create<PodcastState>()(
                                 },
                             }));
                             if (server) {
-                                rememberPodcastPlaybackSession(
-                                    server,
-                                    item,
-                                    episode,
-                                    nextPosition,
-                                );
+                                rememberPodcastPlaybackSession(server, item, episode, nextPosition);
                             }
                         }
 

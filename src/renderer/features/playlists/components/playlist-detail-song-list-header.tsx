@@ -19,7 +19,7 @@ import {
 import { LibraryHeaderBar } from '/@/renderer/features/shared/components/library-header-bar';
 import { ListSearchInput } from '/@/renderer/features/shared/components/list-search-input';
 import { AppRoute } from '/@/renderer/router/routes';
-import { useCurrentServer } from '/@/renderer/store';
+import { recordRecentPlaylist, useCurrentServer } from '/@/renderer/store';
 import { formatDurationString } from '/@/renderer/utils';
 import { replaceURLWithHTMLLinks } from '/@/renderer/utils/linkify';
 import { hasFeature } from '/@/shared/api/utils';
@@ -123,6 +123,9 @@ export const PlaylistDetailSongListHeader = ({
 
     const handlePlay = (type?: Play) => {
         player.addToQueueByData(listData as Song[], type || Play.NOW);
+        if (detailQuery?.data) {
+            recordRecentPlaylist(detailQuery.data);
+        }
     };
 
     const canUploadPlaylistImage =
@@ -159,6 +162,11 @@ export const PlaylistDetailSongListHeader = ({
                     <LibraryHeaderBar ignoreMaxWidth>
                         <LibraryHeaderBar.PlayButton
                             itemType={LibraryItem.PLAYLIST}
+                            onBeforePlay={() => {
+                                if (detailQuery?.data) {
+                                    recordRecentPlaylist(detailQuery.data);
+                                }
+                            }}
                             songs={listData as Song[]}
                         />
                         <LibraryHeaderBar.Title>{detailQuery?.data?.name}</LibraryHeaderBar.Title>

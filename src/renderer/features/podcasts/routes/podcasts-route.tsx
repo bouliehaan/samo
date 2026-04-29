@@ -6,7 +6,7 @@ import { audiobookshelfController } from '/@/renderer/api/audiobookshelf/audiobo
 import { AnimatedPage } from '/@/renderer/features/shared/components/animated-page';
 import { PageErrorBoundary } from '/@/renderer/features/shared/components/page-error-boundary';
 import { AppRoute } from '/@/renderer/router/routes';
-import { useAudiobookshelfServer } from '/@/renderer/store';
+import { recordRecentPodcast, useAudiobookshelfServer } from '/@/renderer/store';
 import { AudiobookshelfLibraryItem } from '/@/shared/api/audiobookshelf/audiobookshelf-types';
 import { Image } from '/@/shared/components/image/image';
 import { Text } from '/@/shared/components/text/text';
@@ -120,10 +120,12 @@ const PodcastsRoute = () => {
 
     const items = itemQueries.flatMap((query) => query.data?.results ?? []);
     const isLoading =
-        librariesQuery.isLoading ||
-        itemQueries.some((query) => query.isLoading || query.isPending);
+        librariesQuery.isLoading || itemQueries.some((query) => query.isLoading || query.isPending);
 
     const handleOpen = (item: AudiobookshelfLibraryItem) => {
+        if (server) {
+            recordRecentPodcast(item, server.id);
+        }
         navigate(generatePath(AppRoute.PODCASTS_DETAIL, { itemId: item.id }));
     };
 

@@ -2302,6 +2302,7 @@ export const SubsonicController: InternalControllerEndpoint = {
             query: {
                 id: query.id,
                 submission: query.submission,
+                time: query.time ?? (query.submission ? Date.now() : undefined),
             },
         });
 

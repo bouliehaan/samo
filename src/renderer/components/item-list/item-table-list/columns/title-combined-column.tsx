@@ -19,11 +19,17 @@ import {
     LONG_PRESS_PLAY_BEHAVIOR,
     PlayTooltip,
 } from '/@/renderer/features/shared/components/play-button-group';
-import { usePlayButtonBehavior } from '/@/renderer/store';
+import { recordRecentArtist, recordRecentPlaylist, usePlayButtonBehavior } from '/@/renderer/store';
 import { ExplicitIndicator } from '/@/shared/components/explicit-indicator/explicit-indicator';
 import { Icon } from '/@/shared/components/icon/icon';
 import { Text } from '/@/shared/components/text/text';
-import { Folder, LibraryItem, QueueSong } from '/@/shared/types/domain-types';
+import {
+    AlbumArtist,
+    Folder,
+    LibraryItem,
+    Playlist,
+    QueueSong,
+} from '/@/shared/types/domain-types';
 import { Play } from '/@/shared/types/types';
 
 export const DefaultTitleCombinedColumn = (props: ItemTableListInnerColumn) => {
@@ -88,6 +94,16 @@ export const DefaultTitleCombinedColumn = (props: ItemTableListInnerColumn) => {
             ? {
                   component: Link,
                   isLink: true,
+                  onClick: () => {
+                      if (
+                          item._itemType === LibraryItem.ALBUM_ARTIST ||
+                          item._itemType === LibraryItem.ARTIST
+                      ) {
+                          recordRecentArtist(item as AlbumArtist);
+                      } else if (item._itemType === LibraryItem.PLAYLIST) {
+                          recordRecentPlaylist(item as Playlist);
+                      }
+                  },
                   state: { item },
                   to: path,
               }

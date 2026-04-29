@@ -32,6 +32,18 @@ export const useSendScrobble = (options?: MutationOptions) => {
                     });
                 }
 
+                queryClient.invalidateQueries({
+                    queryKey: queryKeys.songs.root(serverId),
+                });
+
+                queryClient.invalidateQueries({
+                    queryKey: queryKeys.albums.root(serverId),
+                });
+
+                queryClient.invalidateQueries({
+                    queryKey: queryKeys.albumArtists.root(serverId),
+                });
+
                 // Invalidate recently played carousel on home route
                 queryClient.invalidateQueries({
                     queryKey: ['home', 'recentlyPlayed'],

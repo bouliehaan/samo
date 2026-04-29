@@ -8,8 +8,21 @@ import { ContextMenuController } from '/@/renderer/features/context-menu/context
 import { usePlayer } from '/@/renderer/features/player/context/player-context';
 import { useSetFavorite } from '/@/renderer/features/shared/hooks/use-set-favorite';
 import { useSetRating } from '/@/renderer/features/shared/hooks/use-set-rating';
-import { useAppStore } from '/@/renderer/store';
-import { LibraryItem, QueueSong, Song } from '/@/shared/types/domain-types';
+import {
+    recordRecentAlbum,
+    recordRecentArtist,
+    recordRecentPlaylist,
+    recordRecentSong,
+    useAppStore,
+} from '/@/renderer/store';
+import {
+    Album,
+    AlbumArtist,
+    LibraryItem,
+    Playlist,
+    QueueSong,
+    Song,
+} from '/@/shared/types/domain-types';
 import { Play, TableColumn } from '/@/shared/types/types';
 
 interface UseDefaultItemListControlsArgs {
@@ -219,6 +232,12 @@ export const useDefaultItemListControls = (args?: UseDefaultItemListControlsArgs
                     itemType === LibraryItem.GENRE ||
                     itemType === LibraryItem.PLAYLIST
                 ) {
+                    if (itemType === LibraryItem.ALBUM_ARTIST || itemType === LibraryItem.ARTIST) {
+                        recordRecentArtist(item as AlbumArtist);
+                    } else if (itemType === LibraryItem.PLAYLIST) {
+                        recordRecentPlaylist(item as Playlist);
+                    }
+
                     const path = getTitlePath(itemType, item.id);
                     if (path) {
                         navigateRef.current(path, { state: { item } });
@@ -273,6 +292,7 @@ export const useDefaultItemListControls = (args?: UseDefaultItemListControlsArgs
                         return;
                     }
 
+                    recordRecentSong(item as Song);
                     playerRef.current.addToQueueByData(songsToAdd, playType, item.id);
                     return;
                 }
@@ -399,6 +419,22 @@ export const useDefaultItemListControls = (args?: UseDefaultItemListControlsArgs
             }: DefaultItemControlProps & { playType: Play }) => {
                 if (!item) {
                     return;
+                }
+
+                if (itemType === LibraryItem.ALBUM) {
+                    recordRecentAlbum(item as Album);
+                } else if (
+                    itemType === LibraryItem.ALBUM_ARTIST ||
+                    itemType === LibraryItem.ARTIST
+                ) {
+                    recordRecentArtist(item as AlbumArtist);
+                } else if (itemType === LibraryItem.PLAYLIST) {
+                    recordRecentPlaylist(item as Playlist);
+                } else if (
+                    itemType === LibraryItem.SONG ||
+                    itemType === LibraryItem.PLAYLIST_SONG
+                ) {
+                    recordRecentSong(item as Song);
                 }
 
                 playerRef.current.addToQueueByFetch(item._serverId, [item.id], itemType, playType);

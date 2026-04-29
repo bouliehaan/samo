@@ -18,7 +18,7 @@ import { useSetFavorite } from '/@/renderer/features/shared/hooks/use-set-favori
 import { useSetRating } from '/@/renderer/features/shared/hooks/use-set-rating';
 import { songsQueries } from '/@/renderer/features/songs/api/songs-api';
 import { AppRoute } from '/@/renderer/router/routes';
-import { useCurrentServer, useShowRatings } from '/@/renderer/store';
+import { recordRecentAlbum, useCurrentServer, useShowRatings } from '/@/renderer/store';
 import { useArtistRadioCount, usePlayButtonBehavior } from '/@/renderer/store/settings.store';
 import { formatDurationString, formatPartialIsoDateUTC, formatSizeString } from '/@/renderer/utils';
 import { normalizeReleaseTypes } from '/@/renderer/utils/normalize-release-types';
@@ -85,6 +85,9 @@ export const AlbumDetailHeader = forwardRef<HTMLDivElement>((_props, ref) => {
 
     const handlePlay = (type?: Play) => {
         if (!server?.id || !albumId) return;
+        if (detailQuery.data) {
+            recordRecentAlbum(detailQuery.data);
+        }
         addToQueueByFetch(server.id, [albumId], LibraryItem.ALBUM, type || playButtonBehavior);
     };
 

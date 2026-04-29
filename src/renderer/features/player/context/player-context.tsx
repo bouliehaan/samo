@@ -17,7 +17,12 @@ import {
 } from '/@/renderer/features/player/utils';
 import { playlistsQueries } from '/@/renderer/features/playlists/api/playlists-api';
 import { songsQueries } from '/@/renderer/features/songs/api/songs-api';
-import { AddToQueueType, usePlayerActions, useSettingsStore } from '/@/renderer/store';
+import {
+    AddToQueueType,
+    recordRecentSong,
+    usePlayerActions,
+    useSettingsStore,
+} from '/@/renderer/store';
 import { LogCategory, logFn } from '/@/renderer/utils/logger';
 import { logMsg } from '/@/renderer/utils/logger-message';
 import { shuffle as shuffleArray } from '/@/renderer/utils/shuffle';
@@ -198,6 +203,15 @@ export const PlayerProvider = ({ children }: { children: React.ReactNode }) => {
         (data: Song[], type: AddToQueueType, playSongId?: string) => {
             const filters = useSettingsStore.getState().playback.filters;
             const filteredData = filterSongsByPlayerFilters(data, filters);
+            const selectedSong = playSongId
+                ? data.find((song) => song.id === playSongId)
+                : data.length === 1
+                  ? data[0]
+                  : undefined;
+
+            if (selectedSong) {
+                recordRecentSong(selectedSong);
+            }
 
             if (typeof type === 'object' && 'edge' in type && type.edge !== null) {
                 const edge = type.edge === 'top' ? 'top' : 'bottom';

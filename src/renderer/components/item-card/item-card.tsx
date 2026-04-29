@@ -19,7 +19,7 @@ import { ItemControls } from '/@/renderer/components/item-list/types';
 import { JoinedArtists } from '/@/renderer/features/albums/components/joined-artists';
 import { useDragDrop } from '/@/renderer/hooks/use-drag-drop';
 import { AppRoute } from '/@/renderer/router/routes';
-import { useShowRatings } from '/@/renderer/store';
+import { recordRecentArtist, recordRecentPlaylist, useShowRatings } from '/@/renderer/store';
 import {
     formatDateAbsolute,
     formatDateRelative,
@@ -170,6 +170,14 @@ export interface ItemCardDerivativeProps extends Omit<ItemCardProps, 'type'> {
 }
 
 type ItemCardData = NonNullable<ItemCardProps['data']>;
+
+const recordRecentCardItem = (data: ItemCardData, itemType: LibraryItem) => {
+    if (itemType === LibraryItem.ALBUM_ARTIST || itemType === LibraryItem.ARTIST) {
+        recordRecentArtist(data as AlbumArtist);
+    } else if (itemType === LibraryItem.PLAYLIST) {
+        recordRecentPlaylist(data as Playlist);
+    }
+};
 
 const ItemCardStandardImageArea = memo(function ItemCardStandardImageArea({
     controls,
@@ -597,6 +605,8 @@ const CompactItemCard = ({
             // Prevent navigation on double-click, let the double-click handler work
             if (e.detail === 2 && navigationPath) {
                 e.preventDefault();
+            } else if (navigationPath) {
+                recordRecentCardItem(data, itemType);
             }
             handleClick(e as any);
         };
@@ -743,6 +753,8 @@ const DefaultItemCard = ({
             // Prevent navigation on double-click, let the double-click handler work
             if (e.detail === 2 && navigationPath) {
                 e.preventDefault();
+            } else if (navigationPath) {
+                recordRecentCardItem(data, itemType);
             }
             handleClick(e as any);
         };
@@ -969,6 +981,8 @@ const PosterItemCard = ({
             // Prevent navigation on double-click, let the double-click handler work
             if (e.detail === 2 && navigationPath) {
                 e.preventDefault();
+            } else if (navigationPath) {
+                recordRecentCardItem(data, itemType);
             }
             handleClick(e as any);
         };
@@ -1086,6 +1100,7 @@ export const getDataRows = (type?: 'compact' | 'default' | 'poster'): DataRow[] 
                                 case LibraryItem.ALBUM_ARTIST:
                                     return (
                                         <Link
+                                            onClick={() => recordRecentArtist(data)}
                                             state={{ item: data }}
                                             to={generatePath(
                                                 AppRoute.LIBRARY_ALBUM_ARTISTS_DETAIL,
@@ -1112,6 +1127,7 @@ export const getDataRows = (type?: 'compact' | 'default' | 'poster'): DataRow[] 
                                 case LibraryItem.PLAYLIST:
                                     return (
                                         <Link
+                                            onClick={() => recordRecentPlaylist(data)}
                                             state={{ item: data }}
                                             to={generatePath(AppRoute.PLAYLISTS_DETAIL_SONGS, {
                                                 playlistId: data.id,
@@ -1168,6 +1184,12 @@ export const getDataRows = (type?: 'compact' | 'default' | 'poster'): DataRow[] 
                     return (data as Album | Song).artists.map((artist, index) => (
                         <Fragment key={artist.id}>
                             <Link
+                                onClick={() =>
+                                    recordRecentArtist(artist, {
+                                        serverId: data._serverId,
+                                        serverType: data._serverType,
+                                    })
+                                }
                                 state={{ item: artist }}
                                 to={generatePath(AppRoute.LIBRARY_ALBUM_ARTISTS_DETAIL, {
                                     albumArtistId: artist.id,

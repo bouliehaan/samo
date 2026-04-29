@@ -4,42 +4,42 @@ import { shallow } from 'zustand/shallow';
 
 import { isServerLock } from '/@/renderer/features/action-required/utils/window-properties';
 import { AppRoute } from '/@/renderer/router/routes';
-import { useAuthStore, useAuthStoreActions } from '/@/renderer/store';
+import { getActiveMusicServer, useAuthStore, useAuthStoreActions } from '/@/renderer/store';
 
 const normalizeUrl = (url: string) => url.replace(/\/$/, '');
 
 export const AppOutlet = () => {
-    const currentServer = useAuthStore(
-        (state) =>
-            state.currentServer
-                ? {
-                      id: state.currentServer.id,
-                      url: state.currentServer.url,
-                  }
-                : null,
-        shallow,
-    );
+    const activeMusicServer = useAuthStore((state) => {
+        const server = getActiveMusicServer(state);
+
+        return server
+            ? {
+                  id: server.id,
+                  url: server.url,
+              }
+            : null;
+    }, shallow);
     const { deleteServer, setCurrentServer } = useAuthStoreActions();
 
     const hasServerLockMismatch = useMemo(() => {
-        if (!isServerLock() || !currentServer || !window.SERVER_URL) {
+        if (!isServerLock() || !activeMusicServer || !window.SERVER_URL) {
             return false;
         }
 
         const configuredUrl = normalizeUrl(window.SERVER_URL);
-        const persistedUrl = normalizeUrl(currentServer.url);
+        const persistedUrl = normalizeUrl(activeMusicServer.url);
 
         return configuredUrl !== persistedUrl;
-    }, [currentServer]);
+    }, [activeMusicServer]);
 
     useEffect(() => {
-        if (hasServerLockMismatch && currentServer) {
-            deleteServer(currentServer.id);
+        if (hasServerLockMismatch && activeMusicServer) {
+            deleteServer(activeMusicServer.id);
             setCurrentServer(null);
         }
-    }, [currentServer, deleteServer, hasServerLockMismatch, setCurrentServer]);
+    }, [activeMusicServer, deleteServer, hasServerLockMismatch, setCurrentServer]);
 
-    const isActionsRequired = !currentServer || hasServerLockMismatch;
+    const isActionsRequired = !activeMusicServer || hasServerLockMismatch;
 
     if (isActionsRequired) {
         return <Navigate replace to={AppRoute.ACTION_REQUIRED} />;
