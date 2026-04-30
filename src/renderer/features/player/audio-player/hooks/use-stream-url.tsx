@@ -9,6 +9,7 @@ export function useSongUrl(
     song: QueueSong | undefined,
     current: boolean,
     transcode: TranscodingConfig,
+    enabled = true,
 ): string | undefined {
     const prior = useRef(['', '']);
     const shouldReusePrior = Boolean(
@@ -16,7 +17,7 @@ export function useSongUrl(
     );
 
     const { data: queryStreamUrl } = useQuery({
-        enabled: Boolean(song?._serverId) && !shouldReusePrior,
+        enabled: enabled && Boolean(song?._serverId) && !shouldReusePrior,
         queryFn: () =>
             api.controller.getStreamUrl({
                 apiClientProps: { serverId: song!._serverId },

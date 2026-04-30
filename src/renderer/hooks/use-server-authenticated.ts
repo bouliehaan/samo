@@ -1,19 +1,13 @@
 import { isAxiosError } from 'axios';
 import isElectron from 'is-electron';
-import debounce from 'lodash/debounce';
 import isEqual from 'lodash/isEqual';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router';
 
 import { api } from '/@/renderer/api';
 import { controller } from '/@/renderer/api/controller';
 import { AppRoute } from '/@/renderer/router/routes';
-import {
-    getServerById,
-    useAuthStore,
-    useAuthStoreActions,
-    useCurrentServerId,
-} from '/@/renderer/store';
+import { getServerById, useAuthStoreActions, useCurrentServerId } from '/@/renderer/store';
 import { LogCategory, logFn } from '/@/renderer/utils/logger';
 import { logMsg } from '/@/renderer/utils/logger-message';
 import { toast } from '/@/shared/components/toast/toast';
@@ -21,7 +15,6 @@ import { AuthState } from '/@/shared/types/types';
 
 const localSettings = isElectron() ? window.api.localSettings : null;
 
-const MIN_AUTH_DELAY_MS = 1000;
 const MAX_NETWORK_RETRIES = 1;
 const NETWORK_RETRY_DELAY_MS = 500;
 
@@ -49,18 +42,54 @@ export const useServerAuthenticated = () => {
     const [ready, setReady] = useState(AuthState.LOADING);
     const navigate = useNavigate();
     const navigateRef = useRef(navigate);
-    const retryCountRef = useRef<number>(0);
 
-    const { setCurrentServer, updateServer } = useAuthStoreActions();
+    const { clearActiveServer, updateServer } = useAuthStoreActions();
 
     useEffect(() => {
         navigateRef.current = navigate;
     }, [navigate]);
 
+    const refreshServerInfo = useCallback(
+        async (serverWithAuth: NonNullable<ReturnType<typeof getServerById>>) => {
+            try {
+                const serverInfo = await controller.getServerInfo({
+                    apiClientProps: {
+                        serverId: serverWithAuth.id,
+                    },
+                });
+
+                if (serverInfo && serverInfo.id === serverWithAuth.id) {
+                    const { features, version } = serverInfo;
+                    const currentServer = getServerById(serverWithAuth.id);
+
+                    if (
+                        currentServer &&
+                        (version !== currentServer.version ||
+                            !isEqual(features, currentServer.features))
+                    ) {
+                        updateServer(serverWithAuth.id, {
+                            features,
+                            version,
+                        });
+                    }
+                }
+            } catch (serverInfoError) {
+                logFn.warn(logMsg[LogCategory.SYSTEM].serverAuthenticationSuccess, {
+                    category: LogCategory.SYSTEM,
+                    meta: {
+                        action: 'server_info_fetch_failed',
+                        error: (serverInfoError as Error).message,
+                        serverId: serverWithAuth.id,
+                        serverName: serverWithAuth.name,
+                    },
+                });
+            }
+        },
+        [updateServer],
+    );
+
     const authenticateServer = useCallback(
         async (serverWithAuth: NonNullable<ReturnType<typeof getServerById>>, retryAttempt = 0) => {
-            const authStartTime = Date.now();
-
             try {
                 setReady(AuthState.LOADING);
 
@@ -102,41 +131,7 @@ export const useServerAuthenticated = () => {
                         isAdmin: userInfo.isAdmin,
                     });
 
-                    // Fetch and update server version and features
-                    try {
-                        const serverInfo = await controller.getServerInfo({
-                            apiClientProps: {
-                                serverId: serverWithAuth.id,
-                            },
-                        });
-
-                        if (serverInfo && serverInfo.id === serverWithAuth.id) {
-                            const { features, version } = serverInfo;
-                            const currentServer = getServerById(serverWithAuth.id);
-
-                            if (
-                                currentServer &&
-                                (version !== currentServer.version ||
-                                    !isEqual(features, currentServer.features))
-                            ) {
-                                updateServer(serverWithAuth.id, {
-                                    features,
-                                    version,
-                                });
-                            }
-                        }
-                    } catch (serverInfoError) {
-                        // Log but don't fail authentication if server info fetch fails
-                        logFn.warn(logMsg[LogCategory.SYSTEM].serverAuthenticationSuccess, {
-                            category: LogCategory.SYSTEM,
-                            meta: {
-                                action: 'server_info_fetch_failed',
-                                error: (serverInfoError as Error).message,
-                                serverId: serverWithAuth.id,
-                                serverName: serverWithAuth.name,
-                            },
-                        });
-                    }
+                    void refreshServerInfo(serverWithAuth);
 
                     logFn.info(logMsg[LogCategory.SYSTEM].serverAuthenticationSuccess, {
                         category: LogCategory.SYSTEM,
@@ -149,13 +144,6 @@ export const useServerAuthenticated = () => {
                             userId: userInfo.id,
                         },
                     });
-
-                    const elapsedTime = Date.now() - authStartTime;
-                    const remainingDelay = Math.max(0, MIN_AUTH_DELAY_MS - elapsedTime);
-
-                    if (remainingDelay > 0) {
-                        await new Promise((resolve) => setTimeout(resolve, remainingDelay));
-                    }
 
                     setReady(AuthState.VALID);
                     return;
@@ -212,41 +200,7 @@ export const useServerAuthenticated = () => {
 
                             updateServer(serverWithAuth.id, updatedServer);
 
-                            // Fetch and update server version and features
-                            try {
-                                const serverInfo = await controller.getServerInfo({
-                                    apiClientProps: {
-                                        serverId: serverWithAuth.id,
-                                    },
-                                });
-
-                                if (serverInfo && serverInfo.id === serverWithAuth.id) {
-                                    const { features, version } = serverInfo;
-                                    const currentServer = getServerById(serverWithAuth.id);
-
-                                    if (
-                                        currentServer &&
-                                        (version !== currentServer.version ||
-                                            !isEqual(features, currentServer.features))
-                                    ) {
-                                        updateServer(serverWithAuth.id, {
-                                            features,
-                                            version,
-                                        });
-                                    }
-                                }
-                            } catch (serverInfoError) {
-                                // Log but don't fail authentication if server info fetch fails
-                                logFn.warn(logMsg[LogCategory.SYSTEM].serverAuthenticationSuccess, {
-                                    category: LogCategory.SYSTEM,
-                                    meta: {
-                                        action: 'server_info_fetch_failed',
-                                        error: (serverInfoError as Error).message,
-                                        serverId: serverWithAuth.id,
-                                        serverName: serverWithAuth.name,
-                                    },
-                                });
-                            }
+                            void refreshServerInfo(serverWithAuth);
 
                             logFn.info(logMsg[LogCategory.SYSTEM].serverAuthenticationSuccess, {
                                 category: LogCategory.SYSTEM,
@@ -260,14 +214,6 @@ export const useServerAuthenticated = () => {
                                     username: authData.username,
                                 },
                             });
-
-                            // Ensure minimum delay before completing authentication
-                            const elapsedTime = Date.now() - authStartTime;
-                            const remainingDelay = Math.max(0, MIN_AUTH_DELAY_MS - elapsedTime);
-
-                            if (remainingDelay > 0) {
-                                await new Promise((resolve) => setTimeout(resolve, remainingDelay));
-                            }
 
                             setReady(AuthState.VALID);
                             return;
@@ -346,22 +292,11 @@ export const useServerAuthenticated = () => {
                     message: errorMessage,
                 });
 
-                // Log the user out by setting current server to null
-                if (useAuthStore.getState().currentServer?.id === serverWithAuth.id) {
-                    setCurrentServer(null);
-                }
+                clearActiveServer(serverWithAuth.id);
                 setReady(AuthState.INVALID);
             }
         },
-        [updateServer, setCurrentServer],
-    );
-
-    const debouncedAuth = useMemo(
-        () =>
-            debounce((serverWithAuth: NonNullable<ReturnType<typeof getServerById>>) => {
-                authenticateServer(serverWithAuth).catch(console.error);
-            }, 300),
-        [authenticateServer],
+        [updateServer, refreshServerInfo, clearActiveServer],
     );
 
     useEffect(() => {
@@ -379,7 +314,6 @@ export const useServerAuthenticated = () => {
         if (priorServerId.current !== serverId) {
             const serverWithAuth = getServerById(serverId);
             priorServerId.current = serverId;
-            retryCountRef.current = 0; // Reset retry count when server changes
 
             if (!serverWithAuth) {
                 logFn.error(logMsg[LogCategory.SYSTEM].serverAuthenticationError, {
@@ -394,12 +328,9 @@ export const useServerAuthenticated = () => {
             }
 
             setReady(AuthState.LOADING);
-            debouncedAuth(serverWithAuth);
+            authenticateServer(serverWithAuth).catch(console.error);
         }
-        return () => {
-            debouncedAuth.cancel();
-        };
-    }, [debouncedAuth, serverId]);
+    }, [authenticateServer, serverId]);
 
     return ready;
 };

@@ -28,10 +28,7 @@ export const AbsCoverImage = ({ alt, fallbackIcon, itemId }: AbsCoverImageProps)
         gcTime: COVER_GC_TIME_MS,
         queryFn: async () => {
             try {
-                const dataUrl = await audiobookshelfController.getItemCoverDataUrl(
-                    server!,
-                    itemId,
-                );
+                const dataUrl = await audiobookshelfController.getItemCoverDataUrl(server!, itemId);
                 return dataUrl ?? null;
             } catch {
                 return null;
@@ -43,7 +40,20 @@ export const AbsCoverImage = ({ alt, fallbackIcon, itemId }: AbsCoverImageProps)
     });
 
     if (coverQuery.data) {
-        return <img alt={alt} loading="lazy" src={coverQuery.data} />;
+        return (
+            <img
+                alt={alt}
+                loading="lazy"
+                src={coverQuery.data}
+                style={{
+                    display: 'block',
+                    height: '100%',
+                    objectFit: 'cover',
+                    objectPosition: 'center',
+                    width: '100%',
+                }}
+            />
+        );
     }
 
     return <Icon icon={fallbackIcon} size="lg" />;

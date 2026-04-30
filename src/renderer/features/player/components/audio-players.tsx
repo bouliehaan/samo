@@ -5,7 +5,6 @@ import { eventEmitter } from '/@/renderer/events/event-emitter';
 import { UserFavoriteEventPayload, UserRatingEventPayload } from '/@/renderer/events/events';
 import { AudiobookWebPlayer } from '/@/renderer/features/audiobooks/components/audiobook-web-player';
 import { DiscordRpcHook } from '/@/renderer/features/discord-rpc/use-discord-rpc';
-import { PodcastWebPlayer } from '/@/renderer/features/podcasts/components/podcast-web-player';
 import { MainPlayerListenerHook } from '/@/renderer/features/player/audio-player/hooks/use-main-player-listener';
 import { MpvPlayer } from '/@/renderer/features/player/audio-player/mpv-player';
 import { WebPlayer } from '/@/renderer/features/player/audio-player/web-player';
@@ -17,10 +16,12 @@ import { MPRISHook } from '/@/renderer/features/player/hooks/use-mpris';
 import { PlaybackHotkeysHook } from '/@/renderer/features/player/hooks/use-playback-hotkeys';
 import { PowerSaveBlockerHook } from '/@/renderer/features/player/hooks/use-power-save-blocker';
 import { QueueRestoreTimestampHook } from '/@/renderer/features/player/hooks/use-queue-restore';
+import { RememberMusicSessionHook } from '/@/renderer/features/player/hooks/use-remember-music-session';
 import { RestoreLastPlaybackSessionHook } from '/@/renderer/features/player/hooks/use-restore-last-playback-session';
 import { ScrobbleHook } from '/@/renderer/features/player/hooks/use-scrobble';
 import { UpdateCurrentSongHook } from '/@/renderer/features/player/hooks/use-update-current-song';
 import { useWebAudio } from '/@/renderer/features/player/hooks/use-webaudio';
+import { PodcastWebPlayer } from '/@/renderer/features/podcasts/components/podcast-web-player';
 import { RadioWebPlayer } from '/@/renderer/features/radio/components/radio-web-player';
 import {
     RadioAudioInstanceHook,
@@ -136,6 +137,7 @@ export const AudioPlayers = () => {
             <PlaybackHotkeysHook />
             <RemoteHook />
             <AutoDJHook />
+            <RememberMusicSessionHook />
             <RestoreLastPlaybackSessionHook />
             <QueueRestoreTimestampHook />
             <UpdateCurrentSongHook />

@@ -122,7 +122,17 @@ export const PlaylistDetailSongListHeader = ({
     const uploadPlaylistImageMutation = useUploadPlaylistImage({});
 
     const handlePlay = (type?: Play) => {
-        player.addToQueueByData(listData as Song[], type || Play.NOW);
+        const playlistServerId = detailQuery?.data?._serverId ?? server?.id;
+        // Tag fresh-start plays with playlist context so the queue persists across launches.
+        // Additive types (LAST/NEXT) ignore the context and preserve the prior intent.
+        player.addToQueueByData(
+            listData as Song[],
+            type || Play.NOW,
+            undefined,
+            playlistServerId
+                ? { kind: 'playlist', playlistId, serverId: playlistServerId }
+                : undefined,
+        );
         if (detailQuery?.data) {
             recordRecentPlaylist(detailQuery.data);
         }
@@ -161,6 +171,15 @@ export const PlaylistDetailSongListHeader = ({
                 <PageHeader>
                     <LibraryHeaderBar ignoreMaxWidth>
                         <LibraryHeaderBar.PlayButton
+                            context={
+                                detailQuery?.data?._serverId
+                                    ? {
+                                          kind: 'playlist',
+                                          playlistId,
+                                          serverId: detailQuery.data._serverId,
+                                      }
+                                    : undefined
+                            }
                             itemType={LibraryItem.PLAYLIST}
                             onBeforePlay={() => {
                                 if (detailQuery?.data) {

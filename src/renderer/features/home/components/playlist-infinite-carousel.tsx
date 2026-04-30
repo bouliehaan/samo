@@ -13,32 +13,30 @@ import { useDefaultItemListControls } from '/@/renderer/components/item-list/hel
 import { useGridRows } from '/@/renderer/components/item-list/helpers/use-grid-rows';
 import { useCurrentServerId } from '/@/renderer/store';
 import {
-    Album,
-    AlbumListQuery,
-    AlbumListResponse,
-    AlbumListSort,
     LibraryItem,
+    Playlist,
+    PlaylistListQuery,
+    PlaylistListResponse,
+    PlaylistListSort,
     SortOrder,
 } from '/@/shared/types/domain-types';
 import { ItemListKey } from '/@/shared/types/types';
 
-interface AlbumCarouselProps {
+interface PlaylistCarouselProps {
     containerQuery?: ReturnType<typeof useGridCarouselContainerQuery>;
     enableRefresh?: boolean;
-    excludeIds?: string[];
-    query?: Partial<Omit<AlbumListQuery, 'startIndex'>>;
+    query?: Partial<Omit<PlaylistListQuery, 'startIndex'>>;
     queryKey?: QueryFunctionContext['queryKey'];
     rowCount?: number;
-    sortBy: AlbumListSort;
+    sortBy: PlaylistListSort;
     sortOrder: SortOrder;
     title: React.ReactNode | string;
 }
 
-const BaseAlbumInfiniteCarousel = (props: AlbumCarouselProps & { rows: DataRow[] }) => {
+const BasePlaylistInfiniteCarousel = (props: PlaylistCarouselProps & { rows: DataRow[] }) => {
     const {
         containerQuery,
         enableRefresh,
-        excludeIds,
         query: additionalQuery,
         queryKey,
         rowCount = 1,
@@ -48,40 +46,36 @@ const BaseAlbumInfiniteCarousel = (props: AlbumCarouselProps & { rows: DataRow[]
         title,
     } = props;
     const {
-        data: albums,
+        data: playlists,
         fetchNextPage,
         hasNextPage,
         isError,
         isFetchingNextPage,
         isLoading,
         refetch,
-    } = useAlbumListInfinite(sortBy, sortOrder, 20, additionalQuery, queryKey);
+    } = usePlaylistListInfinite(sortBy, sortOrder, 20, additionalQuery, queryKey);
 
     const controls = useDefaultItemListControls();
 
     const cards = useMemo(() => {
-        const allItems = albums?.pages.flatMap((page: AlbumListResponse) => page.items) || [];
-        const filteredItems = excludeIds
-            ? allItems.filter((album) => !excludeIds.includes(album.id))
-            : allItems;
+        const allItems = playlists?.pages.flatMap((page: PlaylistListResponse) => page.items) || [];
 
-        return filteredItems.map((album: Album) => ({
+        return allItems.map((playlist: Playlist) => ({
             content: (
                 <MemoizedItemCard
                     controls={controls}
-                    data={album}
+                    data={playlist}
                     enableDrag
-                    enableExpansion
                     imageFetchPriority="low"
-                    itemType={LibraryItem.ALBUM}
+                    itemType={LibraryItem.PLAYLIST}
                     rows={rows}
                     type="poster"
                     withControls
                 />
             ),
-            id: album.id,
+            id: playlist.id,
         }));
-    }, [albums, controls, excludeIds, rows]);
+    }, [playlists, controls, rows]);
 
     const handleNextPage = useCallback(() => {}, []);
 
@@ -91,26 +85,20 @@ const BaseAlbumInfiniteCarousel = (props: AlbumCarouselProps & { rows: DataRow[]
         refetch();
     }, [refetch]);
 
-    const firstPageItems = excludeIds
-        ? albums?.pages[0]?.items.filter((album) => !excludeIds.includes(album.id)) || []
-        : albums?.pages[0]?.items || [];
+    const firstPageItems = playlists?.pages[0]?.items || [];
 
     if (isLoading) {
         return (
             <GridCarouselSkeletonFallback
                 containerQuery={containerQuery}
-                placeholderItemType={LibraryItem.ALBUM}
+                placeholderItemType={LibraryItem.PLAYLIST}
                 placeholderRows={rows}
                 title={title}
             />
         );
     }
 
-    if (isError) {
-        return null;
-    }
-
-    if (firstPageItems.length === 0) {
+    if (isError || firstPageItems.length === 0) {
         return null;
     }
 
@@ -125,7 +113,7 @@ const BaseAlbumInfiniteCarousel = (props: AlbumCarouselProps & { rows: DataRow[]
             onNextPage={handleNextPage}
             onPrevPage={handlePrevPage}
             onRefresh={handleRefresh}
-            placeholderItemType={LibraryItem.ALBUM}
+            placeholderItemType={LibraryItem.PLAYLIST}
             placeholderRows={rows}
             rowCount={rowCount}
             title={title}
@@ -133,28 +121,29 @@ const BaseAlbumInfiniteCarousel = (props: AlbumCarouselProps & { rows: DataRow[]
     );
 };
 
-export const AlbumInfiniteCarousel = (props: AlbumCarouselProps) => {
-    const rows = useGridRows(LibraryItem.ALBUM, ItemListKey.ALBUM);
+export const PlaylistInfiniteCarousel = (props: PlaylistCarouselProps) => {
+    const rows = useGridRows(LibraryItem.PLAYLIST, ItemListKey.PLAYLIST);
 
-    return <BaseAlbumInfiniteCarousel {...props} rows={rows} />;
+    return <BasePlaylistInfiniteCarousel {...props} rows={rows} />;
 };
 
-function useAlbumListInfinite(
-    sortBy: AlbumListSort,
+function usePlaylistListInfinite(
+    sortBy: PlaylistListSort,
     sortOrder: SortOrder,
     itemLimit: number,
-    additionalQuery?: Partial<Omit<AlbumListQuery, 'startIndex'>>,
+    additionalQuery?: Partial<Omit<PlaylistListQuery, 'startIndex'>>,
     overrideQueryKey?: QueryFunctionContext['queryKey'],
 ) {
     const serverId = useCurrentServerId();
 
-    const defaultQueryKey = queryKeys.albums.infiniteList(serverId, {
+    const defaultQueryKey = queryKeys.playlists.list(serverId, {
         sortBy,
         sortOrder,
         ...additionalQuery,
+        startIndex: 0,
     });
 
-    const query = useInfiniteQuery<AlbumListResponse>({
+    const query = useInfiniteQuery<PlaylistListResponse>({
         enabled: Boolean(serverId),
         getNextPageParam: (lastPage, _allPages, lastPageParam) => {
             if (lastPage.items.length < itemLimit) {
@@ -167,7 +156,7 @@ function useAlbumListInfinite(
         },
         initialPageParam: '0',
         queryFn: ({ pageParam, signal }) => {
-            return api.controller.getAlbumList({
+            return api.controller.getPlaylistList({
                 apiClientProps: { serverId, signal },
                 query: {
                     limit: itemLimit,

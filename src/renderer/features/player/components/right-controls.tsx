@@ -40,7 +40,6 @@ import { Rating } from '/@/shared/components/rating/rating';
 import { useHotkeys } from '/@/shared/hooks/use-hotkeys';
 import { useMediaQuery } from '/@/shared/hooks/use-media-query';
 import { useThrottledCallback } from '/@/shared/hooks/use-throttled-callback';
-import { useThrottledValue } from '/@/shared/hooks/use-throttled-value';
 import { LibraryItem, QueueSong, ServerType } from '/@/shared/types/domain-types';
 
 const calculateVolumeUp = (volume: number, volumeWheelStep: number) => {
@@ -390,17 +389,18 @@ const VolumeButton = () => {
 
     const [sliderValue, setSliderValue] = useState(volume);
 
-    const throttledVolume = useThrottledValue(sliderValue, 100);
-
-    // Sync throttled value to actual volume
-    useEffect(() => {
-        setVolume(throttledVolume);
-    }, [throttledVolume, setVolume]);
-
-    // Sync external volume changes to local state
+    // Mirror external volume changes (hydration, hotkeys, mute) into the local slider value.
+    // This is the only path that updates the slider when the user is not dragging.
     useEffect(() => {
         setSliderValue(volume);
     }, [volume]);
+
+    // The slider fires onChange continuously while dragging. We throttle the store write so
+    // the leading edge is responsive and the trailing edge captures the final resting value.
+    // Crucially: we only write when the user actually moves the slider — never on mount —
+    // so an initial-render `setVolume(volume)` can't overwrite the persisted value before
+    // hydration completes.
+    const setVolumeThrottled = useThrottledCallback(setVolume, 100);
 
     const handleVolumeDown = useCallback(() => {
         decreaseVolume(volumeWheelStep);
@@ -410,9 +410,13 @@ const VolumeButton = () => {
         increaseVolume(volumeWheelStep);
     }, [increaseVolume, volumeWheelStep]);
 
-    const handleVolumeSlider = useCallback((e: number) => {
-        setSliderValue(e);
-    }, []);
+    const handleVolumeSlider = useCallback(
+        (e: number) => {
+            setSliderValue(e);
+            setVolumeThrottled(e);
+        },
+        [setVolumeThrottled],
+    );
 
     const handleMute = useCallback(() => {
         mediaToggleMute();

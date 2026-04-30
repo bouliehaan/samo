@@ -11,7 +11,14 @@
         <% } %>
         <script>
             (function () {
-                if (localStorage.getItem('umami.disabled') !== '1' && window.ANALYTICS_DISABLED !== true && window.ANALYTICS_DISABLED !== 'true') {
+                var isLocalDev =
+                    location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+                if (
+                    !isLocalDev &&
+                    localStorage.getItem('umami.disabled') !== '1' &&
+                    window.ANALYTICS_DISABLED !== true &&
+                    window.ANALYTICS_DISABLED !== 'true'
+                ) {
                     var s = document.createElement('script');
                     s.defer = true;
                     s.src = 'https://umami.bouliehaan.org/script.js';

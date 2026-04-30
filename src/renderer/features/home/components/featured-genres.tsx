@@ -1,4 +1,4 @@
-import { useQueryClient, useSuspenseQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { shuffle } from 'lodash';
 import { memo, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -65,7 +65,7 @@ export const FeaturedGenres = () => {
         sm: 360,
     });
 
-    const genresQuery = useSuspenseQuery({
+    const genresQuery = useQuery({
         ...genresQueries.list({
             query: {
                 limit: -1,
@@ -75,8 +75,11 @@ export const FeaturedGenres = () => {
             },
             serverId: server?.id,
         }),
-        queryKey: [server.id, 'home', 'featured-genres'],
+        enabled: Boolean(server?.id),
+        queryKey: [server?.id ?? '', 'home', 'featured-genres'],
     });
+
+    const hasNoGenres = !genresQuery.data?.items?.length;
 
     const randomGenres = useMemo(() => {
         if (!genresQuery.data?.items) return [];
@@ -113,6 +116,10 @@ export const FeaturedGenres = () => {
             };
         });
     }, [visibleGenres]);
+
+    if (!server?.id || genresQuery.isError || hasNoGenres) {
+        return null;
+    }
 
     return (
         <div className={styles.container} ref={ref}>

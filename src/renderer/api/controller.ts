@@ -4,7 +4,12 @@ import { JellyfinController } from '/@/renderer/api/jellyfin/jellyfin-controller
 import { NavidromeController } from '/@/renderer/api/navidrome/navidrome-controller';
 import { SubsonicController } from '/@/renderer/api/subsonic/subsonic-controller';
 import { mergeMusicFolderId } from '/@/renderer/api/utils-music-folder';
-import { getServerById, useAuthStore, useSettingsStore } from '/@/renderer/store';
+import {
+    getActiveMusicServer,
+    getServerById,
+    useAuthStore,
+    useSettingsStore,
+} from '/@/renderer/store';
 import { toast } from '/@/shared/components/toast/toast';
 import {
     AuthenticationResponse,
@@ -28,7 +33,8 @@ const apiController = <K extends keyof ControllerEndpoint>(
     endpoint: K,
     type?: ServerType,
 ): NonNullable<InternalControllerEndpoint[K]> => {
-    const serverType = type || useAuthStore.getState().currentServer?.type;
+    const authState = useAuthStore.getState();
+    const serverType = type || getActiveMusicServer(authState)?.type;
 
     if (!serverType) {
         toast.error({

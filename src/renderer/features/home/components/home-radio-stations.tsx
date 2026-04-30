@@ -1,11 +1,11 @@
 import { ActionIcon, Box, Center, Stack } from '@mantine/core';
 import { useQuery } from '@tanstack/react-query';
 import clsx from 'clsx';
-import { Link } from 'react-router';
 
 import styles from './home-radio-stations.module.css';
 
 import { ItemImage } from '/@/renderer/components/item-image/item-image';
+import { HomeSectionTitle } from '/@/renderer/features/home/components/home-section-title';
 import { radioQueries } from '/@/renderer/features/radio/api/radio-api';
 import {
     useRadioControls,
@@ -13,7 +13,6 @@ import {
 } from '/@/renderer/features/radio/hooks/use-radio-player';
 import { AppRoute } from '/@/renderer/router/routes';
 import { useCurrentServer } from '/@/renderer/store';
-import { Button } from '/@/shared/components/button/button';
 import { Icon } from '/@/shared/components/icon/icon';
 import { Text } from '/@/shared/components/text/text';
 import { LibraryItem } from '/@/shared/types/domain-types';
@@ -38,15 +37,7 @@ export const HomeRadioStations = () => {
 
     return (
         <section className={styles.section}>
-            <div className={styles.header}>
-                <Text fw={700} size="xl">
-                    Radio stations
-                </Text>
-                <Button component={Link} size="compact-sm" to={AppRoute.RADIO} variant="subtle">
-                    View all
-                </Button>
-            </div>
-
+            <HomeSectionTitle title="Favorite Radio Stations" to={AppRoute.RADIO} />
             <div className={styles.grid}>
                 {stations.map((station) => {
                     const isCurrentStation = currentStreamUrl === station.streamUrl;
@@ -110,8 +101,9 @@ export const HomeRadioStations = () => {
                                 </ActionIcon>
                             </Box>
 
-                            <Stack gap={2}>
-                                <Text className={styles.name} fw={600} size="sm">
+                            <Stack className={styles.copy} gap={2}>
+                                <span className={styles.liveBadge}>LIVE</span>
+                                <Text className={styles.name} fw={700} size="sm">
                                     {station.name}
                                 </Text>
                                 <Text className={styles.subtitle} isMuted size="xs">

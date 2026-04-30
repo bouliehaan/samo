@@ -9,6 +9,8 @@ type PlayerStorePersistedSlice = {
     queue?: QueueData;
 };
 
+let playerStoreHydratedForPersistence = false;
+
 export function cleanQueueForPersistence(queue: QueueData): QueueData {
     const allQueueIds = new Set(queue.default || []);
     const songs = queue.songs || {};
@@ -62,6 +64,23 @@ export async function migratePlayerStorePersist(storeName: string): Promise<void
     );
 }
 
+export function setPlayerStoreHydratedForPersistence(value: boolean): void {
+    playerStoreHydratedForPersistence = value;
+}
+
+function hasStructuredPersistedMusicContext(player: unknown): boolean {
+    if (!player || typeof player !== 'object') return false;
+
+    const context = (player as { context?: unknown }).context;
+
+    // Legacy persisted queues predate playback context. Allow those through so older
+    // users do not silently lose their saved queue during the v4 migration path.
+    if (!context || typeof context !== 'object') return true;
+
+    const kind = (context as { kind?: unknown }).kind;
+    return kind === 'album' || kind === 'playlist';
+}
+
 function playerStoreQueueKey(storeName: string): string {
     return `${storeName}-queue`;
 }
@@ -86,13 +105,16 @@ export const playerStoreStorage: PersistStorage<unknown> = {
         let queue: QueueData | undefined;
         const queueRaw = await get(playerStoreQueueKey(name));
 
-        if (queueRaw) {
+        if (queueRaw && hasStructuredPersistedMusicContext(parsed.state?.player)) {
             try {
                 queue = JSON.parse(queueRaw as string) as QueueData;
             } catch {
                 queue = undefined;
             }
-        } else if (parsed.state?.queue) {
+        } else if (
+            parsed.state?.queue &&
+            hasStructuredPersistedMusicContext(parsed.state?.player)
+        ) {
             // Fallback to legacy format if queue is not found
             queue = parsed.state.queue;
         }
@@ -113,6 +135,10 @@ export const playerStoreStorage: PersistStorage<unknown> = {
     },
 
     setItem: async (name, value) => {
+        if (!playerStoreHydratedForPersistence) {
+            return;
+        }
+
         const { state: rawState, version } = value;
         const state = rawState as PlayerStorePersistedSlice;
         const player = state.player;

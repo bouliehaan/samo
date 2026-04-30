@@ -416,8 +416,9 @@ export function WebPlayer() {
         }
     }, [calculateReplayGain, num, player1, player2Source, player2, volume, webAudio]);
 
-    const player1Url = useSongUrl(player1, num === 1, transcode);
-    const player2Url = useSongUrl(player2, num === 2, transcode);
+    const shouldResolveUrls = status === PlayerStatus.PLAYING;
+    const player1Url = useSongUrl(player1, num === 1, transcode, shouldResolveUrls);
+    const player2Url = useSongUrl(player2, num === 2, transcode, shouldResolveUrls);
 
     const handlePlayer1Start = useCallback(
         async (player: ReactPlayer) => {

@@ -1,16 +1,25 @@
+import type { QueryClient } from '@tanstack/react-query';
+
+import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef } from 'react';
 
 import { audiobookshelfController } from '/@/renderer/api/audiobookshelf/audiobookshelf-controller';
+import { getSongById } from '/@/renderer/features/player/utils';
 import { useRadioStore as useRadioPlayerStore } from '/@/renderer/features/radio/hooks/use-radio-player';
 import { useRadioStore as useRadioStationStore } from '/@/renderer/features/radio/store/radio-store';
-import { getServerById } from '/@/renderer/store/auth.store';
 import { useAudiobookStore } from '/@/renderer/store/audiobook.store';
+import { getServerById } from '/@/renderer/store/auth.store';
 import {
+    isStructuredMusicContext,
     type LastPlaybackSession,
+    rememberMusicPlaybackSession,
+    SONG_CONTEXT,
     useLastPlaybackSessionStore,
 } from '/@/renderer/store/last-playback-session.store';
 import { usePlaybackOwnerStore } from '/@/renderer/store/playback-owner.store';
+import { usePlayerHydrated, usePlayerStoreBase } from '/@/renderer/store/player.store';
 import { usePodcastStore } from '/@/renderer/store/podcast.store';
+import { setTimestamp } from '/@/renderer/store/timestamp.store';
 
 const restoreAudiobookSession = async (
     session: Extract<LastPlaybackSession, { source: 'audiobook' }>,
@@ -22,9 +31,7 @@ const restoreAudiobookSession = async (
     if (usePlaybackOwnerStore.getState().source) return true;
 
     const position =
-        session.position ??
-        useAudiobookStore.getState().resumeByItemId[session.itemId] ??
-        0;
+        session.position ?? useAudiobookStore.getState().resumeByItemId[session.itemId] ?? 0;
 
     useAudiobookStore.setState((state) => ({
         chapters: item.media?.chapters ?? [],
@@ -59,9 +66,7 @@ const restorePodcastSession = async (
     const resumeKey = `${session.itemId}::${session.episodeId}`;
     const duration = episode.duration ?? episode.audioFile?.duration ?? 0;
     const position =
-        session.position ??
-        usePodcastStore.getState().resumeByEpisodeKey[resumeKey] ??
-        0;
+        session.position ?? usePodcastStore.getState().resumeByEpisodeKey[resumeKey] ?? 0;
     const clampedPosition =
         duration > 0 ? Math.min(Math.max(0, position), duration) : Math.max(0, position);
 
@@ -84,9 +89,68 @@ const restorePodcastSession = async (
     return true;
 };
 
-const restoreRadioSession = (
-    session: Extract<LastPlaybackSession, { source: 'radio' }>,
+const restoreMusicSession = async (
+    session: Extract<LastPlaybackSession, { source: 'music' }>,
+    queryClient: QueryClient,
 ) => {
+    if (usePlaybackOwnerStore.getState().source) return true;
+
+    const player = usePlayerStoreBase.getState();
+    const persistedQueue = player.getQueue();
+    const queueAlreadyRestored = persistedQueue.items.length > 0;
+    const restoredQueueContext = player.player.context ?? session.context;
+
+    // Album / playlist contexts: zustand-persist already rehydrated the queue + index
+    // (the partialize gate let it through). Trust the hydrated player context over the
+    // session context because the session is only metadata and can lag behind by one write.
+    if (queueAlreadyRestored && isStructuredMusicContext(restoredQueueContext)) {
+        usePlaybackOwnerStore.getState().claim('music');
+        if (typeof session.position === 'number') {
+            setTimestamp(session.position);
+        }
+
+        const song = player.getCurrentSong();
+        rememberMusicPlaybackSession({
+            context: restoredQueueContext,
+            position: session.position,
+            songRef:
+                song?.id && song?._serverId
+                    ? { serverId: song._serverId, songId: song.id }
+                    : undefined,
+        });
+
+        return true;
+    }
+
+    // Single-song lifeboat: queue wasn't persisted (kind: 'song'). Fetch the saved
+    // track by id and seed a one-track queue paused at the saved position. The user
+    // has to press play to resume — we never auto-play on launch.
+    if (!session.songRef) return false;
+    const { serverId, songId } = session.songRef;
+    const server = getServerById(serverId);
+    if (!server) return false;
+
+    try {
+        const songResponse = await getSongById({ id: songId, queryClient, serverId });
+        const song = songResponse.items[0];
+        if (!song) return false;
+
+        // Re-claim must happen after fetch resolves in case another source claimed in
+        // the meantime (e.g. user opened a podcast before this resolved).
+        if (usePlaybackOwnerStore.getState().source) return true;
+
+        const position = session.position ?? 0;
+        usePlayerStoreBase
+            .getState()
+            .setQueue([song], 0, position, SONG_CONTEXT, /* autoPlay */ false);
+        setTimestamp(position);
+        return true;
+    } catch {
+        return false;
+    }
+};
+
+const restoreRadioSession = (session: Extract<LastPlaybackSession, { source: 'radio' }>) => {
     const station = useRadioStationStore
         .getState()
         .actions.getStation(session.serverId, session.stationId);
@@ -114,13 +178,16 @@ const restoreRadioSession = (
 
 export const useRestoreLastPlaybackSession = () => {
     const hasRestoredRef = useRef(false);
+    const playerHydrated = usePlayerHydrated();
+    const queryClient = useQueryClient();
 
     useEffect(() => {
+        if (!playerHydrated) return;
         if (hasRestoredRef.current) return;
         hasRestoredRef.current = true;
 
         const session = useLastPlaybackSessionStore.getState().session;
-        if (!session || session.source === 'music') return;
+        if (!session) return;
 
         const restore = async () => {
             try {
@@ -131,19 +198,21 @@ export const useRestoreLastPlaybackSession = () => {
                     didRestore = await restorePodcastSession(session);
                 } else if (session.source === 'radio') {
                     didRestore = restoreRadioSession(session);
+                } else if (session.source === 'music') {
+                    didRestore = await restoreMusicSession(session, queryClient);
                 }
 
                 if (!didRestore) {
                     useLastPlaybackSessionStore.getState().actions.clear();
                 }
             } catch {
-                // Temporary ABS/network failures should fall back for this launch
+                // Temporary network failures should fall back for this launch
                 // without forgetting the saved target.
             }
         };
 
         restore();
-    }, []);
+    }, [playerHydrated, queryClient]);
 };
 
 export const RestoreLastPlaybackSessionHook = () => {

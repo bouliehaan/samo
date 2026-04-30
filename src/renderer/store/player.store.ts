@@ -8,14 +8,23 @@ import { createWithEqualityFn } from 'zustand/traditional';
 
 import { eventEmitter } from '/@/renderer/events/event-emitter';
 import { createSelectors } from '/@/renderer/lib/zustand';
-import { rememberMusicPlaybackSession } from '/@/renderer/store/last-playback-session.store';
+import {
+    isStructuredMusicContext,
+    type MusicPlaybackContext,
+    rememberMusicPlaybackSession,
+    SONG_CONTEXT,
+} from '/@/renderer/store/last-playback-session.store';
 import { usePlaybackOwnerStore } from '/@/renderer/store/playback-owner.store';
 import { useSettingsStore } from '/@/renderer/store/settings.store';
 import {
     setTimestamp as setTimestampStore,
     useTimestampStoreBase,
 } from '/@/renderer/store/timestamp.store';
-import { migratePlayerStorePersist, playerStoreStorage } from '/@/renderer/store/utils';
+import {
+    migratePlayerStorePersist,
+    playerStoreStorage,
+    setPlayerStoreHydratedForPersistence,
+} from '/@/renderer/store/utils';
 import { shuffleInPlace } from '/@/renderer/utils/shuffle';
 import { PlayerData, QueueData, QueueSong, Song } from '/@/shared/types/domain-types';
 import {
@@ -32,7 +41,19 @@ export interface PlayerState extends Actions, State {}
 export type QueueGroupingProperty = keyof QueueSong;
 
 interface Actions {
-    addToQueueByType: (items: Song[], playType: Play, playSongId?: string) => void;
+    addToQueueByType: (
+        items: Song[],
+        playType: Play,
+        playSongId?: string,
+        /**
+         * Optional context describing the source (album/playlist) the user invoked.
+         * Only consulted for fresh-start play types (`Play.NOW`, `Play.SHUFFLE`); additive
+         * play types (LAST, NEXT, etc.) preserve the current context. When fresh-start
+         * fires without an explicit context the player resets to `SONG_CONTEXT` — this is
+         * what keeps an old album context from bleeding into an unrelated single-track play.
+         */
+        context?: MusicPlaybackContext,
+    ) => void;
     addToQueueByUniqueId: (
         items: Song[],
         uniqueId: string,
@@ -74,8 +95,21 @@ interface Actions {
     moveSelectedToTop: (items: QueueSong[]) => void;
     setCrossfadeDuration: (duration: number) => void;
     setCrossfadeStyle: (style: CrossfadeStyle) => void;
+    setMusicPlaybackContext: (context: MusicPlaybackContext) => void;
     setPauseOnNextSongEnd: (value: boolean) => void;
-    setQueue: (data: Song[], index?: number, position?: number) => void;
+    setQueue: (
+        data: Song[],
+        index?: number,
+        position?: number,
+        /** Defaults to `SONG_CONTEXT` — `setQueue` is always a fresh start. */
+        context?: MusicPlaybackContext,
+        /**
+         * When false, the queue is seeded paused — used by launch-time session restore
+         * (one-track lifeboat) so the user can press play to resume rather than having
+         * audio start unprompted. Defaults to true (user-initiated playback).
+         */
+        autoPlay?: boolean,
+    ) => void;
     setRepeat: (repeat: PlayerRepeat) => void;
     setShuffle: (shuffle: PlayerShuffle) => void;
     setSpeed: (speed: number) => void;
@@ -96,6 +130,12 @@ interface GroupedQueue {
 interface State {
     hydrated: boolean;
     player: {
+        /**
+         * What the user explicitly asked to play. Determines whether the queue is worth
+         * persisting across launches (album / playlist) or whether only the current song
+         * should be remembered as a one-track lifeboat (song).
+         */
+        context: MusicPlaybackContext;
         crossfadeDuration: number;
         crossfadeStyle: CrossfadeStyle;
         index: number;
@@ -302,6 +342,7 @@ function regenerateShuffledIndexesIfNeeded(state: {
 const initialState: State = {
     hydrated: false,
     player: {
+        context: SONG_CONTEXT,
         crossfadeDuration: 5,
         crossfadeStyle: CrossfadeStyle.EQUAL_POWER,
         index: -1,
@@ -325,15 +366,29 @@ const initialState: State = {
 
 const claimMusicPlayback = () => {
     usePlaybackOwnerStore.getState().claim('music');
-    rememberMusicPlaybackSession();
 };
 
 export const usePlayerStoreBase = createWithEqualityFn<PlayerState>()(
     persist(
         subscribeWithSelector(
             immer((set, get) => ({
-                addToQueueByType: (items, playType, playSongId) => {
+                addToQueueByType: (items, playType, playSongId, context) => {
                     claimMusicPlayback();
+
+                    // Fresh-start play types replace the listening intent. Default to
+                    // `SONG_CONTEXT` so an old album/playlist context can't bleed into a
+                    // single-track play; structured callers (album/playlist headers) pass
+                    // their own context. Additive play types (LAST, NEXT, SHUFFLE variants
+                    // for inserts) intentionally fall through and preserve the current
+                    // context — adding "Play next" to an album doesn't end the album.
+                    const isFreshStart = playType === Play.NOW || playType === Play.SHUFFLE;
+                    if (isFreshStart) {
+                        const nextContext = context ?? SONG_CONTEXT;
+                        set((state) => {
+                            state.player.context = nextContext;
+                        });
+                        rememberMusicPlaybackSession({ context: nextContext });
+                    }
 
                     const newItems = items.map(toQueueSong);
                     const newUniqueIds = newItems.map((item) => item._uniqueId);
@@ -1314,8 +1369,10 @@ export const usePlayerStoreBase = createWithEqualityFn<PlayerState>()(
                         state.queue.default = newQueue;
                     });
                 },
-                setQueue: (items, index, position) => {
+                setQueue: (items, index, position, context, autoPlay = true) => {
                     claimMusicPlayback();
+
+                    const nextContext = context ?? SONG_CONTEXT;
 
                     const newItems = items.map(toQueueSong);
                     const newUniqueIds = newItems.map((item) => item._uniqueId);
@@ -1326,10 +1383,13 @@ export const usePlayerStoreBase = createWithEqualityFn<PlayerState>()(
                         });
 
                         state.player.index = index ?? 0;
-                        state.player.status = PlayerStatus.PLAYING;
+                        state.player.status = autoPlay ? PlayerStatus.PLAYING : PlayerStatus.PAUSED;
                         state.player.playerNum = 1;
+                        state.player.context = nextContext;
                         state.queue.default = newUniqueIds;
                     });
+
+                    rememberMusicPlaybackSession({ context: nextContext });
 
                     eventEmitter.emit('QUEUE_RESTORED', {
                         data: items,
@@ -1348,6 +1408,12 @@ export const usePlayerStoreBase = createWithEqualityFn<PlayerState>()(
                     set((state) => {
                         state.player.crossfadeStyle = style;
                     });
+                },
+                setMusicPlaybackContext: (context: MusicPlaybackContext) => {
+                    set((state) => {
+                        state.player.context = context;
+                    });
+                    rememberMusicPlaybackSession({ context });
                 },
                 setPauseOnNextSongEnd: (value: boolean) => {
                     set((state) => {
@@ -1582,18 +1648,28 @@ export const usePlayerStoreBase = createWithEqualityFn<PlayerState>()(
             },
             name: 'player-store',
             onRehydrateStorage: () => () => {
+                setPlayerStoreHydratedForPersistence(true);
                 usePlayerStoreBase.setState({ hydrated: true });
             },
             partialize: (state) => {
-                const shouldRestorePlayQueue = useSettingsStore.getState().general.resume;
+                // The `general.resume` setting is the master kill switch. When false, we never
+                // persist the queue regardless of context — the user has opted out of resume
+                // entirely and `RestoreLastPlaybackSessionHook` becomes the only restoration path
+                // (one-track lifeboat for music, audiobook/podcast/radio still restore from their
+                // own session metadata).
+                const resumeEnabled = useSettingsStore.getState().general.resume;
 
-                // Exclude playerNum, seekToTimestamp, and status from stored player object
-                // These are not needed to be stored since they are ephemeral properties
-                // Note: timestamp is now in a separate store and doesn't need to be excluded here
+                // Persist the queue only for "structured" contexts where the queue itself is the
+                // listening intent (album, playlist). Ad-hoc song plays don't bloat the queue
+                // across launches; their continuity comes from `last-playback-session.store`.
+                const persistQueue =
+                    resumeEnabled && isStructuredMusicContext(state.player.context);
+
+                // playerNum / seekToTimestamp / status are ephemeral and never restored.
                 const excludedPlayerKeys = ['playerNum', 'seekToTimestamp', 'status'];
 
-                // If we're not restoring the play queue, we don't need the index property
-                if (!shouldRestorePlayQueue) {
+                // The current index only makes sense when its queue is being restored alongside.
+                if (!persistQueue) {
                     excludedPlayerKeys.push('index');
                 }
 
@@ -1603,7 +1679,7 @@ export const usePlayerStoreBase = createWithEqualityFn<PlayerState>()(
                     ),
                 ) as typeof state.player;
 
-                if (!shouldRestorePlayQueue) {
+                if (!persistQueue) {
                     return { player };
                 }
 
@@ -1649,6 +1725,7 @@ export const usePlayerActions = () => {
             moveSelectedToTop: state.moveSelectedToTop,
             setCrossfadeDuration: state.setCrossfadeDuration,
             setCrossfadeStyle: state.setCrossfadeStyle,
+            setMusicPlaybackContext: state.setMusicPlaybackContext,
             setPauseOnNextSongEnd: state.setPauseOnNextSongEnd,
             setQueue: state.setQueue,
             setRepeat: state.setRepeat,

@@ -120,12 +120,15 @@ export const MpvPlayerEngine = (props: MpvPlayerEngineProps) => {
             // After initialization, populate the queue if currentSrc is available.
             // Normal song playback must always be allowed to reclaim MPV from radio.
             const playerData = usePlayerStore.getState().getPlayerData();
-            const currentSongUrl = playerData.currentSong
-                ? await getSongUrl(playerData.currentSong, transcode, true)
-                : undefined;
-            const nextSongUrl = playerData.nextSong
-                ? await getSongUrl(playerData.nextSong, transcode, true)
-                : undefined;
+            const shouldPopulateQueue = playerData.status === PlayerStatus.PLAYING;
+            const currentSongUrl =
+                shouldPopulateQueue && playerData.currentSong
+                    ? await getSongUrl(playerData.currentSong, transcode, true)
+                    : undefined;
+            const nextSongUrl =
+                shouldPopulateQueue && playerData.nextSong
+                    ? await getSongUrl(playerData.nextSong, transcode, true)
+                    : undefined;
 
             if (currentSongUrl && !hasPopulatedQueueRef.current && mpvPlayer) {
                 useRadioStore.setState({

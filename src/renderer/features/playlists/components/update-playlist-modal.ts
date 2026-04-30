@@ -1,7 +1,7 @@
 import { openContextModal } from '@mantine/modals';
 
 import i18n from '/@/i18n/i18n';
-import { useAuthStore } from '/@/renderer/store';
+import { getActiveMusicServer, useAuthStore } from '/@/renderer/store';
 import { hasFeature } from '/@/shared/api/utils';
 import { Playlist } from '/@/shared/types/domain-types';
 import { ServerFeature } from '/@/shared/types/features-types';
@@ -9,7 +9,7 @@ import { ServerFeature } from '/@/shared/types/features-types';
 export const openUpdatePlaylistModal = async (args: { playlist: Playlist }) => {
     const { playlist } = args;
 
-    const server = useAuthStore.getState().currentServer;
+    const server = getActiveMusicServer(useAuthStore.getState());
     const hasImageUpload = hasFeature(server, ServerFeature.PLAYLIST_IMAGE_UPLOAD);
 
     openContextModal({

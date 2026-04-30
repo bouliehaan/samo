@@ -10,6 +10,8 @@ import packageJson from '../../../../../package.json';
 
 import { isAnalyticsDisabled } from '/@/renderer/features/analytics/hooks/use-analytics-disabled';
 import {
+    getActiveMusicServer,
+    getPrimaryAudiobookshelfServer,
     PlayerbarSliderType,
     SideQueueType,
     useAuthStore,
@@ -205,7 +207,7 @@ const getSettingsProperties = (): SettingsProperties => {
 const getServer = (): 'unknown' | ServerType => {
     const auth = useAuthStore.getState();
 
-    const currentServer = auth.currentServer;
+    const currentServer = getActiveMusicServer(auth) ?? getPrimaryAudiobookshelfServer(auth);
 
     if (currentServer) {
         return currentServer.type;
@@ -232,13 +234,18 @@ export const useAppTracker = () => {
         }
 
         const waitForServer = async (): Promise<void> => {
-            if (useAuthStore.getState().currentServer) {
+            const hasActiveServer = () => {
+                const auth = useAuthStore.getState();
+                return Boolean(getActiveMusicServer(auth) ?? getPrimaryAudiobookshelfServer(auth));
+            };
+
+            if (hasActiveServer()) {
                 return;
             }
 
             const pollInterval = 1000 * 60;
 
-            while (!useAuthStore.getState().currentServer) {
+            while (!hasActiveServer()) {
                 await new Promise((resolve) => setTimeout(resolve, pollInterval));
             }
         };

@@ -7,7 +7,7 @@ import styles from './library-header-bar.module.css';
 import { useIsPlayerFetching, usePlayer } from '/@/renderer/features/player/context/player-context';
 import { DefaultPlayButton } from '/@/renderer/features/shared/components/play-button';
 import { PlayButtonGroupPopover } from '/@/renderer/features/shared/components/play-button-group';
-import { useCurrentServerId } from '/@/renderer/store';
+import { type MusicPlaybackContext, useCurrentServerId } from '/@/renderer/store';
 import { Badge, BadgeProps } from '/@/shared/components/badge/badge';
 import { Spinner } from '/@/shared/components/spinner/spinner';
 import { TextTitle } from '/@/shared/components/text-title/text-title';
@@ -32,6 +32,14 @@ const LibraryHeaderBarComponent = ({ children, ignoreMaxWidth }: LibraryHeaderBa
 
 interface HeaderPlayButtonProps {
     className?: string;
+    /**
+     * Explicit playback context to attach when starting playback. Only used by the
+     * `songs={...}` path — `ids`/`listQuery` paths derive their own context inside
+     * `addToQueueByFetch` from a single ALBUM/PLAYLIST id. Pass this when you have the
+     * full song array of an album/playlist already in hand (e.g. the collapsed playlist
+     * detail header).
+     */
+    context?: MusicPlaybackContext;
     ids?: string[];
     itemType: LibraryItem;
     listQuery?: Record<string, any>;
@@ -47,6 +55,7 @@ interface TitleProps {
 
 const HeaderPlayButton = ({
     className,
+    context,
     ids,
     itemType,
     listQuery,
@@ -66,12 +75,12 @@ const HeaderPlayButton = ({
             } else if (ids) {
                 player.addToQueueByFetch(serverId, ids, itemType, playType);
             } else if (songs) {
-                player.addToQueueByData(songs, playType);
+                player.addToQueueByData(songs, playType, undefined, context);
             }
 
             closeAllModals();
         },
-        [ids, itemType, listQuery, onBeforePlay, player, serverId, songs],
+        [context, ids, itemType, listQuery, onBeforePlay, player, serverId, songs],
     );
 
     const isPlayerFetching = useIsPlayerFetching();

@@ -19,6 +19,7 @@ import { playlistsQueries } from '/@/renderer/features/playlists/api/playlists-a
 import { songsQueries } from '/@/renderer/features/songs/api/songs-api';
 import {
     AddToQueueType,
+    type MusicPlaybackContext,
     recordRecentSong,
     usePlayerActions,
     useSettingsStore,
@@ -44,7 +45,19 @@ import {
 import { Play, PlayerRepeat, PlayerShuffle } from '/@/shared/types/types';
 
 export interface PlayerContext {
-    addToQueueByData: (data: Song[], type: AddToQueueType, playSongId?: string) => void;
+    addToQueueByData: (
+        data: Song[],
+        type: AddToQueueType,
+        playSongId?: string,
+        /**
+         * Optional override for the playback context. Only meaningful for fresh-start play
+         * types (`Play.NOW` / `Play.SHUFFLE`); ignored for additive ones. Pass an `album`
+         * or `playlist` context when you have the full song list for that source — without
+         * it the player falls back to `SONG_CONTEXT` and the queue is treated as ad-hoc
+         * (not persisted across launches).
+         */
+        context?: MusicPlaybackContext,
+    ) => void;
     addToQueueByFetch: (
         serverId: string,
         id: string[],
@@ -200,7 +213,12 @@ export const PlayerProvider = ({ children }: { children: React.ReactNode }) => {
     }, [doNotShowAgain, setDoNotShowAgain, t]);
 
     const addToQueueByData = useCallback(
-        (data: Song[], type: AddToQueueType, playSongId?: string) => {
+        (
+            data: Song[],
+            type: AddToQueueType,
+            playSongId?: string,
+            context?: MusicPlaybackContext,
+        ) => {
             const filters = useSettingsStore.getState().playback.filters;
             const filteredData = filterSongsByPlayerFilters(data, filters);
             const selectedSong = playSongId
@@ -227,6 +245,7 @@ export const PlayerProvider = ({ children }: { children: React.ReactNode }) => {
                     },
                 });
 
+                // Insert-by-uniqueId is always additive — never resets context.
                 storeActions.addToQueueByUniqueId(filteredData, type.uniqueId, edge, playSongId);
             } else {
                 logFn.debug(logMsg[LogCategory.PLAYER].addToQueueByType, {
@@ -234,7 +253,7 @@ export const PlayerProvider = ({ children }: { children: React.ReactNode }) => {
                     meta: { data: data.length, filtered: filteredData.length, type },
                 });
 
-                storeActions.addToQueueByType(filteredData, type as Play, playSongId);
+                storeActions.addToQueueByType(filteredData, type as Play, playSongId, context);
             }
         },
         [storeActions],
@@ -311,7 +330,24 @@ export const PlayerProvider = ({ children }: { children: React.ReactNode }) => {
                     const edge = type.edge === 'top' ? 'top' : 'bottom';
                     storeActions.addToQueueByUniqueId(filteredSongs, type.uniqueId, edge);
                 } else {
-                    storeActions.addToQueueByType(filteredSongs, type as Play);
+                    // Header "Play" buttons land here — when the user fetches a single
+                    // album or playlist by id, we have everything we need to derive the
+                    // structured context that gates queue persistence. Multi-id fetches
+                    // (e.g. shuffle-all across multiple albums) intentionally fall back to
+                    // SONG context inside the store.
+                    const derivedContext: MusicPlaybackContext | undefined =
+                        id.length === 1 && itemType === LibraryItem.ALBUM
+                            ? { albumId: id[0], kind: 'album', serverId }
+                            : id.length === 1 && itemType === LibraryItem.PLAYLIST
+                              ? { kind: 'playlist', playlistId: id[0], serverId }
+                              : undefined;
+
+                    storeActions.addToQueueByType(
+                        filteredSongs,
+                        type as Play,
+                        undefined,
+                        derivedContext,
+                    );
                 }
             } catch (err: any) {
                 if (instanceOfCancellationError(err)) {

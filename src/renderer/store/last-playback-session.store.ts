@@ -1,20 +1,32 @@
-import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
-
 import type {
     RadioCurrentStationArt,
     RadioMetadata,
 } from '/@/renderer/features/radio/hooks/use-radio-player';
 import type { PlaybackSource } from '/@/renderer/store/playback-owner.store';
 
+import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
+
+export type MusicPlaybackContext =
+    | { albumId: string; kind: 'album'; serverId: string }
+    | { kind: 'playlist'; playlistId: string; serverId: string }
+    | { kind: 'song' };
+
 interface BaseLastPlaybackSession {
     source: PlaybackSource;
     updatedAt: number;
 }
 
-interface LastMusicPlaybackSession extends BaseLastPlaybackSession {
-    source: 'music';
-}
+export const SONG_CONTEXT: MusicPlaybackContext = { kind: 'song' };
+
+export const isStructuredMusicContext = (context: MusicPlaybackContext) =>
+    context.kind === 'album' || context.kind === 'playlist';
+
+export type LastPlaybackSession =
+    | LastAudiobookPlaybackSession
+    | LastMusicPlaybackSession
+    | LastPodcastPlaybackSession
+    | LastRadioPlaybackSession;
 
 interface LastAudiobookPlaybackSession extends BaseLastPlaybackSession {
     itemId: string;
@@ -23,31 +35,18 @@ interface LastAudiobookPlaybackSession extends BaseLastPlaybackSession {
     source: 'audiobook';
 }
 
-interface LastPodcastPlaybackSession extends BaseLastPlaybackSession {
-    episodeId: string;
-    itemId: string;
+interface LastMusicPlaybackSession extends BaseLastPlaybackSession {
+    context: MusicPlaybackContext;
+    /** Position in seconds at last save. Always present so the user resumes mid-track on relaunch. */
     position?: number;
-    serverId: string;
-    source: 'podcast';
+    /**
+     * The track currently in focus. For structured contexts this is a hint (the queue carries truth);
+     * for `kind: 'song'` it is the only thing we restore — a one-track lifeboat queue.
+     */
+    songRef?: { serverId: string; songId: string };
+    source: 'music';
 }
 
-interface LastRadioPlaybackSession extends BaseLastPlaybackSession {
-    metadata?: null | RadioMetadata;
-    stationArt?: null | RadioCurrentStationArt;
-    stationId: string;
-    stationName?: null | string;
-    streamUrl?: null | string;
-    serverId: string;
-    source: 'radio';
-}
-
-export type LastPlaybackSession =
-    | LastAudiobookPlaybackSession
-    | LastMusicPlaybackSession
-    | LastPodcastPlaybackSession
-    | LastRadioPlaybackSession;
-
-type WithoutUpdatedAt<T> = T extends unknown ? Omit<T, 'updatedAt'> : never;
 type LastPlaybackSessionInput = WithoutUpdatedAt<LastPlaybackSession>;
 
 interface LastPlaybackSessionState {
@@ -57,6 +56,25 @@ interface LastPlaybackSessionState {
     };
     session: LastPlaybackSession | null;
 }
+
+interface LastPodcastPlaybackSession extends BaseLastPlaybackSession {
+    episodeId: string;
+    itemId: string;
+    position?: number;
+    serverId: string;
+    source: 'podcast';
+}
+interface LastRadioPlaybackSession extends BaseLastPlaybackSession {
+    metadata?: null | RadioMetadata;
+    serverId: string;
+    source: 'radio';
+    stationArt?: null | RadioCurrentStationArt;
+    stationId: string;
+    stationName?: null | string;
+    streamUrl?: null | string;
+}
+
+type WithoutUpdatedAt<T> = T extends unknown ? Omit<T, 'updatedAt'> : never;
 
 export const useLastPlaybackSessionStore = create<LastPlaybackSessionState>()(
     persist(
@@ -86,6 +104,20 @@ export const useLastPlaybackSessionStore = create<LastPlaybackSessionState>()(
     ),
 );
 
-export const rememberMusicPlaybackSession = () => {
-    useLastPlaybackSessionStore.getState().actions.setSession({ source: 'music' });
+export const rememberMusicPlaybackSession = (
+    args: {
+        context?: MusicPlaybackContext;
+        position?: number;
+        songRef?: { serverId: string; songId: string };
+    } = {},
+) => {
+    const previous = useLastPlaybackSessionStore.getState().session;
+    const previousMusic = previous && previous.source === 'music' ? previous : undefined;
+
+    useLastPlaybackSessionStore.getState().actions.setSession({
+        context: args.context ?? previousMusic?.context ?? SONG_CONTEXT,
+        position: args.position ?? previousMusic?.position,
+        songRef: args.songRef ?? previousMusic?.songRef,
+        source: 'music',
+    });
 };

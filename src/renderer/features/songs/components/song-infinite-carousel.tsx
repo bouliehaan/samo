@@ -1,5 +1,5 @@
-import { QueryFunctionContext, useSuspenseInfiniteQuery } from '@tanstack/react-query';
-import { Suspense, useCallback, useMemo } from 'react';
+import { QueryFunctionContext, useInfiniteQuery } from '@tanstack/react-query';
+import { useCallback, useMemo } from 'react';
 
 import { api } from '/@/renderer/api';
 import { queryKeys } from '/@/renderer/api/query-keys';
@@ -53,7 +53,9 @@ const BaseSongInfiniteCarousel = (props: SongCarouselProps & { rows: DataRow[] }
         data: songs,
         fetchNextPage,
         hasNextPage,
+        isError,
         isFetchingNextPage,
+        isLoading,
         refetch,
     } = useSongListInfinite(sortBy, sortOrder, 20, additionalQuery, queryKey);
 
@@ -109,6 +111,21 @@ const BaseSongInfiniteCarousel = (props: SongCarouselProps & { rows: DataRow[] }
         ? songs?.pages[0]?.items.filter((song) => !excludeIds.includes(song.id)) || []
         : songs?.pages[0]?.items || [];
 
+    if (isLoading) {
+        return (
+            <GridCarouselSkeletonFallback
+                containerQuery={containerQuery}
+                placeholderItemType={LibraryItem.SONG}
+                placeholderRows={rows}
+                title={title}
+            />
+        );
+    }
+
+    if (isError) {
+        return null;
+    }
+
     if (firstPageItems.length === 0) {
         return null;
     }
@@ -135,20 +152,7 @@ const BaseSongInfiniteCarousel = (props: SongCarouselProps & { rows: DataRow[] }
 export const SongInfiniteCarousel = (props: SongCarouselProps) => {
     const rows = useGridRows(LibraryItem.SONG, ItemListKey.SONG);
 
-    return (
-        <Suspense
-            fallback={
-                <GridCarouselSkeletonFallback
-                    containerQuery={props.containerQuery}
-                    placeholderItemType={LibraryItem.SONG}
-                    placeholderRows={rows}
-                    title={props.title}
-                />
-            }
-        >
-            <BaseSongInfiniteCarousel {...props} rows={rows} />
-        </Suspense>
-    );
+    return <BaseSongInfiniteCarousel {...props} rows={rows} />;
 };
 
 function useSongListInfinite(
@@ -166,7 +170,8 @@ function useSongListInfinite(
         ...additionalQuery,
     });
 
-    const query = useSuspenseInfiniteQuery<SongListResponse>({
+    const query = useInfiniteQuery<SongListResponse>({
+        enabled: Boolean(serverId),
         getNextPageParam: (lastPage, _allPages, lastPageParam) => {
             if (lastPage.items.length < itemLimit) {
                 return undefined;

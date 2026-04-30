@@ -1,0 +1,534 @@
+import { useQuery } from '@tanstack/react-query';
+import { generatePath, Link, useNavigate } from 'react-router';
+
+import styles from './home-sections.module.css';
+
+import { api } from '/@/renderer/api';
+import {
+    GridCarousel,
+    useGridCarouselContainerQuery,
+} from '/@/renderer/components/grid-carousel/grid-carousel-v2';
+import { ItemImage } from '/@/renderer/components/item-image/item-image';
+import { usePlayer } from '/@/renderer/features/player/context/player-context';
+import { AppRoute } from '/@/renderer/router/routes';
+import { useCurrentServer, useCurrentServerId } from '/@/renderer/store';
+import { formatDateRelative, formatDurationStringShort } from '/@/renderer/utils/format';
+import { Button } from '/@/shared/components/button/button';
+import { Icon } from '/@/shared/components/icon/icon';
+import { TextTitle } from '/@/shared/components/text-title/text-title';
+import { Text } from '/@/shared/components/text/text';
+import {
+    Album,
+    AlbumArtist,
+    AlbumArtistListSort,
+    AlbumListSort,
+    LibraryItem,
+    Playlist,
+    PlaylistListSort,
+    ServerType,
+    Song,
+    SongListSort,
+    SortOrder,
+} from '/@/shared/types/domain-types';
+import { Play } from '/@/shared/types/types';
+
+const SHELF_LIMIT = 8;
+const LIST_LIMIT = 10;
+
+const HomeHeader = ({ title, to }: { title: string; to?: string }) => (
+    <div className={styles.sectionHeader}>
+        <TextTitle fw={700} isNoSelect order={3}>
+            {title}
+        </TextTitle>
+        {to ? (
+            <Button component={Link} size="compact-sm" to={to} variant="subtle">
+                View all
+            </Button>
+        ) : null}
+    </div>
+);
+
+const getSongSubtitle = (song: Song) =>
+    [song.artistName, song.album].filter(Boolean).join(' - ') || 'Track';
+
+const getCountText = (count: null | number | undefined, label: string) => {
+    if (typeof count !== 'number') return undefined;
+    return `${count} ${label}${count === 1 ? '' : 's'}`;
+};
+
+const useAlbums = (sortBy: AlbumListSort, sortOrder: SortOrder, query?: { favorite?: boolean }) => {
+    const serverId = useCurrentServerId();
+
+    return useQuery({
+        enabled: Boolean(serverId),
+        queryFn: ({ signal }) =>
+            api.controller.getAlbumList({
+                apiClientProps: { serverId, signal },
+                query: {
+                    limit: SHELF_LIMIT,
+                    sortBy,
+                    sortOrder,
+                    startIndex: 0,
+                    ...query,
+                },
+            }),
+        queryKey: ['home', 'albums', sortBy, sortOrder, query, serverId],
+    });
+};
+
+const usePlaylists = () => {
+    const serverId = useCurrentServerId();
+
+    return useQuery({
+        enabled: Boolean(serverId),
+        queryFn: ({ signal }) =>
+            api.controller.getPlaylistList({
+                apiClientProps: { serverId, signal },
+                query: {
+                    limit: SHELF_LIMIT,
+                    sortBy: PlaylistListSort.UPDATED_AT,
+                    sortOrder: SortOrder.DESC,
+                    startIndex: 0,
+                },
+            }),
+        queryKey: ['home', 'playlists', serverId],
+    });
+};
+
+const useArtists = () => {
+    const serverId = useCurrentServerId();
+
+    return useQuery({
+        enabled: Boolean(serverId),
+        queryFn: ({ signal }) =>
+            api.controller.getAlbumArtistList({
+                apiClientProps: { serverId, signal },
+                query: {
+                    favorite: true,
+                    limit: SHELF_LIMIT,
+                    sortBy: AlbumArtistListSort.FAVORITED,
+                    sortOrder: SortOrder.DESC,
+                    startIndex: 0,
+                },
+            }),
+        queryKey: ['home', 'artists', 'favorites', serverId],
+    });
+};
+
+const useSongs = (
+    key: string,
+    sortBy: SongListSort,
+    sortOrder: SortOrder,
+    limit = LIST_LIMIT,
+    query?: { favorite?: boolean },
+) => {
+    const serverId = useCurrentServerId();
+
+    return useQuery({
+        enabled: Boolean(serverId),
+        queryFn: ({ signal }) =>
+            api.controller.getSongList({
+                apiClientProps: { serverId, signal },
+                query: {
+                    limit,
+                    sortBy,
+                    sortOrder,
+                    startIndex: 0,
+                    ...query,
+                },
+            }),
+        queryKey: ['home', 'songs', key, sortBy, sortOrder, query, serverId],
+    });
+};
+
+export const HomeFavoritePlaylists = ({
+    containerQuery,
+}: {
+    containerQuery?: ReturnType<typeof useGridCarouselContainerQuery>;
+}) => {
+    const navigate = useNavigate();
+    const playlistsQuery = usePlaylists();
+    const playlists = playlistsQuery.data?.items ?? [];
+
+    if (!playlists.length) return null;
+
+    const cards = playlists.map((playlist) => ({
+        content: (
+            <PlaylistCard
+                onClick={() =>
+                    navigate(
+                        generatePath(AppRoute.PLAYLISTS_DETAIL_SONGS, {
+                            playlistId: playlist.id,
+                        }),
+                    )
+                }
+                playlist={playlist}
+            />
+        ),
+        id: playlist.id,
+    }));
+
+    return (
+        <GridCarousel
+            cards={cards}
+            containerQuery={containerQuery}
+            hasNextPage={false}
+            onNextPage={() => {}}
+            onPrevPage={() => {}}
+            rowCount={1}
+            title={<HomeHeader title="Favorite Playlists" to={AppRoute.PLAYLISTS} />}
+        />
+    );
+};
+
+const PlaylistCard = ({ onClick, playlist }: { onClick: () => void; playlist: Playlist }) => (
+    <button className={styles.mediaCard} onClick={onClick} type="button">
+        <div className={styles.mediaArt}>
+            {playlist.imageId || playlist.imageUrl ? (
+                <ItemImage
+                    alt={playlist.name}
+                    enableViewport={false}
+                    id={playlist.imageId}
+                    imageContainerProps={{ className: styles.imageContainer }}
+                    itemType={LibraryItem.PLAYLIST}
+                    serverId={playlist._serverId}
+                    src={playlist.imageUrl}
+                    type="itemCard"
+                />
+            ) : (
+                <div className={styles.playlistPlaceholder}>
+                    <Icon icon="playlist" size="34%" />
+                </div>
+            )}
+            <span className={styles.badge}>
+                <Icon icon="playlist" size="0.78rem" />
+                Playlist
+            </span>
+        </div>
+        <Text className={styles.title} fw={600} size="sm">
+            {playlist.name}
+        </Text>
+        <Text className={styles.subtitle} isMuted size="xs">
+            {getCountText(playlist.songCount, 'track') ?? 'Playlist'}
+        </Text>
+    </button>
+);
+
+export const HomeFavoriteArtists = ({
+    containerQuery,
+}: {
+    containerQuery?: ReturnType<typeof useGridCarouselContainerQuery>;
+}) => {
+    const navigate = useNavigate();
+    const artistsQuery = useArtists();
+    const artists = artistsQuery.data?.items ?? [];
+
+    if (!artists.length) return null;
+
+    const cards = artists.map((artist) => ({
+        content: (
+            <ArtistCard
+                artist={artist}
+                onClick={() =>
+                    navigate(
+                        generatePath(AppRoute.LIBRARY_ALBUM_ARTISTS_DETAIL, {
+                            albumArtistId: artist.id,
+                        }),
+                    )
+                }
+            />
+        ),
+        id: artist.id,
+    }));
+
+    return (
+        <GridCarousel
+            cards={cards}
+            containerQuery={containerQuery}
+            hasNextPage={false}
+            onNextPage={() => {}}
+            onPrevPage={() => {}}
+            rowCount={1}
+            title={<HomeHeader title="Favorite Artists" to={AppRoute.LIBRARY_ALBUM_ARTISTS} />}
+        />
+    );
+};
+
+const ArtistCard = ({ artist, onClick }: { artist: AlbumArtist; onClick: () => void }) => (
+    <button className={styles.artistCard} onClick={onClick} type="button">
+        <div className={styles.artistArt}>
+            <ItemImage
+                alt={artist.name}
+                enableViewport={false}
+                id={artist.imageId}
+                imageContainerProps={{ className: styles.imageContainer }}
+                itemType={LibraryItem.ALBUM_ARTIST}
+                serverId={artist._serverId}
+                src={artist.imageUrl}
+                type="itemCard"
+            />
+        </div>
+        <Text className={styles.title} fw={650} size="sm">
+            {artist.name}
+        </Text>
+        <Text className={styles.subtitle} isMuted size="xs">
+            {getCountText(artist.albumCount, 'album') ?? getCountText(artist.songCount, 'track')}
+        </Text>
+    </button>
+);
+
+export const HomeFavoriteTracks = () => {
+    const songsQuery = useSongs('favorites', SongListSort.FAVORITED, SortOrder.DESC, LIST_LIMIT, {
+        favorite: true,
+    });
+    const songs = songsQuery.data?.items ?? [];
+
+    if (!songs.length) return null;
+
+    return (
+        <section className={styles.section}>
+            <HomeHeader title="Favorite Tracks" to={AppRoute.LIBRARY_SONGS} />
+            <div className={styles.trackList}>
+                {songs.map((song) => (
+                    <TrackRow key={song.id} song={song} />
+                ))}
+            </div>
+        </section>
+    );
+};
+
+const TrackRow = ({ song }: { song: Song }) => {
+    const player = usePlayer();
+
+    return (
+        <button
+            className={styles.trackRow}
+            onClick={() => player.addToQueueByData([song], Play.NOW)}
+            type="button"
+        >
+            <div className={styles.trackThumb}>
+                <ItemImage
+                    alt={song.name}
+                    enableViewport={false}
+                    id={song.imageId}
+                    imageContainerProps={{ className: styles.imageContainer }}
+                    itemType={LibraryItem.SONG}
+                    serverId={song._serverId}
+                    src={song.imageUrl}
+                    type="itemCard"
+                />
+            </div>
+            <div className={styles.trackMeta}>
+                <Text className={styles.title} fw={650} size="sm">
+                    {song.name}
+                </Text>
+                <Text className={styles.subtitle} isMuted size="xs">
+                    {getSongSubtitle(song)}
+                </Text>
+            </div>
+            <Text className={styles.trackExtra} size="xs">
+                {formatDurationStringShort(song.duration)}
+            </Text>
+        </button>
+    );
+};
+
+export const HomeRediscoverySection = () => {
+    const server = useCurrentServer();
+    const isJellyfin = server?.type === ServerType.JELLYFIN;
+    const songsQuery = useSongs(
+        'rediscovery',
+        SongListSort.RECENTLY_PLAYED,
+        SortOrder.ASC,
+        isJellyfin ? 6 : 0,
+    );
+    const albumsQuery = useAlbums(AlbumListSort.RECENTLY_PLAYED, SortOrder.ASC);
+    const songs = isJellyfin ? (songsQuery.data?.items ?? []) : [];
+    const albums = !isJellyfin ? (albumsQuery.data?.items ?? []) : [];
+
+    if (!songs.length && !albums.length) return null;
+
+    const feature = albums[0] ?? songs[0];
+    const support = (albums.length ? albums.slice(1, 6) : songs.slice(1, 6)) as Array<Album | Song>;
+
+    return (
+        <section className={styles.section}>
+            <HomeHeader title="Haven't Listened in a Long Time" />
+            <div className={styles.editorial}>
+                <RediscoveryFeature item={feature} />
+                <div className={styles.supportList}>
+                    {support.map((item) => (
+                        <RediscoverySupport item={item} key={item.id} />
+                    ))}
+                </div>
+            </div>
+        </section>
+    );
+};
+
+const getRediscoveryCopy = (item: Album | Song) => {
+    if (item.lastPlayedAt) return `Last played ${formatDateRelative(item.lastPlayedAt)}`;
+    if (item.playCount) return `You played this ${item.playCount} times`;
+    return 'Rediscover this from your library';
+};
+
+const RediscoveryFeature = ({ item }: { item: Album | Song }) => {
+    const navigate = useNavigate();
+    const player = usePlayer();
+    const isSong = item._itemType === LibraryItem.SONG;
+    const title = item.name;
+    const subtitle = isSong ? getSongSubtitle(item as Song) : (item as Album).albumArtistName;
+
+    const open = () => {
+        if (isSong) {
+            player.addToQueueByData([item as Song], Play.NOW);
+            return;
+        }
+
+        navigate(generatePath(AppRoute.LIBRARY_ALBUMS_DETAIL, { albumId: item.id }));
+    };
+
+    return (
+        <button className={styles.featureCard} onClick={open} type="button">
+            <div className={styles.featureArt}>
+                <ItemImage
+                    alt={title}
+                    enableViewport={false}
+                    id={item.imageId}
+                    imageContainerProps={{ className: styles.imageContainer }}
+                    itemType={isSong ? LibraryItem.SONG : LibraryItem.ALBUM}
+                    serverId={item._serverId}
+                    src={item.imageUrl}
+                    type="itemCard"
+                />
+            </div>
+            <div className={styles.trackMeta}>
+                <Text isMuted size="xs">
+                    Rediscover this
+                </Text>
+                <Text className={styles.title} fw={750} size="lg">
+                    {title}
+                </Text>
+                <Text className={styles.subtitle} isMuted size="sm">
+                    {subtitle}
+                </Text>
+                <Text className={styles.tertiary} isMuted size="xs">
+                    {getRediscoveryCopy(item)}
+                </Text>
+            </div>
+        </button>
+    );
+};
+
+const RediscoverySupport = ({ item }: { item: Album | Song }) => {
+    const player = usePlayer();
+    const navigate = useNavigate();
+    const isSong = item._itemType === LibraryItem.SONG;
+
+    const open = () => {
+        if (isSong) {
+            player.addToQueueByData([item as Song], Play.NOW);
+            return;
+        }
+
+        navigate(generatePath(AppRoute.LIBRARY_ALBUMS_DETAIL, { albumId: item.id }));
+    };
+
+    return (
+        <button className={styles.discoveryCard} onClick={open} type="button">
+            <div className={styles.trackThumb}>
+                <ItemImage
+                    alt={item.name}
+                    enableViewport={false}
+                    id={item.imageId}
+                    imageContainerProps={{ className: styles.imageContainer }}
+                    itemType={isSong ? LibraryItem.SONG : LibraryItem.ALBUM}
+                    serverId={item._serverId}
+                    src={item.imageUrl}
+                    type="itemCard"
+                />
+            </div>
+            <div className={styles.trackMeta}>
+                <Text className={styles.title} fw={650} size="sm">
+                    {item.name}
+                </Text>
+                <Text className={styles.subtitle} isMuted size="xs">
+                    {getRediscoveryCopy(item)}
+                </Text>
+            </div>
+        </button>
+    );
+};
+
+export const HomeUnplayedSection = () => {
+    const songsQuery = useSongs('unplayed', SongListSort.PLAY_COUNT, SortOrder.ASC, 8);
+    const songs = (songsQuery.data?.items ?? []).filter((song) => !song.playCount);
+
+    if (!songs.length) return null;
+
+    return (
+        <section className={styles.section}>
+            <HomeHeader title="Unplayed in Your Library" to={AppRoute.LIBRARY_SONGS} />
+            <div className={styles.discoveryGrid}>
+                {songs.map((song) => (
+                    <TrackRow key={song.id} song={song} />
+                ))}
+            </div>
+        </section>
+    );
+};
+
+export const HomeMostPlayedSection = () => {
+    const songsQuery = useSongs('most-played', SongListSort.PLAY_COUNT, SortOrder.DESC, LIST_LIMIT);
+    const songs = songsQuery.data?.items ?? [];
+
+    if (!songs.length) return null;
+
+    return (
+        <section className={styles.section}>
+            <HomeHeader title="All-Time Most Played" to={AppRoute.LIBRARY_SONGS} />
+            <div className={styles.rankedList}>
+                {songs.map((song, index) => (
+                    <RankedSongRow index={index + 1} key={song.id} song={song} />
+                ))}
+            </div>
+        </section>
+    );
+};
+
+const RankedSongRow = ({ index, song }: { index: number; song: Song }) => {
+    const player = usePlayer();
+
+    return (
+        <button
+            className={styles.rankedRow}
+            onClick={() => player.addToQueueByData([song], Play.NOW)}
+            type="button"
+        >
+            <span className={styles.rank}>{index}</span>
+            <div className={styles.trackThumb}>
+                <ItemImage
+                    alt={song.name}
+                    enableViewport={false}
+                    id={song.imageId}
+                    imageContainerProps={{ className: styles.imageContainer }}
+                    itemType={LibraryItem.SONG}
+                    serverId={song._serverId}
+                    src={song.imageUrl}
+                    type="itemCard"
+                />
+            </div>
+            <div className={styles.trackMeta}>
+                <Text className={styles.title} fw={650} size="sm">
+                    {song.name}
+                </Text>
+                <Text className={styles.subtitle} isMuted size="xs">
+                    {getSongSubtitle(song)}
+                </Text>
+            </div>
+            <Text className={styles.trackExtra} size="xs">
+                {song.playCount} plays
+            </Text>
+        </button>
+    );
+};

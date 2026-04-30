@@ -330,27 +330,12 @@ const parsePath = (fullPath: string) => {
     };
 };
 
-let authSuccess = true;
-let shouldDelay = false;
-
 const RETRY_DELAY_MS = 1000;
-const MAX_RETRIES = 5;
-
-const waitForResult = async (count = 0): Promise<void> => {
-    return new Promise((resolve) => {
-        if (count === MAX_RETRIES || !shouldDelay) resolve();
-
-        setTimeout(() => {
-            waitForResult(count + 1)
-                .then(resolve)
-                .catch(resolve);
-        }, RETRY_DELAY_MS);
-    });
-};
 
 const limitedFail = debounce(authenticationFailure, RETRY_DELAY_MS);
 const TIMEOUT_ERROR = Error();
 const REQUEST_SERVER_ID_KEY = '__samoNavidromeServerId';
+const navidromeReauthLocks = new Map<string, Promise<string>>();
 
 const getRequestServerId = (config?: unknown) => {
     if (!config || typeof config !== 'object') return undefined;
@@ -379,16 +364,93 @@ const setRequestCredential = (config: any, credential?: string) => {
 };
 
 const clearServerCredentials = (serverId: string) => {
-    const { actions, currentServer } = useAuthStore.getState();
+    const { actions } = useAuthStore.getState();
 
     actions.updateServer(serverId, {
         credential: undefined,
         ndCredential: undefined,
     });
+    actions.clearActiveServer(serverId);
+};
 
-    if (currentServer?.id === serverId) {
-        actions.setCurrentServer(null);
+const reauthenticateNavidromeServer = async (
+    requestServer: ServerListItemWithCredential,
+): Promise<string> => {
+    if (!localSettings || !requestServer.savePassword) {
+        throw new Error('Navidrome reauthentication is unavailable for this server');
     }
+
+    const password = await localSettings.passwordGet(requestServer.id);
+
+    if (password === null) {
+        throw new Error('Saved Navidrome password was not found');
+    }
+
+    const serverUrl = getServerUrl(requestServer);
+
+    if (!serverUrl) {
+        throw new Error('Navidrome server URL is invalid');
+    }
+
+    const res = await axios.post(
+        `${serverUrl}/auth/login`,
+        {
+            password,
+            username: requestServer.username,
+        },
+        { validateStatus: () => true },
+    );
+
+    if (res.status === 429) {
+        toast.error({
+            message: i18n.t('error.loginRateError', {
+                postProcess: 'sentenceCase',
+            }) as string,
+            title: i18n.t('error.sessionExpiredError', {
+                postProcess: 'sentenceCase',
+            }) as string,
+        });
+
+        clearServerCredentials(requestServer.id);
+
+        limitedFail.cancel();
+        throw TIMEOUT_ERROR;
+    }
+
+    if (res.status !== 200) {
+        throw new Error(
+            i18n.t('error.authenticatedFailed', {
+                postProcess: 'sentenceCase',
+            }) as string,
+        );
+    }
+
+    const newCredential = res.data.token;
+    const subsonicCredential = `u=${requestServer.username}&s=${res.data.subsonicSalt}&t=${res.data.subsonicToken}`;
+
+    useAuthStore.getState().actions.updateServer(requestServer.id, {
+        credential: subsonicCredential,
+        ndCredential: newCredential,
+    });
+
+    return newCredential;
+};
+
+const getNavidromeReauthLock = (requestServer: ServerListItemWithCredential) => {
+    const existingLock = navidromeReauthLocks.get(requestServer.id);
+
+    if (existingLock) {
+        return existingLock;
+    }
+
+    const lock = reauthenticateNavidromeServer(requestServer).finally(() => {
+        if (navidromeReauthLocks.get(requestServer.id) === lock) {
+            navidromeReauthLocks.delete(requestServer.id);
+        }
+    });
+
+    navidromeReauthLocks.set(requestServer.id, lock);
+    return lock;
 };
 
 axiosClient.interceptors.response.use(
@@ -405,8 +467,6 @@ axiosClient.interceptors.response.use(
             }
         }
 
-        authSuccess = true;
-
         return response;
     },
     (error) => {
@@ -414,85 +474,9 @@ axiosClient.interceptors.response.use(
             const requestServer = getRequestServer(error.config);
 
             if (localSettings && requestServer?.savePassword) {
-                return localSettings
-                    .passwordGet(requestServer.id)
-                    .then(async (password: null | string) => {
-                        authSuccess = false;
-
-                        if (password === null) {
-                            throw error;
-                        }
-
-                        if (shouldDelay) {
-                            await waitForResult();
-
-                            // Hopefully the delay was sufficient for authentication.
-                            // Otherwise, it will require manual intervention
-                            if (authSuccess) {
-                                const latestServer =
-                                    useAuthStore.getState().actions.getServer(requestServer.id) ??
-                                    requestServer;
-
-                                setRequestCredential(error.config, latestServer.ndCredential);
-
-                                return axiosClient.request(error.config);
-                            }
-
-                            throw error;
-                        }
-
-                        shouldDelay = true;
-
-                        const serverUrl = getServerUrl(requestServer);
-
-                        if (!serverUrl) {
-                            throw error;
-                        }
-
-                        // Do not use axiosClient. Instead, manually make a post.
-                        // Use the server from the failed Navidrome request. currentServer can be
-                        // Audiobookshelf, and Navidrome must never reauth against that service.
-                        const res = await axios.post(`${serverUrl}/auth/login`, {
-                            password,
-                            username: requestServer.username,
-                        });
-
-                        if (res.status === 429) {
-                            toast.error({
-                                message: i18n.t('error.loginRateError', {
-                                    postProcess: 'sentenceCase',
-                                }) as string,
-                                title: i18n.t('error.sessionExpiredError', {
-                                    postProcess: 'sentenceCase',
-                                }) as string,
-                            });
-
-                            clearServerCredentials(requestServer.id);
-
-                            // special error to prevent sending a second message, and stop other messages that could be enqueued
-                            limitedFail.cancel();
-                            throw TIMEOUT_ERROR;
-                        }
-                        if (res.status !== 200) {
-                            throw new Error(
-                                i18n.t('error.authenticatedFailed', {
-                                    postProcess: 'sentenceCase',
-                                }) as string,
-                            );
-                        }
-
-                        const newCredential = res.data.token;
-                        const subsonicCredential = `u=${requestServer.username}&s=${res.data.subsonicSalt}&t=${res.data.subsonicToken}`;
-
-                        useAuthStore.getState().actions.updateServer(requestServer.id, {
-                            credential: subsonicCredential,
-                            ndCredential: newCredential,
-                        });
-
+                return getNavidromeReauthLock(requestServer)
+                    .then((newCredential) => {
                         setRequestCredential(error.config, newCredential);
-
-                        authSuccess = true;
-
                         return axiosClient.request(error.config);
                     })
                     .catch((newError: any) => {
@@ -510,9 +494,6 @@ axiosClient.interceptors.response.use(
 
                         // make sure to pass the error so axios will error later on
                         throw newError;
-                    })
-                    .finally(() => {
-                        shouldDelay = false;
                     });
             }
 
@@ -548,13 +529,15 @@ export const ndApiClient = (args: {
             }
 
             try {
-                if (shouldDelay) await waitForResult();
-
                 const latestServer = server?.id
                     ? (useAuthStore.getState().actions.getServer(server.id) ?? server)
                     : server;
 
-                const token = latestServer?.ndCredential ?? server?.ndCredential;
+                const pendingReauth = server?.id ? navidromeReauthLocks.get(server.id) : undefined;
+                const reauthToken = pendingReauth
+                    ? await pendingReauth.catch(() => undefined)
+                    : undefined;
+                const token = reauthToken ?? latestServer?.ndCredential ?? server?.ndCredential;
 
                 const requestConfig: any = {
                     data: body,

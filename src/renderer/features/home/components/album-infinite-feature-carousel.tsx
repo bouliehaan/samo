@@ -1,4 +1,4 @@
-import { QueryFunctionContext, useSuspenseInfiniteQuery } from '@tanstack/react-query';
+import { QueryFunctionContext, useInfiniteQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef } from 'react';
 
 import { api } from '/@/renderer/api';
@@ -24,8 +24,9 @@ export const AlbumInfiniteFeatureCarousel = ({
         sortOrder: SortOrder.DESC,
     });
 
-    const { data, fetchNextPage, hasNextPage, isFetchingNextPage } =
-        useSuspenseInfiniteQuery<AlbumListResponse>({
+    const { data, fetchNextPage, hasNextPage, isError, isFetchingNextPage } =
+        useInfiniteQuery<AlbumListResponse>({
+            enabled: Boolean(serverId),
             getNextPageParam: (lastPage, _allPages, lastPageParam) => {
                 if (lastPage.items.length < itemLimit) {
                     return undefined;
@@ -52,7 +53,7 @@ export const AlbumInfiniteFeatureCarousel = ({
 
     // Flatten all pages and filter for albums with images
     const albumsWithImages = useMemo(() => {
-        const allAlbums = data.pages.flatMap((page: AlbumListResponse) => page.items);
+        const allAlbums = data?.pages.flatMap((page: AlbumListResponse) => page.items) ?? [];
         // Filter for albums with images and remove duplicates by ID
         const uniqueAlbums = new Map<string, Album>();
         for (const album of allAlbums) {
@@ -61,7 +62,7 @@ export const AlbumInfiniteFeatureCarousel = ({
             }
         }
         return Array.from(uniqueAlbums.values());
-    }, [data.pages]);
+    }, [data?.pages]);
 
     const handleNearEnd = () => {
         if (hasNextPage && !isFetchingNextPage && !loadMoreTriggeredRef.current) {
@@ -86,7 +87,7 @@ export const AlbumInfiniteFeatureCarousel = ({
         }
     }, [albumsWithImages.length, hasNextPage, isFetchingNextPage, fetchNextPage, itemLimit]);
 
-    if (albumsWithImages.length === 0) {
+    if (isError || albumsWithImages.length === 0) {
         return null;
     }
 

@@ -1,31 +1,32 @@
 .section {
-    width: 100%;
-}
-
-.header {
     display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 0.75rem;
+    flex-direction: column;
+    gap: var(--theme-spacing-md);
+    width: 100%;
 }
 
 .grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-    gap: 0.9rem;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: var(--theme-spacing-md);
 }
 
 .card {
     position: relative;
+    display: grid;
+    grid-template-columns: 4.7rem minmax(0, 1fr) auto;
+    gap: 0.8rem;
+    align-items: center;
     width: 100%;
+    min-height: 6.25rem;
     min-width: 0;
-    padding: 0.75rem;
+    padding: 0.7rem;
     overflow: hidden;
     text-align: left;
     cursor: pointer;
-    background: color-mix(in srgb, var(--theme-colors-surface), transparent 8%);
-    border: 1px solid color-mix(in srgb, var(--theme-colors-border), transparent 30%);
-    border-radius: var(--theme-radius-md);
+    background: color-mix(in srgb, var(--theme-colors-surface) 90%, transparent);
+    border: 1px solid color-mix(in srgb, var(--theme-colors-border) 58%, transparent);
+    border-radius: var(--theme-radius-sm);
     transition:
         background-color 150ms ease,
         border-color 150ms ease,
@@ -33,22 +34,22 @@
 }
 
 .card:hover {
-    background: color-mix(in srgb, var(--theme-colors-surface), white 4%);
-    border-color: color-mix(in srgb, var(--theme-colors-primary), transparent 45%);
+    background: color-mix(in srgb, var(--theme-colors-surface) 94%, white 3%);
+    border-color: color-mix(in srgb, var(--theme-colors-primary-filled) 34%, transparent);
     transform: translateY(-1px);
 }
 
 .card-active {
-    border-color: color-mix(in srgb, var(--theme-colors-primary), transparent 20%);
+    border-color: color-mix(in srgb, var(--theme-colors-primary-filled) 48%, transparent);
 }
 
 .image-wrap {
     position: relative;
-    width: 100%;
-    aspect-ratio: 1;
-    margin-bottom: 0.75rem;
+    width: 4.7rem;
+    height: 4.7rem;
     overflow: hidden;
-    border-radius: var(--theme-radius-md);
+    background: var(--theme-colors-background);
+    border-radius: var(--theme-radius-sm);
 }
 
 .image-container {
@@ -57,11 +58,8 @@
 }
 
 .play-overlay {
-    position: absolute;
-    right: 0.5rem;
-    bottom: 0.5rem;
-    opacity: 0;
-    transform: translateY(4px);
+    justify-self: end;
+    opacity: 0.8;
     transition:
         opacity 150ms ease,
         transform 150ms ease;
@@ -70,7 +68,24 @@
 .card:hover .play-overlay,
 .card-active .play-overlay {
     opacity: 1;
-    transform: translateY(0);
+    transform: scale(1.02);
+}
+
+.copy {
+    min-width: 0;
+}
+
+.live-badge {
+    width: fit-content;
+    padding: 0.12rem 0.38rem;
+    font-size: 0.64rem;
+    font-weight: 800;
+    line-height: 1;
+    color: color-mix(in srgb, var(--theme-colors-text) 78%, transparent);
+    letter-spacing: 0;
+    background: rgb(255 255 255 / 7%);
+    border: 1px solid rgb(255 255 255 / 10%);
+    border-radius: 999px;
 }
 
 .name {

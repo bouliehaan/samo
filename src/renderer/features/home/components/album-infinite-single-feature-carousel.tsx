@@ -26,6 +26,7 @@ export const AlbumInfiniteSingleFeatureCarousel = ({
 
     const { data, fetchNextPage, hasNextPage, isError, isFetchingNextPage } =
         useInfiniteQuery<AlbumListResponse>({
+            enabled: Boolean(serverId),
             getNextPageParam: (lastPage, _allPages, lastPageParam) => {
                 if (lastPage.items.length < itemLimit) {
                     return undefined;
