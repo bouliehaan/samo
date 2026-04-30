@@ -18,6 +18,7 @@ import {
     useIsRadioActive,
     useRadioPlayer,
 } from '/@/renderer/features/radio/hooks/use-radio-player';
+import { useNowPlaying } from '/@/renderer/hooks/use-now-playing';
 import { AppRoute } from '/@/renderer/router/routes';
 import {
     useAppStore,
@@ -36,7 +37,6 @@ import { Tooltip } from '/@/shared/components/tooltip/tooltip';
 import { PlaybackSelectors } from '/@/shared/constants/playback-selectors';
 import { useHotkeys } from '/@/shared/hooks/use-hotkeys';
 import { LibraryItem } from '/@/shared/types/domain-types';
-import { useNowPlaying } from '/@/renderer/hooks/use-now-playing';
 
 export const LeftControls = () => {
     const { t } = useTranslation();

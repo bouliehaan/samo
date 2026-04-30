@@ -271,7 +271,6 @@ export const AlbumDetailHeader = forwardRef<HTMLDivElement>((_props, ref) => {
                         onFavorite={handleFavorite}
                         onMore={handleMoreOptions}
                         onPlay={(type) => handlePlay(type)}
-                        onShuffle={() => handlePlay(Play.SHUFFLE)}
                     />
                 </Stack>
             </LibraryHeader>

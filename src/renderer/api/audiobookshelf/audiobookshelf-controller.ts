@@ -149,7 +149,9 @@ const playItemWithFetch = async (
     itemId: string,
     episodeId?: string,
 ): Promise<AudiobookshelfPlaybackSessionResponse> => {
-    const playPath = episodeId ? `/api/items/${itemId}/play/${episodeId}` : `/api/items/${itemId}/play`;
+    const playPath = episodeId
+        ? `/api/items/${itemId}/play/${episodeId}`
+        : `/api/items/${itemId}/play`;
     const response = await fetch(`${normalizeBaseUrl(server.url)}${playPath}`, {
         body: JSON.stringify({}),
         headers: {
@@ -183,13 +185,10 @@ const getItemWithFetch = async (
     server: ServerListItemWithCredential,
     itemId: string,
 ): Promise<AudiobookshelfLibraryItem> => {
-    const response = await fetch(
-        `${normalizeBaseUrl(server.url)}/api/items/${itemId}?expanded=1`,
-        {
-            headers: getAuthHeaders(server.credential),
-            method: 'GET',
-        },
-    );
+    const response = await fetch(`${normalizeBaseUrl(server.url)}/api/items/${itemId}?expanded=1`, {
+        headers: getAuthHeaders(server.credential),
+        method: 'GET',
+    });
 
     if (!response.ok) {
         throw new Error(`Audiobookshelf item request failed: ${response.status}`);
@@ -341,11 +340,7 @@ export const audiobookshelfController = {
      * book's HLS session. For podcasts, pass episodeId to play that specific
      * episode (`/api/items/:id/play/:episodeId`).
      */
-    playItem: async (
-        server: ServerListItemWithCredential,
-        itemId: string,
-        episodeId?: string,
-    ) => {
+    playItem: async (server: ServerListItemWithCredential, itemId: string, episodeId?: string) => {
         return isElectron()
             ? playItemWithMainProcess(server, itemId, episodeId)
             : playItemWithFetch(server, itemId, episodeId);

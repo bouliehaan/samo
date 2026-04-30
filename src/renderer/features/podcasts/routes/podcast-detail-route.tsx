@@ -42,7 +42,7 @@ const formatEpisodeDuration = (episode: AudiobookshelfPodcastEpisode) => {
     return formatDuration(seconds * 1000);
 };
 
-const PodcastCover = ({ itemId, alt }: { alt: string; itemId: string }) => {
+const PodcastCover = ({ alt, itemId }: { alt: string; itemId: string }) => {
     const server = useAudiobookshelfServer();
     const coverQuery = useQuery({
         enabled: Boolean(server?.id && itemId),

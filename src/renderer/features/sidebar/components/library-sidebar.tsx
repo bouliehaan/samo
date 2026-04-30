@@ -1,12 +1,14 @@
 import { useQueries, useQuery } from '@tanstack/react-query';
 import clsx from 'clsx';
-import { MouseEvent, ReactNode, useCallback, useMemo, useState } from 'react';
+import { MouseEvent, ReactNode, useCallback, useMemo, useRef, useState } from 'react';
 import { generatePath, useLocation, useNavigate } from 'react-router';
 
 import styles from './library-sidebar.module.css';
 
 import { audiobookshelfController } from '/@/renderer/api/audiobookshelf/audiobookshelf-controller';
 import { ItemImage } from '/@/renderer/components/item-image/item-image';
+import { albumQueries } from '/@/renderer/features/albums/api/album-api';
+import { artistsQueries } from '/@/renderer/features/artists/api/artists-api';
 import { ContextMenuController } from '/@/renderer/features/context-menu/context-menu-controller';
 import { usePlayer } from '/@/renderer/features/player/context/player-context';
 import { playlistsQueries } from '/@/renderer/features/playlists/api/playlists-api';
@@ -18,6 +20,7 @@ import {
     useRadioPlayer,
 } from '/@/renderer/features/radio/hooks/use-radio-player';
 import { AbsCoverImage } from '/@/renderer/features/search/components/abs-cover-image';
+import { songsQueries } from '/@/renderer/features/songs/api/songs-api';
 import { AppRoute } from '/@/renderer/router/routes';
 import {
     playHistoryKey,
@@ -41,10 +44,16 @@ import {
 import { ActionIcon } from '/@/shared/components/action-icon/action-icon';
 import { type AppIconSelection, Icon } from '/@/shared/components/icon/icon';
 import {
+    Album,
+    AlbumArtist,
+    AlbumArtistListSort,
+    AlbumListSort,
     InternetRadioStation,
     LibraryItem,
     Playlist,
     PlaylistListSort,
+    Song,
+    SongListSort,
     SortOrder,
 } from '/@/shared/types/domain-types';
 import { Play, PlayerStatus } from '/@/shared/types/types';
@@ -193,6 +202,59 @@ const recentPlaylistFromLibrary = (playlist: Playlist, selectedAt = 0): RecentIt
     title: playlist.name,
 });
 
+const recentAlbumFromLibrary = (album: Album, selectedAt = 0): RecentItem => ({
+    artwork: {
+        imageId: album.imageId,
+        imageItemType: LibraryItem.ALBUM,
+        imageUrl: album.imageUrl,
+        kind: 'music',
+        serverId: album._serverId,
+    },
+    itemId: album.id,
+    key: recentKey('album', album._serverId, album.id),
+    mediaType: 'album',
+    selectedAt,
+    serverId: album._serverId,
+    subtitle: withDetail('Album', album.albumArtistName || countText(album.songCount, 'song')),
+    title: album.name,
+});
+
+const recentArtistFromLibrary = (artist: AlbumArtist, selectedAt = 0): RecentItem => ({
+    artwork: {
+        imageId: artist.imageId,
+        imageItemType: LibraryItem.ALBUM_ARTIST,
+        imageUrl: artist.imageUrl,
+        kind: 'music',
+        serverId: artist._serverId,
+        shape: 'circle',
+    },
+    itemId: artist.id,
+    key: recentKey('artist', artist._serverId, artist.id),
+    mediaType: 'artist',
+    selectedAt,
+    serverId: artist._serverId,
+    subtitle: withDetail('Artist', countText(artist.albumCount, 'album')),
+    title: artist.name,
+});
+
+const recentSongFromLibrary = (song: Song, selectedAt = 0): RecentItem => ({
+    artwork: {
+        imageId: song.imageId,
+        imageItemType: LibraryItem.SONG,
+        imageUrl: song.imageUrl,
+        kind: 'music',
+        serverId: song._serverId,
+    },
+    itemId: song.id,
+    key: recentKey('song', song._serverId, song.id),
+    mediaType: 'song',
+    selectedAt,
+    serverId: song._serverId,
+    song,
+    subtitle: withDetail('Song', song.artistName || song.album),
+    title: song.name,
+});
+
 const recentRadioFromLibrary = (
     station: InternetRadioStation,
     serverId: string,
@@ -308,6 +370,7 @@ export const LibrarySidebar = () => {
     const activeAudiobookItem = useAudiobookItem();
     const activePodcastItem = usePodcastItem();
     const [activeFilter, setActiveFilter] = useState<LibraryFilter>('all');
+    const [searchQuery, setSearchQuery] = useState('');
 
     const musicServerId = musicServer?.id ?? '';
     const absServerId = audiobookshelfServer?.id ?? '';
@@ -337,6 +400,48 @@ export const LibrarySidebar = () => {
             serverId: musicServerId,
         }),
         enabled: hasMusicServer && activeFilter === 'radio',
+        staleTime: 1000 * 60 * 5,
+    });
+
+    const albumsQuery = useQuery({
+        ...albumQueries.list({
+            query: {
+                limit: SIDEBAR_TYPE_VIEW_LIMIT,
+                sortBy: AlbumListSort.NAME,
+                sortOrder: SortOrder.ASC,
+                startIndex: 0,
+            },
+            serverId: musicServerId,
+        }),
+        enabled: hasMusicServer && activeFilter === 'albums',
+        staleTime: 1000 * 60 * 5,
+    });
+
+    const artistsQuery = useQuery({
+        ...artistsQueries.albumArtistList({
+            query: {
+                limit: SIDEBAR_TYPE_VIEW_LIMIT,
+                sortBy: AlbumArtistListSort.NAME,
+                sortOrder: SortOrder.ASC,
+                startIndex: 0,
+            },
+            serverId: musicServerId,
+        }),
+        enabled: hasMusicServer && activeFilter === 'artists',
+        staleTime: 1000 * 60 * 5,
+    });
+
+    const songsQuery = useQuery({
+        ...songsQueries.list({
+            query: {
+                limit: SIDEBAR_TYPE_VIEW_LIMIT,
+                sortBy: SongListSort.NAME,
+                sortOrder: SortOrder.ASC,
+                startIndex: 0,
+            },
+            serverId: musicServerId,
+        }),
+        enabled: hasMusicServer && activeFilter === 'songs',
         staleTime: 1000 * 60 * 5,
     });
 
@@ -592,6 +697,30 @@ export const LibrarySidebar = () => {
         return mergeLibraryItemsWithRecents(libraryItems, recentItems, 'radio').map(toSidebarItem);
     }, [musicServerId, radioQuery.data, recentItems, recentItemsByKey, toSidebarItem]);
 
+    const albumSidebarItems = useMemo(() => {
+        const libraryItems = (albumsQuery.data?.items ?? []).map((album) => {
+            const key = recentKey('album', album._serverId, album.id);
+            return recentAlbumFromLibrary(album, recentItemsByKey.get(key)?.selectedAt ?? 0);
+        });
+        return mergeLibraryItemsWithRecents(libraryItems, recentItems, 'album').map(toSidebarItem);
+    }, [albumsQuery.data?.items, recentItems, recentItemsByKey, toSidebarItem]);
+
+    const artistSidebarItems = useMemo(() => {
+        const libraryItems = (artistsQuery.data?.items ?? []).map((artist) => {
+            const key = recentKey('artist', artist._serverId, artist.id);
+            return recentArtistFromLibrary(artist, recentItemsByKey.get(key)?.selectedAt ?? 0);
+        });
+        return mergeLibraryItemsWithRecents(libraryItems, recentItems, 'artist').map(toSidebarItem);
+    }, [artistsQuery.data?.items, recentItems, recentItemsByKey, toSidebarItem]);
+
+    const songSidebarItems = useMemo(() => {
+        const libraryItems = (songsQuery.data?.items ?? []).map((song) => {
+            const key = recentKey('song', song._serverId, song.id);
+            return recentSongFromLibrary(song, recentItemsByKey.get(key)?.selectedAt ?? 0);
+        });
+        return mergeLibraryItemsWithRecents(libraryItems, recentItems, 'song').map(toSidebarItem);
+    }, [songsQuery.data?.items, recentItems, recentItemsByKey, toSidebarItem]);
+
     const audiobookSidebarItems = useMemo(() => {
         const libraryItems = audiobookEntries.map(({ item }) => {
             const key = recentKey('audiobook', absServerId, item.id);
@@ -622,11 +751,14 @@ export const LibrarySidebar = () => {
         );
     }, [absServerId, podcastEntries, recentItems, recentItemsByKey, toSidebarItem]);
 
-    const rows = useMemo(() => {
+    const baseRows = useMemo(() => {
         if (activeFilter === 'playlists') return playlistSidebarItems;
         if (activeFilter === 'radio') return radioSidebarItems;
         if (activeFilter === 'audiobooks') return audiobookSidebarItems;
         if (activeFilter === 'podcasts') return podcastSidebarItems;
+        if (activeFilter === 'albums') return albumSidebarItems;
+        if (activeFilter === 'artists') return artistSidebarItems;
+        if (activeFilter === 'songs') return songSidebarItems;
 
         const mediaType = mediaTypeForFilter[activeFilter];
         const filteredRows = mediaType
@@ -635,12 +767,25 @@ export const LibrarySidebar = () => {
         return filteredRows.slice(0, SIDEBAR_ITEM_LIMIT);
     }, [
         activeFilter,
+        albumSidebarItems,
+        artistSidebarItems,
         audiobookSidebarItems,
         playlistSidebarItems,
         podcastSidebarItems,
         radioSidebarItems,
         recentSidebarItems,
+        songSidebarItems,
     ]);
+
+    const rows = useMemo(() => {
+        const trimmed = searchQuery.trim().toLowerCase();
+        if (!trimmed) return baseRows;
+        return baseRows.filter(
+            (row) =>
+                row.title.toLowerCase().includes(trimmed) ||
+                row.subtitle.toLowerCase().includes(trimmed),
+        );
+    }, [baseRows, searchQuery]);
 
     const availableFilters = useMemo(() => {
         const availableTypes = new Set(recentSidebarItems.map((item) => item.mediaType));
@@ -665,6 +810,9 @@ export const LibrarySidebar = () => {
     const isLoading =
         (activeFilter === 'playlists' && playlistsQuery.isLoading) ||
         (activeFilter === 'radio' && radioQuery.isLoading) ||
+        (activeFilter === 'albums' && albumsQuery.isLoading) ||
+        (activeFilter === 'artists' && artistsQuery.isLoading) ||
+        (activeFilter === 'songs' && songsQuery.isLoading) ||
         (shouldLoadAbsTypeView &&
             (absLibrariesQuery.isLoading ||
                 absItemQueries.some((query) => query.isLoading || query.isPending)));
@@ -697,7 +845,11 @@ export const LibrarySidebar = () => {
                 onChange={setActiveFilter}
             />
 
-            <LibrarySidebarToolbar />
+            <LibrarySidebarToolbar
+                onChange={setSearchQuery}
+                onClear={() => setSearchQuery('')}
+                value={searchQuery}
+            />
 
             <div className={styles.rowList}>
                 {isLoading && rows.length === 0 ? (
@@ -785,17 +937,78 @@ const LibraryFilterChips = ({
     </div>
 );
 
-const LibrarySidebarToolbar = () => (
-    <div aria-label="Library tools" className={styles.utilityRow}>
-        <span className={styles.utilityIcon}>
-            <Icon icon="search" size="sm" />
-        </span>
-        <span className={styles.utilitySort}>
-            <Icon icon="sortDesc" size="sm" />
-            Recents
-        </span>
-    </div>
-);
+const LibrarySidebarToolbar = ({
+    onChange,
+    onClear,
+    value,
+}: {
+    onChange: (value: string) => void;
+    onClear: () => void;
+    value: string;
+}) => {
+    const [isExpanded, setIsExpanded] = useState(value.length > 0);
+    const inputRef = useRef<HTMLInputElement | null>(null);
+
+    const openSearch = useCallback(() => {
+        setIsExpanded(true);
+        // Defer focus until the input is mounted by React.
+        requestAnimationFrame(() => inputRef.current?.focus());
+    }, []);
+
+    const closeSearch = useCallback(() => {
+        onClear();
+        setIsExpanded(false);
+    }, [onClear]);
+
+    if (isExpanded) {
+        return (
+            <div aria-label="Library tools" className={styles.utilityRow}>
+                <input
+                    aria-label="Filter library"
+                    className={styles.utilitySearchInput}
+                    onBlur={() => {
+                        if (!value) setIsExpanded(false);
+                    }}
+                    onChange={(event) => onChange(event.currentTarget.value)}
+                    onKeyDown={(event) => {
+                        if (event.key === 'Escape') {
+                            closeSearch();
+                        }
+                    }}
+                    placeholder="Search in library..."
+                    ref={inputRef}
+                    type="text"
+                    value={value}
+                />
+                <button
+                    aria-label="Close search"
+                    className={styles.utilityIconButton}
+                    onClick={closeSearch}
+                    type="button"
+                >
+                    <Icon icon="x" size="sm" />
+                </button>
+            </div>
+        );
+    }
+
+    return (
+        <div aria-label="Library tools" className={styles.utilityRow}>
+            <button
+                aria-label="Search library"
+                className={styles.utilityIconButton}
+                onClick={openSearch}
+                type="button"
+            >
+                <Icon icon="search" size="sm" />
+            </button>
+            <span className={styles.utilitySort}>
+                <Icon icon="sortDesc" size="sm" />
+                Recents
+            </span>
+        </div>
+    );
+};
 
 const LibraryState = ({ label }: { label: string }) => (
     <div className={styles.state}>

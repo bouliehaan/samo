@@ -3,13 +3,12 @@ import { memo, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import i18n from '/@/i18n/i18n';
-import { StylesSettings } from '/@/renderer/features/settings/components/advanced/styles-settings';
 import {
     SettingOption,
     SettingsSection,
 } from '/@/renderer/features/settings/components/settings-section';
 import { useGeneralSettings, useSettingsStoreActions } from '/@/renderer/store/settings.store';
-import { THEME_DATA, useSetColorScheme } from '/@/renderer/themes/use-app-theme';
+import { THEME_DATA } from '/@/renderer/themes/use-app-theme';
 import { ColorInput } from '/@/shared/components/color-input/color-input';
 import { Group } from '/@/shared/components/group/group';
 import { Select } from '/@/shared/components/select/select';
@@ -90,7 +89,6 @@ export const ThemeSettings = memo(() => {
     const { t } = useTranslation();
     const settings = useGeneralSettings();
     const { setSettings } = useSettingsStoreActions();
-    const { setColorScheme } = useSetColorScheme();
 
     const groupedThemeData = useMemo(() => getGroupedThemeData(), []);
 
@@ -122,40 +120,6 @@ export const ThemeSettings = memo(() => {
             }),
             isHidden: false,
             title: t('setting.useSystemTheme', { postProcess: 'sentenceCase' }),
-        },
-        {
-            control: (
-                <Select
-                    data={groupedThemeData}
-                    defaultValue={settings.theme}
-                    onChange={(e) => {
-                        const theme = e as AppTheme;
-
-                        setSettings({
-                            general: {
-                                theme,
-                            },
-                        });
-
-                        const colorScheme = getAppTheme(theme).mode ?? 'dark';
-
-                        setColorScheme(colorScheme);
-
-                        if (localSettings) {
-                            localSettings.themeSet(colorScheme);
-                        }
-                    }}
-                    renderOption={renderThemeOption}
-                    searchable
-                    width={240}
-                />
-            ),
-            description: t('setting.theme', {
-                context: 'description',
-                postProcess: 'sentenceCase',
-            }),
-            isHidden: settings.followSystemTheme,
-            title: t('setting.theme', { postProcess: 'sentenceCase' }),
         },
         {
             control: (
@@ -205,30 +169,9 @@ export const ThemeSettings = memo(() => {
         },
         {
             control: (
-                <Switch
-                    checked={settings.useThemeAccentColor}
-                    onChange={(e) => {
-                        setSettings({
-                            general: {
-                                useThemeAccentColor: e.currentTarget.checked,
-                            },
-                        });
-                    }}
-                />
-            ),
-            description: t('setting.useThemeAccentColor', {
-                context: 'description',
-                postProcess: 'sentenceCase',
-            }),
-            isHidden: false,
-            title: t('setting.useThemeAccentColor', { postProcess: 'sentenceCase' }),
-        },
-        {
-            control: (
                 <Stack align="center">
                     <ColorInput
                         defaultValue={settings.accent}
-                        disabled={settings.useThemeAccentColor}
                         format="rgb"
                         onChangeEnd={(e) => {
                             setSettings({
@@ -257,26 +200,6 @@ export const ThemeSettings = memo(() => {
         },
         {
             control: (
-                <Switch
-                    checked={settings.useThemePrimaryShade}
-                    onChange={(e) => {
-                        setSettings({
-                            general: {
-                                useThemePrimaryShade: e.currentTarget.checked,
-                            },
-                        });
-                    }}
-                />
-            ),
-            description: t('setting.useThemePrimaryShade', {
-                context: 'description',
-                postProcess: 'sentenceCase',
-            }),
-            isHidden: false,
-            title: t('setting.useThemePrimaryShade', { postProcess: 'sentenceCase' }),
-        },
-        {
-            control: (
                 <Slider
                     defaultValue={settings.primaryShade}
                     label={(value) => value}
@@ -297,14 +220,12 @@ export const ThemeSettings = memo(() => {
                 context: 'description',
                 postProcess: 'sentenceCase',
             }),
-            isHidden: settings.useThemePrimaryShade,
             title: t('setting.primaryShade', { postProcess: 'sentenceCase' }),
         },
     ];
 
     return (
         <SettingsSection
-            extra={<StylesSettings />}
             options={themeOptions}
             title={t('page.setting.theme', { postProcess: 'sentenceCase' })}
         />

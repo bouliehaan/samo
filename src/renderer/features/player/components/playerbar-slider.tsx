@@ -4,17 +4,14 @@ import { lazy, Suspense } from 'react';
 import { PlayerbarSeekSlider } from './playerbar-seek-slider';
 import styles from './playerbar-slider.module.css';
 
+import { useIsPlayingRadio } from '/@/renderer/features/radio/hooks/use-radio-player';
 import {
     useAppStore,
     useAppStoreActions,
     usePlayerSong,
     usePlayerTimestamp,
 } from '/@/renderer/store';
-import { useIsPlayingRadio } from '/@/renderer/features/radio/hooks/use-radio-player';
-import {
-    useAudiobookDuration,
-    useAudiobookPosition,
-} from '/@/renderer/store/audiobook.store';
+import { useAudiobookDuration, useAudiobookPosition } from '/@/renderer/store/audiobook.store';
 import { usePlaybackSource } from '/@/renderer/store/playback-owner.store';
 import { usePodcastDuration, usePodcastPosition } from '/@/renderer/store/podcast.store';
 import { PlayerbarSliderType, usePlayerbarSlider } from '/@/renderer/store/settings.store';
@@ -105,9 +102,7 @@ export const PlayerbarSlider = () => {
                         isMuted
                         isNoSelect
                         onClick={
-                            isRadioMode
-                                ? undefined
-                                : () => setShowTimeRemaining(!showTimeRemaining)
+                            isRadioMode ? undefined : () => setShowTimeRemaining(!showTimeRemaining)
                         }
                         role={isRadioMode ? undefined : 'button'}
                         size="xs"

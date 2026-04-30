@@ -3,9 +3,9 @@
     padding: 0;
     color: inherit;
     text-align: left;
+    cursor: pointer;
     background: transparent;
     border: 0;
-    cursor: pointer;
 }
 
 .card-button:focus-visible {
@@ -16,9 +16,9 @@
 .art-wrap {
     position: relative;
     width: 100%;
-    overflow: hidden;
     aspect-ratio: 1;
     margin-bottom: var(--theme-spacing-xs);
+    overflow: hidden;
     background: var(--theme-colors-surface);
     border-radius: var(--theme-radius-sm);
 }

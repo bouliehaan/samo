@@ -1,9 +1,9 @@
 .window-bar {
-    grid-area: window-bar;
     position: absolute;
     top: 0;
     right: 0;
     z-index: 200;
+    grid-area: window-bar;
     width: 130px;
     height: 30px;
     pointer-events: none;
@@ -16,9 +16,9 @@
     justify-content: flex-end;
     width: 100%;
     height: 100%;
+    pointer-events: none;
     background: transparent;
     border-bottom: 0;
-    pointer-events: none;
 }
 
 .windows-button-group {

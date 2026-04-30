@@ -12,6 +12,7 @@ import {
     useRadioPlayer,
 } from '/@/renderer/features/radio/hooks/use-radio-player';
 import { LibrarySidebar } from '/@/renderer/features/sidebar/components/library-sidebar';
+import { useNowPlaying } from '/@/renderer/hooks/use-now-playing';
 import {
     useAppStore,
     useAppStoreActions,
@@ -57,9 +58,11 @@ const SidebarImage = () => {
     const leftWidth = useAppStore((state) => state.sidebar.leftWidth);
     const { setSideBar } = useAppStoreActions();
     const currentSong = usePlayerSong();
+    const nowPlaying = useNowPlaying();
     const isRadioActive = useIsRadioActive();
     const { currentStationArt, isPlaying: isRadioPlaying } = useRadioPlayer();
     const { blurExplicitImages } = useGeneralSettings();
+    const isLongFormMode = nowPlaying.source === 'audiobook' || nowPlaying.source === 'podcast';
 
     const imageUrl = useItemImageUrl({
         id: currentSong?.imageId || undefined,
@@ -77,6 +80,7 @@ const SidebarImage = () => {
     });
 
     const isPlayingRadio = isRadioActive && isRadioPlaying;
+    const isNonMusicMode = isPlayingRadio || isLongFormMode;
     const isSongDefined = Boolean(currentSong?.id);
 
     const setFullScreenPlayerStore = useSetFullScreenPlayerStore();
@@ -89,7 +93,7 @@ const SidebarImage = () => {
         e.preventDefault();
         e.stopPropagation();
 
-        if (!currentSong || isPlayingRadio) {
+        if (!currentSong || isNonMusicMode) {
             return;
         }
 
@@ -123,7 +127,30 @@ const SidebarImage = () => {
                     postProcess: 'sentenceCase',
                 })}
             >
-                {isRadioActive && radioImageUrl ? (
+                {isLongFormMode && nowPlaying.artwork ? (
+                    <img
+                        alt={nowPlaying.title || 'Cover art'}
+                        className={styles.sidebarImage}
+                        loading="eager"
+                        src={nowPlaying.artwork}
+                    />
+                ) : isLongFormMode ? (
+                    <Center
+                        className={styles.sidebarImage}
+                        style={{
+                            background: 'var(--theme-colors-surface)',
+                            borderRadius: 'var(--theme-card-default-radius)',
+                            height: '100%',
+                            width: '100%',
+                        }}
+                    >
+                        <Icon
+                            color="muted"
+                            icon={nowPlaying.source === 'podcast' ? 'radio' : 'itemAlbum'}
+                            size="40%"
+                        />
+                    </Center>
+                ) : isRadioActive && radioImageUrl ? (
                     <img className={styles.sidebarImage} loading="eager" src={radioImageUrl} />
                 ) : isRadioActive ? (
                     <Center

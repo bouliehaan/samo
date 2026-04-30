@@ -31,6 +31,7 @@ const LibraryHeaderBarComponent = ({ children, ignoreMaxWidth }: LibraryHeaderBa
 };
 
 interface HeaderPlayButtonProps {
+    allowShuffle?: boolean;
     className?: string;
     /**
      * Explicit playback context to attach when starting playback. Only used by the
@@ -54,6 +55,7 @@ interface TitleProps {
 }
 
 const HeaderPlayButton = ({
+    allowShuffle,
     className,
     context,
     ids,
@@ -87,20 +89,32 @@ const HeaderPlayButton = ({
 
     const [isOpen, setIsOpen] = useState(false);
     const buttonRef = useRef<HTMLButtonElement>(null);
+    const shouldAllowShuffle =
+        allowShuffle ?? !(itemType === LibraryItem.ALBUM && ids?.length === 1);
+
+    const handleButtonClick = () => {
+        if (shouldAllowShuffle) {
+            setIsOpen((prev) => !prev);
+            return;
+        }
+
+        handlePlay(Play.NOW);
+    };
 
     return (
         <div className={styles.playButtonContainer}>
             <DefaultPlayButton
                 className={className}
                 loading={isPlayerFetching}
-                onClick={() => setIsOpen((prev) => !prev)}
+                onClick={handleButtonClick}
                 ref={buttonRef}
                 variant={variant}
                 {...props}
             />
             <AnimatePresence>
-                {isOpen && (
+                {isOpen && shouldAllowShuffle && (
                     <PlayButtonGroupPopover
+                        allowShuffle={shouldAllowShuffle}
                         loading={isPlayerFetching}
                         onClose={() => setIsOpen(false)}
                         onPlay={handlePlay}

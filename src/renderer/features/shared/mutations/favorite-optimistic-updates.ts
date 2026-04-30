@@ -14,6 +14,7 @@ import {
     FavoriteArgs,
     LibraryItem,
     PlaylistSongListResponse,
+    SearchResponse,
     Song,
     SongDetailResponse,
     SongListResponse,
@@ -612,6 +613,51 @@ export const applyFavoriteOptimisticUpdates = (
             break;
         }
     }
+
+    // Search results carry albums/artists/songs in a single payload — patch the
+    // matching collection so the global search dropdown's heart icon updates
+    // immediately when the user toggles a favorite from a search result.
+    const searchQueryKey = queryKeys.search.list(variables.apiClientProps.serverId);
+    const searchQueries = queryClient.getQueriesData({
+        exact: false,
+        queryKey: searchQueryKey,
+    });
+
+    searchQueries.forEach(([queryKey, data]) => {
+        if (!data) return;
+        pendingUpdates.push({
+            previousData: data,
+            queryKey,
+            updater: (prev: SearchResponse | undefined) => {
+                if (!prev) return prev;
+                switch (variables.query.type) {
+                    case LibraryItem.ALBUM: {
+                        const updated = updateItemInArray(prev.albums, itemIdSet, (item) =>
+                            createFavoriteUpdater<Album>(item),
+                        );
+                        return updated ? { ...prev, albums: updated } : prev;
+                    }
+                    case LibraryItem.ALBUM_ARTIST:
+                    case LibraryItem.ARTIST: {
+                        const updated = updateItemInArray(prev.albumArtists, itemIdSet, (item) =>
+                            createFavoriteUpdater<AlbumArtist>(item),
+                        );
+                        return updated ? { ...prev, albumArtists: updated } : prev;
+                    }
+                    case LibraryItem.PLAYLIST_SONG:
+                    case LibraryItem.QUEUE_SONG:
+                    case LibraryItem.SONG: {
+                        const updated = updateItemInArray(prev.songs, itemIdSet, (item) =>
+                            createFavoriteUpdater<Song>(item),
+                        );
+                        return updated ? { ...prev, songs: updated } : prev;
+                    }
+                    default:
+                        return prev;
+                }
+            },
+        });
+    });
 
     return collectAndApplyUpdates(queryClient, pendingUpdates);
 };

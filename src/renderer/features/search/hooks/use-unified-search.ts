@@ -13,8 +13,8 @@ import {
 } from '/@/renderer/features/search/utils/relevance';
 import { useAudiobookshelfServer, useCurrentServer } from '/@/renderer/store';
 import {
-    AudiobookshelfLibraryItemsResponse,
     AudiobookshelfLibraryItem,
+    AudiobookshelfLibraryItemsResponse,
     AudiobookshelfPodcastEpisode,
 } from '/@/shared/api/audiobookshelf/audiobookshelf-types';
 import {
@@ -36,24 +36,12 @@ const MUSIC_SEARCH_STALE_TIME_MS = 1000 * 60;
 const ABS_LIBRARY_STALE_TIME_MS = 1000 * 60 * 5;
 const ABS_LIBRARY_GC_TIME_MS = 1000 * 60 * 30;
 
-export type UnifiedPodcastEpisodeResult = {
-    episode: AudiobookshelfPodcastEpisode;
-    show: AudiobookshelfLibraryItem;
-};
-
-export type RankedSong = { kind: 'song'; score: number; song: Song };
 export type RankedAlbum = { album: Album; kind: 'album'; score: number };
+
 export type RankedArtist = { artist: AlbumArtist; kind: 'artist'; score: number };
-export type RankedPlaylist = { kind: 'playlist'; playlist: Playlist; score: number };
-export type RankedRadio = { kind: 'radio'; score: number; station: InternetRadioStation };
 export type RankedAudiobook = {
     item: AudiobookshelfLibraryItem;
     kind: 'audiobook';
-    score: number;
-};
-export type RankedPodcastShow = {
-    item: AudiobookshelfLibraryItem;
-    kind: 'podcastShow';
     score: number;
 };
 export type RankedEpisode = {
@@ -61,7 +49,13 @@ export type RankedEpisode = {
     kind: 'episode';
     score: number;
 };
-
+export type RankedPlaylist = { kind: 'playlist'; playlist: Playlist; score: number };
+export type RankedPodcastShow = {
+    item: AudiobookshelfLibraryItem;
+    kind: 'podcastShow';
+    score: number;
+};
+export type RankedRadio = { kind: 'radio'; score: number; station: InternetRadioStation };
 export type RankedResult =
     | RankedAlbum
     | RankedArtist
@@ -71,6 +65,7 @@ export type RankedResult =
     | RankedPodcastShow
     | RankedRadio
     | RankedSong;
+export type RankedSong = { kind: 'song'; score: number; song: Song };
 
 export type ResultGroupKey =
     | 'albums'
@@ -82,12 +77,17 @@ export type ResultGroupKey =
     | 'radioStations'
     | 'songs';
 
+export type UnifiedPodcastEpisodeResult = {
+    episode: AudiobookshelfPodcastEpisode;
+    show: AudiobookshelfLibraryItem;
+};
+
 const ENTITY_GROUPS: ReadonlySet<ResultGroupKey> = new Set([
-    'artists',
     'albums',
+    'artists',
     'audiobooks',
-    'podcastShows',
     'playlists',
+    'podcastShows',
 ]);
 
 export interface UnifiedSearchResults {
@@ -101,8 +101,8 @@ export interface UnifiedSearchResults {
     songs: RankedSong[];
 }
 
-export type UnifiedSearchSourceKey = 'abs' | 'music' | 'playlists' | 'radio';
 export type UnifiedSearchSourceErrors = Partial<Record<UnifiedSearchSourceKey, string>>;
+export type UnifiedSearchSourceKey = 'abs' | 'music' | 'playlists' | 'radio';
 
 export interface UnifiedSearchState {
     bestMatches: RankedResult[];
@@ -173,7 +173,9 @@ const rankArtists = (artists: AlbumArtist[], ctx: NeedleContext): RankedArtist[]
         .map<RankedArtist>((artist) => ({
             artist,
             kind: 'artist',
-            score: scoreCandidate(artist.name, [], ctx.needle, ctx.tokens) + entityBumpFor('artists', ctx),
+            score:
+                scoreCandidate(artist.name, [], ctx.needle, ctx.tokens) +
+                entityBumpFor('artists', ctx),
         }))
         .filter((entry) => entry.score > 0)
         .sort((a, b) => b.score - a.score || a.artist.name.localeCompare(b.artist.name))
@@ -193,10 +195,7 @@ const rankPlaylists = (playlists: Playlist[], ctx: NeedleContext): RankedPlaylis
         .sort((a, b) => b.score - a.score || a.playlist.name.localeCompare(b.playlist.name))
         .slice(0, RESULT_LIMIT_PER_GROUP);
 
-const rankRadio = (
-    stations: InternetRadioStation[],
-    ctx: NeedleContext,
-): RankedRadio[] =>
+const rankRadio = (stations: InternetRadioStation[], ctx: NeedleContext): RankedRadio[] =>
     stations
         .map<RankedRadio>((station) => ({
             kind: 'radio',
@@ -238,12 +237,8 @@ const rankPodcastShows = (
             item,
             kind: 'podcastShow',
             score:
-                scoreCandidate(
-                    getAbsTitle(item),
-                    [getAbsAuthor(item)],
-                    ctx.needle,
-                    ctx.tokens,
-                ) + entityBumpFor('podcastShows', ctx),
+                scoreCandidate(getAbsTitle(item), [getAbsAuthor(item)], ctx.needle, ctx.tokens) +
+                entityBumpFor('podcastShows', ctx),
         }))
         .filter((entry) => entry.score > 0)
         .sort((a, b) => b.score - a.score || getAbsTitle(a.item).localeCompare(getAbsTitle(b.item)))

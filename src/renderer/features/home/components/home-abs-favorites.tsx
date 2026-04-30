@@ -18,6 +18,10 @@ import {
     useAudiobookshelfServer,
 } from '/@/renderer/store';
 import {
+    useFavoriteAudiobookIds,
+    useFavoritePodcastIds,
+} from '/@/renderer/store/library-favorites.store';
+import {
     AudiobookshelfLibrary,
     AudiobookshelfLibraryItem,
 } from '/@/shared/api/audiobookshelf/audiobookshelf-types';
@@ -138,15 +142,13 @@ const useHomeAbsItems = (kind: AbsMediaKind) => {
 
     const items = useMemo(
         () =>
-            itemQueries
-                .flatMap((query, index) => {
-                    const library = libraries[index];
+            itemQueries.flatMap((query, index) => {
+                const library = libraries[index];
 
-                    return (query.data?.results ?? []).filter((item) =>
-                        isItemForKind(item, library, kind),
-                    );
-                })
-                .slice(0, HOME_ABS_ITEM_LIMIT),
+                return (query.data?.results ?? []).filter((item) =>
+                    isItemForKind(item, library, kind),
+                );
+            }),
         [itemQueries, libraries, kind],
     );
 
@@ -164,7 +166,16 @@ const HomeAbsFavoriteCarousel = ({
 }) => {
     const navigate = useNavigate();
     const audiobookActions = useAudiobookActions();
-    const { items, server } = useHomeAbsItems(kind);
+    const { items: allItems, server } = useHomeAbsItems(kind);
+    const audiobookFavoriteIds = useFavoriteAudiobookIds(server?.id);
+    const podcastFavoriteIds = useFavoritePodcastIds(server?.id);
+    const favoriteIds = kind === 'audiobook' ? audiobookFavoriteIds : podcastFavoriteIds;
+
+    const items = useMemo(() => {
+        const sourceItems = allItems.filter((item) => favoriteIds.has(item.id));
+
+        return sourceItems.slice(0, HOME_ABS_ITEM_LIMIT);
+    }, [allItems, favoriteIds]);
 
     if (!server || !items.length) {
         return null;

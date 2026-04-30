@@ -45,6 +45,11 @@ import {
     usePlayButtonBehavior,
 } from '/@/renderer/store';
 import { useAudiobookActions } from '/@/renderer/store/audiobook.store';
+import {
+    useFavoriteAudiobookIds,
+    useFavoritePodcastIds,
+    useLibraryFavoritesActions,
+} from '/@/renderer/store/library-favorites.store';
 import { usePodcastActions } from '/@/renderer/store/podcast.store';
 import {
     AudiobookshelfLibraryItem,
@@ -219,6 +224,7 @@ interface GlobalSearchBarProps {
 }
 
 interface RowFactoryDeps {
+    audiobookFavoriteIds: Set<string>;
     musicServerId?: null | string;
     onSelectAlbum: (album: Album) => void;
     onSelectArtist: (artist: AlbumArtist) => void;
@@ -228,10 +234,13 @@ interface RowFactoryDeps {
     onSelectPodcastShow: (item: AudiobookshelfLibraryItem) => void;
     onSelectRadio: (station: InternetRadioStation) => void;
     onSelectSong: (song: Song) => void;
+    onToggleAudiobookFavorite: (item: AudiobookshelfLibraryItem) => void;
     onToggleFavorite: (
         item: Album | AlbumArtist | Song,
         itemType: LibraryItem.ALBUM | LibraryItem.ALBUM_ARTIST | LibraryItem.SONG,
     ) => void;
+    onTogglePodcastFavorite: (item: AudiobookshelfLibraryItem) => void;
+    podcastFavoriteIds: Set<string>;
 }
 
 const renderRow = (entry: RankedResult, deps: RowFactoryDeps): ReactNode => {
@@ -290,6 +299,10 @@ const renderRow = (entry: RankedResult, deps: RowFactoryDeps): ReactNode => {
                         />
                     }
                     fallbackIcon="metadata"
+                    favorite={{
+                        isFavorite: deps.audiobookFavoriteIds.has(item.id),
+                        onToggle: () => deps.onToggleAudiobookFavorite(item),
+                    }}
                     key={`audiobook-${item.id}`}
                     onSelect={() => deps.onSelectAudiobook(item)}
                     subtitle={getAbsAuthor(item) || undefined}
@@ -347,6 +360,10 @@ const renderRow = (entry: RankedResult, deps: RowFactoryDeps): ReactNode => {
                         />
                     }
                     fallbackIcon="microphone"
+                    favorite={{
+                        isFavorite: deps.podcastFavoriteIds.has(item.id),
+                        onToggle: () => deps.onTogglePodcastFavorite(item),
+                    }}
                     key={`podcast-${item.id}`}
                     onSelect={() => deps.onSelectPodcastShow(item)}
                     subtitle={getAbsAuthor(item) || undefined}
@@ -440,10 +457,14 @@ export const GlobalSearchBar = ({ className }: GlobalSearchBarProps) => {
     const musicServer = useCurrentServer();
     const musicServerId = musicServer?.id;
     const audiobookshelfServer = useAudiobookshelfServer();
+    const audiobookshelfServerId = audiobookshelfServer?.id;
     const audiobookActions = useAudiobookActions();
     const podcastActions = usePodcastActions();
     const radioControls = useRadioControls();
     const setFavorite = useSetFavorite();
+    const libraryFavoriteActions = useLibraryFavoritesActions();
+    const audiobookFavoriteIds = useFavoriteAudiobookIds(audiobookshelfServerId);
+    const podcastFavoriteIds = useFavoritePodcastIds(audiobookshelfServerId);
 
     const closeDropdown = useCallback(() => setIsOpen(false), []);
 
@@ -585,8 +606,25 @@ export const GlobalSearchBar = ({ className }: GlobalSearchBarProps) => {
         [setFavorite],
     );
 
+    const handleToggleAudiobookFavorite = useCallback(
+        (item: AudiobookshelfLibraryItem) => {
+            if (!audiobookshelfServerId) return;
+            libraryFavoriteActions.toggle('audiobook', audiobookshelfServerId, item.id);
+        },
+        [audiobookshelfServerId, libraryFavoriteActions],
+    );
+
+    const handleTogglePodcastFavorite = useCallback(
+        (item: AudiobookshelfLibraryItem) => {
+            if (!audiobookshelfServerId) return;
+            libraryFavoriteActions.toggle('podcast', audiobookshelfServerId, item.id);
+        },
+        [audiobookshelfServerId, libraryFavoriteActions],
+    );
+
     const rowDeps: RowFactoryDeps = useMemo(
         () => ({
+            audiobookFavoriteIds,
             musicServerId: musicServerId ?? null,
             onSelectAlbum: handleAlbumSelect,
             onSelectArtist: handleArtistSelect,
@@ -596,9 +634,13 @@ export const GlobalSearchBar = ({ className }: GlobalSearchBarProps) => {
             onSelectPodcastShow: handlePodcastShowSelect,
             onSelectRadio: handleRadioSelect,
             onSelectSong: handleSongSelect,
+            onToggleAudiobookFavorite: handleToggleAudiobookFavorite,
             onToggleFavorite: handleToggleFavorite,
+            onTogglePodcastFavorite: handleTogglePodcastFavorite,
+            podcastFavoriteIds,
         }),
         [
+            audiobookFavoriteIds,
             handleAlbumSelect,
             handleArtistSelect,
             handleAudiobookSelect,
@@ -607,8 +649,11 @@ export const GlobalSearchBar = ({ className }: GlobalSearchBarProps) => {
             handlePodcastShowSelect,
             handleRadioSelect,
             handleSongSelect,
+            handleToggleAudiobookFavorite,
             handleToggleFavorite,
+            handleTogglePodcastFavorite,
             musicServerId,
+            podcastFavoriteIds,
         ],
     );
 

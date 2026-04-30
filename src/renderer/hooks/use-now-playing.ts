@@ -1,5 +1,9 @@
 import { getItemImageUrl } from '/@/renderer/components/item-image/item-image';
-import { useRadioPlayer, useRadioStore } from '/@/renderer/features/radio/hooks/use-radio-player';
+import {
+    type RadioCurrentStationArt,
+    useRadioPlayer,
+    useRadioStore,
+} from '/@/renderer/features/radio/hooks/use-radio-player';
 import { usePlayerSong, usePlayerStoreBase } from '/@/renderer/store';
 import {
     getCurrentChapterIndex,
@@ -47,7 +51,7 @@ export function getNowPlayingSnapshot(): NowPlaying {
         const radio = useRadioStore.getState();
         return {
             artist: radio.metadata?.artist || radio.stationName || '',
-            artwork: undefined,
+            artwork: radioArtworkUrl(radio.currentStationArt),
             canSeek: false,
             canSkipNext: false,
             canSkipPrevious: false,
@@ -61,8 +65,7 @@ export function getNowPlayingSnapshot(): NowPlaying {
         const ab = useAudiobookStore.getState();
         const { chapters, duration, item, position, server } = ab;
         const chapterIndex = getCurrentChapterIndex(chapters, position, duration);
-        const chapterTitle =
-            chapterIndex >= 0 ? chapters[chapterIndex].title || '' : '';
+        const chapterTitle = chapterIndex >= 0 ? chapters[chapterIndex].title || '' : '';
         return {
             artist: item ? audiobookAuthor(item) : '',
             artwork: item && server ? audiobookArtworkUrl(server, item) : undefined,
@@ -120,6 +123,7 @@ export function useNowPlaying(): NowPlaying {
     const source = usePlaybackSource();
     const song = usePlayerSong();
     const {
+        currentStationArt,
         currentStreamUrl: radioStreamUrl,
         isPlaying: isRadioPlaying,
         metadata: radioMetadata,
@@ -137,7 +141,7 @@ export function useNowPlaying(): NowPlaying {
     if (source === 'radio' && (isRadioPlaying || radioStreamUrl || stationName)) {
         return {
             artist: radioMetadata?.artist || stationName || '',
-            artwork: undefined,
+            artwork: radioArtworkUrl(currentStationArt),
             canSeek: false,
             canSkipNext: false,
             canSkipPrevious: false,
@@ -173,9 +177,7 @@ export function useNowPlaying(): NowPlaying {
     if (source === 'podcast' && podcastItem) {
         return {
             artist: podcastShowTitle(podcastItem),
-            artwork: podcastServer
-                ? podcastArtworkUrl(podcastServer, podcastItem)
-                : undefined,
+            artwork: podcastServer ? podcastArtworkUrl(podcastServer, podcastItem) : undefined,
             canSeek: true,
             canSkipNext: false,
             canSkipPrevious: false,
@@ -217,13 +219,6 @@ function audiobookArtworkUrl(
     return `${base}/api/items/${item.id}/cover?token=${encodeURIComponent(server.credential)}`;
 }
 
-function podcastArtworkUrl(
-    server: ServerListItemWithCredential,
-    item: AudiobookshelfLibraryItem,
-): string | undefined {
-    return item.media?.metadata?.imageUrl || audiobookArtworkUrl(server, item);
-}
-
 function audiobookAuthor(item: AudiobookshelfLibraryItem): string {
     const meta = item.media?.metadata;
 
@@ -240,18 +235,32 @@ function audiobookTitle(item: AudiobookshelfLibraryItem): string {
     return item.media?.metadata?.title || item.name || 'Untitled audiobook';
 }
 
+function podcastArtworkUrl(
+    server: ServerListItemWithCredential,
+    item: AudiobookshelfLibraryItem,
+): string | undefined {
+    return item.media?.metadata?.imageUrl || audiobookArtworkUrl(server, item);
+}
+
+function podcastAuthor(item: AudiobookshelfLibraryItem): string {
+    const meta = item.media?.metadata;
+    return meta?.author || meta?.authorName || meta?.authors?.map((a) => a.name).join(', ') || '';
+}
+
 // Podcast show name (e.g. "The Daily"). Distinct from audiobookAuthor because
 // for podcasts, what feels like "title" to a user is the episode, not the show.
 function podcastShowTitle(item: AudiobookshelfLibraryItem): string {
     return item.media?.metadata?.title || item.name || 'Podcast';
 }
 
-function podcastAuthor(item: AudiobookshelfLibraryItem): string {
-    const meta = item.media?.metadata;
-    return (
-        meta?.author ||
-        meta?.authorName ||
-        meta?.authors?.map((a) => a.name).join(', ') ||
-        ''
-    );
+function radioArtworkUrl(stationArt: null | RadioCurrentStationArt): string | undefined {
+    if (!stationArt) return undefined;
+
+    return getItemImageUrl({
+        id: stationArt.imageId || undefined,
+        imageUrl: stationArt.imageUrl,
+        itemType: LibraryItem.RADIO_STATION,
+        serverId: stationArt.serverId,
+        type: 'fullScreenPlayer',
+    });
 }

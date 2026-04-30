@@ -76,7 +76,9 @@ export const AudioPathBadge = ({ compact = false, inline = false, song }: AudioP
     const items = inline
         ? [container, sourceQuality, transcode.enabled ? bitRate : null].filter(Boolean)
         : compact
-          ? [pathLabel, container, sourceQuality, transcode.enabled ? bitRate : null].filter(Boolean)
+          ? [pathLabel, container, sourceQuality, transcode.enabled ? bitRate : null].filter(
+                Boolean,
+            )
           : [pathLabel, container, bitDepth, sampleRate, bitRate].filter(Boolean);
 
     return (

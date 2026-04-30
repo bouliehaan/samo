@@ -1,12 +1,18 @@
-import { Box, SimpleGrid, Stack } from '@mantine/core';
+import { Box, SimpleGrid, Stack, TextInput } from '@mantine/core';
 import { useQueries, useQuery } from '@tanstack/react-query';
+import { useMemo, useState } from 'react';
 
 import { audiobookshelfController } from '/@/renderer/api/audiobookshelf/audiobookshelf-controller';
 import { AnimatedPage } from '/@/renderer/features/shared/components/animated-page';
 import { PageErrorBoundary } from '/@/renderer/features/shared/components/page-error-boundary';
 import { useAudiobookshelfServer } from '/@/renderer/store';
 import { useAudiobookActions } from '/@/renderer/store/audiobook.store';
+import {
+    useIsLibraryFavorite,
+    useLibraryFavoritesActions,
+} from '/@/renderer/store/library-favorites.store';
 import { AudiobookshelfLibraryItem } from '/@/shared/api/audiobookshelf/audiobookshelf-types';
+import { ActionIcon } from '/@/shared/components/action-icon/action-icon';
 import { Image } from '/@/shared/components/image/image';
 import { Text } from '/@/shared/components/text/text';
 
@@ -17,6 +23,21 @@ const getAudiobookAuthor = (item: AudiobookshelfLibraryItem) => {
     const metadata = item.media?.metadata;
 
     return metadata?.author || metadata?.authors?.map((author) => author.name).join(', ') || '';
+};
+
+const getAudiobookSearchText = (item: AudiobookshelfLibraryItem) => {
+    const metadata = item.media?.metadata;
+
+    return [
+        getAudiobookTitle(item),
+        getAudiobookAuthor(item),
+        metadata?.narratorName,
+        metadata?.narrators?.join(' '),
+        metadata?.publishedYear,
+    ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
 };
 
 const AudiobookCover = ({ item }: { item: AudiobookshelfLibraryItem }) => {
@@ -52,55 +73,82 @@ const AudiobookCover = ({ item }: { item: AudiobookshelfLibraryItem }) => {
 const AudiobookCard = ({
     item,
     onPlay,
+    serverId,
 }: {
     item: AudiobookshelfLibraryItem;
     onPlay: (item: AudiobookshelfLibraryItem) => void;
+    serverId: string | undefined;
 }) => {
     const title = getAudiobookTitle(item);
     const author = getAudiobookAuthor(item);
     const year = item.media?.metadata?.publishedYear;
+    const isFavorite = useIsLibraryFavorite('audiobook', serverId, item.id);
+    const { toggle: toggleFavorite } = useLibraryFavoritesActions();
 
     return (
-        <button
-            aria-label={`Play ${title}`}
+        <Stack
+            gap="xs"
             onClick={() => onPlay(item)}
-            style={{
-                background: 'transparent',
-                border: 0,
-                color: 'inherit',
-                cursor: 'pointer',
-                display: 'block',
-                padding: 0,
-                textAlign: 'left',
-                width: '100%',
+            onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    onPlay(item);
+                }
             }}
-            type="button"
+            role="button"
+            style={{ cursor: 'pointer' }}
+            tabIndex={0}
         >
-            <Stack gap="xs">
+            <Box style={{ position: 'relative' }}>
                 <AudiobookCover item={item} />
-                <Stack gap={2}>
-                    <Text fw={600} lineClamp={2} size="sm">
-                        {title}
+                <ActionIcon
+                    aria-label={
+                        isFavorite ? `Remove ${title} from favorites` : `Add ${title} to favorites`
+                    }
+                    icon="favorite"
+                    iconProps={isFavorite ? { color: 'primary', fill: 'primary' } : undefined}
+                    onClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        if (!serverId) return;
+                        toggleFavorite('audiobook', serverId, item.id);
+                    }}
+                    size="sm"
+                    style={{
+                        background: 'transparent',
+                        position: 'absolute',
+                        right: 6,
+                        top: 6,
+                    }}
+                    tooltip={{
+                        label: isFavorite ? 'Remove favorite' : 'Add favorite',
+                    }}
+                    variant="subtle"
+                />
+            </Box>
+            <Stack gap={2}>
+                <Text fw={600} lineClamp={2} size="sm">
+                    {title}
+                </Text>
+                {author ? (
+                    <Text isMuted lineClamp={1} size="xs">
+                        {author}
                     </Text>
-                    {author ? (
-                        <Text isMuted lineClamp={1} size="xs">
-                            {author}
-                        </Text>
-                    ) : null}
-                    {year ? (
-                        <Text isMuted size="xs">
-                            {year}
-                        </Text>
-                    ) : null}
-                </Stack>
+                ) : null}
+                {year ? (
+                    <Text isMuted size="xs">
+                        {year}
+                    </Text>
+                ) : null}
             </Stack>
-        </button>
+        </Stack>
     );
 };
 
 const AudiobooksRoute = () => {
     const server = useAudiobookshelfServer();
     const { play: playAudiobook } = useAudiobookActions();
+    const [searchQuery, setSearchQuery] = useState('');
 
     const librariesQuery = useQuery({
         enabled: Boolean(server),
@@ -120,6 +168,12 @@ const AudiobooksRoute = () => {
     });
 
     const items = itemQueries.flatMap((query) => query.data?.results ?? []);
+    const filteredItems = useMemo(() => {
+        const trimmedQuery = searchQuery.trim().toLowerCase();
+        if (!trimmedQuery) return items;
+
+        return items.filter((item) => getAudiobookSearchText(item).includes(trimmedQuery));
+    }, [items, searchQuery]);
     const isLoading =
         librariesQuery.isLoading || itemQueries.some((query) => query.isLoading || query.isPending);
 
@@ -157,13 +211,32 @@ const AudiobooksRoute = () => {
                     ) : !items.length ? (
                         <Text isMuted>No audiobooks found.</Text>
                     ) : (
-                        <SimpleGrid cols={{ base: 2, lg: 6, md: 5, sm: 3, xl: 7 }} spacing="lg">
-                            {items.map((item) => (
-                                <Box key={item.id}>
-                                    <AudiobookCard item={item} onPlay={handlePlay} />
-                                </Box>
-                            ))}
-                        </SimpleGrid>
+                        <>
+                            <TextInput
+                                aria-label="Search audiobooks"
+                                onChange={(event) => setSearchQuery(event.currentTarget.value)}
+                                placeholder="Search audiobooks"
+                                value={searchQuery}
+                            />
+                            {!filteredItems.length ? (
+                                <Text isMuted>No matching audiobooks found.</Text>
+                            ) : (
+                                <SimpleGrid
+                                    cols={{ base: 2, lg: 6, md: 5, sm: 3, xl: 7 }}
+                                    spacing="lg"
+                                >
+                                    {filteredItems.map((item) => (
+                                        <Box key={item.id}>
+                                            <AudiobookCard
+                                                item={item}
+                                                onPlay={handlePlay}
+                                                serverId={server?.id}
+                                            />
+                                        </Box>
+                                    ))}
+                                </SimpleGrid>
+                            )}
+                        </>
                     )}
                 </Stack>
             </Box>

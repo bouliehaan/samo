@@ -18,14 +18,11 @@ import { SONG_TABLE_COLUMNS } from '/@/renderer/components/item-list/item-table-
 import { FullScreenPlayerImage } from '/@/renderer/features/player/components/full-screen-player-image';
 import { FullScreenPlayerQueue } from '/@/renderer/features/player/components/full-screen-player-queue';
 import {
-    useIsRadioActive,
-    useRadioPlayer,
-} from '/@/renderer/features/radio/hooks/use-radio-player';
-import {
     ListConfigMenu,
     SONG_DISPLAY_TYPES,
 } from '/@/renderer/features/shared/components/list-config-menu';
 import { useFastAverageColor } from '/@/renderer/hooks';
+import { useNowPlaying } from '/@/renderer/hooks/use-now-playing';
 import {
     useFullScreenPlayerStore,
     useFullScreenPlayerStoreActions,
@@ -37,6 +34,7 @@ import {
     useSettingsStoreActions,
     useWindowSettings,
 } from '/@/renderer/store';
+import { usePlaybackSource } from '/@/renderer/store/playback-owner.store';
 import { ActionIcon } from '/@/shared/components/action-icon/action-icon';
 import { Divider } from '/@/shared/components/divider/divider';
 import { Group } from '/@/shared/components/group/group';
@@ -83,18 +81,27 @@ interface BackgroundImageProps {
 const BackgroundImage = memo(({ dynamicBackground, dynamicIsImage }: BackgroundImageProps) => {
     const currentSong = usePlayerSong();
     const { nextSong } = usePlayerData();
+    const nowPlaying = useNowPlaying();
 
-    const currentImageUrl = useItemImageUrl({
+    const isNonMusicMode =
+        nowPlaying.source === 'audiobook' ||
+        nowPlaying.source === 'podcast' ||
+        nowPlaying.source === 'radio';
+
+    const musicCurrentImageUrl = useItemImageUrl({
         id: currentSong?.imageId || undefined,
         itemType: LibraryItem.SONG,
         type: 'itemCard',
     });
 
-    const nextImageUrl = useItemImageUrl({
+    const musicNextImageUrl = useItemImageUrl({
         id: nextSong?.imageId || undefined,
         itemType: LibraryItem.SONG,
         type: 'itemCard',
     });
+
+    const currentImageUrl = isNonMusicMode ? nowPlaying.artwork : musicCurrentImageUrl;
+    const nextImageUrl = isNonMusicMode ? nowPlaying.artwork : musicNextImageUrl;
 
     const [imageState, setImageState] = useState({
         bottomImage: nextImageUrl,
@@ -112,7 +119,11 @@ const BackgroundImage = memo(({ dynamicBackground, dynamicIsImage }: BackgroundI
 
     // Update images when song changes
     useEffect(() => {
-        if (currentSong?._uniqueId === previousSongRef.current) {
+        const currentImageKey = isNonMusicMode
+            ? `${nowPlaying.source}-${nowPlaying.title}-${currentImageUrl ?? 'none'}`
+            : currentSong?._uniqueId;
+
+        if (currentImageKey === previousSongRef.current) {
             return;
         }
 
@@ -124,8 +135,16 @@ const BackgroundImage = memo(({ dynamicBackground, dynamicIsImage }: BackgroundI
             topImage: isTop ? nextImageUrl : currentImageUrl,
         });
 
-        previousSongRef.current = currentSong?._uniqueId;
-    }, [currentSong?._uniqueId, currentImageUrl, nextSong?._uniqueId, nextImageUrl]);
+        previousSongRef.current = currentImageKey;
+    }, [
+        isNonMusicMode,
+        nowPlaying.source,
+        nowPlaying.title,
+        currentSong?._uniqueId,
+        currentImageUrl,
+        nextSong?._uniqueId,
+        nextImageUrl,
+    ]);
 
     if (!dynamicBackground || !dynamicIsImage) {
         return null;
@@ -143,10 +162,23 @@ const BackgroundImage = memo(({ dynamicBackground, dynamicIsImage }: BackgroundI
     };
 
     // Determine which song IDs to use for keys and image URLs
-    const topSongId = imageState.current === 0 ? currentSong?._uniqueId : nextSong?._uniqueId;
-    const bottomSongId = imageState.current === 0 ? nextSong?._uniqueId : currentSong?._uniqueId;
-    const topSong = imageState.current === 0 ? currentSong : nextSong;
-    const bottomSong = imageState.current === 0 ? nextSong : currentSong;
+    const mediaImageKey = `${nowPlaying.source}-${nowPlaying.title}-${nowPlaying.artwork ?? 'none'}`;
+    const topSongId = isNonMusicMode
+        ? mediaImageKey
+        : imageState.current === 0
+          ? currentSong?._uniqueId
+          : nextSong?._uniqueId;
+    const bottomSongId = isNonMusicMode
+        ? mediaImageKey
+        : imageState.current === 0
+          ? nextSong?._uniqueId
+          : currentSong?._uniqueId;
+    const topSong = isNonMusicMode ? undefined : imageState.current === 0 ? currentSong : nextSong;
+    const bottomSong = isNonMusicMode
+        ? undefined
+        : imageState.current === 0
+          ? nextSong
+          : currentSong;
 
     return (
         <AnimatePresence initial={false} mode="sync">
@@ -242,6 +274,8 @@ const Controls = () => {
     const lyricsSettings = useLyricsSettings();
     const displaySettings = useLyricsDisplaySettings('default');
     const lyricConfig = { ...lyricsSettings, ...displaySettings };
+    const playbackSource = usePlaybackSource();
+    const showMusicListConfig = playbackSource == null || playbackSource === 'music';
 
     const handleToggleFullScreenPlayer = () => {
         setStore({ expanded: !expanded, visualizerExpanded: false });
@@ -276,12 +310,11 @@ const Controls = () => {
         <Group
             className={styles.controlsContainer}
             gap="sm"
-            p="1rem"
             pos="absolute"
             style={{
                 background: `rgb(var(--theme-colors-background-transparent), ${opacity}%)`,
                 left: 0,
-                top: 0,
+                top: 'max(3rem, calc(env(titlebar-area-height, 0px) + 0.75rem))',
             }}
         >
             <ActionIcon
@@ -294,9 +327,9 @@ const Controls = () => {
             <Popover position="bottom-start">
                 <Popover.Target>
                     <ActionIcon
+                        aria-label={t('common.configure', { postProcess: 'titleCase' })}
                         icon="settings2"
                         iconProps={{ size: 'lg' }}
-                        tooltip={{ label: t('common.configure', { postProcess: 'titleCase' }) }}
                         variant="subtle"
                     />
                 </Popover.Target>
@@ -557,62 +590,62 @@ const Controls = () => {
                     </Option>
                 </Popover.Dropdown>
             </Popover>
-            <ListConfigMenu
-                buttonProps={{
-                    variant: 'subtle',
-                }}
-                displayTypes={[
-                    { hidden: true, value: ListDisplayType.GRID },
-                    ...SONG_DISPLAY_TYPES,
-                ]}
-                listKey={ItemListKey.FULL_SCREEN}
-                optionsConfig={{
-                    table: {
-                        itemsPerPage: { hidden: true },
-                        pagination: { hidden: true },
-                    },
-                }}
-                tableColumnsData={SONG_TABLE_COLUMNS}
-            />
+            {showMusicListConfig && (
+                <ListConfigMenu
+                    buttonProps={{
+                        variant: 'subtle',
+                    }}
+                    displayTypes={[
+                        { hidden: true, value: ListDisplayType.GRID },
+                        ...SONG_DISPLAY_TYPES,
+                    ]}
+                    listKey={ItemListKey.FULL_SCREEN}
+                    optionsConfig={{
+                        table: {
+                            itemsPerPage: { hidden: true },
+                            pagination: { hidden: true },
+                        },
+                    }}
+                    tableColumnsData={SONG_TABLE_COLUMNS}
+                />
+            )}
         </Group>
     );
 };
 
+// The default layout reserves 90px at the bottom for the player bar; everything
+// above that (including any native title bar) is part of the main-content row.
+// Anchoring this overlay to fill the main-content row exactly avoids the visible
+// gap above the player bar that used to appear when this height was hard-coded.
 const containerVariants: Variants = {
-    closed: (custom) => {
-        const { windowBarStyle } = custom;
-        return {
-            height:
-                windowBarStyle === Platform.WINDOWS || windowBarStyle === Platform.MACOS
-                    ? 'calc(100vh - 120px)'
-                    : 'calc(100vh - 90px)',
-            position: 'absolute',
-            top: '100vh',
-            transition: {
-                duration: 0.5,
-                ease: 'easeInOut',
-            },
-            width: '100vw',
-            y: 0,
-        };
-    },
+    closed: () => ({
+        bottom: 0,
+        height: 'auto',
+        left: 0,
+        position: 'absolute',
+        right: 0,
+        top: '100vh',
+        transition: {
+            duration: 0.5,
+            ease: 'easeInOut',
+        },
+        y: 0,
+    }),
     open: (custom) => {
-        const { background, dynamicBackground, windowBarStyle } = custom;
+        const { background, dynamicBackground } = custom;
         return {
             backgroundColor: dynamicBackground ? background : mainBackground,
-            height:
-                windowBarStyle === Platform.WINDOWS || windowBarStyle === Platform.MACOS
-                    ? 'calc(100vh - 120px)'
-                    : 'calc(100vh - 90px)',
+            bottom: 0,
+            height: 'auto',
             left: 0,
             position: 'absolute',
+            right: 0,
             top: 0,
             transition: {
                 delay: 0.1,
                 duration: 0.5,
                 ease: 'easeInOut',
             },
-            width: '100vw',
             y: 0,
         };
     },
@@ -628,12 +661,18 @@ interface PlayerContainerProps {
 const PlayerContainer = memo(
     ({ children, dynamicBackground, dynamicIsImage, windowBarStyle }: PlayerContainerProps) => {
         const currentSong = usePlayerSong();
-        const imageUrl = useItemImageUrl({
+        const nowPlaying = useNowPlaying();
+        const isNonMusicMode =
+            nowPlaying.source === 'audiobook' ||
+            nowPlaying.source === 'podcast' ||
+            nowPlaying.source === 'radio';
+        const musicImageUrl = useItemImageUrl({
             id: currentSong?.imageId || undefined,
             imageUrl: currentSong?.imageUrl,
             itemType: LibraryItem.SONG,
             type: 'itemCard',
         });
+        const imageUrl = isNonMusicMode ? nowPlaying.artwork : musicImageUrl;
         const { background } = useFastAverageColor({
             algorithm: 'dominant',
             src: imageUrl,
@@ -666,11 +705,10 @@ export const FullScreenPlayer = () => {
     const { dynamicBackground, dynamicImageBlur, dynamicIsImage } = useFullScreenPlayerStore();
     const { setStore } = useFullScreenPlayerStoreActions();
     const { windowBarStyle } = useWindowSettings();
-    const isRadioActive = useIsRadioActive();
-    const { isPlaying: isRadioPlaying } = useRadioPlayer();
+    const playbackSource = usePlaybackSource();
 
-    const isPlayingRadio = isRadioActive && isRadioPlaying;
-    const effectiveDynamicBackground = dynamicBackground && !isPlayingRadio;
+    const isRadioMode = playbackSource === 'radio';
+    const effectiveDynamicBackground = dynamicBackground && !isRadioMode;
 
     const location = useLocation();
     const isOpenedRef = useRef<boolean | null>(null);

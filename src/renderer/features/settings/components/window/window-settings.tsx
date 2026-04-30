@@ -6,18 +6,8 @@ import {
     SettingOption,
     SettingsSection,
 } from '/@/renderer/features/settings/components/settings-section';
-import { openRestartRequiredToast } from '/@/renderer/features/settings/restart-toast';
 import { useSettingsStoreActions, useWindowSettings } from '/@/renderer/store';
-import { Select } from '/@/shared/components/select/select';
 import { Switch } from '/@/shared/components/switch/switch';
-import { Platform } from '/@/shared/types/types';
-
-const WINDOW_BAR_OPTIONS = [
-    { label: 'Web (hidden)', value: Platform.WEB },
-    { label: 'Windows', value: Platform.WINDOWS },
-    { label: 'macOS', value: Platform.MACOS },
-    { label: 'Native', value: Platform.LINUX },
-];
 
 const localSettings = isElectron() ? window.api.localSettings : null;
 
@@ -27,44 +17,6 @@ export const WindowSettings = memo(() => {
     const { setSettings } = useSettingsStoreActions();
 
     const windowOptions: SettingOption[] = [
-        {
-            control: (
-                <Select
-                    data={WINDOW_BAR_OPTIONS}
-                    disabled={!isElectron()}
-                    onChange={(e) => {
-                        if (!e) return;
-
-                        // Platform.LINUX is used as the native frame option regardless of the actual platform
-                        const hasFrame = localSettings?.get('window_has_frame') as
-                            | boolean
-                            | undefined;
-                        const isSwitchingToFrame = !hasFrame && e === Platform.LINUX;
-                        const isSwitchingToNoFrame = hasFrame && e !== Platform.LINUX;
-
-                        const requireRestart = isSwitchingToFrame || isSwitchingToNoFrame;
-
-                        if (requireRestart) {
-                            openRestartRequiredToast();
-                        }
-
-                        localSettings?.set('window_window_bar_style', e as Platform);
-                        setSettings({
-                            window: {
-                                windowBarStyle: e as Platform,
-                            },
-                        });
-                    }}
-                    value={settings.windowBarStyle}
-                />
-            ),
-            description: t('setting.windowBarStyle', {
-                context: 'description',
-                postProcess: 'sentenceCase',
-            }),
-            isHidden: !isElectron(),
-            title: t('setting.windowBarStyle', { postProcess: 'sentenceCase' }),
-        },
         {
             control: (
                 <Switch

@@ -126,6 +126,52 @@
     border-radius: 9999px;
 }
 
+.utility-icon-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.75rem;
+    height: 1.75rem;
+    padding: 0;
+    color: rgb(255 255 255 / 70%);
+    cursor: pointer;
+    background: transparent;
+    border: 0;
+    border-radius: 9999px;
+    transition:
+        color 0.12s ease,
+        background 0.12s ease;
+}
+
+.utility-icon-button:hover {
+    color: rgb(255 255 255 / 96%);
+    background: rgb(255 255 255 / 8%);
+}
+
+.utility-search-input {
+    flex: 1;
+    min-width: 0;
+    height: 1.75rem;
+    padding: 0 0.5rem;
+    color: rgb(255 255 255 / 92%);
+    outline: none;
+    background: rgb(255 255 255 / 6%);
+    border: 1px solid rgb(255 255 255 / 8%);
+    border-radius: 0.4rem;
+    transition:
+        border-color 0.12s ease,
+        background 0.12s ease;
+}
+
+.utility-search-input::placeholder {
+    color: rgb(255 255 255 / 38%);
+}
+
+.utility-search-input:focus {
+    background: rgb(255 255 255 / 9%);
+    border-color: alpha(var(--theme-colors-primary-filled), 0.6);
+}
+
 .utility-sort {
     font-weight: 650;
     color: rgb(255 255 255 / 72%);

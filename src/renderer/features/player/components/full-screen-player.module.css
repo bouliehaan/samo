@@ -2,10 +2,14 @@
     position: absolute;
     top: 0;
     left: 0;
-    z-index: 200;
+    z-index: 250;
     display: flex;
     justify-content: center;
     padding: 2rem;
+
+    /* While the full-screen player is open, every pixel of it must be
+       interactive — never inherit the chrome row's drag region underneath. */
+    -webkit-app-region: no-drag;
 
     @media screen and (orientation: portrait) {
         padding: 2rem 2rem 1rem;
@@ -32,7 +36,18 @@
     }
 }
 
+.controls-container {
+    z-index: 251;
+
+    /* Keep controls below the native titlebar hit strip. */
+    padding: 0.75rem 1rem;
+    pointer-events: auto;
+    -webkit-app-region: no-drag;
+}
+
 .responsive-container {
+    position: relative;
+    z-index: 1;
     display: grid;
     grid-template-rows: minmax(0, 1fr);
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);

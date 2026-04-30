@@ -14,9 +14,9 @@ import {
     useTimestampStoreBase,
 } from '/@/renderer/store';
 import { useAudiobookStore } from '/@/renderer/store/audiobook.store';
-import { usePodcastStore } from '/@/renderer/store/podcast.store';
 import { usePlaybackOwnerStore } from '/@/renderer/store/playback-owner.store';
 import { subscribeCurrentTrack } from '/@/renderer/store/player.store';
+import { usePodcastStore } from '/@/renderer/store/podcast.store';
 import { PlayerStatus, PlayerType } from '/@/shared/types/types';
 
 const mediaSession = navigator.mediaSession;

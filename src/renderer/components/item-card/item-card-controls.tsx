@@ -1,4 +1,5 @@
 import clsx from 'clsx';
+import { t } from 'i18next';
 import { motion } from 'motion/react';
 import { memo, MouseEvent, useMemo } from 'react';
 
@@ -182,28 +183,8 @@ export const ItemCardControls = ({
         [controls, item, internalState, itemType],
     );
 
-    const playNextHandler = useMemo(
-        () => createPlayHandler(controls, item, internalState, itemType, Play.NEXT),
-        [controls, item, internalState, itemType],
-    );
-
-    const playLastHandler = useMemo(
-        () => createPlayHandler(controls, item, internalState, itemType, Play.LAST),
-        [controls, item, internalState, itemType],
-    );
-
     const playShuffleHandler = useMemo(
         () => createPlayHandler(controls, item, internalState, itemType, Play.SHUFFLE),
-        [controls, item, internalState, itemType],
-    );
-
-    const playNextShuffleHandler = useMemo(
-        () => createPlayHandler(controls, item, internalState, itemType, Play.NEXT_SHUFFLE),
-        [controls, item, internalState, itemType],
-    );
-
-    const playLastShuffleHandler = useMemo(
-        () => createPlayHandler(controls, item, internalState, itemType, Play.LAST_SHUFFLE),
         [controls, item, internalState, itemType],
     );
 
@@ -223,34 +204,29 @@ export const ItemCardControls = ({
     );
 
     const isFavorite = (item as { userFavorite?: boolean })?.userFavorite ?? false;
+    const showShuffle = itemType !== LibraryItem.ALBUM && itemType !== LibraryItem.SONG;
 
     return (
         <motion.div className={clsx(styles.container)} {...containerProps[type]}>
             {controls?.onPlay && (
                 <Tooltip.Group>
-                    <PlayTooltip type={Play.NOW}>
+                    <PlayTooltip showShuffleHint={false} type={Play.NOW}>
                         <PlayButton
-                            classNames={clsx(styles.playButton, styles.primary)}
+                            classNames={clsx(styles.playButton, styles.primary, {
+                                [styles.singlePrimary]: !showShuffle,
+                            })}
                             onClick={playNowHandler}
-                            onLongPress={playShuffleHandler}
                         />
                     </PlayTooltip>
-                    <PlayTooltip type={Play.NEXT}>
-                        <PlayButton
-                            classNames={clsx(styles.playButton, styles.secondary, styles.left)}
-                            icon="mediaPlayNext"
-                            onClick={playNextHandler}
-                            onLongPress={playNextShuffleHandler}
-                        />
-                    </PlayTooltip>
-                    <PlayTooltip type={Play.LAST}>
-                        <PlayButton
-                            classNames={clsx(styles.playButton, styles.secondary, styles.right)}
-                            icon="mediaPlayLast"
-                            onClick={playLastHandler}
-                            onLongPress={playLastShuffleHandler}
-                        />
-                    </PlayTooltip>
+                    {showShuffle && (
+                        <Tooltip label={t('action.shuffle', { postProcess: 'sentenceCase' })}>
+                            <PlayButton
+                                classNames={clsx(styles.playButton, styles.secondary, styles.right)}
+                                icon="mediaShuffle"
+                                onClick={playShuffleHandler}
+                            />
+                        </Tooltip>
+                    )}
                 </Tooltip.Group>
             )}
             {controls?.onFavorite && (

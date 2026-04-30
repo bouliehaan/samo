@@ -27,8 +27,8 @@
 
 .chapter-row:hover,
 .chapter-row:focus-visible {
-    background: color-mix(in srgb, var(--theme-colors-foreground) 10%, transparent);
     outline: none;
+    background: color-mix(in srgb, var(--theme-colors-foreground) 10%, transparent);
 }
 
 .chapter-row[aria-current='true'] {
@@ -50,17 +50,17 @@
 
 .chapter-text {
     display: flex;
-    min-width: 0;
     flex-direction: column;
     gap: 2px;
+    min-width: 0;
 }
 
 .chapter-title {
     overflow: hidden;
+    text-overflow: ellipsis;
     font-size: var(--theme-font-size-sm);
     font-weight: 600;
     line-height: 1.2;
-    text-overflow: ellipsis;
     white-space: nowrap;
 }
 

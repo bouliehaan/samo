@@ -1,3 +1,5 @@
+import type { AudiobookChapterListItem } from '/@/renderer/store/audiobook.store';
+
 import formatDuration from 'format-duration';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
@@ -5,7 +7,7 @@ import { CustomPlayerbarSlider } from './playerbar-slider';
 import styles from './playerbar-slider.module.css';
 
 import { usePlayer } from '/@/renderer/features/player/context/player-context';
-import type { AudiobookChapterListItem } from '/@/renderer/store/audiobook.store';
+import { usePlayerTimestamp } from '/@/renderer/store';
 import {
     getOrderedAudiobookChapters,
     useAudiobookActions,
@@ -19,7 +21,6 @@ import {
     usePodcastDuration,
     usePodcastPosition,
 } from '/@/renderer/store/podcast.store';
-import { usePlayerTimestamp } from '/@/renderer/store';
 
 interface PlayerbarSeekSliderProps {
     max: number;
@@ -47,8 +48,7 @@ const getChapterSeekbarSegments = (
 
     return chapters.map((chapter) => ({
         fillPercentage:
-            ((Math.min(Math.max(clampedProgress, chapter.start), chapter.end) -
-                chapter.start) /
+            ((Math.min(Math.max(clampedProgress, chapter.start), chapter.end) - chapter.start) /
                 chapter.duration) *
             100,
         leftPercentage: (chapter.start / duration) * 100,
@@ -90,21 +90,17 @@ export const PlayerbarSeekSlider = ({ max, min }: PlayerbarSeekSliderProps) => {
               ? podcastDuration
               : max
           : max;
-    const displayedValue =
-        isSeeking
-            ? seekValue
-            : lastSeekValueRef.current !== null &&
-                Math.abs(currentTime - lastSeekValueRef.current) > 0.5
-              ? lastSeekValueRef.current
-              : currentTime;
-    const chapterSegments = useMemo(
-        () => {
-            if (!isAudiobookMode) return [];
-            const chapters = getOrderedAudiobookChapters(audiobookChapters, sliderMax);
-            return getChapterSeekbarSegments(chapters, sliderMax, displayedValue);
-        },
-        [audiobookChapters, displayedValue, isAudiobookMode, sliderMax],
-    );
+    const displayedValue = isSeeking
+        ? seekValue
+        : lastSeekValueRef.current !== null &&
+            Math.abs(currentTime - lastSeekValueRef.current) > 0.5
+          ? lastSeekValueRef.current
+          : currentTime;
+    const chapterSegments = useMemo(() => {
+        if (!isAudiobookMode) return [];
+        const chapters = getOrderedAudiobookChapters(audiobookChapters, sliderMax);
+        return getChapterSeekbarSegments(chapters, sliderMax, displayedValue);
+    }, [audiobookChapters, displayedValue, isAudiobookMode, sliderMax]);
     const hasChapterSegments = chapterSegments.length > 1;
 
     const handleSeekToTimestamp = (timestamp: number) => {

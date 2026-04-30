@@ -11,8 +11,9 @@ import {
 import { ItemImage } from '/@/renderer/components/item-image/item-image';
 import { usePlayer } from '/@/renderer/features/player/context/player-context';
 import { AppRoute } from '/@/renderer/router/routes';
-import { useCurrentServer, useCurrentServerId } from '/@/renderer/store';
+import { recordRecentPlaylist, useCurrentServer, useCurrentServerId } from '/@/renderer/store';
 import { formatDateRelative, formatDurationStringShort } from '/@/renderer/utils/format';
+import { ActionIcon } from '/@/shared/components/action-icon/action-icon';
 import { Button } from '/@/shared/components/button/button';
 import { Icon } from '/@/shared/components/icon/icon';
 import { TextTitle } from '/@/shared/components/text-title/text-title';
@@ -147,10 +148,16 @@ export const HomeFavoritePlaylists = ({
     containerQuery?: ReturnType<typeof useGridCarouselContainerQuery>;
 }) => {
     const navigate = useNavigate();
+    const player = usePlayer();
     const playlistsQuery = usePlaylists();
     const playlists = playlistsQuery.data?.items ?? [];
 
     if (!playlists.length) return null;
+
+    const handlePlay = (playlist: Playlist, playType: Play) => {
+        recordRecentPlaylist(playlist);
+        player.addToQueueByFetch(playlist._serverId, [playlist.id], LibraryItem.PLAYLIST, playType);
+    };
 
     const cards = playlists.map((playlist) => ({
         content: (
@@ -162,6 +169,7 @@ export const HomeFavoritePlaylists = ({
                         }),
                     )
                 }
+                onPlay={(playType) => handlePlay(playlist, playType)}
                 playlist={playlist}
             />
         ),
@@ -181,8 +189,27 @@ export const HomeFavoritePlaylists = ({
     );
 };
 
-const PlaylistCard = ({ onClick, playlist }: { onClick: () => void; playlist: Playlist }) => (
-    <button className={styles.mediaCard} onClick={onClick} type="button">
+const PlaylistCard = ({
+    onClick,
+    onPlay,
+    playlist,
+}: {
+    onClick: () => void;
+    onPlay: (playType: Play) => void;
+    playlist: Playlist;
+}) => (
+    <div
+        className={styles.mediaCard}
+        onClick={onClick}
+        onKeyDown={(event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                onClick();
+            }
+        }}
+        role="button"
+        tabIndex={0}
+    >
         <div className={styles.mediaArt}>
             {playlist.imageId || playlist.imageUrl ? (
                 <ItemImage
@@ -204,6 +231,32 @@ const PlaylistCard = ({ onClick, playlist }: { onClick: () => void; playlist: Pl
                 <Icon icon="playlist" size="0.78rem" />
                 Playlist
             </span>
+            <span className={styles.playlistControls}>
+                <ActionIcon
+                    aria-label={`Play ${playlist.name}`}
+                    icon="mediaPlay"
+                    iconProps={{ size: 'lg' }}
+                    onClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        onPlay(Play.NOW);
+                    }}
+                    size="lg"
+                    variant="filled"
+                />
+                <ActionIcon
+                    aria-label={`Shuffle ${playlist.name}`}
+                    icon="mediaShuffle"
+                    iconProps={{ size: 'lg' }}
+                    onClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        onPlay(Play.SHUFFLE);
+                    }}
+                    size="md"
+                    variant="default"
+                />
+            </span>
         </div>
         <Text className={styles.title} fw={600} size="sm">
             {playlist.name}
@@ -211,7 +264,7 @@ const PlaylistCard = ({ onClick, playlist }: { onClick: () => void; playlist: Pl
         <Text className={styles.subtitle} isMuted size="xs">
             {getCountText(playlist.songCount, 'track') ?? 'Playlist'}
         </Text>
-    </button>
+    </div>
 );
 
 export const HomeFavoriteArtists = ({

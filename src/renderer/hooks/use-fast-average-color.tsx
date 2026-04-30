@@ -10,6 +10,26 @@ const ignoredColors: FastAverageColorIgnoredColor = [
     [0, 0, 0, 0, 40], // Transparent
 ];
 
+const transparentBackground = 'rgba(0, 0, 0, 0)';
+
+const canReadImagePixels = (src: string) => {
+    try {
+        const url = new URL(src, window.location.href);
+
+        if (url.protocol === 'data:' || url.protocol === 'blob:' || url.protocol === 'file:') {
+            return true;
+        }
+
+        if (url.protocol === 'http:' || url.protocol === 'https:') {
+            return url.origin === window.location.origin;
+        }
+
+        return true;
+    } catch {
+        return true;
+    }
+};
+
 export const getFastAverageColor = async (args: {
     algorithm?: 'dominant' | 'simple' | 'sqrt';
     src: string;
@@ -68,6 +88,20 @@ export const useFastAverageColor = (args: {
             processingSrcRef.current = null;
         }
 
+        if (src && srcLoaded && !canReadImagePixels(src)) {
+            if (isMounted) {
+                idRef.current = id;
+                setBackground({
+                    background: defaultColor ?? transparentBackground,
+                    isDark: true,
+                    isLight: false,
+                });
+                setIsLoading(false);
+                processingSrcRef.current = null;
+            }
+            return;
+        }
+
         if (src && srcLoaded) {
             processingSrcRef.current = src;
             setIsLoading(true);
@@ -107,7 +141,7 @@ export const useFastAverageColor = (args: {
                             console.error('Error fetching average color', e);
                             idRef.current = id;
                             setBackground({
-                                background: 'rgba(0, 0, 0, 0)',
+                                background: defaultColor ?? transparentBackground,
                                 isDark: true,
                                 isLight: false,
                             });
@@ -145,7 +179,7 @@ export const useFastAverageColor = (args: {
                 fac = null;
             }
         };
-    }, [algorithm, srcLoaded, src, id]);
+    }, [algorithm, defaultColor, srcLoaded, src, id]);
 
     return {
         background: background.background,

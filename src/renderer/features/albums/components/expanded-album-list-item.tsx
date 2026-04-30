@@ -307,7 +307,7 @@ const ExpandedAlbumListItemContent = ({ albumData }: ExpandedAlbumListItemConten
                     />
                     {songs && songs.length > 0 && (
                         <div className={styles.playButtonGroup}>
-                            <PlayButtonGroup onPlay={handlePlay} />
+                            <PlayButtonGroup allowShuffle={false} onPlay={handlePlay} />
                         </div>
                     )}
                 </div>

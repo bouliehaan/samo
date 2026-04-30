@@ -6,24 +6,6 @@ import { MainPlayButton, PlayerButton } from '/@/renderer/features/player/compon
 import { PlayerbarSlider } from '/@/renderer/features/player/components/playerbar-slider';
 import { openShuffleAllModal } from '/@/renderer/features/player/components/shuffle-all-modal';
 import { usePlayer } from '/@/renderer/features/player/context/player-context';
-import { usePlaybackSource } from '/@/renderer/store/playback-owner.store';
-import {
-    useAudiobookActions,
-    useAudiobookContentUrl,
-    useAudiobookDuration,
-    useAudiobookItem,
-    useAudiobookPosition,
-    useAudiobookServer,
-} from '/@/renderer/store/audiobook.store';
-import {
-    usePodcastActions,
-    usePodcastContentUrl,
-    usePodcastDuration,
-    usePodcastEpisode,
-    usePodcastItem,
-    usePodcastPosition,
-    usePodcastServer,
-} from '/@/renderer/store/podcast.store';
 import {
     useIsPlayingRadio,
     useIsRadioActive,
@@ -38,6 +20,24 @@ import {
     usePlayerStatus,
     useSkipButtons,
 } from '/@/renderer/store';
+import {
+    useAudiobookActions,
+    useAudiobookContentUrl,
+    useAudiobookDuration,
+    useAudiobookItem,
+    useAudiobookPosition,
+    useAudiobookServer,
+} from '/@/renderer/store/audiobook.store';
+import { usePlaybackSource } from '/@/renderer/store/playback-owner.store';
+import {
+    usePodcastActions,
+    usePodcastContentUrl,
+    usePodcastDuration,
+    usePodcastEpisode,
+    usePodcastItem,
+    usePodcastPosition,
+    usePodcastServer,
+} from '/@/renderer/store/podcast.store';
 import { Icon } from '/@/shared/components/icon/icon';
 import { PlayerRepeat, PlayerShuffle, PlayerStatus } from '/@/shared/types/types';
 
@@ -278,13 +278,7 @@ const CenterPlayButton = ({ disabled }: { disabled?: boolean }) => {
             return;
         }
 
-        if (
-            isPodcastMode &&
-            !podcastContentUrl &&
-            podcastServer &&
-            podcastItem &&
-            podcastEpisode
-        ) {
+        if (isPodcastMode && !podcastContentUrl && podcastServer && podcastItem && podcastEpisode) {
             podcastActions.play(podcastServer, podcastItem, podcastEpisode);
             return;
         }
@@ -375,8 +369,7 @@ const NextButton = ({ disabled }: { disabled?: boolean }) => {
     const isAudiobookMode = source === 'audiobook';
     const handleClick = isAudiobookMode ? seekToNextChapter : mediaNext;
     const tooltipLabel = isAudiobookMode
-        ? t('player.next', { context: 'chapter', postProcess: 'sentenceCase' }) ||
-          'Next chapter'
+        ? t('player.next', { context: 'chapter', postProcess: 'sentenceCase' }) || 'Next chapter'
         : t('player.next', { postProcess: 'sentenceCase' });
 
     return (

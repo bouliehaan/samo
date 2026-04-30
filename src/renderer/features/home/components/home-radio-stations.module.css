@@ -18,8 +18,8 @@
     gap: 0.8rem;
     align-items: center;
     width: 100%;
-    min-height: 6.25rem;
     min-width: 0;
+    min-height: 6.25rem;
     padding: 0.7rem;
     overflow: hidden;
     text-align: left;

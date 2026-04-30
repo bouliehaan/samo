@@ -36,9 +36,9 @@
 .media-art {
     position: relative;
     width: 100%;
-    overflow: hidden;
     aspect-ratio: 1;
     margin-bottom: var(--theme-spacing-xs);
+    overflow: hidden;
     background: color-mix(in srgb, var(--theme-colors-surface) 90%, transparent);
     border: 1px solid color-mix(in srgb, var(--theme-colors-border) 70%, transparent);
     border-radius: var(--theme-radius-sm);
@@ -87,6 +87,29 @@
     border-radius: 999px;
 }
 
+.playlist-controls {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    z-index: 2;
+    display: flex;
+    gap: var(--theme-spacing-sm);
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.94);
+    transition:
+        opacity 150ms ease,
+        transform 150ms ease;
+}
+
+.media-card:hover .playlist-controls,
+.media-card:focus-visible .playlist-controls,
+.playlist-controls:focus-within {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+}
+
 .playlist-placeholder {
     display: grid;
     place-items: center;
@@ -111,9 +134,9 @@
 
 .artist-art {
     width: min(100%, 9rem);
-    overflow: hidden;
     aspect-ratio: 1;
     margin: 0 auto var(--theme-spacing-sm);
+    overflow: hidden;
     background: var(--theme-colors-surface);
     border: 1px solid color-mix(in srgb, var(--theme-colors-border) 60%, transparent);
     border-radius: 50%;
@@ -184,8 +207,8 @@
 
 .rank {
     width: 2rem;
-    font-variant-numeric: tabular-nums;
     font-weight: 800;
+    font-variant-numeric: tabular-nums;
     color: color-mix(in srgb, var(--theme-colors-text) 44%, transparent);
     text-align: center;
 }
@@ -196,7 +219,7 @@
 
 .editorial {
     display: grid;
-    grid-template-columns: minmax(16rem, 1.1fr) minmax(0, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: var(--theme-spacing-md);
 }
 
@@ -220,8 +243,8 @@
 }
 
 .feature-art {
-    overflow: hidden;
     aspect-ratio: 1;
+    overflow: hidden;
     background: var(--theme-colors-background);
     border-radius: var(--theme-radius-sm);
 }
@@ -237,7 +260,7 @@
     gap: 0.5rem var(--theme-spacing-md);
 }
 
-@media (max-width: 780px) {
+@media (width <= 780px) {
     .track-list,
     .ranked-list,
     .editorial,

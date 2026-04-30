@@ -20,11 +20,7 @@ const SECONDARY_FIELD_WEIGHT = 0.35;
 
 export const normalize = (value: null | string | undefined): string => {
     if (!value) return '';
-    return value
-        .toLowerCase()
-        .replace(PUNCTUATION_RE, ' ')
-        .replace(WHITESPACE_RE, ' ')
-        .trim();
+    return value.toLowerCase().replace(PUNCTUATION_RE, ' ').replace(WHITESPACE_RE, ' ').trim();
 };
 
 export const tokenize = (value: string): string[] =>

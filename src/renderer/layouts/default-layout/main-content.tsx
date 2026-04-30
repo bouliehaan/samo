@@ -18,6 +18,7 @@ import { RightSidebar } from '/@/renderer/layouts/default-layout/right-sidebar';
 import {
     useAppStore,
     useAppStoreActions,
+    useFullScreenPlayerStore,
     useGlobalExpanded,
     useSideQueueLayout,
     useSideQueueType,
@@ -43,6 +44,7 @@ export const MainContent = ({ shell }: { shell?: boolean }) => {
     const { setSideBar } = useAppStoreActions();
     const sideQueueType = useSideQueueType();
     const sideQueueLayout = useSideQueueLayout();
+    const isFullScreenPlayerExpanded = useFullScreenPlayerStore((state) => state.expanded);
     const [isResizing, setIsResizing] = useState(false);
     const [isResizingRight, setIsResizingRight] = useState(false);
 
@@ -196,6 +198,7 @@ export const MainContent = ({ shell }: { shell?: boolean }) => {
     return (
         <motion.div
             className={clsx(styles.mainContentContainer, {
+                [styles.fullScreenPlayerExpanded]: isFullScreenPlayerExpanded,
                 [styles.rightExpanded]: rightExpanded && sideQueueType === 'sideQueue',
                 [styles.shell]: shell,
                 [styles.sidebarCollapsed]: collapsed,

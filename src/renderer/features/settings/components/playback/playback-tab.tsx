@@ -3,11 +3,7 @@ import { lazy, memo, Suspense, useMemo } from 'react';
 import { shallow } from 'zustand/shallow';
 
 import { AudioSettings } from '/@/renderer/features/settings/components/playback/audio-settings';
-import { AutoDJSettings } from '/@/renderer/features/settings/components/playback/auto-dj-settings';
-import { PlayerFilterSettings } from '/@/renderer/features/settings/components/playback/player-filter-settings';
-import { TranscodeSettings } from '/@/renderer/features/settings/components/playback/transcode-settings';
 import { useSettingsStore } from '/@/renderer/store';
-import { Divider } from '/@/shared/components/divider/divider';
 import { Stack } from '/@/shared/components/stack/stack';
 import { PlayerType } from '/@/shared/types/types';
 
@@ -37,12 +33,6 @@ export const PlaybackTab = memo(() => {
         <Stack gap="md">
             <AudioSettings />
             <Suspense fallback={<></>}>{hasFancyAudio && <MpvSettings />}</Suspense>
-            <Divider />
-            <TranscodeSettings />
-            <Divider />
-            <PlayerFilterSettings />
-            <Divider />
-            <AutoDJSettings />
         </Stack>
     );
 });

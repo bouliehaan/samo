@@ -1,6 +1,7 @@
 import { ActionIcon, Box, Center, Stack } from '@mantine/core';
 import { useQuery } from '@tanstack/react-query';
 import clsx from 'clsx';
+import { useMemo } from 'react';
 
 import styles from './home-radio-stations.module.css';
 
@@ -13,23 +14,47 @@ import {
 } from '/@/renderer/features/radio/hooks/use-radio-player';
 import { AppRoute } from '/@/renderer/router/routes';
 import { useCurrentServer } from '/@/renderer/store';
+import { useFavoriteRadioStationIds } from '/@/renderer/store/library-favorites.store';
 import { Icon } from '/@/shared/components/icon/icon';
 import { Text } from '/@/shared/components/text/text';
+import { useElementSize } from '/@/shared/hooks/use-element-size';
 import { LibraryItem } from '/@/shared/types/domain-types';
 
-const MAX_HOME_RADIO_STATIONS = 14;
+// Card min-width and gap match the .grid styles below; keep in sync.
+const CARD_MIN_WIDTH = 220;
+const CARD_GAP = 16;
+const HOME_ROWS = 2;
+
+const computeColumns = (width: number) => {
+    if (width <= 0) return 1;
+    return Math.max(1, Math.floor((width + CARD_GAP) / (CARD_MIN_WIDTH + CARD_GAP)));
+};
 
 export const HomeRadioStations = () => {
     const server = useCurrentServer();
     const { currentStreamUrl, isPlaying } = useRadioPlayer();
     const { play, stop } = useRadioControls();
+    const favoriteIds = useFavoriteRadioStationIds(server?.id);
+    const { ref: gridRef, width: gridWidth } = useElementSize();
 
     const radioListQuery = useQuery({
         ...radioQueries.list({ query: undefined, serverId: server?.id ?? '' }),
         enabled: Boolean(server?.id),
     });
 
-    const stations = (radioListQuery.data ?? []).slice(0, MAX_HOME_RADIO_STATIONS);
+    const allStations = useMemo(() => radioListQuery.data ?? [], [radioListQuery.data]);
+
+    const favoriteStations = useMemo(
+        () => allStations.filter((station) => favoriteIds.has(station.id)),
+        [allStations, favoriteIds],
+    );
+
+    // Until the user picks favorites, fall back to showing the library so the
+    // section isn't empty on first run.
+    const sourceStations = favoriteStations.length > 0 ? favoriteStations : allStations;
+
+    const visibleCount = computeColumns(gridWidth) * HOME_ROWS;
+    const stations = sourceStations.slice(0, visibleCount);
 
     if (!server?.id || !stations.length) {
         return null;
@@ -38,7 +63,7 @@ export const HomeRadioStations = () => {
     return (
         <section className={styles.section}>
             <HomeSectionTitle title="Favorite Radio Stations" to={AppRoute.RADIO} />
-            <div className={styles.grid}>
+            <div className={styles.grid} ref={gridRef}>
                 {stations.map((station) => {
                     const isCurrentStation = currentStreamUrl === station.streamUrl;
                     const stationIsPlaying = isCurrentStation && isPlaying;

@@ -20,50 +20,16 @@ const playButtons: {
     type: Play;
 }[] = [
     {
-        icon: 'mediaPlayNext',
-        label: (
-            <Stack gap="xs" justify="center">
-                <Text fw={500} ta="center">
-                    {i18n.t('player.addNext', { postProcess: 'sentenceCase' })}
-                </Text>
-                <Text fw={500} isMuted size="xs" ta="center">
-                    {i18n.t('player.holdToShuffle', { postProcess: 'sentenceCase' })}
-                </Text>
-            </Stack>
-        ),
-
-        secondary: true,
-        type: Play.NEXT,
-    },
-    {
         icon: 'mediaPlay',
-        label: (
-            <Stack gap="xs" justify="center">
-                <Text fw={500} ta="center">
-                    {i18n.t('player.play', { postProcess: 'sentenceCase' })}
-                </Text>
-                <Text fw={500} isMuted size="xs" ta="center">
-                    {i18n.t('player.holdToShuffle', { postProcess: 'sentenceCase' })}
-                </Text>
-            </Stack>
-        ),
+        label: i18n.t('player.play', { postProcess: 'sentenceCase' }),
         secondary: false,
         type: Play.NOW,
     },
     {
-        icon: 'mediaPlayLast',
-        label: (
-            <Stack gap="xs" justify="center">
-                <Text fw={500} ta="center">
-                    {i18n.t('player.addLast', { postProcess: 'sentenceCase' })}
-                </Text>
-                <Text fw={500} isMuted size="xs" ta="center">
-                    {i18n.t('player.holdToShuffle', { postProcess: 'sentenceCase' })}
-                </Text>
-            </Stack>
-        ),
+        icon: 'mediaShuffle',
+        label: i18n.t('action.shuffle', { postProcess: 'sentenceCase' }),
         secondary: true,
-        type: Play.LAST,
+        type: Play.SHUFFLE,
     },
 ];
 
@@ -79,15 +45,24 @@ const PLAY_BEHAVIOR_TO_LABEL = {
     [Play.NOW]: i18n.t('player.play', { postProcess: 'sentenceCase' }),
 };
 
-const TooltipLabel = ({ label }: { label: React.ReactNode | string; type: Play }) => {
+const TooltipLabel = ({
+    label,
+    showShuffleHint,
+}: {
+    label: React.ReactNode | string;
+    showShuffleHint: boolean;
+    type: Play;
+}) => {
     return (
         <Stack gap="xs" justify="center">
             <Text fw={500} ta="center">
                 {label}
             </Text>
-            <Text fw={500} isMuted size="xs" ta="center">
-                {i18n.t('player.holdToShuffle', { postProcess: 'sentenceCase' })}
-            </Text>
+            {showShuffleHint && (
+                <Text fw={500} isMuted size="xs" ta="center">
+                    {i18n.t('player.holdToShuffle', { postProcess: 'sentenceCase' })}
+                </Text>
+            )}
         </Stack>
     );
 };
@@ -95,16 +70,24 @@ const TooltipLabel = ({ label }: { label: React.ReactNode | string; type: Play }
 export const PlayTooltip = ({
     children,
     disabled,
+    showShuffleHint = true,
     type,
 }: {
     children: React.ReactNode;
     disabled?: boolean;
+    showShuffleHint?: boolean;
     type: Play;
 }) => {
     return (
         <Tooltip
             disabled={disabled}
-            label={<TooltipLabel label={PLAY_BEHAVIOR_TO_LABEL[type]} type={type} />}
+            label={
+                <TooltipLabel
+                    label={PLAY_BEHAVIOR_TO_LABEL[type]}
+                    showShuffleHint={showShuffleHint}
+                    type={type}
+                />
+            }
         >
             {children}
         </Tooltip>
@@ -118,17 +101,22 @@ interface PlayButtonGroupPopoverProps extends PlayButtonGroupProps {
 }
 
 interface PlayButtonGroupProps {
+    allowShuffle?: boolean;
     loading?: boolean | Play;
     onPlay: (type: Play) => void;
 }
 
 type PopoverPosition = 'bottom' | 'left' | 'right' | 'top';
 
-export const PlayButtonGroup = ({ loading, onPlay }: PlayButtonGroupProps) => {
+export const PlayButtonGroup = ({ allowShuffle = true, loading, onPlay }: PlayButtonGroupProps) => {
+    const visiblePlayButtons = allowShuffle
+        ? playButtons
+        : playButtons.filter((button) => button.type !== Play.SHUFFLE);
+
     return (
         <div className={styles.playButtonGroup}>
             <Tooltip.Group>
-                {playButtons.map((button) => (
+                {visiblePlayButtons.map((button) => (
                     <Tooltip key={button.type} label={button.label}>
                         <PlayButton
                             fill={button.type === Play.NOW}
@@ -136,7 +124,6 @@ export const PlayButtonGroup = ({ loading, onPlay }: PlayButtonGroupProps) => {
                             isSecondary={button.secondary}
                             loading={loading === button.type}
                             onClick={() => onPlay(button.type)}
-                            onLongPress={() => onPlay(LONG_PRESS_PLAY_BEHAVIOR[button.type])}
                         />
                     </Tooltip>
                 ))}
@@ -295,7 +282,7 @@ const getPositionStyles = (
 const getArchOffset = (index: number, position: PopoverPosition): { x?: number; y?: number } => {
     const archCurve = 16;
     const isVertical = position === 'left' || position === 'right';
-    const isMiddle = index === 1;
+    const isMiddle = index === 0;
 
     if (isMiddle) {
         return {};
@@ -319,6 +306,7 @@ const getArchOffset = (index: number, position: PopoverPosition): { x?: number; 
 };
 
 export const PlayButtonGroupPopover = ({
+    allowShuffle = true,
     loading,
     onClose,
     onPlay,
@@ -329,6 +317,9 @@ export const PlayButtonGroupPopover = ({
     const itemVariants = getItemVariants(position);
     const isVertical = position === 'left' || position === 'right';
     const popoverRef = useRef<HTMLDivElement>(null);
+    const visiblePlayButtons = allowShuffle
+        ? playButtons
+        : playButtons.filter((button) => button.type !== Play.SHUFFLE);
 
     useClickOutside(
         () => {
@@ -372,7 +363,7 @@ export const PlayButtonGroupPopover = ({
             variants={containerVariants}
         >
             <Tooltip.Group>
-                {playButtons.map((button, index) => {
+                {visiblePlayButtons.map((button, index) => {
                     const archOffset = getArchOffset(index, position);
                     const combinedVariants = {
                         ...itemVariants,
@@ -402,9 +393,6 @@ export const PlayButtonGroupPopover = ({
                                     isSecondary={button.secondary}
                                     loading={loading === button.type}
                                     onClick={() => onPlay(button.type)}
-                                    onLongPress={() =>
-                                        onPlay(LONG_PRESS_PLAY_BEHAVIOR[button.type])
-                                    }
                                 />
                             </Tooltip>
                         </motion.div>

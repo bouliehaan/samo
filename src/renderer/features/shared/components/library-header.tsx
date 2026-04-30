@@ -11,11 +11,9 @@ import styles from './library-header.module.css';
 import { getItemImageUrl, ItemImage } from '/@/renderer/components/item-image/item-image';
 import { useIsPlayerFetching } from '/@/renderer/features/player/context/player-context';
 import {
-    PlayLastTextButton,
-    PlayNextTextButton,
     PlayTextButton,
+    WideShuffleButton,
 } from '/@/renderer/features/shared/components/play-button';
-import { LONG_PRESS_PLAY_BEHAVIOR } from '/@/renderer/features/shared/components/play-button-group';
 import { usePlayButtonClick } from '/@/renderer/features/shared/hooks/use-play-button-click';
 import { useIsMutatingCreateFavorite } from '/@/renderer/features/shared/mutations/create-favorite-mutation';
 import { useIsMutatingDeleteFavorite } from '/@/renderer/features/shared/mutations/delete-favorite-mutation';
@@ -342,6 +340,7 @@ export const LibraryHeaderMenu = ({
     onFavorite,
     onMore,
     onPlay,
+    onShuffle,
 }: LibraryHeaderMenuProps) => {
     const { t } = useTranslation();
     const isMutatingCreateFavorite = useIsMutatingCreateFavorite();
@@ -353,26 +352,11 @@ export const LibraryHeaderMenu = ({
         onClick: () => {
             onPlay?.(Play.NOW);
         },
-        onLongPress: () => {
-            onPlay?.(LONG_PRESS_PLAY_BEHAVIOR[Play.NOW]);
-        },
     });
 
-    const handlePlayNext = usePlayButtonClick({
-        onClick: () => {
-            onPlay?.(Play.NEXT);
-        },
-        onLongPress: () => {
-            onPlay?.(LONG_PRESS_PLAY_BEHAVIOR[Play.NEXT]);
-        },
-    });
-
-    const handlePlayLast = usePlayButtonClick({
-        onClick: () => {
-            onPlay?.(Play.LAST);
-        },
-        onLongPress: () => {
-            onPlay?.(LONG_PRESS_PLAY_BEHAVIOR[Play.LAST]);
+    const handleShuffle = usePlayButtonClick({
+        onClick: (event) => {
+            onShuffle?.(event);
         },
     });
 
@@ -380,11 +364,8 @@ export const LibraryHeaderMenu = ({
         <div className={styles.libraryHeaderMenu}>
             <Group wrap="nowrap">
                 {onPlay && <PlayTextButton {...handlePlayNow.handlers} {...handlePlayNow.props} />}
-                {onPlay && (
-                    <PlayNextTextButton {...handlePlayNext.handlers} {...handlePlayNext.props} />
-                )}
-                {onPlay && (
-                    <PlayLastTextButton {...handlePlayLast.handlers} {...handlePlayLast.props} />
+                {onShuffle && (
+                    <WideShuffleButton {...handleShuffle.handlers} {...handleShuffle.props} />
                 )}
                 {onAlbumRadio && (
                     <Button

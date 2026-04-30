@@ -12,6 +12,10 @@ import {
 } from '/@/renderer/features/radio/hooks/use-radio-player';
 import { useDeleteRadioStation } from '/@/renderer/features/radio/mutations/delete-radio-station-mutation';
 import { useCurrentServer, usePermissions } from '/@/renderer/store';
+import {
+    useIsLibraryFavorite,
+    useLibraryFavoritesActions,
+} from '/@/renderer/store/library-favorites.store';
 import { ActionIcon } from '/@/shared/components/action-icon/action-icon';
 import { Box } from '/@/shared/components/box/box';
 import { Flex } from '/@/shared/components/flex/flex';
@@ -38,6 +42,17 @@ const RadioListItem = ({ station }: RadioListItemProps) => {
     const server = useCurrentServer();
     const permissions = usePermissions();
     const deleteRadioStationMutation = useDeleteRadioStation({});
+    const isFavorite = useIsLibraryFavorite('radio', server?.id, station.id);
+    const { toggle: toggleFavorite } = useLibraryFavoritesActions();
+
+    const handleFavoriteClick = useCallback(
+        (e: React.MouseEvent<HTMLButtonElement>) => {
+            e.stopPropagation();
+            if (!server?.id) return;
+            toggleFavorite('radio', server.id, station.id);
+        },
+        [server, station.id, toggleFavorite],
+    );
 
     const isCurrentStation = currentStreamUrl === station.streamUrl;
     const stationIsPlaying = isCurrentStation && isPlaying;
@@ -144,33 +159,41 @@ const RadioListItem = ({ station }: RadioListItemProps) => {
                         </Stack>
                     </Group>
                 </button>
-                {(permissions.radio.edit || permissions.radio.delete) && (
-                    <Group className={styles['radio-item-actions']} gap="xs">
-                        {permissions.radio.edit && (
-                            <ActionIcon
-                                icon="edit"
-                                onClick={handleEditClick}
-                                size="sm"
-                                tooltip={{
-                                    label: t('common.edit', { postProcess: 'sentenceCase' }),
-                                }}
-                                variant="subtle"
-                            />
-                        )}
-                        {permissions.radio.delete && (
-                            <ActionIcon
-                                icon="delete"
-                                iconProps={{ color: 'error' }}
-                                onClick={handleDeleteClick}
-                                size="sm"
-                                tooltip={{
-                                    label: t('common.delete', { postProcess: 'sentenceCase' }),
-                                }}
-                                variant="subtle"
-                            />
-                        )}
-                    </Group>
-                )}
+                <Group className={styles['radio-item-actions']} gap="xs">
+                    <ActionIcon
+                        icon="favorite"
+                        iconProps={isFavorite ? { color: 'primary', fill: 'primary' } : undefined}
+                        onClick={handleFavoriteClick}
+                        size="sm"
+                        tooltip={{
+                            label: isFavorite ? 'Remove favorite' : 'Add favorite',
+                        }}
+                        variant="subtle"
+                    />
+                    {permissions.radio.edit && (
+                        <ActionIcon
+                            icon="edit"
+                            onClick={handleEditClick}
+                            size="sm"
+                            tooltip={{
+                                label: t('common.edit', { postProcess: 'sentenceCase' }),
+                            }}
+                            variant="subtle"
+                        />
+                    )}
+                    {permissions.radio.delete && (
+                        <ActionIcon
+                            icon="delete"
+                            iconProps={{ color: 'error' }}
+                            onClick={handleDeleteClick}
+                            size="sm"
+                            tooltip={{
+                                label: t('common.delete', { postProcess: 'sentenceCase' }),
+                            }}
+                            variant="subtle"
+                        />
+                    )}
+                </Group>
             </Flex>
         </Paper>
     );

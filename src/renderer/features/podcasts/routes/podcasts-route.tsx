@@ -1,5 +1,6 @@
-import { Box, SimpleGrid, Stack } from '@mantine/core';
+import { Box, SimpleGrid, Stack, TextInput } from '@mantine/core';
 import { useQueries, useQuery } from '@tanstack/react-query';
+import { useMemo, useState } from 'react';
 import { generatePath, useNavigate } from 'react-router';
 
 import { audiobookshelfController } from '/@/renderer/api/audiobookshelf/audiobookshelf-controller';
@@ -7,7 +8,12 @@ import { AnimatedPage } from '/@/renderer/features/shared/components/animated-pa
 import { PageErrorBoundary } from '/@/renderer/features/shared/components/page-error-boundary';
 import { AppRoute } from '/@/renderer/router/routes';
 import { recordRecentPodcast, useAudiobookshelfServer } from '/@/renderer/store';
+import {
+    useIsLibraryFavorite,
+    useLibraryFavoritesActions,
+} from '/@/renderer/store/library-favorites.store';
 import { AudiobookshelfLibraryItem } from '/@/shared/api/audiobookshelf/audiobookshelf-types';
+import { ActionIcon } from '/@/shared/components/action-icon/action-icon';
 import { Image } from '/@/shared/components/image/image';
 import { Text } from '/@/shared/components/text/text';
 
@@ -18,6 +24,17 @@ const podcastAuthor = (item: AudiobookshelfLibraryItem) => {
     const meta = item.media?.metadata;
     return meta?.author || meta?.authors?.map((a) => a.name).join(', ') || '';
 };
+
+const getPodcastSearchText = (item: AudiobookshelfLibraryItem) =>
+    [
+        podcastTitle(item),
+        podcastAuthor(item),
+        item.media?.metadata?.description,
+        item.media?.metadata?.genres?.join(' '),
+    ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
 
 const PodcastCover = ({ item }: { item: AudiobookshelfLibraryItem }) => {
     const server = useAudiobookshelfServer();
@@ -52,54 +69,81 @@ const PodcastCover = ({ item }: { item: AudiobookshelfLibraryItem }) => {
 const PodcastCard = ({
     item,
     onOpen,
+    serverId,
 }: {
     item: AudiobookshelfLibraryItem;
     onOpen: (item: AudiobookshelfLibraryItem) => void;
+    serverId: string | undefined;
 }) => {
     const title = podcastTitle(item);
     const author = podcastAuthor(item);
+    const isFavorite = useIsLibraryFavorite('podcast', serverId, item.id);
+    const { toggle: toggleFavorite } = useLibraryFavoritesActions();
 
     return (
-        <button
-            aria-label={`Open ${title}`}
+        <Stack
+            gap="xs"
             onClick={() => onOpen(item)}
-            style={{
-                background: 'transparent',
-                border: 0,
-                color: 'inherit',
-                cursor: 'pointer',
-                display: 'block',
-                padding: 0,
-                textAlign: 'left',
-                width: '100%',
+            onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    onOpen(item);
+                }
             }}
-            type="button"
+            role="button"
+            style={{ cursor: 'pointer' }}
+            tabIndex={0}
         >
-            <Stack gap="xs">
+            <Box style={{ position: 'relative' }}>
                 <PodcastCover item={item} />
-                <Stack gap={2}>
-                    <Text fw={600} lineClamp={2} size="sm">
-                        {title}
+                <ActionIcon
+                    aria-label={
+                        isFavorite ? `Remove ${title} from favorites` : `Add ${title} to favorites`
+                    }
+                    icon="favorite"
+                    iconProps={isFavorite ? { color: 'primary', fill: 'primary' } : undefined}
+                    onClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        if (!serverId) return;
+                        toggleFavorite('podcast', serverId, item.id);
+                    }}
+                    size="sm"
+                    style={{
+                        background: 'transparent',
+                        position: 'absolute',
+                        right: 6,
+                        top: 6,
+                    }}
+                    tooltip={{
+                        label: isFavorite ? 'Remove favorite' : 'Add favorite',
+                    }}
+                    variant="subtle"
+                />
+            </Box>
+            <Stack gap={2}>
+                <Text fw={600} lineClamp={2} size="sm">
+                    {title}
+                </Text>
+                {author ? (
+                    <Text isMuted lineClamp={1} size="xs">
+                        {author}
                     </Text>
-                    {author ? (
-                        <Text isMuted lineClamp={1} size="xs">
-                            {author}
-                        </Text>
-                    ) : null}
-                    {typeof item.numEpisodes === 'number' && item.numEpisodes > 0 ? (
-                        <Text isMuted size="xs">
-                            {item.numEpisodes} episode{item.numEpisodes === 1 ? '' : 's'}
-                        </Text>
-                    ) : null}
-                </Stack>
+                ) : null}
+                {typeof item.numEpisodes === 'number' && item.numEpisodes > 0 ? (
+                    <Text isMuted size="xs">
+                        {item.numEpisodes} episode{item.numEpisodes === 1 ? '' : 's'}
+                    </Text>
+                ) : null}
             </Stack>
-        </button>
+        </Stack>
     );
 };
 
 const PodcastsRoute = () => {
     const server = useAudiobookshelfServer();
     const navigate = useNavigate();
+    const [searchQuery, setSearchQuery] = useState('');
 
     const librariesQuery = useQuery({
         enabled: Boolean(server),
@@ -119,6 +163,12 @@ const PodcastsRoute = () => {
     });
 
     const items = itemQueries.flatMap((query) => query.data?.results ?? []);
+    const filteredItems = useMemo(() => {
+        const trimmedQuery = searchQuery.trim().toLowerCase();
+        if (!trimmedQuery) return items;
+
+        return items.filter((item) => getPodcastSearchText(item).includes(trimmedQuery));
+    }, [items, searchQuery]);
     const isLoading =
         librariesQuery.isLoading || itemQueries.some((query) => query.isLoading || query.isPending);
 
@@ -147,13 +197,32 @@ const PodcastsRoute = () => {
                     ) : !items.length ? (
                         <Text isMuted>No podcasts found.</Text>
                     ) : (
-                        <SimpleGrid cols={{ base: 2, lg: 6, md: 5, sm: 3, xl: 7 }} spacing="lg">
-                            {items.map((item) => (
-                                <Box key={item.id}>
-                                    <PodcastCard item={item} onOpen={handleOpen} />
-                                </Box>
-                            ))}
-                        </SimpleGrid>
+                        <>
+                            <TextInput
+                                aria-label="Search podcasts"
+                                onChange={(event) => setSearchQuery(event.currentTarget.value)}
+                                placeholder="Search podcasts"
+                                value={searchQuery}
+                            />
+                            {!filteredItems.length ? (
+                                <Text isMuted>No matching podcasts found.</Text>
+                            ) : (
+                                <SimpleGrid
+                                    cols={{ base: 2, lg: 6, md: 5, sm: 3, xl: 7 }}
+                                    spacing="lg"
+                                >
+                                    {filteredItems.map((item) => (
+                                        <Box key={item.id}>
+                                            <PodcastCard
+                                                item={item}
+                                                onOpen={handleOpen}
+                                                serverId={server?.id}
+                                            />
+                                        </Box>
+                                    ))}
+                                </SimpleGrid>
+                            )}
+                        </>
                     )}
                 </Stack>
             </Box>

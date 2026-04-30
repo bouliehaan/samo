@@ -12,6 +12,7 @@ import {
     useIsRadioActive,
     useRadioPlayer,
 } from '/@/renderer/features/radio/hooks/use-radio-player';
+import { useNowPlaying } from '/@/renderer/hooks/use-now-playing';
 import { AppRoute } from '/@/renderer/router/routes';
 import {
     useGeneralSettings,
@@ -106,8 +107,13 @@ export const FullScreenPlayerImage = () => {
     const { nextSong } = usePlayerData();
     const { blurExplicitImages, playerItems } = useGeneralSettings();
     const playbackSource = usePlaybackSource();
+    const nowPlaying = useNowPlaying();
 
-    const isPlayingRadio = isRadioActive && isRadioPlaying;
+    const isRadioMode = playbackSource === 'radio' || (isRadioActive && isRadioPlaying);
+    const isAudiobookMode = playbackSource === 'audiobook';
+    const isPodcastMode = playbackSource === 'podcast';
+    const isLongFormMode = isAudiobookMode || isPodcastMode;
+    const isNonMusicMode = isLongFormMode || isRadioMode;
     // Quality badge only makes sense for music playback. Radio (no decode) and
     // audiobook (HLS/per-book) do not have meaningful track-quality fields.
     const showAudioPathBadge = playbackSource === 'music' || playbackSource == null;
@@ -143,9 +149,9 @@ export const FullScreenPlayerImage = () => {
         imageStateRef.current = imageState;
     }, [imageState]);
 
-    // Update images when song or size changes (skip when playing radio - no album art)
+    // Update images when song or size changes. Non-music modes use nowPlaying artwork directly.
     useEffect(() => {
-        if (isPlayingRadio) {
+        if (isNonMusicMode) {
             return;
         }
         if (currentSong?._uniqueId === previousSongRef.current) {
@@ -168,7 +174,8 @@ export const FullScreenPlayerImage = () => {
 
         previousSongRef.current = currentSong?._uniqueId;
     }, [
-        isPlayingRadio,
+        isLongFormMode,
+        isNonMusicMode,
         currentSong?._uniqueId,
         currentImageUrl,
         nextSong?._uniqueId,
@@ -220,7 +227,23 @@ export const FullScreenPlayerImage = () => {
         >
             <div className={styles.imageContainer} ref={mainImageRef}>
                 <AnimatePresence initial={false} mode="sync">
-                    {!isPlayingRadio && imageState.current === 0 && (
+                    {isNonMusicMode && (
+                        <ImageWithPlaceholder
+                            animate="open"
+                            className="full-screen-player-image"
+                            custom={{ isOpen: true }}
+                            draggable={false}
+                            exit="closed"
+                            initial="closed"
+                            key={`${nowPlaying.source}-${nowPlaying.title}-${nowPlaying.artwork ?? 'none'}`}
+                            placeholder="var(--theme-colors-foreground-muted)"
+                            placeholderIcon={isPodcastMode || isRadioMode ? 'radio' : 'itemAlbum'}
+                            src={nowPlaying.artwork ?? ''}
+                            variants={imageVariants}
+                        />
+                    )}
+
+                    {!isNonMusicMode && imageState.current === 0 && (
                         <ImageWithPlaceholder
                             animate="open"
                             className="full-screen-player-image"
@@ -236,7 +259,7 @@ export const FullScreenPlayerImage = () => {
                         />
                     )}
 
-                    {!isPlayingRadio && imageState.current === 1 && (
+                    {!isNonMusicMode && imageState.current === 1 && (
                         <ImageWithPlaceholder
                             animate="open"
                             className="full-screen-player-image"
@@ -251,58 +274,52 @@ export const FullScreenPlayerImage = () => {
                             variants={imageVariants}
                         />
                     )}
-
-                    {isPlayingRadio && (
-                        <ImageWithPlaceholder
-                            animate="open"
-                            className="full-screen-player-image"
-                            custom={{ isOpen: true }}
-                            draggable={false}
-                            exit="closed"
-                            initial="closed"
-                            key="radio"
-                            placeholder="var(--theme-colors-foreground-muted)"
-                            placeholderIcon="radio"
-                            src=""
-                            variants={imageVariants}
-                        />
-                    )}
                 </AnimatePresence>
             </div>
             <Stack className={styles.metadataContainer} gap="md" maw="100%">
                 <Text fw={900} lh="1.2" overflow="hidden" size="4xl" w="100%">
-                    {isPlayingRadio
-                        ? radioMetadata?.title || stationName || 'Radio'
-                        : currentSong?.name}
+                    {isNonMusicMode
+                        ? nowPlaying.title
+                        : isRadioMode
+                          ? radioMetadata?.title || stationName || 'Radio'
+                          : currentSong?.name}
                 </Text>
                 <Text key="fs-artists" size="xl">
-                    {isPlayingRadio
-                        ? radioMetadata?.artist || stationName || 'Radio'
-                        : currentSong?.artists?.map((artist, index) => (
-                              <Fragment key={`fs-artist-${artist.id}`}>
-                                  {index > 0 && (
-                                      <Text
-                                          style={{
-                                              display: 'inline-block',
-                                              padding: '0 0.5rem',
-                                          }}
-                                      >
-                                          •
-                                      </Text>
-                                  )}
-                                  <Text
-                                      component={Link}
-                                      isLink
-                                      to={generatePath(AppRoute.LIBRARY_ALBUM_ARTISTS_DETAIL, {
-                                          albumArtistId: artist.id,
-                                      })}
-                                  >
-                                      {artist.name}
-                                  </Text>
-                              </Fragment>
-                          ))}
+                    {isNonMusicMode
+                        ? nowPlaying.artist
+                        : isRadioMode
+                          ? radioMetadata?.artist || stationName || 'Radio'
+                          : currentSong?.artists?.map((artist, index) => (
+                                <Fragment key={`fs-artist-${artist.id}`}>
+                                    {index > 0 && (
+                                        <Text
+                                            style={{
+                                                display: 'inline-block',
+                                                padding: '0 0.5rem',
+                                            }}
+                                        >
+                                            •
+                                        </Text>
+                                    )}
+                                    <Text
+                                        component={Link}
+                                        isLink
+                                        to={generatePath(AppRoute.LIBRARY_ALBUM_ARTISTS_DETAIL, {
+                                            albumArtistId: artist.id,
+                                        })}
+                                    >
+                                        {artist.name}
+                                    </Text>
+                                </Fragment>
+                            ))}
                 </Text>
-                {isPlayingRadio ? (
+                {isNonMusicMode ? (
+                    nowPlaying.subtitle ? (
+                        <Text overflow="hidden" size="xl" w="100%">
+                            {nowPlaying.subtitle}
+                        </Text>
+                    ) : null
+                ) : isRadioMode ? (
                     <Text overflow="hidden" size="xl" w="100%">
                         {stationName || 'Radio'}
                     </Text>
@@ -320,11 +337,16 @@ export const FullScreenPlayerImage = () => {
                         {currentSong?.album}
                     </Text>
                 )}
-                {!isPlayingRadio && (
+                {!isNonMusicMode && (
                     <>
                         {showAudioPathBadge && <AudioPathBadge song={currentSong} />}
                         <Group justify="center" mt="sm">
-                            {playerItems.map((i) => !i.disabled && builtDataItems[i.id])}
+                            {playerItems.map((i) => {
+                                const item = builtDataItems[i.id];
+                                return !i.disabled && item ? (
+                                    <Fragment key={i.id}>{item}</Fragment>
+                                ) : null;
+                            })}
                         </Group>
                     </>
                 )}
