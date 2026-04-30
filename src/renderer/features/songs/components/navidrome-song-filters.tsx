@@ -13,7 +13,6 @@ import { TagFilters } from '/@/renderer/features/shared/components/tag-filter';
 import { useSongListFilters } from '/@/renderer/features/songs/hooks/use-song-list-filters';
 import { useCurrentServer } from '/@/renderer/store';
 import { useAppStore, useAppStoreActions } from '/@/renderer/store/app.store';
-import { hasFeature } from '/@/shared/api/utils';
 import { Divider } from '/@/shared/components/divider/divider';
 import { Group } from '/@/shared/components/group/group';
 import { VirtualMultiSelect } from '/@/shared/components/multi-select/virtual-multi-select';
@@ -28,7 +27,6 @@ import {
     LibraryItem,
     SortOrder,
 } from '/@/shared/types/domain-types';
-import { ServerFeature } from '/@/shared/types/features-types';
 
 interface NavidromeSongFiltersProps {
     disableArtistFilter?: boolean;
@@ -42,18 +40,8 @@ export const NavidromeSongFilters = ({
     const { t } = useTranslation();
     const server = useCurrentServer();
     const serverId = server.id;
-    const {
-        query,
-        setArtistIds,
-        setCustom,
-        setFavorite,
-        setGenreId,
-        setHasRating,
-        setMaxYear,
-        setMinYear,
-    } = useSongListFilters();
-
-    const showRatingFilter = hasFeature(server, ServerFeature.TRACK_YES_NO_RATING_FILTER);
+    const { query, setArtistIds, setCustom, setFavorite, setGenreId, setMaxYear, setMinYear } =
+        useSongListFilters();
 
     const genreListQuery = useQuery(
         genresQueries.list({
@@ -290,25 +278,6 @@ export const NavidromeSongFilters = ({
                     w="100%"
                 />
             </Stack>
-            {showRatingFilter && (
-                <>
-                    <Divider my="md" />
-                    <Stack gap="xs">
-                        <Text size="sm" weight={500}>
-                            {t('filter.isRated', { postProcess: 'sentenceCase' })}
-                        </Text>
-                        <SegmentedControl
-                            data={segmentedControlData}
-                            onChange={(value) => {
-                                setHasRating(segmentValueToBoolean(value));
-                            }}
-                            size="sm"
-                            value={booleanToSegmentValue(query.hasRating)}
-                            w="100%"
-                        />
-                    </Stack>
-                </>
-            )}
             {!disableArtistFilter && (
                 <>
                     <Divider my="md" />

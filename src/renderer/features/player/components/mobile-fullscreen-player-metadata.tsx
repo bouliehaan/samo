@@ -5,7 +5,6 @@ import styles from './mobile-fullscreen-player.module.css';
 
 import { ActionIcon } from '/@/shared/components/action-icon/action-icon';
 import { Group } from '/@/shared/components/group/group';
-import { Rating } from '/@/shared/components/rating/rating';
 import { Separator } from '/@/shared/components/separator/separator';
 import { TextTitle } from '/@/shared/components/text-title/text-title';
 import { Text } from '/@/shared/components/text/text';
@@ -15,22 +14,18 @@ import { QueueSong } from '/@/shared/types/domain-types';
 interface MobileFullscreenPlayerMetadataProps {
     currentSong?: QueueSong;
     onToggleFavorite: (e: MouseEvent<HTMLButtonElement>) => void;
-    onUpdateRating: (rating: number) => void;
     radioArtist?: string;
     radioStationName?: string;
     radioTitle?: string;
-    showRating?: boolean;
 }
 
 export const MobileFullscreenPlayerMetadata = memo(
     ({
         currentSong,
         onToggleFavorite,
-        onUpdateRating,
         radioArtist,
         radioStationName,
         radioTitle,
-        showRating,
     }: MobileFullscreenPlayerMetadataProps) => {
         const isRadio = radioTitle !== undefined || radioStationName !== undefined;
 
@@ -42,8 +37,6 @@ export const MobileFullscreenPlayerMetadata = memo(
         const container = currentSong?.container;
         const year = currentSong?.releaseYear;
         const isFavorite = currentSong?.userFavorite;
-        const rating = currentSong?.userRating;
-
         const hasMetadata = !isRadio && (container || year);
 
         return (
@@ -87,9 +80,6 @@ export const MobileFullscreenPlayerMetadata = memo(
                             size="sm"
                             variant="subtle"
                         />
-                        {showRating && (
-                            <Rating onChange={onUpdateRating} size="sm" value={rating || 0} />
-                        )}
                     </Group>
                 )}
             </div>

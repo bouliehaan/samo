@@ -3,7 +3,6 @@ import { useEffect, useRef } from 'react';
 
 import { getItemImageUrl } from '/@/renderer/components/item-image/item-image';
 import { usePlayerEvents } from '/@/renderer/features/player/audio-player/hooks/use-player-events';
-import { useSetRating } from '/@/renderer/features/shared/hooks/use-set-rating';
 import { useCreateFavorite } from '/@/renderer/features/shared/mutations/create-favorite-mutation';
 import { useDeleteFavorite } from '/@/renderer/features/shared/mutations/delete-favorite-mutation';
 import { usePlayerActions, usePlayerStore, useRemoteSettings } from '/@/renderer/store';
@@ -21,7 +20,6 @@ export const useRemote = () => {
     const player = usePlayerStore();
 
     const remoteSettings = useRemoteSettings();
-    const setRating = useSetRating();
     const addToFavoritesMutation = useCreateFavorite({});
     const removeFromFavoritesMutation = useDeleteFavorite({});
 
@@ -82,16 +80,6 @@ export const useRemote = () => {
             mediaSkipForward(data.offset);
         });
 
-        remote.requestRating(
-            (_e: unknown, data: { id: string; rating: number; serverId: string }) => {
-                logFn.debug(logMsg[LogCategory.REMOTE].requestRatingReceived, {
-                    category: LogCategory.REMOTE,
-                    meta: { id: data.id, rating: data.rating, serverId: data.serverId },
-                });
-                setRating(data.serverId, [data.id], LibraryItem.SONG, data.rating);
-            },
-        );
-
         remote.requestVolume((_e: unknown, data: { volume: number }) => {
             logFn.debug(logMsg[LogCategory.REMOTE].requestVolumeReceived, {
                 category: LogCategory.REMOTE,
@@ -124,7 +112,6 @@ export const useRemote = () => {
             ipc?.removeAllListeners('request-seek');
             ipc?.removeAllListeners('request-volume');
             ipc?.removeAllListeners('request-favorite');
-            ipc?.removeAllListeners('request-rating');
         };
     }, [
         addToFavoritesMutation,
@@ -133,7 +120,6 @@ export const useRemote = () => {
         player,
         removeFromFavoritesMutation,
         setVolume,
-        setRating,
     ]);
 
     // Send initial song if one is already playing
@@ -274,21 +260,6 @@ export const useRemote = () => {
                     },
                 });
                 remote.updateFavorite(properties.favorite, properties.serverId, properties.id);
-            },
-            onUserRating: (properties) => {
-                if (!isRemoteEnabled || !remote) {
-                    return;
-                }
-
-                logFn.debug(logMsg[LogCategory.REMOTE].updateRatingSent, {
-                    category: LogCategory.REMOTE,
-                    meta: {
-                        id: properties.id,
-                        rating: properties.rating || 0,
-                        serverId: properties.serverId,
-                    },
-                });
-                remote.updateRating(properties.rating || 0, properties.serverId, properties.id);
             },
         },
         [],

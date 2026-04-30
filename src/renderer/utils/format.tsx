@@ -1,5 +1,3 @@
-import type { Album, AlbumArtist, Song } from '/@/shared/types/domain-types';
-
 import dayjs from 'dayjs';
 import 'dayjs/locale/ar';
 import 'dayjs/locale/ca';
@@ -35,8 +33,6 @@ import utc from 'dayjs/plugin/utc';
 import formatDuration from 'format-duration';
 
 import i18n from '/@/i18n/i18n';
-import { Rating } from '/@/shared/components/rating/rating';
-
 dayjs.extend(relativeTime);
 dayjs.extend(utc);
 dayjs.extend(localizedFormat);
@@ -186,9 +182,6 @@ export const formatDurationStringShort = (duration: number) => {
 
     return rawDuration;
 };
-
-export const formatRating = (item: Album | AlbumArtist | Song) =>
-    item.userRating !== null ? <Rating readOnly value={item.userRating} /> : null;
 
 const SIZES = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
 

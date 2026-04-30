@@ -17,14 +17,8 @@ import {
     LibraryHeaderMenu,
 } from '/@/renderer/features/shared/components/library-header';
 import { useSetFavorite } from '/@/renderer/features/shared/hooks/use-set-favorite';
-import { useSetRating } from '/@/renderer/features/shared/hooks/use-set-rating';
 import { AppRoute } from '/@/renderer/router/routes';
-import {
-    recordRecentArtist,
-    useAppStore,
-    useCurrentServer,
-    useShowRatings,
-} from '/@/renderer/store';
+import { recordRecentArtist, useAppStore, useCurrentServer } from '/@/renderer/store';
 import { useArtistReleaseTypeItems, usePlayButtonBehavior } from '/@/renderer/store/settings.store';
 import { formatDurationString } from '/@/renderer/utils';
 import { hasFeature, SEPARATOR_STRING, sortAlbumList } from '/@/shared/api/utils';
@@ -37,7 +31,6 @@ import {
     AlbumArtistDetailResponse,
     AlbumListResponse,
     LibraryItem,
-    ServerType,
 } from '/@/shared/types/domain-types';
 import { ServerFeature } from '/@/shared/types/features-types';
 import { Play } from '/@/shared/types/types';
@@ -109,7 +102,6 @@ export const AlbumArtistDetailHeader = forwardRef<HTMLDivElement, AlbumArtistDet
         };
         const routeId = (artistId || albumArtistId) as string;
         const server = useCurrentServer();
-        const showRatings = useShowRatings();
         const { t } = useTranslation();
         const detailQuery = useSuspenseQuery(
             artistsQueries.albumArtistDetail({
@@ -147,7 +139,6 @@ export const AlbumArtistDetailHeader = forwardRef<HTMLDivElement, AlbumArtistDet
         const { addToQueueByFetch } = usePlayer();
         const playButtonBehavior = usePlayButtonBehavior();
         const setFavorite = useSetFavorite();
-        const setRating = useSetRating();
         const uploadArtistImageMutation = useUploadArtistImage({});
 
         const albumArtistDetailSort = useAppStore((state) => state.albumArtistDetailSort);
@@ -208,29 +199,6 @@ export const AlbumArtistDetailHeader = forwardRef<HTMLDivElement, AlbumArtistDet
             );
         }, [detailQuery.data, setFavorite]);
 
-        const handleUpdateRating = useCallback(
-            (rating: number) => {
-                if (!detailQuery.data) return;
-
-                if (detailQuery.data.userRating === rating) {
-                    return setRating(
-                        detailQuery.data._serverId,
-                        [detailQuery.data.id],
-                        LibraryItem.ALBUM_ARTIST,
-                        0,
-                    );
-                }
-
-                return setRating(
-                    detailQuery.data._serverId,
-                    [detailQuery.data.id],
-                    LibraryItem.ALBUM_ARTIST,
-                    rating,
-                );
-            },
-            [detailQuery.data, setRating],
-        );
-
         const handleMoreOptions = useCallback(
             (e: React.MouseEvent<HTMLButtonElement>) => {
                 if (!detailQuery.data) return;
@@ -248,8 +216,6 @@ export const AlbumArtistDetailHeader = forwardRef<HTMLDivElement, AlbumArtistDet
             itemType: LibraryItem.ALBUM_ARTIST,
             type: 'header',
         });
-
-        const showRating = showRatings && detailQuery?.data?._serverType === ServerType.NAVIDROME;
 
         const canUploadArtistImage =
             hasFeature(server, ServerFeature.ARTIST_IMAGE_UPLOAD) &&
@@ -311,9 +277,7 @@ export const AlbumArtistDetailHeader = forwardRef<HTMLDivElement, AlbumArtistDet
                         onFavorite={handleFavorite}
                         onMore={handleMoreOptions}
                         onPlay={(type) => handlePlay(type)}
-                        onRating={showRating ? handleUpdateRating : undefined}
                         onShuffle={() => handlePlay(Play.SHUFFLE)}
-                        rating={detailQuery.data?.userRating || 0}
                     />
                 </Stack>
             </LibraryHeader>

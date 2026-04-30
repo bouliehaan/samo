@@ -17,7 +17,7 @@ import { Icon } from '/@/shared/components/icon/icon';
 import { Text } from '/@/shared/components/text/text';
 import { LibraryItem } from '/@/shared/types/domain-types';
 
-const MAX_HOME_RADIO_STATIONS = 8;
+const MAX_HOME_RADIO_STATIONS = 14;
 
 export const HomeRadioStations = () => {
     const server = useCurrentServer();

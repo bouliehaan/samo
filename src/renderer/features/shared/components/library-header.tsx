@@ -19,7 +19,6 @@ import { LONG_PRESS_PLAY_BEHAVIOR } from '/@/renderer/features/shared/components
 import { usePlayButtonClick } from '/@/renderer/features/shared/hooks/use-play-button-click';
 import { useIsMutatingCreateFavorite } from '/@/renderer/features/shared/mutations/create-favorite-mutation';
 import { useIsMutatingDeleteFavorite } from '/@/renderer/features/shared/mutations/delete-favorite-mutation';
-import { useIsMutatingRating } from '/@/renderer/features/shared/mutations/set-rating-mutation';
 import { useGeneralSettings } from '/@/renderer/store';
 import { ActionIcon } from '/@/shared/components/action-icon/action-icon';
 import { Button } from '/@/shared/components/button/button';
@@ -28,7 +27,6 @@ import { DragDropZone } from '/@/shared/components/drag-drop-zone/drag-drop-zone
 import { Group } from '/@/shared/components/group/group';
 import { Icon } from '/@/shared/components/icon/icon';
 import { BaseImage } from '/@/shared/components/image/image';
-import { Rating } from '/@/shared/components/rating/rating';
 import { Spinner } from '/@/shared/components/spinner/spinner';
 import { Text } from '/@/shared/components/text/text';
 import { ExplicitStatus, LibraryItem } from '/@/shared/types/domain-types';
@@ -334,9 +332,7 @@ interface LibraryHeaderMenuProps {
     onFavorite?: (e: React.MouseEvent<HTMLButtonElement>) => void;
     onMore?: (e: React.MouseEvent<HTMLButtonElement>) => void;
     onPlay?: (type: Play) => void;
-    onRating?: (rating: number) => void;
     onShuffle?: (e: React.MouseEvent<HTMLButtonElement>) => void;
-    rating?: number;
 }
 
 export const LibraryHeaderMenu = ({
@@ -346,11 +342,8 @@ export const LibraryHeaderMenu = ({
     onFavorite,
     onMore,
     onPlay,
-    onRating,
-    rating,
 }: LibraryHeaderMenuProps) => {
     const { t } = useTranslation();
-    const isMutatingRating = useIsMutatingRating();
     const isMutatingCreateFavorite = useIsMutatingCreateFavorite();
     const isMutatingDeleteFavorite = useIsMutatingDeleteFavorite();
     const isMutatingFavorite = isMutatingCreateFavorite || isMutatingDeleteFavorite;
@@ -429,14 +422,6 @@ export const LibraryHeaderMenu = ({
                 )}
             </Group>
             <Group gap="sm" wrap="nowrap">
-                {onRating && (
-                    <Rating
-                        onChange={onRating}
-                        readOnly={isMutatingRating}
-                        size="lg"
-                        value={rating || 0}
-                    />
-                )}
                 {onFavorite && (
                     <ActionIcon
                         disabled={isMutatingFavorite}

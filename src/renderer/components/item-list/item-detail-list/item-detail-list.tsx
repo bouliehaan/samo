@@ -66,7 +66,7 @@ import { useIsMutatingDeleteFavorite } from '/@/renderer/features/shared/mutatio
 import { songsQueries } from '/@/renderer/features/songs/api/songs-api';
 import { useDragDrop } from '/@/renderer/hooks/use-drag-drop';
 import { AppRoute } from '/@/renderer/router/routes';
-import { useSettingsStore, useShowRatings } from '/@/renderer/store';
+import { useSettingsStore } from '/@/renderer/store';
 import { formatDurationString, formatPartialIsoDateUTC } from '/@/renderer/utils';
 import { SEPARATOR_STRING } from '/@/shared/api/utils';
 import { ExplicitIndicator } from '/@/shared/components/explicit-indicator/explicit-indicator';
@@ -421,7 +421,6 @@ interface MetadataSectionProps {
 const MetadataSection = memo(
     ({ controls, internalState, item }: MetadataSectionProps) => {
         const { t } = useTranslation();
-        const showRatings = useShowRatings();
         const [isImageHovered, setIsImageHovered] = useState(false);
         const [isMetadataHovered, setIsMetadataHovered] = useState(false);
 
@@ -481,8 +480,7 @@ const MetadataSection = memo(
         }, []);
 
         const isFavorite = item.userFavorite ?? false;
-        const userRating = item.userRating ?? null;
-        const hasRating = showRatings && userRating !== null && userRating > 0;
+        const hasRating = false;
 
         const metadataExtra = useMemo(() => {
             const parts: Array<{ content: React.ReactNode; key: string }> = [];
@@ -567,7 +565,7 @@ const MetadataSection = memo(
                             type="itemCard"
                         />
                         {isFavorite && <div className={styles.favoriteBadge} />}
-                        {hasRating && <div className={styles.ratingBadge}>{userRating}</div>}
+                        {hasRating && <div className={styles.ratingBadge} />}
                         <AnimatePresence>
                             {controls && isImageHovered && (
                                 <ItemCardControls
@@ -576,7 +574,7 @@ const MetadataSection = memo(
                                     internalState={internalState}
                                     item={item}
                                     itemType={item._itemType}
-                                    showRating={true}
+                                    showRating={false}
                                     type="compact"
                                 />
                             )}
@@ -1322,7 +1320,7 @@ export const ItemDetailList = ({
     const trackColumns = useMemo((): ItemTableListColumnConfig[] => {
         const raw = tableConfig?.columns;
         if (raw && raw.length > 0) {
-            return parseTableColumns(raw);
+            return parseTableColumns(raw).filter((column) => column.id !== TableColumn.USER_RATING);
         }
         return pickTableColumns({
             columns: SONG_TABLE_COLUMNS,
@@ -1331,7 +1329,6 @@ export const ItemDetailList = ({
                 TableColumn.TITLE,
                 TableColumn.DURATION,
                 TableColumn.USER_FAVORITE,
-                TableColumn.USER_RATING,
             ],
         });
     }, [tableConfig?.columns]);

@@ -6,7 +6,7 @@ import { generatePath, Link } from 'react-router';
 import { SongPath } from '/@/renderer/features/item-details/components/song-path';
 import { AppRoute } from '/@/renderer/router/routes';
 import { formatDurationString, formatSizeString } from '/@/renderer/utils';
-import { formatDateRelative, formatRating } from '/@/renderer/utils/format';
+import { formatDateRelative } from '/@/renderer/utils/format';
 import { replaceURLWithHTMLLinks } from '/@/renderer/utils/linkify';
 import { normalizeReleaseTypes } from '/@/renderer/utils/normalize-release-types';
 import { sanitize } from '/@/renderer/utils/sanitize';
@@ -170,7 +170,6 @@ const AlbumPropertyMapping: ItemDetailRow<Album>[] = [
         label: 'common.favorite',
         render: (album) => BoolField(album.userFavorite),
     },
-    { label: 'common.rating', render: formatRating },
     { key: 'playCount', label: 'filter.playCount' },
     {
         label: 'filter.lastPlayed',
@@ -212,7 +211,6 @@ const AlbumArtistPropertyMapping: ItemDetailRow<AlbumArtist>[] = [
         label: 'common.favorite',
         render: (artist) => BoolField(artist.userFavorite),
     },
-    { label: 'common.rating', render: formatRating },
     { key: 'playCount', label: 'filter.playCount' },
     {
         label: 'filter.lastPlayed',
@@ -330,7 +328,6 @@ const SongPropertyMapping: ItemDetailRow<Song>[] = [
         label: 'common.favorite',
         render: (song) => BoolField(song.userFavorite),
     },
-    { label: 'common.rating', render: formatRating },
     { key: 'playCount', label: 'filter.playCount' },
     {
         label: 'filter.lastPlayed',

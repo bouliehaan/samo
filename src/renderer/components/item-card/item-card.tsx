@@ -19,13 +19,12 @@ import { ItemControls } from '/@/renderer/components/item-list/types';
 import { JoinedArtists } from '/@/renderer/features/albums/components/joined-artists';
 import { useDragDrop } from '/@/renderer/hooks/use-drag-drop';
 import { AppRoute } from '/@/renderer/router/routes';
-import { recordRecentArtist, recordRecentPlaylist, useShowRatings } from '/@/renderer/store';
+import { recordRecentArtist, recordRecentPlaylist } from '/@/renderer/store';
 import {
     formatDateAbsolute,
     formatDateRelative,
     formatDurationString,
     formatPartialIsoDateUTC,
-    formatRating,
 } from '/@/renderer/utils/format';
 import { SEPARATOR_STRING } from '/@/shared/api/utils';
 import { ExplicitIndicator } from '/@/shared/components/explicit-indicator/explicit-indicator';
@@ -89,7 +88,7 @@ export const ItemCard = ({
     type = 'poster',
     withControls,
 }: ItemCardProps) => {
-    const showRatings = useShowRatings();
+    const showRatings = false;
     const imageUrl = getImageUrl(data);
     const rows = providedRows || [];
 
@@ -234,12 +233,7 @@ const ItemCardStandardImageArea = memo(function ItemCardStandardImageArea({
         [styles.isRound]: isRound,
     });
 
-    const userRating =
-        'userRating' in data &&
-        typeof (data as { userRating: null | number }).userRating === 'number'
-            ? (data as { userRating: null | number }).userRating
-            : null;
-    const hasRating = showRating && userRating !== null && userRating > 0;
+    const hasRating = false;
 
     const imageContainerContent = (
         <>
@@ -266,7 +260,7 @@ const ItemCardStandardImageArea = memo(function ItemCardStandardImageArea({
                     type="itemCard"
                 />
             )}
-            {hasRating && <div className={styles.ratingBadge}>{userRating}</div>}
+            {hasRating && <div className={styles.ratingBadge} />}
             <AnimatePresence>
                 {withControls && showControls && (
                     <ItemCardControls
@@ -365,12 +359,7 @@ const CompactItemCardImageArea = memo(function CompactItemCardImageArea({
         [styles.isRound]: isRound,
     });
 
-    const userRating =
-        'userRating' in data &&
-        typeof (data as { userRating: null | number }).userRating === 'number'
-            ? (data as { userRating: null | number }).userRating
-            : null;
-    const hasRating = showRating && userRating !== null && userRating > 0;
+    const hasRating = false;
 
     const imageContainerContent = (
         <>
@@ -398,7 +387,7 @@ const CompactItemCardImageArea = memo(function CompactItemCardImageArea({
                     type="itemCard"
                 />
             )}
-            {hasRating && <div className={styles.ratingBadge}>{userRating}</div>}
+            {hasRating && <div className={styles.ratingBadge} />}
             <AnimatePresence>
                 {withControls && showControls && data && (
                     <ItemCardControls
@@ -1338,18 +1327,6 @@ export const getDataRows = (type?: 'compact' | 'default' | 'poster'): DataRow[] 
                 return '';
             },
             id: 'albumCount',
-        },
-        {
-            format: (data) => {
-                if (
-                    'userRating' in data &&
-                    (data as Album | AlbumArtist | Song).userRating !== null
-                ) {
-                    return formatRating(data as Album | AlbumArtist | Song);
-                }
-                return null;
-            },
-            id: 'rating',
         },
         {
             format: (data) => {

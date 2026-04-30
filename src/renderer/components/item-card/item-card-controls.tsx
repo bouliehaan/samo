@@ -10,10 +10,8 @@ import { PlayButton } from '/@/renderer/features/shared/components/play-button';
 import { PlayTooltip } from '/@/renderer/features/shared/components/play-button-group';
 import { useIsMutatingCreateFavorite } from '/@/renderer/features/shared/mutations/create-favorite-mutation';
 import { useIsMutatingDeleteFavorite } from '/@/renderer/features/shared/mutations/delete-favorite-mutation';
-import { useIsMutatingRating } from '/@/renderer/features/shared/mutations/set-rating-mutation';
 import { animationVariants } from '/@/shared/components/animations/animation-variants';
 import { AppIcon, Icon, IconProps } from '/@/shared/components/icon/icon';
-import { Rating } from '/@/shared/components/rating/rating';
 import { Tooltip } from '/@/shared/components/tooltip/tooltip';
 import {
     Album,
@@ -22,7 +20,6 @@ import {
     Genre,
     LibraryItem,
     Playlist,
-    ServerType,
     Song,
 } from '/@/shared/types/domain-types';
 import { Play } from '/@/shared/types/types';
@@ -33,7 +30,7 @@ interface ItemCardControlsProps {
     internalState?: ItemListStateActions;
     item: Album | AlbumArtist | Artist | Genre | Playlist | Song | undefined;
     itemType: LibraryItem;
-    showRating: boolean;
+    showRating?: boolean;
     type?: 'compact' | 'default' | 'poster';
 }
 
@@ -131,33 +128,6 @@ const createFavoriteHandler =
         });
     };
 
-const createRatingChangeHandler =
-    (
-        controls: ItemControls | undefined,
-        item: Album | AlbumArtist | Artist | Genre | Playlist | Song | undefined,
-        internalState: ItemListStateActions | undefined,
-        itemType: LibraryItem,
-    ) =>
-    (rating: number) => {
-        if (!item) {
-            return;
-        }
-
-        let newRating = rating;
-
-        if (rating === (item as { userRating: number }).userRating) {
-            newRating = 0;
-        }
-
-        controls?.onRating?.({
-            event: null,
-            internalState,
-            item,
-            itemType,
-            rating: newRating,
-        });
-    };
-
 const moreDoubleClickHandler = (e: MouseEvent<HTMLButtonElement>) => {
     e.stopPropagation();
     e.preventDefault();
@@ -205,7 +175,6 @@ export const ItemCardControls = ({
     internalState,
     item,
     itemType,
-    showRating,
     type = 'default',
 }: ItemCardControlsProps) => {
     const playNowHandler = useMemo(
@@ -240,11 +209,6 @@ export const ItemCardControls = ({
 
     const favoriteHandler = useMemo(
         () => createFavoriteHandler(controls, item, internalState, itemType),
-        [controls, item, internalState, itemType],
-    );
-
-    const ratingChangeHandler = useMemo(
-        () => createRatingChangeHandler(controls, item, internalState, itemType),
         [controls, item, internalState, itemType],
     );
 
@@ -292,15 +256,6 @@ export const ItemCardControls = ({
             {controls?.onFavorite && (
                 <FavoriteButton isFavorite={isFavorite} onClick={favoriteHandler} />
             )}
-            {controls?.onRating &&
-                showRating &&
-                (item?._serverType === ServerType.NAVIDROME ||
-                    item?._serverType === ServerType.SUBSONIC) && (
-                    <RatingButton
-                        onChange={ratingChangeHandler}
-                        rating={(item as { userRating: number }).userRating}
-                    />
-                )}
             {controls?.onMore && (
                 <SecondaryButton
                     className={styles.options}
@@ -351,34 +306,6 @@ const FavoriteButton = memo(
         );
     },
     (prev, next) => prev.isFavorite === next.isFavorite,
-);
-
-const RatingButton = memo(
-    ({ onChange, rating }: { onChange: (rating: number) => void; rating: number }) => {
-        const ratingClickHandler = (e: MouseEvent<HTMLElement>) => {
-            e.stopPropagation();
-            e.preventDefault();
-        };
-
-        const ratingMouseDownHandler = (e: React.MouseEvent<HTMLElement>) => {
-            e.stopPropagation();
-            e.preventDefault();
-        };
-
-        const isMutatingRating = useIsMutatingRating();
-        return (
-            <Rating
-                className={styles.rating}
-                onChange={onChange}
-                onClick={ratingClickHandler}
-                onMouseDown={ratingMouseDownHandler}
-                readOnly={isMutatingRating}
-                size="sm"
-                value={rating}
-            />
-        );
-    },
-    (prev, next) => prev.rating === next.rating,
 );
 
 interface SecondaryButtonProps {

@@ -29,20 +29,17 @@ import {
     useRadioPlayer,
 } from '/@/renderer/features/radio/hooks/use-radio-player';
 import { useSetFavorite } from '/@/renderer/features/shared/hooks/use-set-favorite';
-import { useSetRating } from '/@/renderer/features/shared/hooks/use-set-rating';
 import { useFastAverageColor } from '/@/renderer/hooks';
 import {
-    useCurrentServer,
     useFullScreenPlayerStore,
     useFullScreenPlayerStoreActions,
-    useGeneralSettings,
     usePlayerData,
     usePlayerSong,
     useSetFullScreenPlayerStore,
 } from '/@/renderer/store';
 import { ActionIcon } from '/@/shared/components/action-icon/action-icon';
 import { Text } from '/@/shared/components/text/text';
-import { LibraryItem, ServerType } from '/@/shared/types/domain-types';
+import { LibraryItem } from '/@/shared/types/domain-types';
 import { ItemListKey } from '/@/shared/types/types';
 
 const mainBackground = 'var(--theme-colors-background)';
@@ -382,13 +379,9 @@ export const MobileFullscreenPlayer = () => {
     const { currentSong: currentSongData } = usePlayerData();
     const isRadioActive = useIsRadioActive();
     const { isPlaying: isRadioPlaying, metadata: radioMetadata, stationName } = useRadioPlayer();
-    const server = useCurrentServer();
-
     const isPlayingRadio = isRadioActive && isRadioPlaying;
     const effectiveDynamicBackground = dynamicBackground && !isPlayingRadio;
     const setFavorite = useSetFavorite();
-    const { showRatings: showRatingsSetting } = useGeneralSettings();
-    const setRating = useSetRating();
 
     const [isPageHovered, setIsPageHovered] = useState(false);
 
@@ -432,24 +425,9 @@ export const MobileFullscreenPlayer = () => {
         setStore({ activeTab: activeTab === 'lyrics' ? 'player' : 'lyrics' });
     }, [activeTab, setStore]);
 
-    const handleUpdateRating = useCallback(
-        (rating: number) => {
-            if (!currentSong?.id) return;
-
-            setRating(currentSong._serverId, [currentSong.id], LibraryItem.SONG, rating);
-        },
-        [currentSong, setRating],
-    );
-
     const isPlayerState = activeTab !== 'queue' && activeTab !== 'lyrics';
     const isQueueState = activeTab === 'queue';
     const isLyricsState = activeTab === 'lyrics';
-    const isSongDefined = Boolean(currentSong?.id);
-    const showRating =
-        showRatingsSetting &&
-        isSongDefined &&
-        (server?.type === ServerType.NAVIDROME || server?.type === ServerType.SUBSONIC);
-
     return (
         <MobilePlayerContainer
             dynamicBackground={effectiveDynamicBackground}
@@ -478,11 +456,9 @@ export const MobileFullscreenPlayer = () => {
                 <MobileFullscreenPlayerMetadata
                     currentSong={currentSong}
                     onToggleFavorite={handleToggleFavorite}
-                    onUpdateRating={handleUpdateRating}
                     radioArtist={isPlayingRadio ? (radioMetadata?.artist ?? undefined) : undefined}
                     radioStationName={isPlayingRadio ? (stationName ?? undefined) : undefined}
                     radioTitle={isPlayingRadio ? (radioMetadata?.title ?? undefined) : undefined}
-                    showRating={showRating}
                 />
                 <MobileFullscreenPlayerProgress currentSong={currentSong} />
                 <MobileFullscreenPlayerControls currentSong={currentSong} />

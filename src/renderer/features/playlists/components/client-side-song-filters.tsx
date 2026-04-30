@@ -224,7 +224,6 @@ export const ClientSideSongFilters = () => {
         setFavorite,
         setGenreId,
         setGenreIdsMode,
-        setHasRating,
         setMaxYear,
         setMinYear,
     } = usePlaylistSongListFilters();
@@ -524,7 +523,6 @@ export const ClientSideSongFilters = () => {
     );
 
     const queryFavorite = query[FILTER_KEYS.SONG.FAVORITE] as boolean | undefined;
-    const queryHasRating = query[FILTER_KEYS.SONG.HAS_RATING] as boolean | undefined;
     const queryMinYear = query[FILTER_KEYS.SONG.MIN_YEAR] as number | undefined;
     const queryMaxYear = query[FILTER_KEYS.SONG.MAX_YEAR] as number | undefined;
 
@@ -541,14 +539,6 @@ export const ClientSideSongFilters = () => {
                 segmentData={segmentedControlData}
                 value={queryFavorite}
             />
-            <Stack gap="xs" mt="md">
-                <BooleanSegmentFilter
-                    label={t('filter.isRated', { postProcess: 'sentenceCase' })}
-                    onChange={setHasRating}
-                    segmentData={segmentedControlData}
-                    value={queryHasRating}
-                />
-            </Stack>
             <Divider my="md" />
             <MultiSelectFilter
                 height={300}

@@ -1,10 +1,18 @@
 .container {
     display: flex;
     align-items: center;
+    justify-content: flex-end;
     height: 65px;
     -webkit-app-region: drag;
 
     input {
         -webkit-app-region: no-drag;
     }
+}
+
+.logo {
+    display: block;
+    width: 1.35rem;
+    height: 1.35rem;
+    object-fit: contain;
 }

@@ -304,6 +304,38 @@
     border-radius: 9999px;
 }
 
+.favorite-button {
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    width: 1.85rem;
+    height: 1.85rem;
+    padding: 0;
+    color: var(--theme-colors-text-muted);
+    cursor: pointer;
+    background: transparent;
+    border: 0;
+    border-radius: 999px;
+    opacity: 0.7;
+    transition:
+        color 120ms ease,
+        background 120ms ease,
+        opacity 120ms ease;
+}
+
+.row:hover .favorite-button,
+.favorite-button:focus-visible {
+    opacity: 1;
+}
+
+.favorite-button:hover,
+.favorite-button:focus-visible {
+    color: var(--theme-colors-primary-filled);
+    outline: none;
+    background: alpha(var(--theme-colors-text), 0.08);
+}
+
 .loading {
     padding: 0.75rem 1.5rem;
     font-size: 0.8rem;

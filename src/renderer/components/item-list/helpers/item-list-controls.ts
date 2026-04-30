@@ -7,7 +7,6 @@ import { DefaultItemControlProps, ItemControls } from '/@/renderer/components/it
 import { ContextMenuController } from '/@/renderer/features/context-menu/context-menu-controller';
 import { usePlayer } from '/@/renderer/features/player/context/player-context';
 import { useSetFavorite } from '/@/renderer/features/shared/hooks/use-set-favorite';
-import { useSetRating } from '/@/renderer/features/shared/hooks/use-set-rating';
 import {
     recordRecentAlbum,
     recordRecentArtist,
@@ -51,14 +50,11 @@ export const useDefaultItemListControls = (args?: UseDefaultItemListControlsArgs
     const navigate = useNavigate();
     const navigateRef = useRef(navigate);
     const setFavorite = useSetFavorite();
-    const setRating = useSetRating();
 
     const playerRef = useRef(player);
     const setFavoriteRef = useRef(setFavorite);
-    const setRatingRef = useRef(setRating);
     playerRef.current = player;
     setFavoriteRef.current = setFavorite;
-    setRatingRef.current = setRating;
 
     useEffect(() => {
         navigateRef.current = navigate;
@@ -438,32 +434,6 @@ export const useDefaultItemListControls = (args?: UseDefaultItemListControlsArgs
                 }
 
                 playerRef.current.addToQueueByFetch(item._serverId, [item.id], itemType, playType);
-            },
-
-            onRating: ({
-                item,
-                itemType,
-                rating,
-            }: DefaultItemControlProps & { rating: number }) => {
-                if (!item) {
-                    return;
-                }
-
-                const apiItemType = itemTypeMapping[itemType] || itemType;
-
-                if (!item.id || !item._serverId) {
-                    return;
-                }
-
-                const previousRating = (item as { userRating: number }).userRating || 0;
-
-                let newRating = rating;
-
-                if (previousRating === rating) {
-                    newRating = 0;
-                }
-
-                setRatingRef.current(item._serverId, [item.id], apiItemType, newRating);
             },
 
             ...overrides,

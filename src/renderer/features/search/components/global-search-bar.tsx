@@ -32,6 +32,7 @@ import {
     type UnifiedSearchSourceKey,
     useUnifiedSearch,
 } from '/@/renderer/features/search/hooks/use-unified-search';
+import { useSetFavorite } from '/@/renderer/features/shared/hooks/use-set-favorite';
 import { AppRoute } from '/@/renderer/router/routes';
 import {
     recordRecentArtist,
@@ -74,6 +75,10 @@ interface ResultRowProps {
     artServerId?: null | string;
     artVariant?: 'circle' | 'square';
     fallbackIcon: FallbackIcon;
+    favorite?: {
+        isFavorite: boolean;
+        onToggle: () => void;
+    };
     onSelect: ResultClickHandler;
     subtitle?: string;
     tag: string;
@@ -88,6 +93,7 @@ const ResultRow = ({
     artServerId,
     artVariant = 'square',
     fallbackIcon,
+    favorite,
     onSelect,
     subtitle,
     tag,
@@ -96,16 +102,18 @@ const ResultRow = ({
     const showImage = Boolean((artImageId || artImageUrl) && artItemType);
 
     return (
-        <button
+        <div
+            aria-selected={false}
             className={styles.row}
             onClick={onSelect}
-            onKeyDown={(event: KeyboardEvent<HTMLButtonElement>) => {
+            onKeyDown={(event: KeyboardEvent<HTMLDivElement>) => {
                 if (event.key === 'Enter' || event.key === ' ') {
                     event.preventDefault();
                     onSelect();
                 }
             }}
-            type="button"
+            role="option"
+            tabIndex={0}
         >
             <div
                 className={`${styles.rowArt}${
@@ -134,8 +142,28 @@ const ResultRow = ({
                 <span className={styles.rowTitle}>{title}</span>
                 {subtitle ? <span className={styles.rowSubtitle}>{subtitle}</span> : null}
             </div>
+            {favorite ? (
+                <button
+                    aria-label={favorite.isFavorite ? 'Remove favorite' : 'Add favorite'}
+                    className={styles.favoriteButton}
+                    onClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        favorite.onToggle();
+                    }}
+                    type="button"
+                >
+                    <Icon
+                        icon="favorite"
+                        size="md"
+                        {...(favorite.isFavorite
+                            ? { color: 'primary' as const, fill: 'primary' as const }
+                            : {})}
+                    />
+                </button>
+            ) : null}
             <span className={styles.rowTag}>{tag}</span>
-        </button>
+        </div>
     );
 };
 
@@ -200,6 +228,10 @@ interface RowFactoryDeps {
     onSelectPodcastShow: (item: AudiobookshelfLibraryItem) => void;
     onSelectRadio: (station: InternetRadioStation) => void;
     onSelectSong: (song: Song) => void;
+    onToggleFavorite: (
+        item: Album | AlbumArtist | Song,
+        itemType: LibraryItem.ALBUM | LibraryItem.ALBUM_ARTIST | LibraryItem.SONG,
+    ) => void;
 }
 
 const renderRow = (entry: RankedResult, deps: RowFactoryDeps): ReactNode => {
@@ -213,6 +245,10 @@ const renderRow = (entry: RankedResult, deps: RowFactoryDeps): ReactNode => {
                     artItemType={LibraryItem.ALBUM}
                     artServerId={album._serverId}
                     fallbackIcon="album"
+                    favorite={{
+                        isFavorite: album.userFavorite,
+                        onToggle: () => deps.onToggleFavorite(album, LibraryItem.ALBUM),
+                    }}
                     key={`album-${album.id}`}
                     onSelect={() => deps.onSelectAlbum(album)}
                     subtitle={album.albumArtistName || undefined}
@@ -231,6 +267,10 @@ const renderRow = (entry: RankedResult, deps: RowFactoryDeps): ReactNode => {
                     artServerId={artist._serverId}
                     artVariant="circle"
                     fallbackIcon="artist"
+                    favorite={{
+                        isFavorite: artist.userFavorite,
+                        onToggle: () => deps.onToggleFavorite(artist, LibraryItem.ALBUM_ARTIST),
+                    }}
                     key={`artist-${artist.id}`}
                     onSelect={() => deps.onSelectArtist(artist)}
                     tag="Artist"
@@ -339,6 +379,10 @@ const renderRow = (entry: RankedResult, deps: RowFactoryDeps): ReactNode => {
                     artItemType={LibraryItem.SONG}
                     artServerId={song._serverId}
                     fallbackIcon="track"
+                    favorite={{
+                        isFavorite: song.userFavorite,
+                        onToggle: () => deps.onToggleFavorite(song, LibraryItem.SONG),
+                    }}
                     key={`song-${song.id}`}
                     onSelect={() => deps.onSelectSong(song)}
                     subtitle={song.artistName ?? song.album ?? undefined}
@@ -399,6 +443,7 @@ export const GlobalSearchBar = ({ className }: GlobalSearchBarProps) => {
     const audiobookActions = useAudiobookActions();
     const podcastActions = usePodcastActions();
     const radioControls = useRadioControls();
+    const setFavorite = useSetFavorite();
 
     const closeDropdown = useCallback(() => setIsOpen(false), []);
 
@@ -530,6 +575,16 @@ export const GlobalSearchBar = ({ className }: GlobalSearchBarProps) => {
         [audiobookshelfServer, closeDropdown, navigate, podcastActions],
     );
 
+    const handleToggleFavorite = useCallback(
+        (
+            item: Album | AlbumArtist | Song,
+            itemType: LibraryItem.ALBUM | LibraryItem.ALBUM_ARTIST | LibraryItem.SONG,
+        ) => {
+            setFavorite(item._serverId, [item.id], itemType, !item.userFavorite);
+        },
+        [setFavorite],
+    );
+
     const rowDeps: RowFactoryDeps = useMemo(
         () => ({
             musicServerId: musicServerId ?? null,
@@ -541,6 +596,7 @@ export const GlobalSearchBar = ({ className }: GlobalSearchBarProps) => {
             onSelectPodcastShow: handlePodcastShowSelect,
             onSelectRadio: handleRadioSelect,
             onSelectSong: handleSongSelect,
+            onToggleFavorite: handleToggleFavorite,
         }),
         [
             handleAlbumSelect,
@@ -551,6 +607,7 @@ export const GlobalSearchBar = ({ className }: GlobalSearchBarProps) => {
             handlePodcastShowSelect,
             handleRadioSelect,
             handleSongSelect,
+            handleToggleFavorite,
             musicServerId,
         ],
     );

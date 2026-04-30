@@ -53,7 +53,6 @@ export const NavidromeAlbumFilters = ({
         setCustom,
         setFavorite,
         setGenreId,
-        setHasRating,
         setMaxYear,
         setMinYear,
         setRecentlyPlayed,
@@ -298,20 +297,6 @@ export const NavidromeAlbumFilters = ({
                     }}
                     size="sm"
                     value={booleanToSegmentValue(query.favorite)}
-                    w="100%"
-                />
-            </Stack>
-            <Stack gap="xs">
-                <Text size="sm" weight={500}>
-                    {t('filter.isRated', { postProcess: 'sentenceCase' })}
-                </Text>
-                <SegmentedControl
-                    data={segmentedControlData}
-                    onChange={(value) => {
-                        setHasRating(segmentValueToBoolean(value));
-                    }}
-                    size="sm"
-                    value={booleanToSegmentValue(query.hasRating)}
                     w="100%"
                 />
             </Stack>

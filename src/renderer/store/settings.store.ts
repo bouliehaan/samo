@@ -1172,7 +1172,7 @@ const initialState: SettingsState = {
         qobuz: true,
         resume: true,
         showLyricsInSidebar: true,
-        showRatings: true,
+        showRatings: false,
         showVisualizerInSidebar: true,
         sidebarCollapsedNavigation: true,
         sidebarCollapseShared: false,
