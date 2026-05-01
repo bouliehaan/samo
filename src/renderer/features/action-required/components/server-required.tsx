@@ -106,7 +106,7 @@ function SetupWizard({ onExit }: { onExit: () => void }) {
                           defaultValue: 'Server added. Want to add another server?',
                       })}
             </Text>
-            <Group grow>
+            <Group>
                 <Button leftSection={<Icon icon="add" />} onClick={handleAddAnother}>
                     {t('form.addServer.wizardAddAnother', {
                         defaultValue: 'Add another server',

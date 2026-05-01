@@ -25,6 +25,7 @@ import { SegmentedControl } from '/@/shared/components/segmented-control/segment
 import { Select } from '/@/shared/components/select/select';
 import { Slider } from '/@/shared/components/slider/slider';
 import { Switch } from '/@/shared/components/switch/switch';
+import { Tooltip } from '/@/shared/components/tooltip/tooltip';
 import { PlayerStatus, PlayerStyle, PlayerType } from '/@/shared/types/types';
 
 export const PlayerConfig = () => {
@@ -186,6 +187,7 @@ export const PlayerConfig = () => {
 };
 
 const AudioDeviceConfig = () => {
+    const { t } = useTranslation();
     const status = usePlayerStatus();
     const playbackType = usePlaybackType();
     const playbackSettings = usePlaybackSettings();
@@ -197,13 +199,15 @@ const AudioDeviceConfig = () => {
             ? playbackSettings.mpvAudioDeviceId
             : playbackSettings.audioDeviceId;
 
-    return (
+    const isDisabledDueToPlayback = status === PlayerStatus.PLAYING;
+
+    const select = (
         <Select
             clearable
             comboboxProps={{ withinPortal: false }}
             data={audioDevices}
             defaultValue={audioDeviceId}
-            disabled={status === PlayerStatus.PLAYING}
+            disabled={isDisabledDueToPlayback}
             onChange={(e) => {
                 setSettings({
                     playback: {
@@ -217,6 +221,16 @@ const AudioDeviceConfig = () => {
             width="100%"
         />
     );
+
+    if (isDisabledDueToPlayback) {
+        return (
+            <Tooltip label={t('player.pausePlaybackToChangeSetting', { postProcess: 'titleCase' })}>
+                <div>{select}</div>
+            </Tooltip>
+        );
+    }
+
+    return select;
 };
 
 const TransitionTypeConfig = () => {
@@ -226,7 +240,10 @@ const TransitionTypeConfig = () => {
     const { transitionType } = usePlayerProperties();
     const { setTransitionType } = usePlayerActions();
 
-    return (
+    const isDisabledDueToPlayback = status === PlayerStatus.PLAYING;
+    const isDisabled = playbackSettings.type !== PlayerType.WEB || isDisabledDueToPlayback;
+
+    const control = (
         <SegmentedControl
             data={[
                 {
@@ -244,29 +261,42 @@ const TransitionTypeConfig = () => {
                     value: PlayerStyle.CROSSFADE,
                 },
             ]}
-            disabled={playbackSettings.type !== PlayerType.WEB || status === PlayerStatus.PLAYING}
+            disabled={isDisabled}
             onChange={(value) => setTransitionType(value as PlayerStyle)}
             size="sm"
             value={transitionType}
             w="100%"
         />
     );
+
+    if (isDisabledDueToPlayback) {
+        return (
+            <Tooltip label={t('player.pausePlaybackToChangeSetting', { postProcess: 'titleCase' })}>
+                <div>{control}</div>
+            </Tooltip>
+        );
+    }
+
+    return control;
 };
 
 const CrossfadeDurationConfig = () => {
+    const { t } = useTranslation();
     const status = usePlayerStatus();
     const playbackSettings = usePlaybackSettings();
     const { crossfadeDuration, transitionType } = usePlayerProperties();
     const { setCrossfadeDuration } = usePlayerActions();
 
-    return (
+    const isDisabledDueToPlayback = status === PlayerStatus.PLAYING;
+    const isDisabled =
+        playbackSettings.type !== PlayerType.WEB ||
+        transitionType !== PlayerStyle.CROSSFADE ||
+        isDisabledDueToPlayback;
+
+    const slider = (
         <Slider
             defaultValue={crossfadeDuration}
-            disabled={
-                playbackSettings.type !== PlayerType.WEB ||
-                transitionType !== PlayerStyle.CROSSFADE ||
-                status === PlayerStatus.PLAYING
-            }
+            disabled={isDisabled}
             marks={[
                 { label: '3', value: 3 },
                 { label: '6', value: 6 },
@@ -283,6 +313,16 @@ const CrossfadeDurationConfig = () => {
             w="100%"
         />
     );
+
+    if (isDisabledDueToPlayback) {
+        return (
+            <Tooltip label={t('player.pausePlaybackToChangeSetting', { postProcess: 'titleCase' })}>
+                <div>{slider}</div>
+            </Tooltip>
+        );
+    }
+
+    return slider;
 };
 
 export const PlaybackSpeedSlider = () => {

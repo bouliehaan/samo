@@ -2,7 +2,6 @@
     z-index: 200;
     grid-area: player;
     background: #050505;
-    border-top: 1px solid rgb(255 255 255 / 7%);
 
     @mixin light {
         background: #050505;

@@ -75,7 +75,7 @@ These variables override app settings **on first run** when no persisted setting
 |-------------|---------|--------------|--------------------------------|
 | `discord.enabled` | `false` | `FS_DISCORD_ENABLED` | `true` / `false` — Discord rich presence. |
 | `discord.clientId` | *(built-in)* | `FS_DISCORD_CLIENT_ID` | Custom Discord application ID. |
-| `discord.displayType` | `feishin` | `FS_DISCORD_DISPLAY_TYPE` | `artist` / `feishin` / `song`. |
+| `discord.displayType` | `samo` | `FS_DISCORD_DISPLAY_TYPE` | `artist` / `samo` / `song`. |
 | `discord.linkType` | `none` | `FS_DISCORD_LINK_TYPE` | `last_fm` / `musicbrainz` / `musicbrainz_last_fm` / `none`. |
 | `discord.showAsListening` | `false` | `FS_DISCORD_SHOW_AS_LISTENING` | `true` / `false`. |
 | `discord.showPaused` | `true` | `FS_DISCORD_SHOW_PAUSED` | `true` / `false` — Show paused state. |
