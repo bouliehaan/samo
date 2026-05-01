@@ -11,6 +11,7 @@ import {
 } from '/@/renderer/components/grid-carousel/grid-carousel-v2';
 import itemCardControlsStyles from '/@/renderer/components/item-card/item-card-controls.module.css';
 import { ItemImage } from '/@/renderer/components/item-image/item-image';
+import { ContextMenuController } from '/@/renderer/features/context-menu/context-menu-controller';
 import { usePlayer } from '/@/renderer/features/player/context/player-context';
 import { AppRoute } from '/@/renderer/router/routes';
 import { PlayButton } from '/@/renderer/features/shared/components/play-button';
@@ -203,6 +204,18 @@ const PlaylistCard = ({
     <div
         className={styles.mediaCard}
         onClick={onClick}
+        onContextMenu={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+
+            ContextMenuController.call({
+                cmd: {
+                    items: [playlist],
+                    type: LibraryItem.PLAYLIST,
+                },
+                event,
+            });
+        }}
         onKeyDown={(event) => {
             if (event.key === 'Enter' || event.key === ' ') {
                 event.preventDefault();
@@ -238,6 +251,7 @@ const PlaylistCard = ({
                     classNames={clsx(
                         itemCardControlsStyles.playButton,
                         itemCardControlsStyles.primary,
+                        styles.playlistPrimaryControl,
                     )}
                     fill
                     onClick={(event) => {
@@ -251,6 +265,7 @@ const PlaylistCard = ({
                         itemCardControlsStyles.playButton,
                         itemCardControlsStyles.secondary,
                         itemCardControlsStyles.right,
+                        styles.playlistSecondaryControl,
                     )}
                     icon="mediaShuffle"
                     onClick={(event) => {

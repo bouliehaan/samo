@@ -91,6 +91,10 @@
     position: absolute;
     inset: 0;
     z-index: 2;
+    display: flex;
+    gap: 0.55rem;
+    align-items: center;
+    justify-content: center;
     opacity: 0;
     transform: scale(0.8);
     transition:
@@ -266,4 +270,12 @@
     .feature-card {
         grid-template-columns: 5rem minmax(0, 1fr);
     }
+}
+
+.playlistPrimaryControl {
+    left: 34% !important;
+}
+
+.playlistSecondaryControl {
+    left: 68% !important;
 }

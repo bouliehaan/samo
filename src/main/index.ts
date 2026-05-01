@@ -547,8 +547,11 @@ const createTray = () => {
     let trayIcon: Electron.NativeImage | string;
 
     if (isMacOS()) {
-        const iconPath = getAssetPath('icons/IconTemplate.png');
-        const icon = nativeImage.createFromPath(iconPath);
+        const iconPath = getAssetPath('icons/trayTemplate.png');
+        const icon = nativeImage.createFromPath(iconPath).resize({
+            height: 26,
+            width: 26,
+        });
         icon.setTemplateImage(true);
         trayIcon = icon;
     } else if (isLinux()) {

@@ -59,6 +59,7 @@ import {
 import { Play, PlayerStatus } from '/@/shared/types/types';
 
 const SIDEBAR_ITEM_LIMIT = 40;
+const SIDEBAR_RENDER_LIMIT = 200;
 const SIDEBAR_TYPE_VIEW_LIMIT = 1000;
 const ABS_LIBRARY_STALE_TIME_MS = 1000 * 60 * 5;
 const ABS_LIBRARY_GC_TIME_MS = 1000 * 60 * 30;
@@ -390,7 +391,7 @@ export const LibrarySidebar = () => {
             },
             serverId: musicServerId,
         }),
-        enabled: hasMusicServer && activeFilter === 'playlists',
+        enabled: hasMusicServer,
         staleTime: 1000 * 60 * 5,
     });
 
@@ -399,7 +400,7 @@ export const LibrarySidebar = () => {
             query: undefined,
             serverId: musicServerId,
         }),
-        enabled: hasMusicServer && activeFilter === 'radio',
+        enabled: hasMusicServer,
         staleTime: 1000 * 60 * 5,
     });
 
@@ -413,7 +414,7 @@ export const LibrarySidebar = () => {
             },
             serverId: musicServerId,
         }),
-        enabled: hasMusicServer && activeFilter === 'albums',
+        enabled: hasMusicServer,
         staleTime: 1000 * 60 * 5,
     });
 
@@ -427,7 +428,7 @@ export const LibrarySidebar = () => {
             },
             serverId: musicServerId,
         }),
-        enabled: hasMusicServer && activeFilter === 'artists',
+        enabled: hasMusicServer,
         staleTime: 1000 * 60 * 5,
     });
 
@@ -441,7 +442,7 @@ export const LibrarySidebar = () => {
             },
             serverId: musicServerId,
         }),
-        enabled: hasMusicServer && activeFilter === 'songs',
+        enabled: hasMusicServer,
         staleTime: 1000 * 60 * 5,
     });
 
@@ -787,6 +788,12 @@ export const LibrarySidebar = () => {
         );
     }, [baseRows, searchQuery]);
 
+    const visibleRows = useMemo(() => {
+        const hasSearch = searchQuery.trim().length > 0;
+        if (hasSearch || activeFilter === 'all') return rows;
+        return rows.slice(0, SIDEBAR_RENDER_LIMIT);
+    }, [activeFilter, rows, searchQuery]);
+
     const availableFilters = useMemo(() => {
         const availableTypes = new Set(recentSidebarItems.map((item) => item.mediaType));
 
@@ -853,12 +860,12 @@ export const LibrarySidebar = () => {
             />
 
             <div className={styles.rowList}>
-                {isLoading && rows.length === 0 ? (
+                {isLoading ? (
                     <LibraryState label="Loading library..." />
                 ) : rows.length === 0 ? (
                     <LibraryState label="Nothing to show yet." />
                 ) : (
-                    rows.map((row) => <LibrarySidebarRow item={row} key={row.id} />)
+                    visibleRows.map((row) => <LibrarySidebarRow item={row} key={row.id} />)
                 )}
             </div>
         </div>
