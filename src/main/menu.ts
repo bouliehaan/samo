@@ -1,7 +1,5 @@
 import { app, BrowserWindow, Menu, MenuItemConstructorOptions, shell } from 'electron';
 
-import packageJson from '../../package.json';
-
 import { PlayerRepeat, PlayerStatus } from '/@/shared/types/types';
 
 export type MenuPlaybackState = {
@@ -122,13 +120,6 @@ export default class MenuBuilder {
             label: 'View',
             submenu: [
                 {
-                    accelerator: 'Command+K',
-                    click: () => {
-                        this.mainWindow.webContents.send('renderer-open-command-palette');
-                    },
-                    label: 'Command Palette...',
-                },
-                {
                     checked: sidebarCollapsed,
                     click: () => {
                         this.mainWindow.webContents.send('renderer-toggle-sidebar');
@@ -163,13 +154,6 @@ export default class MenuBuilder {
         const subMenuViewProd: MenuItemConstructorOptions = {
             label: 'View',
             submenu: [
-                {
-                    accelerator: 'Command+K',
-                    click: () => {
-                        this.mainWindow.webContents.send('renderer-open-command-palette');
-                    },
-                    label: 'Command Palette...',
-                },
                 {
                     checked: sidebarCollapsed,
                     click: () => {
@@ -312,13 +296,6 @@ export default class MenuBuilder {
                         shell.openExternal('https://github.com/bouliehaan/samo/issues');
                     },
                     label: 'Search Issues',
-                },
-                { type: 'separator' },
-                {
-                    click: () => {
-                        this.mainWindow.webContents.send('renderer-open-release-notes');
-                    },
-                    label: 'Version ' + packageJson.version,
                 },
             ],
         };

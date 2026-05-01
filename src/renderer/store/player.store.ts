@@ -1169,8 +1169,8 @@ export const usePlayerStoreBase = createWithEqualityFn<PlayerState>()(
                     const currentTimestamp = useTimestampStoreBase.getState().timestamp;
                     const isFirstTrack = currentIndex === 0;
 
-                    // If timestamp is greater than 10 seconds, restart current song
-                    if (currentTimestamp > 10) {
+                    // If timestamp is greater than 5 seconds, restart current song
+                    if (currentTimestamp > 5) {
                         set((state) => {
                             state.player.seekToTimestamp = uniqueSeekToTimestamp(0);
                         });

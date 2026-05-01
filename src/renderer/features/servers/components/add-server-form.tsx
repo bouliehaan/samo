@@ -4,6 +4,8 @@ import { nanoid } from 'nanoid/non-secure';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import AudiobookshelfIcon from '../../../../../Audiobookshelf_Logo.svg';
+
 import { api } from '/@/renderer/api';
 import {
     isLegacyAuth,
@@ -72,7 +74,7 @@ function useAutodiscovery() {
 
 const SERVER_TYPES: Record<ServerType, ServerDetails> = {
     [ServerType.AUDIOBOOKSHELF]: {
-        icon: SubsonicIcon,
+        icon: AudiobookshelfIcon,
         name: 'Audiobookshelf',
     },
     [ServerType.JELLYFIN]: {

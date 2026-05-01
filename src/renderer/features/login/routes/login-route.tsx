@@ -4,6 +4,8 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Navigate } from 'react-router';
 
+import AudiobookshelfIcon from '../../../../../Audiobookshelf_Logo.svg';
+
 import { api } from '/@/renderer/api';
 import { PageHeader } from '/@/renderer/components/page-header/page-header';
 import {
@@ -40,7 +42,7 @@ import { ServerType, toServerType } from '/@/shared/types/types';
 const localSettings = isElectron() ? window.api.localSettings : null;
 
 const SERVER_ICONS: Record<ServerType, string> = {
-    [ServerType.AUDIOBOOKSHELF]: SubsonicIcon,
+    [ServerType.AUDIOBOOKSHELF]: AudiobookshelfIcon,
     [ServerType.JELLYFIN]: JellyfinIcon,
     [ServerType.NAVIDROME]: NavidromeIcon,
     [ServerType.SUBSONIC]: SubsonicIcon,

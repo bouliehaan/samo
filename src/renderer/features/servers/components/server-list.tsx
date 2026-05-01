@@ -2,6 +2,8 @@ import { openContextModal } from '@mantine/modals';
 import isElectron from 'is-electron';
 import { useTranslation } from 'react-i18next';
 
+import AudiobookshelfLogo from '../../../../../Audiobookshelf_Logo.svg';
+
 import { isServerLock } from '/@/renderer/features/action-required/utils/window-properties';
 import JellyfinLogo from '/@/renderer/features/servers/assets/jellyfin.png';
 import NavidromeLogo from '/@/renderer/features/servers/assets/navidrome.png';
@@ -55,7 +57,7 @@ export const ServerList = () => {
                                                     : server.type === ServerType.JELLYFIN
                                                       ? JellyfinLogo
                                                       : server.type === ServerType.AUDIOBOOKSHELF
-                                                        ? OpenSubsonicLogo
+                                                        ? AudiobookshelfLogo
                                                         : OpenSubsonicLogo
                                             }
                                             style={{

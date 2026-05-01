@@ -38,11 +38,30 @@
 
 .controls-container {
     z-index: 251;
-
-    /* Keep controls below the native titlebar hit strip. */
-    padding: 0.75rem 1rem;
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    padding: 0 1rem;
     pointer-events: auto;
     -webkit-app-region: no-drag;
+}
+
+/* Force every interactive element inside to be its own self-contained hit target. */
+.controls-container > * {
+    -webkit-app-region: no-drag;
+}
+
+/* Each button is a fixed square so the visible glyph always sits at the geometric
+   center of the hit rect — no inherited line-height or baseline offsets shifting
+   the glyph above the clickable area. */
+.controls-container button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: calc(3.125rem * var(--mantine-scale));
+    height: calc(3.125rem * var(--mantine-scale));
+    padding: 0;
+    line-height: 0;
 }
 
 .responsive-container {
@@ -84,4 +103,11 @@
     height: 100%;
     background: var(--theme-overlay-header);
     backdrop-filter: blur(var(--image-blur));
+}
+
+.minimizeTooltip {
+    font-size: 10px;
+    line-height: 1;
+    padding: 3px 5px;
+    white-space: nowrap;
 }

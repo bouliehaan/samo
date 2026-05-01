@@ -45,10 +45,5 @@ export const ApplicationSettings = memo(() => {
         },
     ];
 
-    return (
-        <SettingsSection
-            options={options}
-            title={t('page.setting.application', { postProcess: 'sentenceCase' })}
-        />
-    );
+    return <SettingsSection options={options} />;
 });

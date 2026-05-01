@@ -24,6 +24,7 @@ import {
     useAudiobookActions,
     useAudiobookContentUrl,
     useAudiobookDuration,
+    useAudiobookIsLoading,
     useAudiobookItem,
     useAudiobookPosition,
     useAudiobookServer,
@@ -34,11 +35,13 @@ import {
     usePodcastContentUrl,
     usePodcastDuration,
     usePodcastEpisode,
+    usePodcastIsLoading,
     usePodcastItem,
     usePodcastPosition,
     usePodcastServer,
 } from '/@/renderer/store/podcast.store';
 import { Icon } from '/@/shared/components/icon/icon';
+import { Spinner } from '/@/shared/components/spinner/spinner';
 import { PlayerRepeat, PlayerShuffle, PlayerStatus } from '/@/shared/types/types';
 
 export const CenterControls = () => {
@@ -256,11 +259,13 @@ const CenterPlayButton = ({ disabled }: { disabled?: boolean }) => {
     const source = usePlaybackSource();
     const audiobookItem = useAudiobookItem();
     const audiobookContentUrl = useAudiobookContentUrl();
+    const audiobookIsLoading = useAudiobookIsLoading();
     const audiobookServer = useAudiobookServer();
     const audiobookActions = useAudiobookActions();
     const podcastItem = usePodcastItem();
     const podcastEpisode = usePodcastEpisode();
     const podcastContentUrl = usePodcastContentUrl();
+    const podcastIsLoading = usePodcastIsLoading();
     const podcastServer = usePodcastServer();
     const podcastActions = usePodcastActions();
 
@@ -269,6 +274,8 @@ const CenterPlayButton = ({ disabled }: { disabled?: boolean }) => {
 
     const isAudiobookMode = source === 'audiobook';
     const isPodcastMode = source === 'podcast';
+    const isStartingLongForm =
+        (isAudiobookMode && audiobookIsLoading) || (isPodcastMode && podcastIsLoading);
     const canPlayAudiobook = Boolean(audiobookItem && audiobookServer);
     const canPlayPodcast = Boolean(podcastItem && podcastEpisode && podcastServer);
 
@@ -285,6 +292,17 @@ const CenterPlayButton = ({ disabled }: { disabled?: boolean }) => {
 
         mediaTogglePlayPause();
     };
+
+    if (isStartingLongForm) {
+        return (
+            <PlayerButton
+                disabled
+                icon={<Spinner size={20} />}
+                tooltip={{ label: 'Starting playback...', openDelay: 0 }}
+                variant="main"
+            />
+        );
+    }
 
     return (
         <MainPlayButton

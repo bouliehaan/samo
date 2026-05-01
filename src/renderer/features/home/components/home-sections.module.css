@@ -89,15 +89,10 @@
 
 .playlist-controls {
     position: absolute;
-    top: 50%;
-    left: 50%;
+    inset: 0;
     z-index: 2;
-    display: flex;
-    gap: var(--theme-spacing-sm);
-    align-items: center;
-    justify-content: center;
     opacity: 0;
-    transform: translate(-50%, -50%) scale(0.94);
+    transform: scale(0.8);
     transition:
         opacity 150ms ease,
         transform 150ms ease;
@@ -107,7 +102,7 @@
 .media-card:focus-visible .playlist-controls,
 .playlist-controls:focus-within {
     opacity: 1;
-    transform: translate(-50%, -50%) scale(1);
+    transform: scale(1);
 }
 
 .playlist-placeholder {

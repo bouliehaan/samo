@@ -1,7 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef } from 'react';
 import { createCallable } from 'react-call';
-import { useParams } from 'react-router';
+import { generatePath, useNavigate, useParams } from 'react-router';
 
 import { AlbumArtistContextMenu } from '/@/renderer/features/context-menu/menus/album-artist-context-menu';
 import { AlbumContextMenu } from '/@/renderer/features/context-menu/menus/album-context-menu';
@@ -12,6 +12,11 @@ import { PlaylistContextMenu } from '/@/renderer/features/context-menu/menus/pla
 import { PlaylistSongContextMenu } from '/@/renderer/features/context-menu/menus/playlist-song-context-menu';
 import { QueueContextMenu } from '/@/renderer/features/context-menu/menus/queue-context-menu';
 import { SongContextMenu } from '/@/renderer/features/context-menu/menus/song-context-menu';
+import { useRadioControls } from '/@/renderer/features/radio/hooks/use-radio-player';
+import { AppRoute } from '/@/renderer/router/routes';
+import { useAudiobookActions } from '/@/renderer/store/audiobook.store';
+import { useLibraryFavoritesActions } from '/@/renderer/store/library-favorites.store';
+import { AudiobookshelfLibraryItem } from '/@/shared/api/audiobookshelf/audiobookshelf-types';
 import { ContextMenu } from '/@/shared/components/context-menu/context-menu';
 import {
     Album,
@@ -19,9 +24,11 @@ import {
     Artist,
     Folder,
     Genre,
+    InternetRadioStation,
     LibraryItem,
     Playlist,
     QueueSong,
+    ServerListItemWithCredential,
     Song,
 } from '/@/shared/types/domain-types';
 
@@ -89,6 +96,9 @@ export const ContextMenuController = createCallable<ContextMenuControllerProps, 
                 {cmd.type === LibraryItem.PLAYLIST && <PlaylistContextMenu {...cmd} />}
                 {cmd.type === LibraryItem.PLAYLIST_SONG && <PlaylistSongContextMenu {...cmd} />}
                 {cmd.type === LibraryItem.SONG && <SongContextMenu {...cmd} />}
+                {cmd.type === 'audiobook' && <AudiobookContextMenu {...cmd} />}
+                {cmd.type === 'podcast' && <PodcastContextMenu {...cmd} />}
+                {cmd.type === 'radio' && <RadioContextMenu {...cmd} />}
             </ContextMenu>
         );
     },
@@ -98,11 +108,14 @@ export type ContextMenuCommand =
     | AlbumArtistContextMenuProps
     | AlbumContextMenuProps
     | ArtistContextMenuProps
+    | AudiobookContextMenuProps
     | FolderContextMenuProps
     | GenreContextMenuProps
     | PlaylistContextMenuProps
     | PlaylistSongContextMenuProps
+    | PodcastContextMenuProps
     | QueueSongContextMenuProps
+    | RadioContextMenuProps
     | SongContextMenuProps;
 
 type AlbumArtistContextMenuProps = {
@@ -118,6 +131,12 @@ type AlbumContextMenuProps = {
 type ArtistContextMenuProps = {
     items: Artist[];
     type: LibraryItem.ARTIST;
+};
+
+type AudiobookContextMenuProps = {
+    items: AudiobookshelfLibraryItem[];
+    server: ServerListItemWithCredential;
+    type: 'audiobook';
 };
 
 type FolderContextMenuProps = {
@@ -140,12 +159,117 @@ type PlaylistSongContextMenuProps = {
     type: LibraryItem.PLAYLIST_SONG;
 };
 
+type PodcastContextMenuProps = {
+    items: AudiobookshelfLibraryItem[];
+    server: ServerListItemWithCredential;
+    type: 'podcast';
+};
+
 type QueueSongContextMenuProps = {
     items: QueueSong[];
     type: LibraryItem.QUEUE_SONG;
 };
 
+type RadioContextMenuProps = {
+    items: InternetRadioStation[];
+    serverId: string;
+    type: 'radio';
+};
+
 type SongContextMenuProps = {
     items: Song[];
     type: LibraryItem.SONG;
+};
+
+const AudiobookContextMenu = ({ items, server }: AudiobookContextMenuProps) => {
+    const navigate = useNavigate();
+    const { play } = useAudiobookActions();
+    const { toggle } = useLibraryFavoritesActions();
+    const item = items[0];
+    if (!item) return null;
+
+    return (
+        <ContextMenu.Content>
+            <ContextMenu.Item leftIcon="mediaPlay" onSelect={() => play(server, item)}>
+                Play
+            </ContextMenu.Item>
+            <ContextMenu.Item leftIcon="info" onSelect={() => navigate(AppRoute.AUDIOBOOKS)}>
+                More info
+            </ContextMenu.Item>
+            <ContextMenu.Divider />
+            <ContextMenu.Item
+                leftIcon="favorite"
+                onSelect={() => toggle('audiobook', server.id, item.id)}
+            >
+                Favorite
+            </ContextMenu.Item>
+        </ContextMenu.Content>
+    );
+};
+
+const PodcastContextMenu = ({ items, server }: PodcastContextMenuProps) => {
+    const navigate = useNavigate();
+    const { toggle } = useLibraryFavoritesActions();
+    const item = items[0];
+    if (!item) return null;
+
+    return (
+        <ContextMenu.Content>
+            <ContextMenu.Item
+                leftIcon="mediaPlay"
+                onSelect={() =>
+                    navigate(generatePath(AppRoute.PODCASTS_DETAIL, { itemId: item.id }))
+                }
+            >
+                Open
+            </ContextMenu.Item>
+            <ContextMenu.Item
+                leftIcon="info"
+                onSelect={() =>
+                    navigate(generatePath(AppRoute.PODCASTS_DETAIL, { itemId: item.id }))
+                }
+            >
+                More info
+            </ContextMenu.Item>
+            <ContextMenu.Divider />
+            <ContextMenu.Item
+                leftIcon="favorite"
+                onSelect={() => toggle('podcast', server.id, item.id)}
+            >
+                Favorite
+            </ContextMenu.Item>
+        </ContextMenu.Content>
+    );
+};
+
+const RadioContextMenu = ({ items, serverId }: RadioContextMenuProps) => {
+    const { play } = useRadioControls();
+    const { toggle } = useLibraryFavoritesActions();
+    const station = items[0];
+    if (!station) return null;
+
+    return (
+        <ContextMenu.Content>
+            <ContextMenu.Item
+                leftIcon="mediaPlay"
+                onSelect={() =>
+                    play(station.streamUrl, station.name, {
+                        id: station.id,
+                        imageId: station.imageId,
+                        imageUrl: station.imageUrl,
+                        serverId,
+                    })
+                }
+            >
+                Play
+            </ContextMenu.Item>
+            <ContextMenu.Divider />
+            <ContextMenu.Item
+                leftIcon="favorite"
+                onSelect={() => toggle('radio', serverId, station.id)}
+            >
+                Favorite
+            </ContextMenu.Item>
+        </ContextMenu.Content>
+    );
 };

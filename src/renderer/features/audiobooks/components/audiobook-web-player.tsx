@@ -90,20 +90,14 @@ export function AudiobookWebPlayer() {
 
     // --- Subscribe to universal transport status ---
     useEffect(() => {
-        console.log('[AudiobookWebPlayer] mounted, subscribing to player status');
         // Reconcile in case the status changed between the initial useState() read and now.
         const initialStatus = usePlayerStoreBase.getState().player.status;
         setPlayerStatus(initialStatus);
-        console.log('[AudiobookWebPlayer] initial status from store:', initialStatus);
 
         const unsub = subscribePlayerStatus(({ status }) => {
-            console.log('[AudiobookWebPlayer] player status changed →', status);
             setPlayerStatus(status);
         });
-        return () => {
-            console.log('[AudiobookWebPlayer] unmounting');
-            unsub();
-        };
+        return unsub;
     }, []);
 
     // --- Subscribe to seek-to-timestamp events ---
@@ -144,11 +138,6 @@ export function AudiobookWebPlayer() {
             // Note: we intentionally do NOT call player.getDuration() here. The
             // authoritative audiobook duration comes from media.duration in the store
             // (set in audiobook.store#play). HLS-derived duration is unreliable.
-            console.log('[AudiobookWebPlayer] player ready', {
-                hasSeeded: hasSeededRef.current,
-                resumePosition,
-            });
-
             // Seek to resume position on first play of this URL.
             if (!hasSeededRef.current && resumePosition > 0) {
                 playerRef.current?.seekTo(resumePosition);
@@ -179,7 +168,9 @@ export function AudiobookWebPlayer() {
     }, [release]);
 
     const handleError = useCallback(() => {
-        toast.error({ message: 'Audiobook playback error — check the stream URL.' });
+        const message = 'Audiobook playback error. Check the stream URL or server connection.';
+        useAudiobookStore.getState().actions.setError(message);
+        toast.error({ message });
         release();
     }, [release]);
 

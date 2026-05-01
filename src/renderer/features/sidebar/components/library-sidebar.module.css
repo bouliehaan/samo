@@ -30,6 +30,11 @@
     gap: 0.55rem;
     align-items: center;
     min-width: 0;
+    padding: 0;
+    color: inherit;
+    cursor: pointer;
+    background: transparent;
+    border: 0;
 }
 
 .title-icon {

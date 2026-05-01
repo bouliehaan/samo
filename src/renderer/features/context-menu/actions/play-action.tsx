@@ -8,12 +8,13 @@ import { LibraryItem, Song } from '/@/shared/types/domain-types';
 import { Play } from '/@/shared/types/types';
 
 interface PlayActionProps {
+    allowShuffle?: boolean;
     ids: string[];
     itemType: LibraryItem;
     songs?: Song[];
 }
 
-export const PlayAction = ({ ids, itemType, songs }: PlayActionProps) => {
+export const PlayAction = ({ allowShuffle = true, ids, itemType, songs }: PlayActionProps) => {
     const { t } = useTranslation();
     const player = usePlayer();
     const serverId = useCurrentServerId();
@@ -88,16 +89,26 @@ export const PlayAction = ({ ids, itemType, songs }: PlayActionProps) => {
                 <ContextMenu.Item leftIcon="mediaPlayLast" onSelect={handlePlayLast}>
                     {t('player.addLast', { postProcess: 'sentenceCase' })}
                 </ContextMenu.Item>
-                <ContextMenu.Divider />
-                <ContextMenu.Item leftIcon="mediaShuffle" onSelect={handlePlayShuffled}>
-                    {t('player.shuffle', { postProcess: 'sentenceCase' })}
-                </ContextMenu.Item>
-                <ContextMenu.Item leftIcon="mediaPlayNext" onSelect={handlePlayNextShuffled}>
-                    {t('player.addNextShuffled', { postProcess: 'sentenceCase' })}
-                </ContextMenu.Item>
-                <ContextMenu.Item leftIcon="mediaPlayLast" onSelect={handlePlayLastShuffled}>
-                    {t('player.addLastShuffled', { postProcess: 'sentenceCase' })}
-                </ContextMenu.Item>
+                {allowShuffle ? (
+                    <>
+                        <ContextMenu.Divider />
+                        <ContextMenu.Item leftIcon="mediaShuffle" onSelect={handlePlayShuffled}>
+                            {t('player.shuffle', { postProcess: 'sentenceCase' })}
+                        </ContextMenu.Item>
+                        <ContextMenu.Item
+                            leftIcon="mediaPlayNext"
+                            onSelect={handlePlayNextShuffled}
+                        >
+                            {t('player.addNextShuffled', { postProcess: 'sentenceCase' })}
+                        </ContextMenu.Item>
+                        <ContextMenu.Item
+                            leftIcon="mediaPlayLast"
+                            onSelect={handlePlayLastShuffled}
+                        >
+                            {t('player.addLastShuffled', { postProcess: 'sentenceCase' })}
+                        </ContextMenu.Item>
+                    </>
+                ) : null}
             </ContextMenu.SubmenuContent>
         </ContextMenu.Submenu>
     );

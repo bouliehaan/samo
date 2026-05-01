@@ -783,7 +783,7 @@ export enum BindingActions {
 
 export enum DiscordDisplayType {
     ARTIST_NAME = 'artist',
-    FEISHIN = 'samo',
+    SAMO = 'samo',
     SONG_NAME = 'song',
 }
 
@@ -1099,7 +1099,7 @@ const initialState: SettingsState = {
     },
     discord: {
         clientId: '1165957668758900787',
-        displayType: DiscordDisplayType.FEISHIN,
+        displayType: DiscordDisplayType.SAMO,
         enabled: false,
         linkType: DiscordLinkType.NONE,
         showAsListening: false,

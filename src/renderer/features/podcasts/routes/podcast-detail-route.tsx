@@ -7,11 +7,16 @@ import { audiobookshelfController } from '/@/renderer/api/audiobookshelf/audiobo
 import { AnimatedPage } from '/@/renderer/features/shared/components/animated-page';
 import { PageErrorBoundary } from '/@/renderer/features/shared/components/page-error-boundary';
 import { useAudiobookshelfServer } from '/@/renderer/store';
+import {
+    useIsLibraryFavorite,
+    useLibraryFavoritesActions,
+} from '/@/renderer/store/library-favorites.store';
 import { usePodcastActions } from '/@/renderer/store/podcast.store';
 import {
     AudiobookshelfLibraryItem,
     AudiobookshelfPodcastEpisode,
 } from '/@/shared/api/audiobookshelf/audiobookshelf-types';
+import { ActionIcon } from '/@/shared/components/action-icon/action-icon';
 import { Image } from '/@/shared/components/image/image';
 import { Text } from '/@/shared/components/text/text';
 
@@ -132,6 +137,8 @@ const PodcastDetailRoute = () => {
     const { itemId } = useParams<{ itemId: string }>();
     const server = useAudiobookshelfServer();
     const { play: playPodcast } = usePodcastActions();
+    const isFavorite = useIsLibraryFavorite('podcast', server?.id, itemId ?? '');
+    const { toggle: toggleFavorite } = useLibraryFavoritesActions();
 
     const itemQuery = useQuery({
         enabled: Boolean(server?.id && itemId),
@@ -179,6 +186,31 @@ const PodcastDetailRoute = () => {
                                             {item.media.metadata.description}
                                         </Text>
                                     ) : null}
+                                    <Group gap="xs">
+                                        <ActionIcon
+                                            aria-label={
+                                                isFavorite
+                                                    ? `Remove ${podcastTitle(item)} from favorites`
+                                                    : `Add ${podcastTitle(item)} to favorites`
+                                            }
+                                            icon="favorite"
+                                            iconProps={
+                                                isFavorite
+                                                    ? { color: 'primary', fill: 'primary' }
+                                                    : undefined
+                                            }
+                                            onClick={() => {
+                                                if (!server?.id || !itemId) return;
+                                                toggleFavorite('podcast', server.id, itemId);
+                                            }}
+                                            tooltip={{
+                                                label: isFavorite
+                                                    ? 'Remove favorite'
+                                                    : 'Add favorite',
+                                            }}
+                                            variant="subtle"
+                                        />
+                                    </Group>
                                 </Stack>
                             </Group>
 

@@ -21,7 +21,7 @@ import { shuffleInPlace } from '/@/renderer/utils/shuffle';
 import { hasFeature } from '/@/shared/api/utils';
 import { Played, Song, SongListSort, SortOrder } from '/@/shared/types/domain-types';
 import { ServerFeature } from '/@/shared/types/features-types';
-import { Play } from '/@/shared/types/types';
+import { Play, PlayerStatus } from '/@/shared/types/types';
 
 export const useAutoDJ = () => {
     const queryClient = useQueryClient();
@@ -201,6 +201,21 @@ export const useAutoDJ = () => {
 
                     // Add to the end of the queue
                     player.addToQueueByData(songsToAdd, Play.LAST);
+
+                    // If the previous track ended while Auto DJ was fetching, mediaAutoNext
+                    // has already wrapped to index 0 and paused. Jump to the first freshly
+                    // enqueued song so playback continues without replaying earlier tracks.
+                    const stateAfter = usePlayerStoreBase.getState();
+                    if (
+                        stateAfter.player.status === PlayerStatus.PAUSED &&
+                        properties.remaining === 0
+                    ) {
+                        const firstNewSongIndex = properties.index + 1;
+                        const queueAfter = stateAfter.getQueue();
+                        if (firstNewSongIndex < queueAfter.items.length) {
+                            stateAfter.mediaPlayByIndex(firstNewSongIndex);
+                        }
+                    }
 
                     // Emit event to trigger queue follow
                     eventEmitter.emit('AUTODJ_QUEUE_ADDED', {

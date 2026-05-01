@@ -3,6 +3,7 @@ import { useQueries, useQuery } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 
 import { audiobookshelfController } from '/@/renderer/api/audiobookshelf/audiobookshelf-controller';
+import { ContextMenuController } from '/@/renderer/features/context-menu/context-menu-controller';
 import { AnimatedPage } from '/@/renderer/features/shared/components/animated-page';
 import { PageErrorBoundary } from '/@/renderer/features/shared/components/page-error-boundary';
 import { useAudiobookshelfServer } from '/@/renderer/store';
@@ -73,10 +74,12 @@ const AudiobookCover = ({ item }: { item: AudiobookshelfLibraryItem }) => {
 const AudiobookCard = ({
     item,
     onPlay,
+    server,
     serverId,
 }: {
     item: AudiobookshelfLibraryItem;
     onPlay: (item: AudiobookshelfLibraryItem) => void;
+    server: ReturnType<typeof useAudiobookshelfServer>;
     serverId: string | undefined;
 }) => {
     const title = getAudiobookTitle(item);
@@ -89,6 +92,14 @@ const AudiobookCard = ({
         <Stack
             gap="xs"
             onClick={() => onPlay(item)}
+            onContextMenu={(event) => {
+                event.preventDefault();
+                if (!server) return;
+                ContextMenuController.call({
+                    cmd: { items: [item], server, type: 'audiobook' },
+                    event,
+                });
+            }}
             onKeyDown={(event) => {
                 if (event.key === 'Enter' || event.key === ' ') {
                     event.preventDefault();
@@ -178,14 +189,7 @@ const AudiobooksRoute = () => {
         librariesQuery.isLoading || itemQueries.some((query) => query.isLoading || query.isPending);
 
     const handlePlay = (item: AudiobookshelfLibraryItem) => {
-        console.log('[audiobooks-route] handlePlay clicked', {
-            hasServer: Boolean(server),
-            itemId: item.id,
-            title: item.media?.metadata?.title || item.name,
-        });
-
         if (!server) {
-            console.warn('[audiobooks-route] no audiobookshelf server configured');
             return;
         }
 
@@ -230,6 +234,7 @@ const AudiobooksRoute = () => {
                                             <AudiobookCard
                                                 item={item}
                                                 onPlay={handlePlay}
+                                                server={server}
                                                 serverId={server?.id}
                                             />
                                         </Box>

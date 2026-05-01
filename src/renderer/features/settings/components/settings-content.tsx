@@ -56,17 +56,11 @@ export const SettingsContent = () => {
                         <Tabs.Tab value="general">
                             {t('page.setting.generalTab', { postProcess: 'sentenceCase' })}
                         </Tabs.Tab>
-                        <Tabs.Tab value="playback">
-                            {t('page.setting.playbackTab', { postProcess: 'sentenceCase' })}
-                        </Tabs.Tab>
+                        <Tabs.Tab value="playback">Audio</Tabs.Tab>
                         <Tabs.Tab value="hotkeys">
                             {t('page.setting.hotkeysTab', { postProcess: 'sentenceCase' })}
                         </Tabs.Tab>
-                        {isElectron() && (
-                            <Tabs.Tab value="window">
-                                {t('page.setting.windowTab', { postProcess: 'sentenceCase' })}
-                            </Tabs.Tab>
-                        )}
+                        {isElectron() && <Tabs.Tab value="window">Application</Tabs.Tab>}
                         <Tabs.Tab value="advanced">
                             {t('page.setting.advanced', { postProcess: 'sentenceCase' })}
                         </Tabs.Tab>

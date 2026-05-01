@@ -4,7 +4,7 @@ import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { Outlet, useNavigate } from 'react-router';
 import { shallow } from 'zustand/shallow';
 
-import samoLogoUrl from '../../../../samo_logo_white.svg?url';
+import samoLogoUrl from '../../../../build/samologo.svg?url';
 import styles from './main-content.module.css';
 
 import { ExpandedListContainer } from '/@/renderer/components/item-list/expanded-list-container';
@@ -261,37 +261,42 @@ function ShellChromeControls() {
     const navigate = useNavigate();
 
     return (
-        <div className={styles.shellChromeControls}>
-            <button
-                aria-label="Back"
-                className={styles.chromeButton}
-                onClick={() => navigate(-1)}
-                type="button"
-            >
-                <Icon icon="arrowLeftS" size="lg" />
-            </button>
-            <button
-                aria-label="Forward"
-                className={styles.chromeButton}
-                onClick={() => navigate(1)}
-                type="button"
-            >
-                <Icon icon="arrowRightS" size="lg" />
-            </button>
-            <DropdownMenu position="bottom-end">
-                <DropdownMenu.Target>
-                    <button
-                        aria-label="Open app menu"
-                        className={styles.chromeButton}
-                        type="button"
-                    >
-                        <img alt="Samo" className={styles.chromeLogo} src={samoLogoUrl} />
-                    </button>
-                </DropdownMenu.Target>
-                <DropdownMenu.Dropdown>
-                    <AppMenu />
-                </DropdownMenu.Dropdown>
-            </DropdownMenu>
-        </div>
+        <>
+            <div className={styles.chromeNavigationControls}>
+                <button
+                    aria-label="Back"
+                    className={styles.chromeButton}
+                    onClick={() => navigate(-1)}
+                    type="button"
+                >
+                    <Icon icon="arrowLeftS" size="lg" />
+                </button>
+                <button
+                    aria-label="Forward"
+                    className={styles.chromeButton}
+                    onClick={() => navigate(1)}
+                    type="button"
+                >
+                    <Icon icon="arrowRightS" size="lg" />
+                </button>
+            </div>
+
+            <div className={styles.shellChromeControls}>
+                <DropdownMenu position="bottom-end">
+                    <DropdownMenu.Target>
+                        <button
+                            aria-label="Open app menu"
+                            className={styles.chromeButton}
+                            type="button"
+                        >
+                            <img alt="Samo" className={styles.chromeLogo} src={samoLogoUrl} />
+                        </button>
+                    </DropdownMenu.Target>
+                    <DropdownMenu.Dropdown>
+                        <AppMenu />
+                    </DropdownMenu.Dropdown>
+                </DropdownMenu>
+            </div>
+        </>
     );
 }

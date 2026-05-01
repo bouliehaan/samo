@@ -17,6 +17,8 @@ import { PlayerStatus } from '/@/shared/types/types';
 // How often (in seconds of drift) to flush position to the persisted resume map.
 const POSITION_PERSIST_DEBOUNCE_S = 10;
 const SERVER_PROGRESS_SYNC_INTERVAL_S = 30;
+const RESUME_NEAR_END_MINIMUM_S = 30;
+const RESUME_NEAR_END_MAXIMUM_S = 120;
 
 /**
  * Persisted resume position is keyed by `${itemId}::${episodeId}` so each
@@ -29,6 +31,18 @@ const clampPosition = (seconds: number, duration: number) => {
     if (!Number.isFinite(seconds)) return 0;
     const floor = Math.max(0, seconds);
     return duration > 0 ? Math.min(floor, duration) : floor;
+};
+
+const normalizeResumePosition = (seconds: number, duration: number) => {
+    const clamped = clampPosition(seconds, duration);
+    if (duration <= 0 || clamped <= 0) return clamped;
+
+    const nearEndThreshold = Math.min(
+        RESUME_NEAR_END_MAXIMUM_S,
+        Math.max(RESUME_NEAR_END_MINIMUM_S, duration * 0.02),
+    );
+
+    return duration - clamped <= nearEndThreshold ? 0 : clamped;
 };
 
 interface PodcastState {
@@ -61,6 +75,7 @@ let lastFlushedPosition = 0;
 let lastServerSyncedPosition = 0;
 let lastServerSyncAtMs = 0;
 let hasLoggedMissingSessionId = false;
+let playRequestId = 0;
 
 const rememberPodcastPlaybackSession = (
     server: ServerListItemWithCredential,
@@ -93,7 +108,7 @@ const syncAudiobookshelfProgress = (options: {
     if (!item || !episode || !server) return;
     if (!sessionId) {
         if (!hasLoggedMissingSessionId) {
-            console.info('[podcast.store] Audiobookshelf progress sync unavailable', {
+            console.warn('[podcast.store] Audiobookshelf progress sync unavailable', {
                 episodeId: episode.id,
                 itemId: item.id,
                 reason: 'missing-session-id',
@@ -124,40 +139,20 @@ const syncAudiobookshelfProgress = (options: {
         timeListened,
     };
 
-    console.info('[podcast.store] Audiobookshelf progress sync request', {
-        closeSession: options.closeSession,
-        episodeId: episode.id,
-        itemId: item.id,
-        payload,
-        reason: options.reason,
-        sessionId,
-    });
-
     const request = options.closeSession
         ? audiobookshelfController.closePlaybackSession(server, sessionId, payload)
         : audiobookshelfController.syncPlaybackSession(server, sessionId, payload);
 
-    void request
-        .then(() => {
-            console.info('[podcast.store] Audiobookshelf progress sync succeeded', {
-                closeSession: options.closeSession,
-                currentTime,
-                episodeId: episode.id,
-                itemId: item.id,
-                reason: options.reason,
-                sessionId,
-            });
-        })
-        .catch((error) => {
-            console.warn('[podcast.store] Audiobookshelf progress sync failed', {
-                closeSession: options.closeSession,
-                episodeId: episode.id,
-                error,
-                itemId: item.id,
-                reason: options.reason,
-                sessionId,
-            });
+    void request.catch((error) => {
+        console.warn('[podcast.store] Audiobookshelf progress sync failed', {
+            closeSession: options.closeSession,
+            episodeId: episode.id,
+            error,
+            itemId: item.id,
+            reason: options.reason,
+            sessionId,
         });
+    });
 };
 
 export const usePodcastStore = create<PodcastState>()(
@@ -166,6 +161,7 @@ export const usePodcastStore = create<PodcastState>()(
             (set, get) => ({
                 actions: {
                     play: async (server, item, episode) => {
+                        const requestId = ++playRequestId;
                         const current = get();
                         if (current.item && current.episode) {
                             const currentItem = current.item;
@@ -244,7 +240,14 @@ export const usePodcastStore = create<PodcastState>()(
                                 playSessionEpisode?.duration ??
                                 playSessionEpisode?.audioFile?.duration ??
                                 seedDuration;
-                            const clampedResumePosition = clampPosition(resumePosition, duration);
+                            if (requestId !== playRequestId) {
+                                return;
+                            }
+
+                            const clampedResumePosition = normalizeResumePosition(
+                                resumePosition,
+                                duration,
+                            );
 
                             lastFlushedPosition = clampedResumePosition;
                             resetAudiobookshelfProgressSync(clampedResumePosition);
@@ -266,7 +269,11 @@ export const usePodcastStore = create<PodcastState>()(
 
                             usePlayerStoreBase.getState().mediaPlay();
                         } catch (err) {
+                            if (requestId !== playRequestId) {
+                                return;
+                            }
                             const message = err instanceof Error ? err.message : String(err);
+                            console.error('[podcast.store] play() failed', err);
                             toast.error({ message: `Podcast playback failed: ${message}` });
 
                             set({
@@ -279,6 +286,7 @@ export const usePodcastStore = create<PodcastState>()(
                     },
 
                     release: () => {
+                        playRequestId += 1;
                         // Save current position before clearing.
                         const { episode, item, position, server } = get();
                         if (item && episode) {

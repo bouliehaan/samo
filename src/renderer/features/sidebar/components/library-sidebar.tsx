@@ -837,6 +837,7 @@ export const LibrarySidebar = () => {
                 browseTarget={browseTarget}
                 createAction={createAction}
                 onBrowse={(target) => navigate(target)}
+                onHome={() => navigate(AppRoute.HOME)}
             />
 
             <LibraryFilterChips
@@ -868,6 +869,7 @@ const LibrarySidebarHeader = ({
     browseTarget,
     createAction,
     onBrowse,
+    onHome,
 }: {
     browseTarget?: string;
     createAction: null | {
@@ -875,14 +877,15 @@ const LibrarySidebarHeader = ({
         onClick: (event: MouseEvent<HTMLButtonElement>) => void;
     };
     onBrowse: (target: string) => void;
+    onHome: () => void;
 }) => (
     <div className={styles.header}>
-        <div className={styles.titleGroup}>
+        <button className={styles.titleGroup} onClick={onHome} type="button">
             <span className={styles.titleIcon}>
                 <Icon icon="library" size="lg" />
             </span>
             <h2 className={styles.title}>Your Library</h2>
-        </div>
+        </button>
         <div className={styles.headerActions}>
             {createAction ? (
                 <ActionIcon

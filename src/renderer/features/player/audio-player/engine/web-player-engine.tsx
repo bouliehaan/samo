@@ -105,6 +105,28 @@ export const WebPlayerEngine = (props: WebPlayerEngineProps) => {
     const [internalVolume1, setInternalVolume1] = useState(volume / 100 || 0);
     const [internalVolume2, setInternalVolume2] = useState(volume / 100 || 0);
 
+    const clearAudioElement = useCallback((player: null | ReactPlayer) => {
+        const internal = player?.getInternalPlayer();
+        if (!(internal instanceof HTMLAudioElement)) return;
+
+        internal.pause();
+        internal.removeAttribute('src');
+        internal.load();
+    }, []);
+
+    const clearInactivePlayer = useCallback(() => {
+        if (playerNum === 1) {
+            clearAudioElement(player2Ref.current);
+        } else {
+            clearAudioElement(player1Ref.current);
+        }
+    }, [clearAudioElement, playerNum]);
+
+    const clearAllAudioElements = useCallback(() => {
+        clearAudioElement(player1Ref.current);
+        clearAudioElement(player2Ref.current);
+    }, [clearAudioElement]);
+
     useImperativeHandle<WebPlayerEngineHandle, WebPlayerEngineHandle>(playerRef, () => ({
         decreaseVolume(by: number) {
             setInternalVolume1(Math.max(0, internalVolume1 - by / 100));
@@ -121,6 +143,7 @@ export const WebPlayerEngine = (props: WebPlayerEngineProps) => {
         play() {
             player1Ref.current?.getInternalPlayer()?.pause();
             player2Ref.current?.getInternalPlayer()?.pause();
+            clearInactivePlayer();
             if (playerNum === 1) {
                 player1Ref.current?.getInternalPlayer()?.play();
             } else {
@@ -234,11 +257,11 @@ export const WebPlayerEngine = (props: WebPlayerEngineProps) => {
             return;
         }
         if (playerNum === 1) {
-            player2Ref.current?.getInternalPlayer()?.pause();
+            clearAudioElement(player2Ref.current);
         } else {
-            player1Ref.current?.getInternalPlayer()?.pause();
+            clearAudioElement(player1Ref.current);
         }
-    }, [isTransitioning, playerNum, playerStatus, pauseBothPlayers]);
+    }, [clearAudioElement, isTransitioning, playerNum, playerStatus, pauseBothPlayers]);
 
     useEffect(() => {
         const player1 = player1Ref.current?.getInternalPlayer();
@@ -250,6 +273,8 @@ export const WebPlayerEngine = (props: WebPlayerEngineProps) => {
             player2.preservesPitch = preservesPitch;
         }
     }, [preservesPitch]);
+
+    useEffect(() => clearAllAudioElements, [clearAllAudioElements]);
 
     const handleOnReadyPlayer1 = useCallback(
         (player: ReactPlayer) => {

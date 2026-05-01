@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import clsx from 'clsx';
 import { generatePath, Link, useNavigate } from 'react-router';
 
 import styles from './home-sections.module.css';
@@ -8,12 +9,13 @@ import {
     GridCarousel,
     useGridCarouselContainerQuery,
 } from '/@/renderer/components/grid-carousel/grid-carousel-v2';
+import itemCardControlsStyles from '/@/renderer/components/item-card/item-card-controls.module.css';
 import { ItemImage } from '/@/renderer/components/item-image/item-image';
 import { usePlayer } from '/@/renderer/features/player/context/player-context';
 import { AppRoute } from '/@/renderer/router/routes';
+import { PlayButton } from '/@/renderer/features/shared/components/play-button';
 import { recordRecentPlaylist, useCurrentServer, useCurrentServerId } from '/@/renderer/store';
 import { formatDateRelative, formatDurationStringShort } from '/@/renderer/utils/format';
-import { ActionIcon } from '/@/shared/components/action-icon/action-icon';
 import { Button } from '/@/shared/components/button/button';
 import { Icon } from '/@/shared/components/icon/icon';
 import { TextTitle } from '/@/shared/components/text-title/text-title';
@@ -232,29 +234,30 @@ const PlaylistCard = ({
                 Playlist
             </span>
             <span className={styles.playlistControls}>
-                <ActionIcon
-                    aria-label={`Play ${playlist.name}`}
-                    icon="mediaPlay"
-                    iconProps={{ size: 'lg' }}
+                <PlayButton
+                    classNames={clsx(
+                        itemCardControlsStyles.playButton,
+                        itemCardControlsStyles.primary,
+                    )}
+                    fill
                     onClick={(event) => {
                         event.preventDefault();
                         event.stopPropagation();
                         onPlay(Play.NOW);
                     }}
-                    size="lg"
-                    variant="filled"
                 />
-                <ActionIcon
-                    aria-label={`Shuffle ${playlist.name}`}
+                <PlayButton
+                    classNames={clsx(
+                        itemCardControlsStyles.playButton,
+                        itemCardControlsStyles.secondary,
+                        itemCardControlsStyles.right,
+                    )}
                     icon="mediaShuffle"
-                    iconProps={{ size: 'lg' }}
                     onClick={(event) => {
                         event.preventDefault();
                         event.stopPropagation();
                         onPlay(Play.SHUFFLE);
                     }}
-                    size="md"
-                    variant="default"
                 />
             </span>
         </div>

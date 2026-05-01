@@ -6,7 +6,6 @@ import { UserFavoriteEventPayload, UserRatingEventPayload } from '/@/renderer/ev
 import { AudiobookWebPlayer } from '/@/renderer/features/audiobooks/components/audiobook-web-player';
 import { DiscordRpcHook } from '/@/renderer/features/discord-rpc/use-discord-rpc';
 import { MainPlayerListenerHook } from '/@/renderer/features/player/audio-player/hooks/use-main-player-listener';
-import { MpvPlayer } from '/@/renderer/features/player/audio-player/mpv-player';
 import { WebPlayer } from '/@/renderer/features/player/audio-player/web-player';
 import { SleepTimerHook } from '/@/renderer/features/player/components/sleep-timer-button';
 import { AutoDJHook } from '/@/renderer/features/player/hooks/use-auto-dj';
@@ -34,14 +33,12 @@ import {
     updateQueueRatings,
     useCurrentServerId,
     usePlaybackSettings,
-    usePlaybackType,
     useSettingsStoreActions,
 } from '/@/renderer/store';
 import { usePlaybackSource } from '/@/renderer/store/playback-owner.store';
 import { logFn } from '/@/renderer/utils/logger';
 import { toast } from '/@/shared/components/toast/toast';
 import { LibraryItem } from '/@/shared/types/domain-types';
-import { PlayerType } from '/@/shared/types/types';
 
 const CODEC_PROBES = [
     { codec: 'mp3', container: 'mp3', mime: 'audio/mpeg' },
@@ -110,7 +107,6 @@ function isSafari() {
 }
 
 export const AudioPlayers = () => {
-    const playbackType = usePlaybackType();
     const serverId = useCurrentServerId();
     const { resetSampleRate } = useSettingsStoreActions();
 
@@ -149,7 +145,6 @@ export const AudioPlayers = () => {
                 audioContext={audioContext}
                 audioDeviceId={audioDeviceId}
                 audioSampleRateHz={audioSampleRateHz}
-                playbackType={playbackType}
                 resetSampleRate={resetSampleRate}
                 serverId={serverId}
                 setWebAudio={setWebAudio}
@@ -163,7 +158,6 @@ const AudioPlayersContent = ({
     audioContext,
     audioDeviceId,
     audioSampleRateHz,
-    playbackType,
     resetSampleRate,
     serverId,
     setWebAudio,
@@ -172,7 +166,6 @@ const AudioPlayersContent = ({
     audioContext: ReturnType<typeof useWebAudio>['webAudio'];
     audioDeviceId: null | string | undefined;
     audioSampleRateHz: number | undefined;
-    playbackType: PlayerType;
     resetSampleRate: ReturnType<typeof useSettingsStoreActions>['resetSampleRate'];
     serverId: null | string;
     setWebAudio: ReturnType<typeof useWebAudio>['setWebAudio'];
@@ -217,10 +210,6 @@ const AudioPlayersContent = ({
             return;
         }
 
-        if (playbackType !== PlayerType.WEB) {
-            return;
-        }
-
         if (audioContext && 'setSinkId' in audioContext.context && audioDeviceId) {
             const setSink = async () => {
                 try {
@@ -234,7 +223,7 @@ const AudioPlayersContent = ({
 
             setSink();
         }
-    }, [audioContext, audioDeviceId, playbackType]);
+    }, [audioContext, audioDeviceId]);
 
     // Listen to favorite and rating events to update queue songs
     useEffect(() => {
@@ -264,25 +253,17 @@ const AudioPlayersContent = ({
     }, [serverId]);
 
     if (source === 'radio') {
-        if (playbackType === PlayerType.LOCAL) return <MpvPlayer />;
         return <RadioWebPlayer />;
     }
 
     if (source === 'audiobook') {
-        // MPV path for audiobooks is Phase 3; fall back to WebPlayer for now if LOCAL is set.
         return <AudiobookWebPlayer />;
     }
 
     if (source === 'podcast') {
-        // Podcasts always go through the web player engine; no MPV path yet.
         return <PodcastWebPlayer />;
     }
 
     // 'music', null (idle at boot), and future sources fall through here.
-    return (
-        <>
-            {playbackType === PlayerType.WEB && <WebPlayer />}
-            {playbackType === PlayerType.LOCAL && <MpvPlayer />}
-        </>
-    );
+    return <WebPlayer />;
 };

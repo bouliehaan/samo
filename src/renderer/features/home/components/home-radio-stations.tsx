@@ -6,6 +6,7 @@ import { useMemo } from 'react';
 import styles from './home-radio-stations.module.css';
 
 import { ItemImage } from '/@/renderer/components/item-image/item-image';
+import { ContextMenuController } from '/@/renderer/features/context-menu/context-menu-controller';
 import { HomeSectionTitle } from '/@/renderer/features/home/components/home-section-title';
 import { radioQueries } from '/@/renderer/features/radio/api/radio-api';
 import {
@@ -88,6 +89,22 @@ export const HomeRadioStations = () => {
                                 [styles['card-active']]: isCurrentStation,
                             })}
                             key={station.id}
+                            onClick={handleClick}
+                            onContextMenu={(event) => {
+                                event.preventDefault();
+                                ContextMenuController.call({
+                                    cmd: { items: [station], serverId: server.id, type: 'radio' },
+                                    event,
+                                });
+                            }}
+                            onKeyDown={(event) => {
+                                if (event.key === 'Enter' || event.key === ' ') {
+                                    event.preventDefault();
+                                    handleClick();
+                                }
+                            }}
+                            role="button"
+                            tabIndex={0}
                         >
                             <Box className={styles['image-wrap']}>
                                 <ItemImage
@@ -115,7 +132,10 @@ export const HomeRadioStations = () => {
                                             : `Play ${station.name}`
                                     }
                                     className={styles['play-overlay']}
-                                    onClick={handleClick}
+                                    onClick={(event) => {
+                                        event.stopPropagation();
+                                        handleClick();
+                                    }}
                                     radius="xl"
                                     size="lg"
                                     variant="filled"

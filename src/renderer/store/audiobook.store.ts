@@ -17,11 +17,25 @@ import { PlayerStatus } from '/@/shared/types/types';
 // How often (in seconds of drift) to flush position to the persisted resume map.
 const POSITION_PERSIST_DEBOUNCE_S = 10;
 const SERVER_PROGRESS_SYNC_INTERVAL_S = 30;
+const RESUME_NEAR_END_MINIMUM_S = 30;
+const RESUME_NEAR_END_MAXIMUM_S = 120;
 
 const clampPosition = (seconds: number, duration: number) => {
     if (!Number.isFinite(seconds)) return 0;
     const floor = Math.max(0, seconds);
     return duration > 0 ? Math.min(floor, duration) : floor;
+};
+
+const normalizeResumePosition = (seconds: number, duration: number) => {
+    const clamped = clampPosition(seconds, duration);
+    if (duration <= 0 || clamped <= 0) return clamped;
+
+    const nearEndThreshold = Math.min(
+        RESUME_NEAR_END_MAXIMUM_S,
+        Math.max(RESUME_NEAR_END_MINIMUM_S, duration * 0.02),
+    );
+
+    return duration - clamped <= nearEndThreshold ? 0 : clamped;
 };
 
 export interface AudiobookChapterListItem {
@@ -131,6 +145,7 @@ let lastFlushedPosition = 0;
 let lastServerSyncedPosition = 0;
 let lastServerSyncAtMs = 0;
 let hasLoggedMissingSessionId = false;
+let playRequestId = 0;
 
 const rememberAudiobookPlaybackSession = (
     server: ServerListItemWithCredential,
@@ -161,7 +176,7 @@ const syncAudiobookshelfProgress = (options: {
     if (!item || !server) return;
     if (!sessionId) {
         if (!hasLoggedMissingSessionId) {
-            console.info('[audiobook.store] Audiobookshelf progress sync unavailable', {
+            console.warn('[audiobook.store] Audiobookshelf progress sync unavailable', {
                 itemId: item.id,
                 reason: 'missing-session-id',
                 trigger: options.reason,
@@ -191,37 +206,19 @@ const syncAudiobookshelfProgress = (options: {
         timeListened,
     };
 
-    console.info('[audiobook.store] Audiobookshelf progress sync request', {
-        closeSession: options.closeSession,
-        itemId: item.id,
-        payload,
-        reason: options.reason,
-        sessionId,
-    });
-
     const request = options.closeSession
         ? audiobookshelfController.closePlaybackSession(server, sessionId, payload)
         : audiobookshelfController.syncPlaybackSession(server, sessionId, payload);
 
-    void request
-        .then(() => {
-            console.info('[audiobook.store] Audiobookshelf progress sync succeeded', {
-                closeSession: options.closeSession,
-                currentTime,
-                itemId: item.id,
-                reason: options.reason,
-                sessionId,
-            });
-        })
-        .catch((error) => {
-            console.warn('[audiobook.store] Audiobookshelf progress sync failed', {
-                closeSession: options.closeSession,
-                error,
-                itemId: item.id,
-                reason: options.reason,
-                sessionId,
-            });
+    void request.catch((error) => {
+        console.warn('[audiobook.store] Audiobookshelf progress sync failed', {
+            closeSession: options.closeSession,
+            error,
+            itemId: item.id,
+            reason: options.reason,
+            sessionId,
         });
+    });
 };
 
 export const useAudiobookStore = create<AudiobookState>()(
@@ -230,10 +227,7 @@ export const useAudiobookStore = create<AudiobookState>()(
             (set, get) => ({
                 actions: {
                     play: async (server, item) => {
-                        console.log('[audiobook.store] play() called', {
-                            itemId: item.id,
-                            title: item.media?.metadata?.title || item.name,
-                        });
+                        const requestId = ++playRequestId;
 
                         const current = get();
                         const currentItem = current.item;
@@ -262,7 +256,6 @@ export const useAudiobookStore = create<AudiobookState>()(
                         }
 
                         usePlaybackOwnerStore.getState().claim('audiobook');
-                        console.log('[audiobook.store] arbiter claimed → source=audiobook');
                         rememberAudiobookPlaybackSession(server, item, 0);
                         recordRecentAudiobook(item, server.id);
 
@@ -286,12 +279,9 @@ export const useAudiobookStore = create<AudiobookState>()(
                                 item.id,
                             );
 
-                            console.log('[audiobook.store] session fetched', {
-                                contentUrl: session.audioTracks?.[0]?.contentUrl,
-                                currentTime: session.currentTime,
-                                sessionId: session.id,
-                                trackCount: session.audioTracks?.length,
-                            });
+                            if (requestId !== playRequestId) {
+                                return;
+                            }
 
                             const contentUrl = session.audioTracks?.[0]?.contentUrl;
                             // Prefer the playback session's media (it's authoritative for the
@@ -311,7 +301,10 @@ export const useAudiobookStore = create<AudiobookState>()(
                             const serverResume = session.currentTime ?? 0;
                             const resumePosition =
                                 localResume !== undefined ? localResume : serverResume;
-                            const clampedResumePosition = clampPosition(resumePosition, duration);
+                            const clampedResumePosition = normalizeResumePosition(
+                                resumePosition,
+                                duration,
+                            );
 
                             lastFlushedPosition = clampedResumePosition;
                             resetAudiobookshelfProgressSync(clampedResumePosition);
@@ -327,12 +320,11 @@ export const useAudiobookStore = create<AudiobookState>()(
                             });
                             rememberAudiobookPlaybackSession(server, item, clampedResumePosition);
 
-                            console.log('[audiobook.store] state set → calling mediaPlay()', {
-                                resumePosition: clampedResumePosition,
-                            });
                             usePlayerStoreBase.getState().mediaPlay();
-                            console.log('[audiobook.store] mediaPlay() called');
                         } catch (err) {
+                            if (requestId !== playRequestId) {
+                                return;
+                            }
                             const message = err instanceof Error ? err.message : String(err);
                             console.error('[audiobook.store] play() failed', err);
                             toast.error({ message: `Audiobook playback failed: ${message}` });
@@ -347,6 +339,7 @@ export const useAudiobookStore = create<AudiobookState>()(
                     },
 
                     release: () => {
+                        playRequestId += 1;
                         // Save current position before clearing.
                         const { item, position, server } = get();
                         if (item) {

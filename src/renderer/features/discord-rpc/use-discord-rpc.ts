@@ -205,7 +205,7 @@ export const useDiscordRpc = () => {
 
                 const statusDisplayMap = {
                     [DiscordDisplayType.ARTIST_NAME]: DiscordStatusDisplayType.STATE,
-                    [DiscordDisplayType.FEISHIN]: DiscordStatusDisplayType.NAME,
+                    [DiscordDisplayType.SAMO]: DiscordStatusDisplayType.NAME,
                     [DiscordDisplayType.SONG_NAME]: DiscordStatusDisplayType.DETAILS,
                 };
 

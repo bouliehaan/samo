@@ -9,6 +9,7 @@ import {
     GridCarousel,
     useGridCarouselContainerQuery,
 } from '/@/renderer/components/grid-carousel/grid-carousel-v2';
+import { ContextMenuController } from '/@/renderer/features/context-menu/context-menu-controller';
 import { HomeSectionTitle } from '/@/renderer/features/home/components/home-section-title';
 import { AbsCoverImage } from '/@/renderer/features/search/components/abs-cover-image';
 import { AppRoute } from '/@/renderer/router/routes';
@@ -192,7 +193,14 @@ const HomeAbsFavoriteCarousel = ({
     };
 
     const cards = items.map((item) => ({
-        content: <HomeAbsFavoriteCard item={item} kind={kind} onClick={() => openItem(item)} />,
+        content: (
+            <HomeAbsFavoriteCard
+                item={item}
+                kind={kind}
+                onClick={() => openItem(item)}
+                server={server}
+            />
+        ),
         id: item.id,
     }));
 
@@ -213,10 +221,12 @@ const HomeAbsFavoriteCard = ({
     item,
     kind,
     onClick,
+    server,
 }: {
     item: AudiobookshelfLibraryItem;
     kind: AbsMediaKind;
     onClick: () => void;
+    server: NonNullable<ReturnType<typeof useAudiobookshelfServer>>;
 }) => {
     const title = getAbsTitle(item);
 
@@ -225,6 +235,13 @@ const HomeAbsFavoriteCard = ({
             aria-label={`${kind === 'audiobook' ? 'Play' : 'Open'} ${title}`}
             className={styles.cardButton}
             onClick={onClick}
+            onContextMenu={(event) => {
+                event.preventDefault();
+                ContextMenuController.call({
+                    cmd: { items: [item], server, type: kind },
+                    event,
+                });
+            }}
             type="button"
         >
             <div className={styles.artWrap}>

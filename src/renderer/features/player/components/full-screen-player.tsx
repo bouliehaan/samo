@@ -321,7 +321,14 @@ const Controls = () => {
                 icon="arrowDownS"
                 iconProps={{ size: 'lg' }}
                 onClick={handleToggleFullScreenPlayer}
-                tooltip={{ label: t('common.minimize', { postProcess: 'titleCase' }) }}
+                size="lg"
+                tooltip={{
+                    classNames: { tooltip: styles.minimizeTooltip },
+                    label: t('common.minimize', { postProcess: 'titleCase' }),
+                    offset: 2,
+                    position: 'bottom',
+                    withinPortal: false,
+                }}
                 variant="subtle"
             />
             <Popover position="bottom-start">
@@ -330,6 +337,7 @@ const Controls = () => {
                         aria-label={t('common.configure', { postProcess: 'titleCase' })}
                         icon="settings2"
                         iconProps={{ size: 'lg' }}
+                        size="lg"
                         variant="subtle"
                     />
                 </Popover.Target>
@@ -593,6 +601,7 @@ const Controls = () => {
             {showMusicListConfig && (
                 <ListConfigMenu
                     buttonProps={{
+                        size: 'lg',
                         variant: 'subtle',
                     }}
                     displayTypes={[

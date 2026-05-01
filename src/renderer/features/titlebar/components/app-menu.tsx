@@ -4,25 +4,11 @@ import { Fragment, ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useNavigate } from 'react-router';
 
-import packageJson from '../../../../../package.json';
-import styles from './app-menu.module.css';
-
 import { isServerLock } from '/@/renderer/features/action-required/utils/window-properties';
 import { ServerList } from '/@/renderer/features/servers/components/server-list';
 import { openSettingsModal } from '/@/renderer/features/settings/utils/open-settings-modal';
-import { ServerSelector } from '/@/renderer/features/sidebar/components/server-selector';
-import { openReleaseNotesModal } from '/@/renderer/release-notes-modal';
-import {
-    useAppStore,
-    useAppStoreActions,
-    useCommandPalette,
-    useCurrentServer,
-    useGeneralSettings,
-    useSettingsStoreActions,
-} from '/@/renderer/store';
-import { ActionIcon } from '/@/shared/components/action-icon/action-icon';
+import { useAppStore, useAppStoreActions } from '/@/renderer/store';
 import { DropdownMenu, MenuItemProps } from '/@/shared/components/dropdown-menu/dropdown-menu';
-import { Group } from '/@/shared/components/group/group';
 import { Icon } from '/@/shared/components/icon/icon';
 import { toast } from '/@/shared/components/toast/toast';
 
@@ -85,14 +71,6 @@ export const AppMenu = () => {
     const collapsed = useAppStore((state) => state.sidebar.collapsed);
     const privateMode = useAppStore((state) => state.privateMode);
     const { setPrivateMode, setSideBar } = useAppStoreActions();
-    const { setSettings } = useSettingsStoreActions();
-    const settings = useGeneralSettings();
-    const currentServer = useCurrentServer();
-    const { open: openCommandPalette } = useCommandPalette();
-
-    const handleBrowserDevTools = () => {
-        browser?.devtools();
-    };
 
     const handleCollapseSidebar = () => {
         setSideBar({ collapsed: true });
@@ -129,46 +107,7 @@ export const AppMenu = () => {
         browser?.quit();
     };
 
-    const handleSetSideQueueLayout = (sideQueueLayout: 'horizontal' | 'vertical') => {
-        setSettings({
-            general: {
-                ...settings,
-                sideQueueLayout,
-            },
-        });
-    };
-
-    const serverHeaderMenuItems: MenuItem[] = currentServer
-        ? [
-              {
-                  component: (
-                      <div className={styles.serverSelector}>
-                          <ServerSelector />
-                      </div>
-                  ),
-                  id: 'server-selector',
-                  type: 'custom',
-              },
-              {
-                  id: 'divider-server',
-                  type: 'divider',
-              },
-          ]
-        : [];
-
     const menuConfig: MenuItem[] = [
-        ...serverHeaderMenuItems,
-        {
-            icon: 'search',
-            id: 'command-palette',
-            label: t('page.appMenu.commandPalette', { postProcess: 'sentenceCase' }),
-            onClick: openCommandPalette,
-            type: 'item',
-        },
-        {
-            id: 'divider-1',
-            type: 'divider',
-        },
         {
             condition: collapsed,
             id: 'navigation-group',
@@ -268,34 +207,6 @@ export const AppMenu = () => {
             type: 'divider',
         },
         {
-            icon: 'brandGitHub',
-            id: 'version',
-            label: t('page.appMenu.version', {
-                postProcess: 'sentenceCase',
-                version: packageJson.version,
-            }),
-            onClick: () =>
-                openReleaseNotesModal(
-                    t('common.newVersion', {
-                        postProcess: 'sentenceCase',
-                        version: packageJson.version,
-                    }) as string,
-                ),
-            type: 'item',
-        },
-        {
-            condition: isElectron(),
-            id: 'devtools',
-            item: {
-                icon: 'appWindow',
-                id: 'open-devtools',
-                label: t('page.appMenu.openBrowserDevtools', { postProcess: 'sentenceCase' }),
-                onClick: handleBrowserDevTools,
-                type: 'item',
-            },
-            type: 'conditional-item',
-        },
-        {
             condition: isElectron(),
             id: 'quit',
             item: {
@@ -306,65 +217,6 @@ export const AppMenu = () => {
                 type: 'item',
             },
             type: 'conditional-item',
-        },
-        {
-            id: 'divider-5',
-            type: 'divider',
-        },
-        {
-            condition: settings.sideQueueType === 'sideQueue',
-            id: 'layout-toggle-group',
-            items: [
-                {
-                    component: (
-                        <Group gap="xs" grow pb="xs" pt="sm" px="xs" w="100%">
-                            <ActionIcon
-                                icon="layoutPanelRight"
-                                iconProps={{
-                                    size: 'xl',
-                                }}
-                                onClick={() => handleSetSideQueueLayout('horizontal')}
-                                tooltip={{
-                                    label: t('setting.sidePlayQueueLayout', {
-                                        context: 'optionHorizontal',
-                                        postProcess: 'sentenceCase',
-                                    }),
-                                    openDelay: 0,
-                                    position: 'bottom',
-                                }}
-                                variant={
-                                    settings.sideQueueLayout === 'horizontal'
-                                        ? 'default'
-                                        : 'transparent'
-                                }
-                            />
-                            <ActionIcon
-                                icon="layoutPanelBottom"
-                                iconProps={{
-                                    size: 'xl',
-                                }}
-                                onClick={() => handleSetSideQueueLayout('vertical')}
-                                tooltip={{
-                                    label: t('setting.sidePlayQueueLayout', {
-                                        context: 'optionVertical',
-                                        postProcess: 'sentenceCase',
-                                    }),
-                                    openDelay: 0,
-                                    position: 'bottom',
-                                }}
-                                variant={
-                                    settings.sideQueueLayout === 'vertical'
-                                        ? 'default'
-                                        : 'transparent'
-                                }
-                            />
-                        </Group>
-                    ),
-                    id: 'layout-toggle',
-                    type: 'custom',
-                },
-            ],
-            type: 'conditional-group',
         },
     ];
 

@@ -165,7 +165,9 @@ export function PodcastWebPlayer() {
     }, [release]);
 
     const handleError = useCallback(() => {
-        toast.error({ message: 'Podcast playback error — check the stream URL.' });
+        const message = 'Podcast playback error. Check the stream URL or server connection.';
+        usePodcastStore.getState().actions.setError(message);
+        toast.error({ message });
         release();
     }, [release]);
 

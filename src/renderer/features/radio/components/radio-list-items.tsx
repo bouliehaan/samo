@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import styles from './radio-list-items.module.css';
 
 import { ItemImage } from '/@/renderer/components/item-image/item-image';
+import { ContextMenuController } from '/@/renderer/features/context-menu/context-menu-controller';
 import { openEditRadioStationModal } from '/@/renderer/features/radio/components/edit-radio-station-form';
 import {
     useRadioControls,
@@ -122,80 +123,97 @@ const RadioListItem = ({ station }: RadioListItemProps) => {
     );
 
     return (
-        <Paper
-            className={clsx(styles['radio-item'], {
-                [styles['radio-item-active']]: isCurrentStation,
-            })}
-            p="md"
+        <div
+            onContextMenu={(event) => {
+                event.preventDefault();
+                if (!server?.id) return;
+                ContextMenuController.call({
+                    cmd: { items: [station], serverId: server.id, type: 'radio' },
+                    event,
+                });
+            }}
         >
-            <Flex align="center" gap="md" justify="space-between" wrap="nowrap">
-                <button className={styles['radio-item-button']} onClick={handleClick} type="button">
-                    <Group align="center" gap="md" wrap="nowrap">
-                        <Box className={styles.thumbnail}>
-                            <ItemImage
-                                enableViewport={false}
-                                id={station.imageId ?? undefined}
-                                imageContainerProps={{
-                                    className: styles['image-container'],
-                                }}
-                                itemType={LibraryItem.RADIO_STATION}
-                                serverId={server?.id}
-                                src={station.imageUrl ?? ''}
-                                type="table"
-                            />
-                        </Box>
-                        <Stack className={styles.meta} gap={4}>
-                            <Text fw={500} size="md">
-                                {station.name}
-                            </Text>
-                            <Text className={styles['meta-line']} isMuted size="sm">
-                                {station.streamUrl}
-                            </Text>
-                            {station.homepageUrl ? (
-                                <Text className={styles['meta-line']} isMuted size="sm">
-                                    {station.homepageUrl}
+            <Paper
+                className={clsx(styles['radio-item'], {
+                    [styles['radio-item-active']]: isCurrentStation,
+                })}
+                p="md"
+            >
+                <Flex align="center" gap="md" justify="space-between" wrap="nowrap">
+                    <button
+                        className={styles['radio-item-button']}
+                        onClick={handleClick}
+                        type="button"
+                    >
+                        <Group align="center" gap="md" wrap="nowrap">
+                            <Box className={styles.thumbnail}>
+                                <ItemImage
+                                    enableViewport={false}
+                                    id={station.imageId ?? undefined}
+                                    imageContainerProps={{
+                                        className: styles['image-container'],
+                                    }}
+                                    itemType={LibraryItem.RADIO_STATION}
+                                    serverId={server?.id}
+                                    src={station.imageUrl ?? ''}
+                                    type="table"
+                                />
+                            </Box>
+                            <Stack className={styles.meta} gap={4}>
+                                <Text fw={500} size="md">
+                                    {station.name}
                                 </Text>
-                            ) : null}
-                        </Stack>
+                                <Text className={styles['meta-line']} isMuted size="sm">
+                                    {station.streamUrl}
+                                </Text>
+                                {station.homepageUrl ? (
+                                    <Text className={styles['meta-line']} isMuted size="sm">
+                                        {station.homepageUrl}
+                                    </Text>
+                                ) : null}
+                            </Stack>
+                        </Group>
+                    </button>
+                    <Group className={styles['radio-item-actions']} gap="xs">
+                        <ActionIcon
+                            icon="favorite"
+                            iconProps={
+                                isFavorite ? { color: 'primary', fill: 'primary' } : undefined
+                            }
+                            onClick={handleFavoriteClick}
+                            size="sm"
+                            tooltip={{
+                                label: isFavorite ? 'Remove favorite' : 'Add favorite',
+                            }}
+                            variant="subtle"
+                        />
+                        {permissions.radio.edit && (
+                            <ActionIcon
+                                icon="edit"
+                                onClick={handleEditClick}
+                                size="sm"
+                                tooltip={{
+                                    label: t('common.edit', { postProcess: 'sentenceCase' }),
+                                }}
+                                variant="subtle"
+                            />
+                        )}
+                        {permissions.radio.delete && (
+                            <ActionIcon
+                                icon="delete"
+                                iconProps={{ color: 'error' }}
+                                onClick={handleDeleteClick}
+                                size="sm"
+                                tooltip={{
+                                    label: t('common.delete', { postProcess: 'sentenceCase' }),
+                                }}
+                                variant="subtle"
+                            />
+                        )}
                     </Group>
-                </button>
-                <Group className={styles['radio-item-actions']} gap="xs">
-                    <ActionIcon
-                        icon="favorite"
-                        iconProps={isFavorite ? { color: 'primary', fill: 'primary' } : undefined}
-                        onClick={handleFavoriteClick}
-                        size="sm"
-                        tooltip={{
-                            label: isFavorite ? 'Remove favorite' : 'Add favorite',
-                        }}
-                        variant="subtle"
-                    />
-                    {permissions.radio.edit && (
-                        <ActionIcon
-                            icon="edit"
-                            onClick={handleEditClick}
-                            size="sm"
-                            tooltip={{
-                                label: t('common.edit', { postProcess: 'sentenceCase' }),
-                            }}
-                            variant="subtle"
-                        />
-                    )}
-                    {permissions.radio.delete && (
-                        <ActionIcon
-                            icon="delete"
-                            iconProps={{ color: 'error' }}
-                            onClick={handleDeleteClick}
-                            size="sm"
-                            tooltip={{
-                                label: t('common.delete', { postProcess: 'sentenceCase' }),
-                            }}
-                            variant="subtle"
-                        />
-                    )}
-                </Group>
-            </Flex>
-        </Paper>
+                </Flex>
+            </Paper>
+        </div>
     );
 };
 

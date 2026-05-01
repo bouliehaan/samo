@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import { generatePath, useNavigate } from 'react-router';
 
 import { audiobookshelfController } from '/@/renderer/api/audiobookshelf/audiobookshelf-controller';
+import { ContextMenuController } from '/@/renderer/features/context-menu/context-menu-controller';
 import { AnimatedPage } from '/@/renderer/features/shared/components/animated-page';
 import { PageErrorBoundary } from '/@/renderer/features/shared/components/page-error-boundary';
 import { AppRoute } from '/@/renderer/router/routes';
@@ -69,10 +70,12 @@ const PodcastCover = ({ item }: { item: AudiobookshelfLibraryItem }) => {
 const PodcastCard = ({
     item,
     onOpen,
+    server,
     serverId,
 }: {
     item: AudiobookshelfLibraryItem;
     onOpen: (item: AudiobookshelfLibraryItem) => void;
+    server: ReturnType<typeof useAudiobookshelfServer>;
     serverId: string | undefined;
 }) => {
     const title = podcastTitle(item);
@@ -84,6 +87,14 @@ const PodcastCard = ({
         <Stack
             gap="xs"
             onClick={() => onOpen(item)}
+            onContextMenu={(event) => {
+                event.preventDefault();
+                if (!server) return;
+                ContextMenuController.call({
+                    cmd: { items: [item], server, type: 'podcast' },
+                    event,
+                });
+            }}
             onKeyDown={(event) => {
                 if (event.key === 'Enter' || event.key === ' ') {
                     event.preventDefault();
@@ -216,6 +227,7 @@ const PodcastsRoute = () => {
                                             <PodcastCard
                                                 item={item}
                                                 onOpen={handleOpen}
+                                                server={server}
                                                 serverId={server?.id}
                                             />
                                         </Box>

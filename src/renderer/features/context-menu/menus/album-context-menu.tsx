@@ -28,7 +28,7 @@ export const AlbumContextMenu = ({ items, type }: AlbumContextMenuProps) => {
         <ContextMenu.Content
             bottomStickyContent={<ContextMenuPreview items={items} itemType={type} />}
         >
-            <PlayAction ids={ids} itemType={LibraryItem.ALBUM} />
+            <PlayAction allowShuffle={false} ids={ids} itemType={LibraryItem.ALBUM} />
             <PlayAlbumRadioAction album={items[0]} disabled={items.length > 1} />
             <ContextMenu.Divider />
             <AddToPlaylistAction items={ids} itemType={LibraryItem.ALBUM} />

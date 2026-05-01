@@ -32,6 +32,7 @@ import { ScrollArea } from '/@/shared/components/scroll-area/scroll-area';
 import { Stack } from '/@/shared/components/stack/stack';
 import { LibraryItem, ServerType } from '/@/shared/types/domain-types';
 import { Platform } from '/@/shared/types/types';
+import samoLogo from '../../../../../build/samologo.svg';
 
 export const CollapsedSidebar = () => {
     const { t } = useTranslation();
@@ -91,11 +92,11 @@ export const CollapsedSidebar = () => {
             <ScrollArea>
                 {sidebarCollapsedNavigation && (
                     <Group gap={0} grow>
-                        <CollapsedSidebarButton onClick={() => navigate(-1)}>
-                            <Icon icon="arrowLeftS" size="xl" />
+                        <CollapsedSidebarButton aria-label="Go back" onClick={() => navigate(-1)}>
+                            <Icon icon="arrowLeftS" size="2xl" />
                         </CollapsedSidebarButton>
-                        <CollapsedSidebarButton onClick={() => navigate(1)}>
-                            <Icon icon="arrowRightS" size="xl" />
+                        <CollapsedSidebarButton aria-label="Go forward" onClick={() => navigate(1)}>
+                            <Icon icon="arrowRightS" size="2xl" />
                         </CollapsedSidebarButton>
                     </Group>
                 )}
@@ -104,11 +105,18 @@ export const CollapsedSidebar = () => {
                         <CollapsedSidebarItem
                             activeIcon={null}
                             component={Flex}
-                            icon={<Icon fill="muted" icon="menu" size="3xl" />}
+                            icon={
+                                <img
+                                    alt="Samo"
+                                    src={samoLogo}
+                                    style={{ height: 40, width: 40, objectFit: 'contain' }}
+                                />
+                            }
                             label={t('common.menu', { postProcess: 'titleCase' })}
                             style={{
                                 cursor: 'pointer',
-                                padding: 'var(--theme-spacing-md) 0',
+                                minHeight: '4.25rem',
+                                padding: 'var(--theme-spacing-lg) 0',
                             }}
                         />
                     </DropdownMenu.Target>

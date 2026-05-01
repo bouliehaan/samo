@@ -1,4 +1,3 @@
-import isElectron from 'is-electron';
 import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -26,9 +25,7 @@ import { SegmentedControl } from '/@/shared/components/segmented-control/segment
 import { Select } from '/@/shared/components/select/select';
 import { Slider } from '/@/shared/components/slider/slider';
 import { Switch } from '/@/shared/components/switch/switch';
-import { CrossfadeStyle, PlayerStatus, PlayerStyle, PlayerType } from '/@/shared/types/types';
-
-const ipc = isElectron() ? window.api.ipc : null;
+import { PlayerStatus, PlayerStyle, PlayerType } from '/@/shared/types/types';
 
 export const PlayerConfig = () => {
     const { t } = useTranslation();
@@ -52,11 +49,6 @@ export const PlayerConfig = () => {
     const options = useMemo(() => {
         const allOptions = [
             {
-                component: <AudioPlayerTypeConfig />,
-                id: 'audioPlayerType',
-                label: t('setting.audioPlayer', { postProcess: 'titleCase' }),
-            },
-            {
                 component: <AudioDeviceConfig />,
                 id: 'audioDevice',
                 label: t('setting.audioDevice', { postProcess: 'titleCase' }),
@@ -71,13 +63,6 @@ export const PlayerConfig = () => {
                 component: <TransitionTypeConfig />,
                 id: 'transitionType',
                 label: t('setting.playbackStyle', {
-                    postProcess: 'titleCase',
-                }),
-            },
-            {
-                component: <CrossfadeStyleConfig />,
-                id: 'crossfadeStyle',
-                label: t('setting.crossfadeStyle', {
                     postProcess: 'titleCase',
                 }),
             },
@@ -200,45 +185,13 @@ export const PlayerConfig = () => {
     );
 };
 
-const AudioPlayerTypeConfig = () => {
-    const status = usePlayerStatus();
-    const playbackSettings = usePlaybackSettings();
-    const { setSettings } = useSettingsStoreActions();
-
-    return (
-        <Select
-            comboboxProps={{ withinPortal: false }}
-            data={[
-                {
-                    disabled: !isElectron(),
-                    label: 'MPV',
-                    value: PlayerType.LOCAL,
-                },
-                { label: 'Web', value: PlayerType.WEB },
-            ]}
-            defaultValue={playbackSettings.type}
-            disabled={status === PlayerStatus.PLAYING}
-            onChange={(e) => {
-                setSettings({
-                    playback: { ...playbackSettings, type: e as PlayerType },
-                });
-                ipc?.send('settings-set', {
-                    property: 'playbackType',
-                    value: e,
-                });
-            }}
-            width="100%"
-        />
-    );
-};
-
 const AudioDeviceConfig = () => {
     const status = usePlayerStatus();
     const playbackType = usePlaybackType();
     const playbackSettings = usePlaybackSettings();
     const { setSettings } = useSettingsStoreActions();
 
-    const audioDevices = useAudioDevices(playbackType);
+    const audioDevices = useAudioDevices();
     const audioDeviceId =
         playbackType === PlayerType.LOCAL
             ? playbackSettings.mpvAudioDeviceId
@@ -296,37 +249,6 @@ const TransitionTypeConfig = () => {
             size="sm"
             value={transitionType}
             w="100%"
-        />
-    );
-};
-
-const CrossfadeStyleConfig = () => {
-    const status = usePlayerStatus();
-    const playbackSettings = usePlaybackSettings();
-    const { crossfadeStyle, transitionType } = usePlayerProperties();
-    const { setCrossfadeStyle } = usePlayerActions();
-
-    return (
-        <Select
-            comboboxProps={{ withinPortal: false }}
-            data={[
-                { label: 'Linear', value: CrossfadeStyle.LINEAR },
-                { label: 'Equal Power', value: CrossfadeStyle.EQUAL_POWER },
-                { label: 'S-Curve', value: CrossfadeStyle.S_CURVE },
-                { label: 'Exponential', value: CrossfadeStyle.EXPONENTIAL },
-            ]}
-            defaultValue={crossfadeStyle}
-            disabled={
-                playbackSettings.type !== PlayerType.WEB ||
-                transitionType !== PlayerStyle.CROSSFADE ||
-                status === PlayerStatus.PLAYING
-            }
-            onChange={(e) => {
-                if (e) {
-                    setCrossfadeStyle(e as CrossfadeStyle);
-                }
-            }}
-            width="100%"
         />
     );
 };
