@@ -192,6 +192,35 @@
     overflow-y: auto;
     scrollbar-gutter: stable;
     background: transparent;
+
+    scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+}
+
+.row-list:hover {
+    scrollbar-color: rgb(255 255 255 / 30%) rgb(255 255 255 / 8%);
+}
+
+.row-list::-webkit-scrollbar {
+    width: 8px;
+}
+
+.row-list::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.row-list::-webkit-scrollbar-thumb {
+    background: transparent;
+    border-radius: 4px;
+    transition: background 0.2s ease;
+}
+
+.row-list:hover::-webkit-scrollbar-thumb {
+    background: rgb(255 255 255 / 30%);
+}
+
+.row-list::-webkit-scrollbar-thumb:hover {
+    background: rgb(255 255 255 / 50%);
 }
 
 .row {
