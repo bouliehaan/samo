@@ -1,4 +1,5 @@
 import { openModal } from '@mantine/modals';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Navigate } from 'react-router';
 
@@ -12,7 +13,7 @@ import { ServerList } from '/@/renderer/features/servers/components/server-list'
 import { AnimatedPage } from '/@/renderer/features/shared/components/animated-page';
 import { PageErrorBoundary } from '/@/renderer/features/shared/components/page-error-boundary';
 import { AppRoute } from '/@/renderer/router/routes';
-import { useCurrentServerWithCredential } from '/@/renderer/store';
+import { useCurrentServerWithCredential, useServerList } from '/@/renderer/store';
 import { Button } from '/@/shared/components/button/button';
 import { Center } from '/@/shared/components/center/center';
 import { Group } from '/@/shared/components/group/group';
@@ -23,10 +24,17 @@ import { Stack } from '/@/shared/components/stack/stack';
 const ActionRequiredRoute = () => {
     const { t } = useTranslation();
     const currentServer = useCurrentServerWithCredential();
+    const serverList = useServerList();
     const isServerRequired = !currentServer;
     const isCredentialRequired = currentServer && !currentServer.credential;
 
     const isLoginRequired = isServerLock() && !currentServer;
+
+    // Enter wizard mode only on a fresh install (no servers configured at mount time).
+    // This is captured once — subsequent renders don't re-evaluate the initial state.
+    const [wizardActive, setWizardActive] = useState(
+        () => Object.keys(serverList).length === 0,
+    );
 
     const checks = [
         {
@@ -62,14 +70,30 @@ const ActionRequiredRoute = () => {
                 <Stack gap="xl" style={{ maxWidth: '50%' }}>
                     <ScrollArea style={{ maxHeight: 'calc(100vh - 50px)' }}>
                         <Group wrap="nowrap">
-                            {displayedCheck && (
-                                <ActionRequiredContainer title={displayedCheck.title}>
-                                    {displayedCheck?.component}
+                            {wizardActive ? (
+                                <ActionRequiredContainer
+                                    title={t('error.serverRequired', {
+                                        postProcess: 'serverRequired',
+                                    })}
+                                >
+                                    <ServerRequired
+                                        isWizard
+                                        onWizardExit={() => setWizardActive(false)}
+                                    />
                                 </ActionRequiredContainer>
+                            ) : (
+                                displayedCheck && (
+                                    <ActionRequiredContainer title={displayedCheck.title}>
+                                        {displayedCheck?.component}
+                                    </ActionRequiredContainer>
+                                )
                             )}
                         </Group>
                         <Stack mt="2rem">
-                            {canReturnHome && <Navigate replace to={AppRoute.HOME} />}
+                            {/* Only auto-navigate once the wizard has been dismissed */}
+                            {!wizardActive && canReturnHome && (
+                                <Navigate replace to={AppRoute.HOME} />
+                            )}
                             {/* This should be displayed if a credential is required */}
                             {isCredentialRequired && !isServerLock && (
                                 <Group justify="center" wrap="nowrap">

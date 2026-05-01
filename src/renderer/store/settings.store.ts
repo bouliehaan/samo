@@ -1114,7 +1114,7 @@ const initialState: SettingsState = {
         type: FontType.BUILT_IN,
     },
     general: {
-        accent: 'rgb(53, 116, 252)',
+        accent: '#e8d5b0',
         albumBackground: false,
         albumBackgroundBlur: 3,
         artistBackground: true,
@@ -2416,10 +2416,17 @@ export const useSettingsStore = createWithEqualityFn<SettingsSlice>()(
                     }
                 }
 
+                if (version <= 28) {
+                    // Reset accent to the new samo default if the user never customised it
+                    if (state.general.accent === 'rgb(53, 116, 252)') {
+                        state.general.accent = '#e8d5b0';
+                    }
+                }
+
                 return persistedState;
             },
             name: 'store_settings',
-            version: 27,
+            version: 28,
         },
     ),
 );

@@ -173,7 +173,7 @@ export const applyFavoriteOptimisticUpdates = (
                                 | undefined
                                 | { pageParams: string[]; pages: AlbumListResponse[] },
                         ) => {
-                            if (!current) return current;
+                            if (!current || !current.pages) return current;
                             const updatedPages = updateItemsInPages<Album, AlbumListResponse>(
                                 current.pages.filter((p): p is AlbumListResponse => !!p),
                                 itemIdSet,
@@ -598,7 +598,7 @@ export const applyFavoriteOptimisticUpdates = (
                                 | undefined
                                 | { pageParams: string[]; pages: SongListResponse[] },
                         ) => {
-                            if (!current) return current;
+                            if (!current || !current.pages) return current;
                             const updatedPages = updateItemsInPages<Song, SongListResponse>(
                                 current.pages.filter((p): p is SongListResponse => !!p),
                                 itemIdSet,

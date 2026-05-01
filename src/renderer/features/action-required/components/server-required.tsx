@@ -1,5 +1,6 @@
 import { closeAllModals, openModal } from '@mantine/modals';
 import isElectron from 'is-electron';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router';
 
@@ -26,8 +27,17 @@ import {
 
 const localSettings = isElectron() ? window.api.localSettings : null;
 
-export const ServerRequired = () => {
+interface ServerRequiredProps {
+    isWizard?: boolean;
+    onWizardExit?: () => void;
+}
+
+export const ServerRequired = ({ isWizard = false, onWizardExit }: ServerRequiredProps) => {
     const serverList = useServerList();
+
+    if (isWizard) {
+        return <SetupWizard onExit={onWizardExit ?? (() => {})} />;
+    }
 
     if (Object.keys(serverList).length > 0) {
         return (
@@ -47,6 +57,70 @@ export const ServerRequired = () => {
 
     return <AddServerForm onCancel={null} />;
 };
+
+type WizardStep = 'addAnother' | 'addFirst' | 'prompt';
+
+function SetupWizard({ onExit }: { onExit: () => void }) {
+    const { t } = useTranslation();
+    const [step, setStep] = useState<WizardStep>('addFirst');
+    const [formKey, setFormKey] = useState(0);
+    const [lastAddedName, setLastAddedName] = useState<string | null>(null);
+
+    const handleSubmitSuccess = (server: ServerListItemWithCredential) => {
+        setLastAddedName(server.name);
+        setStep('prompt');
+    };
+
+    const handleAddAnother = () => {
+        setFormKey((key) => key + 1);
+        setStep('addAnother');
+    };
+
+    const handleBackToPrompt = () => {
+        setStep('prompt');
+    };
+
+    if (step === 'addFirst') {
+        return <AddServerForm key={formKey} onCancel={null} onSubmitSuccess={handleSubmitSuccess} />;
+    }
+
+    if (step === 'addAnother') {
+        return (
+            <AddServerForm
+                key={formKey}
+                onCancel={handleBackToPrompt}
+                onSubmitSuccess={handleSubmitSuccess}
+            />
+        );
+    }
+
+    return (
+        <Stack gap="md" miw="300px">
+            <Text size="md">
+                {lastAddedName
+                    ? t('form.addServer.wizardPromptNamed', {
+                          defaultValue: '"{{name}}" added. Want to add another server?',
+                          name: lastAddedName,
+                      })
+                    : t('form.addServer.wizardPrompt', {
+                          defaultValue: 'Server added. Want to add another server?',
+                      })}
+            </Text>
+            <Group grow>
+                <Button leftSection={<Icon icon="add" />} onClick={handleAddAnother}>
+                    {t('form.addServer.wizardAddAnother', {
+                        defaultValue: 'Add another server',
+                    })}
+                </Button>
+                <Button onClick={onExit} variant="filled">
+                    {t('form.addServer.wizardFinish', {
+                        defaultValue: 'Continue',
+                    })}
+                </Button>
+            </Group>
+        </Stack>
+    );
+}
 
 function ServerSelector() {
     const { t } = useTranslation();

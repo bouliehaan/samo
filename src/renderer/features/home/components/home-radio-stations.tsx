@@ -50,9 +50,15 @@ export const HomeRadioStations = () => {
         [allStations, favoriteIds],
     );
 
-    // Until the user picks favorites, fall back to showing the library so the
-    // section isn't empty on first run.
-    const sourceStations = favoriteStations.length > 0 ? favoriteStations : allStations;
+    const nonFavoriteStations = useMemo(
+        () => allStations.filter((station) => !favoriteIds.has(station.id)),
+        [allStations, favoriteIds],
+    );
+
+    const sourceStations = useMemo(
+        () => [...favoriteStations, ...nonFavoriteStations],
+        [favoriteStations, nonFavoriteStations],
+    );
 
     const visibleCount = computeColumns(gridWidth) * HOME_ROWS;
     const stations = sourceStations.slice(0, visibleCount);
@@ -63,7 +69,7 @@ export const HomeRadioStations = () => {
 
     return (
         <section className={styles.section}>
-            <HomeSectionTitle title="Favorite Radio Stations" to={AppRoute.RADIO} />
+            <HomeSectionTitle title="Radio Stations" to={AppRoute.RADIO} />
             <div className={styles.grid} ref={gridRef}>
                 {stations.map((station) => {
                     const isCurrentStation = currentStreamUrl === station.streamUrl;

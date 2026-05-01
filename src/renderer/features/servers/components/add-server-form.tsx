@@ -37,6 +37,7 @@ const localSettings = isElectron() ? window.api.localSettings : null;
 
 interface AddServerFormProps {
     onCancel: (() => void) | null;
+    onSubmitSuccess?: (server: ServerListItemWithCredential) => void;
 }
 
 interface ServerDetails {
@@ -99,7 +100,7 @@ const ALL_SERVERS = Object.keys(SERVER_TYPES).map((serverType) => {
     };
 });
 
-export const AddServerForm = ({ onCancel }: AddServerFormProps) => {
+export const AddServerForm = ({ onCancel, onSubmitSuccess }: AddServerFormProps) => {
     const { t } = useTranslation();
     const focusTrapRef = useFocusTrap(true);
     const [isLoading, setIsLoading] = useState(false);
@@ -224,6 +225,8 @@ export const AddServerForm = ({ onCancel }: AddServerFormProps) => {
             toast.success({
                 message: t('form.addServer.success', { postProcess: 'sentenceCase' }),
             });
+
+            onSubmitSuccess?.(serverItem);
 
             if (localSettings && values.savePassword) {
                 const saved = await localSettings.passwordSet(values.password, serverItem.id);

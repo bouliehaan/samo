@@ -39,7 +39,7 @@ export const PlaylistContextMenu = ({ items, type }: PlaylistContextMenuProps) =
             <ContextMenu.Divider />
             <AddToPlaylistAction items={ids} itemType={LibraryItem.PLAYLIST} />
             <ContextMenu.Divider />
-            <SetFavoriteAction ids={ids} itemType={LibraryItem.PLAYLIST} />
+            <SetFavoriteAction ids={ids} itemType={LibraryItem.PLAYLIST} items={items} />
             <ContextMenu.Divider />
             <EditPlaylistAction disabled={!canEditPlaylist} items={items} />
             <DeletePlaylistAction disabled={!canDeletePlaylist} items={items} />

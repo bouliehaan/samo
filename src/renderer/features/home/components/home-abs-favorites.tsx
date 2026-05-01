@@ -173,9 +173,9 @@ const HomeAbsFavoriteCarousel = ({
     const favoriteIds = kind === 'audiobook' ? audiobookFavoriteIds : podcastFavoriteIds;
 
     const items = useMemo(() => {
-        const sourceItems = allItems.filter((item) => favoriteIds.has(item.id));
-
-        return sourceItems.slice(0, HOME_ABS_ITEM_LIMIT);
+        const favoriteItems = allItems.filter((item) => favoriteIds.has(item.id));
+        const nonFavoriteItems = allItems.filter((item) => !favoriteIds.has(item.id));
+        return [...favoriteItems, ...nonFavoriteItems].slice(0, HOME_ABS_ITEM_LIMIT);
     }, [allItems, favoriteIds]);
 
     if (!server || !items.length) {
@@ -269,7 +269,7 @@ export const HomeFavoriteAudiobooks = ({
     <HomeAbsFavoriteCarousel
         containerQuery={containerQuery}
         kind="audiobook"
-        title={<HomeSectionTitle title="Favorite Audiobooks" to={AppRoute.AUDIOBOOKS} />}
+        title={<HomeSectionTitle title="Audiobooks" to={AppRoute.AUDIOBOOKS} />}
     />
 );
 
@@ -281,6 +281,6 @@ export const HomeFavoritePodcasts = ({
     <HomeAbsFavoriteCarousel
         containerQuery={containerQuery}
         kind="podcast"
-        title={<HomeSectionTitle title="Favorite Podcasts" to={AppRoute.PODCASTS} />}
+        title={<HomeSectionTitle title="Podcasts" to={AppRoute.PODCASTS} />}
     />
 );

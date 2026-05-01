@@ -81,26 +81,6 @@ export const AudioSettings = memo(() => {
         {
             control: (
                 <Switch
-                    defaultChecked={settings.webAudio}
-                    onChange={(e) => {
-                        setSettings({
-                            playback: { webAudio: e.currentTarget.checked },
-                        });
-                    }}
-                />
-            ),
-            description: t('setting.webAudio', {
-                context: 'description',
-                postProcess: 'sentenceCase',
-            }),
-            note: t('common.restartRequired', { postProcess: 'sentenceCase' }),
-            title: t('setting.webAudio', {
-                postProcess: 'sentenceCase',
-            }),
-        },
-        {
-            control: (
-                <Switch
                     defaultChecked={settings.preservePitch}
                     onChange={(e) => {
                         setSettings({

@@ -1,5 +1,8 @@
-import { Suspense, useRef } from 'react';
+import { Suspense, useEffect, useRef, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
+
+import { api } from '/@/renderer/api';
 
 import { useGridCarouselContainerQuery } from '/@/renderer/components/grid-carousel/grid-carousel-v2';
 import { NativeScrollArea } from '/@/renderer/components/native-scroll-area/native-scroll-area';
@@ -27,7 +30,76 @@ import { useWindowSettings } from '/@/renderer/store';
 import { Spinner } from '/@/shared/components/spinner/spinner';
 import { Stack } from '/@/shared/components/stack/stack';
 import { AlbumListSort, SortOrder } from '/@/shared/types/domain-types';
+import { useCurrentServerId } from '/@/renderer/store';
 import { Platform } from '/@/shared/types/types';
+
+const HomeAlbumsWithFallback = ({
+    containerQuery,
+}: {
+    containerQuery?: ReturnType<typeof useGridCarouselContainerQuery>;
+}) => {
+    const serverId = useCurrentServerId();
+    const [useFallback, setUseFallback] = useState(false);
+
+    const favoritesQuery = useQuery({
+        enabled: Boolean(serverId) && !useFallback,
+        queryFn: ({ signal }) =>
+            api.controller.getAlbumList({
+                apiClientProps: { serverId, signal },
+                query: {
+                    favorite: true,
+                    limit: 8,
+                    sortBy: AlbumListSort.FAVORITED,
+                    sortOrder: SortOrder.DESC,
+                    startIndex: 0,
+                },
+            }),
+        queryKey: ['home', 'album', 'favorites-check', serverId],
+    });
+
+    useEffect(() => {
+        if (favoritesQuery.data && favoritesQuery.data.items.length === 0) {
+            setUseFallback(true);
+        }
+    }, [favoritesQuery.data]);
+
+    if (useFallback) {
+        return (
+            <AlbumInfiniteCarousel
+                containerQuery={containerQuery}
+                enableRefresh
+                queryKey={['home', 'album', 'recently-played'] as const}
+                rowCount={1}
+                sortBy={AlbumListSort.RECENTLY_PLAYED}
+                sortOrder={SortOrder.DESC}
+                title={
+                    <HomeSectionTitle
+                        title="Albums"
+                        to={AppRoute.LIBRARY_ALBUMS}
+                    />
+                }
+            />
+        );
+    }
+
+    return (
+        <AlbumInfiniteCarousel
+            containerQuery={containerQuery}
+            enableRefresh
+            query={{ favorite: true }}
+            queryKey={['home', 'album', 'favorites'] as const}
+            rowCount={1}
+            sortBy={AlbumListSort.FAVORITED}
+            sortOrder={SortOrder.DESC}
+            title={
+                <HomeSectionTitle
+                    title="Albums"
+                    to={AppRoute.LIBRARY_ALBUMS}
+                />
+            }
+        />
+    );
+};
 
 const HomeRoute = () => {
     const { t } = useTranslation();
@@ -60,21 +132,7 @@ const HomeRoute = () => {
                         ref={containerQuery.ref}
                     >
                         <HomeRadioStations />
-                        <AlbumInfiniteCarousel
-                            containerQuery={containerQuery}
-                            enableRefresh
-                            query={{ favorite: true }}
-                            queryKey={['home', 'album', 'favorites'] as const}
-                            rowCount={1}
-                            sortBy={AlbumListSort.FAVORITED}
-                            sortOrder={SortOrder.DESC}
-                            title={
-                                <HomeSectionTitle
-                                    title="Favorite Albums"
-                                    to={AppRoute.LIBRARY_ALBUMS}
-                                />
-                            }
-                        />
+                        <HomeAlbumsWithFallback containerQuery={containerQuery} />
                         <HomeFavoritePlaylists containerQuery={containerQuery} />
                         <HomeFavoriteAudiobooks containerQuery={containerQuery} />
                         <HomeFavoritePodcasts containerQuery={containerQuery} />

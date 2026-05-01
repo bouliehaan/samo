@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import clsx from 'clsx';
+import { useMemo } from 'react';
 import { generatePath, Link, useNavigate } from 'react-router';
 
 import styles from './home-sections.module.css';
@@ -15,7 +16,8 @@ import { ContextMenuController } from '/@/renderer/features/context-menu/context
 import { usePlayer } from '/@/renderer/features/player/context/player-context';
 import { AppRoute } from '/@/renderer/router/routes';
 import { PlayButton } from '/@/renderer/features/shared/components/play-button';
-import { recordRecentPlaylist, useCurrentServer, useCurrentServerId } from '/@/renderer/store';
+import { recordRecentArtist, recordRecentPlaylist, useCurrentServer, useCurrentServerId } from '/@/renderer/store';
+import { useFavoritePlaylistIds } from '/@/renderer/store/library-favorites.store';
 import { formatDateRelative, formatDurationStringShort } from '/@/renderer/utils/format';
 import { Button } from '/@/shared/components/button/button';
 import { Icon } from '/@/shared/components/icon/icon';
@@ -80,29 +82,11 @@ const useAlbums = (sortBy: AlbumListSort, sortOrder: SortOrder, query?: { favori
     });
 };
 
-const usePlaylists = () => {
-    const serverId = useCurrentServerId();
-
-    return useQuery({
-        enabled: Boolean(serverId),
-        queryFn: ({ signal }) =>
-            api.controller.getPlaylistList({
-                apiClientProps: { serverId, signal },
-                query: {
-                    limit: SHELF_LIMIT,
-                    sortBy: PlaylistListSort.UPDATED_AT,
-                    sortOrder: SortOrder.DESC,
-                    startIndex: 0,
-                },
-            }),
-        queryKey: ['home', 'playlists', serverId],
-    });
-};
 
 const useArtists = () => {
     const serverId = useCurrentServerId();
 
-    return useQuery({
+    const favoritesQuery = useQuery({
         enabled: Boolean(serverId),
         queryFn: ({ signal }) =>
             api.controller.getAlbumArtistList({
@@ -117,6 +101,23 @@ const useArtists = () => {
             }),
         queryKey: ['home', 'artists', 'favorites', serverId],
     });
+
+    const recentlyPlayedQuery = useQuery({
+        enabled: Boolean(serverId) && !favoritesQuery.data?.items?.length,
+        queryFn: ({ signal }) =>
+            api.controller.getAlbumArtistList({
+                apiClientProps: { serverId, signal },
+                query: {
+                    limit: SHELF_LIMIT,
+                    sortBy: AlbumArtistListSort.RECENTLY_ADDED,
+                    sortOrder: SortOrder.DESC,
+                    startIndex: 0,
+                },
+            }),
+        queryKey: ['home', 'artists', 'recently-added', serverId],
+    });
+
+    return favoritesQuery.data?.items?.length ? favoritesQuery : recentlyPlayedQuery;
 };
 
 const useSongs = (
@@ -152,8 +153,31 @@ export const HomeFavoritePlaylists = ({
 }) => {
     const navigate = useNavigate();
     const player = usePlayer();
-    const playlistsQuery = usePlaylists();
-    const playlists = playlistsQuery.data?.items ?? [];
+    const serverId = useCurrentServerId();
+    const favoritePlaylistIds = useFavoritePlaylistIds(serverId);
+
+    const playlistsQuery = useQuery({
+        enabled: Boolean(serverId),
+        queryFn: ({ signal }) =>
+            api.controller.getPlaylistList({
+                apiClientProps: { serverId, signal },
+                query: {
+                    limit: SHELF_LIMIT,
+                    sortBy: PlaylistListSort.UPDATED_AT,
+                    sortOrder: SortOrder.DESC,
+                    startIndex: 0,
+                },
+            }),
+        queryKey: ['home', 'playlists', serverId],
+    });
+
+    const allPlaylists = playlistsQuery.data?.items ?? [];
+
+    const playlists = useMemo(() => {
+        const favorites = allPlaylists.filter((p) => favoritePlaylistIds.has(p.id));
+        const nonFavorites = allPlaylists.filter((p) => !favoritePlaylistIds.has(p.id));
+        return [...favorites, ...nonFavorites].slice(0, SHELF_LIMIT);
+    }, [allPlaylists, favoritePlaylistIds]);
 
     if (!playlists.length) return null;
 
@@ -187,7 +211,7 @@ export const HomeFavoritePlaylists = ({
             onNextPage={() => {}}
             onPrevPage={() => {}}
             rowCount={1}
-            title={<HomeHeader title="Favorite Playlists" to={AppRoute.PLAYLISTS} />}
+            title={<HomeHeader title="Playlists" to={AppRoute.PLAYLISTS} />}
         />
     );
 };
@@ -300,13 +324,14 @@ export const HomeFavoriteArtists = ({
         content: (
             <ArtistCard
                 artist={artist}
-                onClick={() =>
+                onClick={() => {
+                    recordRecentArtist(artist);
                     navigate(
                         generatePath(AppRoute.LIBRARY_ALBUM_ARTISTS_DETAIL, {
                             albumArtistId: artist.id,
                         }),
-                    )
-                }
+                    );
+                }}
             />
         ),
         id: artist.id,
@@ -320,13 +345,29 @@ export const HomeFavoriteArtists = ({
             onNextPage={() => {}}
             onPrevPage={() => {}}
             rowCount={1}
-            title={<HomeHeader title="Favorite Artists" to={AppRoute.LIBRARY_ALBUM_ARTISTS} />}
+            title={<HomeHeader title="Artists" to={AppRoute.LIBRARY_ALBUM_ARTISTS} />}
         />
     );
 };
 
 const ArtistCard = ({ artist, onClick }: { artist: AlbumArtist; onClick: () => void }) => (
-    <button className={styles.artistCard} onClick={onClick} type="button">
+    <button
+        className={styles.artistCard}
+        onClick={onClick}
+        onContextMenu={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+
+            ContextMenuController.call({
+                cmd: {
+                    items: [artist],
+                    type: LibraryItem.ALBUM_ARTIST,
+                },
+                event,
+            });
+        }}
+        type="button"
+    >
         <div className={styles.artistArt}>
             <ItemImage
                 alt={artist.name}
@@ -349,16 +390,35 @@ const ArtistCard = ({ artist, onClick }: { artist: AlbumArtist; onClick: () => v
 );
 
 export const HomeFavoriteTracks = () => {
-    const songsQuery = useSongs('favorites', SongListSort.FAVORITED, SortOrder.DESC, LIST_LIMIT, {
+    const serverId = useCurrentServerId();
+
+    const favoritesQuery = useSongs('favorites', SongListSort.FAVORITED, SortOrder.DESC, LIST_LIMIT, {
         favorite: true,
     });
+
+    const recentlyPlayedQuery = useQuery({
+        enabled: Boolean(serverId) && !favoritesQuery.data?.items?.length,
+        queryFn: ({ signal }) =>
+            api.controller.getSongList({
+                apiClientProps: { serverId, signal },
+                query: {
+                    limit: LIST_LIMIT,
+                    sortBy: SongListSort.RECENTLY_PLAYED,
+                    sortOrder: SortOrder.DESC,
+                    startIndex: 0,
+                },
+            }),
+        queryKey: ['home', 'songs', 'recently-played', serverId],
+    });
+
+    const songsQuery = favoritesQuery.data?.items?.length ? favoritesQuery : recentlyPlayedQuery;
     const songs = songsQuery.data?.items ?? [];
 
     if (!songs.length) return null;
 
     return (
         <section className={styles.section}>
-            <HomeHeader title="Favorite Tracks" to={AppRoute.LIBRARY_SONGS} />
+            <HomeHeader title="Tracks" to={AppRoute.LIBRARY_SONGS} />
             <div className={styles.trackList}>
                 {songs.map((song) => (
                     <TrackRow key={song.id} song={song} />
@@ -375,6 +435,18 @@ const TrackRow = ({ song }: { song: Song }) => {
         <button
             className={styles.trackRow}
             onClick={() => player.addToQueueByData([song], Play.NOW)}
+            onContextMenu={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+
+                ContextMenuController.call({
+                    cmd: {
+                        items: [song],
+                        type: LibraryItem.SONG,
+                    },
+                    event,
+                });
+            }}
             type="button"
         >
             <div className={styles.trackThumb}>
@@ -459,8 +531,36 @@ const RediscoveryFeature = ({ item }: { item: Album | Song }) => {
         navigate(generatePath(AppRoute.LIBRARY_ALBUMS_DETAIL, { albumId: item.id }));
     };
 
+    const handleContextMenu = (event: React.MouseEvent<HTMLButtonElement>) => {
+        event.preventDefault();
+        event.stopPropagation();
+
+        if (isSong) {
+            ContextMenuController.call({
+                cmd: {
+                    items: [item as Song],
+                    type: LibraryItem.SONG,
+                },
+                event,
+            });
+        } else {
+            ContextMenuController.call({
+                cmd: {
+                    items: [item as Album],
+                    type: LibraryItem.ALBUM,
+                },
+                event,
+            });
+        }
+    };
+
     return (
-        <button className={styles.featureCard} onClick={open} type="button">
+        <button
+            className={styles.featureCard}
+            onClick={open}
+            onContextMenu={handleContextMenu}
+            type="button"
+        >
             <div className={styles.featureArt}>
                 <ItemImage
                     alt={title}
@@ -505,8 +605,36 @@ const RediscoverySupport = ({ item }: { item: Album | Song }) => {
         navigate(generatePath(AppRoute.LIBRARY_ALBUMS_DETAIL, { albumId: item.id }));
     };
 
+    const handleContextMenu = (event: React.MouseEvent<HTMLButtonElement>) => {
+        event.preventDefault();
+        event.stopPropagation();
+
+        if (isSong) {
+            ContextMenuController.call({
+                cmd: {
+                    items: [item as Song],
+                    type: LibraryItem.SONG,
+                },
+                event,
+            });
+        } else {
+            ContextMenuController.call({
+                cmd: {
+                    items: [item as Album],
+                    type: LibraryItem.ALBUM,
+                },
+                event,
+            });
+        }
+    };
+
     return (
-        <button className={styles.discoveryCard} onClick={open} type="button">
+        <button
+            className={styles.discoveryCard}
+            onClick={open}
+            onContextMenu={handleContextMenu}
+            type="button"
+        >
             <div className={styles.trackThumb}>
                 <ItemImage
                     alt={item.name}
@@ -574,6 +702,18 @@ const RankedSongRow = ({ index, song }: { index: number; song: Song }) => {
         <button
             className={styles.rankedRow}
             onClick={() => player.addToQueueByData([song], Play.NOW)}
+            onContextMenu={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+
+                ContextMenuController.call({
+                    cmd: {
+                        items: [song],
+                        type: LibraryItem.SONG,
+                    },
+                    event,
+                });
+            }}
             type="button"
         >
             <span className={styles.rank}>{index}</span>

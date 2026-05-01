@@ -3,12 +3,12 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
 // Local favorites for media types whose backends do not expose a first-class
-// "favorite" concept (Audiobookshelf books/podcasts) or where we deliberately
+// "favorite" concept (Audiobookshelf books/podcasts, playlists) or where we deliberately
 // keep them client-side (radio stations) so the home page surfaces what *this
 // user* cares about, not the entire library. Music album/artist/song favorites
 // continue to flow through Subsonic `star`/`unstar`.
 
-export type LibraryFavoriteType = 'audiobook' | 'podcast' | 'radio';
+export type LibraryFavoriteType = 'audiobook' | 'playlist' | 'podcast' | 'radio';
 
 const buildKey = (serverId: string, itemId: string) => `${serverId}:${itemId}`;
 
@@ -19,6 +19,7 @@ interface LibraryFavoritesState {
         toggle: (type: LibraryFavoriteType, serverId: string, itemId: string) => boolean;
     };
     audiobookKeys: Record<string, true>;
+    playlistKeys: Record<string, true>;
     podcastKeys: Record<string, true>;
     radioKeys: Record<string, true>;
 }
@@ -26,9 +27,11 @@ interface LibraryFavoritesState {
 const bucketField = (type: LibraryFavoriteType) =>
     type === 'audiobook'
         ? ('audiobookKeys' as const)
-        : type === 'podcast'
-          ? ('podcastKeys' as const)
-          : ('radioKeys' as const);
+        : type === 'playlist'
+          ? ('playlistKeys' as const)
+          : type === 'podcast'
+            ? ('podcastKeys' as const)
+            : ('radioKeys' as const);
 
 export const useLibraryFavoritesStore = create<LibraryFavoritesState>()(
     persist(
@@ -70,6 +73,7 @@ export const useLibraryFavoritesStore = create<LibraryFavoritesState>()(
                 },
             },
             audiobookKeys: {},
+            playlistKeys: {},
             podcastKeys: {},
             radioKeys: {},
         }),
@@ -77,6 +81,7 @@ export const useLibraryFavoritesStore = create<LibraryFavoritesState>()(
             name: 'library-favorites-store',
             partialize: (state) => ({
                 audiobookKeys: state.audiobookKeys,
+                playlistKeys: state.playlistKeys,
                 podcastKeys: state.podcastKeys,
                 radioKeys: state.radioKeys,
             }),
@@ -106,6 +111,9 @@ export const useFavoriteRadioStationIds = (serverId: null | string | undefined) 
 
 export const useFavoriteAudiobookIds = (serverId: null | string | undefined) =>
     useFavoriteIdSet('audiobook', serverId);
+
+export const useFavoritePlaylistIds = (serverId: null | string | undefined) =>
+    useFavoriteIdSet('playlist', serverId);
 
 export const useFavoritePodcastIds = (serverId: null | string | undefined) =>
     useFavoriteIdSet('podcast', serverId);
