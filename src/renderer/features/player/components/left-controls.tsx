@@ -28,6 +28,9 @@ import {
     usePlayerSong,
     useSetFullScreenPlayerStore,
 } from '/@/renderer/store';
+import { useAudiobookItem } from '/@/renderer/store/audiobook.store';
+import { useCurrentServerWithCredential } from '/@/renderer/store/auth.store';
+import { usePodcastItem, usePodcastServer } from '/@/renderer/store/podcast.store';
 import { ActionIcon } from '/@/shared/components/action-icon/action-icon';
 import { Center } from '/@/shared/components/center/center';
 import { Group } from '/@/shared/components/group/group';
@@ -57,6 +60,10 @@ export const LeftControls = () => {
 
     const currentSong = usePlayerSong();
     const nowPlaying = useNowPlaying();
+    const podcastItem = usePodcastItem();
+    const podcastServer = usePodcastServer();
+    const audiobookItem = useAudiobookItem();
+    const currentServer = useCurrentServerWithCredential();
 
     const isAudiobookMode = nowPlaying.source === 'audiobook';
     const isPodcastMode = nowPlaying.source === 'podcast';
@@ -102,14 +109,22 @@ export const LeftControls = () => {
         e.preventDefault();
         e.stopPropagation();
 
-        if (!currentSong) {
-            return;
+        if (isPodcastMode && podcastItem && podcastServer) {
+            ContextMenuController.call({
+                cmd: { items: [podcastItem], server: podcastServer, type: 'podcast' },
+                event: e,
+            });
+        } else if (isAudiobookMode && audiobookItem && currentServer) {
+            ContextMenuController.call({
+                cmd: { items: [audiobookItem], server: currentServer, type: 'audiobook' },
+                event: e,
+            });
+        } else if (currentSong) {
+            ContextMenuController.call({
+                cmd: { items: [currentSong], type: LibraryItem.SONG },
+                event: e,
+            });
         }
-
-        ContextMenuController.call({
-            cmd: { items: [currentSong], type: LibraryItem.SONG },
-            event: e,
-        });
     };
 
     const stopPropagation = (e?: MouseEvent) => e?.stopPropagation();
@@ -251,10 +266,25 @@ export const LeftControls = () => {
                                 )}
                                 onClick={stopPropagation}
                             >
-                                <Text isMuted overflow="hidden" size="sm">
-                                    {longFormArtist ||
-                                        (isPodcastMode ? 'Podcast' : 'Unknown author')}
-                                </Text>
+                                {isPodcastMode && podcastItem?.id ? (
+                                    <Text
+                                        component={Link}
+                                        isMuted
+                                        isLink
+                                        overflow="hidden"
+                                        size="sm"
+                                        to={generatePath(AppRoute.PODCASTS_DETAIL, {
+                                            itemId: podcastItem.id,
+                                        })}
+                                    >
+                                        {longFormArtist || 'Podcast'}
+                                    </Text>
+                                ) : (
+                                    <Text isMuted overflow="hidden" size="sm">
+                                        {longFormArtist ||
+                                            (isPodcastMode ? 'Podcast' : 'Unknown author')}
+                                    </Text>
+                                )}
                             </div>
 
                             <div

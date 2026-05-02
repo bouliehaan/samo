@@ -21,6 +21,7 @@ const POSITION_FLUSH_INTERVAL_MS = 10_000;
  *      itself isn't persisted (kind: 'song' lifeboat).
  *   2. The active source flips to/away from `music` → flush on entry so radio→music
  *      handoffs don't strand a stale audiobook session as "the last thing you played".
+ *      Also clear the queue when switching away from music.
  *   3. A 10s tick while music is the active source → flush the current timestamp.
  *
  * The hook is renderless and lives in the player tree alongside other always-on hooks.
@@ -40,6 +41,11 @@ export const useRememberMusicSession = () => {
             // the source claims it, even before the next song change.
             if (isMusic && !wasMusic) {
                 writeSessionFromStore();
+            }
+
+            // Clear the music queue when switching away from music
+            if (wasMusic && !isMusic) {
+                usePlayerStoreBase.getState().clearQueue();
             }
         });
 

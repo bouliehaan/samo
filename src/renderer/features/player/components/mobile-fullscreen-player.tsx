@@ -30,6 +30,7 @@ import {
 } from '/@/renderer/features/radio/hooks/use-radio-player';
 import { useSetFavorite } from '/@/renderer/features/shared/hooks/use-set-favorite';
 import { useFastAverageColor } from '/@/renderer/hooks';
+import { useNowPlaying } from '/@/renderer/hooks/use-now-playing';
 import {
     useFullScreenPlayerStore,
     useFullScreenPlayerStoreActions,
@@ -37,6 +38,9 @@ import {
     usePlayerSong,
     useSetFullScreenPlayerStore,
 } from '/@/renderer/store';
+import { useAudiobookItem } from '/@/renderer/store/audiobook.store';
+import { useCurrentServerWithCredential } from '/@/renderer/store/auth.store';
+import { usePodcastItem, usePodcastServer } from '/@/renderer/store/podcast.store';
 import { ActionIcon } from '/@/shared/components/action-icon/action-icon';
 import { Text } from '/@/shared/components/text/text';
 import { LibraryItem } from '/@/shared/types/domain-types';
@@ -382,6 +386,14 @@ export const MobileFullscreenPlayer = () => {
     const isPlayingRadio = isRadioActive && isRadioPlaying;
     const effectiveDynamicBackground = dynamicBackground && !isPlayingRadio;
     const setFavorite = useSetFavorite();
+    const nowPlaying = useNowPlaying();
+    const podcastItem = usePodcastItem();
+    const podcastServer = usePodcastServer();
+    const audiobookItem = useAudiobookItem();
+    const currentServer = useCurrentServerWithCredential();
+
+    const isAudiobookMode = nowPlaying.source === 'audiobook';
+    const isPodcastMode = nowPlaying.source === 'podcast';
 
     const [isPageHovered, setIsPageHovered] = useState(false);
 
@@ -394,16 +406,24 @@ export const MobileFullscreenPlayer = () => {
             e.preventDefault();
             e.stopPropagation();
 
-            if (!currentSong) {
-                return;
+            if (isPodcastMode && podcastItem && podcastServer) {
+                ContextMenuController.call({
+                    cmd: { items: [podcastItem], server: podcastServer, type: 'podcast' },
+                    event: e as unknown as MouseEvent<HTMLDivElement>,
+                });
+            } else if (isAudiobookMode && audiobookItem && currentServer) {
+                ContextMenuController.call({
+                    cmd: { items: [audiobookItem], server: currentServer, type: 'audiobook' },
+                    event: e as unknown as MouseEvent<HTMLDivElement>,
+                });
+            } else if (currentSong) {
+                ContextMenuController.call({
+                    cmd: { items: [currentSong], type: LibraryItem.SONG },
+                    event: e as unknown as MouseEvent<HTMLDivElement>,
+                });
             }
-
-            ContextMenuController.call({
-                cmd: { items: [currentSong], type: LibraryItem.SONG },
-                event: e as unknown as MouseEvent<HTMLDivElement>,
-            });
         },
-        [currentSong],
+        [currentSong, isPodcastMode, podcastItem, podcastServer, isAudiobookMode, audiobookItem, currentServer],
     );
 
     const handleToggleQueue = useCallback(() => {

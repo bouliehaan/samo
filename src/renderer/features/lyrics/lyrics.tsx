@@ -29,6 +29,7 @@ import { useIsRadioActive } from '/@/renderer/features/radio/hooks/use-radio-pla
 import { ComponentErrorBoundary } from '/@/renderer/features/shared/components/component-error-boundary';
 import { queryClient } from '/@/renderer/lib/react-query';
 import { useLyricsSettings, usePlayerSong } from '/@/renderer/store';
+import { usePlaybackSource } from '/@/renderer/store/playback-owner.store';
 import { ActionIcon } from '/@/shared/components/action-icon/action-icon';
 import { Center } from '/@/shared/components/center/center';
 import { Group } from '/@/shared/components/group/group';
@@ -44,8 +45,9 @@ type LyricsProps = {
 export const Lyrics = ({ fadeOutNoLyricsMessage = true, settingsKey = 'default' }: LyricsProps) => {
     const currentSong = usePlayerSong();
     const isRadioActive = useIsRadioActive();
+    const playbackSource = usePlaybackSource();
 
-    const isLyricsDisabled = isRadioActive;
+    const isLyricsDisabled = isRadioActive || playbackSource === 'audiobook' || playbackSource === 'podcast';
 
     const {
         enableAutoTranslation,
@@ -309,23 +311,7 @@ export const Lyrics = ({ fadeOutNoLyricsMessage = true, settingsKey = 'default' 
                     <Spinner container />
                 ) : (
                     <AnimatePresence mode="sync">
-                        {hasNoLyrics ? (
-                            <Center w="100%">
-                                <motion.div
-                                    animate={{ opacity: shouldFadeOut ? 0 : 1 }}
-                                    initial={{ opacity: 1 }}
-                                    transition={{ duration: 0.5 }}
-                                >
-                                    <Group>
-                                        <Text fw={500} isMuted isNoSelect>
-                                            {t('page.fullscreenPlayer.noLyrics', {
-                                                postProcess: 'sentenceCase',
-                                            })}
-                                        </Text>
-                                    </Group>
-                                </motion.div>
-                            </Center>
-                        ) : (
+                        {!hasNoLyrics && (
                             <motion.div
                                 animate={{ opacity: 1 }}
                                 className={styles.scrollContainer}

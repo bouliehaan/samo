@@ -54,6 +54,8 @@ interface PodcastState {
         ) => Promise<void>;
         release: () => void;
         seekTo: (seconds: number) => void;
+        seekToNextEpisode: () => Promise<void>;
+        seekToPreviousEpisode: () => Promise<void>;
         setError: (error: null | string) => void;
         setPosition: (seconds: number) => void;
     };
@@ -253,10 +255,23 @@ export const usePodcastStore = create<PodcastState>()(
                             resetAudiobookshelfProgressSync(clampedResumePosition);
                             hasLoggedMissingSessionId = false;
 
+                            // Only replace the item if the session's libraryItem has a
+                            // usable episodes list — RSS feed play sessions often return
+                            // a libraryItem with an empty/missing episodes array, which
+                            // would overwrite the good list we already have and break
+                            // episode navigation.
+                            const sessionEpisodes = session.libraryItem?.media?.episodes;
+                            const itemToStore =
+                                sessionEpisodes && sessionEpisodes.length > 0
+                                    ? session.libraryItem
+                                    : item;
+
                             set({
                                 contentUrl,
                                 duration,
+                                ...(playSessionEpisode && { episode: playSessionEpisode }),
                                 isLoading: false,
+                                item: itemToStore,
                                 position: clampedResumePosition,
                                 sessionId: session.id ?? null,
                             });
@@ -390,6 +405,56 @@ export const usePodcastStore = create<PodcastState>()(
                             countListeningTime: true,
                             reason: 'progress',
                         });
+                    },
+
+                    seekToNextEpisode: async () => {
+                        const state = get();
+                        const { item, episode, server } = state;
+                        if (!item || !episode || !server) return;
+
+                        // Sort by publishedAt ascending (oldest → newest) so navigation
+                        // is always chronological regardless of API array order.
+                        const episodes = (item.media?.episodes ?? [])
+                            .slice()
+                            .sort((a, b) => (a.publishedAt ?? 0) - (b.publishedAt ?? 0));
+                        if (episodes.length === 0) return;
+
+                        const currentIndex = episodes.findIndex((e) => e.id === episode.id);
+                        if (currentIndex === -1) return;
+
+                        // next = more recent = higher index in ascending sort
+                        const nextIndex = currentIndex + 1;
+                        if (nextIndex >= episodes.length) return;
+
+                        const nextEpisode = episodes[nextIndex];
+                        if (nextEpisode) {
+                            await get().actions.play(server, item, nextEpisode);
+                        }
+                    },
+
+                    seekToPreviousEpisode: async () => {
+                        const state = get();
+                        const { item, episode, server } = state;
+                        if (!item || !episode || !server) return;
+
+                        // Sort by publishedAt ascending (oldest → newest) so navigation
+                        // is always chronological regardless of API array order.
+                        const episodes = (item.media?.episodes ?? [])
+                            .slice()
+                            .sort((a, b) => (a.publishedAt ?? 0) - (b.publishedAt ?? 0));
+                        if (episodes.length === 0) return;
+
+                        const currentIndex = episodes.findIndex((e) => e.id === episode.id);
+                        if (currentIndex === -1) return;
+
+                        // previous = older = lower index in ascending sort
+                        const previousIndex = currentIndex - 1;
+                        if (previousIndex < 0) return;
+
+                        const previousEpisode = episodes[previousIndex];
+                        if (previousEpisode) {
+                            await get().actions.play(server, item, previousEpisode);
+                        }
                     },
                 },
                 contentUrl: null,

@@ -314,7 +314,7 @@ const Controls = () => {
             style={{
                 background: `rgb(var(--theme-colors-background-transparent), ${opacity}%)`,
                 left: 0,
-                top: 'max(3rem, calc(env(titlebar-area-height, 0px) + 0.75rem))',
+                top: 'max(72px, calc(env(titlebar-area-height, 0px) + 0.75rem))',
             }}
         >
             <ActionIcon

@@ -184,13 +184,28 @@ const PreviousButton = ({ disabled }: { disabled?: boolean }) => {
     const { mediaPrevious } = usePlayer();
     const source = usePlaybackSource();
     const { seekToPreviousChapter } = useAudiobookActions();
+    const { seekToPreviousEpisode } = usePodcastActions();
 
     const isAudiobookMode = source === 'audiobook';
-    const handleClick = isAudiobookMode ? seekToPreviousChapter : mediaPrevious;
-    const tooltipLabel = isAudiobookMode
-        ? t('player.previous', { context: 'chapter', postProcess: 'sentenceCase' }) ||
-          'Previous chapter'
-        : t('player.previous', { postProcess: 'sentenceCase' });
+    const isPodcastMode = source === 'podcast';
+
+    let handleClick: () => void | Promise<void>;
+    let tooltipLabel: string;
+
+    if (isAudiobookMode) {
+        handleClick = seekToPreviousChapter;
+        tooltipLabel =
+            t('player.previous', { context: 'chapter', postProcess: 'sentenceCase' }) ||
+            'Previous chapter';
+    } else if (isPodcastMode) {
+        handleClick = () => seekToPreviousEpisode();
+        tooltipLabel =
+            t('player.previous', { context: 'episode', postProcess: 'sentenceCase' }) ||
+            'Previous episode';
+    } else {
+        handleClick = mediaPrevious;
+        tooltipLabel = t('player.previous', { postProcess: 'sentenceCase' });
+    }
 
     return (
         <PlayerButton
@@ -383,12 +398,27 @@ const NextButton = ({ disabled }: { disabled?: boolean }) => {
     const { mediaNext } = usePlayer();
     const source = usePlaybackSource();
     const { seekToNextChapter } = useAudiobookActions();
+    const { seekToNextEpisode } = usePodcastActions();
 
     const isAudiobookMode = source === 'audiobook';
-    const handleClick = isAudiobookMode ? seekToNextChapter : mediaNext;
-    const tooltipLabel = isAudiobookMode
-        ? t('player.next', { context: 'chapter', postProcess: 'sentenceCase' }) || 'Next chapter'
-        : t('player.next', { postProcess: 'sentenceCase' });
+    const isPodcastMode = source === 'podcast';
+
+    let handleClick: () => void | Promise<void>;
+    let tooltipLabel: string;
+
+    if (isAudiobookMode) {
+        handleClick = seekToNextChapter;
+        tooltipLabel =
+            t('player.next', { context: 'chapter', postProcess: 'sentenceCase' }) || 'Next chapter';
+    } else if (isPodcastMode) {
+        handleClick = () => seekToNextEpisode();
+        tooltipLabel =
+            t('player.next', { context: 'episode', postProcess: 'sentenceCase' }) ||
+            'Next episode';
+    } else {
+        handleClick = mediaNext;
+        tooltipLabel = t('player.next', { postProcess: 'sentenceCase' });
+    }
 
     return (
         <PlayerButton
