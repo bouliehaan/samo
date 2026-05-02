@@ -2,8 +2,6 @@ import { useQuery } from '@tanstack/react-query';
 import isElectron from 'is-electron';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-// import { Group, Panel, Separator, useDefaultLayout } from 'react-resizable-panels';
-import { Pane, SplitPane, usePersistence } from 'react-split-pane';
 
 import styles from './sidebar-play-queue.module.css';
 
@@ -43,6 +41,71 @@ const ButterchurnVisualizer = lazy(() =>
     })),
 );
 
+const SIDEBAR_QUEUE_ITEM_SIZE = 'default' as const;
+
+const LYRICS_PREFERRED_HEIGHT = 240;
+const QUEUE_VIZ_OFFSET = 25;
+const LYRICS_MIN_HEIGHT = 190;
+const QUEUE_MIN_HEIGHT = 120;
+const VISUALIZER_MIN_HEIGHT = 90;
+
+function calcSidebarHeights(
+    totalHeight: number,
+    panels: SidebarPanelType[],
+): Record<SidebarPanelType, number> {
+    const hasLyrics = panels.includes('lyrics');
+    const hasVisualizer = panels.includes('visualizer');
+
+    if (!hasLyrics && !hasVisualizer) {
+        return { lyrics: 0, queue: totalHeight, visualizer: 0 };
+    }
+
+    if (!hasLyrics) {
+        const queue = Math.max(QUEUE_MIN_HEIGHT, totalHeight / 2);
+        return { lyrics: 0, queue, visualizer: Math.max(VISUALIZER_MIN_HEIGHT, totalHeight - queue) };
+    }
+
+    if (!hasVisualizer) {
+        const lyrics = Math.min(
+            LYRICS_PREFERRED_HEIGHT,
+            Math.max(LYRICS_MIN_HEIGHT, totalHeight - QUEUE_MIN_HEIGHT),
+        );
+        return { lyrics, queue: Math.max(QUEUE_MIN_HEIGHT, totalHeight - lyrics), visualizer: 0 };
+    }
+
+    // All three panels — staged shrinking
+    const halfRemaining = (totalHeight - LYRICS_PREFERRED_HEIGHT) / 2;
+
+    // Stage 1: tall sidebar — lyrics at preferred, queue slightly larger than visualizer
+    if (halfRemaining - QUEUE_VIZ_OFFSET >= VISUALIZER_MIN_HEIGHT) {
+        return {
+            lyrics: LYRICS_PREFERRED_HEIGHT,
+            queue: halfRemaining + QUEUE_VIZ_OFFSET,
+            visualizer: halfRemaining - QUEUE_VIZ_OFFSET,
+        };
+    }
+
+    // Stage 2: queue hits minimum, visualizer keeps absorbing; lyrics still at preferred
+    if (totalHeight >= LYRICS_PREFERRED_HEIGHT + QUEUE_MIN_HEIGHT + VISUALIZER_MIN_HEIGHT) {
+        return {
+            lyrics: LYRICS_PREFERRED_HEIGHT,
+            queue: QUEUE_MIN_HEIGHT,
+            visualizer: totalHeight - LYRICS_PREFERRED_HEIGHT - QUEUE_MIN_HEIGHT,
+        };
+    }
+
+    // Stage 3: both queue and visualizer at minimum; lyrics shrinks; visualizer collapses first
+    const lyrics = Math.max(
+        LYRICS_MIN_HEIGHT,
+        totalHeight - QUEUE_MIN_HEIGHT - VISUALIZER_MIN_HEIGHT,
+    );
+    return {
+        lyrics,
+        queue: QUEUE_MIN_HEIGHT,
+        visualizer: Math.max(0, totalHeight - QUEUE_MIN_HEIGHT - lyrics),
+    };
+}
+
 export const SidebarPlayQueue = () => {
     const tableRef = useRef<ItemListHandle | null>(null);
     const [search, setSearch] = useState<string | undefined>(undefined);
@@ -79,12 +142,6 @@ export const SidebarPlayQueue = () => {
         }
     }, [isFullScreenPlayerExpanded, isFullScreenVisualizerExpanded]);
 
-    const [defaultLayout, onLayoutChange] = usePersistence({
-        debounce: 300,
-        key: 'sidebar-play-queue-container',
-        storage: localStorage,
-    });
-
     // Filter and order panels based on what's enabled
     const orderedPanels = useMemo(() => {
         if (combinedLyricsAndVisualizer) {
@@ -107,6 +164,23 @@ export const SidebarPlayQueue = () => {
         return visiblePanels;
     }, [combinedLyricsAndVisualizer, showLyricsInSidebar, showVisualizer, sidebarPanelOrder]);
 
+    const [panelContainer, setPanelContainer] = useState<HTMLDivElement | null>(null);
+    const [containerHeight, setContainerHeight] = useState(800);
+
+    useEffect(() => {
+        if (!panelContainer) return;
+        const ro = new ResizeObserver(([entry]) => {
+            setContainerHeight(entry.contentRect.height);
+        });
+        ro.observe(panelContainer);
+        return () => ro.disconnect();
+    }, [panelContainer]);
+
+    const paneHeights = useMemo(
+        () => calcSidebarHeights(containerHeight, orderedPanels as SidebarPanelType[]),
+        [containerHeight, orderedPanels],
+    );
+
     const renderPanel = (panelType: SidebarPanelType) => {
         if (panelType === 'queue') {
             return (
@@ -122,6 +196,7 @@ export const SidebarPlayQueue = () => {
                             listKey={ItemListKey.SIDE_QUEUE}
                             ref={tableRef}
                             searchTerm={search}
+                            tableSize={SIDEBAR_QUEUE_ITEM_SIZE}
                         />
                     </div>
                 </Stack>
@@ -143,49 +218,6 @@ export const SidebarPlayQueue = () => {
         return null;
     };
 
-    const getPanelSize = useCallback(
-        (panelType: SidebarPanelType, index: number) => {
-            // Queue panel should always autofit
-            if (panelType === 'queue') {
-                return undefined;
-            }
-
-            // If defaultLayout exists and has saved sizes, use them
-            if (
-                defaultLayout &&
-                Array.isArray(defaultLayout) &&
-                defaultLayout[index] !== undefined
-            ) {
-                return defaultLayout[index];
-            }
-
-            // Calculate default sizes for non-queue panels based on order
-            const nonQueuePanels = orderedPanels.filter((p) => p !== 'queue');
-            const nonQueueCount = nonQueuePanels.length;
-
-            if (nonQueueCount === 0) {
-                return undefined;
-            }
-
-            // If only one non-queue panel, give it a default size
-            if (nonQueueCount === 1) {
-                return 100;
-            }
-
-            // If multiple non-queue panels, distribute sizes evenly
-            // First non-queue panel gets a size, others get undefined to share remaining
-            const nonQueueIndex = orderedPanels.slice(0, index).filter((p) => p !== 'queue').length;
-            if (nonQueueIndex === 0) {
-                // First non-queue panel gets a default size
-                return 100;
-            }
-
-            // Other non-queue panels autofit
-            return undefined;
-        },
-        [defaultLayout, orderedPanels],
-    );
-
     // Unmount when fullscreen player is open
     if (!shouldRender) {
         return null;
@@ -195,10 +227,8 @@ export const SidebarPlayQueue = () => {
         <Stack gap={0} h="100%" id="sidebar-play-queue-container" pos="relative" w="100%">
             {shouldAddTopMargin && <div className={styles.draggableRegion} />}
             {showPanel ? (
-                <SplitPane
-                    direction="vertical"
-                    dividerClassName={styles.resizeHandle}
-                    onResize={onLayoutChange}
+                <div
+                    ref={setPanelContainer}
                     style={{
                         display: 'flex',
                         flex: 1,
@@ -207,12 +237,19 @@ export const SidebarPlayQueue = () => {
                         overflow: 'hidden',
                     }}
                 >
-                    {orderedPanels.map((panel, index) => (
-                        <Pane key={panel} size={getPanelSize(panel, index)}>
-                            {renderPanel(panel)}
-                        </Pane>
+                    {orderedPanels.map((panel) => (
+                        <div
+                            key={panel}
+                            style={{
+                                flexShrink: 0,
+                                height: paneHeights[panel as SidebarPanelType],
+                                overflow: 'hidden',
+                            }}
+                        >
+                            {renderPanel(panel as SidebarPanelType)}
+                        </div>
                     ))}
-                </SplitPane>
+                </div>
             ) : (
                 <Stack gap={0} h="100%" w="100%">
                     <PlayQueueListControls
@@ -227,6 +264,7 @@ export const SidebarPlayQueue = () => {
                                 listKey={ItemListKey.SIDE_QUEUE}
                                 ref={tableRef}
                                 searchTerm={search}
+                                tableSize={SIDEBAR_QUEUE_ITEM_SIZE}
                             />
                         </div>
                     </Flex>

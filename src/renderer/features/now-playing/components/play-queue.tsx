@@ -40,10 +40,11 @@ type QueueProps = {
     enableScrollShadow?: boolean;
     listKey: ItemListKey;
     searchTerm: string | undefined;
+    tableSize?: 'compact' | 'default' | 'large';
 };
 
 export const PlayQueue = forwardRef<ItemListHandle, QueueProps>(
-    ({ enableScrollShadow = true, listKey, searchTerm }, ref) => {
+    ({ enableScrollShadow = true, listKey, searchTerm, tableSize }, ref) => {
         const { table } = useListSettings(listKey) || {};
 
         const isFetching = useIsPlayerFetching();
@@ -202,7 +203,7 @@ export const PlayQueue = forwardRef<ItemListHandle, QueueProps>(
                     onColumnReordered={handleColumnReordered}
                     onColumnResized={handleColumnResized}
                     ref={mergedRef}
-                    size={table.size}
+                    size={tableSize ?? table?.size}
                 />
                 {isEmpty && <EmptyQueueDropZone />}
             </div>

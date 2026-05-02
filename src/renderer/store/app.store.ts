@@ -232,7 +232,7 @@ export const useAppStore = createWithEqualityFn<AppSlice>()(
                     image: false,
                     leftWidth: '350px',
                     rightExpanded: false,
-                    rightHeight: '400px',
+                    rightHeight: '320px',
                     rightWidth: '600px',
                 },
                 titlebar: {
@@ -253,7 +253,7 @@ export const useAppStore = createWithEqualityFn<AppSlice>()(
 
                 const state = persistedState as AppSlice;
                 if (version <= 4 && !state.sidebar.rightHeight) {
-                    state.sidebar.rightHeight = '400px';
+                    state.sidebar.rightHeight = '320px';
                 }
 
                 return state;
