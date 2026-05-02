@@ -150,7 +150,7 @@ export const SynchronizedLyrics = ({
             ) as HTMLElement;
             const currentLyric = document.querySelector(`#lyric-${index}`) as HTMLElement;
 
-            const offsetTop = currentLyric?.offsetTop + (currentLyric?.clientHeight || 0) / 2 - (doc?.clientHeight || 0) / 2 || 0;
+            const offsetTop = currentLyric?.offsetTop + (currentLyric?.clientHeight || 0) / 2 - (doc?.clientHeight || 0) / 2 + 15 || 0;
 
             if (currentLyric === null) {
                 lyricRef.current = null;
