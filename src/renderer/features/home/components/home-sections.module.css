@@ -45,11 +45,26 @@
     transition:
         border-color 150ms ease,
         transform 150ms ease;
+
+    &::before {
+        position: absolute;
+        inset: 0;
+        z-index: 1;
+        content: '';
+        pointer-events: none;
+        background: rgb(0 0 0);
+        opacity: 0;
+        transition: opacity 150ms ease;
+    }
 }
 
 .media-card:hover .media-art {
     border-color: color-mix(in srgb, var(--theme-colors-primary-filled) 40%, transparent);
     transform: translateY(-1px);
+}
+
+.media-card:hover .media-art::before {
+    opacity: 0.55;
 }
 
 .image-container {
@@ -278,4 +293,43 @@
 
 .playlistSecondaryControl {
     left: 68% !important;
+}
+
+.overlay-btn {
+    all: unset;
+    position: absolute;
+    z-index: 2;
+    padding: var(--theme-spacing-sm);
+    cursor: pointer;
+    border-radius: var(--theme-radius-md);
+    transition: transform 100ms ease;
+
+    &:hover {
+        transform: scale(1.15);
+    }
+
+    &:active {
+        transform: scale(0.88);
+    }
+
+    svg {
+        display: block;
+        stroke: white;
+        stroke-width: 1.5px;
+    }
+}
+
+.overlay-heart {
+    top: 0;
+    left: 0;
+}
+
+.overlay-options {
+    right: 0;
+    bottom: 0;
+}
+
+.favorite-active svg {
+    fill: var(--theme-colors-primary-filled);
+    stroke: var(--theme-colors-primary-filled);
 }

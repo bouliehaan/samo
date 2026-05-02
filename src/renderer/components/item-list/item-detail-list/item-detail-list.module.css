@@ -100,11 +100,6 @@
     border-right: 1px solid var(--theme-colors-border);
 }
 
-.track-header-cell-dragging {
-    cursor: grabbing;
-    opacity: 0.5;
-}
-
 .track-header-cell-dragged-over-left::before {
     position: absolute;
     top: 0;

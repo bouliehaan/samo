@@ -11,10 +11,11 @@ interface PlayActionProps {
     allowShuffle?: boolean;
     ids: string[];
     itemType: LibraryItem;
+    onPlay?: () => void;
     songs?: Song[];
 }
 
-export const PlayAction = ({ allowShuffle = true, ids, itemType, songs }: PlayActionProps) => {
+export const PlayAction = ({ allowShuffle = true, ids, itemType, onPlay, songs }: PlayActionProps) => {
     const { t } = useTranslation();
     const player = usePlayer();
     const serverId = useCurrentServerId();
@@ -22,6 +23,8 @@ export const PlayAction = ({ allowShuffle = true, ids, itemType, songs }: PlayAc
     const handlePlay = useCallback(
         (playType: Play) => {
             if (ids.length === 0 || !serverId) return;
+
+            onPlay?.();
 
             if (
                 itemType === LibraryItem.SONG ||
@@ -33,7 +36,7 @@ export const PlayAction = ({ allowShuffle = true, ids, itemType, songs }: PlayAc
                 player.addToQueueByFetch(serverId, ids, itemType, playType);
             }
         },
-        [ids, itemType, player, serverId, songs],
+        [ids, itemType, onPlay, player, serverId, songs],
     );
 
     const handlePlayNow = useCallback(() => {

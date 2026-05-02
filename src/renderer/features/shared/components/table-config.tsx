@@ -542,7 +542,6 @@ const DragHandle = ({
             }}
             ref={dragHandleRef as React.RefObject<HTMLButtonElement>}
             size="xs"
-            style={{ cursor: 'grab' }}
             variant="default"
         />
     );

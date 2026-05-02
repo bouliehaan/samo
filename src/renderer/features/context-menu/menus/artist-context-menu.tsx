@@ -10,8 +10,9 @@ import { SetFavoriteAction } from '/@/renderer/features/context-menu/actions/set
 import { SetRatingAction } from '/@/renderer/features/context-menu/actions/set-rating-action';
 import { ShareAction } from '/@/renderer/features/context-menu/actions/share-action';
 import { ContextMenuPreview } from '/@/renderer/features/context-menu/components/context-menu-preview';
+import { recordRecentArtist } from '/@/renderer/store/play-history.store';
 import { ContextMenu } from '/@/shared/components/context-menu/context-menu';
-import { Artist, LibraryItem } from '/@/shared/types/domain-types';
+import { AlbumArtist, Artist, LibraryItem } from '/@/shared/types/domain-types';
 
 interface ArtistContextMenuProps {
     items: Artist[];
@@ -28,7 +29,11 @@ export const ArtistContextMenu = ({ items, type }: ArtistContextMenuProps) => {
         <ContextMenu.Content
             bottomStickyContent={<ContextMenuPreview items={items} itemType={type} />}
         >
-            <PlayAction ids={ids} itemType={LibraryItem.ARTIST} />
+            <PlayAction
+                ids={ids}
+                itemType={LibraryItem.ARTIST}
+                onPlay={() => items.forEach((a) => recordRecentArtist(a as unknown as AlbumArtist))}
+            />
             <PlayArtistRadioAction artist={items[0]} disabled={items.length > 1} />
             <ContextMenu.Divider />
             <AddToPlaylistAction items={ids} itemType={LibraryItem.ARTIST} />

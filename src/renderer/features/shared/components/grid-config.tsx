@@ -462,7 +462,6 @@ const DragHandle = ({
             }}
             ref={dragHandleRef}
             size="xs"
-            style={{ cursor: 'grab' }}
             variant="default"
         />
     );

@@ -8,6 +8,7 @@ import { PlayAction } from '/@/renderer/features/context-menu/actions/play-actio
 import { SetFavoriteAction } from '/@/renderer/features/context-menu/actions/set-favorite-action';
 import { ContextMenuPreview } from '/@/renderer/features/context-menu/components/context-menu-preview';
 import { usePermissions } from '/@/renderer/store';
+import { recordRecentPlaylist } from '/@/renderer/store/play-history.store';
 import { ContextMenu } from '/@/shared/components/context-menu/context-menu';
 import { LibraryItem, Playlist } from '/@/shared/types/domain-types';
 
@@ -35,7 +36,11 @@ export const PlaylistContextMenu = ({ items, type }: PlaylistContextMenuProps) =
         <ContextMenu.Content
             bottomStickyContent={<ContextMenuPreview items={items} itemType={type} />}
         >
-            <PlayAction ids={ids} itemType={LibraryItem.PLAYLIST} />
+            <PlayAction
+                ids={ids}
+                itemType={LibraryItem.PLAYLIST}
+                onPlay={() => items.forEach(recordRecentPlaylist)}
+            />
             <ContextMenu.Divider />
             <AddToPlaylistAction items={ids} itemType={LibraryItem.PLAYLIST} />
             <ContextMenu.Divider />

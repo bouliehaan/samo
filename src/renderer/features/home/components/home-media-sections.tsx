@@ -17,7 +17,10 @@ import { usePlayer } from '/@/renderer/features/player/context/player-context';
 import { AppRoute } from '/@/renderer/router/routes';
 import { PlayButton } from '/@/renderer/features/shared/components/play-button';
 import { recordRecentArtist, recordRecentPlaylist, useCurrentServer, useCurrentServerId } from '/@/renderer/store';
-import { useFavoritePlaylistIds } from '/@/renderer/store/library-favorites.store';
+import {
+    useFavoritePlaylistIds,
+    useLibraryFavoritesActions,
+} from '/@/renderer/store/library-favorites.store';
 import { formatDateRelative, formatDurationStringShort } from '/@/renderer/utils/format';
 import { Button } from '/@/shared/components/button/button';
 import { Icon } from '/@/shared/components/icon/icon';
@@ -155,6 +158,7 @@ export const HomeFavoritePlaylists = ({
     const player = usePlayer();
     const serverId = useCurrentServerId();
     const favoritePlaylistIds = useFavoritePlaylistIds(serverId);
+    const favoritesActions = useLibraryFavoritesActions();
 
     const playlistsQuery = useQuery({
         enabled: Boolean(serverId),
@@ -189,6 +193,7 @@ export const HomeFavoritePlaylists = ({
     const cards = playlists.map((playlist) => ({
         content: (
             <PlaylistCard
+                isFavorite={favoritePlaylistIds.has(playlist.id)}
                 onClick={() =>
                     navigate(
                         generatePath(AppRoute.PLAYLISTS_DETAIL_SONGS, {
@@ -197,6 +202,9 @@ export const HomeFavoritePlaylists = ({
                     )
                 }
                 onPlay={(playType) => handlePlay(playlist, playType)}
+                onToggleFavorite={() =>
+                    favoritesActions.toggle('playlist', playlist._serverId, playlist.id)
+                }
                 playlist={playlist}
             />
         ),
@@ -217,97 +225,123 @@ export const HomeFavoritePlaylists = ({
 };
 
 const PlaylistCard = ({
+    isFavorite,
     onClick,
     onPlay,
+    onToggleFavorite,
     playlist,
 }: {
+    isFavorite: boolean;
     onClick: () => void;
     onPlay: (playType: Play) => void;
+    onToggleFavorite: () => void;
     playlist: Playlist;
-}) => (
-    <div
-        className={styles.mediaCard}
-        onClick={onClick}
-        onContextMenu={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
+}) => {
+    const openContextMenu = (event: React.MouseEvent) => {
+        event.preventDefault();
+        event.stopPropagation();
+        ContextMenuController.call({
+            cmd: { items: [playlist], type: LibraryItem.PLAYLIST },
+            event,
+        });
+    };
 
-            ContextMenuController.call({
-                cmd: {
-                    items: [playlist],
-                    type: LibraryItem.PLAYLIST,
-                },
-                event,
-            });
-        }}
-        onKeyDown={(event) => {
-            if (event.key === 'Enter' || event.key === ' ') {
-                event.preventDefault();
-                onClick();
-            }
-        }}
-        role="button"
-        tabIndex={0}
-    >
-        <div className={styles.mediaArt}>
-            {playlist.imageId || playlist.imageUrl ? (
-                <ItemImage
-                    alt={playlist.name}
-                    enableViewport={false}
-                    id={playlist.imageId}
-                    imageContainerProps={{ className: styles.imageContainer }}
-                    itemType={LibraryItem.PLAYLIST}
-                    serverId={playlist._serverId}
-                    src={playlist.imageUrl}
-                    type="itemCard"
-                />
-            ) : (
-                <div className={styles.playlistPlaceholder}>
-                    <Icon icon="playlist" size="34%" />
-                </div>
-            )}
-            <span className={styles.badge}>
-                <Icon icon="playlist" size="0.78rem" />
-                Playlist
-            </span>
-            <span className={styles.playlistControls}>
-                <PlayButton
-                    classNames={clsx(
-                        itemCardControlsStyles.playButton,
-                        itemCardControlsStyles.primary,
-                        styles.playlistPrimaryControl,
-                    )}
-                    fill
-                    onClick={(event) => {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        onPlay(Play.NOW);
-                    }}
-                />
-                <PlayButton
-                    classNames={clsx(
-                        itemCardControlsStyles.playButton,
-                        itemCardControlsStyles.secondary,
-                        itemCardControlsStyles.right,
-                        styles.playlistSecondaryControl,
-                    )}
-                    icon="mediaShuffle"
-                    onClick={(event) => {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        onPlay(Play.SHUFFLE);
-                    }}
-                />
-            </span>
+    return (
+        <div
+            className={styles.mediaCard}
+            onClick={onClick}
+            onContextMenu={openContextMenu}
+            onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    onClick();
+                }
+            }}
+            role="button"
+            tabIndex={0}
+        >
+            <div className={styles.mediaArt}>
+                {playlist.imageId || playlist.imageUrl ? (
+                    <ItemImage
+                        alt={playlist.name}
+                        enableViewport={false}
+                        id={playlist.imageId}
+                        imageContainerProps={{ className: styles.imageContainer }}
+                        itemType={LibraryItem.PLAYLIST}
+                        serverId={playlist._serverId}
+                        src={playlist.imageUrl}
+                        type="itemCard"
+                    />
+                ) : (
+                    <div className={styles.playlistPlaceholder}>
+                        <Icon icon="playlist" size="34%" />
+                    </div>
+                )}
+                <span className={styles.badge}>
+                    <Icon icon="playlist" size="0.78rem" />
+                    Playlist
+                </span>
+                <span className={styles.playlistControls}>
+                    <PlayButton
+                        classNames={clsx(
+                            itemCardControlsStyles.playButton,
+                            itemCardControlsStyles.primary,
+                            styles.playlistPrimaryControl,
+                        )}
+                        fill
+                        onClick={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            onPlay(Play.NOW);
+                        }}
+                    />
+                    <PlayButton
+                        classNames={clsx(
+                            itemCardControlsStyles.playButton,
+                            itemCardControlsStyles.secondary,
+                            itemCardControlsStyles.right,
+                            styles.playlistSecondaryControl,
+                        )}
+                        icon="mediaShuffle"
+                        onClick={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            onPlay(Play.SHUFFLE);
+                        }}
+                    />
+                    <button
+                        className={clsx(
+                            styles.overlayBtn,
+                            styles.overlayHeart,
+                            isFavorite && styles.favoriteActive,
+                        )}
+                        onClick={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            onToggleFavorite();
+                        }}
+                        type="button"
+                    >
+                        <Icon icon="favorite" size="lg" />
+                    </button>
+                    <button
+                        className={clsx(styles.overlayBtn, styles.overlayOptions)}
+                        onClick={openContextMenu}
+                        type="button"
+                    >
+                        <Icon icon="ellipsisHorizontal" size="lg" />
+                    </button>
+                </span>
+            </div>
+            <Text className={styles.title} fw={600} size="sm">
+                {playlist.name}
+            </Text>
+            <Text className={styles.subtitle} isMuted size="xs">
+                {getCountText(playlist.songCount, 'track') ?? 'Playlist'}
+            </Text>
         </div>
-        <Text className={styles.title} fw={600} size="sm">
-            {playlist.name}
-        </Text>
-        <Text className={styles.subtitle} isMuted size="xs">
-            {getCountText(playlist.songCount, 'track') ?? 'Playlist'}
-        </Text>
-    </div>
-);
+    );
+};
 
 export const HomeFavoriteArtists = ({
     containerQuery,

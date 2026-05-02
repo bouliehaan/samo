@@ -10,6 +10,7 @@ import { SetFavoriteAction } from '/@/renderer/features/context-menu/actions/set
 import { SetRatingAction } from '/@/renderer/features/context-menu/actions/set-rating-action';
 import { ShareAction } from '/@/renderer/features/context-menu/actions/share-action';
 import { ContextMenuPreview } from '/@/renderer/features/context-menu/components/context-menu-preview';
+import { recordRecentAlbum } from '/@/renderer/store/play-history.store';
 import { ContextMenu } from '/@/shared/components/context-menu/context-menu';
 import { Album, LibraryItem } from '/@/shared/types/domain-types';
 
@@ -28,7 +29,12 @@ export const AlbumContextMenu = ({ items, type }: AlbumContextMenuProps) => {
         <ContextMenu.Content
             bottomStickyContent={<ContextMenuPreview items={items} itemType={type} />}
         >
-            <PlayAction allowShuffle={false} ids={ids} itemType={LibraryItem.ALBUM} />
+            <PlayAction
+                allowShuffle={false}
+                ids={ids}
+                itemType={LibraryItem.ALBUM}
+                onPlay={() => items.forEach(recordRecentAlbum)}
+            />
             <PlayAlbumRadioAction album={items[0]} disabled={items.length > 1} />
             <ContextMenu.Divider />
             <AddToPlaylistAction items={ids} itemType={LibraryItem.ALBUM} />

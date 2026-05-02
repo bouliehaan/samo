@@ -1,3 +1,4 @@
+import clsx from 'clsx';
 import { useQueries, useQuery } from '@tanstack/react-query';
 import { ReactNode, useMemo } from 'react';
 import { generatePath, useNavigate } from 'react-router';
@@ -9,8 +10,10 @@ import {
     GridCarousel,
     useGridCarouselContainerQuery,
 } from '/@/renderer/components/grid-carousel/grid-carousel-v2';
+import itemCardControlsStyles from '/@/renderer/components/item-card/item-card-controls.module.css';
 import { ContextMenuController } from '/@/renderer/features/context-menu/context-menu-controller';
 import { HomeSectionTitle } from '/@/renderer/features/home/components/home-section-title';
+import { PlayButton } from '/@/renderer/features/shared/components/play-button';
 import { AbsCoverImage } from '/@/renderer/features/search/components/abs-cover-image';
 import { AppRoute } from '/@/renderer/router/routes';
 import {
@@ -21,7 +24,10 @@ import {
 import {
     useFavoriteAudiobookIds,
     useFavoritePodcastIds,
+    useLibraryFavoritesActions,
 } from '/@/renderer/store/library-favorites.store';
+import { usePodcastActions } from '/@/renderer/store/podcast.store';
+import { Icon } from '/@/shared/components/icon/icon';
 import {
     AudiobookshelfLibrary,
     AudiobookshelfLibraryItem,
@@ -167,6 +173,7 @@ const HomeAbsFavoriteCarousel = ({
 }) => {
     const navigate = useNavigate();
     const audiobookActions = useAudiobookActions();
+    const { play: playPodcast } = usePodcastActions();
     const { items: allItems, server } = useHomeAbsItems(kind);
     const audiobookFavoriteIds = useFavoriteAudiobookIds(server?.id);
     const podcastFavoriteIds = useFavoritePodcastIds(server?.id);
@@ -192,12 +199,37 @@ const HomeAbsFavoriteCarousel = ({
         navigate(generatePath(AppRoute.PODCASTS_DETAIL, { itemId: item.id }));
     };
 
+    const playItem = async (item: AudiobookshelfLibraryItem) => {
+        if (kind === 'audiobook') {
+            audiobookActions.play(server, item);
+            return;
+        }
+
+        try {
+            const fullItem = await audiobookshelfController.getItem(server, item.id);
+            const episodes = (fullItem?.media?.episodes ?? [])
+                .slice()
+                .sort((a, b) => (b.publishedAt ?? 0) - (a.publishedAt ?? 0));
+            const episode = episodes[0];
+            if (episode) {
+                recordRecentPodcast(item, server.id);
+                playPodcast(server, fullItem, episode);
+            }
+        } catch {
+            // fall back to opening the detail page if fetch fails
+            recordRecentPodcast(item, server.id);
+            navigate(generatePath(AppRoute.PODCASTS_DETAIL, { itemId: item.id }));
+        }
+    };
+
     const cards = items.map((item) => ({
         content: (
             <HomeAbsFavoriteCard
+                isFavorite={favoriteIds.has(item.id)}
                 item={item}
                 kind={kind}
                 onClick={() => openItem(item)}
+                onPlay={() => playItem(item)}
                 server={server}
             />
         ),
@@ -218,30 +250,35 @@ const HomeAbsFavoriteCarousel = ({
 };
 
 const HomeAbsFavoriteCard = ({
+    isFavorite,
     item,
     kind,
     onClick,
+    onPlay,
     server,
 }: {
+    isFavorite: boolean;
     item: AudiobookshelfLibraryItem;
     kind: AbsMediaKind;
     onClick: () => void;
+    onPlay: () => void;
     server: NonNullable<ReturnType<typeof useAudiobookshelfServer>>;
 }) => {
     const title = getAbsTitle(item);
+    const favoritesActions = useLibraryFavoritesActions();
+
+    const openContextMenu = (event: React.MouseEvent) => {
+        event.preventDefault();
+        event.stopPropagation();
+        ContextMenuController.call({ cmd: { items: [item], server, type: kind }, event });
+    };
 
     return (
         <button
             aria-label={`${kind === 'audiobook' ? 'Play' : 'Open'} ${title}`}
             className={styles.cardButton}
             onClick={onClick}
-            onContextMenu={(event) => {
-                event.preventDefault();
-                ContextMenuController.call({
-                    cmd: { items: [item], server, type: kind },
-                    event,
-                });
-            }}
+            onContextMenu={openContextMenu}
             type="button"
         >
             <div className={styles.artWrap}>
@@ -250,6 +287,43 @@ const HomeAbsFavoriteCard = ({
                     fallbackIcon={kind === 'audiobook' ? 'metadata' : 'microphone'}
                     itemId={item.id}
                 />
+                <div className={styles.overlayControls}>
+                    <PlayButton
+                        classNames={clsx(
+                            itemCardControlsStyles.playButton,
+                            itemCardControlsStyles.primary,
+                            itemCardControlsStyles.singlePrimary,
+                        )}
+                        fill
+                        onClick={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            onPlay();
+                        }}
+                    />
+                    <button
+                        className={clsx(
+                            styles.overlayBtn,
+                            styles.overlayHeart,
+                            isFavorite && styles.favoriteActive,
+                        )}
+                        onClick={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            favoritesActions.toggle(kind, server.id, item.id);
+                        }}
+                        type="button"
+                    >
+                        <Icon icon="favorite" size="lg" />
+                    </button>
+                    <button
+                        className={clsx(styles.overlayBtn, styles.overlayOptions)}
+                        onClick={openContextMenu}
+                        type="button"
+                    >
+                        <Icon icon="ellipsisHorizontal" size="lg" />
+                    </button>
+                </div>
             </div>
             <Text className={styles.title} fw={600} size="sm">
                 {title}

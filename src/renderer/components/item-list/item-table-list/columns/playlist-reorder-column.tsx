@@ -354,9 +354,6 @@ const PlaylistReorderColumnBase = (props: ItemTableListInnerColumn) => {
                     iconProps={{ size: 'md' }}
                     ref={dragRef}
                     size="xs"
-                    style={{
-                        cursor: isPlaylistSong ? 'grab' : 'default',
-                    }}
                     variant="default"
                 />
             </ActionIconGroup>

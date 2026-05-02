@@ -16,6 +16,7 @@ import { useRadioControls } from '/@/renderer/features/radio/hooks/use-radio-pla
 import { AppRoute } from '/@/renderer/router/routes';
 import { useAudiobookActions } from '/@/renderer/store/audiobook.store';
 import { useLibraryFavoritesActions } from '/@/renderer/store/library-favorites.store';
+import { recordRecentPodcast } from '/@/renderer/store/play-history.store';
 import { AudiobookshelfLibraryItem } from '/@/shared/api/audiobookshelf/audiobookshelf-types';
 import { ContextMenu } from '/@/shared/components/context-menu/context-menu';
 import {
@@ -217,17 +218,19 @@ const PodcastContextMenu = ({ items, server }: PodcastContextMenuProps) => {
         <ContextMenu.Content>
             <ContextMenu.Item
                 leftIcon="mediaPlay"
-                onSelect={() =>
-                    navigate(generatePath(AppRoute.PODCASTS_DETAIL, { itemId: item.id }))
-                }
+                onSelect={() => {
+                    recordRecentPodcast(item, server.id);
+                    navigate(generatePath(AppRoute.PODCASTS_DETAIL, { itemId: item.id }));
+                }}
             >
                 Open
             </ContextMenu.Item>
             <ContextMenu.Item
                 leftIcon="info"
-                onSelect={() =>
-                    navigate(generatePath(AppRoute.PODCASTS_DETAIL, { itemId: item.id }))
-                }
+                onSelect={() => {
+                    recordRecentPodcast(item, server.id);
+                    navigate(generatePath(AppRoute.PODCASTS_DETAIL, { itemId: item.id }));
+                }}
             >
                 More info
             </ContextMenu.Item>
