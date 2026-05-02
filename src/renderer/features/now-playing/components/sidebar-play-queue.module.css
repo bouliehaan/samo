@@ -52,41 +52,11 @@
 }
 
 .resize-handle {
-    position: relative;
-    z-index: 10;
-    flex-shrink: 0;
-    width: 100%;
-    height: 0;
-    padding: 4px 0;
-    margin: -4px 0;
-    cursor: row-resize;
-
-    &::before {
-        position: absolute;
-        top: 50%;
-        left: 0;
-        width: 100%;
-        height: 1px;
-        content: '';
-        background: var(--theme-colors-border);
-        transform: translateY(-50%);
-        transition: opacity 0.2s ease;
-    }
+    display: none !important;
 }
 
 .panel-reorder-controls {
-    position: absolute;
-    top: var(--theme-spacing-md);
-    left: var(--theme-spacing-md);
-    z-index: 100;
-    pointer-events: auto;
-    opacity: 0;
-    transition: opacity 0.2s ease;
-}
-
-.lyrics-section:hover .panel-reorder-controls,
-.visualizer-section:hover .panel-reorder-controls {
-    opacity: 1;
+    display: none;
 }
 
 .draggable-region {

@@ -4,7 +4,7 @@
     width: 4px;
     height: 100%;
     cursor: ew-resize;
-    background-color: var(--theme-colors-border);
+    background-color: transparent;
     opacity: 0;
 
     &:hover {
@@ -16,6 +16,7 @@
         width: 1px;
         height: 100%;
         content: '';
+        background-color: transparent;
     }
 }
 

@@ -414,22 +414,6 @@ const CombinedLyricsAndVisualizerPanel = () => {
         <div className={styles.lyricsSection}>
             <PanelReorderControls panelType="lyrics" />
             {showLyricsInSidebar && <Lyrics fadeOutNoLyricsMessage={true} settingsKey="sidebar" />}
-            {showVisualizer && (
-                <div
-                    className={styles.visualizerOverlay}
-                    style={{
-                        opacity: hasLyrics && showLyricsInSidebar ? 0.2 : 1,
-                    }}
-                >
-                    <Suspense fallback={<></>}>
-                        {visualizerType === 'butterchurn' ? (
-                            <ButterchurnVisualizer />
-                        ) : (
-                            <AudioMotionAnalyzerVisualizer />
-                        )}
-                    </Suspense>
-                </div>
-            )}
         </div>
     );
 };

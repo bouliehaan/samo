@@ -6,7 +6,7 @@
     height: 100%;
     min-height: 0;
     overflow: hidden;
-    background: #121212;
+    background: #050505;
     border-radius: 20px;
 
     .current-song-cell:not(.current-playlist-song-cell) svg {
@@ -16,4 +16,15 @@
 
 .queue-drawer {
     border-radius: var(--theme-radius-lg);
+}
+
+.right-sidebar-container::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -1px;
+    height: 1px;
+    background: #121212;
+    pointer-events: none;
 }

@@ -298,12 +298,12 @@ export const SynchronizedLyrics = ({
 
     const hideScrollbar = () => {
         const doc = document.getElementById('sychronized-lyrics-scroll-container') as HTMLElement;
-        doc.classList.add('hide-scrollbar');
+        doc?.classList.add('hide-scrollbar');
     };
 
     const showScrollbar = () => {
         const doc = document.getElementById('sychronized-lyrics-scroll-container') as HTMLElement;
-        doc.classList.remove('hide-scrollbar');
+        doc?.classList.remove('hide-scrollbar');
     };
 
     return (

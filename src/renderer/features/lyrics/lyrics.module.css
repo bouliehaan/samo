@@ -1,38 +1,5 @@
 .actions-container {
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    z-index: 50;
-    display: flex;
-    gap: 0.5rem;
-    align-items: center;
-    justify-content: center;
-    width: 100%;
-    pointer-events: none;
-    opacity: 0;
-    transition: opacity 0.2s ease-in-out;
-
-    &:hover {
-        opacity: 1 !important;
-    }
-
-    &:focus-within {
-        opacity: 1 !important;
-    }
-
-    :global(> *),
-    :global(> * > *),
-    :global(div) {
-        pointer-events: none;
-    }
-
-    :global(button),
-    :global(input),
-    :global([role='button']),
-    :global([role='combobox']),
-    :global([role='textbox']) {
-        pointer-events: auto;
-    }
+    display: none;
 }
 
 .lyrics-container {
@@ -43,11 +10,6 @@
     height: 100%;
     overflow: hidden;
 
-    &:hover {
-        .actions-container {
-            opacity: 0.6;
-        }
-    }
 }
 
 .scroll-container {
@@ -66,11 +28,5 @@
 }
 
 .settings-icon {
-    z-index: 100;
-    opacity: 0;
-    transition: opacity 0.2s ease;
-}
-
-.lyrics-container:hover .settings-icon {
-    opacity: 1;
+    display: none;
 }

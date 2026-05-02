@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ICON_DIR="${1:-$HOME/Downloads/iconset}"
-PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+PROJECT_ROOT="$(cd "$(dirname "$0")" && pwd)"
 BUILD_ICON="$PROJECT_ROOT/build/icon.icns"
 
 cd "$ICON_DIR"
@@ -33,7 +33,6 @@ fi
 
 if [[ -z "$SRC" || ! -f "$SRC" ]]; then
   echo "No usable source image found in: $ICON_DIR"
-  echo "Expected something like 1024-mac.png, 1024.png, .webp, .jpg, or .png"
   exit 1
 fi
 
@@ -42,22 +41,31 @@ echo "Using source image: $ICON_DIR/$SRC"
 rm -rf real.png samo.iconset samo.icns
 mkdir samo.iconset
 
-magick "$SRC" -resize 1024x1024 real.png
+# Convert to a real PNG while preserving transparency.
+# -background none keeps transparent pixels transparent.
+# -alpha on forces an alpha channel.
+# PNG32 writes RGBA PNG instead of indexed/opaque PNG.
+magick "$SRC" \
+  -background none \
+  -alpha on \
+  -resize 1024x1024 \
+  PNG32:real.png
 
-sips -z 16 16     real.png --out samo.iconset/icon_16x16.png >/dev/null
-sips -z 32 32     real.png --out samo.iconset/icon_16x16@2x.png >/dev/null
+# Generate every required Apple icon size from the transparent PNG.
+magick real.png -background none -alpha on -resize 16x16     PNG32:samo.iconset/icon_16x16.png
+magick real.png -background none -alpha on -resize 32x32     PNG32:samo.iconset/icon_16x16@2x.png
 
-sips -z 32 32     real.png --out samo.iconset/icon_32x32.png >/dev/null
-sips -z 64 64     real.png --out samo.iconset/icon_32x32@2x.png >/dev/null
+magick real.png -background none -alpha on -resize 32x32     PNG32:samo.iconset/icon_32x32.png
+magick real.png -background none -alpha on -resize 64x64     PNG32:samo.iconset/icon_32x32@2x.png
 
-sips -z 128 128   real.png --out samo.iconset/icon_128x128.png >/dev/null
-sips -z 256 256   real.png --out samo.iconset/icon_128x128@2x.png >/dev/null
+magick real.png -background none -alpha on -resize 128x128   PNG32:samo.iconset/icon_128x128.png
+magick real.png -background none -alpha on -resize 256x256   PNG32:samo.iconset/icon_128x128@2x.png
 
-sips -z 256 256   real.png --out samo.iconset/icon_256x256.png >/dev/null
-sips -z 512 512   real.png --out samo.iconset/icon_256x256@2x.png >/dev/null
+magick real.png -background none -alpha on -resize 256x256   PNG32:samo.iconset/icon_256x256.png
+magick real.png -background none -alpha on -resize 512x512   PNG32:samo.iconset/icon_256x256@2x.png
 
-sips -z 512 512   real.png --out samo.iconset/icon_512x512.png >/dev/null
-sips -z 1024 1024 real.png --out samo.iconset/icon_512x512@2x.png >/dev/null
+magick real.png -background none -alpha on -resize 512x512   PNG32:samo.iconset/icon_512x512.png
+magick real.png -background none -alpha on -resize 1024x1024 PNG32:samo.iconset/icon_512x512@2x.png
 
 iconutil -c icns samo.iconset -o samo.icns
 

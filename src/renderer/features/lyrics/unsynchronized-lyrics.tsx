@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { FixedSizeList as List } from 'react-window';
 
 import styles from './unsynchronized-lyrics.module.css';
 
@@ -41,6 +42,64 @@ export const UnsynchronizedLyrics = ({
     const translatedLines = useMemo(() => {
         return translatedLyrics ? translatedLyrics.split('\n') : [];
     }, [translatedLyrics]);
+
+    const useVirtualization = lines.length > 100;
+    const itemHeight = settings.gapUnsync + settings.fontSizeUnsync + 4;
+
+    const headerItems = [];
+    if (settings.showProvider && source) {
+        headerItems.push({ type: 'provider', text: `Provided by ${source}` });
+    }
+    if (settings.showMatch && remote) {
+        headerItems.push({ type: 'match', text: `"${name} by ${artist}"` });
+    }
+
+    const renderItem = ({ index, style: itemStyle }: { index: number; style: React.CSSProperties }) => {
+        if (index < headerItems.length) {
+            const item = headerItems[index];
+            return (
+                <div style={itemStyle}>
+                    <LyricLine
+                        alignment={settings.alignment}
+                        className="lyric-credit"
+                        fontSize={settings.fontSizeUnsync}
+                        text={item.text}
+                    />
+                </div>
+            );
+        }
+
+        const lineIdx = index - headerItems.length;
+        const text = lines[lineIdx];
+        const translatedLine = translatedLines[lineIdx] || '';
+
+        return (
+            <div style={itemStyle}>
+                <LyricLine
+                    alignment={settings.alignment}
+                    className="lyric-line unsynchronized"
+                    fontSize={settings.fontSizeUnsync}
+                    id={`lyric-${lineIdx}`}
+                    text={text + (translatedLine ? `_BREAK_${translatedLine}` : '')}
+                />
+            </div>
+        );
+    };
+
+    if (useVirtualization) {
+        return (
+            <div className={styles.container} style={{ gap: `${settings.gapUnsync}px`, height: '100%' }}>
+                <List
+                    height={600}
+                    itemCount={lines.length + headerItems.length}
+                    itemSize={itemHeight}
+                    width="100%"
+                >
+                    {renderItem}
+                </List>
+            </div>
+        );
+    }
 
     return (
         <div className={styles.container} style={{ gap: `${settings.gapUnsync}px` }}>

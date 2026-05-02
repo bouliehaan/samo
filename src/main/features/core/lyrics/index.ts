@@ -81,9 +81,20 @@ const GET_FETCHERS: Record<LyricSource, GetFetcher> = {
     [LyricSource.SIMPMUSIC]: getSimpMusic,
 };
 
-const MAX_CACHED_ITEMS = 10;
+const MAX_CACHED_ITEMS = 100;
 
 const lyricCache = new Map<string, CachedLyrics>();
+
+const SEARCH_TIMEOUT_MS = 3000;
+
+const withTimeout = <T,>(promise: Promise<T>, ms: number): Promise<T> => {
+    return Promise.race([
+        promise,
+        new Promise<T>((_, reject) =>
+            setTimeout(() => reject(new Error(`Search timeout after ${ms}ms`)), ms),
+        ),
+    ]);
+};
 
 const searchAllSources = async (
     params: LyricSearchQuery,
@@ -91,7 +102,10 @@ const searchAllSources = async (
     const sources = store.get('lyrics', []) as LyricSource[];
 
     const searchPromises = sources.map((source) =>
-        SEARCH_FETCHERS[source](params).then((searchResults) => ({ searchResults, source })),
+        withTimeout(
+            SEARCH_FETCHERS[source](params).then((searchResults) => ({ searchResults, source })),
+            SEARCH_TIMEOUT_MS,
+        ),
     );
 
     const settled = await Promise.allSettled(searchPromises);
@@ -139,35 +153,58 @@ const getRemoteLyrics = async (song: Song) => {
         results: allSearchResults,
     });
 
-    const bestMatch = rankedResults[0];
-
-    if (!bestMatch) {
-        return null;
-    }
-
     // Score is 0-1 where 0 = perfect match, 1 = worst match
     const matchThreshold = 0.55;
-    const matchScore = bestMatch.score ?? 1;
 
-    if (matchScore > matchThreshold) {
+    // Filter to candidates within threshold
+    const validCandidates = rankedResults.filter((match) => (match.score ?? 1) <= matchThreshold);
+
+    if (validCandidates.length === 0) {
         return null;
     }
+
+    // Race-based fetching: fetch from top 3 candidates in parallel, return first success
+    const fetchPromises = validCandidates.slice(0, 3).map(async (match) => {
+        try {
+            const lyrics = await GET_FETCHERS[match.source](match.id);
+            if (lyrics) {
+                return {
+                    artist: match.artist,
+                    id: match.id,
+                    lyrics,
+                    name: match.name,
+                    source: match.source,
+                };
+            }
+        } catch (error) {
+            console.error(`Error fetching lyrics from ${match.source}:`, error);
+        }
+        return null;
+    });
 
     let lyricsFromSource: InternetProviderLyricResponse | null = null;
 
+    // Use Promise.race to get the first successful result
     try {
-        const lyrics = await GET_FETCHERS[bestMatch.source](bestMatch.id);
-        if (lyrics) {
-            lyricsFromSource = {
-                artist: bestMatch.artist,
-                id: bestMatch.id,
-                lyrics,
-                name: bestMatch.name,
-                source: bestMatch.source,
-            };
+        lyricsFromSource = await Promise.race(
+            fetchPromises.map((p) =>
+                p.then((result) => {
+                    if (result) return result;
+                    return new Promise<InternetProviderLyricResponse>((_, reject) =>
+                        reject(new Error('No lyrics found')),
+                    );
+                }),
+            ),
+        );
+    } catch {
+        // If race fails, try to get any successful result
+        const settled = await Promise.allSettled(fetchPromises);
+        for (const result of settled) {
+            if (result.status === 'fulfilled' && result.value) {
+                lyricsFromSource = result.value;
+                break;
+            }
         }
-    } catch (error) {
-        console.error(`Error fetching lyrics from ${bestMatch.source}:`, error);
     }
 
     if (lyricsFromSource) {
