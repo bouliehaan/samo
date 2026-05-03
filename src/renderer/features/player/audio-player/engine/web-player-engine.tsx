@@ -76,6 +76,8 @@ export const WebPlayerEngine = (props: WebPlayerEngineProps) => {
     const player2Ref = useRef<null | ReactPlayer>(null);
     const networkRetryCount1 = useRef(0);
     const networkRetryCount2 = useRef(0);
+    const networkRetryTimeout1 = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const networkRetryTimeout2 = useRef<ReturnType<typeof setTimeout> | null>(null);
     const [ReactPlayerComponent, setReactPlayerComponent] = useState<any>(null);
     const [isLoading, setIsLoading] = useState(true);
 
@@ -192,6 +194,7 @@ export const WebPlayerEngine = (props: WebPlayerEngineProps) => {
         onEnded: () => void,
         onErrorPause: () => void,
         networkRetryCountRef: React.RefObject<number>,
+        retryTimeoutRef: React.RefObject<ReturnType<typeof setTimeout> | null>,
     ) => {
         return ({ target }: ErrorEvent) => {
             const { current: player } = playerRef;
@@ -215,7 +218,11 @@ export const WebPlayerEngine = (props: WebPlayerEngineProps) => {
                 if (networkRetryCountRef.current < MAX_NETWORK_RETRIES) {
                     networkRetryCountRef.current += 1;
                     const audio = target;
-                    setTimeout(() => {
+                    if (retryTimeoutRef.current) {
+                        clearTimeout(retryTimeoutRef.current);
+                    }
+                    retryTimeoutRef.current = setTimeout(() => {
+                        retryTimeoutRef.current = null;
                         pauseBothPlayers();
                         audio.load();
                         audio.play().catch(() => {
@@ -247,6 +254,14 @@ export const WebPlayerEngine = (props: WebPlayerEngineProps) => {
     useEffect(() => {
         networkRetryCount1.current = 0;
         networkRetryCount2.current = 0;
+        if (networkRetryTimeout1.current) {
+            clearTimeout(networkRetryTimeout1.current);
+            networkRetryTimeout1.current = null;
+        }
+        if (networkRetryTimeout2.current) {
+            clearTimeout(networkRetryTimeout2.current);
+            networkRetryTimeout2.current = null;
+        }
     }, [src1, src2]);
 
     // When not transitioning, ensure only the active player can play (e.g. after seek/prev during transition)
@@ -318,6 +333,7 @@ export const WebPlayerEngine = (props: WebPlayerEngineProps) => {
                     () => onEndedPlayer1(),
                     onErrorPause,
                     networkRetryCount1,
+                    networkRetryTimeout1,
                 )}
                 onProgress={onProgressPlayer1}
                 onReady={handleOnReadyPlayer1}
@@ -343,6 +359,7 @@ export const WebPlayerEngine = (props: WebPlayerEngineProps) => {
                     () => onEndedPlayer2(),
                     onErrorPause,
                     networkRetryCount2,
+                    networkRetryTimeout2,
                 )}
                 onProgress={onProgressPlayer2}
                 onReady={handleOnReadyPlayer2}

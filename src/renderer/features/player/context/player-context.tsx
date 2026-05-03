@@ -304,7 +304,7 @@ export const PlayerProvider = ({ children }: { children: React.ReactNode }) => {
                             itemType,
                         });
                     },
-                    queryKey: queryKeys.player.fetch(),
+                    queryKey: queryKeys.player.fetch(fetchId),
                     staleTime: 0,
                 });
 

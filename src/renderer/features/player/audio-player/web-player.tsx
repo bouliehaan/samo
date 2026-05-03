@@ -627,7 +627,7 @@ function gaplessHandler(args: {
     const { currentTime, duration, isFlac, isTransitioning, nextPlayer, setIsTransitioning } = args;
 
     if (!isTransitioning) {
-        if (currentTime > duration - 2) {
+        if (duration > 0 && currentTime > duration - 2) {
             return setIsTransitioning(true);
         }
 
@@ -636,7 +636,7 @@ function gaplessHandler(args: {
 
     const durationPadding = getDurationPadding(isFlac);
 
-    if (currentTime + durationPadding >= duration) {
+    if (duration > 0 && currentTime + durationPadding >= duration) {
         // Skip pre-starting next player if pauseOnNextSongEnd is set
         if (usePlayerStoreBase.getState().player.pauseOnNextSongEnd) {
             return null;
