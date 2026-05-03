@@ -940,14 +940,18 @@ async function createWindow(first = true): Promise<void> {
     }
 }
 
-// Only allow hardware media key handling if:
-// 1. The "Enable Media Session" setting is enabled
-// 2. The playback type is WEB (mpv not supported)
-// 3. The platform is not Linux (because we are using mpris instead)
+// Disable Chromium's hardware media key handling when:
+// - Linux (MPRIS handles it instead)
+// - MPV playback (not supported)
+// - Windows/non-macOS desktop that hasn't opted into MediaSession
+// On macOS + WEB, always enable so Bluetooth headphone controls reach the app
+// via MPRemoteCommandCenter regardless of the MediaSession setting toggle.
 const enableMediaSession = store.get('mediaSession', false) as boolean;
 const playbackType = store.get('playbackType', PlayerType.WEB) as PlayerType;
 const shouldDisableMediaFeatures =
-    isLinux() || !enableMediaSession || playbackType !== PlayerType.WEB;
+    isLinux() ||
+    playbackType !== PlayerType.WEB ||
+    (!isMacOS() && !enableMediaSession);
 
 const chromiumDisabledFeatures: string[] = [];
 // Fractional scaling on Wayland: https://github.com/bouliehaan/samo/issues/1271#issuecomment-4063326712

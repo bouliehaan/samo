@@ -20,6 +20,7 @@ import { usePodcastStore } from '/@/renderer/store/podcast.store';
 import { PlayerStatus, PlayerType } from '/@/shared/types/types';
 
 const mediaSession = navigator.mediaSession;
+const utils = isElectron() ? window.api.utils : null;
 
 const getSeekPosition = () => {
     const source = usePlaybackOwnerStore.getState().source;
@@ -71,6 +72,12 @@ export const useMediaSession = () => {
 
     const isMediaSessionEnabled = useMemo(() => {
         if (!isElectron()) {
+            return true;
+        }
+
+        // On macOS + WEB, always enable so Bluetooth headphone buttons work via
+        // MPRemoteCommandCenter regardless of the MediaSession setting toggle.
+        if (utils?.isMacOS() && playbackType === PlayerType.WEB) {
             return true;
         }
 

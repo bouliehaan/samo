@@ -28,7 +28,13 @@ export const enableMediaKeys = (window: BrowserWindow | null) => {
     const enableMediaSession = store.get('mediaSession', false) as boolean;
     const playbackType = store.get('playbackType', PlayerType.WEB) as PlayerType;
 
-    if (!enableMediaSession || isLinux() || playbackType !== PlayerType.WEB) {
+    // On macOS + WEB, MediaSession owns all hardware remote events (including Bluetooth
+    // headphone buttons via MPRemoteCommandCenter). globalShortcut only handles keyboard HID
+    // events and would conflict with MediaSession if registered simultaneously.
+    const useGlobalShortcut =
+        isLinux() || playbackType !== PlayerType.WEB || (!isMacOS() && !enableMediaSession);
+
+    if (useGlobalShortcut) {
         globalShortcut.register('MediaStop', () => {
             window?.webContents.send('renderer-player-stop');
         });

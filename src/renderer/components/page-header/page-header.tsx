@@ -109,7 +109,7 @@ const BasePageHeader = ({
                 <div
                     className={clsx(styles.header, {
                         [styles.hidden]: isHidden,
-                        [styles.isDraggable]: windowBarStyle === Platform.WEB,
+                        [styles.isDraggable]: windowBarStyle !== Platform.WEB,
                         [styles.padRight]: padRight,
                     })}
                 >
