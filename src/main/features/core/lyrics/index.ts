@@ -107,7 +107,10 @@ const PERSISTED_CACHE_MAX_BYTES = 25 * 1024 * 1024;
 const PERSISTED_CACHE_MAX_ITEMS = 1000;
 const DURATION_MISMATCH_MIN_SECONDS = 8;
 const DURATION_MISMATCH_RATIO = 0.08;
-const PERSISTED_CACHE_VERSION = 2;
+const PERSISTED_CACHE_VERSION = 3;
+const MIN_SYNC_QUALITY_SCORE = 0.45;
+const LRC_TIME_EXP = /\[(\d{2,}):(\d{2})(?:\.(\d{2,3}))?]([^\n]*)(\n|$)/g;
+const ALTERNATE_TIME_EXP = /\[(\d+),(\d+)]([^\n]*)(\n|$)/g;
 
 const isOfflineMode = () => Boolean(store.get('offline_mode', false));
 
@@ -127,6 +130,139 @@ const isDurationMatch = (expected?: number, actual?: number) => {
         expected * DURATION_MISMATCH_RATIO,
     );
     return Math.abs(expected - actual) <= toleranceSeconds;
+};
+
+const countWords = (text: string) => {
+    const matches = text.trim().match(/\S+/g);
+    return matches?.length ?? 0;
+};
+
+const parseTimestampedLyrics = (lyrics: string) => {
+    const entries: Array<{ text: string; timeMs: number }> = [];
+
+    for (const line of lyrics.matchAll(LRC_TIME_EXP)) {
+        const [, minute, sec, ms, text] = line;
+        const minutes = parseInt(minute, 10);
+        const seconds = parseInt(sec, 10);
+        const millis = ms ? (ms.length === 3 ? parseInt(ms, 10) : parseInt(ms, 10) * 10) : 0;
+        const timeMs = (minutes * 60 + seconds) * 1000 + millis;
+
+        if (Number.isFinite(timeMs)) {
+            entries.push({ text, timeMs });
+        }
+    }
+
+    if (entries.length > 0) return entries;
+
+    for (const line of lyrics.matchAll(ALTERNATE_TIME_EXP)) {
+        const [, timeMs, , text] = line;
+        const parsedTimeMs = Number(timeMs);
+
+        if (Number.isFinite(parsedTimeMs)) {
+            entries.push({ text, timeMs: parsedTimeMs });
+        }
+    }
+
+    return entries;
+};
+
+const evaluateLyricsSyncQuality = (
+    lyrics: string,
+    durationSeconds?: number,
+): { rejectionReason: null | string; score: number; timestamped: boolean } => {
+    const entries = parseTimestampedLyrics(lyrics);
+
+    if (entries.length === 0) {
+        return { rejectionReason: null, score: 0.2, timestamped: false };
+    }
+
+    if (entries.length < 3) {
+        return { rejectionReason: 'too few timestamped lines', score: 0, timestamped: true };
+    }
+
+    for (let idx = 1; idx < entries.length; idx += 1) {
+        if (entries[idx].timeMs + 250 < entries[idx - 1].timeMs) {
+            return { rejectionReason: 'timestamps move backwards', score: 0, timestamped: true };
+        }
+    }
+
+    let score = 0.72;
+    const firstTimeMs = entries[0].timeMs;
+    const lastTimeMs = entries[entries.length - 1].timeMs;
+    const durationMs = durationSeconds ? durationSeconds * 1000 : undefined;
+    const nonEmptyEntries = entries.filter((entry) => entry.text.trim());
+
+    if (durationMs && durationMs > 0) {
+        const endingGapMs = durationMs - lastTimeMs;
+        const latestAllowedMs = durationMs + Math.max(10_000, durationMs * 0.08);
+
+        if (lastTimeMs > latestAllowedMs) {
+            return {
+                rejectionReason: 'timestamps exceed track duration',
+                score: 0,
+                timestamped: true,
+            };
+        }
+
+        if (lastTimeMs < durationMs * 0.45) {
+            return {
+                rejectionReason: 'timestamps cover too little of track duration',
+                score: 0,
+                timestamped: true,
+            };
+        }
+
+        if (endingGapMs <= Math.max(8_000, durationMs * 0.04)) {
+            score += 0.18;
+        } else if (endingGapMs > Math.max(60_000, durationMs * 0.25)) {
+            score -= 0.45;
+        } else if (endingGapMs > Math.max(40_000, durationMs * 0.18)) {
+            score -= 0.25;
+        }
+
+        const firstFive = nonEmptyEntries.slice(0, 5);
+        if (durationMs >= 120_000 && firstFive.length === 5) {
+            const firstFiveSpanMs = firstFive[4].timeMs - firstFive[0].timeMs;
+            const firstFiveWordCount = firstFive.reduce(
+                (total, entry) => total + countWords(entry.text),
+                0,
+            );
+
+            if (
+                firstTimeMs < 2_000 &&
+                firstFive[4].timeMs < 10_000 &&
+                firstFiveSpanMs < 6_500 &&
+                firstFiveWordCount >= 24
+            ) {
+                score -= 0.5;
+            }
+        }
+    }
+
+    if (score < MIN_SYNC_QUALITY_SCORE) {
+        return { rejectionReason: 'timestamp quality check failed', score, timestamped: true };
+    }
+
+    return { rejectionReason: null, score, timestamped: true };
+};
+
+const isLyricsResultUsable = (
+    lyrics: InternetProviderLyricResponse,
+    song: Pick<Song, 'duration' | 'name'>,
+) => {
+    const quality = evaluateLyricsSyncQuality(lyrics.lyrics, song.duration / 1000);
+
+    if (quality.rejectionReason) {
+        console.info('[lyrics] rejecting synced lyrics', {
+            reason: quality.rejectionReason,
+            score: Math.round(quality.score * 100) / 100,
+            song: song.name,
+            source: lyrics.source,
+        });
+        return false;
+    }
+
+    return true;
 };
 
 const getPersistedCacheFile = (song: Song) => {
@@ -155,6 +291,10 @@ const readPersistedCachedLyrics = async (
         for (const source of sources) {
             const result = cached[source];
             if (result) {
+                if (!isLyricsResultUsable(result, song)) {
+                    continue;
+                }
+
                 logTiming('persistent cache hit', startedAt, {
                     song: song.name,
                     source,
@@ -300,6 +440,10 @@ const fetchFirstMatchingLyrics = async (
     signal?: AbortSignal,
 ): Promise<InternetProviderLyricResponse | null> => {
     const startedAt = performance.now();
+    const songForQuality = {
+        duration: (params.duration ?? 0) * 1000,
+        name: params.name ?? 'Unknown song',
+    };
 
     const searchAndFetch = async (signal?: AbortSignal) => {
         if (signal?.aborted) return null;
@@ -334,7 +478,7 @@ const fetchFirstMatchingLyrics = async (
         const handleAbort = () => candidateController.abort();
         signal?.addEventListener('abort', handleAbort, { once: true });
 
-        const fetchPromises = validCandidates.slice(0, 3).map(async (match) => {
+        const fetchPromises = validCandidates.slice(0, 6).map(async (match) => {
             const fetchStartedAt = performance.now();
             try {
                 const lyrics = await GET_FETCHERS[match.source](
@@ -347,13 +491,15 @@ const fetchFirstMatchingLyrics = async (
                     source: match.source,
                 });
                 if (lyrics) {
-                    return {
+                    const result = {
                         artist: match.artist,
                         id: match.id,
                         lyrics,
                         name: match.name,
                         source: match.source,
                     };
+
+                    return isLyricsResultUsable(result, songForQuality) ? result : null;
                 }
             } catch (error) {
                 console.error(`Error fetching lyrics from ${match.source}:`, error);
@@ -384,6 +530,9 @@ const fetchFirstMatchingLyrics = async (
                 song: params.name,
                 source,
             });
+            if (directResult && !isLyricsResultUsable(directResult, songForQuality)) {
+                return null;
+            }
             return directResult;
         })().catch((error) => {
             console.error(`Error getting exact lyrics from ${source}:`, error);
@@ -445,6 +594,10 @@ const getRemoteLyrics = async (song: Song) => {
         for (const source of sources) {
             const data = cached[source];
             if (data) {
+                if (!isLyricsResultUsable(data, song)) {
+                    continue;
+                }
+
                 logTiming('memory cache hit', startedAt, {
                     song: song.name,
                     source,
