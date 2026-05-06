@@ -642,8 +642,6 @@
         "mpvExtraParameters_help": "jeden na riadok",
         "musicbrainz": "zobraziť linky na MusicBrainz",
         "musicbrainz_description": "zobrazí linky na stránky interpreta/albumu na MusicBrainz, ak je vyplnené MusicBrainz ID",
-        "neteaseTranslation": "Povoliť NetEase preklady",
-        "neteaseTranslation_description": "Ak sú povolené, aplikácia stiahne a zobrazí preložené texty skladieb z NetEase, ak sú dostupné",
         "passwordStore": "ukladanie hesiel/utajených údajov",
         "passwordStore_description": "aký spôsob ukladania hesiel/utajených údajov použiť. ak máte problém s ukladaním hesiel, skúste zmeniť nastavenie",
         "playbackStyle": "štýl prehrávania",

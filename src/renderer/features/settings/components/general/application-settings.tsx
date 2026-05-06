@@ -8,6 +8,9 @@ import {
 } from '/@/renderer/features/settings/components/settings-section';
 import { useGeneralSettings, useSettingsStoreActions } from '/@/renderer/store/settings.store';
 import { Select } from '/@/shared/components/select/select';
+import { Switch } from '/@/shared/components/switch/switch';
+
+const localSettings = window.api?.localSettings;
 
 export const ApplicationSettings = memo(() => {
     const { t } = useTranslation();
@@ -42,6 +45,30 @@ export const ApplicationSettings = memo(() => {
             }),
             isHidden: false,
             title: t('setting.language', { postProcess: 'sentenceCase' }),
+        },
+        {
+            control: (
+                <Switch
+                    aria-label={t('setting.offlineMode', { postProcess: 'sentenceCase' })}
+                    checked={settings.offlineMode}
+                    onChange={(e) => {
+                        const offlineMode = e.currentTarget.checked;
+                        localSettings?.set('offline_mode', offlineMode);
+                        setSettings({
+                            general: {
+                                ...settings,
+                                offlineMode,
+                            },
+                        });
+                    }}
+                />
+            ),
+            description: t('setting.offlineMode', {
+                context: 'description',
+                postProcess: 'sentenceCase',
+            }),
+            isHidden: false,
+            title: t('setting.offlineMode', { postProcess: 'sentenceCase' }),
         },
     ];
 

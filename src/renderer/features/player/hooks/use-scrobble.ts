@@ -5,6 +5,7 @@ import { usePlayerEvents } from '/@/renderer/features/player/audio-player/hooks/
 import { useSendScrobble } from '/@/renderer/features/player/mutations/scrobble-mutation';
 import {
     useAppStore,
+    useOfflineMode,
     usePlaybackOwnerStore,
     usePlaybackSettings,
     usePlayerSong,
@@ -69,7 +70,8 @@ const isMusicPlaybackSource = () => usePlaybackOwnerStore.getState().source === 
 
 export const useScrobble = () => {
     const scrobbleSettings = usePlaybackSettings().scrobble;
-    const isScrobbleEnabled = scrobbleSettings?.enabled;
+    const offlineMode = useOfflineMode();
+    const isScrobbleEnabled = scrobbleSettings?.enabled && !offlineMode;
     const isPrivateModeEnabled = useAppStore((state) => state.privateMode);
     const sendScrobble = useSendScrobble();
     const currentSong = usePlayerSong();
@@ -517,9 +519,10 @@ const ScrobbleHookInner = () => {
 
 export const ScrobbleHook = () => {
     const isScrobbleEnabled = useSettingsStore((state) => state.playback.scrobble.enabled);
+    const offlineMode = useOfflineMode();
     const privateMode = useAppStore((state) => state.privateMode);
 
-    if (!isScrobbleEnabled || privateMode) {
+    if (!isScrobbleEnabled || offlineMode || privateMode) {
         return null;
     }
 

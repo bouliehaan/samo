@@ -1325,6 +1325,7 @@ export type InternetProviderLyricResponse = {
 
 export type InternetProviderLyricSearchResponse = {
     artist: string;
+    duration?: number;
     id: string;
     isSync: boolean | null;
     name: string;
@@ -1438,7 +1439,6 @@ export const instanceOfCancellationError = (error: any) => {
 export enum LyricSource {
     GENIUS = 'Genius',
     LRCLIB = 'lrclib.net',
-    NETEASE = 'NetEase',
     SIMPMUSIC = 'SimpMusic',
 }
 

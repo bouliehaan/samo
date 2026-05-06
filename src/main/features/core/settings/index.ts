@@ -33,10 +33,10 @@ export const store = new Store<any>({
     cwd: storePath,
     defaults: {
         disable_auto_updates: false,
-        enableNeteaseTranslation: false,
         global_media_hotkeys: true,
-        lyrics: ['NetEase', 'lrclib.net'],
+        lyrics: ['lrclib.net', 'SimpMusic'],
         mediaSession: false,
+        offline_mode: false,
         playbackType: 'web',
         should_prompt_accessibility: true,
         shown_accessibility_warning: false,

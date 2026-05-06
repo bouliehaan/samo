@@ -326,7 +326,7 @@ export function WebPlayer() {
                 transitionType === PlayerStyle.CROSSFADE ||
                 transitionType === PlayerStyle.GAPLESS
             ) {
-                setTimestamp(Number(currentTime.toFixed(0)));
+                setTimestamp(Number(currentTime.toFixed(3)));
             }
         }, 500);
 

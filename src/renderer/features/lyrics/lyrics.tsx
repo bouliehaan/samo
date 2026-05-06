@@ -1,7 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'motion/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useTranslation } from 'react-i18next';
 
 import styles from './lyrics.module.css';
 
@@ -19,35 +18,29 @@ import {
     SynchronizedLyrics,
     SynchronizedLyricsProps,
 } from '/@/renderer/features/lyrics/synchronized-lyrics';
-import {
-    UnsynchronizedLyrics,
-    UnsynchronizedLyricsProps,
-} from '/@/renderer/features/lyrics/unsynchronized-lyrics';
 import { openLyricsSettingsModal } from '/@/renderer/features/lyrics/utils/open-lyrics-settings-modal';
 import { usePlayerEvents } from '/@/renderer/features/player/audio-player/hooks/use-player-events';
 import { useIsRadioActive } from '/@/renderer/features/radio/hooks/use-radio-player';
 import { ComponentErrorBoundary } from '/@/renderer/features/shared/components/component-error-boundary';
 import { queryClient } from '/@/renderer/lib/react-query';
-import { useLyricsSettings, usePlayerSong } from '/@/renderer/store';
+import { useLyricsSettings, useOfflineMode, usePlayerSong } from '/@/renderer/store';
 import { usePlaybackSource } from '/@/renderer/store/playback-owner.store';
 import { ActionIcon } from '/@/shared/components/action-icon/action-icon';
-import { Center } from '/@/shared/components/center/center';
-import { Group } from '/@/shared/components/group/group';
 import { Spinner } from '/@/shared/components/spinner/spinner';
-import { Text } from '/@/shared/components/text/text';
 import { LyricsOverride } from '/@/shared/types/domain-types';
 
 type LyricsProps = {
-    fadeOutNoLyricsMessage?: boolean;
     settingsKey?: string;
 };
 
-export const Lyrics = ({ fadeOutNoLyricsMessage = true, settingsKey = 'default' }: LyricsProps) => {
+export const Lyrics = ({ settingsKey = 'default' }: LyricsProps) => {
     const currentSong = usePlayerSong();
     const isRadioActive = useIsRadioActive();
     const playbackSource = usePlaybackSource();
+    const offlineMode = useOfflineMode();
 
-    const isLyricsDisabled = isRadioActive || playbackSource === 'audiobook' || playbackSource === 'podcast';
+    const isLyricsDisabled =
+        isRadioActive || playbackSource === 'audiobook' || playbackSource === 'podcast';
 
     const {
         enableAutoTranslation,
@@ -56,12 +49,10 @@ export const Lyrics = ({ fadeOutNoLyricsMessage = true, settingsKey = 'default' 
         translationApiProvider,
         translationTargetLanguage,
     } = useLyricsSettings();
-    const { t } = useTranslation();
     const [index, setIndexState] = useState(0);
     const [translatedLyrics, setTranslatedLyrics] = useState<null | string>(null);
     const [showTranslation, setShowTranslation] = useState(false);
     const [pendingSongId, setPendingSongId] = useState<string | undefined>(currentSong?.id);
-    const lyricsFetchTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
     const previousSongIdRef = useRef<string | undefined>(currentSong?.id);
 
     useEffect(() => {
@@ -73,20 +64,7 @@ export const Lyrics = ({ fadeOutNoLyricsMessage = true, settingsKey = 'default' 
         }
 
         previousSongIdRef.current = currentSongId;
-        setPendingSongId(undefined);
-
-        if (!currentSongId) {
-            return;
-        }
-
-        clearTimeout(lyricsFetchTimeoutRef.current);
-        lyricsFetchTimeoutRef.current = setTimeout(() => {
-            setPendingSongId(currentSongId);
-        }, 500);
-
-        return () => {
-            clearTimeout(lyricsFetchTimeoutRef.current);
-        };
+        setPendingSongId(currentSongId);
     }, [currentSong?.id]);
 
     const lyricsKey = useMemo(() => {
@@ -118,7 +96,7 @@ export const Lyrics = ({ fadeOutNoLyricsMessage = true, settingsKey = 'default' 
         return computeSelectedFromResult(data, preferLocalLyrics, indexToUse);
     }, [data, indexToUse, preferLocalLyrics]);
 
-    const displayLyrics = isLyricsDisabled ? null : lyrics;
+    const displayLyrics = isLyricsDisabled || !synced ? null : lyrics;
 
     const currentOffsetMs = useMemo(() => {
         if (!data) return 0;
@@ -196,15 +174,15 @@ export const Lyrics = ({ fadeOutNoLyricsMessage = true, settingsKey = 'default' 
                       overrideData: null,
                       overrideSelection: null,
                       remoteAuto: null,
-                      suppressRemoteAuto: true,
+                      suppressRemoteAuto: !!displayLyrics,
                   }
                 : prev,
         );
         await queryClient.invalidateQueries({ queryKey: lyricsKey });
-    }, [currentSong, lyricsKey]);
+    }, [currentSong, displayLyrics, lyricsKey]);
 
     const fetchTranslation = useCallback(async () => {
-        if (!lyrics || isLyricsDisabled) return;
+        if (!lyrics || isLyricsDisabled || offlineMode) return;
         const originalLyrics = Array.isArray(lyrics.lyrics)
             ? lyrics.lyrics.map(([, line]) => line).join('\n')
             : lyrics.lyrics;
@@ -219,6 +197,7 @@ export const Lyrics = ({ fadeOutNoLyricsMessage = true, settingsKey = 'default' 
     }, [
         isLyricsDisabled,
         lyrics,
+        offlineMode,
         translationApiKey,
         translationApiProvider,
         translationTargetLanguage,
@@ -262,27 +241,6 @@ export const Lyrics = ({ fadeOutNoLyricsMessage = true, settingsKey = 'default' 
 
     const isLoadingLyrics = isLoading && !isLyricsDisabled;
     const hasNoLyrics = !displayLyrics;
-    const [shouldFadeOut, setShouldFadeOut] = useState(false);
-
-    useEffect(() => {
-        if (!fadeOutNoLyricsMessage) {
-            setShouldFadeOut(false);
-            return undefined;
-        }
-
-        if (!isLoadingLyrics && hasNoLyrics) {
-            const timer = setTimeout(() => {
-                setShouldFadeOut(true);
-            }, 3000);
-            return () => clearTimeout(timer);
-        }
-
-        if (!hasNoLyrics) {
-            setShouldFadeOut(false);
-        }
-
-        return undefined;
-    }, [isLoadingLyrics, hasNoLyrics, fadeOutNoLyricsMessage]);
 
     const handleExportLyrics = useCallback(() => {
         if (displayLyrics) {
@@ -318,20 +276,12 @@ export const Lyrics = ({ fadeOutNoLyricsMessage = true, settingsKey = 'default' 
                                 initial={{ opacity: 0 }}
                                 transition={{ duration: 0.5 }}
                             >
-                                {synced ? (
-                                    <SynchronizedLyrics
-                                        {...(displayLyrics as SynchronizedLyricsProps)}
-                                        offsetMs={displayOffsetMs}
-                                        settingsKey={settingsKey}
-                                        translatedLyrics={showTranslation ? translatedLyrics : null}
-                                    />
-                                ) : (
-                                    <UnsynchronizedLyrics
-                                        {...(displayLyrics as UnsynchronizedLyricsProps)}
-                                        settingsKey={settingsKey}
-                                        translatedLyrics={showTranslation ? translatedLyrics : null}
-                                    />
-                                )}
+                                <SynchronizedLyrics
+                                    {...(displayLyrics as SynchronizedLyricsProps)}
+                                    offsetMs={displayOffsetMs}
+                                    settingsKey={settingsKey}
+                                    translatedLyrics={showTranslation ? translatedLyrics : null}
+                                />
                             </motion.div>
                         )}
                     </AnimatePresence>

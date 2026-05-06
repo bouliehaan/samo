@@ -14,12 +14,8 @@ export interface UnsynchronizedLyricsProps extends Omit<FullLyricsMetadata, 'lyr
 }
 
 export const UnsynchronizedLyrics = ({
-    artist,
     lyrics,
-    name,
-    remote,
     settingsKey = 'default',
-    source,
     translatedLyrics,
 }: UnsynchronizedLyricsProps) => {
     const lyricsSettings = useLyricsSettings();
@@ -46,15 +42,15 @@ export const UnsynchronizedLyrics = ({
     const useVirtualization = lines.length > 100;
     const itemHeight = settings.gapUnsync + settings.fontSizeUnsync + 4;
 
-    const headerItems = [];
-    if (settings.showProvider && source) {
-        headerItems.push({ type: 'provider', text: `Provided by ${source}` });
-    }
-    if (settings.showMatch && remote) {
-        headerItems.push({ type: 'match', text: `"${name} by ${artist}"` });
-    }
+    const headerItems: { text: string; type: string }[] = [];
 
-    const renderItem = ({ index, style: itemStyle }: { index: number; style: React.CSSProperties }) => {
+    const renderItem = ({
+        index,
+        style: itemStyle,
+    }: {
+        index: number;
+        style: React.CSSProperties;
+    }) => {
         if (index < headerItems.length) {
             const item = headerItems[index];
             return (
@@ -88,7 +84,10 @@ export const UnsynchronizedLyrics = ({
 
     if (useVirtualization) {
         return (
-            <div className={styles.container} style={{ gap: `${settings.gapUnsync}px`, height: '100%' }}>
+            <div
+                className={styles.container}
+                style={{ gap: `${settings.gapUnsync}px`, height: '100%' }}
+            >
                 <List
                     height={600}
                     itemCount={lines.length + headerItems.length}
@@ -103,22 +102,6 @@ export const UnsynchronizedLyrics = ({
 
     return (
         <div className={styles.container} style={{ gap: `${settings.gapUnsync}px` }}>
-            {settings.showProvider && source && (
-                <LyricLine
-                    alignment={settings.alignment}
-                    className="lyric-credit"
-                    fontSize={settings.fontSizeUnsync}
-                    text={`Provided by ${source}`}
-                />
-            )}
-            {settings.showMatch && remote && (
-                <LyricLine
-                    alignment={settings.alignment}
-                    className="lyric-credit"
-                    fontSize={settings.fontSizeUnsync}
-                    text={`"${name} by ${artist}"`}
-                />
-            )}
             {lines.map((text, idx) => (
                 <LyricLine
                     alignment={settings.alignment}

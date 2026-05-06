@@ -267,8 +267,6 @@
         "lastfm_description": "na stránkách umělců a alb zobrazit odkazy na Last.fm",
         "musicbrainz": "zobrazit odkazy na MusicBrainz",
         "musicbrainz_description": "na stránkách umělců a alb, kde existuje MusicBrainz ID, zobrazit odkazy na MusicBrainz",
-        "neteaseTranslation": "Povolit překlady NetEase",
-        "neteaseTranslation_description": "Pokud je povoleno, načte a zobrazí přeložené texty ze služby NetEase, pokud jsou dostupné",
         "preferLocalLyrics": "preferovat místní texty",
         "preferLocalLyrics_description": "preferovat místní texty před vzdálenými, pokud jsou dostupné",
         "discordPausedStatus": "zobrazit stav při pozastavení",

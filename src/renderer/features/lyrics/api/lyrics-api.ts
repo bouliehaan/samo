@@ -24,6 +24,7 @@ import { LyricsResponse } from '/@/shared/types/domain-types';
 import { ServerFeature } from '/@/shared/types/features-types';
 
 const lyricsIpc = isElectron() ? window.api.lyrics : null;
+const LOCAL_LYRICS_GRACE_MS = 400;
 
 export type LyricsQueryResult = {
     local: FullLyricsMetadata | null | StructuredLyric[];
@@ -37,12 +38,25 @@ export type LyricsQueryResult = {
     suppressRemoteAuto: boolean;
 };
 
+const hasUsableLocalLyrics = (local: FullLyricsMetadata | null | StructuredLyric[]) => {
+    return (
+        (Array.isArray(local) && local.length > 0) ||
+        (local != null && !Array.isArray(local) && 'lyrics' in local && Boolean(local.lyrics))
+    );
+};
+
+const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const logLyricsTiming = (label: string, startedAt: number, meta?: Record<string, unknown>) => {
+    const elapsedMs = Math.round(performance.now() - startedAt);
+    console.info(`[lyrics] ${label} finished in ${elapsedMs}ms`, meta ?? {});
+};
+
 // Match LRC lyrics format by https://github.com/ustbhuangyi/lyric-parser
 // [mm:ss.SSS] text
 const timeExp = /\[(\d{2,}):(\d{2})(?:\.(\d{2,3}))?]([^\n]+)(\n|$)/g;
 
-// Match karaoke lyrics format returned by NetEase
-// [SSS,???] text
+// Match alternate karaoke lyrics format: [SSS,???] text
 const alternateTimeExp = /\[(\d*),(\d*)]([^\n]+)(\n|$)/g;
 
 const formatLyrics = (lyrics: string) => {
@@ -109,12 +123,8 @@ export function computeSelectedFromResult(
         };
     }
 
-    const hasLocalLocal =
-        (Array.isArray(local) && local.length > 0) ||
-        (local != null && !Array.isArray(local) && 'lyrics' in local && Boolean(local.lyrics));
-
     // If setting is set to prefer local lyrics, return the local lyrics if available
-    if (preferLocalLyrics && hasLocalLocal) {
+    if (preferLocalLyrics && hasUsableLocalLyrics(local)) {
         if (Array.isArray(local) && local.length > 0) {
             const item = local[Math.min(selectedStructuredIndex, local.length - 1)];
             return { selected: item, selectedSynced: item.synced };
@@ -199,9 +209,14 @@ export async function fetchRemoteLyricsAuto(song: QueueSong): Promise<FullLyrics
         await lyricsIpc?.getRemoteLyricsBySong(song);
 
     if (remoteLyricsResult) {
+        const formattedLyrics = formatLyrics(remoteLyricsResult.lyrics);
+        if (!Array.isArray(formattedLyrics)) {
+            return null;
+        }
+
         return {
             ...remoteLyricsResult,
-            lyrics: formatLyrics(remoteLyricsResult.lyrics),
+            lyrics: formattedLyrics,
             remote: true,
         };
     }
@@ -248,6 +263,59 @@ const emptyResult = (): LyricsQueryResult => ({
     suppressRemoteAuto: false,
 });
 
+const buildLyricsQueryResult = (args: {
+    local: FullLyricsMetadata | null | StructuredLyric[];
+    overrideData: LyricsResponse | null;
+    overrideSelection: LyricsOverride | null;
+    preferLocalLyrics: boolean;
+    remoteAuto: FullLyricsMetadata | null;
+    selectedOffsetMs: number;
+    selectedStructuredIndex: number;
+    suppressRemoteAuto: boolean;
+}): LyricsQueryResult => {
+    const {
+        local,
+        overrideData,
+        overrideSelection,
+        preferLocalLyrics,
+        remoteAuto,
+        selectedOffsetMs,
+        selectedStructuredIndex,
+        suppressRemoteAuto,
+    } = args;
+    const partial: Pick<
+        LyricsQueryResult,
+        'local' | 'overrideData' | 'overrideSelection' | 'remoteAuto' | 'selectedOffsetMs'
+    > = {
+        local,
+        overrideData,
+        overrideSelection,
+        remoteAuto,
+        selectedOffsetMs,
+    };
+    const { selected, selectedSynced } = computeSelectedFromResult(
+        partial,
+        preferLocalLyrics,
+        selectedStructuredIndex,
+    );
+    const displayOffset = getDisplayOffset(
+        selected,
+        selectedOffsetMs,
+        selectedStructuredIndex,
+        local,
+    );
+
+    return {
+        ...emptyResult(),
+        ...partial,
+        selected,
+        selectedOffsetMs: displayOffset,
+        selectedStructuredIndex,
+        selectedSynced,
+        suppressRemoteAuto,
+    };
+};
+
 export const lyricsQueries = {
     search: (args: Omit<QueryHookArgs<LyricSearchQuery>, 'serverId'>) => {
         return queryOptions({
@@ -270,6 +338,7 @@ export const lyricsQueries = {
             queryFn: async ({ signal }): Promise<LyricsQueryResult> => {
                 if (!song) return emptyResult();
 
+                const queryStartedAt = performance.now();
                 const prev = queryClient.getQueryData<LyricsQueryResult>(lyricsKey);
                 const overrideSelection = prev?.overrideSelection ?? null;
                 const suppressRemoteAuto = prev?.suppressRemoteAuto ?? false;
@@ -277,69 +346,177 @@ export const lyricsQueries = {
                 const selectedOffsetMs = prev?.selectedOffsetMs ?? 0;
                 const preferLocalLyrics = useSettingsStore.getState().lyrics.preferLocalLyrics;
 
-                // Fetch local lyrics
-                const localPromise = fetchLocalLyrics({ serverId: args.serverId, signal, song });
+                const makeResult = (params: {
+                    local?: FullLyricsMetadata | null | StructuredLyric[];
+                    overrideData?: LyricsResponse | null;
+                    remoteAuto?: FullLyricsMetadata | null;
+                }) =>
+                    buildLyricsQueryResult({
+                        local: params.local ?? null,
+                        overrideData: params.overrideData ?? null,
+                        overrideSelection,
+                        preferLocalLyrics,
+                        remoteAuto: params.remoteAuto ?? null,
+                        selectedOffsetMs,
+                        selectedStructuredIndex,
+                        suppressRemoteAuto,
+                    });
 
-                // Fetch remote auto lyrics
+                const updateCachedResult = (params: {
+                    local?: FullLyricsMetadata | null | StructuredLyric[];
+                    remoteAuto?: FullLyricsMetadata | null;
+                    selectionReason: string;
+                }) => {
+                    queryClient.setQueryData<LyricsQueryResult>(lyricsKey, (current) => {
+                        if (!current || current.overrideSelection) return current;
+
+                        const nextResult = buildLyricsQueryResult({
+                            local: params.local ?? current.local,
+                            overrideData: current.overrideData,
+                            overrideSelection: current.overrideSelection,
+                            preferLocalLyrics,
+                            remoteAuto: params.remoteAuto ?? current.remoteAuto,
+                            selectedOffsetMs: current.selectedOffsetMs,
+                            selectedStructuredIndex: current.selectedStructuredIndex,
+                            suppressRemoteAuto: current.suppressRemoteAuto,
+                        });
+
+                        logLyricsTiming('selection update', queryStartedAt, {
+                            selected: nextResult.selected ? params.selectionReason : 'none',
+                            song: song.name,
+                        });
+
+                        return nextResult;
+                    });
+                };
+
+                const localPromise = fetchLocalLyrics({
+                    serverId: args.serverId,
+                    signal,
+                    song,
+                }).then((local) => {
+                    logLyricsTiming('local lyrics', queryStartedAt, {
+                        hit: hasUsableLocalLyrics(local),
+                        song: song.name,
+                    });
+                    return local;
+                });
+
                 const remoteAutoPromise =
                     suppressRemoteAuto || !useSettingsStore.getState().lyrics.fetch
-                        ? null
-                        : fetchRemoteLyricsAuto(song);
+                        ? Promise.resolve<FullLyricsMetadata | null>(null)
+                        : fetchRemoteLyricsAuto(song).then((remoteAuto) => {
+                              logLyricsTiming('remote lyrics', queryStartedAt, {
+                                  hit: Boolean(remoteAuto),
+                                  song: song.name,
+                                  source: remoteAuto?.source,
+                              });
+                              return remoteAuto;
+                          });
 
-                // Fetch override data
                 const overrideDataPromise = overrideSelection
                     ? fetchRemoteLyricsById({
                           remoteSongId: overrideSelection.id,
                           remoteSource: overrideSelection.source as LyricSource,
                           song,
                       })
-                    : null;
+                    : Promise.resolve<LyricsResponse | null>(null);
 
-                const [local, remoteAuto, overrideData] = await Promise.all([
-                    localPromise,
-                    remoteAutoPromise,
-                    overrideDataPromise,
+                if (overrideSelection) {
+                    const [overrideData, local, remoteAuto] = await Promise.all([
+                        overrideDataPromise,
+                        localPromise,
+                        remoteAutoPromise,
+                    ]);
+                    const result = makeResult({ local, overrideData, remoteAuto });
+                    logLyricsTiming('selection', queryStartedAt, {
+                        selected: result.selected ? 'override' : 'none',
+                        song: song.name,
+                    });
+                    return result;
+                }
+
+                const localOutcomePromise = localPromise.then((local) => ({
+                    local,
+                    type: 'local' as const,
+                }));
+                const remoteOutcomePromise = remoteAutoPromise.then((remoteAuto) => ({
+                    remoteAuto,
+                    type: 'remote' as const,
+                }));
+
+                localOutcomePromise.then(({ local }) => {
+                    if (hasUsableLocalLyrics(local)) {
+                        updateCachedResult({
+                            local,
+                            selectionReason: preferLocalLyrics
+                                ? 'late local'
+                                : 'late local fallback',
+                        });
+                    }
+                });
+
+                remoteOutcomePromise.then(({ remoteAuto }) => {
+                    if (remoteAuto && !preferLocalLyrics) {
+                        updateCachedResult({
+                            remoteAuto,
+                            selectionReason: 'late remote',
+                        });
+                    }
+                });
+
+                if (preferLocalLyrics) {
+                    const fastLocal = await Promise.race([
+                        localOutcomePromise,
+                        delay(LOCAL_LYRICS_GRACE_MS).then(() => null),
+                    ]);
+
+                    if (fastLocal?.type === 'local' && hasUsableLocalLyrics(fastLocal.local)) {
+                        const result = makeResult({ local: fastLocal.local });
+                        logLyricsTiming('selection', queryStartedAt, {
+                            selected: 'fast local',
+                            song: song.name,
+                        });
+                        return result;
+                    }
+                }
+
+                const firstOutcome = await Promise.race([
+                    remoteOutcomePromise,
+                    localOutcomePromise,
                 ]);
 
-                const partial: Pick<
-                    LyricsQueryResult,
-                    | 'local'
-                    | 'overrideData'
-                    | 'overrideSelection'
-                    | 'remoteAuto'
-                    | 'selectedOffsetMs'
-                > = {
-                    local,
-                    overrideData,
-                    overrideSelection,
-                    remoteAuto,
-                    selectedOffsetMs,
-                };
-                const { selected, selectedSynced } = computeSelectedFromResult(
-                    partial,
-                    preferLocalLyrics,
-                    selectedStructuredIndex,
-                );
-                const displayOffset = getDisplayOffset(
-                    selected,
-                    selectedOffsetMs,
-                    selectedStructuredIndex,
-                    local,
-                );
-                const resultSelectedOffsetMs = displayOffset;
+                if (firstOutcome.type === 'local') {
+                    if (hasUsableLocalLyrics(firstOutcome.local)) {
+                        const result = makeResult({ local: firstOutcome.local });
+                        logLyricsTiming('selection', queryStartedAt, {
+                            selected: 'local',
+                            song: song.name,
+                        });
+                        return result;
+                    }
 
-                return {
-                    ...emptyResult(),
-                    ...partial,
-                    selected,
-                    selectedOffsetMs: resultSelectedOffsetMs,
-                    selectedStructuredIndex,
-                    selectedSynced,
-                    suppressRemoteAuto,
-                };
+                    const { remoteAuto } = await remoteOutcomePromise;
+                    const result = makeResult({ remoteAuto });
+                    logLyricsTiming('selection', queryStartedAt, {
+                        selected: remoteAuto ? 'remote' : 'none',
+                        song: song.name,
+                    });
+                    return result;
+                }
+
+                const result = makeResult({ remoteAuto: firstOutcome.remoteAuto });
+                logLyricsTiming('selection', queryStartedAt, {
+                    selected: firstOutcome.remoteAuto ? 'remote' : 'none',
+                    song: song.name,
+                });
+                return result;
             },
             queryKey: lyricsKey,
-            staleTime: Infinity,
+            staleTime: (query) => {
+                const data = query.state.data as LyricsQueryResult | undefined;
+                return data?.selected ? Infinity : 1000 * 60 * 5;
+            },
             ...args.options,
         });
     },

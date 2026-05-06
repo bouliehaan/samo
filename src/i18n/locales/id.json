@@ -915,8 +915,6 @@
         "mpvExtraParameters_description": "argumen tambahan untuk diteruskan ke mpv",
         "musicbrainz_description": "tampilkan tautan ke MusicBrainz pada halaman artis/album, saat ID MusicBrainz tersedia",
         "musicbrainz": "tampilkan tautan MusicBrainz",
-        "neteaseTranslation_description": "Saat diaktifkan, mengambil dan menampilkan lirik terjemahan dari NetEase jika tersedia",
-        "neteaseTranslation": "aktifkan terjemahan NetEase",
         "notify": "aktifkan notifikasi lagu",
         "notify_description": "tampilkan notifikasi saat mengganti lagu saat ini",
         "pathReplace": "penggantian jalur file",

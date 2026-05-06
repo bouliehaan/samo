@@ -11,6 +11,13 @@ import { orderSearchResults } from './shared';
 
 const SEARCH_URL = 'https://genius.com/api/search/song';
 
+const SEARCH_TIMEOUT_MS = 6000;
+const SCRAPE_TIMEOUT_MS = 12000;
+
+const isCanceled = (error: unknown) => {
+    return axios.isCancel(error) || (error as { code?: string })?.code === 'ERR_CANCELED';
+};
+
 // Adapted from https://github.com/NyaomiDEV/Sunamu/blob/master/src/main/lyricproviders/genius.ts
 
 export interface GeniusResponse {
@@ -95,11 +102,16 @@ export interface Stats {
     unreviewed_annotations: number;
 }
 
-export async function getLyricsBySongId(url: string): Promise<null | string> {
+export async function getLyricsBySongId(url: string, signal?: AbortSignal): Promise<null | string> {
     let result: AxiosResponse<string, any>;
     try {
-        result = await axios.get<string>(url, { responseType: 'text' });
+        result = await axios.get<string>(url, {
+            responseType: 'text',
+            signal,
+            timeout: SCRAPE_TIMEOUT_MS,
+        });
     } catch (e) {
+        if (isCanceled(e)) return null;
         console.error('Genius lyrics request got an error!', (e as Error)?.message);
         return null;
     }
@@ -121,6 +133,7 @@ export async function getLyricsBySongId(url: string): Promise<null | string> {
 
 export async function getSearchResults(
     params: LyricSearchQuery,
+    signal?: AbortSignal,
 ): Promise<InternetProviderLyricSearchResponse[] | null> {
     let result: AxiosResponse<GeniusResponse>;
 
@@ -136,8 +149,11 @@ export async function getSearchResults(
                 per_page: '5',
                 q: searchQuery,
             },
+            signal,
+            timeout: SEARCH_TIMEOUT_MS,
         });
     } catch (e) {
+        if (isCanceled(e)) return null;
         console.error('Genius search request got an error!', (e as Error)?.message);
         return null;
     }
@@ -161,13 +177,14 @@ export async function getSearchResults(
 
 export async function query(
     params: LyricSearchQuery,
+    signal?: AbortSignal,
 ): Promise<InternetProviderLyricResponse | null> {
-    const response = await getSongId(params);
+    const response = await getSongId(params, signal);
     if (!response) {
         return null;
     }
 
-    const lyrics = await getLyricsBySongId(response.id);
+    const lyrics = await getLyricsBySongId(response.id, signal);
     if (!lyrics) {
         return null;
     }
@@ -183,6 +200,7 @@ export async function query(
 
 async function getSongId(
     params: LyricSearchQuery,
+    signal?: AbortSignal,
 ): Promise<null | Omit<InternetProviderLyricResponse, 'lyrics'>> {
     let result: AxiosResponse<GeniusResponse>;
     try {
@@ -191,8 +209,11 @@ async function getSongId(
                 per_page: '1',
                 q: `${params.artist} ${params.name}`,
             },
+            signal,
+            timeout: SEARCH_TIMEOUT_MS,
         });
     } catch (e) {
+        if (isCanceled(e)) return null;
         console.error('Genius search request got an error!', (e as Error)?.message);
         return null;
     }

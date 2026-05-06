@@ -172,9 +172,11 @@ export const recordRecentArtist = (
     const serverId = '_serverId' in artist ? artist._serverId : fallback?.serverId;
     if (!serverId) return;
 
+    const imageId = 'imageId' in artist && artist.imageId ? artist.imageId : artist.id;
+
     recordRecentItem({
         artwork: {
-            imageId: 'imageId' in artist ? artist.imageId : null,
+            imageId,
             imageItemType: LibraryItem.ALBUM_ARTIST,
             imageUrl: 'imageUrl' in artist ? artist.imageUrl : null,
             kind: 'music',

@@ -1014,8 +1014,6 @@
         "mpvExtraParameters_description": "дополнительные аргументы, передаваемые mpv",
         "musicbrainz_description": "показывать ссылки MusicBrainz на страницах артистов и альбомов, где есть ID MusicBrainz",
         "musicbrainz": "показывать ссылки MusicBrainz",
-        "neteaseTranslation_description": "Если включено, получает и отображает переведённые текста песен с NetEase по возможности",
-        "neteaseTranslation": "Включить переводы NetEase",
         "notify": "включить уведомления о песнях",
         "notify_description": "показывать уведомления при смене песни",
         "pathReplace": "замена пути к файлу",

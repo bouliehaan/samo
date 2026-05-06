@@ -224,7 +224,7 @@ export function WaveSurferPlayer() {
                 transitionType === PlayerStyle.CROSSFADE ||
                 transitionType === PlayerStyle.GAPLESS
             ) {
-                setTimestamp(Number(currentTime.toFixed(0)));
+                setTimestamp(Number(currentTime.toFixed(3)));
             }
         }, 500);
 

@@ -481,6 +481,7 @@ export const GeneralSettingsSchema = z.object({
     musicBrainz: z.boolean(),
     nativeAspectRatio: z.boolean(),
     nativeSpotify: z.boolean(),
+    offlineMode: z.boolean(),
     passwordStore: z.string().optional(),
     pathReplace: z.string(),
     pathReplaceWith: z.string(),
@@ -544,7 +545,6 @@ const LyricsSettingsSchema = z.object({
     alignment: z.enum(['center', 'left', 'right']),
     delayMs: z.number(),
     enableAutoTranslation: z.boolean(),
-    enableNeteaseTranslation: z.boolean(),
     fetch: z.boolean(),
     follow: z.boolean(),
     preferLocalLyrics: z.boolean(),
@@ -1153,6 +1153,7 @@ const initialState: SettingsState = {
         musicBrainz: true,
         nativeAspectRatio: false,
         nativeSpotify: false,
+        offlineMode: false,
         passwordStore: undefined,
         pathReplace: '',
         pathReplaceWith: '',
@@ -1791,13 +1792,12 @@ const initialState: SettingsState = {
         alignment: 'center',
         delayMs: 0,
         enableAutoTranslation: false,
-        enableNeteaseTranslation: false,
         fetch: true,
         follow: true,
         preferLocalLyrics: true,
         showMatch: true,
         showProvider: true,
-        sources: [LyricSource.NETEASE, LyricSource.LRCLIB],
+        sources: [LyricSource.LRCLIB, LyricSource.SIMPMUSIC],
         translationApiKey: '',
         translationApiProvider: '',
         translationTargetLanguage: 'en',
@@ -2423,10 +2423,40 @@ export const useSettingsStore = createWithEqualityFn<SettingsSlice>()(
                     }
                 }
 
+                if (version <= 29) {
+                    // Remove Chinese (NetEase) and SimpMusic providers from lyrics sources
+                    const removed = ['NetEase', 'SimpMusic'];
+                    if (Array.isArray(state.lyrics?.sources)) {
+                        state.lyrics.sources = state.lyrics.sources.filter(
+                            (s: string) => !removed.includes(s),
+                        );
+                        if (state.lyrics.sources.length === 0) {
+                            state.lyrics.sources = [LyricSource.LRCLIB];
+                        }
+                    }
+                    delete (state.lyrics as any)?.enableNeteaseTranslation;
+                }
+
+                if (version <= 30) {
+                    if (typeof state.general.offlineMode !== 'boolean') {
+                        state.general.offlineMode = initialState.general.offlineMode;
+                    }
+                }
+
+                if (version <= 31) {
+                    if (
+                        Array.isArray(state.lyrics?.sources) &&
+                        state.lyrics.sources.length === 1 &&
+                        state.lyrics.sources[0] === LyricSource.LRCLIB
+                    ) {
+                        state.lyrics.sources = [LyricSource.LRCLIB, LyricSource.SIMPMUSIC];
+                    }
+                }
+
                 return persistedState;
             },
             name: 'store_settings',
-            version: 28,
+            version: 31,
         },
     ),
 );
@@ -2439,6 +2469,8 @@ export const useTableSettings = (type: ItemListKey) =>
     useSettingsStore((state) => state.lists[type as keyof typeof state.lists]);
 
 export const useGeneralSettings = () => useSettingsStore((state) => state.general, shallow);
+
+export const useOfflineMode = () => useSettingsStore((state) => state.general.offlineMode);
 
 export const usePlaybackType = () => useSettingsStore((state) => state.playback.type, shallow);
 

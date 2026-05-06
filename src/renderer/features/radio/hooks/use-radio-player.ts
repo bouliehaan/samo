@@ -1,6 +1,6 @@
 import IcecastMetadataStats from 'icecast-metadata-stats';
 import isElectron from 'is-electron';
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { createWithEqualityFn } from 'zustand/traditional';
 
 import { usePlayerEvents } from '/@/renderer/features/player/audio-player/hooks/use-player-events';
@@ -209,6 +209,10 @@ export const useRadioAudioInstance = () => {
     const playbackType = usePlaybackType();
     const isUsingMpv = playbackType === PlayerType.LOCAL && mpvPlayer;
 
+    // Track the last URL we called setQueue with so we don't reload the stream
+    // on a plain play/pause toggle — only reload when the station actually changes.
+    const loadedUrlRef = useRef<null | string>(null);
+
     // Handle mpv playback
     useEffect(() => {
         if (!isUsingMpv || !mpvPlayer) {
@@ -216,8 +220,16 @@ export const useRadioAudioInstance = () => {
         }
 
         if (currentStreamUrl) {
-            mpvPlayer.setQueue(currentStreamUrl, undefined, !isPlaying);
+            if (currentStreamUrl !== loadedUrlRef.current) {
+                loadedUrlRef.current = currentStreamUrl;
+                mpvPlayer.setQueue(currentStreamUrl, undefined, !isPlaying);
+            } else if (isPlaying) {
+                mpvPlayer.play();
+            } else {
+                mpvPlayer.pause();
+            }
         } else {
+            loadedUrlRef.current = null;
             mpvPlayer.pause();
         }
     }, [

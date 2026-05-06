@@ -735,8 +735,6 @@
         "musicbrainz_description": "affiche les liens vers MusicBrainz sur les pages artiste/album, lorsque l'identifiant MusicBrainz existe",
         "lastfm_description": "affiche les liens vers last.fm sur les pages artiste/album",
         "musicbrainz": "affiche les liens MusicBrainz",
-        "neteaseTranslation": "Activer les traductions NetEase",
-        "neteaseTranslation_description": "si activé, récupère et affiche les paroles traduites de NetEase si elles sont disponibles",
         "preferLocalLyrics_description": "privilégier les paroles locales aux paroles distantes lorsqu'elles sont disponibles",
         "preferLocalLyrics": "privilégier les paroles locales",
         "discordPausedStatus_description": "si activé, le statut affichera lorsque la lecture est en pause",

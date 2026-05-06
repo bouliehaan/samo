@@ -423,7 +423,15 @@ export const MobileFullscreenPlayer = () => {
                 });
             }
         },
-        [currentSong, isPodcastMode, podcastItem, podcastServer, isAudiobookMode, audiobookItem, currentServer],
+        [
+            currentSong,
+            isPodcastMode,
+            podcastItem,
+            podcastServer,
+            isAudiobookMode,
+            audiobookItem,
+            currentServer,
+        ],
     );
 
     const handleToggleQueue = useCallback(() => {
@@ -552,7 +560,7 @@ export const MobileFullscreenPlayer = () => {
                             />
                         </div>
                         <div className={styles.lyricsContent}>
-                            <Lyrics fadeOutNoLyricsMessage={false} />
+                            <Lyrics />
                         </div>
                     </motion.div>
                 )}

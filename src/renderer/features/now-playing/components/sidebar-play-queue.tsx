@@ -1,4 +1,3 @@
-import { useQuery } from '@tanstack/react-query';
 import isElectron from 'is-electron';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -6,7 +5,6 @@ import { useTranslation } from 'react-i18next';
 import styles from './sidebar-play-queue.module.css';
 
 import { ItemListHandle } from '/@/renderer/components/item-list/types';
-import { lyricsQueries } from '/@/renderer/features/lyrics/api/lyrics-api';
 import { Lyrics } from '/@/renderer/features/lyrics/lyrics';
 import { PlayQueue } from '/@/renderer/features/now-playing/components/play-queue';
 import { PlayQueueListControls } from '/@/renderer/features/now-playing/components/play-queue-list-controls';
@@ -14,7 +12,6 @@ import {
     useCombinedLyricsAndVisualizer,
     useFullScreenPlayerStore,
     usePlaybackSettings,
-    usePlayerSong,
     useSettingsStore,
     useSettingsStoreActions,
     useShowLyricsInSidebar,
@@ -62,7 +59,11 @@ function calcSidebarHeights(
 
     if (!hasLyrics) {
         const queue = Math.max(QUEUE_MIN_HEIGHT, totalHeight / 2);
-        return { lyrics: 0, queue, visualizer: Math.max(VISUALIZER_MIN_HEIGHT, totalHeight - queue) };
+        return {
+            lyrics: 0,
+            queue,
+            visualizer: Math.max(VISUALIZER_MIN_HEIGHT, totalHeight - queue),
+        };
     }
 
     if (!hasVisualizer) {
@@ -385,7 +386,7 @@ const LyricsPanel = () => {
     return (
         <div className={styles.lyricsSection}>
             <PanelReorderControls panelType="lyrics" />
-            <Lyrics fadeOutNoLyricsMessage={false} settingsKey="sidebar" />
+            <Lyrics settingsKey="sidebar" />
         </div>
     );
 };
@@ -408,50 +409,12 @@ const VisualizerPanel = () => {
 };
 
 const CombinedLyricsAndVisualizerPanel = () => {
-    const currentSong = usePlayerSong();
-    const visualizerType = useSettingsStore((store) => store.visualizer.type);
     const showLyricsInSidebar = useShowLyricsInSidebar();
-    const showVisualizerInSidebar = useShowVisualizerInSidebar();
-    const { webAudio } = usePlaybackSettings();
-    const showVisualizer = showVisualizerInSidebar && webAudio;
-
-    const { data: lyricsData } = useQuery(
-        lyricsQueries.songLyrics(
-            {
-                options: {
-                    enabled: !!currentSong?.id && showLyricsInSidebar,
-                },
-                query: { songId: currentSong?.id || '' },
-                serverId: currentSong?._serverId || '',
-            },
-            currentSong,
-        ),
-    );
-
-    const hasLyrics = useMemo(() => {
-        if (!lyricsData) return false;
-
-        if (Array.isArray(lyricsData)) {
-            return lyricsData.length > 0 && !!lyricsData[0]?.lyrics;
-        }
-
-        const lyrics = lyricsData.selected?.lyrics;
-
-        if (Array.isArray(lyrics)) {
-            return lyrics.length > 0;
-        }
-
-        if (typeof lyrics === 'string') {
-            return lyrics.trim().length > 0;
-        }
-
-        return false;
-    }, [lyricsData]);
 
     return (
         <div className={styles.lyricsSection}>
             <PanelReorderControls panelType="lyrics" />
-            {showLyricsInSidebar && <Lyrics fadeOutNoLyricsMessage={true} settingsKey="sidebar" />}
+            {showLyricsInSidebar && <Lyrics settingsKey="sidebar" />}
         </div>
     );
 };

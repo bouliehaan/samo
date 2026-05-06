@@ -616,8 +616,6 @@
         "mpvExtraParameters_help": "一行一個",
         "musicbrainz": "顯示 MusicBrainz 連結",
         "musicbrainz_description": "在存在 MusicBrainz ID 的藝人/專輯頁面上顯示 MusicBrainz 的連結",
-        "neteaseTranslation": "啟用網易翻譯",
-        "neteaseTranslation_description": "啟用後，將從網易取得並顯示翻譯的歌詞（如果有）",
         "passwordStore": "密碼/secret儲存",
         "passwordStore_description": "使用什麼密碼/secret儲存。如果您在儲存密碼時遇到問題，請變更此項目",
         "playButtonBehavior_optionPlayShuffled": "$t(player.shuffle)",

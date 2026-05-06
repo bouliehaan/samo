@@ -14,9 +14,14 @@ import itemCardControlsStyles from '/@/renderer/components/item-card/item-card-c
 import { ItemImage } from '/@/renderer/components/item-image/item-image';
 import { ContextMenuController } from '/@/renderer/features/context-menu/context-menu-controller';
 import { usePlayer } from '/@/renderer/features/player/context/player-context';
-import { AppRoute } from '/@/renderer/router/routes';
 import { PlayButton } from '/@/renderer/features/shared/components/play-button';
-import { recordRecentArtist, recordRecentPlaylist, useCurrentServer, useCurrentServerId } from '/@/renderer/store';
+import { AppRoute } from '/@/renderer/router/routes';
+import {
+    recordRecentArtist,
+    recordRecentPlaylist,
+    useCurrentServer,
+    useCurrentServerId,
+} from '/@/renderer/store';
 import {
     useFavoritePlaylistIds,
     useLibraryFavoritesActions,
@@ -65,11 +70,16 @@ const getCountText = (count: null | number | undefined, label: string) => {
     return `${count} ${label}${count === 1 ? '' : 's'}`;
 };
 
-const useAlbums = (sortBy: AlbumListSort, sortOrder: SortOrder, query?: { favorite?: boolean }) => {
+const useAlbums = (
+    sortBy: AlbumListSort,
+    sortOrder: SortOrder,
+    query?: { favorite?: boolean },
+    options?: { enabled?: boolean },
+) => {
     const serverId = useCurrentServerId();
 
     return useQuery({
-        enabled: Boolean(serverId),
+        enabled: Boolean(serverId) && (options?.enabled ?? true),
         queryFn: ({ signal }) =>
             api.controller.getAlbumList({
                 apiClientProps: { serverId, signal },
@@ -84,7 +94,6 @@ const useAlbums = (sortBy: AlbumListSort, sortOrder: SortOrder, query?: { favori
         queryKey: ['home', 'albums', sortBy, sortOrder, query, serverId],
     });
 };
-
 
 const useArtists = () => {
     const serverId = useCurrentServerId();
@@ -106,7 +115,8 @@ const useArtists = () => {
     });
 
     const recentlyPlayedQuery = useQuery({
-        enabled: Boolean(serverId) && !favoritesQuery.data?.items?.length,
+        enabled:
+            Boolean(serverId) && favoritesQuery.isSuccess && favoritesQuery.data.items.length === 0,
         queryFn: ({ signal }) =>
             api.controller.getAlbumArtistList({
                 apiClientProps: { serverId, signal },
@@ -129,11 +139,12 @@ const useSongs = (
     sortOrder: SortOrder,
     limit = LIST_LIMIT,
     query?: { favorite?: boolean },
+    options?: { enabled?: boolean },
 ) => {
     const serverId = useCurrentServerId();
 
     return useQuery({
-        enabled: Boolean(serverId),
+        enabled: Boolean(serverId) && (options?.enabled ?? true),
         queryFn: ({ signal }) =>
             api.controller.getSongList({
                 apiClientProps: { serverId, signal },
@@ -175,13 +186,12 @@ export const HomeFavoritePlaylists = ({
         queryKey: ['home', 'playlists', serverId],
     });
 
-    const allPlaylists = playlistsQuery.data?.items ?? [];
-
     const playlists = useMemo(() => {
+        const allPlaylists = playlistsQuery.data?.items ?? [];
         const favorites = allPlaylists.filter((p) => favoritePlaylistIds.has(p.id));
         const nonFavorites = allPlaylists.filter((p) => !favoritePlaylistIds.has(p.id));
         return [...favorites, ...nonFavorites].slice(0, SHELF_LIMIT);
-    }, [allPlaylists, favoritePlaylistIds]);
+    }, [favoritePlaylistIds, playlistsQuery.data?.items]);
 
     if (!playlists.length) return null;
 
@@ -426,12 +436,19 @@ const ArtistCard = ({ artist, onClick }: { artist: AlbumArtist; onClick: () => v
 export const HomeFavoriteTracks = () => {
     const serverId = useCurrentServerId();
 
-    const favoritesQuery = useSongs('favorites', SongListSort.FAVORITED, SortOrder.DESC, LIST_LIMIT, {
-        favorite: true,
-    });
+    const favoritesQuery = useSongs(
+        'favorites',
+        SongListSort.FAVORITED,
+        SortOrder.DESC,
+        LIST_LIMIT,
+        {
+            favorite: true,
+        },
+    );
 
     const recentlyPlayedQuery = useQuery({
-        enabled: Boolean(serverId) && !favoritesQuery.data?.items?.length,
+        enabled:
+            Boolean(serverId) && favoritesQuery.isSuccess && favoritesQuery.data.items.length === 0,
         queryFn: ({ signal }) =>
             api.controller.getSongList({
                 apiClientProps: { serverId, signal },
@@ -517,9 +534,13 @@ export const HomeRediscoverySection = () => {
         'rediscovery',
         SongListSort.RECENTLY_PLAYED,
         SortOrder.ASC,
-        isJellyfin ? 6 : 0,
+        6,
+        undefined,
+        { enabled: isJellyfin },
     );
-    const albumsQuery = useAlbums(AlbumListSort.RECENTLY_PLAYED, SortOrder.ASC);
+    const albumsQuery = useAlbums(AlbumListSort.RECENTLY_PLAYED, SortOrder.ASC, undefined, {
+        enabled: !isJellyfin,
+    });
     const songs = isJellyfin ? (songsQuery.data?.items ?? []) : [];
     const albums = !isJellyfin ? (albumsQuery.data?.items ?? []) : [];
 

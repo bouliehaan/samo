@@ -267,8 +267,6 @@
         "lastfm_description": "Muestra enlaces a Last.fm en las páginas de artistas/álbumes",
         "musicbrainz": "Mostrar enlaces de MusicBrainz",
         "musicbrainz_description": "Muestra enlaces a MusicBrainz en las páginas de artistas/álbumes, donde exista MusicBrainz ID",
-        "neteaseTranslation": "Activar traducciones de NetEase",
-        "neteaseTranslation_description": "Cuando se habilita, busca y muestra letras traducidas desde NetEase si está disponible",
         "preferLocalLyrics_description": "Prefiere letras locales sobre letras remotas cuando esté disponible",
         "preferLocalLyrics": "Preferir letras locales",
         "discordPausedStatus": "Mostrar estado de actividad cuando esté en pausa",

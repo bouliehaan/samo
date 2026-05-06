@@ -700,8 +700,6 @@
         "mpvExtraParameters_help": "un per línia",
         "musicbrainz": "mostra els enllaços de MusicBrainz",
         "musicbrainz_description": "mostra enllaços a les pàgines d'artista/àlbum a MusicBrainz si hi ha MusicBrainz ID",
-        "neteaseTranslation": "activeu les traduccions NetEase",
-        "neteaseTranslation_description": "Si ho activeu, cerca i mostra lletres traduïdes de NetEase si estan disponibles",
         "passwordStore": "contrasenyes/emmagatzematge secret",
         "passwordStore_description": "quina contrasenya/emmagatzematge secret s'utilitza. canvieu-ho si teniu problemes per desar contrasenyes",
         "playbackStyle": "estil de reproducció",

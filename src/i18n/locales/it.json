@@ -394,8 +394,6 @@
         "mpvExtraParameters_help": "uno per linea",
         "musicbrainz": "mostra links MusicBrainz",
         "musicbrainz_description": "mostra link a MusicBrainz sulle pagine degli artisti/album, se è disponibile un MusicBrainz ID",
-        "neteaseTranslation": "Abilita traduzioni di NetEase",
-        "neteaseTranslation_description": "Se abilitato, recupera e mostra i testi tradotti da NetEase, se disponibili",
         "passwordStore": "Archivio di password/segreti",
         "passwordStore_description": "specifica quale archivio di password e segreti utilizzare. modificalo in caso di problemi nel salvataggio delle credenziali",
         "playButtonBehavior_optionPlayShuffled": "$t(player.shuffle)",

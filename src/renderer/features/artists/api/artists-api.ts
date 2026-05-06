@@ -40,6 +40,7 @@ export const artistsQueries = {
                 );
             },
             queryKey: queryKeys.albumArtists.info(args.serverId, args.query),
+            staleTime: 1000 * 60 * 60,
             ...args.options,
         });
     },

@@ -994,8 +994,6 @@
         "externalLinks": "Externe Links anzeigen",
         "externalLinks_description": "Aktiviert die Anzeige externer Links (Last.fm, MusicBrainz) auf Artist/Album Seiten",
         "musicbrainz_description": "Zeige Links zu MusicBrainz auf Artist/Album Seite, falls MusicBrainz ID vorhanden",
-        "neteaseTranslation_description": "Wenn aktiviert, werden Songtextübersetzungen von NetEase abgerufen und angezeigt, sofern verfügbar",
-        "neteaseTranslation": "NetEase Übersetzungen aktivieren",
         "notify": "Benachrichtigungen aktivieren",
         "notify_description": "Zeigt Benachrichtigungen beim Titelwechsel",
         "playerFilters": "Lieder der Wiedergabeliste filtern",

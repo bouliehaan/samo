@@ -890,12 +890,6 @@ async function createWindow(first = true): Promise<void> {
     menuBuilder = new MenuBuilder(mainWindow);
     rebuildMainMenu();
 
-    // Open URLs in the user's browser
-    mainWindow.webContents.setWindowOpenHandler((edata) => {
-        shell.openExternal(edata.url);
-        return { action: 'deny' };
-    });
-
     mainWindow.webContents.session.setDisplayMediaRequestHandler((_request, callback) => {
         if (!isMacOS()) {
             callback({ audio: 'loopback' });

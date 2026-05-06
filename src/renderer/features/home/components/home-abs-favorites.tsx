@@ -1,6 +1,6 @@
 import clsx from 'clsx';
 import { useQueries, useQuery } from '@tanstack/react-query';
-import { ReactNode, useMemo } from 'react';
+import { ReactNode, useCallback, useMemo } from 'react';
 import { generatePath, useNavigate } from 'react-router';
 
 import styles from './home-continue-listening.module.css';
@@ -185,56 +185,67 @@ const HomeAbsFavoriteCarousel = ({
         return [...favoriteItems, ...nonFavoriteItems].slice(0, HOME_ABS_ITEM_LIMIT);
     }, [allItems, favoriteIds]);
 
+    const openItem = useCallback(
+        (item: AudiobookshelfLibraryItem) => {
+            if (!server) return;
+            if (kind === 'audiobook') {
+                audiobookActions.play(server, item);
+                return;
+            }
+
+            recordRecentPodcast(item, server.id);
+            navigate(generatePath(AppRoute.PODCASTS_DETAIL, { itemId: item.id }));
+        },
+        [audiobookActions, kind, navigate, server],
+    );
+
+    const playItem = useCallback(
+        async (item: AudiobookshelfLibraryItem) => {
+            if (!server) return;
+            if (kind === 'audiobook') {
+                audiobookActions.play(server, item);
+                return;
+            }
+
+            try {
+                const fullItem = await audiobookshelfController.getItem(server, item.id);
+                const episodes = (fullItem?.media?.episodes ?? [])
+                    .slice()
+                    .sort((a, b) => (b.publishedAt ?? 0) - (a.publishedAt ?? 0));
+                const episode = episodes[0];
+                if (episode) {
+                    recordRecentPodcast(item, server.id);
+                    playPodcast(server, fullItem, episode);
+                }
+            } catch {
+                recordRecentPodcast(item, server.id);
+                navigate(generatePath(AppRoute.PODCASTS_DETAIL, { itemId: item.id }));
+            }
+        },
+        [audiobookActions, kind, navigate, playPodcast, server],
+    );
+
+    const cards = useMemo(
+        () =>
+            items.map((item) => ({
+                content: (
+                    <HomeAbsFavoriteCard
+                        isFavorite={favoriteIds.has(item.id)}
+                        item={item}
+                        kind={kind}
+                        onClick={() => openItem(item)}
+                        onPlay={() => playItem(item)}
+                        server={server!}
+                    />
+                ),
+                id: item.id,
+            })),
+        [favoriteIds, items, kind, openItem, playItem, server],
+    );
+
     if (!server || !items.length) {
         return null;
     }
-
-    const openItem = (item: AudiobookshelfLibraryItem) => {
-        if (kind === 'audiobook') {
-            audiobookActions.play(server, item);
-            return;
-        }
-
-        recordRecentPodcast(item, server.id);
-        navigate(generatePath(AppRoute.PODCASTS_DETAIL, { itemId: item.id }));
-    };
-
-    const playItem = async (item: AudiobookshelfLibraryItem) => {
-        if (kind === 'audiobook') {
-            audiobookActions.play(server, item);
-            return;
-        }
-
-        try {
-            const fullItem = await audiobookshelfController.getItem(server, item.id);
-            const episodes = (fullItem?.media?.episodes ?? [])
-                .slice()
-                .sort((a, b) => (b.publishedAt ?? 0) - (a.publishedAt ?? 0));
-            const episode = episodes[0];
-            if (episode) {
-                recordRecentPodcast(item, server.id);
-                playPodcast(server, fullItem, episode);
-            }
-        } catch {
-            // fall back to opening the detail page if fetch fails
-            recordRecentPodcast(item, server.id);
-            navigate(generatePath(AppRoute.PODCASTS_DETAIL, { itemId: item.id }));
-        }
-    };
-
-    const cards = items.map((item) => ({
-        content: (
-            <HomeAbsFavoriteCard
-                isFavorite={favoriteIds.has(item.id)}
-                item={item}
-                kind={kind}
-                onClick={() => openItem(item)}
-                onPlay={() => playItem(item)}
-                server={server}
-            />
-        ),
-        id: item.id,
-    }));
 
     return (
         <GridCarousel
@@ -274,12 +285,16 @@ const HomeAbsFavoriteCard = ({
     };
 
     return (
-        <button
+        <div
             aria-label={`${kind === 'audiobook' ? 'Play' : 'Open'} ${title}`}
             className={styles.cardButton}
             onClick={onClick}
             onContextMenu={openContextMenu}
-            type="button"
+            onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') onClick();
+            }}
+            role="button"
+            tabIndex={0}
         >
             <div className={styles.artWrap}>
                 <AbsCoverImage
@@ -331,7 +346,7 @@ const HomeAbsFavoriteCard = ({
             <Text className={styles.subtitle} isMuted size="xs">
                 {getAbsSubtitle(item, kind)}
             </Text>
-        </button>
+        </div>
     );
 };
 

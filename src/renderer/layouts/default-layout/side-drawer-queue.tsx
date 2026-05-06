@@ -18,6 +18,7 @@ const queueDrawerVariants: Variants = {
             windowBarStyle === Platform.WINDOWS || Platform.MACOS
                 ? 'calc(100vh - 205px)'
                 : 'calc(100vh - 175px)',
+        pointerEvents: 'none',
         position: 'absolute',
         right: 0,
         top: '75px',
@@ -82,42 +83,39 @@ export const SideDrawerQueue = () => {
         !rightExpanded && !drawer && location.pathname !== AppRoute.NOW_PLAYING;
 
     return (
-        <AnimatePresence initial={false} mode="wait">
-            {isQueueDrawerButtonVisible && (
-                <motion.div
-                    animate="visible"
-                    className={styles.queueDrawerArea}
-                    exit="hidden"
-                    initial="hidden"
-                    key="queue-drawer-button"
-                    onMouseEnter={handleEnterDrawerButton}
-                    onMouseLeave={handleLeaveDrawerButton}
-                    variants={queueDrawerButtonVariants}
-                    whileHover={{ opacity: 1, scale: 2, transition: { duration: 0.5 } }}
-                >
-                    <Icon icon="arrowLeftToLine" size="lg" />
-                </motion.div>
-            )}
+        <>
+            <AnimatePresence initial={false} mode="wait">
+                {isQueueDrawerButtonVisible && (
+                    <motion.div
+                        animate="visible"
+                        className={styles.queueDrawerArea}
+                        exit="hidden"
+                        initial="hidden"
+                        key="queue-drawer-button"
+                        onMouseEnter={handleEnterDrawerButton}
+                        onMouseLeave={handleLeaveDrawerButton}
+                        variants={queueDrawerButtonVariants}
+                        whileHover={{ opacity: 1, scale: 2, transition: { duration: 0.5 } }}
+                    >
+                        <Icon icon="arrowLeftToLine" size="lg" />
+                    </motion.div>
+                )}
+            </AnimatePresence>
 
-            {drawer && (
-                <motion.div
-                    animate="open"
-                    className={styles.queueDrawer}
-                    exit="closed"
-                    initial="closed"
-                    key="queue-drawer"
-                    onMouseLeave={() => {
-                        // The drawer will close due to the delay when setting isReorderingQueue
-                        setTimeout(() => {
-                            if (useAppStore.getState().isReorderingQueue) return;
-                            drawerHandler.close();
-                        }, 50);
-                    }}
-                    variants={queueDrawerVariants}
-                >
-                    <DrawerPlayQueue />
-                </motion.div>
-            )}
-        </AnimatePresence>
+            <motion.div
+                animate={drawer ? 'open' : 'closed'}
+                className={styles.queueDrawer}
+                initial="closed"
+                onMouseLeave={() => {
+                    setTimeout(() => {
+                        if (useAppStore.getState().isReorderingQueue) return;
+                        drawerHandler.close();
+                    }, 50);
+                }}
+                variants={queueDrawerVariants}
+            >
+                <DrawerPlayQueue />
+            </motion.div>
+        </>
     );
 };

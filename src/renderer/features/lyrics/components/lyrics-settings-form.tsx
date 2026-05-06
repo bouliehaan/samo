@@ -228,32 +228,6 @@ export const LyricsSettingsForm = ({ settingsKey }: LyricsSettingsFormProps) => 
                 postProcess: 'sentenceCase',
             }),
         },
-        {
-            control: (
-                <Switch
-                    aria-label="Show match"
-                    defaultChecked={lyricsSettings.showMatch}
-                    onChange={(e) => updateLyricsSetting({ showMatch: e.currentTarget.checked })}
-                />
-            ),
-            description: '',
-            title: t('page.fullscreenPlayer.config.showLyricMatch', {
-                postProcess: 'sentenceCase',
-            }),
-        },
-        {
-            control: (
-                <Switch
-                    aria-label="Show provider"
-                    defaultChecked={lyricsSettings.showProvider}
-                    onChange={(e) => updateLyricsSetting({ showProvider: e.currentTarget.checked })}
-                />
-            ),
-            description: '',
-            title: t('page.fullscreenPlayer.config.showLyricProvider', {
-                postProcess: 'sentenceCase',
-            }),
-        },
     ];
 
     const lyricOptions: SettingOption[] = [
@@ -309,25 +283,6 @@ export const LyricsSettingsForm = ({ settingsKey }: LyricsSettingsFormProps) => 
             }),
             isHidden: !isElectron(),
             title: t('setting.lyricFetchProvider', { postProcess: 'sentenceCase' }),
-        },
-        {
-            control: (
-                <Switch
-                    aria-label="Enable NetEase translations"
-                    defaultChecked={lyricsSettings.enableNeteaseTranslation}
-                    onChange={(e) => {
-                        const isChecked = e.currentTarget.checked;
-                        updateLyricsSetting({ enableNeteaseTranslation: isChecked });
-                        localSettings?.set('enableNeteaseTranslation', isChecked);
-                    }}
-                />
-            ),
-            description: t('setting.neteaseTranslation', {
-                context: 'description',
-                postProcess: 'sentenceCase',
-            }),
-            isHidden: !isElectron(),
-            title: t('setting.neteaseTranslation', { postProcess: 'sentenceCase' }),
         },
         {
             control: (

@@ -223,8 +223,6 @@
         "mpvExtraParameters_help": "1 行に 1 つずつ",
         "musicbrainz_description": "MusicBrainz ID が存在するアーティストとアルバムページに MusicBrainz へのリンクを表示します",
         "musicbrainz": "MusicBrainz のリンクを表示",
-        "neteaseTranslation_description": "有効にすると、利用可能な場合は NetEase から翻訳された歌詞を取得して表示します",
-        "neteaseTranslation": "NetEase 翻訳歌詞を有効にする",
         "passwordStore_description": "使用するパスワード / シークレットストア。パスワードの保存に問題がある場合はこれを変更してください",
         "passwordStore": "パスワード / シークレットストア",
         "playerbarOpenDrawer_description": "プレーヤーバーをクリックすると全画面プレーヤーが開きます",

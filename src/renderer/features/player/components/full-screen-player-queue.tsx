@@ -182,7 +182,7 @@ export const FullScreenPlayerQueue = () => {
                 <FullScreenSimilarSongs />
             </div>
         ) : activeTab === 'lyrics' ? (
-            <Lyrics fadeOutNoLyricsMessage={false} />
+            <Lyrics />
         ) : activeTab === 'visualizer' && webAudio ? (
             <FullScreenVisualizerPane visualizerType={visualizerType} webAudio={webAudio} />
         ) : null;

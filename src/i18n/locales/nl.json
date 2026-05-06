@@ -827,8 +827,6 @@
         "mpvExtraParameters_help": "één per regel",
         "musicbrainz_description": "toon links naar MusicBrainz op artiest- en albumpagina's, als een MusicBrainz-ID aanwezig is",
         "musicbrainz": "toon MusicBrainz-links",
-        "neteaseTranslation_description": "Haalt songteksten van NetEase op en toont deze, indien beschikbaar",
-        "neteaseTranslation": "Gebruikt vertalingen van NetEase",
         "notify": "Nummerwisselnotificaties",
         "notify_description": "Toont een notificatie als het actieve nummer wisselt",
         "pathReplace": "bestandspadvervanging",

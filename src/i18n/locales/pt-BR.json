@@ -356,8 +356,6 @@
         "mpvExtraParameters_help": "um por linha",
         "musicbrainz": "mostrar links do MusicBrainz",
         "musicbrainz_description": "exibir links para o MusicBrainz nas páginas de artista/álbum, quando o ID do MusicBrainz existir",
-        "neteaseTranslation": "ativar traduções do NetEase",
-        "neteaseTranslation_description": "Quando ativado, busca e exibe letras traduzidas do NetEase, se disponíveis",
         "passwordStore": "Armazenamento de senhas/segredos",
         "passwordStore_description": "qual armazenamento de senhas/segredos usar. Altere isto se estiver tendo problemas para armazenar senhas",
         "playbackStyle": "estilo de reprodução",

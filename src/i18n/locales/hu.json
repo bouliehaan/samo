@@ -801,8 +801,6 @@
         "minimumScrobbleSeconds_description": "a szám lejátszásának minimális hossza, amelynek el kell hangzania, mielőtt Scrobble-nak számít",
         "mpvExtraParameters_help": "soronként",
         "musicbrainz_description": "mutasd a MusicBrainz linkjeit az előadó/album oldalakon, ahol MusicBrainz ID létezik",
-        "neteaseTranslation_description": "Ha engedélyezve van, letölti és megjeleníti a NetEase-ről a lefordított dalszövegeket, ha azok rendelkezésre állnak",
-        "neteaseTranslation": "Engedélyezi a NetEase fordításokat",
         "notify": "bekapcsolja a dal értesítéseket",
         "notify_description": "értesítések megjelenítése az aktuális dal megváltoztatásakor",
         "playbackStyle_description": "válaszd ki az lejátszóhoz használni kívánt lejátszási stílust",

@@ -611,8 +611,6 @@
         "lastfm": "näytä last.fm linkit",
         "lastfm_description": "näytä linkit Last.fm sivulle artistin/albumin sivuilla",
         "musicbrainz": "näytä MusicBrainz linkit",
-        "neteaseTranslation": "Ota NetEasen käännökset käyttöön",
-        "neteaseTranslation_description": "Käytöss ollessa noutaa ja näyttää käännetyt sanat NetEasesta, jos ne ovat saatavilla",
         "preferLocalLyrics_description": "suosi paikallisia sanoituksia ulkoisten sijasta, kun saatavilla",
         "preferLocalLyrics": "suosi paikallisia sanoituksia",
         "discordPausedStatus": "näytä rich presence tauotettuna",

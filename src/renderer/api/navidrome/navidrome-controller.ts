@@ -873,7 +873,7 @@ export const NavidromeController: InternalControllerEndpoint = {
         const fetchAlbums = async (albumIdBatch: string[] | undefined) => {
             const res = await ndApiClient(apiClientProps).getSongList({
                 query: {
-                    _end: query.startIndex + (query.limit || -1),
+                    _end: query.startIndex + (query.limit ?? -1),
                     _order: sortOrderMap.navidrome[query.sortOrder],
                     _sort: songListSortMap.navidrome[query.sortBy],
                     _start: query.startIndex,

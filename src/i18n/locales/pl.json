@@ -946,8 +946,6 @@
         "exportImportSettings_offendingKeyError": "\"{{offendingKey}}\" jest nieprawidłowy - {{reason}}",
         "hotkey_navigateHome": "przejdź do strony głównej",
         "language": "język",
-        "neteaseTranslation_description": "Gdy włączone, pobiera i wyświetla teksty przetłumaczone od NetEase, gdy dostępne",
-        "neteaseTranslation": "Włącz tłumaczenia NetEase",
         "notify": "włącz powiadomienia piosenek",
         "notify_description": "pokazuje powiadomienie, gdy aktualna piosenka jest zmieniana",
         "playerbarSlider": "pasek suwaka odtwarzacza",

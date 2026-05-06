@@ -222,7 +222,7 @@ const recentAlbumFromLibrary = (album: Album, selectedAt = 0): RecentItem => ({
 
 const recentArtistFromLibrary = (artist: AlbumArtist, selectedAt = 0): RecentItem => ({
     artwork: {
-        imageId: artist.imageId,
+        imageId: artist.imageId || artist.id,
         imageItemType: LibraryItem.ALBUM_ARTIST,
         imageUrl: artist.imageUrl,
         kind: 'music',
@@ -352,6 +352,22 @@ const mergeLibraryItemsWithRecents = (
         if (a.selectedAt !== b.selectedAt) return b.selectedAt - a.selectedAt;
         return a.title.localeCompare(b.title);
     });
+};
+
+const getSidebarArtwork = (item: RecentItem): RecentItem['artwork'] => {
+    if (
+        item.mediaType !== 'artist' ||
+        item.artwork.kind !== 'music' ||
+        item.artwork.imageId ||
+        item.artwork.imageUrl
+    ) {
+        return item.artwork;
+    }
+
+    return {
+        ...item.artwork,
+        imageId: item.itemId,
+    };
 };
 
 export const LibrarySidebar = () => {
@@ -622,7 +638,7 @@ export const LibrarySidebar = () => {
                 activePodcastItem?.id === item.itemId;
 
             return {
-                artwork: item.artwork,
+                artwork: getSidebarArtwork(item),
                 fallbackIconKey: getFallbackIcon(item.mediaType),
                 id: item.key,
                 isPlaying:

@@ -12,7 +12,11 @@ import { orderSearchResults } from './shared';
 const FETCH_URL = 'https://lrclib.net/api/get';
 const SEEARCH_URL = 'https://lrclib.net/api/search';
 
-const TIMEOUT_MS = 5000;
+const TIMEOUT_MS = 8000;
+
+const isCanceled = (error: unknown) => {
+    return axios.isCancel(error) || (error as { code?: string })?.code === 'ERR_CANCELED';
+};
 
 export interface LrcLibSearchResponse {
     albumName: string;
@@ -40,12 +44,19 @@ export interface LrcLibTrackResponse {
     syncedLyrics: null | string;
 }
 
-export async function getLyricsBySongId(songId: string): Promise<null | string> {
+export async function getLyricsBySongId(
+    songId: string,
+    signal?: AbortSignal,
+): Promise<null | string> {
     let result: AxiosResponse<LrcLibTrackResponse, any>;
 
     try {
-        result = await axios.get<LrcLibTrackResponse>(`${FETCH_URL}/${songId}`);
+        result = await axios.get<LrcLibTrackResponse>(`${FETCH_URL}/${songId}`, {
+            signal,
+            timeout: TIMEOUT_MS,
+        });
     } catch (e) {
+        if (isCanceled(e)) return null;
         console.error('LrcLib lyrics request got an error!', (e as Error)?.message);
         return null;
     }
@@ -55,6 +66,7 @@ export async function getLyricsBySongId(songId: string): Promise<null | string> 
 
 export async function getSearchResults(
     params: LyricSearchQuery,
+    signal?: AbortSignal,
 ): Promise<InternetProviderLyricSearchResponse[] | null> {
     let result: AxiosResponse<LrcLibSearchResponse[]>;
 
@@ -69,8 +81,11 @@ export async function getSearchResults(
             params: {
                 q: searchQuery,
             },
+            signal,
+            timeout: TIMEOUT_MS,
         });
     } catch (e) {
+        if (isCanceled(e)) return null;
         console.error('LrcLib search request got an error!', (e as Error)?.message);
         return null;
     }
@@ -80,6 +95,7 @@ export async function getSearchResults(
     const songResults: InternetProviderLyricSearchResponse[] = result.data.map((song) => {
         return {
             artist: song.artistName,
+            duration: song.duration,
             id: String(song.id),
             isSync: song.syncedLyrics ? true : false,
             name: song.name,
@@ -92,6 +108,7 @@ export async function getSearchResults(
 
 export async function query(
     params: LyricSearchQuery,
+    signal?: AbortSignal,
 ): Promise<InternetProviderLyricResponse | null> {
     let result: AxiosResponse<LrcLibTrackResponse, any>;
 
@@ -106,9 +123,11 @@ export async function query(
                 duration: params.duration,
                 track_name: params.name,
             },
+            signal,
             timeout: TIMEOUT_MS,
         });
     } catch (e) {
+        if (isCanceled(e)) return null;
         console.error('LrcLib search request got an error!', (e as Error).message);
         return null;
     }

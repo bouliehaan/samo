@@ -586,8 +586,6 @@
         "mpvExtraParameters_help": "lerro bakoitzeko bat",
         "musicbrainz": "erakutsi MusicBrainz estekak",
         "musicbrainz_description": "erakutsi MusicbBrainz-erako estekak artista/album orrietan, MusicBrainz ID existitzen den lekuetan",
-        "neteaseTranslation": "Gaitu NetEase itzulpenak",
-        "neteaseTranslation_description": "Gaituta dagoenean, NetEase-tik itzulitako letrak eskuratu eta bistaratzen ditu, eskuragarri badaude",
         "playbackStyle": "erreprodukzio estiloa",
         "playbackStyle_description": "aukeratu audio erreproduzitzailearentzat erabiliko den erreprodukzio estiloa",
         "playButtonBehavior": "erreprodukzio botoiaren portaera",
