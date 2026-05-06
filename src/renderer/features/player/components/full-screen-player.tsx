@@ -14,39 +14,23 @@ import { useLocation } from 'react-router';
 import styles from './full-screen-player.module.css';
 
 import { useItemImageUrl } from '/@/renderer/components/item-image/item-image';
-import { SONG_TABLE_COLUMNS } from '/@/renderer/components/item-list/item-table-list/default-columns';
 import { FullScreenPlayerImage } from '/@/renderer/features/player/components/full-screen-player-image';
 import { FullScreenPlayerQueue } from '/@/renderer/features/player/components/full-screen-player-queue';
-import {
-    ListConfigMenu,
-    SONG_DISPLAY_TYPES,
-} from '/@/renderer/features/shared/components/list-config-menu';
 import { useFastAverageColor } from '/@/renderer/hooks';
 import { useNowPlaying } from '/@/renderer/hooks/use-now-playing';
 import {
     useFullScreenPlayerStore,
     useFullScreenPlayerStoreActions,
-    useLyricsDisplaySettings,
-    useLyricsSettings,
     usePlayerData,
     usePlayerSong,
-    useSettingsStore,
-    useSettingsStoreActions,
     useWindowSettings,
 } from '/@/renderer/store';
 import { usePlaybackSource } from '/@/renderer/store/playback-owner.store';
 import { ActionIcon } from '/@/shared/components/action-icon/action-icon';
-import { Divider } from '/@/shared/components/divider/divider';
 import { Group } from '/@/shared/components/group/group';
-import { NumberInput } from '/@/shared/components/number-input/number-input';
-import { Option } from '/@/shared/components/option/option';
-import { Popover } from '/@/shared/components/popover/popover';
-import { SegmentedControl } from '/@/shared/components/segmented-control/segmented-control';
-import { Slider } from '/@/shared/components/slider/slider';
-import { Switch } from '/@/shared/components/switch/switch';
 import { useHotkeys } from '/@/shared/hooks/use-hotkeys';
 import { LibraryItem } from '/@/shared/types/domain-types';
-import { ItemListKey, ListDisplayType, Platform } from '/@/shared/types/types';
+import { Platform } from '/@/shared/types/types';
 
 const mainBackground = 'var(--theme-colors-background)';
 
@@ -261,47 +245,11 @@ BackgroundImageOverlay.displayName = 'BackgroundImageOverlay';
 
 const Controls = () => {
     const { t } = useTranslation();
-    const {
-        dynamicBackground,
-        dynamicImageBlur,
-        dynamicIsImage,
-        expanded,
-        opacity,
-        useImageAspectRatio,
-    } = useFullScreenPlayerStore();
+    const { expanded } = useFullScreenPlayerStore();
     const { setStore } = useFullScreenPlayerStoreActions();
-    const { setSettings } = useSettingsStoreActions();
-    const lyricsSettings = useLyricsSettings();
-    const displaySettings = useLyricsDisplaySettings('default');
-    const lyricConfig = { ...lyricsSettings, ...displaySettings };
-    const playbackSource = usePlaybackSource();
-    const showMusicListConfig = playbackSource == null || playbackSource === 'music';
 
     const handleToggleFullScreenPlayer = () => {
         setStore({ expanded: !expanded, visualizerExpanded: false });
-    };
-
-    const handleLyricsSettings = (property: string, value: any) => {
-        const displayProperties = ['fontSize', 'fontSizeUnsync', 'gap', 'gapUnsync'];
-        if (displayProperties.includes(property)) {
-            const currentDisplay = useSettingsStore.getState().lyricsDisplay;
-            setSettings({
-                lyricsDisplay: {
-                    ...currentDisplay,
-                    default: {
-                        ...currentDisplay.default,
-                        [property]: value,
-                    },
-                },
-            });
-        } else {
-            setSettings({
-                lyrics: {
-                    ...useSettingsStore.getState().lyrics,
-                    [property]: value,
-                },
-            });
-        }
     };
 
     useHotkeys([['Escape', handleToggleFullScreenPlayer]]);
@@ -312,7 +260,7 @@ const Controls = () => {
             gap="sm"
             pos="absolute"
             style={{
-                background: `rgb(var(--theme-colors-background-transparent), ${opacity}%)`,
+                background: 'rgb(var(--theme-colors-background-transparent), 0%)',
                 left: 0,
                 top: 'max(72px, calc(env(titlebar-area-height, 0px) + 0.75rem))',
             }}
@@ -331,293 +279,6 @@ const Controls = () => {
                 }}
                 variant="subtle"
             />
-            <Popover position="bottom-start">
-                <Popover.Target>
-                    <ActionIcon
-                        aria-label={t('common.configure', { postProcess: 'titleCase' })}
-                        icon="settings2"
-                        iconProps={{ size: 'lg' }}
-                        size="lg"
-                        variant="subtle"
-                    />
-                </Popover.Target>
-                <Popover.Dropdown>
-                    <Option>
-                        <Option.Label>
-                            {t('page.fullscreenPlayer.config.dynamicBackground', {
-                                postProcess: 'sentenceCase',
-                            })}
-                        </Option.Label>
-                        <Option.Control>
-                            <Switch
-                                defaultChecked={dynamicBackground}
-                                onChange={(e) =>
-                                    setStore({
-                                        dynamicBackground: e.target.checked,
-                                    })
-                                }
-                            />
-                        </Option.Control>
-                    </Option>
-                    {dynamicBackground && (
-                        <Option>
-                            <Option.Label>
-                                {t('page.fullscreenPlayer.config.dynamicIsImage', {
-                                    postProcess: 'sentenceCase',
-                                })}
-                            </Option.Label>
-                            <Option.Control>
-                                <Switch
-                                    defaultChecked={dynamicIsImage}
-                                    onChange={(e) =>
-                                        setStore({
-                                            dynamicIsImage: e.target.checked,
-                                        })
-                                    }
-                                />
-                            </Option.Control>
-                        </Option>
-                    )}
-                    {dynamicBackground && dynamicIsImage && (
-                        <Option>
-                            <Option.Label>
-                                {t('page.fullscreenPlayer.config.dynamicImageBlur', {
-                                    postProcess: 'sentenceCase',
-                                })}
-                            </Option.Label>
-                            <Option.Control>
-                                <Slider
-                                    defaultValue={dynamicImageBlur}
-                                    label={(e) => `${e} rem`}
-                                    max={6}
-                                    min={0}
-                                    onChangeEnd={(e) => setStore({ dynamicImageBlur: Number(e) })}
-                                    step={0.5}
-                                    w="100%"
-                                />
-                            </Option.Control>
-                        </Option>
-                    )}
-                    {dynamicBackground && (
-                        <Option>
-                            <Option.Label>
-                                {t('page.fullscreenPlayer.config.opacity', {
-                                    postProcess: 'sentenceCase',
-                                })}
-                            </Option.Label>
-                            <Option.Control>
-                                <Slider
-                                    defaultValue={opacity}
-                                    label={(e) => `${e} %`}
-                                    max={100}
-                                    min={0}
-                                    onChangeEnd={(e) => setStore({ opacity: Number(e) })}
-                                    w="100%"
-                                />
-                            </Option.Control>
-                        </Option>
-                    )}
-                    <Option>
-                        <Option.Label>
-                            {t('page.fullscreenPlayer.config.useImageAspectRatio', {
-                                postProcess: 'sentenceCase',
-                            })}
-                        </Option.Label>
-                        <Option.Control>
-                            <Switch
-                                checked={useImageAspectRatio}
-                                onChange={(e) =>
-                                    setStore({
-                                        useImageAspectRatio: e.target.checked,
-                                    })
-                                }
-                            />
-                        </Option.Control>
-                    </Option>
-                    <Divider my="sm" />
-                    <Option>
-                        <Option.Label>
-                            {t('page.fullscreenPlayer.config.followCurrentLyric', {
-                                postProcess: 'sentenceCase',
-                            })}
-                        </Option.Label>
-                        <Option.Control>
-                            <Switch
-                                checked={lyricConfig.follow}
-                                onChange={(e) =>
-                                    handleLyricsSettings('follow', e.currentTarget.checked)
-                                }
-                            />
-                        </Option.Control>
-                    </Option>
-                    <Option>
-                        <Option.Label>
-                            {t('page.fullscreenPlayer.config.showLyricProvider', {
-                                postProcess: 'sentenceCase',
-                            })}
-                        </Option.Label>
-                        <Option.Control>
-                            <Switch
-                                checked={lyricConfig.showProvider}
-                                onChange={(e) =>
-                                    handleLyricsSettings('showProvider', e.currentTarget.checked)
-                                }
-                            />
-                        </Option.Control>
-                    </Option>
-                    <Option>
-                        <Option.Label>
-                            {t('page.fullscreenPlayer.config.showLyricMatch', {
-                                postProcess: 'sentenceCase',
-                            })}
-                        </Option.Label>
-                        <Option.Control>
-                            <Switch
-                                checked={lyricConfig.showMatch}
-                                onChange={(e) =>
-                                    handleLyricsSettings('showMatch', e.currentTarget.checked)
-                                }
-                            />
-                        </Option.Control>
-                    </Option>
-                    <Option>
-                        <Option.Label>
-                            {t('page.fullscreenPlayer.config.lyricSize', {
-                                postProcess: 'sentenceCase',
-                            })}
-                        </Option.Label>
-                        <Option.Control>
-                            <Group w="100%" wrap="nowrap">
-                                <Slider
-                                    defaultValue={lyricConfig.fontSize}
-                                    label={(e) =>
-                                        `${t('page.fullscreenPlayer.config.synchronized', {
-                                            postProcess: 'titleCase',
-                                        })}: ${e}px`
-                                    }
-                                    max={72}
-                                    min={8}
-                                    onChangeEnd={(e) => handleLyricsSettings('fontSize', Number(e))}
-                                    w="100%"
-                                />
-                                <Slider
-                                    defaultValue={lyricConfig.fontSize}
-                                    label={(e) =>
-                                        `${t('page.fullscreenPlayer.config.unsynchronized', {
-                                            postProcess: 'sentenceCase',
-                                        })}: ${e}px`
-                                    }
-                                    max={72}
-                                    min={8}
-                                    onChangeEnd={(e) =>
-                                        handleLyricsSettings('fontSizeUnsync', Number(e))
-                                    }
-                                    w="100%"
-                                />
-                            </Group>
-                        </Option.Control>
-                    </Option>
-                    <Option>
-                        <Option.Label>
-                            {t('page.fullscreenPlayer.config.lyricGap', {
-                                postProcess: 'sentenceCase',
-                            })}
-                        </Option.Label>
-                        <Option.Control>
-                            <Group w="100%" wrap="nowrap">
-                                <Slider
-                                    defaultValue={lyricConfig.gap}
-                                    label={(e) => `Synchronized: ${e}px`}
-                                    max={50}
-                                    min={0}
-                                    onChangeEnd={(e) => handleLyricsSettings('gap', Number(e))}
-                                    w="100%"
-                                />
-                                <Slider
-                                    defaultValue={lyricConfig.gap}
-                                    label={(e) => `Unsynchronized: ${e}px`}
-                                    max={50}
-                                    min={0}
-                                    onChangeEnd={(e) =>
-                                        handleLyricsSettings('gapUnsync', Number(e))
-                                    }
-                                    w="100%"
-                                />
-                            </Group>
-                        </Option.Control>
-                    </Option>
-                    <Option>
-                        <Option.Label>
-                            {t('page.fullscreenPlayer.config.lyricAlignment', {
-                                postProcess: 'sentenceCase',
-                            })}
-                        </Option.Label>
-                        <Option.Control>
-                            <SegmentedControl
-                                data={[
-                                    {
-                                        label: t('common.left', {
-                                            postProcess: 'titleCase',
-                                        }),
-                                        value: 'left',
-                                    },
-                                    {
-                                        label: t('common.center', {
-                                            postProcess: 'titleCase',
-                                        }),
-                                        value: 'center',
-                                    },
-                                    {
-                                        label: t('common.right', {
-                                            postProcess: 'titleCase',
-                                        }),
-                                        value: 'right',
-                                    },
-                                ]}
-                                onChange={(e) => handleLyricsSettings('alignment', e)}
-                                value={lyricConfig.alignment}
-                            />
-                        </Option.Control>
-                    </Option>
-                    <Option>
-                        <Option.Label>
-                            {t('page.fullscreenPlayer.config.lyricOffset', {
-                                postProcess: 'sentenceCase',
-                            })}
-                        </Option.Label>
-                        <Option.Control>
-                            <NumberInput
-                                defaultValue={lyricConfig.delayMs}
-                                hideControls={false}
-                                onBlur={(e) =>
-                                    handleLyricsSettings('delayMs', Number(e.currentTarget.value))
-                                }
-                                step={10}
-                            />
-                        </Option.Control>
-                    </Option>
-                </Popover.Dropdown>
-            </Popover>
-            {showMusicListConfig && (
-                <ListConfigMenu
-                    buttonProps={{
-                        size: 'lg',
-                        variant: 'subtle',
-                    }}
-                    displayTypes={[
-                        { hidden: true, value: ListDisplayType.GRID },
-                        ...SONG_DISPLAY_TYPES,
-                    ]}
-                    listKey={ItemListKey.FULL_SCREEN}
-                    optionsConfig={{
-                        table: {
-                            itemsPerPage: { hidden: true },
-                            pagination: { hidden: true },
-                        },
-                    }}
-                    tableColumnsData={SONG_TABLE_COLUMNS}
-                />
-            )}
         </Group>
     );
 };

@@ -1,15 +1,17 @@
 import IcecastMetadataStats from 'icecast-metadata-stats';
 import isElectron from 'is-electron';
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect } from 'react';
 import { createWithEqualityFn } from 'zustand/traditional';
 
 import { usePlayerEvents } from '/@/renderer/features/player/audio-player/hooks/use-player-events';
-import { usePlaybackType, usePlayerStoreBase } from '/@/renderer/store';
+import { usePlayerStoreBase } from '/@/renderer/store';
 import { useLastPlaybackSessionStore } from '/@/renderer/store/last-playback-session.store';
 import { recordRecentItem } from '/@/renderer/store/play-history.store';
 import { usePlaybackOwnerStore } from '/@/renderer/store/playback-owner.store';
 import { LibraryItem } from '/@/shared/types/domain-types';
-import { PlayerStatus, PlayerType } from '/@/shared/types/types';
+import { PlayerStatus } from '/@/shared/types/types';
+
+const streamMetadataReader = isElectron() ? window.api.mpvPlayer : null;
 
 export type RadioCurrentStationArt = {
     id: string;
@@ -195,82 +197,8 @@ export const useRadioControls = () => {
     };
 };
 
-const mpvPlayer = isElectron() ? window.api.mpvPlayer : null;
-const shouldUseMpvRadioMetadata = Boolean(mpvPlayer?.getStreamMetadata);
-const mpvPlayerListener = isElectron() ? window.api.mpvPlayerListener : null;
-const ipc = isElectron() ? window.api.ipc : null;
-
 export const useRadioAudioInstance = () => {
     const { actions } = useRadioStore();
-    const { setCurrentStreamUrl, setIsPlaying, setStationName } = actions;
-    const currentStreamUrl = useRadioStore((state) => state.currentStreamUrl);
-    const isPlaying = useRadioStore((state) => state.isPlaying);
-    const isRadioActive = useIsRadioActive();
-    const playbackType = usePlaybackType();
-    const isUsingMpv = playbackType === PlayerType.LOCAL && mpvPlayer;
-
-    // Track the last URL we called setQueue with so we don't reload the stream
-    // on a plain play/pause toggle — only reload when the station actually changes.
-    const loadedUrlRef = useRef<null | string>(null);
-
-    // Handle mpv playback
-    useEffect(() => {
-        if (!isUsingMpv || !mpvPlayer) {
-            return;
-        }
-
-        if (currentStreamUrl) {
-            if (currentStreamUrl !== loadedUrlRef.current) {
-                loadedUrlRef.current = currentStreamUrl;
-                mpvPlayer.setQueue(currentStreamUrl, undefined, !isPlaying);
-            } else if (isPlaying) {
-                mpvPlayer.play();
-            } else {
-                mpvPlayer.pause();
-            }
-        } else {
-            loadedUrlRef.current = null;
-            mpvPlayer.pause();
-        }
-    }, [
-        currentStreamUrl,
-        isPlaying,
-        isUsingMpv,
-        setIsPlaying,
-        setCurrentStreamUrl,
-        setStationName,
-    ]);
-
-    useEffect(() => {
-        if (!isUsingMpv || !mpvPlayerListener || !ipc || !isRadioActive) {
-            return;
-        }
-
-        const handleMpvPlay = () => {
-            setIsPlaying(true);
-        };
-
-        const handleMpvPause = () => {
-            setIsPlaying(false);
-        };
-
-        const handleMpvStop = () => {
-            setIsPlaying(false);
-            setCurrentStreamUrl(null);
-            setStationName(null);
-            useRadioStore.setState({ currentStationArt: null, metadata: null });
-        };
-
-        mpvPlayerListener.rendererPlay(handleMpvPlay);
-        mpvPlayerListener.rendererPause(handleMpvPause);
-        mpvPlayerListener.rendererStop(handleMpvStop);
-
-        return () => {
-            ipc.removeAllListeners('renderer-player-play');
-            ipc.removeAllListeners('renderer-player-pause');
-            ipc.removeAllListeners('renderer-player-stop');
-        };
-    }, [isUsingMpv, isRadioActive, setIsPlaying, setCurrentStreamUrl, setStationName]);
 
     usePlayerEvents(
         {
@@ -309,14 +237,15 @@ export const useRadioMetadata = () => {
             return;
         }
 
-        // Electron/local mode: prefer MPV metadata because browser-side ICY fetches
-        // are commonly blocked by CORS.
-        if (shouldUseMpvRadioMetadata && mpvPlayer) {
+        // Radio audio is intentionally Web-engine playback. In Electron, use the
+        // main-process ICY reader only for metadata so browser CORS cannot blank
+        // the playerbar while the stream itself stays in the Web engine.
+        if (streamMetadataReader?.getStreamMetadata) {
             let stopped = false;
 
             const pollMetadata = async () => {
                 try {
-                    const metadata = await mpvPlayer.getStreamMetadata(currentStreamUrl);
+                    const metadata = await streamMetadataReader.getStreamMetadata(currentStreamUrl);
 
                     if (!stopped) {
                         setMetadata(metadata);
@@ -338,8 +267,6 @@ export const useRadioMetadata = () => {
             };
         }
 
-        // Web fallback: use IcecastMetadataStats. This can fail under browser CORS,
-        // but is still useful outside Electron/MPV mode.
         let statsListener: IcecastMetadataStats | null = null;
 
         try {

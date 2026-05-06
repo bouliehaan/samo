@@ -1,5 +1,6 @@
 import clsx from 'clsx';
 import { t } from 'i18next';
+import isElectron from 'is-electron';
 import { AnimatePresence, HTMLMotionProps, motion, Variants } from 'motion/react';
 import { Fragment, useEffect, useRef } from 'react';
 import { generatePath, Link } from 'react-router';
@@ -17,6 +18,8 @@ import { AppRoute } from '/@/renderer/router/routes';
 import {
     useGeneralSettings,
     useNativeAspectRatio,
+    usePlaybackSettings,
+    usePlaybackType,
     usePlayerData,
     usePlayerSong,
 } from '/@/renderer/store';
@@ -30,6 +33,7 @@ import { Stack } from '/@/shared/components/stack/stack';
 import { Text } from '/@/shared/components/text/text';
 import { useSetState } from '/@/shared/hooks/use-set-state';
 import { ExplicitStatus, LibraryItem } from '/@/shared/types/domain-types';
+import { PlayerType } from '/@/shared/types/types';
 
 const imageVariants: Variants = {
     closed: {
@@ -55,6 +59,40 @@ const imageVariants: Variants = {
 };
 
 const MotionImage = motion.img;
+
+const PREMIUM_QUALITY_CONTAINERS = new Set([
+    'aif',
+    'aiff',
+    'alac',
+    'ape',
+    'dsd',
+    'dsf',
+    'flac',
+    'wav',
+]);
+
+const formatBitRate = (bitRate?: null | number) => {
+    if (!bitRate) return null;
+
+    const kbps = bitRate >= 100_000 ? Math.round(bitRate / 1000) : Math.round(bitRate);
+
+    return `${kbps} kbps`;
+};
+
+const formatSampleRate = (sampleRate?: null | number) => {
+    if (!sampleRate) return null;
+
+    const khz = sampleRate / 1000;
+    const formatted = Number.isInteger(khz) ? khz.toFixed(0) : khz.toFixed(1);
+
+    return `${formatted} kHz`;
+};
+
+const unknownBadge = (label: string) => (
+    <Badge color="gray" variant="light">
+        {label}
+    </Badge>
+);
 
 const ImageWithPlaceholder = ({
     className,
@@ -106,6 +144,8 @@ export const FullScreenPlayerImage = () => {
     const currentSong = usePlayerSong();
     const { nextSong } = usePlayerData();
     const { blurExplicitImages, playerItems } = useGeneralSettings();
+    const { transcode } = usePlaybackSettings();
+    const playbackType = usePlaybackType();
     const playbackSource = usePlaybackSource();
     const nowPlaying = useNowPlaying();
 
@@ -117,6 +157,12 @@ export const FullScreenPlayerImage = () => {
     // Quality badge only makes sense for music playback. Radio (no decode) and
     // audiobook (HLS/per-book) do not have meaningful track-quality fields.
     const showAudioPathBadge = playbackSource === 'music' || playbackSource == null;
+    const isNativeDirect = isElectron() && playbackType === PlayerType.LOCAL;
+    const isTranscoded = showAudioPathBadge && !isNativeDirect && transcode.enabled;
+    const effectiveContainer = isTranscoded ? transcode.format : currentSong?.container;
+    const effectiveBitRate = isTranscoded ? transcode.bitrate : currentSong?.bitRate;
+    const isPremiumQualityDirect =
+        !isTranscoded && PREMIUM_QUALITY_CONTAINERS.has(effectiveContainer?.toLowerCase() ?? '');
 
     const currentImageUrl = useItemImageUrl({
         id: currentSong?.imageId || undefined,
@@ -186,14 +232,28 @@ export const FullScreenPlayerImage = () => {
     ]);
 
     const builtDataItems = {
-        bit_depth: currentSong?.bitDepth && <Badge>{currentSong?.bitDepth} bit</Badge>,
-        bit_rate: currentSong?.bitRate && <Badge>{currentSong?.bitRate} kbps</Badge>,
+        bit_depth: isTranscoded ? (
+            unknownBadge('Unknown bit depth')
+        ) : currentSong?.bitDepth ? (
+            <Badge>{currentSong.bitDepth} bit</Badge>
+        ) : isPremiumQualityDirect ? (
+            unknownBadge('Unknown bit depth')
+        ) : null,
+        bit_rate: formatBitRate(effectiveBitRate) ? (
+            <Badge>{formatBitRate(effectiveBitRate)}</Badge>
+        ) : isTranscoded ? (
+            unknownBadge('Unknown bitrate')
+        ) : null,
         bpm: currentSong?.bpm && (
             <Badge>
                 {currentSong?.bpm} {t('common.bpm')}
             </Badge>
         ),
-        codec: currentSong?.container && <Badge>{currentSong?.container}</Badge>,
+        codec: effectiveContainer ? (
+            <Badge>{effectiveContainer.toUpperCase()}</Badge>
+        ) : (
+            unknownBadge('Unknown format')
+        ),
         disc_number: currentSong?.discNumber && (
             <Badge>
                 {t('common.disc')} {currentSong?.discNumber}
@@ -209,7 +269,13 @@ export const FullScreenPlayerImage = () => {
             <Badge>{currentSong?.tags?.releasetype[0]}</Badge>
         ),
         release_year: currentSong?.releaseYear && <Badge>{currentSong?.releaseYear}</Badge>,
-        sample_rate: currentSong?.sampleRate && <Badge>{currentSong?.sampleRate / 1000} kHz</Badge>,
+        sample_rate: isTranscoded ? (
+            unknownBadge('Unknown sample rate')
+        ) : formatSampleRate(currentSong?.sampleRate) ? (
+            <Badge>{formatSampleRate(currentSong?.sampleRate)}</Badge>
+        ) : isPremiumQualityDirect ? (
+            unknownBadge('Unknown sample rate')
+        ) : null,
         track_number: currentSong?.trackNumber && (
             <Badge>
                 {t('common.trackNumber')} {currentSong?.trackNumber}

@@ -27,7 +27,10 @@ export const useFullScreenPlayerStore = createWithEqualityFn<FullScreenPlayerSli
             immer((set, get) => ({
                 actions: {
                     setStore: (data) => {
-                        set({ ...get(), ...data });
+                        const nextData = { ...data };
+                        delete nextData.opacity;
+
+                        set({ ...get(), ...nextData, opacity: 0 });
                     },
                 },
                 activeTab: 'queue',
@@ -35,7 +38,7 @@ export const useFullScreenPlayerStore = createWithEqualityFn<FullScreenPlayerSli
                 dynamicImageBlur: 1.5,
                 dynamicIsImage: false,
                 expanded: false,
-                opacity: 60,
+                opacity: 0,
                 useImageAspectRatio: false,
                 visualizerExpanded: false,
             })),
@@ -43,7 +46,9 @@ export const useFullScreenPlayerStore = createWithEqualityFn<FullScreenPlayerSli
         ),
         {
             merge: (persistedState, currentState) => {
-                return merge(currentState, persistedState);
+                const merged = merge(currentState, persistedState);
+
+                return { ...merged, opacity: 0 };
             },
             migrate: (persistedState, version) => {
                 if (version <= 2) {

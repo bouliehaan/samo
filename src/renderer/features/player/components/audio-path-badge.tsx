@@ -1,12 +1,16 @@
 import type { QueueSong } from '/@/shared/types/domain-types';
 
 import { Badge, Group } from '@mantine/core';
+import isElectron from 'is-electron';
 
-import { usePlaybackSettings } from '/@/renderer/store';
+import { usePlaybackSettings, usePlaybackType } from '/@/renderer/store';
+import { usePlaybackSource } from '/@/renderer/store/playback-owner.store';
+import { PlayerType } from '/@/shared/types/types';
 
 type AudioPathBadgeProps = {
     compact?: boolean;
     inline?: boolean;
+    mode?: 'detail' | 'playerbar';
     song?: QueueSong;
 };
 
@@ -52,34 +56,191 @@ const formatBitRate = (bitRate?: null | number) => {
     return `${kbps} kbps`;
 };
 
-export const AudioPathBadge = ({ compact = false, inline = false, song }: AudioPathBadgeProps) => {
-    const { transcode } = usePlaybackSettings();
+const LOSSY_CONTAINERS = new Set(['aac', 'm4a', 'mp3', 'oga', 'ogg', 'opus', 'wma']);
 
-    if (!song) {
+type AudioPathBadgeItem = {
+    label: string;
+    tone: BadgeTone;
+};
+
+type BadgeTone = 'direct' | 'neutral' | 'transcoded' | 'unknown';
+
+const getQualityLabel = ({
+    bitDepth,
+    bitRate,
+    container,
+    isTranscoded,
+    sampleRate,
+}: {
+    bitDepth?: null | number;
+    bitRate?: null | number;
+    container?: null | string;
+    isTranscoded: boolean;
+    sampleRate?: null | number;
+}) => {
+    const containerKey = container?.toLowerCase();
+
+    if (isTranscoded || (containerKey && LOSSY_CONTAINERS.has(containerKey))) {
+        return formatBitRate(bitRate);
+    }
+
+    if (bitDepth && sampleRate) {
+        return `${formatBitDepth(bitDepth, true)}/${formatSampleRate(sampleRate, true)}`;
+    }
+
+    return null;
+};
+
+const getToneStyles = (tone: BadgeTone) => {
+    if (tone === 'direct') {
+        return {
+            root: {
+                backgroundColor: 'rgba(184, 134, 11, 0.22)',
+                border: '1px solid rgba(218, 165, 32, 0.36)',
+                color: '#d6b25e',
+            },
+        };
+    }
+
+    if (tone === 'transcoded') {
+        return {
+            root: {
+                backgroundColor: 'rgba(220, 110, 40, 0.18)',
+                border: '1px solid rgba(220, 110, 40, 0.32)',
+                color: '#e0a06d',
+            },
+        };
+    }
+
+    if (tone === 'unknown') {
+        return {
+            root: {
+                backgroundColor: 'rgba(128, 128, 128, 0.14)',
+                border: '1px solid rgba(128, 128, 128, 0.24)',
+                color: 'var(--theme-colors-foreground-muted)',
+            },
+        };
+    }
+
+    return undefined;
+};
+
+export const AudioPathBadge = ({
+    compact = false,
+    inline = false,
+    mode = 'detail',
+    song,
+}: AudioPathBadgeProps) => {
+    const { transcode } = usePlaybackSettings();
+    const playbackType = usePlaybackType();
+    const playbackSource = usePlaybackSource();
+
+    if (!song || (playbackSource !== null && playbackSource !== 'music')) {
         return null;
     }
 
-    const rawContainer = transcode.enabled ? transcode.format : song.container;
-    const isPremiumQualityDirect =
-        !transcode.enabled && PREMIUM_QUALITY_CONTAINERS.has(rawContainer?.toLowerCase() ?? '');
-
-    const pathLabel = transcode.enabled ? 'Transcoded' : compact ? 'Direct' : 'Direct Play';
+    const isNativeDirect = isElectron() && playbackType === PlayerType.LOCAL;
+    const isTranscoded = !isNativeDirect && transcode.enabled;
+    const isWebDirect = !isNativeDirect && !isTranscoded;
+    const rawContainer = isTranscoded ? transcode.format : song.container;
     const container = formatContainer(rawContainer);
+    const isPremiumQualityDirect =
+        !isTranscoded && PREMIUM_QUALITY_CONTAINERS.has(rawContainer?.toLowerCase() ?? '');
     const bitDepth = isPremiumQualityDirect ? formatBitDepth(song.bitDepth, compact) : null;
     const sampleRate = isPremiumQualityDirect ? formatSampleRate(song.sampleRate, compact) : null;
-    const bitRate = transcode.enabled
-        ? formatBitRate(transcode.bitrate)
-        : formatBitRate(song.bitRate);
+    const bitRate = isTranscoded ? formatBitRate(transcode.bitrate) : formatBitRate(song.bitRate);
+    const pathTone: BadgeTone = isTranscoded
+        ? 'transcoded'
+        : isPremiumQualityDirect
+          ? 'direct'
+          : 'neutral';
+    const detailTone: BadgeTone = isPremiumQualityDirect ? 'direct' : 'neutral';
+    const pathLabel = isTranscoded
+        ? compact
+            ? 'Transcoded'
+            : 'Transcoded Compatibility'
+        : isNativeDirect
+          ? compact
+              ? 'Native Direct'
+              : 'Native Direct'
+          : isWebDirect
+            ? compact
+                ? 'Web Direct'
+                : 'Web Direct'
+            : 'Unknown Path';
+    const unknownFormat = isTranscoded ? 'Unknown transcode format' : 'Unknown format';
 
-    const sourceQuality = compact && bitDepth && sampleRate ? `${bitDepth}/${sampleRate}` : null;
+    if (mode === 'playerbar') {
+        const qualityLabel = getQualityLabel({
+            bitDepth: isTranscoded ? null : song.bitDepth,
+            bitRate: isTranscoded ? transcode.bitrate : song.bitRate,
+            container: rawContainer,
+            isTranscoded,
+            sampleRate: isTranscoded ? null : song.sampleRate,
+        });
+        const qualityTone: BadgeTone =
+            isTranscoded && qualityLabel
+                ? 'transcoded'
+                : !qualityLabel
+                  ? 'unknown'
+                  : isPremiumQualityDirect
+                    ? 'direct'
+                    : 'neutral';
+        const playerbarItems: AudioPathBadgeItem[] = [
+            { label: container ?? 'Unknown format', tone: container ? detailTone : 'unknown' },
+            { label: qualityLabel ?? 'Unknown quality', tone: qualityTone },
+        ];
 
-    const items = inline
-        ? [container, sourceQuality, transcode.enabled ? bitRate : null].filter(Boolean)
-        : compact
-          ? [pathLabel, container, sourceQuality, transcode.enabled ? bitRate : null].filter(
-                Boolean,
-            )
-          : [pathLabel, container, bitDepth, sampleRate, bitRate].filter(Boolean);
+        return (
+            <Group gap={inline ? 3 : 4} justify="flex-start" wrap="nowrap">
+                {playerbarItems.map((item, index) => (
+                    <Badge
+                        key={`${item.label}-${index}`}
+                        radius={inline ? 'xs' : 'sm'}
+                        size="xs"
+                        styles={getToneStyles(item.tone)}
+                        variant={item.tone === 'neutral' ? 'light' : 'outline'}
+                    >
+                        {item.label}
+                    </Badge>
+                ))}
+            </Group>
+        );
+    }
+
+    const items: AudioPathBadgeItem[] = [
+        { label: pathLabel, tone: pathTone },
+        { label: container ?? unknownFormat, tone: container ? detailTone : 'unknown' },
+    ];
+
+    if (isPremiumQualityDirect) {
+        if (compact || inline) {
+            items.push(
+                bitDepth && sampleRate
+                    ? { label: `${bitDepth}/${sampleRate}`, tone: 'direct' }
+                    : { label: 'Unknown quality', tone: 'unknown' },
+            );
+        } else {
+            items.push(
+                bitDepth
+                    ? { label: bitDepth, tone: 'direct' }
+                    : { label: 'Unknown bit depth', tone: 'unknown' },
+                sampleRate
+                    ? { label: sampleRate, tone: 'direct' }
+                    : { label: 'Unknown sample rate', tone: 'unknown' },
+            );
+        }
+    }
+
+    if (isTranscoded) {
+        items.push(
+            bitRate
+                ? { label: bitRate, tone: 'transcoded' }
+                : { label: 'Unknown bitrate', tone: 'unknown' },
+        );
+    } else if (bitRate) {
+        items.push({ label: bitRate, tone: detailTone });
+    }
 
     return (
         <Group
@@ -87,26 +248,15 @@ export const AudioPathBadge = ({ compact = false, inline = false, song }: AudioP
             justify={compact || inline ? 'flex-start' : 'center'}
             wrap="nowrap"
         >
-            {items.map((item) => (
+            {items.map((item, index) => (
                 <Badge
-                    color={isPremiumQualityDirect ? undefined : undefined}
-                    key={item}
+                    key={`${item.label}-${index}`}
                     radius={inline ? 'xs' : 'sm'}
                     size={compact || inline ? 'xs' : 'lg'}
-                    styles={
-                        isPremiumQualityDirect
-                            ? {
-                                  root: {
-                                      backgroundColor: 'rgba(184, 134, 11, 0.22)',
-                                      border: '1px solid rgba(218, 165, 32, 0.36)',
-                                      color: '#d6b25e',
-                                  },
-                              }
-                            : undefined
-                    }
-                    variant={isPremiumQualityDirect ? 'outline' : 'light'}
+                    styles={getToneStyles(item.tone)}
+                    variant={item.tone === 'neutral' ? 'light' : 'outline'}
                 >
-                    {item}
+                    {item.label}
                 </Badge>
             ))}
         </Group>

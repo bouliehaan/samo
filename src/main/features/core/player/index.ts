@@ -421,7 +421,7 @@ ipcMain.on('player-auto-next', async (_event, url?: string) => {
 // Sets the volume to the given value (0-100)
 ipcMain.on('player-volume', async (_event, value: number) => {
     try {
-        if (!value || value < 0 || value > 100) {
+        if (value === undefined || value < 0 || value > 100) {
             return;
         }
 

@@ -6,6 +6,7 @@ import { UserFavoriteEventPayload, UserRatingEventPayload } from '/@/renderer/ev
 import { AudiobookWebPlayer } from '/@/renderer/features/audiobooks/components/audiobook-web-player';
 import { DiscordRpcHook } from '/@/renderer/features/discord-rpc/use-discord-rpc';
 import { MainPlayerListenerHook } from '/@/renderer/features/player/audio-player/hooks/use-main-player-listener';
+import { MpvPlayer } from '/@/renderer/features/player/audio-player/mpv-player';
 import { WebPlayer } from '/@/renderer/features/player/audio-player/web-player';
 import { SleepTimerHook } from '/@/renderer/features/player/components/sleep-timer-button';
 import { AutoDJHook } from '/@/renderer/features/player/hooks/use-auto-dj';
@@ -33,12 +34,14 @@ import {
     updateQueueRatings,
     useCurrentServerId,
     usePlaybackSettings,
+    usePlaybackType,
     useSettingsStoreActions,
 } from '/@/renderer/store';
 import { usePlaybackSource } from '/@/renderer/store/playback-owner.store';
 import { logFn } from '/@/renderer/utils/logger';
 import { toast } from '/@/shared/components/toast/toast';
 import { LibraryItem } from '/@/shared/types/domain-types';
+import { PlayerType } from '/@/shared/types/types';
 
 const CODEC_PROBES = [
     { codec: 'mp3', container: 'mp3', mime: 'audio/mpeg' },
@@ -252,6 +255,8 @@ const AudioPlayersContent = ({
         };
     }, [serverId]);
 
+    const playbackType = usePlaybackType();
+
     if (source === 'radio') {
         return <RadioWebPlayer />;
     }
@@ -262,6 +267,10 @@ const AudioPlayersContent = ({
 
     if (source === 'podcast') {
         return <PodcastWebPlayer />;
+    }
+
+    if (isElectron() && playbackType === PlayerType.LOCAL) {
+        return <MpvPlayer />;
     }
 
     // 'music', null (idle at boot), and future sources fall through here.

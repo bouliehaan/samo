@@ -120,7 +120,7 @@ const FullScreenAudiobookChapters = () => {
 
 export const FullScreenPlayerQueue = () => {
     const { t } = useTranslation();
-    const { activeTab, opacity } = useFullScreenPlayerStore();
+    const { activeTab } = useFullScreenPlayerStore();
     const { setStore } = useFullScreenPlayerStoreActions();
     const { webAudio } = usePlaybackSettings();
     const visualizerType = useSettingsStore((store) => store.visualizer.type);
@@ -197,7 +197,7 @@ export const FullScreenPlayerQueue = () => {
             )}
             style={
                 {
-                    '--opacity': opacity / 100,
+                    '--opacity': 0,
                 } as CSSProperties
             }
         >

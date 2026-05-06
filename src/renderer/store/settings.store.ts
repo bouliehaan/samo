@@ -1839,7 +1839,7 @@ const initialState: SettingsState = {
         transcode: {
             enabled: false,
         },
-        type: PlayerType.WEB,
+        type: isElectron() ? PlayerType.LOCAL : PlayerType.WEB,
         webAudio: true,
     },
     queryBuilder: {
@@ -2453,10 +2453,14 @@ export const useSettingsStore = createWithEqualityFn<SettingsSlice>()(
                     }
                 }
 
+                if (version <= 32 && isElectron()) {
+                    state.playback.type = PlayerType.LOCAL;
+                }
+
                 return persistedState;
             },
             name: 'store_settings',
-            version: 31,
+            version: 32,
         },
     ),
 );

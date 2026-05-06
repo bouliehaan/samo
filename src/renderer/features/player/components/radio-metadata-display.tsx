@@ -22,12 +22,17 @@ export const RadioMetadataDisplay = ({
 }: RadioMetadataDisplayProps) => {
     const radioMetadata = useRadioStore((state) => state.metadata);
     const stationName = useRadioStore((state) => state.stationName);
+    const streamUrl = useRadioStore((state) => state.currentStreamUrl);
 
     const isRadioActive = useIsRadioActive();
 
     if (!isRadioActive) {
         return null;
     }
+
+    const title = radioMetadata?.title || stationName || 'Radio';
+    const artist = radioMetadata?.artist || (radioMetadata?.title ? stationName : null);
+    const station = stationName || streamUrl || 'Internet radio';
 
     return (
         <>
@@ -39,7 +44,7 @@ export const RadioMetadataDisplay = ({
                     onContextMenu={onToggleContextMenu}
                     overflow="hidden"
                 >
-                    {radioMetadata?.title || '—'}
+                    {title}
                 </Text>
             </div>
             <div
@@ -47,7 +52,7 @@ export const RadioMetadataDisplay = ({
                 onClick={onStopPropagation}
             >
                 <Text isMuted isNoSelect overflow="hidden" size="md">
-                    {radioMetadata?.artist || '—'}
+                    {artist || station}
                 </Text>
             </div>
             <div
@@ -66,7 +71,7 @@ export const RadioMetadataDisplay = ({
                         size="md"
                         to={AppRoute.RADIO}
                     >
-                        {stationName || '—'}
+                        {station}
                     </Text>
                 </Group>
             </div>

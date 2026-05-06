@@ -74,7 +74,7 @@ export const RightControls = () => {
             </Group>
             <Group align="center" gap="xs" wrap="nowrap">
                 {(source === 'music' || source == null) && (
-                    <AudioPathBadge compact inline song={badgeSong} />
+                    <AudioPathBadge compact inline mode="playerbar" song={badgeSong} />
                 )}
                 <AudiobookChapterListButton />
                 <SleepTimerButton />
