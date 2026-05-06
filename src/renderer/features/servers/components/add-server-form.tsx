@@ -107,6 +107,9 @@ export const AddServerForm = ({ onCancel, onSubmitSuccess }: AddServerFormProps)
     const { addServer, setCurrentServer } = useAuthStoreActions();
     const serverList = useServerList();
     const { servers: discovered } = useAutodiscovery();
+    const initialServerType =
+        (localSettings ? localSettings.env.SERVER_TYPE : toServerType(window.SERVER_TYPE)) ??
+        ServerType.NAVIDROME;
 
     const serverLock = isServerLock();
 
@@ -114,16 +117,13 @@ export const AddServerForm = ({ onCancel, onSubmitSuccess }: AddServerFormProps)
         initialValues: {
             legacyAuth: isLegacyAuth(),
             name:
-                (localSettings ? localSettings.env.SERVER_NAME : window.SERVER_NAME) || 'My Server',
+                (localSettings ? localSettings.env.SERVER_NAME : window.SERVER_NAME) ||
+                SERVER_TYPES[initialServerType].name,
             password: '',
             preferInstantMix: undefined,
             preferRemoteUrl: false,
             remoteUrl: '',
-            savePassword: undefined,
-            type:
-                (localSettings
-                    ? localSettings.env.SERVER_TYPE
-                    : toServerType(window.SERVER_TYPE)) ?? ServerType.NAVIDROME,
+            type: initialServerType,
             url: (localSettings ? localSettings.env.SERVER_URL : window.SERVER_URL) ?? 'https://',
             username: '',
         },
@@ -199,10 +199,6 @@ export const AddServerForm = ({ onCancel, onSubmitSuccess }: AddServerFormProps)
                 serverItem.preferInstantMix = values.preferInstantMix;
             }
 
-            if (values.savePassword !== undefined) {
-                serverItem.savePassword = values.savePassword;
-            }
-
             if (values.remoteUrl?.trim()) {
                 serverItem.remoteUrl = values.remoteUrl.trim().replace(/\/$/, '');
             }
@@ -213,6 +209,20 @@ export const AddServerForm = ({ onCancel, onSubmitSuccess }: AddServerFormProps)
 
             if (data.ndCredential !== undefined) {
                 serverItem.ndCredential = data.ndCredential;
+            }
+
+            if (localSettings && values.password) {
+                const saved = await localSettings.passwordSet(values.password, serverItem.id);
+                serverItem.savePassword = saved;
+
+                if (!saved) {
+                    toast.error({
+                        message: t('form.addServer.error', {
+                            context: 'savePassword',
+                            postProcess: 'sentenceCase',
+                        }),
+                    });
+                }
             }
 
             addServer(serverItem);
@@ -227,18 +237,6 @@ export const AddServerForm = ({ onCancel, onSubmitSuccess }: AddServerFormProps)
             });
 
             onSubmitSuccess?.(serverItem);
-
-            if (localSettings && values.savePassword) {
-                const saved = await localSettings.passwordSet(values.password, serverItem.id);
-                if (!saved) {
-                    toast.error({
-                        message: t('form.addServer.error', {
-                            context: 'savePassword',
-                            postProcess: 'sentenceCase',
-                        }),
-                    });
-                }
-            }
         } catch (err: any) {
             setIsLoading(false);
             return toast.error({ message: err?.message });
@@ -336,17 +334,6 @@ export const AddServerForm = ({ onCancel, onSubmitSuccess }: AddServerFormProps)
                         })}
                         {...form.getInputProps('password')}
                     />
-                    {localSettings && form.values.type === ServerType.NAVIDROME && (
-                        <Checkbox
-                            label={t('form.addServer.input', {
-                                context: 'savePassword',
-                                postProcess: 'titleCase',
-                            })}
-                            {...form.getInputProps('savePassword', {
-                                type: 'checkbox',
-                            })}
-                        />
-                    )}
                     {form.values.type === ServerType.SUBSONIC && (
                         <Checkbox
                             disabled={serverLock}

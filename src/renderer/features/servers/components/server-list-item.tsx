@@ -28,7 +28,7 @@ export const ServerListItem = ({ server }: ServerListItemProps) => {
 
     const handleDeleteServer = () => {
         deleteServer(server.id);
-        localSettings?.passwordRemove(server.name);
+        localSettings?.passwordRemove(server.id);
     };
 
     const handleEdit = useCallback(() => {

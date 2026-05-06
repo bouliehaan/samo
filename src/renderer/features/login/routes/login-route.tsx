@@ -161,13 +161,14 @@ const LoginRoute = () => {
 
             const normalizedUrl = normalizeUrl(serverUrl);
             const normalizedRemoteURL = normalizeUrl(remoteUrl);
-            const existingServer =
-                serverLock &&
-                Object.values(serverList).find((s) => normalizeUrl(s.url) === normalizedUrl);
+            const existingServer = serverLock
+                ? Object.values(serverList).find((s) => normalizeUrl(s.url) === normalizedUrl)
+                : undefined;
+            const serverId = existingServer?.id ?? nanoid();
 
             const serverItem: ServerListItemWithCredential = {
                 credential: data.credential,
-                id: nanoid(),
+                id: serverId,
                 isAdmin: data.isAdmin,
                 name: serverName,
                 remoteUrl: normalizedRemoteURL,
@@ -177,10 +178,25 @@ const LoginRoute = () => {
                 username: data.username,
             };
 
+            if (localSettings && values.password) {
+                const saved = await localSettings.passwordSet(values.password, serverId);
+                serverItem.savePassword = saved;
+
+                if (!saved) {
+                    toast.error({
+                        message: t('form.addServer.error', {
+                            context: 'savePassword',
+                            postProcess: 'sentenceCase',
+                        }),
+                    });
+                }
+            }
+
             if (existingServer) {
                 const updates: Partial<ServerListItemWithCredential> = {
                     credential: data.credential,
                     isAdmin: data.isAdmin,
+                    savePassword: serverItem.savePassword,
                     userId: data.userId,
                     username: data.username,
                 };
@@ -201,18 +217,6 @@ const LoginRoute = () => {
             toast.success({
                 message: t('form.addServer.success', { postProcess: 'sentenceCase' }),
             });
-
-            if (localSettings && values.password) {
-                const saved = await localSettings.passwordSet(values.password, serverItem.id);
-                if (!saved) {
-                    toast.error({
-                        message: t('form.addServer.error', {
-                            context: 'savePassword',
-                            postProcess: 'sentenceCase',
-                        }),
-                    });
-                }
-            }
         } catch (err: any) {
             setIsLoading(false);
             return toast.error({ message: err?.message });

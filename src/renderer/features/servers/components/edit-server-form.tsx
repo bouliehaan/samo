@@ -57,7 +57,6 @@ export const EditServerForm = ({ isUpdate, onCancel, password, server }: EditSer
             preferInstantMix: server.preferInstantMix,
             preferRemoteUrl: server?.preferRemoteUrl || false,
             remoteUrl: server?.remoteUrl || '',
-            savePassword: server.savePassword,
             type: server?.type,
             url: server?.url,
             username: server?.username,
@@ -65,7 +64,6 @@ export const EditServerForm = ({ isUpdate, onCancel, password, server }: EditSer
     });
 
     const isSubsonic = form.values.type === ServerType.SUBSONIC;
-    const isNavidrome = form.values.type === ServerType.NAVIDROME;
 
     const handleSubmit = form.onSubmit(async (values) => {
         try {
@@ -147,10 +145,6 @@ export const EditServerForm = ({ isUpdate, onCancel, password, server }: EditSer
                 serverItem.preferInstantMix = values.preferInstantMix;
             }
 
-            if (values.savePassword !== undefined) {
-                serverItem.savePassword = values.savePassword;
-            }
-
             if (values.remoteUrl?.trim()) {
                 serverItem.remoteUrl = values.remoteUrl.trim().replace(/\/$/, '');
             } else {
@@ -161,36 +155,26 @@ export const EditServerForm = ({ isUpdate, onCancel, password, server }: EditSer
                 serverItem.preferRemoteUrl = values.preferRemoteUrl;
             }
 
+            serverItem.savePassword = server.savePassword;
+
+            if (!canSkipAuth && localSettings && passwordProvided) {
+                const saved = await localSettings.passwordSet(values.password, server.id);
+                serverItem.savePassword = saved;
+
+                if (!saved) {
+                    toast.error({
+                        message: t('form.addServer.error', {
+                            context: 'savePassword',
+                            postProcess: 'sentenceCase',
+                        }),
+                    });
+                }
+            }
+
             updateServer(server.id, serverItem);
             toast.success({
                 message: t('form.updateServer.title', { postProcess: 'sentenceCase' }),
             });
-
-            // Handle password saving in local settings
-            if (localSettings) {
-                if (canSkipAuth) {
-                    // If we skipped auth, only update savePassword preference
-                    // Don't change the actual saved password
-                    if (!values.savePassword) {
-                        localSettings.passwordRemove(server.id);
-                    }
-                } else {
-                    // If we authenticated, update password if savePassword is enabled
-                    if (values.savePassword && passwordProvided) {
-                        const saved = await localSettings.passwordSet(values.password, server.id);
-                        if (!saved) {
-                            toast.error({
-                                message: t('form.addServer.error', {
-                                    context: 'savePassword',
-                                    postProcess: 'sentenceCase',
-                                }),
-                            });
-                        }
-                    } else if (!values.savePassword) {
-                        localSettings.passwordRemove(server.id);
-                    }
-                }
-            }
 
             queryClient.removeQueries();
         } catch (err: any) {
@@ -266,17 +250,6 @@ export const EditServerForm = ({ isUpdate, onCancel, password, server }: EditSer
                     })}
                     {...form.getInputProps('password')}
                 />
-                {localSettings && isNavidrome && (
-                    <Checkbox
-                        label={t('form.addServer.input', {
-                            context: 'savePassword',
-                            postProcess: 'titleCase',
-                        })}
-                        {...form.getInputProps('savePassword', {
-                            type: 'checkbox',
-                        })}
-                    />
-                )}
                 {isSubsonic && (
                     <Checkbox
                         label={t('form.addServer.input', {
