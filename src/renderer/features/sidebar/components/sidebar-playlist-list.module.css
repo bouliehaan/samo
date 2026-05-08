@@ -35,6 +35,10 @@
     opacity: 0.8;
 }
 
+.row-playing .name {
+    color: var(--theme-colors-primary-filled);
+}
+
 .row-group {
     display: flex;
     gap: var(--theme-spacing-md);

@@ -34,6 +34,7 @@ import {
     usePlaybackSource,
     usePlayerSong,
     usePlayerStatus,
+    usePlayerStore,
     usePodcastItem,
     useRecentItems,
 } from '/@/renderer/store';
@@ -611,6 +612,8 @@ export const LibrarySidebar = () => {
         [recentItems],
     );
 
+    const playerContext = usePlayerStore((state) => state.player.context);
+
     const toSidebarItem = useCallback(
         (item: RecentItem): LibrarySidebarItem => {
             const routeTarget = getRecentRouteTarget(item);
@@ -622,6 +625,11 @@ export const LibrarySidebar = () => {
                 playbackSource === 'music' &&
                 item.mediaType === 'album' &&
                 currentSong?.albumId === item.itemId;
+            const isCurrentPlaylist =
+                playbackSource === 'music' &&
+                item.mediaType === 'playlist' &&
+                playerContext.kind === 'playlist' &&
+                playerContext.playlistId === item.itemId;
             const isCurrentArtist =
                 playbackSource === 'music' &&
                 item.mediaType === 'artist' &&
@@ -645,6 +653,7 @@ export const LibrarySidebar = () => {
                     (isCurrentRadio && isRadioPlaying) ||
                     ((isCurrentSong ||
                         isCurrentAlbum ||
+                        isCurrentPlaylist ||
                         isCurrentArtist ||
                         isCurrentAudiobook ||
                         isCurrentPodcast) &&
@@ -677,6 +686,7 @@ export const LibrarySidebar = () => {
             location.pathname,
             openRecentItem,
             playbackSource,
+            playerContext,
             playerIsPlaying,
         ],
     );

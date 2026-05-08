@@ -25,6 +25,9 @@ import {
     usePermissions,
     useSidebarPlaylistListFilterRegex,
     useSidebarPlaylistSorting,
+    usePlayerStatus,
+    usePlaybackSource,
+    usePlayerStore,
 } from '/@/renderer/store';
 import { formatDurationString } from '/@/renderer/utils';
 import { Accordion } from '/@/shared/components/accordion/accordion';
@@ -66,8 +69,17 @@ const PlaylistRowButton = memo(
         };
         const { t } = useTranslation();
         const sidebarPlaylistSorting = useSidebarPlaylistSorting();
+        const playerStatus = usePlayerStatus();
+        const playbackSource = usePlaybackSource();
+        const playerContext = usePlayerStore((state) => state.player.context);
 
         const [isHovered, setIsHovered] = useState(false);
+
+        const isPlaylistPlaying =
+            playbackSource === 'music' &&
+            playerStatus === 'playing' &&
+            playerContext.kind === 'playlist' &&
+            playerContext.playlistId === to;
 
         const { isDraggedOver, isDragging, ref } = useDragDrop<HTMLAnchorElement>({
             drag: {
@@ -215,6 +227,7 @@ const PlaylistRowButton = memo(
                 className={clsx(styles.row, {
                     [styles.rowDraggedOver]: isDraggedOver,
                     [styles.rowHover]: isHovered,
+                    [styles.rowPlaying]: isPlaylistPlaying,
                 })}
                 onContextMenu={(e: MouseEvent<HTMLAnchorElement>) => {
                     e.preventDefault();

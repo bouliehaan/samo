@@ -1,14 +1,16 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { AxiosError } from 'axios';
+import { useRef } from 'react';
 
 import { api } from '/@/renderer/api';
 import { queryKeys } from '/@/renderer/api/query-keys';
 import { MutationOptions } from '/@/renderer/lib/react-query';
-import { incrementQueuePlayCount } from '/@/renderer/store/player.store';
+import { incrementQueuePlayCount, usePlayerStoreBase } from '/@/renderer/store/player.store';
 import { ScrobbleArgs, ScrobbleResponse } from '/@/shared/types/domain-types';
 
 export const useSendScrobble = (options?: MutationOptions) => {
     const queryClient = useQueryClient();
+    const lastScrobbledAlbumKeyRef = useRef<string>('');
 
     return useMutation<ScrobbleResponse, AxiosError, ScrobbleArgs, null>({
         mutationFn: (args) => {
@@ -23,13 +25,32 @@ export const useSendScrobble = (options?: MutationOptions) => {
                 const serverId = variables.apiClientProps.serverId;
                 incrementQueuePlayCount([variables.query.id]);
 
-                // Invalidate the album detail query for the song's album
+                // Only invalidate the album query once per album to prevent multiple play count increments
+                // When playing an album, scrobbling each song would increment the album's play count,
+                // so we track which album we last invalidated and skip subsequent songs from the same album
                 if (variables.query.albumId) {
-                    queryClient.invalidateQueries({
-                        queryKey: queryKeys.albums.detail(serverId, {
-                            id: variables.query.albumId,
-                        }),
-                    });
+                    const playerContext = usePlayerStoreBase.getState().player.context;
+                    const isPlayingFromAlbum = playerContext.kind === 'album';
+                    const currentAlbumId =
+                        isPlayingFromAlbum ? playerContext.albumId : undefined;
+                    const albumKey = `${serverId}:${variables.query.albumId}`;
+
+                    // Skip invalidation if:
+                    // 1. We're playing from an album context AND
+                    // 2. The current song is from that same album AND
+                    // 3. We already invalidated once for this album
+                    const isSameAlbumAsContext =
+                        isPlayingFromAlbum && currentAlbumId === variables.query.albumId;
+                    const alreadyInvalidatedThisAlbum = albumKey === lastScrobbledAlbumKeyRef.current;
+
+                    if (!isSameAlbumAsContext || !alreadyInvalidatedThisAlbum) {
+                        lastScrobbledAlbumKeyRef.current = albumKey;
+                        queryClient.invalidateQueries({
+                            queryKey: queryKeys.albums.detail(serverId, {
+                                id: variables.query.albumId,
+                            }),
+                        });
+                    }
                 }
 
                 queryClient.invalidateQueries({
