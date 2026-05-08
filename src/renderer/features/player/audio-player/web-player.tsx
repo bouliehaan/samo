@@ -10,6 +10,11 @@ import {
 } from '/@/renderer/features/player/audio-player/engine/web-player-engine';
 import { usePlayerEvents } from '/@/renderer/features/player/audio-player/hooks/use-player-events';
 import { useSongUrl } from '/@/renderer/features/player/audio-player/hooks/use-stream-url';
+import {
+    setClockAnchor,
+    setClockPlaying,
+    setClockSpeed,
+} from '/@/renderer/features/player/audio-player/playback-clock';
 import { PlayerOnProgressProps } from '/@/renderer/features/player/audio-player/types';
 import { usePlayer } from '/@/renderer/features/player/context/player-context';
 import { useWebAudio } from '/@/renderer/features/player/hooks/use-webaudio';
@@ -307,31 +312,51 @@ export function WebPlayer() {
 
     useEffect(() => {
         if (localPlayerStatus !== PlayerStatus.PLAYING) {
+            setClockPlaying(false);
             return;
         }
 
-        const interval = setInterval(() => {
+        let rafId: null | number = null;
+        let lastZustandWriteAt = 0;
+
+        const tick = () => {
             const activePlayer =
                 num === 1 ? playerRef.current?.player1() : playerRef.current?.player2();
             const internalPlayer =
                 activePlayer?.ref?.getInternalPlayer() as HTMLAudioElement | null;
 
-            if (!internalPlayer) {
-                return;
+            if (internalPlayer) {
+                const currentTime = internalPlayer.currentTime;
+                setClockAnchor({ isPlaying: true, speed, timeSec: currentTime });
+
+                // Throttle the zustand write to ~4 Hz so slider/scrobble subscribers don't
+                // re-render every frame. Lyrics read via the playback-clock interpolation.
+                const now = performance.now();
+                if (
+                    now - lastZustandWriteAt >= 240 &&
+                    (transitionType === PlayerStyle.CROSSFADE ||
+                        transitionType === PlayerStyle.GAPLESS)
+                ) {
+                    setTimestamp(Number(currentTime.toFixed(3)));
+                    lastZustandWriteAt = now;
+                }
             }
 
-            const currentTime = internalPlayer.currentTime;
+            rafId = requestAnimationFrame(tick);
+        };
 
-            if (
-                transitionType === PlayerStyle.CROSSFADE ||
-                transitionType === PlayerStyle.GAPLESS
-            ) {
-                setTimestamp(Number(currentTime.toFixed(3)));
-            }
-        }, 500);
+        rafId = requestAnimationFrame(tick);
+        setClockPlaying(true);
 
-        return () => clearInterval(interval);
-    }, [localPlayerStatus, num, setTimestamp, transitionType]);
+        return () => {
+            if (rafId !== null) cancelAnimationFrame(rafId);
+            setClockPlaying(false);
+        };
+    }, [localPlayerStatus, num, setTimestamp, speed, transitionType]);
+
+    useEffect(() => {
+        setClockSpeed(speed ?? 1);
+    }, [speed]);
 
     const calculateReplayGain = useCallback(
         (song: QueueSong): number => {

@@ -7,26 +7,22 @@ import {
     LyricSource,
 } from '../main/features/core/lyrics';
 
-import { QueueSong } from '/@/shared/types/domain-types';
+import { QueueSong, Song } from '/@/shared/types/domain-types';
 
-const getRemoteLyricsBySong = (song: QueueSong) => {
-    const result = ipcRenderer.invoke('lyric-by-song', song);
-    return result;
-};
+const getRemoteLyricsBySong = (song: QueueSong) => ipcRenderer.invoke('lyric-by-song', song);
 
 const searchRemoteLyrics = (
     params: LyricSearchQuery,
-): Promise<Record<LyricSource, InternetProviderLyricSearchResponse[]>> => {
-    const result = ipcRenderer.invoke('lyric-search', params);
-    return result;
-};
+): Promise<Record<LyricSource, InternetProviderLyricSearchResponse[]>> =>
+    ipcRenderer.invoke('lyric-search', params);
 
-const getRemoteLyricsByRemoteId = (id: LyricGetQuery) => {
-    const result = ipcRenderer.invoke('lyric-by-remote-id', id);
-    return result;
-};
+const getRemoteLyricsByRemoteId = (id: LyricGetQuery) =>
+    ipcRenderer.invoke('lyric-by-remote-id', id);
+
+const clearCacheForSong = (song: Song) => ipcRenderer.invoke('lyric-clear-cache-for-song', song);
 
 export const lyrics = {
+    clearCacheForSong,
     getRemoteLyricsByRemoteId,
     getRemoteLyricsBySong,
     searchRemoteLyrics,

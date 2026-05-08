@@ -255,7 +255,7 @@ export const useAudiobookStore = create<AudiobookState>()(
                             });
                         }
 
-                        usePlaybackOwnerStore.getState().claim('audiobook');
+                        usePlaybackOwnerStore.getState().claim('audiobook', { engine: 'web' });
                         rememberAudiobookPlaybackSession(server, item, 0);
                         recordRecentAudiobook(item, server.id);
 

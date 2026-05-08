@@ -1,6 +1,7 @@
 import type { QueryClient } from '@tanstack/react-query';
 
 import { useQueryClient } from '@tanstack/react-query';
+import isElectron from 'is-electron';
 import { useEffect, useRef } from 'react';
 
 import { audiobookshelfController } from '/@/renderer/api/audiobookshelf/audiobookshelf-controller';
@@ -19,7 +20,16 @@ import {
 import { usePlaybackOwnerStore } from '/@/renderer/store/playback-owner.store';
 import { usePlayerHydrated, usePlayerStoreBase } from '/@/renderer/store/player.store';
 import { usePodcastStore } from '/@/renderer/store/podcast.store';
+import { useSettingsStore } from '/@/renderer/store/settings.store';
 import { setTimestamp } from '/@/renderer/store/timestamp.store';
+import { PlayerType } from '/@/shared/types/types';
+
+const claimMusicPlayback = () => {
+    const playbackType = useSettingsStore.getState().playback.type;
+    usePlaybackOwnerStore.getState().claim('music', {
+        engine: isElectron() && playbackType === PlayerType.LOCAL ? 'mpv-native' : 'web',
+    });
+};
 
 const restoreAudiobookSession = async (
     session: Extract<LastPlaybackSession, { source: 'audiobook' }>,
@@ -48,7 +58,7 @@ const restoreAudiobookSession = async (
         server,
         sessionId: null,
     }));
-    usePlaybackOwnerStore.getState().claim('audiobook');
+    usePlaybackOwnerStore.getState().claim('audiobook', { engine: 'web' });
     return true;
 };
 
@@ -85,7 +95,7 @@ const restorePodcastSession = async (
         server,
         sessionId: null,
     }));
-    usePlaybackOwnerStore.getState().claim('podcast');
+    usePlaybackOwnerStore.getState().claim('podcast', { engine: 'web' });
     return true;
 };
 
@@ -104,7 +114,7 @@ const restoreMusicSession = async (
     // (the partialize gate let it through). Trust the hydrated player context over the
     // session context because the session is only metadata and can lag behind by one write.
     if (queueAlreadyRestored && isStructuredMusicContext(restoredQueueContext)) {
-        usePlaybackOwnerStore.getState().claim('music');
+        claimMusicPlayback();
         if (typeof session.position === 'number') {
             setTimestamp(session.position);
         }
@@ -172,7 +182,7 @@ const restoreRadioSession = (session: Extract<LastPlaybackSession, { source: 'ra
         metadata: session.metadata ?? null,
         stationName: station?.name || session.stationName || null,
     });
-    usePlaybackOwnerStore.getState().claim('radio');
+    usePlaybackOwnerStore.getState().claim('radio', { engine: 'web' });
     return true;
 };
 

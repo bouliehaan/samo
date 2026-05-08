@@ -34,10 +34,10 @@ export const store = new Store<any>({
     defaults: {
         disable_auto_updates: false,
         global_media_hotkeys: true,
-        lyrics: ['lrclib.net', 'SimpMusic'],
+        lyrics: ['lrclib.net'],
         mediaSession: false,
         offline_mode: false,
-        playbackType: 'web',
+        playbackType: 'local',
         should_prompt_accessibility: true,
         shown_accessibility_warning: false,
         visualizer_system_audio_consent_granted: false,
@@ -50,9 +50,6 @@ export const store = new Store<any>({
     migrations: {
         '>=0.21.2': (store) => {
             store.set('window_bar_style', 'linux');
-        },
-        '>=1.0.0': (store) => {
-            store.clear();
         },
     },
 });

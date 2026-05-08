@@ -1,14 +1,20 @@
 appId: org.bouliehaan.samo
 productName: Samo
 artifactName: ${productName}-${version}-${os}-${arch}.${ext}
-electronVersion: 39.4.0
+electronVersion: 39.8.6
 directories:
     buildResources: assets
 files:
     - 'out/**/*'
     - 'package.json'
 extraResources:
-    - assets/**
+    - from: assets
+      to: assets
+    - from: src/renderer/assets/icons
+      to: assets/icons
+      filter:
+          - icon.png
+          - icon.ico
 asarUnpack:
     - resources/**
 win:
@@ -21,7 +27,7 @@ win:
           arch:
               - x64
               - arm64
-    icon: assets/icons/icon.ico
+    icon: src/renderer/assets/icons/icon.ico
 
 nsis:
     allowToChangeInstallationDirectory: true
@@ -31,6 +37,11 @@ nsis:
     createDesktopShortcut: always
 
 mac:
+    extraResources:
+        - from: resources/bin/darwin
+          to: bin
+          filter:
+              - '**/*'
     target:
         - target: dmg
           arch:
@@ -59,7 +70,7 @@ linux:
         - deb
         - tar.xz
     category: AudioVideo;Audio;Player
-    icon: assets/icons/icon.png
+    icon: src/renderer/assets/icons/icon.png
     artifactName: ${productName}-${os}-${arch}.${ext}
 
 toolsets:

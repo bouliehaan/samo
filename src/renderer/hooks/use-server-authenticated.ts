@@ -7,7 +7,12 @@ import { useNavigate } from 'react-router';
 import { api } from '/@/renderer/api';
 import { controller } from '/@/renderer/api/controller';
 import { AppRoute } from '/@/renderer/router/routes';
-import { getServerById, useAuthStoreActions, useCurrentServerId } from '/@/renderer/store';
+import {
+    getServerById,
+    useAuthHydrated,
+    useAuthStoreActions,
+    useCurrentServerId,
+} from '/@/renderer/store';
 import { LogCategory, logFn } from '/@/renderer/utils/logger';
 import { logMsg } from '/@/renderer/utils/logger-message';
 import { toast } from '/@/shared/components/toast/toast';
@@ -38,6 +43,8 @@ const isNetworkError = (error: any): boolean => {
 
 export const useServerAuthenticated = () => {
     const priorServerId = useRef<string | undefined>(undefined);
+    const priorAuthSignature = useRef<string | undefined>(undefined);
+    const authHydrated = useAuthHydrated();
     const serverId = useCurrentServerId();
     const [ready, setReady] = useState(AuthState.LOADING);
     const navigate = useNavigate();
@@ -300,6 +307,11 @@ export const useServerAuthenticated = () => {
     );
 
     useEffect(() => {
+        if (!authHydrated) {
+            setReady(AuthState.LOADING);
+            return;
+        }
+
         if (!serverId) {
             logFn.debug(logMsg[LogCategory.SYSTEM].serverAuthenticationInvalid, {
                 category: LogCategory.SYSTEM,
@@ -311,9 +323,21 @@ export const useServerAuthenticated = () => {
             return;
         }
 
-        if (priorServerId.current !== serverId) {
-            const serverWithAuth = getServerById(serverId);
+        const serverWithAuth = getServerById(serverId);
+        const authSignature = serverWithAuth
+            ? [
+                  serverWithAuth.id,
+                  serverWithAuth.credential,
+                  serverWithAuth.ndCredential,
+                  serverWithAuth.userId,
+                  serverWithAuth.username,
+                  serverWithAuth.url,
+              ].join(':')
+            : undefined;
+
+        if (priorServerId.current !== serverId || priorAuthSignature.current !== authSignature) {
             priorServerId.current = serverId;
+            priorAuthSignature.current = authSignature;
 
             if (!serverWithAuth) {
                 logFn.error(logMsg[LogCategory.SYSTEM].serverAuthenticationError, {
@@ -330,7 +354,7 @@ export const useServerAuthenticated = () => {
             setReady(AuthState.LOADING);
             authenticateServer(serverWithAuth).catch(console.error);
         }
-    }, [authenticateServer, serverId]);
+    }, [authHydrated, authenticateServer, serverId]);
 
     return ready;
 };

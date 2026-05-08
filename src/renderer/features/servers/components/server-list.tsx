@@ -2,7 +2,7 @@ import { openContextModal } from '@mantine/modals';
 import isElectron from 'is-electron';
 import { useTranslation } from 'react-i18next';
 
-import AudiobookshelfLogo from '../../../../../Audiobookshelf_Logo.svg';
+import AudiobookshelfLogo from '../../../../../assets/icons/audiobookshelf.svg';
 
 import { isServerLock } from '/@/renderer/features/action-required/utils/window-properties';
 import JellyfinLogo from '/@/renderer/features/servers/assets/jellyfin.png';

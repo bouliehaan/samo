@@ -37,7 +37,7 @@ import {
     usePlaybackType,
     useSettingsStoreActions,
 } from '/@/renderer/store';
-import { usePlaybackSource } from '/@/renderer/store/playback-owner.store';
+import { usePlaybackSession } from '/@/renderer/store/playback-owner.store';
 import { logFn } from '/@/renderer/utils/logger';
 import { toast } from '/@/shared/components/toast/toast';
 import { LibraryItem } from '/@/shared/types/domain-types';
@@ -174,7 +174,8 @@ const AudioPlayersContent = ({
     setWebAudio: ReturnType<typeof useWebAudio>['setWebAudio'];
     webAudio: boolean;
 }) => {
-    const source = usePlaybackSource();
+    const session = usePlaybackSession();
+    const { engine, source } = session;
 
     useEffect(() => {
         if (webAudio && 'AudioContext' in window) {
@@ -269,10 +270,17 @@ const AudioPlayersContent = ({
         return <PodcastWebPlayer />;
     }
 
-    if (isElectron() && playbackType === PlayerType.LOCAL) {
+    const musicEngine =
+        engine === 'none'
+            ? isElectron() && playbackType === PlayerType.LOCAL
+                ? 'mpv-native'
+                : 'web'
+            : engine;
+
+    if (source === 'music' && isElectron() && musicEngine === 'mpv-native') {
         return <MpvPlayer />;
     }
 
-    // 'music', null (idle at boot), and future sources fall through here.
+    // Web is the explicit compatibility engine for music and the harmless idle engine at boot.
     return <WebPlayer />;
 };

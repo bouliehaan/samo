@@ -1,10 +1,11 @@
 import { closeAllModals } from '@mantine/modals';
+import { useQueryClient } from '@tanstack/react-query';
 import isElectron from 'is-electron';
 import { nanoid } from 'nanoid/non-secure';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import AudiobookshelfIcon from '../../../../../Audiobookshelf_Logo.svg';
+import AudiobookshelfIcon from '../../../../../assets/icons/audiobookshelf.svg';
 
 import { api } from '/@/renderer/api';
 import {
@@ -36,6 +37,7 @@ const autodiscover = isElectron() ? window.api.autodiscover : null;
 const localSettings = isElectron() ? window.api.localSettings : null;
 
 interface AddServerFormProps {
+    initialServerType?: ServerType;
     onCancel: (() => void) | null;
     onSubmitSuccess?: (server: ServerListItemWithCredential) => void;
 }
@@ -100,14 +102,20 @@ const ALL_SERVERS = Object.keys(SERVER_TYPES).map((serverType) => {
     };
 });
 
-export const AddServerForm = ({ onCancel, onSubmitSuccess }: AddServerFormProps) => {
+export const AddServerForm = ({
+    initialServerType: preferredInitialServerType,
+    onCancel,
+    onSubmitSuccess,
+}: AddServerFormProps) => {
     const { t } = useTranslation();
+    const queryClient = useQueryClient();
     const focusTrapRef = useFocusTrap(true);
     const [isLoading, setIsLoading] = useState(false);
     const { addServer, setCurrentServer } = useAuthStoreActions();
     const serverList = useServerList();
     const { servers: discovered } = useAutodiscovery();
     const initialServerType =
+        preferredInitialServerType ??
         (localSettings ? localSettings.env.SERVER_TYPE : toServerType(window.SERVER_TYPE)) ??
         ServerType.NAVIDROME;
 
@@ -230,6 +238,9 @@ export const AddServerForm = ({ onCancel, onSubmitSuccess }: AddServerFormProps)
             if (serverItem.type !== ServerType.AUDIOBOOKSHELF) {
                 setCurrentServer(serverItem);
             }
+            void queryClient.invalidateQueries({ queryKey: ['home'] });
+            void queryClient.invalidateQueries({ queryKey: ['audiobookshelf'] });
+            void queryClient.invalidateQueries({ queryKey: ['search'] });
             closeAllModals();
 
             toast.success({

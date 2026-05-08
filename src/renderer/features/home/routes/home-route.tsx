@@ -1,9 +1,8 @@
-import { Suspense, useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { Suspense, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { api } from '/@/renderer/api';
-
 import { useGridCarouselContainerQuery } from '/@/renderer/components/grid-carousel/grid-carousel-v2';
 import { NativeScrollArea } from '/@/renderer/components/native-scroll-area/native-scroll-area';
 import { AlbumInfiniteCarousel } from '/@/renderer/features/albums/components/album-infinite-carousel';
@@ -26,11 +25,10 @@ import { LibraryContainer } from '/@/renderer/features/shared/components/library
 import { LibraryHeaderBar } from '/@/renderer/features/shared/components/library-header-bar';
 import { PageErrorBoundary } from '/@/renderer/features/shared/components/page-error-boundary';
 import { AppRoute } from '/@/renderer/router/routes';
-import { useWindowSettings } from '/@/renderer/store';
+import { useCurrentServer, useCurrentServerId, useWindowSettings } from '/@/renderer/store';
 import { Spinner } from '/@/shared/components/spinner/spinner';
 import { Stack } from '/@/shared/components/stack/stack';
-import { AlbumListSort, SortOrder } from '/@/shared/types/domain-types';
-import { useCurrentServerId } from '/@/renderer/store';
+import { AlbumListSort, ServerType, SortOrder } from '/@/shared/types/domain-types';
 import { Platform } from '/@/shared/types/types';
 
 const HomeAlbumsWithFallback = ({
@@ -72,12 +70,7 @@ const HomeAlbumsWithFallback = ({
                 rowCount={1}
                 sortBy={AlbumListSort.RECENTLY_PLAYED}
                 sortOrder={SortOrder.DESC}
-                title={
-                    <HomeSectionTitle
-                        title="Albums"
-                        to={AppRoute.LIBRARY_ALBUMS}
-                    />
-                }
+                title={<HomeSectionTitle title="Albums" to={AppRoute.LIBRARY_ALBUMS} />}
             />
         );
     }
@@ -91,12 +84,31 @@ const HomeAlbumsWithFallback = ({
             rowCount={1}
             sortBy={AlbumListSort.FAVORITED}
             sortOrder={SortOrder.DESC}
-            title={
-                <HomeSectionTitle
-                    title="Albums"
-                    to={AppRoute.LIBRARY_ALBUMS}
-                />
-            }
+            title={<HomeSectionTitle title="Albums" to={AppRoute.LIBRARY_ALBUMS} />}
+        />
+    );
+};
+
+const HomeRecentlyAddedAlbums = ({
+    containerQuery,
+}: {
+    containerQuery?: ReturnType<typeof useGridCarouselContainerQuery>;
+}) => {
+    const server = useCurrentServer();
+
+    if (server?.type !== ServerType.NAVIDROME) {
+        return null;
+    }
+
+    return (
+        <AlbumInfiniteCarousel
+            containerQuery={containerQuery}
+            enableRefresh
+            queryKey={['home', 'album', 'recently-added'] as const}
+            rowCount={1}
+            sortBy={AlbumListSort.RECENTLY_ADDED}
+            sortOrder={SortOrder.DESC}
+            title={<HomeSectionTitle title="Recently Added" to={AppRoute.LIBRARY_ALBUMS} />}
         />
     );
 };
@@ -136,6 +148,7 @@ const HomeRoute = () => {
                         <HomeFavoritePlaylists containerQuery={containerQuery} />
                         <HomeFavoriteAudiobooks containerQuery={containerQuery} />
                         <HomeFavoritePodcasts containerQuery={containerQuery} />
+                        <HomeRecentlyAddedAlbums containerQuery={containerQuery} />
                         <HomeFavoriteArtists containerQuery={containerQuery} />
                         <HomeFavoriteTracks />
                         <HomeRediscoverySection />

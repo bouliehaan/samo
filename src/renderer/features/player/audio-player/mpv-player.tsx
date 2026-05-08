@@ -4,6 +4,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { usePlayerEvents } from '/@/renderer/features/player/audio-player/hooks/use-player-events';
 import { getSongUrl } from '/@/renderer/features/player/audio-player/hooks/use-stream-url';
 import {
+    setClockAnchor,
+    setClockPlaying,
+    setClockSpeed,
+} from '/@/renderer/features/player/audio-player/playback-clock';
+import {
     TranscodingConfig,
     usePlaybackSettings,
     usePlayerActions,
@@ -277,6 +282,7 @@ export const MpvPlayer = () => {
 
         const handleCurrentTime = (_event: any, time: number) => {
             setTimestamp(time);
+            setClockAnchor({ isPlaying: true, timeSec: time });
         };
 
         const handleAutoNext = async () => {
@@ -342,6 +348,14 @@ export const MpvPlayer = () => {
     useEffect(() => {
         mpvPlayer?.updateMetadata(playerData);
     }, [playerData]);
+
+    useEffect(() => {
+        setClockPlaying(status === PlayerStatus.PLAYING);
+    }, [status]);
+
+    useEffect(() => {
+        setClockSpeed(speed ?? 1);
+    }, [speed]);
 
     return null;
 };

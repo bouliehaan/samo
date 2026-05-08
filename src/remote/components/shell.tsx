@@ -1,5 +1,7 @@
 import { AppShell, Flex, Grid, Image } from '@mantine/core';
 
+import samoLogoUrl from '../../../build/samologo.svg?url';
+
 import { ImageButton } from '/@/remote/components/buttons/image-button';
 import { ReconnectButton } from '/@/remote/components/buttons/reconnect-button';
 import { ThemeButton } from '/@/remote/components/buttons/theme-button';
@@ -26,7 +28,7 @@ export const Shell = () => {
                                 justifySelf: 'flex-start',
                             }}
                         >
-                            <Image fit="contain" height={32} src="/favicon.ico" width={32} />
+                            <Image fit="contain" height={32} src={samoLogoUrl} width={32} />
                         </Flex>
                     </Grid.Col>
                     <Grid.Col span={8}>

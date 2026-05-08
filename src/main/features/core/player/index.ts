@@ -1,15 +1,17 @@
 import console from 'console';
 import { app, ipcMain } from 'electron';
-import { rm } from 'fs/promises';
 import uniq from 'lodash/uniq';
 import MpvAPI from 'node-mpv';
+import { accessSync, chmodSync, constants, existsSync, statSync } from 'node:fs';
+import { rm } from 'node:fs/promises';
 import http from 'node:http';
 import https from 'node:https';
+import { join } from 'node:path';
 import { pid } from 'node:process';
 import process from 'process';
 
 import { getMainWindow, sendToastToRenderer } from '../../../index';
-import { createLog, isWindows } from '../../../utils';
+import { createLog, isLinux, isMacOS, isWindows } from '../../../utils';
 import { store } from '../settings';
 
 import { PlayerData } from '/@/shared/types/domain-types';
@@ -27,6 +29,7 @@ declare module 'node-mpv';
 let mpvInstance: MpvAPI | null = null;
 let currentPlayerData: null | PlayerData = null;
 const socketPath = isWindows() ? `\\\\.\\pipe\\mpvserver-${pid}` : `/tmp/node-mpv-${pid}.sock`;
+let mpvLifecyclePromise: Promise<void> = Promise.resolve();
 
 const NodeMpvErrorCode = {
     0: 'Unable to load file or stream',
@@ -42,35 +45,242 @@ const NodeMpvErrorCode = {
 };
 
 type NodeMpvError = {
-    errcode: number;
-    method: string;
-    stackTrace: string;
-    verbose: string;
+    errcode?: number;
+    message?: string;
+    method?: string;
+    stackTrace?: string;
+    verbose?: string;
 };
 
 const mpvLog = (
-    data: { action: string; toast?: 'info' | 'success' | 'warning' },
-    err?: NodeMpvError,
+    data: {
+        action: string;
+        toast?: 'info' | 'success' | 'warning';
+        type?: 'debug' | 'info' | 'success' | 'verbose' | 'warning';
+    },
+    err?: Error | NodeMpvError,
 ) => {
-    const { action, toast } = data;
+    const { action, toast, type = 'info' } = data;
 
     if (err) {
-        const message = `[AUDIO PLAYER] ${action} - mpv errorcode ${err.errcode} - ${
-            NodeMpvErrorCode[err.errcode as keyof typeof NodeMpvErrorCode]
-        }`;
+        const errcode = 'errcode' in err ? err.errcode : undefined;
+        const codeDescription =
+            typeof errcode === 'number'
+                ? `mpv errorcode ${errcode} - ${
+                      NodeMpvErrorCode[errcode as keyof typeof NodeMpvErrorCode] ??
+                      'Unknown MPV error'
+                  }`
+                : undefined;
+        const detail = codeDescription ?? err.message ?? String(err);
+        const message = `[AUDIO PLAYER] ${action} - ${detail}`;
 
         sendToastToRenderer({ message, type: 'error' });
         createLog({ message, type: 'error' });
+        return;
     }
 
     const message = `[AUDIO PLAYER] ${action}`;
-    createLog({ message, type: 'error' });
+    createLog({ message, type });
     if (toast) {
         sendToastToRenderer({ message, type: toast });
     }
 };
 
-const MPV_BINARY_PATH = store.get('mpv_path') as string | undefined;
+const getConfiguredMpvBinaryPath = () => store.get('mpv_path') as string | undefined;
+
+type MpvBinaryCandidate = {
+    allowExecutableName?: boolean;
+    canRepairPermissions?: boolean;
+    path: string;
+    source: string;
+};
+
+const MACOS_DEV_MPV_CANDIDATES = ['/opt/homebrew/bin/mpv', '/usr/local/bin/mpv'];
+const LINUX_MPV_CANDIDATES = ['/usr/bin/mpv', '/usr/local/bin/mpv', '/snap/bin/mpv'];
+const MPV_QUIT_GRACE_PERIOD_MS = 750;
+
+const getBundledMacOSMpvBinaryPath = () => join(process.resourcesPath, 'bin', 'mpv');
+const getBundledMacOSX64MpvBinaryPath = () => join(process.resourcesPath, 'bin', 'x64', 'mpv');
+
+const getPackagedMacOSMpvCandidates = (): MpvBinaryCandidate[] => {
+    const appleSiliconMpv = {
+        canRepairPermissions: true,
+        path: getBundledMacOSMpvBinaryPath(),
+        source: 'bundled Apple Silicon app resource',
+    };
+    const intelMpv = {
+        canRepairPermissions: true,
+        path: getBundledMacOSX64MpvBinaryPath(),
+        source: 'bundled Intel app resource',
+    };
+
+    return process.arch === 'x64' ? [intelMpv, appleSiliconMpv] : [appleSiliconMpv, intelMpv];
+};
+
+const isExecutableName = (value: string) => !/[\\/]/.test(value);
+
+const ensureMpvCandidateExecutable = ({
+    canRepairPermissions,
+    path: candidatePath,
+    source,
+}: MpvBinaryCandidate) => {
+    const stats = statSync(candidatePath);
+
+    if (!stats.isFile()) {
+        throw new Error(
+            `MPV unavailable: ${source} exists at ${candidatePath}, but it is not a file.`,
+        );
+    }
+
+    try {
+        accessSync(candidatePath, constants.X_OK);
+        return;
+    } catch {
+        if (canRepairPermissions) {
+            try {
+                chmodSync(candidatePath, stats.mode | 0o111);
+                accessSync(candidatePath, constants.X_OK);
+                mpvLog({
+                    action: `Repaired executable permissions for ${source} MPV at ${candidatePath}`,
+                    type: 'warning',
+                });
+                return;
+            } catch {
+                // Fall through to the explicit error below.
+            }
+        }
+
+        throw new Error(
+            `MPV unavailable: ${source} exists at ${candidatePath}, but it is not executable.`,
+        );
+    }
+};
+
+const resolveExistingMpvCandidate = (candidate: MpvBinaryCandidate) => {
+    if (candidate.allowExecutableName && isExecutableName(candidate.path)) {
+        return candidate.path;
+    }
+
+    if (!existsSync(candidate.path)) {
+        return null;
+    }
+
+    ensureMpvCandidateExecutable(candidate);
+    return candidate.path;
+};
+
+const logSelectedMpvPath = (mode: 'dev' | 'packaged', path: string, source: string) => {
+    mpvLog({
+        action: `Resolved MPV binary in ${mode} mode from ${source}: ${path}`,
+        type: 'info',
+    });
+};
+
+const resolveMpvBinaryPath = (binaryPath?: string) => {
+    const mode = app.isPackaged ? 'packaged' : 'dev';
+    const configuredPath = binaryPath || getConfiguredMpvBinaryPath();
+    const envPath = process.env.SAMO_MPV_PATH;
+
+    mpvLog({
+        action: `Resolving MPV binary in ${mode} mode`,
+        type: 'debug',
+    });
+
+    if (isMacOS() && app.isPackaged) {
+        const bundledCandidates = getPackagedMacOSMpvCandidates();
+
+        for (const candidate of bundledCandidates) {
+            const bundledMpvPath = resolveExistingMpvCandidate(candidate);
+
+            if (bundledMpvPath) {
+                logSelectedMpvPath(mode, bundledMpvPath, candidate.source);
+                return bundledMpvPath;
+            }
+        }
+
+        mpvLog({
+            action: `Bundled MPV binaries missing at ${bundledCandidates
+                .map((candidate) => candidate.path)
+                .join(' and ')}`,
+            type: 'warning',
+        });
+
+        if (configuredPath) {
+            const configuredMpvPath = resolveExistingMpvCandidate({
+                path: configuredPath,
+                source: 'configured mpv_path',
+            });
+
+            if (configuredMpvPath) {
+                logSelectedMpvPath(mode, configuredMpvPath, 'configured mpv_path');
+                return configuredMpvPath;
+            }
+
+            mpvLog({
+                action: `Configured MPV path was not found at ${configuredPath}`,
+                type: 'warning',
+            });
+        }
+
+        throw new Error(
+            `MPV unavailable: packaged macOS builds require bundled MPV at ${getBundledMacOSMpvBinaryPath()} with optional Intel backup at ${getBundledMacOSX64MpvBinaryPath()}. Populate resources/bin/darwin before building release artifacts.`,
+        );
+    }
+
+    if (isMacOS()) {
+        const candidates: MpvBinaryCandidate[] = [
+            ...(envPath ? [{ path: envPath, source: 'SAMO_MPV_PATH' }] : []),
+            ...(configuredPath ? [{ path: configuredPath, source: 'configured mpv_path' }] : []),
+            ...MACOS_DEV_MPV_CANDIDATES.map((path) => ({
+                path,
+                source: 'macOS development default path',
+            })),
+        ];
+
+        for (const candidate of candidates) {
+            const resolvedPath = resolveExistingMpvCandidate(candidate);
+
+            if (resolvedPath) {
+                logSelectedMpvPath(mode, resolvedPath, candidate.source);
+                return resolvedPath;
+            }
+        }
+
+        throw new Error(
+            `MPV unavailable: set SAMO_MPV_PATH, configure mpv_path, or install mpv at ${MACOS_DEV_MPV_CANDIDATES.join(
+                ' or ',
+            )}.`,
+        );
+    }
+
+    const candidates: MpvBinaryCandidate[] = [
+        ...(envPath ? [{ allowExecutableName: true, path: envPath, source: 'SAMO_MPV_PATH' }] : []),
+        ...(configuredPath
+            ? [{ allowExecutableName: true, path: configuredPath, source: 'configured mpv_path' }]
+            : []),
+        ...(isLinux()
+            ? LINUX_MPV_CANDIDATES.map((path) => ({
+                  path,
+                  source: 'linux default path',
+              }))
+            : []),
+    ];
+
+    for (const candidate of candidates) {
+        const resolvedPath = resolveExistingMpvCandidate(candidate);
+
+        if (resolvedPath) {
+            logSelectedMpvPath(mode, resolvedPath, candidate.source);
+            return resolvedPath;
+        }
+    }
+
+    mpvLog({
+        action: 'No explicit MPV binary resolved; allowing node-mpv to use system PATH',
+        type: 'warning',
+    });
+    return undefined;
+};
 
 const prefetchPlaylistParams = [
     '--prefetch-playlist=no',
@@ -96,12 +306,18 @@ const createMpv = async (data: {
     const { binaryPath, extraParameters, properties } = data;
 
     const params = uniq([...DEFAULT_MPV_PARAMETERS(extraParameters), ...(extraParameters || [])]);
+    const binary = resolveMpvBinaryPath(binaryPath);
+
+    mpvLog({
+        action: binary ? `Starting mpv from ${binary}` : 'Starting mpv from system PATH',
+        type: 'debug',
+    });
 
     const mpv = new MpvAPI(
         {
             audio_only: true,
             auto_restart: false,
-            binary: binaryPath || MPV_BINARY_PATH || undefined,
+            binary,
             socket: socketPath,
             time_update: 1,
         },
@@ -110,10 +326,15 @@ const createMpv = async (data: {
 
     try {
         await mpv.start();
-    } catch (error: any) {
-        console.error('mpv failed to start', error);
-    } finally {
+        attachMpvProcessLogging(mpv);
         await mpv.setMultipleProperties(properties || {});
+    } catch (error) {
+        try {
+            await quit(mpv);
+        } catch {
+            // Ignore cleanup errors from a failed start path.
+        }
+        throw error;
     }
 
     mpv.on('status', (status) => {
@@ -159,22 +380,138 @@ export const getMpvInstance = () => {
     return mpvInstance;
 };
 
+const wait = (timeout: number) =>
+    new Promise((resolve) => {
+        setTimeout(resolve, timeout);
+    });
+
+const getMpvChildProcess = (instance: MpvAPI) => {
+    const mpvProcess =
+        (instance as any).process || (instance as any).mpvProcess || (instance as any)._mpvProcess;
+
+    return mpvProcess && typeof mpvProcess.kill === 'function' ? mpvProcess : null;
+};
+
+const getMpvChildPid = (instance: MpvAPI | null | undefined) => {
+    const mpvProcess = instance ? getMpvChildProcess(instance) : null;
+    return typeof mpvProcess?.pid === 'number' ? mpvProcess.pid : undefined;
+};
+
+const logMpvChildProcess = (action: string, instance: MpvAPI | null | undefined) => {
+    const childPid = getMpvChildPid(instance);
+
+    mpvLog({
+        action:
+            childPid !== undefined
+                ? `${action} mpv child process pid=${childPid}`
+                : `${action} mpv child process pid unavailable`,
+        type: 'info',
+    });
+};
+
+const attachMpvProcessLogging = (instance: MpvAPI) => {
+    const mpvProcess = getMpvChildProcess(instance);
+
+    logMpvChildProcess('Started', instance);
+
+    if (!mpvProcess || typeof mpvProcess.once !== 'function') {
+        return;
+    }
+
+    mpvProcess.once('exit', (code: null | number, signal: NodeJS.Signals | null) => {
+        const childPid = typeof mpvProcess.pid === 'number' ? mpvProcess.pid : undefined;
+
+        mpvLog({
+            action:
+                childPid !== undefined
+                    ? `Exited mpv child process pid=${childPid} code=${code ?? 'null'} signal=${
+                          signal ?? 'null'
+                      }`
+                    : `Exited mpv child process pid unavailable code=${code ?? 'null'} signal=${
+                          signal ?? 'null'
+                      }`,
+            type: 'info',
+        });
+    });
+};
+
+const hasMpvChildProcessExited = (mpvProcess: any) => {
+    return mpvProcess?.exitCode != null || mpvProcess?.signalCode != null;
+};
+
+const terminateMpvProcess = async (
+    instance: MpvAPI,
+    reason: string,
+    options?: { waitBeforeSignal?: boolean },
+) => {
+    if (isWindows()) {
+        return;
+    }
+
+    const mpvProcess = getMpvChildProcess(instance);
+
+    if (!mpvProcess || hasMpvChildProcessExited(mpvProcess)) {
+        return;
+    }
+
+    if (options?.waitBeforeSignal) {
+        logMpvChildProcess(`Waiting for graceful shutdown ${reason}`, instance);
+        await wait(MPV_QUIT_GRACE_PERIOD_MS);
+
+        if (hasMpvChildProcessExited(mpvProcess)) {
+            return;
+        }
+    }
+
+    try {
+        mpvLog({
+            action:
+                typeof mpvProcess.pid === 'number'
+                    ? `Terminating native mpv process ${reason} pid=${mpvProcess.pid}`
+                    : `Terminating native mpv process ${reason} pid unavailable`,
+            type: 'warning',
+        });
+        mpvProcess.kill('SIGTERM');
+    } catch (killErr) {
+        mpvLog({ action: 'Failed to terminate native mpv process' }, killErr as NodeMpvError);
+        return;
+    }
+
+    await wait(MPV_QUIT_GRACE_PERIOD_MS);
+
+    if (hasMpvChildProcessExited(mpvProcess)) {
+        return;
+    }
+
+    try {
+        mpvLog({
+            action:
+                typeof mpvProcess.pid === 'number'
+                    ? `Force killing native mpv process ${reason} pid=${mpvProcess.pid}`
+                    : `Force killing native mpv process ${reason} pid unavailable`,
+            type: 'warning',
+        });
+        mpvProcess.kill('SIGKILL');
+    } catch (killErr) {
+        mpvLog({ action: 'Failed to force kill native mpv process' }, killErr as NodeMpvError);
+    }
+};
+
 const quit = async (instance?: MpvAPI | null) => {
     const mpv = instance || getMpvInstance();
     if (mpv) {
+        logMpvChildProcess('Cleaning up', mpv);
         try {
             await mpv.quit();
-        } catch {
-            // If quit() fails, try to kill the process directly
-            const mpvProcess = (mpv as any).process || (mpv as any).mpvProcess;
-            if (mpvProcess && typeof mpvProcess.kill === 'function') {
-                try {
-                    mpvProcess.kill('SIGTERM');
-                } catch (killErr) {
-                    mpvLog({ action: 'Failed to kill mpv process' }, killErr as NodeMpvError);
-                }
-            }
+        } catch (error) {
+            mpvLog({
+                action: `mpv quit IPC failed; terminating native process directly: ${
+                    (error as Error | NodeMpvError)?.message ?? String(error)
+                }`,
+                type: 'warning',
+            });
         }
+        await terminateMpvProcess(mpv, 'after quit', { waitBeforeSignal: true });
         if (!isWindows()) {
             try {
                 await rm(socketPath);
@@ -182,6 +519,48 @@ const quit = async (instance?: MpvAPI | null) => {
                 // Ignore errors when removing socket file
             }
         }
+    }
+};
+
+const runMpvLifecycle = async <T>(task: () => Promise<T>): Promise<T> => {
+    const run = mpvLifecyclePromise.then(task, task);
+
+    mpvLifecyclePromise = run.then(
+        () => undefined,
+        () => undefined,
+    );
+
+    return run;
+};
+
+const shutdownMpvInstance = async (
+    instance: MpvAPI | null | undefined,
+    reason: string,
+    options?: { clearPlaylist?: boolean; force?: boolean },
+) => {
+    if (!instance) {
+        return;
+    }
+
+    logMpvChildProcess(`Cleaning up ${reason}`, instance);
+
+    try {
+        if (!options?.force) {
+            await instance.stop().catch((error) => {
+                mpvLog({ action: `Failed to stop MPV ${reason}` }, error);
+            });
+        }
+
+        if (options?.clearPlaylist) {
+            await instance.clearPlaylist().catch((error) => {
+                mpvLog({ action: `Failed to clear MPV playlist ${reason}` }, error);
+            });
+        }
+
+        await quit(instance);
+    } catch (error: any | NodeMpvError) {
+        mpvLog({ action: `Failed to clean up MPV ${reason}` }, error);
+        await terminateMpvProcess(instance, `after ${reason} cleanup failure`);
     }
 };
 
@@ -213,24 +592,22 @@ ipcMain.handle(
     'player-restart',
     async (_event, data: { extraParameters?: string[]; properties?: Record<string, any> }) => {
         try {
-            mpvLog({
-                action: `Attempting to initialize mpv with parameters: ${JSON.stringify(data)}`,
-            });
-
-            // Clean up previous mpv instance
-            getMpvInstance()?.stop();
-            getMpvInstance()
-                ?.quit()
-                .catch((error) => {
-                    mpvLog({ action: 'Failed to quit existing MPV' }, error);
+            await runMpvLifecycle(async () => {
+                mpvLog({
+                    action: `Attempting to restart mpv with parameters: ${JSON.stringify(data)}`,
                 });
-            mpvInstance = null;
 
-            mpvInstance = await createMpv(data);
-            mpvLog({ action: 'Restarted mpv', toast: 'success' });
-            setAudioPlayerFallback(false);
+                const existingInstance = getMpvInstance();
+                await shutdownMpvInstance(existingInstance, 'before restart');
+                mpvInstance = null;
+
+                mpvInstance = await createMpv(data);
+                mpvState = MpvState.STARTED;
+                mpvLog({ action: 'Restarted mpv', toast: 'success' });
+                setAudioPlayerFallback(false);
+            });
         } catch (err: any | NodeMpvError) {
-            mpvLog({ action: 'Failed to restart mpv, falling back to web player' }, err);
+            mpvLog({ action: 'Failed to restart native MPV playback' }, err);
             setAudioPlayerFallback(true);
         }
     },
@@ -240,27 +617,37 @@ ipcMain.handle(
     'player-initialize',
     async (_event, data: { extraParameters?: string[]; properties?: Record<string, any> }) => {
         try {
-            mpvLog({
-                action: `Attempting to initialize mpv with parameters: ${JSON.stringify(data)}`,
+            await runMpvLifecycle(async () => {
+                mpvLog({
+                    action: `Attempting to initialize mpv with parameters: ${JSON.stringify(data)}`,
+                });
+
+                const existingInstance = getMpvInstance();
+                await shutdownMpvInstance(existingInstance, 'before initialize');
+                mpvInstance = null;
+
+                mpvInstance = await createMpv(data);
+                mpvState = MpvState.STARTED;
+                setAudioPlayerFallback(false);
             });
-            mpvInstance = await createMpv(data);
-            setAudioPlayerFallback(false);
         } catch (err: any | NodeMpvError) {
-            mpvLog({ action: 'Failed to initialize mpv, falling back to web player' }, err);
+            mpvLog({ action: 'Failed to initialize native MPV playback' }, err);
             setAudioPlayerFallback(true);
         }
     },
 );
 
 ipcMain.on('player-quit', async () => {
-    try {
-        await getMpvInstance()?.stop();
-        await quit();
-    } catch (err: any | NodeMpvError) {
-        mpvLog({ action: 'Failed to quit mpv' }, err);
-    } finally {
-        mpvInstance = null;
-    }
+    void runMpvLifecycle(async () => {
+        try {
+            await shutdownMpvInstance(getMpvInstance(), 'from player quit');
+        } catch (err: any | NodeMpvError) {
+            mpvLog({ action: 'Failed to quit mpv' }, err);
+        } finally {
+            currentPlayerData = null;
+            mpvInstance = null;
+        }
+    });
 });
 
 ipcMain.handle('player-is-running', async () => {
@@ -268,8 +655,13 @@ ipcMain.handle('player-is-running', async () => {
 });
 
 ipcMain.handle('player-clean-up', async () => {
-    getMpvInstance()?.stop();
-    getMpvInstance()?.clearPlaylist();
+    await runMpvLifecycle(async () => {
+        await shutdownMpvInstance(getMpvInstance(), 'from renderer cleanup', {
+            clearPlaylist: true,
+        });
+        currentPlayerData = null;
+        mpvInstance = null;
+    });
 });
 
 ipcMain.on('player-start', async () => {
@@ -361,7 +753,7 @@ ipcMain.on('player-set-queue', async (_event, current?: string, next?: string, p
                 await getMpvInstance()?.load(current, 'replace');
             } catch (error: any | NodeMpvError) {
                 mpvLog({ action: `Failed to load current song` }, error);
-                await getMpvInstance()?.play();
+                throw error;
             }
 
             if (next) {
@@ -726,28 +1118,10 @@ const cleanupMpv = async (force = false) => {
         return;
     }
 
-    const instance = getMpvInstance();
-    if (instance) {
-        try {
-            if (!force) {
-                await instance.stop();
-            }
-            await quit(instance);
-        } catch (err: any | NodeMpvError) {
-            mpvLog({ action: `Failed to cleanup mpv` }, err);
-            // Force kill as fallback
-            const mpvProcess = (instance as any).process || (instance as any).mpvProcess;
-            if (mpvProcess && typeof mpvProcess.kill === 'function') {
-                try {
-                    mpvProcess.kill('SIGKILL');
-                } catch {
-                    // Ignore kill errors
-                }
-            }
-        } finally {
-            mpvInstance = null;
-        }
-    }
+    await runMpvLifecycle(async () => {
+        await shutdownMpvInstance(getMpvInstance(), 'before app quit', { force });
+        mpvInstance = null;
+    });
 };
 
 app.on('before-quit', async (event) => {
@@ -777,10 +1151,16 @@ app.on('before-quit', async (event) => {
 process.on('exit', () => {
     const instance = getMpvInstance();
     if (instance) {
-        // Try to access and kill the process directly
-        const mpvProcess = (instance as any).process || (instance as any).mpvProcess;
+        const mpvProcess = getMpvChildProcess(instance);
         if (mpvProcess && typeof mpvProcess.kill === 'function') {
             try {
+                mpvLog({
+                    action:
+                        typeof mpvProcess.pid === 'number'
+                            ? `Process exit force killing mpv child process pid=${mpvProcess.pid}`
+                            : 'Process exit force killing mpv child process pid unavailable',
+                    type: 'warning',
+                });
                 mpvProcess.kill('SIGKILL');
             } catch {
                 // Ignore errors during exit

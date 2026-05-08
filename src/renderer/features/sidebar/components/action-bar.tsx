@@ -1,6 +1,5 @@
 import { useNavigate } from 'react-router';
 
-import samoLogoUrl from '../../../../../samo_logo_white.svg?url';
 import styles from './action-bar.module.css';
 
 import { AppMenu } from '/@/renderer/features/titlebar/components/app-menu';
@@ -16,7 +15,6 @@ export const ActionBar = () => {
                 <DropdownMenu position="bottom-start">
                     <DropdownMenu.Target>
                         <Button p="0">
-                            <img alt="Samo" className={styles.logo} src={samoLogoUrl} />
                         </Button>
                     </DropdownMenu.Target>
                     <DropdownMenu.Dropdown>

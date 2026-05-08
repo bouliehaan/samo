@@ -74,7 +74,7 @@ export const useRadioStore = createWithEqualityFn<RadioStore>((set, get) => ({
                     nextStationArt = stationArt ?? null;
                 }
 
-                usePlaybackOwnerStore.getState().claim('radio');
+                usePlaybackOwnerStore.getState().claim('radio', { engine: 'web' });
                 usePlayerStoreBase.getState().mediaPlay();
                 if (nextStationArt?.id && nextStationArt.serverId) {
                     recordRecentItem({

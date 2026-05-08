@@ -1,3 +1,4 @@
+import isElectron from 'is-electron';
 import merge from 'lodash/merge';
 import { nanoid } from 'nanoid';
 import { useMemo } from 'react';
@@ -34,6 +35,7 @@ import {
     PlayerShuffle,
     PlayerStatus,
     PlayerStyle,
+    PlayerType,
 } from '/@/shared/types/types';
 
 export interface PlayerState extends Actions, State {}
@@ -365,7 +367,10 @@ const initialState: State = {
 };
 
 const claimMusicPlayback = () => {
-    usePlaybackOwnerStore.getState().claim('music');
+    const playbackType = useSettingsStore.getState().playback.type;
+    usePlaybackOwnerStore.getState().claim('music', {
+        engine: isElectron() && playbackType === PlayerType.LOCAL ? 'mpv-native' : 'web',
+    });
 };
 
 export const usePlayerStoreBase = createWithEqualityFn<PlayerState>()(

@@ -1,4 +1,5 @@
 import './autodiscover';
+import './audiobookshelf';
 import './lyrics';
 import './player';
 import './remote';

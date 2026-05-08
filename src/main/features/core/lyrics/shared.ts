@@ -70,6 +70,15 @@ export const orderSearchResults = (args: {
             }
         });
 
+        nameResults.forEach((result) => {
+            if (!combinedResults.has(result.item.id)) {
+                combinedResults.set(result.item.id, {
+                    ...result,
+                    score: Math.max(result.score ?? 1, 0.35),
+                });
+            }
+        });
+
         searchResults = Array.from(combinedResults.values());
     } else {
         searchResults = fuse.search<InternetProviderLyricSearchResponse>({

@@ -1797,7 +1797,7 @@ const initialState: SettingsState = {
         preferLocalLyrics: true,
         showMatch: true,
         showProvider: true,
-        sources: [LyricSource.LRCLIB, LyricSource.SIMPMUSIC],
+        sources: [LyricSource.LRCLIB],
         translationApiKey: '',
         translationApiProvider: '',
         translationTargetLanguage: 'en',
@@ -1923,7 +1923,7 @@ const initialState: SettingsState = {
         disableAutoUpdate: false,
         exitToTray: false,
         minimizeToTray: false,
-        preventSleepOnPlayback: false,
+        preventSleepOnPlayback: true,
         releaseChannel: 'latest',
         startMinimized: false,
         tray: true,
@@ -2457,10 +2457,18 @@ export const useSettingsStore = createWithEqualityFn<SettingsSlice>()(
                     state.playback.type = PlayerType.LOCAL;
                 }
 
+                if (version <= 33) {
+                    // Lyrics is LRCLib-only now. Wipe stale Genius / SimpMusic / NetEase
+                    // entries from `sources`.
+                    if (state.lyrics) {
+                        state.lyrics.sources = [LyricSource.LRCLIB];
+                    }
+                }
+
                 return persistedState;
             },
             name: 'store_settings',
-            version: 32,
+            version: 33,
         },
     ),
 );

@@ -13,7 +13,6 @@ import {
     useSettingsStoreActions,
 } from '/@/renderer/store';
 import { Fieldset } from '/@/shared/components/fieldset/fieldset';
-import { MultiSelect } from '/@/shared/components/multi-select/multi-select';
 import { NumberInput } from '/@/shared/components/number-input/number-input';
 import { SegmentedControl } from '/@/shared/components/segmented-control/segmented-control';
 import { Select } from '/@/shared/components/select/select';
@@ -22,9 +21,6 @@ import { Stack } from '/@/shared/components/stack/stack';
 import { Switch } from '/@/shared/components/switch/switch';
 import { TextInput } from '/@/shared/components/text-input/text-input';
 import { Text } from '/@/shared/components/text/text';
-import { LyricSource } from '/@/shared/types/domain-types';
-
-const localSettings = isElectron() ? window.api.localSettings : null;
 
 interface LyricsSettingsFormProps {
     settingsKey: string;
@@ -262,27 +258,6 @@ export const LyricsSettingsForm = ({ settingsKey }: LyricsSettingsFormProps) => 
             }),
             isHidden: !isElectron(),
             title: t('setting.lyricFetch', { postProcess: 'sentenceCase' }),
-        },
-        {
-            control: (
-                <MultiSelect
-                    aria-label="Lyric providers"
-                    clearable
-                    data={Object.values(LyricSource)}
-                    defaultValue={lyricsSettings.sources}
-                    onChange={(e: string[]) => {
-                        localSettings?.set('lyrics', e);
-                        updateLyricsSetting({ sources: e.map((source) => source as LyricSource) });
-                    }}
-                    width={300}
-                />
-            ),
-            description: t('setting.lyricFetchProvider', {
-                context: 'description',
-                postProcess: 'sentenceCase',
-            }),
-            isHidden: !isElectron(),
-            title: t('setting.lyricFetchProvider', { postProcess: 'sentenceCase' }),
         },
         {
             control: (

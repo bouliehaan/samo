@@ -12,13 +12,6 @@ export default defineConfig({
         outDir: path.resolve(__dirname, './out/web'),
         rollupOptions: {
             input: {
-                '32x32': normalizePath(path.resolve(__dirname, './assets/icons/32x32.png')),
-                '64x64': normalizePath(path.resolve(__dirname, './assets/icons/64x64.png')),
-                '128x128': normalizePath(path.resolve(__dirname, './assets/icons/128x128.png')),
-                '256x256': normalizePath(path.resolve(__dirname, './assets/icons/256x256.png')),
-                '512x512': normalizePath(path.resolve(__dirname, './assets/icons/512x512.png')),
-                '1024x1024': normalizePath(path.resolve(__dirname, './assets/icons/1024x1024.png')),
-                favicon: normalizePath(path.resolve(__dirname, './assets/icons/favicon.ico')),
                 index: normalizePath(path.resolve(__dirname, './src/renderer/index.html')),
                 preview_full_screen_player: normalizePath(
                     path.resolve(__dirname, './media/preview_full_screen_player.webp'),

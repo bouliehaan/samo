@@ -1,4 +1,4 @@
-import { createRef, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import styles from './visualizer.module.css';
 
@@ -6,7 +6,7 @@ import { useWebAudio } from '/@/renderer/features/player/hooks/use-webaudio';
 import { getVisualizerAudioNodes } from '/@/renderer/features/player/utils/get-visualizer-audio-nodes';
 import { openVisualizerSettingsModal } from '/@/renderer/features/player/utils/open-visualizer-settings-modal';
 import { ComponentErrorBoundary } from '/@/renderer/features/shared/components/component-error-boundary';
-import { useAccent, usePlaybackType, useSettingsStore } from '/@/renderer/store';
+import { usePlaybackType, useSettingsStore } from '/@/renderer/store';
 import {
     useFullScreenPlayerStore,
     useFullScreenPlayerStoreActions,
@@ -18,12 +18,15 @@ import { PlayerStatus, PlayerType } from '/@/shared/types/types';
 
 const VisualizerInner = () => {
     const { webAudio } = useWebAudio();
-    const canvasRef = createRef<HTMLDivElement>();
-    const accent = useAccent();
+    const canvasRef = useRef<HTMLDivElement>(null);
     const visualizer = useSettingsStore((store) => store.visualizer);
     const playbackType = usePlaybackType();
     const opacity = useSettingsStore((store) => store.visualizer.audiomotionanalyzer.opacity);
-    const [motion, setMotion] = useState<any>();
+    const motionRef = useRef<any>(undefined);
+    const resizeObserverRef = useRef<ResizeObserver | undefined>(undefined);
+    const resizeFrameRef = useRef<number | undefined>(undefined);
+    const [containerSize, setContainerSize] = useState({ height: 0, width: 0 });
+    const [hasMotion, setHasMotion] = useState(false);
     const [libraryLoaded, setLibraryLoaded] = useState(false);
     const AudioMotionAnalyzerRef = useRef<any>(null);
     const pauseTimerRef = useRef<NodeJS.Timeout | undefined>(undefined);
@@ -220,123 +223,186 @@ const VisualizerInner = () => {
         [visualizer, transformGradientForVisualizer],
     );
 
+    const clearPauseTimer = useCallback(() => {
+        if (pauseTimerRef.current) {
+            clearTimeout(pauseTimerRef.current);
+            pauseTimerRef.current = undefined;
+        }
+    }, []);
+
+    const resizeMotion = useCallback(() => {
+        const motion = motionRef.current;
+        const container = canvasRef.current;
+
+        if (!motion || !container) {
+            return;
+        }
+
+        const width = Math.floor(container.clientWidth);
+        const height = Math.floor(container.clientHeight);
+
+        if (width <= 0 || height <= 0) {
+            return;
+        }
+
+        motion.setCanvasSize(width, height);
+    }, []);
+
+    const destroyMotion = useCallback(() => {
+        clearPauseTimer();
+
+        const motion = motionRef.current;
+        motionRef.current = undefined;
+
+        if (motion) {
+            try {
+                motion.destroy();
+            } catch {
+                // ignore
+            }
+        }
+
+        canvasRef.current?.querySelectorAll('canvas').forEach((canvas) => canvas.remove());
+        setHasMotion(false);
+    }, [clearPauseTimer]);
+
+    useEffect(() => {
+        const container = canvasRef.current;
+
+        if (!container) {
+            return;
+        }
+
+        const updateSize = () => {
+            if (resizeFrameRef.current !== undefined) {
+                cancelAnimationFrame(resizeFrameRef.current);
+            }
+
+            resizeFrameRef.current = requestAnimationFrame(() => {
+                resizeFrameRef.current = undefined;
+                setContainerSize({
+                    height: Math.floor(container.clientHeight),
+                    width: Math.floor(container.clientWidth),
+                });
+                resizeMotion();
+            });
+        };
+
+        updateSize();
+        resizeObserverRef.current = new ResizeObserver(updateSize);
+        resizeObserverRef.current.observe(container);
+        window.addEventListener('resize', updateSize);
+
+        return () => {
+            window.removeEventListener('resize', updateSize);
+            resizeObserverRef.current?.disconnect();
+            resizeObserverRef.current = undefined;
+
+            if (resizeFrameRef.current !== undefined) {
+                cancelAnimationFrame(resizeFrameRef.current);
+                resizeFrameRef.current = undefined;
+            }
+        };
+    }, [resizeMotion]);
+
     useEffect(() => {
         const { context } = webAudio || {};
         const inputNodes = getVisualizerAudioNodes(webAudio, playbackType);
         const shouldRunForWebPlayback = playbackType === PlayerType.WEB && isPlaying;
         const shouldRunForMpvLoopback =
             playbackType === PlayerType.LOCAL && isPlaying && inputNodes.length > 0;
+        const shouldRun = shouldRunForWebPlayback || shouldRunForMpvLoopback;
 
-        let audioMotion: any | undefined;
-        if (
-            inputNodes.length > 0 &&
-            context &&
-            canvasRef.current &&
-            !motion &&
-            libraryLoaded &&
-            (shouldRunForWebPlayback || shouldRunForMpvLoopback)
-        ) {
-            const AudioMotionAnalyzer = AudioMotionAnalyzerRef.current;
-            if (!AudioMotionAnalyzer) return;
-
-            // Reset gradients registered flag on new instance
-            setGradientsRegistered(false);
-
-            // Create options without custom gradients on first init
-            const initOptions: any = { ...options };
-
-            // Replace custom gradients with default 'classic' for initial setup
-            if (visualizer.type === 'audiomotionanalyzer') {
-                const ama = visualizer.audiomotionanalyzer;
-                if (isCustomGradient(ama.gradient)) {
-                    initOptions.gradient = 'classic';
-                }
-                if (isCustomGradient(ama.gradientLeft)) {
-                    initOptions.gradientLeft = 'classic';
-                }
-                if (isCustomGradient(ama.gradientRight)) {
-                    initOptions.gradientRight = 'classic';
-                }
+        if (!shouldRun || !context || inputNodes.length === 0) {
+            if (motionRef.current) {
+                destroyMotion();
             }
-
-            audioMotion = new AudioMotionAnalyzer(canvasRef.current, {
-                ...initOptions,
-                audioCtx: context,
-            });
-
-            // Register custom gradients (this will set gradientsRegistered to true)
-            registerCustomGradients(audioMotion);
-
-            setMotion(audioMotion);
-            for (const node of inputNodes) audioMotion.connectInput(node);
+            return;
         }
 
-        return () => {
-            if (motion) {
-                try {
-                    motion.destroy();
-                } catch {
-                    // ignore (e.g. already destroyed by idle timer)
-                }
-                setMotion(undefined);
+        if (
+            motionRef.current ||
+            !canvasRef.current ||
+            !libraryLoaded ||
+            containerSize.width <= 0 ||
+            containerSize.height <= 0
+        ) {
+            return;
+        }
+
+        const AudioMotionAnalyzer = AudioMotionAnalyzerRef.current;
+        if (!AudioMotionAnalyzer) return;
+
+        setGradientsRegistered(false);
+
+        const initOptions: any = { ...options };
+
+        if (visualizer.type === 'audiomotionanalyzer') {
+            const ama = visualizer.audiomotionanalyzer;
+            if (isCustomGradient(ama.gradient)) {
+                initOptions.gradient = 'classic';
             }
-        };
+            if (isCustomGradient(ama.gradientLeft)) {
+                initOptions.gradientLeft = 'classic';
+            }
+            if (isCustomGradient(ama.gradientRight)) {
+                initOptions.gradientRight = 'classic';
+            }
+        }
+
+        const audioMotion = new AudioMotionAnalyzer(canvasRef.current, {
+            ...initOptions,
+            audioCtx: context,
+        });
+
+        motionRef.current = audioMotion;
+        setHasMotion(true);
+        registerCustomGradients(audioMotion);
+
+        for (const node of inputNodes) audioMotion.connectInput(node);
+        requestAnimationFrame(resizeMotion);
     }, [
-        accent,
-        canvasRef,
-        registerCustomGradients,
+        containerSize.height,
+        containerSize.width,
+        destroyMotion,
+        isCustomGradient,
+        isPlaying,
+        libraryLoaded,
+        options,
         playbackType,
+        registerCustomGradients,
+        resizeMotion,
         webAudio,
         visualizer,
-        options,
-        isCustomGradient,
-        motion,
-        libraryLoaded,
-        isPlaying,
     ]);
 
     // Kill visualizer after 5 seconds of pause
     useEffect(() => {
         if (isPlaying) {
-            if (pauseTimerRef.current) {
-                clearTimeout(pauseTimerRef.current);
-                pauseTimerRef.current = undefined;
-            }
+            clearPauseTimer();
             return;
         }
 
-        if (!motion) return;
+        if (!hasMotion) return;
 
         pauseTimerRef.current = setTimeout(() => {
-            setMotion((current) => {
-                if (current) {
-                    try {
-                        current.destroy();
-                    } catch {
-                        // ignore
-                    }
-                }
-                return undefined;
-            });
+            destroyMotion();
             pauseTimerRef.current = undefined;
         }, 5000);
 
         return () => {
-            if (pauseTimerRef.current) {
-                clearTimeout(pauseTimerRef.current);
-                pauseTimerRef.current = undefined;
-            }
+            clearPauseTimer();
         };
-    }, [isPlaying, motion]);
+    }, [clearPauseTimer, destroyMotion, hasMotion, isPlaying]);
 
     // Re-register custom gradients when they change
     useEffect(() => {
-        if (motion && visualizer.type === 'audiomotionanalyzer') {
+        if (motionRef.current && visualizer.type === 'audiomotionanalyzer') {
             setGradientsRegistered(false);
-            registerCustomGradients(motion);
+            registerCustomGradients(motionRef.current);
         }
     }, [
-        motion,
+        hasMotion,
         registerCustomGradients,
         visualizer.audiomotionanalyzer.customGradients,
         visualizer.type,
@@ -344,10 +410,17 @@ const VisualizerInner = () => {
 
     // Update visualizer settings when they change
     useEffect(() => {
-        if (motion) {
-            motion.setOptions(options);
+        if (motionRef.current) {
+            motionRef.current.setOptions(options);
+            resizeMotion();
         }
-    }, [motion, options]);
+    }, [hasMotion, options, resizeMotion]);
+
+    useEffect(() => {
+        return () => {
+            destroyMotion();
+        };
+    }, [destroyMotion]);
 
     return <div className={styles.visualizer} ref={canvasRef} style={{ opacity }} />;
 };

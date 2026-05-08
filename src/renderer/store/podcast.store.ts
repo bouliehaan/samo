@@ -193,7 +193,7 @@ export const usePodcastStore = create<PodcastState>()(
                             });
                         }
 
-                        usePlaybackOwnerStore.getState().claim('podcast');
+                        usePlaybackOwnerStore.getState().claim('podcast', { engine: 'web' });
                         rememberPodcastPlaybackSession(server, item, episode, 0);
                         recordRecentPodcast(item, server.id);
 
@@ -370,6 +370,56 @@ export const usePodcastStore = create<PodcastState>()(
                         });
                     },
 
+                    seekToNextEpisode: async () => {
+                        const state = get();
+                        const { episode, item, server } = state;
+                        if (!item || !episode || !server) return;
+
+                        // Sort by publishedAt ascending (oldest → newest) so navigation
+                        // is always chronological regardless of API array order.
+                        const episodes = (item.media?.episodes ?? [])
+                            .slice()
+                            .sort((a, b) => (a.publishedAt ?? 0) - (b.publishedAt ?? 0));
+                        if (episodes.length === 0) return;
+
+                        const currentIndex = episodes.findIndex((e) => e.id === episode.id);
+                        if (currentIndex === -1) return;
+
+                        // next = more recent = higher index in ascending sort
+                        const nextIndex = currentIndex + 1;
+                        if (nextIndex >= episodes.length) return;
+
+                        const nextEpisode = episodes[nextIndex];
+                        if (nextEpisode) {
+                            await get().actions.play(server, item, nextEpisode);
+                        }
+                    },
+
+                    seekToPreviousEpisode: async () => {
+                        const state = get();
+                        const { episode, item, server } = state;
+                        if (!item || !episode || !server) return;
+
+                        // Sort by publishedAt ascending (oldest → newest) so navigation
+                        // is always chronological regardless of API array order.
+                        const episodes = (item.media?.episodes ?? [])
+                            .slice()
+                            .sort((a, b) => (a.publishedAt ?? 0) - (b.publishedAt ?? 0));
+                        if (episodes.length === 0) return;
+
+                        const currentIndex = episodes.findIndex((e) => e.id === episode.id);
+                        if (currentIndex === -1) return;
+
+                        // previous = older = lower index in ascending sort
+                        const previousIndex = currentIndex - 1;
+                        if (previousIndex < 0) return;
+
+                        const previousEpisode = episodes[previousIndex];
+                        if (previousEpisode) {
+                            await get().actions.play(server, item, previousEpisode);
+                        }
+                    },
+
                     setError: (error) => {
                         set({ error });
                     },
@@ -405,56 +455,6 @@ export const usePodcastStore = create<PodcastState>()(
                             countListeningTime: true,
                             reason: 'progress',
                         });
-                    },
-
-                    seekToNextEpisode: async () => {
-                        const state = get();
-                        const { item, episode, server } = state;
-                        if (!item || !episode || !server) return;
-
-                        // Sort by publishedAt ascending (oldest → newest) so navigation
-                        // is always chronological regardless of API array order.
-                        const episodes = (item.media?.episodes ?? [])
-                            .slice()
-                            .sort((a, b) => (a.publishedAt ?? 0) - (b.publishedAt ?? 0));
-                        if (episodes.length === 0) return;
-
-                        const currentIndex = episodes.findIndex((e) => e.id === episode.id);
-                        if (currentIndex === -1) return;
-
-                        // next = more recent = higher index in ascending sort
-                        const nextIndex = currentIndex + 1;
-                        if (nextIndex >= episodes.length) return;
-
-                        const nextEpisode = episodes[nextIndex];
-                        if (nextEpisode) {
-                            await get().actions.play(server, item, nextEpisode);
-                        }
-                    },
-
-                    seekToPreviousEpisode: async () => {
-                        const state = get();
-                        const { item, episode, server } = state;
-                        if (!item || !episode || !server) return;
-
-                        // Sort by publishedAt ascending (oldest → newest) so navigation
-                        // is always chronological regardless of API array order.
-                        const episodes = (item.media?.episodes ?? [])
-                            .slice()
-                            .sort((a, b) => (a.publishedAt ?? 0) - (b.publishedAt ?? 0));
-                        if (episodes.length === 0) return;
-
-                        const currentIndex = episodes.findIndex((e) => e.id === episode.id);
-                        if (currentIndex === -1) return;
-
-                        // previous = older = lower index in ascending sort
-                        const previousIndex = currentIndex - 1;
-                        if (previousIndex < 0) return;
-
-                        const previousEpisode = episodes[previousIndex];
-                        if (previousEpisode) {
-                            await get().actions.play(server, item, previousEpisode);
-                        }
                     },
                 },
                 contentUrl: null,

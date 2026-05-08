@@ -12,12 +12,9 @@ import {
     usePlayerStatus,
 } from '/@/renderer/store';
 import {
-    useCombinedLyricsAndVisualizer,
     usePlaybackSettings,
     useSettingsStore,
     useSettingsStoreActions,
-    useShowLyricsInSidebar,
-    useShowVisualizerInSidebar,
 } from '/@/renderer/store/settings.store';
 import { ActionIcon } from '/@/shared/components/action-icon/action-icon';
 import { Popover } from '/@/shared/components/popover/popover';
@@ -31,9 +28,6 @@ import { PlayerStatus, PlayerStyle, PlayerType } from '/@/shared/types/types';
 export const PlayerConfig = () => {
     const { t } = useTranslation();
     const preservePitch = useSettingsStore((state) => state.playback.preservePitch);
-    const showLyricsInSidebar = useShowLyricsInSidebar();
-    const showVisualizerInSidebar = useShowVisualizerInSidebar();
-    const combinedLyricsAndVisualizer = useCombinedLyricsAndVisualizer();
 
     const playbackSettings = usePlaybackSettings();
     const { setSettings } = useSettingsStoreActions();
@@ -95,72 +89,10 @@ export const PlayerConfig = () => {
                 id: 'preservePitch',
                 label: t('setting.preservePitch', { postProcess: 'titleCase' }),
             },
-            {
-                component: null,
-                id: 'divider-3',
-                isDivider: true,
-                label: '',
-            },
-            {
-                component: (
-                    <Switch
-                        defaultChecked={showLyricsInSidebar}
-                        onChange={(e) => {
-                            setSettings({
-                                general: {
-                                    showLyricsInSidebar: e.currentTarget.checked,
-                                },
-                            });
-                        }}
-                    />
-                ),
-                id: 'showLyricsInSidebar',
-                label: t('setting.showLyricsInSidebar', { postProcess: 'titleCase' }),
-            },
-            {
-                component: (
-                    <Switch
-                        defaultChecked={showVisualizerInSidebar}
-                        onChange={(e) => {
-                            setSettings({
-                                general: {
-                                    showVisualizerInSidebar: e.currentTarget.checked,
-                                },
-                            });
-                        }}
-                    />
-                ),
-                id: 'showVisualizerInSidebar',
-                label: t('setting.showVisualizerInSidebar', { postProcess: 'titleCase' }),
-            },
-            {
-                component: (
-                    <Switch
-                        defaultChecked={combinedLyricsAndVisualizer}
-                        onChange={(e) => {
-                            setSettings({
-                                general: {
-                                    combinedLyricsAndVisualizer: e.currentTarget.checked,
-                                },
-                            });
-                        }}
-                    />
-                ),
-                id: 'combinedLyricsAndVisualizer',
-                label: t('setting.combinedLyricsAndVisualizer', { postProcess: 'titleCase' }),
-            },
         ];
 
         return allOptions;
-    }, [
-        t,
-        preservePitch,
-        setSettings,
-        setPreservePitch,
-        showLyricsInSidebar,
-        showVisualizerInSidebar,
-        combinedLyricsAndVisualizer,
-    ]);
+    }, [t, preservePitch, setPreservePitch]);
 
     return (
         <Popover position="top" width={500}>
@@ -241,7 +173,9 @@ const TransitionTypeConfig = () => {
     const { setTransitionType } = usePlayerActions();
 
     const isDisabledDueToPlayback = status === PlayerStatus.PLAYING;
-    const isDisabled = playbackSettings.type !== PlayerType.WEB || isDisabledDueToPlayback;
+    const isUnsupportedByEngine = playbackSettings.type !== PlayerType.WEB;
+    const isDisabled = isUnsupportedByEngine || isDisabledDueToPlayback;
+    const displayedTransitionType = isUnsupportedByEngine ? PlayerStyle.GAPLESS : transitionType;
 
     const control = (
         <SegmentedControl
@@ -264,7 +198,7 @@ const TransitionTypeConfig = () => {
             disabled={isDisabled}
             onChange={(value) => setTransitionType(value as PlayerStyle)}
             size="sm"
-            value={transitionType}
+            value={displayedTransitionType}
             w="100%"
         />
     );
@@ -272,6 +206,14 @@ const TransitionTypeConfig = () => {
     if (isDisabledDueToPlayback) {
         return (
             <Tooltip label={t('player.pausePlaybackToChangeSetting', { postProcess: 'titleCase' })}>
+                <div>{control}</div>
+            </Tooltip>
+        );
+    }
+
+    if (isUnsupportedByEngine) {
+        return (
+            <Tooltip label="Crossfade requires Web compatibility playback. Native MPV playback stays gapless/normal.">
                 <div>{control}</div>
             </Tooltip>
         );
@@ -288,8 +230,9 @@ const CrossfadeDurationConfig = () => {
     const { setCrossfadeDuration } = usePlayerActions();
 
     const isDisabledDueToPlayback = status === PlayerStatus.PLAYING;
+    const isUnsupportedByEngine = playbackSettings.type !== PlayerType.WEB;
     const isDisabled =
-        playbackSettings.type !== PlayerType.WEB ||
+        isUnsupportedByEngine ||
         transitionType !== PlayerStyle.CROSSFADE ||
         isDisabledDueToPlayback;
 
@@ -317,6 +260,14 @@ const CrossfadeDurationConfig = () => {
     if (isDisabledDueToPlayback) {
         return (
             <Tooltip label={t('player.pausePlaybackToChangeSetting', { postProcess: 'titleCase' })}>
+                <div>{slider}</div>
+            </Tooltip>
+        );
+    }
+
+    if (isUnsupportedByEngine) {
+        return (
+            <Tooltip label="Crossfade duration only applies to Web compatibility playback.">
                 <div>{slider}</div>
             </Tooltip>
         );

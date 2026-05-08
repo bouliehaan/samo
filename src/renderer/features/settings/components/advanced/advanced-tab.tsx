@@ -3,12 +3,10 @@ import { Fragment } from 'react/jsx-runtime';
 
 import { ExportImportSettings } from '/@/renderer/features/settings/components/advanced/export-import-settings';
 import { CacheSettings } from '/@/renderer/features/settings/components/window/cache-settngs';
-import { UpdateSettings } from '/@/renderer/features/settings/components/window/update-settings';
 import { Divider } from '/@/shared/components/divider/divider';
 import { Stack } from '/@/shared/components/stack/stack';
 
 const sections = [
-    { component: UpdateSettings, key: 'update' },
     { component: ExportImportSettings, key: 'export-import' },
     { component: CacheSettings, key: 'cache' },
 ];

@@ -9,6 +9,10 @@ import {
 } from '/@/renderer/features/player/audio-player/engine/wavesurfer-player-engine';
 import { usePlayerEvents } from '/@/renderer/features/player/audio-player/hooks/use-player-events';
 import { useSongUrl } from '/@/renderer/features/player/audio-player/hooks/use-stream-url';
+import {
+    setClockAnchor,
+    setClockPlaying,
+} from '/@/renderer/features/player/audio-player/playback-clock';
 import { PlayerOnProgressProps } from '/@/renderer/features/player/audio-player/types';
 import {
     usePlaybackSettings,
@@ -206,29 +210,43 @@ export function WaveSurferPlayer() {
 
     useEffect(() => {
         if (localPlayerStatus !== PlayerStatus.PLAYING) {
+            setClockPlaying(false);
             return;
         }
 
-        const interval = setInterval(() => {
+        let rafId: null | number = null;
+        let lastZustandWriteAt = 0;
+
+        const tick = () => {
             const activePlayer =
                 num === 1 ? playerRef.current?.player1() : playerRef.current?.player2();
             const wavesurfer = activePlayer?.ref;
 
-            if (!wavesurfer) {
-                return;
+            if (wavesurfer) {
+                const currentTime = wavesurfer.getCurrentTime();
+                setClockAnchor({ isPlaying: true, timeSec: currentTime });
+
+                const now = performance.now();
+                if (
+                    now - lastZustandWriteAt >= 240 &&
+                    (transitionType === PlayerStyle.CROSSFADE ||
+                        transitionType === PlayerStyle.GAPLESS)
+                ) {
+                    setTimestamp(Number(currentTime.toFixed(3)));
+                    lastZustandWriteAt = now;
+                }
             }
 
-            const currentTime = wavesurfer.getCurrentTime();
+            rafId = requestAnimationFrame(tick);
+        };
 
-            if (
-                transitionType === PlayerStyle.CROSSFADE ||
-                transitionType === PlayerStyle.GAPLESS
-            ) {
-                setTimestamp(Number(currentTime.toFixed(3)));
-            }
-        }, 500);
+        rafId = requestAnimationFrame(tick);
+        setClockPlaying(true);
 
-        return () => clearInterval(interval);
+        return () => {
+            if (rafId !== null) cancelAnimationFrame(rafId);
+            setClockPlaying(false);
+        };
     }, [localPlayerStatus, num, setTimestamp, transitionType]);
 
     const player1Url = useSongUrl(player1, num === 1, transcode);

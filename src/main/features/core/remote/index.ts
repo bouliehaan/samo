@@ -31,6 +31,8 @@ interface MimeType {
     html: string;
     ico: string;
     js: string;
+    png: string;
+    svg: string;
 }
 
 interface RemoteConfig {
@@ -93,6 +95,8 @@ const MIME_TYPES: MimeType = {
     html: 'text/html; charset=UTF-8',
     ico: 'image/x-icon',
     js: 'application/javascript',
+    png: 'image/png',
+    svg: 'image/svg+xml',
 };
 
 const PING_TIMEOUT_MS = 10000;
@@ -297,10 +301,6 @@ const enableServer = (config: RemoteConfig): Promise<void> => {
                             res.end(req.headers.authorization);
                             break;
                         }
-                        case '/favicon.ico': {
-                            await serveFile(req, 'favicon', 'ico', res);
-                            break;
-                        }
                         case '/manifest.json': {
                             res.statusCode = 200;
                             res.setHeader('Content-Type', 'application/json');
@@ -313,6 +313,14 @@ const enableServer = (config: RemoteConfig): Promise<void> => {
                         }
                         case '/remote.js': {
                             await serveFile(req, 'remote', 'js', res);
+                            break;
+                        }
+                        case '/samologo.png': {
+                            await serveFile(req, 'samologo', 'png', res);
+                            break;
+                        }
+                        case '/samologo.svg': {
+                            await serveFile(req, 'samologo', 'svg', res);
                             break;
                         }
                         default: {

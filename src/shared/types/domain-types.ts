@@ -1328,6 +1328,7 @@ export type InternetProviderLyricSearchResponse = {
     duration?: number;
     id: string;
     isSync: boolean | null;
+    lyrics?: string;
     name: string;
     score?: number;
     source: LyricSource;

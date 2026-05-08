@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Navigate } from 'react-router';
 
-import AudiobookshelfIcon from '../../../../../Audiobookshelf_Logo.svg';
+import AudiobookshelfIcon from '../../../../../assets/icons/audiobookshelf.svg';
 
 import { api } from '/@/renderer/api';
 import { PageHeader } from '/@/renderer/components/page-header/page-header';

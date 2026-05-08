@@ -52,8 +52,7 @@ const SearchResult = ({ data, isSelected, onClick }: SearchResultProps) => {
         return ((1 - score) * 100).toFixed(2);
     }, [score]);
 
-    const cleanId =
-        source === LyricSource.GENIUS ? id.replace(/^((http[s]?|ftp):\/)?\/?([^:/\s]+)/g, '') : id;
+    const cleanId = id;
 
     const syncStatus = useMemo(() => {
         if (isSync === true) {

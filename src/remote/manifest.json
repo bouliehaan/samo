@@ -6,8 +6,8 @@
     "theme_color": "#1E003D",
     "icons": [
         {
-            "src": "favicon.ico",
-            "sizes": "192x192",
+            "src": "samologo.png",
+            "sizes": "1024x1024",
             "type": "image/png",
             "purpose": "maskable any"
         }

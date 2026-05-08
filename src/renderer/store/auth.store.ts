@@ -30,6 +30,7 @@ export interface AuthState {
     activeMusicServerId: null | string;
     currentServer: null | ServerListItemWithCredential;
     deviceId: string;
+    hydrated: boolean;
     serverList: Record<string, ServerListItemWithCredential>;
 }
 
@@ -232,12 +233,16 @@ export const useAuthStore = createWithEqualityFn<AuthSlice>()(
                 activeMusicServerId: null,
                 currentServer: null,
                 deviceId: nanoid(),
+                hydrated: false,
                 serverList: {},
             })),
             { name: 'store_authentication' },
         ),
         {
-            merge: (persistedState, currentState) => merge(currentState, persistedState),
+            merge: (persistedState, currentState) => ({
+                ...merge(currentState, persistedState),
+                hydrated: true,
+            }),
             migrate: (persistedState, version) => {
                 const state = persistedState as Partial<AuthState>;
 
@@ -251,6 +256,11 @@ export const useAuthStore = createWithEqualityFn<AuthSlice>()(
                 return state;
             },
             name: 'store_authentication',
+            partialize: (state) => {
+                const stateToPersist = { ...state };
+                delete (stateToPersist as Partial<AuthSlice>).hydrated;
+                return stateToPersist;
+            },
             version: 3,
         },
     ),
@@ -313,6 +323,8 @@ export const useAudiobookshelfServer = () =>
     useAuthStore((state) => getPrimaryAudiobookshelfServer(state), shallow);
 
 export const useServerList = () => useAuthStore((state) => state.serverList);
+
+export const useAuthHydrated = () => useAuthStore((state) => state.hydrated);
 
 export const useAuthStoreActions = () => useAuthStore((state) => state.actions);
 
