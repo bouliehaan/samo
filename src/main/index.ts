@@ -706,6 +706,9 @@ async function createWindow(first = true): Promise<void> {
             }
 
             mainWindow.show();
+            app.focus({ steal: true });
+            mainWindow.focus();
+            mainWindow.webContents.focus();
             createWinThumbarButtons();
         }
     });

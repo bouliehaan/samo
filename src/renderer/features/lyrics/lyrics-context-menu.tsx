@@ -45,7 +45,9 @@ export const LyricsContextMenu = ({
 
     return (
         <ContextMenu>
-            <ContextMenu.Target>{children}</ContextMenu.Target>
+            <ContextMenu.Target>
+                <div style={{ height: '100%', minHeight: 0, width: '100%' }}>{children}</div>
+            </ContextMenu.Target>
             <ContextMenu.Content>
                 <ContextMenu.Submenu>
                     <ContextMenu.SubmenuTarget>

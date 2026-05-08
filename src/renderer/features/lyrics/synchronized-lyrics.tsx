@@ -122,17 +122,11 @@ export const SynchronizedLyrics = ({
 
                     if (followRef.current && !userScrollingRef.current) {
                         programmaticScrollRef.current = true;
-                        ignoreScrollUntilRef.current = performance.now() + 500;
-                        container.scrollTo({
-                            behavior: 'smooth',
-                            top: getCenteredScrollTop(container, node),
-                        });
-                        // The smooth-scroll fires more `scroll` events; clear the flag once
-                        // the browser settles (one frame after the last scroll event would be
-                        // ideal, but a fixed wait is close enough for our cadence).
-                        setTimeout(() => {
+                        ignoreScrollUntilRef.current = performance.now() + 50;
+                        container.scrollTop = getCenteredScrollTop(container, node);
+                        requestAnimationFrame(() => {
                             programmaticScrollRef.current = false;
-                        }, 500);
+                        });
                     }
                 }
             }

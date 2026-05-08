@@ -2,7 +2,7 @@ import { closeAllModals } from '@mantine/modals';
 import { useQueryClient } from '@tanstack/react-query';
 import isElectron from 'is-electron';
 import { nanoid } from 'nanoid/non-secure';
-import { useEffect, useState } from 'react';
+import { type FocusEvent, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import AudiobookshelfIcon from '../../../../../assets/icons/audiobookshelf.svg';
@@ -110,10 +110,12 @@ export const AddServerForm = ({
     const { t } = useTranslation();
     const queryClient = useQueryClient();
     const focusTrapRef = useFocusTrap(true);
+    const urlInputRef = useRef<HTMLInputElement>(null);
     const [isLoading, setIsLoading] = useState(false);
     const { addServer, setCurrentServer } = useAuthStoreActions();
     const serverList = useServerList();
     const { servers: discovered } = useAutodiscovery();
+    const configuredServerUrl = localSettings ? localSettings.env.SERVER_URL : window.SERVER_URL;
     const initialServerType =
         preferredInitialServerType ??
         (localSettings ? localSettings.env.SERVER_TYPE : toServerType(window.SERVER_TYPE)) ??
@@ -132,10 +134,83 @@ export const AddServerForm = ({
             preferRemoteUrl: false,
             remoteUrl: '',
             type: initialServerType,
-            url: (localSettings ? localSettings.env.SERVER_URL : window.SERVER_URL) ?? 'https://',
+            url: configuredServerUrl || 'http://',
             username: '',
         },
     });
+
+    const preferRemoteUrlLabel = t('form.addServer.input', { context: 'preferRemoteUrl' });
+    const remoteUrlLabel = t('form.addServer.input', { context: 'remoteUrl' });
+    const serverUrlLabel = t('form.addServer.input', { context: 'url' });
+    const urlInputProps = form.getInputProps('url');
+
+    const placeCursorAfterProtocol = useCallback((urlInput: HTMLInputElement) => {
+        const protocolMatch = urlInput.value.match(/^https?:\/\//);
+        const cursorPosition = protocolMatch ? protocolMatch[0].length : urlInput.value.length;
+
+        urlInput.setSelectionRange(cursorPosition, cursorPosition);
+    }, []);
+
+    const focusServerUrlInput = useCallback(() => {
+        if (serverLock) return false;
+
+        const urlInput = urlInputRef.current;
+
+        if (!urlInput || urlInput.disabled) return false;
+
+        urlInput.focus({ preventScroll: true });
+        placeCursorAfterProtocol(urlInput);
+
+        return document.activeElement === urlInput;
+    }, [placeCursorAfterProtocol, serverLock]);
+
+    useLayoutEffect(() => {
+        if (serverLock) return;
+
+        let animationFrameId: null | number = null;
+        let retryTimeoutId: null | number = null;
+        let hasFocusedServerUrl = false;
+        const startedAt = performance.now();
+
+        const focusUntilActive = () => {
+            hasFocusedServerUrl = focusServerUrlInput();
+
+            if (hasFocusedServerUrl || performance.now() - startedAt > 2500) {
+                return;
+            }
+
+            animationFrameId = window.requestAnimationFrame(focusUntilActive);
+        };
+
+        const handleWindowFocus = () => {
+            if (!hasFocusedServerUrl) {
+                window.setTimeout(() => {
+                    hasFocusedServerUrl = focusServerUrlInput();
+                }, 0);
+            }
+        };
+
+        focusUntilActive();
+        retryTimeoutId = window.setTimeout(focusUntilActive, 350);
+        window.addEventListener('focus', handleWindowFocus);
+
+        return () => {
+            if (animationFrameId !== null) {
+                window.cancelAnimationFrame(animationFrameId);
+            }
+
+            if (retryTimeoutId !== null) {
+                window.clearTimeout(retryTimeoutId);
+            }
+
+            window.removeEventListener('focus', handleWindowFocus);
+        };
+    }, [focusServerUrlInput, serverLock]);
+
+    const handleServerUrlFocus = (event: FocusEvent<HTMLInputElement>) => {
+        urlInputProps.onFocus?.(event);
+        placeCursorAfterProtocol(event.currentTarget);
+    };
 
     const isSubmitDisabled = !form.values.name || !form.values.url || !form.values.username;
 
@@ -288,7 +363,6 @@ export const AddServerForm = ({
                     />
                     <Group grow>
                         <TextInput
-                            data-autofocus
                             disabled={serverLock}
                             label={t('form.addServer.input', {
                                 context: 'name',
@@ -298,21 +372,19 @@ export const AddServerForm = ({
                             {...form.getInputProps('name')}
                         />
                         <TextInput
+                            autoFocus
+                            data-autofocus
                             disabled={serverLock}
-                            label={t('form.addServer.input', {
-                                context: 'url',
-                                postProcess: 'titleCase',
-                            })}
+                            label={serverUrlLabel}
+                            ref={urlInputRef}
                             required
-                            {...form.getInputProps('url')}
+                            {...urlInputProps}
+                            onFocus={handleServerUrlFocus}
                         />
                     </Group>
                     <TextInput
                         disabled={serverLock}
-                        label={t('form.addServer.input', {
-                            context: 'remoteUrl',
-                            postProcess: 'titleCase',
-                        })}
+                        label={remoteUrlLabel}
                         placeholder={t('form.addServer.input', {
                             context: 'remoteUrlPlaceholder',
                             postProcess: 'sentenceCase',
@@ -321,10 +393,7 @@ export const AddServerForm = ({
                     />
                     {form.values.remoteUrl && (
                         <Checkbox
-                            label={t('form.addServer.input', {
-                                context: 'preferRemoteUrl',
-                                postProcess: 'titleCase',
-                            })}
+                            label={preferRemoteUrlLabel}
                             {...form.getInputProps('preferRemoteUrl', {
                                 type: 'checkbox',
                             })}

@@ -47,6 +47,9 @@ export const EditServerForm = ({ isUpdate, onCancel, password, server }: EditSer
     const { updateServer } = useAuthStoreActions();
     const focusTrapRef = useFocusTrap();
     const [isLoading, setIsLoading] = useState(false);
+    const preferRemoteUrlLabel = t('form.addServer.input', { context: 'preferRemoteUrl' });
+    const remoteUrlLabel = t('form.addServer.input', { context: 'remoteUrl' });
+    const serverUrlLabel = t('form.addServer.input', { context: 'url' });
 
     const form = useForm({
         initialValues: {
@@ -199,19 +202,13 @@ export const EditServerForm = ({ isUpdate, onCancel, password, server }: EditSer
                     {...form.getInputProps('name')}
                 />
                 <TextInput
-                    label={t('form.addServer.input', {
-                        context: 'url',
-                        postProcess: 'titleCase',
-                    })}
+                    label={serverUrlLabel}
                     required
                     rightSection={form.isDirty('url') && <ModifiedFieldIndicator />}
                     {...form.getInputProps('url')}
                 />
                 <TextInput
-                    label={t('form.addServer.input', {
-                        context: 'remoteUrl',
-                        postProcess: 'titleCase',
-                    })}
+                    label={remoteUrlLabel}
                     placeholder={t('form.addServer.input', {
                         context: 'remoteUrlPlaceholder',
                         postProcess: 'sentenceCase',
@@ -222,10 +219,7 @@ export const EditServerForm = ({ isUpdate, onCancel, password, server }: EditSer
                 {form.values.remoteUrl && (
                     <Group gap="xs">
                         <Checkbox
-                            label={t('form.addServer.input', {
-                                context: 'preferRemoteUrl',
-                                postProcess: 'titleCase',
-                            })}
+                            label={preferRemoteUrlLabel}
                             {...form.getInputProps('preferRemoteUrl', {
                                 type: 'checkbox',
                             })}
