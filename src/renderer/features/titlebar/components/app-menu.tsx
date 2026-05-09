@@ -1,7 +1,7 @@
 import { openModal } from '@mantine/modals';
 import { useQueryClient } from '@tanstack/react-query';
 import isElectron from 'is-electron';
-import { Fragment, ReactNode, useTransition } from 'react';
+import { Fragment, ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useNavigate } from 'react-router';
 
@@ -73,7 +73,6 @@ export const AppMenu = () => {
     const collapsed = useAppStore((state) => state.sidebar.collapsed);
     const privateMode = useAppStore((state) => state.privateMode);
     const { setPrivateMode, setSideBar } = useAppStoreActions();
-    const [, startTransition] = useTransition();
 
     const handleCollapseSidebar = () => {
         setSideBar({ collapsed: true });
@@ -106,37 +105,46 @@ export const AppMenu = () => {
         });
     };
 
-    const handleSyncWithServer = async () => {
-        const loadingId = toast.info({
+    const handleSyncWithServer = () => {
+        // Subtle, mac-native toast: no color stripe, no title, no close button.
+        const syncingId = toast.show({
             autoClose: false,
-            loading: true,
+            color: 'transparent',
             message: t('page.appMenu.syncWithServerInProgress', {
                 postProcess: 'sentenceCase',
             }),
+            title: '',
+            withCloseButton: false,
         });
 
-        // Yield two frames so the spinner paints before the heavy work starts
-        await new Promise<void>((resolve) => {
-            requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+        // Double rAF: menu close + toast must paint on the next frame BEFORE we kick off
+        // invalidateQueries. Single rAF runs before the same frame's paint; double rAF
+        // guarantees the previous frame fully painted, so reconciliation never blocks
+        // the visual response to the click.
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+                void (async () => {
+                    try {
+                        await queryClient.invalidateQueries();
+                        await browser?.clearCache();
+
+                        toast.hide(syncingId);
+                        toast.show({
+                            autoClose: 2000,
+                            color: 'transparent',
+                            message: t('page.appMenu.syncWithServerSuccess', {
+                                postProcess: 'sentenceCase',
+                            }),
+                            title: '',
+                            withCloseButton: false,
+                        });
+                    } catch (error) {
+                        toast.hide(syncingId);
+                        toast.error({ message: (error as Error).message });
+                    }
+                })();
+            });
         });
-
-        try {
-            // Mark the query updates as non-urgent so they don't block the spinner animation
-            startTransition(async () => {
-                await queryClient.invalidateQueries();
-                await browser?.clearCache();
-            });
-
-            toast.hide(loadingId);
-            toast.success({
-                message: t('page.appMenu.syncWithServerSuccess', {
-                    postProcess: 'sentenceCase',
-                }),
-            });
-        } catch (error) {
-            toast.hide(loadingId);
-            toast.error({ message: (error as Error).message });
-        }
     };
 
     const handleQuit = () => {

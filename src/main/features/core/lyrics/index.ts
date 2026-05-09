@@ -147,6 +147,11 @@ const fetchFromLrcLib = async (
     if (!results?.length) return null;
 
     const best = results[0];
+    // Reject low-confidence matches — Fuse score > 0.4 means < 60% sureity, where
+    // serving the wrong song's lyrics is worse than serving none. Direct match above
+    // is unaffected (signature-based, high precision by construction).
+    if (best.score !== undefined && best.score > 0.4) return null;
+
     // LRCLib returns lyrics inline with search results; only fetch separately when missing.
     const lyrics = best.lyrics ?? (await getLrcLib(best.id, signal).catch(() => null));
     if (!lyrics) return null;

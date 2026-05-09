@@ -25,7 +25,6 @@ import {
     usePlayerSong,
     useWindowSettings,
 } from '/@/renderer/store';
-import { usePlaybackSource } from '/@/renderer/store/playback-owner.store';
 import { ActionIcon } from '/@/shared/components/action-icon/action-icon';
 import { Group } from '/@/shared/components/group/group';
 import { useHotkeys } from '/@/shared/hooks/use-hotkeys';
@@ -375,10 +374,6 @@ export const FullScreenPlayer = () => {
     const { dynamicBackground, dynamicImageBlur, dynamicIsImage } = useFullScreenPlayerStore();
     const { setStore } = useFullScreenPlayerStoreActions();
     const { windowBarStyle } = useWindowSettings();
-    const playbackSource = usePlaybackSource();
-
-    const isRadioMode = playbackSource === 'radio';
-    const effectiveDynamicBackground = dynamicBackground && !isRadioMode;
 
     const location = useLocation();
     const isOpenedRef = useRef<boolean | null>(null);
@@ -393,13 +388,13 @@ export const FullScreenPlayer = () => {
 
     return (
         <PlayerContainer
-            dynamicBackground={effectiveDynamicBackground}
+            dynamicBackground={dynamicBackground}
             dynamicIsImage={dynamicIsImage}
             windowBarStyle={windowBarStyle}
         >
             <Controls />
             <BackgroundImageOverlay
-                dynamicBackground={effectiveDynamicBackground}
+                dynamicBackground={dynamicBackground}
                 dynamicImageBlur={dynamicImageBlur}
             />
             <div className={styles.responsiveContainer}>

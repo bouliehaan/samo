@@ -89,6 +89,11 @@ const compactItems = (items: RecentItem[]) =>
 interface PlayHistoryState {
     actions: {
         clear: () => void;
+        pruneStale: (args: {
+            knownItemIds: Set<string>;
+            mediaType: RecentItemType;
+            serverId: string;
+        }) => void;
         record: (entry: RecentItemInput) => void;
         remove: (key: string) => void;
     };
@@ -100,6 +105,14 @@ export const usePlayHistoryStore = create<PlayHistoryState>()(
         (set) => ({
             actions: {
                 clear: () => set({ items: [] }),
+                pruneStale: ({ knownItemIds, mediaType, serverId }) =>
+                    set((state) => ({
+                        items: state.items.filter((item) => {
+                            if (item.mediaType !== mediaType) return true;
+                            if (item.serverId !== serverId) return true;
+                            return knownItemIds.has(item.itemId);
+                        }),
+                    })),
                 record: (entry) => {
                     if (!entry.itemId || !entry.serverId) return;
 

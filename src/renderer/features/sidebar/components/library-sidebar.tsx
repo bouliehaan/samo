@@ -1,6 +1,6 @@
 import { useQueries, useQuery } from '@tanstack/react-query';
 import clsx from 'clsx';
-import { MouseEvent, ReactNode, useCallback, useMemo, useRef, useState } from 'react';
+import { MouseEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { generatePath, useLocation, useNavigate } from 'react-router';
 
 import styles from './library-sidebar.module.css';
@@ -35,6 +35,7 @@ import {
     usePlayerSong,
     usePlayerStatus,
     usePlayerStore,
+    usePlayHistoryStore,
     usePodcastItem,
     useRecentItems,
 } from '/@/renderer/store';
@@ -527,6 +528,71 @@ export const LibrarySidebar = () => {
             ),
         [absEntries],
     );
+
+    const pruneStaleRecents = usePlayHistoryStore((state) => state.actions.pruneStale);
+
+    useEffect(() => {
+        if (!musicServerId || !albumsQuery.isSuccess || !albumsQuery.data) return;
+        const { items, totalRecordCount } = albumsQuery.data;
+        if (totalRecordCount === null || items.length < totalRecordCount) return;
+        pruneStaleRecents({
+            knownItemIds: new Set(items.map((item) => item.id)),
+            mediaType: 'album',
+            serverId: musicServerId,
+        });
+    }, [albumsQuery.data, albumsQuery.isSuccess, musicServerId, pruneStaleRecents]);
+
+    useEffect(() => {
+        if (!musicServerId || !artistsQuery.isSuccess || !artistsQuery.data) return;
+        const { items, totalRecordCount } = artistsQuery.data;
+        if (totalRecordCount === null || items.length < totalRecordCount) return;
+        pruneStaleRecents({
+            knownItemIds: new Set(items.map((item) => item.id)),
+            mediaType: 'artist',
+            serverId: musicServerId,
+        });
+    }, [artistsQuery.data, artistsQuery.isSuccess, musicServerId, pruneStaleRecents]);
+
+    useEffect(() => {
+        if (!musicServerId || !playlistsQuery.isSuccess || !playlistsQuery.data) return;
+        const { items, totalRecordCount } = playlistsQuery.data;
+        if (totalRecordCount === null || items.length < totalRecordCount) return;
+        pruneStaleRecents({
+            knownItemIds: new Set(items.map((item) => item.id)),
+            mediaType: 'playlist',
+            serverId: musicServerId,
+        });
+    }, [musicServerId, playlistsQuery.data, playlistsQuery.isSuccess, pruneStaleRecents]);
+
+    useEffect(() => {
+        if (!musicServerId || !radioQuery.isSuccess || !radioQuery.data) return;
+        pruneStaleRecents({
+            knownItemIds: new Set(radioQuery.data.map((station) => station.id)),
+            mediaType: 'radio',
+            serverId: musicServerId,
+        });
+    }, [musicServerId, pruneStaleRecents, radioQuery.data, radioQuery.isSuccess]);
+
+    const absItemQueriesAllSuccess =
+        absItemQueries.length > 0 && absItemQueries.every((query) => query.isSuccess);
+
+    useEffect(() => {
+        if (!absServerId || activeFilter !== 'audiobooks' || !absItemQueriesAllSuccess) return;
+        pruneStaleRecents({
+            knownItemIds: new Set(audiobookEntries.map((entry) => entry.item.id)),
+            mediaType: 'audiobook',
+            serverId: absServerId,
+        });
+    }, [absItemQueriesAllSuccess, absServerId, activeFilter, audiobookEntries, pruneStaleRecents]);
+
+    useEffect(() => {
+        if (!absServerId || activeFilter !== 'podcasts' || !absItemQueriesAllSuccess) return;
+        pruneStaleRecents({
+            knownItemIds: new Set(podcastEntries.map((entry) => entry.item.id)),
+            mediaType: 'podcast',
+            serverId: absServerId,
+        });
+    }, [absItemQueriesAllSuccess, absServerId, activeFilter, podcastEntries, pruneStaleRecents]);
 
     const currentMusicArtistIds = useMemo(
         () =>

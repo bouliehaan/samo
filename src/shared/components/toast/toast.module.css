@@ -1,5 +1,25 @@
 .root {
-    background-color: var(--theme-colors-surface);
+    /* macOS-style rounded corners. Mantine uses --notification-radius for both the
+       outer box and the colored stripe; overriding once cascades to both. */
+    --notification-radius: 12px;
+
+    width: fit-content;
+    max-width: 100%;
+    margin-inline: auto;
+
+    /* Translucent surface + backdrop blur for the macOS "liquid glass" look —
+       same idea as the fullscreen player overlay. saturate boosts the colors of
+       whatever is behind the toast, which is the trick that makes it feel native. */
+    background-color: color-mix(in srgb, var(--theme-colors-surface) 55%, transparent);
+    backdrop-filter: blur(24px) saturate(1.5);
+}
+
+/* Typeless toasts have no colored stripe, so override Mantine's asymmetric padding
+   (22px left for the stripe) with symmetric padding so the centered text actually
+   sits at the visual center. Typed toasts keep the stripe-aware spacing below. */
+.root:not(.error, .info, .success, .warning) {
+    padding-inline-start: var(--mantine-spacing-md);
+    padding-inline-end: var(--mantine-spacing-md);
 }
 
 .root.error {
@@ -19,11 +39,14 @@
 }
 
 .title {
+    font-family: var(--theme-content-font-family);
     font-size: var(--theme-font-size-md);
+    font-weight: 700;
 }
 
 .body {
     padding: var(--theme-spacing-md);
+    text-align: center;
 }
 
 .loader {
@@ -31,7 +54,9 @@
 }
 
 .description {
+    font-family: var(--theme-content-font-family);
     font-size: var(--theme-font-size-md);
+    font-weight: 600;
 }
 
 .close-button {

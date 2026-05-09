@@ -21,11 +21,15 @@ const getTitle = (type: NotificationProps['type']) => {
     if (type === 'success') return 'Success';
     if (type === 'warning') return 'Warning';
     if (type === 'error') return 'Error';
-    return 'Info';
+    if (type === 'info') return 'Info';
+    return undefined;
 };
 
 const showToast = ({ message, onClose, type, ...props }: NotificationProps) => {
     return notifications.show({
+        title: getTitle(type),
+        withBorder: false,
+        withCloseButton: true,
         ...props,
         classNames: {
             body: styles.body,
@@ -42,9 +46,6 @@ const showToast = ({ message, onClose, type, ...props }: NotificationProps) => {
         },
         message: message ?? '',
         onClose,
-        title: getTitle(type),
-        withBorder: true,
-        withCloseButton: true,
     });
 };
 
