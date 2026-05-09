@@ -11,6 +11,7 @@ import { GenreContextMenu } from '/@/renderer/features/context-menu/menus/genre-
 import { PlaylistContextMenu } from '/@/renderer/features/context-menu/menus/playlist-context-menu';
 import { PlaylistSongContextMenu } from '/@/renderer/features/context-menu/menus/playlist-song-context-menu';
 import { QueueContextMenu } from '/@/renderer/features/context-menu/menus/queue-context-menu';
+import { RecentItemContextMenu } from '/@/renderer/features/context-menu/menus/recent-item-context-menu';
 import { SongContextMenu } from '/@/renderer/features/context-menu/menus/song-context-menu';
 import { useRadioControls } from '/@/renderer/features/radio/hooks/use-radio-player';
 import { AppRoute } from '/@/renderer/router/routes';
@@ -100,6 +101,7 @@ export const ContextMenuController = createCallable<ContextMenuControllerProps, 
                 {cmd.type === 'audiobook' && <AudiobookContextMenu {...cmd} />}
                 {cmd.type === 'podcast' && <PodcastContextMenu {...cmd} />}
                 {cmd.type === 'radio' && <RadioContextMenu {...cmd} />}
+                {cmd.type === 'recent' && <RecentItemContextMenu {...cmd} />}
             </ContextMenu>
         );
     },
@@ -117,6 +119,7 @@ export type ContextMenuCommand =
     | PodcastContextMenuProps
     | QueueSongContextMenuProps
     | RadioContextMenuProps
+    | RecentItemContextMenuProps
     | SongContextMenuProps;
 
 type AlbumArtistContextMenuProps = {
@@ -177,8 +180,15 @@ type RadioContextMenuProps = {
     type: 'radio';
 };
 
+type RecentItemContextMenuProps = {
+    onOpen?: () => void;
+    recentItemKey: string;
+    type: 'recent';
+};
+
 type SongContextMenuProps = {
     items: Song[];
+    recentItemKey?: string;
     type: LibraryItem.SONG;
 };
 

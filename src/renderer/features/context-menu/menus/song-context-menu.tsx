@@ -6,6 +6,7 @@ import { GetInfoAction } from '/@/renderer/features/context-menu/actions/get-inf
 import { GoToAction } from '/@/renderer/features/context-menu/actions/go-to-action';
 import { PlayAction } from '/@/renderer/features/context-menu/actions/play-action';
 import { PlayTrackRadioAction } from '/@/renderer/features/context-menu/actions/play-track-radio-action';
+import { RemoveFromRecentsAction } from '/@/renderer/features/context-menu/actions/remove-from-recents-action';
 import { SetFavoriteAction } from '/@/renderer/features/context-menu/actions/set-favorite-action';
 import { SetRatingAction } from '/@/renderer/features/context-menu/actions/set-rating-action';
 import { ShareAction } from '/@/renderer/features/context-menu/actions/share-action';
@@ -16,10 +17,11 @@ import { LibraryItem, Song } from '/@/shared/types/domain-types';
 
 interface SongContextMenuProps {
     items: Song[];
+    recentItemKey?: string;
     type: LibraryItem.SONG;
 }
 
-export const SongContextMenu = ({ items, type }: SongContextMenuProps) => {
+export const SongContextMenu = ({ items, recentItemKey, type }: SongContextMenuProps) => {
     const { ids } = useMemo(() => {
         const ids = items.map((item) => item.id);
         return { ids };
@@ -44,6 +46,12 @@ export const SongContextMenu = ({ items, type }: SongContextMenuProps) => {
             <ShowInFileExplorerAction items={items} />
             <ContextMenu.Divider />
             <GetInfoAction disabled={items.length === 0} items={items} />
+            {recentItemKey ? (
+                <>
+                    <ContextMenu.Divider />
+                    <RemoveFromRecentsAction recentItemKey={recentItemKey} />
+                </>
+            ) : null}
         </ContextMenu.Content>
     );
 };

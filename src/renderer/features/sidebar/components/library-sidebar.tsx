@@ -645,6 +645,32 @@ export const LibrarySidebar = () => {
                 item.mediaType === 'podcast' &&
                 activePodcastItem?.id === item.itemId;
 
+            const isInRecents = item.selectedAt > 0;
+            const onContextMenu = isInRecents
+                ? (event: MouseEvent<HTMLButtonElement>) => {
+                      event.preventDefault();
+                      if (item.song) {
+                          ContextMenuController.call({
+                              cmd: {
+                                  items: [item.song],
+                                  recentItemKey: item.key,
+                                  type: LibraryItem.SONG,
+                              },
+                              event,
+                          });
+                          return;
+                      }
+                      ContextMenuController.call({
+                          cmd: {
+                              onOpen: () => openRecentItem(item),
+                              recentItemKey: item.key,
+                              type: 'recent',
+                          },
+                          event,
+                      });
+                  }
+                : undefined;
+
             return {
                 artwork: getSidebarArtwork(item),
                 fallbackIconKey: getFallbackIcon(item.mediaType),
@@ -661,15 +687,7 @@ export const LibrarySidebar = () => {
                 isSelected: isSelectedRoute(location.pathname, routeTarget),
                 mediaType: item.mediaType,
                 onClick: () => openRecentItem(item),
-                onContextMenu: item.song
-                    ? (event) => {
-                          event.preventDefault();
-                          ContextMenuController.call({
-                              cmd: { items: [item.song!], type: LibraryItem.SONG },
-                              event,
-                          });
-                      }
-                    : undefined,
+                onContextMenu,
                 selectedAt: item.selectedAt,
                 subtitle: item.subtitle,
                 title: item.title,
