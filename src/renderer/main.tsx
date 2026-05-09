@@ -29,17 +29,9 @@ createRoot(document.getElementById('root')!).render(
     <PersistQueryClientProvider
         client={queryClient}
         persistOptions={{
-            buster: 'samo-v2',
+            buster: 'samo-v3',
             dehydrateOptions: {
-                shouldDehydrateQuery: (query) => {
-                    const isSuccess = query.state.status === 'success';
-                    const isLyricsQueryKey =
-                        query.queryKey.includes('song') &&
-                        query.queryKey.includes('lyrics') &&
-                        query.queryKey.includes('select');
-
-                    return isSuccess && isLyricsQueryKey;
-                },
+                shouldDehydrateQuery: (query) => query.state.status === 'success',
             },
             hydrateOptions: {
                 defaultOptions: {

@@ -98,6 +98,7 @@ type MpvBinaryCandidate = {
 const MACOS_DEV_MPV_CANDIDATES = ['/opt/homebrew/bin/mpv', '/usr/local/bin/mpv'];
 const LINUX_MPV_CANDIDATES = ['/usr/bin/mpv', '/usr/local/bin/mpv', '/snap/bin/mpv'];
 const MPV_QUIT_GRACE_PERIOD_MS = 750;
+const MPV_QUIT_IPC_TIMEOUT_MS = 1500;
 
 const getBundledMacOSMpvBinaryPath = () => join(process.resourcesPath, 'bin', 'mpv');
 const getBundledMacOSX64MpvBinaryPath = () => join(process.resourcesPath, 'bin', 'x64', 'mpv');
@@ -502,7 +503,22 @@ const quit = async (instance?: MpvAPI | null) => {
     if (mpv) {
         logMpvChildProcess('Cleaning up', mpv);
         try {
-            await mpv.quit();
+            // node-mpv's quit() awaits the IPC socket round-trip; on a wedged
+            // socket it can hang forever and starve terminateMpvProcess.
+            await Promise.race([
+                mpv.quit(),
+                new Promise<void>((_, reject) =>
+                    setTimeout(
+                        () =>
+                            reject(
+                                new Error(
+                                    `mpv quit IPC timed out after ${MPV_QUIT_IPC_TIMEOUT_MS}ms`,
+                                ),
+                            ),
+                        MPV_QUIT_IPC_TIMEOUT_MS,
+                    ),
+                ),
+            ]);
         } catch (error) {
             mpvLog({
                 action: `mpv quit IPC failed; terminating native process directly: ${

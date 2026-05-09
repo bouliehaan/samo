@@ -117,6 +117,11 @@ export const MpvPlayer = () => {
             try {
                 const isRunning = await mpvPlayer.isRunning();
 
+                // The unmount cleanup IPC can arrive at main before this point
+                // returns. Bailing here prevents a stale spawn from outliving
+                // the component and leaking an orphan mpv process.
+                if (cancelled) return;
+
                 if (!isRunning) {
                     await mpvPlayer.initialize({
                         extraParameters: playback.mpvExtraParameters,
@@ -126,16 +131,18 @@ export const MpvPlayer = () => {
                     mpvPlayer.setProperties(mpvProperties);
                 }
 
+                if (cancelled) return;
+
                 const initialized = await mpvPlayer.isRunning();
+
+                if (cancelled) return;
 
                 if (!initialized) {
                     throw new Error('MPV did not start');
                 }
 
-                if (!cancelled) {
-                    setIsReady(true);
-                    mpvPlayer.volume(volume);
-                }
+                setIsReady(true);
+                mpvPlayer.volume(volume);
             } catch (error) {
                 logFn.error('Failed to initialize native music playback', {
                     category: LogCategory.PLAYER,

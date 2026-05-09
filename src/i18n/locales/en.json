@@ -492,6 +492,9 @@
             "noMusicFolder": "no music folder selected",
             "multipleMusicFolders": "{{count}} music folders selected",
             "settings": "$t(common.setting, {\"count\": 2})",
+            "syncWithServer": "sync with server",
+            "syncWithServerInProgress": "syncing with server",
+            "syncWithServerSuccess": "synced with server",
             "version": "version {{version}}"
         },
         "manageServers": {

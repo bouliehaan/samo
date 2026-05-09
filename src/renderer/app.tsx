@@ -69,6 +69,7 @@ const AppShell = memo(function AppShell() {
                 containerWidth="300px"
                 position="bottom-center"
                 styles={notificationStyles}
+                transitionDuration={0}
                 zIndex={50000}
             />
             <WebAudioContext.Provider value={webAudioProvider}>

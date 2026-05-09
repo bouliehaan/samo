@@ -28,6 +28,7 @@ import { PlayerStatus, PlayerStyle, PlayerType } from '/@/shared/types/types';
 export const PlayerConfig = () => {
     const { t } = useTranslation();
     const preservePitch = useSettingsStore((state) => state.playback.preservePitch);
+    const playbackType = usePlaybackType();
 
     const playbackSettings = usePlaybackSettings();
     const { setSettings } = useSettingsStoreActions();
@@ -42,6 +43,8 @@ export const PlayerConfig = () => {
     );
 
     const options = useMemo(() => {
+        const isWebPlayback = playbackType === PlayerType.WEB;
+
         const allOptions = [
             {
                 component: <AudioDeviceConfig />,
@@ -54,26 +57,30 @@ export const PlayerConfig = () => {
                 isDivider: true,
                 label: '',
             },
-            {
-                component: <TransitionTypeConfig />,
-                id: 'transitionType',
-                label: t('setting.playbackStyle', {
-                    postProcess: 'titleCase',
-                }),
-            },
-            {
-                component: <CrossfadeDurationConfig />,
-                id: 'crossfadeDuration',
-                label: t('setting.crossfadeDuration', {
-                    postProcess: 'titleCase',
-                }),
-            },
-            {
-                component: null,
-                id: 'divider-2',
-                isDivider: true,
-                label: '',
-            },
+            ...(isWebPlayback
+                ? [
+                      {
+                          component: <TransitionTypeConfig />,
+                          id: 'transitionType',
+                          label: t('setting.playbackStyle', {
+                              postProcess: 'titleCase',
+                          }),
+                      },
+                      {
+                          component: <CrossfadeDurationConfig />,
+                          id: 'crossfadeDuration',
+                          label: t('setting.crossfadeDuration', {
+                              postProcess: 'titleCase',
+                          }),
+                      },
+                      {
+                          component: null,
+                          id: 'divider-2',
+                          isDivider: true,
+                          label: '',
+                      },
+                  ]
+                : []),
             {
                 component: <PlaybackSpeedSlider />,
                 id: 'playbackSpeed',
@@ -92,7 +99,7 @@ export const PlayerConfig = () => {
         ];
 
         return allOptions;
-    }, [t, preservePitch, setPreservePitch]);
+    }, [t, preservePitch, setPreservePitch, playbackType]);
 
     return (
         <Popover position="top" width={500}>

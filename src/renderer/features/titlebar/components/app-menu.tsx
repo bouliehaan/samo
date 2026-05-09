@@ -1,6 +1,7 @@
 import { openModal } from '@mantine/modals';
+import { useQueryClient } from '@tanstack/react-query';
 import isElectron from 'is-electron';
-import { Fragment, ReactNode } from 'react';
+import { Fragment, ReactNode, useTransition } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useNavigate } from 'react-router';
 
@@ -68,9 +69,11 @@ interface RegularMenuItem extends BaseMenuItem {
 export const AppMenu = () => {
     const { t } = useTranslation();
     const navigate = useNavigate();
+    const queryClient = useQueryClient();
     const collapsed = useAppStore((state) => state.sidebar.collapsed);
     const privateMode = useAppStore((state) => state.privateMode);
     const { setPrivateMode, setSideBar } = useAppStoreActions();
+    const [, startTransition] = useTransition();
 
     const handleCollapseSidebar = () => {
         setSideBar({ collapsed: true });
@@ -101,6 +104,39 @@ export const AppMenu = () => {
             children: <ServerList />,
             title: t('page.manageServers.title', { postProcess: 'titleCase' }),
         });
+    };
+
+    const handleSyncWithServer = async () => {
+        const loadingId = toast.info({
+            autoClose: false,
+            loading: true,
+            message: t('page.appMenu.syncWithServerInProgress', {
+                postProcess: 'sentenceCase',
+            }),
+        });
+
+        // Yield two frames so the spinner paints before the heavy work starts
+        await new Promise<void>((resolve) => {
+            requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+        });
+
+        try {
+            // Mark the query updates as non-urgent so they don't block the spinner animation
+            startTransition(async () => {
+                await queryClient.invalidateQueries();
+                await browser?.clearCache();
+            });
+
+            toast.hide(loadingId);
+            toast.success({
+                message: t('page.appMenu.syncWithServerSuccess', {
+                    postProcess: 'sentenceCase',
+                }),
+            });
+        } catch (error) {
+            toast.hide(loadingId);
+            toast.error({ message: (error as Error).message });
+        }
     };
 
     const handleQuit = () => {
@@ -156,6 +192,13 @@ export const AppMenu = () => {
         {
             id: 'divider-2',
             type: 'divider',
+        },
+        {
+            icon: 'refresh',
+            id: 'sync-with-server',
+            label: t('page.appMenu.syncWithServer', { postProcess: 'sentenceCase' }),
+            onClick: handleSyncWithServer,
+            type: 'item',
         },
         {
             condition: !isServerLock(),

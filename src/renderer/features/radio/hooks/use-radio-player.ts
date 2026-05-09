@@ -3,6 +3,7 @@ import isElectron from 'is-electron';
 import React, { useEffect } from 'react';
 import { createWithEqualityFn } from 'zustand/traditional';
 
+import { stopAllAudioElements } from '/@/renderer/features/player/audio-player/audio-element-registry';
 import { usePlayerEvents } from '/@/renderer/features/player/audio-player/hooks/use-player-events';
 import { usePlayerStoreBase } from '/@/renderer/store';
 import { useLastPlaybackSessionStore } from '/@/renderer/store/last-playback-session.store';
@@ -57,6 +58,32 @@ export const useRadioStore = createWithEqualityFn<RadioStore>((set, get) => ({
             stationName?: string,
             stationArt?: null | RadioCurrentStationArt,
         ) => {
+            // Idempotency: clicking the currently-playing station (or the
+            // PAUSED→PLAYING listener re-firing actions.play()) must not
+            // re-enter the play pipeline. Without this, every redundant call
+            // re-claims a new session and React can spawn a fresh <audio>
+            // element while the previous one is still streaming — that's
+            // what stacks 5 copies on a single click.
+            const currentState = get();
+            const desiredStreamUrl = streamUrl ?? currentState.currentStreamUrl;
+            if (
+                desiredStreamUrl &&
+                desiredStreamUrl === currentState.currentStreamUrl &&
+                currentState.isPlaying
+            ) {
+                return;
+            }
+
+            // Switching to a different station — silence the outgoing one
+            // before the new <audio> mounts.
+            if (
+                desiredStreamUrl &&
+                currentState.currentStreamUrl &&
+                desiredStreamUrl !== currentState.currentStreamUrl
+            ) {
+                stopAllAudioElements();
+            }
+
             set((state) => {
                 const newStreamUrl = streamUrl ?? state.currentStreamUrl;
                 const newStationName = stationName ?? state.stationName;

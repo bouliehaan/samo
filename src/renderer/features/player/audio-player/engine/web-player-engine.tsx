@@ -3,6 +3,10 @@ import type ReactPlayer from 'react-player';
 
 import { useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
 
+import {
+    registerAudioElement,
+    unregisterAudioElement,
+} from '/@/renderer/features/player/audio-player/audio-element-registry';
 import { AudioPlayer, PlayerOnProgressProps } from '/@/renderer/features/player/audio-player/types';
 import { convertToLogVolume } from '/@/renderer/features/player/audio-player/utils/player-utils';
 import { LogCategory, logFn } from '/@/renderer/utils/logger';
@@ -74,6 +78,7 @@ export const WebPlayerEngine = (props: WebPlayerEngineProps) => {
 
     const player1Ref = useRef<null | ReactPlayer>(null);
     const player2Ref = useRef<null | ReactPlayer>(null);
+    const ownedAudioElementsRef = useRef<Set<HTMLAudioElement>>(new Set());
     const networkRetryCount1 = useRef(0);
     const networkRetryCount2 = useRef(0);
     const networkRetryTimeout1 = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -291,27 +296,48 @@ export const WebPlayerEngine = (props: WebPlayerEngineProps) => {
 
     useEffect(() => clearAllAudioElements, [clearAllAudioElements]);
 
+    const trackAudioElement = useCallback((player: ReactPlayer) => {
+        const internal = player.getInternalPlayer();
+        if (internal instanceof HTMLAudioElement) {
+            ownedAudioElementsRef.current.add(internal);
+            registerAudioElement(internal);
+        }
+    }, []);
+
     const handleOnReadyPlayer1 = useCallback(
         (player: ReactPlayer) => {
+            trackAudioElement(player);
             const internal = player.getInternalPlayer();
             if (internal && internal instanceof HTMLAudioElement) {
                 internal.preservesPitch = preservesPitch;
             }
             onStartedPlayer1(player);
         },
-        [onStartedPlayer1, preservesPitch],
+        [onStartedPlayer1, preservesPitch, trackAudioElement],
     );
 
     const handleOnReadyPlayer2 = useCallback(
         (player: ReactPlayer) => {
+            trackAudioElement(player);
             const internal = player.getInternalPlayer();
             if (internal && internal instanceof HTMLAudioElement) {
                 internal.preservesPitch = preservesPitch;
             }
             onStartedPlayer2(player);
         },
-        [onStartedPlayer2, preservesPitch],
+        [onStartedPlayer2, preservesPitch, trackAudioElement],
     );
+
+    // Pause + unregister via captured refs, not via player1Ref/player2Ref —
+    // those are null by the time this cleanup runs because React unmounts
+    // children (the ReactPlayer instances) before parent cleanups fire.
+    useEffect(() => {
+        return () => {
+            const owned = ownedAudioElementsRef.current;
+            owned.forEach((audio) => unregisterAudioElement(audio));
+            owned.clear();
+        };
+    }, []);
 
     if (isLoading || !ReactPlayerComponent) {
         return <div id="web-player-engine" style={{ display: 'none' }} />;

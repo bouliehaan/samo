@@ -1,6 +1,8 @@
 import { create } from 'zustand';
 import { subscribeWithSelector } from 'zustand/middleware';
 
+import { stopAllAudioElements } from '/@/renderer/features/player/audio-player/audio-element-registry';
+
 export type PlaybackEngine = 'mpv-native' | 'none' | 'web';
 export interface PlaybackSession {
     engine: PlaybackEngine;
@@ -48,12 +50,20 @@ const createPlaybackSession = (
 export const usePlaybackOwnerStore = create<PlaybackOwnerState>()(
     subscribeWithSelector((set, get) => ({
         claim: (source, options = {}) => {
+            // When the source actually changes, brute-force pause every <audio>
+            // the previous owner left behind. React's unmount cleanups can't be
+            // trusted here because parent cleanups fire after child refs are
+            // nulled, so a stale stream would otherwise keep playing.
+            if (get().source !== source) {
+                stopAllAudioElements();
+            }
             const session = createPlaybackSession(source, options.engine ?? 'none');
             set({ session, source });
             return session;
         },
         release: (source) => {
             if (get().source === source) {
+                stopAllAudioElements();
                 set({ session: createIdlePlaybackSession(), source: null });
             }
         },
