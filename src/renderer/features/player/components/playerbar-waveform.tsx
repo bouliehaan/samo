@@ -20,13 +20,21 @@ import { useAppThemeColors, useColorScheme } from '/@/renderer/themes/use-app-th
 import { Text } from '/@/shared/components/text/text';
 import { PlayerStatus } from '/@/shared/types/types';
 
+const createWaveformPreviewAudioElement = () => {
+    const audio = document.createElement('audio');
+    audio.dataset.samoAudioRole = 'preview';
+    audio.muted = true;
+    audio.volume = 0;
+    return audio;
+};
+
 export const PlayerbarWaveform = () => {
     const currentSong = usePlayerSong();
     const playerStatus = usePlayerStatus();
     const playerbarSlider = usePlayerbarSlider();
     const currentTime = usePlayerTimestamp();
     const containerRef = useRef<HTMLDivElement>(null);
-    const audioElementRef = useRef<HTMLAudioElement>(document.createElement('audio'));
+    const audioElementRef = useRef<HTMLAudioElement>(createWaveformPreviewAudioElement());
     const { mediaSeekToTimestamp } = usePlayer();
     const [isLoading, setIsLoading] = useState(true);
     const [isDragging, setIsDragging] = useState(false);

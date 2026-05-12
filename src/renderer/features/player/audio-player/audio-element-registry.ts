@@ -1,18 +1,133 @@
-// Module-level registry of every <audio> element this app's web players
-// have spawned. We can't rely on React's unmount cleanup to pause audio
-// because by the time a parent component's cleanup runs, child refs
-// (player1Ref, player2Ref) have already been nulled — so the cleanup
-// silently no-ops while the underlying <audio> keeps streaming. Tracking
-// the elements here gives the playback owner a way to forcibly silence
-// any leftover stream when the source changes.
+// Module-level registry of every playback <audio> element this app's web
+// players have spawned. We can't rely on React's unmount cleanup to pause
+// audio because by the time a parent component's cleanup runs, child refs
+// (player1Ref, player2Ref) have already been nulled, so the cleanup can
+// silently no-op while the underlying <audio> keeps streaming.
 
-const ACTIVE_AUDIO_ELEMENTS = new Set<HTMLAudioElement>();
+export interface AudioElementRegistration {
+    mediaKey: null | string;
+    playerId: string;
+    registeredAt: number;
+    sessionId: null | string;
+    source: null | string;
+    updatedAt: number;
+}
 
-export const registerAudioElement = (audio: HTMLAudioElement) => {
-    ACTIVE_AUDIO_ELEMENTS.add(audio);
+type RegisterAudioElementOptions = Partial<
+    Pick<AudioElementRegistration, 'mediaKey' | 'playerId' | 'sessionId' | 'source'>
+>;
+
+const ACTIVE_AUDIO_ELEMENTS = new Map<HTMLAudioElement, AudioElementRegistration>();
+const PLAYBACK_AUDIO_ROLE = 'playback';
+let lastDuplicateWarningSignature: null | string = null;
+
+const isDevelopment = () => process.env.NODE_ENV === 'development';
+
+const handlePlaybackStateChange = () => {
+    warnIfMultipleAudiblePlaybackElements();
 };
 
-export const unregisterAudioElement = (audio: HTMLAudioElement) => {
+const hasOption = <Key extends keyof RegisterAudioElementOptions>(
+    options: RegisterAudioElementOptions,
+    key: Key,
+) => Object.prototype.hasOwnProperty.call(options, key);
+
+const describeAudioElement = (audio: HTMLAudioElement, registration: AudioElementRegistration) => ({
+    currentSrc: audio.currentSrc || audio.src || null,
+    mediaKey: registration.mediaKey,
+    paused: audio.paused,
+    playerId: registration.playerId,
+    readyState: audio.readyState,
+    sessionId: registration.sessionId,
+    source: registration.source,
+});
+
+const isPlayingPlaybackElement = (audio: HTMLAudioElement) => {
+    return !audio.paused && !audio.ended && audio.readyState > HTMLMediaElement.HAVE_NOTHING;
+};
+
+const getDuplicateWarningKey = (
+    audio: HTMLAudioElement,
+    registration: AudioElementRegistration,
+) => {
+    if (registration.source === 'radio') return 'radio';
+    const mediaKey = registration.mediaKey || audio.currentSrc || audio.src || 'unknown';
+    return `${registration.source ?? 'unknown'}:${mediaKey}`;
+};
+
+export const warnIfMultipleAudiblePlaybackElements = () => {
+    if (!isDevelopment()) return;
+
+    const playing = [...ACTIVE_AUDIO_ELEMENTS.entries()].filter(([audio]) =>
+        isPlayingPlaybackElement(audio),
+    );
+    const warningKeys = new Map<string, number>();
+
+    playing.forEach(([audio, registration]) => {
+        const key = getDuplicateWarningKey(audio, registration);
+        warningKeys.set(key, (warningKeys.get(key) ?? 0) + 1);
+    });
+
+    const duplicates = playing.filter(([audio, registration]) => {
+        return (warningKeys.get(getDuplicateWarningKey(audio, registration)) ?? 0) > 1;
+    });
+
+    if (duplicates.length <= 1) {
+        lastDuplicateWarningSignature = null;
+        return;
+    }
+
+    const signature = duplicates
+        .map(
+            ([audio, registration]) =>
+                `${registration.sessionId}:${registration.playerId}:${audio.currentSrc || audio.src}`,
+        )
+        .sort()
+        .join('|');
+
+    if (signature === lastDuplicateWarningSignature) return;
+    lastDuplicateWarningSignature = signature;
+
+    console.warn(
+        '[Samo playback] Multiple registered Web playback audio elements are playing.',
+        duplicates.map(([audio, registration]) => describeAudioElement(audio, registration)),
+    );
+};
+
+export const registerAudioElement = (
+    audio: HTMLAudioElement,
+    options: RegisterAudioElementOptions = {},
+) => {
+    const now = Date.now();
+    const previous = ACTIVE_AUDIO_ELEMENTS.get(audio);
+
+    audio.dataset.samoAudioRole = PLAYBACK_AUDIO_ROLE;
+    audio.removeEventListener('play', handlePlaybackStateChange);
+    audio.removeEventListener('playing', handlePlaybackStateChange);
+    audio.addEventListener('play', handlePlaybackStateChange);
+    audio.addEventListener('playing', handlePlaybackStateChange);
+
+    ACTIVE_AUDIO_ELEMENTS.set(audio, {
+        mediaKey: hasOption(options, 'mediaKey')
+            ? (options.mediaKey ?? null)
+            : (previous?.mediaKey ?? null),
+        playerId: hasOption(options, 'playerId')
+            ? (options.playerId ?? 'web-player')
+            : (previous?.playerId ?? 'web-player'),
+        registeredAt: previous?.registeredAt ?? now,
+        sessionId: hasOption(options, 'sessionId')
+            ? (options.sessionId ?? null)
+            : (previous?.sessionId ?? null),
+        source: hasOption(options, 'source')
+            ? (options.source ?? null)
+            : (previous?.source ?? null),
+        updatedAt: now,
+    });
+
+    warnIfMultipleAudiblePlaybackElements();
+};
+
+export const stopAudioElement = (audio: HTMLAudioElement) => {
     try {
         audio.pause();
         audio.removeAttribute('src');
@@ -20,23 +135,23 @@ export const unregisterAudioElement = (audio: HTMLAudioElement) => {
     } catch {
         // Element may already be detached / GC'd; nothing to do.
     }
-    ACTIVE_AUDIO_ELEMENTS.delete(audio);
 };
 
-// Nuclear: pause, strip src, force a load() to abort any in-flight buffering,
-// and drop the element from the registry. Use this on every source-change /
-// station-switch / release path — the whole point of the backstop is to
-// guarantee nothing the previous owner spawned can keep streaming. The next
-// mount will register fresh elements via onReady.
+export const unregisterAudioElement = (audio: HTMLAudioElement) => {
+    stopAudioElement(audio);
+    audio.removeEventListener('play', handlePlaybackStateChange);
+    audio.removeEventListener('playing', handlePlaybackStateChange);
+    ACTIVE_AUDIO_ELEMENTS.delete(audio);
+    warnIfMultipleAudiblePlaybackElements();
+};
+
+// Pause, strip src, and force load() to abort any in-flight buffering.
+// Intentionally keep mounted elements registered: ReactPlayer may reuse the
+// same DOM node for the next URL, and onReady is not guaranteed to re-register
+// that reused node.
 export const stopAllAudioElements = () => {
-    ACTIVE_AUDIO_ELEMENTS.forEach((audio) => {
-        try {
-            audio.pause();
-            audio.removeAttribute('src');
-            audio.load();
-        } catch {
-            // Element may already be detached / GC'd; nothing to do.
-        }
+    ACTIVE_AUDIO_ELEMENTS.forEach((_registration, audio) => {
+        stopAudioElement(audio);
     });
-    ACTIVE_AUDIO_ELEMENTS.clear();
+    warnIfMultipleAudiblePlaybackElements();
 };

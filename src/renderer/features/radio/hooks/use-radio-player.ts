@@ -3,7 +3,6 @@ import isElectron from 'is-electron';
 import React, { useEffect } from 'react';
 import { createWithEqualityFn } from 'zustand/traditional';
 
-import { stopAllAudioElements } from '/@/renderer/features/player/audio-player/audio-element-registry';
 import { usePlayerEvents } from '/@/renderer/features/player/audio-player/hooks/use-player-events';
 import { usePlayerStoreBase } from '/@/renderer/store';
 import { useLastPlaybackSessionStore } from '/@/renderer/store/last-playback-session.store';
@@ -74,16 +73,6 @@ export const useRadioStore = createWithEqualityFn<RadioStore>((set, get) => ({
                 return;
             }
 
-            // Switching to a different station — silence the outgoing one
-            // before the new <audio> mounts.
-            if (
-                desiredStreamUrl &&
-                currentState.currentStreamUrl &&
-                desiredStreamUrl !== currentState.currentStreamUrl
-            ) {
-                stopAllAudioElements();
-            }
-
             set((state) => {
                 const newStreamUrl = streamUrl ?? state.currentStreamUrl;
                 const newStationName = stationName ?? state.stationName;
@@ -101,7 +90,11 @@ export const useRadioStore = createWithEqualityFn<RadioStore>((set, get) => ({
                     nextStationArt = stationArt ?? null;
                 }
 
-                usePlaybackOwnerStore.getState().claim('radio', { engine: 'web' });
+                usePlaybackOwnerStore.getState().claim('radio', {
+                    engine: 'web',
+                    mediaKey: newStreamUrl,
+                    replace: isSwitchingStation,
+                });
                 usePlayerStoreBase.getState().mediaPlay();
                 if (nextStationArt?.id && nextStationArt.serverId) {
                     recordRecentItem({

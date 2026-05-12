@@ -5,10 +5,13 @@ import { useCallback, useEffect, useImperativeHandle, useRef, useState } from 'r
 
 import {
     registerAudioElement,
+    stopAudioElement,
     unregisterAudioElement,
+    warnIfMultipleAudiblePlaybackElements,
 } from '/@/renderer/features/player/audio-player/audio-element-registry';
 import { AudioPlayer, PlayerOnProgressProps } from '/@/renderer/features/player/audio-player/types';
 import { convertToLogVolume } from '/@/renderer/features/player/audio-player/utils/player-utils';
+import { usePlaybackSession } from '/@/renderer/store/playback-owner.store';
 import { LogCategory, logFn } from '/@/renderer/utils/logger';
 import { logMsg } from '/@/renderer/utils/logger-message';
 import { PlayerStatus } from '/@/shared/types/types';
@@ -76,15 +79,25 @@ export const WebPlayerEngine = (props: WebPlayerEngineProps) => {
         volume,
     } = props;
 
+    const playbackSession = usePlaybackSession();
     const player1Ref = useRef<null | ReactPlayer>(null);
     const player2Ref = useRef<null | ReactPlayer>(null);
     const ownedAudioElementsRef = useRef<Set<HTMLAudioElement>>(new Set());
+    const playbackSessionIdRef = useRef(playbackSession.id);
+    const playbackSessionSourceRef = useRef(playbackSession.source);
+    const src1Ref = useRef(src1);
+    const src2Ref = useRef(src2);
     const networkRetryCount1 = useRef(0);
     const networkRetryCount2 = useRef(0);
-    const networkRetryTimeout1 = useRef<ReturnType<typeof setTimeout> | null>(null);
-    const networkRetryTimeout2 = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const networkRetryTimeout1 = useRef<null | ReturnType<typeof setTimeout>>(null);
+    const networkRetryTimeout2 = useRef<null | ReturnType<typeof setTimeout>>(null);
     const [ReactPlayerComponent, setReactPlayerComponent] = useState<any>(null);
     const [isLoading, setIsLoading] = useState(true);
+
+    playbackSessionIdRef.current = playbackSession.id;
+    playbackSessionSourceRef.current = playbackSession.source;
+    src1Ref.current = src1;
+    src2Ref.current = src2;
 
     useEffect(() => {
         let isMounted = true;
@@ -116,9 +129,7 @@ export const WebPlayerEngine = (props: WebPlayerEngineProps) => {
         const internal = player?.getInternalPlayer();
         if (!(internal instanceof HTMLAudioElement)) return;
 
-        internal.pause();
-        internal.removeAttribute('src');
-        internal.load();
+        stopAudioElement(internal);
     }, []);
 
     const clearInactivePlayer = useCallback(() => {
@@ -133,6 +144,17 @@ export const WebPlayerEngine = (props: WebPlayerEngineProps) => {
         clearAudioElement(player1Ref.current);
         clearAudioElement(player2Ref.current);
     }, [clearAudioElement]);
+
+    const clearNetworkRetryTimers = useCallback(() => {
+        if (networkRetryTimeout1.current) {
+            clearTimeout(networkRetryTimeout1.current);
+            networkRetryTimeout1.current = null;
+        }
+        if (networkRetryTimeout2.current) {
+            clearTimeout(networkRetryTimeout2.current);
+            networkRetryTimeout2.current = null;
+        }
+    }, []);
 
     useImperativeHandle<WebPlayerEngineHandle, WebPlayerEngineHandle>(playerRef, () => ({
         decreaseVolume(by: number) {
@@ -194,17 +216,38 @@ export const WebPlayerEngine = (props: WebPlayerEngineProps) => {
         player2Ref.current?.getInternalPlayer()?.pause();
     }, []);
 
+    const registerPlayerAudioElement = useCallback(
+        (player: null | ReactPlayer, playerId: string, mediaKey?: string) => {
+            const internal = player?.getInternalPlayer();
+            if (!(internal instanceof HTMLAudioElement)) return null;
+
+            ownedAudioElementsRef.current.add(internal);
+            internal.preservesPitch = preservesPitch;
+            registerAudioElement(internal, {
+                mediaKey: mediaKey ?? null,
+                playerId,
+                sessionId: playbackSession.id,
+                source: playbackSession.source,
+            });
+
+            return internal;
+        },
+        [playbackSession.id, playbackSession.source, preservesPitch],
+    );
+
     const handleOnError = (
         playerRef: React.RefObject<null | ReactPlayer>,
+        playerId: string,
+        sourceRef: React.RefObject<string | undefined>,
         onEnded: () => void,
         onErrorPause: () => void,
         networkRetryCountRef: React.RefObject<number>,
-        retryTimeoutRef: React.RefObject<ReturnType<typeof setTimeout> | null>,
+        retryTimeoutRef: React.RefObject<null | ReturnType<typeof setTimeout>>,
     ) => {
         return ({ target }: ErrorEvent) => {
             const { current: player } = playerRef;
 
-            if (!player || !(target instanceof Audio)) {
+            if (!player || !(target instanceof HTMLAudioElement)) {
                 return;
             }
 
@@ -223,11 +266,25 @@ export const WebPlayerEngine = (props: WebPlayerEngineProps) => {
                 if (networkRetryCountRef.current < MAX_NETWORK_RETRIES) {
                     networkRetryCountRef.current += 1;
                     const audio = target;
+                    const scheduledSessionId = playbackSessionIdRef.current;
+                    const scheduledSource = sourceRef.current;
                     if (retryTimeoutRef.current) {
                         clearTimeout(retryTimeoutRef.current);
                     }
                     retryTimeoutRef.current = setTimeout(() => {
                         retryTimeoutRef.current = null;
+                        if (
+                            playbackSessionIdRef.current !== scheduledSessionId ||
+                            sourceRef.current !== scheduledSource
+                        ) {
+                            return;
+                        }
+                        registerAudioElement(audio, {
+                            mediaKey: scheduledSource ?? null,
+                            playerId,
+                            sessionId: playbackSessionIdRef.current,
+                            source: playbackSessionSourceRef.current,
+                        });
                         pauseBothPlayers();
                         audio.load();
                         audio.play().catch(() => {
@@ -259,15 +316,10 @@ export const WebPlayerEngine = (props: WebPlayerEngineProps) => {
     useEffect(() => {
         networkRetryCount1.current = 0;
         networkRetryCount2.current = 0;
-        if (networkRetryTimeout1.current) {
-            clearTimeout(networkRetryTimeout1.current);
-            networkRetryTimeout1.current = null;
-        }
-        if (networkRetryTimeout2.current) {
-            clearTimeout(networkRetryTimeout2.current);
-            networkRetryTimeout2.current = null;
-        }
-    }, [src1, src2]);
+        clearNetworkRetryTimers();
+    }, [clearNetworkRetryTimers, playbackSession.id, src1, src2]);
+
+    useEffect(() => clearNetworkRetryTimers, [clearNetworkRetryTimers]);
 
     // When not transitioning, ensure only the active player can play (e.g. after seek/prev during transition)
     useEffect(() => {
@@ -296,44 +348,34 @@ export const WebPlayerEngine = (props: WebPlayerEngineProps) => {
 
     useEffect(() => clearAllAudioElements, [clearAllAudioElements]);
 
-    const trackAudioElement = useCallback((player: ReactPlayer) => {
-        const internal = player.getInternalPlayer();
-        if (internal instanceof HTMLAudioElement) {
-            ownedAudioElementsRef.current.add(internal);
-            registerAudioElement(internal);
-        }
-    }, []);
+    useEffect(() => {
+        registerPlayerAudioElement(player1Ref.current, 'web-player-1', src1);
+        registerPlayerAudioElement(player2Ref.current, 'web-player-2', src2);
+    }, [registerPlayerAudioElement, src1, src2]);
 
     const handleOnReadyPlayer1 = useCallback(
         (player: ReactPlayer) => {
-            trackAudioElement(player);
-            const internal = player.getInternalPlayer();
-            if (internal && internal instanceof HTMLAudioElement) {
-                internal.preservesPitch = preservesPitch;
-            }
+            registerPlayerAudioElement(player, 'web-player-1', src1);
             onStartedPlayer1(player);
         },
-        [onStartedPlayer1, preservesPitch, trackAudioElement],
+        [onStartedPlayer1, registerPlayerAudioElement, src1],
     );
 
     const handleOnReadyPlayer2 = useCallback(
         (player: ReactPlayer) => {
-            trackAudioElement(player);
-            const internal = player.getInternalPlayer();
-            if (internal && internal instanceof HTMLAudioElement) {
-                internal.preservesPitch = preservesPitch;
-            }
+            registerPlayerAudioElement(player, 'web-player-2', src2);
             onStartedPlayer2(player);
         },
-        [onStartedPlayer2, preservesPitch, trackAudioElement],
+        [onStartedPlayer2, registerPlayerAudioElement, src2],
     );
 
     // Pause + unregister via captured refs, not via player1Ref/player2Ref —
     // those are null by the time this cleanup runs because React unmounts
     // children (the ReactPlayer instances) before parent cleanups fire.
     useEffect(() => {
+        const owned = ownedAudioElementsRef.current;
+
         return () => {
-            const owned = ownedAudioElementsRef.current;
             owned.forEach((audio) => unregisterAudioElement(audio));
             owned.clear();
         };
@@ -356,11 +398,14 @@ export const WebPlayerEngine = (props: WebPlayerEngineProps) => {
                 onEnded={src1 ? () => onEndedPlayer1() : undefined}
                 onError={handleOnError(
                     player1Ref,
+                    'web-player-1',
+                    src1Ref,
                     () => onEndedPlayer1(),
                     onErrorPause,
                     networkRetryCount1,
                     networkRetryTimeout1,
                 )}
+                onPlay={warnIfMultipleAudiblePlaybackElements}
                 onProgress={onProgressPlayer1}
                 onReady={handleOnReadyPlayer1}
                 playbackRate={speed || 1}
@@ -382,11 +427,14 @@ export const WebPlayerEngine = (props: WebPlayerEngineProps) => {
                 onEnded={src2 ? () => onEndedPlayer2() : undefined}
                 onError={handleOnError(
                     player2Ref,
+                    'web-player-2',
+                    src2Ref,
                     () => onEndedPlayer2(),
                     onErrorPause,
                     networkRetryCount2,
                     networkRetryTimeout2,
                 )}
+                onPlay={warnIfMultipleAudiblePlaybackElements}
                 onProgress={onProgressPlayer2}
                 onReady={handleOnReadyPlayer2}
                 playbackRate={speed || 1}

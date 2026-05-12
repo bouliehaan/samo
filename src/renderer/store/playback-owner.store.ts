@@ -7,6 +7,7 @@ export type PlaybackEngine = 'mpv-native' | 'none' | 'web';
 export interface PlaybackSession {
     engine: PlaybackEngine;
     id: string;
+    mediaKey: null | string;
     source: null | PlaybackSource;
     startedAt: number;
     status: PlaybackSessionStatus;
@@ -17,6 +18,8 @@ export type PlaybackSource = 'audiobook' | 'music' | 'podcast' | 'radio';
 
 interface PlaybackClaimOptions {
     engine?: PlaybackEngine;
+    mediaKey?: null | string;
+    replace?: boolean;
 }
 
 interface PlaybackOwnerState {
@@ -31,6 +34,7 @@ let playbackSessionSequence = 0;
 const createIdlePlaybackSession = (): PlaybackSession => ({
     engine: 'none',
     id: 'idle',
+    mediaKey: null,
     source: null,
     startedAt: 0,
     status: 'idle',
@@ -39,9 +43,11 @@ const createIdlePlaybackSession = (): PlaybackSession => ({
 const createPlaybackSession = (
     source: PlaybackSource,
     engine: PlaybackEngine,
+    mediaKey: null | string,
 ): PlaybackSession => ({
     engine,
     id: `${source}-${Date.now()}-${++playbackSessionSequence}`,
+    mediaKey,
     source,
     startedAt: Date.now(),
     status: 'active',
@@ -50,14 +56,23 @@ const createPlaybackSession = (
 export const usePlaybackOwnerStore = create<PlaybackOwnerState>()(
     subscribeWithSelector((set, get) => ({
         claim: (source, options = {}) => {
-            // When the source actually changes, brute-force pause every <audio>
-            // the previous owner left behind. React's unmount cleanups can't be
-            // trusted here because parent cleanups fire after child refs are
-            // nulled, so a stale stream would otherwise keep playing.
-            if (get().source !== source) {
+            const currentSession = get().session;
+            const nextMediaKey = options.mediaKey ?? null;
+            const isSourceChange = get().source !== source;
+            const isExplicitReplacement = Boolean(options.replace);
+            const isMediaKeyReplacement =
+                options.mediaKey !== undefined &&
+                currentSession.source === source &&
+                currentSession.mediaKey !== null &&
+                currentSession.mediaKey !== nextMediaKey;
+
+            // Stop any Web audio that belongs to the outgoing owner/session.
+            // Mounted elements stay registered so reused DOM nodes remain
+            // inspectable and controllable after a URL or session switch.
+            if (isSourceChange || isExplicitReplacement || isMediaKeyReplacement) {
                 stopAllAudioElements();
             }
-            const session = createPlaybackSession(source, options.engine ?? 'none');
+            const session = createPlaybackSession(source, options.engine ?? 'none', nextMediaKey);
             set({ session, source });
             return session;
         },

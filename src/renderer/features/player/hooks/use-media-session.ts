@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 
 import { usePlayerEvents } from '/@/renderer/features/player/audio-player/hooks/use-player-events';
 import { usePlayer } from '/@/renderer/features/player/context/player-context';
-import { useRadioPlayer } from '/@/renderer/features/radio/hooks/use-radio-player';
+import { useRadioPlayer, useRadioStore } from '/@/renderer/features/radio/hooks/use-radio-player';
 import { getNowPlayingSnapshot } from '/@/renderer/hooks/use-now-playing';
 import {
     subscribePlayerStatus,
@@ -133,6 +133,10 @@ export const useMediaSession = () => {
         });
 
         mediaSession.setActionHandler('stop', () => {
+            if (usePlaybackOwnerStore.getState().source === 'radio') {
+                useRadioStore.getState().actions.stop();
+                return;
+            }
             playerRef.current.mediaStop();
         });
 

@@ -182,7 +182,7 @@ const restoreRadioSession = (session: Extract<LastPlaybackSession, { source: 'ra
         metadata: session.metadata ?? null,
         stationName: station?.name || session.stationName || null,
     });
-    usePlaybackOwnerStore.getState().claim('radio', { engine: 'web' });
+    usePlaybackOwnerStore.getState().claim('radio', { engine: 'web', mediaKey: streamUrl });
     return true;
 };
 
