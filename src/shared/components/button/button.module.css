@@ -183,11 +183,9 @@
 
 .uppercase {
     text-transform: uppercase;
-    overflow-wrap: break-word;
-    word-break: break-word;
+    overflow-wrap: anywhere;
 }
 
 .button-inner {
-    overflow-wrap: break-word;
-    word-break: break-word;
+    overflow-wrap: anywhere;
 }

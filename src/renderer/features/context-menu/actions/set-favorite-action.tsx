@@ -4,17 +4,20 @@ import { useTranslation } from 'react-i18next';
 import { useCreateFavorite } from '/@/renderer/features/shared/mutations/create-favorite-mutation';
 import { useDeleteFavorite } from '/@/renderer/features/shared/mutations/delete-favorite-mutation';
 import { useCurrentServerId } from '/@/renderer/store';
-import { useLibraryFavoritesActions, useFavoritePlaylistIds } from '/@/renderer/store/library-favorites.store';
+import {
+    useFavoritePlaylistIds,
+    useLibraryFavoritesActions,
+} from '/@/renderer/store/library-favorites.store';
 import { ContextMenu } from '/@/shared/components/context-menu/context-menu';
 import { LibraryItem } from '/@/shared/types/domain-types';
 
 interface SetFavoriteActionProps {
     ids: string[];
-    itemType: LibraryItem;
     items?: Array<{ id: string; userFavorite?: boolean }>;
+    itemType: LibraryItem;
 }
 
-export const SetFavoriteAction = ({ ids, itemType, items }: SetFavoriteActionProps) => {
+export const SetFavoriteAction = ({ ids, items, itemType }: SetFavoriteActionProps) => {
     const { t } = useTranslation();
     const serverId = useCurrentServerId();
     const favoritePlaylistIds = useFavoritePlaylistIds(serverId);

@@ -138,6 +138,7 @@ export default defineConfig({
             '/@/remote': path.resolve(__dirname, './src/remote'),
             '/@/renderer': path.resolve(__dirname, './src/renderer'),
             '/@/shared': path.resolve(__dirname, './src/shared'),
+            '@samo/core': path.resolve(__dirname, './packages/core/src'),
         },
     },
     root: path.resolve(__dirname, './src/renderer'),

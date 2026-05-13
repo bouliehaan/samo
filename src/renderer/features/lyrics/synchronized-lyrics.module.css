@@ -5,10 +5,10 @@
     height: 100%;
     padding: 10vh 0 50vh;
     overflow: scroll;
-    scrollbar-width: none;
-    -ms-overflow-style: none;
     word-break: break-all;
+    scrollbar-width: none;
     transform: translateY(-2rem);
+    -ms-overflow-style: none;
 
     @media screen and (orientation: portrait) {
         padding: 5vh 0;

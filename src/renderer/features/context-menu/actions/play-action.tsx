@@ -15,7 +15,13 @@ interface PlayActionProps {
     songs?: Song[];
 }
 
-export const PlayAction = ({ allowShuffle = true, ids, itemType, onPlay, songs }: PlayActionProps) => {
+export const PlayAction = ({
+    allowShuffle = true,
+    ids,
+    itemType,
+    onPlay,
+    songs,
+}: PlayActionProps) => {
     const { t } = useTranslation();
     const player = usePlayer();
     const serverId = useCurrentServerId();

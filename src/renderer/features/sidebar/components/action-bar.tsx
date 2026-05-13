@@ -14,8 +14,7 @@ export const ActionBar = () => {
             <Group gap="sm" grow px="md" w="100%" wrap="nowrap">
                 <DropdownMenu position="bottom-start">
                     <DropdownMenu.Target>
-                        <Button p="0">
-                        </Button>
+                        <Button p="0"></Button>
                     </DropdownMenu.Target>
                     <DropdownMenu.Dropdown>
                         <AppMenu />

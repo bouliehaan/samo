@@ -270,7 +270,7 @@ const Controls = () => {
                 onClick={handleToggleFullScreenPlayer}
                 size="lg"
                 tooltip={{
-                    classNames: { tooltip: styles.minimizeTooltip },
+                    classNames: { tooltip: styles['minimize-tooltip'] },
                     label: t('common.minimize', { postProcess: 'titleCase' }),
                     offset: 2,
                     position: 'bottom',

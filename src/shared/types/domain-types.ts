@@ -1,3 +1,10 @@
+import { ExplicitStatus, LibraryItem } from '@samo/core/library';
+import {
+    type ServerListItemCore,
+    type ServerListItemWithCredentialCore,
+    ServerType,
+} from '@samo/core/server';
+
 import {
     JFAlbumArtistListSort,
     JFAlbumListSort,
@@ -20,25 +27,8 @@ import {
 import { ServerFeatures } from '/@/shared/types/features-types';
 import { PlayerStatus } from '/@/shared/types/types';
 
-export enum LibraryItem {
-    ALBUM = 'album',
-    ALBUM_ARTIST = 'albumArtist',
-    ARTIST = 'artist',
-    FOLDER = 'folder',
-    GENRE = 'genre',
-    PLAYLIST = 'playlist',
-    PLAYLIST_SONG = 'playlistSong',
-    QUEUE_SONG = 'queueSong',
-    RADIO_STATION = 'radioStation',
-    SONG = 'song',
-}
-
-export enum ServerType {
-    AUDIOBOOKSHELF = 'audiobookshelf',
-    JELLYFIN = 'jellyfin',
-    NAVIDROME = 'navidrome',
-    SUBSONIC = 'subsonic',
-}
+export { ExplicitStatus, LibraryItem } from '@samo/core/library';
+export { ServerType } from '@samo/core/server';
 
 export enum SortOrder {
     ASC = 'ASC',
@@ -84,27 +74,9 @@ export interface SavedCollection {
     type: LibraryItem.ALBUM | LibraryItem.SONG;
 }
 
-export type ServerListItem = {
-    features?: ServerFeatures;
-    id: string;
-    isAdmin?: boolean;
-    musicFolderId?: string[];
-    name: string;
-    preferInstantMix?: boolean;
-    preferRemoteUrl?: boolean;
-    remoteUrl?: string;
-    savePassword?: boolean;
-    type: ServerType;
-    url: string;
-    userId: null | string;
-    username: string;
-    version?: string;
-};
+export type ServerListItem = ServerListItemCore;
 
-export type ServerListItemWithCredential = ServerListItem & {
-    credential: string;
-    ndCredential?: string;
-};
+export type ServerListItemWithCredential = ServerListItemWithCredentialCore;
 
 export type User = {
     createdAt: null | string;
@@ -136,11 +108,6 @@ export const sortOrderMap: SortOrderMap = {
         DESC: undefined,
     },
 };
-
-export enum ExplicitStatus {
-    CLEAN = 'CLEAN',
-    EXPLICIT = 'EXPLICIT',
-}
 
 export enum ExternalSource {
     LASTFM = 'LASTFM',

@@ -296,7 +296,7 @@ const PlaylistCard = ({
                         classNames={clsx(
                             itemCardControlsStyles.playButton,
                             itemCardControlsStyles.primary,
-                            styles.playlistPrimaryControl,
+                            styles['playlist-primary-control'],
                         )}
                         fill
                         onClick={(event) => {
@@ -310,7 +310,7 @@ const PlaylistCard = ({
                             itemCardControlsStyles.playButton,
                             itemCardControlsStyles.secondary,
                             itemCardControlsStyles.right,
-                            styles.playlistSecondaryControl,
+                            styles['playlist-secondary-control'],
                         )}
                         icon="mediaShuffle"
                         onClick={(event) => {

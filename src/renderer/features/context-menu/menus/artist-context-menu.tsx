@@ -38,7 +38,7 @@ export const ArtistContextMenu = ({ items, type }: ArtistContextMenuProps) => {
             <ContextMenu.Divider />
             <AddToPlaylistAction items={ids} itemType={LibraryItem.ARTIST} />
             <ContextMenu.Divider />
-            <SetFavoriteAction ids={ids} itemType={LibraryItem.ARTIST} items={items} />
+            <SetFavoriteAction ids={ids} items={items} itemType={LibraryItem.ARTIST} />
             <SetRatingAction ids={ids} itemType={LibraryItem.ARTIST} />
             <ContextMenu.Divider />
             <DownloadAction ids={ids} />

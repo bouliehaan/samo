@@ -50,8 +50,8 @@
         position: absolute;
         inset: 0;
         z-index: 1;
-        content: '';
         pointer-events: none;
+        content: '';
         background: rgb(0 0 0);
         opacity: 0;
         transition: opacity 150ms ease;
@@ -287,11 +287,11 @@
     }
 }
 
-.playlistPrimaryControl {
+.playlist-primary-control {
     left: 34% !important;
 }
 
-.playlistSecondaryControl {
+.playlist-secondary-control {
     left: 68% !important;
 }
 

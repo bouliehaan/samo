@@ -191,10 +191,9 @@
     padding: 0 0.45rem 0.75rem;
     overflow-y: auto;
     scrollbar-gutter: stable;
-    background: transparent;
-
-    scrollbar-width: thin;
     scrollbar-color: transparent transparent;
+    scrollbar-width: thin;
+    background: transparent;
 }
 
 .row-list:hover {

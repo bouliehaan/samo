@@ -262,10 +262,10 @@ function ShellChromeControls() {
 
     return (
         <>
-            <div className={styles.chromeNavigationControls}>
+            <div className={styles['chrome-navigation-controls']}>
                 <button
                     aria-label="Back"
-                    className={styles.chromeButton}
+                    className={styles['chrome-shell-button']}
                     onClick={() => navigate(-1)}
                     type="button"
                 >
@@ -273,7 +273,7 @@ function ShellChromeControls() {
                 </button>
                 <button
                     aria-label="Forward"
-                    className={styles.chromeButton}
+                    className={styles['chrome-shell-button']}
                     onClick={() => navigate(1)}
                     type="button"
                 >
@@ -286,10 +286,14 @@ function ShellChromeControls() {
                     <DropdownMenu.Target>
                         <button
                             aria-label="Open app menu"
-                            className={styles.chromeButton}
+                            className={styles['chrome-shell-button']}
                             type="button"
                         >
-                            <img alt="Samo" className={styles.chromeLogo} src={samoLogoUrl} />
+                            <img
+                                alt="Samo"
+                                className={styles['chrome-shell-logo']}
+                                src={samoLogoUrl}
+                            />
                         </button>
                     </DropdownMenu.Target>
                     <DropdownMenu.Dropdown>

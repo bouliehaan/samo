@@ -1,0 +1,12 @@
+{
+  "extends": "expo/tsconfig.base",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@samo/core": ["../../packages/core/src/index.ts"],
+      "@samo/core/*": ["../../packages/core/src/*"]
+    },
+    "strict": true
+  },
+  "include": ["**/*.ts", "**/*.tsx", "../../packages/core/src/**/*"]
+}

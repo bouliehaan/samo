@@ -8,6 +8,7 @@
     "src/i18n/**/*",
     "src/shared/**/*",
     "src/remote/**/*",
+    "packages/core/src/**/*",
     "package.json"
   ],
   "compilerOptions": {
@@ -26,6 +27,12 @@
       ],
       "/@/remote/*": [
         "src/remote/*"
+      ],
+      "@samo/core": [
+        "packages/core/src/index.ts"
+      ],
+      "@samo/core/*": [
+        "packages/core/src/*"
       ]
     }
   },

@@ -1,6 +1,7 @@
 import type { QueueSong } from '/@/shared/types/domain-types';
 
 import { Badge, Group } from '@mantine/core';
+import { type AudioQualityBadgeTone, buildAudioQualityBadgeItems } from '@samo/core/audio-quality';
 import isElectron from 'is-electron';
 
 import { usePlaybackSettings, usePlaybackType } from '/@/renderer/store';
@@ -14,84 +15,7 @@ type AudioPathBadgeProps = {
     song?: QueueSong;
 };
 
-const PREMIUM_QUALITY_CONTAINERS = new Set([
-    'aif',
-    'aiff',
-    'alac',
-    'ape',
-    'dsd',
-    'dsf',
-    'flac',
-    'wav',
-]);
-
-const formatContainer = (container?: null | string) => {
-    if (!container) return null;
-
-    return container.toUpperCase();
-};
-
-const formatBitDepth = (bitDepth?: null | number, compact?: boolean) => {
-    if (!bitDepth) return null;
-
-    return compact ? `${bitDepth}` : `${bitDepth}-bit`;
-};
-
-const formatSampleRate = (sampleRate?: null | number, compact?: boolean) => {
-    if (!sampleRate) return null;
-
-    const khz = sampleRate / 1000;
-    const formatted = Number.isInteger(khz) ? khz.toFixed(0) : khz.toFixed(1);
-
-    return compact ? formatted : `${formatted} kHz`;
-};
-
-const formatBitRate = (bitRate?: null | number) => {
-    if (!bitRate) return null;
-
-    // Subsonic/Navidrome reports bitrate as kbps. If a source ever reports raw
-    // bits-per-second, normalize only clearly large values.
-    const kbps = bitRate >= 100_000 ? Math.round(bitRate / 1000) : Math.round(bitRate);
-
-    return `${kbps} kbps`;
-};
-
-const LOSSY_CONTAINERS = new Set(['aac', 'm4a', 'mp3', 'oga', 'ogg', 'opus', 'wma']);
-
-type AudioPathBadgeItem = {
-    label: string;
-    tone: BadgeTone;
-};
-
-type BadgeTone = 'direct' | 'neutral' | 'transcoded' | 'unknown';
-
-const getQualityLabel = ({
-    bitDepth,
-    bitRate,
-    container,
-    isTranscoded,
-    sampleRate,
-}: {
-    bitDepth?: null | number;
-    bitRate?: null | number;
-    container?: null | string;
-    isTranscoded: boolean;
-    sampleRate?: null | number;
-}) => {
-    const containerKey = container?.toLowerCase();
-
-    if (isTranscoded || (containerKey && LOSSY_CONTAINERS.has(containerKey))) {
-        return formatBitRate(bitRate);
-    }
-
-    if (bitDepth && sampleRate) {
-        return `${formatBitDepth(bitDepth, true)}/${formatSampleRate(sampleRate, true)}`;
-    }
-
-    return null;
-};
-
-const getToneStyles = (tone: BadgeTone) => {
+const getToneStyles = (tone: AudioQualityBadgeTone) => {
     if (tone === 'direct') {
         return {
             root: {
@@ -140,60 +64,29 @@ export const AudioPathBadge = ({
     }
 
     const isNativeDirect = isElectron() && playbackType === PlayerType.LOCAL;
-    const isTranscoded = !isNativeDirect && transcode.enabled;
-    const isWebDirect = !isNativeDirect && !isTranscoded;
-    const rawContainer = isTranscoded ? transcode.format : song.container;
-    const container = formatContainer(rawContainer);
-    const isPremiumQualityDirect =
-        !isTranscoded && PREMIUM_QUALITY_CONTAINERS.has(rawContainer?.toLowerCase() ?? '');
-    const bitDepth = isPremiumQualityDirect ? formatBitDepth(song.bitDepth, compact) : null;
-    const sampleRate = isPremiumQualityDirect ? formatSampleRate(song.sampleRate, compact) : null;
-    const bitRate = isTranscoded ? formatBitRate(transcode.bitrate) : formatBitRate(song.bitRate);
-    const pathTone: BadgeTone = isTranscoded
-        ? 'transcoded'
-        : isPremiumQualityDirect
-          ? 'direct'
-          : 'neutral';
-    const detailTone: BadgeTone = isPremiumQualityDirect ? 'direct' : 'neutral';
-    const pathLabel = isTranscoded
-        ? compact
-            ? 'Transcoded'
-            : 'Transcoded Compatibility'
-        : isNativeDirect
-          ? compact
-              ? 'Native Direct'
-              : 'Native Direct'
-          : isWebDirect
-            ? compact
-                ? 'Web Direct'
-                : 'Web Direct'
-            : 'Unknown Path';
-    const unknownFormat = isTranscoded ? 'Unknown transcode format' : 'Unknown format';
+    const deliveryKind = isNativeDirect
+        ? 'native-direct'
+        : transcode.enabled
+          ? 'transcoded'
+          : 'web-direct';
+
+    const items = buildAudioQualityBadgeItems({
+        bitDepth: song.bitDepth,
+        bitRate: song.bitRate,
+        compact,
+        container: song.container,
+        deliveryKind,
+        inline,
+        mode,
+        sampleRate: song.sampleRate,
+        transcodeBitrate: transcode.bitrate,
+        transcodeFormat: transcode.format,
+    });
 
     if (mode === 'playerbar') {
-        const qualityLabel = getQualityLabel({
-            bitDepth: isTranscoded ? null : song.bitDepth,
-            bitRate: isTranscoded ? transcode.bitrate : song.bitRate,
-            container: rawContainer,
-            isTranscoded,
-            sampleRate: isTranscoded ? null : song.sampleRate,
-        });
-        const qualityTone: BadgeTone =
-            isTranscoded && qualityLabel
-                ? 'transcoded'
-                : !qualityLabel
-                  ? 'unknown'
-                  : isPremiumQualityDirect
-                    ? 'direct'
-                    : 'neutral';
-        const playerbarItems: AudioPathBadgeItem[] = [
-            { label: container ?? 'Unknown format', tone: container ? detailTone : 'unknown' },
-            { label: qualityLabel ?? 'Unknown quality', tone: qualityTone },
-        ];
-
         return (
             <Group gap={inline ? 3 : 4} justify="flex-start" wrap="nowrap">
-                {playerbarItems.map((item, index) => (
+                {items.map((item, index) => (
                     <Badge
                         key={`${item.label}-${index}`}
                         radius={inline ? 'xs' : 'sm'}
@@ -206,40 +99,6 @@ export const AudioPathBadge = ({
                 ))}
             </Group>
         );
-    }
-
-    const items: AudioPathBadgeItem[] = [
-        { label: pathLabel, tone: pathTone },
-        { label: container ?? unknownFormat, tone: container ? detailTone : 'unknown' },
-    ];
-
-    if (isPremiumQualityDirect) {
-        if (compact || inline) {
-            items.push(
-                bitDepth && sampleRate
-                    ? { label: `${bitDepth}/${sampleRate}`, tone: 'direct' }
-                    : { label: 'Unknown quality', tone: 'unknown' },
-            );
-        } else {
-            items.push(
-                bitDepth
-                    ? { label: bitDepth, tone: 'direct' }
-                    : { label: 'Unknown bit depth', tone: 'unknown' },
-                sampleRate
-                    ? { label: sampleRate, tone: 'direct' }
-                    : { label: 'Unknown sample rate', tone: 'unknown' },
-            );
-        }
-    }
-
-    if (isTranscoded) {
-        items.push(
-            bitRate
-                ? { label: bitRate, tone: 'transcoded' }
-                : { label: 'Unknown bitrate', tone: 'unknown' },
-        );
-    } else if (bitRate) {
-        items.push({ label: bitRate, tone: detailTone });
     }
 
     return (

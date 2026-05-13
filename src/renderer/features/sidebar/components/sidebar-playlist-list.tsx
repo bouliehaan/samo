@@ -23,11 +23,11 @@ import {
     useCurrentServer,
     useCurrentServerId,
     usePermissions,
+    usePlaybackSource,
+    usePlayerStatus,
+    usePlayerStore,
     useSidebarPlaylistListFilterRegex,
     useSidebarPlaylistSorting,
-    usePlayerStatus,
-    usePlaybackSource,
-    usePlayerStore,
 } from '/@/renderer/store';
 import { formatDurationString } from '/@/renderer/utils';
 import { Accordion } from '/@/shared/components/accordion/accordion';

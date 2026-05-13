@@ -1,0 +1,17 @@
+{
+    "name": "@samo/core",
+    "version": "0.0.0",
+    "private": true,
+    "type": "module",
+    "exports": {
+        ".": "./src/index.ts",
+        "./audio-quality": "./src/audio-quality/index.ts",
+        "./library": "./src/library/index.ts",
+        "./mobile": "./src/mobile/index.ts",
+        "./navigation": "./src/navigation/index.ts",
+        "./playback": "./src/playback/index.ts",
+        "./server": "./src/server/index.ts",
+        "./server/auth": "./src/server/server-auth.ts"
+    },
+    "types": "./src/index.ts"
+}

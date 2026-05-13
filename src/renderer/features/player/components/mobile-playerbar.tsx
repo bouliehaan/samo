@@ -10,6 +10,7 @@ import { ItemImage } from '/@/renderer/components/item-image/item-image';
 import { ContextMenuController } from '/@/renderer/features/context-menu/context-menu-controller';
 import { MainPlayButton, PlayerButton } from '/@/renderer/features/player/components/player-button';
 import { usePlayer } from '/@/renderer/features/player/context/player-context';
+import { useNowPlaying } from '/@/renderer/hooks/use-now-playing';
 import { AppRoute } from '/@/renderer/router/routes';
 import {
     useFullScreenPlayerStore,
@@ -18,7 +19,6 @@ import {
     usePlayerStatus,
     useSetFullScreenPlayerStore,
 } from '/@/renderer/store';
-import { useNowPlaying } from '/@/renderer/hooks/use-now-playing';
 import { useAudiobookItem } from '/@/renderer/store/audiobook.store';
 import { useCurrentServerWithCredential } from '/@/renderer/store/auth.store';
 import { usePodcastItem, usePodcastServer } from '/@/renderer/store/podcast.store';

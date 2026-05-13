@@ -34,6 +34,7 @@ const config: UserConfig = {
             alias: {
                 '/@/main': resolve('src/main'),
                 '/@/shared': resolve('src/shared'),
+                '@samo/core': resolve('packages/core/src'),
             },
         },
     },
@@ -46,6 +47,7 @@ const config: UserConfig = {
             alias: {
                 '/@/preload': resolve('src/preload'),
                 '/@/shared': resolve('src/shared'),
+                '@samo/core': resolve('packages/core/src'),
             },
         },
     },
@@ -72,6 +74,7 @@ const config: UserConfig = {
                 '/@/remote': resolve('src/remote'),
                 '/@/renderer': resolve('src/renderer'),
                 '/@/shared': resolve('src/shared'),
+                '@samo/core': resolve('packages/core/src'),
             },
         },
     },

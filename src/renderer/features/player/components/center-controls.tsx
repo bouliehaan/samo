@@ -189,7 +189,7 @@ const PreviousButton = ({ disabled }: { disabled?: boolean }) => {
     const isAudiobookMode = source === 'audiobook';
     const isPodcastMode = source === 'podcast';
 
-    let handleClick: () => void | Promise<void>;
+    let handleClick: () => Promise<void> | void;
     let tooltipLabel: string;
 
     if (isAudiobookMode) {
@@ -403,7 +403,7 @@ const NextButton = ({ disabled }: { disabled?: boolean }) => {
     const isAudiobookMode = source === 'audiobook';
     const isPodcastMode = source === 'podcast';
 
-    let handleClick: () => void | Promise<void>;
+    let handleClick: () => Promise<void> | void;
     let tooltipLabel: string;
 
     if (isAudiobookMode) {
@@ -413,8 +413,7 @@ const NextButton = ({ disabled }: { disabled?: boolean }) => {
     } else if (isPodcastMode) {
         handleClick = () => seekToNextEpisode();
         tooltipLabel =
-            t('player.next', { context: 'episode', postProcess: 'sentenceCase' }) ||
-            'Next episode';
+            t('player.next', { context: 'episode', postProcess: 'sentenceCase' }) || 'Next episode';
     } else {
         handleClick = mediaNext;
         tooltipLabel = t('player.next', { postProcess: 'sentenceCase' });

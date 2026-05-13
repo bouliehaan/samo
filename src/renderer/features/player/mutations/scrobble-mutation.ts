@@ -31,8 +31,7 @@ export const useSendScrobble = (options?: MutationOptions) => {
                 if (variables.query.albumId) {
                     const playerContext = usePlayerStoreBase.getState().player.context;
                     const isPlayingFromAlbum = playerContext.kind === 'album';
-                    const currentAlbumId =
-                        isPlayingFromAlbum ? playerContext.albumId : undefined;
+                    const currentAlbumId = isPlayingFromAlbum ? playerContext.albumId : undefined;
                     const albumKey = `${serverId}:${variables.query.albumId}`;
 
                     // Skip invalidation if:
@@ -41,7 +40,8 @@ export const useSendScrobble = (options?: MutationOptions) => {
                     // 3. We already invalidated once for this album
                     const isSameAlbumAsContext =
                         isPlayingFromAlbum && currentAlbumId === variables.query.albumId;
-                    const alreadyInvalidatedThisAlbum = albumKey === lastScrobbledAlbumKeyRef.current;
+                    const alreadyInvalidatedThisAlbum =
+                        albumKey === lastScrobbledAlbumKeyRef.current;
 
                     if (!isSameAlbumAsContext || !alreadyInvalidatedThisAlbum) {
                         lastScrobbledAlbumKeyRef.current = albumKey;

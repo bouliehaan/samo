@@ -105,9 +105,9 @@
     backdrop-filter: blur(var(--image-blur));
 }
 
-.minimizeTooltip {
+.minimize-tooltip {
+    padding: 3px 5px;
     font-size: 10px;
     line-height: 1;
-    padding: 3px 5px;
     white-space: nowrap;
 }

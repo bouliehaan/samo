@@ -4,6 +4,7 @@ import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, NavLink, useNavigate } from 'react-router';
 
+import samoLogo from '../../../../../build/samologo.svg';
 import styles from './collapsed-sidebar.module.css';
 
 import JellyfinLogo from '/@/renderer/features/servers/assets/jellyfin.png';
@@ -32,7 +33,6 @@ import { ScrollArea } from '/@/shared/components/scroll-area/scroll-area';
 import { Stack } from '/@/shared/components/stack/stack';
 import { LibraryItem, ServerType } from '/@/shared/types/domain-types';
 import { Platform } from '/@/shared/types/types';
-import samoLogo from '../../../../../build/samologo.svg';
 
 export const CollapsedSidebar = () => {
     const { t } = useTranslation();
@@ -109,7 +109,7 @@ export const CollapsedSidebar = () => {
                                 <img
                                     alt="Samo"
                                     src={samoLogo}
-                                    style={{ height: 40, width: 40, objectFit: 'contain' }}
+                                    style={{ height: 40, objectFit: 'contain', width: 40 }}
                                 />
                             }
                             label={t('common.menu', { postProcess: 'titleCase' })}

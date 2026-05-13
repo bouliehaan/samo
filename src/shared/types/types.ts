@@ -1,3 +1,12 @@
+import {
+    Play,
+    PlayerQueueType,
+    PlayerRepeat,
+    PlayerShuffle,
+    PlayerStatus,
+    PlayerType,
+} from '@samo/core/playback';
+import { ServerType } from '@samo/core/server';
 import { AppRoute } from '@ts-rest/core';
 import { TFunction } from 'i18next';
 import { ReactNode } from 'react';
@@ -12,6 +21,9 @@ import {
     Song,
 } from '/@/shared/types/domain-types';
 import { ServerFeatures } from '/@/shared/types/features-types';
+
+export { Play, PlayerQueueType, PlayerRepeat, PlayerShuffle, PlayerStatus, PlayerType };
+export { ServerType } from '@samo/core/server';
 
 export enum ItemListKey {
     ALBUM = LibraryItem.ALBUM,
@@ -51,13 +63,6 @@ export enum Platform {
     MACOS = 'macos',
     WEB = 'web',
     WINDOWS = 'windows',
-}
-
-export enum ServerType {
-    AUDIOBOOKSHELF = 'audiobookshelf',
-    JELLYFIN = 'jellyfin',
-    NAVIDROME = 'navidrome',
-    SUBSONIC = 'subsonic',
 }
 
 export type CardRoute = {
@@ -120,46 +125,9 @@ export enum FontType {
     SYSTEM = 'system',
 }
 
-export enum Play {
-    INDEX = 'index',
-    LAST = 'last',
-    LAST_SHUFFLE = 'lastShuffle',
-    NEXT = 'next',
-    NEXT_SHUFFLE = 'nextShuffle',
-    NOW = 'now',
-    SHUFFLE = 'shuffle',
-}
-
-export enum PlayerQueueType {
-    DEFAULT = 'default',
-    PRIORITY = 'priority',
-}
-
-export enum PlayerRepeat {
-    ALL = 'all',
-    NONE = 'none',
-    ONE = 'one',
-}
-
-export enum PlayerShuffle {
-    ALBUM = 'album',
-    NONE = 'none',
-    TRACK = 'track',
-}
-
-export enum PlayerStatus {
-    PAUSED = 'paused',
-    PLAYING = 'playing',
-}
-
 export enum PlayerStyle {
     CROSSFADE = 'crossfade',
     GAPLESS = 'gapless',
-}
-
-export enum PlayerType {
-    LOCAL = 'local',
-    WEB = 'web',
 }
 
 export enum TableColumn {

@@ -269,8 +269,8 @@ export const LeftControls = () => {
                                 {isPodcastMode && podcastItem?.id ? (
                                     <Text
                                         component={Link}
-                                        isMuted
                                         isLink
+                                        isMuted
                                         overflow="hidden"
                                         size="sm"
                                         to={generatePath(AppRoute.PODCASTS_DETAIL, {

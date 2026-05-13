@@ -1,20 +1,16 @@
+import {
+    createIdlePlaybackSession,
+    createPlaybackSession,
+    type PlaybackEngine,
+    type PlaybackSession,
+    type PlaybackSource,
+} from '@samo/core/playback';
 import { create } from 'zustand';
 import { subscribeWithSelector } from 'zustand/middleware';
 
 import { stopAllAudioElements } from '/@/renderer/features/player/audio-player/audio-element-registry';
 
-export type PlaybackEngine = 'mpv-native' | 'none' | 'web';
-export interface PlaybackSession {
-    engine: PlaybackEngine;
-    id: string;
-    mediaKey: null | string;
-    source: null | PlaybackSource;
-    startedAt: number;
-    status: PlaybackSessionStatus;
-}
-export type PlaybackSessionStatus = 'active' | 'idle';
-
-export type PlaybackSource = 'audiobook' | 'music' | 'podcast' | 'radio';
+export type { PlaybackEngine, PlaybackSession, PlaybackSource } from '@samo/core/playback';
 
 interface PlaybackClaimOptions {
     engine?: PlaybackEngine;
@@ -30,28 +26,6 @@ interface PlaybackOwnerState {
 }
 
 let playbackSessionSequence = 0;
-
-const createIdlePlaybackSession = (): PlaybackSession => ({
-    engine: 'none',
-    id: 'idle',
-    mediaKey: null,
-    source: null,
-    startedAt: 0,
-    status: 'idle',
-});
-
-const createPlaybackSession = (
-    source: PlaybackSource,
-    engine: PlaybackEngine,
-    mediaKey: null | string,
-): PlaybackSession => ({
-    engine,
-    id: `${source}-${Date.now()}-${++playbackSessionSequence}`,
-    mediaKey,
-    source,
-    startedAt: Date.now(),
-    status: 'active',
-});
 
 export const usePlaybackOwnerStore = create<PlaybackOwnerState>()(
     subscribeWithSelector((set, get) => ({
@@ -72,7 +46,12 @@ export const usePlaybackOwnerStore = create<PlaybackOwnerState>()(
             if (isSourceChange || isExplicitReplacement || isMediaKeyReplacement) {
                 stopAllAudioElements();
             }
-            const session = createPlaybackSession(source, options.engine ?? 'none', nextMediaKey);
+            const session = createPlaybackSession({
+                engine: options.engine ?? 'none',
+                mediaKey: nextMediaKey,
+                sequence: ++playbackSessionSequence,
+                source,
+            });
             set({ session, source });
             return session;
         },

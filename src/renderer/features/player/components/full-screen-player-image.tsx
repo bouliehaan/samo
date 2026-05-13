@@ -1,3 +1,8 @@
+import {
+    formatBitRate,
+    formatSampleRate,
+    isPremiumQualityContainer,
+} from '@samo/core/audio-quality';
 import clsx from 'clsx';
 import { t } from 'i18next';
 import isElectron from 'is-electron';
@@ -59,34 +64,6 @@ const imageVariants: Variants = {
 };
 
 const MotionImage = motion.img;
-
-const PREMIUM_QUALITY_CONTAINERS = new Set([
-    'aif',
-    'aiff',
-    'alac',
-    'ape',
-    'dsd',
-    'dsf',
-    'flac',
-    'wav',
-]);
-
-const formatBitRate = (bitRate?: null | number) => {
-    if (!bitRate) return null;
-
-    const kbps = bitRate >= 100_000 ? Math.round(bitRate / 1000) : Math.round(bitRate);
-
-    return `${kbps} kbps`;
-};
-
-const formatSampleRate = (sampleRate?: null | number) => {
-    if (!sampleRate) return null;
-
-    const khz = sampleRate / 1000;
-    const formatted = Number.isInteger(khz) ? khz.toFixed(0) : khz.toFixed(1);
-
-    return `${formatted} kHz`;
-};
 
 const unknownBadge = (label: string) => (
     <Badge color="gray" variant="light">
@@ -161,8 +138,7 @@ export const FullScreenPlayerImage = () => {
     const isTranscoded = showAudioPathBadge && !isNativeDirect && transcode.enabled;
     const effectiveContainer = isTranscoded ? transcode.format : currentSong?.container;
     const effectiveBitRate = isTranscoded ? transcode.bitrate : currentSong?.bitRate;
-    const isPremiumQualityDirect =
-        !isTranscoded && PREMIUM_QUALITY_CONTAINERS.has(effectiveContainer?.toLowerCase() ?? '');
+    const isPremiumQualityDirect = !isTranscoded && isPremiumQualityContainer(effectiveContainer);
 
     const currentImageUrl = useItemImageUrl({
         id: currentSong?.imageId || undefined,
