@@ -1,3 +1,4 @@
+import { normalizeBaseUrl } from '@samo/core/server';
 import { app, ipcMain } from 'electron';
 import log from 'electron-log/main';
 import { randomUUID } from 'node:crypto';
@@ -15,8 +16,6 @@ const PROXY_SESSION_TTL_MS = 6 * 60 * 60 * 1000;
 const audiobookshelfProxySessions = new Map<string, AudiobookshelfProxySession>();
 let audiobookshelfProxyServer: null | Server = null;
 let audiobookshelfProxyPort: null | number = null;
-
-const normalizeBaseUrl = (value: string) => value.replace(/\/+$/, '');
 
 const sendAudiobookshelfProxyResponse = (
     response: ServerResponse,

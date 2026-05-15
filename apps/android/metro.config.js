@@ -14,4 +14,32 @@ config.resolver.nodeModulesPaths = [
     path.resolve(workspaceRoot, 'node_modules'),
 ];
 
+// Force every `react` import to resolve to ONE physical path. In a pnpm
+// workspace, react-native ships its own nested node_modules/react and the
+// hoisted root has another copy — even when versions match, two paths means
+// two dispatcher instances and hooks blow up with "useState of null".
+// `extraNodeModules` is only a fallback and doesn't help here because walk-up
+// succeeds before the alias fires; `resolveRequest` intercepts unconditionally.
+const REACT_ROOT = path.resolve(projectRoot, 'node_modules/react');
+const REACT_ALIASES = {
+    react: path.join(REACT_ROOT, 'index.js'),
+    'react/jsx-runtime': path.join(REACT_ROOT, 'jsx-runtime.js'),
+    'react/jsx-dev-runtime': path.join(REACT_ROOT, 'jsx-dev-runtime.js'),
+};
+
+const defaultResolveRequest = config.resolver.resolveRequest;
+config.resolver.resolveRequest = (context, moduleName, platform) => {
+    const aliased = REACT_ALIASES[moduleName];
+    if (aliased) {
+        return { type: 'sourceFile', filePath: aliased };
+    }
+    if (defaultResolveRequest) {
+        return defaultResolveRequest(context, moduleName, platform);
+    }
+    return context.resolveRequest(context, moduleName, platform);
+};
+
+// Bump whenever resolver config changes so Metro discards its stale cache.
+config.cacheVersion = 'single-react-v6';
+
 module.exports = config;

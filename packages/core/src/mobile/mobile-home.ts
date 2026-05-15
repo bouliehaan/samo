@@ -6,9 +6,11 @@ import {
     getMobileContentSource,
     type MobileContentSource,
 } from './mobile-content-source';
+import { buildRadioPlayback, type MobilePlayableAudio } from './mobile-playback';
 
 export enum MobileHomeItemType {
     ALBUM = 'album',
+    ARTIST = 'artist',
     AUDIOBOOK = 'audiobook',
     PLAYLIST = 'playlist',
     PODCAST = 'podcast',
@@ -17,6 +19,8 @@ export enum MobileHomeItemType {
 
 export enum MobileHomeSectionId {
     AUDIOBOOKS = 'audiobooks',
+    FAVORITE_ALBUMS = 'favorite-albums',
+    FAVORITE_ARTISTS = 'favorite-artists',
     PLAYLISTS = 'playlists',
     PODCASTS = 'podcasts',
     RADIO = 'radio',
@@ -45,6 +49,7 @@ export interface MobileHomeContentInput {
 export interface MobileHomeItem {
     artworkUrl?: string;
     id: string;
+    playback?: MobilePlayableAudio;
     source?: MobileContentSource;
     subtitle?: string;
     title: string;
@@ -105,6 +110,13 @@ interface SubsonicAlbum {
     year?: number;
 }
 
+interface SubsonicArtist {
+    albumCount?: number;
+    coverArt?: string;
+    id?: number | string;
+    name?: string;
+}
+
 interface SubsonicAlbumListBody {
     'subsonic-response'?: {
         albumList2?: {
@@ -153,6 +165,17 @@ interface SubsonicRadioStation {
     id?: string;
     name?: string;
     streamUrl?: string;
+}
+
+interface SubsonicStarred2Body {
+    'subsonic-response'?: {
+        error?: SubsonicError;
+        starred2?: {
+            album?: SubsonicAlbum[];
+            artist?: SubsonicArtist[];
+        };
+        status?: string;
+    };
 }
 
 const DEFAULT_HOME_LIMIT = 12;
@@ -407,6 +430,66 @@ const loadSubsonicAlbums = async (
     };
 };
 
+const loadSubsonicFavoriteAlbumsAndArtists = async (
+    authentication: ServerAuthenticationResult,
+    fetcher: SamoFetch,
+    limit: number,
+): Promise<MobileHomeSection[]> => {
+    const body = await requestJson<SubsonicStarred2Body>(
+        fetcher,
+        subsonicUrl(authentication, 'getStarred2.view'),
+    );
+    const response = body['subsonic-response'];
+    assertSubsonicOk(response, 'Failed to load favorites');
+    const source = getMobileContentSource(authentication);
+    const favoriteAlbums: MobileHomeItem[] = (response?.starred2?.album ?? [])
+        .slice(0, limit)
+        .flatMap((album) => {
+            const id = album.id?.toString();
+            const title = album.name ?? album.title;
+
+            if (!id || !title) {
+                return [];
+            }
+
+            return {
+                artworkUrl: subsonicCoverArtUrl(authentication, album.coverArt),
+                id,
+                source,
+                subtitle: album.artist ?? (album.year ? String(album.year) : undefined),
+                title,
+                type: MobileHomeItemType.ALBUM,
+            };
+        });
+    const favoriteArtists: MobileHomeItem[] = (response?.starred2?.artist ?? [])
+        .slice(0, limit)
+        .flatMap((artist) => {
+            const id = artist.id?.toString();
+
+            if (!id || !artist.name) {
+                return [];
+            }
+
+            return {
+                artworkUrl: subsonicCoverArtUrl(authentication, artist.coverArt),
+                id,
+                source,
+                subtitle: artist.albumCount ? `${artist.albumCount} albums` : undefined,
+                title: artist.name,
+                type: MobileHomeItemType.ARTIST,
+            };
+        });
+
+    return [
+        { id: MobileHomeSectionId.FAVORITE_ALBUMS, items: favoriteAlbums, title: 'Favorite Albums' },
+        {
+            id: MobileHomeSectionId.FAVORITE_ARTISTS,
+            items: favoriteArtists,
+            title: 'Favorite Artists',
+        },
+    ].filter(hasItems);
+};
+
 const loadSubsonicPlaylists = async (
     authentication: ServerAuthenticationResult,
     fetcher: SamoFetch,
@@ -454,13 +537,17 @@ const loadSubsonicRadio = async (
     return {
         id: MobileHomeSectionId.RADIO,
         items: (response?.internetRadioStations?.internetRadioStation ?? []).flatMap((station) => {
+            const artworkUrl = subsonicCoverArtUrl(authentication, station.coverArt);
+            const playback = buildRadioPlayback(authentication, station, artworkUrl);
+
             if (!station.id || !station.name) {
                 return [];
             }
 
             return {
-                artworkUrl: subsonicCoverArtUrl(authentication, station.coverArt),
+                artworkUrl,
                 id: station.id,
+                playback: playback ?? undefined,
                 source: getMobileContentSource(authentication),
                 subtitle: station.homepageUrl ?? station.streamUrl,
                 title: station.name,
@@ -476,13 +563,27 @@ const loadSubsonicHomeContent = async (
     fetcher: SamoFetch,
     limit: number,
 ): Promise<MobileHomeContent> => {
-    const sectionLoads = await Promise.allSettled([
+    const [favoritesResult, ...sectionLoads] = await Promise.allSettled([
+        loadSubsonicFavoriteAlbumsAndArtists(authentication, fetcher, limit),
         loadSubsonicAlbums(authentication, fetcher, limit),
         loadSubsonicPlaylists(authentication, fetcher),
         loadSubsonicRadio(authentication, fetcher),
     ]);
 
-    return toHomeContent(authentication, sectionLoads);
+    const favoriteLoads: PromiseSettledResult<MobileHomeSection>[] =
+        favoritesResult.status === 'fulfilled'
+            ? favoritesResult.value.map((section) => ({
+                  status: 'fulfilled' as const,
+                  value: section,
+              }))
+            : [
+                  {
+                      reason: favoritesResult.reason,
+                      status: 'rejected' as const,
+                  },
+              ];
+
+    return toHomeContent(authentication, [...favoriteLoads, ...sectionLoads]);
 };
 
 export const loadMobileHomeContent = async ({
@@ -536,6 +637,7 @@ export const loadMobileHomeContentForServers = async ({
     );
     const sectionsById = new Map<MobileHomeSectionId, MobileHomeSection>();
     const errors: MobileHomeSectionError[] = [];
+    let fulfilledCount = 0;
 
     contentLoads.forEach((result, index) => {
         const authentication = authentications[index];
@@ -548,6 +650,7 @@ export const loadMobileHomeContentForServers = async ({
             return;
         }
 
+        fulfilledCount += 1;
         errors.push(...result.value.errors);
 
         result.value.sections.forEach((section) => {
@@ -561,6 +664,10 @@ export const loadMobileHomeContentForServers = async ({
             sectionsById.set(section.id, { ...section, items: [...section.items] });
         });
     });
+
+    if (fulfilledCount === 0) {
+        throw new Error(errors[0]?.message ?? 'Failed to load Home content');
+    }
 
     return {
         errors,

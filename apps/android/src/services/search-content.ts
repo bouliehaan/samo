@@ -14,6 +14,7 @@ export type AndroidSearchState =
 export const loadAndroidSearchResults = async (
     authentications: ServerAuthenticationResult[],
     query: string,
+    userRecents?: Map<string, number>,
 ): Promise<AndroidSearchState> => {
     const trimmedQuery = query.trim();
 
@@ -27,6 +28,7 @@ export const loadAndroidSearchResults = async (
             results: await searchMobileContentAcrossServers({
                 authentications,
                 query: trimmedQuery,
+                userRecents,
             }),
             status: 'loaded',
         };

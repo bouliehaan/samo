@@ -1,5 +1,6 @@
 import type { ServerInferResponses } from '@ts-rest/core';
 
+import { normalizeBaseUrl } from '@samo/core/server';
 import dayjs from 'dayjs';
 import { set } from 'idb-keyval';
 import filter from 'lodash/filter';
@@ -315,7 +316,7 @@ export const SubsonicController: InternalControllerEndpoint = {
             u: string;
         };
 
-        const cleanServerUrl = `${url.replace(/\/$/, '')}/rest`;
+        const cleanServerUrl = `${normalizeBaseUrl(url)}/rest`;
 
         if (body.legacy) {
             credential = `u=${encodeURIComponent(body.username)}&p=${encodeURIComponent(body.password)}`;

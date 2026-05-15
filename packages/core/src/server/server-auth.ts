@@ -1,4 +1,11 @@
+import {
+    formatServerCapabilities,
+    getAudiobookshelfCapabilitiesFromLibraries,
+    getDefaultServerCapabilities,
+    type ServerCapabilities,
+} from './server-capabilities';
 import { getFetch, normalizeBaseUrl, type SamoFetch } from './server-http';
+import { getSubsonicUser } from './server-subsonic';
 import { ServerType } from './server-types';
 
 export enum ServerAuthenticationKind {
@@ -16,6 +23,7 @@ export interface ServerAuthenticationInput {
 }
 
 export interface ServerAuthenticationResult {
+    capabilities: ServerCapabilities;
     credential: string;
     details: string;
     isAdmin?: boolean;
@@ -27,6 +35,12 @@ export interface ServerAuthenticationResult {
     url: string;
     userId?: string;
     username: string;
+}
+
+interface AudiobookshelfLibrariesBody {
+    libraries?: Array<{
+        mediaType?: string;
+    }>;
 }
 
 interface AudiobookshelfLoginBody {
@@ -57,20 +71,6 @@ interface NavidromeLoginData {
     subsonicToken?: string;
     token?: string;
     username?: string;
-}
-
-interface SubsonicGetUserBody {
-    'subsonic-response'?: {
-        error?: {
-            message?: string;
-        };
-        status?: string;
-        user?: {
-            adminRole?: boolean;
-            username?: string;
-        };
-        version?: string;
-    };
 }
 
 export const getServerAuthenticationErrorMessage = (error: unknown) => {
@@ -107,11 +107,17 @@ const authenticateAudiobookshelf = async ({
         method: 'GET',
     });
 
+    if (!librariesResponse.ok) {
+        throw new Error(`Audiobookshelf library check failed (${librariesResponse.status})`);
+    }
+
+    const librariesBody = (await librariesResponse.json()) as AudiobookshelfLibrariesBody;
+    const capabilities = getAudiobookshelfCapabilitiesFromLibraries(librariesBody.libraries ?? []);
+
     return {
+        capabilities,
         credential: user.token,
-        details: librariesResponse.ok
-            ? `Libraries endpoint responded ${librariesResponse.status}`
-            : 'Login succeeded',
+        details: `Audiobookshelf libraries: ${formatServerCapabilities(capabilities)}`,
         isAdmin: user.type === 'admin',
         kind: ServerAuthenticationKind.AUDIOBOOKSHELF_TOKEN,
         title: `Audiobookshelf: ${user.username ?? username}`,
@@ -150,17 +156,29 @@ const authenticateNavidrome = async ({
         throw new Error('Navidrome did not return Subsonic-compatible credentials');
     }
 
+    const resolvedUsername = data.username ?? username;
+    const credential = `u=${encodeURIComponent(resolvedUsername)}&s=${encodeURIComponent(data.subsonicSalt)}&t=${encodeURIComponent(data.subsonicToken)}`;
+    const subsonic = await getSubsonicUser(
+        getFetch(fetcher),
+        baseUrl,
+        credential,
+        resolvedUsername,
+    );
+    const capabilities = getDefaultServerCapabilities(ServerType.NAVIDROME);
+
     return {
-        credential: `u=${encodeURIComponent(data.username ?? username)}&s=${encodeURIComponent(data.subsonicSalt)}&t=${encodeURIComponent(data.subsonicToken)}`,
-        details: 'Navidrome auth endpoint accepted the credentials',
+        capabilities,
+        credential,
+        details: `Navidrome Subsonic API ${subsonic.version ?? 'unknown version'}: ${formatServerCapabilities(capabilities)}`,
         isAdmin: Boolean(data.isAdmin),
         kind: ServerAuthenticationKind.NAVIDROME_TOKEN,
         ndCredential: data.token,
-        title: `Navidrome: ${data.username ?? username}`,
+        serverVersion: subsonic.version,
+        title: `Navidrome: ${resolvedUsername}`,
         type: ServerType.NAVIDROME,
         url: baseUrl,
         userId: data.id,
-        username: data.username ?? username,
+        username: resolvedUsername,
     };
 };
 
@@ -171,30 +189,14 @@ const authenticateSubsonicLegacy = async ({
     username,
 }: ServerAuthenticationInput): Promise<ServerAuthenticationResult> => {
     const baseUrl = normalizeBaseUrl(url);
-    const params = new URLSearchParams({
-        c: 'Samo',
-        f: 'json',
-        p: password,
-        u: username,
-        username,
-        v: '1.13.0',
-    });
-    const response = await getFetch(fetcher)(`${baseUrl}/rest/getUser.view?${params.toString()}`);
-
-    if (!response.ok) {
-        throw new Error(`Subsonic user check failed (${response.status})`);
-    }
-
-    const body = (await response.json()) as SubsonicGetUserBody;
-    const subsonic = body['subsonic-response'];
-
-    if (subsonic?.status !== 'ok') {
-        throw new Error(subsonic?.error?.message ?? 'Subsonic user check did not return ok');
-    }
+    const credential = `u=${encodeURIComponent(username)}&p=${encodeURIComponent(password)}`;
+    const subsonic = await getSubsonicUser(getFetch(fetcher), baseUrl, credential, username);
+    const capabilities = getDefaultServerCapabilities(ServerType.SUBSONIC);
 
     return {
-        credential: `u=${encodeURIComponent(username)}&p=${encodeURIComponent(password)}`,
-        details: `Subsonic API ${subsonic.version ?? 'unknown version'}`,
+        capabilities,
+        credential,
+        details: `Subsonic API ${subsonic.version ?? 'unknown version'}: ${formatServerCapabilities(capabilities)}`,
         isAdmin: Boolean(subsonic.user?.adminRole),
         kind: ServerAuthenticationKind.SUBSONIC_LEGACY_PASSWORD,
         serverVersion: subsonic.version,

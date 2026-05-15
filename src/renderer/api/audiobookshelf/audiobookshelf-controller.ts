@@ -1,3 +1,4 @@
+import { normalizeBaseUrl } from '@samo/core/server';
 import isElectron from 'is-electron';
 
 import {
@@ -9,8 +10,6 @@ import {
     AudiobookshelfPlaybackSessionSyncRequest,
 } from '/@/shared/api/audiobookshelf/audiobookshelf-types';
 import { AuthenticationResponse, ServerListItemWithCredential } from '/@/shared/types/domain-types';
-
-const normalizeBaseUrl = (url: string) => url.replace(/\/+$/, '');
 
 const getAuthHeaders = (token: string) => ({
     Authorization: `Bearer ${token}`,

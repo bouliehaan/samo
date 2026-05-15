@@ -35,7 +35,7 @@ export enum PlayerType {
     WEB = 'web',
 }
 
-export type PlaybackEngine = 'mpv-native' | 'none' | 'web';
+export type PlaybackEngine = 'android-native' | 'mpv-native' | 'none' | 'web';
 
 export interface PlaybackSession {
     engine: PlaybackEngine;

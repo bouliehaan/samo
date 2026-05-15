@@ -3,14 +3,14 @@ export interface SamoMobileTabDefinition {
     label: string;
 }
 
-export type SamoMobileTabId = 'home' | 'library' | 'listen' | 'playlists' | 'search';
+export type SamoMobileTabId = 'home' | 'library' | 'playlists' | 'radio' | 'search';
 
 export const SAMO_MOBILE_TABS = [
     { id: 'home', label: 'Home' },
-    { id: 'playlists', label: 'Playlists' },
-    { id: 'library', label: 'Library' },
-    { id: 'listen', label: 'Listen' },
     { id: 'search', label: 'Search' },
+    { id: 'library', label: 'Library' },
+    { id: 'playlists', label: 'Playlists' },
+    { id: 'radio', label: 'Radio' },
 ] satisfies SamoMobileTabDefinition[];
 
 export interface SamoListenSectionDefinition {

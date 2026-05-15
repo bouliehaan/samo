@@ -1,4 +1,5 @@
 import { closeAllModals } from '@mantine/modals';
+import { normalizeBaseUrl } from '@samo/core/server';
 import { useQueryClient } from '@tanstack/react-query';
 import isElectron from 'is-electron';
 import { nanoid } from 'nanoid/non-secure';
@@ -273,7 +274,7 @@ export const AddServerForm = ({
                 isAdmin: data.isAdmin,
                 name: values.name,
                 type: values.type as ServerType,
-                url: values.url.replace(/\/$/, ''),
+                url: normalizeBaseUrl(values.url),
                 userId: data.userId,
                 username: data.username,
             };
@@ -283,7 +284,7 @@ export const AddServerForm = ({
             }
 
             if (values.remoteUrl?.trim()) {
-                serverItem.remoteUrl = values.remoteUrl.trim().replace(/\/$/, '');
+                serverItem.remoteUrl = normalizeBaseUrl(values.remoteUrl);
             }
 
             if (values.preferRemoteUrl !== undefined) {

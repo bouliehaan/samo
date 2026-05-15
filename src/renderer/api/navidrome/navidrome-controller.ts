@@ -1,3 +1,4 @@
+import { normalizeBaseUrl } from '@samo/core/server';
 import axios from 'axios';
 import { set } from 'idb-keyval';
 import orderBy from 'lodash/orderBy';
@@ -146,7 +147,7 @@ export const NavidromeController: InternalControllerEndpoint = {
         return null;
     },
     authenticate: async (url, body): Promise<AuthenticationResponse> => {
-        const cleanServerUrl = url.replace(/\/$/, '');
+        const cleanServerUrl = normalizeBaseUrl(url);
 
         const res = await ndApiClient({ server: null, url: cleanServerUrl }).authenticate({
             body: {

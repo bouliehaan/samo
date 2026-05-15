@@ -192,7 +192,10 @@
         "onlyBuiltDependencies": [
             "electron",
             "esbuild"
-        ]
+        ],
+        "patchedDependencies": {
+            "react-native-image-colors@2.6.0": "patches/react-native-image-colors@2.6.0.patch"
+        }
     },
     "productName": "samo"
 }

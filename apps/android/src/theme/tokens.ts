@@ -1,12 +1,12 @@
 export const colors = {
-    accent: '#d6b25e',
-    accentSoft: 'rgba(214, 178, 94, 0.16)',
-    background: '#17130d',
-    border: 'rgba(255, 255, 255, 0.12)',
-    muted: '#a79d8b',
-    panel: '#211b13',
-    surface: '#2a2217',
-    text: '#f6efe2',
+    accent: '#caa04f',
+    accentSoft: 'rgba(202, 160, 79, 0.14)',
+    background: '#000000',
+    border: 'rgba(255, 255, 255, 0.08)',
+    muted: '#a7a7a7',
+    panel: '#181818',
+    surface: '#242424',
+    text: '#f5f5f5',
 };
 
 export const spacing = {

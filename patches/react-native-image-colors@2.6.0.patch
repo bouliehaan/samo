@@ -1,0 +1,27 @@
+diff --git a/android/build.gradle b/android/build.gradle
+index 25d0f7456c48ebe18ec49fbf0a6cbb88bbdf9055..79aa179b3df5494451056544b16aed75efd30cb2 100644
+--- a/android/build.gradle
++++ b/android/build.gradle
+@@ -54,16 +54,13 @@ android {
+   namespace = "com.reactnativeimagecolors"
+   compileSdkVersion safeExtGet("compileSdkVersion", 33)
+ 
+-  def agpVersion = com.android.Version.ANDROID_GRADLE_PLUGIN_VERSION
+-  if (agpVersion.tokenize('.')[0].toInteger() < 8) {
+-    compileOptions {
+-      sourceCompatibility JavaVersion.VERSION_11
+-      targetCompatibility JavaVersion.VERSION_11
+-    }
++  compileOptions {
++    sourceCompatibility JavaVersion.VERSION_17
++    targetCompatibility JavaVersion.VERSION_17
++  }
+ 
+-    kotlinOptions {
+-      jvmTarget = JavaVersion.VERSION_11.majorVersion
+-    }
++  kotlinOptions {
++    jvmTarget = JavaVersion.VERSION_17.majorVersion
+   }
+ 
+   defaultConfig {

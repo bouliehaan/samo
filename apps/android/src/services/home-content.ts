@@ -5,6 +5,8 @@ import {
 } from '@samo/core/mobile';
 import { type ServerAuthenticationResult } from '@samo/core/server';
 
+const ANDROID_HOME_CONTENT_LIMIT = 80;
+
 export type AndroidHomeContentState =
     | { content: MobileHomeContent; status: 'loaded' }
     | { message: string; status: 'error' }
@@ -20,7 +22,10 @@ export const loadAndroidHomeContent = async (
 
     try {
         return {
-            content: await loadMobileHomeContentForServers({ authentications }),
+            content: await loadMobileHomeContentForServers({
+                authentications,
+                limit: ANDROID_HOME_CONTENT_LIMIT,
+            }),
             status: 'loaded',
         };
     } catch (error) {

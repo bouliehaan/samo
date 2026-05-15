@@ -1,3 +1,4 @@
+import { normalizeBaseUrl } from '@samo/core/server';
 import { set } from 'idb-keyval';
 import chunk from 'lodash/chunk';
 import filter from 'lodash/filter';
@@ -148,7 +149,7 @@ export const JellyfinController: InternalControllerEndpoint = {
         return null;
     },
     authenticate: async (url, body) => {
-        const cleanServerUrl = url.replace(/\/$/, '');
+        const cleanServerUrl = normalizeBaseUrl(url);
 
         const res = await jfApiClient({ server: null, url: cleanServerUrl }).authenticate({
             body: {
