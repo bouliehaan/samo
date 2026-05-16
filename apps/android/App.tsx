@@ -67,7 +67,9 @@ import {
 } from 'react-native';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import Reanimated, {
+    interpolate,
     runOnJS,
+    type SharedValue,
     useAnimatedStyle,
     useSharedValue,
     withSpring,
@@ -549,6 +551,18 @@ export default function App() {
         status: 'idle',
     });
     const [isFullPlayerOpen, setIsFullPlayerOpen] = useState(false);
+    // Unified animation source for the MiniPlayer ↔ FullScreenPlayer transition.
+    // 0 = miniplayer visible, 1 = fullscreen visible. Both components derive
+    // their opacity / translate / scale from this single shared value so the
+    // motion always reads as one physical object expanding or collapsing.
+    const playerProgress = useSharedValue(0);
+    useEffect(() => {
+        if (isFullPlayerOpen) {
+            playerProgress.value = withSpring(1, OPEN_SPRING);
+        } else {
+            playerProgress.value = withTiming(0, { duration: 240 });
+        }
+    }, [isFullPlayerOpen, playerProgress]);
     const [isSearchOverlayOpen, setIsSearchOverlayOpen] = useState(false);
     const [searchOverlayQuery, setSearchOverlayQuery] = useState('');
     const [mediaDetailState, setMediaDetailState] = useState<AndroidMediaDetailState>({
@@ -2556,6 +2570,7 @@ export default function App() {
                         onOpenFullPlayer={() => setIsFullPlayerOpen(true)}
                         onTogglePlayback={handleTogglePlayback}
                         playbackState={playbackState}
+                        playerProgress={playerProgress}
                     />
                     <FullScreenPlayer
                         isShuffled={isShuffled}
@@ -2566,6 +2581,7 @@ export default function App() {
                         onSeek={(positionMs) => void handleSeekPlayback(positionMs)}
                         onTogglePlayback={handleTogglePlayback}
                         onToggleShuffle={handleToggleShuffle}
+                        playerProgress={playerProgress}
                         serverConnections={serverConnections}
                         playbackState={playbackState}
                         queue={playbackQueueRef.current}
@@ -7101,12 +7117,21 @@ const MiniPlayer = ({
     onOpenFullPlayer,
     onTogglePlayback,
     playbackState,
+    playerProgress,
 }: {
     lastPlayedItem: MobilePlayableAudio | null;
     onOpenFullPlayer: () => void;
     onTogglePlayback: () => void;
     playbackState: AndroidPlaybackState;
+    playerProgress: SharedValue<number>;
 }) => {
+    // Fade out as the fullscreen player rises so the two surfaces never compete
+    // for the user's eye. Disable taps past the halfway point so the miniplayer
+    // can't intercept anything once the fullscreen is on top.
+    const miniAnimatedStyle = useAnimatedStyle(() => ({
+        opacity: interpolate(playerProgress.value, [0, 0.35], [1, 0], 'clamp'),
+        pointerEvents: playerProgress.value > 0.5 ? 'none' : 'auto',
+    }));
     const miniPanResponder = useMemo(
         () =>
             PanResponder.create({
@@ -7147,7 +7172,7 @@ const MiniPlayer = ({
     };
 
     return (
-        <View style={styles.miniPlayer} {...miniPanResponder.panHandlers}>
+        <Reanimated.View style={[styles.miniPlayer, miniAnimatedStyle]} {...miniPanResponder.panHandlers}>
             <Pressable
                 accessibilityRole="button"
                 onPress={onOpenFullPlayer}
@@ -7200,7 +7225,7 @@ const MiniPlayer = ({
                     <PlayPauseGlyph color={colors.text} isPlaying={isPlaying} size={24} />
                 </Pressable>
             </Pressable>
-        </View>
+        </Reanimated.View>
     );
 };
 
@@ -7578,6 +7603,7 @@ const FullScreenPlayer = ({
     onToggleShuffle,
     onTogglePlayback,
     playbackState,
+    playerProgress,
     queue,
     serverConnections,
     visible,
@@ -7591,11 +7617,11 @@ const FullScreenPlayer = ({
     onTogglePlayback: () => void;
     onToggleShuffle: () => void;
     playbackState: AndroidPlaybackState;
+    playerProgress: SharedValue<number>;
     queue: { index: number; items: MobilePlayableAudio[] } | null;
     serverConnections: ServerAuthenticationResult[];
     visible: boolean;
 }) => {
-    const translateY = useSharedValue(SCREEN_HEIGHT);
     const [sleepMenuVisible, setSleepMenuVisible] = useState(false);
     const [sleepSecondsLeft, setSleepSecondsLeft] = useState<null | number>(null);
     const [queueVisible, setQueueVisible] = useState(false);
@@ -7672,22 +7698,16 @@ const FullScreenPlayer = ({
         };
     }, []);
 
-    useEffect(() => {
-        if (visible) {
-            // Snap offscreen first so the spring always runs from the same start
-            // even if the user just dismissed and reopened mid-animation.
-            translateY.value = SCREEN_HEIGHT;
-            translateY.value = withSpring(0, OPEN_SPRING);
-        }
-    }, [visible, translateY]);
-
     const dismissPlayer = useCallback(() => {
-        translateY.value = withTiming(SCREEN_HEIGHT, { duration: 220 }, (finished) => {
+        // Animate playerProgress to 0 and flip the parent's visible state once
+        // the motion finishes; visible stays true for the duration of the close
+        // so the user can actually see the fullscreen sliding away.
+        playerProgress.value = withTiming(0, { duration: 240 }, (finished) => {
             if (finished) {
                 runOnJS(onClose)();
             }
         });
-    }, [translateY, onClose]);
+    }, [playerProgress, onClose]);
 
     const openFullscreenContextMenu = useCallback(() => {
         const item = playbackState.status !== 'idle' ? playbackState.item : lastPlayedItem;
@@ -7763,11 +7783,9 @@ const FullScreenPlayer = ({
         }
     }, [contextMenu, lastPlayedItem, playbackState, serverConnections]);
 
-    // Vertical drag-to-dismiss. Reanimated drives translateY on the UI thread so
-    // the gesture and the spring/timing animations no longer fight over a single
-    // Animated.Value across two drivers (the old PanResponder + JS Animated.Value
-    // implementation reset visibly on slow drags because setValue() runs JS-side
-    // while the spring back ran natively).
+    // Vertical drag-to-dismiss drives playerProgress directly so the miniplayer
+    // fades back in in lock-step as the fullscreen falls — the two surfaces
+    // share a single source of truth.
     const dragGesture = useMemo(
         () =>
             Gesture.Pan()
@@ -7775,8 +7793,9 @@ const FullScreenPlayer = ({
                 .failOffsetX([-20, 20])
                 .onChange((event) => {
                     'worklet';
-                    const next = event.translationY;
-                    translateY.value = next < 0 ? 0 : next;
+                    const dragFraction = event.translationY / SCREEN_HEIGHT;
+                    const next = 1 - dragFraction;
+                    playerProgress.value = next > 1 ? 1 : next < 0 ? 0 : next;
                 })
                 .onEnd((event) => {
                     'worklet';
@@ -7784,8 +7803,8 @@ const FullScreenPlayer = ({
                         event.translationY > DISMISS_DISTANCE ||
                         (event.velocityY > DISMISS_VELOCITY && event.translationY > 40);
                     if (shouldDismiss) {
-                        translateY.value = withTiming(
-                            SCREEN_HEIGHT,
+                        playerProgress.value = withTiming(
+                            0,
                             { duration: 220 },
                             (finished) => {
                                 if (finished) {
@@ -7795,12 +7814,12 @@ const FullScreenPlayer = ({
                         );
                         return;
                     }
-                    translateY.value = withSpring(0, {
+                    playerProgress.value = withSpring(1, {
                         ...OPEN_SPRING,
-                        velocity: event.velocityY,
+                        velocity: -event.velocityY / SCREEN_HEIGHT,
                     });
                 }),
-        [onClose, translateY],
+        [onClose, playerProgress],
     );
 
     // Horizontal swipe-to-skip. Separated so it can fail cleanly when the gesture
@@ -7827,11 +7846,25 @@ const FullScreenPlayer = ({
         [dragGesture, skipGesture],
     );
 
-    const playerAnimatedStyle = useAnimatedStyle(() => ({
-        transform: [{ translateY: translateY.value }],
-    }));
+    // The fullscreen rises from below, scales up slightly, and fades in — all
+    // driven by the same playerProgress that fades the miniplayer out. With
+    // motion this tight, the eye reads it as one surface expanding into the
+    // other rather than a slide-up modal.
+    const playerAnimatedStyle = useAnimatedStyle(() => {
+        const p = playerProgress.value;
+        return {
+            opacity: interpolate(p, [0, 0.35], [0, 1], 'clamp'),
+            transform: [
+                { translateY: interpolate(p, [0, 1], [SCREEN_HEIGHT, 0], 'clamp') },
+                { scale: interpolate(p, [0, 1], [0.94, 1], 'clamp') },
+            ],
+        };
+    });
 
-    if (!visible || !displayItem) {
+    // Stay mounted whenever there's something to play, so close animations
+    // triggered from outside the player (back button, navigation) still get to
+    // run. Visibility/interactivity is now derived from playerProgress + visible.
+    if (!displayItem) {
         return null;
     }
 
@@ -7859,6 +7892,7 @@ const FullScreenPlayer = ({
         <>
         <GestureDetector gesture={playerGesture}>
         <Reanimated.View
+            pointerEvents={visible ? 'auto' : 'none'}
             style={[
                 StyleSheet.absoluteFillObject,
                 styles.fullPlayer,
