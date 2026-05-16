@@ -43,6 +43,7 @@ import {
     useState,
 } from 'react';
 import {
+    AccessibilityInfo,
     ActivityIndicator,
     Alert,
     Animated,
@@ -573,13 +574,17 @@ export default function App() {
     // their opacity / translate / scale from this single shared value so the
     // motion always reads as one physical object expanding or collapsing.
     const playerProgress = useSharedValue(0);
+    const reducedMotion = useReducedMotionPreference();
     useEffect(() => {
+        const spring = reducedMotion ? REDUCED_MOTION_SPRING : OPEN_SPRING;
         if (isFullPlayerOpen) {
-            playerProgress.value = withSpring(1, OPEN_SPRING);
+            playerProgress.value = withSpring(1, spring);
         } else {
-            playerProgress.value = withTiming(0, { duration: 240 });
+            playerProgress.value = withTiming(0, {
+                duration: reducedMotion ? 0 : 240,
+            });
         }
-    }, [isFullPlayerOpen, playerProgress]);
+    }, [isFullPlayerOpen, playerProgress, reducedMotion]);
     const [isSearchOverlayOpen, setIsSearchOverlayOpen] = useState(false);
     const [searchOverlayQuery, setSearchOverlayQuery] = useState('');
     const [mediaDetailState, setMediaDetailState] = useState<AndroidMediaDetailState>({
@@ -2713,6 +2718,7 @@ export default function App() {
                         onTogglePlayback={handleTogglePlayback}
                         onToggleShuffle={handleToggleShuffle}
                         playerProgress={playerProgress}
+                        reducedMotion={reducedMotion}
                         serverConnections={serverConnections}
                         playbackState={playbackState}
                         queue={playbackQueueRef.current}
@@ -7712,6 +7718,32 @@ const FULL_PLAYER_ARTWORK_SIZE = Math.min(SCREEN_WIDTH - 64, SCREEN_HEIGHT * 0.4
 // in under 400 ms. Shared by the fullscreen player open and drag-cancel paths so
 // both motions read as the same physical object.
 const OPEN_SPRING = { damping: 26, mass: 0.9, stiffness: 220 } as const;
+// When the OS-level "reduce motion" setting is on, use an effectively
+// over-damped spring so the same code path arrives at the target without any
+// overshoot, bounce, or sustained travel. Cheaper than special-casing
+// withTiming everywhere and keeps the velocity-aware drag math intact.
+const REDUCED_MOTION_SPRING = { damping: 90, mass: 1, stiffness: 400 } as const;
+
+const useReducedMotionPreference = (): boolean => {
+    const [reduced, setReduced] = useState(false);
+    useEffect(() => {
+        let cancelled = false;
+        void AccessibilityInfo.isReduceMotionEnabled().then((value) => {
+            if (!cancelled) setReduced(value);
+        });
+        const subscription = AccessibilityInfo.addEventListener(
+            'reduceMotionChanged',
+            (value) => {
+                if (!cancelled) setReduced(value);
+            },
+        );
+        return () => {
+            cancelled = true;
+            subscription.remove();
+        };
+    }, []);
+    return reduced;
+};
 // How far the player must be dragged (or how fast it must be flung) before a
 // release commits to dismiss instead of springing back.
 const DISMISS_DISTANCE = SCREEN_HEIGHT * 0.22;
@@ -7951,6 +7983,7 @@ const FullScreenPlayer = ({
     playbackState,
     playerProgress,
     queue,
+    reducedMotion,
     serverConnections,
     visible,
 }: {
@@ -7965,6 +7998,7 @@ const FullScreenPlayer = ({
     playbackState: AndroidPlaybackState;
     playerProgress: SharedValue<number>;
     queue: { index: number; items: MobilePlayableAudio[] } | null;
+    reducedMotion: boolean;
     serverConnections: ServerAuthenticationResult[];
     visible: boolean;
 }) => {
@@ -8055,12 +8089,16 @@ const FullScreenPlayer = ({
         // Animate playerProgress to 0 and flip the parent's visible state once
         // the motion finishes; visible stays true for the duration of the close
         // so the user can actually see the fullscreen sliding away.
-        playerProgress.value = withTiming(0, { duration: 240 }, (finished) => {
-            if (finished) {
-                runOnJS(onClose)();
-            }
-        });
-    }, [playerProgress, onClose]);
+        playerProgress.value = withTiming(
+            0,
+            { duration: reducedMotion ? 0 : 240 },
+            (finished) => {
+                if (finished) {
+                    runOnJS(onClose)();
+                }
+            },
+        );
+    }, [playerProgress, onClose, reducedMotion]);
 
     const openFullscreenContextMenu = useCallback(() => {
         const item = playbackState.status !== 'idle' ? playbackState.item : lastPlayedItem;
@@ -8142,6 +8180,8 @@ const FullScreenPlayer = ({
     // open closes the queue instead of dismissing the player. Mode is locked
     // at the moment the first significant drag direction is detected so the
     // motion stays predictable.
+    const settleSpring = reducedMotion ? REDUCED_MOTION_SPRING : OPEN_SPRING;
+    const dismissDuration = reducedMotion ? 0 : 220;
     const dragGesture = useMemo(
         () =>
             Gesture.Pan()
@@ -8185,7 +8225,7 @@ const FullScreenPlayer = ({
                             event.velocityY < -700;
                         queueProgress.value = withSpring(
                             opening ? 1 : 0,
-                            OPEN_SPRING,
+                            settleSpring,
                         );
                         return;
                     }
@@ -8196,7 +8236,7 @@ const FullScreenPlayer = ({
                     if (shouldDismiss) {
                         playerProgress.value = withTiming(
                             0,
-                            { duration: 220 },
+                            { duration: dismissDuration },
                             (finished) => {
                                 if (finished) {
                                     runOnJS(onClose)();
@@ -8206,11 +8246,19 @@ const FullScreenPlayer = ({
                         return;
                     }
                     playerProgress.value = withSpring(1, {
-                        ...OPEN_SPRING,
+                        ...settleSpring,
                         velocity: -event.velocityY / SCREEN_HEIGHT,
                     });
                 }),
-        [dragMode, dragStartQueue, onClose, playerProgress, queueProgress],
+        [
+            dismissDuration,
+            dragMode,
+            dragStartQueue,
+            onClose,
+            playerProgress,
+            queueProgress,
+            settleSpring,
+        ],
     );
 
     // Animated styles for the queue overlay. The sheet rises from the bottom
@@ -8246,8 +8294,8 @@ const FullScreenPlayer = ({
     );
 
     const closeQueue = useCallback(() => {
-        queueProgress.value = withSpring(0, OPEN_SPRING);
-    }, [queueProgress]);
+        queueProgress.value = withSpring(0, settleSpring);
+    }, [queueProgress, settleSpring]);
 
     // Horizontal swipe-to-skip. Separated so it can fail cleanly when the gesture
     // is clearly vertical — composing with Simultaneous lets the user
