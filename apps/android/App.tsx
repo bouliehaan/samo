@@ -66,6 +66,7 @@ import {
     type ViewStyle,
 } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import Svg, { Circle as SvgCircle } from 'react-native-svg';
 
 import heartIcon from './assets/icons/heart.png';
 import shuffleIcon from './assets/icons/shuffle.png';
@@ -262,6 +263,7 @@ interface PlaylistsScreenProps {
     homeContentState: AndroidHomeContentState;
     onSelectItem: (item: MobileHomeItem) => void;
     onShufflePlay: (items: MobileHomeItem[]) => void;
+    recentItems: AndroidRecentContentItem[];
 }
 
 interface RadioScreenProps {
@@ -328,6 +330,9 @@ interface MediaContextMenuOpenOptions {
     // True when the menu is opened from the detail page itself, so we should
     // skip the "Open Album/Playlist/Artist" action (you're already there).
     suppressOpenAction?: boolean;
+    // True when there's already a visible Download button next to where the
+    // menu was opened (e.g. the detail page hero), so the duplicate is clutter.
+    suppressDownloadAction?: boolean;
 }
 
 type MediaContextMenuTarget =
@@ -335,12 +340,14 @@ type MediaContextMenuTarget =
           detail?: MobileMediaDetail;
           kind: 'song';
           source?: MobileContentSource;
+          suppressDownloadAction?: boolean;
           suppressOpenAction?: boolean;
           track: MobileMediaTrack;
       }
     | {
           item: AndroidRecentContentSourceItem;
           kind: Exclude<MediaContextMenuKind, 'song'>;
+          suppressDownloadAction?: boolean;
           suppressOpenAction?: boolean;
       };
 
@@ -1693,6 +1700,9 @@ export default function App() {
         };
 
         setContextMenuTarget(null);
+        // The action is reachable from the fullscreen player overflow; without
+        // dismissing it first the new detail page would load behind the modal.
+        setIsFullPlayerOpen(false);
         await handleSelectMediaItem(synthetic);
     };
 
@@ -1712,6 +1722,7 @@ export default function App() {
         };
 
         setContextMenuTarget(null);
+        setIsFullPlayerOpen(false);
         await handleSelectMediaItem(synthetic);
     };
 
@@ -2009,6 +2020,7 @@ export default function App() {
                     setContextMenuTarget({
                         kind: 'song',
                         source: item.source,
+                        suppressDownloadAction: options?.suppressDownloadAction,
                         suppressOpenAction: options?.suppressOpenAction,
                         track: synthesizeTrackFromSongItem(item),
                     });
@@ -2023,6 +2035,7 @@ export default function App() {
                 setContextMenuTarget({
                     item,
                     kind,
+                    suppressDownloadAction: options?.suppressDownloadAction,
                     suppressOpenAction: options?.suppressOpenAction,
                 });
             },
@@ -2251,7 +2264,7 @@ export default function App() {
                 detail?.type === MobileMediaDetailType.AUDIOBOOK ||
                 detail?.type === MobileMediaDetailType.PODCAST ||
                 track.playback?.source === 'music';
-            if (canDownload) {
+            if (canDownload && !contextMenuTarget.suppressDownloadAction) {
                 actions.push({
                     icon: <DownloadGlyph color={colors.text} />,
                     id: 'download',
@@ -2276,6 +2289,8 @@ export default function App() {
 
         const suppressOpen = contextMenuTarget.suppressOpenAction === true;
 
+        const suppressDownload = contextMenuTarget.suppressDownloadAction === true;
+
         if (contextMenuTarget.kind === 'audiobook') {
             actions.push({
                 icon: <BookInfoGlyph color={colors.text} />,
@@ -2283,12 +2298,14 @@ export default function App() {
                 label: 'Book Information',
                 onPress: () => void handleOpenBookInfo(item, 'audiobook'),
             });
-            actions.push({
-                icon: <DownloadGlyph color={colors.text} />,
-                id: 'download',
-                label: 'Download audiobook',
-                onPress: () => void handleDownloadCollectionItem(item),
-            });
+            if (!suppressDownload) {
+                actions.push({
+                    icon: <DownloadGlyph color={colors.text} />,
+                    id: 'download',
+                    label: 'Download audiobook',
+                    onPress: () => void handleDownloadCollectionItem(item),
+                });
+            }
             if (!suppressOpen) {
                 actions.push({
                     icon: <ChaptersGlyph color={colors.text} />,
@@ -2335,13 +2352,17 @@ export default function App() {
                     onPress: () => handleOpenAddToPlaylistForCollection(item),
                 });
             }
-            actions.push({
-                icon: <DownloadGlyph color={colors.text} />,
-                id: 'download',
-                label:
-                    contextMenuTarget.kind === 'album' ? 'Download album' : 'Download playlist',
-                onPress: () => void handleDownloadCollectionItem(item),
-            });
+            if (!suppressDownload) {
+                actions.push({
+                    icon: <DownloadGlyph color={colors.text} />,
+                    id: 'download',
+                    label:
+                        contextMenuTarget.kind === 'album'
+                            ? 'Download album'
+                            : 'Download playlist',
+                    onPress: () => void handleDownloadCollectionItem(item),
+                });
+            }
             if (!suppressOpen) {
                 actions.push({
                     icon: <ChaptersGlyph color={colors.text} />,
@@ -2492,6 +2513,7 @@ export default function App() {
                                 homeContentState={visibleHomeContentState}
                                 onSelectItem={handleSelectMediaItem}
                                 onShufflePlay={handleShuffleHomeItems}
+                                recentItems={visibleRecentItems}
                             />
                         ) : activeTab === 'library' ? (
                             <LibraryScreen
@@ -3450,7 +3472,12 @@ const LibraryScreen = ({
     );
 };
 
-const PlaylistsScreen = ({ homeContentState, onSelectItem, onShufflePlay }: PlaylistsScreenProps) => {
+const PlaylistsScreen = ({
+    homeContentState,
+    onSelectItem,
+    onShufflePlay,
+    recentItems,
+}: PlaylistsScreenProps) => {
     if (homeContentState.status === 'idle') {
         return <EmptyServerBackedScreen tabTitle="Playlists" />;
     }
@@ -3472,7 +3499,7 @@ const PlaylistsScreen = ({ homeContentState, onSelectItem, onShufflePlay }: Play
     }
 
     const section = getSectionsById(homeContentState, [MobileHomeSectionId.PLAYLISTS])[0];
-    const playlists = section?.items ?? [];
+    const playlists = sortHomeItemsByRecents(section?.items ?? [], recentItems);
 
     if (playlists.length === 0) {
         return (
@@ -4519,10 +4546,10 @@ const getLibraryRows = (
         });
 };
 
-const sortHomeItemsByRecents = (
-    items: AndroidRecentContentSourceItem[],
+const sortHomeItemsByRecents = <T extends AndroidRecentContentSourceItem>(
+    items: T[],
     recentItems: AndroidRecentContentItem[],
-) => {
+): T[] => {
     const recentItemsByKey = new Map(recentItems.map((item) => [item.key, item]));
 
     return [...items].sort((left, right) => {
@@ -5271,7 +5298,11 @@ const MediaDetailLoaded = ({
             title: detail.title,
             type: homeType,
         };
-        contextMenu.openForItem(syntheticItem, { suppressOpenAction: true });
+        contextMenu.openForItem(syntheticItem, {
+            // The hero already shows a visible Download button; don't duplicate it here.
+            suppressDownloadAction: true,
+            suppressOpenAction: true,
+        });
     };
 
     const handleDownloadDetail = async () => {
@@ -6772,10 +6803,9 @@ const CheckGlyph = ({ color, size = 14 }: { color: string; size?: number }) => {
 };
 
 /**
- * Spotify-style circular download progress indicator. Renders 16 small ticks
- * around the perimeter that light up as progress advances, with a download
- * arrow (or check, when complete) in the middle. No SVG dependency — every
- * tick is a rotated+translated View, so this works on any RN install.
+ * Circular download progress indicator. A continuous accent-colored arc sweeps
+ * clockwise from 12 o'clock over a dim background ring, with a download arrow
+ * (or check, when complete) in the middle.
  */
 const CircularDownloadGlyph = ({
     completed,
@@ -6787,10 +6817,10 @@ const CircularDownloadGlyph = ({
     progress: number;
 }) => {
     const SIZE = 30;
-    const TICK_COUNT = 16;
-    const filledTicks = completed
-        ? TICK_COUNT
-        : Math.min(TICK_COUNT, Math.max(0, Math.round(progress * TICK_COUNT)));
+    const STROKE = 2;
+    const RADIUS = (SIZE - STROKE) / 2;
+    const CIRC = 2 * Math.PI * RADIUS;
+    const fraction = completed ? 1 : Math.min(1, Math.max(0, progress));
     const accent = colors.accent;
     const dim = 'rgba(255, 255, 255, 0.16)';
 
@@ -6804,26 +6834,32 @@ const CircularDownloadGlyph = ({
                 width: SIZE,
             }}
         >
-            {Array.from({ length: TICK_COUNT }).map((_, idx) => {
-                const angleDeg = (idx / TICK_COUNT) * 360;
-                const filled = idx < filledTicks;
-                return (
-                    <View
-                        key={idx}
-                        style={{
-                            backgroundColor: filled ? accent : dim,
-                            borderRadius: 1,
-                            height: 4,
-                            position: 'absolute',
-                            transform: [
-                                { rotate: `${angleDeg}deg` },
-                                { translateY: -(SIZE / 2 - 2) },
-                            ],
-                            width: 1.6,
-                        }}
+            <Svg
+                height={SIZE}
+                style={{ position: 'absolute', transform: [{ rotate: '-90deg' }] }}
+                width={SIZE}
+            >
+                <SvgCircle
+                    cx={SIZE / 2}
+                    cy={SIZE / 2}
+                    fill="none"
+                    r={RADIUS}
+                    stroke={dim}
+                    strokeWidth={STROKE}
+                />
+                {fraction > 0 ? (
+                    <SvgCircle
+                        cx={SIZE / 2}
+                        cy={SIZE / 2}
+                        fill="none"
+                        r={RADIUS}
+                        stroke={accent}
+                        strokeDasharray={`${CIRC * fraction}, ${CIRC}`}
+                        strokeLinecap="round"
+                        strokeWidth={STROKE}
                     />
-                );
-            })}
+                ) : null}
+            </Svg>
             {completed ? (
                 <CheckGlyph color={accent} size={14} />
             ) : (
@@ -7240,6 +7276,11 @@ const SegmentedSeekBar = ({
         [isSeekable, seekFromLocation],
     );
 
+    const globalProgress =
+        !isLive && durationMs && durationMs > 0
+            ? clamp((positionMs ?? 0) / durationMs, 0, 1)
+            : null;
+
     return (
         <View
             {...panResponder.panHandlers}
@@ -7283,9 +7324,23 @@ const SegmentedSeekBar = ({
                     );
                 })
             )}
+            {globalProgress !== null && trackWidth > 0 ? (
+                <View
+                    pointerEvents="none"
+                    style={[
+                        styles.seekThumb,
+                        {
+                            backgroundColor: tint,
+                            left: globalProgress * trackWidth - SEEK_THUMB_WIDTH / 2,
+                        },
+                    ]}
+                />
+            ) : null}
         </View>
     );
 };
+
+const SEEK_THUMB_WIDTH = 5;
 
 const SCREEN_HEIGHT = Dimensions.get('window').height;
 const SCREEN_WIDTH = Dimensions.get('window').width;
@@ -9132,19 +9187,19 @@ const styles = StyleSheet.create({
     inlineSearchBar: {
         alignItems: 'center',
         backgroundColor: colors.surface,
-        borderRadius: 8,
+        borderRadius: 999,
         flexDirection: 'row',
         gap: spacing.sm,
         minHeight: 50,
-        paddingHorizontal: spacing.sm,
+        paddingHorizontal: spacing.md,
     },
     inlineSearchBarElevated: {
         backgroundColor: 'rgba(255,255,255,0.10)',
         borderColor: 'rgba(255,255,255,0.13)',
-        borderRadius: 14,
+        borderRadius: 999,
         borderWidth: 1,
         minHeight: 52,
-        paddingHorizontal: spacing.md,
+        paddingHorizontal: spacing.lg,
     },
     inlineSearchIconButton: {
         alignItems: 'center',
@@ -9997,12 +10052,12 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         backgroundColor: 'rgba(255,255,255,0.10)',
         borderColor: 'rgba(255,255,255,0.13)',
-        borderRadius: 14,
+        borderRadius: 999,
         borderWidth: 1,
         flexDirection: 'row',
         gap: spacing.sm,
         minHeight: 52,
-        paddingHorizontal: spacing.md,
+        paddingHorizontal: spacing.lg,
     },
     searchOverlayClear: {
         alignItems: 'center',
@@ -10388,6 +10443,13 @@ const styles = StyleSheet.create({
     },
     seekSegmentLive: {
         flex: 1,
+    },
+    seekThumb: {
+        borderRadius: 999,
+        bottom: -3,
+        position: 'absolute',
+        top: -3,
+        width: 5,
     },
     seekSegmentLiveFill: {
         height: '100%',
