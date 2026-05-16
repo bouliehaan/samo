@@ -1,4 +1,4 @@
-import * as SecureStore from 'expo-secure-store';
+import { fsDeleteItem, fsGetItem, fsSetItem } from './fs-storage';
 
 const FAVORITES_KEY = 'samo.android.local-favorites.v1';
 
@@ -35,7 +35,7 @@ const isPersistedFavorite = (value: unknown): value is AndroidLocalFavoriteItem 
 };
 
 export const loadLocalFavorites = async (): Promise<AndroidLocalFavoriteItem[]> => {
-    const raw = await SecureStore.getItemAsync(FAVORITES_KEY);
+    const raw = await fsGetItem(FAVORITES_KEY);
 
     if (!raw) {
         return [];
@@ -56,11 +56,11 @@ export const loadLocalFavorites = async (): Promise<AndroidLocalFavoriteItem[]> 
 
 export const saveLocalFavorites = async (favorites: AndroidLocalFavoriteItem[]) => {
     if (favorites.length === 0) {
-        await SecureStore.deleteItemAsync(FAVORITES_KEY);
+        await fsDeleteItem(FAVORITES_KEY);
         return;
     }
 
-    await SecureStore.setItemAsync(FAVORITES_KEY, JSON.stringify(favorites));
+    await fsSetItem(FAVORITES_KEY, JSON.stringify(favorites));
 };
 
 export const toggleLocalFavorite = (

@@ -44,6 +44,7 @@ import {
 } from 'react';
 import {
     ActivityIndicator,
+    Alert,
     Animated,
     BackHandler,
     Dimensions,
@@ -58,6 +59,7 @@ import {
     Pressable,
     ScrollView,
     StyleSheet,
+    Switch,
     Text,
     TextInput,
     View,
@@ -81,12 +83,40 @@ import {
     getAndroidPlaybackStatus,
     subscribeToAndroidAudioEvents,
 } from './src/services/audio-playback';
+import {
+    cancelDownload,
+    type DownloadEntry,
+    type DownloadStatus,
+    enqueueCollectionDownload,
+    enqueueSingleMusicTrackDownload,
+    enqueueSinglePodcastEpisodeDownload,
+    getDownloadsRootUri,
+    getLocalUriForTrack,
+    getOfflineAudiobookFiles,
+    getStorageLocation,
+    type OfflineAudiobookFile,
+    pickSdCardStorageLocation,
+    removeDownload,
+    resetStorageLocation,
+    retryDownload,
+    type StorageLocationPreference,
+    subscribeDownloads,
+    subscribeStorageLocation,
+} from './src/services/download-manager';
 import { triggerImpact } from './src/services/haptics';
 import { type AndroidHomeContentState, loadAndroidHomeContent } from './src/services/home-content';
 import {
     loadCachedHomeContent,
     saveCachedHomeContent,
 } from './src/services/home-content-cache';
+import {
+    loadCachedMediaDetail,
+    saveCachedMediaDetail,
+} from './src/services/media-detail-cache';
+import {
+    loadOfflineModePreference,
+    saveOfflineModePreference,
+} from './src/services/offline-mode';
 import {
     type AndroidMediaDetailState,
     addAndroidMediaTrackToPlaylist,
@@ -185,7 +215,11 @@ type AndroidPlaybackState =
 
 type AndroidPlaybackStatus = 'loading' | Exclude<AndroidNativePlaybackEvent['status'], 'idle'>;
 
-type AndroidUtilityScreen = 'add-server' | 'servers';
+type AndroidUtilityScreen =
+    | 'add-server'
+    | 'downloads'
+    | 'manage-servers'
+    | 'settings';
 
 interface ContentBackedScreenProps {
     emptyTitle: string;
@@ -234,14 +268,6 @@ interface RadioScreenProps {
     onSelectItem: (item: MobileHomeItem) => void;
     playbackState: AndroidPlaybackState;
     recentItems: AndroidRecentContentItem[];
-}
-
-interface ServerManagerScreenProps {
-    authState: AndroidAuthState;
-    onAddServer: () => void;
-    onDisconnect: (authentication: ServerAuthenticationResult) => void;
-    serverConnections: ServerAuthenticationResult[];
-    serverHealthByKey: AndroidServerHealthMap;
 }
 
 type LibraryFilter =
@@ -297,17 +323,31 @@ type MediaContextMenuKind =
     | 'radio'
     | 'song';
 
+interface MediaContextMenuOpenOptions {
+    // True when the menu is opened from the detail page itself, so we should
+    // skip the "Open Album/Playlist/Artist" action (you're already there).
+    suppressOpenAction?: boolean;
+}
+
 type MediaContextMenuTarget =
     | {
           detail?: MobileMediaDetail;
           kind: 'song';
           source?: MobileContentSource;
+          suppressOpenAction?: boolean;
           track: MobileMediaTrack;
       }
-    | { item: AndroidRecentContentSourceItem; kind: Exclude<MediaContextMenuKind, 'song'> };
+    | {
+          item: AndroidRecentContentSourceItem;
+          kind: Exclude<MediaContextMenuKind, 'song'>;
+          suppressOpenAction?: boolean;
+      };
 
 interface MediaContextMenuApi {
-    openForItem: (item: AndroidRecentContentSourceItem) => void;
+    openForItem: (
+        item: AndroidRecentContentSourceItem,
+        options?: MediaContextMenuOpenOptions,
+    ) => void;
     openForTrack: (track: MobileMediaTrack, detail?: MobileMediaDetail) => void;
 }
 
@@ -317,6 +357,123 @@ const MediaContextMenuContext = createContext<MediaContextMenuApi>({
 });
 
 const useMediaContextMenu = () => useContext(MediaContextMenuContext);
+
+/**
+ * Pick which downloaded audiobook file contains a given book-time. Files
+ * are sorted by startOffset; we pick the last file whose start is <= the
+ * target. Defaults to 0 if nothing matches (shouldn't happen for valid
+ * book-time inside the book's duration).
+ */
+const pickAudiobookFileIndexForTime = (
+    files: OfflineAudiobookFile[],
+    bookTimeSeconds: number,
+): number => {
+    if (files.length === 0) {
+        return 0;
+    }
+    let chosen = 0;
+    for (let i = 0; i < files.length; i += 1) {
+        const file = files[i];
+        if (file.startOffsetSeconds <= bookTimeSeconds) {
+            chosen = i;
+        } else {
+            break;
+        }
+    }
+    return chosen;
+};
+
+/**
+ * Wrap a single downloaded audiobook file as a MobilePlayableAudio so
+ * ExoPlayer can play it through the same queue infrastructure as music
+ * tracks. Each file becomes its own queue entry; the playback session
+ * id namespaces them under the book so resolveLocalPlayback doesn't try
+ * to second-guess us with a streaming swap.
+ */
+const buildOfflineAudiobookPlayable = (
+    detail: MobileMediaDetail,
+    file: OfflineAudiobookFile,
+    initialPositionSeconds: number,
+): MobilePlayableAudio => {
+    return {
+        artworkUrl: detail.artworkUrl,
+        contentSourceId: detail.source.id,
+        durationSeconds: file.durationSeconds,
+        id: `${detail.source.type}:${detail.source.url}:audiobook:${detail.id}:offline:${file.ino}`,
+        initialPositionSeconds,
+        quality: {
+            container: null,
+            deliveryKind: 'unknown',
+            losslessRequired: false,
+            serverTranscodeRequested: false,
+        },
+        source: 'audiobook',
+        subtitle: detail.subtitle,
+        title: detail.title,
+        url: file.localUri,
+    };
+};
+
+// Podcast episodes don't get a track.playback baked into the detail loader —
+// the streaming URL is fetched on demand from the ABS /play endpoint. That
+// network call fails offline, so for downloaded episodes we synthesize the
+// MobilePlayableAudio directly from the local file. The id keeps the same
+// `<authType>:<authUrl>:podcast:<itemId>:<episodeId>` shape playback uses
+// elsewhere so MediaSession metadata, progress sync, and resolveLocalPlayback
+// all behave consistently.
+const buildOfflinePodcastEpisodePlayable = (
+    detail: MobileMediaDetail,
+    track: MobileMediaTrack,
+    localUri: string,
+): MobilePlayableAudio => {
+    const itemId = track.itemId ?? detail.id;
+    const episodeId = track.episodeId ?? track.id;
+    return {
+        artworkUrl: track.artworkUrl ?? detail.artworkUrl,
+        contentSourceId: detail.source.id,
+        durationSeconds: track.durationSeconds,
+        id: `${detail.source.type}:${detail.source.url}:podcast:${itemId}:${episodeId}`,
+        quality: {
+            container: null,
+            deliveryKind: 'unknown',
+            losslessRequired: false,
+            serverTranscodeRequested: false,
+        },
+        source: 'podcast',
+        subtitle: track.subtitle ?? detail.title,
+        title: track.title,
+        url: localUri,
+    };
+};
+
+// Map a streaming `MobilePlayableAudio` to a local-file version if the track
+// has been downloaded. The download manager keys by the inner track id and
+// the server's content-source id; we recover both from playback.id's
+// `<authType>:<authUrl>:<source>:<innerId>` shape.
+const resolveLocalPlayback = async (
+    item: MobilePlayableAudio,
+): Promise<MobilePlayableAudio> => {
+    const sourceId = item.contentSourceId ?? item.id.match(/^([^:]+:[^:]+):/)?.[1];
+    const innerIdMatch = item.id.match(/:(music|audiobook|podcast|radio):(.+)$/);
+    if (!sourceId || !innerIdMatch) {
+        return item;
+    }
+    const [, sourceKind, innerId] = innerIdMatch;
+    // For podcasts, the inner part is `<itemId>:<episodeId>` — and we keyed
+    // the download by episodeId so each episode resolves to its own file.
+    const lookupTrackId =
+        sourceKind === 'podcast' ? (innerId.split(':').pop() ?? innerId) : innerId;
+    try {
+        const localUri = await getLocalUriForTrack(lookupTrackId, sourceId);
+        if (!localUri) {
+            return item;
+        }
+        // Local file — no auth headers, no need for the streaming URL.
+        return { ...item, httpHeaders: undefined, url: localUri };
+    } catch {
+        return item;
+    }
+};
 
 const inferContextMenuKindFromItem = (
     item: AndroidRecentContentSourceItem,
@@ -395,6 +552,13 @@ export default function App() {
     const [isShuffled, setIsShuffled] = useState(false);
     const [localFavorites, setLocalFavorites] = useState<AndroidLocalFavoriteItem[]>([]);
     const [favoritedKeys, setFavoritedKeys] = useState<Set<string>>(new Set());
+    const [isOfflineMode, setIsOfflineMode] = useState(false);
+    // Set of `${sourceId}:${collectionId}` keys for items where at least one
+    // file is completely downloaded. Used to filter the home/library views
+    // when offline mode is on.
+    const [downloadedCollectionKeys, setDownloadedCollectionKeys] = useState<Set<string>>(
+        new Set(),
+    );
     const [contextMenuTarget, setContextMenuTarget] =
         useState<MediaContextMenuTarget | null>(null);
     const [contextMenuFeedback, setContextMenuFeedback] = useState<string | null>(null);
@@ -470,12 +634,16 @@ export default function App() {
                 return true;
             }
 
-            if (activeUtilityScreen === 'add-server') {
-                setActiveUtilityScreen('servers');
+            if (
+                activeUtilityScreen === 'add-server' ||
+                activeUtilityScreen === 'downloads' ||
+                activeUtilityScreen === 'manage-servers'
+            ) {
+                setActiveUtilityScreen('settings');
                 return true;
             }
 
-            if (activeUtilityScreen === 'servers') {
+            if (activeUtilityScreen === 'settings') {
                 setActiveUtilityScreen(null);
                 return true;
             }
@@ -491,6 +659,39 @@ export default function App() {
     const isHomeSurface =
         activeTab === 'home' && activeUtilityScreen === null && mediaDetailState.status === 'idle';
     const title = useMemo(() => getTabTitle(activeTab), [activeTab]);
+
+    // When offline mode is on, filter home/library content to items that
+    // have at least one completed download. Items without a server source
+    // are dropped entirely (defensive: shouldn't happen for downloadables).
+    const visibleHomeContentState = useMemo(() => {
+        if (!isOfflineMode || homeContentState.status !== 'loaded') {
+            return homeContentState;
+        }
+        const filteredSections = homeContentState.content.sections
+            .map((section) => ({
+                ...section,
+                items: section.items.filter((item) =>
+                    downloadedCollectionKeys.has(`${item.source?.id ?? ''}:${item.id}`),
+                ),
+            }))
+            .filter((section) => section.items.length > 0);
+        return {
+            ...homeContentState,
+            content: {
+                ...homeContentState.content,
+                sections: filteredSections,
+            },
+        };
+    }, [homeContentState, isOfflineMode, downloadedCollectionKeys]);
+
+    const visibleRecentItems = useMemo(() => {
+        if (!isOfflineMode) {
+            return recentContentItems;
+        }
+        return recentContentItems.filter((entry) =>
+            downloadedCollectionKeys.has(`${entry.item.source?.id ?? ''}:${entry.item.id}`),
+        );
+    }, [recentContentItems, isOfflineMode, downloadedCollectionKeys]);
 
     const loadHomeForConnections = useCallback(
         async (authentications: ServerAuthenticationResult[]) => {
@@ -576,7 +777,11 @@ export default function App() {
 
             try {
                 const deviceInfoPromise = getAndroidAudioDeviceInfo().catch(() => undefined);
-                let event = await playAndroidAudio(item, session.id);
+                // Prefer a downloaded local file if we have one for this
+                // track — that's the whole point of the offline downloader.
+                // Falls through to the streaming URL if not downloaded.
+                const playable = await resolveLocalPlayback(item);
+                let event = await playAndroidAudio(playable, session.id);
 
                 if (initialPositionMs > 0) {
                     event = await seekAndroidAudio(initialPositionMs);
@@ -768,8 +973,46 @@ export default function App() {
             });
         });
 
+        void loadOfflineModePreference().then((next) => {
+            if (isMounted) {
+                setIsOfflineMode(next);
+            }
+        });
+
+        // In dev mode, Metro serves the brand logo over HTTP. Prefetch it
+        // immediately on launch so it lands in Fresco's disk cache — that
+        // way the logo still renders if you later flip to airplane mode and
+        // Metro becomes unreachable. In release builds the asset is bundled
+        // into the APK and this is a no-op fast path.
+        try {
+            const resolved = Image.resolveAssetSource(samoLogo);
+            if (resolved?.uri) {
+                void Image.prefetch(resolved.uri).catch(() => undefined);
+            }
+        } catch {
+            // ignore — Image.resolveAssetSource throws in some edge cases
+        }
+
         return () => {
             isMounted = false;
+        };
+    }, []);
+
+    // Build the set of "collection has at least one completed download" keys
+    // by subscribing to the download manager. Used by Home/Library when
+    // offline mode is on so we only show items the user can actually play.
+    useEffect(() => {
+        const unsubscribe = subscribeDownloads((entries) => {
+            const keys = new Set<string>();
+            for (const entry of entries) {
+                if (entry.status === 'completed') {
+                    keys.add(`${entry.collection.sourceId}:${entry.collection.id}`);
+                }
+            }
+            setDownloadedCollectionKeys(keys);
+        });
+        return () => {
+            unsubscribe();
         };
     }, []);
 
@@ -915,7 +1158,7 @@ export default function App() {
             setServerUrl('');
             setUsername('');
             setSearchState({ status: 'idle' });
-            setActiveUtilityScreen('servers');
+            setActiveUtilityScreen('manage-servers');
             await savePersistedServerAuths(nextConnections);
             await loadHomeForConnections(nextConnections);
         }
@@ -969,6 +1212,44 @@ export default function App() {
         [recentContentItems, serverConnections],
     );
 
+    const loadDetailWithCache = async (
+        item: AndroidRecentContentSourceItem,
+    ): Promise<{ cached: boolean }> => {
+        const cacheKey = getRecentContentItemKey(item);
+
+        // Layer 1: in-memory cache — instant.
+        let cached = mediaDetailCacheRef.current.get(cacheKey);
+
+        // Layer 2: persistent fs cache — async, but still much faster than
+        // the network and works in airplane mode.
+        if (!cached) {
+            const fromDisk = await loadCachedMediaDetail(cacheKey);
+            if (fromDisk) {
+                cached = fromDisk;
+                mediaDetailCacheRef.current.set(cacheKey, fromDisk);
+            }
+        }
+
+        if (cached) {
+            setMediaDetailState({ detail: cached, status: 'loaded' });
+        } else {
+            setMediaDetailState({ itemTitle: item.title, status: 'loading' });
+        }
+
+        // Refresh from network in the background. Failure is OK if we have
+        // stale data — the user sees the cached version, which is the whole
+        // point of offline playback.
+        const next = await loadAndroidMediaDetail(serverConnections, item);
+        if (next.status === 'loaded') {
+            mediaDetailCacheRef.current.set(cacheKey, next.detail);
+            void saveCachedMediaDetail(cacheKey, next.detail);
+            setMediaDetailState(next);
+        } else if (!cached) {
+            setMediaDetailState(next);
+        }
+        return { cached: Boolean(cached) };
+    };
+
     const handleSelectMediaItem = async (item: MobileHomeItem | MobileSearchItem) => {
         recordRecentContentItem(item);
 
@@ -982,22 +1263,7 @@ export default function App() {
             return;
         }
 
-        const cacheKey = getRecentContentItemKey(item);
-        const cached = mediaDetailCacheRef.current.get(cacheKey);
-        if (cached) {
-            // Stale-while-revalidate: show what we had immediately so the
-            // page paints instantly, then refresh in the background.
-            setMediaDetailState({ detail: cached, status: 'loaded' });
-        } else {
-            setMediaDetailState({ itemTitle: item.title, status: 'loading' });
-        }
-        const next = await loadAndroidMediaDetail(serverConnections, item);
-        if (next.status === 'loaded') {
-            mediaDetailCacheRef.current.set(cacheKey, next.detail);
-            setMediaDetailState(next);
-        } else if (!cached) {
-            setMediaDetailState(next);
-        }
+        await loadDetailWithCache(item);
     };
 
     const handleStartAudiobook = async (item: MobileHomeItem | MobileSearchItem) => {
@@ -1007,15 +1273,60 @@ export default function App() {
                 : { ...current, message: 'Loading audiobook…' },
         );
 
-        const detailResult = await loadAndroidMediaDetail(serverConnections, item);
+        // Try the network first, then fall back to caches (in-memory or fs),
+        // and finally synthesize a detail from downloaded files if we have
+        // them. This is what makes tap-to-play work offline.
+        const cacheKey = getRecentContentItemKey(item);
+        const networkResult = await loadAndroidMediaDetail(serverConnections, item);
+        let detail: MobileMediaDetail | undefined =
+            networkResult.status === 'loaded' ? networkResult.detail : undefined;
 
-        if (detailResult.status !== 'loaded') {
-            // Fall back to the detail view on error so the user can recover.
-            setMediaDetailState(detailResult);
+        if (!detail) {
+            detail =
+                mediaDetailCacheRef.current.get(cacheKey) ??
+                (await loadCachedMediaDetail(cacheKey)) ??
+                undefined;
+        }
+
+        if (!detail) {
+            // Last resort: build a synthetic detail from the downloaded files.
+            // Lets the user play an audiobook entirely offline even if the
+            // server's never been reached since launch.
+            const offlineFiles = await getOfflineAudiobookFiles(item.id, item.source?.id ?? '');
+            if (offlineFiles.length > 0 && item.source) {
+                detail = {
+                    artworkUrl: item.artworkUrl,
+                    id: item.id,
+                    source: item.source,
+                    subtitle: item.subtitle,
+                    title: item.title,
+                    tracks: offlineFiles.map((file) => ({
+                        artworkUrl: item.artworkUrl,
+                        durationSeconds: file.durationSeconds,
+                        id: `${item.id}:${file.ino}`,
+                        itemId: item.id,
+                        startSeconds: file.startOffsetSeconds,
+                        subtitle: item.subtitle,
+                        title: item.title,
+                        trackNumber: file.index + 1,
+                    })),
+                    type: MobileMediaDetailType.AUDIOBOOK,
+                };
+            }
+        }
+
+        if (!detail) {
+            // Genuinely no way to play — surface the network error so the
+            // user can recover (e.g. by reconnecting).
+            setMediaDetailState(networkResult);
             return;
         }
 
-        const detail = detailResult.detail;
+        // Always refresh the cache when the network succeeded.
+        if (networkResult.status === 'loaded') {
+            mediaDetailCacheRef.current.set(cacheKey, networkResult.detail);
+            void saveCachedMediaDetail(cacheKey, networkResult.detail);
+        }
         const auth = serverConnections.find(
             (candidate) => getPersistedServerAuthKey(candidate) === detail.source.id,
         );
@@ -1074,6 +1385,88 @@ export default function App() {
 
             await handlePlayItem(track.playback, queueItems, queueIndex);
             return;
+        }
+
+        // Podcast offline path: the ABS /play endpoint that normally builds the
+        // streaming URL fails offline, so synthesize a MobilePlayableAudio
+        // directly from the downloaded file when one exists for this episode.
+        if (detail.type === MobileMediaDetailType.PODCAST) {
+            const lookupTrackId = track.episodeId ?? track.id;
+            const localUri = await getLocalUriForTrack(
+                lookupTrackId,
+                detail.source.id,
+            );
+            if (localUri) {
+                const playable = buildOfflinePodcastEpisodePlayable(
+                    detail,
+                    track,
+                    localUri,
+                );
+                const absAuth = serverConnections.find(
+                    (auth) => getPersistedServerAuthKey(auth) === detail.source.id,
+                );
+                if (absAuth && track.itemId) {
+                    absContextRef.current = {
+                        authentication: absAuth,
+                        durationSeconds: track.durationSeconds ?? 0,
+                        episodeId: track.episodeId,
+                        itemId: track.itemId,
+                    };
+                } else {
+                    absContextRef.current = null;
+                }
+                await handlePlayItem(playable, [playable], 0);
+                return;
+            }
+        }
+
+        // Multi-file audiobook offline path: when more than one file has been
+        // downloaded for this book, build a per-file queue and start at the
+        // file that contains the requested chapter / book time. ExoPlayer
+        // auto-advances through the queue so playback continues seamlessly
+        // across file boundaries.
+        if (detail.type === MobileMediaDetailType.AUDIOBOOK) {
+            const offlineFiles = await getOfflineAudiobookFiles(
+                detail.id,
+                detail.source.id,
+            );
+            if (offlineFiles.length > 1) {
+                const targetBookSeconds = track.startSeconds ?? 0;
+                const startIndex = pickAudiobookFileIndexForTime(
+                    offlineFiles,
+                    targetBookSeconds,
+                );
+                const initialOffsetSeconds = Math.max(
+                    0,
+                    targetBookSeconds - offlineFiles[startIndex].startOffsetSeconds,
+                );
+                const queue = offlineFiles.map((file, idx) =>
+                    buildOfflineAudiobookPlayable(
+                        detail,
+                        file,
+                        idx === startIndex ? initialOffsetSeconds : 0,
+                    ),
+                );
+                const absAuth = serverConnections.find(
+                    (auth) => getPersistedServerAuthKey(auth) === detail.source.id,
+                );
+                if (absAuth && track.itemId) {
+                    const totalDurationSeconds = offlineFiles.reduce(
+                        (sum, file) => sum + (file.durationSeconds ?? 0),
+                        0,
+                    );
+                    absContextRef.current = {
+                        authentication: absAuth,
+                        durationSeconds: totalDurationSeconds,
+                        episodeId: undefined,
+                        itemId: track.itemId,
+                    };
+                } else {
+                    absContextRef.current = null;
+                }
+                await handlePlayItem(queue[startIndex], queue, startIndex);
+                return;
+            }
         }
 
         try {
@@ -1368,6 +1761,103 @@ export default function App() {
         }
     };
 
+    const reportDownloadResult = useCallback(
+        (
+            result: { enqueued: number; reason?: string; skipped: number },
+            _kindWord: string,
+        ) => {
+            // Only surface hard failures. The Spotify-style circular glyph and
+            // the Downloads tab show progress / completion visually now.
+            if (result.reason) {
+                Alert.alert('Download', result.reason);
+            }
+        },
+        [],
+    );
+
+    const handleDownloadCollectionItem = async (
+        item: AndroidRecentContentSourceItem,
+    ) => {
+        setContextMenuTarget(null);
+        // Three-layer detail lookup: in-memory → fs cache → network.
+        const cacheKey = getRecentContentItemKey(item);
+        let detail: MobileMediaDetail | undefined =
+            mediaDetailCacheRef.current.get(cacheKey);
+        if (!detail) {
+            const fromDisk = await loadCachedMediaDetail(cacheKey);
+            if (fromDisk) {
+                detail = fromDisk;
+                mediaDetailCacheRef.current.set(cacheKey, fromDisk);
+            }
+        }
+        if (!detail) {
+            const next = await loadAndroidMediaDetail(serverConnections, item);
+            if (next.status === 'loaded') {
+                mediaDetailCacheRef.current.set(cacheKey, next.detail);
+                void saveCachedMediaDetail(cacheKey, next.detail);
+                detail = next.detail;
+            } else {
+                Alert.alert('Download', 'Could not load detail to start the download.');
+                return;
+            }
+        }
+        const result = await enqueueCollectionDownload(detail, serverConnections);
+        const kindWord =
+            detail.type === MobileMediaDetailType.AUDIOBOOK
+                ? 'audiobook file'
+                : detail.type === MobileMediaDetailType.PLAYLIST
+                  ? 'track'
+                  : 'track';
+        reportDownloadResult(result, kindWord);
+    };
+
+    const handleDownloadSongTrack = async (
+        track: MobileMediaTrack,
+        detail: MobileMediaDetail | undefined,
+        source: MobileContentSource | undefined,
+    ) => {
+        setContextMenuTarget(null);
+
+        // Audiobook chapter long-press → download the whole book. Individual
+        // chapter files don't exist as separate downloads.
+        if (detail?.type === MobileMediaDetailType.AUDIOBOOK) {
+            const result = await enqueueCollectionDownload(detail, serverConnections);
+            reportDownloadResult(result, 'audiobook file');
+            return;
+        }
+
+        // Podcast episode long-press → download just that episode.
+        if (detail?.type === MobileMediaDetailType.PODCAST) {
+            const outcome = await enqueueSinglePodcastEpisodeDownload(
+                detail,
+                track,
+                serverConnections,
+            );
+            if (outcome.reason) {
+                Alert.alert('Download', outcome.reason);
+            }
+            return;
+        }
+
+        // Music track. Use the source we have.
+        if (!source) {
+            Alert.alert(
+                'Download',
+                'Could not figure out which server this track belongs to.',
+            );
+            return;
+        }
+        const outcome = await enqueueSingleMusicTrackDownload(
+            track,
+            source,
+            track.artworkUrl ?? detail?.artworkUrl,
+            serverConnections,
+        );
+        if (outcome.reason) {
+            Alert.alert('Download', outcome.reason);
+        }
+    };
+
     const handleOpenStreamInfo = (item: AndroidRecentContentSourceItem) => {
         setContextMenuTarget(null);
         setStreamInfoItem(item);
@@ -1377,20 +1867,7 @@ export default function App() {
         setContextMenuTarget(null);
         // Bypass the playback-on-tap shortcut so we always land on the detail page.
         recordRecentContentItem(item);
-        const cacheKey = getRecentContentItemKey(item);
-        const cached = mediaDetailCacheRef.current.get(cacheKey);
-        if (cached) {
-            setMediaDetailState({ detail: cached, status: 'loaded' });
-        } else {
-            setMediaDetailState({ itemTitle: item.title, status: 'loading' });
-        }
-        const next = await loadAndroidMediaDetail(serverConnections, item);
-        if (next.status === 'loaded') {
-            mediaDetailCacheRef.current.set(cacheKey, next.detail);
-            setMediaDetailState(next);
-        } else if (!cached) {
-            setMediaDetailState(next);
-        }
+        await loadDetailWithCache(item);
     };
 
     const handleOpenBookInfo = async (
@@ -1524,13 +2001,14 @@ export default function App() {
 
     const mediaContextMenuApi = useMemo<MediaContextMenuApi>(
         () => ({
-            openForItem: (item) => {
+            openForItem: (item, options) => {
                 if (isSongSearchItem(item)) {
                     triggerImpact('medium');
                     setContextMenuFeedback(null);
                     setContextMenuTarget({
                         kind: 'song',
                         source: item.source,
+                        suppressOpenAction: options?.suppressOpenAction,
                         track: synthesizeTrackFromSongItem(item),
                     });
                     return;
@@ -1541,7 +2019,11 @@ export default function App() {
                 }
                 triggerImpact('medium');
                 setContextMenuFeedback(null);
-                setContextMenuTarget({ kind, item });
+                setContextMenuTarget({
+                    item,
+                    kind,
+                    suppressOpenAction: options?.suppressOpenAction,
+                });
             },
             openForTrack: (track, detail) => {
                 triggerImpact('medium');
@@ -1558,9 +2040,15 @@ export default function App() {
     );
 
     const handleTogglePlayback = async () => {
-        if (playbackState.status === 'idle') {
-            if (lastPlayedItem) {
-                await playQueuedItem(lastPlayedItem, [lastPlayedItem], 0);
+        if (playbackState.status === 'idle' || playbackState.status === 'error') {
+            // Force a full re-play when the previous session errored out, not
+            // just a resume — that goes through ensurePlayer on the native side
+            // which detects the stuck playerError and rebuilds the ExoPlayer
+            // from scratch. Resume alone would dispatch to a wedged player.
+            const fallback =
+                playbackState.status === 'error' ? playbackState.item : lastPlayedItem;
+            if (fallback) {
+                await playQueuedItem(fallback, [fallback], 0);
             }
             return;
         }
@@ -1746,6 +2234,32 @@ export default function App() {
                     onPress: () => void handleStartSongRadio(track, source),
                 });
             }
+
+            // Download label is media-aware: chapter long-press → "Download
+            // audiobook" (whole-book file is the only granularity ABS exposes);
+            // episode long-press → "Download episode"; everything else →
+            // "Download" (single music track).
+            const detail = contextMenuTarget.detail;
+            const downloadLabel =
+                detail?.type === MobileMediaDetailType.AUDIOBOOK
+                    ? 'Download audiobook'
+                    : detail?.type === MobileMediaDetailType.PODCAST
+                      ? 'Download episode'
+                      : 'Download';
+            const canDownload =
+                detail?.type === MobileMediaDetailType.AUDIOBOOK ||
+                detail?.type === MobileMediaDetailType.PODCAST ||
+                track.playback?.source === 'music';
+            if (canDownload) {
+                actions.push({
+                    icon: <DownloadGlyph color={colors.text} />,
+                    id: 'download',
+                    label: downloadLabel,
+                    onPress: () =>
+                        void handleDownloadSongTrack(track, detail, source),
+                });
+            }
+
             return actions;
         }
 
@@ -1759,6 +2273,8 @@ export default function App() {
             onPress: () => void handleToggleFavoriteForItem(item),
         });
 
+        const suppressOpen = contextMenuTarget.suppressOpenAction === true;
+
         if (contextMenuTarget.kind === 'audiobook') {
             actions.push({
                 icon: <BookInfoGlyph color={colors.text} />,
@@ -1767,11 +2283,19 @@ export default function App() {
                 onPress: () => void handleOpenBookInfo(item, 'audiobook'),
             });
             actions.push({
-                icon: <ChaptersGlyph color={colors.text} />,
-                id: 'view-chapters',
-                label: 'View Chapters',
-                onPress: () => void handleViewDetailForItem(item),
+                icon: <DownloadGlyph color={colors.text} />,
+                id: 'download',
+                label: 'Download audiobook',
+                onPress: () => void handleDownloadCollectionItem(item),
             });
+            if (!suppressOpen) {
+                actions.push({
+                    icon: <ChaptersGlyph color={colors.text} />,
+                    id: 'view-chapters',
+                    label: 'View Chapters',
+                    onPress: () => void handleViewDetailForItem(item),
+                });
+            }
         } else if (contextMenuTarget.kind === 'podcast') {
             actions.push({
                 icon: <BookInfoGlyph color={colors.text} />,
@@ -1779,12 +2303,14 @@ export default function App() {
                 label: 'Podcast Info',
                 onPress: () => void handleOpenBookInfo(item, 'podcast'),
             });
-            actions.push({
-                icon: <ChaptersGlyph color={colors.text} />,
-                id: 'view-episodes',
-                label: 'View Episodes',
-                onPress: () => void handleViewDetailForItem(item),
-            });
+            if (!suppressOpen) {
+                actions.push({
+                    icon: <ChaptersGlyph color={colors.text} />,
+                    id: 'view-episodes',
+                    label: 'View Episodes',
+                    onPress: () => void handleViewDetailForItem(item),
+                });
+            }
         } else if (contextMenuTarget.kind === 'radio') {
             actions.push({
                 icon: <BookInfoGlyph color={colors.text} />,
@@ -1809,18 +2335,29 @@ export default function App() {
                 });
             }
             actions.push({
-                icon: <ChaptersGlyph color={colors.text} />,
-                id: 'open',
-                label: contextMenuTarget.kind === 'album' ? 'Open Album' : 'Open Playlist',
-                onPress: () => void handleViewDetailForItem(item),
+                icon: <DownloadGlyph color={colors.text} />,
+                id: 'download',
+                label:
+                    contextMenuTarget.kind === 'album' ? 'Download album' : 'Download playlist',
+                onPress: () => void handleDownloadCollectionItem(item),
             });
+            if (!suppressOpen) {
+                actions.push({
+                    icon: <ChaptersGlyph color={colors.text} />,
+                    id: 'open',
+                    label: contextMenuTarget.kind === 'album' ? 'Open Album' : 'Open Playlist',
+                    onPress: () => void handleViewDetailForItem(item),
+                });
+            }
         } else if (contextMenuTarget.kind === 'artist') {
-            actions.push({
-                icon: <ChaptersGlyph color={colors.text} />,
-                id: 'open',
-                label: 'Open Artist',
-                onPress: () => void handleViewDetailForItem(item),
-            });
+            if (!suppressOpen) {
+                actions.push({
+                    icon: <ChaptersGlyph color={colors.text} />,
+                    id: 'open',
+                    label: 'Open Artist',
+                    onPress: () => void handleViewDetailForItem(item),
+                });
+            }
         }
 
         return actions;
@@ -1879,10 +2416,10 @@ export default function App() {
                             <View style={styles.header}>
                                 <Text style={styles.homeHeaderTitle}>Home</Text>
                                 <Pressable
-                                    accessibilityLabel="Settings and servers"
+                                    accessibilityLabel="Settings"
                                     accessibilityRole="button"
                                     onPress={() => {
-                                        setActiveUtilityScreen('servers');
+                                        setActiveUtilityScreen('settings');
                                         setMediaDetailState({ status: 'idle' });
                                     }}
                                     style={styles.appIconButton}
@@ -1891,19 +2428,34 @@ export default function App() {
                                 </Pressable>
                             </View>
                         ) : null}
-                        {activeUtilityScreen === 'servers' ? (
-                            <ServerManagerScreen
+                        {activeUtilityScreen === 'settings' ? (
+                            <SettingsScreen
+                                isOfflineMode={isOfflineMode}
+                                onOpenDownloads={() => setActiveUtilityScreen('downloads')}
+                                onOpenManageServers={() =>
+                                    setActiveUtilityScreen('manage-servers')
+                                }
+                                onToggleOfflineMode={(next) => {
+                                    setIsOfflineMode(next);
+                                    void saveOfflineModePreference(next);
+                                }}
+                                serverCount={serverConnections.length}
+                            />
+                        ) : activeUtilityScreen === 'manage-servers' ? (
+                            <ManageServersScreen
                                 authState={authState}
                                 onAddServer={() => setActiveUtilityScreen('add-server')}
                                 onDisconnect={handleDisconnect}
                                 serverConnections={serverConnections}
                                 serverHealthByKey={serverHealthByKey}
                             />
+                        ) : activeUtilityScreen === 'downloads' ? (
+                            <DownloadsScreen serverConnections={serverConnections} />
                         ) : activeUtilityScreen === 'add-server' ? (
                             <AddServerScreen
                                 authState={authState}
                                 canConnect={canConnect}
-                                onBack={() => setActiveUtilityScreen('servers')}
+                                onBack={() => setActiveUtilityScreen('manage-servers')}
                                 onConnect={handleConnect}
                                 onPasswordChange={setPassword}
                                 onServerTypeChange={setServerType}
@@ -1927,42 +2479,42 @@ export default function App() {
                             />
                         ) : activeTab === 'home' ? (
                             <HomeScreen
-                                homeContentState={homeContentState}
-                                onManageServers={() => setActiveUtilityScreen('servers')}
+                                homeContentState={visibleHomeContentState}
+                                onManageServers={() => setActiveUtilityScreen('manage-servers')}
                                 onSelectItem={handleSelectMediaItem}
-                                recentItems={recentContentItems}
+                                recentItems={visibleRecentItems}
                                 serverConnections={serverConnections}
                             />
                         ) : activeTab === 'playlists' ? (
                             <PlaylistsScreen
-                                homeContentState={homeContentState}
+                                homeContentState={visibleHomeContentState}
                                 onSelectItem={handleSelectMediaItem}
                                 onShufflePlay={handleShuffleHomeItems}
                             />
                         ) : activeTab === 'library' ? (
                             <LibraryScreen
                                 hasServerConnections={serverConnections.length > 0}
-                                homeContentState={homeContentState}
+                                homeContentState={visibleHomeContentState}
                                 onSelectItem={handleSelectMediaItem}
-                                recentItems={recentContentItems}
+                                recentItems={visibleRecentItems}
                             />
                         ) : activeTab === 'search' ? (
                             <SearchScreen
                                 hasServerConnections={serverConnections.length > 0}
-                                homeContentState={homeContentState}
+                                homeContentState={visibleHomeContentState}
                                 onSearch={handleSearch}
                                 onSelectItem={handleSelectMediaItem}
                                 onSelectRecentItem={handleSelectMediaItem}
-                                recentItems={recentContentItems}
+                                recentItems={visibleRecentItems}
                                 searchState={searchState}
                                 serverConnections={serverConnections}
                             />
                         ) : activeTab === 'radio' ? (
                             <RadioScreen
-                                homeContentState={homeContentState}
+                                homeContentState={visibleHomeContentState}
                                 onSelectItem={handleSelectMediaItem}
                                 playbackState={playbackState}
-                                recentItems={recentContentItems}
+                                recentItems={visibleRecentItems}
                             />
                         ) : (
                             <EmptyServerBackedScreen tabTitle={title} />
@@ -2295,16 +2847,94 @@ const HomeScreen = ({
 };
 
 
-const ServerManagerScreen = ({
+const SettingsScreen = ({
+    isOfflineMode,
+    onOpenDownloads,
+    onOpenManageServers,
+    onToggleOfflineMode,
+    serverCount,
+}: {
+    isOfflineMode: boolean;
+    onOpenDownloads: () => void;
+    onOpenManageServers: () => void;
+    onToggleOfflineMode: (next: boolean) => void;
+    serverCount: number;
+}) => {
+    return (
+        <View style={styles.settingsRoot}>
+            <Text style={styles.settingsRootTitle}>Settings</Text>
+            <Pressable
+                accessibilityRole="button"
+                onPress={onOpenManageServers}
+                style={styles.settingsRow}
+            >
+                <PersonGlyph color={colors.text} />
+                <View style={styles.settingsRowText}>
+                    <Text style={styles.settingsRowTitle}>
+                        {serverCount === 1 ? 'Manage Server' : 'Manage Servers'}
+                    </Text>
+                    <Text style={styles.settingsRowSubtitle}>
+                        {serverCount === 0
+                            ? 'Connect a music server, Audiobookshelf, or radio source'
+                            : `${serverCount} connected`}
+                    </Text>
+                </View>
+            </Pressable>
+            <Pressable
+                accessibilityRole="button"
+                onPress={onOpenDownloads}
+                style={styles.settingsRow}
+            >
+                <DownloadGlyph color={colors.text} />
+                <View style={styles.settingsRowText}>
+                    <Text style={styles.settingsRowTitle}>Downloads</Text>
+                    <Text style={styles.settingsRowSubtitle}>
+                        Manage offline content
+                    </Text>
+                </View>
+            </Pressable>
+            <View style={styles.settingsRow}>
+                <CheckGlyph color={isOfflineMode ? colors.accent : colors.text} size={16} />
+                <View style={styles.settingsRowText}>
+                    <Text style={styles.settingsRowTitle}>Offline mode</Text>
+                    <Text style={styles.settingsRowSubtitle}>
+                        {isOfflineMode
+                            ? 'Only downloaded items are shown'
+                            : 'Show everything available'}
+                    </Text>
+                </View>
+                <Switch
+                    onValueChange={onToggleOfflineMode}
+                    thumbColor={isOfflineMode ? colors.accent : '#ffffff'}
+                    trackColor={{
+                        false: 'rgba(255, 255, 255, 0.18)',
+                        true: 'rgba(202, 160, 79, 0.45)',
+                    }}
+                    value={isOfflineMode}
+                />
+            </View>
+        </View>
+    );
+};
+
+const ManageServersScreen = ({
     authState,
     onAddServer,
     onDisconnect,
     serverConnections,
     serverHealthByKey,
-}: ServerManagerScreenProps) => {
+}: {
+    authState: AndroidAuthState;
+    onAddServer: () => void;
+    onDisconnect: (authentication: ServerAuthenticationResult) => void;
+    serverConnections: ServerAuthenticationResult[];
+    serverHealthByKey: AndroidServerHealthMap;
+}) => {
     return (
         <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Manage Servers</Text>
+            <Text style={styles.sectionTitle}>
+                {serverConnections.length === 1 ? 'Manage Server' : 'Manage Servers'}
+            </Text>
             <ConnectedServerList
                 authState={authState}
                 onDisconnect={onDisconnect}
@@ -2318,6 +2948,269 @@ const ServerManagerScreen = ({
             >
                 <Text style={styles.primaryButtonText}>Add Server</Text>
             </Pressable>
+        </View>
+    );
+};
+
+const formatBytes = (bytes: number | undefined): string => {
+    if (!bytes || bytes <= 0) return '';
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+};
+
+const getDownloadStatusLabel = (entry: DownloadEntry): string => {
+    if (entry.status === 'downloading') {
+        const pct = entry.progress !== undefined ? Math.round(entry.progress * 100) : null;
+        return pct !== null ? `Downloading ${pct}%` : 'Downloading…';
+    }
+    if (entry.status === 'completed') {
+        return formatBytes(entry.totalBytes ?? entry.bytesDownloaded) || 'Saved';
+    }
+    if (entry.status === 'queued') return 'Queued';
+    if (entry.status === 'canceled') return 'Canceled';
+    return entry.errorMessage ? `Failed: ${entry.errorMessage}` : 'Failed';
+};
+
+const DOWNLOAD_STATUS_ORDER: DownloadStatus[] = [
+    'downloading',
+    'queued',
+    'failed',
+    'completed',
+    'canceled',
+];
+
+const DownloadsScreen = ({
+    serverConnections,
+}: {
+    serverConnections: ServerAuthenticationResult[];
+}) => {
+    const [entries, setEntries] = useState<DownloadEntry[]>([]);
+    const [storage, setStorage] = useState<StorageLocationPreference>({
+        label: 'Internal storage',
+    });
+    const [isPickingStorage, setIsPickingStorage] = useState(false);
+
+    useEffect(() => {
+        const unsubscribe = subscribeDownloads(setEntries);
+        return () => {
+            unsubscribe();
+        };
+    }, []);
+
+    useEffect(() => {
+        const unsubscribe = subscribeStorageLocation(setStorage);
+        void getStorageLocation().then(setStorage);
+        return () => {
+            unsubscribe();
+        };
+    }, []);
+
+    const handlePickSdCard = async () => {
+        if (isPickingStorage) return;
+        setIsPickingStorage(true);
+        try {
+            const result = await pickSdCardStorageLocation();
+            if (!result) {
+                Alert.alert(
+                    'SD card not set',
+                    'Picking a folder was canceled or your device doesn’t expose an SD card via the system file picker.',
+                );
+            }
+        } finally {
+            setIsPickingStorage(false);
+        }
+    };
+
+    const handleResetStorage = async () => {
+        await resetStorageLocation();
+    };
+
+    const sortedEntries = useMemo(() => {
+        return [...entries].sort((a, b) => {
+            const orderA = DOWNLOAD_STATUS_ORDER.indexOf(a.status);
+            const orderB = DOWNLOAD_STATUS_ORDER.indexOf(b.status);
+            if (orderA !== orderB) {
+                return orderA - orderB;
+            }
+            return b.enqueuedAt - a.enqueuedAt;
+        });
+    }, [entries]);
+
+    const grouped = useMemo(() => {
+        const map = new Map<
+            string,
+            { collection: DownloadEntry['collection']; entries: DownloadEntry[] }
+        >();
+        for (const entry of sortedEntries) {
+            const key = `${entry.collection.sourceId}:${entry.collection.id}`;
+            const existing = map.get(key);
+            if (existing) {
+                existing.entries.push(entry);
+            } else {
+                map.set(key, { collection: entry.collection, entries: [entry] });
+            }
+        }
+        return Array.from(map.values());
+    }, [sortedEntries]);
+
+    const totalBytes = useMemo(
+        () =>
+            sortedEntries.reduce(
+                (sum, entry) =>
+                    sum +
+                    (entry.status === 'completed'
+                        ? (entry.totalBytes ?? entry.bytesDownloaded ?? 0)
+                        : 0),
+                0,
+            ),
+        [sortedEntries],
+    );
+
+    return (
+        <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Downloads</Text>
+            <Text style={styles.downloadsSummary}>
+                {sortedEntries.length === 0
+                    ? 'No downloads yet. Tap the download icon on an album, playlist, audiobook, or podcast to save it for offline listening.'
+                    : `${sortedEntries.length} ${sortedEntries.length === 1 ? 'item' : 'items'} · ${formatBytes(totalBytes) || '0 MB on disk'}`}
+            </Text>
+            <View style={styles.downloadsStorageRow}>
+                <Text style={styles.downloadsStorageLabel}>Storage location</Text>
+                <Text numberOfLines={2} style={styles.downloadsStorageValue}>
+                    {storage.treeUri
+                        ? storage.label
+                        : `Internal · ${getDownloadsRootUri().replace(/^file:\/\//, '')}`}
+                </Text>
+                <Text style={styles.downloadsStorageNote}>
+                    {storage.treeUri
+                        ? 'New downloads will be moved to this folder when they finish — long audiobooks too. Existing downloads stay where they are.'
+                        : 'Default: app-private internal storage. Pick a folder on your SD card if you want downloads to live there instead.'}
+                </Text>
+                <View style={styles.downloadsStorageActions}>
+                    <Pressable
+                        accessibilityRole="button"
+                        disabled={isPickingStorage}
+                        onPress={() => void handlePickSdCard()}
+                        style={[
+                            styles.downloadsStorageButton,
+                            isPickingStorage && styles.disabledButton,
+                        ]}
+                    >
+                        <Text style={styles.downloadsStorageButtonLabel}>
+                            {storage.treeUri ? 'Change folder…' : 'Pick SD card folder…'}
+                        </Text>
+                    </Pressable>
+                    {storage.treeUri ? (
+                        <Pressable
+                            accessibilityRole="button"
+                            onPress={() => void handleResetStorage()}
+                            style={styles.downloadsStorageButton}
+                        >
+                            <Text style={styles.downloadsStorageButtonLabel}>
+                                Use internal
+                            </Text>
+                        </Pressable>
+                    ) : null}
+                </View>
+            </View>
+            {grouped.map((group) => (
+                <View
+                    key={`${group.collection.sourceId}:${group.collection.id}`}
+                    style={styles.downloadGroup}
+                >
+                    <View style={styles.downloadGroupHeader}>
+                        {group.collection.artworkUrl ? (
+                            <Image
+                                source={{ uri: group.collection.artworkUrl }}
+                                style={styles.downloadGroupArtwork}
+                            />
+                        ) : (
+                            <View
+                                style={[
+                                    styles.downloadGroupArtwork,
+                                    styles.downloadGroupArtworkFallback,
+                                ]}
+                            />
+                        )}
+                        <View style={styles.downloadGroupText}>
+                            <Text numberOfLines={1} style={styles.downloadGroupTitle}>
+                                {group.collection.title}
+                            </Text>
+                            <Text style={styles.downloadGroupSubtitle}>
+                                {group.entries.length}{' '}
+                                {group.entries.length === 1 ? 'track' : 'tracks'} ·{' '}
+                                {group.collection.type}
+                            </Text>
+                        </View>
+                    </View>
+                    {group.entries.map((entry) => (
+                        <View key={entry.id} style={styles.downloadRow}>
+                            <View style={styles.downloadRowText}>
+                                <Text numberOfLines={1} style={styles.downloadRowTitle}>
+                                    {entry.title}
+                                </Text>
+                                <Text numberOfLines={1} style={styles.downloadRowStatus}>
+                                    {getDownloadStatusLabel(entry)}
+                                </Text>
+                                {entry.status === 'downloading' &&
+                                entry.progress !== undefined ? (
+                                    <View style={styles.downloadProgressTrack}>
+                                        <View
+                                            style={[
+                                                styles.downloadProgressFill,
+                                                {
+                                                    width: `${Math.round(
+                                                        (entry.progress ?? 0) * 100,
+                                                    )}%`,
+                                                },
+                                            ]}
+                                        />
+                                    </View>
+                                ) : null}
+                            </View>
+                            <View style={styles.downloadRowActions}>
+                                {entry.status === 'failed' ? (
+                                    <Pressable
+                                        accessibilityRole="button"
+                                        onPress={() =>
+                                            void retryDownload(entry.id, serverConnections)
+                                        }
+                                        style={styles.downloadActionButton}
+                                    >
+                                        <Text style={styles.downloadActionLabel}>Retry</Text>
+                                    </Pressable>
+                                ) : null}
+                                {entry.status === 'queued' ||
+                                entry.status === 'downloading' ? (
+                                    <Pressable
+                                        accessibilityRole="button"
+                                        onPress={() => void cancelDownload(entry.id)}
+                                        style={styles.downloadActionButton}
+                                    >
+                                        <Text style={styles.downloadActionLabel}>Cancel</Text>
+                                    </Pressable>
+                                ) : null}
+                                <Pressable
+                                    accessibilityRole="button"
+                                    onPress={() => void removeDownload(entry.id)}
+                                    style={styles.downloadActionButton}
+                                >
+                                    <Text
+                                        style={[
+                                            styles.downloadActionLabel,
+                                            styles.downloadActionDestructive,
+                                        ]}
+                                    >
+                                        Remove
+                                    </Text>
+                                </Pressable>
+                            </View>
+                        </View>
+                    ))}
+                </View>
+            ))}
         </View>
     );
 };
@@ -4299,9 +5192,97 @@ const MediaDetailLoaded = ({
         setPlaylistMenuTrack(track);
     };
 
+    const isArtistDetail = detail.type === MobileMediaDetailType.ARTIST;
+    // Download button shows for everything that has saveable media. Podcasts
+    // here download every episode; long-press on a single episode row still
+    // works to grab just that one.
+    const canDownloadDetail = !isArtistDetail;
+
+    // Subscribe to downloads for this specific collection so the hero
+    // glyph can mirror download progress in real time (Spotify-style).
+    const [collectionDownloads, setCollectionDownloads] = useState<DownloadEntry[]>([]);
+    useEffect(() => {
+        const unsubscribe = subscribeDownloads((entries) => {
+            setCollectionDownloads(
+                entries.filter(
+                    (entry) =>
+                        entry.collection.sourceId === detail.source.id &&
+                        entry.collection.id === detail.id,
+                ),
+            );
+        });
+        return () => {
+            unsubscribe();
+        };
+    }, [detail.id, detail.source.id]);
+
+    // Aggregate progress: each entry contributes 1 (completed) / its current
+    // progress fraction (downloading) / 0 (queued/failed). Total = entry
+    // count. A collection with zero entries shows the "not yet started"
+    // glyph; one with all completed shows the check.
+    const downloadAggregate = useMemo(() => {
+        if (collectionDownloads.length === 0) {
+            return { completed: false, progress: 0 };
+        }
+        const completedCount = collectionDownloads.filter(
+            (entry) => entry.status === 'completed',
+        ).length;
+        const partial = collectionDownloads.reduce((sum, entry) => {
+            if (entry.status === 'completed') return sum + 1;
+            if (entry.status === 'downloading') return sum + (entry.progress ?? 0);
+            return sum;
+        }, 0);
+        return {
+            completed: completedCount === collectionDownloads.length,
+            progress: partial / collectionDownloads.length,
+        };
+    }, [collectionDownloads]);
+
+    const handleOpenDetailContextMenu = () => {
+        const kind: Exclude<MediaContextMenuKind, 'song'> | null =
+            detail.type === MobileMediaDetailType.ALBUM
+                ? 'album'
+                : detail.type === MobileMediaDetailType.PLAYLIST
+                  ? 'playlist'
+                  : detail.type === MobileMediaDetailType.AUDIOBOOK
+                    ? 'audiobook'
+                    : detail.type === MobileMediaDetailType.PODCAST
+                      ? 'podcast'
+                      : null;
+        if (!kind) {
+            return;
+        }
+        const homeType =
+            kind === 'album'
+                ? MobileHomeItemType.ALBUM
+                : kind === 'playlist'
+                  ? MobileHomeItemType.PLAYLIST
+                  : kind === 'audiobook'
+                    ? MobileHomeItemType.AUDIOBOOK
+                    : MobileHomeItemType.PODCAST;
+        const syntheticItem: MobileHomeItem = {
+            artworkUrl: detail.artworkUrl,
+            id: detail.id,
+            source: detail.source,
+            subtitle: detail.subtitle,
+            title: detail.title,
+            type: homeType,
+        };
+        contextMenu.openForItem(syntheticItem, { suppressOpenAction: true });
+    };
+
+    const handleDownloadDetail = async () => {
+        // Visual feedback comes from the circular download glyph and the
+        // Downloads tab — no need for a popup on click.
+        const result = await enqueueCollectionDownload(detail, serverConnections);
+        if (result.reason) {
+            Alert.alert('Download', result.reason);
+        }
+    };
+
     return (
         <>
-            {detail.type === MobileMediaDetailType.ALBUM ? (
+            {!isArtistDetail ? (
                 <View style={styles.albumHero}>
                     {detail.artworkUrl ? (
                         <Image
@@ -4315,25 +5296,57 @@ const MediaDetailLoaded = ({
                             </Text>
                         </View>
                     )}
+                    {detail.type === MobileMediaDetailType.AUDIOBOOK ? null : (
+                        <Text style={styles.albumHeroEyebrow}>
+                            {getDetailTypeLabel(detail.type)}
+                        </Text>
+                    )}
                     <Text numberOfLines={2} style={styles.albumHeroTitle}>
                         {detail.title}
                     </Text>
-                    <View style={styles.albumHeroMetaRow}>
-                        <View style={styles.albumHeroMetaText}>
-                            {(detail.metadataLines && detail.metadataLines.length > 0
-                                ? detail.metadataLines
-                                : detail.subtitle
-                                  ? [detail.subtitle]
-                                  : []
-                            ).map((line, index) => (
-                                <Text
-                                    key={`${line}-${index}`}
-                                    numberOfLines={1}
-                                    style={styles.albumHeroMetaLine}
+                    <View style={styles.albumHeroMeta}>
+                        {(detail.metadataLines && detail.metadataLines.length > 0
+                            ? detail.metadataLines
+                            : detail.subtitle
+                              ? [detail.subtitle]
+                              : []
+                        ).map((line, index) => (
+                            <Text
+                                key={`${line}-${index}`}
+                                numberOfLines={1}
+                                style={styles.albumHeroMetaLine}
+                            >
+                                {line}
+                            </Text>
+                        ))}
+                    </View>
+                    <View style={styles.albumHeroActionsBar}>
+                        <View style={styles.albumHeroLeftActions}>
+                            {canDownloadDetail ? (
+                                <Pressable
+                                    accessibilityLabel={
+                                        downloadAggregate.completed
+                                            ? 'Downloaded'
+                                            : 'Download'
+                                    }
+                                    accessibilityRole="button"
+                                    onPress={handleDownloadDetail}
+                                    style={styles.albumHeroGlyphButton}
                                 >
-                                    {line}
-                                </Text>
-                            ))}
+                                    <CircularDownloadGlyph
+                                        completed={downloadAggregate.completed}
+                                        progress={downloadAggregate.progress}
+                                    />
+                                </Pressable>
+                            ) : null}
+                            <Pressable
+                                accessibilityLabel="More options"
+                                accessibilityRole="button"
+                                onPress={handleOpenDetailContextMenu}
+                                style={styles.albumHeroGlyphButton}
+                            >
+                                <MoreGlyph color={colors.text} />
+                            </Pressable>
                         </View>
                         <View style={styles.albumHeroActions}>
                             {canShuffleDetail ? (
@@ -4371,19 +5384,11 @@ const MediaDetailLoaded = ({
                     {detail.artworkUrl ? (
                         <Image
                             source={{ uri: detail.artworkUrl }}
-                            style={[
-                                styles.detailArtwork,
-                                detail.type === MobileMediaDetailType.ARTIST &&
-                                    styles.detailArtworkRound,
-                            ]}
+                            style={[styles.detailArtwork, styles.detailArtworkRound]}
                         />
                     ) : (
                         <View
-                            style={[
-                                styles.detailArtworkFallback,
-                                detail.type === MobileMediaDetailType.ARTIST &&
-                                    styles.detailArtworkRound,
-                            ]}
+                            style={[styles.detailArtworkFallback, styles.detailArtworkRound]}
                         >
                             <Text style={styles.mediaArtworkLetter}>
                                 {detail.title.slice(0, 1)}
@@ -4397,35 +5402,6 @@ const MediaDetailLoaded = ({
                             <Text numberOfLines={2} style={styles.mediaSubtitle}>
                                 {detail.subtitle}
                             </Text>
-                        ) : null}
-                        {firstTrack ? (
-                            <View style={styles.detailHeroActions}>
-                                {canShuffleDetail ? (
-                                    <Pressable
-                                        accessibilityLabel="Shuffle"
-                                        accessibilityRole="button"
-                                        onPress={() => void onShufflePlay(detail)}
-                                        style={styles.albumHeroGlyphButton}
-                                    >
-                                        <ShuffleGlyph color={colors.text} />
-                                    </Pressable>
-                                ) : null}
-                                <Pressable
-                                    accessibilityLabel="Play"
-                                    accessibilityRole="button"
-                                    onPress={() => onPlayTrack(detail, firstTrack, 0)}
-                                    style={[
-                                        styles.albumHeroGlyphButton,
-                                        styles.albumHeroPlayButton,
-                                    ]}
-                                >
-                                    <PlayPauseGlyph
-                                        color={colors.background}
-                                        isPlaying={false}
-                                        size={22}
-                                    />
-                                </Pressable>
-                            </View>
                         ) : null}
                     </View>
                 </View>
@@ -5762,6 +6738,130 @@ const RadioWaveGlyph = ({ color }: { color: string }) => {
                     borderRadius: 2,
                     height: 4,
                     width: 4,
+                }}
+            />
+        </View>
+    );
+};
+
+const CheckGlyph = ({ color, size = 14 }: { color: string; size?: number }) => {
+    // Unicode check rendered as Text — cheap and renders consistently. The
+    // tight lineHeight + textAlign keeps it centered inside its box rather
+    // than dropping below the baseline like the default Text behavior.
+    return (
+        <Text
+            accessibilityElementsHidden
+            allowFontScaling={false}
+            importantForAccessibility="no"
+            style={{
+                color,
+                fontSize: size,
+                fontWeight: '900',
+                includeFontPadding: false,
+                lineHeight: size,
+                textAlign: 'center',
+                textAlignVertical: 'center',
+            }}
+        >
+            {'✓'}
+        </Text>
+    );
+};
+
+/**
+ * Spotify-style circular download progress indicator. Renders 16 small ticks
+ * around the perimeter that light up as progress advances, with a download
+ * arrow (or check, when complete) in the middle. No SVG dependency — every
+ * tick is a rotated+translated View, so this works on any RN install.
+ */
+const CircularDownloadGlyph = ({
+    completed,
+    progress,
+}: {
+    /** True when everything's saved and the user should see the "done" state. */
+    completed: boolean;
+    /** 0–1 fraction of how much is downloaded. */
+    progress: number;
+}) => {
+    const SIZE = 30;
+    const TICK_COUNT = 16;
+    const filledTicks = completed
+        ? TICK_COUNT
+        : Math.min(TICK_COUNT, Math.max(0, Math.round(progress * TICK_COUNT)));
+    const accent = colors.accent;
+    const dim = 'rgba(255, 255, 255, 0.16)';
+
+    return (
+        <View
+            pointerEvents="none"
+            style={{
+                alignItems: 'center',
+                height: SIZE,
+                justifyContent: 'center',
+                width: SIZE,
+            }}
+        >
+            {Array.from({ length: TICK_COUNT }).map((_, idx) => {
+                const angleDeg = (idx / TICK_COUNT) * 360;
+                const filled = idx < filledTicks;
+                return (
+                    <View
+                        key={idx}
+                        style={{
+                            backgroundColor: filled ? accent : dim,
+                            borderRadius: 1,
+                            height: 4,
+                            position: 'absolute',
+                            transform: [
+                                { rotate: `${angleDeg}deg` },
+                                { translateY: -(SIZE / 2 - 2) },
+                            ],
+                            width: 1.6,
+                        }}
+                    />
+                );
+            })}
+            {completed ? (
+                <CheckGlyph color={accent} size={14} />
+            ) : (
+                <DownloadGlyph color={progress > 0 ? accent : colors.text} />
+            )}
+        </View>
+    );
+};
+
+const DownloadGlyph = ({ color }: { color: string }) => {
+    // Downward arrow over a small tray — universal "download" affordance.
+    return (
+        <View style={{ alignItems: 'center', height: 20, justifyContent: 'center', width: 20 }}>
+            <View
+                style={{
+                    backgroundColor: color,
+                    borderRadius: 1,
+                    height: 8,
+                    width: 2.4,
+                }}
+            />
+            <View
+                style={{
+                    borderLeftColor: 'transparent',
+                    borderLeftWidth: 4,
+                    borderRightColor: 'transparent',
+                    borderRightWidth: 4,
+                    borderTopColor: color,
+                    borderTopWidth: 5,
+                    height: 0,
+                    marginTop: -1,
+                    width: 0,
+                }}
+            />
+            <View
+                style={{
+                    backgroundColor: color,
+                    borderRadius: 1,
+                    height: 2,
+                    marginTop: 2,
+                    width: 14,
                 }}
             />
         </View>
@@ -7506,18 +8606,43 @@ const styles = StyleSheet.create({
         flex: 1,
         minWidth: 0,
     },
+    albumHeroMeta: {
+        alignItems: 'center',
+        marginTop: spacing.xs,
+        width: '100%',
+    },
     albumHeroMetaLine: {
         color: colors.muted,
         fontSize: 13,
         fontWeight: '600',
         lineHeight: 18,
+        textAlign: 'center',
+    },
+    albumHeroEyebrow: {
+        color: colors.accent,
+        fontSize: 11,
+        fontWeight: '900',
+        letterSpacing: 1.4,
+        marginBottom: 6,
+        textAlign: 'center',
+        textTransform: 'uppercase',
+    },
+    albumHeroActionsBar: {
+        alignItems: 'center',
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        marginTop: spacing.md,
+        width: '100%',
+    },
+    albumHeroLeftActions: {
+        alignItems: 'center',
+        flexDirection: 'row',
+        gap: spacing.sm,
     },
     albumHeroActions: {
         alignItems: 'center',
-        alignSelf: 'flex-end',
         flexDirection: 'row',
         gap: spacing.sm,
-        justifyContent: 'flex-end',
     },
     albumHeroGlyphButton: {
         alignItems: 'center',
@@ -9029,6 +10154,172 @@ const styles = StyleSheet.create({
         color: colors.text,
         fontSize: 14,
         fontWeight: '800',
+    },
+    settingsRoot: {
+        // No panel background — settings rows sit directly on the app black
+        // so they read as separate "blobs" rather than as one slab.
+        marginTop: spacing.lg,
+    },
+    settingsRootTitle: {
+        color: colors.text,
+        fontSize: 22,
+        fontWeight: '900',
+        marginBottom: spacing.md,
+    },
+    settingsRow: {
+        alignItems: 'center',
+        backgroundColor: colors.surface,
+        borderRadius: 14,
+        flexDirection: 'row',
+        gap: spacing.md,
+        marginTop: spacing.sm,
+        paddingHorizontal: spacing.md,
+        paddingVertical: 14,
+    },
+    settingsRowText: {
+        flex: 1,
+    },
+    settingsRowTitle: {
+        color: colors.text,
+        fontSize: 15,
+        fontWeight: '800',
+        marginBottom: 2,
+    },
+    settingsRowSubtitle: {
+        color: colors.muted,
+        fontSize: 12,
+        fontWeight: '600',
+    },
+    downloadsSummary: {
+        color: colors.muted,
+        fontSize: 13,
+        lineHeight: 18,
+        marginBottom: spacing.md,
+        marginTop: spacing.xs,
+    },
+    downloadsStorageRow: {
+        backgroundColor: colors.surface,
+        borderRadius: 10,
+        marginBottom: spacing.md,
+        padding: spacing.md,
+    },
+    downloadsStorageLabel: {
+        color: colors.accent,
+        fontSize: 10,
+        fontWeight: '900',
+        letterSpacing: 1,
+        textTransform: 'uppercase',
+    },
+    downloadsStorageValue: {
+        color: colors.text,
+        fontSize: 13,
+        fontWeight: '700',
+        marginTop: 4,
+    },
+    downloadsStorageNote: {
+        color: colors.muted,
+        fontSize: 11,
+        marginTop: 6,
+    },
+    downloadsStorageActions: {
+        flexDirection: 'row',
+        gap: spacing.sm,
+        marginTop: spacing.sm,
+    },
+    downloadsStorageButton: {
+        backgroundColor: 'rgba(255, 255, 255, 0.06)',
+        borderColor: 'rgba(255, 255, 255, 0.12)',
+        borderRadius: 8,
+        borderWidth: 1,
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+    },
+    downloadsStorageButtonLabel: {
+        color: colors.text,
+        fontSize: 12,
+        fontWeight: '700',
+    },
+    downloadGroup: {
+        backgroundColor: colors.surface,
+        borderRadius: 10,
+        marginTop: spacing.sm,
+        padding: spacing.sm,
+    },
+    downloadGroupHeader: {
+        alignItems: 'center',
+        flexDirection: 'row',
+        gap: 10,
+        marginBottom: 6,
+    },
+    downloadGroupArtwork: {
+        backgroundColor: '#2a2a2c',
+        borderRadius: 6,
+        height: 40,
+        width: 40,
+    },
+    downloadGroupArtworkFallback: {
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    downloadGroupText: {
+        flex: 1,
+    },
+    downloadGroupTitle: {
+        color: colors.text,
+        fontSize: 14,
+        fontWeight: '800',
+    },
+    downloadGroupSubtitle: {
+        color: colors.muted,
+        fontSize: 11,
+        fontWeight: '600',
+        textTransform: 'capitalize',
+    },
+    downloadRow: {
+        alignItems: 'center',
+        flexDirection: 'row',
+        paddingVertical: 8,
+    },
+    downloadRowText: {
+        flex: 1,
+    },
+    downloadRowTitle: {
+        color: colors.text,
+        fontSize: 13,
+        fontWeight: '700',
+    },
+    downloadRowStatus: {
+        color: colors.muted,
+        fontSize: 11,
+        marginTop: 2,
+    },
+    downloadProgressTrack: {
+        backgroundColor: 'rgba(255, 255, 255, 0.08)',
+        borderRadius: 2,
+        height: 3,
+        marginTop: 4,
+        overflow: 'hidden',
+    },
+    downloadProgressFill: {
+        backgroundColor: colors.accent,
+        height: 3,
+    },
+    downloadRowActions: {
+        alignItems: 'center',
+        flexDirection: 'row',
+        gap: 4,
+    },
+    downloadActionButton: {
+        paddingHorizontal: 8,
+        paddingVertical: 6,
+    },
+    downloadActionLabel: {
+        color: colors.text,
+        fontSize: 11,
+        fontWeight: '700',
+    },
+    downloadActionDestructive: {
+        color: '#ff7a6e',
     },
     section: {
         backgroundColor: colors.panel,

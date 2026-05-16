@@ -2,6 +2,7 @@ import { type ServerAuthenticationResult } from '../server/server-auth';
 import { getFetch, requestJson, type SamoFetch } from '../server/server-http';
 import { ServerType } from '../server/server-types';
 import {
+    buildAudiobookshelfArtworkUrl,
     firstNonEmptyString,
     getMobileContentSource,
     type MobileContentSource,
@@ -483,10 +484,11 @@ const loadAudiobookshelfSearch = async (
             const { id, library } = item;
 
             return {
-                artworkUrl: id
-                    ? (item.media?.metadata?.imageUrl ??
-                      `${authentication.url}/api/items/${id}/cover?token=${encodeURIComponent(authentication.credential)}`)
-                    : undefined,
+                artworkUrl: buildAudiobookshelfArtworkUrl(
+                    authentication,
+                    id,
+                    item.media?.metadata?.imageUrl,
+                ),
                 id: id ?? `${library.id}-${item.name}`,
                 source: getMobileContentSource(authentication),
                 subtitle: getAudiobookshelfAuthor(item),
@@ -502,10 +504,11 @@ const loadAudiobookshelfSearch = async (
             const { id, library, numEpisodes } = item;
 
             return {
-                artworkUrl: id
-                    ? (item.media?.metadata?.imageUrl ??
-                      `${authentication.url}/api/items/${id}/cover?token=${encodeURIComponent(authentication.credential)}`)
-                    : undefined,
+                artworkUrl: buildAudiobookshelfArtworkUrl(
+                    authentication,
+                    id,
+                    item.media?.metadata?.imageUrl,
+                ),
                 id: id ?? `${library.id}-${item.name}`,
                 source: getMobileContentSource(authentication),
                 subtitle: numEpisodes ? `${numEpisodes} episodes` : library.name,

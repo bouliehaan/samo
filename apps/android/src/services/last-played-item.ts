@@ -1,5 +1,6 @@
 import { type MobilePlayableAudio } from '@samo/core/mobile';
-import * as SecureStore from 'expo-secure-store';
+
+import { fsGetItem, fsSetItem } from './fs-storage';
 
 const LAST_PLAYED_KEY = 'samo.android.last-played-item.v1';
 
@@ -21,7 +22,7 @@ const isPersistedLastPlayedItem = (value: unknown): value is MobilePlayableAudio
 };
 
 export const loadPersistedLastPlayedItem = async (): Promise<MobilePlayableAudio | null> => {
-    const raw = await SecureStore.getItemAsync(LAST_PLAYED_KEY);
+    const raw = await fsGetItem(LAST_PLAYED_KEY);
 
     if (!raw) {
         return null;
@@ -36,5 +37,5 @@ export const loadPersistedLastPlayedItem = async (): Promise<MobilePlayableAudio
 };
 
 export const savePersistedLastPlayedItem = async (item: MobilePlayableAudio) => {
-    await SecureStore.setItemAsync(LAST_PLAYED_KEY, JSON.stringify(item));
+    await fsSetItem(LAST_PLAYED_KEY, JSON.stringify(item));
 };

@@ -2,6 +2,7 @@ import { type ServerAuthenticationResult } from '../server/server-auth';
 import { getFetch, requestJson, type SamoFetch } from '../server/server-http';
 import { ServerType } from '../server/server-types';
 import {
+    buildAudiobookshelfArtworkUrl,
     firstNonEmptyString,
     getMobileContentSource,
     type MobileContentSource,
@@ -323,9 +324,11 @@ const loadAudiobookshelfItems = async (
         const source = getMobileContentSource(authentication);
 
         return {
-            artworkUrl:
-                item.media?.metadata?.imageUrl ??
-                `${authentication.url}/api/items/${item.id}/cover?token=${encodeURIComponent(authentication.credential)}`,
+            artworkUrl: buildAudiobookshelfArtworkUrl(
+                authentication,
+                item.id,
+                item.media?.metadata?.imageUrl,
+            ),
             id: item.id,
             source,
             subtitle:

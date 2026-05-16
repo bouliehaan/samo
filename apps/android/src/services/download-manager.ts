@@ -1,0 +1,1192 @@
+import {
+    loadAudiobookshelfDownloadFiles,
+    loadAudiobookshelfPodcastEpisodeFiles,
+    type MobileHomeItem,
+    type MobileMediaDetail,
+    MobileMediaDetailType,
+} from '@samo/core/mobile';
+import { type ServerAuthenticationResult, ServerType } from '@samo/core/server';
+// expo-file-system 19+ split into a new "file API" and a legacy API. The
+// legacy API still exposes documentDirectory, createDownloadResumable, etc.,
+// which is what we need for the download manager. The new API is async-iterator
+// based and would require a much larger rewrite to use cleanly.
+import * as FileSystem from 'expo-file-system/legacy';
+
+import { fsDeleteItem, fsGetItem, fsSetItem } from './fs-storage';
+import { isNativeSafCopyAvailable, streamCopyToSaf } from './saf-copy';
+
+// Persistent registry of offline downloads. Each entry tracks a single
+// downloadable file (a song, an audiobook file, or a podcast episode).
+
+const REGISTRY_KEY = 'samo.android.downloads.v1';
+const STORAGE_LOCATION_KEY = 'samo.android.downloads.storage-location.v1';
+const DOWNLOADS_DIR_NAME = 'samo-downloads';
+// Run up to N downloads at once. More than this and we saturate phone/Wi-Fi,
+// hammer the server, and make every individual download slower.
+const MAX_CONCURRENT_DOWNLOADS = 3;
+// Throttle progress updates aggressively so a 50/sec progress callback
+// doesn't turn into a 50/sec re-render storm in the UI.
+const PROGRESS_BYTES_THRESHOLD = 256 * 1024;
+const PROGRESS_RATIO_THRESHOLD = 0.01; // 1%
+const LISTENER_NOTIFY_THROTTLE_MS = 150;
+// Files larger than this stay on internal storage even when an SD card SAF
+// location is configured — copying via SAF moves bytes through a single JS
+// base64 buffer, which OOMs on multi-hundred-MB audiobooks. We can lift this
+// once we have a native streaming-copy module.
+const SAF_COPY_MAX_BYTES = 200 * 1024 * 1024;
+
+export interface DownloadCollectionInfo {
+    artworkUrl?: string;
+    id: string;
+    sourceId: string;
+    subtitle?: string;
+    title: string;
+    type: 'album' | 'playlist' | 'audiobook' | 'podcast';
+}
+
+export type DownloadStatus = 'queued' | 'downloading' | 'completed' | 'failed' | 'canceled';
+
+/**
+ * For audiobooks split into multiple files. Captures where this file sits in
+ * the overall book (in seconds) so we can map "book time → file + local
+ * offset" at playback time and stream the right file from disk.
+ */
+export interface AudiobookFileSegment {
+    durationSeconds?: number;
+    index: number;
+    startOffsetSeconds: number;
+}
+
+export interface DownloadEntry {
+    audiobookSegment?: AudiobookFileSegment;
+    bytesDownloaded?: number;
+    collection: DownloadCollectionInfo;
+    completedAt?: number;
+    enqueuedAt: number;
+    errorMessage?: string;
+    id: string;
+    localUri?: string;
+    progress?: number;
+    sourceUrl: string;
+    status: DownloadStatus;
+    title: string;
+    totalBytes?: number;
+    trackId: string;
+    trackSubtitle?: string;
+}
+
+const buildDownloadsRootUri = () =>
+    `${FileSystem.documentDirectory ?? ''}${DOWNLOADS_DIR_NAME}/`;
+
+const sanitizeForPath = (value: string): string =>
+    value.replace(/[^a-zA-Z0-9._-]+/g, '_').slice(0, 80) || 'item';
+
+const ensureDownloadsDirectory = async () => {
+    const root = buildDownloadsRootUri();
+    const info = await FileSystem.getInfoAsync(root);
+    if (!info.exists) {
+        await FileSystem.makeDirectoryAsync(root, { intermediates: true });
+    }
+    return root;
+};
+
+const buildLocalUri = async (entry: Pick<DownloadEntry, 'collection' | 'trackId'>) => {
+    const root = await ensureDownloadsDirectory();
+    const collectionDir = `${root}${sanitizeForPath(entry.collection.sourceId)}/${sanitizeForPath(entry.collection.id)}/`;
+    const dirInfo = await FileSystem.getInfoAsync(collectionDir);
+    if (!dirInfo.exists) {
+        await FileSystem.makeDirectoryAsync(collectionDir, { intermediates: true });
+    }
+    return `${collectionDir}${sanitizeForPath(entry.trackId)}.audio`;
+};
+
+// In-process registry. fs-storage is the source of truth across launches.
+let registryCache: DownloadEntry[] | null = null;
+const listeners = new Set<(entries: DownloadEntry[]) => void>();
+const activeDownloads = new Map<string, { cancel: () => void }>();
+const lastProgressReport = new Map<string, { bytes: number; ratio: number }>();
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+    typeof value === 'object' && value !== null;
+
+const parseEntry = (value: unknown): DownloadEntry | null => {
+    if (!isRecord(value)) {
+        return null;
+    }
+    if (
+        typeof value.id !== 'string' ||
+        typeof value.title !== 'string' ||
+        typeof value.sourceUrl !== 'string' ||
+        typeof value.trackId !== 'string' ||
+        typeof value.enqueuedAt !== 'number' ||
+        !isRecord(value.collection)
+    ) {
+        return null;
+    }
+    const c = value.collection;
+    if (
+        typeof c.id !== 'string' ||
+        typeof c.sourceId !== 'string' ||
+        typeof c.title !== 'string' ||
+        typeof c.type !== 'string'
+    ) {
+        return null;
+    }
+    return value as unknown as DownloadEntry;
+};
+
+const loadRegistryFromDisk = async (): Promise<DownloadEntry[]> => {
+    try {
+        const raw = await fsGetItem(REGISTRY_KEY);
+        if (!raw) {
+            return [];
+        }
+        const parsed = JSON.parse(raw) as unknown;
+        if (!Array.isArray(parsed)) {
+            return [];
+        }
+        return parsed
+            .map(parseEntry)
+            .filter((entry): entry is DownloadEntry => entry !== null);
+    } catch {
+        return [];
+    }
+};
+
+const saveRegistryToDisk = async (entries: DownloadEntry[]): Promise<void> => {
+    // Best-effort persistence; failures don't break the running session.
+    await fsSetItem(REGISTRY_KEY, JSON.stringify(entries));
+};
+
+const getRegistry = async (): Promise<DownloadEntry[]> => {
+    if (registryCache === null) {
+        registryCache = await loadRegistryFromDisk();
+        // On launch, anything that was mid-download is now orphaned; mark it
+        // queued so the next pump tries again.
+        registryCache = registryCache.map((entry) =>
+            entry.status === 'downloading'
+                ? { ...entry, progress: undefined, status: 'queued' as const }
+                : entry,
+        );
+    }
+    return registryCache;
+};
+
+// "persist" controls whether we also write the registry to disk. Progress
+// updates (50+/sec from createDownloadResumable) skip the write — only status
+// transitions hit disk. Without this, persisting every progress tick made the
+// downloads list visibly glitch as the UI rerendered against an in-flight
+// JSON serialization storm.
+const setRegistry = (entries: DownloadEntry[], persist: boolean) => {
+    registryCache = entries;
+    if (persist) {
+        void saveRegistryToDisk(entries);
+    }
+    notifyListeners();
+};
+
+let pendingNotifyTimer: ReturnType<typeof setTimeout> | null = null;
+const notifyListeners = () => {
+    if (pendingNotifyTimer !== null) {
+        return;
+    }
+    pendingNotifyTimer = setTimeout(() => {
+        pendingNotifyTimer = null;
+        const snapshot = registryCache ?? [];
+        listeners.forEach((listener) => {
+            try {
+                listener(snapshot);
+            } catch {
+                // ignore listener errors — never let a UI listener crash break the manager
+            }
+        });
+    }, LISTENER_NOTIFY_THROTTLE_MS);
+};
+
+export const subscribeDownloads = (
+    listener: (entries: DownloadEntry[]) => void,
+): (() => void) => {
+    listeners.add(listener);
+    if (registryCache !== null) {
+        listener(registryCache);
+    } else {
+        void getRegistry().then(() => listener(registryCache ?? []));
+    }
+    return () => {
+        listeners.delete(listener);
+    };
+};
+
+export const listDownloads = async (): Promise<DownloadEntry[]> => {
+    return getRegistry();
+};
+
+const updateEntry = async (
+    id: string,
+    patch: Partial<DownloadEntry>,
+    options?: { persist?: boolean },
+): Promise<DownloadEntry | null> => {
+    const current = await getRegistry();
+    let updated: DownloadEntry | null = null;
+    const next = current.map((entry) => {
+        if (entry.id === id) {
+            updated = { ...entry, ...patch };
+            return updated;
+        }
+        return entry;
+    });
+    if (updated) {
+        setRegistry(next, options?.persist !== false);
+    }
+    return updated;
+};
+
+const startSingleDownload = async (
+    entryId: string,
+    authentications: ServerAuthenticationResult[],
+): Promise<void> => {
+    const registry = await getRegistry();
+    const entry = registry.find((candidate) => candidate.id === entryId);
+    if (!entry) {
+        return;
+    }
+
+    const auth = authentications.find(
+        (candidate) =>
+            `${candidate.type}:${candidate.url}` === entry.collection.sourceId,
+    );
+
+    const headers: Record<string, string> = {};
+    if (auth && auth.type === ServerType.AUDIOBOOKSHELF) {
+        headers.Authorization = `Bearer ${auth.credential}`;
+    }
+
+    try {
+        const localUri = await buildLocalUri(entry);
+        // Pre-record so the first onProgress fires don't all get through the
+        // 1% / 256KB threshold and update state 10 times for the first packet.
+        lastProgressReport.set(entry.id, { bytes: 0, ratio: 0 });
+        const resumable = FileSystem.createDownloadResumable(
+            entry.sourceUrl,
+            localUri,
+            { headers },
+            (progress) => {
+                const total = progress.totalBytesExpectedToWrite;
+                const written = progress.totalBytesWritten;
+                const ratio = total > 0 ? written / total : 0;
+                const last = lastProgressReport.get(entry.id) ?? { bytes: 0, ratio: 0 };
+                const bytesDelta = written - last.bytes;
+                const ratioDelta = Math.abs(ratio - last.ratio);
+                const isComplete = total > 0 && written >= total;
+                if (
+                    !isComplete &&
+                    bytesDelta < PROGRESS_BYTES_THRESHOLD &&
+                    ratioDelta < PROGRESS_RATIO_THRESHOLD
+                ) {
+                    // Too small a delta to bother re-rendering the UI for.
+                    return;
+                }
+                lastProgressReport.set(entry.id, { bytes: written, ratio });
+                // Don't persist on every progress tick — only status changes
+                // get written to disk. If the app dies mid-download, the
+                // entry comes back as 'queued' and retries from scratch.
+                void updateEntry(
+                    entry.id,
+                    {
+                        bytesDownloaded: written,
+                        progress: total > 0 ? ratio : undefined,
+                        status: 'downloading',
+                        totalBytes: total > 0 ? total : undefined,
+                    },
+                    { persist: false },
+                );
+            },
+        );
+        activeDownloads.set(entry.id, {
+            cancel: () => {
+                void resumable.cancelAsync().catch(() => undefined);
+            },
+        });
+        await updateEntry(entry.id, { status: 'downloading' });
+
+        const result = await resumable.downloadAsync();
+        lastProgressReport.delete(entry.id);
+        if (!result) {
+            await updateEntry(entry.id, { status: 'canceled' });
+        } else {
+            const completed = await updateEntry(entry.id, {
+                completedAt: Date.now(),
+                localUri: result.uri,
+                progress: 1,
+                status: 'completed',
+            });
+            // Move to SD card if the user picked a SAF location. Falls back
+            // silently to internal storage on huge files / revoked permission.
+            if (completed) {
+                await tryMoveCompletedFileToSaf(completed);
+            }
+        }
+    } catch (error) {
+        lastProgressReport.delete(entry.id);
+        await updateEntry(entry.id, {
+            errorMessage: error instanceof Error ? error.message : 'Download failed',
+            status: 'failed',
+        });
+    } finally {
+        activeDownloads.delete(entry.id);
+        // Tail-call: keep draining the queue from the freshly-freed slot.
+        void pumpQueue(authentications);
+    }
+};
+
+const pumpQueue = async (
+    authentications: ServerAuthenticationResult[],
+): Promise<void> => {
+    if (activeDownloads.size >= MAX_CONCURRENT_DOWNLOADS) {
+        return;
+    }
+    const registry = await getRegistry();
+    // Pick the next queued entry that isn't already active. We keep starting
+    // entries until we hit the concurrency cap.
+    while (activeDownloads.size < MAX_CONCURRENT_DOWNLOADS) {
+        const next = registry.find(
+            (entry) => entry.status === 'queued' && !activeDownloads.has(entry.id),
+        );
+        if (!next) {
+            return;
+        }
+        // Mark as active immediately so the next loop iteration doesn't pick
+        // the same one again. startSingleDownload re-reads from the registry
+        // when it actually begins, so this is just a placeholder.
+        activeDownloads.set(next.id, { cancel: () => undefined });
+        void startSingleDownload(next.id, authentications);
+    }
+};
+
+const buildEntryId = (): string =>
+    `dl-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+export interface EnqueueTrackInput {
+    /** Optional per-file metadata for multi-file audiobooks. */
+    audiobookSegment?: AudiobookFileSegment;
+    collection: DownloadCollectionInfo;
+    sourceUrl: string;
+    title: string;
+    trackId: string;
+    trackSubtitle?: string;
+}
+
+export const enqueueDownload = async (
+    input: EnqueueTrackInput,
+    authentications: ServerAuthenticationResult[],
+): Promise<DownloadEntry> => {
+    const registry = await getRegistry();
+    const existing = registry.find(
+        (entry) =>
+            entry.trackId === input.trackId &&
+            entry.collection.sourceId === input.collection.sourceId &&
+            entry.collection.id === input.collection.id &&
+            (entry.status === 'completed' ||
+                entry.status === 'queued' ||
+                entry.status === 'downloading'),
+    );
+    if (existing) {
+        return existing;
+    }
+
+    const entry: DownloadEntry = {
+        audiobookSegment: input.audiobookSegment,
+        collection: input.collection,
+        enqueuedAt: Date.now(),
+        id: buildEntryId(),
+        sourceUrl: input.sourceUrl,
+        status: 'queued',
+        title: input.title,
+        trackId: input.trackId,
+        trackSubtitle: input.trackSubtitle,
+    };
+    setRegistry([...registry, entry], true);
+    void pumpQueue(authentications);
+    return entry;
+};
+
+export const enqueueCollectionDownload = async (
+    detail: MobileMediaDetail,
+    authentications: ServerAuthenticationResult[],
+): Promise<{ enqueued: number; reason?: string; skipped: number }> => {
+    if (detail.type === MobileMediaDetailType.AUDIOBOOK) {
+        return enqueueAudiobookDownload(detail, authentications);
+    }
+    if (detail.type === MobileMediaDetailType.PODCAST) {
+        return enqueuePodcastDownload(detail, authentications);
+    }
+    return enqueueMusicCollectionDownload(detail, authentications);
+};
+
+const enqueueMusicCollectionDownload = async (
+    detail: MobileMediaDetail,
+    authentications: ServerAuthenticationResult[],
+): Promise<{ enqueued: number; reason?: string; skipped: number }> => {
+    const downloadable = detail.tracks.filter((track) => track.playback?.url);
+    if (downloadable.length === 0) {
+        return { enqueued: 0, skipped: 0 };
+    }
+
+    const collection: DownloadCollectionInfo = {
+        artworkUrl: detail.artworkUrl,
+        id: detail.id,
+        sourceId: detail.source.id,
+        subtitle: detail.subtitle,
+        title: detail.title,
+        type: collectionTypeForDetail(detail.type),
+    };
+
+    let enqueued = 0;
+    let skipped = 0;
+    for (const track of downloadable) {
+        const url = track.playback?.url;
+        if (!url) {
+            skipped += 1;
+            continue;
+        }
+        const entry = await enqueueDownload(
+            {
+                collection,
+                sourceUrl: url,
+                title: track.title,
+                trackId: track.id,
+                trackSubtitle: track.subtitle,
+            },
+            authentications,
+        );
+        if (entry.enqueuedAt && entry.status !== 'completed') {
+            enqueued += 1;
+        } else {
+            skipped += 1;
+        }
+    }
+    return { enqueued, skipped };
+};
+
+const findAudiobookshelfAuth = (
+    authentications: ServerAuthenticationResult[],
+    sourceId: string,
+): ServerAuthenticationResult | undefined => {
+    return authentications.find(
+        (candidate) =>
+            `${candidate.type}:${candidate.url}` === sourceId &&
+            candidate.type === ServerType.AUDIOBOOKSHELF,
+    );
+};
+
+const enqueueAudiobookDownload = async (
+    detail: MobileMediaDetail,
+    authentications: ServerAuthenticationResult[],
+): Promise<{ enqueued: number; reason?: string; skipped: number }> => {
+    const auth = findAudiobookshelfAuth(authentications, detail.source.id);
+    if (!auth) {
+        return {
+            enqueued: 0,
+            reason: 'The Audiobookshelf server for this book is no longer connected.',
+            skipped: 0,
+        };
+    }
+
+    // Resolve the raw audio files via /api/items/:id/file/:ino instead of
+    // /play. The /play endpoint can hand back a server-transcoded HLS stream
+    // which we can't save as a usable offline file; the /file/:ino endpoint
+    // always returns the original-quality source file. This is also how
+    // Audiobookshelf's own offline download flow works.
+    let files;
+    try {
+        files = await loadAudiobookshelfDownloadFiles({
+            authentication: auth,
+            itemId: detail.id,
+        });
+    } catch (error) {
+        return {
+            enqueued: 0,
+            reason:
+                error instanceof Error
+                    ? `Could not list audio files: ${error.message}`
+                    : 'Could not list audio files for this book.',
+            skipped: 0,
+        };
+    }
+
+    if (files.length === 0) {
+        return {
+            enqueued: 0,
+            reason: 'No audio files were reported for this book by the server.',
+            skipped: 0,
+        };
+    }
+
+    const collection: DownloadCollectionInfo = {
+        artworkUrl: detail.artworkUrl,
+        id: detail.id,
+        sourceId: detail.source.id,
+        subtitle: detail.subtitle,
+        title: detail.title,
+        type: 'audiobook',
+    };
+
+    let enqueued = 0;
+    let skipped = 0;
+    for (let i = 0; i < files.length; i += 1) {
+        const file = files[i];
+        // Key each file by the book id when single-file, or by `<bookId>:<ino>`
+        // for multi-file. Multi-file books store an audiobookSegment so the
+        // offline playback resolver can map "book time" back to the right
+        // file + local offset and seamlessly chain them in a queue.
+        const trackId = files.length === 1 ? detail.id : `${detail.id}:${file.ino}`;
+        const entry = await enqueueDownload(
+            {
+                audiobookSegment:
+                    files.length > 1
+                        ? {
+                              durationSeconds: file.durationSeconds,
+                              index: file.index ?? i,
+                              startOffsetSeconds: file.startOffsetSeconds ?? 0,
+                          }
+                        : undefined,
+                collection,
+                sourceUrl: file.downloadUrl,
+                title: files.length === 1 ? detail.title : (file.title ?? file.filename),
+                trackId,
+                trackSubtitle:
+                    files.length === 1
+                        ? detail.subtitle
+                        : `${detail.title} · ${file.filename}`,
+            },
+            authentications,
+        );
+        if (entry.status === 'completed') {
+            skipped += 1;
+        } else {
+            enqueued += 1;
+        }
+    }
+    return { enqueued, skipped };
+};
+
+const enqueuePodcastDownload = async (
+    detail: MobileMediaDetail,
+    authentications: ServerAuthenticationResult[],
+): Promise<{ enqueued: number; reason?: string; skipped: number }> => {
+    const auth = findAudiobookshelfAuth(authentications, detail.source.id);
+    if (!auth) {
+        return {
+            enqueued: 0,
+            reason: 'The Audiobookshelf server for this podcast is no longer connected.',
+            skipped: 0,
+        };
+    }
+
+    // Pull every episode's underlying audio file via the ABS file endpoint.
+    // /api/items/:id/file/:ino always returns the raw source MP3/M4A
+    // regardless of whether the server's /play endpoint would have wrapped
+    // it in HLS for streaming.
+    let episodeFiles;
+    try {
+        episodeFiles = await loadAudiobookshelfPodcastEpisodeFiles({
+            authentication: auth,
+            itemId: detail.id,
+        });
+    } catch (error) {
+        return {
+            enqueued: 0,
+            reason:
+                error instanceof Error
+                    ? `Could not list episode files: ${error.message}`
+                    : 'Could not list episode files for this podcast.',
+            skipped: 0,
+        };
+    }
+
+    if (episodeFiles.length === 0) {
+        return {
+            enqueued: 0,
+            reason: 'No episode files were reported for this podcast by the server.',
+            skipped: 0,
+        };
+    }
+
+    const collection: DownloadCollectionInfo = {
+        artworkUrl: detail.artworkUrl,
+        id: detail.id,
+        sourceId: detail.source.id,
+        subtitle: detail.subtitle,
+        title: detail.title,
+        type: 'podcast',
+    };
+
+    let enqueued = 0;
+    let skipped = 0;
+    for (const file of episodeFiles) {
+        const entry = await enqueueDownload(
+            {
+                collection,
+                sourceUrl: file.fileDownloadUrl,
+                title: file.title,
+                // Key by episodeId — matches what playback's resolveLocalPlayback
+                // extracts from `<authType>:<authUrl>:podcast:<itemId>:<episodeId>`.
+                trackId: file.episodeId,
+                trackSubtitle: detail.title,
+            },
+            authentications,
+        );
+        if (entry.status === 'completed') {
+            skipped += 1;
+        } else {
+            enqueued += 1;
+        }
+    }
+    return { enqueued, skipped };
+};
+
+/**
+ * Enqueue a single music track. Used by the long-press / context-menu
+ * Download action on individual songs so users can save a single track
+ * without downloading the whole album/playlist.
+ */
+export const enqueueSingleMusicTrackDownload = async (
+    track: {
+        album?: string;
+        albumId?: string;
+        artist?: string;
+        id: string;
+        playback?: { url?: string; source?: string };
+        subtitle?: string;
+        title: string;
+    },
+    source: { id: string; title?: string },
+    artworkUrl: string | undefined,
+    authentications: ServerAuthenticationResult[],
+): Promise<{ enqueued: boolean; reason?: string }> => {
+    const url = track.playback?.url;
+    if (!url || track.playback?.source !== 'music') {
+        return {
+            enqueued: false,
+            reason: 'This track can’t be downloaded — only music tracks with a direct stream URL.',
+        };
+    }
+    // Group single-track downloads under a synthetic collection so the
+    // Downloads list keeps them organized by album when present.
+    const collection: DownloadCollectionInfo = {
+        artworkUrl,
+        id: track.albumId ?? track.id,
+        sourceId: source.id,
+        subtitle: track.artist,
+        title: track.album ?? track.title,
+        type: 'album',
+    };
+    const entry = await enqueueDownload(
+        {
+            collection,
+            sourceUrl: url,
+            title: track.title,
+            trackId: track.id,
+            trackSubtitle: track.subtitle ?? track.artist,
+        },
+        authentications,
+    );
+    return { enqueued: entry.status !== 'completed' };
+};
+
+/**
+ * Enqueue a single podcast episode. Uses the ABS /api/items/:itemId/file/:ino
+ * endpoint to fetch the raw audio file (bypassing HLS) so downloads work
+ * regardless of the server's streaming-format setting.
+ */
+export const enqueueSinglePodcastEpisodeDownload = async (
+    detail: MobileMediaDetail,
+    episodeTrack: {
+        episodeId?: string;
+        id: string;
+        itemId?: string;
+        publishedAt?: number;
+        subtitle?: string;
+        title: string;
+    },
+    authentications: ServerAuthenticationResult[],
+): Promise<{ enqueued: boolean; reason?: string }> => {
+    const auth = findAudiobookshelfAuth(authentications, detail.source.id);
+    if (!auth || !episodeTrack.episodeId || !episodeTrack.itemId) {
+        return {
+            enqueued: false,
+            reason: 'The Audiobookshelf server for this podcast is no longer connected.',
+        };
+    }
+
+    try {
+        // Look up the episode's underlying audio file. We need the file's ino
+        // to hit /api/items/:id/file/:ino — that's what makes downloads work
+        // even when the server's streaming layer would have returned HLS.
+        const episodeFiles = await loadAudiobookshelfPodcastEpisodeFiles({
+            authentication: auth,
+            itemId: episodeTrack.itemId,
+        });
+        const file = episodeFiles.find(
+            (candidate) => candidate.episodeId === episodeTrack.episodeId,
+        );
+        if (!file) {
+            return {
+                enqueued: false,
+                reason:
+                    'The server didn’t report a downloadable audio file for this episode.',
+            };
+        }
+        const collection: DownloadCollectionInfo = {
+            artworkUrl: detail.artworkUrl,
+            id: detail.id,
+            sourceId: detail.source.id,
+            subtitle: detail.subtitle,
+            title: detail.title,
+            type: 'podcast',
+        };
+        const entry = await enqueueDownload(
+            {
+                collection,
+                sourceUrl: file.fileDownloadUrl,
+                title: episodeTrack.title,
+                trackId: episodeTrack.id,
+                trackSubtitle: episodeTrack.subtitle,
+            },
+            authentications,
+        );
+        return { enqueued: entry.status !== 'completed' };
+    } catch (error) {
+        return {
+            enqueued: false,
+            reason:
+                error instanceof Error
+                    ? `Could not resolve audio URL: ${error.message}`
+                    : 'Could not resolve the audio URL for this episode.',
+        };
+    }
+};
+
+export const enqueueHomeItemDownload = async (
+    item: MobileHomeItem,
+    authentications: ServerAuthenticationResult[],
+): Promise<DownloadEntry | null> => {
+    const url = item.playback?.url;
+    const sourceId = item.source?.id;
+    if (!url || !sourceId) {
+        return null;
+    }
+    const collection: DownloadCollectionInfo = {
+        artworkUrl: item.artworkUrl,
+        id: item.id,
+        sourceId,
+        subtitle: item.subtitle,
+        title: item.title,
+        type: collectionTypeForHomeItem(item),
+    };
+    return enqueueDownload(
+        {
+            collection,
+            sourceUrl: url,
+            title: item.title,
+            trackId: item.id,
+            trackSubtitle: item.subtitle,
+        },
+        authentications,
+    );
+};
+
+export const cancelDownload = async (id: string): Promise<void> => {
+    const registry = await getRegistry();
+    const target = registry.find((entry) => entry.id === id);
+    if (!target) {
+        return;
+    }
+    const active = activeDownloads.get(id);
+    if (active) {
+        active.cancel();
+        // startSingleDownload's finally block updates the entry to canceled.
+        return;
+    }
+    await updateEntry(id, { status: 'canceled' });
+};
+
+export const removeDownload = async (id: string): Promise<void> => {
+    const registry = await getRegistry();
+    const target = registry.find((entry) => entry.id === id);
+    if (!target) {
+        return;
+    }
+    if (target.localUri) {
+        try {
+            await FileSystem.deleteAsync(target.localUri, { idempotent: true });
+        } catch {
+            // best-effort
+        }
+    }
+    const active = activeDownloads.get(id);
+    if (active) {
+        active.cancel();
+        activeDownloads.delete(id);
+    }
+    setRegistry(registry.filter((entry) => entry.id !== id), true);
+};
+
+export const retryDownload = async (
+    id: string,
+    authentications: ServerAuthenticationResult[],
+): Promise<void> => {
+    await updateEntry(id, {
+        errorMessage: undefined,
+        progress: undefined,
+        status: 'queued',
+    });
+    void pumpQueue(authentications);
+};
+
+export const getLocalUriForTrack = async (
+    trackId: string,
+    sourceId: string,
+): Promise<string | null> => {
+    const registry = await getRegistry();
+    const match = registry.find(
+        (entry) =>
+            entry.trackId === trackId &&
+            entry.collection.sourceId === sourceId &&
+            entry.status === 'completed' &&
+            entry.localUri,
+    );
+    return match?.localUri ?? null;
+};
+
+export interface OfflineAudiobookFile {
+    durationSeconds?: number;
+    index: number;
+    ino: string;
+    localUri: string;
+    startOffsetSeconds: number;
+}
+
+/**
+ * Returns all completed download files for an Audiobookshelf book, sorted by
+ * their position in the book. For single-file books returns one entry; for
+ * multi-file books returns the full ordered list so the playback layer can
+ * concatenate them as a queue.
+ */
+export const getOfflineAudiobookFiles = async (
+    bookId: string,
+    sourceId: string,
+): Promise<OfflineAudiobookFile[]> => {
+    const registry = await getRegistry();
+    const matches = registry.filter(
+        (entry) =>
+            entry.status === 'completed' &&
+            entry.localUri &&
+            entry.collection.sourceId === sourceId &&
+            entry.collection.id === bookId &&
+            entry.collection.type === 'audiobook',
+    );
+    if (matches.length === 0) {
+        return [];
+    }
+    if (matches.length === 1) {
+        const only = matches[0];
+        return [
+            {
+                durationSeconds: only.audiobookSegment?.durationSeconds,
+                index: 0,
+                ino: only.trackId.includes(':')
+                    ? (only.trackId.split(':').pop() ?? only.trackId)
+                    : only.trackId,
+                localUri: only.localUri!,
+                startOffsetSeconds: 0,
+            },
+        ];
+    }
+    return matches
+        .map((entry) => {
+            const inoFromKey = entry.trackId.includes(':')
+                ? (entry.trackId.split(':').pop() ?? entry.trackId)
+                : entry.trackId;
+            return {
+                durationSeconds: entry.audiobookSegment?.durationSeconds,
+                index: entry.audiobookSegment?.index ?? Number.MAX_SAFE_INTEGER,
+                ino: inoFromKey,
+                localUri: entry.localUri!,
+                startOffsetSeconds: entry.audiobookSegment?.startOffsetSeconds ?? 0,
+            };
+        })
+        .sort(
+            (left, right) =>
+                left.startOffsetSeconds - right.startOffsetSeconds ||
+                left.index - right.index,
+        );
+};
+
+export const getDownloadsRootUri = (): string => buildDownloadsRootUri();
+
+// ---------- Storage location (internal vs SD card via SAF) ----------
+
+export interface StorageLocationPreference {
+    // Display name shown in UI (e.g., "SD card" or "Internal storage")
+    label: string;
+    // The location is a SAF content:// tree URI when set, undefined for default internal
+    treeUri?: string;
+}
+
+let storageLocationCache: StorageLocationPreference | null = null;
+const storageLocationListeners = new Set<(pref: StorageLocationPreference) => void>();
+
+const DEFAULT_STORAGE_LOCATION: StorageLocationPreference = {
+    label: 'Internal storage',
+};
+
+const notifyStorageListeners = () => {
+    const snapshot = storageLocationCache ?? DEFAULT_STORAGE_LOCATION;
+    storageLocationListeners.forEach((listener) => {
+        try {
+            listener(snapshot);
+        } catch {
+            // ignore
+        }
+    });
+};
+
+export const getStorageLocation = async (): Promise<StorageLocationPreference> => {
+    if (storageLocationCache !== null) {
+        return storageLocationCache;
+    }
+    try {
+        const raw = await fsGetItem(STORAGE_LOCATION_KEY);
+        if (!raw) {
+            storageLocationCache = DEFAULT_STORAGE_LOCATION;
+            return storageLocationCache;
+        }
+        const parsed = JSON.parse(raw) as unknown;
+        if (isRecord(parsed) && typeof parsed.treeUri === 'string') {
+            storageLocationCache = {
+                label:
+                    typeof parsed.label === 'string' && parsed.label.length > 0
+                        ? parsed.label
+                        : 'SD card',
+                treeUri: parsed.treeUri,
+            };
+            return storageLocationCache;
+        }
+    } catch {
+        // fall through
+    }
+    storageLocationCache = DEFAULT_STORAGE_LOCATION;
+    return storageLocationCache;
+};
+
+export const subscribeStorageLocation = (
+    listener: (pref: StorageLocationPreference) => void,
+): (() => void) => {
+    storageLocationListeners.add(listener);
+    if (storageLocationCache !== null) {
+        listener(storageLocationCache);
+    } else {
+        void getStorageLocation().then((pref) => listener(pref));
+    }
+    return () => {
+        storageLocationListeners.delete(listener);
+    };
+};
+
+const persistStorageLocation = async (
+    pref: StorageLocationPreference,
+): Promise<void> => {
+    storageLocationCache = pref;
+    notifyStorageListeners();
+    try {
+        if (!pref.treeUri) {
+            await fsDeleteItem(STORAGE_LOCATION_KEY);
+            return;
+        }
+        await fsSetItem(STORAGE_LOCATION_KEY, JSON.stringify(pref));
+    } catch {
+        // best-effort
+    }
+};
+
+export const pickSdCardStorageLocation = async (): Promise<
+    StorageLocationPreference | null
+> => {
+    try {
+        const permission =
+            await FileSystem.StorageAccessFramework.requestDirectoryPermissionsAsync();
+        if (!permission.granted || !permission.directoryUri) {
+            return null;
+        }
+        const decoded = decodeURIComponent(permission.directoryUri);
+        // Try to surface a friendly tail of the path so the user can recognise
+        // their pick — SAF URIs like content://com.android.externalstorage.documents/tree/...
+        const tailMatch = decoded.match(/[:/]([^:/]+)$/);
+        const friendly = tailMatch?.[1] ?? 'SD card';
+        const pref: StorageLocationPreference = {
+            label: `SD card · ${friendly}`,
+            treeUri: permission.directoryUri,
+        };
+        await persistStorageLocation(pref);
+        return pref;
+    } catch {
+        return null;
+    }
+};
+
+export const resetStorageLocation = async (): Promise<void> => {
+    await persistStorageLocation(DEFAULT_STORAGE_LOCATION);
+};
+
+// ---------- SAF copy after download completes ----------
+
+const mimeTypeForFileName = (fileName: string): string => {
+    const ext = fileName.toLowerCase().split('.').pop() ?? '';
+    if (ext === 'mp3') return 'audio/mpeg';
+    if (ext === 'm4a' || ext === 'aac') return 'audio/mp4';
+    if (ext === 'flac') return 'audio/flac';
+    if (ext === 'ogg' || ext === 'opus') return 'audio/ogg';
+    if (ext === 'wav') return 'audio/wav';
+    return 'audio/*';
+};
+
+const tryMoveCompletedFileToSaf = async (
+    entry: DownloadEntry,
+): Promise<DownloadEntry> => {
+    if (!entry.localUri || entry.status !== 'completed') {
+        return entry;
+    }
+    const pref = await getStorageLocation();
+    if (!pref.treeUri) {
+        return entry;
+    }
+    // Skip already-SAF URIs (idempotent on re-runs).
+    if (entry.localUri.startsWith('content://')) {
+        return entry;
+    }
+
+    let info: FileSystem.FileInfo;
+    try {
+        info = await FileSystem.getInfoAsync(entry.localUri);
+    } catch {
+        return entry;
+    }
+    if (!info.exists) {
+        return entry;
+    }
+
+    const trackFileName = sanitizeForPath(entry.trackId) + '.audio';
+    const mimeType = mimeTypeForFileName(trackFileName);
+
+    // Prefer the native streaming copy. It uses ContentResolver under the
+    // hood with a 64KB buffer, so a 5 GB audiobook moves in O(1) memory.
+    if (isNativeSafCopyAvailable()) {
+        const safUri = await streamCopyToSaf(
+            entry.localUri,
+            pref.treeUri,
+            trackFileName,
+            mimeType,
+        );
+        if (safUri) {
+            try {
+                await FileSystem.deleteAsync(entry.localUri, { idempotent: true });
+            } catch {
+                // best-effort
+            }
+            return (
+                updateEntryDirect(entry.id, { localUri: safUri }) ?? {
+                    ...entry,
+                    localUri: safUri,
+                }
+            );
+        }
+        // Native bridge returned null (e.g., permission revoked). Fall back
+        // to the JS bridge below for files small enough to make it through.
+    }
+
+    // Fallback: legacy expo-file-system SAF write via base64. Caps out
+    // around 200MB before the in-memory base64 buffer becomes a problem.
+    const size = info.size ?? 0;
+    if (size > SAF_COPY_MAX_BYTES) {
+        return updateEntryDirect(entry.id, {
+            errorMessage:
+                'File too large to copy to SD card without the native bridge. Staying on internal storage — rebuild the app to get streaming SAF copy.',
+        }) ?? entry;
+    }
+    try {
+        const safFileUri = await FileSystem.StorageAccessFramework.createFileAsync(
+            pref.treeUri,
+            trackFileName,
+            mimeType,
+        );
+        const base64 = await FileSystem.readAsStringAsync(entry.localUri, {
+            encoding: FileSystem.EncodingType.Base64,
+        });
+        await FileSystem.writeAsStringAsync(safFileUri, base64, {
+            encoding: FileSystem.EncodingType.Base64,
+        });
+        try {
+            await FileSystem.deleteAsync(entry.localUri, { idempotent: true });
+        } catch {
+            // best-effort
+        }
+        return (
+            updateEntryDirect(entry.id, { localUri: safFileUri }) ?? {
+                ...entry,
+                localUri: safFileUri,
+            }
+        );
+    } catch {
+        return entry;
+    }
+};
+
+const updateEntryDirect = (
+    id: string,
+    patch: Partial<DownloadEntry>,
+): DownloadEntry | null => {
+    if (!registryCache) return null;
+    let updated: DownloadEntry | null = null;
+    const next = registryCache.map((entry) => {
+        if (entry.id === id) {
+            updated = { ...entry, ...patch };
+            return updated;
+        }
+        return entry;
+    });
+    if (updated) {
+        setRegistry(next, true);
+    }
+    return updated;
+};
+
+const collectionTypeForDetail = (
+    detailType: MobileMediaDetail['type'],
+): DownloadCollectionInfo['type'] => {
+    switch (detailType) {
+        case MobileMediaDetailType.PLAYLIST:
+            return 'playlist';
+        case MobileMediaDetailType.AUDIOBOOK:
+            return 'audiobook';
+        case MobileMediaDetailType.PODCAST:
+            return 'podcast';
+        default:
+            return 'album';
+    }
+};
+
+const collectionTypeForHomeItem = (
+    item: MobileHomeItem,
+): DownloadCollectionInfo['type'] => {
+    switch (item.type) {
+        case ('playlist' as MobileHomeItem['type']):
+            return 'playlist';
+        case ('audiobook' as MobileHomeItem['type']):
+            return 'audiobook';
+        case ('podcast' as MobileHomeItem['type']):
+            return 'podcast';
+        default:
+            return 'album';
+    }
+};

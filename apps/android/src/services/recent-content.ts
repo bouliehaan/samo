@@ -1,5 +1,6 @@
 import { type MobileHomeItem, type MobileSearchItem } from '@samo/core/mobile';
-import * as SecureStore from 'expo-secure-store';
+
+import { fsDeleteItem, fsGetItem, fsSetItem } from './fs-storage';
 
 const RECENT_CONTENT_KEY = 'samo.android.recent-content.v1';
 const MAX_RECENT_CONTENT_ITEMS = 80;
@@ -37,7 +38,7 @@ const isPersistedRecentContentItem = (value: unknown): value is AndroidRecentCon
 };
 
 export const loadPersistedRecentContentItems = async (): Promise<AndroidRecentContentItem[]> => {
-    const raw = await SecureStore.getItemAsync(RECENT_CONTENT_KEY);
+    const raw = await fsGetItem(RECENT_CONTENT_KEY);
 
     if (!raw) {
         return [];
@@ -58,11 +59,11 @@ export const loadPersistedRecentContentItems = async (): Promise<AndroidRecentCo
 
 export const savePersistedRecentContentItems = async (items: AndroidRecentContentItem[]) => {
     if (items.length === 0) {
-        await SecureStore.deleteItemAsync(RECENT_CONTENT_KEY);
+        await fsDeleteItem(RECENT_CONTENT_KEY);
         return;
     }
 
-    await SecureStore.setItemAsync(
+    await fsSetItem(
         RECENT_CONTENT_KEY,
         JSON.stringify(items.slice(0, MAX_RECENT_CONTENT_ITEMS)),
     );

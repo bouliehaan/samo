@@ -90,8 +90,13 @@ interface AudiobookshelfPlaybackSessionBody {
 }
 
 const subsonicOriginalStreamUrl = (authentication: ServerAuthenticationResult, id: string) => {
+    // format=raw is the Subsonic / Navidrome way to explicitly disable
+    // server-side transcoding (since 1.9.0). Without it the server applies
+    // the user's "Max bit rate" preference and can hand back a transcoded MP3
+    // even for FLAC sources, which means downloads aren't bit-perfect.
     const params = new URLSearchParams({
         c: 'Samo',
+        format: 'raw',
         id,
         v: '1.13.0',
     });

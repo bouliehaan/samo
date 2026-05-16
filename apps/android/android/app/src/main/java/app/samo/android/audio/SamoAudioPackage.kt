@@ -9,7 +9,7 @@ import com.facebook.react.uimanager.ViewManager
 class SamoAudioPackage : ReactPackage {
   @Suppress("OVERRIDE_DEPRECATION")
   override fun createNativeModules(reactContext: ReactApplicationContext): List<NativeModule> {
-    return listOf(SamoAudioModule(reactContext))
+    return listOf(SamoAudioModule(reactContext), SamoFileSystemModule(reactContext))
   }
 
   override fun createViewManagers(

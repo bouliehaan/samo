@@ -1,5 +1,6 @@
 import { type MobileHomeContent } from '@samo/core/mobile';
-import * as SecureStore from 'expo-secure-store';
+
+import { fsDeleteItem, fsGetItem, fsSetItem } from './fs-storage';
 
 // Stale-while-revalidate cache for the Home tab so cold-open feels instant
 // instead of staring at a spinner for several seconds while every server
@@ -7,10 +8,9 @@ import * as SecureStore from 'expo-secure-store';
 // next launch, then kick off the live fetch in the background and replace.
 const HOME_CACHE_KEY = 'samo.android.home-cache.v1';
 
-// SecureStore writes are slow at large sizes. Hard-cap stored items per
-// section so the cache stays well under any platform-specific blob limit and
-// the write doesn't stall app launch. The user will get the fresh data once
-// the network call returns anyway.
+// Hard-cap stored items per section so the cache write stays fast and the
+// app's launch read doesn't have to JSON-parse a 200KB blob. The user will
+// see the freshly-loaded sections once the network call finishes anyway.
 const MAX_ITEMS_PER_SECTION = 32;
 
 export interface AndroidCachedHomeContent {
@@ -31,7 +31,7 @@ const isValidContent = (value: unknown): value is MobileHomeContent => {
 
 export const loadCachedHomeContent = async (): Promise<AndroidCachedHomeContent | null> => {
     try {
-        const raw = await SecureStore.getItemAsync(HOME_CACHE_KEY);
+        const raw = await fsGetItem(HOME_CACHE_KEY);
         if (!raw) {
             return null;
         }
@@ -63,7 +63,7 @@ export const saveCachedHomeContent = async (content: MobileHomeContent): Promise
             cachedAt: Date.now(),
             content: trimmed,
         };
-        await SecureStore.setItemAsync(HOME_CACHE_KEY, JSON.stringify(payload));
+        await fsSetItem(HOME_CACHE_KEY, JSON.stringify(payload));
     } catch {
         // Caching is best-effort. Never block launch on a write failure.
     }
@@ -71,7 +71,7 @@ export const saveCachedHomeContent = async (content: MobileHomeContent): Promise
 
 export const clearCachedHomeContent = async (): Promise<void> => {
     try {
-        await SecureStore.deleteItemAsync(HOME_CACHE_KEY);
+        await fsDeleteItem(HOME_CACHE_KEY);
     } catch {
         // ignore
     }

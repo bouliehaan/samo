@@ -1,7 +1,11 @@
 import { type ServerAuthenticationResult } from '../server/server-auth';
 import { getFetch, requestJson, type SamoFetch } from '../server/server-http';
 import { ServerType } from '../server/server-types';
-import { getMobileContentSource, type MobileContentSource } from './mobile-content-source';
+import {
+    buildAudiobookshelfArtworkUrl,
+    getMobileContentSource,
+    type MobileContentSource,
+} from './mobile-content-source';
 import { type MobileHomeItem, MobileHomeItemType } from './mobile-home';
 import {
     buildSubsonicMusicPlayback,
@@ -67,8 +71,36 @@ export interface MobileMediaTrack {
     trackNumber?: number;
 }
 
+interface AudiobookshelfAudioTrack {
+    contentUrl?: string;
+    duration?: number;
+    ino?: string;
+    index?: number;
+    metadata?: {
+        ext?: string;
+        filename?: string;
+        size?: number;
+    };
+    mimeType?: string;
+    startOffset?: number;
+    title?: string;
+}
+
+interface AudiobookshelfLibraryFile {
+    ino?: string;
+    fileType?: string;
+    isSupplementary?: boolean;
+    metadata?: {
+        ext?: string;
+        filename?: string;
+        path?: string;
+        size?: number;
+    };
+}
+
 interface AudiobookshelfLibraryItem {
     id?: string;
+    libraryFiles?: AudiobookshelfLibraryFile[];
     media?: {
         authorName?: string;
         authors?: Array<{ id?: string; name?: string }>;
@@ -97,6 +129,7 @@ interface AudiobookshelfLibraryItem {
         narratorName?: string;
         subtitle?: string;
         title?: string;
+        tracks?: AudiobookshelfAudioTrack[];
     };
     name?: string;
     numEpisodes?: number;
@@ -106,6 +139,13 @@ interface AudiobookshelfPodcastEpisode {
     audioFile?: {
         chapters?: Array<{ start: number; title?: string }>;
         duration?: number;
+        index?: number;
+        ino?: string;
+        metadata?: {
+            ext?: string;
+            filename?: string;
+            size?: number;
+        };
         mimeType?: string;
     };
     chapters?: Array<{ start: number; title?: string }>;
@@ -418,11 +458,19 @@ const buildAudiobookshelfMetadataLines = (
 ): string[] => {
     const metadata = item.media?.metadata;
     const lines: string[] = [];
+    const author = getAudiobookshelfAuthor(item);
     const narrator = getAudiobookshelfNarrator(item);
     const series = getAudiobookshelfSeries(item);
     const genres = metadata?.genres?.filter(Boolean).slice(0, 3).join(' · ');
     const duration = formatAudiobookshelfDurationSeconds(item.media?.duration);
     const publishedYear = metadata?.publishedYear ? String(metadata.publishedYear) : undefined;
+
+    if (author && type === MobileMediaDetailType.AUDIOBOOK) {
+        // Lead the metadata stack with the author. Audiobook detail already
+        // has an "AUDIOBOOK" eyebrow up top, so the grey lines should start
+        // with the information you actually want under the title.
+        lines.push(author);
+    }
 
     if (narrator) {
         lines.push(`Narrated by ${narrator}`);
@@ -463,11 +511,10 @@ const getAudiobookshelfCoverUrl = (
     authentication: ServerAuthenticationResult,
     item: AudiobookshelfLibraryItem,
 ) => {
-    return (
-        item.media?.metadata?.imageUrl ??
-        (item.id
-            ? `${authentication.url}/api/items/${item.id}/cover?token=${encodeURIComponent(authentication.credential)}`
-            : undefined)
+    return buildAudiobookshelfArtworkUrl(
+        authentication,
+        item.id,
+        item.media?.metadata?.imageUrl,
     );
 };
 
@@ -1128,6 +1175,167 @@ export const loadSongRadioQueue = async ({
     }
 
     return dedupePlayables(blended).slice(0, desired);
+};
+
+export interface AudiobookshelfDownloadFile {
+    /** Build the download URL for this file (no Authorization header included). */
+    downloadUrl: string;
+    /** Duration of this file in seconds (used to compute book-time → file mapping). */
+    durationSeconds?: number;
+    /** Filename suggested by the server, e.g. "Title - 01.mp3". */
+    filename: string;
+    /** Inode id used to construct /api/items/:id/file/:ino. */
+    ino: string;
+    /** Sequence index within the book. Defaults to array order if absent. */
+    index?: number;
+    /** Item id this file belongs to. */
+    itemId: string;
+    /** File size in bytes, when the server reports it. */
+    sizeBytes?: number;
+    /** Where in the book this file begins (seconds). 0 for single-file books. */
+    startOffsetSeconds?: number;
+    /** ABS title for the file (sometimes pretty, sometimes not). */
+    title?: string;
+}
+
+/**
+ * Resolve the per-file audio download URLs for an Audiobookshelf library
+ * item. ABS exposes the raw, original-quality audio files via
+ * `/api/items/:itemId/file/:ino`, which is what we want for offline storage
+ * — the `/play` endpoint sometimes returns a server-transcoded HLS stream
+ * that's lower quality and can't be saved offline as a single file.
+ *
+ * For single-file audiobooks this returns one entry. For multi-file books
+ * the array contains one entry per part, in playback order.
+ */
+export const loadAudiobookshelfDownloadFiles = async ({
+    authentication,
+    fetch: fetcher,
+    itemId,
+}: {
+    authentication: ServerAuthenticationResult;
+    fetch?: SamoFetch;
+    itemId: string;
+}): Promise<AudiobookshelfDownloadFile[]> => {
+    if (authentication.type !== ServerType.AUDIOBOOKSHELF) {
+        return [];
+    }
+
+    const request = getFetch(fetcher);
+    const item = await requestJson<AudiobookshelfLibraryItem>(
+        request,
+        `${authentication.url}/api/items/${itemId}?expanded=1`,
+        {
+            headers: { Authorization: `Bearer ${authentication.credential}` },
+            method: 'GET',
+        },
+    );
+
+    // For audiobooks the `media.tracks` array is the per-file breakdown; each
+    // entry carries the ino we need plus the startOffset+duration we need
+    // for offline book-time → file mapping. Older ABS responses / podcasts
+    // fall back to libraryFiles filtered to audio files.
+    const tracks = item.media?.tracks ?? [];
+    if (tracks.length > 0) {
+        return tracks
+            .filter((track) => Boolean(track.ino))
+            .map((track, idx) => ({
+                downloadUrl: `${authentication.url}/api/items/${itemId}/file/${track.ino}`,
+                durationSeconds: track.duration,
+                filename:
+                    track.metadata?.filename ??
+                    track.title ??
+                    `audio-${track.index ?? idx}`,
+                index: track.index ?? idx,
+                ino: track.ino!,
+                itemId,
+                sizeBytes: track.metadata?.size,
+                startOffsetSeconds: track.startOffset ?? 0,
+                title: track.title,
+            }));
+    }
+
+    const libraryFiles = item.libraryFiles ?? [];
+    return libraryFiles
+        .filter((file) =>
+            file.ino &&
+            (file.fileType === 'audio' ||
+                /\.(mp3|m4a|m4b|aac|flac|ogg|opus|wav)$/i.test(file.metadata?.filename ?? '')),
+        )
+        .map((file, idx) => ({
+            downloadUrl: `${authentication.url}/api/items/${itemId}/file/${file.ino}`,
+            filename: file.metadata?.filename ?? `audio-${file.ino}`,
+            index: idx,
+            ino: file.ino!,
+            itemId,
+            sizeBytes: file.metadata?.size,
+            startOffsetSeconds: 0,
+        }));
+};
+
+export interface AudiobookshelfPodcastEpisodeFile {
+    /** Filename suggested by the server. */
+    filename: string;
+    /** ABS episode id (matches MobileMediaTrack.episodeId for podcasts). */
+    episodeId: string;
+    /** Build URL hits /api/items/:itemId/file/:ino — original-quality raw file. */
+    fileDownloadUrl: string;
+    /** Inode id of the audio file. */
+    ino: string;
+    /** Parent library item id. */
+    itemId: string;
+    /** File size in bytes when known. */
+    sizeBytes?: number;
+    /** Episode title for UI surfaces. */
+    title: string;
+}
+
+/**
+ * Resolve raw per-episode download URLs for an Audiobookshelf podcast item.
+ *
+ * The play endpoint we use for streaming (`/api/items/:itemId/play/:episodeId`)
+ * is allowed to hand back an HLS playlist instead of the underlying audio
+ * file, which can't be saved as a single offline file. The file endpoint
+ * (`/api/items/:itemId/file/:ino`) always returns the source MP3/M4A
+ * regardless of how the server's playback layer would deliver it.
+ *
+ * Returns one entry per episode that has a discoverable audio file ino.
+ */
+export const loadAudiobookshelfPodcastEpisodeFiles = async ({
+    authentication,
+    fetch: fetcher,
+    itemId,
+}: {
+    authentication: ServerAuthenticationResult;
+    fetch?: SamoFetch;
+    itemId: string;
+}): Promise<AudiobookshelfPodcastEpisodeFile[]> => {
+    if (authentication.type !== ServerType.AUDIOBOOKSHELF) {
+        return [];
+    }
+
+    const request = getFetch(fetcher);
+    const item = await requestJson<AudiobookshelfLibraryItem>(
+        request,
+        `${authentication.url}/api/items/${itemId}?expanded=1`,
+        {
+            headers: { Authorization: `Bearer ${authentication.credential}` },
+            method: 'GET',
+        },
+    );
+
+    const episodes = item.media?.episodes ?? [];
+    return episodes
+        .filter((episode) => episode.id && episode.audioFile?.ino)
+        .map((episode, idx) => ({
+            episodeId: episode.id!,
+            filename: episode.audioFile?.metadata?.filename ?? `episode-${episode.index ?? idx}`,
+            fileDownloadUrl: `${authentication.url}/api/items/${itemId}/file/${episode.audioFile!.ino}`,
+            ino: episode.audioFile!.ino!,
+            itemId,
+            sizeBytes: episode.audioFile?.metadata?.size,
+            title: episode.title ?? `Episode ${episode.index ?? idx + 1}`,
+        }));
 };
 
 export const addMobileTracksToPlaylist = async ({

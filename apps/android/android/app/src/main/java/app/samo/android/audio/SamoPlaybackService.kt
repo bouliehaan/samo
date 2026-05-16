@@ -111,7 +111,14 @@ class SamoPlaybackService : MediaSessionService() {
     fun ensurePlayer(requestHeaders: Map<String, String>): ExoPlayer {
         val existing = player
 
-        if (existing != null && playerRequestHeaders == requestHeaders) {
+        // Reuse the existing player only if headers match AND it's not in a
+        // stuck error state. A lingering playerError means the player will
+        // silently swallow play commands until rebuilt — that was the
+        // "audio cuts out and won't recover until APK rebuild" bug.
+        if (existing != null &&
+            playerRequestHeaders == requestHeaders &&
+            existing.playerError == null
+        ) {
             return existing
         }
 
@@ -145,8 +152,16 @@ class SamoPlaybackService : MediaSessionService() {
             .buildUpon()
             .setAudioOffloadPreferences(
                 TrackSelectionParameters.AudioOffloadPreferences.Builder()
+                    // DISABLED instead of ENABLED. Hardware audio offload is
+                    // great for battery on long audiobook sessions, but some
+                    // devices have firmware bugs where the offload path gets
+                    // wedged after hours of playback and audio silently stops
+                    // until the process is killed. Until we can detect+work
+                    // around that case dynamically, force ExoPlayer to use
+                    // standard software decode — slightly higher battery,
+                    // dramatically more reliable.
                     .setAudioOffloadMode(
-                        TrackSelectionParameters.AudioOffloadPreferences.AUDIO_OFFLOAD_MODE_ENABLED
+                        TrackSelectionParameters.AudioOffloadPreferences.AUDIO_OFFLOAD_MODE_DISABLED
                     )
                     .setIsGaplessSupportRequired(false)
                     .setIsSpeedChangeSupportRequired(false)
