@@ -33,7 +33,9 @@ import { StatusBar } from 'expo-status-bar';
 import { getColors as getImageColors } from 'react-native-image-colors';
 import type { ImageColorsResult } from 'react-native-image-colors/build/types';
 import {
+    Component,
     createContext,
+    type ErrorInfo,
     type ReactNode,
     useCallback,
     useContext,
@@ -2569,6 +2571,7 @@ export default function App() {
 
     return (
         <GestureHandlerRootView style={styles.gestureRoot}>
+        <ErrorBoundary label="App">
         <MediaContextMenuContext.Provider value={mediaContextMenuApi}>
         <View style={styles.safeArea}>
             <StatusBar style="light" />
@@ -2708,22 +2711,45 @@ export default function App() {
                         playbackState={playbackState}
                         playerProgress={playerProgress}
                     />
-                    <FullScreenPlayer
-                        isShuffled={isShuffled}
-                        lastPlayedItem={lastPlayedItem}
-                        onClose={() => setIsFullPlayerOpen(false)}
-                        onNext={() => void handleNavigatePlayback(1)}
-                        onPrevious={() => void handleNavigatePlayback(-1)}
-                        onSeek={(positionMs) => void handleSeekPlayback(positionMs)}
-                        onTogglePlayback={handleTogglePlayback}
-                        onToggleShuffle={handleToggleShuffle}
-                        playerProgress={playerProgress}
-                        reducedMotion={reducedMotion}
-                        serverConnections={serverConnections}
-                        playbackState={playbackState}
-                        queue={playbackQueueRef.current}
-                        visible={isFullPlayerOpen}
-                    />
+                    <ErrorBoundary
+                        fallback={(error, retry) => (
+                            // If the fullscreen player throws, just dismiss it
+                            // rather than blocking the whole app. The user can
+                            // still see the miniplayer and tap to reopen.
+                            <View style={styles.errorBoundaryRoot}>
+                                <Text style={styles.errorBoundaryTitle}>Player error</Text>
+                                <Text style={styles.errorBoundarySubtitle}>{error.message}</Text>
+                                <Pressable
+                                    accessibilityRole="button"
+                                    onPress={() => {
+                                        setIsFullPlayerOpen(false);
+                                        retry();
+                                    }}
+                                    style={styles.errorBoundaryButton}
+                                >
+                                    <Text style={styles.errorBoundaryButtonText}>Dismiss</Text>
+                                </Pressable>
+                            </View>
+                        )}
+                        label="FullScreenPlayer"
+                    >
+                        <FullScreenPlayer
+                            isShuffled={isShuffled}
+                            lastPlayedItem={lastPlayedItem}
+                            onClose={() => setIsFullPlayerOpen(false)}
+                            onNext={() => void handleNavigatePlayback(1)}
+                            onPrevious={() => void handleNavigatePlayback(-1)}
+                            onSeek={(positionMs) => void handleSeekPlayback(positionMs)}
+                            onTogglePlayback={handleTogglePlayback}
+                            onToggleShuffle={handleToggleShuffle}
+                            playerProgress={playerProgress}
+                            reducedMotion={reducedMotion}
+                            serverConnections={serverConnections}
+                            playbackState={playbackState}
+                            queue={playbackQueueRef.current}
+                            visible={isFullPlayerOpen}
+                        />
+                    </ErrorBoundary>
                     {isSearchOverlayOpen ? (
                         <SearchOverlay
                             homeContentState={homeContentState}
@@ -2812,6 +2838,7 @@ export default function App() {
             />
         </View>
         </MediaContextMenuContext.Provider>
+        </ErrorBoundary>
         </GestureHandlerRootView>
     );
 }
@@ -8804,6 +8831,60 @@ const QueueSheetOverlay = ({
 };
 
 
+interface ErrorBoundaryProps {
+    children: ReactNode;
+    fallback?: (error: Error, retry: () => void) => ReactNode;
+    label: string;
+}
+
+interface ErrorBoundaryState {
+    error: Error | null;
+}
+
+/**
+ * Catches render-phase errors so a single component throwing doesn't take the
+ * whole app to a blank screen. The default fallback gives the user a Try Again
+ * button that resets the boundary's state; production builds will otherwise
+ * silently re-mount on retry, dev builds still surface the redbox first.
+ */
+class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+    state: ErrorBoundaryState = { error: null };
+
+    static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+        return { error };
+    }
+
+    componentDidCatch(error: Error, info: ErrorInfo): void {
+        console.warn(`[${this.props.label}] caught render error:`, error, info.componentStack);
+    }
+
+    private handleRetry = (): void => {
+        this.setState({ error: null });
+    };
+
+    render(): ReactNode {
+        if (this.state.error) {
+            if (this.props.fallback) {
+                return this.props.fallback(this.state.error, this.handleRetry);
+            }
+            return (
+                <View style={styles.errorBoundaryRoot}>
+                    <Text style={styles.errorBoundaryTitle}>Something went wrong</Text>
+                    <Text style={styles.errorBoundarySubtitle}>{this.state.error.message}</Text>
+                    <Pressable
+                        accessibilityRole="button"
+                        onPress={this.handleRetry}
+                        style={styles.errorBoundaryButton}
+                    >
+                        <Text style={styles.errorBoundaryButtonText}>Try Again</Text>
+                    </Pressable>
+                </View>
+            );
+        }
+        return this.props.children;
+    }
+}
+
 // Letters that anchor the alphabet sidebar. '#' catches anything starting with
 // a digit or non-Latin character so every item maps somewhere.
 const ALPHABET_SIDEBAR_LETTERS = [
@@ -11000,6 +11081,38 @@ const styles = StyleSheet.create({
         fontWeight: '700',
         lineHeight: 18,
         marginTop: 4,
+    },
+    errorBoundaryButton: {
+        backgroundColor: colors.accent,
+        borderRadius: 999,
+        marginTop: spacing.md,
+        paddingHorizontal: spacing.lg,
+        paddingVertical: spacing.sm,
+    },
+    errorBoundaryButtonText: {
+        color: '#050505',
+        fontSize: 15,
+        fontWeight: '800',
+    },
+    errorBoundaryRoot: {
+        alignItems: 'center',
+        backgroundColor: colors.background,
+        flex: 1,
+        justifyContent: 'center',
+        padding: spacing.lg,
+    },
+    errorBoundarySubtitle: {
+        color: colors.muted,
+        fontSize: 14,
+        lineHeight: 20,
+        marginTop: spacing.xs,
+        textAlign: 'center',
+    },
+    errorBoundaryTitle: {
+        color: colors.text,
+        fontSize: 18,
+        fontWeight: '800',
+        textAlign: 'center',
     },
     gestureRoot: {
         backgroundColor: colors.background,
