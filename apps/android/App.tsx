@@ -49,6 +49,7 @@ import {
     AppState,
     BackHandler,
     Dimensions,
+    FlatList,
     type GestureResponderEvent,
     Image,
     type ImageSourcePropType,
@@ -235,7 +236,16 @@ type AndroidUtilityScreen =
     | 'add-server'
     | 'downloads'
     | 'manage-servers'
-    | 'settings';
+    | 'settings'
+    | 'view-all';
+
+type ViewAllVariant = 'album' | 'artist' | 'audiobook' | 'playlist' | 'podcast';
+
+interface ViewAllRoute {
+    items: MobileHomeItem[];
+    title: string;
+    variant: ViewAllVariant;
+}
 
 interface ContentBackedScreenProps {
     emptyTitle: string;
@@ -250,6 +260,7 @@ interface HomeScreenProps {
     homeContentState: AndroidHomeContentState;
     onManageServers: () => void;
     onSelectItem: (item: AndroidRecentContentSourceItem) => void;
+    onViewAll: (section: HomeDisplaySection) => void;
     recentItems: AndroidRecentContentItem[];
     serverConnections: ServerAuthenticationResult[];
 }
@@ -556,6 +567,7 @@ export default function App() {
         status: 'idle',
     });
     const [isFullPlayerOpen, setIsFullPlayerOpen] = useState(false);
+    const [viewAllRoute, setViewAllRoute] = useState<null | ViewAllRoute>(null);
     // Unified animation source for the MiniPlayer ↔ FullScreenPlayer transition.
     // 0 = miniplayer visible, 1 = fullscreen visible. Both components derive
     // their opacity / translate / scale from this single shared value so the
@@ -674,6 +686,12 @@ export default function App() {
                 activeUtilityScreen === 'manage-servers'
             ) {
                 setActiveUtilityScreen('settings');
+                return true;
+            }
+
+            if (activeUtilityScreen === 'view-all') {
+                setActiveUtilityScreen(null);
+                setViewAllRoute(null);
                 return true;
             }
 
@@ -1308,6 +1326,31 @@ export default function App() {
         }
         return { cached: Boolean(cached) };
     };
+
+    const handleOpenViewAll = useCallback(
+        (section: HomeDisplaySection) => {
+            const variant = getViewAllVariant(section.variant);
+            if (!variant) return;
+            // We pull from the homeContentState rather than section.items so
+            // the View All page sees the wider set the home-content service
+            // returned (capped at ANDROID_HOME_CONTENT_LIMIT = 80 per server-
+            // side section), not just the trimmed slice we render on Home.
+            const wideItems =
+                homeContentState.status === 'loaded'
+                    ? gatherViewAllItems(homeContentState.content.sections, variant)
+                    : section.items.filter(
+                          (item): item is MobileHomeItem => 'type' in item,
+                      );
+            setViewAllRoute({
+                items: wideItems,
+                title: section.title,
+                variant,
+            });
+            setActiveUtilityScreen('view-all');
+            setMediaDetailState({ status: 'idle' });
+        },
+        [homeContentState],
+    );
 
     const handleSelectMediaItem = async (item: MobileHomeItem | MobileSearchItem) => {
         recordRecentContentItem(item);
@@ -2540,6 +2583,15 @@ export default function App() {
                                 serverUrl={serverUrl}
                                 username={username}
                             />
+                        ) : activeUtilityScreen === 'view-all' && viewAllRoute ? (
+                            <ViewAllScreen
+                                onBack={() => {
+                                    setActiveUtilityScreen(null);
+                                    setViewAllRoute(null);
+                                }}
+                                onSelectItem={handleSelectMediaItem}
+                                route={viewAllRoute}
+                            />
                         ) : mediaDetailState.status !== 'idle' ? (
                             <MediaDetailContent
                                 homeContentState={homeContentState}
@@ -2556,6 +2608,7 @@ export default function App() {
                                 homeContentState={visibleHomeContentState}
                                 onManageServers={() => setActiveUtilityScreen('manage-servers')}
                                 onSelectItem={handleSelectMediaItem}
+                                onViewAll={handleOpenViewAll}
                                 recentItems={visibleRecentItems}
                                 serverConnections={serverConnections}
                             />
@@ -2890,6 +2943,7 @@ const HomeScreen = ({
     homeContentState,
     onManageServers,
     onSelectItem,
+    onViewAll,
     recentItems,
     serverConnections,
 }: HomeScreenProps) => {
@@ -2919,6 +2973,7 @@ const HomeScreen = ({
             homeContentState={homeContentState}
             onFilterChange={setHomeFilter}
             onSelectItem={onSelectItem}
+            onViewAll={onViewAll}
             recentItems={recentItems}
         />
     );
@@ -4328,12 +4383,14 @@ const HomeContentStatus = ({
     homeContentState,
     onFilterChange,
     onSelectItem,
+    onViewAll,
     recentItems,
 }: {
     activeFilter: HomeFilter;
     homeContentState: AndroidHomeContentState;
     onFilterChange: (filter: HomeFilter) => void;
     onSelectItem: (item: AndroidRecentContentSourceItem) => void;
+    onViewAll?: (section: HomeDisplaySection) => void;
     recentItems: AndroidRecentContentItem[];
 }) => {
     if (homeContentState.status === 'idle') {
@@ -4419,7 +4476,11 @@ const HomeContentStatus = ({
                     variant={activeFilter === 'podcasts' ? 'podcast' : 'book'}
                 />
             ) : (
-                <ContentSections onSelectItem={onSelectItem} sections={filteredSections} />
+                <ContentSections
+                    onSelectItem={onSelectItem}
+                    onViewAll={onViewAll}
+                    sections={filteredSections}
+                />
             )}
             <WarningList errors={homeContentState.content.errors} title="Server warnings" />
         </>
@@ -4641,6 +4702,54 @@ const getHomeItemsForSection = (
 
 const RECENTLY_ADDED_ROW_LIMIT = 18;
 const RECENTLY_ADDED_PER_CATEGORY = 8;
+
+const getViewAllVariant = (
+    variant: HomeDisplaySection['variant'],
+): null | ViewAllVariant => {
+    switch (variant) {
+        case 'album':
+            return 'album';
+        case 'artist':
+            return 'artist';
+        case 'book':
+            return 'audiobook';
+        case 'playlist':
+            return 'playlist';
+        case 'podcast':
+            return 'podcast';
+        // Recents, the "Recently Added" hero, the radio grid, and the wide
+        // "continue" row are deliberately ephemeral or live — no View All.
+        case 'continue':
+        case 'radio':
+        case 'recents':
+        case 'wide':
+            return null;
+    }
+};
+
+const gatherViewAllItems = (
+    sections: MobileHomeSection[],
+    variant: ViewAllVariant,
+): MobileHomeItem[] => {
+    const sectionsById = new Map(sections.map((section) => [section.id, section]));
+    const byId = (id: MobileHomeSectionId): MobileHomeItem[] =>
+        sectionsById.get(id)?.items ?? [];
+    switch (variant) {
+        case 'album':
+            return getUniqueHomeItems([
+                ...byId(MobileHomeSectionId.FAVORITE_ALBUMS),
+                ...byId(MobileHomeSectionId.RECENTLY_ADDED),
+            ]) as MobileHomeItem[];
+        case 'artist':
+            return byId(MobileHomeSectionId.FAVORITE_ARTISTS);
+        case 'audiobook':
+            return byId(MobileHomeSectionId.AUDIOBOOKS);
+        case 'playlist':
+            return byId(MobileHomeSectionId.PLAYLISTS);
+        case 'podcast':
+            return byId(MobileHomeSectionId.PODCASTS);
+    }
+};
 
 /**
  * Interleave the newest items from each category into a single hero row at
@@ -4970,9 +5079,11 @@ const HomeFilterGrid = ({
 
 const ContentSections = ({
     onSelectItem,
+    onViewAll,
     sections,
 }: {
     onSelectItem: (item: AndroidRecentContentSourceItem) => void;
+    onViewAll?: (section: HomeDisplaySection) => void;
     sections: HomeDisplaySection[];
 }) => {
     const contextMenu = useMediaContextMenu();
@@ -4988,10 +5099,28 @@ const ContentSections = ({
                 const isRadioSection = section.variant === 'radio';
                 const isRecent = section.variant === 'recents';
                 const isWide = section.variant === 'wide' || isContinue;
+                // View All is opt-in by variant: recents (incl. the
+                // "Recently Added" hero), wide/continue and radio rows are
+                // skipped because they're meant to be ephemeral or live.
+                const viewAllVariant = getViewAllVariant(section.variant);
+                const canViewAll = viewAllVariant !== null && Boolean(onViewAll);
 
                 return (
                     <View key={section.key} style={styles.homeSection}>
-                        <Text style={styles.sectionTitle}>{section.title}</Text>
+                        <View style={styles.sectionHeaderRow}>
+                            <Text style={styles.sectionTitle}>{section.title}</Text>
+                            {canViewAll ? (
+                                <Pressable
+                                    accessibilityLabel={`View all ${section.title}`}
+                                    accessibilityRole="button"
+                                    hitSlop={8}
+                                    onPress={() => onViewAll?.(section)}
+                                    style={styles.sectionViewAll}
+                                >
+                                    <Text style={styles.sectionViewAllLabel}>View All</Text>
+                                </Pressable>
+                            ) : null}
+                        </View>
                         <ScrollView horizontal showsHorizontalScrollIndicator={false}>
                             {section.items.map((item) => {
                                 const isRadio = item.type === MobileHomeItemType.RADIO;
@@ -8536,6 +8665,212 @@ const QueueSheetOverlay = ({
 };
 
 
+// Letters that anchor the alphabet sidebar. '#' catches anything starting with
+// a digit or non-Latin character so every item maps somewhere.
+const ALPHABET_SIDEBAR_LETTERS = [
+    '#', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K',
+    'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W',
+    'X', 'Y', 'Z',
+] as const;
+
+const buildAlphabetLetterIndex = (
+    items: MobileHomeItem[],
+): Map<string, number> => {
+    const map = new Map<string, number>();
+    items.forEach((item, index) => {
+        const first = item.title.charAt(0).toUpperCase();
+        const letter = first >= 'A' && first <= 'Z' ? first : '#';
+        if (!map.has(letter)) {
+            map.set(letter, index);
+        }
+    });
+    return map;
+};
+
+const ViewAllScreen = ({
+    onBack,
+    onSelectItem,
+    route,
+}: {
+    onBack: () => void;
+    onSelectItem: (item: AndroidRecentContentSourceItem) => void;
+    route: ViewAllRoute;
+}) => {
+    const contextMenu = useMediaContextMenu();
+    const listRef = useRef<FlatList<MobileHomeItem>>(null);
+    const sortedItems = useMemo(
+        () =>
+            [...route.items].sort((left, right) =>
+                left.title.localeCompare(right.title, undefined, {
+                    sensitivity: 'base',
+                }),
+            ),
+        [route.items],
+    );
+    const letterIndex = useMemo(
+        () => buildAlphabetLetterIndex(sortedItems),
+        [sortedItems],
+    );
+
+    const handleJumpToLetter = useCallback(
+        (letter: string) => {
+            const index = letterIndex.get(letter);
+            if (typeof index !== 'number') return;
+            // Round down to the start of the row in 2-column layouts so the
+            // first item of the chosen letter sits on the left.
+            const rowStartIndex = index - (index % 2);
+            listRef.current?.scrollToIndex({
+                animated: true,
+                index: rowStartIndex,
+                viewPosition: 0,
+            });
+        },
+        [letterIndex],
+    );
+
+    const renderItem = useCallback(
+        ({ item }: { item: MobileHomeItem }) => {
+            const isArtist = item.type === MobileHomeItemType.ARTIST;
+            return (
+                <Pressable
+                    accessibilityRole="button"
+                    onLongPress={() => contextMenu.openForItem(item)}
+                    onPress={() => onSelectItem(item)}
+                    style={styles.viewAllTile}
+                >
+                    {item.artworkUrl ? (
+                        <Image
+                            source={{ uri: item.artworkUrl }}
+                            style={[
+                                styles.viewAllTileArtwork,
+                                isArtist && styles.libraryArtworkRound,
+                            ]}
+                        />
+                    ) : (
+                        <View
+                            style={[
+                                styles.viewAllTileArtwork,
+                                styles.viewAllTileArtworkFallback,
+                                isArtist && styles.libraryArtworkRound,
+                            ]}
+                        >
+                            <Text style={styles.mediaArtworkLetter}>
+                                {item.title.slice(0, 1).toUpperCase()}
+                            </Text>
+                        </View>
+                    )}
+                    <Text numberOfLines={1} style={styles.viewAllTileTitle}>
+                        {item.title}
+                    </Text>
+                    {item.subtitle ? (
+                        <Text
+                            numberOfLines={1}
+                            style={styles.viewAllTileSubtitle}
+                        >
+                            {item.subtitle}
+                        </Text>
+                    ) : null}
+                </Pressable>
+            );
+        },
+        [contextMenu, onSelectItem],
+    );
+
+    return (
+        <View style={styles.viewAllScreen}>
+            <View style={styles.viewAllHeader}>
+                <Pressable
+                    accessibilityLabel="Back"
+                    accessibilityRole="button"
+                    hitSlop={12}
+                    onPress={onBack}
+                    style={styles.viewAllBackButton}
+                >
+                    <Text style={styles.viewAllBackArrow}>‹</Text>
+                </Pressable>
+                <Text numberOfLines={1} style={styles.viewAllTitle}>
+                    {route.title}
+                </Text>
+                <View style={styles.viewAllBackButton} />
+            </View>
+            <View style={styles.viewAllBody}>
+                {sortedItems.length === 0 ? (
+                    <Text style={styles.viewAllEmpty}>
+                        Nothing to show here yet.
+                    </Text>
+                ) : (
+                    <FlatList
+                        columnWrapperStyle={styles.viewAllColumn}
+                        contentContainerStyle={styles.viewAllListContent}
+                        data={sortedItems}
+                        keyExtractor={(item) => getContentItemKey(item)}
+                        numColumns={2}
+                        // scrollToIndex can fail when the target row hasn't been
+                        // measured yet; fall back to an offset estimate and
+                        // re-attempt once layout settles.
+                        onScrollToIndexFailed={(info) => {
+                            const offset = info.averageItemLength * Math.floor(info.index / 2);
+                            listRef.current?.scrollToOffset({
+                                animated: true,
+                                offset,
+                            });
+                            setTimeout(() => {
+                                listRef.current?.scrollToIndex({
+                                    animated: true,
+                                    index: info.index,
+                                });
+                            }, 60);
+                        }}
+                        ref={listRef}
+                        renderItem={renderItem}
+                        showsVerticalScrollIndicator={false}
+                    />
+                )}
+                <AlphabetSidebar
+                    activeLetters={letterIndex}
+                    onJumpToLetter={handleJumpToLetter}
+                />
+            </View>
+        </View>
+    );
+};
+
+const AlphabetSidebar = ({
+    activeLetters,
+    onJumpToLetter,
+}: {
+    activeLetters: Map<string, number>;
+    onJumpToLetter: (letter: string) => void;
+}) => {
+    return (
+        <View pointerEvents="box-none" style={styles.alphabetSidebar}>
+            {ALPHABET_SIDEBAR_LETTERS.map((letter) => {
+                const isActive = activeLetters.has(letter);
+                return (
+                    <Pressable
+                        accessibilityLabel={`Jump to ${letter}`}
+                        accessibilityRole="button"
+                        disabled={!isActive}
+                        hitSlop={4}
+                        key={letter}
+                        onPress={() => onJumpToLetter(letter)}
+                        style={styles.alphabetSidebarLetterButton}
+                    >
+                        <Text
+                            style={[
+                                styles.alphabetSidebarLetter,
+                                isActive && styles.alphabetSidebarLetterActive,
+                            ]}
+                        >
+                            {letter}
+                        </Text>
+                    </Pressable>
+                );
+            })}
+        </View>
+    );
+};
+
 const EmptyServerBackedScreen = ({ tabTitle }: { tabTitle: string }) => {
     return (
         <View style={styles.section}>
@@ -9678,6 +10013,119 @@ const styles = StyleSheet.create({
     },
     keyboardView: {
         flex: 1,
+    },
+    alphabetSidebar: {
+        alignItems: 'center',
+        bottom: spacing.md,
+        justifyContent: 'space-between',
+        paddingVertical: spacing.xs,
+        position: 'absolute',
+        right: 2,
+        top: spacing.md,
+    },
+    alphabetSidebarLetter: {
+        color: 'rgba(255,255,255,0.18)',
+        fontSize: 10,
+        fontWeight: '800',
+        letterSpacing: 0.5,
+    },
+    alphabetSidebarLetterActive: {
+        color: colors.accent,
+    },
+    alphabetSidebarLetterButton: {
+        alignItems: 'center',
+        height: 16,
+        justifyContent: 'center',
+        width: 18,
+    },
+    sectionHeaderRow: {
+        alignItems: 'center',
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        paddingRight: spacing.sm,
+    },
+    sectionViewAll: {
+        paddingHorizontal: spacing.xs,
+        paddingVertical: 4,
+    },
+    sectionViewAllLabel: {
+        color: colors.accent,
+        fontSize: 13,
+        fontWeight: '700',
+    },
+    viewAllBackArrow: {
+        color: colors.text,
+        fontSize: 28,
+        fontWeight: '300',
+        lineHeight: 28,
+    },
+    viewAllBackButton: {
+        alignItems: 'center',
+        height: 36,
+        justifyContent: 'center',
+        width: 36,
+    },
+    viewAllBody: {
+        flex: 1,
+        position: 'relative',
+    },
+    viewAllColumn: {
+        gap: HOME_TILE_GAP,
+        paddingHorizontal: HOME_EDGE_PADDING,
+    },
+    viewAllEmpty: {
+        color: colors.muted,
+        padding: spacing.lg,
+    },
+    viewAllHeader: {
+        alignItems: 'center',
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        paddingHorizontal: spacing.sm,
+        paddingVertical: spacing.sm,
+    },
+    viewAllListContent: {
+        gap: HOME_TILE_GAP,
+        paddingBottom: spacing.xl,
+        // Leave room on the right edge so tiles don't sit under the sidebar.
+        paddingRight: 22,
+    },
+    viewAllScreen: {
+        flex: 1,
+    },
+    viewAllTile: {
+        flex: 1,
+    },
+    viewAllTileArtwork: {
+        aspectRatio: 1,
+        borderRadius: 2,
+        marginBottom: 6,
+        width: '100%',
+    },
+    viewAllTileArtworkFallback: {
+        alignItems: 'center',
+        backgroundColor: colors.surface,
+        justifyContent: 'center',
+    },
+    viewAllTileSubtitle: {
+        color: colors.muted,
+        fontSize: 12,
+        lineHeight: 16,
+        paddingHorizontal: 2,
+    },
+    viewAllTileTitle: {
+        color: colors.text,
+        fontSize: 14,
+        fontWeight: '700',
+        lineHeight: 18,
+        paddingHorizontal: 2,
+    },
+    viewAllTitle: {
+        color: colors.text,
+        flex: 1,
+        fontSize: 17,
+        fontWeight: '800',
+        textAlign: 'center',
     },
     libraryArtworkRound: {
         borderRadius: 999,
