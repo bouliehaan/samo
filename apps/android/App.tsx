@@ -4639,6 +4639,49 @@ const getHomeItemsForSection = (
     return sortHomeItemsByRecents(sectionsById.get(sectionId)?.items ?? [], recentItems);
 };
 
+const RECENTLY_ADDED_ROW_LIMIT = 18;
+const RECENTLY_ADDED_PER_CATEGORY = 8;
+
+/**
+ * Interleave the newest items from each category into a single hero row at
+ * the top of Home. Each contributing section is already addedAt-desc on the
+ * server side; we round-robin so albums, audiobooks, and podcasts all show up
+ * even when one category has many more items than the others.
+ */
+const buildRecentlyAddedHeroRow = (
+    sectionsById: Map<MobileHomeSectionId, MobileHomeSection>,
+): MobileHomeItem[] => {
+    const buckets: MobileHomeItem[][] = [
+        (sectionsById.get(MobileHomeSectionId.RECENTLY_ADDED)?.items ?? []).slice(
+            0,
+            RECENTLY_ADDED_PER_CATEGORY,
+        ),
+        (sectionsById.get(MobileHomeSectionId.AUDIOBOOKS)?.items ?? []).slice(
+            0,
+            RECENTLY_ADDED_PER_CATEGORY,
+        ),
+        (sectionsById.get(MobileHomeSectionId.PODCASTS)?.items ?? []).slice(
+            0,
+            RECENTLY_ADDED_PER_CATEGORY,
+        ),
+    ];
+    const result: MobileHomeItem[] = [];
+    const seenKeys = new Set<string>();
+    const maxLength = Math.max(0, ...buckets.map((bucket) => bucket.length));
+    for (let i = 0; i < maxLength && result.length < RECENTLY_ADDED_ROW_LIMIT; i += 1) {
+        for (const bucket of buckets) {
+            const item = bucket[i];
+            if (!item) continue;
+            const key = getRecentContentItemKey(item);
+            if (seenKeys.has(key)) continue;
+            seenKeys.add(key);
+            result.push(item);
+            if (result.length >= RECENTLY_ADDED_ROW_LIMIT) break;
+        }
+    }
+    return result;
+};
+
 const getContentItemProgress = (item: AndroidRecentContentSourceItem) => {
     const playback = item.playback;
 
@@ -4721,6 +4764,20 @@ const getHomeDisplaySections = (
             !recentKeys.has(getRecentContentItemKey(item)) &&
             (item.type === MobileHomeItemType.ALBUM || item.type === MobileHomeItemType.PLAYLIST),
     );
+
+    // "Recently added to server" sits above Recents: the newest items each
+    // server has, interleaved across categories so albums, audiobooks, and
+    // podcasts all get a turn. Each per-category section is already sorted
+    // addedAt-desc on the server side, so the first N of each are the newest.
+    const recentlyAddedItems = buildRecentlyAddedHeroRow(sectionsById);
+    if (recentlyAddedItems.length > 0) {
+        displaySections.push({
+            items: recentlyAddedItems,
+            key: 'recently-added-to-server',
+            title: 'Recently Added',
+            variant: 'recents',
+        });
+    }
 
     if (recentDisplayItems.length > 0) {
         displaySections.push({
