@@ -65,7 +65,14 @@ import {
     View,
     type ViewStyle,
 } from 'react-native';
-import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
+import Reanimated, {
+    runOnJS,
+    useAnimatedStyle,
+    useSharedValue,
+    withSpring,
+    withTiming,
+} from 'react-native-reanimated';
 import Svg, { Circle as SvgCircle } from 'react-native-svg';
 
 import heartIcon from './assets/icons/heart.png';
@@ -7346,6 +7353,15 @@ const SCREEN_HEIGHT = Dimensions.get('window').height;
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const FULL_PLAYER_ARTWORK_SIZE = Math.min(SCREEN_WIDTH - 64, SCREEN_HEIGHT * 0.42);
 
+// Tuned for a "weighty but settling" feel — never overshoots more than ~3%, lands
+// in under 400 ms. Shared by the fullscreen player open and drag-cancel paths so
+// both motions read as the same physical object.
+const OPEN_SPRING = { damping: 26, mass: 0.9, stiffness: 220 } as const;
+// How far the player must be dragged (or how fast it must be flung) before a
+// release commits to dismiss instead of springing back.
+const DISMISS_DISTANCE = SCREEN_HEIGHT * 0.22;
+const DISMISS_VELOCITY = 900;
+
 // Two album cards must fit perfectly across the screen with breathing room.
 const HOME_EDGE_PADDING = 10;
 const HOME_TILE_GAP = 6;
@@ -7579,7 +7595,7 @@ const FullScreenPlayer = ({
     serverConnections: ServerAuthenticationResult[];
     visible: boolean;
 }) => {
-    const slideAnim = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
+    const translateY = useSharedValue(SCREEN_HEIGHT);
     const [sleepMenuVisible, setSleepMenuVisible] = useState(false);
     const [sleepSecondsLeft, setSleepSecondsLeft] = useState<null | number>(null);
     const [queueVisible, setQueueVisible] = useState(false);
@@ -7658,25 +7674,20 @@ const FullScreenPlayer = ({
 
     useEffect(() => {
         if (visible) {
-            slideAnim.setValue(SCREEN_HEIGHT);
-            Animated.spring(slideAnim, {
-                friction: 12,
-                tension: 70,
-                toValue: 0,
-                useNativeDriver: true,
-            }).start();
+            // Snap offscreen first so the spring always runs from the same start
+            // even if the user just dismissed and reopened mid-animation.
+            translateY.value = SCREEN_HEIGHT;
+            translateY.value = withSpring(0, OPEN_SPRING);
         }
-    }, [visible, slideAnim]);
-
-
+    }, [visible, translateY]);
 
     const dismissPlayer = useCallback(() => {
-        Animated.timing(slideAnim, {
-            duration: 240,
-            toValue: SCREEN_HEIGHT,
-            useNativeDriver: true,
-        }).start(() => onClose());
-    }, [slideAnim, onClose]);
+        translateY.value = withTiming(SCREEN_HEIGHT, { duration: 220 }, (finished) => {
+            if (finished) {
+                runOnJS(onClose)();
+            }
+        });
+    }, [translateY, onClose]);
 
     const openFullscreenContextMenu = useCallback(() => {
         const item = playbackState.status !== 'idle' ? playbackState.item : lastPlayedItem;
@@ -7752,48 +7763,73 @@ const FullScreenPlayer = ({
         }
     }, [contextMenu, lastPlayedItem, playbackState, serverConnections]);
 
-    const playerPanResponder = useMemo(
+    // Vertical drag-to-dismiss. Reanimated drives translateY on the UI thread so
+    // the gesture and the spring/timing animations no longer fight over a single
+    // Animated.Value across two drivers (the old PanResponder + JS Animated.Value
+    // implementation reset visibly on slow drags because setValue() runs JS-side
+    // while the spring back ran natively).
+    const dragGesture = useMemo(
         () =>
-            PanResponder.create({
-                // Capture phase: intercept downward drags before any child (including scrubber)
-                onMoveShouldSetPanResponderCapture: (_event, gs) => {
-                    return gs.dy > 6 && gs.dy > Math.abs(gs.dx) * 1.2;
-                },
-                onPanResponderGrant: () => {
-                    slideAnim.stopAnimation();
-                },
-                onPanResponderMove: (_event, gs) => {
-                    if (gs.dy > 0) {
-                        slideAnim.setValue(gs.dy);
-                    }
-                },
-                onPanResponderRelease: (_event, gs) => {
-                    if (gs.dy > 90 || (gs.vy > 0.4 && gs.dy > 20)) {
-                        dismissPlayer();
+            Gesture.Pan()
+                .activeOffsetY(10)
+                .failOffsetX([-20, 20])
+                .onChange((event) => {
+                    'worklet';
+                    const next = event.translationY;
+                    translateY.value = next < 0 ? 0 : next;
+                })
+                .onEnd((event) => {
+                    'worklet';
+                    const shouldDismiss =
+                        event.translationY > DISMISS_DISTANCE ||
+                        (event.velocityY > DISMISS_VELOCITY && event.translationY > 40);
+                    if (shouldDismiss) {
+                        translateY.value = withTiming(
+                            SCREEN_HEIGHT,
+                            { duration: 220 },
+                            (finished) => {
+                                if (finished) {
+                                    runOnJS(onClose)();
+                                }
+                            },
+                        );
                         return;
                     }
-
-                    const absDx = Math.abs(gs.dx);
-                    const absDy = Math.abs(gs.dy);
-
-                    if (gs.dx < -80 || (gs.vx < -0.5 && absDx > absDy * 1.2)) {
-                        onNext();
-                    } else if (gs.dx > 80 || (gs.vx > 0.5 && absDx > absDy * 1.2)) {
-                        onPrevious();
-                    }
-
-                    Animated.spring(slideAnim, {
-                        friction: 10,
-                        tension: 80,
-                        toValue: 0,
-                        useNativeDriver: true,
-                    }).start();
-                },
-                onPanResponderTerminationRequest: () => false,
-                onStartShouldSetPanResponder: () => false,
-            }),
-        [dismissPlayer, onNext, onPrevious, slideAnim],
+                    translateY.value = withSpring(0, {
+                        ...OPEN_SPRING,
+                        velocity: event.velocityY,
+                    });
+                }),
+        [onClose, translateY],
     );
+
+    // Horizontal swipe-to-skip. Separated so it can fail cleanly when the gesture
+    // is clearly vertical — composing with Simultaneous lets the user
+    // start a swipe in either direction without one stealing the other.
+    const skipGesture = useMemo(
+        () =>
+            Gesture.Pan()
+                .activeOffsetX([-30, 30])
+                .failOffsetY([-30, 30])
+                .onEnd((event) => {
+                    'worklet';
+                    if (event.translationX < -80 || event.velocityX < -700) {
+                        runOnJS(onNext)();
+                    } else if (event.translationX > 80 || event.velocityX > 700) {
+                        runOnJS(onPrevious)();
+                    }
+                }),
+        [onNext, onPrevious],
+    );
+
+    const playerGesture = useMemo(
+        () => Gesture.Simultaneous(dragGesture, skipGesture),
+        [dragGesture, skipGesture],
+    );
+
+    const playerAnimatedStyle = useAnimatedStyle(() => ({
+        transform: [{ translateY: translateY.value }],
+    }));
 
     if (!visible || !displayItem) {
         return null;
@@ -7821,8 +7857,8 @@ const FullScreenPlayer = ({
     const timelineSegments = displayItem.timelineSegments;
     return (
         <>
-        <Animated.View
-            {...playerPanResponder.panHandlers}
+        <GestureDetector gesture={playerGesture}>
+        <Reanimated.View
             style={[
                 StyleSheet.absoluteFillObject,
                 styles.fullPlayer,
@@ -7832,8 +7868,8 @@ const FullScreenPlayer = ({
                     // is meant to be edge-to-edge. Escape that padding so the
                     // album-colored gradient runs all the way under the status bar.
                     top: Platform.OS === 'android' ? -24 : 0,
-                    transform: [{ translateY: slideAnim }],
                 },
+                playerAnimatedStyle,
             ]}
         >
             {/* OLED base; remains under the gradients so unfilled corners stay black. */}
@@ -8037,7 +8073,8 @@ const FullScreenPlayer = ({
                     </Text>
                 ) : null}
             </View>
-        </Animated.View>
+        </Reanimated.View>
+        </GestureDetector>
 
         {/* Sleep timer picker */}
         <Modal animationType="slide" onRequestClose={() => setSleepMenuVisible(false)} transparent visible={sleepMenuVisible}>
