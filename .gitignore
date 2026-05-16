@@ -5,3 +5,7 @@ out
 .eslintcache
 *.log*
 release
+
+# Android emulator/device bug reports — large ZIPs that may include device
+# identifiers and full system logs; generated under apps/android/ on demand.
+apps/android/bugreport-*.zip
