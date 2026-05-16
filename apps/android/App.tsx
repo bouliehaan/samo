@@ -66,6 +66,7 @@ import {
     type ViewStyle,
 } from 'react-native';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
+import LinearGradient from 'react-native-linear-gradient';
 import Reanimated, {
     interpolate,
     runOnJS,
@@ -7400,11 +7401,7 @@ const HOME_PRIMARY_TILE = Math.floor(
 const HOME_COMPACT_OFFSET = 30;
 const HOME_ROUNDED_OFFSET = 22;
 
-// Picks the "essence" color of an album cover — the swatch that best captures
-// the artwork's mood. Vibrant first (saturated/recognizable), then a saturated
-// fallback chain, ending on the platform's average. Web Palette skews lighter,
-// so we prefer darkVibrant on web for the dark player backdrop.
-// Parse #rrggbb into RGB tuple. Returns null on bad input.
+// Parse #rrggbb into an RGB tuple in 0..255. Returns null on bad input.
 const parseHex = (hex: string): [number, number, number] | null => {
     const m = hex.trim().match(/^#?([0-9a-fA-F]{6})$/);
     if (!m) return null;
@@ -7412,124 +7409,141 @@ const parseHex = (hex: string): [number, number, number] | null => {
     return [(v >> 16) & 0xff, (v >> 8) & 0xff, v & 0xff];
 };
 
-// Render a vertical linear gradient as a stack of N horizontal slices whose
-// background colors interpolate between the given stops. With 40 slices on a
-// typical phone (~22px per slice) and a single-family color palette where
-// adjacent slices differ by only 1-2 RGB units, the result is visually
-// indistinguishable from a true GPU-rendered linear gradient. We use this
-// instead of any native gradient library because native view-manager
-// registration under React Native's new architecture (Fabric) is unreliable in
-// this Expo SDK stack for both expo-linear-gradient and
-// react-native-linear-gradient — a JS-side renderer is the more stable
-// foundation here, not a hack.
-const VerticalGradient = ({
-    colors,
-    locations,
-    slices = 40,
-    style,
-}: {
-    colors: string[];
-    locations?: number[];
-    slices?: number;
-    style?: ViewStyle | ViewStyle[];
-}) => {
-    const stops = useMemo(() => {
-        const rgbs = colors.map(parseHex).filter((c): c is [number, number, number] => c !== null);
-        const locs = locations && locations.length === colors.length
-            ? locations
-            : colors.map((_, i) => i / Math.max(1, colors.length - 1));
-        return { locs, rgbs };
-    }, [colors, locations]);
-
-    if (stops.rgbs.length < 2) {
-        return (
-            <View
-                pointerEvents="none"
-                style={[style, { backgroundColor: colors[0] ?? '#000000' }]}
-            />
-        );
-    }
-
-    return (
-        <View pointerEvents="none" style={[style, { overflow: 'hidden' }]}>
-            {Array.from({ length: slices }, (_, i) => {
-                const t = i / (slices - 1);
-                let lo = 0;
-                while (lo < stops.locs.length - 2 && stops.locs[lo + 1] < t) lo += 1;
-                const hi = lo + 1;
-                const span = Math.max(0.0001, stops.locs[hi] - stops.locs[lo]);
-                const k = Math.max(0, Math.min(1, (t - stops.locs[lo]) / span));
-                const a = stops.rgbs[lo];
-                const b = stops.rgbs[hi];
-                const r = Math.round(a[0] + (b[0] - a[0]) * k);
-                const g = Math.round(a[1] + (b[1] - a[1]) * k);
-                const bch = Math.round(a[2] + (b[2] - a[2]) * k);
-                return (
-                    <View
-                        key={i}
-                        style={{
-                            backgroundColor: `rgb(${r},${g},${bch})`,
-                            height: `${(1 / slices) * 100 + 0.6}%`,
-                            left: 0,
-                            position: 'absolute',
-                            right: 0,
-                            top: `${(i / slices) * 100}%`,
-                        }}
-                    />
-                );
-            })}
-        </View>
-    );
+// sRGB↔OKLab conversions. OKLab is perceptually uniform — linear interpolation
+// in OKLab produces visibly smooth gradients in their color family with no hue
+// shift, which is what makes Tidal's player backdrop feel "in one piece"
+// instead of muddied or banded.
+//
+// Constants are from Björn Ottosson's reference implementation
+// (https://bottosson.github.io/posts/oklab/).
+const srgbChannelToLinear = (c: number): number => {
+    const n = c / 255;
+    return n <= 0.04045 ? n / 12.92 : Math.pow((n + 0.055) / 1.055, 2.4);
 };
-
-const mixWithBlack = (hex: string, blackAmount: number): string => {
-    const m = hex.trim().match(/^#?([0-9a-fA-F]{6})$/);
-    if (!m) return hex;
-    const v = parseInt(m[1], 16);
-    const r = (v >> 16) & 0xff;
-    const g = (v >> 8) & 0xff;
-    const b = v & 0xff;
-    const k = Math.max(0, Math.min(1, blackAmount));
-    const mix = (c: number) => Math.round(c * (1 - k));
-    const out = (mix(r) << 16) | (mix(g) << 8) | mix(b);
+const linearChannelToSrgb = (c: number): number => {
+    const v = c <= 0.0031308 ? c * 12.92 : 1.055 * Math.pow(c, 1 / 2.4) - 0.055;
+    return Math.max(0, Math.min(255, Math.round(v * 255)));
+};
+const rgbToOklab = (
+    r: number,
+    g: number,
+    b: number,
+): [number, number, number] => {
+    const lr = srgbChannelToLinear(r);
+    const lg = srgbChannelToLinear(g);
+    const lb = srgbChannelToLinear(b);
+    const l = 0.4122214708 * lr + 0.5363325363 * lg + 0.0514459929 * lb;
+    const m = 0.2119034982 * lr + 0.6806995451 * lg + 0.1073969566 * lb;
+    const s = 0.0883024619 * lr + 0.2817188376 * lg + 0.6299787005 * lb;
+    const l_ = Math.cbrt(l);
+    const m_ = Math.cbrt(m);
+    const s_ = Math.cbrt(s);
+    return [
+        0.2104542553 * l_ + 0.793617785 * m_ - 0.0040720468 * s_,
+        1.9779984951 * l_ - 2.428592205 * m_ + 0.4505937099 * s_,
+        0.0259040371 * l_ + 0.7827717662 * m_ - 0.808675766 * s_,
+    ];
+};
+const oklabToHex = (L: number, a: number, b: number): string => {
+    const l_ = L + 0.3963377774 * a + 0.2158037573 * b;
+    const m_ = L - 0.1055613458 * a - 0.0638541728 * b;
+    const s_ = L - 0.0894841775 * a - 1.291485548 * b;
+    const l = l_ * l_ * l_;
+    const m = m_ * m_ * m_;
+    const s = s_ * s_ * s_;
+    const lr = 4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s;
+    const lg = -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s;
+    const lb = -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s;
+    const r = linearChannelToSrgb(lr);
+    const g = linearChannelToSrgb(lg);
+    const bch = linearChannelToSrgb(lb);
+    const out = (r << 16) | (g << 8) | bch;
     return `#${out.toString(16).padStart(6, '0')}`;
 };
 
+// Picks the "essence" color of an album cover by scoring each swatch the
+// extractor returned. The aim is a Tidal-like backdrop: muted enough not to
+// fight the UI, characteristic enough that the eye reads it as "the album's
+// color family" rather than a generic dark wash. Scoring works in OKLab so
+// chroma and lightness can be reasoned about perceptually instead of by raw
+// RGB heuristics.
 const pickAlbumEssenceColor = (result: ImageColorsResult): null | string => {
-    const skipBlack = (hex: null | string | undefined): null | string => {
-        if (!hex || typeof hex !== 'string') return null;
-        const m = hex.trim().match(/^#?([0-9a-fA-F]{6})$/);
-        if (!m) return null;
-        const v = parseInt(m[1], 16);
-        const r = (v >> 16) & 0xff;
-        const g = (v >> 8) & 0xff;
-        const b = v & 0xff;
-        if (r + g + b < 24) return null; // near-black
-        if (r + g + b > 720) return null; // near-white
-        return `#${m[1]}`;
+    const candidates: string[] = [];
+    const push = (hex: null | string | undefined): void => {
+        if (typeof hex === 'string' && /^#?[0-9a-fA-F]{6}$/.test(hex.trim())) {
+            candidates.push(hex.trim().startsWith('#') ? hex.trim() : `#${hex.trim()}`);
+        }
     };
-    // Tidal-style: prefer muted swatches for a washed, premium backdrop in the
-    // album's color family. Vibrant only as a last resort — it overpowers the UI.
     if (result.platform === 'android') {
-        return (
-            skipBlack(result.darkMuted) ||
-            skipBlack(result.muted) ||
-            skipBlack(result.darkVibrant) ||
-            skipBlack(result.dominant) ||
-            skipBlack(result.average) ||
-            skipBlack(result.vibrant)
-        );
+        push(result.darkMuted);
+        push(result.darkVibrant);
+        push(result.muted);
+        push(result.dominant);
+        push(result.average);
+        push(result.vibrant);
+    } else if (result.platform === 'ios') {
+        push(result.background);
+        push(result.primary);
+        push(result.secondary);
+        push(result.detail);
+    } else {
+        push(result.darkMuted);
+        push(result.darkVibrant);
+        push(result.muted);
+        push(result.dominant);
+        push(result.vibrant);
     }
-    if (result.platform === 'ios') {
-        return skipBlack(result.background) || skipBlack(result.primary);
+
+    let bestHex: null | string = null;
+    let bestScore = -Infinity;
+    for (const hex of candidates) {
+        const rgb = parseHex(hex);
+        if (!rgb) continue;
+        const [L, a, b] = rgbToOklab(rgb[0], rgb[1], rgb[2]);
+        const C = Math.sqrt(a * a + b * b);
+        // Penalize anything near-black, near-white, or near-grey — the backdrop
+        // should still feel like part of the album, not the device chrome.
+        if (L < 0.12 || L > 0.92) continue;
+        if (C < 0.025) continue;
+        // Prefer L around 0.4 (rich, mid-tone) and reasonable chroma. We darken
+        // afterwards, so it's OK if the picked color is brighter than the final
+        // stop — we just need a color with personality.
+        const lightnessFit = 1 - Math.min(1, Math.abs(L - 0.42) / 0.42);
+        const chromaFit = Math.min(1, C / 0.14);
+        const score = lightnessFit * 0.6 + chromaFit * 0.7;
+        if (score > bestScore) {
+            bestScore = score;
+            bestHex = hex;
+        }
     }
-    // web
-    return (
-        skipBlack(result.darkMuted) ||
-        skipBlack(result.muted) ||
-        skipBlack(result.darkVibrant) ||
-        skipBlack(result.dominant)
-    );
+    return bestHex;
+};
+
+// Three OKLab-based stops keeping the same chroma family, descending in
+// lightness. With perceptual stops a true GPU gradient covers the screen
+// without the dullness or hue shift you get from sRGB lerp, and the close
+// palette across the screen suppresses visible banding on its own.
+const buildBackdropStops = (
+    essence: null | string,
+): readonly [string, string, string] => {
+    if (!essence) {
+        return ['#1f1812', '#100b07', '#050403'] as const;
+    }
+    const rgb = parseHex(essence);
+    if (!rgb) {
+        return ['#1f1812', '#100b07', '#050403'] as const;
+    }
+    const [, a, b] = rgbToOklab(rgb[0], rgb[1], rgb[2]);
+    // Chroma fades alongside lightness so the bottom of the gradient settles
+    // into near-black without looking flat-painted.
+    const topL = 0.22;
+    const midL = 0.13;
+    const bottomL = 0.05;
+    return [
+        oklabToHex(topL, a * 0.95, b * 0.95),
+        oklabToHex(midL, a * 0.7, b * 0.7),
+        oklabToHex(bottomL, a * 0.35, b * 0.35),
+    ] as const;
 };
 
 const SwipeDismissSheet = ({
@@ -7652,8 +7666,10 @@ const FullScreenPlayer = ({
             cache: true,
             fallback: '#101010',
             key: artworkUrl,
-            pixelSpacing: 5,
-            quality: 'low',
+            // High-quality extraction picks more swatches and clusters them
+            // more carefully, which dramatically improves the OKLab scorer's
+            // chance of finding a characteristic muted swatch.
+            quality: 'high',
         })
             .then((result) => {
                 if (cancelled) return;
@@ -7993,8 +8009,10 @@ const FullScreenPlayer = ({
             <View pointerEvents="none" style={styles.fullPlayerBg} />
             {/* Tidal-style backdrop: a single album-derived color holds the whole screen
                 in one family, with a gentle vertical darkening that adds depth without
-                breaking into a separate tone. Two stacked gradients cross-fade on
-                track change so the new album color rolls in smoothly. */}
+                breaking into a separate tone. Two stacked native linear gradients
+                cross-fade on track change so the new album color rolls in smoothly,
+                and stops are perceptually generated in OKLab so the mid-gradient
+                stays in the album's color family instead of muddying. */}
             {bgPrev ? (
                 <Animated.View
                     pointerEvents="none"
@@ -8008,14 +8026,9 @@ const FullScreenPlayer = ({
                         },
                     ]}
                 >
-                    <VerticalGradient
-                        colors={[
-                            mixWithBlack(bgPrev, 0.05),
-                            bgPrev,
-                            mixWithBlack(bgPrev, 0.22),
-                            mixWithBlack(bgPrev, 0.38),
-                        ]}
-                        locations={[0, 0.3, 0.75, 1]}
+                    <LinearGradient
+                        colors={buildBackdropStops(bgPrev) as unknown as string[]}
+                        locations={[0, 0.55, 1]}
                         style={StyleSheet.absoluteFillObject}
                     />
                 </Animated.View>
@@ -8034,18 +8047,9 @@ const FullScreenPlayer = ({
                     },
                 ]}
             >
-                <VerticalGradient
-                    colors={
-                        bgCurr
-                            ? [
-                                  mixWithBlack(bgCurr, 0.05),
-                                  bgCurr,
-                                  mixWithBlack(bgCurr, 0.22),
-                                  mixWithBlack(bgCurr, 0.38),
-                              ]
-                            : ['#1f1812', '#17120c', '#100b07', '#0a0705']
-                    }
-                    locations={[0, 0.3, 0.75, 1]}
+                <LinearGradient
+                    colors={buildBackdropStops(bgCurr) as unknown as string[]}
+                    locations={[0, 0.55, 1]}
                     style={StyleSheet.absoluteFillObject}
                 />
             </Animated.View>
