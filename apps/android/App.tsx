@@ -65,6 +65,7 @@ import {
     View,
     type ViewStyle,
 } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import heartIcon from './assets/icons/heart.png';
 import shuffleIcon from './assets/icons/shuffle.png';
@@ -2400,6 +2401,7 @@ export default function App() {
         : undefined;
 
     return (
+        <GestureHandlerRootView style={styles.gestureRoot}>
         <MediaContextMenuContext.Provider value={mediaContextMenuApi}>
         <View style={styles.safeArea}>
             <StatusBar style="light" />
@@ -2628,6 +2630,7 @@ export default function App() {
             />
         </View>
         </MediaContextMenuContext.Provider>
+        </GestureHandlerRootView>
     );
 }
 
@@ -9908,6 +9911,10 @@ const styles = StyleSheet.create({
         fontWeight: '700',
         lineHeight: 18,
         marginTop: 4,
+    },
+    gestureRoot: {
+        backgroundColor: colors.background,
+        flex: 1,
     },
     safeArea: {
         backgroundColor: colors.background,
