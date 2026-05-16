@@ -1,4 +1,7 @@
 import { type ServerAuthenticationResult } from '@samo/core/server';
+// expo-file-system 19 split the API; the legacy export still exposes
+// documentDirectory + the simple read/write helpers we need here.
+import * as FileSystem from 'expo-file-system/legacy';
 
 export interface AbsProgressContext {
     authentication: ServerAuthenticationResult;
@@ -13,11 +16,110 @@ export interface AbsLoadedProgress {
     isFinished: boolean;
 }
 
-const isFinishedProgress = (
-    progress: AbsLoadedProgress,
-): boolean => progress.isFinished || (progress.durationSeconds
-    ? progress.currentTimeSeconds / progress.durationSeconds >= 0.96
-    : false);
+interface PersistedEntry {
+    currentTimeSeconds: number;
+    durationSeconds: number;
+    episodeId?: string;
+    itemId: string;
+    serverKey: string;
+    syncedAt: number;
+    updatedAt: number;
+}
+
+const STORAGE_FILE = `${FileSystem.documentDirectory ?? ''}abs-progress-pending.json`;
+const THROTTLE_MS = 20_000;
+
+let memCache: PersistedEntry[] = [];
+const lastAttemptByKey = new Map<string, number>();
+let writeInFlight: null | Promise<void> = null;
+let writeQueued = false;
+let initialized = false;
+
+const isFinishedProgress = (progress: AbsLoadedProgress): boolean =>
+    progress.isFinished ||
+    (progress.durationSeconds
+        ? progress.currentTimeSeconds / progress.durationSeconds >= 0.96
+        : false);
+
+const serverKeyOf = (auth: ServerAuthenticationResult): string =>
+    `${auth.type}:${auth.url}`;
+
+const contextKeyOf = (ctx: { episodeId?: string; itemId: string }): string =>
+    `${ctx.itemId}:${ctx.episodeId ?? ''}`;
+
+const findEntry = (
+    itemId: string,
+    episodeId?: string,
+): PersistedEntry | undefined =>
+    memCache.find((e) => e.itemId === itemId && e.episodeId === episodeId);
+
+const upsertEntry = (entry: PersistedEntry): void => {
+    const idx = memCache.findIndex(
+        (e) => e.itemId === entry.itemId && e.episodeId === entry.episodeId,
+    );
+    if (idx >= 0) {
+        memCache[idx] = entry;
+    } else {
+        memCache.push(entry);
+    }
+};
+
+const isValidEntry = (raw: unknown): raw is PersistedEntry =>
+    typeof raw === 'object' &&
+    raw !== null &&
+    typeof (raw as PersistedEntry).itemId === 'string' &&
+    typeof (raw as PersistedEntry).serverKey === 'string' &&
+    typeof (raw as PersistedEntry).currentTimeSeconds === 'number' &&
+    typeof (raw as PersistedEntry).durationSeconds === 'number' &&
+    typeof (raw as PersistedEntry).syncedAt === 'number' &&
+    typeof (raw as PersistedEntry).updatedAt === 'number';
+
+// Coalesce writes so a burst of upserts only produces one file write.
+const flushMemCacheToDisk = async (): Promise<void> => {
+    if (writeInFlight) {
+        writeQueued = true;
+        return writeInFlight;
+    }
+    writeInFlight = (async () => {
+        try {
+            await FileSystem.writeAsStringAsync(
+                STORAGE_FILE,
+                JSON.stringify(memCache),
+            );
+        } catch {
+            // Disk full / IO error — best-effort. Memory copy still wins on
+            // subsequent flush attempts.
+        } finally {
+            writeInFlight = null;
+            if (writeQueued) {
+                writeQueued = false;
+                void flushMemCacheToDisk();
+            }
+        }
+    })();
+    return writeInFlight;
+};
+
+/**
+ * Read any pending entries from disk into the in-memory cache. Idempotent;
+ * subsequent calls are no-ops once the store has been read.
+ */
+export const initAbsProgressStore = async (): Promise<void> => {
+    if (initialized) return;
+    initialized = true;
+    try {
+        const info = await FileSystem.getInfoAsync(STORAGE_FILE);
+        if (!info.exists) return;
+        const text = await FileSystem.readAsStringAsync(STORAGE_FILE);
+        const parsed: unknown = JSON.parse(text);
+        if (Array.isArray(parsed)) {
+            memCache = parsed.filter(isValidEntry);
+        }
+    } catch {
+        // Corrupted file or missing directory — start fresh; the next
+        // successful sync will overwrite it.
+    }
+};
 
 export const loadAbsCurrentProgress = async (
     authentication: ServerAuthenticationResult,
@@ -46,7 +148,9 @@ export const loadAbsCurrentProgress = async (
         };
 
         const currentTimeSeconds =
-            typeof body.currentTime === 'number' && body.currentTime > 0 ? body.currentTime : 0;
+            typeof body.currentTime === 'number' && body.currentTime > 0
+                ? body.currentTime
+                : 0;
 
         if (currentTimeSeconds === 0 && !body.isFinished) {
             return null;
@@ -58,16 +162,60 @@ export const loadAbsCurrentProgress = async (
             isFinished: Boolean(body.isFinished),
         };
 
-        return isFinishedProgress(loaded) ? { ...loaded, currentTimeSeconds: 0 } : loaded;
+        // Reconcile with any unsynced local progress that hasn't reached the
+        // server yet — without this, a foreground after a network outage would
+        // overwrite the user's actual furthest-listened position with the older
+        // server value.
+        const pending = findEntry(itemId, episodeId);
+        if (pending && pending.updatedAt > pending.syncedAt) {
+            if (pending.currentTimeSeconds > loaded.currentTimeSeconds) {
+                loaded.currentTimeSeconds = pending.currentTimeSeconds;
+            }
+        }
+
+        return isFinishedProgress(loaded)
+            ? { ...loaded, currentTimeSeconds: 0 }
+            : loaded;
     } catch {
+        // Network error: fall back to the latest local progress if we have it.
+        const pending = findEntry(itemId, episodeId);
+        if (pending) {
+            return {
+                currentTimeSeconds: pending.currentTimeSeconds,
+                durationSeconds: pending.durationSeconds,
+                isFinished: false,
+            };
+        }
         return null;
     }
 };
 
-const syncToServer = async (
+// Mark a context as locally updated. Caller still attempts the wire write;
+// this just keeps the on-disk copy fresh so a crash or background-kill can be
+// recovered on next launch.
+const recordLocalProgress = (
+    ctx: AbsProgressContext,
+    currentTimeSeconds: number,
+    synced: boolean,
+): void => {
+    const existing = findEntry(ctx.itemId, ctx.episodeId);
+    const now = Date.now();
+    upsertEntry({
+        currentTimeSeconds,
+        durationSeconds: ctx.durationSeconds,
+        episodeId: ctx.episodeId,
+        itemId: ctx.itemId,
+        serverKey: serverKeyOf(ctx.authentication),
+        syncedAt: synced ? now : (existing?.syncedAt ?? 0),
+        updatedAt: now,
+    });
+    void flushMemCacheToDisk();
+};
+
+const writeProgressToServer = async (
     context: AbsProgressContext,
     currentTimeSeconds: number,
-): Promise<void> => {
+): Promise<boolean> => {
     const { authentication, durationSeconds, episodeId, itemId } = context;
     const path = episodeId
         ? `/api/me/progress/${itemId}/${episodeId}`
@@ -75,53 +223,86 @@ const syncToServer = async (
     const progress =
         durationSeconds > 0 ? Math.min(1, currentTimeSeconds / durationSeconds) : 0;
 
-    await fetch(`${authentication.url}${path}`, {
-        body: JSON.stringify({
-            currentTime: currentTimeSeconds,
-            duration: durationSeconds,
-            isFinished: progress >= 0.96,
-            lastUpdate: Date.now(),
-            progress,
-        }),
-        headers: {
-            Authorization: `Bearer ${authentication.credential}`,
-            'Content-Type': 'application/json',
-        },
-        method: 'PATCH',
-    });
+    try {
+        const response = await fetch(`${authentication.url}${path}`, {
+            body: JSON.stringify({
+                currentTime: currentTimeSeconds,
+                duration: durationSeconds,
+                isFinished: progress >= 0.96,
+                lastUpdate: Date.now(),
+                progress,
+            }),
+            headers: {
+                Authorization: `Bearer ${authentication.credential}`,
+                'Content-Type': 'application/json',
+            },
+            method: 'PATCH',
+        });
+        return response.ok;
+    } catch {
+        return false;
+    }
 };
-
-let lastSyncMs = 0;
-const THROTTLE_MS = 20_000;
 
 export const syncAbsProgressThrottled = async (
     context: AbsProgressContext,
     currentTimeSeconds: number,
 ): Promise<void> => {
+    const key = contextKeyOf(context);
     const now = Date.now();
 
-    if (now - lastSyncMs < THROTTLE_MS) {
+    if (now - (lastAttemptByKey.get(key) ?? 0) < THROTTLE_MS) {
+        // Inside the throttle window: still record locally so AppState
+        // background-handlers / boot-replay can pick up the latest position.
+        recordLocalProgress(context, currentTimeSeconds, false);
         return;
     }
 
-    lastSyncMs = now;
-
-    try {
-        await syncToServer(context, currentTimeSeconds);
-    } catch {
-        // graceful offline/failure
-    }
+    lastAttemptByKey.set(key, now);
+    const synced = await writeProgressToServer(context, currentTimeSeconds);
+    recordLocalProgress(context, currentTimeSeconds, synced);
 };
 
 export const syncAbsProgressImmediate = async (
     context: AbsProgressContext,
     currentTimeSeconds: number,
 ): Promise<void> => {
-    lastSyncMs = Date.now();
+    const key = contextKeyOf(context);
+    lastAttemptByKey.set(key, Date.now());
+    const synced = await writeProgressToServer(context, currentTimeSeconds);
+    recordLocalProgress(context, currentTimeSeconds, synced);
+};
 
-    try {
-        await syncToServer(context, currentTimeSeconds);
-    } catch {
-        // graceful offline/failure
+/**
+ * Push every pending (updatedAt > syncedAt) entry to its server. Called on
+ * AppState background and on app boot — the two moments where unsent progress
+ * is most likely to be lost otherwise.
+ */
+export const flushPendingAbsProgress = async (
+    authentications: ServerAuthenticationResult[],
+): Promise<void> => {
+    if (!initialized) {
+        await initAbsProgressStore();
     }
+    const authByKey = new Map(
+        authentications.map((auth) => [serverKeyOf(auth), auth]),
+    );
+    const pending = memCache.filter((entry) => entry.updatedAt > entry.syncedAt);
+    for (const entry of pending) {
+        const auth = authByKey.get(entry.serverKey);
+        if (!auth) continue;
+        const ok = await writeProgressToServer(
+            {
+                authentication: auth,
+                durationSeconds: entry.durationSeconds,
+                episodeId: entry.episodeId,
+                itemId: entry.itemId,
+            },
+            entry.currentTimeSeconds,
+        );
+        if (ok) {
+            entry.syncedAt = Date.now();
+        }
+    }
+    void flushMemCacheToDisk();
 };

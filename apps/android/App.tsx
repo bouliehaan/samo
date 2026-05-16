@@ -46,6 +46,7 @@ import {
     ActivityIndicator,
     Alert,
     Animated,
+    AppState,
     BackHandler,
     Dimensions,
     type GestureResponderEvent,
@@ -170,6 +171,8 @@ import {
 } from './src/services/server-health';
 import {
     type AbsProgressContext,
+    flushPendingAbsProgress,
+    initAbsProgressStore,
     loadAbsCurrentProgress,
     syncAbsProgressImmediate,
     syncAbsProgressThrottled,
@@ -1156,6 +1159,31 @@ export default function App() {
             isMounted = false;
         };
     }, [loadHomeForConnections]);
+
+    // Boot + foreground replay of any audiobookshelf progress writes that
+    // didn't make it to the server on the previous run (process killed during
+    // playback, dropped network, etc.). Idempotent — flushPendingAbsProgress
+    // only re-attempts entries whose updatedAt > syncedAt.
+    useEffect(() => {
+        if (serverConnections.length === 0) return;
+        void (async () => {
+            await initAbsProgressStore();
+            await flushPendingAbsProgress(serverConnections);
+        })();
+    }, [serverConnections]);
+
+    // Flush pending progress whenever the app loses foreground. AppState fires
+    // 'background' on Android when the user task-switches away or locks the
+    // screen — both moments where the process might be killed before the next
+    // throttled write would otherwise fire.
+    useEffect(() => {
+        const subscription = AppState.addEventListener('change', (next) => {
+            if (next === 'background' || next === 'inactive') {
+                void flushPendingAbsProgress(serverConnections);
+            }
+        });
+        return () => subscription.remove();
+    }, [serverConnections]);
 
     const handleConnect = async () => {
         if (!canConnect || authState.status === 'loading') return;
@@ -7376,6 +7404,29 @@ const SegmentedSeekBar = ({
 
 const SEEK_THUMB_WIDTH = 5;
 
+const findActiveChapterIndex = (
+    chapters: MobilePlaybackSegment[],
+    positionSeconds: number,
+): number => {
+    let index = -1;
+    for (let i = 0; i < chapters.length; i += 1) {
+        if (chapters[i].startSeconds <= positionSeconds) {
+            index = i;
+        } else {
+            break;
+        }
+    }
+    return index;
+};
+
+const formatChapterRange = (chapter: MobilePlaybackSegment): string => {
+    const start = formatPlaybackTime(chapter.startSeconds * 1000);
+    if (chapter.durationSeconds === undefined) {
+        return start;
+    }
+    return `${start} · ${formatPlaybackTime(chapter.durationSeconds * 1000)}`;
+};
+
 const SCREEN_HEIGHT = Dimensions.get('window').height;
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const FULL_PLAYER_ARTWORK_SIZE = Math.min(SCREEN_WIDTH - 64, SCREEN_HEIGHT * 0.42);
@@ -8187,7 +8238,12 @@ const FullScreenPlayer = ({
 
             <QueueSheetOverlay
                 backdropStyle={queueBackdropStyle}
+                chapters={
+                    displayItem.source === 'audiobook' ? timelineSegments : undefined
+                }
+                currentPositionMs={positionMs}
                 interactive={isQueueInteractive}
+                onChapterSeek={onSeek}
                 onClose={closeQueue}
                 queue={queue}
                 sheetStyle={queueSheetStyle}
@@ -8250,18 +8306,29 @@ const FullScreenPlayer = ({
  */
 const QueueSheetOverlay = ({
     backdropStyle,
+    chapters,
+    currentPositionMs,
     interactive,
+    onChapterSeek,
     onClose,
     queue,
     sheetStyle,
 }: {
     backdropStyle: ReturnType<typeof useAnimatedStyle>;
+    chapters?: MobilePlaybackSegment[];
+    currentPositionMs?: number;
     interactive: boolean;
+    onChapterSeek?: (positionMs: number) => void;
     onClose: () => void;
     queue: { index: number; items: MobilePlayableAudio[] } | null;
     sheetStyle: ReturnType<typeof useAnimatedStyle>;
 }) => {
     const items = queue?.items ?? [];
+    const showingChapters = (chapters?.length ?? 0) > 0;
+    const positionSeconds = (currentPositionMs ?? 0) / 1000;
+    const activeChapterIndex = showingChapters
+        ? findActiveChapterIndex(chapters!, positionSeconds)
+        : -1;
     return (
         <>
             <Reanimated.View
@@ -8279,13 +8346,74 @@ const QueueSheetOverlay = ({
                 style={[styles.queueSheet, sheetStyle]}
             >
                 <View style={styles.queueSheetHandle} />
-                <Text style={styles.queueSheetTitle}>Up Next</Text>
+                <Text style={styles.queueSheetTitle}>
+                    {showingChapters ? 'Chapters' : 'Up Next'}
+                </Text>
                 <ScrollView
                     contentContainerStyle={styles.queueSheetContent}
                     showsVerticalScrollIndicator={false}
                     style={styles.queueSheetScroll}
                 >
-                    {items.length === 0 ? (
+                    {showingChapters ? (
+                        chapters!.map((chapter, i) => {
+                            const isActive = i === activeChapterIndex;
+                            return (
+                                <Pressable
+                                    accessibilityRole="button"
+                                    key={`${chapter.id}-${i}`}
+                                    onPress={() =>
+                                        onChapterSeek?.(chapter.startSeconds * 1000)
+                                    }
+                                    style={styles.queueRow}
+                                >
+                                    <View style={styles.queueChapterNumber}>
+                                        <Text
+                                            style={[
+                                                styles.queueChapterNumberText,
+                                                isActive && { color: colors.accent },
+                                            ]}
+                                        >
+                                            {i + 1}
+                                        </Text>
+                                    </View>
+                                    <View style={styles.queueRowBody}>
+                                        <Text
+                                            numberOfLines={1}
+                                            style={[
+                                                styles.queueRowTitle,
+                                                isActive && { color: colors.accent },
+                                            ]}
+                                        >
+                                            {chapter.title ?? `Chapter ${i + 1}`}
+                                        </Text>
+                                        <Text
+                                            numberOfLines={1}
+                                            style={styles.queueRowSubtitle}
+                                        >
+                                            {formatChapterRange(chapter)}
+                                        </Text>
+                                    </View>
+                                    {isActive ? (
+                                        <View style={styles.queueNowPlayingIndicator}>
+                                            <View
+                                                style={[
+                                                    styles.queueRowPlayingBar,
+                                                    styles.queueRowPlayingBarShort,
+                                                ]}
+                                            />
+                                            <View style={styles.queueRowPlayingBar} />
+                                            <View
+                                                style={[
+                                                    styles.queueRowPlayingBar,
+                                                    styles.queueRowPlayingBarShort,
+                                                ]}
+                                            />
+                                        </View>
+                                    ) : null}
+                                </Pressable>
+                            );
+                        })
+                    ) : items.length === 0 ? (
                         <Text style={styles.queueSheetEmpty}>The queue is empty.</Text>
                     ) : (
                         items.map((item, i) => {
@@ -9196,6 +9324,17 @@ const styles = StyleSheet.create({
     },
     queueSheetScroll: {
         flex: 1,
+    },
+    queueChapterNumber: {
+        alignItems: 'center',
+        height: 44,
+        justifyContent: 'center',
+        width: 44,
+    },
+    queueChapterNumberText: {
+        color: colors.muted,
+        fontSize: 14,
+        fontWeight: '700',
     },
     queueSheetTitle: {
         color: colors.text,
