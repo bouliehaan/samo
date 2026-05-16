@@ -70,6 +70,7 @@ import Reanimated, {
     interpolate,
     runOnJS,
     type SharedValue,
+    useAnimatedReaction,
     useAnimatedStyle,
     useSharedValue,
     withSpring,
@@ -7386,6 +7387,9 @@ const OPEN_SPRING = { damping: 26, mass: 0.9, stiffness: 220 } as const;
 // release commits to dismiss instead of springing back.
 const DISMISS_DISTANCE = SCREEN_HEIGHT * 0.22;
 const DISMISS_VELOCITY = 900;
+// The queue sheet covers the lower 78% of the player when fully open; the
+// remaining strip keeps a sliver of artwork visible for context.
+const QUEUE_SHEET_HEIGHT = Math.round(SCREEN_HEIGHT * 0.78);
 
 // Two album cards must fit perfectly across the screen with breathing room.
 const HOME_EDGE_PADDING = 10;
@@ -7624,7 +7628,12 @@ const FullScreenPlayer = ({
 }) => {
     const [sleepMenuVisible, setSleepMenuVisible] = useState(false);
     const [sleepSecondsLeft, setSleepSecondsLeft] = useState<null | number>(null);
-    const [queueVisible, setQueueVisible] = useState(false);
+    // Queue sheet position: 0 = hidden below the screen, 1 = fully expanded.
+    // Driven by the same vertical-drag gesture that handles player dismiss,
+    // mode-switched per drag based on direction and current state.
+    const queueProgress = useSharedValue(0);
+    const dragMode = useSharedValue<'player' | 'queue'>('player');
+    const dragStartQueue = useSharedValue(0);
     const contextMenu = useMediaContextMenu();
     const [bgPrev, setBgPrev] = useState<null | string>(null);
     const [bgCurr, setBgCurr] = useState<null | string>(null);
@@ -7783,25 +7792,63 @@ const FullScreenPlayer = ({
         }
     }, [contextMenu, lastPlayedItem, playbackState, serverConnections]);
 
-    // Vertical drag-to-dismiss drives playerProgress directly so the miniplayer
-    // fades back in in lock-step as the fullscreen falls — the two surfaces
-    // share a single source of truth.
+    // One vertical-drag gesture handles three intents based on direction and
+    // current state: swipe-down dismisses the player; swipe-up opens the queue
+    // sheet (replacing the old queue button); a swipe-down while the queue is
+    // open closes the queue instead of dismissing the player. Mode is locked
+    // at the moment the first significant drag direction is detected so the
+    // motion stays predictable.
     const dragGesture = useMemo(
         () =>
             Gesture.Pan()
-                .activeOffsetY(10)
-                .failOffsetX([-20, 20])
+                .activeOffsetY([-10, 10])
+                .failOffsetX([-30, 30])
+                .onStart(() => {
+                    'worklet';
+                    dragStartQueue.value = queueProgress.value;
+                    // Tentative: if the queue is already open, this drag is
+                    // about the queue; otherwise wait for direction to decide.
+                    dragMode.value = queueProgress.value > 0 ? 'queue' : 'player';
+                })
                 .onChange((event) => {
                     'worklet';
+                    if (
+                        dragMode.value === 'player' &&
+                        event.translationY < -10
+                    ) {
+                        // First upward motion: switch to queue-mode.
+                        dragMode.value = 'queue';
+                    }
+
+                    if (dragMode.value === 'queue') {
+                        const fraction =
+                            -event.translationY / QUEUE_SHEET_HEIGHT;
+                        const next = dragStartQueue.value + fraction;
+                        queueProgress.value = next > 1 ? 1 : next < 0 ? 0 : next;
+                        return;
+                    }
+
                     const dragFraction = event.translationY / SCREEN_HEIGHT;
                     const next = 1 - dragFraction;
                     playerProgress.value = next > 1 ? 1 : next < 0 ? 0 : next;
                 })
                 .onEnd((event) => {
                     'worklet';
+                    if (dragMode.value === 'queue') {
+                        // Snap open or closed based on position + velocity.
+                        const opening =
+                            queueProgress.value > 0.5 ||
+                            event.velocityY < -700;
+                        queueProgress.value = withSpring(
+                            opening ? 1 : 0,
+                            OPEN_SPRING,
+                        );
+                        return;
+                    }
                     const shouldDismiss =
                         event.translationY > DISMISS_DISTANCE ||
-                        (event.velocityY > DISMISS_VELOCITY && event.translationY > 40);
+                        (event.velocityY > DISMISS_VELOCITY &&
+                            event.translationY > 40);
                     if (shouldDismiss) {
                         playerProgress.value = withTiming(
                             0,
@@ -7819,8 +7866,44 @@ const FullScreenPlayer = ({
                         velocity: -event.velocityY / SCREEN_HEIGHT,
                     });
                 }),
-        [onClose, playerProgress],
+        [dragMode, dragStartQueue, onClose, playerProgress, queueProgress],
     );
+
+    // Animated styles for the queue overlay. The sheet rises from the bottom
+    // of the screen; a separate dimming backdrop fades in alongside it so the
+    // player content underneath visibly recedes.
+    const queueBackdropStyle = useAnimatedStyle(() => ({
+        opacity: interpolate(queueProgress.value, [0, 1], [0, 0.55], 'clamp'),
+    }));
+    const queueSheetStyle = useAnimatedStyle(() => ({
+        transform: [
+            {
+                translateY: interpolate(
+                    queueProgress.value,
+                    [0, 1],
+                    [QUEUE_SHEET_HEIGHT, 0],
+                    'clamp',
+                ),
+            },
+        ],
+    }));
+
+    // Gate pointerEvents on the backdrop + sheet so the player below stays
+    // interactive when the queue is closed (an invisible Pressable at opacity 0
+    // would otherwise swallow taps).
+    const [isQueueInteractive, setIsQueueInteractive] = useState(false);
+    useAnimatedReaction(
+        () => queueProgress.value > 0.05,
+        (open, previous) => {
+            if (open !== previous) {
+                runOnJS(setIsQueueInteractive)(open);
+            }
+        },
+    );
+
+    const closeQueue = useCallback(() => {
+        queueProgress.value = withSpring(0, OPEN_SPRING);
+    }, [queueProgress]);
 
     // Horizontal swipe-to-skip. Separated so it can fail cleanly when the gesture
     // is clearly vertical — composing with Simultaneous lets the user
@@ -8078,7 +8161,9 @@ const FullScreenPlayer = ({
                     </Text>
                 )}
 
-                {/* Bottom row — cast on left, queue on right, no shared surface. */}
+                {/* Bottom row — cast on left. The queue button used to live here
+                    too, but the queue is now opened by swiping up from anywhere
+                    on the player. */}
                 <View style={styles.fullPlayerBottomBar}>
                     <Pressable
                         accessibilityLabel="Connect to Chromecast"
@@ -8086,18 +8171,6 @@ const FullScreenPlayer = ({
                         style={styles.fullPlayerBottomBarButton}
                     >
                         <CastGlyph />
-                    </Pressable>
-                    <Pressable
-                        accessibilityLabel="Queue"
-                        accessibilityRole="button"
-                        onPress={() => setQueueVisible(true)}
-                        style={styles.fullPlayerBottomBarButton}
-                    >
-                        <View style={{ alignItems: 'flex-start', gap: 4, height: 18, justifyContent: 'center', width: 22 }}>
-                            <View style={{ backgroundColor: colors.text, borderRadius: 1, height: 2, width: 22 }} />
-                            <View style={{ backgroundColor: colors.text, borderRadius: 1, height: 2, width: 22 }} />
-                            <View style={{ backgroundColor: colors.text, borderRadius: 1, height: 2, width: 14 }} />
-                        </View>
                     </Pressable>
                 </View>
 
@@ -8107,6 +8180,14 @@ const FullScreenPlayer = ({
                     </Text>
                 ) : null}
             </View>
+
+            <QueueSheetOverlay
+                backdropStyle={queueBackdropStyle}
+                interactive={isQueueInteractive}
+                onClose={closeQueue}
+                queue={queue}
+                sheetStyle={queueSheetStyle}
+            />
         </Reanimated.View>
         </GestureDetector>
 
@@ -8153,17 +8234,57 @@ const FullScreenPlayer = ({
             </Pressable>
         </Modal>
 
-        {/* Queue */}
-        <Modal animationType="slide" onRequestClose={() => setQueueVisible(false)} transparent visible={queueVisible}>
-            <Pressable onPress={() => setQueueVisible(false)} style={styles.modalBackdrop}>
-                <SwipeDismissSheet
-                    onDismiss={() => setQueueVisible(false)}
-                    style={[styles.actionSheet, { maxHeight: '78%' }]}
+        {/* Universal MediaContextMenu (rendered at App root) handles the "..." menu. */}
+        </>
+    );
+};
+
+/**
+ * Inline queue sheet rendered as a child of the fullscreen player. translateY
+ * is driven by the shared queueProgress that the outer pan gesture mutates, so
+ * the sheet follows the user's finger end-to-end.
+ */
+const QueueSheetOverlay = ({
+    backdropStyle,
+    interactive,
+    onClose,
+    queue,
+    sheetStyle,
+}: {
+    backdropStyle: ReturnType<typeof useAnimatedStyle>;
+    interactive: boolean;
+    onClose: () => void;
+    queue: { index: number; items: MobilePlayableAudio[] } | null;
+    sheetStyle: ReturnType<typeof useAnimatedStyle>;
+}) => {
+    const items = queue?.items ?? [];
+    return (
+        <>
+            <Reanimated.View
+                pointerEvents={interactive ? 'auto' : 'none'}
+                style={[styles.queueSheetBackdrop, backdropStyle]}
+            >
+                <Pressable
+                    accessibilityLabel="Close queue"
+                    onPress={onClose}
+                    style={StyleSheet.absoluteFillObject}
+                />
+            </Reanimated.View>
+            <Reanimated.View
+                pointerEvents={interactive ? 'auto' : 'none'}
+                style={[styles.queueSheet, sheetStyle]}
+            >
+                <View style={styles.queueSheetHandle} />
+                <Text style={styles.queueSheetTitle}>Up Next</Text>
+                <ScrollView
+                    contentContainerStyle={styles.queueSheetContent}
+                    showsVerticalScrollIndicator={false}
+                    style={styles.queueSheetScroll}
                 >
-                    <View style={styles.actionSheetHandle} />
-                    <Text style={styles.actionSheetTitle}>Up Next</Text>
-                    <ScrollView style={{ maxHeight: SCREEN_HEIGHT * 0.55 }}>
-                        {(queue?.items ?? []).map((item, i) => {
+                    {items.length === 0 ? (
+                        <Text style={styles.queueSheetEmpty}>The queue is empty.</Text>
+                    ) : (
+                        items.map((item, i) => {
                             const isActive = queue?.index === i;
                             return (
                                 <View key={`${item.id}-${i}`} style={styles.queueRow}>
@@ -8190,27 +8311,37 @@ const FullScreenPlayer = ({
                                             {item.title}
                                         </Text>
                                         {item.subtitle ? (
-                                            <Text numberOfLines={1} style={styles.queueRowSubtitle}>
+                                            <Text
+                                                numberOfLines={1}
+                                                style={styles.queueRowSubtitle}
+                                            >
                                                 {item.subtitle}
                                             </Text>
                                         ) : null}
                                     </View>
                                     {isActive ? (
                                         <View style={styles.queueNowPlayingIndicator}>
-                                            <View style={[styles.queueRowPlayingBar, styles.queueRowPlayingBarShort]} />
+                                            <View
+                                                style={[
+                                                    styles.queueRowPlayingBar,
+                                                    styles.queueRowPlayingBarShort,
+                                                ]}
+                                            />
                                             <View style={styles.queueRowPlayingBar} />
-                                            <View style={[styles.queueRowPlayingBar, styles.queueRowPlayingBarShort]} />
+                                            <View
+                                                style={[
+                                                    styles.queueRowPlayingBar,
+                                                    styles.queueRowPlayingBarShort,
+                                                ]}
+                                            />
                                         </View>
                                     ) : null}
                                 </View>
                             );
-                        })}
-                    </ScrollView>
-                </SwipeDismissSheet>
-            </Pressable>
-        </Modal>
-
-        {/* Universal MediaContextMenu (rendered at App root) handles the "..." menu. */}
+                        })
+                    )}
+                </ScrollView>
+            </Reanimated.View>
         </>
     );
 };
@@ -9023,6 +9154,51 @@ const styles = StyleSheet.create({
         gap: 12,
         paddingHorizontal: spacing.lg,
         paddingVertical: 8,
+    },
+    queueSheet: {
+        backgroundColor: 'rgba(12, 10, 8, 0.96)',
+        borderTopLeftRadius: 18,
+        borderTopRightRadius: 18,
+        bottom: 0,
+        height: QUEUE_SHEET_HEIGHT,
+        left: 0,
+        position: 'absolute',
+        right: 0,
+    },
+    queueSheetBackdrop: {
+        backgroundColor: '#000000',
+        bottom: 0,
+        left: 0,
+        position: 'absolute',
+        right: 0,
+        top: 0,
+    },
+    queueSheetContent: {
+        paddingBottom: spacing.xl,
+    },
+    queueSheetEmpty: {
+        color: colors.muted,
+        paddingHorizontal: spacing.lg,
+        paddingTop: spacing.md,
+    },
+    queueSheetHandle: {
+        alignSelf: 'center',
+        backgroundColor: 'rgba(255,255,255,0.24)',
+        borderRadius: 999,
+        height: 4,
+        marginBottom: 12,
+        marginTop: 10,
+        width: 38,
+    },
+    queueSheetScroll: {
+        flex: 1,
+    },
+    queueSheetTitle: {
+        color: colors.text,
+        fontSize: 18,
+        fontWeight: '800',
+        paddingBottom: spacing.sm,
+        paddingHorizontal: spacing.lg,
     },
     queueRowThumb: {
         backgroundColor: 'rgba(255,255,255,0.06)',
