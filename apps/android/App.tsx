@@ -60,6 +60,7 @@ import {
     type LayoutChangeEvent,
     Modal,
     PanResponder,
+    PermissionsAndroid,
     Platform,
     Pressable,
     ScrollView,
@@ -1184,6 +1185,18 @@ export default function App() {
             isMounted = false;
         };
     }, [loadHomeForConnections]);
+
+    // Android 13+ requires runtime POST_NOTIFICATIONS consent before any
+    // notification (including the MediaSession one that drives shade controls
+    // and lock-screen artwork) can appear. Without this, the media notification
+    // silently never shows up. Request once on boot; declined permissions
+    // simply mean no notification.
+    useEffect(() => {
+        if (Platform.OS !== 'android' || Platform.Version < 33) return;
+        void PermissionsAndroid.request(
+            PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS,
+        ).catch(() => undefined);
+    }, []);
 
     // Boot + foreground replay of any audiobookshelf progress writes that
     // didn't make it to the server on the previous run (process killed during
