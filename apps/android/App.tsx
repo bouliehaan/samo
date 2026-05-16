@@ -2293,6 +2293,53 @@ export default function App() {
         }
     };
 
+    const handleSyncWithServer = useCallback(async (): Promise<{
+        message?: string;
+        ok: boolean;
+    }> => {
+        if (serverConnections.length === 0) {
+            return { message: 'No servers connected', ok: false };
+        }
+        try {
+            // Three coordinated calls per sync. Loading home content first so
+            // the rest of the app's view of the libraries is fresh, then
+            // pushing any locally-pending audiobookshelf progress so the
+            // server gets caught up on whatever happened offline.
+            await loadHomeForConnections(serverConnections);
+            await flushPendingAbsProgress(serverConnections);
+            // If there's a currently-active audiobook context, re-read its
+            // progress from the server in case another client moved ahead.
+            const absCtx = absContextRef.current;
+            if (absCtx) {
+                const fresh = await loadAbsCurrentProgress(
+                    absCtx.authentication,
+                    absCtx.itemId,
+                    absCtx.episodeId,
+                );
+                const currentPosMs =
+                    playbackState.status !== 'idle'
+                        ? (playbackState.positionMs ?? 0)
+                        : 0;
+                if (
+                    fresh &&
+                    fresh.currentTimeSeconds * 1000 > currentPosMs + 5_000
+                ) {
+                    // Only seek forward and only if the gap is meaningful; a
+                    // 5-second buffer keeps us from interrupting playback when
+                    // local and server values trivially differ.
+                    await handleSeekPlayback(fresh.currentTimeSeconds * 1000);
+                }
+            }
+            return { ok: true };
+        } catch (error) {
+            return {
+                message:
+                    error instanceof Error ? error.message : 'Sync failed',
+                ok: false,
+            };
+        }
+    }, [loadHomeForConnections, playbackState, serverConnections]);
+
     const contextMenuActions = useMemo<MediaContextMenuAction[]>(() => {
         if (!contextMenuTarget) {
             return [];
@@ -2552,6 +2599,7 @@ export default function App() {
                                 onOpenManageServers={() =>
                                     setActiveUtilityScreen('manage-servers')
                                 }
+                                onSyncWithServer={handleSyncWithServer}
                                 onToggleOfflineMode={(next) => {
                                     setIsOfflineMode(next);
                                     void saveOfflineModePreference(next);
@@ -2984,15 +3032,34 @@ const SettingsScreen = ({
     isOfflineMode,
     onOpenDownloads,
     onOpenManageServers,
+    onSyncWithServer,
     onToggleOfflineMode,
     serverCount,
 }: {
     isOfflineMode: boolean;
     onOpenDownloads: () => void;
     onOpenManageServers: () => void;
+    onSyncWithServer: () => Promise<{ message?: string; ok: boolean }>;
     onToggleOfflineMode: (next: boolean) => void;
     serverCount: number;
 }) => {
+    type SyncStatus =
+        | { kind: 'error'; message: string }
+        | { kind: 'idle' }
+        | { kind: 'running' }
+        | { kind: 'success' };
+    const [syncStatus, setSyncStatus] = useState<SyncStatus>({ kind: 'idle' });
+    const handleSyncPress = async () => {
+        if (syncStatus.kind === 'running') return;
+        setSyncStatus({ kind: 'running' });
+        const result = await onSyncWithServer();
+        setSyncStatus(
+            result.ok
+                ? { kind: 'success' }
+                : { kind: 'error', message: result.message ?? 'Sync failed' },
+        );
+    };
+
     return (
         <View style={styles.settingsRoot}>
             <Text style={styles.settingsRootTitle}>Settings</Text>
@@ -3010,6 +3077,30 @@ const SettingsScreen = ({
                         {serverCount === 0
                             ? 'Connect a music server, Audiobookshelf, or radio source'
                             : `${serverCount} connected`}
+                    </Text>
+                </View>
+            </Pressable>
+            <Pressable
+                accessibilityRole="button"
+                disabled={syncStatus.kind === 'running' || serverCount === 0}
+                onPress={() => void handleSyncPress()}
+                style={styles.settingsRow}
+            >
+                {syncStatus.kind === 'running' ? (
+                    <ActivityIndicator color={colors.text} size="small" />
+                ) : (
+                    <RadioWaveGlyph color={colors.text} />
+                )}
+                <View style={styles.settingsRowText}>
+                    <Text style={styles.settingsRowTitle}>Sync with Server</Text>
+                    <Text style={styles.settingsRowSubtitle}>
+                        {syncStatus.kind === 'running'
+                            ? 'Refreshing libraries and pushing pending progress…'
+                            : syncStatus.kind === 'success'
+                              ? 'Up to date'
+                              : syncStatus.kind === 'error'
+                                ? syncStatus.message
+                                : 'Refresh libraries and reconcile playback progress'}
                     </Text>
                 </View>
             </Pressable>
