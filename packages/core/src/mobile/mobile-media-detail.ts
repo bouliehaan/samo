@@ -1,4 +1,5 @@
 import { isHiResAudioQuality, isLosslessAudioQuality } from '../audio-quality';
+import { annotateSubsonicAlbumsQuality } from './mobile-subsonic-quality';
 import { type ServerAuthenticationResult } from '../server/server-auth';
 import { getFetch, requestJson, type SamoFetch } from '../server/server-http';
 import { ServerType } from '../server/server-types';
@@ -909,20 +910,39 @@ const loadSubsonicArtistDetail = async (
             ? infoResult.value['subsonic-response']?.artistInfo2
             : undefined;
 
-    const albumItems = (artist.album ?? []).flatMap((album) =>
+    const rawAlbumItems = (artist.album ?? []).flatMap((album) =>
         toSubsonicAlbumItem(authentication, album),
+    );
+    // The artist page lists every album the artist released, but those album
+    // records come back from getArtist.view without per-song quality data.
+    // Re-scan each album's songs (same path as the home/recently-added
+    // annotation) so the artist-page tiles show their format badge instead
+    // of rendering bare. annotateSubsonicAlbumsQuality is safe to call here
+    // even on large discographies — it walks in concurrent chunks and skips
+    // anything past its limit, so a 50-album catalog still resolves quickly.
+    const albumItems = await annotateSubsonicAlbumsQuality(
+        authentication,
+        fetcher,
+        rawAlbumItems,
     );
     const albumIds = new Set(albumItems.map((album) => album.id));
     const topTracks = topSongs
         .slice(0, TOP_SONGS_LIMIT)
         .map((song) => subsonicSongToTrack(authentication, song))
         .filter((track): track is MobileMediaTrack => Boolean(track));
-    const appearsOnItems = subsonicAppearsOnFromSongs(
+    const rawAppearsOnItems = subsonicAppearsOnFromSongs(
         authentication,
         artist.name,
         artist.id.toString(),
         [...topSongs, ...searchSongs],
     ).filter((item) => !albumIds.has(item.id));
+    // Same scan as the discography — "Appears On" tiles are also album items
+    // and should carry their format badge.
+    const appearsOnItems = await annotateSubsonicAlbumsQuality(
+        authentication,
+        fetcher,
+        rawAppearsOnItems,
+    );
     const relatedArtists = (infoResponse?.similarArtist ?? []).flatMap((similar) => {
         const similarId = similar.id?.toString();
         if (!similarId || !similar.name) return [];

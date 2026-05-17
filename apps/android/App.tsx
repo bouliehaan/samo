@@ -5997,6 +5997,113 @@ const getPlaylistTargetsForDetail = (
         );
 };
 
+type PlaylistTrackFilter = 'all' | 'hifi';
+type PlaylistTrackSort = 'artist' | 'order' | 'title';
+
+/**
+ * Filter + sort chips for the playlist track list. Playlists are mixed by
+ * design — so the user gets a Hi-Fi filter (any lossless 16-bit+ track) and
+ * a sort axis (order added / title / artist) with an asc/desc arrow that
+ * flips the direction. The same controls don't appear on album detail —
+ * albums are authored in a specific order and shouldn't be reshufflable
+ * from a passing screen.
+ */
+const PlaylistTrackControls = ({
+    filter,
+    onFilterChange,
+    onSortChange,
+    onToggleSortDirection,
+    sort,
+    sortAsc,
+}: {
+    filter: PlaylistTrackFilter;
+    onFilterChange: (next: PlaylistTrackFilter) => void;
+    onSortChange: (next: PlaylistTrackSort) => void;
+    onToggleSortDirection: () => void;
+    sort: PlaylistTrackSort;
+    sortAsc: boolean;
+}) => {
+    const filters: Array<{ id: PlaylistTrackFilter; label: string }> = [
+        { id: 'all', label: 'All' },
+        { id: 'hifi', label: 'Hi-Fi' },
+    ];
+    const sorts: Array<{ id: PlaylistTrackSort; label: string }> = [
+        { id: 'order', label: 'Order Added' },
+        { id: 'title', label: 'Title' },
+        { id: 'artist', label: 'Artist' },
+    ];
+    return (
+        <View style={styles.playlistControlsBlock}>
+            <View style={styles.playlistControlGroup}>
+                <Text style={styles.playlistControlLabel}>Filter</Text>
+                <View style={styles.playlistControlPillRow}>
+                    {filters.map(({ id, label }) => {
+                        const isActive = filter === id;
+                        return (
+                            <Pressable
+                                key={id}
+                                onPress={() => onFilterChange(id)}
+                                style={[
+                                    styles.playlistControlPill,
+                                    isActive && styles.playlistControlPillActive,
+                                ]}
+                            >
+                                <Text
+                                    style={[
+                                        styles.playlistControlPillText,
+                                        isActive && styles.playlistControlPillTextActive,
+                                    ]}
+                                >
+                                    {label}
+                                </Text>
+                            </Pressable>
+                        );
+                    })}
+                </View>
+            </View>
+            <View style={styles.playlistControlGroup}>
+                <Text style={styles.playlistControlLabel}>Sort</Text>
+                <View style={styles.playlistControlPillRow}>
+                    {sorts.map(({ id, label }) => {
+                        const isActive = sort === id;
+                        return (
+                            <Pressable
+                                key={id}
+                                onPress={() => onSortChange(id)}
+                                style={[
+                                    styles.playlistControlPill,
+                                    isActive && styles.playlistControlPillActive,
+                                ]}
+                            >
+                                <Text
+                                    style={[
+                                        styles.playlistControlPillText,
+                                        isActive && styles.playlistControlPillTextActive,
+                                    ]}
+                                >
+                                    {label}
+                                </Text>
+                            </Pressable>
+                        );
+                    })}
+                    <Pressable
+                        accessibilityLabel={
+                            sortAsc ? 'Sort ascending — tap to descend' : 'Sort descending — tap to ascend'
+                        }
+                        onPress={onToggleSortDirection}
+                        style={[
+                            styles.playlistControlPill,
+                            styles.playlistControlDirectionPill,
+                        ]}
+                    >
+                        <Text style={styles.playlistControlPillText}>{sortAsc ? '↑' : '↓'}</Text>
+                    </Pressable>
+                </View>
+            </View>
+        </View>
+    );
+};
+
 const MediaDetailContent = ({
     homeContentState,
     mediaDetailState,
@@ -6086,9 +6193,52 @@ const MediaDetailLoaded = ({
         | { message: string; status: 'success' }
         | { status: 'idle' }
     >({ status: 'idle' });
+    // Playlist-only filter + sort. Playlists are mixed format and mixed
+    // artists by definition, so being able to scope to Hi-Fi only or
+    // re-sort by title/artist is the user-facing affordance the user
+    // asked for. Album tracks keep their server order untouched.
+    const [playlistFilter, setPlaylistFilter] = useState<'all' | 'hifi'>('all');
+    const [playlistSort, setPlaylistSort] = useState<'artist' | 'order' | 'title'>('order');
+    const [playlistSortAsc, setPlaylistSortAsc] = useState(true);
     const firstTrack = detail.tracks[0];
     const contextMenu = useMediaContextMenu();
     const isMusic = detail.type === MobileMediaDetailType.ALBUM || detail.type === MobileMediaDetailType.PLAYLIST;
+    const isPlaylistDetail = detail.type === MobileMediaDetailType.PLAYLIST;
+    /**
+     * Track list after the playlist's filter + sort controls are applied.
+     * For non-playlists we return the original tracks untouched — albums
+     * already ship in their authored order and shouldn't be reshuffleable
+     * from this surface.
+     */
+    const displayTracks = useMemo(() => {
+        if (!isPlaylistDetail) return detail.tracks;
+        const filtered =
+            playlistFilter === 'hifi'
+                ? detail.tracks.filter((track) =>
+                      Boolean(track.playback && isLosslessAudioQuality(track.playback.quality)),
+                  )
+                : detail.tracks;
+        if (playlistSort === 'order') {
+            // "Order Added" descending = newest at top, which for Subsonic
+            // playlists is whatever order the entries arrived in. Ascending
+            // flips that — playlist start at the bottom.
+            return playlistSortAsc ? filtered : [...filtered].reverse();
+        }
+        const sorted = [...filtered].sort((left, right) => {
+            const leftKey =
+                playlistSort === 'artist' ? left.artist ?? '' : left.title ?? '';
+            const rightKey =
+                playlistSort === 'artist' ? right.artist ?? '' : right.title ?? '';
+            return leftKey.localeCompare(rightKey, undefined, { sensitivity: 'base' });
+        });
+        return playlistSortAsc ? sorted : sorted.reverse();
+    }, [
+        detail.tracks,
+        isPlaylistDetail,
+        playlistFilter,
+        playlistSort,
+        playlistSortAsc,
+    ]);
     const canShuffleDetail = isMusic && detail.tracks.filter((t) => t.playback).length > 1;
     const detailAuth = serverConnections.find(
         (auth) => getPersistedServerAuthKey(auth) === detail.source.id,
@@ -6437,10 +6587,24 @@ const MediaDetailLoaded = ({
             ) : (
                 <View style={styles.homeSection}>
                     <Text style={styles.sectionTitle}>{sectionTitle}</Text>
-                    {detail.tracks.length === 0 ? (
-                        <Text style={styles.mutedText}>{emptyText}</Text>
+                    {isPlaylistDetail && detail.tracks.length > 0 ? (
+                        <PlaylistTrackControls
+                            filter={playlistFilter}
+                            onFilterChange={setPlaylistFilter}
+                            onSortChange={setPlaylistSort}
+                            onToggleSortDirection={() => setPlaylistSortAsc((value) => !value)}
+                            sort={playlistSort}
+                            sortAsc={playlistSortAsc}
+                        />
+                    ) : null}
+                    {displayTracks.length === 0 ? (
+                        <Text style={styles.mutedText}>
+                            {detail.tracks.length === 0
+                                ? emptyText
+                                : 'No tracks match the current filter.'}
+                        </Text>
                     ) : (
-                        detail.tracks.map((track, index) => {
+                        displayTracks.map((track, index) => {
                             const qualityItems =
                                 isMusic && track.playback
                                     ? buildAudioQualityBadgeItems({
@@ -11688,6 +11852,59 @@ const styles = StyleSheet.create({
         color: '#050505',
         fontSize: 16,
         fontWeight: '800',
+    },
+    playlistControlsBlock: {
+        // Two stacked label+pill rows above the playlist track list. Block
+        // (not row) so even on narrow phones the sort axis never wraps under
+        // an active filter pill and lose its breathing room.
+        gap: spacing.sm,
+        marginBottom: spacing.sm,
+        marginTop: spacing.xs,
+    },
+    playlistControlDirectionPill: {
+        // The arrow pill stands a bit apart — it's a TOGGLE, not a member of
+        // the sort-axis exclusive group.
+        marginLeft: spacing.sm,
+        minWidth: 36,
+    },
+    playlistControlGroup: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        alignItems: 'center',
+        gap: spacing.sm,
+    },
+    playlistControlLabel: {
+        color: colors.muted,
+        fontSize: 11,
+        fontWeight: '800',
+        letterSpacing: 0.6,
+        textTransform: 'uppercase',
+    },
+    playlistControlPill: {
+        backgroundColor: 'rgba(255, 255, 255, 0.06)',
+        borderColor: 'rgba(255, 255, 255, 0.12)',
+        borderRadius: 999,
+        borderWidth: 1,
+        paddingHorizontal: spacing.sm,
+        paddingVertical: 6,
+    },
+    playlistControlPillActive: {
+        backgroundColor: colors.accent,
+        borderColor: colors.accent,
+    },
+    playlistControlPillRow: {
+        alignItems: 'center',
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 6,
+    },
+    playlistControlPillText: {
+        color: colors.text,
+        fontSize: 13,
+        fontWeight: '700',
+    },
+    playlistControlPillTextActive: {
+        color: '#050505',
     },
     playlistScreen: {
         marginTop: spacing.sm,
