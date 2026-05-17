@@ -1,6 +1,7 @@
 import { buildAudioQualityBadgeItems } from '@samo/core/audio-quality';
 import {
     addMobileTracksToPlaylist,
+    buildAudiobookshelfArtworkUrl,
     getMobileContentSource,
     loadMobileMediaDetail,
     loadSongRadioQueue,
@@ -755,13 +756,24 @@ export default function App() {
     }, [homeContentState, isOfflineMode, downloadedCollectionKeys]);
 
     const visibleRecentItems = useMemo(() => {
-        if (!isOfflineMode) {
-            return recentContentItems;
-        }
-        return recentContentItems.filter((entry) =>
-            downloadedCollectionKeys.has(`${entry.item.source?.id ?? ''}:${entry.item.id}`),
-        );
-    }, [recentContentItems, isOfflineMode, downloadedCollectionKeys]);
+        const filtered = isOfflineMode
+            ? recentContentItems.filter((entry) =>
+                  downloadedCollectionKeys.has(
+                      `${entry.item.source?.id ?? ''}:${entry.item.id}`,
+                  ),
+              )
+            : recentContentItems;
+        // Recents persisted before subsonicCoverArtUrl learned the entity-id
+        // fallback were stored without artworkUrl. Backfill at render time so
+        // they pick up real covers as soon as the matching server is
+        // connected, without rewriting storage.
+        return filtered.map((entry) => {
+            if (entry.item.artworkUrl) return entry;
+            const resolved = resolveItemArtworkUrl(entry.item, serverConnections);
+            if (!resolved) return entry;
+            return { ...entry, item: { ...entry.item, artworkUrl: resolved } };
+        });
+    }, [recentContentItems, isOfflineMode, downloadedCollectionKeys, serverConnections]);
 
     const loadHomeForConnections = useCallback(
         async (authentications: ServerAuthenticationResult[]) => {
@@ -3099,6 +3111,7 @@ const HomeScreen = ({
             onSelectItem={onSelectItem}
             onViewAll={onViewAll}
             recentItems={recentItems}
+            serverConnections={serverConnections}
         />
     );
 };
@@ -4552,6 +4565,7 @@ const HomeContentStatus = ({
     onSelectItem,
     onViewAll,
     recentItems,
+    serverConnections,
 }: {
     activeFilter: HomeFilter;
     homeContentState: AndroidHomeContentState;
@@ -4559,6 +4573,7 @@ const HomeContentStatus = ({
     onSelectItem: (item: AndroidRecentContentSourceItem) => void;
     onViewAll?: (section: HomeDisplaySection) => void;
     recentItems: AndroidRecentContentItem[];
+    serverConnections: ServerAuthenticationResult[];
 }) => {
     if (homeContentState.status === 'idle') {
         return null;
@@ -4592,7 +4607,11 @@ const HomeContentStatus = ({
         );
     }
 
-    const allSections = getHomeDisplaySections(homeContentState.content.sections, recentItems);
+    const allSections = getHomeDisplaySections(
+        homeContentState.content.sections,
+        recentItems,
+        serverConnections,
+    );
     const availableFilters = getAvailableHomeFilters(allSections);
     const filteredSections = filterHomeDisplaySections(allSections, activeFilter);
 
@@ -4827,6 +4846,65 @@ const getLibraryRows = (
         });
 };
 
+/**
+ * Compute an artwork URL for an item that didn't carry one when it was first
+ * stored. Persisted recents are the canonical case: they were recorded
+ * before subsonicCoverArtUrl learned to fall back to the entity id, so an
+ * artist or album you tapped six months ago still has artworkUrl=undefined
+ * on disk. Rather than migrating storage on every install, we rebuild the
+ * URL at render time from the item's source + id whenever we have a matching
+ * server connection. New items already arrive with artworkUrl set; this just
+ * fills in the historical gaps. Returns undefined when nothing better than
+ * the fallback letter can be produced (no server connection, unknown server
+ * type, etc.).
+ */
+const resolveItemArtworkUrl = (
+    item: AndroidRecentContentSourceItem,
+    serverConnections: ServerAuthenticationResult[],
+): string | undefined => {
+    if (item.artworkUrl) return item.artworkUrl;
+    const sourceId = item.source?.id;
+    if (!sourceId) return undefined;
+    const auth = serverConnections.find(
+        (candidate) => getPersistedServerAuthKey(candidate) === sourceId,
+    );
+    if (!auth) return undefined;
+    if (
+        auth.type === ServerType.NAVIDROME ||
+        auth.type === ServerType.SUBSONIC
+    ) {
+        const params = new URLSearchParams({
+            c: 'Samo',
+            f: 'json',
+            id: item.id,
+            size: '320',
+            v: '1.13.0',
+        });
+        return `${auth.url}/rest/getCoverArt.view?${params.toString()}&${auth.credential}`;
+    }
+    if (auth.type === ServerType.AUDIOBOOKSHELF) {
+        return buildAudiobookshelfArtworkUrl(auth, item.id, undefined);
+    }
+    return undefined;
+};
+
+/**
+ * Apply resolveItemArtworkUrl across a list of items, returning each item
+ * unchanged when it already had artwork. Used to backfill recents (which may
+ * have been persisted before the entity-id fallback existed) without
+ * mutating the persisted store.
+ */
+const withResolvedArtwork = <T extends AndroidRecentContentSourceItem>(
+    items: T[],
+    serverConnections: ServerAuthenticationResult[],
+): T[] => {
+    return items.map((item) => {
+        if (item.artworkUrl) return item;
+        const resolved = resolveItemArtworkUrl(item, serverConnections);
+        return resolved ? ({ ...item, artworkUrl: resolved } as T) : item;
+    });
+};
+
 const sortHomeItemsByRecents = <T extends AndroidRecentContentSourceItem>(
     items: T[],
     recentItems: AndroidRecentContentItem[],
@@ -4975,6 +5053,7 @@ const getContentItemProgress = (item: AndroidRecentContentSourceItem) => {
 const getHomeDisplaySections = (
     sections: MobileHomeSection[],
     recentItems: AndroidRecentContentItem[],
+    serverConnections: ServerAuthenticationResult[],
 ): HomeDisplaySection[] => {
     const displaySections: HomeDisplaySection[] = [];
     const sectionsById = new Map(sections.map((section) => [section.id, section]));
@@ -4990,13 +5069,16 @@ const getHomeDisplaySections = (
             }
         }
     }
-    const recentDisplayItems = recentItems.flatMap((recentItem) => {
-        if (!getLibraryMediaType(recentItem.item)) {
-            return [];
-        }
-        const fresh = freshItemsByKey.get(recentItem.key);
-        return [fresh ?? recentItem.item];
-    });
+    const recentDisplayItems = withResolvedArtwork(
+        recentItems.flatMap((recentItem) => {
+            if (!getLibraryMediaType(recentItem.item)) {
+                return [];
+            }
+            const fresh = freshItemsByKey.get(recentItem.key);
+            return [fresh ?? recentItem.item];
+        }),
+        serverConnections,
+    );
     const favoriteAlbumItems = getHomeItemsForSection(
         sectionsById,
         MobileHomeSectionId.FAVORITE_ALBUMS,
