@@ -48,6 +48,15 @@ export interface MobileHomeContentInput {
 }
 
 export interface MobileHomeItem {
+    /**
+     * Server-reported "added at" timestamp in epoch milliseconds. Used to
+     * sort the cross-source "Recently Added" hero row chronologically rather
+     * than round-robining categories — so a newly-added audiobook can land
+     * above a music album added two weeks ago. Undefined when the source
+     * didn't report a timestamp (eg favorites/starred lists, which we never
+     * surface in the Recently Added row anyway).
+     */
+    addedAt?: number;
     artworkUrl?: string;
     id: string;
     playback?: MobilePlayableAudio;
@@ -79,6 +88,7 @@ interface AudiobookshelfLibrary {
 }
 
 interface AudiobookshelfLibraryItem {
+    addedAt?: number;
     id?: string;
     media?: {
         authorName?: string;
@@ -96,6 +106,7 @@ interface AudiobookshelfLibraryItem {
     };
     name?: string;
     numEpisodes?: number;
+    updatedAt?: number;
 }
 
 interface AudiobookshelfLibraryItemsBody {
@@ -105,6 +116,13 @@ interface AudiobookshelfLibraryItemsBody {
 interface SubsonicAlbum {
     artist?: string;
     coverArt?: string;
+    /**
+     * ISO-8601 timestamp the album was added to the library. Navidrome and
+     * stock Subsonic both populate this on getAlbumList2.view; older servers
+     * may omit it, in which case the field stays undefined and the item just
+     * loses its place in the unified recency sort.
+     */
+    created?: string;
     id?: number | string;
     name?: string;
     title?: string;
@@ -243,12 +261,19 @@ const subsonicUrl = (
 const subsonicCoverArtUrl = (
     authentication: ServerAuthenticationResult,
     coverArt: string | undefined,
+    entityId?: number | string,
 ) => {
-    if (!coverArt) {
+    // Newer Navidrome populates coverArt; older Subsonic-compatible servers
+    // sometimes leave it blank even when artwork exists. getCoverArt.view
+    // accepts the entity id directly, so fall back to it whenever the
+    // explicit coverArt field is missing — produces covers for albums/artists
+    // that would otherwise render a fallback letter.
+    const target = coverArt ?? (entityId != null ? entityId.toString() : undefined);
+    if (!target) {
         return undefined;
     }
 
-    return subsonicUrl(authentication, 'getCoverArt.view', { id: coverArt, size: 320 });
+    return subsonicUrl(authentication, 'getCoverArt.view', { id: target, size: 320 });
 };
 
 const assertSubsonicOk = (
@@ -324,6 +349,7 @@ const loadAudiobookshelfItems = async (
         const source = getMobileContentSource(authentication);
 
         return {
+            addedAt: item.addedAt,
             artworkUrl: buildAudiobookshelfArtworkUrl(
                 authentication,
                 item.id,
@@ -420,8 +446,11 @@ const loadSubsonicAlbums = async (
                 return [];
             }
 
+            const createdMs = album.created ? Date.parse(album.created) : NaN;
+
             return {
-                artworkUrl: subsonicCoverArtUrl(authentication, album.coverArt),
+                addedAt: Number.isFinite(createdMs) ? createdMs : undefined,
+                artworkUrl: subsonicCoverArtUrl(authentication, album.coverArt, album.id),
                 id,
                 source: getMobileContentSource(authentication),
                 subtitle: album.artist ?? (album.year ? String(album.year) : undefined),
@@ -456,7 +485,7 @@ const loadSubsonicFavoriteAlbumsAndArtists = async (
             }
 
             return {
-                artworkUrl: subsonicCoverArtUrl(authentication, album.coverArt),
+                artworkUrl: subsonicCoverArtUrl(authentication, album.coverArt, album.id),
                 id,
                 source,
                 subtitle: album.artist ?? (album.year ? String(album.year) : undefined),
@@ -474,7 +503,7 @@ const loadSubsonicFavoriteAlbumsAndArtists = async (
             }
 
             return {
-                artworkUrl: subsonicCoverArtUrl(authentication, artist.coverArt),
+                artworkUrl: subsonicCoverArtUrl(authentication, artist.coverArt, artist.id),
                 id,
                 source,
                 subtitle: artist.albumCount ? `${artist.albumCount} albums` : undefined,
@@ -514,7 +543,7 @@ const loadSubsonicPlaylists = async (
             }
 
             return {
-                artworkUrl: subsonicCoverArtUrl(authentication, playlist.coverArt),
+                artworkUrl: subsonicCoverArtUrl(authentication, playlist.coverArt, playlist.id),
                 id,
                 source: getMobileContentSource(authentication),
                 subtitle: playlist.songCount ? `${playlist.songCount} songs` : playlist.owner,
@@ -614,6 +643,225 @@ const getHomeFailureSectionId = (authentication: ServerAuthenticationResult) => 
     return authentication.type === ServerType.AUDIOBOOKSHELF
         ? MobileHomeSectionId.AUDIOBOOKS
         : MobileHomeSectionId.RECENTLY_ADDED;
+};
+
+export type MobileFullCollectionVariant =
+    | 'album'
+    | 'artist'
+    | 'audiobook'
+    | 'playlist'
+    | 'podcast';
+
+export interface MobileFullCollectionInput {
+    authentications: ServerAuthenticationResult[];
+    fetch?: SamoFetch;
+    variant: MobileFullCollectionVariant;
+}
+
+export interface MobileFullCollectionResult {
+    errors: string[];
+    items: MobileHomeItem[];
+}
+
+interface SubsonicArtistsBody {
+    'subsonic-response'?: {
+        artists?: {
+            index?: Array<{
+                artist?: SubsonicArtist[];
+                name?: string;
+            }>;
+        };
+        error?: SubsonicError;
+        status?: string;
+    };
+}
+
+// Subsonic pagination is offset-based; libraries beyond ~5k albums need
+// multiple round-trips. 500 hits the sweet spot where Navidrome still returns
+// fast (~100ms) but we don't waste a dozen requests for the typical user.
+const FULL_COLLECTION_PAGE_SIZE = 500;
+// Cap iterations as a safety so a misbehaving server can't loop forever.
+const FULL_COLLECTION_MAX_PAGES = 40;
+
+const loadAllSubsonicAlbums = async (
+    authentication: ServerAuthenticationResult,
+    fetcher: SamoFetch,
+): Promise<MobileHomeItem[]> => {
+    const source = getMobileContentSource(authentication);
+    const items: MobileHomeItem[] = [];
+
+    for (let page = 0; page < FULL_COLLECTION_MAX_PAGES; page += 1) {
+        const body = await requestJson<SubsonicAlbumListBody>(
+            fetcher,
+            subsonicUrl(authentication, 'getAlbumList2.view', {
+                offset: page * FULL_COLLECTION_PAGE_SIZE,
+                size: FULL_COLLECTION_PAGE_SIZE,
+                type: 'alphabeticalByName',
+            }),
+        );
+        const response = body['subsonic-response'];
+        assertSubsonicOk(response, 'Failed to load albums');
+        const albums = response?.albumList2?.album ?? [];
+        if (albums.length === 0) {
+            break;
+        }
+        for (const album of albums) {
+            const id = album.id?.toString();
+            const title = album.name ?? album.title;
+            if (!id || !title) continue;
+            const createdMs = album.created ? Date.parse(album.created) : NaN;
+            items.push({
+                addedAt: Number.isFinite(createdMs) ? createdMs : undefined,
+                artworkUrl: subsonicCoverArtUrl(authentication, album.coverArt, album.id),
+                id,
+                source,
+                subtitle: album.artist ?? (album.year ? String(album.year) : undefined),
+                title,
+                type: MobileHomeItemType.ALBUM,
+            });
+        }
+        if (albums.length < FULL_COLLECTION_PAGE_SIZE) {
+            break;
+        }
+    }
+
+    return items;
+};
+
+const loadAllSubsonicArtists = async (
+    authentication: ServerAuthenticationResult,
+    fetcher: SamoFetch,
+): Promise<MobileHomeItem[]> => {
+    // getArtists.view returns ALL artists in one shot, grouped by alphabet
+    // index — no pagination needed. This matches how Navidrome exposes the
+    // artist library to other clients and avoids the inconsistent paging
+    // semantics on getArtistList variants.
+    const body = await requestJson<SubsonicArtistsBody>(
+        fetcher,
+        subsonicUrl(authentication, 'getArtists.view'),
+    );
+    const response = body['subsonic-response'];
+    assertSubsonicOk(response, 'Failed to load artists');
+    const source = getMobileContentSource(authentication);
+    const items: MobileHomeItem[] = [];
+    for (const index of response?.artists?.index ?? []) {
+        for (const artist of index.artist ?? []) {
+            const id = artist.id?.toString();
+            if (!id || !artist.name) continue;
+            items.push({
+                artworkUrl: subsonicCoverArtUrl(authentication, artist.coverArt, artist.id),
+                id,
+                source,
+                subtitle: artist.albumCount ? `${artist.albumCount} albums` : undefined,
+                title: artist.name,
+                type: MobileHomeItemType.ARTIST,
+            });
+        }
+    }
+    return items;
+};
+
+const loadAllSubsonicPlaylists = async (
+    authentication: ServerAuthenticationResult,
+    fetcher: SamoFetch,
+): Promise<MobileHomeItem[]> => {
+    // getPlaylists.view already returns the complete list — we can reuse the
+    // home-page loader unchanged, just without the home-page item cap.
+    const section = await loadSubsonicPlaylists(authentication, fetcher);
+    return section.items;
+};
+
+const loadAllAudiobookshelfItems = async (
+    authentication: ServerAuthenticationResult,
+    fetcher: SamoFetch,
+    itemType: MobileHomeItemType.AUDIOBOOK | MobileHomeItemType.PODCAST,
+): Promise<MobileHomeItem[]> => {
+    const librariesBody = await requestJson<AudiobookshelfLibrariesBody>(
+        fetcher,
+        `${authentication.url}/api/libraries`,
+        {
+            headers: { Authorization: `Bearer ${authentication.credential}` },
+            method: 'GET',
+        },
+    );
+    const libraries = (librariesBody.libraries ?? []).filter(
+        (library) => library.mediaType === (itemType === MobileHomeItemType.PODCAST ? 'podcast' : 'book'),
+    );
+    const perLibrary = await Promise.all(
+        libraries.map((library) =>
+            loadAudiobookshelfItems(
+                authentication,
+                fetcher,
+                library,
+                itemType,
+                FULL_COLLECTION_PAGE_SIZE * FULL_COLLECTION_MAX_PAGES,
+            ),
+        ),
+    );
+    return perLibrary.flat();
+};
+
+const loadFullCollectionForServer = async (
+    authentication: ServerAuthenticationResult,
+    fetcher: SamoFetch,
+    variant: MobileFullCollectionVariant,
+): Promise<MobileHomeItem[]> => {
+    const subsonic =
+        authentication.type === ServerType.NAVIDROME ||
+        authentication.type === ServerType.SUBSONIC;
+    const audiobookshelf = authentication.type === ServerType.AUDIOBOOKSHELF;
+
+    switch (variant) {
+        case 'album':
+            return subsonic ? loadAllSubsonicAlbums(authentication, fetcher) : [];
+        case 'artist':
+            return subsonic ? loadAllSubsonicArtists(authentication, fetcher) : [];
+        case 'audiobook':
+            return audiobookshelf
+                ? loadAllAudiobookshelfItems(authentication, fetcher, MobileHomeItemType.AUDIOBOOK)
+                : [];
+        case 'playlist':
+            return subsonic ? loadAllSubsonicPlaylists(authentication, fetcher) : [];
+        case 'podcast':
+            return audiobookshelf
+                ? loadAllAudiobookshelfItems(authentication, fetcher, MobileHomeItemType.PODCAST)
+                : [];
+    }
+};
+
+/**
+ * Load the COMPLETE list of items for a given collection variant across every
+ * connected server. Used by the "View All" screens — Home only fetches the top
+ * slice of each section, but the View All grids are supposed to be exhaustive.
+ *
+ * Failures from individual servers are bubbled up as errors but never block
+ * the items returned by other servers — partial connectivity should still
+ * show whatever it can.
+ */
+export const loadMobileFullCollection = async ({
+    authentications,
+    fetch: fetcher,
+    variant,
+}: MobileFullCollectionInput): Promise<MobileFullCollectionResult> => {
+    if (authentications.length === 0) {
+        return { errors: [], items: [] };
+    }
+    const request = getFetch(fetcher);
+    const results = await Promise.allSettled(
+        authentications.map((authentication) =>
+            loadFullCollectionForServer(authentication, request, variant),
+        ),
+    );
+    const items: MobileHomeItem[] = [];
+    const errors: string[] = [];
+    results.forEach((result, index) => {
+        if (result.status === 'fulfilled') {
+            items.push(...result.value);
+        } else {
+            errors.push(`${authentications[index].title}: ${getErrorMessage(result.reason)}`);
+        }
+    });
+    return { errors, items };
 };
 
 export const loadMobileHomeContentForServers = async ({

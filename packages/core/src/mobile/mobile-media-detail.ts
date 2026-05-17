@@ -318,12 +318,16 @@ const subsonicUrlWithMultiValueQuery = (
 const subsonicCoverArtUrl = (
     authentication: ServerAuthenticationResult,
     coverArt: string | undefined,
+    entityId?: number | string,
 ) => {
-    if (!coverArt) {
+    // Fall back to the entity id when coverArt is absent — see the matching
+    // helper in mobile-search.ts for the rationale.
+    const target = coverArt ?? (entityId != null ? entityId.toString() : undefined);
+    if (!target) {
         return undefined;
     }
 
-    return subsonicUrl(authentication, 'getCoverArt.view', { id: coverArt, size: 640 });
+    return subsonicUrl(authentication, 'getCoverArt.view', { id: target, size: 640 });
 };
 
 const assertSubsonicOk = (
@@ -350,7 +354,7 @@ const toSubsonicAlbumItem = (
 
     return [
         {
-            artworkUrl: subsonicCoverArtUrl(authentication, album.coverArt),
+            artworkUrl: subsonicCoverArtUrl(authentication, album.coverArt, album.id),
             id,
             source: getMobileContentSource(authentication),
             subtitle: album.artist ?? (album.year ? String(album.year) : undefined),
@@ -878,7 +882,7 @@ const loadSubsonicArtistDetail = async (
         if (!similarId || !similar.name) return [];
         return [
             {
-                artworkUrl: subsonicCoverArtUrl(authentication, similar.coverArt),
+                artworkUrl: subsonicCoverArtUrl(authentication, similar.coverArt, similar.id),
                 id: similarId,
                 source: getMobileContentSource(authentication),
                 title: similar.name,
@@ -898,7 +902,7 @@ const loadSubsonicArtistDetail = async (
             infoResponse?.largeImageUrl ??
             infoResponse?.mediumImageUrl ??
             artist.artistImageUrl ??
-            subsonicCoverArtUrl(authentication, artist.coverArt),
+            subsonicCoverArtUrl(authentication, artist.coverArt, artist.id),
         biography: sanitizeBiography(infoResponse?.biography),
         id: artist.id.toString(),
         items: albumItems,

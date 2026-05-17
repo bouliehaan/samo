@@ -123,6 +123,10 @@ import {
     subscribeStorageLocation,
 } from './src/services/download-manager';
 import { triggerImpact } from './src/services/haptics';
+import {
+    type AndroidFullCollectionState,
+    loadAndroidFullCollection,
+} from './src/services/full-collection';
 import { type AndroidHomeContentState, loadAndroidHomeContent } from './src/services/home-content';
 import {
     loadCachedHomeContent,
@@ -572,6 +576,10 @@ export default function App() {
     });
     const [isFullPlayerOpen, setIsFullPlayerOpen] = useState(false);
     const [viewAllRoute, setViewAllRoute] = useState<null | ViewAllRoute>(null);
+    const [viewAllFullState, setViewAllFullState] = useState<AndroidFullCollectionState>({
+        status: 'idle',
+    });
+    const viewAllFetchTokenRef = useRef(0);
     // Unified animation source for the MiniPlayer ↔ FullScreenPlayer transition.
     // 0 = miniplayer visible, 1 = fullscreen visible. Both components derive
     // their opacity / translate / scale from this single shared value so the
@@ -700,6 +708,8 @@ export default function App() {
             if (activeUtilityScreen === 'view-all') {
                 setActiveUtilityScreen(null);
                 setViewAllRoute(null);
+                viewAllFetchTokenRef.current += 1;
+                setViewAllFullState({ status: 'idle' });
                 return true;
             }
 
@@ -1351,10 +1361,9 @@ export default function App() {
         (section: HomeDisplaySection) => {
             const variant = getViewAllVariant(section.variant);
             if (!variant) return;
-            // We pull from the homeContentState rather than section.items so
-            // the View All page sees the wider set the home-content service
-            // returned (capped at ANDROID_HOME_CONTENT_LIMIT = 80 per server-
-            // side section), not just the trimmed slice we render on Home.
+            // Show the cached home-content slice immediately so the screen
+            // never opens blank; the full collection fetch below will fill in
+            // every remaining item once the server(s) respond.
             const wideItems =
                 homeContentState.status === 'loaded'
                     ? gatherViewAllItems(homeContentState.content.sections, variant)
@@ -1368,8 +1377,20 @@ export default function App() {
             });
             setActiveUtilityScreen('view-all');
             setMediaDetailState({ status: 'idle' });
+
+            // Kick off the exhaustive fetch. The token guards against a stale
+            // response landing after the user has opened a different View All
+            // (or closed the screen entirely).
+            viewAllFetchTokenRef.current += 1;
+            const myToken = viewAllFetchTokenRef.current;
+            setViewAllFullState({ status: 'loading' });
+            void (async () => {
+                const result = await loadAndroidFullCollection(serverConnections, variant);
+                if (viewAllFetchTokenRef.current !== myToken) return;
+                setViewAllFullState(result);
+            })();
         },
-        [homeContentState],
+        [homeContentState, serverConnections],
     );
 
     const handleSelectMediaItem = async (item: MobileHomeItem | MobileSearchItem) => {
@@ -2593,6 +2614,23 @@ export default function App() {
                 style={styles.keyboardView}
             >
                 <View style={styles.root}>
+                    {activeUtilityScreen === 'view-all' && viewAllRoute ? (
+                        // ViewAllScreen renders its own FlatList — keep it
+                        // outside the surrounding ScrollView so RN doesn't
+                        // warn about nested VirtualizedLists with the same
+                        // orientation (which also disables windowing).
+                        <ViewAllScreen
+                            fullState={viewAllFullState}
+                            onBack={() => {
+                                setActiveUtilityScreen(null);
+                                setViewAllRoute(null);
+                                viewAllFetchTokenRef.current += 1;
+                                setViewAllFullState({ status: 'idle' });
+                            }}
+                            onSelectItem={handleSelectMediaItem}
+                            route={viewAllRoute}
+                        />
+                    ) : (
                     <ScrollView contentContainerStyle={styles.content}>
                         {activeTab === 'home' &&
                         activeUtilityScreen === null &&
@@ -2652,15 +2690,6 @@ export default function App() {
                                 serverUrl={serverUrl}
                                 username={username}
                             />
-                        ) : activeUtilityScreen === 'view-all' && viewAllRoute ? (
-                            <ViewAllScreen
-                                onBack={() => {
-                                    setActiveUtilityScreen(null);
-                                    setViewAllRoute(null);
-                                }}
-                                onSelectItem={handleSelectMediaItem}
-                                route={viewAllRoute}
-                            />
                         ) : mediaDetailState.status !== 'idle' ? (
                             <MediaDetailContent
                                 homeContentState={homeContentState}
@@ -2717,6 +2746,7 @@ export default function App() {
                             <EmptyServerBackedScreen tabTitle={title} />
                         )}
                     </ScrollView>
+                    )}
                     <MiniPlayer
                         lastPlayedItem={lastPlayedItem}
                         onOpenFullPlayer={() => setIsFullPlayerOpen(true)}
@@ -4838,7 +4868,6 @@ const getHomeItemsForSection = (
 };
 
 const RECENTLY_ADDED_ROW_LIMIT = 18;
-const RECENTLY_ADDED_PER_CATEGORY = 8;
 
 const getViewAllVariant = (
     variant: HomeDisplaySection['variant'],
@@ -4889,43 +4918,42 @@ const gatherViewAllItems = (
 };
 
 /**
- * Interleave the newest items from each category into a single hero row at
- * the top of Home. Each contributing section is already addedAt-desc on the
- * server side; we round-robin so albums, audiobooks, and podcasts all show up
- * even when one category has many more items than the others.
+ * Build the single cross-source "Recently Added" hero row at the top of Home.
+ * Pulls candidate items from every section that carries server-reported
+ * addedAt timestamps (the Subsonic "Recently Added" album list, plus ABS
+ * audiobooks and podcasts which already arrive sorted by addedAt-desc) and
+ * sorts the union strictly by addedAt. Items without a timestamp fall to the
+ * end so we still show *something* if a server didn't populate created/addedAt
+ * — but the typical case is a fully chronological list that reflects what was
+ * most recently added to ANY connected server, regardless of media type. If
+ * you only added albums recently, the row is all albums; if a podcast episode
+ * just landed, it pushes everything older down.
  */
 const buildRecentlyAddedHeroRow = (
     sectionsById: Map<MobileHomeSectionId, MobileHomeSection>,
 ): MobileHomeItem[] => {
-    const buckets: MobileHomeItem[][] = [
-        (sectionsById.get(MobileHomeSectionId.RECENTLY_ADDED)?.items ?? []).slice(
-            0,
-            RECENTLY_ADDED_PER_CATEGORY,
-        ),
-        (sectionsById.get(MobileHomeSectionId.AUDIOBOOKS)?.items ?? []).slice(
-            0,
-            RECENTLY_ADDED_PER_CATEGORY,
-        ),
-        (sectionsById.get(MobileHomeSectionId.PODCASTS)?.items ?? []).slice(
-            0,
-            RECENTLY_ADDED_PER_CATEGORY,
-        ),
+    const candidates: MobileHomeItem[] = [
+        ...(sectionsById.get(MobileHomeSectionId.RECENTLY_ADDED)?.items ?? []),
+        ...(sectionsById.get(MobileHomeSectionId.AUDIOBOOKS)?.items ?? []),
+        ...(sectionsById.get(MobileHomeSectionId.PODCASTS)?.items ?? []),
     ];
-    const result: MobileHomeItem[] = [];
     const seenKeys = new Set<string>();
-    const maxLength = Math.max(0, ...buckets.map((bucket) => bucket.length));
-    for (let i = 0; i < maxLength && result.length < RECENTLY_ADDED_ROW_LIMIT; i += 1) {
-        for (const bucket of buckets) {
-            const item = bucket[i];
-            if (!item) continue;
-            const key = getRecentContentItemKey(item);
-            if (seenKeys.has(key)) continue;
-            seenKeys.add(key);
-            result.push(item);
-            if (result.length >= RECENTLY_ADDED_ROW_LIMIT) break;
-        }
+    const deduped: MobileHomeItem[] = [];
+    for (const item of candidates) {
+        const key = getRecentContentItemKey(item);
+        if (seenKeys.has(key)) continue;
+        seenKeys.add(key);
+        deduped.push(item);
     }
-    return result;
+    deduped.sort((left, right) => {
+        const leftAdded = left.addedAt ?? -Infinity;
+        const rightAdded = right.addedAt ?? -Infinity;
+        if (leftAdded === rightAdded) {
+            return left.title.localeCompare(right.title);
+        }
+        return rightAdded - leftAdded;
+    });
+    return deduped.slice(0, RECENTLY_ADDED_ROW_LIMIT);
 };
 
 const getContentItemProgress = (item: AndroidRecentContentSourceItem) => {
@@ -5029,7 +5057,7 @@ const getHomeDisplaySections = (
         displaySections.push({
             items: recentDisplayItems.slice(0, 18),
             key: 'recents',
-            title: 'Recents',
+            title: 'Recently Played',
             variant: 'recents',
         });
     }
@@ -8908,41 +8936,79 @@ const ALPHABET_SIDEBAR_LETTERS = [
 
 const buildAlphabetLetterIndex = (
     items: MobileHomeItem[],
+    indexOffset: number = 0,
 ): Map<string, number> => {
     const map = new Map<string, number>();
     items.forEach((item, index) => {
         const first = item.title.charAt(0).toUpperCase();
         const letter = first >= 'A' && first <= 'Z' ? first : '#';
         if (!map.has(letter)) {
-            map.set(letter, index);
+            map.set(letter, indexOffset + index);
         }
     });
     return map;
 };
 
+// Number of recency-sorted items shown at the top of a View All grid before
+// the rest of the catalog falls into alphabetical order. 30 keeps the recent
+// chunk visible (~15 rows in a 2-column layout) without burying the bulk of
+// the library too far down the scroll.
+const VIEW_ALL_RECENCY_CHUNK = 30;
+
 const ViewAllScreen = ({
+    fullState,
     onBack,
     onSelectItem,
     route,
 }: {
+    fullState: AndroidFullCollectionState;
     onBack: () => void;
     onSelectItem: (item: AndroidRecentContentSourceItem) => void;
     route: ViewAllRoute;
 }) => {
     const contextMenu = useMediaContextMenu();
     const listRef = useRef<FlatList<MobileHomeItem>>(null);
-    const sortedItems = useMemo(
-        () =>
-            [...route.items].sort((left, right) =>
+    const isLoading = fullState.status === 'loading';
+    const isError = fullState.status === 'error';
+    const { alphabeticalStartIndex, sortedItems } = useMemo(() => {
+        // Prefer the exhaustive list once it lands; until then show the
+        // home-content slice the route was opened with so the grid isn't
+        // empty during the fetch. Merge the cached items either way so a
+        // brief stale state can't drop favorites that the full fetch missed.
+        const fullItems = fullState.status === 'loaded' ? fullState.items : [];
+        const merged: MobileHomeItem[] = [];
+        const seen = new Set<string>();
+        for (const item of [...fullItems, ...route.items]) {
+            const key = getRecentContentItemKey(item);
+            if (seen.has(key)) continue;
+            seen.add(key);
+            merged.push(item);
+        }
+        // "Order it in recency, then once recency is done, just list all the
+        // rest of the albums." — slice the newest-added items off the front
+        // (by addedAt desc) and follow them with the entire remaining catalog
+        // in alphabetical order. The alphabet sidebar jumps into the second
+        // chunk so per-letter navigation still feels natural.
+        const datedItems = merged
+            .filter((item) => typeof item.addedAt === 'number')
+            .sort((left, right) => (right.addedAt ?? 0) - (left.addedAt ?? 0));
+        const recentChunk = datedItems.slice(0, VIEW_ALL_RECENCY_CHUNK);
+        const recentKeys = new Set(recentChunk.map((item) => getRecentContentItemKey(item)));
+        const alphabeticalChunk = merged
+            .filter((item) => !recentKeys.has(getRecentContentItemKey(item)))
+            .sort((left, right) =>
                 left.title.localeCompare(right.title, undefined, {
                     sensitivity: 'base',
                 }),
-            ),
-        [route.items],
-    );
+            );
+        return {
+            alphabeticalStartIndex: recentChunk.length,
+            sortedItems: [...recentChunk, ...alphabeticalChunk],
+        };
+    }, [fullState, route.items]);
     const letterIndex = useMemo(
-        () => buildAlphabetLetterIndex(sortedItems),
-        [sortedItems],
+        () => buildAlphabetLetterIndex(sortedItems.slice(alphabeticalStartIndex), alphabeticalStartIndex),
+        [alphabeticalStartIndex, sortedItems],
     );
 
     const handleJumpToLetter = useCallback(
@@ -9028,9 +9094,13 @@ const ViewAllScreen = ({
             </View>
             <View style={styles.viewAllBody}>
                 {sortedItems.length === 0 ? (
-                    <Text style={styles.viewAllEmpty}>
-                        Nothing to show here yet.
-                    </Text>
+                    isLoading ? (
+                        <ActivityIndicator color={colors.accent} />
+                    ) : (
+                        <Text style={styles.viewAllEmpty}>
+                            {isError ? 'Couldn’t load every item.' : 'Nothing to show here yet.'}
+                        </Text>
+                    )
                 ) : (
                     <FlatList
                         columnWrapperStyle={styles.viewAllColumn}

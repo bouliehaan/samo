@@ -309,12 +309,19 @@ const subsonicUrl = (
 const subsonicCoverArtUrl = (
     authentication: ServerAuthenticationResult,
     coverArt: string | undefined,
+    entityId?: number | string,
 ) => {
-    if (!coverArt) {
+    // Newer Navidrome usually populates coverArt; older Subsonic-compatible
+    // servers and some search3 responses leave it blank even when the artwork
+    // is available. getCoverArt.view accepts the entity id directly, so fall
+    // back to it whenever the explicit coverArt field is missing — produces
+    // covers for albums/artists where we previously rendered a fallback letter.
+    const target = coverArt ?? (entityId != null ? entityId.toString() : undefined);
+    if (!target) {
         return undefined;
     }
 
-    return subsonicUrl(authentication, 'getCoverArt.view', { id: coverArt, size: 320 });
+    return subsonicUrl(authentication, 'getCoverArt.view', { id: target, size: 320 });
 };
 
 // Match-quality tiers, descending. Used to bubble obvious matches (a query that
@@ -681,7 +688,7 @@ const loadSubsonicSearch = async (
                     }
 
                     return {
-                        artworkUrl: subsonicCoverArtUrl(authentication, album.coverArt),
+                        artworkUrl: subsonicCoverArtUrl(authentication, album.coverArt, album.id),
                         id,
                         lastPlayedAt: parseIsoTimestamp(album.played),
                         playCount: album.playCount,
@@ -703,7 +710,7 @@ const loadSubsonicSearch = async (
                     }
 
                     return {
-                        artworkUrl: subsonicCoverArtUrl(authentication, artist.coverArt),
+                        artworkUrl: subsonicCoverArtUrl(authentication, artist.coverArt, artist.id),
                         id,
                         lastPlayedAt: parseIsoTimestamp(artist.played),
                         playCount: artist.playCount,
@@ -728,7 +735,11 @@ const loadSubsonicSearch = async (
                         }
 
                         return {
-                            artworkUrl: subsonicCoverArtUrl(authentication, playlist.coverArt),
+                            artworkUrl: subsonicCoverArtUrl(
+                                authentication,
+                                playlist.coverArt,
+                                playlist.id,
+                            ),
                             id,
                             source: getMobileContentSource(authentication),
                             subtitle: playlist.songCount
