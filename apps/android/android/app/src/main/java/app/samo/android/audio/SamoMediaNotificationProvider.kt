@@ -133,7 +133,13 @@ class SamoMediaNotificationProvider(
         val isPlaying = player.playWhenReady && player.playbackState != Player.STATE_IDLE
 
         val builder = NotificationCompat.Builder(context, NOTIFICATION_CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_media_play)
+            // Android requires every notification to carry a smallIcon in the
+            // top-left of the card and the status bar; you can't suppress it.
+            // The Samo "S" mark generated from build/samologo.png reads as
+            // brand chrome rather than a fourth phantom play control (the
+            // previous android.R.drawable.ic_media_play was being mistaken for
+            // an action button next to the real prev/play/next ones below).
+            .setSmallIcon(app.samo.android.R.drawable.ic_notification_samo)
             .setContentTitle(title.ifEmpty { "Samo" })
             .setContentText(artist)
             .setOngoing(isPlaying)

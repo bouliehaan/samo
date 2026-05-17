@@ -230,7 +230,10 @@ class SamoPlaybackService : MediaSessionService() {
 
     private fun buildPlaceholderNotification(): Notification {
         return NotificationCompat.Builder(this, NOTIFICATION_CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_media_play)
+            // Same Samo S used by the real notification — so the cold-start
+            // placeholder doesn't flash a system play triangle for the frame
+            // before Media3 swaps in the proper MediaStyle card.
+            .setSmallIcon(app.samo.android.R.drawable.ic_notification_samo)
             .setContentTitle("Samo")
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setOngoing(true)
