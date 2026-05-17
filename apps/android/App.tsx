@@ -4989,7 +4989,7 @@ const LibraryListRow = ({
                 title={item.title}
             />
             <View style={styles.libraryRowText}>
-                <Text numberOfLines={1} style={[styles.libraryRowTitle, styles.rowTitleText]}>
+                <Text numberOfLines={1} style={styles.libraryRowTitle}>
                     {item.title}
                 </Text>
                 <Text numberOfLines={1} style={styles.libraryRowSubtitle}>
@@ -6502,10 +6502,7 @@ const MediaDetailLoaded = ({
                                         </View>
                                     )}
                                     <View style={styles.searchRowText}>
-                                        <Text
-                                            numberOfLines={1}
-                                            style={[styles.searchTitle, styles.rowTitleText]}
-                                        >
+                                        <Text numberOfLines={1} style={styles.searchTitle}>
                                             {track.title}
                                         </Text>
                                         {meta.length > 0 ? (
@@ -6642,10 +6639,7 @@ const ArtistDetailSections = ({
                                     <QualityBadge thumb profile={trackBadgeProfile} />
                                 </View>
                                 <View style={styles.searchRowText}>
-                                    <Text
-                                        numberOfLines={1}
-                                        style={[styles.searchTitle, styles.rowTitleText]}
-                                    >
+                                    <Text numberOfLines={1} style={styles.searchTitle}>
                                         {track.title}
                                     </Text>
                                     {track.subtitle ? (
@@ -8201,10 +8195,7 @@ const MiniPlayer = ({
                     </View>
                 )}
                 <View style={styles.miniPlayerText}>
-                    <Text
-                        numberOfLines={1}
-                        style={[styles.miniPlayerTitle, styles.rowTitleText]}
-                    >
+                    <Text numberOfLines={1} style={styles.miniPlayerTitle}>
                         {title || 'Nothing playing'}
                     </Text>
                     {subtitle ? (
@@ -9601,7 +9592,6 @@ const QueueSheetOverlay = ({
                                             numberOfLines={1}
                                             style={[
                                                 styles.queueRowTitle,
-                                                styles.rowTitleText,
                                                 isActive && { color: colors.accent },
                                             ]}
                                         >
@@ -9849,7 +9839,7 @@ const ViewAllScreen = ({
                     <QualityBadge overlay profile={tileBadgeProfile} />
                     <Text
                         numberOfLines={1}
-                        style={[styles.viewAllTileTitle, styles.rowTitleText]}
+                        style={styles.viewAllTileTitle}
                     >
                         {item.title}
                     </Text>
@@ -11843,16 +11833,6 @@ const styles = StyleSheet.create({
         fontSize: 17,
         fontWeight: '700',
         marginBottom: 4,
-    },
-    rowTitleText: {
-        flex: 1,
-        minWidth: 0,
-    },
-    rowTitleWithBadge: {
-        alignItems: 'center',
-        flexDirection: 'row',
-        gap: 7,
-        minWidth: 0,
     },
     formatBadge: {
         height: 44,
