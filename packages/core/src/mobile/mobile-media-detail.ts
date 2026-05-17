@@ -1,4 +1,4 @@
-import { isHiResAudioQuality } from '../audio-quality';
+import { isHiResAudioQuality, isLosslessAudioQuality } from '../audio-quality';
 import { type ServerAuthenticationResult } from '../server/server-auth';
 import { getFetch, requestJson, type SamoFetch } from '../server/server-http';
 import { ServerType } from '../server/server-types';
@@ -649,8 +649,9 @@ const tracksHaveHiRes = (tracks: MobileMediaTrack[]) =>
 /**
  * Compute the best (highest) bit-depth / sample-rate present across a
  * detail's tracks — used to label the album hero with one representative
- * format. Only counts tracks whose playback quality clears the hi-res
- * threshold so plain CD-rate albums get no badge.
+ * format. Uses the lossless predicate (not the stricter hi-res one) so a
+ * 16/44.1 lossless album still earns its badge; the asset set has a 16/44.1
+ * variant and the user expects every lossless album to carry a marker.
  */
 const trackQualityProfile = (
     tracks: MobileMediaTrack[],
@@ -659,7 +660,7 @@ const trackQualityProfile = (
     for (const track of tracks) {
         const quality = track.playback?.quality;
         if (!quality) continue;
-        if (!isHiResAudioQuality(quality)) continue;
+        if (!isLosslessAudioQuality(quality)) continue;
         const { bitDepth, sampleRate } = quality;
         if (bitDepth == null || sampleRate == null) continue;
         if (

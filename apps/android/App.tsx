@@ -1,4 +1,8 @@
-import { buildAudioQualityBadgeItems, isHiResAudioQuality } from '@samo/core/audio-quality';
+import {
+    buildAudioQualityBadgeItems,
+    isHiResAudioQuality,
+    isLosslessAudioQuality,
+} from '@samo/core/audio-quality';
 import {
     addMobileTracksToPlaylist,
     buildAudiobookshelfArtworkUrl,
@@ -238,13 +242,15 @@ const isContentItemHiRes = (
  * Pull a quality profile from a playback record's quality block. Returns
  * undefined when either dimension isn't reported (some Subsonic-compat
  * servers leave bitDepth/sampleRate empty even for lossless tracks) or when
- * the playback doesn't clear the hi-res threshold.
+ * the playback isn't lossless. We use isLosslessAudioQuality (not the
+ * stricter hi-res check) so any 16-bit-or-up lossless track gets badged —
+ * 16/44.1 FLAC included.
  */
 const getPlaybackQualityProfile = (
     playback?: MobilePlayableAudio | null,
 ): MobileQualityProfile | undefined => {
     if (!playback) return undefined;
-    if (!isHiResAudioQuality(playback.quality)) return undefined;
+    if (!isLosslessAudioQuality(playback.quality)) return undefined;
     const { bitDepth, sampleRate } = playback.quality;
     if (bitDepth == null || sampleRate == null) return undefined;
     return { bitDepth, sampleRate };
@@ -9270,6 +9276,13 @@ const FullScreenPlayer = ({
                             </Text>
                         </View>
                     )}
+                    {/* Format badge sits in the corner of the artwork — the same
+                        artwork-overlay treatment used on home and view-all tiles,
+                        scaled up for the hero. */}
+                    <QualityBadge
+                        overlay
+                        profile={getPlaybackQualityProfile(displayItem)}
+                    />
                 </View>
             </View>
 
@@ -9278,7 +9291,7 @@ const FullScreenPlayer = ({
                 <View style={styles.fullPlayerMetadata}>
                     <Text
                         numberOfLines={2}
-                        style={[styles.fullPlayerTitle, styles.fullPlayerTitleText]}
+                        style={styles.fullPlayerTitle}
                     >
                         {display.title}
                     </Text>
@@ -9287,16 +9300,6 @@ const FullScreenPlayer = ({
                             {display.subtitle}
                         </Text>
                     ) : null}
-                    {/* Format badge gets its own row beneath the metadata; never
-                        inline with the title text. */}
-                    {(() => {
-                        const playerProfile = getPlaybackQualityProfile(displayItem);
-                        return playerProfile ? (
-                            <View style={styles.fullPlayerBadgeRow}>
-                                <QualityBadge player profile={playerProfile} />
-                            </View>
-                        ) : null;
-                    })()}
                     {qualityItems.length > 0 ? (
                         <View style={styles.fullPlayerQualityRow}>
                             <QualityBadgeRow items={qualityItems} />
@@ -11026,24 +11029,6 @@ const styles = StyleSheet.create({
         letterSpacing: 0,
         lineHeight: 30,
         textAlign: 'left',
-    },
-    fullPlayerTitleRow: {
-        alignItems: 'center',
-        flexDirection: 'row',
-        gap: 10,
-        minWidth: 0,
-    },
-    fullPlayerBadgeRow: {
-        // Format badge gets its own line beneath the title + subtitle, never
-        // jammed next to the title text. Left-aligned to match the rest of
-        // the metadata block.
-        alignItems: 'flex-start',
-        flexDirection: 'row',
-        marginTop: spacing.xs,
-    },
-    fullPlayerTitleText: {
-        flex: 1,
-        minWidth: 0,
     },
     gearGlyphText: {
         fontSize: 18,

@@ -1,4 +1,4 @@
-import { isHiResAudioQuality } from '../audio-quality';
+import { isLosslessAudioQuality } from '../audio-quality';
 import { type ServerAuthenticationResult } from '../server/server-auth';
 import { requestJson, type SamoFetch } from '../server/server-http';
 import { type MobileQualityProfile } from './mobile-home';
@@ -74,12 +74,16 @@ export const loadSubsonicAlbumQualityProfile = async (
         return undefined;
     }
 
+    // Anything lossless at 16-bit or above earns a badge — including CD-rate
+    // FLAC. The 16/44.1 asset exists; the user (rightly) doesn't want plain
+    // lossless tracks to render unmarked just because they're not above the
+    // hi-res threshold. Walk every song; keep the album's highest profile.
     let best: MobileQualityProfile | undefined;
-    let anyHiRes = false;
+    let anyLossless = false;
     for (const song of response?.album?.song ?? []) {
         const quality = getSubsonicMusicQuality(song);
-        if (!isHiResAudioQuality(quality)) continue;
-        anyHiRes = true;
+        if (!isLosslessAudioQuality(quality)) continue;
+        anyLossless = true;
         const bitDepth = quality.bitDepth ?? null;
         const sampleRate = quality.sampleRate ?? null;
         if (bitDepth == null || sampleRate == null) continue;
@@ -89,11 +93,9 @@ export const loadSubsonicAlbumQualityProfile = async (
         }
     }
 
-    // Album qualifies as hi-res by bitrate floor but no song reports a
+    // Album qualifies as lossless by bitrate floor but no song reports a
     // structured profile — return undefined so we don't pick a wrong badge.
-    // The legacy isHiRes boolean (set elsewhere) still keeps that information
-    // around for non-badge consumers.
-    return anyHiRes ? best : undefined;
+    return anyLossless ? best : undefined;
 };
 
 /**

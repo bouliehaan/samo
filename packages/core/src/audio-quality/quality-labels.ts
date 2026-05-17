@@ -38,6 +38,29 @@ const PREMIUM_QUALITY_CONTAINERS = new Set([
 ]);
 
 const LOSSY_CONTAINERS = new Set(['aac', 'm4a', 'mp3', 'oga', 'ogg', 'opus', 'wma']);
+const HI_RES_LOSSLESS_BITRATE_FLOOR_KBPS = 1411;
+
+const normalizeContainerKey = (container?: null | string) => {
+    if (!container) return '';
+
+    const [mime] = container.trim().toLowerCase().split(';');
+    const withoutMimePrefix = mime.startsWith('audio/') ? mime.slice('audio/'.length) : mime;
+    const withoutDot = withoutMimePrefix.startsWith('.')
+        ? withoutMimePrefix.slice(1)
+        : withoutMimePrefix;
+    const withoutVendorPrefix = withoutDot.startsWith('x-') ? withoutDot.slice(2) : withoutDot;
+
+    if (withoutVendorPrefix === 'mpeg') return 'mp3';
+    if (withoutVendorPrefix === 'wave') return 'wav';
+
+    return withoutVendorPrefix;
+};
+
+const normalizeBitRateKbps = (bitRate?: null | number) => {
+    if (!bitRate) return null;
+
+    return bitRate >= 100_000 ? bitRate / 1000 : bitRate;
+};
 
 export const formatContainer = (container?: null | string) => {
     if (!container) return null;
@@ -71,7 +94,79 @@ export const formatBitRate = (bitRate?: null | number) => {
 };
 
 export const isPremiumQualityContainer = (container?: null | string) => {
-    return PREMIUM_QUALITY_CONTAINERS.has(container?.toLowerCase() ?? '');
+    return PREMIUM_QUALITY_CONTAINERS.has(normalizeContainerKey(container));
+};
+
+export const isHiResAudioQuality = ({
+    bitDepth,
+    bitRate,
+    container,
+    deliveryKind,
+    sampleRate,
+}: {
+    bitDepth?: null | number;
+    bitRate?: null | number;
+    container?: null | string;
+    deliveryKind: AudioDeliveryKind;
+    sampleRate?: null | number;
+}) => {
+    if (deliveryKind === 'transcoded') {
+        return false;
+    }
+
+    if (!isPremiumQualityContainer(container)) {
+        return false;
+    }
+
+    if ((bitDepth ?? 0) > 16 || (sampleRate ?? 0) > 48_000) {
+        return true;
+    }
+
+    const bitRateKbps = normalizeBitRateKbps(bitRate);
+    return bitDepth == null && sampleRate == null && (bitRateKbps ?? 0) > HI_RES_LOSSLESS_BITRATE_FLOOR_KBPS;
+};
+
+/**
+ * Broader cousin of isHiResAudioQuality used by the quality-badge surface
+ * only. Anything delivered direct (not transcoded) from a lossless container
+ * at 16-bit or above earns a badge — CD-rate FLAC included, since the badge
+ * art set ships a 16/44.1 variant and the user expects to see a marker on
+ * any lossless track. isHiResAudioQuality keeps its stricter 24-bit-or-up
+ * meaning for the audio-quality labels and filters that consume it
+ * elsewhere.
+ */
+export const isLosslessAudioQuality = ({
+    bitDepth,
+    bitRate,
+    container,
+    deliveryKind,
+    sampleRate,
+}: {
+    bitDepth?: null | number;
+    bitRate?: null | number;
+    container?: null | string;
+    deliveryKind: AudioDeliveryKind;
+    sampleRate?: null | number;
+}) => {
+    if (deliveryKind === 'transcoded') {
+        return false;
+    }
+
+    if (!isPremiumQualityContainer(container)) {
+        return false;
+    }
+
+    // Explicit bit depth wins. Reject anything below 16-bit (sub-CD is rare
+    // and not what the "Lossless" badge represents). 16-bit and above is in.
+    if (bitDepth != null) {
+        return bitDepth >= 16;
+    }
+
+    // If the server didn't report bit depth, fall back to the bitrate floor —
+    // a bitrate well above the lossy ceiling is a reliable proxy for lossless
+    // even when bitDepth/sampleRate are missing.
+    const bitRateKbps = normalizeBitRateKbps(bitRate);
+    return (bitRateKbps ?? 0) > HI_RES_LOSSLESS_BITRATE_FLOOR_KBPS;
 };
 
 export const getQualityLabel = ({
@@ -87,7 +182,7 @@ export const getQualityLabel = ({
     isTranscoded: boolean;
     sampleRate?: null | number;
 }) => {
-    const containerKey = container?.toLowerCase();
+    const containerKey = normalizeContainerKey(container);
 
     if (isTranscoded || (containerKey && LOSSY_CONTAINERS.has(containerKey))) {
         return formatBitRate(bitRate);
