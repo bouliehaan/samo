@@ -59,15 +59,18 @@ class SamoPlaybackService : MediaSessionService() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        // Android 8+ contract: when a process calls startForegroundService(), the
-        // service has 5 seconds to call startForeground() or the system ANRs the
-        // app ("Context.startForegroundService() did not then call
-        // Service.startForeground()"). MediaSessionService auto-promotes only
-        // when the player transitions to playing, which can take longer than
-        // that on a slow first-buffer. Call startForeground immediately with a
-        // minimal placeholder so we satisfy the contract; Media3 swaps in the
-        // real media notification once the session has content.
-        startForeground(NOTIFICATION_ID, buildPlaceholderNotification())
+        // Android 8+ contract: when a process calls startForegroundService(),
+        // the service has 5 seconds to call startForeground() or the system
+        // ANRs the app. We only post the silent placeholder when there's no
+        // MediaSession yet — once Media3's notification provider owns the
+        // slot, reposting the placeholder here OVERWRITES the proper
+        // MediaStyle notification every time the system delivers an intent
+        // (eg pause/resume via media buttons, or a START_STICKY service
+        // restart). That overwrite was the bug behind "pause kills the play
+        // card and replaces it with the silent notification".
+        if (mediaSession == null) {
+            startForeground(NOTIFICATION_ID, buildPlaceholderNotification())
+        }
         return super.onStartCommand(intent, flags, startId)
     }
 

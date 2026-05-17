@@ -7595,19 +7595,45 @@ const MiniPlayer = ({
         opacity: interpolate(playerProgress.value, [0, 0.35], [1, 0], 'clamp'),
         pointerEvents: playerProgress.value > 0.5 ? 'none' : 'auto',
     }));
-    const miniPanResponder = useMemo(
+    // Drag-up that *follows the finger* instead of waiting for release. The
+    // miniplayer writes directly into the same `playerProgress` shared value
+    // the fullscreen player uses for its translateY — so as the user drags
+    // upward, the fullscreen sheet rises in real time and the miniplayer
+    // fades. On release we either commit (hand off to the App's useEffect
+    // which springs to 1 with the user's velocity) or roll back to 0.
+    //
+    // Failure offsets keep horizontal swipes and the play/pause tap from
+    // accidentally triggering the open gesture.
+    const miniDragGesture = useMemo(
         () =>
-            PanResponder.create({
-                onMoveShouldSetPanResponder: (_event, gs) =>
-                    gs.dy < -6 && Math.abs(gs.dy) > Math.abs(gs.dx) * 1.2,
-                onPanResponderRelease: (_event, gs) => {
-                    if (gs.dy < -28 || gs.vy < -0.5) {
-                        onOpenFullPlayer();
+            Gesture.Pan()
+                .activeOffsetY(-8)
+                .failOffsetX([-20, 20])
+                .onChange((event) => {
+                    'worklet';
+                    if (event.translationY >= 0) {
+                        playerProgress.value = 0;
+                        return;
                     }
-                },
-                onPanResponderTerminationRequest: () => false,
-            }),
-        [onOpenFullPlayer],
+                    const next = -event.translationY / SCREEN_HEIGHT;
+                    playerProgress.value = next > 1 ? 1 : next;
+                })
+                .onEnd((event) => {
+                    'worklet';
+                    const shouldCommit =
+                        event.translationY < -SCREEN_HEIGHT * 0.18 ||
+                        event.velocityY < -800;
+                    if (shouldCommit) {
+                        // Hand off to the App's useEffect-driven spring by
+                        // flipping the open flag; the spring picks up from
+                        // wherever the drag left playerProgress so the motion
+                        // is continuous.
+                        runOnJS(onOpenFullPlayer)();
+                    } else {
+                        playerProgress.value = withTiming(0, { duration: 200 });
+                    }
+                }),
+        [onOpenFullPlayer, playerProgress],
     );
 
     const isActive = playbackState.status !== 'idle';
@@ -7635,7 +7661,8 @@ const MiniPlayer = ({
     };
 
     return (
-        <Reanimated.View style={[styles.miniPlayer, miniAnimatedStyle]} {...miniPanResponder.panHandlers}>
+        <GestureDetector gesture={miniDragGesture}>
+        <Reanimated.View style={[styles.miniPlayer, miniAnimatedStyle]}>
             <Pressable
                 accessibilityRole="button"
                 onPress={onOpenFullPlayer}
@@ -7689,6 +7716,7 @@ const MiniPlayer = ({
                 </Pressable>
             </Pressable>
         </Reanimated.View>
+        </GestureDetector>
     );
 };
 
@@ -7971,12 +7999,13 @@ const oklabToHex = (L: number, a: number, b: number): string => {
     return `#${out.toString(16).padStart(6, '0')}`;
 };
 
-// Picks the "essence" color of an album cover by scoring each swatch the
-// extractor returned. The aim is a Tidal-like backdrop: muted enough not to
-// fight the UI, characteristic enough that the eye reads it as "the album's
-// color family" rather than a generic dark wash. Scoring works in OKLab so
-// chroma and lightness can be reasoned about perceptually instead of by raw
-// RGB heuristics.
+// Pick the album's representative color — whatever the image-colors extractor
+// thinks is the most *characteristic* hue of the cover. We try `dominant`
+// first (the actual most-frequent color, which is what the eye reads as the
+// album's mood), then progressively fall back through the saturated/muted
+// buckets. The only thing we reject is near-black, near-white, and near-grey
+// — anything else passes straight through. No lightness manipulation, no
+// chroma scoring; the gradient builder handles toning for legibility.
 const pickAlbumEssenceColor = (result: ImageColorsResult): null | string => {
     const candidates: string[] = [];
     const push = (hex: null | string | undefined): void => {
@@ -7985,75 +8014,76 @@ const pickAlbumEssenceColor = (result: ImageColorsResult): null | string => {
         }
     };
     if (result.platform === 'android') {
-        push(result.darkMuted);
-        push(result.darkVibrant);
-        push(result.muted);
+        // Dominant first: it's the literal most-frequent color in the image,
+        // which is what reads as "this album's color family". Vibrant /
+        // muted variants are fallbacks for when dominant is missing.
         push(result.dominant);
-        push(result.average);
         push(result.vibrant);
+        push(result.muted);
+        push(result.darkVibrant);
+        push(result.darkMuted);
+        push(result.average);
     } else if (result.platform === 'ios') {
         push(result.background);
         push(result.primary);
         push(result.secondary);
         push(result.detail);
     } else {
-        push(result.darkMuted);
-        push(result.darkVibrant);
-        push(result.muted);
         push(result.dominant);
         push(result.vibrant);
+        push(result.muted);
+        push(result.darkVibrant);
+        push(result.darkMuted);
     }
 
-    let bestHex: null | string = null;
-    let bestScore = -Infinity;
     for (const hex of candidates) {
         const rgb = parseHex(hex);
         if (!rgb) continue;
         const [L, a, b] = rgbToOklab(rgb[0], rgb[1], rgb[2]);
         const C = Math.sqrt(a * a + b * b);
-        // Penalize anything near-black, near-white, or near-grey — the backdrop
-        // should still feel like part of the album, not the device chrome.
-        if (L < 0.12 || L > 0.92) continue;
-        if (C < 0.025) continue;
-        // Prefer L around 0.4 (rich, mid-tone) and reasonable chroma. We darken
-        // afterwards, so it's OK if the picked color is brighter than the final
-        // stop — we just need a color with personality.
-        const lightnessFit = 1 - Math.min(1, Math.abs(L - 0.42) / 0.42);
-        const chromaFit = Math.min(1, C / 0.14);
-        const score = lightnessFit * 0.6 + chromaFit * 0.7;
-        if (score > bestScore) {
-            bestScore = score;
-            bestHex = hex;
-        }
+        // Skip only the genuine outliers: pure black/white covers and the
+        // washed-out greys you'd get from a noise-heavy thumbnail.
+        if (L < 0.06 || L > 0.96) continue;
+        if (C < 0.012) continue;
+        return hex;
     }
-    return bestHex;
+    return candidates[0] ?? null;
 };
 
-// Three OKLab-based stops keeping the same chroma family, descending in
-// lightness. With perceptual stops a true GPU gradient covers the screen
-// without the dullness or hue shift you get from sRGB lerp, and the close
-// palette across the screen suppresses visible banding on its own.
-const buildBackdropStops = (
-    essence: null | string,
-): readonly [string, string, string] => {
-    if (!essence) {
-        return ['#1f1812', '#100b07', '#050403'] as const;
-    }
+// Build the fullscreen player backdrop as an 8-stop OKLab gradient sharing
+// the essence color's hue. We DON'T crush the top stop to a fixed dark value
+// — we honor whatever lightness the cover actually has, only clamping the
+// extremes so super-bright covers don't blow out and super-dark ones don't
+// vanish into black. Chroma decays slightly toward the bottom so the gradient
+// settles into a quiet near-black without losing the album's color identity.
+// Eight stops is enough that adjacent OKLab interpolation steps are below the
+// 8-bit perceptual banding threshold on a typical phone display.
+const buildBackdropStops = (essence: null | string): readonly string[] => {
+    const fallback: readonly string[] = [
+        '#1f1812', '#1a140f', '#15110c', '#100c09',
+        '#0b0806', '#070504', '#040302', '#010101',
+    ];
+    if (!essence) return fallback;
     const rgb = parseHex(essence);
-    if (!rgb) {
-        return ['#1f1812', '#100b07', '#050403'] as const;
+    if (!rgb) return fallback;
+    const [L0, a, b] = rgbToOklab(rgb[0], rgb[1], rgb[2]);
+    // Top stop honors the cover's natural lightness, clamped to a band where
+    // (a) text on the gradient stays readable and (b) the color doesn't read
+    // as washed-out. This is the only "manipulation" — and it's the minimum
+    // necessary for legibility, not an aesthetic darkening pass.
+    const Ltop = Math.max(0.30, Math.min(0.52, L0));
+    const Lbottom = 0.06;
+    const stopCount = 8;
+    const stops: string[] = [];
+    for (let i = 0; i < stopCount; i++) {
+        const t = i / (stopCount - 1);
+        const L = Ltop * (1 - t) + Lbottom * t;
+        // Mild chroma decay (1.00 → 0.55) so the bottom doesn't look painted
+        // with a saturated color in the dark — the eye expects depth there.
+        const cScale = 1 - t * 0.45;
+        stops.push(oklabToHex(L, a * cScale, b * cScale));
     }
-    const [, a, b] = rgbToOklab(rgb[0], rgb[1], rgb[2]);
-    // Chroma fades alongside lightness so the bottom of the gradient settles
-    // into near-black without looking flat-painted.
-    const topL = 0.22;
-    const midL = 0.13;
-    const bottomL = 0.05;
-    return [
-        oklabToHex(topL, a * 0.95, b * 0.95),
-        oklabToHex(midL, a * 0.7, b * 0.7),
-        oklabToHex(bottomL, a * 0.35, b * 0.35),
-    ] as const;
+    return stops;
 };
 
 const SwipeDismissSheet = ({
@@ -8554,7 +8584,6 @@ const FullScreenPlayer = ({
                 >
                     <LinearGradient
                         colors={buildBackdropStops(bgPrev) as unknown as string[]}
-                        locations={[0, 0.55, 1]}
                         style={StyleSheet.absoluteFillObject}
                     />
                 </Animated.View>
@@ -8575,7 +8604,6 @@ const FullScreenPlayer = ({
             >
                 <LinearGradient
                     colors={buildBackdropStops(bgCurr) as unknown as string[]}
-                    locations={[0, 0.55, 1]}
                     style={StyleSheet.absoluteFillObject}
                 />
             </Animated.View>
