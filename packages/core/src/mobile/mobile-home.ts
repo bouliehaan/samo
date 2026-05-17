@@ -8,6 +8,7 @@ import {
     type MobileContentSource,
 } from './mobile-content-source';
 import { buildRadioPlayback, type MobilePlayableAudio } from './mobile-playback';
+import { annotateSubsonicHiResCollections } from './mobile-subsonic-quality';
 
 export enum MobileHomeItemType {
     ALBUM = 'album',
@@ -59,11 +60,26 @@ export interface MobileHomeItem {
     addedAt?: number;
     artworkUrl?: string;
     id: string;
+    isHiRes?: boolean;
     playback?: MobilePlayableAudio;
+    /**
+     * The album / track's representative format — bit depth and sample rate
+     * of the highest-quality song in the collection (or the song itself).
+     * Populated by annotateSubsonicAlbumsQuality for album items; remains
+     * undefined for playlists (always mixed format), artists, audiobooks,
+     * podcasts. The UI uses this to pick the matching format-specific
+     * badge asset; absent profile = no badge.
+     */
+    qualityProfile?: MobileQualityProfile;
     source?: MobileContentSource;
     subtitle?: string;
     title: string;
     type: MobileHomeItemType;
+}
+
+export interface MobileQualityProfile {
+    bitDepth: number;
+    sampleRate: number;
 }
 
 export interface MobileHomeSection {
@@ -436,28 +452,30 @@ const loadSubsonicAlbums = async (
     const response = body['subsonic-response'];
     assertSubsonicOk(response, 'Failed to load albums');
 
+    const items: MobileHomeItem[] = (response?.albumList2?.album ?? []).flatMap((album) => {
+        const id = album.id?.toString();
+        const title = album.name ?? album.title;
+
+        if (!id || !title) {
+            return [];
+        }
+
+        const createdMs = album.created ? Date.parse(album.created) : NaN;
+
+        return {
+            addedAt: Number.isFinite(createdMs) ? createdMs : undefined,
+            artworkUrl: subsonicCoverArtUrl(authentication, album.coverArt, album.id),
+            id,
+            source: getMobileContentSource(authentication),
+            subtitle: album.artist ?? (album.year ? String(album.year) : undefined),
+            title,
+            type: MobileHomeItemType.ALBUM,
+        };
+    });
+
     return {
         id: MobileHomeSectionId.RECENTLY_ADDED,
-        items: (response?.albumList2?.album ?? []).flatMap((album) => {
-            const id = album.id?.toString();
-            const title = album.name ?? album.title;
-
-            if (!id || !title) {
-                return [];
-            }
-
-            const createdMs = album.created ? Date.parse(album.created) : NaN;
-
-            return {
-                addedAt: Number.isFinite(createdMs) ? createdMs : undefined,
-                artworkUrl: subsonicCoverArtUrl(authentication, album.coverArt, album.id),
-                id,
-                source: getMobileContentSource(authentication),
-                subtitle: album.artist ?? (album.year ? String(album.year) : undefined),
-                title,
-                type: MobileHomeItemType.ALBUM,
-            };
-        }),
+        items: await annotateSubsonicHiResCollections(authentication, fetcher, 'album', items),
         title: 'Recently Added',
     };
 };
@@ -474,9 +492,11 @@ const loadSubsonicFavoriteAlbumsAndArtists = async (
     const response = body['subsonic-response'];
     assertSubsonicOk(response, 'Failed to load favorites');
     const source = getMobileContentSource(authentication);
-    const favoriteAlbums: MobileHomeItem[] = (response?.starred2?.album ?? [])
-        .slice(0, limit)
-        .flatMap((album) => {
+    const favoriteAlbums: MobileHomeItem[] = await annotateSubsonicHiResCollections(
+        authentication,
+        fetcher,
+        'album',
+        (response?.starred2?.album ?? []).slice(0, limit).flatMap((album) => {
             const id = album.id?.toString();
             const title = album.name ?? album.title;
 
@@ -492,7 +512,8 @@ const loadSubsonicFavoriteAlbumsAndArtists = async (
                 title,
                 type: MobileHomeItemType.ALBUM,
             };
-        });
+        }),
+    );
     const favoriteArtists: MobileHomeItem[] = (response?.starred2?.artist ?? [])
         .slice(0, limit)
         .flatMap((artist) => {
@@ -533,24 +554,29 @@ const loadSubsonicPlaylists = async (
     const response = body['subsonic-response'];
     assertSubsonicOk(response, 'Failed to load playlists');
 
+    const items: MobileHomeItem[] = (response?.playlists?.playlist ?? []).flatMap((playlist) => {
+        const id = playlist.id?.toString();
+
+        if (!id || !playlist.name) {
+            return [];
+        }
+
+        return {
+            artworkUrl: subsonicCoverArtUrl(authentication, playlist.coverArt, playlist.id),
+            id,
+            source: getMobileContentSource(authentication),
+            subtitle: playlist.songCount ? `${playlist.songCount} songs` : playlist.owner,
+            title: playlist.name,
+            type: MobileHomeItemType.PLAYLIST,
+        };
+    });
+
+    // Playlists are mixed format by design — never run the hi-res scan or
+    // stamp a collection-level badge on them. Per-track quality still shows
+    // up on each row inside the playlist detail.
     return {
         id: MobileHomeSectionId.PLAYLISTS,
-        items: (response?.playlists?.playlist ?? []).flatMap((playlist) => {
-            const id = playlist.id?.toString();
-
-            if (!id || !playlist.name) {
-                return [];
-            }
-
-            return {
-                artworkUrl: subsonicCoverArtUrl(authentication, playlist.coverArt, playlist.id),
-                id,
-                source: getMobileContentSource(authentication),
-                subtitle: playlist.songCount ? `${playlist.songCount} songs` : playlist.owner,
-                title: playlist.name,
-                type: MobileHomeItemType.PLAYLIST,
-            };
-        }),
+        items,
         title: 'Playlists',
     };
 };

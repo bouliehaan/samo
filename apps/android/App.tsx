@@ -15,6 +15,7 @@ import {
     type MobileMediaTrack,
     type MobilePlayableAudio,
     type MobilePlaybackSegment,
+    type MobileQualityProfile,
     type MobileSearchItem,
     MobileSearchItemType,
     type MobileSearchSection,
@@ -90,7 +91,6 @@ import Reanimated, {
 import Svg, { Circle as SvgCircle } from 'react-native-svg';
 
 import heartIcon from './assets/icons/heart.png';
-import hiResAudioBadge from '../../assets/icons/hi-res-audio-badge.png';
 import shuffleIcon from './assets/icons/shuffle.png';
 import sleepTimerIcon from './assets/icons/sleep-timer.png';
 import samoLogo from './assets/samo-logo.png';
@@ -177,6 +177,10 @@ import {
     loadPersistedLastPlayedItem,
     savePersistedLastPlayedItem,
 } from './src/services/last-played-item';
+import {
+    formatQualityProfile,
+    pickQualityBadgeAsset,
+} from './src/services/quality-badge-assets';
 import { type AndroidSearchState, loadAndroidSearchResults } from './src/services/search-content';
 import { type AndroidAuthState, authenticateServer } from './src/services/server-auth';
 import {
@@ -229,6 +233,64 @@ const detailHasHiRes = (detail: MobileMediaDetail): boolean =>
 const isContentItemHiRes = (
     item?: null | { isHiRes?: boolean; playback?: MobilePlayableAudio },
 ): boolean => Boolean(item?.isHiRes || isPlaybackHiRes(item?.playback));
+
+/**
+ * Pull a quality profile from a playback record's quality block. Returns
+ * undefined when either dimension isn't reported (some Subsonic-compat
+ * servers leave bitDepth/sampleRate empty even for lossless tracks) or when
+ * the playback doesn't clear the hi-res threshold.
+ */
+const getPlaybackQualityProfile = (
+    playback?: MobilePlayableAudio | null,
+): MobileQualityProfile | undefined => {
+    if (!playback) return undefined;
+    if (!isHiResAudioQuality(playback.quality)) return undefined;
+    const { bitDepth, sampleRate } = playback.quality;
+    if (bitDepth == null || sampleRate == null) return undefined;
+    return { bitDepth, sampleRate };
+};
+
+/**
+ * Resolve a quality profile from any home/search item. The explicit
+ * qualityProfile set by annotateSubsonicAlbumsQuality wins; we fall back to
+ * the item's playback (covers individual song hits in search) before
+ * giving up. Undefined → caller renders no badge.
+ */
+const getItemQualityProfile = (
+    item?:
+        | null
+        | { playback?: MobilePlayableAudio; qualityProfile?: MobileQualityProfile },
+): MobileQualityProfile | undefined => {
+    if (!item) return undefined;
+    if (item.qualityProfile) return item.qualityProfile;
+    return getPlaybackQualityProfile(item.playback);
+};
+
+/**
+ * Album-detail and audiobook-detail: prefer the loader-computed profile,
+ * else walk tracks for the best one. Playlist detail intentionally still
+ * computes a profile here (so per-track badges work) but the UI never
+ * draws it on the playlist hero — see the rendering rule in the album hero.
+ */
+const getDetailQualityProfile = (
+    detail?: MobileMediaDetail | null,
+): MobileQualityProfile | undefined => {
+    if (!detail) return undefined;
+    if (detail.qualityProfile) return detail.qualityProfile;
+    let best: MobileQualityProfile | undefined;
+    for (const track of detail.tracks) {
+        const profile = getPlaybackQualityProfile(track.playback);
+        if (!profile) continue;
+        if (
+            !best ||
+            profile.bitDepth > best.bitDepth ||
+            (profile.bitDepth === best.bitDepth && profile.sampleRate > best.sampleRate)
+        ) {
+            best = profile;
+        }
+    }
+    return best;
+};
 
 const getSourceFromSourceId = (
     sourceId: string,
@@ -4906,7 +4968,6 @@ const LibraryListRow = ({
 }) => {
     const { item, mediaType } = displayItem;
     const contextMenu = useMediaContextMenu();
-    const showHiRes = isContentItemHiRes(item);
 
     return (
         <Pressable
@@ -4922,12 +4983,9 @@ const LibraryListRow = ({
                 title={item.title}
             />
             <View style={styles.libraryRowText}>
-                <View style={styles.rowTitleWithBadge}>
-                    <Text numberOfLines={1} style={[styles.libraryRowTitle, styles.rowTitleText]}>
-                        {item.title}
-                    </Text>
-                    {showHiRes ? <HiResBadge compact /> : null}
-                </View>
+                <Text numberOfLines={1} style={[styles.libraryRowTitle, styles.rowTitleText]}>
+                    {item.title}
+                </Text>
                 <Text numberOfLines={1} style={styles.libraryRowSubtitle}>
                     {getLibraryItemSubtitle(item, mediaType)}
                 </Text>
@@ -5790,7 +5848,13 @@ const ContentSections = ({
                                 const isArtistItem = item.type === MobileHomeItemType.ARTIST;
                                 const progress = getContentItemProgress(item);
                                 const subtitle = getHomeItemSubtitle(item, section.variant);
-                                const showHiRes = isContentItemHiRes(item);
+                                // Playlists are never a single quality, so per the UX rule we
+                                // suppress the format badge on playlist tiles even when the
+                                // item happens to carry an isHiRes flag from an older path.
+                                const tileBadgeProfile =
+                                    item.type === MobileHomeItemType.PLAYLIST
+                                        ? undefined
+                                        : getItemQualityProfile(item);
                                 const tileStyle = [
                                     styles.mediaTile,
                                     isAlbum && styles.mediaTileAlbum,
@@ -5843,7 +5907,7 @@ const ContentSections = ({
                                             style={artworkStyle}
                                             uri={item.artworkUrl}
                                         />
-                                        {showHiRes ? <HiResBadge overlay /> : null}
+                                        <QualityBadge overlay profile={tileBadgeProfile} />
                                         {isRecent ? (
                                             <View style={styles.mediaTypeBadge}>
                                                 <Text style={styles.mediaTypeBadgeText}>
@@ -5869,7 +5933,6 @@ const ContentSections = ({
                                             >
                                                 {item.title}
                                             </Text>
-                                            {showHiRes ? <HiResBadge compact /> : null}
                                             {subtitle ? (
                                                 <Text
                                                     numberOfLines={isWide ? 2 : 1}
@@ -6121,6 +6184,16 @@ const MediaDetailLoaded = ({
 
     const isArtistDetail = detail.type === MobileMediaDetailType.ARTIST;
     const showDetailHiRes = detailHasHiRes(detail);
+    // Playlists never get a collection-level format badge — they're mixed by
+    // definition. Per-track badges on the track rows below still show.
+    const heroBadgeProfile =
+        detail.type === MobileMediaDetailType.PLAYLIST
+            ? undefined
+            : getDetailQualityProfile(detail);
+    const heroFormatLabel =
+        detail.type === MobileMediaDetailType.ALBUM
+            ? formatQualityProfile(heroBadgeProfile)
+            : null;
     // Download button shows for everything that has saveable media. Podcasts
     // here download every episode; long-press on a single episode row still
     // works to grab just that one.
@@ -6230,7 +6303,7 @@ const MediaDetailLoaded = ({
                                 </Text>
                             </View>
                         )}
-                        {showDetailHiRes ? <HiResBadge overlay /> : null}
+                        <QualityBadge overlay profile={heroBadgeProfile} />
                     </View>
                     <View style={styles.albumHeroBadgeRow}>
                         {detail.type === MobileMediaDetailType.AUDIOBOOK ? null : (
@@ -6238,7 +6311,6 @@ const MediaDetailLoaded = ({
                                 {getDetailTypeLabel(detail.type)}
                             </Text>
                         )}
-                        {showDetailHiRes ? <HiResBadge /> : null}
                     </View>
                     <Text numberOfLines={2} style={styles.albumHeroTitle}>
                         {detail.title}
@@ -6258,6 +6330,9 @@ const MediaDetailLoaded = ({
                                 {line}
                             </Text>
                         ))}
+                        {heroFormatLabel ? (
+                            <Text style={styles.formatBadgeMeta}>{heroFormatLabel}</Text>
+                        ) : null}
                     </View>
                     <View style={styles.albumHeroActionsBar}>
                         <View style={styles.albumHeroLeftActions}>
@@ -6380,9 +6455,15 @@ const MediaDetailLoaded = ({
                                 track.playback?.source === 'music' && playlistTargets.length > 0;
                             const hasOverflowActions = canAddToPlaylist || canFavoriteTrack;
                             const isStarred = starredTracks.has(track.id);
-                            const showTrackHiRes = isPlaybackHiRes(track.playback);
-
                             const isAlbumDetail = detail.type === MobileMediaDetailType.ALBUM;
+                            // Track-level format badge only meaningful inside playlists (the
+                            // collection itself is mixed). Album track rows skip the badge
+                            // because the album hero already carries one. Audiobook/podcast
+                            // tracks are spoken-word — format badges aren't useful there.
+                            const trackBadgeProfile =
+                                detail.type === MobileMediaDetailType.PLAYLIST
+                                    ? getPlaybackQualityProfile(track.playback)
+                                    : undefined;
                             return (
                                 <Pressable
                                     accessibilityRole="button"
@@ -6397,28 +6478,30 @@ const MediaDetailLoaded = ({
                                                 {index + 1}
                                             </Text>
                                         </View>
-                                    ) : track.artworkUrl ?? detail.artworkUrl ? (
-                                        <Image
-                                            source={{ uri: (track.artworkUrl ?? detail.artworkUrl)! }}
-                                            style={styles.trackArtwork}
-                                        />
                                     ) : (
-                                        <View style={styles.trackArtworkFallback}>
-                                            <Text style={styles.trackArtworkLetter}>
-                                                {track.title.slice(0, 1).toUpperCase()}
-                                            </Text>
+                                        <View>
+                                            {track.artworkUrl ?? detail.artworkUrl ? (
+                                                <Image
+                                                    source={{ uri: (track.artworkUrl ?? detail.artworkUrl)! }}
+                                                    style={styles.trackArtwork}
+                                                />
+                                            ) : (
+                                                <View style={styles.trackArtworkFallback}>
+                                                    <Text style={styles.trackArtworkLetter}>
+                                                        {track.title.slice(0, 1).toUpperCase()}
+                                                    </Text>
+                                                </View>
+                                            )}
+                                            <QualityBadge thumb profile={trackBadgeProfile} />
                                         </View>
                                     )}
                                     <View style={styles.searchRowText}>
-                                        <View style={styles.rowTitleWithBadge}>
-                                            <Text
-                                                numberOfLines={1}
-                                                style={[styles.searchTitle, styles.rowTitleText]}
-                                            >
-                                                {track.title}
-                                            </Text>
-                                            {showTrackHiRes ? <HiResBadge compact /> : null}
-                                        </View>
+                                        <Text
+                                            numberOfLines={1}
+                                            style={[styles.searchTitle, styles.rowTitleText]}
+                                        >
+                                            {track.title}
+                                        </Text>
                                         {meta.length > 0 ? (
                                             <Text numberOfLines={1} style={styles.mediaSubtitle}>
                                                 {meta.join(' · ')}
@@ -6528,7 +6611,7 @@ const ArtistDetailSections = ({
                 <View style={styles.homeSection}>
                     <Text style={styles.sectionTitle}>Top Tracks</Text>
                     {topTracks.map((track, index) => {
-                        const showTrackHiRes = isPlaybackHiRes(track.playback);
+                        const trackBadgeProfile = getPlaybackQualityProfile(track.playback);
                         return (
                             <Pressable
                                 accessibilityRole="button"
@@ -6537,28 +6620,28 @@ const ArtistDetailSections = ({
                                 onPress={() => onPlayTrack(detail, track, index)}
                                 style={styles.trackRow}
                             >
-                                {track.artworkUrl ? (
-                                    <Image
-                                        source={{ uri: track.artworkUrl }}
-                                        style={styles.trackArtwork}
-                                    />
-                                ) : (
-                                    <View style={styles.trackArtworkFallback}>
-                                        <Text style={styles.trackArtworkLetter}>
-                                            {track.title.slice(0, 1).toUpperCase()}
-                                        </Text>
-                                    </View>
-                                )}
+                                <View>
+                                    {track.artworkUrl ? (
+                                        <Image
+                                            source={{ uri: track.artworkUrl }}
+                                            style={styles.trackArtwork}
+                                        />
+                                    ) : (
+                                        <View style={styles.trackArtworkFallback}>
+                                            <Text style={styles.trackArtworkLetter}>
+                                                {track.title.slice(0, 1).toUpperCase()}
+                                            </Text>
+                                        </View>
+                                    )}
+                                    <QualityBadge thumb profile={trackBadgeProfile} />
+                                </View>
                                 <View style={styles.searchRowText}>
-                                    <View style={styles.rowTitleWithBadge}>
-                                        <Text
-                                            numberOfLines={1}
-                                            style={[styles.searchTitle, styles.rowTitleText]}
-                                        >
-                                            {track.title}
-                                        </Text>
-                                        {showTrackHiRes ? <HiResBadge compact /> : null}
-                                    </View>
+                                    <Text
+                                        numberOfLines={1}
+                                        style={[styles.searchTitle, styles.rowTitleText]}
+                                    >
+                                        {track.title}
+                                    </Text>
                                     {track.subtitle ? (
                                         <Text numberOfLines={1} style={styles.mediaSubtitle}>
                                             {track.subtitle}
@@ -8071,7 +8154,6 @@ const MiniPlayer = ({
         : (displayItem?.subtitle ?? undefined);
     const artworkUrl = displayItem?.artworkUrl;
     const showQuality = displayItem?.source === 'music';
-    const showHiRes = isPlaybackHiRes(displayItem);
     const miniQualityItems = showQuality && displayItem
         ? buildAudioQualityBadgeItems({
               ...displayItem.quality,
@@ -8113,15 +8195,12 @@ const MiniPlayer = ({
                     </View>
                 )}
                 <View style={styles.miniPlayerText}>
-                    <View style={styles.miniPlayerTitleRow}>
-                        <Text
-                            numberOfLines={1}
-                            style={[styles.miniPlayerTitle, styles.rowTitleText]}
-                        >
-                            {title || 'Nothing playing'}
-                        </Text>
-                        {showHiRes ? <HiResBadge compact /> : null}
-                    </View>
+                    <Text
+                        numberOfLines={1}
+                        style={[styles.miniPlayerTitle, styles.rowTitleText]}
+                    >
+                        {title || 'Nothing playing'}
+                    </Text>
                     {subtitle ? (
                         <Text numberOfLines={1} style={styles.miniPlayerSubtitle}>
                             {subtitle}
@@ -8197,26 +8276,49 @@ const QualityBadgeRow = ({ items }: { items: ReturnType<typeof buildAudioQuality
     );
 };
 
-const HiResBadge = ({
-    compact = false,
+/**
+ * Format-specific quality badge. Picks the matching 16/24/32-bit asset for
+ * the playback's bit-depth / sample-rate; renders nothing when there's no
+ * exact match in the badge set (we'd rather omit the badge than mislabel
+ * a 24/48 track as 24/96).
+ *
+ * Variant placement, kept strict to avoid double-badging:
+ *  - `overlay`: corner-pinned on artwork (home / view-all album tiles,
+ *               album-detail hero artwork). Implies a position-absolute
+ *               container with `position: relative` on the parent.
+ *  - `thumb`:   small overlay on a track-row thumb. The only badge a
+ *               track row carries — never next to the title text.
+ *  - `player`:  beneath the fullscreen player title (its own row, not
+ *               inline with text).
+ *  - default:   standalone (44x44), reserved for the inline "Format" chip
+ *               on the album detail page.
+ */
+const QualityBadge = ({
     overlay = false,
     player = false,
+    profile,
+    thumb = false,
 }: {
-    compact?: boolean;
     overlay?: boolean;
     player?: boolean;
-}) => (
-    <Image
-        accessibilityLabel="Hi-Res Audio"
-        source={hiResAudioBadge}
-        style={[
-            styles.hiResBadge,
-            compact && styles.hiResBadgeCompact,
-            overlay && styles.hiResBadgeOverlay,
-            player && styles.hiResBadgePlayer,
-        ]}
-    />
-);
+    profile: MobileQualityProfile | undefined;
+    thumb?: boolean;
+}) => {
+    const asset = pickQualityBadgeAsset(profile);
+    if (!asset || !profile) return null;
+    return (
+        <Image
+            accessibilityLabel={`${profile.bitDepth}-bit ${(profile.sampleRate / 1000).toFixed(1).replace(/\.0$/, '')} kHz`}
+            source={asset}
+            style={[
+                styles.formatBadge,
+                overlay && styles.formatBadgeOverlay,
+                player && styles.formatBadgePlayer,
+                thumb && styles.formatBadgeThumb,
+            ]}
+        />
+    );
+};
 
 const SegmentedSeekBar = ({
     durationMs,
@@ -9056,7 +9158,6 @@ const FullScreenPlayer = ({
               mode: 'detail',
           })
         : [];
-    const showHiRes = isPlaybackHiRes(displayItem);
     const playerArtworkUrl = displayItem.artworkUrl;
     const positionMs =
         playbackState.status !== 'idle' ? (playbackState.positionMs ?? 0) : 0;
@@ -9175,20 +9276,27 @@ const FullScreenPlayer = ({
             {/* Bottom stack: each block owns its own row — no overlap. */}
             <View style={styles.fullPlayerBottom}>
                 <View style={styles.fullPlayerMetadata}>
-                    <View style={styles.fullPlayerTitleRow}>
-                        <Text
-                            numberOfLines={2}
-                            style={[styles.fullPlayerTitle, styles.fullPlayerTitleText]}
-                        >
-                            {display.title}
-                        </Text>
-                        {showHiRes ? <HiResBadge player /> : null}
-                    </View>
+                    <Text
+                        numberOfLines={2}
+                        style={[styles.fullPlayerTitle, styles.fullPlayerTitleText]}
+                    >
+                        {display.title}
+                    </Text>
                     {display.subtitle ? (
                         <Text numberOfLines={1} style={styles.fullPlayerSubtitle}>
                             {display.subtitle}
                         </Text>
                     ) : null}
+                    {/* Format badge gets its own row beneath the metadata; never
+                        inline with the title text. */}
+                    {(() => {
+                        const playerProfile = getPlaybackQualityProfile(displayItem);
+                        return playerProfile ? (
+                            <View style={styles.fullPlayerBadgeRow}>
+                                <QualityBadge player profile={playerProfile} />
+                            </View>
+                        ) : null;
+                    })()}
                     {qualityItems.length > 0 ? (
                         <View style={styles.fullPlayerQualityRow}>
                             <QualityBadgeRow items={qualityItems} />
@@ -9473,29 +9581,29 @@ const QueueSheetOverlay = ({
                     ) : (
                         items.map((item, i) => {
                             const isActive = queue?.index === i;
-                            const showHiRes = isPlaybackHiRes(item);
+                            const queueRowProfile = getPlaybackQualityProfile(item);
                             return (
                                 <View key={`${item.id}-${i}`} style={styles.queueRow}>
-                                    <ArtworkImage
-                                        fallbackStyle={styles.queueRowThumbFallback}
-                                        letter={item.title.slice(0, 1).toUpperCase()}
-                                        style={styles.queueRowThumb}
-                                        uri={item.artworkUrl}
-                                    />
+                                    <View>
+                                        <ArtworkImage
+                                            fallbackStyle={styles.queueRowThumbFallback}
+                                            letter={item.title.slice(0, 1).toUpperCase()}
+                                            style={styles.queueRowThumb}
+                                            uri={item.artworkUrl}
+                                        />
+                                        <QualityBadge thumb profile={queueRowProfile} />
+                                    </View>
                                     <View style={styles.queueRowBody}>
-                                        <View style={styles.rowTitleWithBadge}>
-                                            <Text
-                                                numberOfLines={1}
-                                                style={[
-                                                    styles.queueRowTitle,
-                                                    styles.rowTitleText,
-                                                    isActive && { color: colors.accent },
-                                                ]}
-                                            >
-                                                {item.title}
-                                            </Text>
-                                            {showHiRes ? <HiResBadge compact /> : null}
-                                        </View>
+                                        <Text
+                                            numberOfLines={1}
+                                            style={[
+                                                styles.queueRowTitle,
+                                                styles.rowTitleText,
+                                                isActive && { color: colors.accent },
+                                            ]}
+                                        >
+                                            {item.title}
+                                        </Text>
                                         {item.subtitle ? (
                                             <Text
                                                 numberOfLines={1}
@@ -9711,7 +9819,11 @@ const ViewAllScreen = ({
     const renderItem = useCallback(
         ({ item }: { item: MobileHomeItem }) => {
             const isArtist = item.type === MobileHomeItemType.ARTIST;
-            const showHiRes = isContentItemHiRes(item);
+            // Playlists are mixed format — never collection-level badge.
+            const tileBadgeProfile =
+                item.type === MobileHomeItemType.PLAYLIST
+                    ? undefined
+                    : getItemQualityProfile(item);
             return (
                 <Pressable
                     accessibilityRole="button"
@@ -9731,16 +9843,13 @@ const ViewAllScreen = ({
                         ]}
                         uri={item.artworkUrl}
                     />
-                    {showHiRes ? <HiResBadge overlay /> : null}
-                    <View style={styles.rowTitleWithBadge}>
-                        <Text
-                            numberOfLines={1}
-                            style={[styles.viewAllTileTitle, styles.rowTitleText]}
-                        >
-                            {item.title}
-                        </Text>
-                        {showHiRes ? <HiResBadge compact /> : null}
-                    </View>
+                    <QualityBadge overlay profile={tileBadgeProfile} />
+                    <Text
+                        numberOfLines={1}
+                        style={[styles.viewAllTileTitle, styles.rowTitleText]}
+                    >
+                        {item.title}
+                    </Text>
                     {item.subtitle ? (
                         <Text
                             numberOfLines={1}
@@ -10924,6 +11033,14 @@ const styles = StyleSheet.create({
         gap: 10,
         minWidth: 0,
     },
+    fullPlayerBadgeRow: {
+        // Format badge gets its own line beneath the title + subtitle, never
+        // jammed next to the title text. Left-aligned to match the rest of
+        // the metadata block.
+        alignItems: 'flex-start',
+        flexDirection: 'row',
+        marginTop: spacing.xs,
+    },
     fullPlayerTitleText: {
         flex: 1,
         minWidth: 0,
@@ -11752,25 +11869,42 @@ const styles = StyleSheet.create({
         gap: 7,
         minWidth: 0,
     },
-    hiResBadge: {
-        borderRadius: 4,
-        height: 38,
+    formatBadge: {
+        height: 44,
         resizeMode: 'contain',
-        width: 38,
+        width: 44,
     },
-    hiResBadgeCompact: {
-        borderRadius: 3,
-        height: 22,
-        width: 22,
-    },
-    hiResBadgeOverlay: {
+    formatBadgeOverlay: {
+        // Corner overlay on artwork. Top-left mirrors how Tidal and Apple
+        // Music position their lossless marks — bottom corners draw the eye
+        // away from the title beneath the tile.
+        height: 38,
         left: 6,
         position: 'absolute',
         top: 6,
+        width: 38,
     },
-    hiResBadgePlayer: {
-        height: 34,
-        width: 34,
+    formatBadgePlayer: {
+        height: 32,
+        width: 32,
+    },
+    formatBadgeThumb: {
+        bottom: 2,
+        height: 18,
+        position: 'absolute',
+        right: 2,
+        width: 18,
+    },
+    formatBadgeMeta: {
+        // Standalone "16-bit / 44.1 kHz Lossless" text line on the album
+        // detail. Sits in the metaLines block so it lines up with the
+        // artist/year/label entries already there.
+        color: colors.accent,
+        fontSize: 12,
+        fontWeight: '700',
+        letterSpacing: 0.4,
+        marginTop: spacing.xs,
+        textTransform: 'uppercase',
     },
     qualityBadge: {
         backgroundColor: 'rgba(255, 255, 255, 0.1)',

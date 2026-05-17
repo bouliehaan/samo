@@ -1,3 +1,4 @@
+import { isHiResAudioQuality } from '../audio-quality';
 import { type ServerAuthenticationResult } from '../server/server-auth';
 import { getFetch, requestJson, type SamoFetch } from '../server/server-http';
 import { ServerType } from '../server/server-types';
@@ -6,7 +7,7 @@ import {
     getMobileContentSource,
     type MobileContentSource,
 } from './mobile-content-source';
-import { type MobileHomeItem, MobileHomeItemType } from './mobile-home';
+import { type MobileHomeItem, MobileHomeItemType, type MobileQualityProfile } from './mobile-home';
 import {
     buildSubsonicMusicPlayback,
     type MobilePlayableAudio,
@@ -34,8 +35,15 @@ export interface MobileMediaDetail {
     artworkUrl?: string;
     biography?: string;
     id: string;
+    isHiRes?: boolean;
     items?: MobileHomeItem[];
     metadataLines?: string[];
+    /**
+     * Representative bit-depth/sample-rate for the whole detail (albums
+     * only). Computed by walking detail.tracks at load time; surfaces as
+     * the hero badge and the inline "24-bit / 96 kHz" text line.
+     */
+    qualityProfile?: MobileQualityProfile;
     relatedArtists?: MobileHomeItem[];
     source: MobileContentSource;
     subtitle?: string;
@@ -635,6 +643,36 @@ const toTrackItems = (
     });
 };
 
+const tracksHaveHiRes = (tracks: MobileMediaTrack[]) =>
+    tracks.some((track) => Boolean(track.playback && isHiResAudioQuality(track.playback.quality)));
+
+/**
+ * Compute the best (highest) bit-depth / sample-rate present across a
+ * detail's tracks — used to label the album hero with one representative
+ * format. Only counts tracks whose playback quality clears the hi-res
+ * threshold so plain CD-rate albums get no badge.
+ */
+const trackQualityProfile = (
+    tracks: MobileMediaTrack[],
+): MobileQualityProfile | undefined => {
+    let best: MobileQualityProfile | undefined;
+    for (const track of tracks) {
+        const quality = track.playback?.quality;
+        if (!quality) continue;
+        if (!isHiResAudioQuality(quality)) continue;
+        const { bitDepth, sampleRate } = quality;
+        if (bitDepth == null || sampleRate == null) continue;
+        if (
+            !best ||
+            bitDepth > best.bitDepth ||
+            (bitDepth === best.bitDepth && sampleRate > best.sampleRate)
+        ) {
+            best = { bitDepth, sampleRate };
+        }
+    }
+    return best;
+};
+
 const loadSubsonicAlbumDetail = async (
     authentication: ServerAuthenticationResult,
     fetcher: SamoFetch,
@@ -669,14 +707,18 @@ const loadSubsonicAlbumDetail = async (
         recordLabel ?? genre,
     ].filter((value): value is string => Boolean(value));
 
+    const tracks = toTrackItems(authentication, album.song ?? [], artworkUrl);
+
     return {
         artworkUrl,
         id: album.id.toString(),
+        isHiRes: tracksHaveHiRes(tracks),
         metadataLines: metadataLines.length > 0 ? metadataLines : undefined,
+        qualityProfile: trackQualityProfile(tracks),
         source: getMobileContentSource(authentication),
         subtitle: album.artist ?? (album.year ? String(album.year) : undefined),
         title: album.name,
-        tracks: toTrackItems(authentication, album.song ?? [], artworkUrl),
+        tracks,
         type: MobileMediaDetailType.ALBUM,
     };
 };
@@ -701,13 +743,16 @@ const loadSubsonicPlaylistDetail = async (
 
     const artworkUrl = subsonicCoverArtUrl(authentication, playlist.coverArt);
 
+    const tracks = toTrackItems(authentication, playlist.entry ?? [], artworkUrl);
+
     return {
         artworkUrl,
         id: playlist.id.toString(),
+        isHiRes: tracksHaveHiRes(tracks),
         source: getMobileContentSource(authentication),
         subtitle: playlist.songCount ? `${playlist.songCount} songs` : playlist.owner,
         title: playlist.name,
-        tracks: toTrackItems(authentication, playlist.entry ?? [], artworkUrl),
+        tracks,
         type: MobileMediaDetailType.PLAYLIST,
     };
 };

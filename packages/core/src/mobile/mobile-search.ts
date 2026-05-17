@@ -12,6 +12,8 @@ import {
     buildSubsonicMusicPlayback,
     type MobilePlayableAudio,
 } from './mobile-playback';
+import { type MobileQualityProfile } from './mobile-home';
+import { annotateSubsonicHiResCollections } from './mobile-subsonic-quality';
 
 export enum MobileSearchItemType {
     ALBUM = 'album',
@@ -55,9 +57,16 @@ export interface MobileSearchItem {
     artistId?: string;
     artworkUrl?: string;
     id: string;
+    isHiRes?: boolean;
     lastPlayedAt?: number;
     playback?: MobilePlayableAudio;
     playCount?: number;
+    /**
+     * Format profile from annotateSubsonicAlbumsQuality (albums only).
+     * Songs derive their profile from playback.quality at render time.
+     * Playlists, artists, etc. are always undefined.
+     */
+    qualityProfile?: MobileQualityProfile;
     source?: MobileContentSource;
     subtitle?: string;
     title: string;
@@ -644,6 +653,56 @@ const loadSubsonicSearch = async (
             : undefined;
     const radioResponse =
         radioResult.status === 'fulfilled' ? radioResult.value['subsonic-response'] : undefined;
+    const source = getMobileContentSource(authentication);
+    const albumItems: MobileSearchItem[] = await annotateSubsonicHiResCollections(
+        authentication,
+        fetcher,
+        'album',
+        (response.searchResult3?.album ?? []).flatMap((album) => {
+            const id = album.id?.toString();
+            const title = album.name ?? album.title;
+
+            if (!id || !title) {
+                return [];
+            }
+
+            return {
+                artworkUrl: subsonicCoverArtUrl(authentication, album.coverArt, album.id),
+                id,
+                lastPlayedAt: parseIsoTimestamp(album.played),
+                playCount: album.playCount,
+                source,
+                subtitle: album.artist ?? (album.year ? String(album.year) : undefined),
+                title,
+                type: MobileSearchItemType.ALBUM,
+            };
+        }),
+    );
+    // Playlists never carry a collection-level quality badge — they're mixed
+    // by definition. Skip the hi-res scan entirely.
+    const playlistItems: MobileSearchItem[] = (playlistsResponse?.playlists?.playlist ?? [])
+        .filter((playlist) => includesQuery(playlist.name, query))
+        .slice(0, limit)
+        .flatMap((playlist) => {
+            const id = playlist.id?.toString();
+
+            if (!id || !playlist.name) {
+                return [];
+            }
+
+            return {
+                artworkUrl: subsonicCoverArtUrl(
+                    authentication,
+                    playlist.coverArt,
+                    playlist.id,
+                ),
+                id,
+                source,
+                subtitle: playlist.songCount ? `${playlist.songCount} songs` : playlist.owner,
+                title: playlist.name,
+                type: MobileSearchItemType.PLAYLIST,
+            };
+        });
 
     return toSearchResults(
         query,
@@ -679,25 +738,7 @@ const loadSubsonicSearch = async (
             },
             {
                 id: MobileSearchSectionId.ALBUMS,
-                items: (response.searchResult3?.album ?? []).flatMap((album) => {
-                    const id = album.id?.toString();
-                    const title = album.name ?? album.title;
-
-                    if (!id || !title) {
-                        return [];
-                    }
-
-                    return {
-                        artworkUrl: subsonicCoverArtUrl(authentication, album.coverArt, album.id),
-                        id,
-                        lastPlayedAt: parseIsoTimestamp(album.played),
-                        playCount: album.playCount,
-                        source: getMobileContentSource(authentication),
-                        subtitle: album.artist ?? (album.year ? String(album.year) : undefined),
-                        title,
-                        type: MobileSearchItemType.ALBUM,
-                    };
-                }),
+                items: albumItems,
                 title: 'Albums',
             },
             {
@@ -714,7 +755,7 @@ const loadSubsonicSearch = async (
                         id,
                         lastPlayedAt: parseIsoTimestamp(artist.played),
                         playCount: artist.playCount,
-                        source: getMobileContentSource(authentication),
+                        source,
                         subtitle: artist.albumCount ? `${artist.albumCount} albums` : undefined,
                         title: artist.name,
                         type: MobileSearchItemType.ARTIST,
@@ -724,31 +765,7 @@ const loadSubsonicSearch = async (
             },
             {
                 id: MobileSearchSectionId.PLAYLISTS,
-                items: (playlistsResponse?.playlists?.playlist ?? [])
-                    .filter((playlist) => includesQuery(playlist.name, query))
-                    .slice(0, limit)
-                    .flatMap((playlist) => {
-                        const id = playlist.id?.toString();
-
-                        if (!id || !playlist.name) {
-                            return [];
-                        }
-
-                        return {
-                            artworkUrl: subsonicCoverArtUrl(
-                                authentication,
-                                playlist.coverArt,
-                                playlist.id,
-                            ),
-                            id,
-                            source: getMobileContentSource(authentication),
-                            subtitle: playlist.songCount
-                                ? `${playlist.songCount} songs`
-                                : playlist.owner,
-                            title: playlist.name,
-                            type: MobileSearchItemType.PLAYLIST,
-                        };
-                    }),
+                items: playlistItems,
                 title: 'Playlists',
             },
             {
