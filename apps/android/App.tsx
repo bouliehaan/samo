@@ -1110,17 +1110,61 @@ export default function App() {
                   ),
               )
             : recentContentItems;
-        // Recents persisted before subsonicCoverArtUrl learned the entity-id
-        // fallback were stored without artworkUrl. Backfill at render time so
-        // they pick up real covers as soon as the matching server is
-        // connected, without rewriting storage.
+        // Build a key→item index from the freshly-loaded home content so we
+        // can swap recents up to date at render time. The home loader runs
+        // annotateSubsonicAlbumsQuality on every album section, which means
+        // the fresh copies carry qualityProfile — so backfilling here lets
+        // recents inherit the badge without us having to rewrite the
+        // persisted store. Same trick applies for artworkUrl, which used to
+        // be the only field we patched here.
+        const freshByKey = new Map<string, MobileHomeItem>();
+        if (homeContentState.status === 'loaded') {
+            for (const section of homeContentState.content.sections) {
+                for (const item of section.items) {
+                    const key = getRecentContentItemKey(item);
+                    if (!freshByKey.has(key)) {
+                        freshByKey.set(key, item);
+                    }
+                }
+            }
+        }
         return filtered.map((entry) => {
-            if (entry.item.artworkUrl) return entry;
-            const resolved = resolveItemArtworkUrl(entry.item, serverConnections);
-            if (!resolved) return entry;
-            return { ...entry, item: { ...entry.item, artworkUrl: resolved } };
+            const fresh = freshByKey.get(entry.key);
+            // Merge keeps stored fields as the base — title/subtitle/source
+            // — and layers any fresh signal (qualityProfile, artworkUrl,
+            // isHiRes) on top. We don't fully replace because a recent item
+            // can outlive its home-content reflection (eg you clicked
+            // through to an album that isn't in your home-page slice).
+            const merged: AndroidRecentContentSourceItem = fresh
+                ? {
+                      ...entry.item,
+                      artworkUrl: entry.item.artworkUrl ?? fresh.artworkUrl,
+                      isHiRes: entry.item.isHiRes ?? fresh.isHiRes,
+                      qualityProfile:
+                          'qualityProfile' in entry.item
+                              ? entry.item.qualityProfile ?? fresh.qualityProfile
+                              : fresh.qualityProfile,
+                  }
+                : entry.item;
+            // Recents persisted before subsonicCoverArtUrl learned the
+            // entity-id fallback were stored without artworkUrl. Backfill
+            // at render time so they pick up real covers as soon as the
+            // matching server is connected, without rewriting storage.
+            if (!merged.artworkUrl) {
+                const resolved = resolveItemArtworkUrl(merged, serverConnections);
+                if (resolved) {
+                    return { ...entry, item: { ...merged, artworkUrl: resolved } };
+                }
+            }
+            return merged === entry.item ? entry : { ...entry, item: merged };
         });
-    }, [recentContentItems, isOfflineMode, downloadedCollectionKeys, serverConnections]);
+    }, [
+        recentContentItems,
+        isOfflineMode,
+        downloadedCollectionKeys,
+        serverConnections,
+        homeContentState,
+    ]);
 
     const loadHomeForConnections = useCallback(
         async (authentications: ServerAuthenticationResult[]) => {
