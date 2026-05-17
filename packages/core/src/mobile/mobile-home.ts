@@ -8,7 +8,10 @@ import {
     type MobileContentSource,
 } from './mobile-content-source';
 import { buildRadioPlayback, type MobilePlayableAudio } from './mobile-playback';
-import { annotateSubsonicHiResCollections } from './mobile-subsonic-quality';
+import {
+    annotateSubsonicAlbumsQuality,
+    annotateSubsonicHiResCollections,
+} from './mobile-subsonic-quality';
 
 export enum MobileHomeItemType {
     ALBUM = 'album',
@@ -827,6 +830,15 @@ const loadAllAudiobookshelfItems = async (
     return perLibrary.flat();
 };
 
+/**
+ * Cap on the per-album quality scan when exploding the full library —
+ * scanning every album in a 10k-track collection would be a per-album HTTP
+ * fan-out we don't want to pay for at View-All open time. 200 covers the
+ * top of the alphabetical sweep that the user is most likely to scroll
+ * through; the rest pass through unbadged until the user opens them.
+ */
+const FULL_COLLECTION_QUALITY_SCAN_LIMIT = 200;
+
 const loadFullCollectionForServer = async (
     authentication: ServerAuthenticationResult,
     fetcher: SamoFetch,
@@ -838,8 +850,20 @@ const loadFullCollectionForServer = async (
     const audiobookshelf = authentication.type === ServerType.AUDIOBOOKSHELF;
 
     switch (variant) {
-        case 'album':
-            return subsonic ? loadAllSubsonicAlbums(authentication, fetcher) : [];
+        case 'album': {
+            if (!subsonic) return [];
+            const albums = await loadAllSubsonicAlbums(authentication, fetcher);
+            // Annotate the first chunk so the View All grid renders badges
+            // alongside the badge-bearing tiles the user sees on Home. The
+            // tail of huge libraries stays unbadged at this surface — opening
+            // any individual album still shows the correct format.
+            return annotateSubsonicAlbumsQuality(
+                authentication,
+                fetcher,
+                albums,
+                FULL_COLLECTION_QUALITY_SCAN_LIMIT,
+            );
+        }
         case 'artist':
             return subsonic ? loadAllSubsonicArtists(authentication, fetcher) : [];
         case 'audiobook':

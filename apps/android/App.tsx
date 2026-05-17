@@ -4974,6 +4974,13 @@ const LibraryListRow = ({
 }) => {
     const { item, mediaType } = displayItem;
     const contextMenu = useMediaContextMenu();
+    // Library rows and search results both render through LibraryListRow, so
+    // adding the format badge here covers both surfaces in one move.
+    // getItemQualityProfile returns undefined for anything without a
+    // structured profile — playlists, artists, audiobooks, podcasts, radio
+    // — so we can safely drop it in unconditionally and let the badge
+    // component decide whether to render.
+    const itemBadgeProfile = getItemQualityProfile(item);
 
     return (
         <Pressable
@@ -4982,12 +4989,15 @@ const LibraryListRow = ({
             onPress={onPress}
             style={styles.libraryRow}
         >
-            <MediaArtwork
-                artworkUrl={item.artworkUrl}
-                mediaType={mediaType}
-                size="row"
-                title={item.title}
-            />
+            <View>
+                <MediaArtwork
+                    artworkUrl={item.artworkUrl}
+                    mediaType={mediaType}
+                    size="row"
+                    title={item.title}
+                />
+                <QualityBadge thumb profile={itemBadgeProfile} />
+            </View>
             <View style={styles.libraryRowText}>
                 <Text numberOfLines={1} style={styles.libraryRowTitle}>
                     {item.title}
