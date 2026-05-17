@@ -1,4 +1,4 @@
-import { buildAudioQualityBadgeItems } from '@samo/core/audio-quality';
+import { buildAudioQualityBadgeItems, isHiResAudioQuality } from '@samo/core/audio-quality';
 import {
     addMobileTracksToPlaylist,
     buildAudiobookshelfArtworkUrl,
@@ -30,6 +30,7 @@ import {
     supportsServerTypeOnAndroid,
     upsertServerAuthentication,
 } from '@samo/core/server';
+import { Image as ExpoImage } from 'expo-image';
 import { StatusBar } from 'expo-status-bar';
 import { getColors as getImageColors } from 'react-native-image-colors';
 import type { ImageColorsResult } from 'react-native-image-colors/build/types';
@@ -89,6 +90,7 @@ import Reanimated, {
 import Svg, { Circle as SvgCircle } from 'react-native-svg';
 
 import heartIcon from './assets/icons/heart.png';
+import hiResAudioBadge from '../../assets/icons/hi-res-audio-badge.png';
 import shuffleIcon from './assets/icons/shuffle.png';
 import sleepTimerIcon from './assets/icons/sleep-timer.png';
 import samoLogo from './assets/samo-logo.png';
@@ -117,6 +119,7 @@ import {
     getLocalUriForTrack,
     getOfflineAudiobookFiles,
     getStorageLocation,
+    listDownloads,
     type OfflineAudiobookFile,
     pickSdCardStorageLocation,
     removeDownload,
@@ -212,14 +215,217 @@ const getContentItemKey = (item: { id: string; source?: { id: string }; type: st
     return `${item.source?.id ?? 'server'}:${item.type}:${item.id}`;
 };
 
+type DownloadedCollectionSummary = {
+    collection: DownloadEntry['collection'];
+    latestCompletedAt: number;
+};
+
+const isPlaybackHiRes = (playback?: MobilePlayableAudio | null): boolean =>
+    Boolean(playback && isHiResAudioQuality(playback.quality));
+
+const detailHasHiRes = (detail: MobileMediaDetail): boolean =>
+    Boolean(detail.isHiRes || detail.tracks.some((track) => isPlaybackHiRes(track.playback)));
+
+const isContentItemHiRes = (
+    item?: null | { isHiRes?: boolean; playback?: MobilePlayableAudio },
+): boolean => Boolean(item?.isHiRes || isPlaybackHiRes(item?.playback));
+
+const getSourceFromSourceId = (
+    sourceId: string,
+    serverConnections: ServerAuthenticationResult[],
+): MobileContentSource | undefined => {
+    const connected = serverConnections.find(
+        (connection) => getPersistedServerAuthKey(connection) === sourceId,
+    );
+    if (connected) {
+        return getMobileContentSource(connected);
+    }
+
+    const separator = sourceId.indexOf(':');
+    if (separator <= 0) {
+        return undefined;
+    }
+
+    const type = sourceId.slice(0, separator) as ServerType;
+    const url = sourceId.slice(separator + 1);
+    if (!Object.values(ServerType).includes(type) || !url) {
+        return undefined;
+    }
+
+    return {
+        id: sourceId,
+        title: url.replace(/^https?:\/\//i, ''),
+        type,
+        url,
+    };
+};
+
+const buildOfflineHomeContentState = (
+    downloadedCollections: DownloadedCollectionSummary[],
+    serverConnections: ServerAuthenticationResult[],
+): AndroidHomeContentState => {
+    const sectionItems = new Map<MobileHomeSectionId, MobileHomeItem[]>();
+    const sortedCollections = [...downloadedCollections].sort(
+        (left, right) => right.latestCompletedAt - left.latestCompletedAt,
+    );
+
+    for (const { collection } of sortedCollections) {
+        const source = getSourceFromSourceId(collection.sourceId, serverConnections);
+        if (!source) {
+            continue;
+        }
+
+        const itemType =
+            collection.type === 'album'
+                ? MobileHomeItemType.ALBUM
+                : collection.type === 'playlist'
+                  ? MobileHomeItemType.PLAYLIST
+                  : collection.type === 'audiobook'
+                    ? MobileHomeItemType.AUDIOBOOK
+                    : MobileHomeItemType.PODCAST;
+        const sectionId =
+            collection.type === 'album'
+                ? MobileHomeSectionId.RECENTLY_ADDED
+                : collection.type === 'playlist'
+                  ? MobileHomeSectionId.PLAYLISTS
+                  : collection.type === 'audiobook'
+                    ? MobileHomeSectionId.AUDIOBOOKS
+                    : MobileHomeSectionId.PODCASTS;
+        const items = sectionItems.get(sectionId) ?? [];
+        items.push({
+            artworkUrl: collection.artworkUrl,
+            id: collection.id,
+            source,
+            subtitle: collection.subtitle,
+            title: collection.title,
+            type: itemType,
+        });
+        sectionItems.set(sectionId, items);
+    }
+
+    const sections: MobileHomeSection[] = [
+        {
+            id: MobileHomeSectionId.RECENTLY_ADDED,
+            items: sectionItems.get(MobileHomeSectionId.RECENTLY_ADDED) ?? [],
+            title: 'Downloaded Albums',
+        },
+        {
+            id: MobileHomeSectionId.PLAYLISTS,
+            items: sectionItems.get(MobileHomeSectionId.PLAYLISTS) ?? [],
+            title: 'Downloaded Playlists',
+        },
+        {
+            id: MobileHomeSectionId.AUDIOBOOKS,
+            items: sectionItems.get(MobileHomeSectionId.AUDIOBOOKS) ?? [],
+            title: 'Downloaded Audiobooks',
+        },
+        {
+            id: MobileHomeSectionId.PODCASTS,
+            items: sectionItems.get(MobileHomeSectionId.PODCASTS) ?? [],
+            title: 'Downloaded Podcasts',
+        },
+    ].filter((section) => section.items.length > 0);
+
+    return {
+        content: {
+            errors: [],
+            loadedAt: Date.now(),
+            sections,
+            serverTitle: 'Offline Downloads',
+        },
+        status: 'loaded',
+    };
+};
+
+const buildDownloadedMusicDetail = async (
+    item: AndroidRecentContentSourceItem,
+): Promise<MobileMediaDetail | null> => {
+    if (
+        !item.source ||
+        (item.type !== MobileHomeItemType.ALBUM && item.type !== MobileHomeItemType.PLAYLIST)
+    ) {
+        return null;
+    }
+
+    const entries = (await listDownloads())
+        .filter(
+            (entry) =>
+                entry.status === 'completed' &&
+                Boolean(entry.localUri) &&
+                entry.collection.sourceId === item.source!.id &&
+                entry.collection.id === item.id &&
+                (entry.collection.type === 'album' || entry.collection.type === 'playlist'),
+        )
+        .sort((left, right) => left.enqueuedAt - right.enqueuedAt);
+
+    if (entries.length === 0) {
+        return null;
+    }
+
+    const tracks: MobileMediaTrack[] = entries.map((entry, index) => {
+        const playback: MobilePlayableAudio = {
+            artworkUrl: item.artworkUrl ?? entry.collection.artworkUrl,
+            contentSourceId: item.source!.id,
+            id: `${item.source!.id}:music:${entry.trackId}`,
+            quality: {
+                container: null,
+                deliveryKind: 'android-direct',
+                losslessRequired: true,
+                serverTranscodeRequested: false,
+            },
+            source: 'music',
+            subtitle: entry.trackSubtitle ?? item.title,
+            title: entry.title,
+            url: entry.localUri!,
+        };
+
+        return {
+            artworkUrl: item.artworkUrl ?? entry.collection.artworkUrl,
+            id: entry.trackId,
+            playback,
+            subtitle: entry.trackSubtitle ?? item.title,
+            title: entry.title,
+            trackNumber: index + 1,
+        };
+    });
+
+    return {
+        artworkUrl: item.artworkUrl,
+        id: item.id,
+        source: item.source,
+        subtitle: item.subtitle,
+        title: item.title,
+        tracks,
+        type:
+            item.type === MobileHomeItemType.ALBUM
+                ? MobileMediaDetailType.ALBUM
+                : MobileMediaDetailType.PLAYLIST,
+    };
+};
+
 /**
- * Artwork tile with a built-in letter-glyph fallback. Wraps RN's Image so that
- * a failed load (404, expired token, server returning a placeholder, etc)
- * downgrades to the same fallback we render when there's no URL at all. The
- * old inline `{url ? <Image/> : <Fallback/>}` pattern was leaving blank tiles
- * whenever a generated cover URL didn't actually resolve to an image — most
- * visibly for artists whose servers don't expose cover art for them, and for
- * playlists with no custom cover.
+ * Artwork tile backed by expo-image so cover art behaves like a native app —
+ * persistent across launches, instant on remount, and resilient to one-off
+ * network failures.
+ *
+ * Why expo-image instead of RN's Image:
+ *   - cachePolicy='memory-disk' keeps a per-process LRU AND a persistent
+ *     disk cache, so navigating away from Home and back doesn't re-fetch
+ *     every cover. The Samo metaphor is "I already saw this tile — it should
+ *     reappear instantly", not "the renderer just spawned a fresh HTTP
+ *     request".
+ *   - transition=180 fades cached / decoded bitmaps in over ~3 frames so the
+ *     surface doesn't pop. RN Image renders blank → image hard-cut, which
+ *     reads as janky compared to native browsers / iOS / Spotify.
+ *   - The native decoder is more forgiving of slow / flaky responses than
+ *     RN's stock fetcher, which is the root of the "image was there, now
+ *     it's gone" reports — RN's was timing out aggressively and not
+ *     retrying. expo-image retries via its own pipeline and persists the
+ *     decoded bitmap to disk so a flake on session N+1 doesn't matter.
+ *
+ * The letter-glyph fallback still fires when the URL is genuinely missing
+ * (no source-side cover art at all) — onError catches the case where every
+ * retry was exhausted, not just the first failure.
  */
 const ArtworkImage = ({
     fallbackStyle,
@@ -233,8 +439,6 @@ const ArtworkImage = ({
     uri?: string;
 }) => {
     const [errored, setErrored] = useState(false);
-    // A new URL gets a fresh chance — don't carry an old failure into the
-    // next track / search hit.
     useEffect(() => {
         setErrored(false);
     }, [uri]);
@@ -252,10 +456,12 @@ const ArtworkImage = ({
         );
     }
     return (
-        <Image
+        <ExpoImage
+            cachePolicy="memory-disk"
             onError={() => setErrored(true)}
-            source={{ uri }}
-            style={style}
+            source={uri}
+            style={style as StyleProp<ImageStyle>}
+            transition={180}
         />
     );
 };
@@ -634,8 +840,8 @@ export default function App() {
     const viewAllFetchTokenRef = useRef(0);
     // Unified animation source for the MiniPlayer ↔ FullScreenPlayer transition.
     // 0 = miniplayer visible, 1 = fullscreen visible. Both components derive
-    // their opacity / translate / scale from this single shared value so the
-    // motion always reads as one physical object expanding or collapsing.
+    // their frame, opacity, and touchability from this single shared value so
+    // the motion reads as one physical object expanding or collapsing.
     const playerProgress = useSharedValue(0);
     const reducedMotion = useReducedMotionPreference();
     useEffect(() => {
@@ -643,9 +849,9 @@ export default function App() {
         if (isFullPlayerOpen) {
             playerProgress.value = withSpring(1, spring);
         } else {
-            playerProgress.value = withTiming(0, {
-                duration: reducedMotion ? 0 : 240,
-            });
+            playerProgress.value = reducedMotion
+                ? withTiming(0, { duration: 0 })
+                : withSpring(0, spring);
         }
     }, [isFullPlayerOpen, playerProgress, reducedMotion]);
     const [isSearchOverlayOpen, setIsSearchOverlayOpen] = useState(false);
@@ -673,6 +879,9 @@ export default function App() {
     const [downloadedCollectionKeys, setDownloadedCollectionKeys] = useState<Set<string>>(
         new Set(),
     );
+    const [downloadedCollections, setDownloadedCollections] = useState<
+        DownloadedCollectionSummary[]
+    >([]);
     const [contextMenuTarget, setContextMenuTarget] =
         useState<MediaContextMenuTarget | null>(null);
     const [contextMenuFeedback, setContextMenuFeedback] = useState<string | null>(null);
@@ -786,8 +995,15 @@ export default function App() {
     // have at least one completed download. Items without a server source
     // are dropped entirely (defensive: shouldn't happen for downloadables).
     const visibleHomeContentState = useMemo(() => {
-        if (!isOfflineMode || homeContentState.status !== 'loaded') {
+        if (!isOfflineMode) {
             return homeContentState;
+        }
+        const offlineContentState = buildOfflineHomeContentState(
+            downloadedCollections,
+            serverConnections,
+        );
+        if (homeContentState.status !== 'loaded') {
+            return offlineContentState;
         }
         const filteredSections = homeContentState.content.sections
             .map((section) => ({
@@ -797,6 +1013,9 @@ export default function App() {
                 ),
             }))
             .filter((section) => section.items.length > 0);
+        if (filteredSections.length === 0) {
+            return offlineContentState;
+        }
         return {
             ...homeContentState,
             content: {
@@ -804,7 +1023,13 @@ export default function App() {
                 sections: filteredSections,
             },
         };
-    }, [homeContentState, isOfflineMode, downloadedCollectionKeys]);
+    }, [
+        downloadedCollectionKeys,
+        downloadedCollections,
+        homeContentState,
+        isOfflineMode,
+        serverConnections,
+    ]);
 
     const visibleRecentItems = useMemo(() => {
         const filtered = isOfflineMode
@@ -1014,6 +1239,24 @@ export default function App() {
         return () => subscription.remove();
     }, []);
 
+    // Warm the artwork cache the moment new home content lands. expo-image's
+    // memory-disk cache is per-URL, so a Image.prefetch() now means the
+    // grid tiles render straight from cache when the user scrolls — no
+    // staggered "tiles popping in" once the section data finishes its first
+    // server roundtrip.
+    useEffect(() => {
+        if (homeContentState.status !== 'loaded') return;
+        const urls = new Set<string>();
+        for (const section of homeContentState.content.sections) {
+            for (const item of section.items) {
+                if (item.artworkUrl) urls.add(item.artworkUrl);
+            }
+        }
+        if (urls.size > 0) {
+            void ExpoImage.prefetch([...urls]);
+        }
+    }, [homeContentState]);
+
     useEffect(() => {
         if (playbackState.status === 'idle' || !isAndroidNativePlaybackAvailable()) {
             return;
@@ -1156,12 +1399,23 @@ export default function App() {
     useEffect(() => {
         const unsubscribe = subscribeDownloads((entries) => {
             const keys = new Set<string>();
+            const collections = new Map<string, DownloadedCollectionSummary>();
             for (const entry of entries) {
                 if (entry.status === 'completed') {
-                    keys.add(`${entry.collection.sourceId}:${entry.collection.id}`);
+                    const key = `${entry.collection.sourceId}:${entry.collection.id}`;
+                    keys.add(key);
+                    const existing = collections.get(key);
+                    const latestCompletedAt = entry.completedAt ?? entry.enqueuedAt;
+                    if (!existing || latestCompletedAt > existing.latestCompletedAt) {
+                        collections.set(key, {
+                            collection: entry.collection,
+                            latestCompletedAt,
+                        });
+                    }
                 }
             }
             setDownloadedCollectionKeys(keys);
+            setDownloadedCollections([...collections.values()]);
         });
         return () => {
             unsubscribe();
@@ -1419,10 +1673,22 @@ export default function App() {
             }
         }
 
+        if (!cached && isOfflineMode) {
+            const downloadedDetail = await buildDownloadedMusicDetail(item);
+            if (downloadedDetail) {
+                cached = downloadedDetail;
+                mediaDetailCacheRef.current.set(cacheKey, downloadedDetail);
+            }
+        }
+
         if (cached) {
             setMediaDetailState({ detail: cached, status: 'loaded' });
         } else {
             setMediaDetailState({ itemTitle: item.title, status: 'loading' });
+        }
+
+        if (isOfflineMode && cached) {
+            return { cached: true };
         }
 
         // Refresh from network in the background. Failure is OK if we have
@@ -2428,6 +2694,14 @@ export default function App() {
             // the rest of the app's view of the libraries is fresh, then
             // pushing any locally-pending audiobookshelf progress so the
             // server gets caught up on whatever happened offline.
+            //
+            // Memory cache for artwork gets flushed too — disk cache stays
+            // since covers don't change unless the user re-uploads them, but
+            // the in-memory LRU might be holding decoded bitmaps for items
+            // whose URL changed (server moved coverArt to a different id).
+            // This is the only point in the app where we deliberately
+            // invalidate; everything else trusts the cache.
+            await ExpoImage.clearMemoryCache();
             await loadHomeForConnections(serverConnections);
             await flushPendingAbsProgress(serverConnections);
             // If there's a currently-active audiobook context, re-read its
@@ -2848,6 +3122,7 @@ export default function App() {
                         onTogglePlayback={handleTogglePlayback}
                         playbackState={playbackState}
                         playerProgress={playerProgress}
+                        reducedMotion={reducedMotion}
                     />
                     <ErrorBoundary
                         fallback={(error, retry) => (
@@ -4631,6 +4906,7 @@ const LibraryListRow = ({
 }) => {
     const { item, mediaType } = displayItem;
     const contextMenu = useMediaContextMenu();
+    const showHiRes = isContentItemHiRes(item);
 
     return (
         <Pressable
@@ -4646,9 +4922,12 @@ const LibraryListRow = ({
                 title={item.title}
             />
             <View style={styles.libraryRowText}>
-                <Text numberOfLines={1} style={styles.libraryRowTitle}>
-                    {item.title}
-                </Text>
+                <View style={styles.rowTitleWithBadge}>
+                    <Text numberOfLines={1} style={[styles.libraryRowTitle, styles.rowTitleText]}>
+                        {item.title}
+                    </Text>
+                    {showHiRes ? <HiResBadge compact /> : null}
+                </View>
                 <Text numberOfLines={1} style={styles.libraryRowSubtitle}>
                     {getLibraryItemSubtitle(item, mediaType)}
                 </Text>
@@ -4685,19 +4964,13 @@ const MediaArtwork = ({
               : styles.libraryRowArtworkFallback;
     const shouldRound = mediaType === 'artists';
 
-    if (artworkUrl) {
-        return (
-            <Image
-                source={{ uri: artworkUrl }}
-                style={[artworkStyle, shouldRound && styles.libraryArtworkRound]}
-            />
-        );
-    }
-
     return (
-        <View style={[fallbackStyle, shouldRound && styles.libraryArtworkRound]}>
-            <Text style={styles.mediaArtworkLetter}>{title.slice(0, 1)}</Text>
-        </View>
+        <ArtworkImage
+            fallbackStyle={[fallbackStyle, shouldRound && styles.libraryArtworkRound]}
+            letter={title.slice(0, 1)}
+            style={[artworkStyle, shouldRound && styles.libraryArtworkRound]}
+            uri={artworkUrl}
+        />
     );
 };
 
@@ -4739,11 +5012,18 @@ const HomeContentStatus = ({
     }
 
     if (homeContentState.content.sections.length === 0) {
+        const isOfflineContent = homeContentState.content.serverTitle === 'Offline Downloads';
         return (
             <>
                 <View style={styles.section}>
-                    <Text style={styles.sectionTitle}>Home</Text>
-                    <Text style={styles.mutedText}>No server-backed Home content returned.</Text>
+                    <Text style={styles.sectionTitle}>
+                        {isOfflineContent ? 'Offline Downloads' : 'Home'}
+                    </Text>
+                    <Text style={styles.mutedText}>
+                        {isOfflineContent
+                            ? 'No downloads yet. Download albums, playlists, podcasts, or audiobooks to use offline mode.'
+                            : 'No server-backed Home content returned.'}
+                    </Text>
                 </View>
                 <WarningList errors={homeContentState.content.errors} title="Server warnings" />
             </>
@@ -5510,6 +5790,7 @@ const ContentSections = ({
                                 const isArtistItem = item.type === MobileHomeItemType.ARTIST;
                                 const progress = getContentItemProgress(item);
                                 const subtitle = getHomeItemSubtitle(item, section.variant);
+                                const showHiRes = isContentItemHiRes(item);
                                 const tileStyle = [
                                     styles.mediaTile,
                                     isAlbum && styles.mediaTileAlbum,
@@ -5562,6 +5843,7 @@ const ContentSections = ({
                                             style={artworkStyle}
                                             uri={item.artworkUrl}
                                         />
+                                        {showHiRes ? <HiResBadge overlay /> : null}
                                         {isRecent ? (
                                             <View style={styles.mediaTypeBadge}>
                                                 <Text style={styles.mediaTypeBadgeText}>
@@ -5587,6 +5869,7 @@ const ContentSections = ({
                                             >
                                                 {item.title}
                                             </Text>
+                                            {showHiRes ? <HiResBadge compact /> : null}
                                             {subtitle ? (
                                                 <Text
                                                     numberOfLines={isWide ? 2 : 1}
@@ -5837,6 +6120,7 @@ const MediaDetailLoaded = ({
     };
 
     const isArtistDetail = detail.type === MobileMediaDetailType.ARTIST;
+    const showDetailHiRes = detailHasHiRes(detail);
     // Download button shows for everything that has saveable media. Podcasts
     // here download every episode; long-press on a single episode row still
     // works to grab just that one.
@@ -5907,6 +6191,7 @@ const MediaDetailLoaded = ({
         const syntheticItem: MobileHomeItem = {
             artworkUrl: detail.artworkUrl,
             id: detail.id,
+            isHiRes: showDetailHiRes,
             source: detail.source,
             subtitle: detail.subtitle,
             title: detail.title,
@@ -5932,23 +6217,29 @@ const MediaDetailLoaded = ({
         <>
             {!isArtistDetail ? (
                 <View style={styles.albumHero}>
-                    {detail.artworkUrl ? (
-                        <Image
-                            source={{ uri: detail.artworkUrl }}
-                            style={styles.albumHeroArtwork}
-                        />
-                    ) : (
-                        <View style={[styles.albumHeroArtwork, styles.albumHeroArtworkFallback]}>
-                            <Text style={styles.mediaArtworkLetter}>
-                                {detail.title.slice(0, 1)}
+                    <View style={styles.albumHeroArtworkWrap}>
+                        {detail.artworkUrl ? (
+                            <Image
+                                source={{ uri: detail.artworkUrl }}
+                                style={styles.albumHeroArtwork}
+                            />
+                        ) : (
+                            <View style={[styles.albumHeroArtwork, styles.albumHeroArtworkFallback]}>
+                                <Text style={styles.mediaArtworkLetter}>
+                                    {detail.title.slice(0, 1)}
+                                </Text>
+                            </View>
+                        )}
+                        {showDetailHiRes ? <HiResBadge overlay /> : null}
+                    </View>
+                    <View style={styles.albumHeroBadgeRow}>
+                        {detail.type === MobileMediaDetailType.AUDIOBOOK ? null : (
+                            <Text style={styles.albumHeroEyebrow}>
+                                {getDetailTypeLabel(detail.type)}
                             </Text>
-                        </View>
-                    )}
-                    {detail.type === MobileMediaDetailType.AUDIOBOOK ? null : (
-                        <Text style={styles.albumHeroEyebrow}>
-                            {getDetailTypeLabel(detail.type)}
-                        </Text>
-                    )}
+                        )}
+                        {showDetailHiRes ? <HiResBadge /> : null}
+                    </View>
                     <Text numberOfLines={2} style={styles.albumHeroTitle}>
                         {detail.title}
                     </Text>
@@ -6089,6 +6380,7 @@ const MediaDetailLoaded = ({
                                 track.playback?.source === 'music' && playlistTargets.length > 0;
                             const hasOverflowActions = canAddToPlaylist || canFavoriteTrack;
                             const isStarred = starredTracks.has(track.id);
+                            const showTrackHiRes = isPlaybackHiRes(track.playback);
 
                             const isAlbumDetail = detail.type === MobileMediaDetailType.ALBUM;
                             return (
@@ -6118,9 +6410,15 @@ const MediaDetailLoaded = ({
                                         </View>
                                     )}
                                     <View style={styles.searchRowText}>
-                                        <Text numberOfLines={1} style={styles.searchTitle}>
-                                            {track.title}
-                                        </Text>
+                                        <View style={styles.rowTitleWithBadge}>
+                                            <Text
+                                                numberOfLines={1}
+                                                style={[styles.searchTitle, styles.rowTitleText]}
+                                            >
+                                                {track.title}
+                                            </Text>
+                                            {showTrackHiRes ? <HiResBadge compact /> : null}
+                                        </View>
                                         {meta.length > 0 ? (
                                             <Text numberOfLines={1} style={styles.mediaSubtitle}>
                                                 {meta.join(' · ')}
@@ -6229,38 +6527,47 @@ const ArtistDetailSections = ({
             {topTracks.length > 0 ? (
                 <View style={styles.homeSection}>
                     <Text style={styles.sectionTitle}>Top Tracks</Text>
-                    {topTracks.map((track, index) => (
-                        <Pressable
-                            accessibilityRole="button"
-                            key={`${track.id}:${index}`}
-                            onLongPress={() => contextMenu.openForTrack(track, detail)}
-                            onPress={() => onPlayTrack(detail, track, index)}
-                            style={styles.trackRow}
-                        >
-                            {track.artworkUrl ? (
-                                <Image
-                                    source={{ uri: track.artworkUrl }}
-                                    style={styles.trackArtwork}
-                                />
-                            ) : (
-                                <View style={styles.trackArtworkFallback}>
-                                    <Text style={styles.trackArtworkLetter}>
-                                        {track.title.slice(0, 1).toUpperCase()}
-                                    </Text>
+                    {topTracks.map((track, index) => {
+                        const showTrackHiRes = isPlaybackHiRes(track.playback);
+                        return (
+                            <Pressable
+                                accessibilityRole="button"
+                                key={`${track.id}:${index}`}
+                                onLongPress={() => contextMenu.openForTrack(track, detail)}
+                                onPress={() => onPlayTrack(detail, track, index)}
+                                style={styles.trackRow}
+                            >
+                                {track.artworkUrl ? (
+                                    <Image
+                                        source={{ uri: track.artworkUrl }}
+                                        style={styles.trackArtwork}
+                                    />
+                                ) : (
+                                    <View style={styles.trackArtworkFallback}>
+                                        <Text style={styles.trackArtworkLetter}>
+                                            {track.title.slice(0, 1).toUpperCase()}
+                                        </Text>
+                                    </View>
+                                )}
+                                <View style={styles.searchRowText}>
+                                    <View style={styles.rowTitleWithBadge}>
+                                        <Text
+                                            numberOfLines={1}
+                                            style={[styles.searchTitle, styles.rowTitleText]}
+                                        >
+                                            {track.title}
+                                        </Text>
+                                        {showTrackHiRes ? <HiResBadge compact /> : null}
+                                    </View>
+                                    {track.subtitle ? (
+                                        <Text numberOfLines={1} style={styles.mediaSubtitle}>
+                                            {track.subtitle}
+                                        </Text>
+                                    ) : null}
                                 </View>
-                            )}
-                            <View style={styles.searchRowText}>
-                                <Text numberOfLines={1} style={styles.searchTitle}>
-                                    {track.title}
-                                </Text>
-                                {track.subtitle ? (
-                                    <Text numberOfLines={1} style={styles.mediaSubtitle}>
-                                        {track.subtitle}
-                                    </Text>
-                                ) : null}
-                            </View>
-                        </Pressable>
-                    ))}
+                            </Pressable>
+                        );
+                    })}
                 </View>
             ) : null}
 
@@ -6308,23 +6615,12 @@ const ArtistDetailSections = ({
                                 onPress={() => onSelectItem(item)}
                                 style={styles.relatedArtistTile}
                             >
-                                {item.artworkUrl ? (
-                                    <Image
-                                        source={{ uri: item.artworkUrl }}
-                                        style={styles.relatedArtistArtwork}
-                                    />
-                                ) : (
-                                    <View
-                                        style={[
-                                            styles.relatedArtistArtwork,
-                                            styles.relatedArtistArtworkFallback,
-                                        ]}
-                                    >
-                                        <Text style={styles.mediaArtworkLetter}>
-                                            {item.title.slice(0, 1)}
-                                        </Text>
-                                    </View>
-                                )}
+                                <ArtworkImage
+                                    fallbackStyle={styles.relatedArtistArtworkFallback}
+                                    letter={item.title.slice(0, 1)}
+                                    style={styles.relatedArtistArtwork}
+                                    uri={item.artworkUrl}
+                                />
                                 <Text numberOfLines={2} style={styles.relatedArtistTitle}>
                                     {item.title}
                                 </Text>
@@ -6352,13 +6648,12 @@ const ArtistAlbumTile = ({
             onPress={() => onSelectItem(item)}
             style={styles.artistAlbumGridItem}
         >
-            {item.artworkUrl ? (
-                <Image source={{ uri: item.artworkUrl }} style={styles.artistAlbumGridArtwork} />
-            ) : (
-                <View style={styles.artistAlbumGridFallback}>
-                    <Text style={styles.mediaArtworkLetter}>{item.title.slice(0, 1)}</Text>
-                </View>
-            )}
+            <ArtworkImage
+                fallbackStyle={styles.artistAlbumGridFallback}
+                letter={item.title.slice(0, 1)}
+                style={styles.artistAlbumGridArtwork}
+                uri={item.artworkUrl}
+            />
             <Text numberOfLines={2} style={styles.artistAlbumGridTitle}>
                 {item.title}
             </Text>
@@ -6519,27 +6814,18 @@ const MediaContextMenu = ({
                     ]}
                 >
                     <View style={styles.mediaContextHeaderRow}>
-                        {artworkUrl ? (
-                            <Image
-                                source={{ uri: artworkUrl }}
-                                style={[
-                                    styles.mediaContextArtwork,
-                                    isCircularArtwork && styles.mediaContextArtworkRound,
-                                ]}
-                            />
-                        ) : (
-                            <View
-                                style={[
-                                    styles.mediaContextArtwork,
-                                    styles.mediaContextArtworkFallback,
-                                    isCircularArtwork && styles.mediaContextArtworkRound,
-                                ]}
-                            >
-                                <Text style={styles.mediaArtworkLetter}>
-                                    {title.slice(0, 1)}
-                                </Text>
-                            </View>
-                        )}
+                        <ArtworkImage
+                            fallbackStyle={[
+                                styles.mediaContextArtworkFallback,
+                                isCircularArtwork && styles.mediaContextArtworkRound,
+                            ]}
+                            letter={title.slice(0, 1)}
+                            style={[
+                                styles.mediaContextArtwork,
+                                isCircularArtwork && styles.mediaContextArtworkRound,
+                            ]}
+                            uri={artworkUrl}
+                        />
                         <View style={styles.mediaContextHeaderText}>
                             <Text style={styles.mediaContextEyebrow}>{eyebrow}</Text>
                             <Text numberOfLines={1} style={styles.mediaContextTitle}>
@@ -6654,23 +6940,12 @@ const BookInformationModal = ({
                         showsVerticalScrollIndicator={false}
                     >
                         <View style={styles.bookInfoArtworkWrap}>
-                            {artworkUrl ? (
-                                <Image
-                                    source={{ uri: artworkUrl }}
-                                    style={styles.bookInfoArtwork}
-                                />
-                            ) : (
-                                <View
-                                    style={[
-                                        styles.bookInfoArtwork,
-                                        styles.bookInfoArtworkFallback,
-                                    ]}
-                                >
-                                    <Text style={styles.mediaArtworkLetter}>
-                                        {title.slice(0, 1)}
-                                    </Text>
-                                </View>
-                            )}
+                            <ArtworkImage
+                                fallbackStyle={styles.bookInfoArtworkFallback}
+                                letter={title.slice(0, 1)}
+                                style={styles.bookInfoArtwork}
+                                uri={artworkUrl}
+                            />
                         </View>
                         <Text style={styles.bookInfoEyebrow}>{eyebrow}</Text>
                         <Text style={styles.bookInfoTitle}>{title}</Text>
@@ -7709,29 +7984,49 @@ const MiniPlayer = ({
     onTogglePlayback,
     playbackState,
     playerProgress,
+    reducedMotion,
 }: {
     lastPlayedItem: MobilePlayableAudio | null;
     onOpenFullPlayer: () => void;
     onTogglePlayback: () => void;
     playbackState: AndroidPlaybackState;
     playerProgress: SharedValue<number>;
+    reducedMotion: boolean;
 }) => {
-    // Fade out as the fullscreen player rises so the two surfaces never compete
-    // for the user's eye. Disable taps past the halfway point so the miniplayer
-    // can't intercept anything once the fullscreen is on top.
+    const [isMiniInteractive, setIsMiniInteractive] = useState(true);
+    useAnimatedReaction(
+        () => playerProgress.value < 0.12,
+        (interactive, previous) => {
+            if (interactive !== previous) {
+                runOnJS(setIsMiniInteractive)(interactive);
+            }
+        },
+    );
+
+    // Keep the miniplayer visible long enough for the expanding fullscreen
+    // surface to pick up its exact frame, then let the contents recede into it.
     const miniAnimatedStyle = useAnimatedStyle(() => ({
-        opacity: interpolate(playerProgress.value, [0, 0.35], [1, 0], 'clamp'),
-        pointerEvents: playerProgress.value > 0.5 ? 'none' : 'auto',
+        opacity: interpolate(playerProgress.value, [0, 0.26, 0.55], [1, 1, 0], 'clamp'),
+        transform: [
+            {
+                translateY: interpolate(
+                    playerProgress.value,
+                    [0, 0.55],
+                    [0, -32],
+                    'clamp',
+                ),
+            },
+            { scale: interpolate(playerProgress.value, [0, 0.55], [1, 0.985], 'clamp') },
+        ],
     }));
-    // Drag-up that *follows the finger* instead of waiting for release. The
-    // miniplayer writes directly into the same `playerProgress` shared value
-    // the fullscreen player uses for its translateY — so as the user drags
-    // upward, the fullscreen sheet rises in real time and the miniplayer
-    // fades. On release we either commit (hand off to the App's useEffect
-    // which springs to 1 with the user's velocity) or roll back to 0.
+    // Drag-up follows the finger by moving progress across the actual distance
+    // between the mini player's top edge and the fullscreen top edge. That
+    // keeps the expanding surface under the finger instead of behaving like a
+    // generic modal sheet.
     //
     // Failure offsets keep horizontal swipes and the play/pause tap from
     // accidentally triggering the open gesture.
+    const settleSpring = reducedMotion ? REDUCED_MOTION_SPRING : OPEN_SPRING;
     const miniDragGesture = useMemo(
         () =>
             Gesture.Pan()
@@ -7743,25 +8038,26 @@ const MiniPlayer = ({
                         playerProgress.value = 0;
                         return;
                     }
-                    const next = -event.translationY / SCREEN_HEIGHT;
+                    const next = -event.translationY / PLAYER_EXPANSION_DISTANCE;
                     playerProgress.value = next > 1 ? 1 : next;
                 })
                 .onEnd((event) => {
                     'worklet';
                     const shouldCommit =
-                        event.translationY < -SCREEN_HEIGHT * 0.18 ||
-                        event.velocityY < -800;
+                        event.translationY < -PLAYER_EXPANSION_DISTANCE * 0.24 ||
+                        event.velocityY < -760;
                     if (shouldCommit) {
-                        // Hand off to the App's useEffect-driven spring by
-                        // flipping the open flag; the spring picks up from
-                        // wherever the drag left playerProgress so the motion
-                        // is continuous.
                         runOnJS(onOpenFullPlayer)();
                     } else {
-                        playerProgress.value = withTiming(0, { duration: 200 });
+                        playerProgress.value = reducedMotion
+                            ? withTiming(0, { duration: 0 })
+                            : withSpring(0, {
+                                  ...settleSpring,
+                                  velocity: -event.velocityY / PLAYER_EXPANSION_DISTANCE,
+                              });
                     }
                 }),
-        [onOpenFullPlayer, playerProgress],
+        [onOpenFullPlayer, playerProgress, reducedMotion, settleSpring],
     );
 
     const isActive = playbackState.status !== 'idle';
@@ -7775,6 +8071,7 @@ const MiniPlayer = ({
         : (displayItem?.subtitle ?? undefined);
     const artworkUrl = displayItem?.artworkUrl;
     const showQuality = displayItem?.source === 'music';
+    const showHiRes = isPlaybackHiRes(displayItem);
     const miniQualityItems = showQuality && displayItem
         ? buildAudioQualityBadgeItems({
               ...displayItem.quality,
@@ -7790,14 +8087,22 @@ const MiniPlayer = ({
 
     return (
         <GestureDetector gesture={miniDragGesture}>
-        <Reanimated.View style={[styles.miniPlayer, miniAnimatedStyle]}>
+        <Reanimated.View
+            pointerEvents={isMiniInteractive ? 'auto' : 'none'}
+            style={[styles.miniPlayer, miniAnimatedStyle]}
+        >
             <Pressable
                 accessibilityRole="button"
                 onPress={onOpenFullPlayer}
                 style={styles.miniPlayerTouchable}
             >
                 {artworkUrl ? (
-                    <Image source={{ uri: artworkUrl }} style={styles.miniPlayerArtwork} />
+                    <ExpoImage
+                        cachePolicy="memory-disk"
+                        source={artworkUrl}
+                        style={styles.miniPlayerArtwork}
+                        transition={120}
+                    />
                 ) : (
                     <View style={styles.miniPlayerArtworkFallback}>
                         {title ? (
@@ -7808,9 +8113,15 @@ const MiniPlayer = ({
                     </View>
                 )}
                 <View style={styles.miniPlayerText}>
-                    <Text numberOfLines={1} style={styles.miniPlayerTitle}>
-                        {title || 'Nothing playing'}
-                    </Text>
+                    <View style={styles.miniPlayerTitleRow}>
+                        <Text
+                            numberOfLines={1}
+                            style={[styles.miniPlayerTitle, styles.rowTitleText]}
+                        >
+                            {title || 'Nothing playing'}
+                        </Text>
+                        {showHiRes ? <HiResBadge compact /> : null}
+                    </View>
                     {subtitle ? (
                         <Text numberOfLines={1} style={styles.miniPlayerSubtitle}>
                             {subtitle}
@@ -7885,6 +8196,27 @@ const QualityBadgeRow = ({ items }: { items: ReturnType<typeof buildAudioQuality
         </View>
     );
 };
+
+const HiResBadge = ({
+    compact = false,
+    overlay = false,
+    player = false,
+}: {
+    compact?: boolean;
+    overlay?: boolean;
+    player?: boolean;
+}) => (
+    <Image
+        accessibilityLabel="Hi-Res Audio"
+        source={hiResAudioBadge}
+        style={[
+            styles.hiResBadge,
+            compact && styles.hiResBadgeCompact,
+            overlay && styles.hiResBadgeOverlay,
+            player && styles.hiResBadgePlayer,
+        ]}
+    />
+);
 
 const SegmentedSeekBar = ({
     durationMs,
@@ -8018,6 +8350,18 @@ const formatChapterRange = (chapter: MobilePlaybackSegment): string => {
 
 const SCREEN_HEIGHT = Dimensions.get('window').height;
 const SCREEN_WIDTH = Dimensions.get('window').width;
+const PLAYER_SAFE_TOP = Platform.OS === 'android' ? 24 : 0;
+const MINI_PLAYER_BOTTOM = 75;
+const MINI_PLAYER_ARTWORK_SIZE = 58;
+const MINI_PLAYER_VERTICAL_PADDING = 10;
+const MINI_PLAYER_HEIGHT = MINI_PLAYER_ARTWORK_SIZE + MINI_PLAYER_VERTICAL_PADDING * 2;
+const MINI_PLAYER_RADIUS = 28;
+const FULL_PLAYER_EXPANDED_TOP = -PLAYER_SAFE_TOP;
+const FULL_PLAYER_PADDING_TOP = Platform.OS === 'android' ? 42 : 24;
+const FULL_PLAYER_PADDING_BOTTOM = 28;
+const MINI_PLAYER_COLLAPSED_TOP =
+    SCREEN_HEIGHT - PLAYER_SAFE_TOP - MINI_PLAYER_BOTTOM - MINI_PLAYER_HEIGHT;
+const PLAYER_EXPANSION_DISTANCE = MINI_PLAYER_COLLAPSED_TOP - FULL_PLAYER_EXPANDED_TOP;
 const FULL_PLAYER_ARTWORK_SIZE = Math.min(SCREEN_WIDTH - 64, SCREEN_HEIGHT * 0.42);
 
 // Tuned for a "weighty but settling" feel — never overshoots more than ~3%, lands
@@ -8052,11 +8396,13 @@ const useReducedMotionPreference = (): boolean => {
 };
 // How far the player must be dragged (or how fast it must be flung) before a
 // release commits to dismiss instead of springing back.
-const DISMISS_DISTANCE = SCREEN_HEIGHT * 0.22;
+const DISMISS_DISTANCE = PLAYER_EXPANSION_DISTANCE * 0.28;
 const DISMISS_VELOCITY = 900;
 // The queue sheet covers the lower 78% of the player when fully open; the
 // remaining strip keeps a sliver of artwork visible for context.
 const QUEUE_SHEET_HEIGHT = Math.round(SCREEN_HEIGHT * 0.78);
+const QUEUE_CLOSE_DISTANCE = 30;
+const QUEUE_CLOSE_VELOCITY = 360;
 
 // Two album cards must fit perfectly across the screen with breathing room.
 const HOME_EDGE_PADDING = 10;
@@ -8178,37 +8524,35 @@ const pickAlbumEssenceColor = (result: ImageColorsResult): null | string => {
     return candidates[0] ?? null;
 };
 
-// Build the fullscreen player backdrop as an 8-stop OKLab gradient sharing
-// the essence color's hue. We DON'T crush the top stop to a fixed dark value
-// — we honor whatever lightness the cover actually has, only clamping the
-// extremes so super-bright covers don't blow out and super-dark ones don't
-// vanish into black. Chroma decays slightly toward the bottom so the gradient
-// settles into a quiet near-black without losing the album's color identity.
-// Eight stops is enough that adjacent OKLab interpolation steps are below the
-// 8-bit perceptual banding threshold on a typical phone display.
+// Build the fullscreen player backdrop as a dense OKLab color field. The goal
+// is closer to Tidal's "album color fills the room" treatment than a modal
+// fading to black: the bottom gets quieter for controls, but it stays in the
+// same hue family and never collapses into pure black.
 const buildBackdropStops = (essence: null | string): readonly string[] => {
     const fallback: readonly string[] = [
-        '#1f1812', '#1a140f', '#15110c', '#100c09',
-        '#0b0806', '#070504', '#040302', '#010101',
+        '#2b241b', '#292219', '#272018', '#251e17', '#231d16', '#211b15',
+        '#1f1a14', '#1d1813', '#1b1712', '#191511', '#171410', '#15130f',
+        '#14120e', '#13110e', '#12100d', '#110f0d', '#100e0c', '#0f0d0c',
     ];
     if (!essence) return fallback;
     const rgb = parseHex(essence);
     if (!rgb) return fallback;
     const [L0, a, b] = rgbToOklab(rgb[0], rgb[1], rgb[2]);
-    // Top stop honors the cover's natural lightness, clamped to a band where
-    // (a) text on the gradient stays readable and (b) the color doesn't read
-    // as washed-out. This is the only "manipulation" — and it's the minimum
-    // necessary for legibility, not an aesthetic darkening pass.
-    const Ltop = Math.max(0.30, Math.min(0.52, L0));
-    const Lbottom = 0.06;
-    const stopCount = 8;
+    const chroma = Math.sqrt(a * a + b * b);
+    const chromaBoost = chroma < 0.07 ? 1.34 : chroma < 0.12 ? 1.18 : 1.06;
+    const topL = Math.max(0.36, Math.min(0.64, L0 + 0.08));
+    const midL = Math.max(0.25, Math.min(0.42, L0 * 0.72));
+    const bottomL = Math.max(0.17, Math.min(0.30, L0 * 0.5));
+    const stopCount = 18;
     const stops: string[] = [];
     for (let i = 0; i < stopCount; i++) {
         const t = i / (stopCount - 1);
-        const L = Ltop * (1 - t) + Lbottom * t;
-        // Mild chroma decay (1.00 → 0.55) so the bottom doesn't look painted
-        // with a saturated color in the dark — the eye expects depth there.
-        const cScale = 1 - t * 0.45;
+        const eased = t * t * (3 - 2 * t);
+        const L =
+            t < 0.42
+                ? topL + (midL - topL) * (t / 0.42)
+                : midL + (bottomL - midL) * ((t - 0.42) / 0.58);
+        const cScale = chromaBoost * (1 - eased * 0.24);
         stops.push(oklabToHex(L, a * cScale, b * cScale));
     }
     return stops;
@@ -8393,20 +8737,21 @@ const FullScreenPlayer = ({
         };
     }, []);
 
+    const settleSpring = reducedMotion ? REDUCED_MOTION_SPRING : OPEN_SPRING;
     const dismissPlayer = useCallback(() => {
         // Animate playerProgress to 0 and flip the parent's visible state once
         // the motion finishes; visible stays true for the duration of the close
         // so the user can actually see the fullscreen sliding away.
-        playerProgress.value = withTiming(
-            0,
-            { duration: reducedMotion ? 0 : 240 },
-            (finished) => {
-                if (finished) {
-                    runOnJS(onClose)();
-                }
-            },
-        );
-    }, [playerProgress, onClose, reducedMotion]);
+        const onFinish = (finished?: boolean) => {
+            'worklet';
+            if (finished) {
+                runOnJS(onClose)();
+            }
+        };
+        playerProgress.value = reducedMotion
+            ? withTiming(0, { duration: 0 }, onFinish)
+            : withSpring(0, settleSpring, onFinish);
+    }, [playerProgress, onClose, reducedMotion, settleSpring]);
 
     const openFullscreenContextMenu = useCallback(() => {
         const item = playbackState.status !== 'idle' ? playbackState.item : lastPlayedItem;
@@ -8488,8 +8833,6 @@ const FullScreenPlayer = ({
     // open closes the queue instead of dismissing the player. Mode is locked
     // at the moment the first significant drag direction is detected so the
     // motion stays predictable.
-    const settleSpring = reducedMotion ? REDUCED_MOTION_SPRING : OPEN_SPRING;
-    const dismissDuration = reducedMotion ? 0 : 220;
     const dragGesture = useMemo(
         () =>
             Gesture.Pan()
@@ -8520,13 +8863,22 @@ const FullScreenPlayer = ({
                         return;
                     }
 
-                    const dragFraction = event.translationY / SCREEN_HEIGHT;
+                    const dragFraction = event.translationY / PLAYER_EXPANSION_DISTANCE;
                     const next = 1 - dragFraction;
                     playerProgress.value = next > 1 ? 1 : next < 0 ? 0 : next;
                 })
                 .onEnd((event) => {
                     'worklet';
                     if (dragMode.value === 'queue') {
+                        if (
+                            dragStartQueue.value > 0.8 &&
+                            (event.translationY > QUEUE_CLOSE_DISTANCE ||
+                                event.velocityY > QUEUE_CLOSE_VELOCITY)
+                        ) {
+                            queueProgress.value = withSpring(0, settleSpring);
+                            return;
+                        }
+
                         // Snap open or closed based on position + velocity.
                         const opening =
                             queueProgress.value > 0.5 ||
@@ -8542,29 +8894,36 @@ const FullScreenPlayer = ({
                         (event.velocityY > DISMISS_VELOCITY &&
                             event.translationY > 40);
                     if (shouldDismiss) {
-                        playerProgress.value = withTiming(
-                            0,
-                            { duration: dismissDuration },
-                            (finished) => {
-                                if (finished) {
-                                    runOnJS(onClose)();
-                                }
-                            },
-                        );
+                        const onFinish = (finished?: boolean) => {
+                            'worklet';
+                            if (finished) {
+                                runOnJS(onClose)();
+                            }
+                        };
+                        playerProgress.value = reducedMotion
+                            ? withTiming(0, { duration: 0 }, onFinish)
+                            : withSpring(
+                                  0,
+                                  {
+                                      ...settleSpring,
+                                      velocity: -event.velocityY / PLAYER_EXPANSION_DISTANCE,
+                                  },
+                                  onFinish,
+                              );
                         return;
                     }
                     playerProgress.value = withSpring(1, {
                         ...settleSpring,
-                        velocity: -event.velocityY / SCREEN_HEIGHT,
+                        velocity: -event.velocityY / PLAYER_EXPANSION_DISTANCE,
                     });
                 }),
         [
-            dismissDuration,
             dragMode,
             dragStartQueue,
             onClose,
             playerProgress,
             queueProgress,
+            reducedMotion,
             settleSpring,
         ],
     );
@@ -8629,20 +8988,50 @@ const FullScreenPlayer = ({
         [dragGesture, skipGesture],
     );
 
-    // The fullscreen rises from below, scales up slightly, and fades in — all
-    // driven by the same playerProgress that fades the miniplayer out. With
-    // motion this tight, the eye reads it as one surface expanding into the
-    // other rather than a slide-up modal.
+    // The fullscreen player's actual frame expands out of the miniplayer's
+    // frame. The container does the physical motion; its contents wait until
+    // the surface has enough room, so the transition reads as one object
+    // unfolding instead of a transparent mini player under a bottom sheet.
     const playerAnimatedStyle = useAnimatedStyle(() => {
         const p = playerProgress.value;
         return {
-            opacity: interpolate(p, [0, 0.35], [0, 1], 'clamp'),
-            transform: [
-                { translateY: interpolate(p, [0, 1], [SCREEN_HEIGHT, 0], 'clamp') },
-                { scale: interpolate(p, [0, 1], [0.94, 1], 'clamp') },
-            ],
+            borderTopLeftRadius: interpolate(p, [0, 1], [MINI_PLAYER_RADIUS, 0], 'clamp'),
+            borderTopRightRadius: interpolate(p, [0, 1], [MINI_PLAYER_RADIUS, 0], 'clamp'),
+            height: interpolate(p, [0, 1], [MINI_PLAYER_HEIGHT, SCREEN_HEIGHT], 'clamp'),
+            opacity: interpolate(p, [0, 0.035], [0, 1], 'clamp'),
+            paddingBottom: interpolate(
+                p,
+                [0, 1],
+                [0, FULL_PLAYER_PADDING_BOTTOM],
+                'clamp',
+            ),
+            paddingHorizontal: interpolate(p, [0, 1], [0, spacing.lg], 'clamp'),
+            paddingTop: interpolate(p, [0, 1], [0, FULL_PLAYER_PADDING_TOP], 'clamp'),
+            top: interpolate(
+                p,
+                [0, 1],
+                [MINI_PLAYER_COLLAPSED_TOP, FULL_PLAYER_EXPANDED_TOP],
+                'clamp',
+            ),
         };
     });
+    const collapsedSurfaceStyle = useAnimatedStyle(() => ({
+        opacity: interpolate(playerProgress.value, [0, 0.46], [1, 0], 'clamp'),
+    }));
+    const playerContentAnimatedStyle = useAnimatedStyle(() => ({
+        opacity: interpolate(playerProgress.value, [0.34, 0.7], [0, 1], 'clamp'),
+        transform: [
+            {
+                translateY: interpolate(
+                    playerProgress.value,
+                    [0.34, 1],
+                    [26, 0],
+                    'clamp',
+                ),
+            },
+            { scale: interpolate(playerProgress.value, [0.34, 1], [0.97, 1], 'clamp') },
+        ],
+    }));
 
     // Stay mounted whenever there's something to play, so close animations
     // triggered from outside the player (back button, navigation) still get to
@@ -8667,6 +9056,7 @@ const FullScreenPlayer = ({
               mode: 'detail',
           })
         : [];
+    const showHiRes = isPlaybackHiRes(displayItem);
     const playerArtworkUrl = displayItem.artworkUrl;
     const positionMs =
         playbackState.status !== 'idle' ? (playbackState.positionMs ?? 0) : 0;
@@ -8677,15 +9067,7 @@ const FullScreenPlayer = ({
         <Reanimated.View
             pointerEvents={visible ? 'auto' : 'none'}
             style={[
-                StyleSheet.absoluteFillObject,
                 styles.fullPlayer,
-                {
-                    // The safeArea wrapper applies paddingTop:24 on Android so the rest
-                    // of the UI stays below the status bar, but the fullscreen player
-                    // is meant to be edge-to-edge. Escape that padding so the
-                    // album-colored gradient runs all the way under the status bar.
-                    top: Platform.OS === 'android' ? -24 : 0,
-                },
                 playerAnimatedStyle,
             ]}
         >
@@ -8712,6 +9094,8 @@ const FullScreenPlayer = ({
                 >
                     <LinearGradient
                         colors={buildBackdropStops(bgPrev) as unknown as string[]}
+                        end={{ x: 0.82, y: 1 }}
+                        start={{ x: 0.18, y: 0 }}
                         style={StyleSheet.absoluteFillObject}
                     />
                 </Animated.View>
@@ -8732,10 +9116,21 @@ const FullScreenPlayer = ({
             >
                 <LinearGradient
                     colors={buildBackdropStops(bgCurr) as unknown as string[]}
+                    end={{ x: 0.82, y: 1 }}
+                    start={{ x: 0.18, y: 0 }}
                     style={StyleSheet.absoluteFillObject}
                 />
             </Animated.View>
+            <Reanimated.View
+                pointerEvents="none"
+                style={[
+                    StyleSheet.absoluteFillObject,
+                    styles.fullPlayerCollapsedSurface,
+                    collapsedSurfaceStyle,
+                ]}
+            />
 
+            <Reanimated.View style={[styles.fullPlayerContent, playerContentAnimatedStyle]}>
             {/* Header: down chevron / spacer / more menu */}
             <View style={styles.fullPlayerHeader}>
                 <Pressable
@@ -8761,7 +9156,12 @@ const FullScreenPlayer = ({
             <View style={styles.fullPlayerArtworkWrap}>
                 <View style={styles.fullPlayerArtworkShadow}>
                     {playerArtworkUrl ? (
-                        <Image source={{ uri: playerArtworkUrl }} style={styles.fullPlayerArtwork} />
+                        <ExpoImage
+                            cachePolicy="memory-disk"
+                            source={playerArtworkUrl}
+                            style={styles.fullPlayerArtwork}
+                            transition={180}
+                        />
                     ) : (
                         <View style={styles.fullPlayerArtworkFallback}>
                             <Text style={styles.fullPlayerArtworkLetter}>
@@ -8775,9 +9175,15 @@ const FullScreenPlayer = ({
             {/* Bottom stack: each block owns its own row — no overlap. */}
             <View style={styles.fullPlayerBottom}>
                 <View style={styles.fullPlayerMetadata}>
-                    <Text numberOfLines={2} style={styles.fullPlayerTitle}>
-                        {display.title}
-                    </Text>
+                    <View style={styles.fullPlayerTitleRow}>
+                        <Text
+                            numberOfLines={2}
+                            style={[styles.fullPlayerTitle, styles.fullPlayerTitleText]}
+                        >
+                            {display.title}
+                        </Text>
+                        {showHiRes ? <HiResBadge player /> : null}
+                    </View>
                     {display.subtitle ? (
                         <Text numberOfLines={1} style={styles.fullPlayerSubtitle}>
                             {display.subtitle}
@@ -8866,6 +9272,7 @@ const FullScreenPlayer = ({
                     </Text>
                 ) : null}
             </View>
+            </Reanimated.View>
 
             <QueueSheetOverlay
                 backdropStyle={queueBackdropStyle}
@@ -8960,6 +9367,22 @@ const QueueSheetOverlay = ({
     const activeChapterIndex = showingChapters
         ? findActiveChapterIndex(chapters!, positionSeconds)
         : -1;
+    const dismissGesture = useMemo(
+        () =>
+            Gesture.Pan()
+                .activeOffsetY(8)
+                .failOffsetX([-28, 28])
+                .onEnd((event) => {
+                    'worklet';
+                    if (
+                        event.translationY > QUEUE_CLOSE_DISTANCE ||
+                        event.velocityY > QUEUE_CLOSE_VELOCITY
+                    ) {
+                        runOnJS(onClose)();
+                    }
+                }),
+        [onClose],
+    );
     return (
         <>
             <Reanimated.View
@@ -8972,19 +9395,20 @@ const QueueSheetOverlay = ({
                     style={StyleSheet.absoluteFillObject}
                 />
             </Reanimated.View>
-            <Reanimated.View
-                pointerEvents={interactive ? 'auto' : 'none'}
-                style={[styles.queueSheet, sheetStyle]}
-            >
-                <View style={styles.queueSheetHandle} />
-                <Text style={styles.queueSheetTitle}>
-                    {showingChapters ? 'Chapters' : 'Up Next'}
-                </Text>
-                <ScrollView
-                    contentContainerStyle={styles.queueSheetContent}
-                    showsVerticalScrollIndicator={false}
-                    style={styles.queueSheetScroll}
+            <GestureDetector gesture={dismissGesture}>
+                <Reanimated.View
+                    pointerEvents={interactive ? 'auto' : 'none'}
+                    style={[styles.queueSheet, sheetStyle]}
                 >
+                    <View style={styles.queueSheetHandle} />
+                    <Text style={styles.queueSheetTitle}>
+                        {showingChapters ? 'Chapters' : 'Up Next'}
+                    </Text>
+                    <ScrollView
+                        contentContainerStyle={styles.queueSheetContent}
+                        showsVerticalScrollIndicator={false}
+                        style={styles.queueSheetScroll}
+                    >
                     {showingChapters ? (
                         chapters!.map((chapter, i) => {
                             const isActive = i === activeChapterIndex;
@@ -9049,30 +9473,29 @@ const QueueSheetOverlay = ({
                     ) : (
                         items.map((item, i) => {
                             const isActive = queue?.index === i;
+                            const showHiRes = isPlaybackHiRes(item);
                             return (
                                 <View key={`${item.id}-${i}`} style={styles.queueRow}>
-                                    {item.artworkUrl ? (
-                                        <Image
-                                            source={{ uri: item.artworkUrl }}
-                                            style={styles.queueRowThumb}
-                                        />
-                                    ) : (
-                                        <View style={styles.queueRowThumbFallback}>
-                                            <Text style={styles.queueRowThumbLetter}>
-                                                {item.title.slice(0, 1).toUpperCase()}
-                                            </Text>
-                                        </View>
-                                    )}
+                                    <ArtworkImage
+                                        fallbackStyle={styles.queueRowThumbFallback}
+                                        letter={item.title.slice(0, 1).toUpperCase()}
+                                        style={styles.queueRowThumb}
+                                        uri={item.artworkUrl}
+                                    />
                                     <View style={styles.queueRowBody}>
-                                        <Text
-                                            numberOfLines={1}
-                                            style={[
-                                                styles.queueRowTitle,
-                                                isActive && { color: colors.accent },
-                                            ]}
-                                        >
-                                            {item.title}
-                                        </Text>
+                                        <View style={styles.rowTitleWithBadge}>
+                                            <Text
+                                                numberOfLines={1}
+                                                style={[
+                                                    styles.queueRowTitle,
+                                                    styles.rowTitleText,
+                                                    isActive && { color: colors.accent },
+                                                ]}
+                                            >
+                                                {item.title}
+                                            </Text>
+                                            {showHiRes ? <HiResBadge compact /> : null}
+                                        </View>
                                         {item.subtitle ? (
                                             <Text
                                                 numberOfLines={1}
@@ -9103,8 +9526,9 @@ const QueueSheetOverlay = ({
                             );
                         })
                     )}
-                </ScrollView>
-            </Reanimated.View>
+                    </ScrollView>
+                </Reanimated.View>
+            </GestureDetector>
         </>
     );
 };
@@ -9216,7 +9640,7 @@ const ViewAllScreen = ({
         const fullItems = fullState.status === 'loaded' ? fullState.items : [];
         const merged: MobileHomeItem[] = [];
         const seen = new Set<string>();
-        for (const item of [...fullItems, ...route.items]) {
+        for (const item of [...route.items, ...fullItems]) {
             // Skip anything that doesn't have the minimum fields the FlatList
             // renderItem expects. Without this guard, a server returning a
             // partial record (eg an album with no id or title) crashed the
@@ -9287,6 +9711,7 @@ const ViewAllScreen = ({
     const renderItem = useCallback(
         ({ item }: { item: MobileHomeItem }) => {
             const isArtist = item.type === MobileHomeItemType.ARTIST;
+            const showHiRes = isContentItemHiRes(item);
             return (
                 <Pressable
                     accessibilityRole="button"
@@ -9306,9 +9731,16 @@ const ViewAllScreen = ({
                         ]}
                         uri={item.artworkUrl}
                     />
-                    <Text numberOfLines={1} style={styles.viewAllTileTitle}>
-                        {item.title}
-                    </Text>
+                    {showHiRes ? <HiResBadge overlay /> : null}
+                    <View style={styles.rowTitleWithBadge}>
+                        <Text
+                            numberOfLines={1}
+                            style={[styles.viewAllTileTitle, styles.rowTitleText]}
+                        >
+                            {item.title}
+                        </Text>
+                        {showHiRes ? <HiResBadge compact /> : null}
+                    </View>
                     {item.subtitle ? (
                         <Text
                             numberOfLines={1}
@@ -9883,6 +10315,15 @@ const styles = StyleSheet.create({
     albumHero: {
         alignItems: 'center',
         marginTop: spacing.lg,
+        position: 'relative',
+    },
+    albumHeroBadgeRow: {
+        alignItems: 'center',
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 8,
+        justifyContent: 'center',
+        marginBottom: 6,
     },
     artistBio: {
         color: colors.muted,
@@ -9921,18 +10362,21 @@ const styles = StyleSheet.create({
         aspectRatio: 1,
         backgroundColor: colors.surface,
         borderRadius: 4,
-        marginBottom: spacing.md,
         width: Math.min(SCREEN_WIDTH - HOME_EDGE_PADDING * 2 - 40, 360),
     },
     albumHeroArtworkFallback: {
         alignItems: 'center',
         justifyContent: 'center',
     },
+    albumHeroArtworkWrap: {
+        marginBottom: spacing.md,
+        position: 'relative',
+    },
     albumHeroTitle: {
         color: colors.text,
         fontSize: 26,
         fontWeight: '900',
-        letterSpacing: -0.3,
+        letterSpacing: 0,
         lineHeight: 30,
         marginBottom: spacing.sm,
         textAlign: 'center',
@@ -9965,7 +10409,6 @@ const styles = StyleSheet.create({
         fontSize: 11,
         fontWeight: '900',
         letterSpacing: 1.4,
-        marginBottom: 6,
         textAlign: 'center',
         textTransform: 'uppercase',
     },
@@ -10081,10 +10524,10 @@ const styles = StyleSheet.create({
         elevation: 999,
         flex: 1,
         flexDirection: 'column',
+        left: 0,
         overflow: 'hidden',
-        paddingBottom: 28,
-        paddingHorizontal: spacing.lg,
-        paddingTop: Platform.OS === 'android' ? 42 : 24,
+        position: 'absolute',
+        right: 0,
         zIndex: 9999,
     },
     fullPlayerBottom: {
@@ -10388,6 +10831,12 @@ const styles = StyleSheet.create({
         right: 0,
         top: 0,
     },
+    fullPlayerCollapsedSurface: {
+        backgroundColor: '#1c1c1e',
+    },
+    fullPlayerContent: {
+        flex: 1,
+    },
     fullPlayerControls: {
         alignItems: 'center',
         flexDirection: 'row',
@@ -10465,9 +10914,19 @@ const styles = StyleSheet.create({
         color: '#ffffff',
         fontSize: 24,
         fontWeight: '900',
-        letterSpacing: -0.3,
+        letterSpacing: 0,
         lineHeight: 30,
         textAlign: 'left',
+    },
+    fullPlayerTitleRow: {
+        alignItems: 'center',
+        flexDirection: 'row',
+        gap: 10,
+        minWidth: 0,
+    },
+    fullPlayerTitleText: {
+        flex: 1,
+        minWidth: 0,
     },
     gearGlyphText: {
         fontSize: 18,
@@ -10485,7 +10944,7 @@ const styles = StyleSheet.create({
         color: colors.text,
         fontSize: 30,
         fontWeight: '900',
-        letterSpacing: -0.5,
+        letterSpacing: 0,
         lineHeight: 36,
     },
     homeSection: {
@@ -10653,6 +11112,7 @@ const styles = StyleSheet.create({
     },
     viewAllTile: {
         flex: 1,
+        position: 'relative',
     },
     viewAllTileArtwork: {
         aspectRatio: 1,
@@ -11003,9 +11463,9 @@ const styles = StyleSheet.create({
     },
     miniPlayer: {
         backgroundColor: '#1c1c1e',
-        borderTopLeftRadius: 28,
-        borderTopRightRadius: 28,
-        bottom: 75,
+        borderTopLeftRadius: MINI_PLAYER_RADIUS,
+        borderTopRightRadius: MINI_PLAYER_RADIUS,
+        bottom: MINI_PLAYER_BOTTOM,
         left: 0,
         overflow: 'hidden',
         position: 'absolute',
@@ -11014,27 +11474,27 @@ const styles = StyleSheet.create({
         // page (the issue on artist/album/playlist detail). No elevation —
         // that draws an Android drop shadow which broke the visual seam with
         // the tab bar.
-        zIndex: 50,
+        zIndex: 10000,
     },
     miniPlayerTouchable: {
         alignItems: 'center',
         flexDirection: 'row',
         gap: 13,
         paddingHorizontal: 18,
-        paddingVertical: 10,
+        paddingVertical: MINI_PLAYER_VERTICAL_PADDING,
     },
     miniPlayerArtwork: {
         borderRadius: 10,
-        height: 58,
-        width: 58,
+        height: MINI_PLAYER_ARTWORK_SIZE,
+        width: MINI_PLAYER_ARTWORK_SIZE,
     },
     miniPlayerArtworkFallback: {
         alignItems: 'center',
         backgroundColor: 'rgba(255, 255, 255, 0.1)',
         borderRadius: 10,
-        height: 58,
+        height: MINI_PLAYER_ARTWORK_SIZE,
         justifyContent: 'center',
-        width: 58,
+        width: MINI_PLAYER_ARTWORK_SIZE,
     },
     miniPlayerArtworkLetter: {
         color: colors.text,
@@ -11075,6 +11535,12 @@ const styles = StyleSheet.create({
         fontSize: 16,
         fontWeight: '700',
         marginBottom: 2,
+    },
+    miniPlayerTitleRow: {
+        alignItems: 'center',
+        flexDirection: 'row',
+        gap: 7,
+        minWidth: 0,
     },
     pauseGlyph: {
         alignItems: 'center',
@@ -11275,6 +11741,36 @@ const styles = StyleSheet.create({
         fontSize: 17,
         fontWeight: '700',
         marginBottom: 4,
+    },
+    rowTitleText: {
+        flex: 1,
+        minWidth: 0,
+    },
+    rowTitleWithBadge: {
+        alignItems: 'center',
+        flexDirection: 'row',
+        gap: 7,
+        minWidth: 0,
+    },
+    hiResBadge: {
+        borderRadius: 4,
+        height: 38,
+        resizeMode: 'contain',
+        width: 38,
+    },
+    hiResBadgeCompact: {
+        borderRadius: 3,
+        height: 22,
+        width: 22,
+    },
+    hiResBadgeOverlay: {
+        left: 6,
+        position: 'absolute',
+        top: 6,
+    },
+    hiResBadgePlayer: {
+        height: 34,
+        width: 34,
     },
     qualityBadge: {
         backgroundColor: 'rgba(255, 255, 255, 0.1)',
@@ -11536,7 +12032,7 @@ const styles = StyleSheet.create({
     searchOverlay: {
         ...StyleSheet.absoluteFillObject,
         backgroundColor: 'rgba(0,0,0,0.72)',
-        zIndex: 8888,
+        zIndex: 11000,
     },
     searchOverlayBar: {
         alignItems: 'center',
@@ -11883,7 +12379,7 @@ const styles = StyleSheet.create({
         color: colors.text,
         fontSize: 22,
         fontWeight: '900',
-        letterSpacing: -0.3,
+        letterSpacing: 0,
         marginBottom: 4,
         marginTop: 4,
     },
