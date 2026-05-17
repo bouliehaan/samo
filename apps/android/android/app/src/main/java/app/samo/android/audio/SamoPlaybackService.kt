@@ -49,6 +49,13 @@ class SamoPlaybackService : MediaSessionService() {
     override fun onCreate() {
         super.onCreate()
         ensureNotificationChannel()
+        // Without an explicit MediaNotification.Provider the service falls
+        // back to the placeholder we post in onStartCommand — Media3's
+        // DefaultMediaNotificationProvider never actually swapped in for us,
+        // which is what left the shade showing the silent stub. The custom
+        // provider builds the proper MediaStyle (play/pause/prev/next) and
+        // pulls a Palette-derived background color from the cover art.
+        setMediaNotificationProvider(SamoMediaNotificationProvider(this))
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -91,9 +98,13 @@ class SamoPlaybackService : MediaSessionService() {
 
     override fun onDestroy() {
         mainHandler.removeCallbacksAndMessages(null)
-        mediaSession?.run {
-            this.player.release()
-            release()
+        mediaSession?.let { session ->
+            // Remove from the service's tracked-session set BEFORE releasing
+            // so the notification manager has a chance to tear down its bound
+            // listeners cleanly. release() then frees the underlying player.
+            removeSession(session)
+            session.player.release()
+            session.release()
         }
         mediaSession = null
         player = null
@@ -123,7 +134,10 @@ class SamoPlaybackService : MediaSessionService() {
         }
 
         if (existing != null) {
-            mediaSession?.release()
+            mediaSession?.let { session ->
+                removeSession(session)
+                session.release()
+            }
             mediaSession = null
             existing.release()
             player = null
@@ -174,7 +188,13 @@ class SamoPlaybackService : MediaSessionService() {
         // MediaSessionService promotes us to a foreground service with the
         // standard playback notification. That's the load-bearing piece for
         // screen-off survival.
-        mediaSession = MediaSession.Builder(this, createdPlayer).build()
+        val builtSession = MediaSession.Builder(this, createdPlayer).build()
+        // addSession() is the step that was missing before: without it the
+        // service's notification manager doesn't know there's a session to
+        // post a media notification for, so the placeholder in
+        // onStartCommand never gets replaced.
+        addSession(builtSession)
+        mediaSession = builtSession
         player = createdPlayer
         playerRequestHeaders = requestHeaders
 
