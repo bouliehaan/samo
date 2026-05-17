@@ -78,24 +78,26 @@ export const loadSubsonicAlbumQualityProfile = async (
     // FLAC. The 16/44.1 asset exists; the user (rightly) doesn't want plain
     // lossless tracks to render unmarked just because they're not above the
     // hi-res threshold. Walk every song; keep the album's highest profile.
+    //
+    // When the server confirms lossless (premium container, direct delivery)
+    // but doesn't report bitDepth / sampleRate explicitly, fall back to
+    // CD-quality (16/44.1). Real-world Subsonic/Navidrome installs are
+    // inconsistent about populating those numeric fields for FLAC — the
+    // container alone is the source of truth for "this is lossless," and
+    // showing the most common lossless badge beats showing nothing.
     let best: MobileQualityProfile | undefined;
-    let anyLossless = false;
     for (const song of response?.album?.song ?? []) {
         const quality = getSubsonicMusicQuality(song);
         if (!isLosslessAudioQuality(quality)) continue;
-        anyLossless = true;
-        const bitDepth = quality.bitDepth ?? null;
-        const sampleRate = quality.sampleRate ?? null;
-        if (bitDepth == null || sampleRate == null) continue;
+        const bitDepth = quality.bitDepth ?? 16;
+        const sampleRate = quality.sampleRate ?? 44100;
         const candidate: MobileQualityProfile = { bitDepth, sampleRate };
         if (isHigherProfile(candidate, best)) {
             best = candidate;
         }
     }
 
-    // Album qualifies as lossless by bitrate floor but no song reports a
-    // structured profile — return undefined so we don't pick a wrong badge.
-    return anyLossless ? best : undefined;
+    return best;
 };
 
 /**

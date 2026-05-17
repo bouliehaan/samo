@@ -653,6 +653,12 @@ const tracksHaveHiRes = (tracks: MobileMediaTrack[]) =>
  * format. Uses the lossless predicate (not the stricter hi-res one) so a
  * 16/44.1 lossless album still earns its badge; the asset set has a 16/44.1
  * variant and the user expects every lossless album to carry a marker.
+ *
+ * Servers (Navidrome / Airsonic-derivatives / older Subsonic) are
+ * inconsistent about populating bitDepth and sampleRate for FLAC tracks.
+ * Default to CD-quality (16/44.1) when the container check passes but the
+ * numbers aren't reported — a confirmed-lossless track deserves a badge
+ * even without precise specs.
  */
 const trackQualityProfile = (
     tracks: MobileMediaTrack[],
@@ -662,8 +668,8 @@ const trackQualityProfile = (
         const quality = track.playback?.quality;
         if (!quality) continue;
         if (!isLosslessAudioQuality(quality)) continue;
-        const { bitDepth, sampleRate } = quality;
-        if (bitDepth == null || sampleRate == null) continue;
+        const bitDepth = quality.bitDepth ?? 16;
+        const sampleRate = quality.sampleRate ?? 44100;
         if (
             !best ||
             bitDepth > best.bitDepth ||

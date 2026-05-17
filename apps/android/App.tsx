@@ -239,20 +239,23 @@ const isContentItemHiRes = (
 ): boolean => Boolean(item?.isHiRes || isPlaybackHiRes(item?.playback));
 
 /**
- * Pull a quality profile from a playback record's quality block. Returns
- * undefined when either dimension isn't reported (some Subsonic-compat
- * servers leave bitDepth/sampleRate empty even for lossless tracks) or when
- * the playback isn't lossless. We use isLosslessAudioQuality (not the
- * stricter hi-res check) so any 16-bit-or-up lossless track gets badged —
- * 16/44.1 FLAC included.
+ * Pull a quality profile from a playback record's quality block.
+ *
+ * Returns undefined when the playback isn't lossless (transcoded, lossy
+ * container). When the playback IS lossless but the server didn't fill in
+ * bitDepth or sampleRate (Subsonic implementations are inconsistent about
+ * populating those numeric fields for FLAC), we default to CD-quality
+ * 16/44.1 — the asset map has that variant and a confirmed-lossless track
+ * deserves a badge even when its exact specs aren't reported. Hi-res
+ * content that DOES report its specs gets the matching format.
  */
 const getPlaybackQualityProfile = (
     playback?: MobilePlayableAudio | null,
 ): MobileQualityProfile | undefined => {
     if (!playback) return undefined;
     if (!isLosslessAudioQuality(playback.quality)) return undefined;
-    const { bitDepth, sampleRate } = playback.quality;
-    if (bitDepth == null || sampleRate == null) return undefined;
+    const bitDepth = playback.quality.bitDepth ?? 16;
+    const sampleRate = playback.quality.sampleRate ?? 44100;
     return { bitDepth, sampleRate };
 };
 
