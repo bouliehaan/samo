@@ -41,6 +41,13 @@ class SamoPlaybackService : MediaSessionService() {
     private var player: ExoPlayer? = null
     private var playerRequestHeaders: Map<String, String> = emptyMap()
     var preferredMixerDevice: AudioDeviceInfo? = null
+    /**
+     * Set by SamoAudioModule once the React bridge is connected. The
+     * notification's previous/next buttons land here via the ForwardingPlayer
+     * wrapping ExoPlayer; this hop is what lets the JS-side queue handle
+     * track navigation while the native player only ever holds one item.
+     */
+    var navigationHandler: ((direction: Int) -> Unit)? = null
 
     inner class LocalBinder : Binder() {
         fun getService(): SamoPlaybackService = this@SamoPlaybackService
@@ -191,7 +198,17 @@ class SamoPlaybackService : MediaSessionService() {
         // MediaSessionService promotes us to a foreground service with the
         // standard playback notification. That's the load-bearing piece for
         // screen-off survival.
-        val builtSession = MediaSession.Builder(this, createdPlayer).build()
+        //
+        // We hand the session a ForwardingPlayer instead of the raw ExoPlayer
+        // so previous/next show up in the notification (and respond to
+        // Bluetooth + headphone media buttons) even though Samo's queue lives
+        // in JavaScript. The forwarding player claims those commands are
+        // always available and routes them back through navigationHandler,
+        // which SamoAudioModule wires to a JS event.
+        val sessionPlayer = SamoForwardingPlayer(createdPlayer) { direction ->
+            mainHandler.post { navigationHandler?.invoke(direction) }
+        }
+        val builtSession = MediaSession.Builder(this, sessionPlayer).build()
         // addSession() is the step that was missing before: without it the
         // service's notification manager doesn't know there's a session to
         // post a media notification for, so the placeholder in

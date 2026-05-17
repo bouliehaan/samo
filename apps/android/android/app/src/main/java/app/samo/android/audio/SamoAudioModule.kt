@@ -57,12 +57,24 @@ class SamoAudioModule(
       val service = (binder as? SamoPlaybackService.LocalBinder)?.getService() ?: return
       boundService = service
       isBinding = false
+      // Notification's previous/next buttons land on the ForwardingPlayer
+      // wrapping ExoPlayer; ForwardingPlayer calls back to the service,
+      // which calls this handler. We then bounce up to JS so the React
+      // queue can pick the right track. The previous/next physically
+      // present in the shade comes from the ForwardingPlayer claiming the
+      // commands are always available — see SamoForwardingPlayer.
+      service.navigationHandler = { direction ->
+        val event = Arguments.createMap()
+        event.putInt("direction", direction)
+        emit("SamoAudioNavigationRequest", event)
+      }
       val pending = pendingServiceActions.toList()
       pendingServiceActions.clear()
       pending.forEach { it(service) }
     }
 
     override fun onServiceDisconnected(name: ComponentName?) {
+      boundService?.navigationHandler = null
       boundService = null
       playerListenersInstalledOn = null
     }

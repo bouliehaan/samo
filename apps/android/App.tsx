@@ -57,6 +57,7 @@ import {
     type GestureResponderEvent,
     Image,
     type ImageSourcePropType,
+    type ImageStyle,
     KeyboardAvoidingView,
     type LayoutChangeEvent,
     Modal,
@@ -65,6 +66,7 @@ import {
     Platform,
     Pressable,
     ScrollView,
+    StyleProp,
     StyleSheet,
     Switch,
     Text,
@@ -102,6 +104,7 @@ import {
     seekAndroidAudio,
     getAndroidPlaybackStatus,
     subscribeToAndroidAudioEvents,
+    subscribeToAndroidNavigationRequests,
 } from './src/services/audio-playback';
 import {
     cancelDownload,
@@ -207,6 +210,54 @@ const getTabTitle = (activeTab: SamoMobileTabId) => {
 
 const getContentItemKey = (item: { id: string; source?: { id: string }; type: string }) => {
     return `${item.source?.id ?? 'server'}:${item.type}:${item.id}`;
+};
+
+/**
+ * Artwork tile with a built-in letter-glyph fallback. Wraps RN's Image so that
+ * a failed load (404, expired token, server returning a placeholder, etc)
+ * downgrades to the same fallback we render when there's no URL at all. The
+ * old inline `{url ? <Image/> : <Fallback/>}` pattern was leaving blank tiles
+ * whenever a generated cover URL didn't actually resolve to an image — most
+ * visibly for artists whose servers don't expose cover art for them, and for
+ * playlists with no custom cover.
+ */
+const ArtworkImage = ({
+    fallbackStyle,
+    letter,
+    style,
+    uri,
+}: {
+    fallbackStyle?: StyleProp<ViewStyle>;
+    letter: string;
+    style: StyleProp<ImageStyle>;
+    uri?: string;
+}) => {
+    const [errored, setErrored] = useState(false);
+    // A new URL gets a fresh chance — don't carry an old failure into the
+    // next track / search hit.
+    useEffect(() => {
+        setErrored(false);
+    }, [uri]);
+    if (!uri || errored) {
+        return (
+            <View
+                style={[
+                    style as StyleProp<ViewStyle>,
+                    styles.artworkImageFallback,
+                    fallbackStyle,
+                ]}
+            >
+                <Text style={styles.mediaArtworkLetter}>{letter}</Text>
+            </View>
+        );
+    }
+    return (
+        <Image
+            onError={() => setErrored(true)}
+            source={{ uri }}
+            style={style}
+        />
+    );
 };
 
 interface AddServerScreenProps {
@@ -943,6 +994,25 @@ export default function App() {
 
         return () => subscription.remove();
     }, [playQueuedItem]);
+
+    // Notification + Bluetooth media-button previous/next come through here.
+    // SamoForwardingPlayer marks these commands as always-available so the
+    // notification renders both buttons even though the native player only
+    // holds one MediaItem at a time; the actual queue step happens in JS via
+    // handleNavigatePlayback. The ref dance lets us subscribe exactly once
+    // while still calling the most recent closure (which captures live
+    // playback state and queue refs).
+    const navigateRef = useRef<((direction: -1 | 1) => Promise<void>) | null>(null);
+    useEffect(() => {
+        navigateRef.current = handleNavigatePlayback;
+    });
+    useEffect(() => {
+        const subscription = subscribeToAndroidNavigationRequests((event) => {
+            const direction = event.direction === -1 ? -1 : 1;
+            void navigateRef.current?.(direction);
+        });
+        return () => subscription.remove();
+    }, []);
 
     useEffect(() => {
         if (playbackState.status === 'idle' || !isAndroidNativePlaybackAvailable()) {
@@ -2631,17 +2701,30 @@ export default function App() {
                         // outside the surrounding ScrollView so RN doesn't
                         // warn about nested VirtualizedLists with the same
                         // orientation (which also disables windowing).
-                        <ViewAllScreen
-                            fullState={viewAllFullState}
-                            onBack={() => {
-                                setActiveUtilityScreen(null);
-                                setViewAllRoute(null);
-                                viewAllFetchTokenRef.current += 1;
-                                setViewAllFullState({ status: 'idle' });
-                            }}
-                            onSelectItem={handleSelectMediaItem}
-                            route={viewAllRoute}
-                        />
+                        <ErrorBoundary label="ViewAllScreen">
+                            <ViewAllScreen
+                                fullState={viewAllFullState}
+                                onBack={() => {
+                                    setActiveUtilityScreen(null);
+                                    setViewAllRoute(null);
+                                    viewAllFetchTokenRef.current += 1;
+                                    setViewAllFullState({ status: 'idle' });
+                                }}
+                                onSelectItem={(item) => {
+                                    // Close the View All screen before kicking
+                                    // off media-detail navigation; otherwise
+                                    // activeUtilityScreen stays 'view-all' and
+                                    // the detail page never gets a render slot.
+                                    // That was the "nothing happens" tap bug.
+                                    setActiveUtilityScreen(null);
+                                    setViewAllRoute(null);
+                                    viewAllFetchTokenRef.current += 1;
+                                    setViewAllFullState({ status: 'idle' });
+                                    void handleSelectMediaItem(item);
+                                }}
+                                route={viewAllRoute}
+                            />
+                        </ErrorBoundary>
                     ) : (
                     <ScrollView contentContainerStyle={styles.content}>
                         {activeTab === 'home' &&
@@ -3031,27 +3114,87 @@ const filterHomeDisplaySections = (
     const radioVariants: HomeDisplaySection['variant'][] = ['radio'];
     const continuableVariants: HomeDisplaySection['variant'][] = ['continue'];
 
+    // Recents is mixed-type — keep the section but drop any items that don't
+    // belong in the active filter, so picking "Music" actually scrubs
+    // podcasts/audiobooks/radio out of the Recently Played strip.
+    const itemBelongsTo = (
+        item: AndroidRecentContentSourceItem,
+        bucket: HomeFilter,
+    ): boolean => {
+        const type = item.type;
+        switch (bucket) {
+            case 'all':
+                return true;
+            case 'music':
+                return (
+                    type === MobileHomeItemType.ALBUM ||
+                    type === MobileHomeItemType.ARTIST ||
+                    type === MobileHomeItemType.PLAYLIST ||
+                    type === MobileSearchItemType.ALBUM ||
+                    type === MobileSearchItemType.ARTIST ||
+                    type === MobileSearchItemType.PLAYLIST ||
+                    type === MobileSearchItemType.SONG
+                );
+            case 'podcasts':
+                return (
+                    type === MobileHomeItemType.PODCAST ||
+                    type === MobileSearchItemType.PODCAST
+                );
+            case 'audiobooks':
+                return (
+                    type === MobileHomeItemType.AUDIOBOOK ||
+                    type === MobileSearchItemType.AUDIOBOOK
+                );
+            case 'radio':
+                return (
+                    type === MobileHomeItemType.RADIO ||
+                    type === MobileSearchItemType.RADIO
+                );
+        }
+    };
+    const filterRecentsItems = (section: HomeDisplaySection) => {
+        if (section.variant !== 'recents') return section;
+        const filtered = section.items.filter((item) => itemBelongsTo(item, filter));
+        return { ...section, items: filtered };
+    };
+    const dropEmpty = (section: HomeDisplaySection) => section.items.length > 0;
+
     if (filter === 'music') {
-        return sections.filter(
-            (s) => musicVariants.includes(s.variant) || s.variant === 'recents',
-        );
+        return sections
+            .filter((s) => musicVariants.includes(s.variant) || s.variant === 'recents')
+            .map(filterRecentsItems)
+            .filter(dropEmpty);
     }
 
     if (filter === 'podcasts') {
-        return sections.filter(
-            (s) => podcastVariants.includes(s.variant) || continuableVariants.includes(s.variant),
-        );
+        return sections
+            .filter(
+                (s) =>
+                    podcastVariants.includes(s.variant) ||
+                    continuableVariants.includes(s.variant) ||
+                    s.variant === 'recents',
+            )
+            .map(filterRecentsItems)
+            .filter(dropEmpty);
     }
 
     if (filter === 'audiobooks') {
-        return sections.filter(
-            (s) =>
-                audiobookVariants.includes(s.variant) || continuableVariants.includes(s.variant),
-        );
+        return sections
+            .filter(
+                (s) =>
+                    audiobookVariants.includes(s.variant) ||
+                    continuableVariants.includes(s.variant) ||
+                    s.variant === 'recents',
+            )
+            .map(filterRecentsItems)
+            .filter(dropEmpty);
     }
 
     if (filter === 'radio') {
-        return sections.filter((s) => radioVariants.includes(s.variant));
+        return sections
+            .filter((s) => radioVariants.includes(s.variant) || s.variant === 'recents')
+            .map(filterRecentsItems)
+            .filter(dropEmpty);
     }
 
     return sections;
@@ -5288,27 +5431,18 @@ const HomeFilterGrid = ({
                         onPress={() => onSelectItem(item)}
                         style={styles.homeFilterGridTile}
                     >
-                        {item.artworkUrl ? (
-                            <Image
-                                source={{ uri: item.artworkUrl }}
-                                style={[
-                                    styles.homeFilterGridArtwork,
-                                    isPodcast && styles.homeFilterGridArtworkPodcast,
-                                ]}
-                            />
-                        ) : (
-                            <View
-                                style={[
-                                    styles.homeFilterGridArtwork,
-                                    styles.homeFilterGridArtworkFallback,
-                                    isPodcast && styles.homeFilterGridArtworkPodcast,
-                                ]}
-                            >
-                                <Text style={styles.mediaArtworkLetter}>
-                                    {item.title.slice(0, 1)}
-                                </Text>
-                            </View>
-                        )}
+                        <ArtworkImage
+                            fallbackStyle={[
+                                styles.homeFilterGridArtworkFallback,
+                                isPodcast && styles.homeFilterGridArtworkPodcast,
+                            ]}
+                            letter={item.title.slice(0, 1)}
+                            style={[
+                                styles.homeFilterGridArtwork,
+                                isPodcast && styles.homeFilterGridArtworkPodcast,
+                            ]}
+                            uri={item.artworkUrl}
+                        />
                         <Text numberOfLines={2} style={styles.mediaTitle}>
                             {item.title}
                         </Text>
@@ -5422,18 +5556,12 @@ const ContentSections = ({
                                         onPress={() => onSelectItem(item)}
                                         style={tileStyle}
                                     >
-                                        {item.artworkUrl ? (
-                                            <Image
-                                                source={{ uri: item.artworkUrl }}
-                                                style={artworkStyle}
-                                            />
-                                        ) : (
-                                            <View style={fallbackStyle}>
-                                                <Text style={styles.mediaArtworkLetter}>
-                                                    {item.title.slice(0, 1)}
-                                                </Text>
-                                            </View>
-                                        )}
+                                        <ArtworkImage
+                                            fallbackStyle={fallbackStyle}
+                                            letter={item.title.slice(0, 1)}
+                                            style={artworkStyle}
+                                            uri={item.artworkUrl}
+                                        />
                                         {isRecent ? (
                                             <View style={styles.mediaTypeBadge}>
                                                 <Text style={styles.mediaTypeBadgeText}>
@@ -9089,6 +9217,13 @@ const ViewAllScreen = ({
         const merged: MobileHomeItem[] = [];
         const seen = new Set<string>();
         for (const item of [...fullItems, ...route.items]) {
+            // Skip anything that doesn't have the minimum fields the FlatList
+            // renderItem expects. Without this guard, a server returning a
+            // partial record (eg an album with no id or title) crashed the
+            // whole screen at sort time on `.title.localeCompare(undefined)`.
+            if (!item || typeof item.id !== 'string' || typeof item.title !== 'string') {
+                continue;
+            }
             const key = getRecentContentItemKey(item);
             if (seen.has(key)) continue;
             seen.add(key);
@@ -9126,15 +9261,27 @@ const ViewAllScreen = ({
             const index = letterIndex.get(letter);
             if (typeof index !== 'number') return;
             // Round down to the start of the row in 2-column layouts so the
-            // first item of the chosen letter sits on the left.
-            const rowStartIndex = index - (index % 2);
-            listRef.current?.scrollToIndex({
-                animated: true,
-                index: rowStartIndex,
-                viewPosition: 0,
-            });
+            // first item of the chosen letter sits on the left. Clamp to the
+            // current data length so an out-of-bounds jump can't push the
+            // FlatList past its tail and trip native-side index assertions.
+            const rowStartIndex = Math.min(
+                Math.max(0, index - (index % 2)),
+                Math.max(0, sortedItems.length - 1),
+            );
+            try {
+                listRef.current?.scrollToIndex({
+                    animated: true,
+                    index: rowStartIndex,
+                    viewPosition: 0,
+                });
+            } catch (error) {
+                // scrollToIndex throws synchronously on some RN versions when
+                // the target row hasn't been measured yet. Don't take the
+                // screen down — onScrollToIndexFailed will pick up the slack.
+                console.warn('[ViewAllScreen] scrollToIndex threw', error);
+            }
         },
-        [letterIndex],
+        [letterIndex, sortedItems.length],
     );
 
     const renderItem = useCallback(
@@ -9147,27 +9294,18 @@ const ViewAllScreen = ({
                     onPress={() => onSelectItem(item)}
                     style={styles.viewAllTile}
                 >
-                    {item.artworkUrl ? (
-                        <Image
-                            source={{ uri: item.artworkUrl }}
-                            style={[
-                                styles.viewAllTileArtwork,
-                                isArtist && styles.libraryArtworkRound,
-                            ]}
-                        />
-                    ) : (
-                        <View
-                            style={[
-                                styles.viewAllTileArtwork,
-                                styles.viewAllTileArtworkFallback,
-                                isArtist && styles.libraryArtworkRound,
-                            ]}
-                        >
-                            <Text style={styles.mediaArtworkLetter}>
-                                {item.title.slice(0, 1).toUpperCase()}
-                            </Text>
-                        </View>
-                    )}
+                    <ArtworkImage
+                        fallbackStyle={[
+                            styles.viewAllTileArtworkFallback,
+                            isArtist && styles.libraryArtworkRound,
+                        ]}
+                        letter={item.title.slice(0, 1).toUpperCase()}
+                        style={[
+                            styles.viewAllTileArtwork,
+                            isArtist && styles.libraryArtworkRound,
+                        ]}
+                        uri={item.artworkUrl}
+                    />
                     <Text numberOfLines={1} style={styles.viewAllTileTitle}>
                         {item.title}
                     </Text>
@@ -9218,21 +9356,28 @@ const ViewAllScreen = ({
                         data={sortedItems}
                         keyExtractor={(item) => getContentItemKey(item)}
                         numColumns={2}
-                        // scrollToIndex can fail when the target row hasn't been
-                        // measured yet; fall back to an offset estimate and
-                        // re-attempt once layout settles.
+                        // scrollToIndex can fail when the target row hasn't
+                        // been measured yet. Fall back to an offset estimate
+                        // only when we have a sane averageItemLength to work
+                        // with, and don't retry on a setTimeout — successive
+                        // failures were spinning into a redbox-grade crash on
+                        // alphabet-letter taps for unmounted rows.
                         onScrollToIndexFailed={(info) => {
-                            const offset = info.averageItemLength * Math.floor(info.index / 2);
-                            listRef.current?.scrollToOffset({
-                                animated: true,
-                                offset,
-                            });
-                            setTimeout(() => {
-                                listRef.current?.scrollToIndex({
+                            const avg = info.averageItemLength;
+                            if (!Number.isFinite(avg) || avg <= 0) return;
+                            const offset = avg * Math.floor(info.index / 2);
+                            if (!Number.isFinite(offset) || offset < 0) return;
+                            try {
+                                listRef.current?.scrollToOffset({
                                     animated: true,
-                                    index: info.index,
+                                    offset,
                                 });
-                            }, 60);
+                            } catch (error) {
+                                console.warn(
+                                    '[ViewAllScreen] scrollToOffset threw',
+                                    error,
+                                );
+                            }
                         }}
                         ref={listRef}
                         renderItem={renderItem}
@@ -10696,6 +10841,11 @@ const styles = StyleSheet.create({
         color: colors.accent,
         fontSize: 48,
         fontWeight: '900',
+    },
+    artworkImageFallback: {
+        alignItems: 'center',
+        backgroundColor: 'rgba(255, 255, 255, 0.07)',
+        justifyContent: 'center',
     },
     mediaArtworkRadio: {
         backgroundColor: 'transparent',

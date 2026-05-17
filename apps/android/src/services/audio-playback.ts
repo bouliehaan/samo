@@ -136,3 +136,25 @@ export const subscribeToAndroidAudioEvents = (
 ) => {
     return eventEmitter?.addListener('SamoAudioPlaybackState', listener) ?? { remove: () => {} };
 };
+
+export interface AndroidNavigationRequestEvent {
+    /** -1 for previous, +1 for next. */
+    direction: number;
+}
+
+/**
+ * Fires when the user taps Previous / Next on the notification, lock screen,
+ * or hits a Bluetooth media-button. SamoForwardingPlayer surfaces these
+ * commands as always-available so the buttons actually appear in the system
+ * UI, but Samo's queue lives in JavaScript — this event lets the React side
+ * step the queue and call playAndroidAudio with the new track.
+ */
+export const subscribeToAndroidNavigationRequests = (
+    listener: (event: AndroidNavigationRequestEvent) => void,
+) => {
+    return (
+        eventEmitter?.addListener('SamoAudioNavigationRequest', listener) ?? {
+            remove: () => {},
+        }
+    );
+};
