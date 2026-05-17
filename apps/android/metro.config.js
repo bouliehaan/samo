@@ -40,6 +40,9 @@ config.resolver.resolveRequest = (context, moduleName, platform) => {
 };
 
 // Bump whenever resolver config changes so Metro discards its stale cache.
-config.cacheVersion = 'single-react-v6';
+// 2026-05-16: bumped after removing the manual worklets/plugin from
+// babel.config.js — Metro's previous bundles were transformed twice and need
+// to be invalidated.
+config.cacheVersion = 'single-react-v7-worklets-fix';
 
 module.exports = config;
