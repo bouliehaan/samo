@@ -34,22 +34,45 @@ import com.facebook.react.bridge.ReactMethod
 import com.facebook.react.bridge.ReadableMap
 import com.facebook.react.bridge.WritableMap
 import com.facebook.react.modules.core.DeviceEventManagerModule
+import com.google.android.gms.cast.MediaInfo as CastMediaInfo
+import com.google.android.gms.cast.MediaLoadRequestData
+import com.google.android.gms.cast.MediaMetadata as CastMediaMetadata
+import com.google.android.gms.cast.MediaStatus
+import com.google.android.gms.cast.framework.CastContext
+import com.google.android.gms.cast.framework.CastSession
+import com.google.android.gms.cast.framework.CastState
+import com.google.android.gms.cast.framework.CastStateListener
+import com.google.android.gms.cast.framework.SessionManagerListener
+import com.google.android.gms.cast.framework.media.RemoteMediaClient
+import com.google.android.gms.common.images.WebImage
 import java.util.UUID
+import java.util.concurrent.Executors
 
 class SamoAudioModule(
   private val reactContext: ReactApplicationContext
 ) : ReactContextBaseJavaModule(reactContext) {
   private val mainHandler = Handler(Looper.getMainLooper())
+  private val castExecutor = Executors.newSingleThreadExecutor()
   private var boundService: SamoPlaybackService? = null
+  private var castContext: CastContext? = null
+  private var castContextInitializing = false
+  private val pendingCastContextActions =
+    mutableListOf<Pair<(CastContext) -> Unit, (Exception) -> Unit>>()
+  private var castListenersInstalled = false
+  private var currentRemoteMediaClient: RemoteMediaClient? = null
   private var isBinding = false
   private val pendingServiceActions = mutableListOf<(SamoPlaybackService) -> Unit>()
   private var currentAudioTrackConfig: AudioSink.AudioTrackConfig? = null
   private var currentBitPerfectTruth = SamoBitPerfectTruth.unknown()
+  private var currentCastSource: SamoCastSource? = null
   private var currentHlsFallbackAttempted = false
   private var currentMediaItem: MediaItem? = null
   private var currentQuality: SamoAudioSourceQuality? = null
   private var currentSource: SamoAudioSourceSnapshot? = null
   private var currentSessionId: String? = null
+  private var lastCastPositionMs = 0L
+  private var liveReconnectAttempts = 0
+  private var pendingLiveReconnect: Runnable? = null
   private var playerListenersInstalledOn: ExoPlayer? = null
 
   private val serviceConnection = object : ServiceConnection {
@@ -80,6 +103,76 @@ class SamoAudioModule(
     }
   }
 
+  private val castStateListener = CastStateListener { state ->
+    emit("SamoAudioCastState", getCastStateMap(state))
+  }
+
+  private val castSessionListener = object : SessionManagerListener<CastSession> {
+    override fun onSessionStarting(session: CastSession) {
+      emit("SamoAudioCastState", getCastStateMap())
+    }
+
+    override fun onSessionStarted(session: CastSession, sessionId: String) {
+      attachRemoteMediaClient(session.remoteMediaClient)
+      handOffLocalPlaybackToCast()
+      emit("SamoAudioCastState", getCastStateMap())
+    }
+
+    override fun onSessionStartFailed(session: CastSession, error: Int) {
+      detachRemoteMediaClient()
+      emit("SamoAudioCastState", getCastStateMap())
+    }
+
+    override fun onSessionEnding(session: CastSession) {
+      lastCastPositionMs = session.remoteMediaClient?.approximateStreamPosition ?: lastCastPositionMs
+      emit("SamoAudioCastState", getCastStateMap())
+    }
+
+    override fun onSessionEnded(session: CastSession, error: Int) {
+      restoreLocalPlaybackPosition()
+      detachRemoteMediaClient()
+      emit("SamoAudioCastState", getCastStateMap())
+      emitState("paused")
+    }
+
+    override fun onSessionResuming(session: CastSession, sessionId: String) {
+      emit("SamoAudioCastState", getCastStateMap())
+    }
+
+    override fun onSessionResumed(session: CastSession, wasSuspended: Boolean) {
+      attachRemoteMediaClient(session.remoteMediaClient)
+      emit("SamoAudioCastState", getCastStateMap())
+      emitCastPlaybackState()
+    }
+
+    override fun onSessionResumeFailed(session: CastSession, error: Int) {
+      detachRemoteMediaClient()
+      emit("SamoAudioCastState", getCastStateMap())
+    }
+
+    override fun onSessionSuspended(session: CastSession, reason: Int) {
+      lastCastPositionMs = session.remoteMediaClient?.approximateStreamPosition ?: lastCastPositionMs
+      detachRemoteMediaClient()
+      emit("SamoAudioCastState", getCastStateMap())
+      emitState("paused")
+    }
+  }
+
+  private val remoteMediaClientCallback = object : RemoteMediaClient.Callback() {
+    override fun onStatusUpdated() {
+      emitCastPlaybackState()
+    }
+
+    override fun onMetadataUpdated() {
+      emitCastPlaybackState()
+    }
+  }
+
+  private val castProgressListener = RemoteMediaClient.ProgressListener { progressMs, _ ->
+    lastCastPositionMs = progressMs
+    emitCastPlaybackState()
+  }
+
   override fun getName(): String = "SamoAudio"
 
   @ReactMethod
@@ -90,6 +183,21 @@ class SamoAudioModule(
 
   @ReactMethod
   fun play(source: ReadableMap, promise: Promise) {
+    mainHandler.post {
+      if (getActiveRemoteMediaClient() != null) {
+        try {
+          playOnCast(source, promise)
+        } catch (error: Exception) {
+          promise.reject("SAMO_CAST_ERROR", error.message, error)
+        }
+        return@post
+      }
+
+      playLocally(source, promise)
+    }
+  }
+
+  private fun playLocally(source: ReadableMap, promise: Promise) {
     val url = getOptionalString(source, "url")
     if (url == null) {
       promise.reject("SAMO_AUDIO_ERROR", "Missing audio URL")
@@ -126,10 +234,12 @@ class SamoAudioModule(
       resolvedPlayer.stop()
       resolvedPlayer.clearMediaItems()
       clearPreferredMixerAttributes(service)
+      cancelPendingLiveReconnect()
       currentAudioTrackConfig = null
       currentHlsFallbackAttempted = mimeType == MimeTypes.APPLICATION_M3U8
       currentMediaItem = mediaItem
       currentQuality = quality
+      currentCastSource = getCastSource(source, url, mimeType, title, subtitle, artworkUrl, mediaId)
       currentBitPerfectTruth = buildBitPerfectTruth(
         audioTrackConfig = null,
         quality = quality,
@@ -154,55 +264,99 @@ class SamoAudioModule(
 
   @ReactMethod
   fun pause(promise: Promise) {
-    withService(promise) { service ->
-      // Critical: must use the existing player. ensurePlayer(emptyMap()) would
-      // see a header mismatch with whatever was used for play() and tear the
-      // current player down — silently stopping audio every time the user
-      // taps pause.
-      val resolvedPlayer = service.getCurrentPlayer()
-      if (resolvedPlayer == null) {
-        promise.resolve(getIdleStatusMap())
-        return@withService
+    mainHandler.post {
+      val remoteMediaClient = getActiveRemoteMediaClient()
+      if (remoteMediaClient != null) {
+        remoteMediaClient.pause()
+        emitCastPlaybackState("paused")
+        promise.resolve(getCastStatusMap("paused"))
+        return@post
       }
-      installListenersIfNeeded(resolvedPlayer)
-      resolvedPlayer.pause()
-      emitState("paused")
-      promise.resolve(getStatusMap(resolvedPlayer, "paused"))
+
+      withService(promise) { service ->
+        // Critical: must use the existing player. ensurePlayer(emptyMap()) would
+        // see a header mismatch with whatever was used for play() and tear the
+        // current player down — silently stopping audio every time the user
+        // taps pause.
+        val resolvedPlayer = service.getCurrentPlayer()
+        if (resolvedPlayer == null) {
+          promise.resolve(getIdleStatusMap())
+          return@withService
+        }
+        installListenersIfNeeded(resolvedPlayer)
+        resolvedPlayer.pause()
+        emitState("paused")
+        promise.resolve(getStatusMap(resolvedPlayer, "paused"))
+      }
     }
   }
 
   @ReactMethod
   fun resume(promise: Promise) {
-    withService(promise) { service ->
-      val resolvedPlayer = service.getCurrentPlayer()
-      if (resolvedPlayer == null) {
-        promise.resolve(getIdleStatusMap())
-        return@withService
+    mainHandler.post {
+      val remoteMediaClient = getActiveRemoteMediaClient()
+      if (remoteMediaClient != null) {
+        remoteMediaClient.play()
+        emitCastPlaybackState("playing")
+        promise.resolve(getCastStatusMap("playing"))
+        return@post
       }
-      installListenersIfNeeded(resolvedPlayer)
-      resolvedPlayer.play()
-      emitState("playing")
-      promise.resolve(getStatusMap(resolvedPlayer, "playing"))
+
+      withService(promise) { service ->
+        val resolvedPlayer = service.getCurrentPlayer()
+        if (resolvedPlayer == null) {
+          promise.resolve(getIdleStatusMap())
+          return@withService
+        }
+        installListenersIfNeeded(resolvedPlayer)
+        resolvedPlayer.play()
+        emitState("playing")
+        promise.resolve(getStatusMap(resolvedPlayer, "playing"))
+      }
     }
   }
 
   @ReactMethod
   fun seekTo(positionMs: Double, promise: Promise) {
-    withService(promise) { service ->
-      val resolvedPlayer = service.getCurrentPlayer()
-      if (resolvedPlayer == null) {
-        promise.resolve(getIdleStatusMap())
-        return@withService
+    mainHandler.post {
+      val remoteMediaClient = getActiveRemoteMediaClient()
+      if (remoteMediaClient != null) {
+        val nextPositionMs = positionMs.toLong().coerceAtLeast(0L)
+        remoteMediaClient.seek(nextPositionMs)
+        lastCastPositionMs = nextPositionMs
+        emitCastPlaybackState()
+        promise.resolve(getCastStatusMap())
+        return@post
       }
-      installListenersIfNeeded(resolvedPlayer)
-      resolvedPlayer.seekTo(positionMs.toLong())
-      promise.resolve(getStatusMap(resolvedPlayer))
+
+      withService(promise) { service ->
+        val resolvedPlayer = service.getCurrentPlayer()
+        if (resolvedPlayer == null) {
+          promise.resolve(getIdleStatusMap())
+          return@withService
+        }
+        installListenersIfNeeded(resolvedPlayer)
+        resolvedPlayer.seekTo(positionMs.toLong())
+        promise.resolve(getStatusMap(resolvedPlayer))
+      }
     }
   }
 
   @ReactMethod
   fun stop(promise: Promise) {
     mainHandler.post {
+      val remoteMediaClient = getActiveRemoteMediaClient()
+      if (remoteMediaClient != null) {
+        remoteMediaClient.stop()
+        currentCastSource = null
+        currentSource = null
+        currentSessionId = null
+        lastCastPositionMs = 0L
+        emitState("idle")
+        promise.resolve(getIdleStatusMap())
+        return@post
+      }
+
       val service = boundService
       if (service == null) {
         promise.resolve(getIdleStatusMap())
@@ -211,7 +365,9 @@ class SamoAudioModule(
       try {
         service.resetPlayerState()
         clearPreferredMixerAttributes(service)
+        cancelPendingLiveReconnect()
         currentAudioTrackConfig = null
+        currentCastSource = null
         currentHlsFallbackAttempted = false
         currentMediaItem = null
         currentQuality = null
@@ -231,6 +387,12 @@ class SamoAudioModule(
   @ReactMethod
   fun getStatus(promise: Promise) {
     mainHandler.post {
+      val remoteMediaClient = getActiveRemoteMediaClient()
+      if (remoteMediaClient != null) {
+        promise.resolve(getCastStatusMap())
+        return@post
+      }
+
       val service = boundService
       if (service == null) {
         promise.resolve(getIdleStatusMap())
@@ -252,6 +414,14 @@ class SamoAudioModule(
     promise.resolve(getAudioDeviceInfoMap())
   }
 
+  @ReactMethod
+  fun getCastState(promise: Promise) {
+    withCastContext(
+      onReady = { context -> promise.resolve(getCastStateMap(context.getCastState())) },
+      onError = { promise.resolve(getUnavailableCastStateMap()) }
+    )
+  }
+
   override fun invalidate() {
     mainHandler.post {
       val service = boundService
@@ -267,15 +437,397 @@ class SamoAudioModule(
       } catch (_: Exception) {
         // Service may not be bound; that's fine.
       }
+      castContext?.let { context ->
+        if (castListenersInstalled) {
+          context.removeCastStateListener(castStateListener)
+          context.sessionManager.removeSessionManagerListener(
+            castSessionListener,
+            CastSession::class.java
+          )
+        }
+      }
+      detachRemoteMediaClient()
+      cancelPendingLiveReconnect()
       boundService = null
+      castContext = null
+      castContextInitializing = false
+      castListenersInstalled = false
+      pendingCastContextActions.clear()
       playerListenersInstalledOn = null
       currentAudioTrackConfig = null
+      currentCastSource = null
       currentHlsFallbackAttempted = false
       currentMediaItem = null
       currentQuality = null
       currentBitPerfectTruth = SamoBitPerfectTruth.unknown()
       currentSource = null
       currentSessionId = null
+    }
+  }
+
+  private fun withCastContext(
+    onReady: (CastContext) -> Unit,
+    onError: (Exception) -> Unit
+  ) {
+    mainHandler.post {
+      val existing = castContext
+      if (existing != null) {
+        try {
+          onReady(existing)
+        } catch (error: Exception) {
+          onError(error)
+        }
+        return@post
+      }
+
+      pendingCastContextActions.add(Pair(onReady, onError))
+
+      if (castContextInitializing) {
+        return@post
+      }
+      castContextInitializing = true
+
+      try {
+        CastContext
+          .getSharedInstance(reactContext.applicationContext, castExecutor)
+          .addOnSuccessListener { context ->
+            mainHandler.post {
+              castContext = context
+              castContextInitializing = false
+              installCastListenersIfNeeded(context)
+              attachRemoteMediaClient(context.sessionManager.currentCastSession?.remoteMediaClient)
+
+              val pending = pendingCastContextActions.toList()
+              pendingCastContextActions.clear()
+              pending.forEach { (ready, errorHandler) ->
+                try {
+                  ready(context)
+                } catch (error: Exception) {
+                  errorHandler(error)
+                }
+              }
+            }
+          }
+          .addOnFailureListener { error ->
+            mainHandler.post {
+              castContextInitializing = false
+              val pending = pendingCastContextActions.toList()
+              pendingCastContextActions.clear()
+              pending.forEach { (_, errorHandler) -> errorHandler(error) }
+            }
+          }
+      } catch (error: Exception) {
+        castContextInitializing = false
+        val pending = pendingCastContextActions.toList()
+        pendingCastContextActions.clear()
+        pending.forEach { (_, errorHandler) -> errorHandler(error) }
+      }
+    }
+  }
+
+  private fun installCastListenersIfNeeded(context: CastContext) {
+    if (castListenersInstalled) {
+      return
+    }
+
+    context.addCastStateListener(castStateListener)
+    context.sessionManager.addSessionManagerListener(castSessionListener, CastSession::class.java)
+    castListenersInstalled = true
+  }
+
+  private fun attachRemoteMediaClient(remoteMediaClient: RemoteMediaClient?) {
+    if (currentRemoteMediaClient === remoteMediaClient) {
+      return
+    }
+
+    detachRemoteMediaClient()
+    currentRemoteMediaClient = remoteMediaClient
+    remoteMediaClient?.registerCallback(remoteMediaClientCallback)
+    remoteMediaClient?.addProgressListener(castProgressListener, 1000L)
+  }
+
+  private fun detachRemoteMediaClient() {
+    currentRemoteMediaClient?.removeProgressListener(castProgressListener)
+    currentRemoteMediaClient?.unregisterCallback(remoteMediaClientCallback)
+    currentRemoteMediaClient = null
+  }
+
+  private fun getActiveRemoteMediaClient(): RemoteMediaClient? {
+    val session = castContext?.sessionManager?.currentCastSession
+    val remoteMediaClient = session?.remoteMediaClient ?: currentRemoteMediaClient
+
+    return if (session?.isConnected == true && remoteMediaClient != null) {
+      attachRemoteMediaClient(remoteMediaClient)
+      remoteMediaClient
+    } else {
+      null
+    }
+  }
+
+  private fun playOnCast(source: ReadableMap, promise: Promise) {
+    val url = getOptionalString(source, "url")
+    if (url == null) {
+      promise.reject("SAMO_CAST_ERROR", "Missing audio URL")
+      return
+    }
+
+    val sessionId = getOptionalString(source, "sessionId") ?: UUID.randomUUID().toString()
+    val title = getOptionalString(source, "title") ?: "Samo"
+    val subtitle = getOptionalString(source, "subtitle")
+    val artworkUrl = getOptionalString(source, "artworkUrl")
+    val mediaId = getOptionalString(source, "id") ?: sessionId
+    val mimeType = getMediaItemMimeType(url, getOptionalString(source, "mimeType"))
+    val sourceLabel = getOptionalString(source, "source")
+    val castSource = getCastSource(source, url, mimeType, title, subtitle, artworkUrl, mediaId)
+
+    currentSource = SamoAudioSourceSnapshot(
+      artworkUrl = artworkUrl,
+      id = mediaId,
+      source = sourceLabel,
+      subtitle = subtitle,
+      title = title
+    )
+    currentSessionId = sessionId
+    currentCastSource = castSource
+    cancelPendingLiveReconnect()
+
+    val resolvedPlayer = boundService?.getCurrentPlayer()
+    val startPositionMs = resolvedPlayer?.currentPosition ?: getInitialPositionMs(source)
+    resolvedPlayer?.pause()
+
+    loadCastSource(castSource, startPositionMs, true)
+    emitState("buffering")
+    promise.resolve(getCastStatusMap("buffering"))
+  }
+
+  private fun handOffLocalPlaybackToCast() {
+    val castSource = currentCastSource ?: return
+    val resolvedPlayer = boundService?.getCurrentPlayer()
+    val startPositionMs = resolvedPlayer?.currentPosition ?: lastCastPositionMs
+    val autoplay = resolvedPlayer?.isPlaying ?: true
+
+    resolvedPlayer?.pause()
+    try {
+      loadCastSource(castSource, startPositionMs, autoplay)
+      emitState("buffering")
+    } catch (error: Exception) {
+      val event = getCastStatusMap("error")
+      event.putString("message", error.message ?: "Chromecast playback failed")
+      emit("SamoAudioPlaybackState", event)
+    }
+  }
+
+  private fun restoreLocalPlaybackPosition() {
+    val resolvedPlayer = boundService?.getCurrentPlayer() ?: return
+    if (lastCastPositionMs > 0) {
+      try {
+        resolvedPlayer.seekTo(lastCastPositionMs)
+      } catch (_: Exception) {
+        // Best effort; route teardown should not break the Cast session cleanup path.
+      }
+    }
+    resolvedPlayer.pause()
+  }
+
+  private fun loadCastSource(source: SamoCastSource, positionMs: Long, autoplay: Boolean) {
+    val remoteMediaClient = getActiveRemoteMediaClient()
+      ?: throw IllegalStateException("No active Chromecast session")
+    val contentUrl = source.url
+
+    if (!contentUrl.startsWith("http://") && !contentUrl.startsWith("https://")) {
+      throw IllegalArgumentException("Chromecast can only play network URLs.")
+    }
+    if (source.hasHttpHeaders) {
+      throw IllegalArgumentException(
+        "This source needs private request headers, which the default Chromecast receiver cannot send."
+      )
+    }
+
+    val metadata = CastMediaMetadata(CastMediaMetadata.MEDIA_TYPE_MUSIC_TRACK).apply {
+      putString(CastMediaMetadata.KEY_TITLE, source.title)
+      source.subtitle?.let { putString(CastMediaMetadata.KEY_ARTIST, it) }
+      source.album?.let { putString(CastMediaMetadata.KEY_ALBUM_TITLE, it) }
+      source.artworkUrl?.let { artwork ->
+        if (artwork.startsWith("http://") || artwork.startsWith("https://")) {
+          addImage(WebImage(Uri.parse(artwork)))
+        }
+      }
+    }
+    val streamType = if (source.isLive) {
+      CastMediaInfo.STREAM_TYPE_LIVE
+    } else {
+      CastMediaInfo.STREAM_TYPE_BUFFERED
+    }
+    val mediaInfoBuilder = CastMediaInfo.Builder(contentUrl)
+      .setContentUrl(contentUrl)
+      .setContentType(getCastContentType(contentUrl, source.mimeType))
+      .setMetadata(metadata)
+      .setStreamType(streamType)
+
+    if (!source.isLive && source.durationMs != null && source.durationMs > 0) {
+      mediaInfoBuilder.setStreamDuration(source.durationMs)
+    }
+
+    val loadRequest = MediaLoadRequestData.Builder()
+      .setAutoplay(autoplay)
+      .setCurrentTime(positionMs.coerceAtLeast(0L))
+      .setMediaInfo(mediaInfoBuilder.build())
+      .build()
+
+    remoteMediaClient.load(loadRequest)
+  }
+
+  private fun emitCastPlaybackState(status: String? = null) {
+    if (getActiveRemoteMediaClient() == null || currentCastSource == null) {
+      return
+    }
+
+    emit("SamoAudioPlaybackState", getCastStatusMap(status))
+  }
+
+  private fun getCastStatusMap(status: String? = null): WritableMap {
+    val remoteMediaClient = getActiveRemoteMediaClient()
+    val map = Arguments.createMap()
+    val source = currentSource
+    val duration = remoteMediaClient?.streamDuration ?: currentCastSource?.durationMs ?: -1L
+    val position = remoteMediaClient?.approximateStreamPosition ?: lastCastPositionMs
+    val resolvedStatus = status ?: getCurrentCastPlaybackStatus(remoteMediaClient)
+    val castMap = Arguments.createMap()
+    val session = castContext?.sessionManager?.currentCastSession
+
+    map.putString("sessionId", currentSessionId)
+    map.putString("status", resolvedStatus)
+    map.putDouble("positionMs", position.toDouble())
+    map.putDouble("durationMs", if (duration > 0) duration.toDouble() else -1.0)
+    map.putBoolean("isPlaying", resolvedStatus == "playing" || resolvedStatus == "buffering")
+    map.putMap("bitPerfect", getBitPerfectTruthMap(getCastBitPerfectTruth()))
+
+    castMap.putBoolean("isConnected", session?.isConnected == true)
+    castMap.putString("deviceName", session?.castDevice?.friendlyName)
+    map.putMap("cast", castMap)
+
+    if (source != null) {
+      val sourceMap = Arguments.createMap()
+
+      sourceMap.putString("id", source.id)
+      sourceMap.putString("source", source.source)
+      sourceMap.putString("title", source.title)
+      sourceMap.putString("subtitle", source.subtitle)
+      sourceMap.putString("artworkUrl", source.artworkUrl)
+      map.putMap("source", sourceMap)
+    }
+
+    return map
+  }
+
+  private fun getCurrentCastPlaybackStatus(remoteMediaClient: RemoteMediaClient?): String {
+    if (remoteMediaClient == null || !remoteMediaClient.hasMediaSession()) {
+      return "idle"
+    }
+
+    return when (remoteMediaClient.playerState) {
+      MediaStatus.PLAYER_STATE_BUFFERING -> "buffering"
+      MediaStatus.PLAYER_STATE_PLAYING -> "playing"
+      MediaStatus.PLAYER_STATE_PAUSED -> "paused"
+      MediaStatus.PLAYER_STATE_IDLE -> {
+        if (remoteMediaClient.idleReason == MediaStatus.IDLE_REASON_FINISHED) "ended" else "idle"
+      }
+      else -> "idle"
+    }
+  }
+
+  private fun getCastSource(
+    source: ReadableMap,
+    localUrl: String,
+    localMimeType: String?,
+    title: String,
+    subtitle: String?,
+    artworkUrl: String?,
+    mediaId: String
+  ): SamoCastSource {
+    val castUrl = getOptionalString(source, "castUrl") ?: localUrl
+    val castMimeType = getMediaItemMimeType(
+      castUrl,
+      getOptionalString(source, "castMimeType") ?: localMimeType
+    )
+    val sourceLabel = getOptionalString(source, "source")
+    val castHeaders = getHttpHeaders(source, "castHttpHeaders")
+    val localHeaders = getHttpHeaders(source)
+
+    return SamoCastSource(
+      album = getOptionalString(source, "album"),
+      artworkUrl = getOptionalString(source, "castArtworkUrl") ?: artworkUrl,
+      durationMs = getOptionalDouble(source, "durationSeconds")?.times(1000)?.toLong(),
+      hasHttpHeaders = castHeaders.isNotEmpty() ||
+        (getOptionalString(source, "castUrl") == null && localHeaders.isNotEmpty()),
+      id = mediaId,
+      isLive = getOptionalBoolean(source, "castIsLive")
+        ?: getOptionalBoolean(source, "isLive")
+        ?: sourceLabel == "radio",
+      mimeType = castMimeType,
+      subtitle = getOptionalString(source, "castSubtitle") ?: subtitle,
+      title = getOptionalString(source, "castTitle") ?: title,
+      url = castUrl
+    )
+  }
+
+  private fun getInitialPositionMs(source: ReadableMap): Long {
+    return getOptionalDouble(source, "initialPositionSeconds")?.times(1000)?.toLong() ?: 0L
+  }
+
+  private fun getCastContentType(url: String, mimeType: String?): String {
+    val normalizedMimeType = mimeType?.lowercase()
+    val normalizedUrl = url.lowercase()
+
+    return when {
+      normalizedMimeType?.contains("mpegurl") == true ||
+        normalizedUrl.contains(".m3u8") -> "application/x-mpegURL"
+      !normalizedMimeType.isNullOrBlank() -> mimeType
+      normalizedUrl.endsWith(".flac") -> "audio/flac"
+      normalizedUrl.endsWith(".aac") -> "audio/aac"
+      normalizedUrl.endsWith(".m4a") -> "audio/mp4"
+      normalizedUrl.endsWith(".ogg") || normalizedUrl.endsWith(".oga") -> "audio/ogg"
+      normalizedUrl.endsWith(".opus") -> "audio/ogg; codecs=opus"
+      normalizedUrl.endsWith(".wav") -> "audio/wav"
+      else -> "audio/mpeg"
+    }
+  }
+
+  private fun getCastBitPerfectTruth(): SamoBitPerfectTruth {
+    return SamoBitPerfectTruth(
+      activeClaim = "unknown",
+      evidence = listOf("Playback is routed to Chromecast; Android AudioTrack output is not active.")
+    )
+  }
+
+  private fun getCastStateMap(state: Int? = null): WritableMap {
+    val context = castContext
+    val session = context?.sessionManager?.currentCastSession
+    val resolvedState = state ?: context?.getCastState() ?: CastState.NO_DEVICES_AVAILABLE
+    val map = Arguments.createMap()
+
+    map.putString("status", getCastStateLabel(resolvedState))
+    map.putBoolean("isConnected", session?.isConnected == true)
+    map.putString("deviceName", session?.castDevice?.friendlyName)
+
+    return map
+  }
+
+  private fun getUnavailableCastStateMap(): WritableMap {
+    val map = Arguments.createMap()
+
+    map.putString("status", "unavailable")
+    map.putBoolean("isConnected", false)
+    return map
+  }
+
+  private fun getCastStateLabel(state: Int): String {
+    return when (state) {
+      CastState.CONNECTED -> "connected"
+      CastState.CONNECTING -> "connecting"
+      CastState.NOT_CONNECTED -> "not-connected"
+      CastState.NO_DEVICES_AVAILABLE -> "no-devices"
+      else -> "unavailable"
     }
   }
 
@@ -341,6 +893,10 @@ class SamoAudioModule(
 
     player.addListener(object : Player.Listener {
       override fun onIsPlayingChanged(isPlaying: Boolean) {
+        if (isPlaying) {
+          // Stream is alive — give the next failure a fresh retry budget.
+          liveReconnectAttempts = 0
+        }
         emitState(if (isPlaying) "playing" else getCurrentStatus(player))
       }
 
@@ -350,6 +906,10 @@ class SamoAudioModule(
 
       override fun onPlayerError(error: PlaybackException) {
         if (retryCurrentSourceAsHls(player, error)) {
+          return
+        }
+
+        if (scheduleLiveReconnect(player, error)) {
           return
         }
 
@@ -399,6 +959,11 @@ class SamoAudioModule(
   }
 
   private fun emitState(status: String? = null) {
+    if (getActiveRemoteMediaClient() != null && currentCastSource != null) {
+      emit("SamoAudioPlaybackState", getCastStatusMap(status))
+      return
+    }
+
     val resolvedPlayer = boundService?.getCurrentPlayer()
     val event = if (resolvedPlayer == null) getIdleStatusMap() else getStatusMap(resolvedPlayer, status)
 
@@ -421,16 +986,86 @@ class SamoAudioModule(
     }
   }
 
+  /**
+   * Errors that frequently signal "this is actually an HLS stream the
+   * default sniffer didn't recognize." Most internet-radio aggregators
+   * (and a chunk of ABS-transcoded audiobook output) serve HLS playlists
+   * with mislabeled Content-Type headers, or use just enough non-standard
+   * container framing to fail the progressive parser. Retrying once as
+   * HLS recovers from all of these cheaply.
+   */
+  private val HLS_FALLBACK_ERROR_CODES = setOf(
+    PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED,
+    PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED,
+    PlaybackException.ERROR_CODE_PARSING_MANIFEST_UNSUPPORTED,
+    PlaybackException.ERROR_CODE_PARSING_MANIFEST_MALFORMED,
+    PlaybackException.ERROR_CODE_IO_INVALID_HTTP_CONTENT_TYPE,
+  )
+
+  /** Caps how many times we'll bounce a live stream back through prepare()
+   *  before surfacing the error to the user. Combined with the LoadErrorHandling
+   *  policy's 8 inner retries, that's >40 retry attempts across a single
+   *  source — enough headroom for a long string of fast Wi-Fi handoffs. */
+  private val MAX_LIVE_RECONNECT_ATTEMPTS = 5
+
+  private fun scheduleLiveReconnect(
+    resolvedPlayer: ExoPlayer,
+    error: PlaybackException
+  ): Boolean {
+    // Only auto-retry for live sources — for fixed-duration tracks an error
+    // usually means the file is bad and looping prepare() would mask it.
+    if (currentSource?.source != "radio") return false
+    if (liveReconnectAttempts >= MAX_LIVE_RECONNECT_ATTEMPTS) return false
+    val item = currentMediaItem ?: return false
+
+    liveReconnectAttempts += 1
+    val attempt = liveReconnectAttempts
+    Log.w(
+      "SamoAudio",
+      "Radio stream error (${error.errorCodeName}); reconnect attempt $attempt/$MAX_LIVE_RECONNECT_ATTEMPTS"
+    )
+
+    // First retry fires fast (the typical case: Wi-Fi blip already
+    // resolved). Subsequent retries back off so a genuinely unreachable
+    // server doesn't get hammered.
+    val delayMs = when (attempt) {
+      1 -> 500L
+      2 -> 1_500L
+      3 -> 3_000L
+      else -> 5_000L
+    }
+
+    pendingLiveReconnect?.let { mainHandler.removeCallbacks(it) }
+    val reconnect = Runnable {
+      pendingLiveReconnect = null
+      // Bail if the source changed while we were waiting.
+      if (currentSource?.source != "radio" || currentMediaItem !== item) return@Runnable
+      resolvedPlayer.stop()
+      resolvedPlayer.clearMediaItems()
+      resolvedPlayer.setMediaItem(item)
+      resolvedPlayer.prepare()
+      resolvedPlayer.playWhenReady = true
+      emitState("buffering")
+    }
+    pendingLiveReconnect = reconnect
+    mainHandler.postDelayed(reconnect, delayMs)
+    emitState("buffering")
+    return true
+  }
+
+  private fun cancelPendingLiveReconnect() {
+    pendingLiveReconnect?.let { mainHandler.removeCallbacks(it) }
+    pendingLiveReconnect = null
+    liveReconnectAttempts = 0
+  }
+
   private fun retryCurrentSourceAsHls(
     resolvedPlayer: ExoPlayer,
     error: PlaybackException
   ): Boolean {
     val mediaItem = currentMediaItem ?: return false
 
-    if (
-      currentHlsFallbackAttempted ||
-        error.errorCode != PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED
-    ) {
+    if (currentHlsFallbackAttempted || error.errorCode !in HLS_FALLBACK_ERROR_CODES) {
       return false
     }
 
@@ -439,7 +1074,7 @@ class SamoAudioModule(
       .setMimeType(MimeTypes.APPLICATION_M3U8)
       .build()
 
-    Log.w("SamoAudio", "Retrying current source as HLS after unsupported container parse.")
+    Log.w("SamoAudio", "Retrying current source as HLS after ${error.errorCodeName}.")
     resolvedPlayer.stop()
     resolvedPlayer.clearMediaItems()
     resolvedPlayer.setMediaItem(currentMediaItem!!)
@@ -465,12 +1100,12 @@ class SamoAudioModule(
     return source.getBoolean(key)
   }
 
-  private fun getHttpHeaders(source: ReadableMap): Map<String, String> {
-    if (!source.hasKey("httpHeaders") || source.isNull("httpHeaders")) {
+  private fun getHttpHeaders(source: ReadableMap, key: String = "httpHeaders"): Map<String, String> {
+    if (!source.hasKey(key) || source.isNull(key)) {
       return emptyMap()
     }
 
-    val headers = source.getMap("httpHeaders") ?: return emptyMap()
+    val headers = source.getMap(key) ?: return emptyMap()
     val iterator = headers.keySetIterator()
     val result = mutableMapOf<String, String>()
 
@@ -509,6 +1144,14 @@ class SamoAudioModule(
     }
 
     return source.getDouble(key).toInt()
+  }
+
+  private fun getOptionalDouble(source: ReadableMap, key: String): Double? {
+    if (!source.hasKey(key) || source.isNull(key)) {
+      return null
+    }
+
+    return source.getDouble(key)
   }
 
   private fun getSourceQuality(source: ReadableMap): SamoAudioSourceQuality {
@@ -937,6 +1580,19 @@ class SamoAudioModule(
     val source: String?,
     val subtitle: String?,
     val title: String
+  )
+
+  internal data class SamoCastSource(
+    val album: String?,
+    val artworkUrl: String?,
+    val durationMs: Long?,
+    val hasHttpHeaders: Boolean,
+    val id: String,
+    val isLive: Boolean,
+    val mimeType: String?,
+    val subtitle: String?,
+    val title: String,
+    val url: String
   )
 
   internal data class SamoAudioSourceQuality(

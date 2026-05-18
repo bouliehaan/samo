@@ -20,6 +20,8 @@ import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
+import androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 
@@ -161,8 +163,17 @@ class SamoPlaybackService : MediaSessionService() {
             .setEnableAudioFloatOutput(true)
         val httpDataSourceFactory = DefaultHttpDataSource.Factory()
             .setDefaultRequestProperties(requestHeaders)
+            // The default 8-second connect timeout is too tight for live
+            // radio: a Wi-Fi handoff often eats 3-5 seconds, and stacking
+            // one with a TLS handshake exceeds the default before the
+            // network is even back. Give the connection enough slack to
+            // ride out the gap.
+            .setConnectTimeoutMs(15_000)
+            .setReadTimeoutMs(15_000)
+            .setAllowCrossProtocolRedirects(true)
         val dataSourceFactory = DefaultDataSource.Factory(this, httpDataSourceFactory)
         val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory)
+            .setLoadErrorHandlingPolicy(SamoLoadErrorHandlingPolicy())
         val createdPlayer = ExoPlayer.Builder(this, renderersFactory)
             .setMediaSourceFactory(mediaSourceFactory)
             .build()
@@ -265,5 +276,30 @@ class SamoPlaybackService : MediaSessionService() {
         const val ACTION_BIND_LOCAL = "app.samo.android.audio.BIND_LOCAL"
         private const val NOTIFICATION_ID = 1001
         private const val NOTIFICATION_CHANNEL_ID = "samo-playback"
+    }
+}
+
+/**
+ * Custom load-error policy for ExoPlayer. The default
+ * `DefaultLoadErrorHandlingPolicy` allows 3 retries with 1s/2s/4s backoff —
+ * that's enough for stable Wi-Fi but cuts out the moment a handoff to a
+ * different AP takes longer than 7 seconds total. For internet radio (and
+ * live HLS audiobook transcodes) we want to ride out longer blips without
+ * surfacing an error to the user.
+ *
+ * The retry count is bumped from 3 → 8 and the per-retry delay capped at
+ * 3s so the wall-clock recovery window grows from ~7s to ~24s without any
+ * single retry stalling for half a minute the way the default exponential
+ * backoff can.
+ */
+private class SamoLoadErrorHandlingPolicy : DefaultLoadErrorHandlingPolicy() {
+    override fun getMinimumLoadableRetryCount(dataType: Int): Int = 8
+
+    override fun getRetryDelayMsFor(
+        loadErrorInfo: LoadErrorHandlingPolicy.LoadErrorInfo,
+    ): Long {
+        val base = super.getRetryDelayMsFor(loadErrorInfo)
+        if (base == C.TIME_UNSET) return base
+        return base.coerceAtMost(3_000L)
     }
 }

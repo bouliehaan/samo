@@ -158,6 +158,8 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer:1.10.1")
     implementation("androidx.media3:media3-exoplayer-hls:1.10.1")
     implementation("androidx.media3:media3-session:1.10.1")
+    implementation("androidx.mediarouter:mediarouter:1.8.1")
+    implementation("com.google.android.gms:play-services-cast-framework:22.3.1")
     // Palette extracts a tasteful dominant color from cover art so the
     // notification gets a colored background that matches the artwork
     // without looking like a screenshot — classy, not gaudy.

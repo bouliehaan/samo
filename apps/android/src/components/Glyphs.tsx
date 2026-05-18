@@ -2,6 +2,7 @@ import { SamoMobileTabId } from '@samo/core/navigation';
 import { Image, type ImageSourcePropType, Text, View } from 'react-native';
 import Svg, { Circle as SvgCircle } from 'react-native-svg';
 
+import chromecastIcon from '../../../../assets/icons/chromecast.png';
 import heartIcon from '../../assets/icons/heart.png';
 import shuffleIcon from '../../assets/icons/shuffle.png';
 import sleepTimerIcon from '../../assets/icons/sleep-timer.png';
@@ -149,13 +150,13 @@ export const SleepTimerGlyph = ({ active, color }: { active?: boolean; color: st
     return <FullPlayerImageGlyph active={active} color={color} size={24} source={sleepTimerIcon} />;
 };
 
-export const CastGlyph = ({ color = colors.text }: { color?: string }) => {
+export const CastGlyph = ({ color = colors.text, size = 22 }: { color?: string; size?: number }) => {
     return (
-        <View style={[styles.castGlyph, { borderColor: color }]}>
-            <View style={[styles.castGlyphDot, { backgroundColor: color }]} />
-            <View style={[styles.castGlyphWaveSmall, { borderColor: color }]} />
-            <View style={[styles.castGlyphWaveLarge, { borderColor: color }]} />
-        </View>
+        <Image
+            resizeMode="contain"
+            source={chromecastIcon}
+            style={{ height: size, tintColor: color, width: size }}
+        />
     );
 };
 
@@ -545,6 +546,51 @@ export const DownloadGlyph = ({ color }: { color: string }) => {
                     height: 2,
                     marginTop: 2,
                     width: 14,
+                }}
+            />
+        </View>
+    );
+};
+
+/**
+ * Inline "this single track is saved offline" badge for track-list rows.
+ * Kept intentionally small and grey so it reads as row metadata, not an action.
+ */
+export const TrackDownloadedGlyph = ({ size = 12 }: { size?: number }) => {
+    const knockout = colors.background;
+    const shaftWidth = Math.max(1.1, size * 0.13);
+    const shaftHeight = size * 0.22;
+    const headWidth = size * 0.46;
+    const headHeight = size * 0.22;
+    return (
+        <View
+            style={{
+                alignItems: 'center',
+                backgroundColor: colors.muted,
+                borderRadius: size / 2,
+                height: size,
+                justifyContent: 'center',
+                width: size,
+            }}
+        >
+            <View
+                style={{
+                    backgroundColor: knockout,
+                    borderRadius: 0.5,
+                    height: shaftHeight,
+                    width: shaftWidth,
+                }}
+            />
+            <View
+                style={{
+                    borderLeftColor: 'transparent',
+                    borderLeftWidth: headWidth / 2,
+                    borderRightColor: 'transparent',
+                    borderRightWidth: headWidth / 2,
+                    borderTopColor: knockout,
+                    borderTopWidth: headHeight,
+                    height: 0,
+                    width: 0,
                 }}
             />
         </View>

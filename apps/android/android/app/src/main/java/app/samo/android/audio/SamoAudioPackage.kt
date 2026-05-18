@@ -15,6 +15,6 @@ class SamoAudioPackage : ReactPackage {
   override fun createViewManagers(
     reactContext: ReactApplicationContext
   ): List<ViewManager<*, *>> {
-    return emptyList()
+    return listOf(SamoCastButtonManager())
   }
 }

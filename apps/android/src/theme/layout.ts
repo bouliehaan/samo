@@ -58,6 +58,6 @@ export const VIEW_ALL_TILE_SIZE = Math.floor(
 );
 export const VIEW_ALL_TILE_HEIGHT = VIEW_ALL_TILE_SIZE + 6 + 18 + 16;
 export const VIEW_ALL_ROW_HEIGHT = VIEW_ALL_TILE_HEIGHT + HOME_TILE_GAP;
-export const VIEW_ALL_INITIAL_ITEMS = 12;
-export const VIEW_ALL_RENDER_BATCH = 12;
-export const VIEW_ALL_WINDOW_SIZE = 7;
+export const VIEW_ALL_INITIAL_ITEMS = 8;
+export const VIEW_ALL_RENDER_BATCH = 8;
+export const VIEW_ALL_WINDOW_SIZE = 5;

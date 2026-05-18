@@ -18,6 +18,10 @@ export interface AndroidAudioDeviceInfo {
 
 export interface AndroidNativePlaybackEvent {
     bitPerfect?: AndroidPlaybackTruth;
+    cast?: {
+        deviceName?: string;
+        isConnected: boolean;
+    };
     durationMs?: number;
     isPlaying?: boolean;
     message?: string;
@@ -41,6 +45,12 @@ export type AndroidNativePlaybackStatus =
     | 'paused'
     | 'playing';
 
+export interface AndroidCastState {
+    deviceName?: string;
+    isConnected: boolean;
+    status: 'connected' | 'connecting' | 'no-devices' | 'not-connected' | 'unavailable';
+}
+
 export interface AndroidPlaybackTruth {
     activeClaim: 'bit-perfect-active' | 'not-bit-perfect' | 'unknown';
     directBitstreamSupported?: boolean;
@@ -59,10 +69,20 @@ export interface AndroidPlaybackTruth {
 interface SamoAudioNativeModule {
     addListener: (eventName: string) => void;
     getAudioDeviceInfo: () => Promise<AndroidAudioDeviceInfo>;
+    getCastState: () => Promise<AndroidCastState>;
     getStatus: () => Promise<AndroidNativePlaybackEvent>;
     pause: () => Promise<AndroidNativePlaybackEvent>;
     play: (
-        source: MobilePlayableAudio & { sessionId: string },
+        source: MobilePlayableAudio & {
+            castArtworkUrl?: string;
+            castHttpHeaders?: Record<string, string>;
+            castIsLive?: boolean;
+            castMimeType?: string;
+            castSubtitle?: string;
+            castTitle?: string;
+            castUrl?: string;
+            sessionId: string;
+        },
     ) => Promise<AndroidNativePlaybackEvent>;
     removeListeners: (count: number) => void;
     resume: () => Promise<AndroidNativePlaybackEvent>;
@@ -75,7 +95,11 @@ const eventEmitter = samoAudio ? new NativeEventEmitter(samoAudio) : null;
 
 export const isAndroidNativePlaybackAvailable = () => Boolean(samoAudio);
 
-export const playAndroidAudio = async (source: MobilePlayableAudio, sessionId: string) => {
+export const playAndroidAudio = async (
+    source: MobilePlayableAudio,
+    sessionId: string,
+    castSource: MobilePlayableAudio = source,
+) => {
     if (!samoAudio) {
         throw new Error('Native Android audio engine is not available');
     }
@@ -90,7 +114,24 @@ export const playAndroidAudio = async (source: MobilePlayableAudio, sessionId: s
             ? undefined
             : source.subtitle;
 
-    return samoAudio.play({ ...source, sessionId, subtitle: sanitizedSubtitle });
+    // When a self-authenticating castUrl is provided (Subsonic auth in URL
+    // params, or ABS `?token=…`), the cast leg doesn't need the headers the
+    // local ExoPlayer uses. Forwarding them would trip the native guard
+    // since the default Chromecast receiver can't send custom headers.
+    const hasSelfAuthCastUrl = castSource.castUrl !== undefined;
+
+    return samoAudio.play({
+        ...source,
+        castArtworkUrl: castSource.artworkUrl,
+        castHttpHeaders: hasSelfAuthCastUrl ? undefined : castSource.httpHeaders,
+        castIsLive: castSource.isLive,
+        castMimeType: castSource.mimeType,
+        castSubtitle: castSource.subtitle,
+        castTitle: castSource.title,
+        castUrl: castSource.castUrl ?? castSource.url,
+        sessionId,
+        subtitle: sanitizedSubtitle,
+    });
 };
 
 export const pauseAndroidAudio = async () => {
@@ -141,10 +182,22 @@ export const getAndroidPlaybackStatus = async () => {
     return samoAudio.getStatus();
 };
 
+export const getAndroidCastState = async () => {
+    if (!samoAudio) {
+        throw new Error('Native Android audio engine is not available');
+    }
+
+    return samoAudio.getCastState();
+};
+
 export const subscribeToAndroidAudioEvents = (
     listener: (event: AndroidNativePlaybackEvent) => void,
 ) => {
     return eventEmitter?.addListener('SamoAudioPlaybackState', listener) ?? { remove: () => {} };
+};
+
+export const subscribeToAndroidCastEvents = (listener: (event: AndroidCastState) => void) => {
+    return eventEmitter?.addListener('SamoAudioCastState', listener) ?? { remove: () => {} };
 };
 
 export interface AndroidNavigationRequestEvent {

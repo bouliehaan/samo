@@ -29,6 +29,13 @@ export interface MobilePlayableAudio {
     artist?: string;
     artistId?: string;
     artworkUrl?: string;
+    /**
+     * Network URL to use when handing the source to Chromecast. Only set
+     * when `url` is a local file path (offline downloads), so the cast
+     * receiver — which can't read the phone's filesystem — gets the
+     * original streaming URL instead. Falls back to `url` when absent.
+     */
+    castUrl?: string;
     contentSourceId?: string;
     durationSeconds?: number;
     /**
@@ -122,6 +129,16 @@ const getContainerFromContentType = (contentType: string | undefined) => {
 
 const normalizeContentUrl = (baseUrl: string, contentUrl: string) => {
     return new URL(contentUrl, baseUrl).toString();
+};
+
+/**
+ * Append `?token=…` to an ABS URL so it self-authenticates without the
+ * Authorization header — the default Chromecast receiver can't send custom
+ * headers, but ABS accepts the same JWT credential via this query param.
+ */
+export const appendAudiobookshelfAuthToken = (url: string, credential: string) => {
+    const separator = url.includes('?') ? '&' : '?';
+    return `${url}${separator}token=${encodeURIComponent(credential)}`;
 };
 
 const isAudiobookshelfHlsUrl = (contentUrl: string) => {
@@ -262,9 +279,13 @@ export const loadAudiobookshelfPlayback = async ({
     const mimeType = isAudiobookshelfHlsUrl(contentUrl)
         ? 'application/x-mpegURL'
         : audioTrack.mimeType;
+    const normalizedUrl = normalizeContentUrl(authentication.url, contentUrl);
 
     return {
         artworkUrl,
+        // Local ExoPlayer uses the Authorization header; Chromecast can't
+        // forward it, so cast routes via a `?token=…` URL instead.
+        castUrl: appendAudiobookshelfAuthToken(normalizedUrl, authentication.credential),
         contentSourceId: `${authentication.type}:${authentication.url}`,
         durationSeconds,
         httpHeaders: {
@@ -285,6 +306,6 @@ export const loadAudiobookshelfPlayback = async ({
         subtitle,
         timelineSegments,
         title,
-        url: normalizeContentUrl(authentication.url, contentUrl),
+        url: normalizedUrl,
     };
 };

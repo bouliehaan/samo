@@ -898,11 +898,30 @@ export const getLocalUriForTrack = async (
     return match?.localUri ?? null;
 };
 
+export const getLocalDownloadForTrack = async (
+    trackId: string,
+    sourceId: string,
+): Promise<{ localUri: string; sourceUrl: string } | null> => {
+    const registry = await getRegistry();
+    const match = registry.find(
+        (entry) =>
+            entry.trackId === trackId &&
+            entry.collection.sourceId === sourceId &&
+            entry.status === 'completed' &&
+            entry.localUri,
+    );
+    if (!match?.localUri) return null;
+    return { localUri: match.localUri, sourceUrl: match.sourceUrl };
+};
+
 export interface OfflineAudiobookFile {
     durationSeconds?: number;
     index: number;
     ino: string;
     localUri: string;
+    /** The ABS URL this file was downloaded from — kept so cast can stream
+     *  it from the server when the phone-local file path is unreachable. */
+    sourceUrl: string;
     startOffsetSeconds: number;
 }
 
@@ -938,6 +957,7 @@ export const getOfflineAudiobookFiles = async (
                     ? (only.trackId.split(':').pop() ?? only.trackId)
                     : only.trackId,
                 localUri: only.localUri!,
+                sourceUrl: only.sourceUrl,
                 startOffsetSeconds: 0,
             },
         ];
@@ -952,6 +972,7 @@ export const getOfflineAudiobookFiles = async (
                 index: entry.audiobookSegment?.index ?? Number.MAX_SAFE_INTEGER,
                 ino: inoFromKey,
                 localUri: entry.localUri!,
+                sourceUrl: entry.sourceUrl,
                 startOffsetSeconds: entry.audiobookSegment?.startOffsetSeconds ?? 0,
             };
         })

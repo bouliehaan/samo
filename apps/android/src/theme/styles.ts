@@ -9,6 +9,7 @@ import {
     HOME_TILE_GAP,
     MINI_PLAYER_ARTWORK_SIZE,
     MINI_PLAYER_BOTTOM,
+    MINI_PLAYER_HEIGHT,
     MINI_PLAYER_RADIUS,
     MINI_PLAYER_VERTICAL_PADDING,
     QUEUE_SHEET_HEIGHT,
@@ -104,6 +105,7 @@ export const styles = StyleSheet.create({
     },
     albumHero: {
         alignItems: 'center',
+        marginBottom: spacing.lg,
         marginTop: spacing.lg,
         position: 'relative',
     },
@@ -211,12 +213,17 @@ export const styles = StyleSheet.create({
     },
     alphabetSidebar: {
         alignItems: 'center',
-        bottom: spacing.md,
-        justifyContent: 'space-between',
-        paddingVertical: spacing.xs,
+        bottom: MINI_PLAYER_BOTTOM + MINI_PLAYER_HEIGHT + spacing.sm,
+        justifyContent: 'center',
         position: 'absolute',
-        right: 2,
-        top: spacing.md,
+        right: 1,
+        top: spacing.sm,
+        width: 26,
+        zIndex: 4,
+    },
+    alphabetSidebarRail: {
+        alignItems: 'center',
+        justifyContent: 'center',
     },
     alphabetSidebarLetter: {
         color: 'rgba(255,255,255,0.18)',
@@ -229,9 +236,9 @@ export const styles = StyleSheet.create({
     },
     alphabetSidebarLetterButton: {
         alignItems: 'center',
-        height: 16,
+        height: 14,
         justifyContent: 'center',
-        width: 18,
+        width: 24,
     },
     appIcon: {
         height: 34,
@@ -266,6 +273,7 @@ export const styles = StyleSheet.create({
         width: '100%',
     },
     artistAlbumGridItem: {
+        position: 'relative',
         width: '30%',
     },
     artistAlbumGridTitle: {
@@ -581,6 +589,80 @@ export const styles = StyleSheet.create({
         gap: spacing.md,
         marginTop: spacing.lg,
     },
+    detailCollapsedActions: {
+        alignItems: 'center',
+        flexDirection: 'row',
+        gap: 10,
+        position: 'absolute',
+        right: HOME_EDGE_PADDING,
+    },
+    detailCollapsedBackButton: {
+        alignItems: 'center',
+        borderRadius: 999,
+        height: 42,
+        justifyContent: 'center',
+        left: HOME_EDGE_PADDING - 8,
+        position: 'absolute',
+        width: 42,
+        zIndex: 2,
+    },
+    detailCollapsedBackGlyph: {
+        color: colors.text,
+        fontSize: 36,
+        fontWeight: '300',
+        includeFontPadding: false,
+        lineHeight: 40,
+        marginTop: -2,
+    },
+    detailCollapsedIconButton: {
+        alignItems: 'center',
+        borderRadius: 999,
+        height: 38,
+        justifyContent: 'center',
+        width: 38,
+    },
+    detailCollapsedPlayButton: {
+        alignItems: 'center',
+        backgroundColor: colors.accent,
+        borderRadius: 999,
+        height: 42,
+        justifyContent: 'center',
+        width: 42,
+    },
+    detailCollapsedTitle: {
+        color: colors.text,
+        fontSize: 17,
+        fontWeight: '900',
+        letterSpacing: 0,
+        lineHeight: 21,
+        textAlign: 'center',
+    },
+    detailCollapsedTitleWrap: {
+        left: HOME_EDGE_PADDING + 48,
+        minWidth: 0,
+        position: 'absolute',
+        right: HOME_EDGE_PADDING + 112,
+    },
+    detailCollapsedTopbar: {
+        alignItems: 'center',
+        height: 58,
+        justifyContent: 'center',
+        left: 0,
+        position: 'absolute',
+        right: 0,
+        top: 0,
+        zIndex: 20,
+    },
+    detailCollapsedTopbarBackdrop: {
+        backgroundColor: 'rgba(0, 0, 0, 0.92)',
+        borderBottomColor: 'rgba(255, 255, 255, 0.06)',
+        borderBottomWidth: StyleSheet.hairlineWidth,
+        bottom: 0,
+        left: 0,
+        position: 'absolute',
+        right: 0,
+        top: 0,
+    },
     detailHeroActions: {
         alignSelf: 'flex-end',
         flexDirection: 'row',
@@ -589,6 +671,15 @@ export const styles = StyleSheet.create({
         marginTop: spacing.md,
     },
     detailHeroText: {
+        flex: 1,
+    },
+    mediaDetailContent: {
+        paddingBottom: 200,
+        paddingHorizontal: HOME_EDGE_PADDING,
+        paddingTop: 58,
+    },
+    mediaDetailScreen: {
+        backgroundColor: colors.background,
         flex: 1,
     },
     detailPlayPill: {
@@ -943,9 +1034,27 @@ export const styles = StyleSheet.create({
     },
     fullPlayerBottomBarButton: {
         alignItems: 'center',
-        height: 44,
+        height: 40,
         justifyContent: 'center',
-        width: 44,
+        width: 40,
+    },
+    fullPlayerCastButton: {
+        bottom: 0,
+        height: 40,
+        left: 0,
+        opacity: 0.01,
+        position: 'absolute',
+        right: 0,
+        top: 0,
+        width: 40,
+    },
+    fullPlayerCastStatus: {
+        color: colors.accent,
+        flex: 1,
+        fontSize: 12,
+        fontWeight: '700',
+        marginLeft: spacing.sm,
+        textAlign: 'right',
     },
     fullPlayerCollapsedSurface: {
         backgroundColor: '#1c1c1e',
@@ -962,10 +1071,18 @@ export const styles = StyleSheet.create({
     fullPlayerContent: {
         flex: 1,
     },
-    fullPlayerControls: {
+    fullPlayerControlSide: {
         alignItems: 'center',
         flexDirection: 'row',
         gap: 12,
+        minWidth: 100,
+    },
+    fullPlayerControlSideRight: {
+        justifyContent: 'flex-end',
+    },
+    fullPlayerControls: {
+        alignItems: 'center',
+        flexDirection: 'row',
         justifyContent: 'space-between',
         marginTop: 22,
     },
@@ -1245,6 +1362,7 @@ export const styles = StyleSheet.create({
         gap: spacing.sm,
         minHeight: 62,
         padding: 6,
+        position: 'relative',
     },
     libraryRowAccessory: {
         alignItems: 'center',
@@ -1275,6 +1393,15 @@ export const styles = StyleSheet.create({
     libraryRowText: {
         flex: 1,
         minWidth: 0,
+    },
+    libraryRowDownloadIndicator: {
+        bottom: 13,
+        opacity: 0.82,
+        position: 'absolute',
+        right: 8,
+    },
+    libraryRowDownloadIndicatorWithAccessory: {
+        right: 48,
     },
     libraryRowTitle: {
         color: colors.text,
@@ -1516,6 +1643,7 @@ export const styles = StyleSheet.create({
     },
     mediaText: {
         minWidth: 0,
+        position: 'relative',
     },
     mediaTextCentered: {
         alignItems: 'center',
@@ -1576,6 +1704,12 @@ export const styles = StyleSheet.create({
     },
     mediaTitleCentered: {
         textAlign: 'center',
+    },
+    mediaDownloadIndicator: {
+        bottom: 2,
+        opacity: 0.82,
+        position: 'absolute',
+        right: 0,
     },
     mediaTitleWide: {
         fontSize: 15,
@@ -1722,6 +1856,10 @@ export const styles = StyleSheet.create({
     playerControlButtonPrimary: {
         height: 68,
         width: 68,
+    },
+    playerControlButtonSpacer: {
+        height: 44,
+        width: 44,
     },
     playGlyph: {
         borderBottomColor: 'transparent',
@@ -2790,21 +2928,43 @@ export const styles = StyleSheet.create({
         fontSize: 16,
         fontWeight: '700',
     },
+    trackMetadataLine: {
+        alignItems: 'center',
+        flexDirection: 'row',
+        gap: 6,
+        minWidth: 0,
+    },
+    trackMetadataText: {
+        flexShrink: 1,
+        minWidth: 0,
+    },
     trackMenuButton: {
         alignItems: 'center',
         borderRadius: 999,
         height: 38,
         justifyContent: 'center',
+        opacity: 0.68,
         width: 38,
     },
     trackRow: {
         alignItems: 'center',
-        borderColor: colors.border,
-        borderTopWidth: 1,
         flexDirection: 'row',
         gap: spacing.sm,
-        minHeight: 58,
-        paddingVertical: spacing.sm,
+        minHeight: 62,
+        paddingVertical: 9,
+    },
+    trackText: {
+        flex: 1,
+        justifyContent: 'center',
+        minWidth: 0,
+    },
+    trackTitle: {
+        color: colors.text,
+        fontSize: 16,
+        fontWeight: '700',
+        letterSpacing: 0,
+        lineHeight: 21,
+        marginBottom: 2,
     },
     viewAllBackArrow: {
         color: colors.text,
@@ -2837,9 +2997,30 @@ export const styles = StyleSheet.create({
         paddingHorizontal: spacing.sm,
         paddingVertical: spacing.sm,
     },
+    viewAllJumpOverlay: {
+        alignItems: 'center',
+        alignSelf: 'center',
+        backgroundColor: 'rgba(24, 24, 24, 0.88)',
+        borderColor: 'rgba(255, 255, 255, 0.12)',
+        borderRadius: 24,
+        borderWidth: StyleSheet.hairlineWidth,
+        height: 96,
+        justifyContent: 'center',
+        position: 'absolute',
+        top: '36%',
+        width: 96,
+    },
+    viewAllJumpOverlayText: {
+        color: colors.text,
+        fontSize: 48,
+        fontWeight: '900',
+        includeFontPadding: false,
+        lineHeight: 56,
+        textAlign: 'center',
+    },
     viewAllListContent: {
         gap: HOME_TILE_GAP,
-        paddingBottom: spacing.xl,
+        paddingBottom: MINI_PLAYER_BOTTOM + MINI_PLAYER_HEIGHT + spacing.xl,
         // Leave room on the right edge so tiles don't sit under the sidebar.
         paddingRight: VIEW_ALL_SIDEBAR_GUTTER,
     },
