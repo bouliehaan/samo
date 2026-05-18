@@ -25,3 +25,12 @@ index 25d0f7456c48ebe18ec49fbf0a6cbb88bbdf9055..79aa179b3df5494451056544b16aed75
    }
  
    defaultConfig {
+@@ -70,7 +67,7 @@ android {
+     versionName "2.0.0"
+   }
+   lintOptions {
+-    abortOnError false
++    abortOnError = false
+   }
+   publishing {
+     singleVariant("release") {

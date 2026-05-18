@@ -12,6 +12,8 @@ export type AndroidFullCollectionState =
     | { status: 'idle' }
     | { status: 'loading' };
 
+const ANDROID_FULL_COLLECTION_QUALITY_SCAN_LIMIT = 48;
+
 /**
  * Pull the COMPLETE list of items for a View All grid across every connected
  * server. Wraps the core loader with the same error-to-message normalization
@@ -30,6 +32,7 @@ export const loadAndroidFullCollection = async (
     try {
         const { errors, items } = await loadMobileFullCollection({
             authentications,
+            qualityScanLimit: ANDROID_FULL_COLLECTION_QUALITY_SCAN_LIMIT,
             variant,
         });
         if (items.length === 0 && errors.length > 0) {

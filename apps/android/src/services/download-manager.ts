@@ -102,6 +102,8 @@ const buildLocalUri = async (entry: Pick<DownloadEntry, 'collection' | 'trackId'
 
 // In-process registry. fs-storage is the source of truth across launches.
 let registryCache: DownloadEntry[] | null = null;
+let registryMutationQueue: Promise<void> = Promise.resolve();
+let registryPersistQueue: Promise<void> = Promise.resolve();
 const listeners = new Set<(entries: DownloadEntry[]) => void>();
 const activeDownloads = new Map<string, { cancel: () => void }>();
 const lastProgressReport = new Map<string, { bytes: number; ratio: number }>();
@@ -154,8 +156,14 @@ const loadRegistryFromDisk = async (): Promise<DownloadEntry[]> => {
 };
 
 const saveRegistryToDisk = async (entries: DownloadEntry[]): Promise<void> => {
-    // Best-effort persistence; failures don't break the running session.
-    await fsSetItem(REGISTRY_KEY, JSON.stringify(entries));
+    // Best-effort persistence; failures don't break the running session. Writes
+    // are serialized so a slower older status transition cannot land after a
+    // newer completed/canceled state.
+    const payload = JSON.stringify(entries);
+    registryPersistQueue = registryPersistQueue
+        .catch(() => undefined)
+        .then(() => fsSetItem(REGISTRY_KEY, payload));
+    await registryPersistQueue;
 };
 
 const getRegistry = async (): Promise<DownloadEntry[]> => {
@@ -183,6 +191,28 @@ const setRegistry = (entries: DownloadEntry[], persist: boolean) => {
         void saveRegistryToDisk(entries);
     }
     notifyListeners();
+};
+
+const withRegistryMutation = async <T>(
+    mutate: (current: DownloadEntry[]) => {
+        entries?: DownloadEntry[];
+        persist?: boolean;
+        result: T;
+    },
+): Promise<T> => {
+    let result: T | undefined;
+    const run = async () => {
+        const current = await getRegistry();
+        const mutation = mutate(current);
+        result = mutation.result;
+        if (mutation.entries) {
+            setRegistry(mutation.entries, mutation.persist !== false);
+        }
+    };
+
+    registryMutationQueue = registryMutationQueue.then(run, run);
+    await registryMutationQueue;
+    return result as T;
 };
 
 let pendingNotifyTimer: ReturnType<typeof setTimeout> | null = null;
@@ -226,19 +256,21 @@ const updateEntry = async (
     patch: Partial<DownloadEntry>,
     options?: { persist?: boolean },
 ): Promise<DownloadEntry | null> => {
-    const current = await getRegistry();
-    let updated: DownloadEntry | null = null;
-    const next = current.map((entry) => {
-        if (entry.id === id) {
-            updated = { ...entry, ...patch };
-            return updated;
-        }
-        return entry;
+    return withRegistryMutation((current) => {
+        let updated: DownloadEntry | null = null;
+        const next = current.map((entry) => {
+            if (entry.id === id) {
+                updated = { ...entry, ...patch };
+                return updated;
+            }
+            return entry;
+        });
+        return {
+            entries: updated ? next : undefined,
+            persist: options?.persist !== false,
+            result: updated,
+        };
     });
-    if (updated) {
-        setRegistry(next, options?.persist !== false);
-    }
-    return updated;
 };
 
 const startSingleDownload = async (
@@ -380,32 +412,36 @@ export const enqueueDownload = async (
     input: EnqueueTrackInput,
     authentications: ServerAuthenticationResult[],
 ): Promise<DownloadEntry> => {
-    const registry = await getRegistry();
-    const existing = registry.find(
-        (entry) =>
-            entry.trackId === input.trackId &&
-            entry.collection.sourceId === input.collection.sourceId &&
-            entry.collection.id === input.collection.id &&
-            (entry.status === 'completed' ||
-                entry.status === 'queued' ||
-                entry.status === 'downloading'),
-    );
-    if (existing) {
-        return existing;
-    }
+    const entry = await withRegistryMutation<DownloadEntry>((registry) => {
+        const existing = registry.find(
+            (candidate) =>
+                candidate.trackId === input.trackId &&
+                candidate.collection.sourceId === input.collection.sourceId &&
+                candidate.collection.id === input.collection.id &&
+                (candidate.status === 'completed' ||
+                    candidate.status === 'queued' ||
+                    candidate.status === 'downloading'),
+        );
+        if (existing) {
+            return { result: existing };
+        }
 
-    const entry: DownloadEntry = {
-        audiobookSegment: input.audiobookSegment,
-        collection: input.collection,
-        enqueuedAt: Date.now(),
-        id: buildEntryId(),
-        sourceUrl: input.sourceUrl,
-        status: 'queued',
-        title: input.title,
-        trackId: input.trackId,
-        trackSubtitle: input.trackSubtitle,
-    };
-    setRegistry([...registry, entry], true);
+        const nextEntry: DownloadEntry = {
+            audiobookSegment: input.audiobookSegment,
+            collection: input.collection,
+            enqueuedAt: Date.now(),
+            id: buildEntryId(),
+            sourceUrl: input.sourceUrl,
+            status: 'queued',
+            title: input.title,
+            trackId: input.trackId,
+            trackSubtitle: input.trackSubtitle,
+        };
+        return {
+            entries: [...registry, nextEntry],
+            result: nextEntry,
+        };
+    });
     void pumpQueue(authentications);
     return entry;
 };
@@ -829,7 +865,10 @@ export const removeDownload = async (id: string): Promise<void> => {
         active.cancel();
         activeDownloads.delete(id);
     }
-    setRegistry(registry.filter((entry) => entry.id !== id), true);
+    await withRegistryMutation((current) => ({
+        entries: current.filter((entry) => entry.id !== id),
+        result: undefined,
+    }));
 };
 
 export const retryDownload = async (

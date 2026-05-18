@@ -43,6 +43,7 @@ import {
     Component,
     createContext,
     type ErrorInfo,
+    memo,
     type ReactNode,
     useCallback,
     useContext,
@@ -227,6 +228,61 @@ type DownloadedCollectionSummary = {
     collection: DownloadEntry['collection'];
     latestCompletedAt: number;
 };
+
+type DownloadedCollectionSnapshot = {
+    collections: DownloadedCollectionSummary[];
+    keys: Set<string>;
+    signature: string;
+};
+
+const EMPTY_DOWNLOADED_COLLECTION_SNAPSHOT: DownloadedCollectionSnapshot = {
+    collections: [],
+    keys: new Set(),
+    signature: '',
+};
+
+const buildDownloadedCollectionSnapshot = (
+    entries: DownloadEntry[],
+): DownloadedCollectionSnapshot => {
+    const keys = new Set<string>();
+    const collections = new Map<string, DownloadedCollectionSummary>();
+
+    for (const entry of entries) {
+        if (entry.status !== 'completed') continue;
+
+        const key = `${entry.collection.sourceId}:${entry.collection.id}`;
+        keys.add(key);
+        const existing = collections.get(key);
+        const latestCompletedAt = entry.completedAt ?? entry.enqueuedAt;
+        if (!existing || latestCompletedAt > existing.latestCompletedAt) {
+            collections.set(key, {
+                collection: entry.collection,
+                latestCompletedAt,
+            });
+        }
+    }
+
+    const summaries = [...collections.values()];
+    const signature = summaries
+        .map(
+            ({ collection, latestCompletedAt }) =>
+                [
+                    collection.sourceId,
+                    collection.id,
+                    collection.type,
+                    collection.title,
+                    collection.artworkUrl ?? '',
+                    latestCompletedAt,
+                ].join(':'),
+        )
+        .sort()
+        .join('|');
+
+    return { collections: summaries, keys, signature };
+};
+
+const getLastPlayedPersistenceKey = (item: MobilePlayableAudio): string =>
+    `${item.contentSourceId ?? 'server'}:${item.id}`;
 
 const isPlaybackHiRes = (playback?: MobilePlayableAudio | null): boolean =>
     Boolean(playback && isHiResAudioQuality(playback.quality));
@@ -485,7 +541,7 @@ const buildDownloadedMusicDetail = async (
  *     every cover. The Samo metaphor is "I already saw this tile — it should
  *     reappear instantly", not "the renderer just spawned a fresh HTTP
  *     request".
- *   - transition=180 fades cached / decoded bitmaps in over ~3 frames so the
+ *   - transition=120 fades cached / decoded bitmaps in over ~2 frames so the
  *     surface doesn't pop. RN Image renders blank → image hard-cut, which
  *     reads as janky compared to native browsers / iOS / Spotify.
  *   - The native decoder is more forgiving of slow / flaky responses than
@@ -528,11 +584,14 @@ const ArtworkImage = ({
     }
     return (
         <ExpoImage
+            allowDownscaling
             cachePolicy="memory-disk"
+            contentFit="cover"
             onError={() => setErrored(true)}
+            recyclingKey={uri}
             source={uri}
             style={style as StyleProp<ImageStyle>}
-            transition={180}
+            transition={120}
         />
     );
 };
@@ -646,6 +705,9 @@ type LibraryFilter =
     | 'songs';
 
 type LibraryMediaType = Exclude<LibraryFilter, 'all'>;
+
+type LibrarySort = 'name' | 'recents';
+
 type SearchScope =
     | 'albums'
     | 'all'
@@ -727,6 +789,18 @@ const MediaContextMenuContext = createContext<MediaContextMenuApi>({
 });
 
 const useMediaContextMenu = () => useContext(MediaContextMenuContext);
+
+const useStableCallback = <TArgs extends unknown[], TResult>(
+    callback: (...args: TArgs) => TResult,
+): ((...args: TArgs) => TResult) => {
+    const callbackRef = useRef(callback);
+
+    useEffect(() => {
+        callbackRef.current = callback;
+    }, [callback]);
+
+    return useCallback((...args: TArgs) => callbackRef.current(...args), []);
+};
 
 /**
  * Pick which downloaded audiobook file contains a given book-time. Files
@@ -894,6 +968,11 @@ const LIBRARY_FILTERS: Array<{ id: LibraryFilter; label: string; mediaType?: Lib
     { id: 'radio', label: 'Radio', mediaType: 'radio' },
 ];
 
+const LIBRARY_SORTS: Array<{ id: LibrarySort; label: string }> = [
+    { id: 'recents', label: 'Recents' },
+    { id: 'name', label: 'Name' },
+];
+
 export default function App() {
     const [activeTab, setActiveTab] = useState<SamoMobileTabId>('home');
     const [activeUtilityScreen, setActiveUtilityScreen] = useState<AndroidUtilityScreen | null>(
@@ -998,7 +1077,14 @@ export default function App() {
         | { status: 'idle' }
     >({ status: 'idle' });
     const absContextRef = useRef<AbsProgressContext | null>(null);
+    const audiobookStartRequestId = useRef(0);
+    const bookInfoRequestId = useRef(0);
+    const downloadedCollectionSnapshotRef = useRef<DownloadedCollectionSnapshot>(
+        EMPTY_DOWNLOADED_COLLECTION_SNAPSHOT,
+    );
     const homeLoadRequestId = useRef(0);
+    const lastPlayedPersistenceKeyRef = useRef<string | null>(null);
+    const mediaDetailRequestId = useRef(0);
     const playbackQueueRef = useRef<null | { index: number; items: MobilePlayableAudio[] }>(null);
     const playbackSequenceRef = useRef(0);
     // Stale-while-revalidate cache for media detail pages. First open hits the
@@ -1009,6 +1095,17 @@ export default function App() {
         null,
     );
     const searchRequestId = useRef(0);
+
+    const closeMediaDetail = useCallback(() => {
+        mediaDetailRequestId.current += 1;
+        audiobookStartRequestId.current += 1;
+        setMediaDetailState({ status: 'idle' });
+    }, []);
+
+    const closeBookInfo = useCallback(() => {
+        bookInfoRequestId.current += 1;
+        setBookInfoState({ status: 'idle' });
+    }, []);
 
     useEffect(() => {
         const handler = BackHandler.addEventListener('hardwareBackPress', () => {
@@ -1024,7 +1121,7 @@ export default function App() {
             }
 
             if (mediaDetailState.status !== 'idle') {
-                setMediaDetailState({ status: 'idle' });
+                closeMediaDetail();
                 return true;
             }
 
@@ -1054,7 +1151,13 @@ export default function App() {
         });
 
         return () => handler.remove();
-    }, [activeUtilityScreen, isFullPlayerOpen, isSearchOverlayOpen, mediaDetailState.status]);
+    }, [
+        activeUtilityScreen,
+        closeMediaDetail,
+        isFullPlayerOpen,
+        isSearchOverlayOpen,
+        mediaDetailState.status,
+    ]);
 
     const canConnect =
         serverUrl.trim().length > 0 && username.trim().length > 0 && password.length > 0;
@@ -1249,18 +1352,24 @@ export default function App() {
             });
 
             try {
+                const isCurrentPlaybackSession = () =>
+                    playbackSnapshotRef.current?.sessionId === session.id;
                 const deviceInfoPromise = getAndroidAudioDeviceInfo().catch(() => undefined);
                 // Prefer a downloaded local file if we have one for this
                 // track — that's the whole point of the offline downloader.
                 // Falls through to the streaming URL if not downloaded.
                 const playable = await resolveLocalPlayback(item);
+                if (!isCurrentPlaybackSession()) return;
                 let event = await playAndroidAudio(playable, session.id);
+                if (!isCurrentPlaybackSession()) return;
 
                 if (initialPositionMs > 0) {
                     event = await seekAndroidAudio(initialPositionMs);
+                    if (!isCurrentPlaybackSession()) return;
                 }
 
                 const deviceInfo = await deviceInfoPromise;
+                if (!isCurrentPlaybackSession()) return;
 
                 setPlaybackState({
                     bitPerfect: event.bitPerfect,
@@ -1273,6 +1382,7 @@ export default function App() {
                     status: getActivePlaybackStatus(event.status, 'buffering'),
                 });
             } catch (error) {
+                if (playbackSnapshotRef.current?.sessionId !== session.id) return;
                 setPlaybackState({
                     durationMs: getPlaybackItemDurationMs(item),
                     item,
@@ -1453,6 +1563,7 @@ export default function App() {
 
         void loadPersistedLastPlayedItem().then((item) => {
             if (isMounted && item) {
+                lastPlayedPersistenceKeyRef.current = getLastPlayedPersistenceKey(item);
                 setLastPlayedItem(item);
             }
         });
@@ -1513,24 +1624,13 @@ export default function App() {
     // offline mode is on so we only show items the user can actually play.
     useEffect(() => {
         const unsubscribe = subscribeDownloads((entries) => {
-            const keys = new Set<string>();
-            const collections = new Map<string, DownloadedCollectionSummary>();
-            for (const entry of entries) {
-                if (entry.status === 'completed') {
-                    const key = `${entry.collection.sourceId}:${entry.collection.id}`;
-                    keys.add(key);
-                    const existing = collections.get(key);
-                    const latestCompletedAt = entry.completedAt ?? entry.enqueuedAt;
-                    if (!existing || latestCompletedAt > existing.latestCompletedAt) {
-                        collections.set(key, {
-                            collection: entry.collection,
-                            latestCompletedAt,
-                        });
-                    }
-                }
+            const nextSnapshot = buildDownloadedCollectionSnapshot(entries);
+            if (downloadedCollectionSnapshotRef.current.signature === nextSnapshot.signature) {
+                return;
             }
-            setDownloadedCollectionKeys(keys);
-            setDownloadedCollections([...collections.values()]);
+            downloadedCollectionSnapshotRef.current = nextSnapshot;
+            setDownloadedCollectionKeys(nextSnapshot.keys);
+            setDownloadedCollections(nextSnapshot.collections);
         });
         return () => {
             unsubscribe();
@@ -1542,6 +1642,12 @@ export default function App() {
             return;
         }
         const item = playbackState.item;
+        const persistenceKey = getLastPlayedPersistenceKey(item);
+        if (lastPlayedPersistenceKeyRef.current === persistenceKey) {
+            setLastPlayedItem((current) => current ?? item);
+            return;
+        }
+        lastPlayedPersistenceKeyRef.current = persistenceKey;
         setLastPlayedItem(item);
         void savePersistedLastPlayedItem(item);
     }, [playbackState]);
@@ -1599,6 +1705,10 @@ export default function App() {
 
             setServerConnections(persistedAuths);
             setServerHealthByKey(createCheckingServerHealthMap(persistedAuths));
+            const persistedConnectionSignature = persistedAuths
+                .map(getPersistedServerAuthKey)
+                .join('|');
+            void loadHomeForConnections(persistedAuths);
 
             const serverHealth = await checkAndroidServerConnections(persistedAuths);
 
@@ -1636,7 +1746,12 @@ export default function App() {
                 }
 
                 await savePersistedServerAuths(authorizedAuthentications);
-                void loadHomeForConnections(authorizedAuthentications);
+                const authorizedConnectionSignature = authorizedAuthentications
+                    .map(getPersistedServerAuthKey)
+                    .join('|');
+                if (authorizedConnectionSignature !== persistedConnectionSignature) {
+                    void loadHomeForConnections(authorizedAuthentications);
+                }
             }
         };
 
@@ -1711,7 +1826,7 @@ export default function App() {
                 ...current,
                 [nextConnectionKey]: createConnectedServerHealthStatus(nextAuthState.result),
             }));
-            setMediaDetailState({ status: 'idle' });
+            closeMediaDetail();
             setPassword('');
             setServerUrl('');
             setUsername('');
@@ -1732,7 +1847,7 @@ export default function App() {
             delete nextHealthByKey[removedConnectionKey];
             return nextHealthByKey;
         });
-        setMediaDetailState({ status: 'idle' });
+        closeMediaDetail();
         setSearchState({ status: 'idle' });
         setAuthState({ status: 'idle' });
         await savePersistedServerAuths(nextConnections);
@@ -1773,6 +1888,9 @@ export default function App() {
     const loadDetailWithCache = async (
         item: AndroidRecentContentSourceItem,
     ): Promise<{ cached: boolean }> => {
+        audiobookStartRequestId.current += 1;
+        const requestId = (mediaDetailRequestId.current += 1);
+        const isCurrentRequest = () => mediaDetailRequestId.current === requestId;
         const cacheKey = getRecentContentItemKey(item);
 
         // Layer 1: in-memory cache — instant.
@@ -1782,6 +1900,9 @@ export default function App() {
         // the network and works in airplane mode.
         if (!cached) {
             const fromDisk = await loadCachedMediaDetail(cacheKey);
+            if (!isCurrentRequest()) {
+                return { cached: false };
+            }
             if (fromDisk) {
                 cached = fromDisk;
                 mediaDetailCacheRef.current.set(cacheKey, fromDisk);
@@ -1790,6 +1911,9 @@ export default function App() {
 
         if (!cached && isOfflineMode) {
             const downloadedDetail = await buildDownloadedMusicDetail(item);
+            if (!isCurrentRequest()) {
+                return { cached: false };
+            }
             if (downloadedDetail) {
                 cached = downloadedDetail;
                 mediaDetailCacheRef.current.set(cacheKey, downloadedDetail);
@@ -1810,6 +1934,9 @@ export default function App() {
         // stale data — the user sees the cached version, which is the whole
         // point of offline playback.
         const next = await loadAndroidMediaDetail(serverConnections, item);
+        if (!isCurrentRequest()) {
+            return { cached: Boolean(cached) };
+        }
         if (next.status === 'loaded') {
             mediaDetailCacheRef.current.set(cacheKey, next.detail);
             void saveCachedMediaDetail(cacheKey, next.detail);
@@ -1839,7 +1966,7 @@ export default function App() {
                 variant,
             });
             setActiveUtilityScreen('view-all');
-            setMediaDetailState({ status: 'idle' });
+            closeMediaDetail();
 
             // Kick off the exhaustive fetch. The token guards against a stale
             // response landing after the user has opened a different View All
@@ -1853,13 +1980,15 @@ export default function App() {
                 setViewAllFullState(result);
             })();
         },
-        [homeContentState, serverConnections],
+        [closeMediaDetail, homeContentState, serverConnections],
     );
 
     const handleSelectMediaItem = async (item: MobileHomeItem | MobileSearchItem) => {
         recordRecentContentItem(item);
 
         if (item.playback) {
+            mediaDetailRequestId.current += 1;
+            audiobookStartRequestId.current += 1;
             await handlePlayItem(item.playback);
             return;
         }
@@ -1873,6 +2002,9 @@ export default function App() {
     };
 
     const handleStartAudiobook = async (item: MobileHomeItem | MobileSearchItem) => {
+        mediaDetailRequestId.current += 1;
+        const requestId = (audiobookStartRequestId.current += 1);
+        const isCurrentRequest = () => audiobookStartRequestId.current === requestId;
         setPlaybackState((current) =>
             current.status === 'idle'
                 ? current
@@ -1884,6 +2016,7 @@ export default function App() {
         // them. This is what makes tap-to-play work offline.
         const cacheKey = getRecentContentItemKey(item);
         const networkResult = await loadAndroidMediaDetail(serverConnections, item);
+        if (!isCurrentRequest()) return;
         let detail: MobileMediaDetail | undefined =
             networkResult.status === 'loaded' ? networkResult.detail : undefined;
 
@@ -1892,6 +2025,7 @@ export default function App() {
                 mediaDetailCacheRef.current.get(cacheKey) ??
                 (await loadCachedMediaDetail(cacheKey)) ??
                 undefined;
+            if (!isCurrentRequest()) return;
         }
 
         if (!detail) {
@@ -1899,6 +2033,7 @@ export default function App() {
             // Lets the user play an audiobook entirely offline even if the
             // server's never been reached since launch.
             const offlineFiles = await getOfflineAudiobookFiles(item.id, item.source?.id ?? '');
+            if (!isCurrentRequest()) return;
             if (offlineFiles.length > 0 && item.source) {
                 detail = {
                     artworkUrl: item.artworkUrl,
@@ -1943,6 +2078,7 @@ export default function App() {
         }
 
         const progress = await loadAbsCurrentProgress(auth, detail.id);
+        if (!isCurrentRequest()) return;
         const resumeSeconds = progress?.currentTimeSeconds ?? 0;
         const chapterIndex =
             resumeSeconds > 0
@@ -1972,14 +2108,19 @@ export default function App() {
             return;
         }
 
-        await handlePlayMediaTrack(detail, trackToPlay, chapterIndex);
+        if (!isCurrentRequest()) return;
+        await handlePlayMediaTrack(detail, trackToPlay, chapterIndex, {
+            isCurrentRequest,
+        });
     };
 
     const handlePlayMediaTrack = async (
         detail: MobileMediaDetail,
         track: MobileMediaTrack,
         index: number,
+        options?: { isCurrentRequest?: () => boolean },
     ) => {
+        const isCurrentRequest = () => options?.isCurrentRequest?.() !== false;
         if (track.playback) {
             const queueItems = detail.tracks.flatMap((candidate) =>
                 candidate.playback ? [candidate.playback] : [],
@@ -1989,6 +2130,7 @@ export default function App() {
                 queueItems.findIndex((candidate) => candidate.id === track.playback?.id),
             );
 
+            if (!isCurrentRequest()) return;
             await handlePlayItem(track.playback, queueItems, queueIndex);
             return;
         }
@@ -2002,6 +2144,7 @@ export default function App() {
                 lookupTrackId,
                 detail.source.id,
             );
+            if (!isCurrentRequest()) return;
             if (localUri) {
                 const playable = buildOfflinePodcastEpisodePlayable(
                     detail,
@@ -2021,6 +2164,7 @@ export default function App() {
                 } else {
                     absContextRef.current = null;
                 }
+                if (!isCurrentRequest()) return;
                 await handlePlayItem(playable, [playable], 0);
                 return;
             }
@@ -2036,6 +2180,7 @@ export default function App() {
                 detail.id,
                 detail.source.id,
             );
+            if (!isCurrentRequest()) return;
             if (offlineFiles.length > 1) {
                 const targetBookSeconds = track.startSeconds ?? 0;
                 const startIndex = pickAudiobookFileIndexForTime(
@@ -2070,6 +2215,7 @@ export default function App() {
                 } else {
                     absContextRef.current = null;
                 }
+                if (!isCurrentRequest()) return;
                 await handlePlayItem(queue[startIndex], queue, startIndex);
                 return;
             }
@@ -2077,6 +2223,7 @@ export default function App() {
 
         try {
             const playable = await loadAndroidMediaTrackPlayback(serverConnections, detail, track);
+            if (!isCurrentRequest()) return;
             const absAuth = serverConnections.find(
                 (auth) => getPersistedServerAuthKey(auth) === detail.source.id,
             );
@@ -2096,8 +2243,10 @@ export default function App() {
                 absContextRef.current = null;
             }
 
+            if (!isCurrentRequest()) return;
             await handlePlayItem(playable, [playable], index);
         } catch (error) {
+            if (!isCurrentRequest()) return;
             setMediaDetailState({
                 itemTitle: detail.title,
                 message: error instanceof Error ? error.message : 'Playback failed',
@@ -2484,9 +2633,12 @@ export default function App() {
         item: AndroidRecentContentSourceItem,
         variant: 'audiobook' | 'podcast',
     ) => {
+        const requestId = (bookInfoRequestId.current += 1);
+        const isCurrentRequest = () => bookInfoRequestId.current === requestId;
         setContextMenuTarget(null);
         setBookInfoState({ item, status: 'loading', variant });
         const next = await loadAndroidMediaDetail(serverConnections, item);
+        if (!isCurrentRequest()) return;
 
         if (next.status === 'loaded') {
             setBookInfoState({ detail: next.detail, item, status: 'loaded', variant });
@@ -3127,7 +3279,7 @@ export default function App() {
                                     accessibilityRole="button"
                                     onPress={() => {
                                         setActiveUtilityScreen('settings');
-                                        setMediaDetailState({ status: 'idle' });
+                                        closeMediaDetail();
                                     }}
                                     style={styles.appIconButton}
                                 >
@@ -3179,7 +3331,7 @@ export default function App() {
                                 homeContentState={homeContentState}
                                 mediaDetailState={mediaDetailState}
                                 onAddTrackToPlaylist={handleAddMediaTrackToPlaylist}
-                                onBack={() => setMediaDetailState({ status: 'idle' })}
+                                onBack={closeMediaDetail}
                                 onSelectItem={handleSelectMediaItem}
                                 onPlayTrack={handlePlayMediaTrack}
                                 onShufflePlay={handleShuffleDetailTracks}
@@ -3309,7 +3461,7 @@ export default function App() {
                                     key={tab.id}
                                     onPress={() => {
                                         setActiveUtilityScreen(null);
-                                        setMediaDetailState({ status: 'idle' });
+                                        closeMediaDetail();
                                         setActiveTab(tab.id);
                                     }}
                                     style={[styles.tabButton, isActive && styles.tabButtonActive]}
@@ -3342,7 +3494,7 @@ export default function App() {
             />
             <StreamInfoModal item={streamInfoItem} onClose={() => setStreamInfoItem(null)} />
             <BookInformationModal
-                onClose={() => setBookInfoState({ status: 'idle' })}
+                onClose={closeBookInfo}
                 state={bookInfoState}
             />
             <TrackPlaylistMenu
@@ -4228,6 +4380,8 @@ const LibraryScreen = ({
     recentItems,
 }: LibraryScreenProps) => {
     const [activeFilter, setActiveFilter] = useState<LibraryFilter>('all');
+    const [activeSort, setActiveSort] = useState<LibrarySort>('recents');
+    const [isSortMenuOpen, setIsSortMenuOpen] = useState(false);
 
     if (!hasServerConnections) {
         return <EmptyServerBackedScreen tabTitle="Library" />;
@@ -4251,9 +4405,11 @@ const LibraryScreen = ({
 
     const baseItems = getBaseLibraryItems(homeContentState);
     const filters = getAvailableLibraryFilters(baseItems, recentItems);
-    const rows = getLibraryRows(baseItems, recentItems, activeFilter, '');
+    const rows = getLibraryRows(baseItems, recentItems, activeFilter, '', activeSort);
     const activeLabel =
         LIBRARY_FILTERS.find((filter) => filter.id === activeFilter)?.label ?? 'All';
+    const activeSortLabel =
+        LIBRARY_SORTS.find((sort) => sort.id === activeSort)?.label ?? 'Recents';
 
     return (
         <View style={styles.libraryScreen}>
@@ -4264,10 +4420,19 @@ const LibraryScreen = ({
                         {rows.length} {rows.length === 1 ? 'item' : 'items'} - {activeLabel}
                     </Text>
                 </View>
-                <View style={styles.librarySortBadge}>
+                <Pressable
+                    accessibilityLabel={`Sort by ${activeSortLabel}. Tap to change.`}
+                    accessibilityRole="button"
+                    android_ripple={{ borderless: true, color: 'rgba(255, 255, 255, 0.08)' }}
+                    onPress={() => {
+                        triggerImpact('light');
+                        setIsSortMenuOpen(true);
+                    }}
+                    style={styles.librarySortBadge}
+                >
                     <SortGlyph color={colors.muted} />
-                    <Text style={styles.librarySortText}>Recents</Text>
-                </View>
+                    <Text style={styles.librarySortText}>{activeSortLabel}</Text>
+                </Pressable>
             </View>
             <LibraryFilterPills
                 activeFilter={activeFilter}
@@ -4289,7 +4454,84 @@ const LibraryScreen = ({
                     ))
                 )}
             </View>
+            <LibrarySortMenu
+                activeSort={activeSort}
+                onClose={() => setIsSortMenuOpen(false)}
+                onSelect={(next) => {
+                    setActiveSort(next);
+                    setIsSortMenuOpen(false);
+                }}
+                visible={isSortMenuOpen}
+            />
         </View>
+    );
+};
+
+const LibrarySortMenu = ({
+    activeSort,
+    onClose,
+    onSelect,
+    visible,
+}: {
+    activeSort: LibrarySort;
+    onClose: () => void;
+    onSelect: (sort: LibrarySort) => void;
+    visible: boolean;
+}) => {
+    return (
+        <Modal animationType="fade" onRequestClose={onClose} transparent visible={visible}>
+            <Pressable onPress={onClose} style={styles.mediaContextBackdrop}>
+                <Pressable
+                    onPress={(event) => event.stopPropagation()}
+                    style={styles.mediaContextSheet}
+                >
+                    <View style={styles.librarySortMenuHeader}>
+                        <Text style={styles.mediaContextEyebrow}>Sort By</Text>
+                    </View>
+                    <View style={styles.mediaContextDivider} />
+                    <View style={styles.mediaContextActions}>
+                        {LIBRARY_SORTS.map((sort, index) => {
+                            const isActive = sort.id === activeSort;
+
+                            return (
+                                <Pressable
+                                    accessibilityRole="button"
+                                    android_ripple={{
+                                        borderless: false,
+                                        color: 'rgba(255, 255, 255, 0.06)',
+                                    }}
+                                    key={sort.id}
+                                    onPress={() => {
+                                        triggerImpact('light');
+                                        onSelect(sort.id);
+                                    }}
+                                    style={[
+                                        styles.mediaContextActionRow,
+                                        index === LIBRARY_SORTS.length - 1 &&
+                                            styles.mediaContextActionRowLast,
+                                    ]}
+                                >
+                                    <View style={styles.mediaContextActionIcon}>
+                                        {isActive ? (
+                                            <CheckGlyph color={colors.accent} />
+                                        ) : null}
+                                    </View>
+                                    <Text
+                                        numberOfLines={1}
+                                        style={[
+                                            styles.mediaContextActionLabel,
+                                            isActive && styles.librarySortMenuLabelActive,
+                                        ]}
+                                    >
+                                        {sort.label}
+                                    </Text>
+                                </Pressable>
+                            );
+                        })}
+                    </View>
+                </Pressable>
+            </Pressable>
+        </Modal>
     );
 };
 
@@ -5112,6 +5354,38 @@ const HomeContentStatus = ({
     recentItems: AndroidRecentContentItem[];
     serverConnections: ServerAuthenticationResult[];
 }) => {
+    const stableSelectItem = useStableCallback(onSelectItem);
+    const stableViewAll = useStableCallback((section: HomeDisplaySection): void => {
+        onViewAll?.(section);
+    });
+    const loadedContent = homeContentState.status === 'loaded' ? homeContentState.content : null;
+    const allSections = useMemo(
+        () =>
+            loadedContent
+                ? getHomeDisplaySections(
+                      loadedContent.sections,
+                      recentItems,
+                      serverConnections,
+                  )
+                : [],
+        [loadedContent, recentItems, serverConnections],
+    );
+    const availableFilters = useMemo(
+        () => getAvailableHomeFilters(allSections),
+        [allSections],
+    );
+    const filteredSections = useMemo(
+        () => filterHomeDisplaySections(allSections, activeFilter),
+        [activeFilter, allSections],
+    );
+    const filteredGridItems = useMemo(
+        () =>
+            activeFilter === 'podcasts' || activeFilter === 'audiobooks'
+                ? filteredSections.flatMap((section) => section.items)
+                : [],
+        [activeFilter, filteredSections],
+    );
+
     if (homeContentState.status === 'idle') {
         return null;
     }
@@ -5150,14 +5424,6 @@ const HomeContentStatus = ({
             </>
         );
     }
-
-    const allSections = getHomeDisplaySections(
-        homeContentState.content.sections,
-        recentItems,
-        serverConnections,
-    );
-    const availableFilters = getAvailableHomeFilters(allSections);
-    const filteredSections = filterHomeDisplaySections(allSections, activeFilter);
 
     return (
         <>
@@ -5201,14 +5467,14 @@ const HomeContentStatus = ({
                 </View>
             ) : activeFilter === 'podcasts' || activeFilter === 'audiobooks' ? (
                 <HomeFilterGrid
-                    items={filteredSections.flatMap((section) => section.items)}
-                    onSelectItem={onSelectItem}
+                    items={filteredGridItems}
+                    onSelectItem={stableSelectItem}
                     variant={activeFilter === 'podcasts' ? 'podcast' : 'book'}
                 />
             ) : (
                 <ContentSections
-                    onSelectItem={onSelectItem}
-                    onViewAll={onViewAll}
+                    onSelectItem={stableSelectItem}
+                    onViewAll={onViewAll ? stableViewAll : undefined}
                     sections={filteredSections}
                 />
             )}
@@ -5350,6 +5616,7 @@ const getLibraryRows = (
     recentItems: AndroidRecentContentItem[],
     activeFilter: LibraryFilter,
     query: string,
+    sort: LibrarySort = 'recents',
 ) => {
     const recentItemsByKey = new Map(recentItems.map((item) => [item.key, item]));
     const baseKeys = new Set(baseItems.map((item) => item.key));
@@ -5382,6 +5649,10 @@ const getLibraryRows = (
             );
         })
         .sort((left, right) => {
+            if (sort === 'name') {
+                return left.item.title.localeCompare(right.item.title);
+            }
+
             if (left.selectedAt !== right.selectedAt) {
                 return right.selectedAt - left.selectedAt;
             }
@@ -5812,7 +6083,52 @@ const getHomeItemTypeLabel = (item: AndroidRecentContentSourceItem) => {
     return mediaType ? getLibraryMediaTypeLabel(mediaType) : undefined;
 };
 
-const HomeFilterGrid = ({
+const HomeFilterGridTile = memo(({
+    isPodcast,
+    item,
+    onSelectItem,
+    variant,
+}: {
+    isPodcast: boolean;
+    item: AndroidRecentContentSourceItem;
+    onSelectItem: (item: AndroidRecentContentSourceItem) => void;
+    variant: 'book' | 'podcast';
+}) => {
+    const subtitle = getHomeItemSubtitle(item, variant);
+
+    return (
+        <Pressable
+            key={getContentItemKey(item)}
+            onPress={() => onSelectItem(item)}
+            style={styles.homeFilterGridTile}
+        >
+            <ArtworkImage
+                fallbackStyle={[
+                    styles.homeFilterGridArtworkFallback,
+                    isPodcast && styles.homeFilterGridArtworkPodcast,
+                ]}
+                letter={item.title.slice(0, 1)}
+                style={[
+                    styles.homeFilterGridArtwork,
+                    isPodcast && styles.homeFilterGridArtworkPodcast,
+                ]}
+                uri={item.artworkUrl}
+            />
+            <Text numberOfLines={2} style={styles.mediaTitle}>
+                {item.title}
+            </Text>
+            {subtitle ? (
+                <Text numberOfLines={1} style={styles.mediaSubtitle}>
+                    {subtitle}
+                </Text>
+            ) : null}
+        </Pressable>
+    );
+});
+
+HomeFilterGridTile.displayName = 'HomeFilterGridTile';
+
+const HomeFilterGrid = memo(({
     items,
     onSelectItem,
     variant,
@@ -5824,42 +6140,237 @@ const HomeFilterGrid = ({
     const isPodcast = variant === 'podcast';
     return (
         <View style={styles.homeFilterGrid}>
-            {items.map((item) => {
-                const subtitle = getHomeItemSubtitle(item, variant);
-                return (
-                    <Pressable
-                        key={getContentItemKey(item)}
-                        onPress={() => onSelectItem(item)}
-                        style={styles.homeFilterGridTile}
-                    >
-                        <ArtworkImage
-                            fallbackStyle={[
-                                styles.homeFilterGridArtworkFallback,
-                                isPodcast && styles.homeFilterGridArtworkPodcast,
-                            ]}
-                            letter={item.title.slice(0, 1)}
-                            style={[
-                                styles.homeFilterGridArtwork,
-                                isPodcast && styles.homeFilterGridArtworkPodcast,
-                            ]}
-                            uri={item.artworkUrl}
-                        />
-                        <Text numberOfLines={2} style={styles.mediaTitle}>
-                            {item.title}
-                        </Text>
-                        {subtitle ? (
-                            <Text numberOfLines={1} style={styles.mediaSubtitle}>
-                                {subtitle}
-                            </Text>
-                        ) : null}
-                    </Pressable>
-                );
-            })}
+            {items.map((item) => (
+                <HomeFilterGridTile
+                    isPodcast={isPodcast}
+                    item={item}
+                    key={getContentItemKey(item)}
+                    onSelectItem={onSelectItem}
+                    variant={variant}
+                />
+            ))}
         </View>
     );
+});
+
+HomeFilterGrid.displayName = 'HomeFilterGrid';
+
+const getHomeRowItemLength = (variant: HomeDisplaySection['variant']): number => {
+    switch (variant) {
+        case 'artist':
+            return HOME_PRIMARY_TILE - HOME_COMPACT_OFFSET + HOME_TILE_GAP;
+        case 'podcast':
+        case 'radio':
+            return HOME_PRIMARY_TILE - HOME_ROUNDED_OFFSET + HOME_TILE_GAP;
+        case 'continue':
+        case 'wide':
+            return 320 + HOME_TILE_GAP;
+        case 'album':
+        case 'book':
+        case 'playlist':
+        case 'recents':
+            return HOME_PRIMARY_TILE + HOME_TILE_GAP;
+    }
 };
 
-const ContentSections = ({
+interface HomeMediaTileProps {
+    item: AndroidRecentContentSourceItem;
+    onSelectItem: (item: AndroidRecentContentSourceItem) => void;
+    sectionVariant: HomeDisplaySection['variant'];
+}
+
+const HomeMediaTile = memo(({ item, onSelectItem, sectionVariant }: HomeMediaTileProps) => {
+    const contextMenu = useMediaContextMenu();
+
+    const isAlbum = sectionVariant === 'album';
+    const isArtist = sectionVariant === 'artist';
+    const isBook = sectionVariant === 'book';
+    const isContinue = sectionVariant === 'continue';
+    const isPlaylist = sectionVariant === 'playlist';
+    const isPodcast = sectionVariant === 'podcast';
+    const isRadioSection = sectionVariant === 'radio';
+    const isRecent = sectionVariant === 'recents';
+    const isWide = sectionVariant === 'wide' || isContinue;
+    const isRadio = item.type === MobileHomeItemType.RADIO;
+    // An artist tile rendered inside a Recents/mixed row must still
+    // be circular — never a square with a letter.
+    const isArtistItem = item.type === MobileHomeItemType.ARTIST;
+    const progress = getContentItemProgress(item);
+    const subtitle = getHomeItemSubtitle(item, sectionVariant);
+    // Playlists are never a single quality, so per the UX rule we
+    // suppress the format badge on playlist tiles even when the
+    // item happens to carry an isHiRes flag from an older path.
+    const tileBadgeProfile =
+        item.type === MobileHomeItemType.PLAYLIST ? undefined : getItemQualityProfile(item);
+    const tileStyle = [
+        styles.mediaTile,
+        isAlbum && styles.mediaTileAlbum,
+        isArtist && styles.mediaTileArtist,
+        isRecent && styles.mediaTileCompact,
+        isRadioSection && styles.mediaTileGrid,
+        isWide && styles.mediaTileWide,
+        isContinue && styles.mediaTileContinue,
+        isBook && styles.mediaTileBook,
+        isPlaylist && styles.mediaTilePlaylist,
+        isPodcast && styles.mediaTilePodcast,
+    ];
+    const artworkStyle = [
+        styles.mediaArtwork,
+        isAlbum && styles.mediaArtworkAlbum,
+        isArtist && styles.mediaArtworkArtist,
+        isRecent && styles.mediaArtworkCompact,
+        isRadioSection && styles.mediaArtworkGrid,
+        isWide && styles.mediaArtworkWide,
+        isBook && styles.mediaArtworkBook,
+        isPlaylist && styles.mediaArtworkPlaylist,
+        isPodcast && styles.mediaArtworkPodcast,
+        isRadio && styles.mediaArtworkRadio,
+        isArtistItem && styles.libraryArtworkRound,
+    ];
+    const fallbackStyle = [
+        styles.mediaArtworkFallback,
+        isAlbum && styles.mediaArtworkAlbum,
+        isArtist && styles.mediaArtworkArtist,
+        isRecent && styles.mediaArtworkCompact,
+        isRadioSection && styles.mediaArtworkGrid,
+        isWide && styles.mediaArtworkWide,
+        isBook && styles.mediaArtworkBook,
+        isPlaylist && styles.mediaArtworkPlaylist,
+        isPodcast && styles.mediaArtworkPodcast,
+        isRadio && styles.mediaArtworkRadio,
+        isArtistItem && styles.libraryArtworkRound,
+    ];
+
+    return (
+        <Pressable
+            onLongPress={() => contextMenu.openForItem(item)}
+            onPress={() => onSelectItem(item)}
+            style={tileStyle}
+        >
+            <ArtworkImage
+                fallbackStyle={fallbackStyle}
+                letter={item.title.slice(0, 1)}
+                style={artworkStyle}
+                uri={item.artworkUrl}
+            />
+            <QualityBadge overlay profile={tileBadgeProfile} />
+            {isRecent ? (
+                <View style={styles.mediaTypeBadge}>
+                    <Text style={styles.mediaTypeBadgeText}>
+                        {getHomeItemTypeLabel(item) ?? 'Media'}
+                    </Text>
+                </View>
+            ) : null}
+            <View
+                style={[
+                    styles.mediaText,
+                    isWide && styles.mediaTextWide,
+                    isArtist && styles.mediaTextCentered,
+                ]}
+            >
+                <Text
+                    numberOfLines={2}
+                    style={[
+                        styles.mediaTitle,
+                        (isArtist || isRadioSection) && styles.mediaTitleCentered,
+                        isWide && styles.mediaTitleWide,
+                    ]}
+                >
+                    {item.title}
+                </Text>
+                {subtitle ? (
+                    <Text
+                        numberOfLines={isWide ? 2 : 1}
+                        style={[
+                            styles.mediaSubtitle,
+                            isArtist && styles.mediaSubtitleCentered,
+                        ]}
+                    >
+                        {subtitle}
+                    </Text>
+                ) : null}
+                {isContinue && progress !== undefined ? (
+                    <View style={styles.continueProgressTrack}>
+                        <View
+                            style={[
+                                styles.continueProgressFill,
+                                { width: `${progress * 100}%` },
+                            ]}
+                        />
+                    </View>
+                ) : null}
+            </View>
+        </Pressable>
+    );
+});
+
+HomeMediaTile.displayName = 'HomeMediaTile';
+
+interface HomeDisplayRowProps {
+    onSelectItem: (item: AndroidRecentContentSourceItem) => void;
+    onViewAll?: (section: HomeDisplaySection) => void;
+    section: HomeDisplaySection;
+}
+
+const HomeDisplayRow = memo(({ onSelectItem, onViewAll, section }: HomeDisplayRowProps) => {
+    const viewAllVariant = getViewAllVariant(section.variant);
+    const canViewAll = viewAllVariant !== null && Boolean(onViewAll);
+    const itemLength = getHomeRowItemLength(section.variant);
+    const getItemLayout = useCallback(
+        (_: ArrayLike<AndroidRecentContentSourceItem> | null | undefined, index: number) => ({
+            index,
+            length: itemLength,
+            offset: itemLength * index,
+        }),
+        [itemLength],
+    );
+    const renderItem = useCallback(
+        ({ item }: { item: AndroidRecentContentSourceItem }) => (
+            <HomeMediaTile
+                item={item}
+                onSelectItem={onSelectItem}
+                sectionVariant={section.variant}
+            />
+        ),
+        [onSelectItem, section.variant],
+    );
+
+    return (
+        <View style={styles.homeSection}>
+            <View style={styles.sectionHeaderRow}>
+                <Text style={styles.sectionTitle}>{section.title}</Text>
+                {canViewAll ? (
+                    <Pressable
+                        accessibilityLabel={`View all ${section.title}`}
+                        accessibilityRole="button"
+                        hitSlop={8}
+                        onPress={() => onViewAll?.(section)}
+                        style={styles.sectionViewAll}
+                    >
+                        <Text style={styles.sectionViewAllLabel}>View All</Text>
+                    </Pressable>
+                ) : null}
+            </View>
+            <FlatList
+                data={section.items}
+                getItemLayout={getItemLayout}
+                horizontal
+                initialNumToRender={HOME_ROW_INITIAL_ITEMS}
+                keyExtractor={getContentItemKey}
+                maxToRenderPerBatch={HOME_ROW_RENDER_BATCH}
+                removeClippedSubviews={Platform.OS === 'android'}
+                renderItem={renderItem}
+                showsHorizontalScrollIndicator={false}
+                updateCellsBatchingPeriod={32}
+                windowSize={HOME_ROW_WINDOW_SIZE}
+            />
+        </View>
+    );
+});
+
+HomeDisplayRow.displayName = 'HomeDisplayRow';
+
+const ContentSections = memo(({
     onSelectItem,
     onViewAll,
     sections,
@@ -5868,166 +6379,21 @@ const ContentSections = ({
     onViewAll?: (section: HomeDisplaySection) => void;
     sections: HomeDisplaySection[];
 }) => {
-    const contextMenu = useMediaContextMenu();
     return (
         <>
-            {sections.map((section) => {
-                const isAlbum = section.variant === 'album';
-                const isArtist = section.variant === 'artist';
-                const isBook = section.variant === 'book';
-                const isContinue = section.variant === 'continue';
-                const isPlaylist = section.variant === 'playlist';
-                const isPodcast = section.variant === 'podcast';
-                const isRadioSection = section.variant === 'radio';
-                const isRecent = section.variant === 'recents';
-                const isWide = section.variant === 'wide' || isContinue;
-                // View All is opt-in by variant: recents (incl. the
-                // "Recently Added" hero), wide/continue and radio rows are
-                // skipped because they're meant to be ephemeral or live.
-                const viewAllVariant = getViewAllVariant(section.variant);
-                const canViewAll = viewAllVariant !== null && Boolean(onViewAll);
-
-                return (
-                    <View key={section.key} style={styles.homeSection}>
-                        <View style={styles.sectionHeaderRow}>
-                            <Text style={styles.sectionTitle}>{section.title}</Text>
-                            {canViewAll ? (
-                                <Pressable
-                                    accessibilityLabel={`View all ${section.title}`}
-                                    accessibilityRole="button"
-                                    hitSlop={8}
-                                    onPress={() => onViewAll?.(section)}
-                                    style={styles.sectionViewAll}
-                                >
-                                    <Text style={styles.sectionViewAllLabel}>View All</Text>
-                                </Pressable>
-                            ) : null}
-                        </View>
-                        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                            {section.items.map((item) => {
-                                const isRadio = item.type === MobileHomeItemType.RADIO;
-                                // An artist tile rendered inside a Recents/mixed row must still
-                                // be circular — never a square with a letter.
-                                const isArtistItem = item.type === MobileHomeItemType.ARTIST;
-                                const progress = getContentItemProgress(item);
-                                const subtitle = getHomeItemSubtitle(item, section.variant);
-                                // Playlists are never a single quality, so per the UX rule we
-                                // suppress the format badge on playlist tiles even when the
-                                // item happens to carry an isHiRes flag from an older path.
-                                const tileBadgeProfile =
-                                    item.type === MobileHomeItemType.PLAYLIST
-                                        ? undefined
-                                        : getItemQualityProfile(item);
-                                const tileStyle = [
-                                    styles.mediaTile,
-                                    isAlbum && styles.mediaTileAlbum,
-                                    isArtist && styles.mediaTileArtist,
-                                    isRecent && styles.mediaTileCompact,
-                                    isRadioSection && styles.mediaTileGrid,
-                                    isWide && styles.mediaTileWide,
-                                    isContinue && styles.mediaTileContinue,
-                                    isBook && styles.mediaTileBook,
-                                    isPlaylist && styles.mediaTilePlaylist,
-                                    isPodcast && styles.mediaTilePodcast,
-                                ];
-                                const artworkStyle = [
-                                    styles.mediaArtwork,
-                                    isAlbum && styles.mediaArtworkAlbum,
-                                    isArtist && styles.mediaArtworkArtist,
-                                    isRecent && styles.mediaArtworkCompact,
-                                    isRadioSection && styles.mediaArtworkGrid,
-                                    isWide && styles.mediaArtworkWide,
-                                    isBook && styles.mediaArtworkBook,
-                                    isPlaylist && styles.mediaArtworkPlaylist,
-                                    isPodcast && styles.mediaArtworkPodcast,
-                                    isRadio && styles.mediaArtworkRadio,
-                                    isArtistItem && styles.libraryArtworkRound,
-                                ];
-                                const fallbackStyle = [
-                                    styles.mediaArtworkFallback,
-                                    isAlbum && styles.mediaArtworkAlbum,
-                                    isArtist && styles.mediaArtworkArtist,
-                                    isRecent && styles.mediaArtworkCompact,
-                                    isRadioSection && styles.mediaArtworkGrid,
-                                    isWide && styles.mediaArtworkWide,
-                                    isBook && styles.mediaArtworkBook,
-                                    isPlaylist && styles.mediaArtworkPlaylist,
-                                    isPodcast && styles.mediaArtworkPodcast,
-                                    isRadio && styles.mediaArtworkRadio,
-                                    isArtistItem && styles.libraryArtworkRound,
-                                ];
-
-                                return (
-                                    <Pressable
-                                        key={getContentItemKey(item)}
-                                        onLongPress={() => contextMenu.openForItem(item)}
-                                        onPress={() => onSelectItem(item)}
-                                        style={tileStyle}
-                                    >
-                                        <ArtworkImage
-                                            fallbackStyle={fallbackStyle}
-                                            letter={item.title.slice(0, 1)}
-                                            style={artworkStyle}
-                                            uri={item.artworkUrl}
-                                        />
-                                        <QualityBadge overlay profile={tileBadgeProfile} />
-                                        {isRecent ? (
-                                            <View style={styles.mediaTypeBadge}>
-                                                <Text style={styles.mediaTypeBadgeText}>
-                                                    {getHomeItemTypeLabel(item) ?? 'Media'}
-                                                </Text>
-                                            </View>
-                                        ) : null}
-                                        <View
-                                            style={[
-                                                styles.mediaText,
-                                                isWide && styles.mediaTextWide,
-                                                isArtist && styles.mediaTextCentered,
-                                            ]}
-                                        >
-                                            <Text
-                                                numberOfLines={isWide ? 2 : 2}
-                                                style={[
-                                                    styles.mediaTitle,
-                                                    (isArtist || isRadioSection) &&
-                                                        styles.mediaTitleCentered,
-                                                    isWide && styles.mediaTitleWide,
-                                                ]}
-                                            >
-                                                {item.title}
-                                            </Text>
-                                            {subtitle ? (
-                                                <Text
-                                                    numberOfLines={isWide ? 2 : 1}
-                                                    style={[
-                                                        styles.mediaSubtitle,
-                                                        isArtist && styles.mediaSubtitleCentered,
-                                                    ]}
-                                                >
-                                                    {subtitle}
-                                                </Text>
-                                            ) : null}
-                                            {isContinue && progress !== undefined ? (
-                                                <View style={styles.continueProgressTrack}>
-                                                    <View
-                                                        style={[
-                                                            styles.continueProgressFill,
-                                                            { width: `${progress * 100}%` },
-                                                        ]}
-                                                    />
-                                                </View>
-                                            ) : null}
-                                        </View>
-                                    </Pressable>
-                                );
-                            })}
-                        </ScrollView>
-                    </View>
-                );
-            })}
+            {sections.map((section) => (
+                <HomeDisplayRow
+                    key={section.key}
+                    onSelectItem={onSelectItem}
+                    onViewAll={onViewAll}
+                    section={section}
+                />
+            ))}
         </>
     );
-};
+});
+
+ContentSections.displayName = 'ContentSections';
 
 const getDetailTypeLabel = (type: MobileMediaDetailType) => {
     if (type === MobileMediaDetailType.AUDIOBOOK) return 'Audiobook';
@@ -6415,15 +6781,32 @@ const MediaDetailLoaded = ({
     // Subscribe to downloads for this specific collection so the hero
     // glyph can mirror download progress in real time (Spotify-style).
     const [collectionDownloads, setCollectionDownloads] = useState<DownloadEntry[]>([]);
+    const collectionDownloadsSignatureRef = useRef('');
     useEffect(() => {
         const unsubscribe = subscribeDownloads((entries) => {
-            setCollectionDownloads(
-                entries.filter(
-                    (entry) =>
-                        entry.collection.sourceId === detail.source.id &&
-                        entry.collection.id === detail.id,
-                ),
+            const nextDownloads = entries.filter(
+                (entry) =>
+                    entry.collection.sourceId === detail.source.id &&
+                    entry.collection.id === detail.id,
             );
+            const nextSignature = nextDownloads
+                .map((entry) =>
+                    [
+                        entry.id,
+                        entry.status,
+                        entry.progress ?? '',
+                        entry.bytesDownloaded ?? '',
+                        entry.totalBytes ?? '',
+                        entry.localUri ?? '',
+                        entry.errorMessage ?? '',
+                    ].join(':'),
+                )
+                .join('|');
+            if (collectionDownloadsSignatureRef.current === nextSignature) {
+                return;
+            }
+            collectionDownloadsSignatureRef.current = nextSignature;
+            setCollectionDownloads(nextDownloads);
         });
         return () => {
             unsubscribe();
@@ -7318,10 +7701,7 @@ const StreamInfoModal = ({
     }
 
     const streamUrl = item.playback?.url;
-    const homepage =
-        item.playback?.subtitle && /^https?:/i.test(item.playback.subtitle)
-            ? item.playback.subtitle
-            : undefined;
+    const homepage = item.playback?.homepageUrl;
 
     return (
         <Modal animationType="fade" onRequestClose={onClose} transparent visible>
@@ -8374,14 +8754,8 @@ const MiniPlayer = ({
         ? (playbackState.message ?? getPlaybackDisplayMetadata(playbackState).subtitle)
         : (displayItem?.subtitle ?? undefined);
     const artworkUrl = displayItem?.artworkUrl;
-    const showQuality = displayItem?.source === 'music';
-    const miniQualityItems = showQuality && displayItem
-        ? buildAudioQualityBadgeItems({
-              ...displayItem.quality,
-              compact: true,
-              mode: 'playerbar',
-          })
-        : [];
+    const miniBadgeProfile =
+        displayItem?.source === 'music' ? getPlaybackQualityProfile(displayItem) : undefined;
 
     const handlePlayPress = (event: GestureResponderEvent) => {
         event.stopPropagation();
@@ -8399,22 +8773,24 @@ const MiniPlayer = ({
                 onPress={onOpenFullPlayer}
                 style={styles.miniPlayerTouchable}
             >
-                {artworkUrl ? (
-                    <ExpoImage
-                        cachePolicy="memory-disk"
-                        source={artworkUrl}
-                        style={styles.miniPlayerArtwork}
-                        transition={120}
-                    />
-                ) : (
-                    <View style={styles.miniPlayerArtworkFallback}>
-                        {title ? (
-                            <Text style={styles.miniPlayerArtworkLetter}>
-                                {title.slice(0, 1)}
-                            </Text>
-                        ) : null}
-                    </View>
-                )}
+                <View style={styles.miniPlayerArtworkContainer}>
+                    {artworkUrl ? (
+                        <ExpoImage
+                            cachePolicy="memory-disk"
+                            source={artworkUrl}
+                            style={styles.miniPlayerArtwork}
+                            transition={120}
+                        />
+                    ) : (
+                        <View style={styles.miniPlayerArtworkFallback}>
+                            {title ? (
+                                <Text style={styles.miniPlayerArtworkLetter}>
+                                    {title.slice(0, 1)}
+                                </Text>
+                            ) : null}
+                        </View>
+                    )}
+                </View>
                 <View style={styles.miniPlayerText}>
                     <Text numberOfLines={1} style={styles.miniPlayerTitle}>
                         {title || 'Nothing playing'}
@@ -8425,22 +8801,7 @@ const MiniPlayer = ({
                         </Text>
                     ) : null}
                 </View>
-                {miniQualityItems.length > 0 ? (
-                    <View style={styles.miniPlayerQuality}>
-                        {miniQualityItems.slice(0, 3).map((item, index) => (
-                            <Text
-                                key={`${item.label}-${index}`}
-                                numberOfLines={1}
-                                style={[
-                                    styles.miniPlayerQualityLabel,
-                                    item.tone === 'direct' && styles.miniPlayerQualityLabelDirect,
-                                ]}
-                            >
-                                {item.label}
-                            </Text>
-                        ))}
-                    </View>
-                ) : null}
+                <QualityBadge player profile={miniBadgeProfile} />
                 <Pressable
                     accessibilityLabel={isPlaying ? 'Pause' : 'Play'}
                     accessibilityRole="button"
@@ -8512,11 +8873,13 @@ const QualityBadgeRow = ({ items }: { items: ReturnType<typeof buildAudioQuality
  *               on the album detail page.
  */
 const QualityBadge = ({
+    mini = false,
     overlay = false,
     player = false,
     profile,
     thumb = false,
 }: {
+    mini?: boolean;
     overlay?: boolean;
     player?: boolean;
     profile: MobileQualityProfile | undefined;
@@ -8530,6 +8893,7 @@ const QualityBadge = ({
             source={asset}
             style={[
                 styles.formatBadge,
+                mini && styles.formatBadgeMini,
                 overlay && styles.formatBadgeOverlay,
                 player && styles.formatBadgePlayer,
                 thumb && styles.formatBadgeThumb,
@@ -8732,6 +9096,18 @@ const HOME_PRIMARY_TILE = Math.floor(
 );
 const HOME_COMPACT_OFFSET = 30;
 const HOME_ROUNDED_OFFSET = 22;
+const HOME_ROW_INITIAL_ITEMS = 6;
+const HOME_ROW_RENDER_BATCH = 6;
+const HOME_ROW_WINDOW_SIZE = 5;
+const VIEW_ALL_SIDEBAR_GUTTER = 30;
+const VIEW_ALL_TILE_SIZE = Math.floor(
+    (SCREEN_WIDTH - HOME_EDGE_PADDING * 2 - HOME_TILE_GAP - VIEW_ALL_SIDEBAR_GUTTER) / 2,
+);
+const VIEW_ALL_TILE_HEIGHT = VIEW_ALL_TILE_SIZE + 6 + 18 + 16;
+const VIEW_ALL_ROW_HEIGHT = VIEW_ALL_TILE_HEIGHT + HOME_TILE_GAP;
+const VIEW_ALL_INITIAL_ITEMS = 12;
+const VIEW_ALL_RENDER_BATCH = 12;
+const VIEW_ALL_WINDOW_SIZE = 7;
 
 // Parse #rrggbb into an RGB tuple in 0..255. Returns null on bad input.
 const parseHex = (hex: string): [number, number, number] | null => {
@@ -9920,24 +10296,20 @@ const ALPHABET_SIDEBAR_LETTERS = [
 
 const buildAlphabetLetterIndex = (
     items: MobileHomeItem[],
-    indexOffset: number = 0,
 ): Map<string, number> => {
     const map = new Map<string, number>();
     items.forEach((item, index) => {
         const first = item.title.charAt(0).toUpperCase();
         const letter = first >= 'A' && first <= 'Z' ? first : '#';
         if (!map.has(letter)) {
-            map.set(letter, indexOffset + index);
+            map.set(letter, index);
         }
     });
     return map;
 };
 
-// Number of recency-sorted items shown at the top of a View All grid before
-// the rest of the catalog falls into alphabetical order. 30 keeps the recent
-// chunk visible (~15 rows in a 2-column layout) without burying the bulk of
-// the library too far down the scroll.
-const VIEW_ALL_RECENCY_CHUNK = 30;
+const getViewAllSortKey = (item: MobileHomeItem): string =>
+    item.title.trim().toLocaleLowerCase();
 
 const ViewAllScreen = ({
     fullState,
@@ -9954,15 +10326,18 @@ const ViewAllScreen = ({
     const listRef = useRef<FlatList<MobileHomeItem>>(null);
     const isLoading = fullState.status === 'loading';
     const isError = fullState.status === 'error';
-    const { alphabeticalStartIndex, sortedItems } = useMemo(() => {
+    const sortedItems = useMemo(() => {
         // Prefer the exhaustive list once it lands; until then show the
         // home-content slice the route was opened with so the grid isn't
         // empty during the fetch. Merge the cached items either way so a
         // brief stale state can't drop favorites that the full fetch missed.
         const fullItems = fullState.status === 'loaded' ? fullState.items : [];
+        const sourceItems = fullState.status === 'loaded'
+            ? [...fullItems, ...route.items]
+            : route.items;
         const merged: MobileHomeItem[] = [];
         const seen = new Set<string>();
-        for (const item of [...route.items, ...fullItems]) {
+        for (const item of sourceItems) {
             // Skip anything that doesn't have the minimum fields the FlatList
             // renderItem expects. Without this guard, a server returning a
             // partial record (eg an album with no id or title) crashed the
@@ -9975,59 +10350,48 @@ const ViewAllScreen = ({
             seen.add(key);
             merged.push(item);
         }
-        // "Order it in recency, then once recency is done, just list all the
-        // rest of the albums." — slice the newest-added items off the front
-        // (by addedAt desc) and follow them with the entire remaining catalog
-        // in alphabetical order. The alphabet sidebar jumps into the second
-        // chunk so per-letter navigation still feels natural.
-        const datedItems = merged
-            .filter((item) => typeof item.addedAt === 'number')
-            .sort((left, right) => (right.addedAt ?? 0) - (left.addedAt ?? 0));
-        const recentChunk = datedItems.slice(0, VIEW_ALL_RECENCY_CHUNK);
-        const recentKeys = new Set(recentChunk.map((item) => getRecentContentItemKey(item)));
-        const alphabeticalChunk = merged
-            .filter((item) => !recentKeys.has(getRecentContentItemKey(item)))
+        return merged
+            .map((item) => ({ item, sortKey: getViewAllSortKey(item) }))
             .sort((left, right) =>
-                left.title.localeCompare(right.title, undefined, {
+                left.sortKey.localeCompare(right.sortKey, undefined, {
+                    numeric: true,
                     sensitivity: 'base',
                 }),
-            );
-        return {
-            alphabeticalStartIndex: recentChunk.length,
-            sortedItems: [...recentChunk, ...alphabeticalChunk],
-        };
+            )
+            .map(({ item }) => item);
     }, [fullState, route.items]);
     const letterIndex = useMemo(
-        () => buildAlphabetLetterIndex(sortedItems.slice(alphabeticalStartIndex), alphabeticalStartIndex),
-        [alphabeticalStartIndex, sortedItems],
+        () => buildAlphabetLetterIndex(sortedItems),
+        [sortedItems],
     );
 
     const handleJumpToLetter = useCallback(
         (letter: string) => {
             const index = letterIndex.get(letter);
             if (typeof index !== 'number') return;
-            // Round down to the start of the row in 2-column layouts so the
-            // first item of the chosen letter sits on the left. Clamp to the
-            // current data length so an out-of-bounds jump can't push the
-            // FlatList past its tail and trip native-side index assertions.
-            const rowStartIndex = Math.min(
-                Math.max(0, index - (index % 2)),
-                Math.max(0, sortedItems.length - 1),
-            );
+            const row = Math.floor(index / 2);
+            const offset = Math.max(0, row * VIEW_ALL_ROW_HEIGHT);
             try {
-                listRef.current?.scrollToIndex({
+                listRef.current?.scrollToOffset({
                     animated: true,
-                    index: rowStartIndex,
-                    viewPosition: 0,
+                    offset,
                 });
             } catch (error) {
-                // scrollToIndex throws synchronously on some RN versions when
-                // the target row hasn't been measured yet. Don't take the
-                // screen down — onScrollToIndexFailed will pick up the slack.
-                console.warn('[ViewAllScreen] scrollToIndex threw', error);
+                console.warn('[ViewAllScreen] scrollToOffset threw', error);
             }
         },
-        [letterIndex, sortedItems.length],
+        [letterIndex],
+    );
+    const getItemLayout = useCallback(
+        (_: ArrayLike<MobileHomeItem> | null | undefined, index: number) => {
+            const row = Math.floor(index / 2);
+            return {
+                index,
+                length: VIEW_ALL_ROW_HEIGHT,
+                offset: row * VIEW_ALL_ROW_HEIGHT,
+            };
+        },
+        [],
     );
 
     const renderItem = useCallback(
@@ -10109,34 +10473,17 @@ const ViewAllScreen = ({
                         columnWrapperStyle={styles.viewAllColumn}
                         contentContainerStyle={styles.viewAllListContent}
                         data={sortedItems}
-                        keyExtractor={(item) => getContentItemKey(item)}
+                        getItemLayout={getItemLayout}
+                        initialNumToRender={VIEW_ALL_INITIAL_ITEMS}
+                        keyExtractor={getContentItemKey}
+                        maxToRenderPerBatch={VIEW_ALL_RENDER_BATCH}
                         numColumns={2}
-                        // scrollToIndex can fail when the target row hasn't
-                        // been measured yet. Fall back to an offset estimate
-                        // only when we have a sane averageItemLength to work
-                        // with, and don't retry on a setTimeout — successive
-                        // failures were spinning into a redbox-grade crash on
-                        // alphabet-letter taps for unmounted rows.
-                        onScrollToIndexFailed={(info) => {
-                            const avg = info.averageItemLength;
-                            if (!Number.isFinite(avg) || avg <= 0) return;
-                            const offset = avg * Math.floor(info.index / 2);
-                            if (!Number.isFinite(offset) || offset < 0) return;
-                            try {
-                                listRef.current?.scrollToOffset({
-                                    animated: true,
-                                    offset,
-                                });
-                            } catch (error) {
-                                console.warn(
-                                    '[ViewAllScreen] scrollToOffset threw',
-                                    error,
-                                );
-                            }
-                        }}
                         ref={listRef}
+                        removeClippedSubviews={Platform.OS === 'android'}
                         renderItem={renderItem}
                         showsVerticalScrollIndicator={false}
+                        updateCellsBatchingPeriod={32}
+                        windowSize={VIEW_ALL_WINDOW_SIZE}
                     />
                 )}
                 <AlphabetSidebar
@@ -11418,14 +11765,15 @@ const styles = StyleSheet.create({
         gap: HOME_TILE_GAP,
         paddingBottom: spacing.xl,
         // Leave room on the right edge so tiles don't sit under the sidebar.
-        paddingRight: 22,
+        paddingRight: VIEW_ALL_SIDEBAR_GUTTER,
     },
     viewAllScreen: {
         flex: 1,
     },
     viewAllTile: {
-        flex: 1,
+        height: VIEW_ALL_TILE_HEIGHT,
         position: 'relative',
+        width: VIEW_ALL_TILE_SIZE,
     },
     viewAllTileArtwork: {
         aspectRatio: 1,
@@ -11571,6 +11919,13 @@ const styles = StyleSheet.create({
         gap: 6,
         minHeight: 32,
         paddingHorizontal: spacing.sm,
+    },
+    librarySortMenuHeader: {
+        paddingHorizontal: 16,
+        paddingTop: 16,
+    },
+    librarySortMenuLabelActive: {
+        color: colors.accent,
     },
     librarySortText: {
         color: colors.muted,
@@ -11801,6 +12156,11 @@ const styles = StyleSheet.create({
         height: MINI_PLAYER_ARTWORK_SIZE,
         width: MINI_PLAYER_ARTWORK_SIZE,
     },
+    miniPlayerArtworkContainer: {
+        height: MINI_PLAYER_ARTWORK_SIZE,
+        position: 'relative',
+        width: MINI_PLAYER_ARTWORK_SIZE,
+    },
     miniPlayerArtworkFallback: {
         alignItems: 'center',
         backgroundColor: 'rgba(255, 255, 255, 0.1)',
@@ -11819,21 +12179,6 @@ const styles = StyleSheet.create({
         height: 50,
         justifyContent: 'center',
         width: 50,
-    },
-    miniPlayerQuality: {
-        alignItems: 'flex-end',
-        justifyContent: 'center',
-        marginRight: 4,
-    },
-    miniPlayerQualityLabel: {
-        color: 'rgba(246, 239, 226, 0.52)',
-        fontSize: 10,
-        fontWeight: '700',
-        letterSpacing: 0.3,
-        lineHeight: 13,
-    },
-    miniPlayerQualityLabelDirect: {
-        color: colors.accent,
     },
     miniPlayerSubtitle: {
         color: colors.muted,
@@ -12113,6 +12458,16 @@ const styles = StyleSheet.create({
         resizeMode: 'contain',
         width: 44,
     },
+    formatBadgeMini: {
+        // Mini-player artwork is only 58x58, so the badge needs to shrink to
+        // stay readable without smothering the cover art. Same top-left
+        // placement as formatBadgeOverlay for visual consistency with tiles.
+        height: 22,
+        left: 3,
+        position: 'absolute',
+        top: 3,
+        width: 22,
+    },
     formatBadgeOverlay: {
         // Corner overlay on artwork. Top-left mirrors how Tidal and Apple
         // Music position their lossless marks — bottom corners draw the eye
@@ -12124,8 +12479,9 @@ const styles = StyleSheet.create({
         width: 38,
     },
     formatBadgePlayer: {
-        height: 32,
-        width: 32,
+        height: 44,
+        marginRight: -6,
+        width: 44,
     },
     formatBadgeThumb: {
         bottom: 2,

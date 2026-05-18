@@ -1,0 +1,48 @@
+diff --git a/android/build.gradle b/android/build.gradle
+index 0000000000000000000000000000000000000000..0000000000000000000000000000000000000000 100644
+--- a/android/build.gradle
++++ b/android/build.gradle
+@@ -127,7 +127,7 @@ def REANIMATED_FEATURE_FLAGS = getReanimatedStaticFeatureFlags()
+ 
+ // Set version for prefab
+-version REANIMATED_VERSION
++version = REANIMATED_VERSION
+ 
+ def reanimatedPrefabHeadersDir = project.file("$buildDir/prefab-headers/reanimated")
+@@ -159,17 +159,17 @@ android {
+     compileSdkVersion safeExtGet("compileSdkVersion", 34)
+ 
+-    namespace "com.swmansion.reanimated"
++    namespace = "com.swmansion.reanimated"
+ 
+     if (rootProject.hasProperty("ndkPath")) {
+         ndkPath rootProject.ext.ndkPath
+     }
+     if (rootProject.hasProperty("ndkVersion")) {
+-        ndkVersion rootProject.ext.ndkVersion
++        ndkVersion = rootProject.ext.ndkVersion
+     }
+ 
+     buildFeatures {
+-        prefab true
+-        prefabPublishing true
+-        buildConfig true
++        prefab = true
++        prefabPublishing = true
++        buildConfig = true
+     }
+ 
+     prefab {
+         reanimated {
+-            headers reanimatedPrefabHeadersDir.absolutePath
++            headers = reanimatedPrefabHeadersDir.absolutePath
+         }
+     }
+@@ -225,7 +225,7 @@ android {
+         }
+     }
+     lintOptions {
+-        abortOnError false
++        abortOnError = false
+     }
+     packagingOptions {

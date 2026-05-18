@@ -1,0 +1,18 @@
+diff --git a/android/build.gradle b/android/build.gradle
+index 0000000000000000000000000000000000000000..0000000000000000000000000000000000000000 100644
+--- a/android/build.gradle
++++ b/android/build.gradle
+@@ -10,11 +10,11 @@ version = '18.0.13'
+ 
+ expoModule {
+   // We can't prebuild the module because we need to apply `get-app-config-android.gradle` script.
+-  canBePublished false
++  canBePublished = false
+ }
+ 
+ android {
+-  namespace "expo.modules.constants"
++  namespace = "expo.modules.constants"
+   defaultConfig {
+     versionCode 33
+     versionName "18.0.13"

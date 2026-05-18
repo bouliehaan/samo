@@ -1,0 +1,49 @@
+diff --git a/android/build.gradle b/android/build.gradle
+index 0000000000000000000000000000000000000000..0000000000000000000000000000000000000000 100644
+--- a/android/build.gradle
++++ b/android/build.gradle
+@@ -128,7 +128,7 @@ def WORKLETS_PROFILING = safeAppExtGet("enableWorkletsProfiling", false)
+ 
+ // Set version for prefab
+-version WORKLETS_VERSION
++version = WORKLETS_VERSION
+ 
+ def workletsPrefabHeadersDir = project.file("${getLayout().getBuildDirectory().getAsFile().get().absolutePath}/prefab-headers/worklets")
+@@ -181,17 +181,17 @@ apply from: "./fix-prefab.gradle"
+ android {
+     compileSdkVersion safeExtGet("compileSdkVersion", 36)
+ 
+-    namespace "com.swmansion.worklets"
++    namespace = "com.swmansion.worklets"
+ 
+     if (rootProject.hasProperty("ndkPath")) {
+         ndkPath rootProject.ext.ndkPath
+     }
+     if (rootProject.hasProperty("ndkVersion")) {
+-        ndkVersion rootProject.ext.ndkVersion
++        ndkVersion = rootProject.ext.ndkVersion
+     }
+ 
+     buildFeatures {
+-        prefab true
+-        prefabPublishing true
+-        buildConfig true
++        prefab = true
++        prefabPublishing = true
++        buildConfig = true
+     }
+ 
+     prefab {
+         worklets {
+-            headers workletsPrefabHeadersDir.absolutePath
++            headers = workletsPrefabHeadersDir.absolutePath
+         }
+     }
+@@ -261,7 +261,7 @@ android {
+         }
+     }
+     lintOptions {
+-        abortOnError false
++        abortOnError = false
+     }
+     packagingOptions {

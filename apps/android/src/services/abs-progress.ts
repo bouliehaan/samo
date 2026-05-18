@@ -34,6 +34,7 @@ const lastAttemptByKey = new Map<string, number>();
 let writeInFlight: null | Promise<void> = null;
 let writeQueued = false;
 let initialized = false;
+let initInFlight: null | Promise<void> = null;
 
 const isFinishedProgress = (progress: AbsLoadedProgress): boolean =>
     progress.isFinished ||
@@ -106,19 +107,39 @@ const flushMemCacheToDisk = async (): Promise<void> => {
  */
 export const initAbsProgressStore = async (): Promise<void> => {
     if (initialized) return;
-    initialized = true;
-    try {
-        const info = await FileSystem.getInfoAsync(STORAGE_FILE);
-        if (!info.exists) return;
-        const text = await FileSystem.readAsStringAsync(STORAGE_FILE);
-        const parsed: unknown = JSON.parse(text);
-        if (Array.isArray(parsed)) {
-            memCache = parsed.filter(isValidEntry);
+    if (initInFlight) return initInFlight;
+
+    initInFlight = (async () => {
+        try {
+            const info = await FileSystem.getInfoAsync(STORAGE_FILE);
+            if (!info.exists) {
+                initialized = true;
+                return;
+            }
+            const text = await FileSystem.readAsStringAsync(STORAGE_FILE);
+            const parsed: unknown = JSON.parse(text);
+            if (Array.isArray(parsed)) {
+                memCache = parsed.filter(isValidEntry);
+            } else {
+                memCache = [];
+            }
+            initialized = true;
+        } catch {
+            // Corrupted file or IO trouble — clear the disk copy if possible. If
+            // that cleanup also fails, leave initialization retryable.
+            memCache = [];
+            try {
+                await FileSystem.deleteAsync(STORAGE_FILE, { idempotent: true });
+                initialized = true;
+            } catch {
+                initialized = false;
+            }
+        } finally {
+            initInFlight = null;
         }
-    } catch {
-        // Corrupted file or missing directory — start fresh; the next
-        // successful sync will overwrite it.
-    }
+    })();
+
+    return initInFlight;
 };
 
 export const loadAbsCurrentProgress = async (

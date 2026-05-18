@@ -39,6 +39,7 @@ export interface MobileSearchAcrossServersInput {
     authentications: ServerAuthenticationResult[];
     fetch?: SamoFetch;
     limit?: number;
+    qualityScanLimit?: number;
     query: string;
     userRecents?: Map<string, number>;
 }
@@ -47,6 +48,7 @@ export interface MobileSearchInput {
     authentication: ServerAuthenticationResult;
     fetch?: SamoFetch;
     limit?: number;
+    qualityScanLimit?: number;
     query: string;
 }
 
@@ -575,6 +577,7 @@ const loadSubsonicSearch = async (
     fetcher: SamoFetch,
     query: string,
     limit: number,
+    qualityScanLimit: number,
 ): Promise<MobileSearchResults> => {
     const [searchResult, playlistResult, radioResult] = await Promise.allSettled([
         requestJson<SubsonicSearchBody>(
@@ -677,6 +680,7 @@ const loadSubsonicSearch = async (
                 type: MobileSearchItemType.ALBUM,
             };
         }),
+        qualityScanLimit,
     );
     // Playlists never carry a collection-level quality badge — they're mixed
     // by definition. Skip the hi-res scan entirely.
@@ -802,6 +806,7 @@ export const searchMobileContent = async ({
     authentication,
     fetch: fetcher,
     limit = DEFAULT_SEARCH_LIMIT,
+    qualityScanLimit = limit,
     query,
 }: MobileSearchInput): Promise<MobileSearchResults> => {
     const trimmedQuery = query.trim();
@@ -820,7 +825,13 @@ export const searchMobileContent = async ({
         authentication.type === ServerType.NAVIDROME ||
         authentication.type === ServerType.SUBSONIC
     ) {
-        return loadSubsonicSearch(authentication, request, trimmedQuery, limit);
+        return loadSubsonicSearch(
+            authentication,
+            request,
+            trimmedQuery,
+            limit,
+            qualityScanLimit,
+        );
     }
 
     throw new Error('Search is not wired for this server type');
@@ -836,6 +847,7 @@ export const searchMobileContentAcrossServers = async ({
     authentications,
     fetch: fetcher,
     limit = DEFAULT_SEARCH_LIMIT,
+    qualityScanLimit = limit,
     query,
     userRecents,
 }: MobileSearchAcrossServersInput): Promise<MobileSearchResults> => {
@@ -848,7 +860,13 @@ export const searchMobileContentAcrossServers = async ({
     const request = getFetch(fetcher);
     const searchLoads = await Promise.allSettled(
         authentications.map((authentication) =>
-            searchMobileContent({ authentication, fetch: request, limit, query: trimmedQuery }),
+            searchMobileContent({
+                authentication,
+                fetch: request,
+                limit,
+                qualityScanLimit,
+                query: trimmedQuery,
+            }),
         ),
     );
     const sectionsById = new Map<MobileSearchSectionId, MobileSearchSection>();

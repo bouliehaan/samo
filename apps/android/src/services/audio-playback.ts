@@ -80,7 +80,17 @@ export const playAndroidAudio = async (source: MobilePlayableAudio, sessionId: s
         throw new Error('Native Android audio engine is not available');
     }
 
-    return samoAudio.play({ ...source, sessionId });
+    // Defensive: the native side uses `subtitle` as the artist line on the
+    // notification / lock-screen. A URL there is always wrong — older radio
+    // recents persisted before buildRadioPlayback stopped storing the
+    // homepage URL in subtitle still carry one. Strip anything that looks
+    // like a URL so stale persisted data can't leak into the system UI.
+    const sanitizedSubtitle =
+        source.subtitle && /^(https?:\/\/|www\.|[a-z]+:\/\/)/i.test(source.subtitle.trim())
+            ? undefined
+            : source.subtitle;
+
+    return samoAudio.play({ ...source, sessionId, subtitle: sanitizedSubtitle });
 };
 
 export const pauseAndroidAudio = async () => {

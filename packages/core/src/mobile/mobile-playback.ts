@@ -1,4 +1,4 @@
-import { type AudioDeliveryKind } from '../audio-quality';
+import { isHiResAudioQuality, type AudioDeliveryKind } from '../audio-quality';
 import { type PlaybackSource } from '../playback';
 import { type ServerAuthenticationResult } from '../server/server-auth';
 import { getFetch, requestJson, type SamoFetch } from '../server/server-http';
@@ -31,6 +31,13 @@ export interface MobilePlayableAudio {
     artworkUrl?: string;
     contentSourceId?: string;
     durationSeconds?: number;
+    /**
+     * Radio-only: the station's homepage URL, kept separate from `subtitle`
+     * so the Android notification (which uses subtitle as the artist line)
+     * doesn't leak a raw URL into the lock-screen UI. The Stream Information
+     * modal reads it from here.
+     */
+    homepageUrl?: string;
     httpHeaders?: Record<string, string>;
     id: string;
     isLive?: boolean;
@@ -69,15 +76,16 @@ export interface SubsonicPlayableSong {
     albumId?: number | string;
     artist?: string;
     artistId?: number | string;
-    bitDepth?: number;
-    bitRate?: number;
-    channelCount?: number;
+    bitDepth?: number | string;
+    bitRate?: number | string;
+    channelCount?: number | string;
     contentType?: string;
     coverArt?: string;
     duration?: number;
     id?: number | string;
     parent?: number | string;
-    samplingRate?: number;
+    sampleRate?: number | string;
+    samplingRate?: number | string;
     suffix?: string;
     title?: string;
 }
@@ -130,6 +138,35 @@ const getContainerFromMimeType = (mimeType: string | undefined) => {
     return mimeType.split('/')[1] ?? null;
 };
 
+const toAudioNumber = (value: null | number | string | undefined) => {
+    if (typeof value === 'number') {
+        return Number.isFinite(value) ? value : null;
+    }
+
+    if (typeof value === 'string') {
+        const parsed = Number(value);
+        return Number.isFinite(parsed) ? parsed : null;
+    }
+
+    return null;
+};
+
+export const getSubsonicMusicQuality = (
+    song: SubsonicPlayableSong,
+): MobilePlaybackQuality => ({
+    bitDepth: toAudioNumber(song.bitDepth),
+    bitRate: toAudioNumber(song.bitRate),
+    channelCount: toAudioNumber(song.channelCount),
+    container: song.suffix ?? getContainerFromContentType(song.contentType),
+    deliveryKind: 'android-direct',
+    losslessRequired: true,
+    sampleRate: toAudioNumber(song.samplingRate ?? song.sampleRate),
+    serverTranscodeRequested: false,
+});
+
+export const isSubsonicSongHiRes = (song: SubsonicPlayableSong) =>
+    isHiResAudioQuality(getSubsonicMusicQuality(song));
+
 export const buildSubsonicMusicPlayback = (
     authentication: ServerAuthenticationResult,
     song: SubsonicPlayableSong,
@@ -151,16 +188,7 @@ export const buildSubsonicMusicPlayback = (
         durationSeconds: song.duration,
         id: `${authentication.type}:${authentication.url}:music:${id}`,
         mimeType: song.contentType,
-        quality: {
-            bitDepth: song.bitDepth ?? null,
-            bitRate: song.bitRate ?? null,
-            channelCount: song.channelCount ?? null,
-            container: song.suffix ?? getContainerFromContentType(song.contentType),
-            deliveryKind: 'android-direct',
-            losslessRequired: true,
-            sampleRate: song.samplingRate ?? null,
-            serverTranscodeRequested: false,
-        },
+        quality: getSubsonicMusicQuality(song),
         source: 'music',
         subtitle: [song.artist, song.album].filter(Boolean).join(' - '),
         title: song.title,
@@ -180,6 +208,7 @@ export const buildRadioPlayback = (
     return {
         artworkUrl,
         contentSourceId: `${authentication.type}:${authentication.url}`,
+        homepageUrl: station.homepageUrl,
         id: `${authentication.type}:${authentication.url}:radio:${station.id}`,
         isLive: true,
         quality: {
@@ -189,7 +218,6 @@ export const buildRadioPlayback = (
             serverTranscodeRequested: false,
         },
         source: 'radio',
-        subtitle: station.homepageUrl ?? station.streamUrl,
         title: station.name,
         url: station.streamUrl,
     };

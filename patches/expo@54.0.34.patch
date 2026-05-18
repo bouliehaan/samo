@@ -1,0 +1,18 @@
+diff --git a/android/build.gradle b/android/build.gradle
+index 0000000000000000000000000000000000000000..0000000000000000000000000000000000000000 100644
+--- a/android/build.gradle
++++ b/android/build.gradle
+@@ -36,11 +36,11 @@ version = '54.0.34'
+ 
+ expoModule {
+   // We can't prebuild the module because it depends on the generated files.
+-  canBePublished false
++  canBePublished = false
+ }
+ 
+ android {
+-  namespace "expo.core"
++  namespace = "expo.core"
+   defaultConfig {
+     versionCode 1
+     versionName "54.0.34"

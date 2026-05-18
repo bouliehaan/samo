@@ -17,6 +17,34 @@ export interface AndroidServerHealthSummary {
     statuses: AndroidServerHealthMap;
 }
 
+const ANDROID_SERVER_HEALTH_TIMEOUT_MS = 8_000;
+
+const checkAndroidServerConnectionWithTimeout = (
+    authentication: ServerAuthenticationResult,
+): Promise<ServerConnectionHealthResult> => {
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    const timeoutResult = new Promise<ServerConnectionHealthResult>((resolve) => {
+        timeout = setTimeout(() => {
+            resolve({
+                authentication,
+                checkedAt: Date.now(),
+                message: 'Server health check timed out.',
+                ok: false,
+                status: ServerConnectionHealthStatus.UNREACHABLE,
+            });
+        }, ANDROID_SERVER_HEALTH_TIMEOUT_MS);
+    });
+
+    return Promise.race([
+        checkServerConnectionHealth({ authentication }),
+        timeoutResult,
+    ]).finally(() => {
+        if (timeout) {
+            clearTimeout(timeout);
+        }
+    });
+};
+
 export const createCheckingServerHealthMap = (
     authentications: ServerAuthenticationResult[],
 ): AndroidServerHealthMap => {
@@ -47,7 +75,7 @@ export const checkAndroidServerConnections = async (
     authentications: ServerAuthenticationResult[],
 ): Promise<AndroidServerHealthSummary> => {
     const results = await Promise.all(
-        authentications.map((authentication) => checkServerConnectionHealth({ authentication })),
+        authentications.map(checkAndroidServerConnectionWithTimeout),
     );
 
     return {

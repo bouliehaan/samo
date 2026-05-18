@@ -1,0 +1,39 @@
+diff --git a/android/build.gradle b/android/build.gradle
+index 0000000000000000000000000000000000000000..0000000000000000000000000000000000000000 100644
+--- a/android/build.gradle
++++ b/android/build.gradle
+@@ -86,7 +86,7 @@ def FRESCO_VERSION = getFrescoVersion()
+ 
+ android {
+     compileSdkVersion safeExtGet('compileSdkVersion', 28)
+-    namespace "com.horcrux.svg"
++    namespace = "com.horcrux.svg"
+     def agpVersion = com.android.Version.ANDROID_GRADLE_PLUGIN_VERSION
+     if (agpVersion.tokenize('.')[0].toInteger() >= 8) {
+         buildFeatures {
+@@ -99,7 +99,7 @@ android {
+         ndkPath rootProject.ext.ndkPath
+     }
+     if (rootProject.hasProperty("ndkVersion")) {
+-        ndkVersion rootProject.ext.ndkVersion
++        ndkVersion = rootProject.ext.ndkVersion
+     }
+ 
+     defaultConfig {
+@@ -111,7 +111,7 @@ android {
+         consumerProguardFiles 'proguard-rules.pro'
+     }
+     lintOptions {
+-        abortOnError false
++        abortOnError = false
+     }
+ 
+     sourceSets.main {
+@@ -149,7 +149,7 @@ repositories {
+     google()
+     maven {
+         // All of React Native (JS, Obj-C sources, Android binaries) is installed from npm
+-        url "$rootDir/../node_modules/react-native/android"
++        url = "$rootDir/../node_modules/react-native/android"
+     }
+ }

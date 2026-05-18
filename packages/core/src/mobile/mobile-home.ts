@@ -43,12 +43,14 @@ export interface MobileHomeContentForServersInput {
     authentications: ServerAuthenticationResult[];
     fetch?: SamoFetch;
     limit?: number;
+    qualityScanLimit?: number;
 }
 
 export interface MobileHomeContentInput {
     authentication: ServerAuthenticationResult;
     fetch?: SamoFetch;
     limit?: number;
+    qualityScanLimit?: number;
 }
 
 export interface MobileHomeItem {
@@ -444,6 +446,7 @@ const loadSubsonicAlbums = async (
     authentication: ServerAuthenticationResult,
     fetcher: SamoFetch,
     limit: number,
+    qualityScanLimit: number,
 ): Promise<MobileHomeSection> => {
     const body = await requestJson<SubsonicAlbumListBody>(
         fetcher,
@@ -478,7 +481,13 @@ const loadSubsonicAlbums = async (
 
     return {
         id: MobileHomeSectionId.RECENTLY_ADDED,
-        items: await annotateSubsonicHiResCollections(authentication, fetcher, 'album', items),
+        items: await annotateSubsonicHiResCollections(
+            authentication,
+            fetcher,
+            'album',
+            items,
+            qualityScanLimit,
+        ),
         title: 'Recently Added',
     };
 };
@@ -487,6 +496,7 @@ const loadSubsonicFavoriteAlbumsAndArtists = async (
     authentication: ServerAuthenticationResult,
     fetcher: SamoFetch,
     limit: number,
+    qualityScanLimit: number,
 ): Promise<MobileHomeSection[]> => {
     const body = await requestJson<SubsonicStarred2Body>(
         fetcher,
@@ -516,6 +526,7 @@ const loadSubsonicFavoriteAlbumsAndArtists = async (
                 type: MobileHomeItemType.ALBUM,
             };
         }),
+        qualityScanLimit,
     );
     const favoriteArtists: MobileHomeItem[] = (response?.starred2?.artist ?? [])
         .slice(0, limit)
@@ -623,10 +634,16 @@ const loadSubsonicHomeContent = async (
     authentication: ServerAuthenticationResult,
     fetcher: SamoFetch,
     limit: number,
+    qualityScanLimit: number,
 ): Promise<MobileHomeContent> => {
     const [favoritesResult, ...sectionLoads] = await Promise.allSettled([
-        loadSubsonicFavoriteAlbumsAndArtists(authentication, fetcher, limit),
-        loadSubsonicAlbums(authentication, fetcher, limit),
+        loadSubsonicFavoriteAlbumsAndArtists(
+            authentication,
+            fetcher,
+            limit,
+            qualityScanLimit,
+        ),
+        loadSubsonicAlbums(authentication, fetcher, limit, qualityScanLimit),
         loadSubsonicPlaylists(authentication, fetcher),
         loadSubsonicRadio(authentication, fetcher),
     ]);
@@ -651,6 +668,7 @@ export const loadMobileHomeContent = async ({
     authentication,
     fetch: fetcher,
     limit = DEFAULT_HOME_LIMIT,
+    qualityScanLimit = limit,
 }: MobileHomeContentInput): Promise<MobileHomeContent> => {
     const request = getFetch(fetcher);
 
@@ -662,7 +680,7 @@ export const loadMobileHomeContent = async ({
         authentication.type === ServerType.NAVIDROME ||
         authentication.type === ServerType.SUBSONIC
     ) {
-        return loadSubsonicHomeContent(authentication, request, limit);
+        return loadSubsonicHomeContent(authentication, request, limit, qualityScanLimit);
     }
 
     throw new Error('Home content is not wired for this server type');
@@ -684,6 +702,7 @@ export type MobileFullCollectionVariant =
 export interface MobileFullCollectionInput {
     authentications: ServerAuthenticationResult[];
     fetch?: SamoFetch;
+    qualityScanLimit?: number;
     variant: MobileFullCollectionVariant;
 }
 
@@ -843,6 +862,7 @@ const loadFullCollectionForServer = async (
     authentication: ServerAuthenticationResult,
     fetcher: SamoFetch,
     variant: MobileFullCollectionVariant,
+    qualityScanLimit: number,
 ): Promise<MobileHomeItem[]> => {
     const subsonic =
         authentication.type === ServerType.NAVIDROME ||
@@ -861,7 +881,7 @@ const loadFullCollectionForServer = async (
                 authentication,
                 fetcher,
                 albums,
-                FULL_COLLECTION_QUALITY_SCAN_LIMIT,
+                qualityScanLimit,
             );
         }
         case 'artist':
@@ -891,6 +911,7 @@ const loadFullCollectionForServer = async (
 export const loadMobileFullCollection = async ({
     authentications,
     fetch: fetcher,
+    qualityScanLimit = FULL_COLLECTION_QUALITY_SCAN_LIMIT,
     variant,
 }: MobileFullCollectionInput): Promise<MobileFullCollectionResult> => {
     if (authentications.length === 0) {
@@ -899,7 +920,7 @@ export const loadMobileFullCollection = async ({
     const request = getFetch(fetcher);
     const results = await Promise.allSettled(
         authentications.map((authentication) =>
-            loadFullCollectionForServer(authentication, request, variant),
+            loadFullCollectionForServer(authentication, request, variant, qualityScanLimit),
         ),
     );
     const items: MobileHomeItem[] = [];
@@ -918,6 +939,7 @@ export const loadMobileHomeContentForServers = async ({
     authentications,
     fetch: fetcher,
     limit = DEFAULT_HOME_LIMIT,
+    qualityScanLimit = limit,
 }: MobileHomeContentForServersInput): Promise<MobileHomeContent> => {
     const loadedAt = Date.now();
 
@@ -933,7 +955,12 @@ export const loadMobileHomeContentForServers = async ({
     const request = getFetch(fetcher);
     const contentLoads = await Promise.allSettled(
         authentications.map((authentication) =>
-            loadMobileHomeContent({ authentication, fetch: request, limit }),
+            loadMobileHomeContent({
+                authentication,
+                fetch: request,
+                limit,
+                qualityScanLimit,
+            }),
         ),
     );
     const sectionsById = new Map<MobileHomeSectionId, MobileHomeSection>();

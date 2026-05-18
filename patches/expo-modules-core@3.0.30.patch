@@ -1,0 +1,38 @@
+diff --git a/android/build.gradle b/android/build.gradle
+index 0000000000000000000000000000000000000000..0000000000000000000000000000000000000000 100644
+--- a/android/build.gradle
++++ b/android/build.gradle
+@@ -64,7 +64,7 @@ def shouldTurnWarningsIntoErrors = findProperty("EXPO_TURN_WARNINGS_INTO_ERRORS
+ 
+ expoModule {
+-  canBePublished false
++  canBePublished = false
+ }
+ 
+ android {
+@@ -72,10 +72,10 @@ android {
+     ndkPath rootProject.ext.ndkPath
+   }
+   if (rootProject.hasProperty("ndkVersion")) {
+-    ndkVersion rootProject.ext.ndkVersion
++    ndkVersion = rootProject.ext.ndkVersion
+   }
+ 
+-  namespace "expo.modules"
++  namespace = "expo.modules"
+   defaultConfig {
+     consumerProguardFiles 'proguard-rules.pro'
+     versionCode 1
+@@ -106,9 +106,9 @@ android {
+   }
+ 
+   buildFeatures {
+-    buildConfig true
+-    prefab true
+-    compose shouldIncludeCompose
++    buildConfig = true
++    prefab = true
++    compose = shouldIncludeCompose
+   }
+ 
+   packagingOptions {
