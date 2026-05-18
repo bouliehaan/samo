@@ -1,5 +1,5 @@
 diff --git a/android/build.gradle b/android/build.gradle
-index 0000000000000000000000000000000000000000..0000000000000000000000000000000000000000 100644
+index e3aacde27907a94692c8ae9beec9d3d0ed897f5e..b2f7052774f9d9c7842e57968523ded941ad9b09 100644
 --- a/android/build.gradle
 +++ b/android/build.gradle
 @@ -26,7 +26,7 @@ android {
@@ -25,3 +25,20 @@ index 0000000000000000000000000000000000000000..00000000000000000000000000000000
      }
      google()
  }
+diff --git a/android/src/main/java/com/BV/LinearGradient/LinearGradientView.java b/android/src/main/java/com/BV/LinearGradient/LinearGradientView.java
+index 3194c0b3cd6dc885003a76d4e63fa134f0246973..f4cdfcdb413319823660db83743d90d33cf37521 100644
+--- a/android/src/main/java/com/BV/LinearGradient/LinearGradientView.java
++++ b/android/src/main/java/com/BV/LinearGradient/LinearGradientView.java
+@@ -15,7 +15,11 @@ import android.graphics.Shader;
+ import android.view.View;
+ 
+ public class LinearGradientView extends View {
+-    private final Paint mPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
++    // DITHER_FLAG asks Skia to dither during the float→8-bit conversion when
++    // it rasterizes the gradient. That kills the underlying source of color
++    // banding in long, slow gradients — the JS-side dither overlay catches
++    // whatever residual quantization the GPU still produces on top.
++    private final Paint mPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.DITHER_FLAG);
+     private Path mPathForBorderRadius;
+     private RectF mTempRectForBorderRadius;
+     private LinearGradient mShader;
