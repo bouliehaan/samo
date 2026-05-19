@@ -1,8 +1,8 @@
 import { SamoMobileTabId } from '@samo/core/navigation';
 import { Image, type ImageSourcePropType, Text, View } from 'react-native';
-import Svg, { Circle as SvgCircle } from 'react-native-svg';
+import Svg, { Circle as SvgCircle, Path as SvgPath } from 'react-native-svg';
 
-import chromecastIcon from '../../../../assets/icons/chromecast.png';
+import outputPickerIcon from '../../../../assets/monitor.png';
 import heartIcon from '../../assets/icons/heart.png';
 import shuffleIcon from '../../assets/icons/shuffle.png';
 import sleepTimerIcon from '../../assets/icons/sleep-timer.png';
@@ -154,7 +154,7 @@ export const CastGlyph = ({ color = colors.text, size = 22 }: { color?: string; 
     return (
         <Image
             resizeMode="contain"
-            source={chromecastIcon}
+            source={outputPickerIcon}
             style={{ height: size, tintColor: color, width: size }}
         />
     );
@@ -199,6 +199,36 @@ export const SearchGlyph = ({ color }: { color: string }) => {
             <View style={[styles.searchGlyphCircle, { borderColor: color }]} />
             <View style={[styles.searchGlyphHandle, { backgroundColor: color }]} />
         </View>
+    );
+};
+
+export const EyeGlyph = ({
+    closed = false,
+    color,
+}: {
+    closed?: boolean;
+    color: string;
+}) => {
+    return (
+        <Svg height={22} viewBox="0 0 24 24" width={22}>
+            <SvgPath
+                d="M2.8 12s3.4-5.4 9.2-5.4 9.2 5.4 9.2 5.4-3.4 5.4-9.2 5.4S2.8 12 2.8 12Z"
+                fill="none"
+                stroke={color}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={1.8}
+            />
+            <SvgCircle cx={12} cy={12} fill="none" r={2.8} stroke={color} strokeWidth={1.8} />
+            {closed ? (
+                <SvgPath
+                    d="M4.5 19.5 19.5 4.5"
+                    stroke={color}
+                    strokeLinecap="round"
+                    strokeWidth={2}
+                />
+            ) : null}
+        </Svg>
     );
 };
 

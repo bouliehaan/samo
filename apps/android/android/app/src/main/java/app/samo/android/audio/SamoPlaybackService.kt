@@ -43,6 +43,7 @@ class SamoPlaybackService : MediaSessionService() {
     private var player: ExoPlayer? = null
     private var playerRequestHeaders: Map<String, String> = emptyMap()
     var preferredMixerDevice: AudioDeviceInfo? = null
+    var preferredOutputDevice: AudioDeviceInfo? = null
     /**
      * Set by SamoAudioModule once the React bridge is connected. The
      * notification's previous/next buttons land here via the ForwardingPlayer
@@ -179,6 +180,7 @@ class SamoPlaybackService : MediaSessionService() {
             .build()
 
         createdPlayer.setAudioAttributes(audioAttributes, true)
+        createdPlayer.setPreferredAudioDevice(preferredOutputDevice)
         createdPlayer.setHandleAudioBecomingNoisy(true)
         // Hold a partial wake lock while audio is loading or playing so streaming
         // radio doesn't die when the device idles into Doze with the screen off.

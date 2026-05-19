@@ -69,22 +69,21 @@ class SamoMediaNotificationProvider(
         // already cover this artwork URL. The repaint that happens after the
         // fetch lands needs the same kind of factory we just got from Media3,
         // so it's threaded through to loadArtworkAndColor.
-        val artworkUri = mediaSession.player.mediaMetadata.artworkUri
-        val artworkKey = artworkUri?.toString()
-        if (
-            artworkKey != null &&
-            artworkUri != null &&
-            artworkCache[artworkKey] == null &&
-            artworkKey !in inFlightLoads
-        ) {
-            inFlightLoads.add(artworkKey)
-            loadArtworkAndColor(
-                mediaSession = mediaSession,
-                artworkUri = artworkUri,
-                artworkKey = artworkKey,
-                actionFactory = actionFactory,
-                onNotificationChangedCallback = onNotificationChangedCallback,
-            )
+        val metadata =
+            mediaSession.player.currentMediaItem?.mediaMetadata ?: mediaSession.player.mediaMetadata
+        val artworkUri = metadata.artworkUri
+        if (artworkUri != null) {
+            val artworkKey = artworkUri.toString()
+            if (artworkCache[artworkKey] == null && artworkKey !in inFlightLoads) {
+                inFlightLoads.add(artworkKey)
+                loadArtworkAndColor(
+                    mediaSession = mediaSession,
+                    artworkUri = artworkUri,
+                    artworkKey = artworkKey,
+                    actionFactory = actionFactory,
+                    onNotificationChangedCallback = onNotificationChangedCallback,
+                )
+            }
         }
         return mediaNotification
     }
@@ -125,7 +124,7 @@ class SamoMediaNotificationProvider(
         actionFactory: MediaNotification.ActionFactory,
     ): MediaNotification {
         val player = mediaSession.player
-        val metadata = player.mediaMetadata
+        val metadata = player.currentMediaItem?.mediaMetadata ?: player.mediaMetadata
         val artworkKey = metadata.artworkUri?.toString()
         val cached = artworkKey?.let { artworkCache[it] }
         val title = metadata.title?.toString().orEmpty()

@@ -103,6 +103,100 @@ export const styles = StyleSheet.create({
         textAlign: 'center',
         textTransform: 'uppercase',
     },
+    outputPickerEmpty: {
+        color: colors.muted,
+        fontSize: 14,
+        lineHeight: 19,
+        paddingHorizontal: spacing.lg,
+        paddingVertical: spacing.md,
+    },
+    outputPickerError: {
+        color: '#ff9a8a',
+        fontSize: 13,
+        lineHeight: 18,
+        paddingHorizontal: spacing.lg,
+        paddingTop: spacing.sm,
+    },
+    outputPickerIcon: {
+        alignItems: 'center',
+        backgroundColor: 'rgba(255,255,255,0.07)',
+        borderColor: 'rgba(255,255,255,0.08)',
+        borderRadius: 18,
+        borderWidth: StyleSheet.hairlineWidth,
+        height: 36,
+        justifyContent: 'center',
+        width: 36,
+    },
+    outputPickerIconLabel: {
+        color: colors.text,
+        fontSize: 11,
+        fontWeight: '900',
+        lineHeight: 13,
+        maxWidth: 28,
+        textAlign: 'center',
+    },
+    outputPickerIconLabelSelected: {
+        color: colors.accent,
+    },
+    outputPickerIconSelected: {
+        backgroundColor: 'rgba(202,160,79,0.16)',
+        borderColor: 'rgba(202,160,79,0.34)',
+    },
+    outputPickerList: {
+        maxHeight: 430,
+        paddingBottom: spacing.sm,
+    },
+    outputPickerLoading: {
+        alignItems: 'center',
+        justifyContent: 'center',
+        minHeight: 120,
+    },
+    outputPickerRow: {
+        alignItems: 'center',
+        flexDirection: 'row',
+        gap: 12,
+        minHeight: 60,
+        paddingHorizontal: spacing.lg,
+        paddingVertical: 8,
+    },
+    outputPickerRowBody: {
+        flex: 1,
+        minWidth: 0,
+    },
+    outputPickerRowDisabled: {
+        opacity: 0.48,
+    },
+    outputPickerRowPressed: {
+        backgroundColor: 'rgba(255,255,255,0.05)',
+    },
+    outputPickerRowSelected: {
+        backgroundColor: 'rgba(202,160,79,0.08)',
+    },
+    outputPickerSectionLabel: {
+        color: 'rgba(255,255,255,0.42)',
+        fontSize: 11,
+        fontWeight: '800',
+        letterSpacing: 0,
+        paddingHorizontal: spacing.lg,
+        paddingTop: spacing.md,
+        textTransform: 'uppercase',
+    },
+    outputPickerState: {
+        alignItems: 'center',
+        height: 28,
+        justifyContent: 'center',
+        width: 28,
+    },
+    outputPickerSubtitle: {
+        color: colors.muted,
+        fontSize: 13,
+        marginTop: 2,
+    },
+    outputPickerTitle: {
+        color: colors.text,
+        fontSize: 16,
+        fontWeight: '600',
+    },
     albumHero: {
         alignItems: 'center',
         marginBottom: spacing.lg,
@@ -216,20 +310,21 @@ export const styles = StyleSheet.create({
         bottom: MINI_PLAYER_BOTTOM + MINI_PLAYER_HEIGHT + spacing.sm,
         justifyContent: 'center',
         position: 'absolute',
-        right: 1,
+        right: 0,
         top: spacing.sm,
-        width: 26,
+        width: 34,
         zIndex: 4,
     },
     alphabetSidebarRail: {
         alignItems: 'center',
         justifyContent: 'center',
+        paddingHorizontal: 4,
     },
     alphabetSidebarLetter: {
         color: 'rgba(255,255,255,0.18)',
         fontSize: 10,
         fontWeight: '800',
-        letterSpacing: 0.5,
+        letterSpacing: 0,
     },
     alphabetSidebarLetterActive: {
         color: colors.accent,
@@ -238,7 +333,7 @@ export const styles = StyleSheet.create({
         alignItems: 'center',
         height: 14,
         justifyContent: 'center',
-        width: 24,
+        width: 32,
     },
     appIcon: {
         height: 34,
@@ -591,10 +686,12 @@ export const styles = StyleSheet.create({
     },
     detailCollapsedActions: {
         alignItems: 'center',
+        elevation: 3,
         flexDirection: 'row',
         gap: 10,
         position: 'absolute',
         right: HOME_EDGE_PADDING,
+        zIndex: 3,
     },
     detailCollapsedBackButton: {
         alignItems: 'center',
@@ -616,10 +713,11 @@ export const styles = StyleSheet.create({
     },
     detailCollapsedIconButton: {
         alignItems: 'center',
+        backgroundColor: 'rgba(255,255,255,0.08)',
         borderRadius: 999,
-        height: 38,
+        height: 42,
         justifyContent: 'center',
-        width: 38,
+        width: 42,
     },
     detailCollapsedPlayButton: {
         alignItems: 'center',
@@ -1008,6 +1106,7 @@ export const styles = StyleSheet.create({
         shadowOffset: { height: 14, width: 0 },
         shadowOpacity: 0.26,
         shadowRadius: 22,
+        transform: [{ translateY: 8 }],
         width: FULL_PLAYER_ARTWORK_SIZE,
     },
     fullPlayerArtworkWrap: {
@@ -1025,6 +1124,9 @@ export const styles = StyleSheet.create({
     },
     fullPlayerBottom: {
         flexShrink: 0,
+    },
+    fullPlayerBottomLifted: {
+        marginBottom: 34,
     },
     fullPlayerBottomBar: {
         alignItems: 'center',
@@ -1294,6 +1396,27 @@ export const styles = StyleSheet.create({
         marginTop: spacing.sm,
         paddingHorizontal: spacing.md,
         paddingVertical: 13,
+    },
+    inputActionButton: {
+        alignItems: 'center',
+        height: 44,
+        justifyContent: 'center',
+        width: 44,
+    },
+    inputWithAction: {
+        alignItems: 'center',
+        backgroundColor: colors.surface,
+        borderRadius: 8,
+        flexDirection: 'row',
+        marginTop: spacing.sm,
+        paddingRight: 4,
+    },
+    inputWithActionField: {
+        backgroundColor: 'transparent',
+        flex: 1,
+        marginTop: 0,
+        minWidth: 0,
+        paddingRight: spacing.xs,
     },
     keyboardView: {
         flex: 1,
@@ -1921,6 +2044,19 @@ export const styles = StyleSheet.create({
         marginBottom: spacing.sm,
         marginTop: spacing.xs,
     },
+    playlistListEmpty: {
+        color: colors.muted,
+        fontSize: 14,
+        lineHeight: 20,
+        paddingVertical: spacing.md,
+    },
+    playlistSearchAnimatedWrapper: {
+        overflow: 'hidden',
+    },
+    playlistSearchBar: {
+        marginBottom: spacing.sm,
+        marginTop: spacing.xs,
+    },
     playlistHeaderActions: {
         alignItems: 'center',
         flexDirection: 'row',
@@ -1997,7 +2133,9 @@ export const styles = StyleSheet.create({
         borderColor: 'rgba(255, 255, 255, 0.16)',
         borderRadius: 6,
         borderWidth: 1,
+        flexShrink: 1,
         maxWidth: 150,
+        minWidth: 0,
         paddingHorizontal: 8,
         paddingVertical: 4,
     },
@@ -2007,13 +2145,15 @@ export const styles = StyleSheet.create({
     },
     qualityBadgeRow: {
         flexDirection: 'row',
-        flexWrap: 'wrap',
+        flexWrap: 'nowrap',
         gap: 6,
         justifyContent: 'center',
         marginTop: spacing.md,
+        width: '100%',
     },
     qualityBadgeText: {
         color: colors.text,
+        flexShrink: 1,
         fontSize: 11,
         fontWeight: '900',
         lineHeight: 14,
@@ -2107,18 +2247,29 @@ export const styles = StyleSheet.create({
         borderTopLeftRadius: 18,
         borderTopRightRadius: 18,
         bottom: 0,
+        elevation: 1001,
         height: QUEUE_SHEET_HEIGHT,
         left: 0,
         position: 'absolute',
         right: 0,
+        zIndex: 10001,
     },
     queueSheetBackdrop: {
         backgroundColor: '#000000',
         bottom: 0,
+        elevation: 1000,
         left: 0,
         position: 'absolute',
         right: 0,
         top: 0,
+        zIndex: 10000,
+    },
+    queueSheetCloseButton: {
+        alignItems: 'center',
+        borderRadius: 999,
+        height: 42,
+        justifyContent: 'center',
+        width: 42,
     },
     queueSheetContent: {
         paddingBottom: spacing.xl,
@@ -2133,19 +2284,28 @@ export const styles = StyleSheet.create({
         backgroundColor: 'rgba(255,255,255,0.24)',
         borderRadius: 999,
         height: 4,
-        marginBottom: 12,
+        marginBottom: 10,
         marginTop: 10,
         width: 38,
+    },
+    queueSheetHeader: {
+        paddingTop: 2,
     },
     queueSheetScroll: {
         flex: 1,
     },
     queueSheetTitle: {
         color: colors.text,
+        flex: 1,
         fontSize: 18,
         fontWeight: '800',
+    },
+    queueSheetTitleRow: {
+        alignItems: 'center',
+        flexDirection: 'row',
         paddingBottom: spacing.sm,
-        paddingHorizontal: spacing.lg,
+        paddingLeft: spacing.lg,
+        paddingRight: spacing.sm,
     },
     radioCard: {
         alignItems: 'center',
@@ -2982,9 +3142,14 @@ export const styles = StyleSheet.create({
         flex: 1,
         position: 'relative',
     },
-    viewAllColumn: {
+    viewAllRow: {
+        flexDirection: 'row',
         gap: HOME_TILE_GAP,
         paddingHorizontal: HOME_EDGE_PADDING,
+    },
+    viewAllTilePlaceholder: {
+        height: VIEW_ALL_TILE_HEIGHT,
+        width: VIEW_ALL_TILE_SIZE,
     },
     viewAllEmpty: {
         color: colors.muted,

@@ -13,6 +13,7 @@ import {
     getPlaybackQualityProfile,
     loadMobileMediaDetail,
     loadSongRadioQueue,
+    mimeFromAudiobookshelfExt,
     type MobileContentSource,
     type MobileHomeItem,
     MobileHomeItemType,
@@ -75,7 +76,6 @@ import {
     PermissionsAndroid,
     Platform,
     Pressable,
-    requireNativeComponent,
     ScrollView,
     StyleProp,
     StyleSheet,
@@ -85,7 +85,12 @@ import {
     View,
     type ViewStyle,
 } from 'react-native';
-import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
+import {
+    FlatList as GestureFlatList,
+    Gesture,
+    GestureDetector,
+    GestureHandlerRootView,
+} from 'react-native-gesture-handler';
 import LinearGradient from 'react-native-linear-gradient';
 import Reanimated, {
     interpolate,
@@ -103,19 +108,24 @@ import samoLogo from './assets/samo-logo.png';
 import {
     type AndroidAudioDeviceInfo,
     type AndroidCastState,
+    type AndroidMediaOutputRoute,
+    type AndroidMediaOutputState,
     type AndroidNativePlaybackEvent,
     type AndroidPlaybackTruth,
     getAndroidAudioDeviceInfo,
     getAndroidCastState,
+    getAndroidOutputRoutes,
     isAndroidNativePlaybackAvailable,
     pauseAndroidAudio,
     playAndroidAudio,
     resumeAndroidAudio,
     seekAndroidAudio,
     getAndroidPlaybackStatus,
+    selectAndroidOutputRoute,
     subscribeToAndroidAudioEvents,
     subscribeToAndroidCastEvents,
     subscribeToAndroidNavigationRequests,
+    subscribeToAndroidOutputRouteEvents,
 } from './src/services/audio-playback';
 import {
     cancelDownload,
@@ -139,7 +149,7 @@ import {
     subscribeDownloads,
     subscribeStorageLocation,
 } from './src/services/download-manager';
-import { triggerImpact } from './src/services/haptics';
+import { triggerImpact, triggerSelection } from './src/services/haptics';
 import {
     type AndroidFullCollectionState,
     loadAndroidFullCollection,
@@ -238,6 +248,7 @@ import {
     QUEUE_SHEET_HEIGHT,
     REDUCED_MOTION_SPRING,
     SCREEN_HEIGHT,
+    SCREEN_WIDTH,
     VIEW_ALL_INITIAL_ITEMS,
     VIEW_ALL_RENDER_BATCH,
     VIEW_ALL_ROW_HEIGHT,
@@ -254,6 +265,7 @@ import {
     DownCaretGlyph,
     DownloadGlyph,
     EllipsisVerticalGlyph,
+    EyeGlyph,
     FullPlayerImageGlyph,
     GearGlyph,
     HeartGlyph,
@@ -275,16 +287,26 @@ import {
 import { styles } from './src/theme/styles';
 import { colors, spacing } from './src/theme/tokens';
 
-const SamoCastButton = requireNativeComponent<{
-    style?: StyleProp<ViewStyle>;
-    tintColor?: string;
-}>('SamoCastButton');
 const CAST_ICON_ACTIVE_TINT = 'rgba(202, 160, 79, 0.78)';
 const CAST_ICON_INACTIVE_TINT = 'rgba(245, 245, 245, 0.72)';
 
 const SERVER_TYPES = [ServerType.NAVIDROME, ServerType.SUBSONIC, ServerType.AUDIOBOOKSHELF].filter(
     supportsServerTypeOnAndroid,
 );
+
+const addDefaultHttpScheme = (value: string) => {
+    const trimmed = value.trim();
+
+    if (!trimmed) {
+        return '';
+    }
+
+    if (/^[a-z][a-z\d+\-.]*:\/\//i.test(trimmed)) {
+        return trimmed;
+    }
+
+    return `http://${trimmed.replace(/^\/+/, '')}`;
+};
 
 const getTabTitle = (activeTab: SamoMobileTabId) => {
     return SAMO_MOBILE_TABS.find((tab) => tab.id === activeTab)?.label ?? 'Samo';
@@ -623,6 +645,7 @@ interface AddServerScreenProps {
     onConnect: () => void;
     onPasswordChange: (value: string) => void;
     onServerTypeChange: (value: ServerType) => void;
+    onServerUrlBlur: () => void;
     onServerUrlChange: (value: string) => void;
     onUsernameChange: (value: string) => void;
     password: string;
@@ -710,8 +733,8 @@ interface PlaylistsScreenProps {
 
 interface RadioScreenProps {
     homeContentState: AndroidHomeContentState;
+    nowPlayingRadioId: null | string;
     onSelectItem: (item: MobileHomeItem) => void;
-    playbackState: AndroidPlaybackState;
     recentItems: AndroidRecentContentItem[];
 }
 
@@ -778,6 +801,9 @@ interface MediaContextMenuOpenOptions {
     // True when there's already a visible Download button next to where the
     // menu was opened (e.g. the detail page hero), so the duplicate is clutter.
     suppressDownloadAction?: boolean;
+    // True when the menu is opened from a playback surface where "queue this"
+    // would be conceptually backwards, namely the fullscreen player.
+    suppressQueueAction?: boolean;
 }
 
 type MediaContextMenuTarget =
@@ -787,6 +813,7 @@ type MediaContextMenuTarget =
           source?: MobileContentSource;
           suppressDownloadAction?: boolean;
           suppressOpenAction?: boolean;
+          suppressQueueAction?: boolean;
           track: MobileMediaTrack;
       }
     | {
@@ -794,6 +821,7 @@ type MediaContextMenuTarget =
           kind: Exclude<MediaContextMenuKind, 'song'>;
           suppressDownloadAction?: boolean;
           suppressOpenAction?: boolean;
+          suppressQueueAction?: boolean;
       };
 
 interface MediaContextMenuApi {
@@ -867,6 +895,12 @@ const buildOfflineAudiobookPlayable = (
 ): MobilePlayableAudio => {
     return {
         artworkUrl: detail.artworkUrl,
+        // The cast leg points at ABS's `/api/items/.../file/:ino` URL which
+        // has no file extension, so the native receiver can't infer mime
+        // from the path — pass it explicitly from the downloaded file's
+        // extension. Without this an M4B audiobook hits the cast as
+        // audio/mpeg and silently fails to decode on most receivers.
+        castMimeType: mimeFromCastUri(file.localUri),
         // Chromecast can't read local files; route casting through the ABS
         // server URL with `?token=…` so the receiver can self-authenticate.
         castUrl: authentication
@@ -907,6 +941,9 @@ const buildOfflinePodcastEpisodePlayable = (
     const episodeId = track.episodeId ?? track.id;
     return {
         artworkUrl: track.artworkUrl ?? detail.artworkUrl,
+        // ABS file URLs have no extension — pass the downloaded file's mime
+        // explicitly so the cast receiver doesn't fall back to audio/mpeg.
+        castMimeType: mimeFromCastUri(localUri),
         // Same as offline audiobooks: cast routes through the ABS server URL.
         castUrl:
             sourceUrl && authentication
@@ -926,6 +963,15 @@ const buildOfflinePodcastEpisodePlayable = (
         title: track.title,
         url: localUri,
     };
+};
+
+/** Pull a `.ext` off the end of a local file URI and map it to the mime
+ *  type the cast receiver should advertise for the corresponding ABS file
+ *  URL (which the receiver can't sniff because the URL has no extension). */
+const mimeFromCastUri = (localUri: string | undefined): string | undefined => {
+    if (!localUri) return undefined;
+    const match = localUri.match(/\.([a-z0-9]+)(?:$|[?#])/i);
+    return mimeFromAudiobookshelfExt(match?.[1]) ?? undefined;
 };
 
 // Map a streaming `MobilePlayableAudio` to a local-file version if the track
@@ -1474,59 +1520,15 @@ export default function App() {
         });
     }, []);
 
-    const recordPlayableAsRecent = useCallback(
-        (playable: MobilePlayableAudio) => {
-            // Only music tracks bubble up as individual songs in Recently
-            // Played. Audiobook chapters, podcast episodes, and radio
-            // stations are recorded at the parent-item level via
-            // handleSelectMediaItem — re-recording each inner playable
-            // would just push the parent out of the list.
-            if (playable.source !== 'music') return;
-
-            const sourceId =
-                playable.contentSourceId ?? playable.id.match(/^([^:]+:[^:]+):/)?.[1];
-            if (!sourceId) return;
-            const auth = serverConnections.find(
-                (candidate) => getPersistedServerAuthKey(candidate) === sourceId,
-            );
-            if (!auth) return;
-            const idMatch = playable.id.match(/:music:(.+)$/);
-            const innerId = idMatch ? idMatch[1] : playable.id;
-            const songItem: MobileSearchItem = {
-                album: playable.album,
-                albumId: playable.albumId,
-                artist: playable.artist,
-                artistId: playable.artistId,
-                artworkUrl: playable.artworkUrl,
-                id: innerId,
-                playback: playable,
-                source: getMobileContentSource(auth),
-                subtitle: playable.subtitle,
-                title: playable.title,
-                type: MobileSearchItemType.SONG,
-            };
-            recordRecentContentItem(songItem);
-        },
-        [recordRecentContentItem, serverConnections],
-    );
-    // Mirror onto a ref so the audio-events subscription (which captures its
-    // closure once per playQueuedItem identity) can call the latest version
-    // without re-subscribing.
-    const recordPlayableAsRecentRef = useRef(recordPlayableAsRecent);
-    useEffect(() => {
-        recordPlayableAsRecentRef.current = recordPlayableAsRecent;
-    });
-
     const handlePlayItem = useCallback(
         async (
             item: MobilePlayableAudio,
             queueItems: MobilePlayableAudio[] = [item],
             queueIndex?: number,
         ) => {
-            recordPlayableAsRecent(item);
             await playQueuedItem(item, queueItems, queueIndex);
         },
-        [playQueuedItem, recordPlayableAsRecent],
+        [playQueuedItem],
     );
 
     useEffect(() => {
@@ -1548,7 +1550,6 @@ export default function App() {
                     const nextItem = queue?.items[nextIndex];
 
                     if (nextItem) {
-                        recordPlayableAsRecentRef.current(nextItem);
                         void playQueuedItem(nextItem, queue.items, nextIndex);
                         return current;
                     }
@@ -1782,11 +1783,14 @@ export default function App() {
         };
     }, []);
 
+    const activePlaybackItem =
+        playbackState.status !== 'idle' ? playbackState.item : null;
+
     useEffect(() => {
-        if (playbackState.status === 'idle') {
+        if (!activePlaybackItem) {
             return;
         }
-        const item = playbackState.item;
+        const item = activePlaybackItem;
         const persistenceKey = getLastPlayedPersistenceKey(item);
         if (lastPlayedPersistenceKeyRef.current === persistenceKey) {
             setLastPlayedItem((current) => current ?? item);
@@ -1795,7 +1799,7 @@ export default function App() {
         lastPlayedPersistenceKeyRef.current = persistenceKey;
         setLastPlayedItem(item);
         void savePersistedLastPlayedItem(item);
-    }, [playbackState]);
+    }, [activePlaybackItem]);
 
     // Single canonical URL for the currently-playing track's artwork. The
     // MiniPlayer, FullScreenPlayer, and album-essence color extractor all
@@ -1806,10 +1810,7 @@ export default function App() {
     // a fast open/close gesture could leave the player painting the wrong
     // variant ("stick on low-res"). One URL → one image → one load → never
     // a quality mismatch.
-    const playbackArtworkSourceUrl =
-        playbackState.status !== 'idle'
-            ? playbackState.item.artworkUrl
-            : lastPlayedItem?.artworkUrl;
+    const playbackArtworkSourceUrl = activePlaybackItem?.artworkUrl ?? lastPlayedItem?.artworkUrl;
     const currentHighResArtworkUrl = useMemo(
         () => getHighResolutionArtworkUrl(playbackArtworkSourceUrl),
         [playbackArtworkSourceUrl],
@@ -2029,14 +2030,16 @@ export default function App() {
     const handleConnect = async () => {
         if (!canConnect || authState.status === 'loading') return;
 
+        const normalizedServerUrl = addDefaultHttpScheme(serverUrl);
+        setServerUrl(normalizedServerUrl);
         setAuthState({ message: 'Connecting to server', status: 'loading' });
         setHomeContentState({ status: 'idle' });
 
         const nextAuthState = await authenticateServer({
             password,
             type: serverType,
-            url: serverUrl,
-            username,
+            url: normalizedServerUrl,
+            username: username.trim(),
         });
 
         setAuthState(nextAuthState);
@@ -2756,6 +2759,129 @@ export default function App() {
         }
     };
 
+    const canAppendToPlaybackQueue =
+        playbackState.status !== 'idle' && playbackState.item.source !== 'radio';
+
+    const appendPlayableItemsToQueue = useCallback(
+        (items: MobilePlayableAudio[]): number => {
+            const queueableItems = items.filter((item) => item.source !== 'radio');
+
+            if (queueableItems.length === 0) {
+                setContextMenuFeedback('Nothing playable was found for the queue.');
+                return 0;
+            }
+
+            if (playbackState.status === 'idle') {
+                setContextMenuFeedback('Start playback before adding to the queue.');
+                return 0;
+            }
+
+            if (playbackState.item.source === 'radio') {
+                setContextMenuFeedback('Radio playback does not have an Up Next queue.');
+                return 0;
+            }
+
+            const queue = playbackQueueRef.current;
+            if (queue) {
+                playbackQueueRef.current = {
+                    index: queue.index,
+                    items: [...queue.items, ...queueableItems],
+                };
+            } else {
+                playbackQueueRef.current = {
+                    index: 0,
+                    items: [playbackState.item, ...queueableItems],
+                };
+            }
+
+            return queueableItems.length;
+        },
+        [playbackState],
+    );
+
+    const loadDetailForContextAction = useCallback(
+        async (item: AndroidRecentContentSourceItem): Promise<MobileMediaDetail | null> => {
+            const cacheKey = getRecentContentItemKey(item);
+            let detail = mediaDetailCacheRef.current.get(cacheKey);
+
+            if (!detail) {
+                const fromDisk = await loadCachedMediaDetail(cacheKey);
+                if (fromDisk) {
+                    detail = fromDisk;
+                    mediaDetailCacheRef.current.set(cacheKey, fromDisk);
+                }
+            }
+
+            if (!detail && isOfflineMode) {
+                const downloadedDetail = await buildDownloadedMusicDetail(item);
+                if (downloadedDetail) {
+                    detail = downloadedDetail;
+                    mediaDetailCacheRef.current.set(cacheKey, downloadedDetail);
+                }
+            }
+
+            if (detail && isOfflineMode) {
+                return detail;
+            }
+
+            const next = await loadAndroidMediaDetail(serverConnections, item);
+            if (next.status === 'loaded') {
+                mediaDetailCacheRef.current.set(cacheKey, next.detail);
+                void saveCachedMediaDetail(cacheKey, next.detail);
+                return next.detail;
+            }
+
+            return detail ?? null;
+        },
+        [isOfflineMode, serverConnections],
+    );
+
+    const handleAddTrackToQueue = useCallback(
+        (track: MobileMediaTrack) => {
+            const playback = track.playback;
+            if (playback?.source !== 'music') {
+                setContextMenuFeedback('Only music tracks can be added to the queue.');
+                return;
+            }
+
+            const added = appendPlayableItemsToQueue([playback]);
+            if (added > 0) {
+                setContextMenuFeedback('Added to queue');
+            }
+        },
+        [appendPlayableItemsToQueue],
+    );
+
+    const handleAddCollectionToQueue = useCallback(
+        async (item: AndroidRecentContentSourceItem) => {
+            if (
+                item.type !== MobileHomeItemType.ALBUM &&
+                item.type !== MobileHomeItemType.PLAYLIST
+            ) {
+                setContextMenuFeedback('Only music albums and playlists can be added to the queue.');
+                return;
+            }
+
+            setContextMenuFeedback('Adding to queue...');
+            const detail = await loadDetailForContextAction(item);
+            if (!detail) {
+                setContextMenuFeedback('Could not load tracks for this item.');
+                return;
+            }
+
+            const playables = detail.tracks.flatMap((track) =>
+                track.playback?.source === 'music' ? [track.playback] : [],
+            );
+            const added = appendPlayableItemsToQueue(playables);
+            if (added > 0) {
+                setContextMenuFeedback(
+                    added === 1 ? 'Added 1 track to queue' : `Added ${added} tracks to queue`,
+                );
+            }
+        },
+        [appendPlayableItemsToQueue, loadDetailForContextAction],
+    );
+
     const reportDownloadResult = useCallback(
         (
             result: { enqueued: number; reason?: string; skipped: number },
@@ -3008,6 +3134,7 @@ export default function App() {
                         source: item.source,
                         suppressDownloadAction: options?.suppressDownloadAction,
                         suppressOpenAction: options?.suppressOpenAction,
+                        suppressQueueAction: options?.suppressQueueAction,
                         track: synthesizeTrackFromSongItem(item),
                     });
                     return;
@@ -3023,6 +3150,7 @@ export default function App() {
                     kind,
                     suppressDownloadAction: options?.suppressDownloadAction,
                     suppressOpenAction: options?.suppressOpenAction,
+                    suppressQueueAction: options?.suppressQueueAction,
                 });
             },
             openForTrack: (track, detail) => {
@@ -3251,12 +3379,24 @@ export default function App() {
             const { source, track } = contextMenuTarget;
             const favoriteKey = getFavoriteKeyForTrack(track, source?.id);
             const isFavorited = favoritedKeys.has(favoriteKey);
+            const canQueueTrack =
+                canAppendToPlaybackQueue &&
+                !contextMenuTarget.suppressQueueAction &&
+                track.playback?.source === 'music';
             actions.push({
                 icon: <HeartGlyph color={isFavorited ? colors.accent : colors.text} filled={isFavorited} />,
                 id: 'favorite',
                 label: isFavorited ? 'Remove from Favorites' : 'Add to Favorites',
                 onPress: () => void handleToggleFavoriteForTrack(track, source?.id),
             });
+            if (canQueueTrack) {
+                actions.push({
+                    icon: <QueueAddGlyph color={colors.text} />,
+                    id: 'queue',
+                    label: 'Add to Queue',
+                    onPress: () => handleAddTrackToQueue(track),
+                });
+            }
             if (track.playback?.source === 'music' && source) {
                 actions.push({
                     icon: <PlaylistAddGlyph color={colors.text} />,
@@ -3331,6 +3471,7 @@ export default function App() {
         const suppressOpen = contextMenuTarget.suppressOpenAction === true;
 
         const suppressDownload = contextMenuTarget.suppressDownloadAction === true;
+        const suppressQueue = contextMenuTarget.suppressQueueAction === true;
 
         if (contextMenuTarget.kind === 'audiobook') {
             actions.push({
@@ -3382,6 +3523,14 @@ export default function App() {
             contextMenuTarget.kind === 'playlist'
         ) {
             const auth = findAuthForSource(item.source?.id);
+            if (canAppendToPlaybackQueue && !suppressQueue) {
+                actions.push({
+                    icon: <QueueAddGlyph color={colors.text} />,
+                    id: 'queue',
+                    label: 'Add to Queue',
+                    onPress: () => void handleAddCollectionToQueue(item),
+                });
+            }
             if (
                 auth &&
                 (auth.type === ServerType.NAVIDROME || auth.type === ServerType.SUBSONIC)
@@ -3427,8 +3576,11 @@ export default function App() {
     }, [
         contextMenuTarget,
         favoritedKeys,
+        canAppendToPlaybackQueue,
         getFavoriteKeyForItem,
         getFavoriteKeyForTrack,
+        handleAddCollectionToQueue,
+        handleAddTrackToQueue,
     ]);
 
     const contextMenuEyebrow = contextMenuTarget
@@ -3462,6 +3614,88 @@ export default function App() {
             : contextMenuTarget.item.subtitle
         : undefined;
 
+    const handleOpenSettings = useCallback(() => {
+        setActiveUtilityScreen('settings');
+        closeMediaDetail();
+    }, [closeMediaDetail]);
+    const handleOpenManageServers = useCallback(() => {
+        setActiveUtilityScreen('manage-servers');
+    }, []);
+    const handleOpenDownloads = useCallback(() => {
+        setActiveUtilityScreen('downloads');
+    }, []);
+    const handleOpenAddServer = useCallback(() => {
+        setActiveUtilityScreen('add-server');
+    }, []);
+    const handleServerUrlBlur = useCallback(() => {
+        setServerUrl((current) => addDefaultHttpScheme(current));
+    }, []);
+    const handleOpenFullPlayer = useCallback(() => {
+        setIsFullPlayerOpen(true);
+    }, []);
+    const handleCloseFullPlayer = useCallback(() => {
+        setIsFullPlayerOpen(false);
+    }, []);
+    const handleViewAllBack = useCallback(() => {
+        setActiveUtilityScreen(null);
+        setViewAllRoute(null);
+        viewAllFetchTokenRef.current += 1;
+        setViewAllFullState({ status: 'idle' });
+    }, []);
+    const handleSelectMediaItemStable = useStableCallback(
+        (item: MobileHomeItem | MobileSearchItem) => {
+            void handleSelectMediaItem(item);
+        },
+    );
+    const handleSelectViewAllItem = useCallback(
+        (item: AndroidRecentContentSourceItem) => {
+            handleViewAllBack();
+            handleSelectMediaItemStable(item);
+        },
+        [handleSelectMediaItemStable, handleViewAllBack],
+    );
+    const handlePlayMediaTrackStable = useStableCallback(
+        (
+            detail: MobileMediaDetail,
+            track: MobileMediaTrack,
+            index: number,
+            queueTracks?: MobileMediaTrack[],
+        ) => {
+            void handlePlayMediaTrack(detail, track, index, queueTracks);
+        },
+    );
+    const handleAddMediaTrackToPlaylistStable = useStableCallback(
+        (
+            detail: MobileMediaDetail,
+            track: MobileMediaTrack,
+            playlist: MobileHomeItem,
+        ) => handleAddMediaTrackToPlaylist(detail, track, playlist),
+    );
+    const handleToggleOfflineMode = useCallback((next: boolean) => {
+        setIsOfflineMode(next);
+        void saveOfflineModePreference(next);
+    }, []);
+    const rootPlaylistTargets = useMemo(
+        () => getPlaylistTargetsForRoot(homeContentState, playlistMenuRoot?.sourceId),
+        [homeContentState, playlistMenuRoot?.sourceId],
+    );
+    const rootPlaylistTrack = useMemo<MobileMediaTrack | null>(() => {
+        if (!playlistMenuRoot) {
+            return null;
+        }
+
+        if (playlistMenuRoot.kind === 'track') {
+            return playlistMenuRoot.track;
+        }
+
+        return {
+            id: playlistMenuRoot.collectionItem.id,
+            title: playlistMenuRoot.collectionItem.title,
+        } as MobileMediaTrack;
+    }, [playlistMenuRoot]);
+    const nowPlayingRadioId =
+        activePlaybackItem?.source === 'radio' ? activePlaybackItem.id : null;
+
     return (
         <GestureHandlerRootView style={styles.gestureRoot}>
         <ErrorBoundary label="App">
@@ -3482,24 +3716,8 @@ export default function App() {
                         <ErrorBoundary label="ViewAllScreen">
                             <ViewAllScreen
                                 fullState={viewAllFullState}
-                                onBack={() => {
-                                    setActiveUtilityScreen(null);
-                                    setViewAllRoute(null);
-                                    viewAllFetchTokenRef.current += 1;
-                                    setViewAllFullState({ status: 'idle' });
-                                }}
-                                onSelectItem={(item) => {
-                                    // Close the View All screen before kicking
-                                    // off media-detail navigation; otherwise
-                                    // activeUtilityScreen stays 'view-all' and
-                                    // the detail page never gets a render slot.
-                                    // That was the "nothing happens" tap bug.
-                                    setActiveUtilityScreen(null);
-                                    setViewAllRoute(null);
-                                    viewAllFetchTokenRef.current += 1;
-                                    setViewAllFullState({ status: 'idle' });
-                                    void handleSelectMediaItem(item);
-                                }}
+                                onBack={handleViewAllBack}
+                                onSelectItem={handleSelectViewAllItem}
                                 route={viewAllRoute}
                             />
                         </ErrorBoundary>
@@ -3507,10 +3725,10 @@ export default function App() {
                         <MediaDetailContent
                             homeContentState={homeContentState}
                             mediaDetailState={mediaDetailState}
-                            onAddTrackToPlaylist={handleAddMediaTrackToPlaylist}
+                            onAddTrackToPlaylist={handleAddMediaTrackToPlaylistStable}
                             onBack={closeMediaDetail}
-                            onSelectItem={handleSelectMediaItem}
-                            onPlayTrack={handlePlayMediaTrack}
+                            onSelectItem={handleSelectMediaItemStable}
+                            onPlayTrack={handlePlayMediaTrackStable}
                             onShufflePlay={handleShuffleDetailTracks}
                             serverConnections={serverConnections}
                         />
@@ -3525,10 +3743,7 @@ export default function App() {
                                 <Pressable
                                     accessibilityLabel="Settings"
                                     accessibilityRole="button"
-                                    onPress={() => {
-                                        setActiveUtilityScreen('settings');
-                                        closeMediaDetail();
-                                    }}
+                                    onPress={handleOpenSettings}
                                     style={styles.appIconButton}
                                 >
                                     <Image source={samoLogo} style={styles.appIcon} />
@@ -3538,21 +3753,16 @@ export default function App() {
                         {activeUtilityScreen === 'settings' ? (
                             <SettingsScreen
                                 isOfflineMode={isOfflineMode}
-                                onOpenDownloads={() => setActiveUtilityScreen('downloads')}
-                                onOpenManageServers={() =>
-                                    setActiveUtilityScreen('manage-servers')
-                                }
+                                onOpenDownloads={handleOpenDownloads}
+                                onOpenManageServers={handleOpenManageServers}
                                 onSyncWithServer={handleSyncWithServer}
-                                onToggleOfflineMode={(next) => {
-                                    setIsOfflineMode(next);
-                                    void saveOfflineModePreference(next);
-                                }}
+                                onToggleOfflineMode={handleToggleOfflineMode}
                                 serverCount={serverConnections.length}
                             />
                         ) : activeUtilityScreen === 'manage-servers' ? (
                             <ManageServersScreen
                                 authState={authState}
-                                onAddServer={() => setActiveUtilityScreen('add-server')}
+                                onAddServer={handleOpenAddServer}
                                 onDisconnect={handleDisconnect}
                                 serverConnections={serverConnections}
                                 serverHealthByKey={serverHealthByKey}
@@ -3567,6 +3777,7 @@ export default function App() {
                                 onConnect={handleConnect}
                                 onPasswordChange={setPassword}
                                 onServerTypeChange={setServerType}
+                                onServerUrlBlur={handleServerUrlBlur}
                                 onServerUrlChange={setServerUrl}
                                 onUsernameChange={setUsername}
                                 password={password}
@@ -3577,8 +3788,8 @@ export default function App() {
                         ) : mediaDetailState.status !== 'idle' ? null : activeTab === 'home' ? (
                             <HomeScreen
                                 homeContentState={visibleHomeContentState}
-                                onManageServers={() => setActiveUtilityScreen('manage-servers')}
-                                onSelectItem={handleSelectMediaItem}
+                                onManageServers={handleOpenManageServers}
+                                onSelectItem={handleSelectMediaItemStable}
                                 onViewAll={handleOpenViewAll}
                                 recentItems={visibleRecentItems}
                                 serverConnections={serverConnections}
@@ -3586,7 +3797,7 @@ export default function App() {
                         ) : activeTab === 'playlists' ? (
                             <PlaylistsScreen
                                 homeContentState={visibleHomeContentState}
-                                onSelectItem={handleSelectMediaItem}
+                                onSelectItem={handleSelectMediaItemStable}
                                 onShufflePlay={handleShuffleHomeItems}
                                 recentItems={visibleRecentItems}
                             />
@@ -3594,7 +3805,7 @@ export default function App() {
                             <LibraryScreen
                                 hasServerConnections={serverConnections.length > 0}
                                 homeContentState={visibleHomeContentState}
-                                onSelectItem={handleSelectMediaItem}
+                                onSelectItem={handleSelectMediaItemStable}
                                 recentItems={visibleRecentItems}
                             />
                         ) : activeTab === 'search' ? (
@@ -3602,8 +3813,8 @@ export default function App() {
                                 hasServerConnections={serverConnections.length > 0}
                                 homeContentState={visibleHomeContentState}
                                 onSearch={handleSearch}
-                                onSelectItem={handleSelectMediaItem}
-                                onSelectRecentItem={handleSelectMediaItem}
+                                onSelectItem={handleSelectMediaItemStable}
+                                onSelectRecentItem={handleSelectMediaItemStable}
                                 recentItems={visibleRecentItems}
                                 searchState={searchState}
                                 serverConnections={serverConnections}
@@ -3611,8 +3822,8 @@ export default function App() {
                         ) : activeTab === 'radio' ? (
                             <RadioScreen
                                 homeContentState={visibleHomeContentState}
-                                onSelectItem={handleSelectMediaItem}
-                                playbackState={playbackState}
+                                nowPlayingRadioId={nowPlayingRadioId}
+                                onSelectItem={handleSelectMediaItemStable}
                                 recentItems={visibleRecentItems}
                             />
                         ) : (
@@ -3623,7 +3834,7 @@ export default function App() {
                     <MiniPlayer
                         artworkUrl={currentHighResArtworkUrl}
                         lastPlayedItem={lastPlayedItem}
-                        onOpenFullPlayer={() => setIsFullPlayerOpen(true)}
+                        onOpenFullPlayer={handleOpenFullPlayer}
                         onTogglePlayback={handleTogglePlayback}
                         playbackState={playbackState}
                         playerProgress={playerProgress}
@@ -3656,7 +3867,7 @@ export default function App() {
                             castState={castState}
                             isShuffled={isShuffled}
                             lastPlayedItem={lastPlayedItem}
-                            onClose={() => setIsFullPlayerOpen(false)}
+                            onClose={handleCloseFullPlayer}
                             onNext={() => void handleNavigatePlayback(1)}
                             onPrevious={() => void handleNavigatePlayback(-1)}
                             onSeek={(positionMs) => void handleSeekPlayback(positionMs)}
@@ -3684,7 +3895,7 @@ export default function App() {
                             onSelectItem={(item) => {
                                 setIsSearchOverlayOpen(false);
                                 setSearchOverlayQuery('');
-                                handleSelectMediaItem(item);
+                                handleSelectMediaItemStable(item);
                             }}
                             query={searchOverlayQuery}
                             recentItems={recentContentItems}
@@ -3744,17 +3955,8 @@ export default function App() {
                     setPlaylistMenuRoot(null);
                     setPlaylistMenuRootState({ status: 'idle' });
                 }}
-                playlists={getPlaylistTargetsForRoot(homeContentState, playlistMenuRoot?.sourceId)}
-                track={
-                    playlistMenuRoot
-                        ? playlistMenuRoot.kind === 'track'
-                            ? playlistMenuRoot.track
-                            : ({
-                                  id: playlistMenuRoot.collectionItem.id,
-                                  title: playlistMenuRoot.collectionItem.title,
-                              } as MobileMediaTrack)
-                        : null
-                }
+                playlists={rootPlaylistTargets}
+                track={rootPlaylistTrack}
             />
         </View>
         </DownloadedTrackKeysContext.Provider>
@@ -4001,7 +4203,7 @@ const getAvailableHomeFilters = (sections: HomeDisplaySection[]) => {
     });
 };
 
-const HomeScreen = ({
+const HomeScreen = memo(({
     homeContentState,
     onManageServers,
     onSelectItem,
@@ -4040,7 +4242,9 @@ const HomeScreen = ({
             serverConnections={serverConnections}
         />
     );
-};
+});
+
+HomeScreen.displayName = 'HomeScreen';
 
 
 const SettingsScreen = ({
@@ -4461,6 +4665,7 @@ const AddServerScreen = ({
     onConnect,
     onPasswordChange,
     onServerTypeChange,
+    onServerUrlBlur,
     onServerUrlChange,
     onUsernameChange,
     password,
@@ -4468,6 +4673,8 @@ const AddServerScreen = ({
     serverUrl,
     username,
 }: AddServerScreenProps) => {
+    const [isPasswordVisible, setIsPasswordVisible] = useState(false);
+
     return (
         <View style={styles.section}>
             <Pressable accessibilityRole="button" onPress={onBack} style={styles.secondaryButton}>
@@ -4498,7 +4705,9 @@ const AddServerScreen = ({
             </View>
             <TextInput
                 autoCapitalize="none"
+                autoCorrect={false}
                 inputMode="url"
+                onBlur={onServerUrlBlur}
                 onChangeText={onServerUrlChange}
                 placeholder="Server URL"
                 placeholderTextColor={colors.muted}
@@ -4507,20 +4716,33 @@ const AddServerScreen = ({
             />
             <TextInput
                 autoCapitalize="none"
+                autoCorrect={false}
                 onChangeText={onUsernameChange}
                 placeholder="Username"
                 placeholderTextColor={colors.muted}
                 style={styles.input}
                 value={username}
             />
-            <TextInput
-                onChangeText={onPasswordChange}
-                placeholder="Password"
-                placeholderTextColor={colors.muted}
-                secureTextEntry
-                style={styles.input}
-                value={password}
-            />
+            <View style={styles.inputWithAction}>
+                <TextInput
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    onChangeText={onPasswordChange}
+                    placeholder="Password"
+                    placeholderTextColor={colors.muted}
+                    secureTextEntry={!isPasswordVisible}
+                    style={[styles.input, styles.inputWithActionField]}
+                    value={password}
+                />
+                <Pressable
+                    accessibilityLabel={isPasswordVisible ? 'Hide password' : 'Show password'}
+                    accessibilityRole="button"
+                    onPress={() => setIsPasswordVisible((current) => !current)}
+                    style={styles.inputActionButton}
+                >
+                    <EyeGlyph closed={!isPasswordVisible} color={colors.muted} />
+                </Pressable>
+            </View>
             <Pressable
                 accessibilityRole="button"
                 disabled={!canConnect || authState.status === 'loading'}
@@ -4614,7 +4836,7 @@ const ConnectedServerList = ({
     );
 };
 
-const LibraryScreen = ({
+const LibraryScreen = memo(({
     hasServerConnections,
     homeContentState,
     onSelectItem,
@@ -4623,6 +4845,15 @@ const LibraryScreen = ({
     const [activeFilter, setActiveFilter] = useState<LibraryFilter>('all');
     const [activeSort, setActiveSort] = useState<LibrarySort>('recents');
     const [isSortMenuOpen, setIsSortMenuOpen] = useState(false);
+    const baseItems = useMemo(() => getBaseLibraryItems(homeContentState), [homeContentState]);
+    const filters = useMemo(
+        () => getAvailableLibraryFilters(baseItems, recentItems),
+        [baseItems, recentItems],
+    );
+    const rows = useMemo(
+        () => getLibraryRows(baseItems, recentItems, activeFilter, '', activeSort),
+        [activeFilter, activeSort, baseItems, recentItems],
+    );
 
     if (!hasServerConnections) {
         return <EmptyServerBackedScreen tabTitle="Library" />;
@@ -4644,9 +4875,6 @@ const LibraryScreen = ({
         );
     }
 
-    const baseItems = getBaseLibraryItems(homeContentState);
-    const filters = getAvailableLibraryFilters(baseItems, recentItems);
-    const rows = getLibraryRows(baseItems, recentItems, activeFilter, '', activeSort);
     const activeLabel =
         LIBRARY_FILTERS.find((filter) => filter.id === activeFilter)?.label ?? 'All';
     const activeSortLabel =
@@ -4706,7 +4934,9 @@ const LibraryScreen = ({
             />
         </View>
     );
-};
+});
+
+LibraryScreen.displayName = 'LibraryScreen';
 
 const LibrarySortMenu = ({
     activeSort,
@@ -4776,7 +5006,7 @@ const LibrarySortMenu = ({
     );
 };
 
-const PlaylistsScreen = ({
+const PlaylistsScreen = memo(({
     homeContentState,
     onSelectItem,
     onShufflePlay,
@@ -4784,6 +5014,23 @@ const PlaylistsScreen = ({
 }: PlaylistsScreenProps) => {
     const [activeSort, setActiveSort] = useState<LibrarySort>('recents');
     const [isSortMenuOpen, setIsSortMenuOpen] = useState(false);
+    const basePlaylists = useMemo(() => {
+        if (homeContentState.status !== 'loaded') {
+            return [];
+        }
+        return getSectionsById(homeContentState, [MobileHomeSectionId.PLAYLISTS])[0]?.items ?? [];
+    }, [homeContentState]);
+    const playlists = useMemo(
+        () =>
+            activeSort === 'name'
+                ? [...basePlaylists].sort((left, right) => left.title.localeCompare(right.title))
+                : sortHomeItemsByRecents(basePlaylists, recentItems),
+        [activeSort, basePlaylists, recentItems],
+    );
+    const allPlayableItems = useMemo(
+        () => playlists.filter((playlist) => playlist.playback),
+        [playlists],
+    );
 
     if (homeContentState.status === 'idle') {
         return <EmptyServerBackedScreen tabTitle="Playlists" />;
@@ -4805,12 +5052,6 @@ const PlaylistsScreen = ({
         );
     }
 
-    const section = getSectionsById(homeContentState, [MobileHomeSectionId.PLAYLISTS])[0];
-    const basePlaylists = section?.items ?? [];
-    const playlists =
-        activeSort === 'name'
-            ? [...basePlaylists].sort((left, right) => left.title.localeCompare(right.title))
-            : sortHomeItemsByRecents(basePlaylists, recentItems);
     const activeSortLabel =
         LIBRARY_SORTS.find((sort) => sort.id === activeSort)?.label ?? 'Recents';
 
@@ -4822,8 +5063,6 @@ const PlaylistsScreen = ({
             </View>
         );
     }
-
-    const allPlayableItems = playlists.filter((p) => p.playback);
 
     return (
         <View style={styles.playlistScreen}>
@@ -4885,12 +5124,14 @@ const PlaylistsScreen = ({
             />
         </View>
     );
-};
+});
 
-const RadioScreen = ({
+PlaylistsScreen.displayName = 'PlaylistsScreen';
+
+const RadioScreen = memo(({
     homeContentState,
+    nowPlayingRadioId,
     onSelectItem,
-    playbackState,
     recentItems,
 }: RadioScreenProps) => {
     const contextMenu = useMediaContextMenu();
@@ -4940,12 +5181,8 @@ const RadioScreen = ({
             ? stations.find((s) => getRecentContentItemKey(s) === mostRecentRadioKey)
             : undefined) ?? stations[0];
     const otherStations = stations.filter((s) => s !== featuredStation);
-    const nowPlayingId =
-        playbackState.status !== 'idle' && playbackState.item.source === 'radio'
-            ? playbackState.item.id
-            : null;
     const featuredIsPlaying =
-        nowPlayingId !== null && featuredStation.playback?.id === nowPlayingId;
+        nowPlayingRadioId !== null && featuredStation.playback?.id === nowPlayingRadioId;
 
     return (
         <View style={styles.radioScreen}>
@@ -4994,7 +5231,9 @@ const RadioScreen = ({
                     </View>
                     <View style={styles.radioGrid}>
                         {otherStations.map((station) => {
-                            const isPlaying = nowPlayingId !== null && station.playback?.id === nowPlayingId;
+                            const isPlaying =
+                                nowPlayingRadioId !== null &&
+                                station.playback?.id === nowPlayingRadioId;
 
                             return (
                                 <Pressable
@@ -5024,7 +5263,9 @@ const RadioScreen = ({
             ) : null}
         </View>
     );
-};
+});
+
+RadioScreen.displayName = 'RadioScreen';
 
 const SEARCH_SCOPE_DEFINITIONS: Array<{ id: SearchScope; label: string }> = [
     { id: 'all', label: 'All' },
@@ -5129,7 +5370,7 @@ const getSearchSectionsForScope = (sections: MobileSearchSection[], activeScope:
     return sections.filter((section) => sectionIds.has(section.id));
 };
 
-const SearchScreen = ({
+const SearchScreen = memo(({
     hasServerConnections,
     homeContentState,
     onSearch,
@@ -5205,7 +5446,9 @@ const SearchScreen = ({
             />
         </>
     );
-};
+});
+
+SearchScreen.displayName = 'SearchScreen';
 
 const SearchResults = ({
     activeScope,
@@ -6362,7 +6605,7 @@ const getHomeDisplaySections = (
     return displaySections.filter((section) => section.items.length > 0);
 };
 
-const ContentBackedScreen = ({
+const ContentBackedScreen = memo(({
     emptyTitle,
     homeContentState,
     onSelectItem,
@@ -6410,7 +6653,9 @@ const ContentBackedScreen = ({
             }))}
         />
     );
-};
+});
+
+ContentBackedScreen.displayName = 'ContentBackedScreen';
 
 const getHomeItemSubtitle = (
     item: AndroidRecentContentSourceItem,
@@ -6777,6 +7022,22 @@ const getPlaylistTargetsForDetail = (
 
 type PlaylistTrackFilter = 'all' | 'hifi';
 type PlaylistTrackSort = 'artist' | 'order' | 'title';
+const PLAYLIST_TRACK_INITIAL_ITEMS = 16;
+const PLAYLIST_TRACK_RENDER_BATCH = 10;
+
+const getPlaylistTrackSearchText = (track: MobileMediaTrack): string =>
+    [
+        track.title,
+        track.artist,
+        track.album,
+        track.subtitle,
+        track.playback?.title,
+        track.playback?.artist,
+        track.playback?.album,
+    ]
+        .filter((value): value is string => Boolean(value))
+        .join('\n')
+        .toLocaleLowerCase();
 
 /**
  * Filter + sort chips for the playlist track list. Playlists are mixed by
@@ -6886,7 +7147,7 @@ const PlaylistTrackControls = ({
     );
 };
 
-const MediaDetailContent = ({
+const MediaDetailContent = memo(({
     homeContentState,
     mediaDetailState,
     onAddTrackToPlaylist,
@@ -6950,7 +7211,9 @@ const MediaDetailContent = ({
             ) : null}
         </>
     );
-};
+});
+
+MediaDetailContent.displayName = 'MediaDetailContent';
 
 const MediaDetailLoaded = ({
     detail,
@@ -6995,6 +7258,28 @@ const MediaDetailLoaded = ({
     const [playlistFilter, setPlaylistFilter] = useState<'all' | 'hifi'>('all');
     const [playlistSort, setPlaylistSort] = useState<'artist' | 'order' | 'title'>('order');
     const [playlistSortAsc, setPlaylistSortAsc] = useState(true);
+    const [playlistSearchVisible, setPlaylistSearchVisible] = useState(false);
+    const [playlistSearchQuery, setPlaylistSearchQuery] = useState('');
+    const playlistSearchInputRef = useRef<TextInput>(null);
+    // Height/opacity track linearly so the track list below slides predictably;
+    // scale springs out from the icon's anchor point for the "bubble" feel.
+    const playlistSearchLayoutProgress = useSharedValue(0);
+    const playlistSearchBubbleProgress = useSharedValue(0);
+    const playlistSearchAnimatedStyle = useAnimatedStyle(() => ({
+        height: interpolate(playlistSearchLayoutProgress.value, [0, 1], [0, 70]),
+        opacity: interpolate(playlistSearchLayoutProgress.value, [0, 0.5, 1], [0, 1, 1]),
+        transform: [
+            {
+                translateY: interpolate(
+                    playlistSearchBubbleProgress.value,
+                    [0, 1],
+                    [-32, 0],
+                ),
+            },
+            { scale: playlistSearchBubbleProgress.value },
+        ],
+        transformOrigin: ['65%', '0%', 0],
+    }));
     const firstTrack = detail.tracks[0];
     const contextMenu = useMediaContextMenu();
     const downloadedTrackKeys = useDownloadedTrackKeys();
@@ -7007,6 +7292,28 @@ const MediaDetailLoaded = ({
             setPlaylistFilter('all');
         }
     }, [hasHiFiTracks, playlistFilter]);
+    useEffect(() => {
+        setPlaylistSearchVisible(false);
+        setPlaylistSearchQuery('');
+    }, [detail.id, detail.source.id]);
+    useEffect(() => {
+        if (!playlistSearchVisible) return;
+        const id = setTimeout(() => playlistSearchInputRef.current?.focus(), 80);
+        return () => clearTimeout(id);
+    }, [playlistSearchVisible]);
+    useEffect(() => {
+        if (playlistSearchVisible) {
+            playlistSearchLayoutProgress.value = withTiming(1, { duration: 200 });
+            playlistSearchBubbleProgress.value = withSpring(1, {
+                damping: 12,
+                mass: 0.55,
+                stiffness: 180,
+            });
+        } else {
+            playlistSearchBubbleProgress.value = withTiming(0, { duration: 160 });
+            playlistSearchLayoutProgress.value = withTiming(0, { duration: 200 });
+        }
+    }, [playlistSearchBubbleProgress, playlistSearchLayoutProgress, playlistSearchVisible]);
 
     /**
      * Track list after the playlist's filter + sort controls are applied.
@@ -7016,10 +7323,16 @@ const MediaDetailLoaded = ({
      */
     const displayTracks = useMemo(() => {
         if (!isPlaylistDetail) return detail.tracks;
-        const filtered =
+        const playlistSearchNeedle = playlistSearchQuery.trim().toLocaleLowerCase();
+        let filtered =
             playlistFilter === 'hifi'
                 ? detail.tracks.filter(isHiFiTrack)
                 : detail.tracks;
+        if (playlistSearchNeedle) {
+            filtered = filtered.filter((track) =>
+                getPlaylistTrackSearchText(track).includes(playlistSearchNeedle),
+            );
+        }
         if (playlistSort === 'order') {
             // "Order Added" descending = newest at top, which for Subsonic
             // playlists is whatever order the entries arrived in. Ascending
@@ -7038,10 +7351,14 @@ const MediaDetailLoaded = ({
         detail.tracks,
         isPlaylistDetail,
         playlistFilter,
+        playlistSearchQuery,
         playlistSort,
         playlistSortAsc,
     ]);
-    const playableDisplayTracks = displayTracks.filter((track) => track.playback);
+    const playableDisplayTracks = useMemo(
+        () => displayTracks.filter((track) => track.playback),
+        [displayTracks],
+    );
     const firstPlayableDisplayTrack = playableDisplayTracks[0];
     const firstPlayableDisplayIndex = firstPlayableDisplayTrack
         ? displayTracks.indexOf(firstPlayableDisplayTrack)
@@ -7057,9 +7374,19 @@ const MediaDetailLoaded = ({
             detailScrollY.value = event.contentOffset.y;
         },
     });
+    const [collapsedHeaderTriggerY, setCollapsedHeaderTriggerY] = useState(220);
     const [isCollapsedHeaderInteractive, setIsCollapsedHeaderInteractive] = useState(false);
+    const collapsedHeaderRevealStartY = Math.max(0, collapsedHeaderTriggerY - 28);
+    const collapsedHeaderRevealEndY = collapsedHeaderTriggerY + 12;
+    const handleHeroActionsBarLayout = useCallback((event: LayoutChangeEvent) => {
+        const nextTriggerY = Math.max(180, event.nativeEvent.layout.y + spacing.lg);
+
+        setCollapsedHeaderTriggerY((current) =>
+            Math.abs(current - nextTriggerY) < 1 ? current : nextTriggerY,
+        );
+    }, []);
     useAnimatedReaction(
-        () => detailScrollY.value > 150,
+        () => detailScrollY.value >= collapsedHeaderRevealStartY,
         (isVisible, wasVisible) => {
             if (isVisible !== wasVisible) {
                 runOnJS(setIsCollapsedHeaderInteractive)(isVisible);
@@ -7067,13 +7394,28 @@ const MediaDetailLoaded = ({
         },
     );
     const collapsedHeaderBackdropStyle = useAnimatedStyle(() => ({
-        opacity: interpolate(detailScrollY.value, [96, 172], [0, 1], 'clamp'),
+        opacity: interpolate(
+            detailScrollY.value,
+            [collapsedHeaderRevealStartY, collapsedHeaderRevealEndY],
+            [0, 1],
+            'clamp',
+        ),
     }));
     const collapsedHeaderContentStyle = useAnimatedStyle(() => ({
-        opacity: interpolate(detailScrollY.value, [124, 204], [0, 1], 'clamp'),
+        opacity: interpolate(
+            detailScrollY.value,
+            [collapsedHeaderRevealStartY, collapsedHeaderRevealEndY],
+            [0, 1],
+            'clamp',
+        ),
         transform: [
             {
-                translateY: interpolate(detailScrollY.value, [124, 204], [8, 0], 'clamp'),
+                translateY: interpolate(
+                    detailScrollY.value,
+                    [collapsedHeaderRevealStartY, collapsedHeaderRevealEndY],
+                    [8, 0],
+                    'clamp',
+                ),
             },
         ],
     }));
@@ -7323,6 +7665,411 @@ const MediaDetailLoaded = ({
         }
     };
 
+    const renderTrackRow = useCallback(
+        (track: MobileMediaTrack, index: number) => {
+            const qualityItems =
+                isMusic && track.playback
+                    ? buildAudioQualityBadgeItems({
+                          ...track.playback.quality,
+                          compact: true,
+                          mode: 'playerbar',
+                      })
+                    : [];
+            const meta = getTrackMetadataItems(
+                detail,
+                track,
+                qualityItems.map((item) => item.label),
+                isMusic,
+            );
+            const canAddToPlaylist =
+                track.playback?.source === 'music' && playlistTargets.length > 0;
+            const hasOverflowActions =
+                canAddToPlaylist || track.playback?.source === 'music';
+            const isAlbumDetail = detail.type === MobileMediaDetailType.ALBUM;
+            const trackBadgeProfile =
+                detail.type === MobileMediaDetailType.PLAYLIST
+                    ? getPlaybackQualityProfile(track.playback)
+                    : undefined;
+            const isDownloadedTrack = downloadedTrackKeys.has(
+                getDownloadedTrackKey(detail.source.id, track.id),
+            );
+
+            return (
+                <Pressable
+                    accessibilityRole="button"
+                    onLongPress={() => contextMenu.openForTrack(track, detail)}
+                    onPress={() => onPlayTrack(detail, track, index, displayTracks)}
+                    style={styles.trackRow}
+                >
+                    {!isAlbumDetail ? (
+                        <View>
+                            {track.artworkUrl ?? detail.artworkUrl ? (
+                                <Image
+                                    source={{ uri: (track.artworkUrl ?? detail.artworkUrl)! }}
+                                    style={styles.trackArtwork}
+                                />
+                            ) : (
+                                <View style={styles.trackArtworkFallback}>
+                                    <Text style={styles.trackArtworkLetter}>
+                                        {track.title.slice(0, 1).toUpperCase()}
+                                    </Text>
+                                </View>
+                            )}
+                            <QualityBadge thumb profile={trackBadgeProfile} />
+                        </View>
+                    ) : null}
+                    <View style={styles.trackText}>
+                        <Text numberOfLines={1} style={styles.trackTitle}>
+                            {track.title}
+                        </Text>
+                        {meta.length > 0 || isDownloadedTrack ? (
+                            <View style={styles.trackMetadataLine}>
+                                {isDownloadedTrack ? <TrackDownloadedGlyph size={10} /> : null}
+                                {meta.length > 0 ? (
+                                    <Text
+                                        numberOfLines={1}
+                                        style={[
+                                            styles.mediaSubtitle,
+                                            styles.trackMetadataText,
+                                        ]}
+                                    >
+                                        {meta.join(' · ')}
+                                    </Text>
+                                ) : null}
+                            </View>
+                        ) : null}
+                    </View>
+                    {hasOverflowActions ? (
+                        <Pressable
+                            accessibilityLabel={`More options for ${track.title}`}
+                            accessibilityRole="button"
+                            onPress={(event) => {
+                                event.stopPropagation();
+                                contextMenu.openForTrack(track, detail);
+                            }}
+                            style={styles.trackMenuButton}
+                        >
+                            <MoreGlyph color={colors.muted} />
+                        </Pressable>
+                    ) : null}
+                </Pressable>
+            );
+        },
+        [
+            contextMenu,
+            detail,
+            displayTracks,
+            downloadedTrackKeys,
+            isMusic,
+            onPlayTrack,
+            playlistTargets.length,
+        ],
+    );
+
+    const playlistEmptyText =
+        detail.tracks.length === 0
+            ? emptyText
+            : playlistSearchQuery.trim()
+              ? 'No tracks match this search.'
+              : 'No tracks match the current filter.';
+
+    if (isPlaylistDetail) {
+        return (
+            <View style={styles.mediaDetailScreen}>
+                <Reanimated.FlatList
+                    contentContainerStyle={styles.mediaDetailContent}
+                    data={displayTracks}
+                    extraData={downloadedTrackKeys}
+                    initialNumToRender={PLAYLIST_TRACK_INITIAL_ITEMS}
+                    keyboardDismissMode="on-drag"
+                    keyboardShouldPersistTaps="handled"
+                    keyExtractor={(track, index) => `${track.id}:${index}`}
+                    ListEmptyComponent={
+                        <Text style={styles.playlistListEmpty}>{playlistEmptyText}</Text>
+                    }
+                    ListHeaderComponent={
+                        <>
+                            <View style={styles.albumHero}>
+                                <View style={styles.albumHeroArtworkWrap}>
+                                    {detail.artworkUrl ? (
+                                        <Image
+                                            source={{ uri: detail.artworkUrl }}
+                                            style={styles.albumHeroArtwork}
+                                        />
+                                    ) : (
+                                        <View
+                                            style={[
+                                                styles.albumHeroArtwork,
+                                                styles.albumHeroArtworkFallback,
+                                            ]}
+                                        >
+                                            <Text style={styles.mediaArtworkLetter}>
+                                                {detail.title.slice(0, 1)}
+                                            </Text>
+                                        </View>
+                                    )}
+                                    <QualityBadge overlay profile={heroBadgeProfile} />
+                                </View>
+                                <View style={styles.albumHeroBadgeRow}>
+                                    <Text style={styles.albumHeroEyebrow}>
+                                        {getDetailTypeLabel(detail.type)}
+                                    </Text>
+                                </View>
+                                <Text numberOfLines={2} style={styles.albumHeroTitle}>
+                                    {detail.title}
+                                </Text>
+                                <View style={styles.albumHeroMeta}>
+                                    {(detail.metadataLines && detail.metadataLines.length > 0
+                                        ? detail.metadataLines
+                                        : detail.subtitle
+                                          ? [detail.subtitle]
+                                          : []
+                                    ).map((line, index) => (
+                                        <Text
+                                            key={`${line}-${index}`}
+                                            numberOfLines={1}
+                                            style={styles.albumHeroMetaLine}
+                                        >
+                                            {line}
+                                        </Text>
+                                    ))}
+                                    {heroFormatLabel ? (
+                                        <Text style={styles.formatBadgeMeta}>{heroFormatLabel}</Text>
+                                    ) : null}
+                                </View>
+                                <View
+                                    onLayout={handleHeroActionsBarLayout}
+                                    style={styles.albumHeroActionsBar}
+                                >
+                                    <View style={styles.albumHeroLeftActions}>
+                                        {canDownloadDetail ? (
+                                            <Pressable
+                                                accessibilityLabel={
+                                                    downloadAggregate.completed
+                                                        ? 'Downloaded'
+                                                        : 'Download'
+                                                }
+                                                accessibilityRole="button"
+                                                onPress={handleDownloadDetail}
+                                                style={styles.albumHeroGlyphButton}
+                                            >
+                                                <CircularDownloadGlyph
+                                                    completed={downloadAggregate.completed}
+                                                    progress={downloadAggregate.progress}
+                                                />
+                                            </Pressable>
+                                        ) : null}
+                                        <Pressable
+                                            accessibilityLabel="More options"
+                                            accessibilityRole="button"
+                                            onPress={handleOpenDetailContextMenu}
+                                            style={styles.albumHeroGlyphButton}
+                                        >
+                                            <MoreGlyph color={colors.text} />
+                                        </Pressable>
+                                    </View>
+                                    <View style={styles.albumHeroActions}>
+                                        {detail.tracks.length > 0 ? (
+                                            <Pressable
+                                                accessibilityLabel={
+                                                    playlistSearchVisible
+                                                        ? 'Close playlist search'
+                                                        : 'Search playlist'
+                                                }
+                                                accessibilityRole="button"
+                                                hitSlop={8}
+                                                onPress={() => {
+                                                    if (playlistSearchVisible) {
+                                                        setPlaylistSearchQuery('');
+                                                        setPlaylistSearchVisible(false);
+                                                        return;
+                                                    }
+                                                    setPlaylistSearchVisible(true);
+                                                }}
+                                                style={styles.albumHeroGlyphButton}
+                                            >
+                                                <SearchGlyph color="rgba(245,245,245,0.55)" />
+                                            </Pressable>
+                                        ) : null}
+                                        {showPlaylistShuffle ? (
+                                            <Pressable
+                                                accessibilityLabel="Shuffle"
+                                                accessibilityRole="button"
+                                                onPress={() => void onShufflePlay(detail, displayTracks)}
+                                                style={styles.albumHeroGlyphButton}
+                                            >
+                                                <ShuffleGlyph color={colors.text} size={28} />
+                                            </Pressable>
+                                        ) : null}
+                                        {heroPlayTrack ? (
+                                            <Pressable
+                                                accessibilityLabel="Play"
+                                                accessibilityRole="button"
+                                                onPress={() =>
+                                                    onPlayTrack(
+                                                        detail,
+                                                        heroPlayTrack,
+                                                        heroPlayIndex,
+                                                        heroPlayQueue,
+                                                    )
+                                                }
+                                                style={[
+                                                    styles.albumHeroGlyphButton,
+                                                    styles.albumHeroPlayButton,
+                                                ]}
+                                            >
+                                                <PlayPauseGlyph
+                                                    color={colors.background}
+                                                    isPlaying={false}
+                                                    size={22}
+                                                />
+                                            </Pressable>
+                                        ) : null}
+                                    </View>
+                                </View>
+                            </View>
+                            <View style={styles.homeSection}>
+                                <Reanimated.View
+                                    pointerEvents={playlistSearchVisible ? 'auto' : 'none'}
+                                    style={[
+                                        styles.playlistSearchAnimatedWrapper,
+                                        playlistSearchAnimatedStyle,
+                                    ]}
+                                >
+                                    <View
+                                        style={[
+                                            styles.inlineSearchBar,
+                                            styles.playlistSearchBar,
+                                        ]}
+                                    >
+                                        <SearchGlyph color={colors.muted} />
+                                        <TextInput
+                                            autoCapitalize="none"
+                                            autoCorrect={false}
+                                            onChangeText={setPlaylistSearchQuery}
+                                            placeholder="Search this playlist"
+                                            placeholderTextColor={colors.muted}
+                                            ref={playlistSearchInputRef}
+                                            returnKeyType="search"
+                                            style={styles.inlineSearchInput}
+                                            value={playlistSearchQuery}
+                                        />
+                                        {playlistSearchQuery.length > 0 ? (
+                                            <Pressable
+                                                accessibilityLabel="Clear playlist search"
+                                                accessibilityRole="button"
+                                                onPress={() => setPlaylistSearchQuery('')}
+                                                style={styles.inlineSearchIconButton}
+                                            >
+                                                <ClearGlyph color={colors.muted} />
+                                            </Pressable>
+                                        ) : null}
+                                    </View>
+                                </Reanimated.View>
+                                {detail.tracks.length > 0 ? (
+                                    <PlaylistTrackControls
+                                        filter={playlistFilter}
+                                        onFilterChange={setPlaylistFilter}
+                                        onSortChange={setPlaylistSort}
+                                        onToggleSortDirection={() =>
+                                            setPlaylistSortAsc((value) => !value)
+                                        }
+                                        showHiFiFilter={hasHiFiTracks}
+                                        sort={playlistSort}
+                                        sortAsc={playlistSortAsc}
+                                    />
+                                ) : null}
+                            </View>
+                        </>
+                    }
+                    maxToRenderPerBatch={PLAYLIST_TRACK_RENDER_BATCH}
+                    onScroll={detailScrollHandler}
+                    removeClippedSubviews={Platform.OS === 'android'}
+                    renderItem={({ item, index }) => renderTrackRow(item, index)}
+                    scrollEventThrottle={16}
+                    showsVerticalScrollIndicator={false}
+                    updateCellsBatchingPeriod={32}
+                    windowSize={9}
+                />
+                <View pointerEvents="box-none" style={styles.detailCollapsedTopbar}>
+                    <Reanimated.View
+                        pointerEvents="none"
+                        style={[
+                            styles.detailCollapsedTopbarBackdrop,
+                            collapsedHeaderBackdropStyle,
+                        ]}
+                    />
+                    <Pressable
+                        accessibilityLabel="Back"
+                        accessibilityRole="button"
+                        onPress={onBack}
+                        style={styles.detailCollapsedBackButton}
+                    >
+                        <Text style={styles.detailCollapsedBackGlyph}>‹</Text>
+                    </Pressable>
+                    <Reanimated.View
+                        pointerEvents="none"
+                        style={[
+                            styles.detailCollapsedTitleWrap,
+                            collapsedHeaderContentStyle,
+                        ]}
+                    >
+                        <Text numberOfLines={1} style={styles.detailCollapsedTitle}>
+                            {detail.title}
+                        </Text>
+                    </Reanimated.View>
+                    <Reanimated.View
+                        pointerEvents={isCollapsedHeaderInteractive ? 'auto' : 'none'}
+                        style={[styles.detailCollapsedActions, collapsedHeaderContentStyle]}
+                    >
+                        {showPlaylistShuffle ? (
+                            <Pressable
+                                accessibilityLabel="Shuffle"
+                                accessibilityRole="button"
+                                hitSlop={10}
+                                onPress={() => void onShufflePlay(detail, displayTracks)}
+                                style={styles.detailCollapsedIconButton}
+                            >
+                                <ShuffleGlyph color={colors.text} size={20} />
+                            </Pressable>
+                        ) : null}
+                        {canPlayDetail && heroPlayTrack ? (
+                            <Pressable
+                                accessibilityLabel="Play"
+                                accessibilityRole="button"
+                                onPress={() =>
+                                    onPlayTrack(
+                                        detail,
+                                        heroPlayTrack,
+                                        heroPlayIndex,
+                                        heroPlayQueue,
+                                    )
+                                }
+                                style={styles.detailCollapsedPlayButton}
+                            >
+                                <PlayPauseGlyph
+                                    color={colors.background}
+                                    isPlaying={false}
+                                    size={16}
+                                />
+                            </Pressable>
+                        ) : null}
+                    </Reanimated.View>
+                </View>
+                <TrackPlaylistMenu
+                    actionState={playlistActionState}
+                    onAddToPlaylist={(playlist) => void handleAddToPlaylist(playlist)}
+                    onClose={() => {
+                        setPlaylistMenuTrack(null);
+                        setPlaylistActionState({ status: 'idle' });
+                    }}
+                    playlists={playlistTargets}
+                    track={playlistMenuTrack}
+                />
+            </View>
+        );
+    }
+
     return (
         <View style={styles.mediaDetailScreen}>
             <Reanimated.ScrollView
@@ -7377,7 +8124,10 @@ const MediaDetailLoaded = ({
                             <Text style={styles.formatBadgeMeta}>{heroFormatLabel}</Text>
                         ) : null}
                     </View>
-                    <View style={styles.albumHeroActionsBar}>
+                    <View
+                        onLayout={handleHeroActionsBarLayout}
+                        style={styles.albumHeroActionsBar}
+                    >
                         <View style={styles.albumHeroLeftActions}>
                             {canDownloadDetail ? (
                                 <Pressable
@@ -7511,7 +8261,8 @@ const MediaDetailLoaded = ({
                             );
                             const canAddToPlaylist =
                                 track.playback?.source === 'music' && playlistTargets.length > 0;
-                            const hasOverflowActions = canAddToPlaylist;
+                            const hasOverflowActions =
+                                canAddToPlaylist || track.playback?.source === 'music';
                             const isAlbumDetail = detail.type === MobileMediaDetailType.ALBUM;
                             // Track-level format badge only meaningful inside playlists (the
                             // collection itself is mixed). Album track rows skip the badge
@@ -7627,6 +8378,7 @@ const MediaDetailLoaded = ({
                         <Pressable
                             accessibilityLabel="Shuffle"
                             accessibilityRole="button"
+                            hitSlop={10}
                             onPress={() => void onShufflePlay(detail, displayTracks)}
                             style={styles.detailCollapsedIconButton}
                         >
@@ -8597,6 +9349,80 @@ const getSeekSegments = (
     return [{ durationSeconds: Math.max(1, durationSeconds), id: 'full', startSeconds: 0 }];
 };
 
+const MIN_VISUAL_SEEK_SEGMENT_WIDTH = 3.6;
+const SEEK_SEGMENT_MAX_GAP_WIDTH = 4;
+const SEEK_SEGMENT_GAP_BUDGET = 0.24;
+
+const getVisibleSeekSegments = (
+    segments: MobilePlaybackSegment[],
+    trackWidth: number,
+): MobilePlaybackSegment[] => {
+    if (segments.length <= 1 || trackWidth <= 0) {
+        return segments;
+    }
+
+    const maxVisibleSegments = Math.max(
+        1,
+        Math.floor(trackWidth / MIN_VISUAL_SEEK_SEGMENT_WIDTH),
+    );
+
+    if (segments.length <= maxVisibleSegments) {
+        return segments;
+    }
+
+    const totalDuration = segments.reduce(
+        (sum, segment) => sum + Math.max(0, segment.durationSeconds ?? 0),
+        0,
+    );
+
+    if (totalDuration <= 0) {
+        return segments.slice(0, maxVisibleSegments);
+    }
+
+    const visibleSegments: MobilePlaybackSegment[] = [];
+
+    for (let groupIndex = 0; groupIndex < maxVisibleSegments; groupIndex += 1) {
+        const startIndex = Math.floor((groupIndex * segments.length) / maxVisibleSegments);
+        const endIndex = Math.max(
+            startIndex + 1,
+            groupIndex === maxVisibleSegments - 1
+                ? segments.length
+                : Math.floor(((groupIndex + 1) * segments.length) / maxVisibleSegments),
+        );
+        const group = segments.slice(startIndex, endIndex);
+        const groupStart = group[0];
+        const groupEnd = group[group.length - 1];
+        if (!groupStart || !groupEnd) continue;
+        const groupDuration = group.reduce(
+            (sum, segment) => sum + Math.max(0, segment.durationSeconds ?? 0),
+            0,
+        );
+
+        visibleSegments.push({
+            durationSeconds: Math.max(groupDuration, 1),
+            id:
+                group.length === 1
+                    ? groupStart.id
+                    : `${groupStart.id}-${groupEnd.id}-${groupIndex}`,
+            startSeconds: groupStart.startSeconds,
+            title: groupStart.title,
+        });
+    }
+
+    return visibleSegments;
+};
+
+const getSeekSegmentGapWidth = (segmentCount: number, trackWidth: number) => {
+    if (segmentCount <= 1 || trackWidth <= 0) {
+        return 0;
+    }
+
+    return Math.min(
+        SEEK_SEGMENT_MAX_GAP_WIDTH,
+        (trackWidth * SEEK_SEGMENT_GAP_BUDGET) / (segmentCount - 1),
+    );
+};
+
 const PlayerIconButton = ({
     accessibilityLabel,
     children,
@@ -8803,6 +9629,8 @@ const QualityBadgeRow = ({ items }: { items: ReturnType<typeof buildAudioQuality
                     ]}
                 >
                     <Text
+                        adjustsFontSizeToFit
+                        minimumFontScale={0.72}
                         numberOfLines={1}
                         style={[
                             styles.qualityBadgeText,
@@ -8887,7 +9715,19 @@ const SegmentedSeekBar = ({
 }) => {
     const [trackWidth, setTrackWidth] = useState(0);
     const isSeekable = !isLive && Boolean(durationMs && durationMs > 0 && trackWidth > 0);
-    const seekSegments = getSeekSegments(segments, durationMs);
+    const seekTrackWidth = trackWidth > 0 ? trackWidth : Math.max(1, SCREEN_WIDTH - spacing.lg * 2);
+    const seekSegments = useMemo(
+        () => getSeekSegments(segments, durationMs),
+        [durationMs, segments],
+    );
+    const visibleSeekSegments = useMemo(
+        () => getVisibleSeekSegments(seekSegments, seekTrackWidth),
+        [seekSegments, seekTrackWidth],
+    );
+    const seekSegmentGapWidth = getSeekSegmentGapWidth(
+        visibleSeekSegments.length,
+        seekTrackWidth,
+    );
     const seekFromLocation = useCallback(
         (locationX: number) => {
             if (!isSeekable || !durationMs) {
@@ -8927,7 +9767,7 @@ const SegmentedSeekBar = ({
                     <View style={[styles.seekSegmentLiveFill, { backgroundColor: tint }]} />
                 </View>
             ) : (
-                seekSegments.map((segment, index) => {
+                visibleSeekSegments.map((segment, index) => {
                     const segmentStartMs = segment.startSeconds * 1000;
                     const segmentDurationMs = (segment.durationSeconds ?? 0) * 1000;
                     const segmentProgress =
@@ -8942,7 +9782,10 @@ const SegmentedSeekBar = ({
                                 styles.seekSegment,
                                 {
                                     flexGrow: segment.durationSeconds ?? 1,
-                                    marginRight: index === seekSegments.length - 1 ? 0 : 4,
+                                    marginRight:
+                                        index === visibleSeekSegments.length - 1
+                                            ? 0
+                                            : seekSegmentGapWidth,
                                 },
                             ]}
                         >
@@ -9330,6 +10173,7 @@ const FullScreenPlayer = ({
     visible: boolean;
 }) => {
     const [sleepMenuVisible, setSleepMenuVisible] = useState(false);
+    const [outputPickerVisible, setOutputPickerVisible] = useState(false);
     const [sleepSecondsLeft, setSleepSecondsLeft] = useState<null | number>(null);
     // Queue sheet position: 0 = hidden below the screen, 1 = fully expanded.
     // Driven by the same vertical-drag gesture that handles player dismiss,
@@ -9465,7 +10309,7 @@ const FullScreenPlayer = ({
                 title: item.title,
                 type: MobileSearchItemType.SONG,
             };
-            contextMenu.openForItem(songItem);
+            contextMenu.openForItem(songItem, { suppressQueueAction: true });
             return;
         }
 
@@ -9479,7 +10323,7 @@ const FullScreenPlayer = ({
                 title: item.title,
                 type: MobileHomeItemType.RADIO,
             };
-            contextMenu.openForItem(radioItem);
+            contextMenu.openForItem(radioItem, { suppressQueueAction: true });
             return;
         }
 
@@ -9498,7 +10342,7 @@ const FullScreenPlayer = ({
                         ? MobileHomeItemType.AUDIOBOOK
                         : MobileHomeItemType.PODCAST,
             };
-            contextMenu.openForItem(homeItem);
+            contextMenu.openForItem(homeItem, { suppressQueueAction: true });
         }
     }, [contextMenu, lastPlayedItem, playbackState, serverConnections]);
 
@@ -9736,13 +10580,14 @@ const FullScreenPlayer = ({
         displayItem.source !== 'audiobook' && displayItem.source !== 'radio';
     const showSkipControls = displayItem.source !== 'radio';
     const castButton = (
-        <View
+        <Pressable
             accessibilityLabel={
                 castState.isConnected
-                    ? `Casting to ${castState.deviceName ?? 'Chromecast'}`
-                    : 'Connect to Chromecast'
+                    ? `Choose audio output. Casting to ${castState.deviceName ?? 'Chromecast'}`
+                    : 'Choose audio output'
             }
             accessibilityRole="button"
+            onPress={() => setOutputPickerVisible(true)}
             style={styles.fullPlayerBottomBarButton}
         >
             <CastGlyph
@@ -9753,8 +10598,7 @@ const FullScreenPlayer = ({
                 }
                 size={22}
             />
-            <SamoCastButton style={styles.fullPlayerCastButton} />
-        </View>
+        </Pressable>
     );
     const positionMs =
         playbackState.status !== 'idle' ? (playbackState.positionMs ?? 0) : 0;
@@ -9907,7 +10751,12 @@ const FullScreenPlayer = ({
             </View>
 
             {/* Bottom stack: each block owns its own row — no overlap. */}
-            <View style={styles.fullPlayerBottom}>
+            <View
+                style={[
+                    styles.fullPlayerBottom,
+                    !isMusicSource && styles.fullPlayerBottomLifted,
+                ]}
+            >
                 <View style={styles.fullPlayerMetadata}>
                     <Text
                         numberOfLines={2}
@@ -10023,20 +10872,27 @@ const FullScreenPlayer = ({
             </View>
             </Reanimated.View>
 
-            <QueueSheetOverlay
-                backdropStyle={queueBackdropStyle}
-                chapters={
-                    displayItem.source === 'audiobook' ? timelineSegments : undefined
-                }
-                currentPositionMs={positionMs}
-                interactive={isQueueInteractive}
-                onChapterSeek={onSeek}
-                onClose={closeQueue}
-                queue={queue}
-                sheetStyle={queueSheetStyle}
-            />
         </Reanimated.View>
         </GestureDetector>
+
+        <QueueSheetOverlay
+            backdropStyle={queueBackdropStyle}
+            chapters={
+                displayItem.source === 'audiobook' ? timelineSegments : undefined
+            }
+            currentPositionMs={positionMs}
+            interactive={isQueueInteractive}
+            onChapterSeek={onSeek}
+            onClose={closeQueue}
+            queue={queue}
+            sheetStyle={queueSheetStyle}
+        />
+
+        <OutputPickerModal
+            castState={castState}
+            onClose={() => setOutputPickerVisible(false)}
+            visible={outputPickerVisible}
+        />
 
         {/* Sleep timer picker */}
         <Modal animationType="slide" onRequestClose={() => setSleepMenuVisible(false)} transparent visible={sleepMenuVisible}>
@@ -10086,11 +10942,254 @@ const FullScreenPlayer = ({
     );
 };
 
+const EMPTY_OUTPUT_ROUTES: AndroidMediaOutputRoute[] = [];
+
+const getOutputRouteGlyphLabel = (route: AndroidMediaOutputRoute): string => {
+    const type = route.type ?? '';
+    if (type.includes('bluetooth') || type.startsWith('ble') || type === 'hearing-aid') {
+        return 'BT';
+    }
+    if (type.startsWith('usb')) {
+        return 'USB';
+    }
+    if (type.startsWith('wired')) {
+        return 'AUX';
+    }
+    return 'SP';
+};
+
+const getCastPickerEmptyMessage = (castState: AndroidCastState | undefined): string => {
+    if (castState?.status === 'unavailable') {
+        return 'Chromecast is unavailable on this device.';
+    }
+    if (castState?.status === 'connecting') {
+        return 'Looking for Chromecast devices...';
+    }
+    return 'No Chromecast devices found.';
+};
+
+const OutputPickerModal = ({
+    castState,
+    onClose,
+    visible,
+}: {
+    castState: AndroidCastState;
+    onClose: () => void;
+    visible: boolean;
+}) => {
+    const [outputState, setOutputState] = useState<AndroidMediaOutputState | null>(null);
+    const [isLoading, setIsLoading] = useState(false);
+    const [selectingRouteId, setSelectingRouteId] = useState<string | null>(null);
+    const [error, setError] = useState<string | null>(null);
+
+    useEffect(() => {
+        if (!visible) {
+            return;
+        }
+
+        let cancelled = false;
+        const loadRoutes = async (showLoading: boolean) => {
+            if (showLoading) {
+                setIsLoading(true);
+            }
+            setError(null);
+            try {
+                const next = await getAndroidOutputRoutes();
+                if (!cancelled) {
+                    setOutputState(next);
+                }
+            } catch (routeError) {
+                if (!cancelled) {
+                    setError(
+                        routeError instanceof Error
+                            ? routeError.message
+                            : 'Could not load audio outputs.',
+                    );
+                }
+            } finally {
+                if (!cancelled && showLoading) {
+                    setIsLoading(false);
+                }
+            }
+        };
+
+        void loadRoutes(true);
+        const subscription = subscribeToAndroidOutputRouteEvents((next) => {
+            if (cancelled) {
+                return;
+            }
+            setOutputState(next);
+            setIsLoading(false);
+            setError(null);
+        });
+        const refreshTimers: Array<ReturnType<typeof setTimeout>> = [
+            setTimeout(() => void loadRoutes(false), 850),
+            setTimeout(() => void loadRoutes(false), 2200),
+        ];
+
+        return () => {
+            cancelled = true;
+            subscription.remove();
+            refreshTimers.forEach(clearTimeout);
+            setSelectingRouteId(null);
+        };
+    }, [visible]);
+
+    const routes = outputState?.routes ?? EMPTY_OUTPUT_ROUTES;
+    const localRoutes = routes.filter((route) => route.kind === 'local');
+    const castRoutes = routes.filter((route) => route.kind === 'cast');
+    const pickerCastState = outputState?.cast ?? castState;
+
+    const handleSelectRoute = useCallback(
+        async (route: AndroidMediaOutputRoute) => {
+            if (selectingRouteId) {
+                return;
+            }
+            if (route.isSelected) {
+                onClose();
+                return;
+            }
+
+            setSelectingRouteId(route.id);
+            setError(null);
+            try {
+                const next = await selectAndroidOutputRoute(route);
+                setOutputState(next);
+                onClose();
+            } catch (selectError) {
+                setError(
+                    selectError instanceof Error
+                        ? selectError.message
+                        : 'Could not switch audio output.',
+                );
+            } finally {
+                setSelectingRouteId(null);
+            }
+        },
+        [onClose, selectingRouteId],
+    );
+
+    const renderRoute = (route: AndroidMediaOutputRoute) => {
+        const isSelecting = selectingRouteId === route.id;
+        const isDisabled = Boolean(selectingRouteId) || route.isAvailable === false;
+        const iconColor = route.isSelected ? colors.accent : colors.text;
+
+        return (
+            <Pressable
+                accessibilityLabel={`${route.title}${route.subtitle ? `, ${route.subtitle}` : ''}`}
+                accessibilityRole="button"
+                disabled={isDisabled}
+                key={route.id}
+                onPress={(event) => {
+                    event.stopPropagation();
+                    void handleSelectRoute(route);
+                }}
+                style={({ pressed }) => [
+                    styles.outputPickerRow,
+                    pressed && styles.outputPickerRowPressed,
+                    route.isSelected && styles.outputPickerRowSelected,
+                    isDisabled && !isSelecting && styles.outputPickerRowDisabled,
+                ]}
+            >
+                <View
+                    style={[
+                        styles.outputPickerIcon,
+                        route.isSelected && styles.outputPickerIconSelected,
+                    ]}
+                >
+                    {route.kind === 'cast' ? (
+                        <CastGlyph color={iconColor} size={20} />
+                    ) : (
+                        <Text
+                            adjustsFontSizeToFit
+                            numberOfLines={1}
+                            style={[
+                                styles.outputPickerIconLabel,
+                                route.isSelected && styles.outputPickerIconLabelSelected,
+                            ]}
+                        >
+                            {getOutputRouteGlyphLabel(route)}
+                        </Text>
+                    )}
+                </View>
+                <View style={styles.outputPickerRowBody}>
+                    <Text numberOfLines={1} style={styles.outputPickerTitle}>
+                        {route.title}
+                    </Text>
+                    {route.subtitle ? (
+                        <Text numberOfLines={1} style={styles.outputPickerSubtitle}>
+                            {route.subtitle}
+                        </Text>
+                    ) : null}
+                </View>
+                <View style={styles.outputPickerState}>
+                    {isSelecting ? (
+                        <ActivityIndicator color={colors.accent} size="small" />
+                    ) : route.isSelected ? (
+                        <CheckGlyph color={colors.accent} size={16} />
+                    ) : null}
+                </View>
+            </Pressable>
+        );
+    };
+
+    return (
+        <Modal animationType="slide" onRequestClose={onClose} transparent visible={visible}>
+            <Pressable onPress={onClose} style={styles.modalBackdrop}>
+                <SwipeDismissSheet onDismiss={onClose} style={styles.actionSheet}>
+                    <View style={styles.actionSheetHandle} />
+                    <Text style={styles.actionSheetTitle}>Audio Output</Text>
+                    {isLoading && !outputState ? (
+                        <View style={styles.outputPickerLoading}>
+                            <ActivityIndicator color={colors.accent} size="small" />
+                        </View>
+                    ) : (
+                        <ScrollView
+                            contentContainerStyle={styles.outputPickerList}
+                            keyboardShouldPersistTaps="handled"
+                        >
+                            {localRoutes.length > 0 ? (
+                                <>
+                                    <Text style={styles.outputPickerSectionLabel}>
+                                        Phone and Bluetooth
+                                    </Text>
+                                    {localRoutes.map(renderRoute)}
+                                </>
+                            ) : null}
+                            <Text style={styles.outputPickerSectionLabel}>Chromecast</Text>
+                            {castRoutes.length > 0 ? (
+                                castRoutes.map(renderRoute)
+                            ) : (
+                                <Text style={styles.outputPickerEmpty}>
+                                    {getCastPickerEmptyMessage(pickerCastState)}
+                                </Text>
+                            )}
+                            {error ? (
+                                <Text style={styles.outputPickerError}>{error}</Text>
+                            ) : null}
+                        </ScrollView>
+                    )}
+                </SwipeDismissSheet>
+            </Pressable>
+        </Modal>
+    );
+};
+
 /**
  * Inline queue sheet rendered as a child of the fullscreen player. translateY
  * is driven by the shared queueProgress that the outer pan gesture mutates, so
  * the sheet follows the user's finger end-to-end.
  */
+type QueueSheetListItem =
+    | { chapter: MobilePlaybackSegment; index: number; kind: 'chapter' }
+    | { index: number; item: MobilePlayableAudio; kind: 'queue' };
+
+const EMPTY_QUEUE_SHEET_ROWS: QueueSheetListItem[] = [];
+const QUEUE_SHEET_INITIAL_ITEMS = 12;
+const QUEUE_SHEET_RENDER_BATCH = 10;
+const QUEUE_SHEET_ROW_HEIGHT = 60;
+const QUEUE_SHEET_WINDOW_SIZE = 7;
+
 const QueueSheetOverlay = ({
     backdropStyle,
     chapters,
@@ -10116,6 +11215,22 @@ const QueueSheetOverlay = ({
     const activeChapterIndex = showingChapters
         ? findActiveChapterIndex(chapters!, positionSeconds)
         : -1;
+    const queueSheetRows = useMemo<QueueSheetListItem[]>(
+        () => {
+            if (!interactive) {
+                return EMPTY_QUEUE_SHEET_ROWS;
+            }
+
+            return showingChapters
+                ? (chapters ?? []).map((chapter, index) => ({
+                      chapter,
+                      index,
+                      kind: 'chapter' as const,
+                  }))
+                : items.map((item, index) => ({ index, item, kind: 'queue' as const }));
+        },
+        [chapters, interactive, items, showingChapters],
+    );
     const dismissGesture = useMemo(
         () =>
             Gesture.Pan()
@@ -10132,6 +11247,128 @@ const QueueSheetOverlay = ({
                 }),
         [onClose],
     );
+    const keyExtractor = useCallback((row: QueueSheetListItem) => {
+        if (row.kind === 'chapter') {
+            return `${row.chapter.id}-${row.index}`;
+        }
+
+        return `${row.item.id}-${row.index}`;
+    }, []);
+    const getItemLayout = useCallback(
+        (_data: ArrayLike<QueueSheetListItem> | null | undefined, index: number) => ({
+            index,
+            length: QUEUE_SHEET_ROW_HEIGHT,
+            offset: QUEUE_SHEET_ROW_HEIGHT * index,
+        }),
+        [],
+    );
+    const renderItem = useCallback(
+        ({ item: row }: { item: QueueSheetListItem }) => {
+            if (row.kind === 'chapter') {
+                const isActive = row.index === activeChapterIndex;
+                const chapter = row.chapter;
+                return (
+                    <Pressable
+                        accessibilityRole="button"
+                        onPress={() => onChapterSeek?.(chapter.startSeconds * 1000)}
+                        style={styles.queueRow}
+                    >
+                        <View style={styles.queueChapterNumber}>
+                            <Text
+                                style={[
+                                    styles.queueChapterNumberText,
+                                    isActive && { color: colors.accent },
+                                ]}
+                            >
+                                {row.index + 1}
+                            </Text>
+                        </View>
+                        <View style={styles.queueRowBody}>
+                            <Text
+                                numberOfLines={1}
+                                style={[
+                                    styles.queueRowTitle,
+                                    isActive && { color: colors.accent },
+                                ]}
+                            >
+                                {chapter.title ?? `Chapter ${row.index + 1}`}
+                            </Text>
+                            <Text numberOfLines={1} style={styles.queueRowSubtitle}>
+                                {formatChapterRange(chapter)}
+                            </Text>
+                        </View>
+                        {isActive ? (
+                            <View style={styles.queueNowPlayingIndicator}>
+                                <View
+                                    style={[
+                                        styles.queueRowPlayingBar,
+                                        styles.queueRowPlayingBarShort,
+                                    ]}
+                                />
+                                <View style={styles.queueRowPlayingBar} />
+                                <View
+                                    style={[
+                                        styles.queueRowPlayingBar,
+                                        styles.queueRowPlayingBarShort,
+                                    ]}
+                                />
+                            </View>
+                        ) : null}
+                    </Pressable>
+                );
+            }
+
+            const isActive = queue?.index === row.index;
+            const queueRowProfile = getPlaybackQualityProfile(row.item);
+            return (
+                <View style={styles.queueRow}>
+                    <View>
+                        <ArtworkImage
+                            fallbackStyle={styles.queueRowThumbFallback}
+                            letter={row.item.title.slice(0, 1).toUpperCase()}
+                            style={styles.queueRowThumb}
+                            uri={row.item.artworkUrl}
+                        />
+                        <QualityBadge thumb profile={queueRowProfile} />
+                    </View>
+                    <View style={styles.queueRowBody}>
+                        <Text
+                            numberOfLines={1}
+                            style={[
+                                styles.queueRowTitle,
+                                isActive && { color: colors.accent },
+                            ]}
+                        >
+                            {row.item.title}
+                        </Text>
+                        {row.item.subtitle ? (
+                            <Text numberOfLines={1} style={styles.queueRowSubtitle}>
+                                {row.item.subtitle}
+                            </Text>
+                        ) : null}
+                    </View>
+                    {isActive ? (
+                        <View style={styles.queueNowPlayingIndicator}>
+                            <View
+                                style={[
+                                    styles.queueRowPlayingBar,
+                                    styles.queueRowPlayingBarShort,
+                                ]}
+                            />
+                            <View style={styles.queueRowPlayingBar} />
+                            <View
+                                style={[
+                                    styles.queueRowPlayingBar,
+                                    styles.queueRowPlayingBarShort,
+                                ]}
+                            />
+                        </View>
+                    ) : null}
+                </View>
+            );
+        },
+        [activeChapterIndex, onChapterSeek, queue?.index],
+    );
     return (
         <>
             <Reanimated.View
@@ -10144,139 +11381,51 @@ const QueueSheetOverlay = ({
                     style={StyleSheet.absoluteFillObject}
                 />
             </Reanimated.View>
-            <GestureDetector gesture={dismissGesture}>
-                <Reanimated.View
-                    pointerEvents={interactive ? 'auto' : 'none'}
-                    style={[styles.queueSheet, sheetStyle]}
-                >
-                    <View style={styles.queueSheetHandle} />
-                    <Text style={styles.queueSheetTitle}>
-                        {showingChapters ? 'Chapters' : 'Up Next'}
-                    </Text>
-                    <ScrollView
-                        contentContainerStyle={styles.queueSheetContent}
-                        showsVerticalScrollIndicator={false}
-                        style={styles.queueSheetScroll}
-                    >
-                    {showingChapters ? (
-                        chapters!.map((chapter, i) => {
-                            const isActive = i === activeChapterIndex;
-                            return (
-                                <Pressable
-                                    accessibilityRole="button"
-                                    key={`${chapter.id}-${i}`}
-                                    onPress={() =>
-                                        onChapterSeek?.(chapter.startSeconds * 1000)
-                                    }
-                                    style={styles.queueRow}
-                                >
-                                    <View style={styles.queueChapterNumber}>
-                                        <Text
-                                            style={[
-                                                styles.queueChapterNumberText,
-                                                isActive && { color: colors.accent },
-                                            ]}
-                                        >
-                                            {i + 1}
-                                        </Text>
-                                    </View>
-                                    <View style={styles.queueRowBody}>
-                                        <Text
-                                            numberOfLines={1}
-                                            style={[
-                                                styles.queueRowTitle,
-                                                isActive && { color: colors.accent },
-                                            ]}
-                                        >
-                                            {chapter.title ?? `Chapter ${i + 1}`}
-                                        </Text>
-                                        <Text
-                                            numberOfLines={1}
-                                            style={styles.queueRowSubtitle}
-                                        >
-                                            {formatChapterRange(chapter)}
-                                        </Text>
-                                    </View>
-                                    {isActive ? (
-                                        <View style={styles.queueNowPlayingIndicator}>
-                                            <View
-                                                style={[
-                                                    styles.queueRowPlayingBar,
-                                                    styles.queueRowPlayingBarShort,
-                                                ]}
-                                            />
-                                            <View style={styles.queueRowPlayingBar} />
-                                            <View
-                                                style={[
-                                                    styles.queueRowPlayingBar,
-                                                    styles.queueRowPlayingBarShort,
-                                                ]}
-                                            />
-                                        </View>
-                                    ) : null}
-                                </Pressable>
-                            );
-                        })
-                    ) : items.length === 0 ? (
-                        <Text style={styles.queueSheetEmpty}>The queue is empty.</Text>
-                    ) : (
-                        items.map((item, i) => {
-                            const isActive = queue?.index === i;
-                            const queueRowProfile = getPlaybackQualityProfile(item);
-                            return (
-                                <View key={`${item.id}-${i}`} style={styles.queueRow}>
-                                    <View>
-                                        <ArtworkImage
-                                            fallbackStyle={styles.queueRowThumbFallback}
-                                            letter={item.title.slice(0, 1).toUpperCase()}
-                                            style={styles.queueRowThumb}
-                                            uri={item.artworkUrl}
-                                        />
-                                        <QualityBadge thumb profile={queueRowProfile} />
-                                    </View>
-                                    <View style={styles.queueRowBody}>
-                                        <Text
-                                            numberOfLines={1}
-                                            style={[
-                                                styles.queueRowTitle,
-                                                isActive && { color: colors.accent },
-                                            ]}
-                                        >
-                                            {item.title}
-                                        </Text>
-                                        {item.subtitle ? (
-                                            <Text
-                                                numberOfLines={1}
-                                                style={styles.queueRowSubtitle}
-                                            >
-                                                {item.subtitle}
-                                            </Text>
-                                        ) : null}
-                                    </View>
-                                    {isActive ? (
-                                        <View style={styles.queueNowPlayingIndicator}>
-                                            <View
-                                                style={[
-                                                    styles.queueRowPlayingBar,
-                                                    styles.queueRowPlayingBarShort,
-                                                ]}
-                                            />
-                                            <View style={styles.queueRowPlayingBar} />
-                                            <View
-                                                style={[
-                                                    styles.queueRowPlayingBar,
-                                                    styles.queueRowPlayingBarShort,
-                                                ]}
-                                            />
-                                        </View>
-                                    ) : null}
-                                </View>
-                            );
-                        })
-                    )}
-                    </ScrollView>
-                </Reanimated.View>
-            </GestureDetector>
+            <Reanimated.View
+                pointerEvents={interactive ? 'auto' : 'none'}
+                style={[styles.queueSheet, sheetStyle]}
+            >
+                <GestureDetector gesture={dismissGesture}>
+                    <View style={styles.queueSheetHeader}>
+                        <View style={styles.queueSheetHandle} />
+                        <View style={styles.queueSheetTitleRow}>
+                            <Text style={styles.queueSheetTitle}>
+                                {showingChapters ? 'Chapters' : 'Up Next'}
+                            </Text>
+                            <Pressable
+                                accessibilityLabel="Close queue"
+                                accessibilityRole="button"
+                                hitSlop={8}
+                                onPress={onClose}
+                                style={styles.queueSheetCloseButton}
+                            >
+                                <DownCaretGlyph color={colors.text} />
+                            </Pressable>
+                        </View>
+                    </View>
+                </GestureDetector>
+                <GestureFlatList
+                    contentContainerStyle={styles.queueSheetContent}
+                    data={queueSheetRows}
+                    extraData={`${activeChapterIndex}:${queue?.index ?? -1}`}
+                    getItemLayout={getItemLayout}
+                    initialNumToRender={QUEUE_SHEET_INITIAL_ITEMS}
+                    keyboardShouldPersistTaps="handled"
+                    keyExtractor={keyExtractor}
+                    ListEmptyComponent={
+                        interactive && !showingChapters ? (
+                            <Text style={styles.queueSheetEmpty}>The queue is empty.</Text>
+                        ) : null
+                    }
+                    maxToRenderPerBatch={QUEUE_SHEET_RENDER_BATCH}
+                    nestedScrollEnabled
+                    removeClippedSubviews
+                    renderItem={renderItem}
+                    showsVerticalScrollIndicator={false}
+                    style={styles.queueSheetScroll}
+                    windowSize={QUEUE_SHEET_WINDOW_SIZE}
+                />
+            </Reanimated.View>
         </>
     );
 };
@@ -10344,6 +11493,11 @@ const ALPHABET_SIDEBAR_LETTERS = [
     'X', 'Y', 'Z',
 ] as const;
 
+/**
+ * Build a map of sidebar letter → row index for ViewAll's two-column layout.
+ * The value is the *row* the letter falls into (not the flat item index), so
+ * the sidebar can hand the FlatList a row index directly for scrollToIndex.
+ */
 const buildAlphabetLetterIndex = (
     items: MobileHomeItem[],
 ): Map<string, number> => {
@@ -10352,10 +11506,34 @@ const buildAlphabetLetterIndex = (
         const first = item.title.charAt(0).toUpperCase();
         const letter = first >= 'A' && first <= 'Z' ? first : '#';
         if (!map.has(letter)) {
-            map.set(letter, index);
+            map.set(letter, Math.floor(index / 2));
         }
     });
     return map;
+};
+
+type ViewAllRow = {
+    key: string;
+    left: MobileHomeItem;
+    right: MobileHomeItem | undefined;
+};
+
+const chunkIntoViewAllRows = (items: MobileHomeItem[]): ViewAllRow[] => {
+    const rows: ViewAllRow[] = [];
+    for (let index = 0; index < items.length; index += 2) {
+        const left = items[index];
+        const right = items[index + 1];
+        rows.push({
+            // Row identity is its left item — stable as long as the same
+            // item stays in the leftmost slot. Adding/removing items below
+            // this row doesn't shift its key, so React keeps the row
+            // mounted across data updates instead of unmounting/remounting.
+            key: `row:${getContentItemKey(left)}`,
+            left,
+            right,
+        });
+    }
+    return rows;
 };
 
 const getViewAllSortKey = (item: MobileHomeItem): string =>
@@ -10411,7 +11589,7 @@ const ViewAllTile = memo(({ item, onOpenContextMenu, onSelectItem }: ViewAllTile
 });
 ViewAllTile.displayName = 'ViewAllTile';
 
-const ViewAllScreen = ({
+const ViewAllScreen = memo(({
     fullState,
     onBack,
     onSelectItem,
@@ -10423,7 +11601,12 @@ const ViewAllScreen = ({
     route: ViewAllRoute;
 }) => {
     const contextMenu = useMediaContextMenu();
-    const listRef = useRef<FlatList<MobileHomeItem>>(null);
+    // FlatList is single-column over pre-chunked row records — see comment on
+    // `rows` below. Going through numColumns={2} caused stacking bugs:
+    // `removeClippedSubviews` + numColumns + getItemLayout don't agree about
+    // which cell occupies which offset, so on fast scroll Android sometimes
+    // painted the wrong tile at a given row and never recovered.
+    const listRef = useRef<FlatList<ViewAllRow>>(null);
     const jumpFeedbackTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const [jumpFeedbackLetter, setJumpFeedbackLetter] = useState<string | null>(null);
     const isLoading = fullState.status === 'loading';
@@ -10457,6 +11640,12 @@ const ViewAllScreen = ({
             .sort((left, right) => VIEW_ALL_SORT_COLLATOR.compare(left.sortKey, right.sortKey))
             .map(({ item }) => item);
     }, [fullState, route.items]);
+    // Pre-chunk the sorted items into two-up rows so the FlatList is a
+    // simple, single-column virtualized list. Each FlatList item is now an
+    // entire row of tiles, which keeps getItemLayout/scrollToIndex/removed-
+    // subview logic all aligned — no row-vs-item offset arithmetic, no
+    // numColumns recycling quirks.
+    const rows = useMemo(() => chunkIntoViewAllRows(sortedItems), [sortedItems]);
     const letterIndex = useMemo(
         () => buildAlphabetLetterIndex(sortedItems),
         [sortedItems],
@@ -10483,31 +11672,26 @@ const ViewAllScreen = ({
 
     const handleJumpToLetter = useCallback(
         (letter: string) => {
-            const index = letterIndex.get(letter);
-            if (typeof index !== 'number') return;
-            const row = Math.floor(index / 2);
-            const offset = Math.max(0, row * VIEW_ALL_ROW_HEIGHT);
+            const rowIndex = letterIndex.get(letter);
+            if (typeof rowIndex !== 'number') return;
             showJumpFeedback(letter);
             try {
-                listRef.current?.scrollToOffset({
+                listRef.current?.scrollToIndex({
                     animated: false,
-                    offset,
+                    index: rowIndex,
                 });
             } catch (error) {
-                console.warn('[ViewAllScreen] scrollToOffset threw', error);
+                console.warn('[ViewAllScreen] scrollToIndex threw', error);
             }
         },
         [letterIndex, showJumpFeedback],
     );
     const getItemLayout = useCallback(
-        (_: ArrayLike<MobileHomeItem> | null | undefined, index: number) => {
-            const row = Math.floor(index / 2);
-            return {
-                index,
-                length: VIEW_ALL_ROW_HEIGHT,
-                offset: row * VIEW_ALL_ROW_HEIGHT,
-            };
-        },
+        (_: ArrayLike<ViewAllRow> | null | undefined, index: number) => ({
+            index,
+            length: VIEW_ALL_ROW_HEIGHT,
+            offset: index * VIEW_ALL_ROW_HEIGHT,
+        }),
         [],
     );
 
@@ -10516,15 +11700,44 @@ const ViewAllScreen = ({
         [contextMenu],
     );
 
-    const renderItem = useCallback(
-        ({ item }: { item: MobileHomeItem }) => (
-            <ViewAllTile
-                item={item}
-                onOpenContextMenu={handleOpenContextMenu}
-                onSelectItem={onSelectItem}
-            />
+    const renderRow = useCallback(
+        ({ item: row }: { item: ViewAllRow }) => (
+            <View style={styles.viewAllRow}>
+                <ViewAllTile
+                    item={row.left}
+                    onOpenContextMenu={handleOpenContextMenu}
+                    onSelectItem={onSelectItem}
+                />
+                {row.right ? (
+                    <ViewAllTile
+                        item={row.right}
+                        onOpenContextMenu={handleOpenContextMenu}
+                        onSelectItem={onSelectItem}
+                    />
+                ) : (
+                    // Phantom slot keeps the left tile flush-left when the
+                    // grid has an odd item count, instead of letting flex
+                    // stretch it across the full row.
+                    <View style={styles.viewAllTilePlaceholder} />
+                )}
+            </View>
         ),
         [handleOpenContextMenu, onSelectItem],
+    );
+
+    const keyExtractor = useCallback((row: ViewAllRow) => row.key, []);
+
+    // FlatList throws if scrollToIndex targets an unrealized window; in that
+    // case it gives us the chance to fall back to a precise pixel offset
+    // (which getItemLayout makes trivial).
+    const handleScrollToIndexFailed = useCallback(
+        (info: { averageItemLength: number; highestMeasuredFrameIndex: number; index: number }) => {
+            listRef.current?.scrollToOffset({
+                animated: false,
+                offset: info.index * VIEW_ALL_ROW_HEIGHT,
+            });
+        },
+        [],
     );
 
     return (
@@ -10545,7 +11758,7 @@ const ViewAllScreen = ({
                 <View style={styles.viewAllBackButton} />
             </View>
             <View style={styles.viewAllBody}>
-                {sortedItems.length === 0 ? (
+                {rows.length === 0 ? (
                     isLoading ? (
                         <ActivityIndicator color={colors.accent} />
                     ) : (
@@ -10555,17 +11768,15 @@ const ViewAllScreen = ({
                     )
                 ) : (
                     <FlatList
-                        columnWrapperStyle={styles.viewAllColumn}
                         contentContainerStyle={styles.viewAllListContent}
-                        data={sortedItems}
+                        data={rows}
                         getItemLayout={getItemLayout}
-                        initialNumToRender={VIEW_ALL_INITIAL_ITEMS}
-                        keyExtractor={getContentItemKey}
-                        maxToRenderPerBatch={VIEW_ALL_RENDER_BATCH}
-                        numColumns={2}
+                        initialNumToRender={Math.ceil(VIEW_ALL_INITIAL_ITEMS / 2)}
+                        keyExtractor={keyExtractor}
+                        maxToRenderPerBatch={Math.ceil(VIEW_ALL_RENDER_BATCH / 2)}
+                        onScrollToIndexFailed={handleScrollToIndexFailed}
                         ref={listRef}
-                        removeClippedSubviews={Platform.OS === 'android'}
-                        renderItem={renderItem}
+                        renderItem={renderRow}
                         showsVerticalScrollIndicator={false}
                         updateCellsBatchingPeriod={32}
                         windowSize={VIEW_ALL_WINDOW_SIZE}
@@ -10585,7 +11796,9 @@ const ViewAllScreen = ({
             </View>
         </View>
     );
-};
+});
+
+ViewAllScreen.displayName = 'ViewAllScreen';
 
 const AlphabetSidebar = ({
     activeLetters,
@@ -10594,27 +11807,127 @@ const AlphabetSidebar = ({
     activeLetters: Map<string, number>;
     onJumpToLetter: (letter: string) => void;
 }) => {
-    // Every responder/coordinate-math approach I tried here landed on the
-    // wrong letter in some layout state: RN's `locationY` is measured
-    // relative to whichever descendant happens to win hit-testing, and
-    // `measureInWindow` vs `pageY` can disagree on whether the status bar
-    // is included. The bulletproof fix is to make each letter its own
-    // Pressable — the OS routes the touch to the exact button it covers,
-    // no math involved. We pay for that with no drag-through (you have
-    // to lift between letters), but tap-to-jump now lands every time.
-    const handleLetterPress = useCallback(
+    const letterRefs = useRef<Record<string, View | null>>({});
+    const letterMetricsRef = useRef<Array<{ bottom: number; letter: string; top: number }>>([]);
+    const lastSelectedLetterRef = useRef<string | null>(null);
+
+    const measureLetterMetrics = useCallback((onMeasured?: () => void) => {
+        const nextMetrics: Array<{ bottom: number; letter: string; top: number }> = [];
+        let pending = ALPHABET_SIDEBAR_LETTERS.length;
+
+        const finishOne = () => {
+            pending -= 1;
+            if (pending === 0) {
+                letterMetricsRef.current = nextMetrics.sort((left, right) => left.top - right.top);
+                onMeasured?.();
+            }
+        };
+
+        ALPHABET_SIDEBAR_LETTERS.forEach((letter) => {
+            const node = letterRefs.current[letter];
+            if (!node) {
+                finishOne();
+                return;
+            }
+
+            node.measureInWindow((_x, y, _width, height) => {
+                if (height > 0) {
+                    nextMetrics.push({
+                        bottom: y + height,
+                        letter,
+                        top: y,
+                    });
+                }
+                finishOne();
+            });
+        });
+    }, []);
+
+    useEffect(() => {
+        const timer = setTimeout(() => measureLetterMetrics(), 0);
+        return () => clearTimeout(timer);
+    }, [activeLetters, measureLetterMetrics]);
+
+    const getLetterFromPageY = useCallback((pageY: number) => {
+        const metrics = letterMetricsRef.current;
+        if (metrics.length === 0) {
+            return null;
+        }
+
+        const containing = metrics.find((metric) => pageY >= metric.top && pageY <= metric.bottom);
+        if (containing) {
+            return containing.letter;
+        }
+
+        let nearest = metrics[0];
+        let nearestDistance = Math.abs(pageY - (nearest.top + nearest.bottom) / 2);
+        for (let index = 1; index < metrics.length; index += 1) {
+            const candidate = metrics[index];
+            const distance = Math.abs(pageY - (candidate.top + candidate.bottom) / 2);
+            if (distance < nearestDistance) {
+                nearest = candidate;
+                nearestDistance = distance;
+            }
+        }
+
+        return nearest.letter;
+    }, []);
+
+    const jumpToLetter = useCallback(
         (letter: string) => {
             if (!activeLetters.has(letter)) return;
+            if (lastSelectedLetterRef.current === letter) return;
+
+            lastSelectedLetterRef.current = letter;
+            triggerSelection();
             onJumpToLetter(letter);
         },
         [activeLetters, onJumpToLetter],
     );
 
+    const jumpToPageY = useCallback(
+        (pageY: number) => {
+            const letter = getLetterFromPageY(pageY);
+            if (letter) {
+                jumpToLetter(letter);
+            }
+        },
+        [getLetterFromPageY, jumpToLetter],
+    );
+
+    const resetDragLetter = useCallback(() => {
+        lastSelectedLetterRef.current = null;
+    }, []);
+
+    const panResponder = useMemo(
+        () =>
+            PanResponder.create({
+                onMoveShouldSetPanResponder: (_event, gestureState) =>
+                    Math.abs(gestureState.dy) > 2 &&
+                    Math.abs(gestureState.dy) > Math.abs(gestureState.dx),
+                onPanResponderGrant: (event) => {
+                    const { pageY } = event.nativeEvent;
+                    measureLetterMetrics(() => {
+                        jumpToPageY(pageY);
+                    });
+                },
+                onPanResponderMove: (event) => {
+                    jumpToPageY(event.nativeEvent.pageY);
+                },
+                onPanResponderRelease: resetDragLetter,
+                onPanResponderTerminate: resetDragLetter,
+                onStartShouldSetPanResponder: () => false,
+            }),
+        [jumpToPageY, measureLetterMetrics, resetDragLetter],
+    );
+
     return (
         <View pointerEvents="box-none" style={styles.alphabetSidebar}>
             <View
+                {...panResponder.panHandlers}
                 accessibilityLabel="Alphabet jump index"
                 accessibilityRole="adjustable"
+                onLayout={() => measureLetterMetrics()}
                 style={styles.alphabetSidebarRail}
             >
                 {ALPHABET_SIDEBAR_LETTERS.map((letter) => {
@@ -10622,14 +11935,16 @@ const AlphabetSidebar = ({
                     return (
                         <Pressable
                             disabled={!isActive}
-                            // Wider tap area than the 24px button so taps
-                            // near the screen edge still land. Don't widen
-                            // vertically — neighbors stack with no gap, so
-                            // any top/bottom slop would steal touches from
-                            // adjacent letters.
                             hitSlop={{ bottom: 0, left: 18, right: 4, top: 0 }}
                             key={letter}
-                            onPress={() => handleLetterPress(letter)}
+                            onPress={() => {
+                                lastSelectedLetterRef.current = null;
+                                jumpToLetter(letter);
+                                lastSelectedLetterRef.current = null;
+                            }}
+                            ref={(node) => {
+                                letterRefs.current[letter] = node;
+                            }}
                             style={styles.alphabetSidebarLetterButton}
                         >
                             <Text

@@ -201,7 +201,7 @@ const getPathLabel = (deliveryKind: AudioDeliveryKind, compact: boolean) => {
     }
 
     if (deliveryKind === 'native-direct') return 'Native Direct';
-    if (deliveryKind === 'android-direct') return 'Android Direct';
+    if (deliveryKind === 'android-direct') return 'DIRECT';
     if (deliveryKind === 'web-direct') return 'Web Direct';
 
     return 'Unknown Path';
