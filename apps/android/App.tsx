@@ -40,12 +40,13 @@ import {
     supportsServerTypeOnAndroid,
     upsertServerAuthentication,
 } from '@samo/core/server';
+import { FlashList, type FlashListRef } from '@shopify/flash-list';
 import { Image as ExpoImage } from 'expo-image';
 import { StatusBar } from 'expo-status-bar';
 import { getColors as getImageColors } from 'react-native-image-colors';
-import type { ImageColorsResult } from 'react-native-image-colors/build/types';
 import {
     Component,
+    type ComponentProps,
     createContext,
     type ErrorInfo,
     Fragment,
@@ -59,17 +60,14 @@ import {
     useState,
 } from 'react';
 import {
-    AccessibilityInfo,
     ActivityIndicator,
     Alert,
     Animated,
     AppState,
     BackHandler,
-    FlatList,
     type GestureResponderEvent,
     Image,
     type ImageSourcePropType,
-    type ImageStyle,
     KeyboardAvoidingView,
     type LayoutChangeEvent,
     Modal,
@@ -80,16 +78,13 @@ import {
     Platform,
     Pressable,
     ScrollView,
-    StyleProp,
     StyleSheet,
     Switch,
     Text,
     TextInput,
     View,
-    type ViewStyle,
 } from 'react-native';
 import {
-    FlatList as GestureFlatList,
     Gesture,
     GestureDetector,
     GestureHandlerRootView,
@@ -108,6 +103,18 @@ import Reanimated, {
 } from 'react-native-reanimated';
 import ditherTexture from './assets/dither.png';
 import samoLogo from './assets/samo-logo.png';
+import { ArtworkImage } from './src/components/ArtworkImage';
+import { ArtworkZoomModal } from './src/components/ArtworkZoomModal';
+import { QualityBadge, QualityBadgeRow } from './src/components/QualityBadge';
+import { SegmentedSeekBar } from './src/components/SegmentedSeekBar';
+import { SwipeDismissSheet } from './src/components/SwipeDismissSheet';
+import {
+    DownloadedCollectionKeysContext,
+    DownloadedTrackKeysContext,
+    useDownloadedCollectionKeys,
+    useDownloadedTrackKeys,
+} from './src/contexts/downloaded-keys';
+import { useReducedMotionPreference } from './src/hooks/use-reduced-motion-preference';
 import {
     type AndroidCastState,
     type AndroidMediaOutputRoute,
@@ -127,6 +134,13 @@ import {
     subscribeToAndroidNavigationRequests,
     subscribeToAndroidOutputRouteEvents,
 } from './src/services/audio-playback';
+import {
+    getAndroidPlaybackState,
+    selectActiveAndroidPlaybackItem,
+    selectAndroidPlaybackStatus,
+    setAndroidPlaybackState,
+    useAndroidPlaybackState,
+} from './src/state/playback-store';
 import { type AndroidPlaybackState } from './src/types/playback';
 import {
     findActiveChapterIndex,
@@ -140,13 +154,16 @@ import {
     getPlaybackDurationMs,
     getPlaybackEventDurationMs,
     getPlaybackItemDurationMs,
-    getSeekSegmentGapWidth,
-    getSeekSegments,
     getStablePlaybackPositionMs,
-    getVisibleSeekSegments,
     isLivePlayback,
     looksLikeUrl,
 } from './src/utils/playback-time';
+import {
+    buildBackdropStops,
+    darkenColor,
+    pickAlbumEssenceColor,
+} from './src/utils/color';
+import { clamp } from './src/utils/math';
 import {
     cancelDownload,
     type DownloadEntry,
@@ -217,10 +234,7 @@ import {
     loadPersistedLastPlayedItem,
     savePersistedLastPlayedItem,
 } from './src/services/last-played-item';
-import {
-    formatQualityProfile,
-    pickQualityBadgeAsset,
-} from './src/services/quality-badge-assets';
+import { formatQualityProfile } from './src/services/quality-badge-assets';
 import { type AndroidSearchState, loadAndroidSearchResults } from './src/services/search-content';
 import { type AndroidAuthState, authenticateServer } from './src/services/server-auth';
 import {
@@ -259,9 +273,6 @@ import {
     HOME_COMPACT_OFFSET,
     HOME_PRIMARY_TILE,
     HOME_ROUNDED_OFFSET,
-    HOME_ROW_INITIAL_ITEMS,
-    HOME_ROW_RENDER_BATCH,
-    HOME_ROW_WINDOW_SIZE,
     HOME_TILE_GAP,
     MINI_PLAYER_COLLAPSED_TOP,
     MINI_PLAYER_HEIGHT,
@@ -274,10 +285,7 @@ import {
     REDUCED_MOTION_SPRING,
     SCREEN_HEIGHT,
     SCREEN_WIDTH,
-    VIEW_ALL_INITIAL_ITEMS,
-    VIEW_ALL_RENDER_BATCH,
     VIEW_ALL_ROW_HEIGHT,
-    VIEW_ALL_WINDOW_SIZE,
 } from './src/theme/layout';
 import {
     BookInfoGlyph,
@@ -312,6 +320,9 @@ import {
 } from './src/components/Glyphs';
 import { styles } from './src/theme/styles';
 import { colors, spacing } from './src/theme/tokens';
+
+const ReanimatedFlashList = Reanimated.createAnimatedComponent(FlashList) as typeof FlashList;
+const FLASH_LIST_MAINTAIN_POSITION_DISABLED = { disabled: true };
 
 const CAST_ICON_ACTIVE_TINT = 'rgba(202, 160, 79, 0.78)';
 const CAST_ICON_INACTIVE_TINT = 'rgba(245, 245, 245, 0.72)';
@@ -605,54 +616,6 @@ const buildDownloadedMusicDetail = async (
     };
 };
 
-/**
- * Artwork tile backed by expo-image so cover art decodes and recycles like a
- * native app without turning browse sessions into unbounded disk-cache writes.
- * List/grid covers use memory cache only; fullscreen/current artwork can still
- * opt into disk because it is one image at a time instead of hundreds of tiles.
- */
-const ArtworkImage = ({
-    fallbackStyle,
-    letter,
-    style,
-    uri,
-}: {
-    fallbackStyle?: StyleProp<ViewStyle>;
-    letter: string;
-    style: StyleProp<ImageStyle>;
-    uri?: string;
-}) => {
-    const [errored, setErrored] = useState(false);
-    useEffect(() => {
-        setErrored(false);
-    }, [uri]);
-    if (!uri || errored) {
-        return (
-            <View
-                style={[
-                    style as StyleProp<ViewStyle>,
-                    styles.artworkImageFallback,
-                    fallbackStyle,
-                ]}
-            >
-                <Text style={styles.mediaArtworkLetter}>{letter}</Text>
-            </View>
-        );
-    }
-    return (
-        <ExpoImage
-            allowDownscaling
-            cachePolicy="memory"
-            contentFit="cover"
-            onError={() => setErrored(true)}
-            recyclingKey={uri}
-            source={uri}
-            style={style as StyleProp<ImageStyle>}
-            transition={120}
-        />
-    );
-};
-
 interface AddServerScreenProps {
     authState: AndroidAuthState;
     canConnect: boolean;
@@ -838,13 +801,6 @@ const MediaContextMenuContext = createContext<MediaContextMenuApi>({
 });
 
 const useMediaContextMenu = () => useContext(MediaContextMenuContext);
-
-const DownloadedCollectionKeysContext = createContext<Set<string>>(new Set());
-const DownloadedTrackKeysContext = createContext<Set<string>>(new Set());
-
-const useDownloadedCollectionKeys = () => useContext(DownloadedCollectionKeysContext);
-
-const useDownloadedTrackKeys = () => useContext(DownloadedTrackKeysContext);
 
 const useStableCallback = <TArgs extends unknown[], TResult>(
     callback: (...args: TArgs) => TResult,
@@ -1164,7 +1120,7 @@ export default function App() {
         status: 'idle',
     });
     const [password, setPassword] = useState('');
-    const [playbackState, setPlaybackState] = useState<AndroidPlaybackState>({ status: 'idle' });
+    const playbackStatus = useAndroidPlaybackState(selectAndroidPlaybackStatus);
     const [castState, setCastState] = useState<AndroidCastState>({
         isConnected: false,
         status: 'unavailable',
@@ -1191,6 +1147,7 @@ export default function App() {
     const [downloadedCollections, setDownloadedCollections] = useState<
         DownloadedCollectionSummary[]
     >([]);
+    const [, forcePlaybackQueueRender] = useState(0);
     const [contextMenuTarget, setContextMenuTarget] =
         useState<MediaContextMenuTarget | null>(null);
     const [contextMenuFeedback, setContextMenuFeedback] = useState<string | null>(null);
@@ -1469,7 +1426,7 @@ export default function App() {
             options?: { shuffled?: boolean },
         ) => {
             if (!isAndroidNativePlaybackAvailable()) {
-                setPlaybackState({
+                setAndroidPlaybackState({
                     item,
                     message: 'Native Android audio engine is not available in this build.',
                     sessionId: 'unavailable',
@@ -1504,11 +1461,12 @@ export default function App() {
                 index: nextQueueIndex,
                 items: playableQueueItems,
             };
+            forcePlaybackQueueRender((version) => version + 1);
             if (options?.shuffled !== undefined) {
                 setIsShuffled(options.shuffled);
             }
             playbackSnapshotRef.current = { item, sessionId: session.id };
-            setPlaybackState({
+            setAndroidPlaybackState({
                 durationMs: getPlaybackItemDurationMs(item),
                 item,
                 positionMs: initialPositionMs,
@@ -1536,7 +1494,7 @@ export default function App() {
                 const deviceInfo = await deviceInfoPromise;
                 if (!isCurrentPlaybackSession()) return;
 
-                setPlaybackState({
+                setAndroidPlaybackState({
                     bitPerfect: event.bitPerfect,
                     deviceInfo,
                     durationMs: getPlaybackEventDurationMs(event, item),
@@ -1548,7 +1506,7 @@ export default function App() {
                 });
             } catch (error) {
                 if (playbackSnapshotRef.current?.sessionId !== session.id) return;
-                setPlaybackState({
+                setAndroidPlaybackState({
                     durationMs: getPlaybackItemDurationMs(item),
                     item,
                     message: error instanceof Error ? error.message : 'Playback failed',
@@ -1591,7 +1549,7 @@ export default function App() {
                 return;
             }
 
-            setPlaybackState((current) => {
+            setAndroidPlaybackState((current) => {
                 if (current.status === 'idle') {
                     return current;
                 }
@@ -1685,18 +1643,12 @@ export default function App() {
     }, [homeContentState]);
 
     useEffect(() => {
-        if (playbackState.status === 'idle' || !isAndroidNativePlaybackAvailable()) {
+        if (playbackStatus === 'idle' || !isAndroidNativePlaybackAvailable()) {
             return;
         }
-        // The 1Hz position poll is the single biggest source of re-renders in
-        // the app: every tick updates playbackState which cascades through the
-        // entire tree. The only consumer that actually needs position to tick
-        // continuously is the fullscreen progress bar. When fullscreen is
-        // closed (most of the time), poll less aggressively — status changes
-        // still flow through subscribeToAndroidAudioEvents in real time, so
-        // the MiniPlayer's play/pause icon and "Now Playing" indicators stay
-        // correct. ABS progress sync also fires off these polls so we keep
-        // a slower beat going for it.
+        // Polling now writes to the external playback store, not root App
+        // state. That keeps route rendering insulated from progress ticks
+        // while the player surfaces subscribe directly.
         const intervalMs = isFullPlayerOpen ? 1000 : 5000;
         const interval = setInterval(() => {
             void getAndroidPlaybackStatus()
@@ -1713,14 +1665,17 @@ export default function App() {
                     if (absCtx && positionMs && event.status === 'playing') {
                         const activeItem =
                             playbackSnapshotRef.current?.item ??
-                            playbackState.item;
+                            selectActiveAndroidPlaybackItem(getAndroidPlaybackState());
+                        if (!activeItem) {
+                            return;
+                        }
                         void syncAbsProgressThrottled(
                             absCtx,
                             getAbsProgressSeconds(absCtx, positionMs, activeItem),
                         );
                     }
 
-                    setPlaybackState((current) => {
+                    setAndroidPlaybackState((current) => {
                         if (current.status === 'idle') {
                             return current;
                         }
@@ -1758,7 +1713,7 @@ export default function App() {
         }, intervalMs);
 
         return () => clearInterval(interval);
-    }, [isFullPlayerOpen, playbackState.status]);
+    }, [isFullPlayerOpen, playbackStatus]);
 
     useEffect(() => {
         let isMounted = true;
@@ -1846,8 +1801,7 @@ export default function App() {
         };
     }, []);
 
-    const activePlaybackItem =
-        playbackState.status !== 'idle' ? playbackState.item : null;
+    const activePlaybackItem = useAndroidPlaybackState(selectActiveAndroidPlaybackItem);
 
     useEffect(() => {
         if (!activePlaybackItem) {
@@ -2300,7 +2254,7 @@ export default function App() {
         mediaDetailRequestId.current += 1;
         const requestId = (audiobookStartRequestId.current += 1);
         const isCurrentRequest = () => audiobookStartRequestId.current === requestId;
-        setPlaybackState((current) =>
+        setAndroidPlaybackState((current) =>
             current.status === 'idle'
                 ? current
                 : { ...current, message: 'Loading audiobook…' },
@@ -2848,11 +2802,12 @@ export default function App() {
     };
 
     const canAppendToPlaybackQueue =
-        playbackState.status !== 'idle' && playbackState.item.source !== 'radio';
+        activePlaybackItem !== null && activePlaybackItem.source !== 'radio';
 
     const appendPlayableItemsToQueue = useCallback(
         (items: MobilePlayableAudio[]): number => {
             const queueableItems = items.filter((item) => item.source !== 'radio');
+            const playbackState = getAndroidPlaybackState();
 
             if (queueableItems.length === 0) {
                 setContextMenuFeedback('Nothing playable was found for the queue.');
@@ -2881,10 +2836,11 @@ export default function App() {
                     items: [playbackState.item, ...queueableItems],
                 };
             }
+            forcePlaybackQueueRender((version) => version + 1);
 
             return queueableItems.length;
         },
-        [playbackState],
+        [],
     );
 
     const loadDetailForContextAction = useCallback(
@@ -3256,6 +3212,8 @@ export default function App() {
     );
 
     const handleTogglePlayback = async () => {
+        const playbackState = getAndroidPlaybackState();
+
         if (playbackState.status === 'idle' || playbackState.status === 'error') {
             // Force a full re-play when the previous session errored out, not
             // just a resume — that goes through ensurePlayer on the native side
@@ -3272,7 +3230,7 @@ export default function App() {
         try {
             if (playbackState.status === 'playing' || playbackState.status === 'buffering') {
                 await pauseAndroidAudio();
-                setPlaybackState({ ...playbackState, status: 'paused' });
+                setAndroidPlaybackState({ ...playbackState, status: 'paused' });
 
                 const absCtx = absContextRef.current;
 
@@ -3298,9 +3256,9 @@ export default function App() {
             }
 
             await resumeAndroidAudio();
-            setPlaybackState({ ...playbackState, status: 'playing' });
+            setAndroidPlaybackState({ ...playbackState, status: 'playing' });
         } catch (error) {
-            setPlaybackState({
+            setAndroidPlaybackState({
                 ...playbackState,
                 message: error instanceof Error ? error.message : 'Playback command failed',
                 status: 'error',
@@ -3309,6 +3267,8 @@ export default function App() {
     };
 
     const handleSeekPlayback = async (positionMs: number) => {
+        const playbackState = getAndroidPlaybackState();
+
         if (playbackState.status === 'idle' || isLivePlayback(playbackState)) {
             return;
         }
@@ -3316,7 +3276,7 @@ export default function App() {
         const durationMs = getPlaybackDurationMs(playbackState);
         const nextPositionMs = clamp(positionMs, 0, durationMs ?? Math.max(0, positionMs));
 
-        setPlaybackState((current) =>
+        setAndroidPlaybackState((current) =>
             current.status === 'idle' ? current : { ...current, positionMs: nextPositionMs },
         );
 
@@ -3331,7 +3291,7 @@ export default function App() {
                 );
             }
 
-            setPlaybackState((current) => {
+            setAndroidPlaybackState((current) => {
                 if (current.status === 'idle') {
                     return current;
                 }
@@ -3346,7 +3306,7 @@ export default function App() {
                 };
             });
         } catch (error) {
-            setPlaybackState({
+            setAndroidPlaybackState({
                 ...playbackState,
                 message: error instanceof Error ? error.message : 'Seek failed',
                 status: 'error',
@@ -3355,6 +3315,8 @@ export default function App() {
     };
 
     const handleSkipPlayback = async (offsetSeconds: number) => {
+        const playbackState = getAndroidPlaybackState();
+
         if (playbackState.status === 'idle' || isLivePlayback(playbackState)) {
             return;
         }
@@ -3377,6 +3339,7 @@ export default function App() {
                     [after[i], after[j]] = [after[j], after[i]];
                 }
                 playbackQueueRef.current = { index: queue.index, items: [...before, ...after] };
+                forcePlaybackQueueRender((version) => version + 1);
             }
 
             // Turning shuffle off does not restore the original order (matches Apple
@@ -3386,6 +3349,8 @@ export default function App() {
     }, []);
 
     const handleNavigatePlayback = async (direction: -1 | 1) => {
+        const playbackState = getAndroidPlaybackState();
+
         if (playbackState.status === 'idle') {
             return;
         }
@@ -3441,6 +3406,7 @@ export default function App() {
             // progress from the server in case another client moved ahead.
             const absCtx = absContextRef.current;
             if (absCtx) {
+                const playbackState = getAndroidPlaybackState();
                 const fresh = await loadAbsCurrentProgress(
                     absCtx.authentication,
                     absCtx.itemId,
@@ -3477,7 +3443,7 @@ export default function App() {
                 ok: false,
             };
         }
-    }, [loadHomeForConnections, playbackState, serverConnections]);
+    }, [loadHomeForConnections, serverConnections]);
 
     const contextMenuActions = useMemo<MediaContextMenuAction[]>(() => {
         if (!contextMenuTarget) {
@@ -3821,7 +3787,7 @@ export default function App() {
             >
                 <View style={styles.root}>
                     {activeUtilityScreen === 'view-all' && viewAllRoute ? (
-                        // ViewAllScreen renders its own FlatList — keep it
+                        // ViewAllScreen renders its own recycled list — keep it
                         // outside the surrounding ScrollView so RN doesn't
                         // warn about nested VirtualizedLists with the same
                         // orientation (which also disables windowing).
@@ -3945,12 +3911,11 @@ export default function App() {
                         )}
                     </ScrollView>
                     )}
-                    <MiniPlayer
+                    <ConnectedMiniPlayer
                         artworkUrl={currentHighResArtworkUrl}
                         lastPlayedItem={lastPlayedItem}
                         onOpenFullPlayer={handleOpenFullPlayer}
                         onTogglePlayback={handleTogglePlayback}
-                        playbackState={playbackState}
                         playerProgress={playerProgress}
                         reducedMotion={reducedMotion}
                     />
@@ -3976,7 +3941,7 @@ export default function App() {
                         )}
                         label="FullScreenPlayer"
                     >
-                        <FullScreenPlayer
+                        <ConnectedFullScreenPlayer
                             artworkUrl={currentHighResArtworkUrl}
                             castState={castState}
                             isShuffled={isShuffled}
@@ -3990,7 +3955,6 @@ export default function App() {
                             playerProgress={playerProgress}
                             reducedMotion={reducedMotion}
                             serverConnections={serverConnections}
-                            playbackState={playbackState}
                             queue={playbackQueueRef.current}
                             visible={isFullPlayerOpen}
                         />
@@ -7355,17 +7319,10 @@ const HomeDisplayRow = memo(({ onSelectItem, onViewAll, section }: HomeDisplayRo
     const canViewAll = viewAllVariant !== null && Boolean(onViewAll);
     const rowCount = section.rowCount ?? 1;
     const itemLength = getHomeRowItemLength(section.variant);
+    const drawDistance = itemLength * 4;
     const columns = useMemo(
         () => (rowCount > 1 ? chunkHomeSectionItems(section.items, rowCount) : []),
         [rowCount, section.items],
-    );
-    const getItemLayout = useCallback(
-        (_: ArrayLike<AndroidRecentContentSourceItem> | null | undefined, index: number) => ({
-            index,
-            length: itemLength,
-            offset: itemLength * index,
-        }),
-        [itemLength],
     );
     const renderItem = useCallback(
         ({ item }: { item: AndroidRecentContentSourceItem }) => (
@@ -7376,14 +7333,6 @@ const HomeDisplayRow = memo(({ onSelectItem, onViewAll, section }: HomeDisplayRo
             />
         ),
         [onSelectItem, section.variant],
-    );
-    const getColumnLayout = useCallback(
-        (_: ArrayLike<AndroidRecentContentSourceItem[]> | null | undefined, index: number) => ({
-            index,
-            length: itemLength,
-            offset: itemLength * index,
-        }),
-        [itemLength],
     );
     const renderColumn = useCallback(
         ({ item: column }: { item: AndroidRecentContentSourceItem[] }) => (
@@ -7418,32 +7367,24 @@ const HomeDisplayRow = memo(({ onSelectItem, onViewAll, section }: HomeDisplayRo
                 ) : null}
             </View>
             {rowCount > 1 ? (
-                <FlatList
+                <FlashList
                     data={columns}
-                    getItemLayout={getColumnLayout}
+                    drawDistance={drawDistance}
                     horizontal
-                    initialNumToRender={HOME_ROW_INITIAL_ITEMS}
                     keyExtractor={(column) => column.map(getContentItemKey).join('|')}
-                    maxToRenderPerBatch={HOME_ROW_RENDER_BATCH}
-                    removeClippedSubviews={Platform.OS === 'android'}
+                    maintainVisibleContentPosition={FLASH_LIST_MAINTAIN_POSITION_DISABLED}
                     renderItem={renderColumn}
                     showsHorizontalScrollIndicator={false}
-                    updateCellsBatchingPeriod={32}
-                    windowSize={HOME_ROW_WINDOW_SIZE}
                 />
             ) : (
-                <FlatList
+                <FlashList
                     data={section.items}
-                    getItemLayout={getItemLayout}
+                    drawDistance={drawDistance}
                     horizontal
-                    initialNumToRender={HOME_ROW_INITIAL_ITEMS}
                     keyExtractor={getContentItemKey}
-                    maxToRenderPerBatch={HOME_ROW_RENDER_BATCH}
-                    removeClippedSubviews={Platform.OS === 'android'}
+                    maintainVisibleContentPosition={FLASH_LIST_MAINTAIN_POSITION_DISABLED}
                     renderItem={renderItem}
                     showsHorizontalScrollIndicator={false}
-                    updateCellsBatchingPeriod={32}
-                    windowSize={HOME_ROW_WINDOW_SIZE}
                 />
             )}
         </View>
@@ -7504,8 +7445,8 @@ const getPlaylistTargetsForDetail = (
 
 type PlaylistTrackFilter = 'all' | 'hifi';
 type PlaylistTrackSort = 'artist' | 'order' | 'title';
-const PLAYLIST_TRACK_INITIAL_ITEMS = 16;
-const PLAYLIST_TRACK_RENDER_BATCH = 10;
+const PLAYLIST_TRACK_DRAW_DISTANCE = Math.round(SCREEN_HEIGHT * 1.6);
+const getPlaylistTrackItemType = () => 'playlist-track';
 
 const getPlaylistTrackSearchText = (track: MobileMediaTrack): string =>
     [
@@ -8262,11 +8203,12 @@ const MediaDetailLoaded = ({
     if (isPlaylistDetail) {
         return (
             <View style={styles.mediaDetailScreen}>
-                <Reanimated.FlatList
+                <ReanimatedFlashList
                     contentContainerStyle={styles.mediaDetailContent}
                     data={displayTracks}
+                    drawDistance={PLAYLIST_TRACK_DRAW_DISTANCE}
                     extraData={downloadedTrackKeys}
-                    initialNumToRender={PLAYLIST_TRACK_INITIAL_ITEMS}
+                    getItemType={getPlaylistTrackItemType}
                     keyboardDismissMode="on-drag"
                     keyboardShouldPersistTaps="handled"
                     keyExtractor={(track, index) => `${track.id}:${index}`}
@@ -8473,14 +8415,11 @@ const MediaDetailLoaded = ({
                             </View>
                         </>
                     }
-                    maxToRenderPerBatch={PLAYLIST_TRACK_RENDER_BATCH}
+                    maintainVisibleContentPosition={FLASH_LIST_MAINTAIN_POSITION_DISABLED}
                     onScroll={detailScrollHandler}
-                    removeClippedSubviews={Platform.OS === 'android'}
                     renderItem={({ item, index }) => renderTrackRow(item, index)}
                     scrollEventThrottle={16}
                     showsVerticalScrollIndicator={false}
-                    updateCellsBatchingPeriod={32}
-                    windowSize={9}
                 />
                 <View pointerEvents="box-none" style={styles.detailCollapsedTopbar}>
                     <Reanimated.View
@@ -9611,19 +9550,6 @@ const getTrackMetadataItems = (
     return items;
 };
 
-const clamp = (value: number, min: number, max: number) => {
-    return Math.min(Math.max(value, min), max);
-};
-
-const darkenColor = (hex: string, factor: number): string => {
-    const clean = hex.replace('#', '').replace(/^(..)(..)(..).*/, '$1$2$3');
-    if (clean.length !== 6) return '#000000';
-    const r = Math.round(parseInt(clean.slice(0, 2), 16) * factor);
-    const g = Math.round(parseInt(clean.slice(2, 4), 16) * factor);
-    const b = Math.round(parseInt(clean.slice(4, 6), 16) * factor);
-    return `rgb(${r}, ${g}, ${b})`;
-};
-
 const PlayerIconButton = ({
     accessibilityLabel,
     children,
@@ -9812,495 +9738,14 @@ const MiniPlayer = memo(({
     );
 });
 
-const QualityBadgeRow = memo(({ items }: { items: ReturnType<typeof buildAudioQualityBadgeItems> }) => {
-    return (
-        <View style={styles.qualityBadgeRow}>
-            {items.map((item, index) => (
-                <View
-                    key={`${item.label}-${index}`}
-                    style={[
-                        styles.qualityBadge,
-                        item.tone === 'direct'
-                            ? styles.qualityBadgeDirect
-                            : item.tone === 'transcoded'
-                              ? styles.qualityBadgeTranscoded
-                              : item.tone === 'unknown'
-                                ? styles.qualityBadgeUnknown
-                                : null,
-                    ]}
-                >
-                    <Text
-                        adjustsFontSizeToFit
-                        minimumFontScale={0.72}
-                        numberOfLines={1}
-                        style={[
-                            styles.qualityBadgeText,
-                            item.tone === 'direct'
-                                ? styles.qualityBadgeTextDirect
-                                : item.tone === 'transcoded'
-                                  ? styles.qualityBadgeTextTranscoded
-                                  : item.tone === 'unknown'
-                                    ? styles.qualityBadgeTextUnknown
-                                    : null,
-                        ]}
-                    >
-                        {item.label}
-                    </Text>
-                </View>
-            ))}
-        </View>
-    );
+const ConnectedMiniPlayer = memo((
+    props: Omit<ComponentProps<typeof MiniPlayer>, 'playbackState'>,
+) => {
+    const playbackState = useAndroidPlaybackState();
+    return <MiniPlayer {...props} playbackState={playbackState} />;
 });
 
-/**
- * Format-specific quality badge. Picks the matching 16/24/32-bit asset for
- * the playback's bit-depth / sample-rate; renders nothing when there's no
- * exact match in the badge set (we'd rather omit the badge than mislabel
- * a 24/48 track as 24/96).
- *
- * Variant placement, kept strict to avoid double-badging:
- *  - `overlay`: corner-pinned on artwork (home / view-all album tiles,
- *               album-detail hero artwork). Implies a position-absolute
- *               container with `position: relative` on the parent.
- *  - `thumb`:   small overlay on a track-row thumb. The only badge a
- *               track row carries — never next to the title text.
- *  - `player`:  beneath the fullscreen player title (its own row, not
- *               inline with text).
- *  - default:   standalone (44x44), reserved for the inline "Format" chip
- *               on the album detail page.
- */
-const QualityBadge = memo(({
-    mini = false,
-    overlay = false,
-    player = false,
-    profile,
-    thumb = false,
-}: {
-    mini?: boolean;
-    overlay?: boolean;
-    player?: boolean;
-    profile: MobileQualityProfile | undefined;
-    thumb?: boolean;
-}) => {
-    const asset = pickQualityBadgeAsset(profile);
-    if (!asset || !profile) return null;
-    return (
-        <Image
-            accessibilityLabel={`${profile.bitDepth}-bit ${(profile.sampleRate / 1000).toFixed(1).replace(/\.0$/, '')} kHz`}
-            source={asset}
-            style={[
-                styles.formatBadge,
-                mini && styles.formatBadgeMini,
-                overlay && styles.formatBadgeOverlay,
-                player && styles.formatBadgePlayer,
-                thumb && styles.formatBadgeThumb,
-            ]}
-        />
-    );
-});
-
-const SegmentedSeekBar = memo(({
-    durationMs,
-    isLive,
-    onSeek,
-    positionMs,
-    segments,
-    tint,
-}: {
-    durationMs?: number;
-    isLive: boolean;
-    onSeek: (positionMs: number) => void;
-    positionMs?: number;
-    segments?: MobilePlaybackSegment[];
-    tint: string;
-}) => {
-    const [trackWidth, setTrackWidth] = useState(0);
-    const isSeekable = !isLive && Boolean(durationMs && durationMs > 0 && trackWidth > 0);
-    const seekTrackWidth = trackWidth > 0 ? trackWidth : Math.max(1, SCREEN_WIDTH - spacing.lg * 2);
-    const seekSegments = useMemo(
-        () => getSeekSegments(segments, durationMs),
-        [durationMs, segments],
-    );
-    const visibleSeekSegments = useMemo(
-        () => getVisibleSeekSegments(seekSegments, seekTrackWidth),
-        [seekSegments, seekTrackWidth],
-    );
-    const seekSegmentGapWidth = getSeekSegmentGapWidth(
-        visibleSeekSegments.length,
-        seekTrackWidth,
-    );
-    const seekFromLocation = useCallback(
-        (locationX: number) => {
-            if (!isSeekable || !durationMs) {
-                return;
-            }
-
-            const nextProgress = clamp(locationX / trackWidth, 0, 1);
-
-            onSeek(nextProgress * durationMs);
-        },
-        [durationMs, isSeekable, onSeek, trackWidth],
-    );
-    const panResponder = useMemo(
-        () =>
-            PanResponder.create({
-                onMoveShouldSetPanResponder: () => isSeekable,
-                onPanResponderGrant: (event) => seekFromLocation(event.nativeEvent.locationX),
-                onPanResponderMove: (event) => seekFromLocation(event.nativeEvent.locationX),
-                onStartShouldSetPanResponder: () => isSeekable,
-            }),
-        [isSeekable, seekFromLocation],
-    );
-
-    const globalProgress =
-        !isLive && durationMs && durationMs > 0
-            ? clamp((positionMs ?? 0) / durationMs, 0, 1)
-            : null;
-
-    return (
-        <View
-            {...panResponder.panHandlers}
-            onLayout={(event: LayoutChangeEvent) => setTrackWidth(event.nativeEvent.layout.width)}
-            style={styles.segmentedSeekTrack}
-        >
-            {isLive ? (
-                <View style={[styles.seekSegment, styles.seekSegmentLive]}>
-                    <View style={[styles.seekSegmentLiveFill, { backgroundColor: tint }]} />
-                </View>
-            ) : (
-                visibleSeekSegments.map((segment, index) => {
-                    const segmentStartMs = segment.startSeconds * 1000;
-                    const segmentDurationMs = (segment.durationSeconds ?? 0) * 1000;
-                    const segmentProgress =
-                        segmentDurationMs > 0
-                            ? clamp(((positionMs ?? 0) - segmentStartMs) / segmentDurationMs, 0, 1)
-                            : 0;
-
-                    return (
-                        <View
-                            key={`${segment.id}-${index}`}
-                            style={[
-                                styles.seekSegment,
-                                {
-                                    flexGrow: segment.durationSeconds ?? 1,
-                                    marginRight:
-                                        index === visibleSeekSegments.length - 1
-                                            ? 0
-                                            : seekSegmentGapWidth,
-                                },
-                            ]}
-                        >
-                            <View
-                                style={[
-                                    styles.seekSegmentFill,
-                                    {
-                                        backgroundColor: tint,
-                                        width: `${segmentProgress * 100}%`,
-                                    },
-                                ]}
-                            />
-                        </View>
-                    );
-                })
-            )}
-            {globalProgress !== null && trackWidth > 0 ? (
-                <View
-                    pointerEvents="none"
-                    style={[
-                        styles.seekThumb,
-                        {
-                            backgroundColor: tint,
-                            left: globalProgress * trackWidth - SEEK_THUMB_WIDTH / 2,
-                        },
-                    ]}
-                />
-            ) : null}
-        </View>
-    );
-});
-
-const SEEK_THUMB_WIDTH = 5;
-
-const useReducedMotionPreference = (): boolean => {
-    const [reduced, setReduced] = useState(false);
-    useEffect(() => {
-        let cancelled = false;
-        void AccessibilityInfo.isReduceMotionEnabled().then((value) => {
-            if (!cancelled) setReduced(value);
-        });
-        const subscription = AccessibilityInfo.addEventListener(
-            'reduceMotionChanged',
-            (value) => {
-                if (!cancelled) setReduced(value);
-            },
-        );
-        return () => {
-            cancelled = true;
-            subscription.remove();
-        };
-    }, []);
-    return reduced;
-};
-
-// Parse #rrggbb into an RGB tuple in 0..255. Returns null on bad input.
-const parseHex = (hex: string): [number, number, number] | null => {
-    const m = hex.trim().match(/^#?([0-9a-fA-F]{6})$/);
-    if (!m) return null;
-    const v = parseInt(m[1], 16);
-    return [(v >> 16) & 0xff, (v >> 8) & 0xff, v & 0xff];
-};
-
-// sRGB↔OKLab conversions. OKLab is perceptually uniform — linear interpolation
-// in OKLab produces visibly smooth gradients in their color family with no hue
-// shift, which is what makes Tidal's player backdrop feel "in one piece"
-// instead of muddied or banded.
-//
-// Constants are from Björn Ottosson's reference implementation
-// (https://bottosson.github.io/posts/oklab/).
-const srgbChannelToLinear = (c: number): number => {
-    const n = c / 255;
-    return n <= 0.04045 ? n / 12.92 : Math.pow((n + 0.055) / 1.055, 2.4);
-};
-const linearChannelToSrgb = (c: number): number => {
-    const v = c <= 0.0031308 ? c * 12.92 : 1.055 * Math.pow(c, 1 / 2.4) - 0.055;
-    return Math.max(0, Math.min(255, Math.round(v * 255)));
-};
-const rgbToOklab = (
-    r: number,
-    g: number,
-    b: number,
-): [number, number, number] => {
-    const lr = srgbChannelToLinear(r);
-    const lg = srgbChannelToLinear(g);
-    const lb = srgbChannelToLinear(b);
-    const l = 0.4122214708 * lr + 0.5363325363 * lg + 0.0514459929 * lb;
-    const m = 0.2119034982 * lr + 0.6806995451 * lg + 0.1073969566 * lb;
-    const s = 0.0883024619 * lr + 0.2817188376 * lg + 0.6299787005 * lb;
-    const l_ = Math.cbrt(l);
-    const m_ = Math.cbrt(m);
-    const s_ = Math.cbrt(s);
-    return [
-        0.2104542553 * l_ + 0.793617785 * m_ - 0.0040720468 * s_,
-        1.9779984951 * l_ - 2.428592205 * m_ + 0.4505937099 * s_,
-        0.0259040371 * l_ + 0.7827717662 * m_ - 0.808675766 * s_,
-    ];
-};
-const oklabToHex = (L: number, a: number, b: number): string => {
-    const l_ = L + 0.3963377774 * a + 0.2158037573 * b;
-    const m_ = L - 0.1055613458 * a - 0.0638541728 * b;
-    const s_ = L - 0.0894841775 * a - 1.291485548 * b;
-    const l = l_ * l_ * l_;
-    const m = m_ * m_ * m_;
-    const s = s_ * s_ * s_;
-    const lr = 4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s;
-    const lg = -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s;
-    const lb = -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s;
-    const r = linearChannelToSrgb(lr);
-    const g = linearChannelToSrgb(lg);
-    const bch = linearChannelToSrgb(lb);
-    const out = (r << 16) | (g << 8) | bch;
-    return `#${out.toString(16).padStart(6, '0')}`;
-};
-
-// Pick the album's representative color.
-//
-// For most covers the "dominant" color (the most-frequent pixel value) reads
-// as the album's mood. But for two-tone designed covers — say a yellow card
-// with green typography — the dominant is the *background*, not the
-// design choice. The character of the album lives in the accent: the green
-// of the Mac Miller "Buttons" lettering, the red splash on a monochrome
-// photo, the saturated burst against a neutral field.
-//
-// Strategy: identify the dominant candidate, then look for a second
-// candidate that's chromatically distant from it AND saturated in its own
-// right. If one qualifies, it's the accent and we use it — that's the
-// color that gives the cover its intent. If nothing's distinct enough
-// (single-hue covers, photo-y artwork, etc.) we fall back to the dominant
-// so the gradient still feels keyed to the cover.
-const pickAlbumEssenceColor = (result: ImageColorsResult): null | string => {
-    const candidates: string[] = [];
-    const push = (hex: null | string | undefined): void => {
-        if (typeof hex === 'string' && /^#?[0-9a-fA-F]{6}$/.test(hex.trim())) {
-            candidates.push(hex.trim().startsWith('#') ? hex.trim() : `#${hex.trim()}`);
-        }
-    };
-    if (result.platform === 'android') {
-        // Order matters: the *first* usable entry is treated as the
-        // dominant. Vibrant/dark/light variants follow so an accent has
-        // multiple chances to be picked up by the chromatic-distance scan.
-        push(result.dominant);
-        push(result.vibrant);
-        push(result.darkVibrant);
-        push(result.lightVibrant);
-        push(result.muted);
-        push(result.darkMuted);
-        push(result.lightMuted);
-        push(result.average);
-    } else if (result.platform === 'ios') {
-        push(result.background);
-        push(result.primary);
-        push(result.secondary);
-        push(result.detail);
-    } else {
-        push(result.dominant);
-        push(result.vibrant);
-        push(result.muted);
-        push(result.darkVibrant);
-        push(result.darkMuted);
-    }
-
-    interface LabCandidate {
-        L: number;
-        a: number;
-        b: number;
-        chroma: number;
-        hex: string;
-    }
-
-    const usable: LabCandidate[] = [];
-    for (const hex of candidates) {
-        const rgb = parseHex(hex);
-        if (!rgb) continue;
-        const [L, a, b] = rgbToOklab(rgb[0], rgb[1], rgb[2]);
-        const chroma = Math.sqrt(a * a + b * b);
-        // Reject near-black/white/grey — same gate as before, just applied
-        // before the accent search instead of as an early-return.
-        if (L < 0.06 || L > 0.96) continue;
-        if (chroma < 0.012) continue;
-        usable.push({ L, a, b, chroma, hex });
-    }
-
-    if (usable.length === 0) {
-        return candidates[0] ?? null;
-    }
-
-    const dominant = usable[0];
-
-    // Search for a chromatic accent. We score each non-dominant candidate
-    // on its OKLab distance from the dominant (must read as a different
-    // hue family, not just a tonal shift) and its own chroma (the accent
-    // has to be a deliberate saturated color, not a muted neighbor of
-    // the dominant). The thresholds are tuned so two-tone designed covers
-    // pick up the accent reliably while photo covers — where every bucket
-    // is a slight tonal variation of the same hue — fall through to the
-    // dominant.
-    const MIN_DISTANCE = 0.14;
-    const MIN_ACCENT_CHROMA = 0.06;
-    let bestAccent: LabCandidate | null = null;
-    let bestScore = 0;
-    for (let i = 1; i < usable.length; i++) {
-        const c = usable[i];
-        const dL = c.L - dominant.L;
-        const da = c.a - dominant.a;
-        const db = c.b - dominant.b;
-        const distance = Math.sqrt(dL * dL + da * da + db * db);
-        if (distance < MIN_DISTANCE) continue;
-        if (c.chroma < MIN_ACCENT_CHROMA) continue;
-        // Weight: chroma matters more than raw distance (a saturated but
-        // close accent beats a desaturated but distant one — we're picking
-        // for visual intent, not opposition).
-        const score = c.chroma * 1.4 + distance;
-        if (score > bestScore) {
-            bestScore = score;
-            bestAccent = c;
-        }
-    }
-
-    return (bestAccent ?? dominant).hex;
-};
-
-// Build the fullscreen player backdrop as a dense OKLab color field. The goal
-// is closer to Tidal's "album color fills the room" treatment than a modal
-// fading to black: the bottom gets quieter for controls, but it stays in the
-// same hue family and never collapses into pure black.
-const buildBackdropStops = (essence: null | string): readonly string[] => {
-    const fallback: readonly string[] = [
-        '#2b241b', '#292219', '#272018', '#251e17', '#231d16', '#211b15',
-        '#1f1a14', '#1d1813', '#1b1712', '#191511', '#171410', '#15130f',
-        '#14120e', '#13110e', '#12100d', '#110f0d', '#100e0c', '#0f0d0c',
-    ];
-    if (!essence) return fallback;
-    const rgb = parseHex(essence);
-    if (!rgb) return fallback;
-    const [L0, a, b] = rgbToOklab(rgb[0], rgb[1], rgb[2]);
-    const chroma = Math.sqrt(a * a + b * b);
-    const chromaBoost = chroma < 0.07 ? 1.34 : chroma < 0.12 ? 1.18 : 1.06;
-    const topL = Math.max(0.36, Math.min(0.64, L0 + 0.08));
-    const midL = Math.max(0.25, Math.min(0.42, L0 * 0.72));
-    const bottomL = Math.max(0.17, Math.min(0.30, L0 * 0.5));
-    // 64 stops keeps the per-stop OKLab delta to ~0.005 — small enough that
-    // the GPU's sRGB-linear interpolation between adjacent stops produces no
-    // perceptible step on its own. The remaining 8-bit quantization banding
-    // is handled by the soft-light dither overlay on the player.
-    const stopCount = 64;
-    const stops: string[] = [];
-    for (let i = 0; i < stopCount; i++) {
-        const t = i / (stopCount - 1);
-        const eased = t * t * (3 - 2 * t);
-        const L =
-            t < 0.42
-                ? topL + (midL - topL) * (t / 0.42)
-                : midL + (bottomL - midL) * ((t - 0.42) / 0.58);
-        const cScale = chromaBoost * (1 - eased * 0.24);
-        stops.push(oklabToHex(L, a * cScale, b * cScale));
-    }
-    return stops;
-};
-
-const SwipeDismissSheet = ({
-    children,
-    onDismiss,
-    style,
-}: {
-    children: ReactNode;
-    onDismiss: () => void;
-    style?: ViewStyle | ViewStyle[];
-}) => {
-    const translateY = useRef(new Animated.Value(0)).current;
-    const responder = useMemo(
-        () =>
-            PanResponder.create({
-                onMoveShouldSetPanResponder: (_event, gs) =>
-                    gs.dy > 6 && gs.dy > Math.abs(gs.dx) * 1.4,
-                onPanResponderGrant: () => {
-                    translateY.stopAnimation();
-                },
-                onPanResponderMove: (_event, gs) => {
-                    if (gs.dy > 0) translateY.setValue(gs.dy);
-                },
-                onPanResponderRelease: (_event, gs) => {
-                    if (gs.dy > 90 || (gs.vy > 0.45 && gs.dy > 24)) {
-                        Animated.timing(translateY, {
-                            duration: 180,
-                            toValue: SCREEN_HEIGHT,
-                            useNativeDriver: true,
-                        }).start(() => {
-                            translateY.setValue(0);
-                            onDismiss();
-                        });
-                        return;
-                    }
-                    Animated.spring(translateY, {
-                        friction: 9,
-                        tension: 80,
-                        toValue: 0,
-                        useNativeDriver: true,
-                    }).start();
-                },
-                onPanResponderTerminationRequest: () => false,
-            }),
-        [onDismiss, translateY],
-    );
-
-    return (
-        <Animated.View
-            {...responder.panHandlers}
-            style={[style, { transform: [{ translateY }] }]}
-        >
-            {children}
-        </Animated.View>
-    );
-};
+ConnectedMiniPlayer.displayName = 'ConnectedMiniPlayer';
 
 const SLEEP_OPTIONS: { label: string; seconds: number; wide?: boolean }[] = [
     { label: '15m', seconds: 15 * 60 },
@@ -10311,179 +9756,6 @@ const SLEEP_OPTIONS: { label: string; seconds: number; wide?: boolean }[] = [
     { label: '2h', seconds: 120 * 60 },
     { label: 'End of track', seconds: -1, wide: true },
 ];
-
-const ARTWORK_ZOOM_MAX_SCALE = 4;
-const ARTWORK_ZOOM_DOUBLE_TAP_SCALE = 2.35;
-
-const ArtworkZoomModal = memo(({
-    onClose,
-    title,
-    uri,
-    visible,
-}: {
-    onClose: () => void;
-    title: string;
-    uri?: string;
-    visible: boolean;
-}) => {
-    const scale = useSharedValue(1);
-    const savedScale = useSharedValue(1);
-    const translateX = useSharedValue(0);
-    const translateY = useSharedValue(0);
-    const savedTranslateX = useSharedValue(0);
-    const savedTranslateY = useSharedValue(0);
-
-    const resetZoom = useCallback(() => {
-        scale.value = withSpring(1, OPEN_SPRING);
-        savedScale.value = 1;
-        translateX.value = withSpring(0, OPEN_SPRING);
-        translateY.value = withSpring(0, OPEN_SPRING);
-        savedTranslateX.value = 0;
-        savedTranslateY.value = 0;
-    }, [savedScale, savedTranslateX, savedTranslateY, scale, translateX, translateY]);
-
-    useEffect(() => {
-        if (visible) {
-            resetZoom();
-        }
-    }, [resetZoom, uri, visible]);
-
-    const close = useCallback(() => {
-        resetZoom();
-        onClose();
-    }, [onClose, resetZoom]);
-
-    const pinchGesture = useMemo(
-        () =>
-            Gesture.Pinch()
-                .onStart(() => {
-                    'worklet';
-                    savedScale.value = scale.value;
-                })
-                .onUpdate((event) => {
-                    'worklet';
-                    const next = savedScale.value * event.scale;
-                    scale.value = Math.min(
-                        ARTWORK_ZOOM_MAX_SCALE,
-                        Math.max(1, next),
-                    );
-                })
-                .onEnd(() => {
-                    'worklet';
-                    if (scale.value <= 1.04) {
-                        scale.value = withSpring(1, OPEN_SPRING);
-                        translateX.value = withSpring(0, OPEN_SPRING);
-                        translateY.value = withSpring(0, OPEN_SPRING);
-                        savedScale.value = 1;
-                        savedTranslateX.value = 0;
-                        savedTranslateY.value = 0;
-                        return;
-                    }
-                    savedScale.value = scale.value;
-                }),
-        [savedScale, savedTranslateX, savedTranslateY, scale, translateX, translateY],
-    );
-
-    const panGesture = useMemo(
-        () =>
-            Gesture.Pan()
-                .onStart(() => {
-                    'worklet';
-                    savedTranslateX.value = translateX.value;
-                    savedTranslateY.value = translateY.value;
-                })
-                .onUpdate((event) => {
-                    'worklet';
-                    if (scale.value <= 1.01) return;
-                    const maxTravel = ((SCREEN_WIDTH - spacing.lg * 2) * (scale.value - 1)) / 2;
-                    translateX.value = Math.min(
-                        maxTravel,
-                        Math.max(-maxTravel, savedTranslateX.value + event.translationX),
-                    );
-                    translateY.value = Math.min(
-                        maxTravel,
-                        Math.max(-maxTravel, savedTranslateY.value + event.translationY),
-                    );
-                })
-                .onEnd(() => {
-                    'worklet';
-                    savedTranslateX.value = translateX.value;
-                    savedTranslateY.value = translateY.value;
-                }),
-        [savedTranslateX, savedTranslateY, scale, translateX, translateY],
-    );
-
-    const doubleTapGesture = useMemo(
-        () =>
-            Gesture.Tap()
-                .numberOfTaps(2)
-                .onEnd(() => {
-                    'worklet';
-                    if (scale.value > 1.05) {
-                        scale.value = withSpring(1, OPEN_SPRING);
-                        translateX.value = withSpring(0, OPEN_SPRING);
-                        translateY.value = withSpring(0, OPEN_SPRING);
-                        savedScale.value = 1;
-                        savedTranslateX.value = 0;
-                        savedTranslateY.value = 0;
-                        return;
-                    }
-                    scale.value = withSpring(ARTWORK_ZOOM_DOUBLE_TAP_SCALE, OPEN_SPRING);
-                    savedScale.value = ARTWORK_ZOOM_DOUBLE_TAP_SCALE;
-                }),
-        [savedScale, savedTranslateX, savedTranslateY, scale, translateX, translateY],
-    );
-
-    const zoomGesture = useMemo(
-        () => Gesture.Simultaneous(pinchGesture, panGesture, doubleTapGesture),
-        [doubleTapGesture, panGesture, pinchGesture],
-    );
-
-    const zoomStyle = useAnimatedStyle(() => ({
-        transform: [
-            { translateX: translateX.value },
-            { translateY: translateY.value },
-            { scale: scale.value },
-        ],
-    }));
-
-    if (!uri) {
-        return null;
-    }
-
-    return (
-        <Modal animationType="fade" onRequestClose={close} transparent visible={visible}>
-            <View style={styles.artworkZoomModal}>
-                <Pressable
-                    accessibilityLabel="Close artwork"
-                    onPress={close}
-                    style={StyleSheet.absoluteFillObject}
-                />
-                <GestureDetector gesture={zoomGesture}>
-                    <Reanimated.View style={[styles.artworkZoomImageFrame, zoomStyle]}>
-                        <ExpoImage
-                            allowDownscaling={false}
-                            cachePolicy="memory-disk"
-                            contentFit="contain"
-                            priority="high"
-                            recyclingKey={`zoom:${uri}`}
-                            source={{ uri }}
-                            style={styles.artworkZoomImage}
-                        />
-                    </Reanimated.View>
-                </GestureDetector>
-                <Pressable
-                    accessibilityLabel={`Close ${title} artwork`}
-                    accessibilityRole="button"
-                    onPress={close}
-                    style={styles.artworkZoomCloseButton}
-                >
-                    <ClearGlyph color={colors.text} />
-                </Pressable>
-            </View>
-        </Modal>
-    );
-});
 
 const FullScreenPlayer = memo(({
     artworkUrl,
@@ -11310,6 +10582,15 @@ const FullScreenPlayer = memo(({
     );
 });
 
+const ConnectedFullScreenPlayer = memo((
+    props: Omit<ComponentProps<typeof FullScreenPlayer>, 'playbackState'>,
+) => {
+    const playbackState = useAndroidPlaybackState();
+    return <FullScreenPlayer {...props} playbackState={playbackState} />;
+});
+
+ConnectedFullScreenPlayer.displayName = 'ConnectedFullScreenPlayer';
+
 const EMPTY_OUTPUT_ROUTES: AndroidMediaOutputRoute[] = [];
 
 const getOutputRouteGlyphLabel = (route: AndroidMediaOutputRoute): string => {
@@ -11584,10 +10865,8 @@ type QueueSheetListItem =
     | { index: number; item: MobilePlayableAudio; kind: 'queue' };
 
 const EMPTY_QUEUE_SHEET_ROWS: QueueSheetListItem[] = [];
-const QUEUE_SHEET_INITIAL_ITEMS = 12;
-const QUEUE_SHEET_RENDER_BATCH = 10;
 const QUEUE_SHEET_ROW_HEIGHT = 60;
-const QUEUE_SHEET_WINDOW_SIZE = 7;
+const QUEUE_SHEET_DRAW_DISTANCE = QUEUE_SHEET_ROW_HEIGHT * 10;
 
 const QueueSheetOverlay = memo(({
     backdropStyle,
@@ -11675,14 +10954,7 @@ const QueueSheetOverlay = memo(({
 
         return `${row.item.id}-${row.index}`;
     }, []);
-    const getItemLayout = useCallback(
-        (_data: ArrayLike<QueueSheetListItem> | null | undefined, index: number) => ({
-            index,
-            length: QUEUE_SHEET_ROW_HEIGHT,
-            offset: QUEUE_SHEET_ROW_HEIGHT * index,
-        }),
-        [],
-    );
+    const getItemType = useCallback((row: QueueSheetListItem) => row.kind, []);
     const renderItem = useCallback(
         ({ item: row }: { item: QueueSheetListItem }) => {
             if (row.kind === 'chapter') {
@@ -11825,12 +11097,12 @@ const QueueSheetOverlay = memo(({
                         </View>
                     </View>
                 </GestureDetector>
-                <GestureFlatList
+                <FlashList
                     contentContainerStyle={styles.queueSheetContent}
                     data={queueSheetRows}
+                    drawDistance={QUEUE_SHEET_DRAW_DISTANCE}
                     extraData={`${activeChapterIndex}:${queue?.index ?? -1}`}
-                    getItemLayout={getItemLayout}
-                    initialNumToRender={QUEUE_SHEET_INITIAL_ITEMS}
+                    getItemType={getItemType}
                     keyboardShouldPersistTaps="handled"
                     keyExtractor={keyExtractor}
                     ListEmptyComponent={
@@ -11838,17 +11110,15 @@ const QueueSheetOverlay = memo(({
                             <Text style={styles.queueSheetEmpty}>The queue is empty.</Text>
                         ) : null
                     }
-                    maxToRenderPerBatch={QUEUE_SHEET_RENDER_BATCH}
+                    maintainVisibleContentPosition={FLASH_LIST_MAINTAIN_POSITION_DISABLED}
                     nestedScrollEnabled
                     onScroll={handleListScroll}
                     onTouchEnd={handleListTouchEnd}
                     onTouchStart={handleListTouchStart}
-                    removeClippedSubviews
                     renderItem={renderItem}
                     scrollEventThrottle={16}
                     showsVerticalScrollIndicator={false}
                     style={styles.queueSheetScroll}
-                    windowSize={QUEUE_SHEET_WINDOW_SIZE}
                 />
             </Reanimated.View>
         </>
@@ -11921,7 +11191,7 @@ const ALPHABET_SIDEBAR_LETTERS = [
 /**
  * Build a map of sidebar letter → row index for ViewAll's two-column layout.
  * The value is the *row* the letter falls into (not the flat item index), so
- * the sidebar can hand the FlatList a row index directly for scrollToIndex.
+ * the sidebar can hand the list a row index directly for scrollToIndex.
  */
 const buildAlphabetLetterIndex = (
     items: MobileHomeItem[],
@@ -12026,12 +11296,10 @@ const ViewAllScreen = memo(({
     route: ViewAllRoute;
 }) => {
     const contextMenu = useMediaContextMenu();
-    // FlatList is single-column over pre-chunked row records — see comment on
-    // `rows` below. Going through numColumns={2} caused stacking bugs:
-    // `removeClippedSubviews` + numColumns + getItemLayout don't agree about
-    // which cell occupies which offset, so on fast scroll Android sometimes
-    // painted the wrong tile at a given row and never recovered.
-    const listRef = useRef<FlatList<ViewAllRow>>(null);
+    // FlashList is single-column over pre-chunked row records. Keeping each
+    // two-up visual row as one recycled item avoids the old numColumns cell
+    // stacking bug while moving the heavy library grid onto native recycling.
+    const listRef = useRef<FlashListRef<ViewAllRow>>(null);
     const jumpFeedbackTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const [jumpFeedbackLetter, setJumpFeedbackLetter] = useState<string | null>(null);
     const isLoading = fullState.status === 'loading';
@@ -12048,7 +11316,7 @@ const ViewAllScreen = memo(({
         const merged: MobileHomeItem[] = [];
         const seen = new Set<string>();
         for (const item of sourceItems) {
-            // Skip anything that doesn't have the minimum fields the FlatList
+            // Skip anything that doesn't have the minimum fields the list
             // renderItem expects. Without this guard, a server returning a
             // partial record (eg an album with no id or title) crashed the
             // whole screen at sort time on `.title.localeCompare(undefined)`.
@@ -12065,11 +11333,9 @@ const ViewAllScreen = memo(({
             .sort((left, right) => VIEW_ALL_SORT_COLLATOR.compare(left.sortKey, right.sortKey))
             .map(({ item }) => item);
     }, [fullState, route.items]);
-    // Pre-chunk the sorted items into two-up rows so the FlatList is a
-    // simple, single-column virtualized list. Each FlatList item is now an
-    // entire row of tiles, which keeps getItemLayout/scrollToIndex/removed-
-    // subview logic all aligned — no row-vs-item offset arithmetic, no
-    // numColumns recycling quirks.
+    // Pre-chunk the sorted items into two-up rows so the FlashList is a
+    // simple, single-column recycled list. Each item is now an entire row of
+    // tiles, so scrollToIndex still targets row offsets directly.
     const rows = useMemo(() => chunkIntoViewAllRows(sortedItems), [sortedItems]);
     const letterIndex = useMemo(
         () => buildAlphabetLetterIndex(sortedItems),
@@ -12101,23 +11367,21 @@ const ViewAllScreen = memo(({
             if (typeof rowIndex !== 'number') return;
             showJumpFeedback(letter);
             try {
-                listRef.current?.scrollToIndex({
+                const scroll = listRef.current?.scrollToIndex({
                     animated: false,
                     index: rowIndex,
+                });
+                void scroll?.catch(() => {
+                    listRef.current?.scrollToOffset({
+                        animated: false,
+                        offset: rowIndex * VIEW_ALL_ROW_HEIGHT,
+                    });
                 });
             } catch (error) {
                 console.warn('[ViewAllScreen] scrollToIndex threw', error);
             }
         },
         [letterIndex, showJumpFeedback],
-    );
-    const getItemLayout = useCallback(
-        (_: ArrayLike<ViewAllRow> | null | undefined, index: number) => ({
-            index,
-            length: VIEW_ALL_ROW_HEIGHT,
-            offset: index * VIEW_ALL_ROW_HEIGHT,
-        }),
-        [],
     );
 
     const handleOpenContextMenu = useCallback(
@@ -12152,19 +11416,6 @@ const ViewAllScreen = memo(({
 
     const keyExtractor = useCallback((row: ViewAllRow) => row.key, []);
 
-    // FlatList throws if scrollToIndex targets an unrealized window; in that
-    // case it gives us the chance to fall back to a precise pixel offset
-    // (which getItemLayout makes trivial).
-    const handleScrollToIndexFailed = useCallback(
-        (info: { averageItemLength: number; highestMeasuredFrameIndex: number; index: number }) => {
-            listRef.current?.scrollToOffset({
-                animated: false,
-                offset: info.index * VIEW_ALL_ROW_HEIGHT,
-            });
-        },
-        [],
-    );
-
     return (
         <View style={styles.viewAllScreen}>
             <View style={styles.viewAllHeader}>
@@ -12192,19 +11443,15 @@ const ViewAllScreen = memo(({
                         </Text>
                     )
                 ) : (
-                    <FlatList
+                    <FlashList
                         contentContainerStyle={styles.viewAllListContent}
                         data={rows}
-                        getItemLayout={getItemLayout}
-                        initialNumToRender={Math.ceil(VIEW_ALL_INITIAL_ITEMS / 2)}
+                        drawDistance={VIEW_ALL_ROW_HEIGHT * 8}
                         keyExtractor={keyExtractor}
-                        maxToRenderPerBatch={Math.ceil(VIEW_ALL_RENDER_BATCH / 2)}
-                        onScrollToIndexFailed={handleScrollToIndexFailed}
+                        maintainVisibleContentPosition={FLASH_LIST_MAINTAIN_POSITION_DISABLED}
                         ref={listRef}
                         renderItem={renderRow}
                         showsVerticalScrollIndicator={false}
-                        updateCellsBatchingPeriod={32}
-                        windowSize={VIEW_ALL_WINDOW_SIZE}
                     />
                 )}
                 <AlphabetSidebar

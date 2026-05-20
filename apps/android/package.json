@@ -14,6 +14,7 @@
     },
     "dependencies": {
         "@samo/core": "file:../../packages/core",
+        "@shopify/flash-list": "2.0.2",
         "expo": "~54.0.33",
         "expo-file-system": "~19.0.22",
         "expo-haptics": "~15.0.8",
