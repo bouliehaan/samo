@@ -68,6 +68,7 @@ export interface MobileMediaTrack {
     artistId?: string;
     artworkUrl?: string;
     durationSeconds?: number;
+    discNumber?: number;
     episodeId?: string;
     id: string;
     itemId?: string;
@@ -635,6 +636,7 @@ const toTrackItems = (
             artistId: song.artistId?.toString(),
             artworkUrl,
             durationSeconds: song.duration,
+            discNumber: song.discNumber,
             id,
             playback,
             subtitle: [song.artist, song.album].filter(Boolean).join(' - '),
@@ -795,6 +797,7 @@ const subsonicSongToTrack = (
         artistId: song.artistId?.toString(),
         artworkUrl,
         durationSeconds: song.duration,
+        discNumber: song.discNumber,
         id,
         playback: playback ?? undefined,
         subtitle: [song.artist, song.album].filter(Boolean).join(' - '),

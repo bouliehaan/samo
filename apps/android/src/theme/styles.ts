@@ -21,6 +21,64 @@ import {
 import { colors, spacing } from './tokens';
 
 export const styles = StyleSheet.create({
+    addRadioActions: {
+        gap: spacing.sm,
+        marginTop: spacing.sm,
+    },
+    addRadioForm: {
+        paddingBottom: spacing.lg,
+    },
+    addRadioLabel: {
+        color: colors.muted,
+        fontSize: 12,
+        fontWeight: '800',
+        letterSpacing: 0.4,
+        marginTop: spacing.md,
+        textTransform: 'uppercase',
+    },
+    addRadioServerBlock: {
+        marginBottom: spacing.xs,
+    },
+    addRadioServerPill: {
+        alignItems: 'center',
+        borderColor: 'rgba(255,255,255,0.10)',
+        borderRadius: 999,
+        borderWidth: 1,
+        marginRight: spacing.sm,
+        maxWidth: 180,
+        paddingHorizontal: spacing.md,
+        paddingVertical: 9,
+    },
+    addRadioServerPillActive: {
+        backgroundColor: 'rgba(202,160,79,0.16)',
+        borderColor: 'rgba(202,160,79,0.45)',
+    },
+    addRadioServerPillText: {
+        color: colors.muted,
+        fontSize: 13,
+        fontWeight: '700',
+    },
+    addRadioServerPillTextActive: {
+        color: colors.accent,
+    },
+    addRadioSheet: {
+        backgroundColor: '#000000',
+        borderColor: 'rgba(255,255,255,0.06)',
+        borderTopLeftRadius: 28,
+        borderTopRightRadius: 28,
+        borderTopWidth: StyleSheet.hairlineWidth,
+        maxHeight: '88%',
+        paddingBottom: 24,
+        paddingHorizontal: spacing.lg,
+        paddingTop: 8,
+    },
+    addRadioSuccess: {
+        color: colors.accent,
+        fontSize: 13,
+        fontWeight: '700',
+        lineHeight: 18,
+        marginTop: spacing.md,
+    },
     actionSheet: {
         backgroundColor: '#000000',
         borderColor: 'rgba(255,255,255,0.06)',
@@ -103,6 +161,34 @@ export const styles = StyleSheet.create({
         textAlign: 'center',
         textTransform: 'uppercase',
     },
+    artworkZoomCloseButton: {
+        alignItems: 'center',
+        backgroundColor: 'rgba(255,255,255,0.10)',
+        borderRadius: 999,
+        height: 44,
+        justifyContent: 'center',
+        position: 'absolute',
+        right: spacing.lg,
+        top: Platform.OS === 'android' ? 42 : 24,
+        width: 44,
+    },
+    artworkZoomImage: {
+        height: '100%',
+        width: '100%',
+    },
+    artworkZoomImageFrame: {
+        alignSelf: 'center',
+        aspectRatio: 1,
+        borderRadius: 4,
+        overflow: 'hidden',
+        width: SCREEN_WIDTH - spacing.lg * 2,
+    },
+    artworkZoomModal: {
+        alignItems: 'center',
+        backgroundColor: 'rgba(0,0,0,0.94)',
+        flex: 1,
+        justifyContent: 'center',
+    },
     outputPickerEmpty: {
         color: colors.muted,
         fontSize: 14,
@@ -143,13 +229,15 @@ export const styles = StyleSheet.create({
         borderColor: 'rgba(202,160,79,0.34)',
     },
     outputPickerList: {
-        maxHeight: 430,
         paddingBottom: spacing.sm,
     },
     outputPickerLoading: {
         alignItems: 'center',
         justifyContent: 'center',
         minHeight: 120,
+    },
+    outputPickerScroll: {
+        maxHeight: 430,
     },
     outputPickerRow: {
         alignItems: 'center',
@@ -293,6 +381,20 @@ export const styles = StyleSheet.create({
         lineHeight: 30,
         marginBottom: spacing.sm,
         textAlign: 'center',
+    },
+    albumDiscHeader: {
+        borderTopColor: 'rgba(255,255,255,0.08)',
+        borderTopWidth: StyleSheet.hairlineWidth,
+        marginTop: spacing.md,
+        paddingBottom: spacing.xs,
+        paddingTop: spacing.md,
+    },
+    albumDiscHeaderText: {
+        color: colors.accent,
+        fontSize: 12,
+        fontWeight: '900',
+        letterSpacing: 0.8,
+        textTransform: 'uppercase',
     },
     albumTrackNumber: {
         alignItems: 'center',
@@ -1054,9 +1156,9 @@ export const styles = StyleSheet.create({
         width: 38,
     },
     formatBadgePlayer: {
-        height: 44,
-        marginRight: -6,
-        width: 44,
+        height: 36,
+        marginRight: -2,
+        width: 36,
     },
     formatBadgeThumb: {
         bottom: 2,
@@ -1342,6 +1444,9 @@ export const styles = StyleSheet.create({
     },
     homeSection: {
         marginTop: 0,
+    },
+    homeMultiRowColumn: {
+        gap: spacing.lg,
     },
     inlineSearchBar: {
         alignItems: 'center',
@@ -1764,6 +1869,20 @@ export const styles = StyleSheet.create({
     mediaSubtitleCentered: {
         textAlign: 'center',
     },
+    mediaSubtitleInline: {
+        flexShrink: 1,
+        minWidth: 0,
+    },
+    mediaInfoRow: {
+        alignItems: 'center',
+        flexDirection: 'row',
+        gap: 4,
+        minHeight: 16,
+        minWidth: 0,
+    },
+    mediaInfoRowCentered: {
+        justifyContent: 'center',
+    },
     mediaText: {
         minWidth: 0,
         position: 'relative',
@@ -1829,33 +1948,12 @@ export const styles = StyleSheet.create({
         textAlign: 'center',
     },
     mediaDownloadIndicator: {
-        bottom: 2,
         opacity: 0.82,
-        position: 'absolute',
-        right: 0,
+        paddingTop: 1,
     },
     mediaTitleWide: {
         fontSize: 15,
         lineHeight: 19,
-    },
-    mediaTypeBadge: {
-        backgroundColor: 'rgba(0, 0, 0, 0.64)',
-        borderColor: 'rgba(255, 255, 255, 0.1)',
-        borderRadius: 999,
-        borderWidth: 1,
-        left: 8,
-        maxWidth: 110,
-        paddingHorizontal: 7,
-        paddingVertical: 3,
-        position: 'absolute',
-        top: HOME_PRIMARY_TILE - 32,
-    },
-    mediaTypeBadgeText: {
-        color: 'rgba(245, 245, 245, 0.82)',
-        fontSize: 9,
-        fontWeight: '900',
-        lineHeight: 11,
-        textTransform: 'uppercase',
     },
     miniPlayer: {
         backgroundColor: '#1c1c1e',
@@ -2052,6 +2150,13 @@ export const styles = StyleSheet.create({
     },
     playlistSearchAnimatedWrapper: {
         overflow: 'hidden',
+    },
+    playlistHeroSearchBar: {
+        marginTop: spacing.xs,
+    },
+    playlistHeroSearchWrapper: {
+        alignSelf: 'stretch',
+        width: '100%',
     },
     playlistSearchBar: {
         marginBottom: spacing.sm,

@@ -322,6 +322,36 @@ export const PlaylistAddGlyph = ({ color }: { color: string }) => {
     );
 };
 
+export const PlusGlyph = ({ color, size = 20 }: { color: string; size?: number }) => {
+    const stroke = Math.max(2, Math.round(size * 0.12));
+    return (
+        <View style={{ height: size, position: 'relative', width: size }}>
+            <View
+                style={{
+                    backgroundColor: color,
+                    borderRadius: 999,
+                    height: stroke,
+                    left: 0,
+                    position: 'absolute',
+                    top: (size - stroke) / 2,
+                    width: size,
+                }}
+            />
+            <View
+                style={{
+                    backgroundColor: color,
+                    borderRadius: 999,
+                    height: size,
+                    left: (size - stroke) / 2,
+                    position: 'absolute',
+                    top: 0,
+                    width: stroke,
+                }}
+            />
+        </View>
+    );
+};
+
 export const QueueAddGlyph = ({ color }: { color: string }) => {
     return (
         <View style={{ height: 18, justifyContent: 'space-between', width: 20 }}>

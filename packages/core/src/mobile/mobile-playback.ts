@@ -63,6 +63,12 @@ export interface MobilePlayableAudio {
     isLive?: boolean;
     initialPositionSeconds?: number;
     mimeType?: string;
+    /**
+     * Spoken-word progress can be reported against a whole book while the
+     * current audio URL points at one underlying file. Add this offset to the
+     * player position before syncing progress back to the server.
+     */
+    progressOffsetSeconds?: number;
     quality: MobilePlaybackQuality;
     source: PlaybackSource;
     subtitle?: string;
@@ -461,6 +467,14 @@ export const loadAudiobookshelfPlayback = async ({
     }
 
     const source: PlaybackSource = episodeId ? 'podcast' : 'audiobook';
+    const progressOffsetSeconds =
+        typeof audioTrack.startOffset === 'number' && audioTrack.startOffset > 0
+            ? audioTrack.startOffset
+            : 0;
+    const initialPositionSeconds =
+        startSeconds !== undefined
+            ? Math.max(0, startSeconds - progressOffsetSeconds)
+            : undefined;
     const mimeType = isAudiobookshelfHlsUrl(contentUrl)
         ? 'application/x-mpegURL'
         : audioTrack.mimeType;
@@ -491,8 +505,9 @@ export const loadAudiobookshelfPlayback = async ({
             Authorization: `Bearer ${authentication.credential}`,
         },
         id: `${authentication.type}:${authentication.url}:${source}:${itemId}${episodeId ? `:${episodeId}` : ''}`,
-        initialPositionSeconds: startSeconds,
+        initialPositionSeconds,
         mimeType,
+        progressOffsetSeconds,
         quality: {
             container: isAudiobookshelfHlsUrl(contentUrl)
                 ? 'hls'

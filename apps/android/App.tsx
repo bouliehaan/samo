@@ -48,6 +48,7 @@ import {
     Component,
     createContext,
     type ErrorInfo,
+    Fragment,
     memo,
     type ReactNode,
     useCallback,
@@ -72,6 +73,8 @@ import {
     KeyboardAvoidingView,
     type LayoutChangeEvent,
     Modal,
+    type NativeScrollEvent,
+    type NativeSyntheticEvent,
     PanResponder,
     PermissionsAndroid,
     Platform,
@@ -106,12 +109,9 @@ import Reanimated, {
 import ditherTexture from './assets/dither.png';
 import samoLogo from './assets/samo-logo.png';
 import {
-    type AndroidAudioDeviceInfo,
     type AndroidCastState,
     type AndroidMediaOutputRoute,
     type AndroidMediaOutputState,
-    type AndroidNativePlaybackEvent,
-    type AndroidPlaybackTruth,
     getAndroidAudioDeviceInfo,
     getAndroidCastState,
     getAndroidOutputRoutes,
@@ -127,6 +127,26 @@ import {
     subscribeToAndroidNavigationRequests,
     subscribeToAndroidOutputRouteEvents,
 } from './src/services/audio-playback';
+import { type AndroidPlaybackState } from './src/types/playback';
+import {
+    findActiveChapterIndex,
+    formatChapterRange,
+    formatPlaybackTime,
+    getActivePlaybackStatus,
+    getAdjacentSegmentTargetMs,
+    getDisplaySubtitle,
+    getDurationLabel,
+    getPlaybackDisplayMetadata,
+    getPlaybackDurationMs,
+    getPlaybackEventDurationMs,
+    getPlaybackItemDurationMs,
+    getSeekSegmentGapWidth,
+    getSeekSegments,
+    getStablePlaybackPositionMs,
+    getVisibleSeekSegments,
+    isLivePlayback,
+    looksLikeUrl,
+} from './src/utils/playback-time';
 import {
     cancelDownload,
     type DownloadEntry,
@@ -226,6 +246,11 @@ import {
     unstarSubsonicTrack,
 } from './src/services/media-favorites';
 import {
+    addAndroidRadioStation,
+    type AddAndroidRadioStationInput,
+    type AddAndroidRadioStationResult,
+} from './src/services/radio-stations';
+import {
     DISMISS_DISTANCE,
     DISMISS_VELOCITY,
     FULL_PLAYER_EXPANDED_TOP,
@@ -271,6 +296,7 @@ import {
     HeartGlyph,
     MoreGlyph,
     PersonGlyph,
+    PlusGlyph,
     PlayCircleGlyph,
     PlayPauseGlyph,
     PlaylistAddGlyph,
@@ -289,6 +315,9 @@ import { colors, spacing } from './src/theme/tokens';
 
 const CAST_ICON_ACTIVE_TINT = 'rgba(202, 160, 79, 0.78)';
 const CAST_ICON_INACTIVE_TINT = 'rgba(245, 245, 245, 0.72)';
+const HOME_ARTWORK_PREFETCH_LIMIT = 24;
+const MEDIA_DETAIL_MEMORY_CACHE_LIMIT = 24;
+const MEDIA_DETAIL_MEMORY_TRACK_LIMIT = 300;
 
 const SERVER_TYPES = [ServerType.NAVIDROME, ServerType.SUBSONIC, ServerType.AUDIOBOOKSHELF].filter(
     supportsServerTypeOnAndroid,
@@ -320,6 +349,10 @@ const getDownloadedTrackKey = (sourceId: string | undefined, trackId: string) =>
     return `${sourceId ?? 'server'}:${trackId}`;
 };
 
+const getDownloadedCollectionKey = (sourceId: string | undefined, collectionId: string) => {
+    return `${sourceId ?? ''}:${collectionId}`;
+};
+
 type DownloadedCollectionSummary = {
     collection: DownloadEntry['collection'];
     latestCompletedAt: number;
@@ -349,7 +382,7 @@ const buildDownloadedCollectionSnapshot = (
     for (const entry of entries) {
         if (entry.status !== 'completed') continue;
 
-        const key = `${entry.collection.sourceId}:${entry.collection.id}`;
+        const key = getDownloadedCollectionKey(entry.collection.sourceId, entry.collection.id);
         keys.add(key);
         trackKeys.add(getDownloadedTrackKey(entry.collection.sourceId, entry.trackId));
         const existing = collections.get(key);
@@ -573,28 +606,10 @@ const buildDownloadedMusicDetail = async (
 };
 
 /**
- * Artwork tile backed by expo-image so cover art behaves like a native app —
- * persistent across launches, instant on remount, and resilient to one-off
- * network failures.
- *
- * Why expo-image instead of RN's Image:
- *   - cachePolicy='memory-disk' keeps a per-process LRU AND a persistent
- *     disk cache, so navigating away from Home and back doesn't re-fetch
- *     every cover. The Samo metaphor is "I already saw this tile — it should
- *     reappear instantly", not "the renderer just spawned a fresh HTTP
- *     request".
- *   - transition=120 fades cached / decoded bitmaps in over ~2 frames so the
- *     surface doesn't pop. RN Image renders blank → image hard-cut, which
- *     reads as janky compared to native browsers / iOS / Spotify.
- *   - The native decoder is more forgiving of slow / flaky responses than
- *     RN's stock fetcher, which is the root of the "image was there, now
- *     it's gone" reports — RN's was timing out aggressively and not
- *     retrying. expo-image retries via its own pipeline and persists the
- *     decoded bitmap to disk so a flake on session N+1 doesn't matter.
- *
- * The letter-glyph fallback still fires when the URL is genuinely missing
- * (no source-side cover art at all) — onError catches the case where every
- * retry was exhausted, not just the first failure.
+ * Artwork tile backed by expo-image so cover art decodes and recycles like a
+ * native app without turning browse sessions into unbounded disk-cache writes.
+ * List/grid covers use memory cache only; fullscreen/current artwork can still
+ * opt into disk because it is one image at a time instead of hundreds of tiles.
  */
 const ArtworkImage = ({
     fallbackStyle,
@@ -627,7 +642,7 @@ const ArtworkImage = ({
     return (
         <ExpoImage
             allowDownscaling
-            cachePolicy="memory-disk"
+            cachePolicy="memory"
             contentFit="cover"
             onError={() => setErrored(true)}
             recyclingKey={uri}
@@ -653,24 +668,6 @@ interface AddServerScreenProps {
     serverUrl: string;
     username: string;
 }
-
-type AndroidPlaybackState =
-    | {
-          bitPerfect?: AndroidPlaybackTruth;
-          deviceInfo?: AndroidAudioDeviceInfo;
-          durationMs?: number;
-          item: MobilePlayableAudio;
-          message?: string;
-          positionMs?: number;
-          sessionId: string;
-          status: AndroidPlaybackStatus;
-      }
-    | {
-          status: 'idle';
-      };
-
-type AndroidPlaybackStatus = 'loading' | Exclude<AndroidNativePlaybackEvent['status'], 'idle'>;
-type ActiveAndroidPlaybackState = Exclude<AndroidPlaybackState, { status: 'idle' }>;
 
 type AndroidUtilityScreen =
     | 'add-server'
@@ -734,8 +731,10 @@ interface PlaylistsScreenProps {
 interface RadioScreenProps {
     homeContentState: AndroidHomeContentState;
     nowPlayingRadioId: null | string;
+    onAddStation: (input: AddAndroidRadioStationInput) => Promise<AddAndroidRadioStationResult>;
     onSelectItem: (item: MobileHomeItem) => void;
     recentItems: AndroidRecentContentItem[];
+    serverConnections: ServerAuthenticationResult[];
 }
 
 type LibraryFilter =
@@ -772,6 +771,7 @@ interface LibraryDisplayItem {
 interface HomeDisplaySection {
     key: string;
     items: AndroidRecentContentSourceItem[];
+    rowCount?: number;
     title: string;
     variant:
         | 'album'
@@ -839,7 +839,10 @@ const MediaContextMenuContext = createContext<MediaContextMenuApi>({
 
 const useMediaContextMenu = () => useContext(MediaContextMenuContext);
 
+const DownloadedCollectionKeysContext = createContext<Set<string>>(new Set());
 const DownloadedTrackKeysContext = createContext<Set<string>>(new Set());
+
+const useDownloadedCollectionKeys = () => useContext(DownloadedCollectionKeysContext);
 
 const useDownloadedTrackKeys = () => useContext(DownloadedTrackKeysContext);
 
@@ -854,6 +857,46 @@ const useStableCallback = <TArgs extends unknown[], TResult>(
 
     return useCallback((...args: TArgs) => callbackRef.current(...args), []);
 };
+
+const rememberMediaDetail = (
+    cache: Map<string, MobileMediaDetail>,
+    key: string,
+    detail: MobileMediaDetail,
+) => {
+    if (detail.tracks.length > MEDIA_DETAIL_MEMORY_TRACK_LIMIT) {
+        cache.delete(key);
+        return;
+    }
+    if (cache.has(key)) {
+        cache.delete(key);
+    }
+    cache.set(key, detail);
+
+    while (cache.size > MEDIA_DETAIL_MEMORY_CACHE_LIMIT) {
+        const oldestKey = cache.keys().next().value;
+        if (!oldestKey) break;
+        cache.delete(oldestKey);
+    }
+};
+
+const getAbsProgressSeconds = (
+    context: AbsProgressContext,
+    positionMs: number | undefined,
+    item: MobilePlayableAudio | undefined,
+): number => {
+    const offsetSeconds = item?.progressOffsetSeconds ?? 0;
+    const positionSeconds = Math.max(0, (positionMs ?? 0) / 1000);
+    const absoluteSeconds = offsetSeconds + positionSeconds;
+
+    return context.durationSeconds > 0
+        ? clamp(absoluteSeconds, 0, context.durationSeconds)
+        : absoluteSeconds;
+};
+
+const getPlayerPositionMsForAbsProgress = (
+    absoluteSeconds: number,
+    item: MobilePlayableAudio | undefined,
+): number => Math.max(0, (absoluteSeconds - (item?.progressOffsetSeconds ?? 0)) * 1000);
 
 /**
  * Pick which downloaded audiobook file contains a given book-time. Files
@@ -910,6 +953,7 @@ const buildOfflineAudiobookPlayable = (
         durationSeconds: file.durationSeconds,
         id: `${detail.source.type}:${detail.source.url}:audiobook:${detail.id}:offline:${file.ino}`,
         initialPositionSeconds,
+        progressOffsetSeconds: file.startOffsetSeconds,
         quality: {
             container: null,
             deliveryKind: 'unknown',
@@ -952,6 +996,7 @@ const buildOfflinePodcastEpisodePlayable = (
         contentSourceId: detail.source.id,
         durationSeconds: track.durationSeconds,
         id: `${detail.source.type}:${detail.source.url}:podcast:${itemId}:${episodeId}`,
+        initialPositionSeconds: track.startSeconds,
         quality: {
             container: null,
             deliveryKind: 'unknown',
@@ -1297,7 +1342,9 @@ export default function App() {
             .map((section) => ({
                 ...section,
                 items: section.items.filter((item) =>
-                    downloadedCollectionKeys.has(`${item.source?.id ?? ''}:${item.id}`),
+                    downloadedCollectionKeys.has(
+                        getDownloadedCollectionKey(item.source?.id, item.id),
+                    ),
                 ),
             }))
             .filter((section) => section.items.length > 0);
@@ -1323,7 +1370,7 @@ export default function App() {
         const filtered = isOfflineMode
             ? recentContentItems.filter((entry) =>
                   downloadedCollectionKeys.has(
-                      `${entry.item.source?.id ?? ''}:${entry.item.id}`,
+                      getDownloadedCollectionKey(entry.item.source?.id, entry.item.id),
                   ),
               )
             : recentContentItems;
@@ -1419,6 +1466,7 @@ export default function App() {
             item: MobilePlayableAudio,
             queueItems: MobilePlayableAudio[] = [item],
             queueIndex?: number,
+            options?: { shuffled?: boolean },
         ) => {
             if (!isAndroidNativePlaybackAvailable()) {
                 setPlaybackState({
@@ -1456,6 +1504,9 @@ export default function App() {
                 index: nextQueueIndex,
                 items: playableQueueItems,
             };
+            if (options?.shuffled !== undefined) {
+                setIsShuffled(options.shuffled);
+            }
             playbackSnapshotRef.current = { item, sessionId: session.id };
             setPlaybackState({
                 durationMs: getPlaybackItemDurationMs(item),
@@ -1525,8 +1576,9 @@ export default function App() {
             item: MobilePlayableAudio,
             queueItems: MobilePlayableAudio[] = [item],
             queueIndex?: number,
+            options?: { shuffled?: boolean },
         ) => {
-            await playQueuedItem(item, queueItems, queueIndex);
+            await playQueuedItem(item, queueItems, queueIndex, options);
         },
         [playQueuedItem],
     );
@@ -1545,6 +1597,13 @@ export default function App() {
                 }
 
                 if (event.status === 'ended') {
+                    const absCtx = absContextRef.current;
+                    if (absCtx) {
+                        void syncAbsProgressImmediate(
+                            absCtx,
+                            getAbsProgressSeconds(absCtx, event.positionMs, current.item),
+                        );
+                    }
                     const queue = playbackQueueRef.current;
                     const nextIndex = queue ? queue.index + 1 : -1;
                     const nextItem = queue?.items[nextIndex];
@@ -1609,11 +1668,9 @@ export default function App() {
         return () => subscription.remove();
     }, []);
 
-    // Warm the artwork cache the moment new home content lands. expo-image's
-    // memory-disk cache is per-URL, so a Image.prefetch() now means the
-    // grid tiles render straight from cache when the user scrolls — no
-    // staggered "tiles popping in" once the section data finishes its first
-    // server roundtrip.
+    // Warm only the in-memory artwork cache for the first tiles. Disk-caching
+    // every browsed cover lets the image cache grow with normal use, and that
+    // cache pressure has shown up as app-wide slowdown.
     useEffect(() => {
         if (homeContentState.status !== 'loaded') return;
         const urls = new Set<string>();
@@ -1623,7 +1680,7 @@ export default function App() {
             }
         }
         if (urls.size > 0) {
-            void ExpoImage.prefetch([...urls]);
+            void ExpoImage.prefetch([...urls].slice(0, HOME_ARTWORK_PREFETCH_LIMIT), 'memory');
         }
     }, [homeContentState]);
 
@@ -1654,7 +1711,13 @@ export default function App() {
                     const absCtx = absContextRef.current;
 
                     if (absCtx && positionMs && event.status === 'playing') {
-                        void syncAbsProgressThrottled(absCtx, positionMs / 1000);
+                        const activeItem =
+                            playbackSnapshotRef.current?.item ??
+                            playbackState.item;
+                        void syncAbsProgressThrottled(
+                            absCtx,
+                            getAbsProgressSeconds(absCtx, positionMs, activeItem),
+                        );
                     }
 
                     setPlaybackState((current) => {
@@ -2135,7 +2198,7 @@ export default function App() {
             }
             if (fromDisk) {
                 cached = fromDisk;
-                mediaDetailCacheRef.current.set(cacheKey, fromDisk);
+                rememberMediaDetail(mediaDetailCacheRef.current, cacheKey, fromDisk);
             }
         }
 
@@ -2146,7 +2209,7 @@ export default function App() {
             }
             if (downloadedDetail) {
                 cached = downloadedDetail;
-                mediaDetailCacheRef.current.set(cacheKey, downloadedDetail);
+                rememberMediaDetail(mediaDetailCacheRef.current, cacheKey, downloadedDetail);
             }
         }
 
@@ -2169,7 +2232,7 @@ export default function App() {
             return { cached: Boolean(cached) };
         }
         if (next.status === 'loaded') {
-            mediaDetailCacheRef.current.set(cacheKey, next.detail);
+            rememberMediaDetail(mediaDetailCacheRef.current, cacheKey, next.detail);
             void saveCachedMediaDetail(cacheKey, next.detail);
             enrichRecentAlbumFromDetail(item, next.detail);
             setMediaDetailState(next);
@@ -2221,7 +2284,7 @@ export default function App() {
         if (item.playback) {
             mediaDetailRequestId.current += 1;
             audiobookStartRequestId.current += 1;
-            await handlePlayItem(item.playback);
+            await handlePlayItem(item.playback, [item.playback], 0, { shuffled: false });
             return;
         }
 
@@ -2297,7 +2360,7 @@ export default function App() {
 
         // Always refresh the cache when the network succeeded.
         if (networkResult.status === 'loaded') {
-            mediaDetailCacheRef.current.set(cacheKey, networkResult.detail);
+            rememberMediaDetail(mediaDetailCacheRef.current, cacheKey, networkResult.detail);
             void saveCachedMediaDetail(cacheKey, networkResult.detail);
         }
         const auth = serverConnections.find(
@@ -2364,46 +2427,64 @@ export default function App() {
 
             if (!isCurrentRequest()) return;
             if (queueIndex >= 0) {
-                await handlePlayItem(track.playback, queueItems, queueIndex);
+                await handlePlayItem(track.playback, queueItems, queueIndex, { shuffled: false });
             } else {
-                await handlePlayItem(track.playback, [track.playback], 0);
+                await handlePlayItem(track.playback, [track.playback], 0, { shuffled: false });
             }
             return;
+        }
+
+        let trackToPlay = track;
+        const absAuth = serverConnections.find(
+            (auth) => getPersistedServerAuthKey(auth) === detail.source.id,
+        );
+
+        if (
+            detail.type === MobileMediaDetailType.PODCAST &&
+            absAuth?.type === ServerType.AUDIOBOOKSHELF &&
+            track.itemId
+        ) {
+            const progress = await loadAbsCurrentProgress(
+                absAuth,
+                track.itemId,
+                track.episodeId ?? track.id,
+            );
+            if (!isCurrentRequest()) return;
+            if (progress?.currentTimeSeconds && progress.currentTimeSeconds > 0) {
+                trackToPlay = { ...track, startSeconds: progress.currentTimeSeconds };
+            }
         }
 
         // Podcast offline path: the ABS /play endpoint that normally builds the
         // streaming URL fails offline, so synthesize a MobilePlayableAudio
         // directly from the downloaded file when one exists for this episode.
         if (detail.type === MobileMediaDetailType.PODCAST) {
-            const lookupTrackId = track.episodeId ?? track.id;
+            const lookupTrackId = trackToPlay.episodeId ?? trackToPlay.id;
             const localDownload = await getLocalDownloadForTrack(
                 lookupTrackId,
                 detail.source.id,
             );
             if (!isCurrentRequest()) return;
             if (localDownload) {
-                const absAuth = serverConnections.find(
-                    (auth) => getPersistedServerAuthKey(auth) === detail.source.id,
-                );
                 const playable = buildOfflinePodcastEpisodePlayable(
                     detail,
-                    track,
+                    trackToPlay,
                     localDownload.localUri,
                     localDownload.sourceUrl,
                     absAuth,
                 );
-                if (absAuth && track.itemId) {
+                if (absAuth && trackToPlay.itemId) {
                     absContextRef.current = {
                         authentication: absAuth,
-                        durationSeconds: track.durationSeconds ?? 0,
-                        episodeId: track.episodeId,
-                        itemId: track.itemId,
+                        durationSeconds: trackToPlay.durationSeconds ?? 0,
+                        episodeId: trackToPlay.episodeId,
+                        itemId: trackToPlay.itemId,
                     };
                 } else {
                     absContextRef.current = null;
                 }
                 if (!isCurrentRequest()) return;
-                await handlePlayItem(playable, [playable], 0);
+                await handlePlayItem(playable, [playable], 0, { shuffled: false });
                 return;
             }
         }
@@ -2420,7 +2501,7 @@ export default function App() {
             );
             if (!isCurrentRequest()) return;
             if (offlineFiles.length > 1) {
-                const targetBookSeconds = track.startSeconds ?? 0;
+                const targetBookSeconds = trackToPlay.startSeconds ?? 0;
                 const startIndex = pickAudiobookFileIndexForTime(
                     offlineFiles,
                     targetBookSeconds,
@@ -2428,9 +2509,6 @@ export default function App() {
                 const initialOffsetSeconds = Math.max(
                     0,
                     targetBookSeconds - offlineFiles[startIndex].startOffsetSeconds,
-                );
-                const absAuth = serverConnections.find(
-                    (auth) => getPersistedServerAuthKey(auth) === detail.source.id,
                 );
                 const queue = offlineFiles.map((file, idx) =>
                     buildOfflineAudiobookPlayable(
@@ -2440,7 +2518,7 @@ export default function App() {
                         absAuth,
                     ),
                 );
-                if (absAuth && track.itemId) {
+                if (absAuth && trackToPlay.itemId) {
                     const totalDurationSeconds = offlineFiles.reduce(
                         (sum, file) => sum + (file.durationSeconds ?? 0),
                         0,
@@ -2449,41 +2527,42 @@ export default function App() {
                         authentication: absAuth,
                         durationSeconds: totalDurationSeconds,
                         episodeId: undefined,
-                        itemId: track.itemId,
+                        itemId: trackToPlay.itemId,
                     };
                 } else {
                     absContextRef.current = null;
                 }
                 if (!isCurrentRequest()) return;
-                await handlePlayItem(queue[startIndex], queue, startIndex);
+                await handlePlayItem(queue[startIndex], queue, startIndex, { shuffled: false });
                 return;
             }
         }
 
         try {
-            const playable = await loadAndroidMediaTrackPlayback(serverConnections, detail, track);
-            if (!isCurrentRequest()) return;
-            const absAuth = serverConnections.find(
-                (auth) => getPersistedServerAuthKey(auth) === detail.source.id,
+            const playable = await loadAndroidMediaTrackPlayback(
+                serverConnections,
+                detail,
+                trackToPlay,
             );
+            if (!isCurrentRequest()) return;
 
             if (
                 absAuth &&
                 (playable.source === 'audiobook' || playable.source === 'podcast') &&
-                track.itemId
+                trackToPlay.itemId
             ) {
                 absContextRef.current = {
                     authentication: absAuth,
                     durationSeconds: playable.durationSeconds ?? 0,
-                    episodeId: track.episodeId,
-                    itemId: track.itemId,
+                    episodeId: trackToPlay.episodeId,
+                    itemId: trackToPlay.itemId,
                 };
             } else {
                 absContextRef.current = null;
             }
 
             if (!isCurrentRequest()) return;
-            await handlePlayItem(playable, [playable], index);
+            await handlePlayItem(playable, [playable], index, { shuffled: false });
         } catch (error) {
             if (!isCurrentRequest()) return;
             setMediaDetailState({
@@ -2511,7 +2590,7 @@ export default function App() {
                 [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
             }
 
-            await handlePlayItem(shuffled[0], shuffled, 0);
+            await handlePlayItem(shuffled[0], shuffled, 0, { shuffled: true });
         },
         [handlePlayItem],
     );
@@ -2531,7 +2610,7 @@ export default function App() {
                 [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
             }
 
-            await handlePlayItem(shuffled[0], shuffled, 0);
+            await handlePlayItem(shuffled[0], shuffled, 0, { shuffled: true });
         },
         [handlePlayItem],
     );
@@ -2544,6 +2623,15 @@ export default function App() {
         await addAndroidMediaTrackToPlaylist(serverConnections, detail, track, playlist);
         await loadHomeForConnections(serverConnections);
     };
+
+    const handleAddRadioStation = useCallback(
+        async (input: AddAndroidRadioStationInput): Promise<AddAndroidRadioStationResult> => {
+            const result = await addAndroidRadioStation(input);
+            await loadHomeForConnections(serverConnections);
+            return result;
+        },
+        [loadHomeForConnections, serverConnections],
+    );
 
     const getFavoriteKeyForItem = useCallback(
         (item: AndroidRecentContentSourceItem) => getRecentContentItemKey(item),
@@ -2751,7 +2839,7 @@ export default function App() {
             }
 
             absContextRef.current = null;
-            await handlePlayItem(queue[0], queue, 0);
+            await handlePlayItem(queue[0], queue, 0, { shuffled: false });
         } catch (error) {
             setContextMenuFeedback(
                 error instanceof Error ? error.message : 'Could not start Song Radio.',
@@ -2808,7 +2896,7 @@ export default function App() {
                 const fromDisk = await loadCachedMediaDetail(cacheKey);
                 if (fromDisk) {
                     detail = fromDisk;
-                    mediaDetailCacheRef.current.set(cacheKey, fromDisk);
+                    rememberMediaDetail(mediaDetailCacheRef.current, cacheKey, fromDisk);
                 }
             }
 
@@ -2816,7 +2904,7 @@ export default function App() {
                 const downloadedDetail = await buildDownloadedMusicDetail(item);
                 if (downloadedDetail) {
                     detail = downloadedDetail;
-                    mediaDetailCacheRef.current.set(cacheKey, downloadedDetail);
+                    rememberMediaDetail(mediaDetailCacheRef.current, cacheKey, downloadedDetail);
                 }
             }
 
@@ -2826,7 +2914,7 @@ export default function App() {
 
             const next = await loadAndroidMediaDetail(serverConnections, item);
             if (next.status === 'loaded') {
-                mediaDetailCacheRef.current.set(cacheKey, next.detail);
+                rememberMediaDetail(mediaDetailCacheRef.current, cacheKey, next.detail);
                 void saveCachedMediaDetail(cacheKey, next.detail);
                 return next.detail;
             }
@@ -2908,13 +2996,13 @@ export default function App() {
             const fromDisk = await loadCachedMediaDetail(cacheKey);
             if (fromDisk) {
                 detail = fromDisk;
-                mediaDetailCacheRef.current.set(cacheKey, fromDisk);
+                rememberMediaDetail(mediaDetailCacheRef.current, cacheKey, fromDisk);
             }
         }
         if (!detail) {
             const next = await loadAndroidMediaDetail(serverConnections, item);
             if (next.status === 'loaded') {
-                mediaDetailCacheRef.current.set(cacheKey, next.detail);
+                rememberMediaDetail(mediaDetailCacheRef.current, cacheKey, next.detail);
                 void saveCachedMediaDetail(cacheKey, next.detail);
                 detail = next.detail;
             } else {
@@ -3191,10 +3279,21 @@ export default function App() {
                 if (absCtx) {
                     void syncAbsProgressImmediate(
                         absCtx,
-                        (playbackState.positionMs ?? 0) / 1000,
+                        getAbsProgressSeconds(
+                            absCtx,
+                            playbackState.positionMs,
+                            playbackState.item,
+                        ),
                     );
                 }
 
+                return;
+            }
+
+            if (isLivePlayback(playbackState)) {
+                await playQueuedItem(playbackState.item, [playbackState.item], 0, {
+                    shuffled: false,
+                });
                 return;
             }
 
@@ -3226,7 +3325,10 @@ export default function App() {
             const absCtx = absContextRef.current;
 
             if (absCtx) {
-                void syncAbsProgressImmediate(absCtx, nextPositionMs / 1000);
+                void syncAbsProgressImmediate(
+                    absCtx,
+                    getAbsProgressSeconds(absCtx, nextPositionMs, playbackState.item),
+                );
             }
 
             setPlaybackState((current) => {
@@ -3346,7 +3448,11 @@ export default function App() {
                 );
                 const currentPosMs =
                     playbackState.status !== 'idle'
-                        ? (playbackState.positionMs ?? 0)
+                        ? getAbsProgressSeconds(
+                              absCtx,
+                              playbackState.positionMs,
+                              playbackState.item,
+                          ) * 1000
                         : 0;
                 if (
                     fresh &&
@@ -3355,7 +3461,12 @@ export default function App() {
                     // Only seek forward and only if the gap is meaningful; a
                     // 5-second buffer keeps us from interrupting playback when
                     // local and server values trivially differ.
-                    await handleSeekPlayback(fresh.currentTimeSeconds * 1000);
+                    await handleSeekPlayback(
+                        getPlayerPositionMsForAbsProgress(
+                            fresh.currentTimeSeconds,
+                            playbackState.status !== 'idle' ? playbackState.item : undefined,
+                        ),
+                    );
                 }
             }
             return { ok: true };
@@ -3700,6 +3811,7 @@ export default function App() {
         <GestureHandlerRootView style={styles.gestureRoot}>
         <ErrorBoundary label="App">
         <MediaContextMenuContext.Provider value={mediaContextMenuApi}>
+        <DownloadedCollectionKeysContext.Provider value={downloadedCollectionKeys}>
         <DownloadedTrackKeysContext.Provider value={downloadedTrackKeys}>
         <View style={styles.safeArea}>
             <StatusBar style="light" />
@@ -3823,8 +3935,10 @@ export default function App() {
                             <RadioScreen
                                 homeContentState={visibleHomeContentState}
                                 nowPlayingRadioId={nowPlayingRadioId}
+                                onAddStation={handleAddRadioStation}
                                 onSelectItem={handleSelectMediaItemStable}
                                 recentItems={visibleRecentItems}
+                                serverConnections={serverConnections}
                             />
                         ) : (
                             <EmptyServerBackedScreen tabTitle={title} />
@@ -3960,6 +4074,7 @@ export default function App() {
             />
         </View>
         </DownloadedTrackKeysContext.Provider>
+        </DownloadedCollectionKeysContext.Provider>
         </MediaContextMenuContext.Provider>
         </ErrorBoundary>
         </GestureHandlerRootView>
@@ -5131,10 +5246,52 @@ PlaylistsScreen.displayName = 'PlaylistsScreen';
 const RadioScreen = memo(({
     homeContentState,
     nowPlayingRadioId,
+    onAddStation,
     onSelectItem,
     recentItems,
+    serverConnections,
 }: RadioScreenProps) => {
     const contextMenu = useMediaContextMenu();
+    const [activeSort, setActiveSort] = useState<LibrarySort>('recents');
+    const [isSortMenuOpen, setIsSortMenuOpen] = useState(false);
+    const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+    const navidromeConnections = useMemo(
+        () => serverConnections.filter((connection) => connection.type === ServerType.NAVIDROME),
+        [serverConnections],
+    );
+    const section =
+        homeContentState.status === 'loaded'
+            ? getSectionsById(homeContentState, [MobileHomeSectionId.RADIO])[0]
+            : undefined;
+    const stations = section?.items ?? [];
+    const sortedStations = useMemo(
+        () =>
+            activeSort === 'name'
+                ? [...stations].sort((left, right) => left.title.localeCompare(right.title))
+                : sortHomeItemsByRecents(stations, recentItems),
+        [activeSort, recentItems, stations],
+    );
+    const activeSortLabel =
+        LIBRARY_SORTS.find((sort) => sort.id === activeSort)?.label ?? 'Recents';
+    const addButton = (
+        <Pressable
+            accessibilityLabel="Add radio station"
+            accessibilityRole="button"
+            disabled={navidromeConnections.length === 0}
+            onPress={() => {
+                triggerImpact('light');
+                setIsAddModalOpen(true);
+            }}
+            style={[
+                styles.playlistPillButton,
+                navidromeConnections.length === 0 && styles.disabledButton,
+            ]}
+        >
+            <PlusGlyph color={colors.background} size={16} />
+            <Text style={styles.playlistPillButtonText}>Add</Text>
+        </Pressable>
+    );
+
     if (homeContentState.status === 'idle') {
         return <EmptyServerBackedScreen tabTitle="Radio" />;
     }
@@ -5155,14 +5312,27 @@ const RadioScreen = memo(({
         );
     }
 
-    const section = getSectionsById(homeContentState, [MobileHomeSectionId.RADIO])[0];
-    const stations = section?.items ?? [];
-
     if (stations.length === 0) {
         return (
-            <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Radio</Text>
-                <Text style={styles.mutedText}>No server-backed radio stations returned.</Text>
+            <View style={styles.radioScreen}>
+                <View style={styles.playlistTopPanel}>
+                    <View>
+                        <Text style={styles.libraryEyebrow}>Radio</Text>
+                        <Text style={styles.playlistSummary}>0 stations</Text>
+                    </View>
+                    {addButton}
+                </View>
+                <Text style={styles.mutedText}>
+                    {navidromeConnections.length === 0
+                        ? 'Connect a Navidrome server to add radio stations from Android.'
+                        : 'No server-backed radio stations returned.'}
+                </Text>
+                <AddRadioStationModal
+                    onClose={() => setIsAddModalOpen(false)}
+                    onSubmit={onAddStation}
+                    serverConnections={navidromeConnections}
+                    visible={isAddModalOpen}
+                />
             </View>
         );
     }
@@ -5172,20 +5342,37 @@ const RadioScreen = memo(({
             .filter((r) => r.item.type === MobileHomeItemType.RADIO)
             .map((r) => getRecentContentItemKey(r.item)),
     );
-    const mostRecentRadioKey =
-        recentItems
-            .filter((r) => r.item.type === MobileHomeItemType.RADIO)
-            .sort((a, b) => b.selectedAt - a.selectedAt)[0]?.key ?? null;
-    const featuredStation =
-        (mostRecentRadioKey
-            ? stations.find((s) => getRecentContentItemKey(s) === mostRecentRadioKey)
-            : undefined) ?? stations[0];
-    const otherStations = stations.filter((s) => s !== featuredStation);
+    const featuredStation = sortedStations[0]!;
+    const otherStations = sortedStations.slice(1);
     const featuredIsPlaying =
         nowPlayingRadioId !== null && featuredStation.playback?.id === nowPlayingRadioId;
 
     return (
         <View style={styles.radioScreen}>
+            <View style={styles.playlistTopPanel}>
+                <View>
+                    <Text style={styles.libraryEyebrow}>Radio</Text>
+                    <Text style={styles.playlistSummary}>
+                        {stations.length} {stations.length === 1 ? 'station' : 'stations'}
+                    </Text>
+                </View>
+                <View style={styles.playlistHeaderActions}>
+                    <Pressable
+                        accessibilityLabel={`Sort by ${activeSortLabel}. Tap to change.`}
+                        accessibilityRole="button"
+                        android_ripple={{ borderless: true, color: 'rgba(255, 255, 255, 0.08)' }}
+                        onPress={() => {
+                            triggerImpact('light');
+                            setIsSortMenuOpen(true);
+                        }}
+                        style={styles.librarySortBadge}
+                    >
+                        <SortGlyph color={colors.muted} />
+                        <Text style={styles.librarySortText}>{activeSortLabel}</Text>
+                    </Pressable>
+                    {addButton}
+                </View>
+            </View>
             <Pressable
                 accessibilityRole="button"
                 onLongPress={() => contextMenu.openForItem(featuredStation)}
@@ -5226,7 +5413,7 @@ const RadioScreen = memo(({
                     <View style={styles.radioGridHeader}>
                         <Text style={styles.sectionTitle}>All Stations</Text>
                         <Text style={styles.librarySummary}>
-                            {stations.length} {stations.length === 1 ? 'station' : 'stations'}
+                            {activeSort === 'name' ? 'Name' : 'Recent'}
                         </Text>
                     </View>
                     <View style={styles.radioGrid}>
@@ -5261,11 +5448,241 @@ const RadioScreen = memo(({
                     </View>
                 </>
             ) : null}
+            <LibrarySortMenu
+                activeSort={activeSort}
+                onClose={() => setIsSortMenuOpen(false)}
+                onSelect={(next) => {
+                    setActiveSort(next);
+                    setIsSortMenuOpen(false);
+                }}
+                visible={isSortMenuOpen}
+            />
+            <AddRadioStationModal
+                onClose={() => setIsAddModalOpen(false)}
+                onSubmit={onAddStation}
+                serverConnections={navidromeConnections}
+                visible={isAddModalOpen}
+            />
         </View>
     );
 });
 
 RadioScreen.displayName = 'RadioScreen';
+
+const AddRadioStationModal = ({
+    onClose,
+    onSubmit,
+    serverConnections,
+    visible,
+}: {
+    onClose: () => void;
+    onSubmit: (input: AddAndroidRadioStationInput) => Promise<AddAndroidRadioStationResult>;
+    serverConnections: ServerAuthenticationResult[];
+    visible: boolean;
+}) => {
+    const [selectedServerId, setSelectedServerId] = useState<string | null>(null);
+    const [name, setName] = useState('');
+    const [streamUrl, setStreamUrl] = useState('');
+    const [homepageUrl, setHomepageUrl] = useState('');
+    const [thumbnailUrl, setThumbnailUrl] = useState('');
+    const [status, setStatus] = useState<
+        | { kind: 'error'; message: string }
+        | { kind: 'idle' }
+        | { kind: 'saving' }
+        | { kind: 'success'; message: string }
+    >({ kind: 'idle' });
+
+    useEffect(() => {
+        if (!visible) {
+            return;
+        }
+        const firstServer = serverConnections[0];
+        if (firstServer) {
+            setSelectedServerId((current) => current ?? getPersistedServerAuthKey(firstServer));
+        }
+        setStatus({ kind: 'idle' });
+    }, [serverConnections, visible]);
+
+    const selectedServer =
+        serverConnections.find((server) => getPersistedServerAuthKey(server) === selectedServerId) ??
+        serverConnections[0];
+    const canSubmit =
+        Boolean(selectedServer) &&
+        name.trim().length > 0 &&
+        streamUrl.trim().length > 0 &&
+        status.kind !== 'saving';
+
+    const handleSubmit = async () => {
+        if (!selectedServer || !canSubmit) {
+            return;
+        }
+
+        setStatus({ kind: 'saving' });
+        try {
+            const result = await onSubmit({
+                authentication: selectedServer,
+                homepageUrl: homepageUrl.trim() || undefined,
+                name: name.trim(),
+                streamUrl: streamUrl.trim(),
+                thumbnailUrl: thumbnailUrl.trim() || undefined,
+            });
+            const message = result.warning ?? 'Radio station added.';
+            setStatus({ kind: 'success', message });
+            if (!result.warning) {
+                setName('');
+                setStreamUrl('');
+                setHomepageUrl('');
+                setThumbnailUrl('');
+                setTimeout(onClose, 450);
+            }
+        } catch (error) {
+            setStatus({
+                kind: 'error',
+                message: error instanceof Error ? error.message : 'Could not add radio station.',
+            });
+        }
+    };
+
+    return (
+        <Modal animationType="slide" onRequestClose={onClose} transparent visible={visible}>
+            <Pressable onPress={onClose} style={styles.modalBackdrop}>
+                <Pressable
+                    onPress={(event) => event.stopPropagation()}
+                    style={styles.addRadioSheet}
+                >
+                    <View style={styles.actionSheetHandle} />
+                    <Text style={styles.actionSheetTitle}>Add Radio Station</Text>
+                    {serverConnections.length === 0 ? (
+                        <Text style={styles.mutedText}>
+                            Connect a Navidrome server to add radio stations from Android.
+                        </Text>
+                    ) : (
+                        <ScrollView
+                            contentContainerStyle={styles.addRadioForm}
+                            keyboardShouldPersistTaps="handled"
+                        >
+                            {serverConnections.length > 1 ? (
+                                <View style={styles.addRadioServerBlock}>
+                                    <Text style={styles.addRadioLabel}>Server</Text>
+                                    <ScrollView
+                                        horizontal
+                                        showsHorizontalScrollIndicator={false}
+                                    >
+                                        {serverConnections.map((server) => {
+                                            const key = getPersistedServerAuthKey(server);
+                                            const isSelected = selectedServerId === key;
+
+                                            return (
+                                                <Pressable
+                                                    accessibilityRole="button"
+                                                    key={key}
+                                                    onPress={() => setSelectedServerId(key)}
+                                                    style={[
+                                                        styles.addRadioServerPill,
+                                                        isSelected &&
+                                                            styles.addRadioServerPillActive,
+                                                    ]}
+                                                >
+                                                    <Text
+                                                        numberOfLines={1}
+                                                        style={[
+                                                            styles.addRadioServerPillText,
+                                                            isSelected &&
+                                                                styles.addRadioServerPillTextActive,
+                                                        ]}
+                                                    >
+                                                        {server.title}
+                                                    </Text>
+                                                </Pressable>
+                                            );
+                                        })}
+                                    </ScrollView>
+                                </View>
+                            ) : null}
+                            <Text style={styles.addRadioLabel}>Name</Text>
+                            <TextInput
+                                autoCapitalize="words"
+                                onChangeText={setName}
+                                placeholder="Station name"
+                                placeholderTextColor={colors.muted}
+                                style={styles.input}
+                                value={name}
+                            />
+                            <Text style={styles.addRadioLabel}>Stream URL</Text>
+                            <TextInput
+                                autoCapitalize="none"
+                                autoCorrect={false}
+                                inputMode="url"
+                                onChangeText={setStreamUrl}
+                                placeholder="https://..."
+                                placeholderTextColor={colors.muted}
+                                style={styles.input}
+                                value={streamUrl}
+                            />
+                            <Text style={styles.addRadioLabel}>Homepage URL</Text>
+                            <TextInput
+                                autoCapitalize="none"
+                                autoCorrect={false}
+                                inputMode="url"
+                                onChangeText={setHomepageUrl}
+                                placeholder="Optional"
+                                placeholderTextColor={colors.muted}
+                                style={styles.input}
+                                value={homepageUrl}
+                            />
+                            <Text style={styles.addRadioLabel}>Thumbnail URL</Text>
+                            <TextInput
+                                autoCapitalize="none"
+                                autoCorrect={false}
+                                inputMode="url"
+                                onChangeText={setThumbnailUrl}
+                                placeholder="Optional image URL"
+                                placeholderTextColor={colors.muted}
+                                style={styles.input}
+                                value={thumbnailUrl}
+                            />
+                            {status.kind === 'error' || status.kind === 'success' ? (
+                                <Text
+                                    style={
+                                        status.kind === 'error'
+                                            ? styles.errorText
+                                            : styles.addRadioSuccess
+                                    }
+                                >
+                                    {status.message}
+                                </Text>
+                            ) : null}
+                            <View style={styles.addRadioActions}>
+                                <Pressable
+                                    accessibilityRole="button"
+                                    onPress={onClose}
+                                    style={styles.secondaryButton}
+                                >
+                                    <Text style={styles.secondaryButtonText}>Cancel</Text>
+                                </Pressable>
+                                <Pressable
+                                    accessibilityRole="button"
+                                    disabled={!canSubmit}
+                                    onPress={() => void handleSubmit()}
+                                    style={[
+                                        styles.primaryButton,
+                                        !canSubmit && styles.disabledButton,
+                                    ]}
+                                >
+                                    {status.kind === 'saving' ? (
+                                        <ActivityIndicator color={colors.background} />
+                                    ) : (
+                                        <Text style={styles.primaryButtonText}>Add Station</Text>
+                                    )}
+                                </Pressable>
+                            </View>
+                        </ScrollView>
+                    )}
+                </Pressable>
+            </Pressable>
+        </Modal>
+    );
+};
 
 const SEARCH_SCOPE_DEFINITIONS: Array<{ id: SearchScope; label: string }> = [
     { id: 'all', label: 'All' },
@@ -6334,6 +6751,7 @@ const getHomeItemsForSection = (
 };
 
 const RECENTLY_ADDED_ROW_LIMIT = 18;
+const RECENTLY_PLAYED_ROW_LIMIT = 36;
 
 const getViewAllVariant = (
     variant: HomeDisplaySection['variant'],
@@ -6525,25 +6943,25 @@ const getHomeDisplaySections = (
             (item.type === MobileHomeItemType.ALBUM || item.type === MobileHomeItemType.PLAYLIST),
     );
 
-    // "Recently added to server" sits above Recents: the newest items each
-    // server has, interleaved across categories so albums, audiobooks, and
-    // podcasts all get a turn. Each per-category section is already sorted
-    // addedAt-desc on the server side, so the first N of each are the newest.
+    if (recentDisplayItems.length > 0) {
+        displaySections.push({
+            items: recentDisplayItems.slice(0, RECENTLY_PLAYED_ROW_LIMIT),
+            key: 'recents',
+            rowCount: 2,
+            title: 'Recently Played',
+            variant: 'recents',
+        });
+    }
+
+    // Newest items each server has, interleaved across categories so albums,
+    // audiobooks, and podcasts all get a turn. Keep it under Recently Played
+    // because the user asked for listening history to lead Home.
     const recentlyAddedItems = buildRecentlyAddedHeroRow(sectionsById);
     if (recentlyAddedItems.length > 0) {
         displaySections.push({
             items: recentlyAddedItems,
             key: 'recently-added-to-server',
             title: 'Recently Added',
-            variant: 'recents',
-        });
-    }
-
-    if (recentDisplayItems.length > 0) {
-        displaySections.push({
-            items: recentDisplayItems.slice(0, 18),
-            key: 'recents',
-            title: 'Recently Played',
             variant: 'recents',
         });
     }
@@ -6661,17 +7079,11 @@ const getHomeItemSubtitle = (
     item: AndroidRecentContentSourceItem,
     variant: HomeDisplaySection['variant'],
 ) => {
-    if (variant === 'radio' || variant === 'recents') {
+    if (variant === 'radio') {
         return undefined;
     }
 
     return getDisplaySubtitle(item.subtitle);
-};
-
-const getHomeItemTypeLabel = (item: AndroidRecentContentSourceItem) => {
-    const mediaType = getLibraryMediaType(item);
-
-    return mediaType ? getLibraryMediaTypeLabel(mediaType) : undefined;
 };
 
 const HomeFilterGridTile = memo(({
@@ -6770,8 +7182,15 @@ interface HomeMediaTileProps {
     sectionVariant: HomeDisplaySection['variant'];
 }
 
+const isDownloadableCollectionMediaType = (mediaType: LibraryMediaType | undefined): boolean =>
+    mediaType === 'albums' ||
+    mediaType === 'audiobooks' ||
+    mediaType === 'playlists' ||
+    mediaType === 'podcasts';
+
 const HomeMediaTile = memo(({ item, onSelectItem, sectionVariant }: HomeMediaTileProps) => {
     const contextMenu = useMediaContextMenu();
+    const downloadedCollectionKeys = useDownloadedCollectionKeys();
     const downloadedTrackKeys = useDownloadedTrackKeys();
 
     const isAlbum = sectionVariant === 'album';
@@ -6784,14 +7203,19 @@ const HomeMediaTile = memo(({ item, onSelectItem, sectionVariant }: HomeMediaTil
     const isRecent = sectionVariant === 'recents';
     const isWide = sectionVariant === 'wide' || isContinue;
     const isRadio = item.type === MobileHomeItemType.RADIO;
+    const mediaType = getLibraryMediaType(item);
     // An artist tile rendered inside a Recents/mixed row must still
     // be circular — never a square with a letter.
     const isArtistItem = item.type === MobileHomeItemType.ARTIST;
     const progress = getContentItemProgress(item);
     const subtitle = getHomeItemSubtitle(item, sectionVariant);
     const isDownloadedTrack =
-        getLibraryMediaType(item) === 'songs' &&
+        mediaType === 'songs' &&
         downloadedTrackKeys.has(getDownloadedTrackKey(item.source?.id, item.id));
+    const isDownloadedCollection =
+        isDownloadableCollectionMediaType(mediaType) &&
+        downloadedCollectionKeys.has(getDownloadedCollectionKey(item.source?.id, item.id));
+    const isDownloaded = isDownloadedTrack || isDownloadedCollection;
     // Playlists are never a single quality, so per the UX rule we
     // suppress the format badge on playlist tiles even when the
     // item happens to carry an isHiRes flag from an older path.
@@ -6849,13 +7273,6 @@ const HomeMediaTile = memo(({ item, onSelectItem, sectionVariant }: HomeMediaTil
                 uri={item.artworkUrl}
             />
             <QualityBadge overlay profile={tileBadgeProfile} />
-            {isRecent ? (
-                <View style={styles.mediaTypeBadge}>
-                    <Text style={styles.mediaTypeBadgeText}>
-                        {getHomeItemTypeLabel(item) ?? 'Media'}
-                    </Text>
-                </View>
-            ) : null}
             <View
                 style={[
                     styles.mediaText,
@@ -6873,20 +7290,30 @@ const HomeMediaTile = memo(({ item, onSelectItem, sectionVariant }: HomeMediaTil
                 >
                     {item.title}
                 </Text>
-                {subtitle ? (
-                    <Text
-                        numberOfLines={isWide ? 2 : 1}
+                {subtitle || isDownloaded ? (
+                    <View
                         style={[
-                            styles.mediaSubtitle,
-                            isArtist && styles.mediaSubtitleCentered,
+                            styles.mediaInfoRow,
+                            isArtist && styles.mediaInfoRowCentered,
                         ]}
                     >
-                        {subtitle}
-                    </Text>
-                ) : null}
-                {isDownloadedTrack ? (
-                    <View style={styles.mediaDownloadIndicator}>
-                        <TrackDownloadedGlyph size={11} />
+                        {isDownloaded ? (
+                            <View style={styles.mediaDownloadIndicator}>
+                                <TrackDownloadedGlyph size={11} />
+                            </View>
+                        ) : null}
+                        {subtitle ? (
+                            <Text
+                                numberOfLines={isWide ? 2 : 1}
+                                style={[
+                                    styles.mediaSubtitle,
+                                    styles.mediaSubtitleInline,
+                                    isArtist && styles.mediaSubtitleCentered,
+                                ]}
+                            >
+                                {subtitle}
+                            </Text>
+                        ) : null}
                     </View>
                 ) : null}
                 {isContinue && progress !== undefined ? (
@@ -6912,10 +7339,26 @@ interface HomeDisplayRowProps {
     section: HomeDisplaySection;
 }
 
+const chunkHomeSectionItems = (
+    items: AndroidRecentContentSourceItem[],
+    rowCount: number,
+): AndroidRecentContentSourceItem[][] => {
+    const columns: AndroidRecentContentSourceItem[][] = [];
+    for (let index = 0; index < items.length; index += rowCount) {
+        columns.push(items.slice(index, index + rowCount));
+    }
+    return columns;
+};
+
 const HomeDisplayRow = memo(({ onSelectItem, onViewAll, section }: HomeDisplayRowProps) => {
     const viewAllVariant = getViewAllVariant(section.variant);
     const canViewAll = viewAllVariant !== null && Boolean(onViewAll);
+    const rowCount = section.rowCount ?? 1;
     const itemLength = getHomeRowItemLength(section.variant);
+    const columns = useMemo(
+        () => (rowCount > 1 ? chunkHomeSectionItems(section.items, rowCount) : []),
+        [rowCount, section.items],
+    );
     const getItemLayout = useCallback(
         (_: ArrayLike<AndroidRecentContentSourceItem> | null | undefined, index: number) => ({
             index,
@@ -6931,6 +7374,29 @@ const HomeDisplayRow = memo(({ onSelectItem, onViewAll, section }: HomeDisplayRo
                 onSelectItem={onSelectItem}
                 sectionVariant={section.variant}
             />
+        ),
+        [onSelectItem, section.variant],
+    );
+    const getColumnLayout = useCallback(
+        (_: ArrayLike<AndroidRecentContentSourceItem[]> | null | undefined, index: number) => ({
+            index,
+            length: itemLength,
+            offset: itemLength * index,
+        }),
+        [itemLength],
+    );
+    const renderColumn = useCallback(
+        ({ item: column }: { item: AndroidRecentContentSourceItem[] }) => (
+            <View style={styles.homeMultiRowColumn}>
+                {column.map((item) => (
+                    <HomeMediaTile
+                        item={item}
+                        key={getContentItemKey(item)}
+                        onSelectItem={onSelectItem}
+                        sectionVariant={section.variant}
+                    />
+                ))}
+            </View>
         ),
         [onSelectItem, section.variant],
     );
@@ -6951,19 +7417,35 @@ const HomeDisplayRow = memo(({ onSelectItem, onViewAll, section }: HomeDisplayRo
                     </Pressable>
                 ) : null}
             </View>
-            <FlatList
-                data={section.items}
-                getItemLayout={getItemLayout}
-                horizontal
-                initialNumToRender={HOME_ROW_INITIAL_ITEMS}
-                keyExtractor={getContentItemKey}
-                maxToRenderPerBatch={HOME_ROW_RENDER_BATCH}
-                removeClippedSubviews={Platform.OS === 'android'}
-                renderItem={renderItem}
-                showsHorizontalScrollIndicator={false}
-                updateCellsBatchingPeriod={32}
-                windowSize={HOME_ROW_WINDOW_SIZE}
-            />
+            {rowCount > 1 ? (
+                <FlatList
+                    data={columns}
+                    getItemLayout={getColumnLayout}
+                    horizontal
+                    initialNumToRender={HOME_ROW_INITIAL_ITEMS}
+                    keyExtractor={(column) => column.map(getContentItemKey).join('|')}
+                    maxToRenderPerBatch={HOME_ROW_RENDER_BATCH}
+                    removeClippedSubviews={Platform.OS === 'android'}
+                    renderItem={renderColumn}
+                    showsHorizontalScrollIndicator={false}
+                    updateCellsBatchingPeriod={32}
+                    windowSize={HOME_ROW_WINDOW_SIZE}
+                />
+            ) : (
+                <FlatList
+                    data={section.items}
+                    getItemLayout={getItemLayout}
+                    horizontal
+                    initialNumToRender={HOME_ROW_INITIAL_ITEMS}
+                    keyExtractor={getContentItemKey}
+                    maxToRenderPerBatch={HOME_ROW_RENDER_BATCH}
+                    removeClippedSubviews={Platform.OS === 'android'}
+                    renderItem={renderItem}
+                    showsHorizontalScrollIndicator={false}
+                    updateCellsBatchingPeriod={32}
+                    windowSize={HOME_ROW_WINDOW_SIZE}
+                />
+            )}
         </View>
     );
 });
@@ -7262,7 +7744,8 @@ const MediaDetailLoaded = ({
     const [playlistSearchQuery, setPlaylistSearchQuery] = useState('');
     const playlistSearchInputRef = useRef<TextInput>(null);
     // Height/opacity track linearly so the track list below slides predictably;
-    // scale springs out from the icon's anchor point for the "bubble" feel.
+    // the search bar rises into place so it stays visually above the keyboard
+    // instead of dropping toward it.
     const playlistSearchLayoutProgress = useSharedValue(0);
     const playlistSearchBubbleProgress = useSharedValue(0);
     const playlistSearchAnimatedStyle = useAnimatedStyle(() => ({
@@ -7273,12 +7756,12 @@ const MediaDetailLoaded = ({
                 translateY: interpolate(
                     playlistSearchBubbleProgress.value,
                     [0, 1],
-                    [-32, 0],
+                    [32, 0],
                 ),
             },
             { scale: playlistSearchBubbleProgress.value },
         ],
-        transformOrigin: ['65%', '0%', 0],
+        transformOrigin: ['65%', '100%', 0],
     }));
     const firstTrack = detail.tracks[0];
     const contextMenu = useMediaContextMenu();
@@ -7368,6 +7851,9 @@ const MediaDetailLoaded = ({
     const heroPlayQueue = isPlaylistDetail ? displayTracks : undefined;
     const canPlayDetail = Boolean(heroPlayTrack);
     const showPlaylistShuffle = isPlaylistDetail && playableDisplayTracks.length > 0;
+    const showAlbumDiscHeaders =
+        detail.type === MobileMediaDetailType.ALBUM &&
+        new Set(displayTracks.map((track) => track.discNumber ?? 1)).size > 1;
     const detailScrollY = useSharedValue(0);
     const detailScrollHandler = useAnimatedScrollHandler({
         onScroll: (event) => {
@@ -7819,22 +8305,64 @@ const MediaDetailLoaded = ({
                                     {detail.title}
                                 </Text>
                                 <View style={styles.albumHeroMeta}>
-                                    {(detail.metadataLines && detail.metadataLines.length > 0
-                                        ? detail.metadataLines
-                                        : detail.subtitle
-                                          ? [detail.subtitle]
-                                          : []
-                                    ).map((line, index) => (
-                                        <Text
-                                            key={`${line}-${index}`}
-                                            numberOfLines={1}
-                                            style={styles.albumHeroMetaLine}
+                                    <Reanimated.View
+                                        pointerEvents={playlistSearchVisible ? 'auto' : 'none'}
+                                        style={[
+                                            styles.playlistSearchAnimatedWrapper,
+                                            styles.playlistHeroSearchWrapper,
+                                            playlistSearchAnimatedStyle,
+                                        ]}
+                                    >
+                                        <View
+                                            style={[
+                                                styles.inlineSearchBar,
+                                                styles.playlistHeroSearchBar,
+                                            ]}
                                         >
-                                            {line}
-                                        </Text>
-                                    ))}
-                                    {heroFormatLabel ? (
-                                        <Text style={styles.formatBadgeMeta}>{heroFormatLabel}</Text>
+                                            <SearchGlyph color={colors.muted} />
+                                            <TextInput
+                                                autoCapitalize="none"
+                                                autoCorrect={false}
+                                                onChangeText={setPlaylistSearchQuery}
+                                                placeholder="Search this playlist"
+                                                placeholderTextColor={colors.muted}
+                                                ref={playlistSearchInputRef}
+                                                returnKeyType="search"
+                                                style={styles.inlineSearchInput}
+                                                value={playlistSearchQuery}
+                                            />
+                                            {playlistSearchQuery.length > 0 ? (
+                                                <Pressable
+                                                    accessibilityLabel="Clear playlist search"
+                                                    accessibilityRole="button"
+                                                    onPress={() => setPlaylistSearchQuery('')}
+                                                    style={styles.inlineSearchIconButton}
+                                                >
+                                                    <ClearGlyph color={colors.muted} />
+                                                </Pressable>
+                                            ) : null}
+                                        </View>
+                                    </Reanimated.View>
+                                    {!playlistSearchVisible ? (
+                                        <>
+                                            {(detail.metadataLines && detail.metadataLines.length > 0
+                                                ? detail.metadataLines
+                                                : detail.subtitle
+                                                  ? [detail.subtitle]
+                                                  : []
+                                            ).map((line, index) => (
+                                                <Text
+                                                    key={`${line}-${index}`}
+                                                    numberOfLines={1}
+                                                    style={styles.albumHeroMetaLine}
+                                                >
+                                                    {line}
+                                                </Text>
+                                            ))}
+                                            {heroFormatLabel ? (
+                                                <Text style={styles.formatBadgeMeta}>{heroFormatLabel}</Text>
+                                            ) : null}
+                                        </>
                                     ) : null}
                                 </View>
                                 <View
@@ -7929,43 +8457,6 @@ const MediaDetailLoaded = ({
                                 </View>
                             </View>
                             <View style={styles.homeSection}>
-                                <Reanimated.View
-                                    pointerEvents={playlistSearchVisible ? 'auto' : 'none'}
-                                    style={[
-                                        styles.playlistSearchAnimatedWrapper,
-                                        playlistSearchAnimatedStyle,
-                                    ]}
-                                >
-                                    <View
-                                        style={[
-                                            styles.inlineSearchBar,
-                                            styles.playlistSearchBar,
-                                        ]}
-                                    >
-                                        <SearchGlyph color={colors.muted} />
-                                        <TextInput
-                                            autoCapitalize="none"
-                                            autoCorrect={false}
-                                            onChangeText={setPlaylistSearchQuery}
-                                            placeholder="Search this playlist"
-                                            placeholderTextColor={colors.muted}
-                                            ref={playlistSearchInputRef}
-                                            returnKeyType="search"
-                                            style={styles.inlineSearchInput}
-                                            value={playlistSearchQuery}
-                                        />
-                                        {playlistSearchQuery.length > 0 ? (
-                                            <Pressable
-                                                accessibilityLabel="Clear playlist search"
-                                                accessibilityRole="button"
-                                                onPress={() => setPlaylistSearchQuery('')}
-                                                style={styles.inlineSearchIconButton}
-                                            >
-                                                <ClearGlyph color={colors.muted} />
-                                            </Pressable>
-                                        ) : null}
-                                    </View>
-                                </Reanimated.View>
                                 {detail.tracks.length > 0 ? (
                                     <PlaylistTrackControls
                                         filter={playlistFilter}
@@ -8264,6 +8755,12 @@ const MediaDetailLoaded = ({
                             const hasOverflowActions =
                                 canAddToPlaylist || track.playback?.source === 'music';
                             const isAlbumDetail = detail.type === MobileMediaDetailType.ALBUM;
+                            const discNumber = track.discNumber ?? 1;
+                            const previousDiscNumber =
+                                index > 0 ? (displayTracks[index - 1]?.discNumber ?? 1) : null;
+                            const shouldShowDiscHeader =
+                                showAlbumDiscHeaders &&
+                                (index === 0 || previousDiscNumber !== discNumber);
                             // Track-level format badge only meaningful inside playlists (the
                             // collection itself is mixed). Album track rows skip the badge
                             // because the album hero already carries one. Audiobook/podcast
@@ -8276,13 +8773,27 @@ const MediaDetailLoaded = ({
                                 getDownloadedTrackKey(detail.source.id, track.id),
                             );
                             return (
+                                <Fragment key={`${track.id}:${index}`}>
+                                {shouldShowDiscHeader ? (
+                                    <View style={styles.albumDiscHeader}>
+                                        <Text style={styles.albumDiscHeaderText}>
+                                            Disc {discNumber}
+                                        </Text>
+                                    </View>
+                                ) : null}
                                 <Pressable
                                     accessibilityRole="button"
-                                    key={`${track.id}:${index}`}
                                     onLongPress={() => contextMenu.openForTrack(track, detail)}
                                     onPress={() => onPlayTrack(detail, track, index, displayTracks)}
                                     style={styles.trackRow}
                                 >
+                                    {isAlbumDetail ? (
+                                        <View style={styles.albumTrackNumber}>
+                                            <Text style={styles.albumTrackNumberText}>
+                                                {track.trackNumber ?? index + 1}
+                                            </Text>
+                                        </View>
+                                    ) : null}
                                     {!isAlbumDetail ? (
                                         <View>
                                             {track.artworkUrl ?? detail.artworkUrl ? (
@@ -8337,6 +8848,7 @@ const MediaDetailLoaded = ({
                                         </Pressable>
                                     ) : null}
                                 </Pressable>
+                                </Fragment>
                             );
                         })
                     )}
@@ -9112,317 +9624,6 @@ const darkenColor = (hex: string, factor: number): string => {
     return `rgb(${r}, ${g}, ${b})`;
 };
 
-const getActivePlaybackStatus = (
-    status: AndroidNativePlaybackEvent['status'],
-    fallback: AndroidPlaybackStatus,
-): AndroidPlaybackStatus => {
-    return status === 'idle' ? fallback : status;
-};
-
-const PLAYBACK_POSITION_BACKWARD_TOLERANCE_MS = 2500;
-const PLAYBACK_POSITION_RESET_GUARD_MS = 5000;
-
-const getStablePlaybackPositionMs = (
-    event: AndroidNativePlaybackEvent,
-    current: ActiveAndroidPlaybackState,
-) => {
-    const eventPositionMs = event.positionMs;
-    const currentPositionMs = current.positionMs;
-
-    if (eventPositionMs === undefined || !Number.isFinite(eventPositionMs)) {
-        return currentPositionMs;
-    }
-
-    if (event.status === 'idle') {
-        return currentPositionMs;
-    }
-
-    if (currentPositionMs === undefined || event.status === 'ended') {
-        return eventPositionMs;
-    }
-
-    if (eventPositionMs <= 100 && currentPositionMs > PLAYBACK_POSITION_RESET_GUARD_MS) {
-        return currentPositionMs;
-    }
-
-    if (eventPositionMs + PLAYBACK_POSITION_BACKWARD_TOLERANCE_MS < currentPositionMs) {
-        return currentPositionMs;
-    }
-
-    return eventPositionMs;
-};
-
-const getPlaybackItemDurationMs = (item: MobilePlayableAudio) => {
-    return item.durationSeconds && item.durationSeconds > 0
-        ? item.durationSeconds * 1000
-        : undefined;
-};
-
-const getPlaybackEventDurationMs = (
-    event: AndroidNativePlaybackEvent,
-    item: MobilePlayableAudio,
-) => {
-    return event.durationMs && event.durationMs > 0
-        ? event.durationMs
-        : getPlaybackItemDurationMs(item);
-};
-
-const getPlaybackDurationMs = (playbackState: AndroidPlaybackState) => {
-    if (playbackState.status === 'idle') {
-        return undefined;
-    }
-
-    return playbackState.durationMs && playbackState.durationMs > 0
-        ? playbackState.durationMs
-        : getPlaybackItemDurationMs(playbackState.item);
-};
-
-const getActiveTimelineSegment = (item: MobilePlayableAudio, positionMs: number | undefined) => {
-    if (!item.timelineSegments || item.timelineSegments.length === 0) {
-        return undefined;
-    }
-
-    const fallbackPositionMs =
-        item.initialPositionSeconds && item.initialPositionSeconds > 0
-            ? item.initialPositionSeconds * 1000
-            : 0;
-    const positionSeconds = (positionMs ?? fallbackPositionMs) / 1000;
-    const orderedSegments = [...item.timelineSegments].sort(
-        (left, right) => left.startSeconds - right.startSeconds,
-    );
-    let activeSegment: MobilePlaybackSegment | undefined;
-
-    for (const segment of orderedSegments) {
-        if (segment.startSeconds <= positionSeconds + 0.5) {
-            activeSegment = segment;
-        }
-    }
-
-    return activeSegment;
-};
-
-const getPlaybackDisplayMetadata = (playbackState: AndroidPlaybackState) => {
-    if (playbackState.status === 'idle') {
-        return { subtitle: undefined, title: '' };
-    }
-
-    const item = playbackState.item;
-    const activeSegment = getActiveTimelineSegment(item, playbackState.positionMs);
-    const useSegmentTitle = item.source === 'audiobook' && activeSegment?.title;
-    const chapterSubtitle =
-        item.source === 'podcast' && activeSegment?.title ? activeSegment.title : undefined;
-    const fallbackSubtitle = item.source === 'radio' ? 'Radio' : getSourceLabel(item.source);
-
-    return {
-        subtitle: chapterSubtitle ?? getDisplaySubtitle(item.subtitle) ?? fallbackSubtitle,
-        title: useSegmentTitle ? (activeSegment.title ?? item.title) : item.title,
-    };
-};
-
-const isLivePlayback = (playbackState: AndroidPlaybackState) => {
-    if (playbackState.status === 'idle') {
-        return false;
-    }
-
-    return playbackState.item.source === 'radio' && playbackState.item.isLive !== false;
-};
-
-const getSourceLabel = (source: MobilePlayableAudio['source']) => {
-    if (source === 'audiobook') return 'Audiobook';
-    if (source === 'podcast') return 'Podcast';
-    if (source === 'radio') return 'Radio';
-
-    return 'Music';
-};
-
-const looksLikeUrl = (value: string | undefined) => {
-    if (!value) {
-        return false;
-    }
-
-    return /^(https?:\/\/|www\.|[a-z]+:\/\/)/i.test(value.trim());
-};
-
-const getDisplaySubtitle = (subtitle: string | undefined) => {
-    if (!subtitle || looksLikeUrl(subtitle)) {
-        return undefined;
-    }
-
-    return subtitle;
-};
-
-const formatPlaybackTime = (milliseconds: number | undefined) => {
-    if (!milliseconds || milliseconds <= 0) {
-        return '0:00';
-    }
-
-    const totalSeconds = Math.floor(milliseconds / 1000);
-    const hours = Math.floor(totalSeconds / 3600);
-    const minutes = Math.floor((totalSeconds % 3600) / 60);
-    const seconds = (totalSeconds % 60).toString().padStart(2, '0');
-
-    if (hours > 0) {
-        return `${hours}:${minutes.toString().padStart(2, '0')}:${seconds}`;
-    }
-
-    return `${minutes}:${seconds}`;
-};
-
-const getDurationLabel = (playbackState: AndroidPlaybackState) => {
-    if (playbackState.status === 'idle') {
-        return '';
-    }
-
-    if (playbackState.item.source === 'radio') {
-        return 'RADIO';
-    }
-
-    return formatPlaybackTime(getPlaybackDurationMs(playbackState));
-};
-
-const getAdjacentSegmentTargetMs = (
-    segments: MobilePlaybackSegment[] | undefined,
-    positionMs: number,
-    direction: -1 | 1,
-) => {
-    if (!segments || segments.length === 0) {
-        return undefined;
-    }
-
-    const orderedSegments = [...segments].sort(
-        (left, right) => left.startSeconds - right.startSeconds,
-    );
-    const positionSeconds = positionMs / 1000;
-
-    if (direction === 1) {
-        const nextSegment = orderedSegments.find(
-            (segment) => segment.startSeconds > positionSeconds + 1,
-        );
-
-        return nextSegment ? nextSegment.startSeconds * 1000 : undefined;
-    }
-
-    let currentIndex = -1;
-
-    for (let index = orderedSegments.length - 1; index >= 0; index -= 1) {
-        const segment = orderedSegments[index];
-
-        if (segment && segment.startSeconds <= positionSeconds) {
-            currentIndex = index;
-            break;
-        }
-    }
-    const currentSegment = orderedSegments[currentIndex];
-
-    if (currentSegment && positionSeconds - currentSegment.startSeconds > 3) {
-        return currentSegment.startSeconds * 1000;
-    }
-
-    return currentIndex > 0 ? orderedSegments[currentIndex - 1].startSeconds * 1000 : undefined;
-};
-
-const getSeekSegments = (
-    segments: MobilePlaybackSegment[] | undefined,
-    durationMs: number | undefined,
-) => {
-    const durationSeconds = durationMs ? durationMs / 1000 : 0;
-    const orderedSegments = [...(segments ?? [])].sort(
-        (left, right) => left.startSeconds - right.startSeconds,
-    );
-    const timelineSegments = orderedSegments.flatMap((segment, index) => {
-        const nextStart = orderedSegments[index + 1]?.startSeconds;
-        const segmentEnd =
-            segment.durationSeconds !== undefined
-                ? segment.startSeconds + segment.durationSeconds
-                : nextStart !== undefined
-                  ? nextStart
-                  : durationSeconds;
-        const segmentDuration = Math.max(0, segmentEnd - segment.startSeconds);
-
-        return segmentDuration > 0 ? [{ ...segment, durationSeconds: segmentDuration }] : [];
-    });
-
-    if (timelineSegments.length > 1) {
-        return timelineSegments;
-    }
-
-    return [{ durationSeconds: Math.max(1, durationSeconds), id: 'full', startSeconds: 0 }];
-};
-
-const MIN_VISUAL_SEEK_SEGMENT_WIDTH = 3.6;
-const SEEK_SEGMENT_MAX_GAP_WIDTH = 4;
-const SEEK_SEGMENT_GAP_BUDGET = 0.24;
-
-const getVisibleSeekSegments = (
-    segments: MobilePlaybackSegment[],
-    trackWidth: number,
-): MobilePlaybackSegment[] => {
-    if (segments.length <= 1 || trackWidth <= 0) {
-        return segments;
-    }
-
-    const maxVisibleSegments = Math.max(
-        1,
-        Math.floor(trackWidth / MIN_VISUAL_SEEK_SEGMENT_WIDTH),
-    );
-
-    if (segments.length <= maxVisibleSegments) {
-        return segments;
-    }
-
-    const totalDuration = segments.reduce(
-        (sum, segment) => sum + Math.max(0, segment.durationSeconds ?? 0),
-        0,
-    );
-
-    if (totalDuration <= 0) {
-        return segments.slice(0, maxVisibleSegments);
-    }
-
-    const visibleSegments: MobilePlaybackSegment[] = [];
-
-    for (let groupIndex = 0; groupIndex < maxVisibleSegments; groupIndex += 1) {
-        const startIndex = Math.floor((groupIndex * segments.length) / maxVisibleSegments);
-        const endIndex = Math.max(
-            startIndex + 1,
-            groupIndex === maxVisibleSegments - 1
-                ? segments.length
-                : Math.floor(((groupIndex + 1) * segments.length) / maxVisibleSegments),
-        );
-        const group = segments.slice(startIndex, endIndex);
-        const groupStart = group[0];
-        const groupEnd = group[group.length - 1];
-        if (!groupStart || !groupEnd) continue;
-        const groupDuration = group.reduce(
-            (sum, segment) => sum + Math.max(0, segment.durationSeconds ?? 0),
-            0,
-        );
-
-        visibleSegments.push({
-            durationSeconds: Math.max(groupDuration, 1),
-            id:
-                group.length === 1
-                    ? groupStart.id
-                    : `${groupStart.id}-${groupEnd.id}-${groupIndex}`,
-            startSeconds: groupStart.startSeconds,
-            title: groupStart.title,
-        });
-    }
-
-    return visibleSegments;
-};
-
-const getSeekSegmentGapWidth = (segmentCount: number, trackWidth: number) => {
-    if (segmentCount <= 1 || trackWidth <= 0) {
-        return 0;
-    }
-
-    return Math.min(
-        SEEK_SEGMENT_MAX_GAP_WIDTH,
-        (trackWidth * SEEK_SEGMENT_GAP_BUDGET) / (segmentCount - 1),
-    );
-};
-
 const PlayerIconButton = ({
     accessibilityLabel,
     children,
@@ -9452,7 +9653,7 @@ const PlayerIconButton = ({
     );
 };
 
-const MiniPlayer = ({
+const MiniPlayer = memo(({
     artworkUrl,
     lastPlayedItem,
     onOpenFullPlayer,
@@ -9609,9 +9810,9 @@ const MiniPlayer = ({
         </Reanimated.View>
         </GestureDetector>
     );
-};
+});
 
-const QualityBadgeRow = ({ items }: { items: ReturnType<typeof buildAudioQualityBadgeItems> }) => {
+const QualityBadgeRow = memo(({ items }: { items: ReturnType<typeof buildAudioQualityBadgeItems> }) => {
     return (
         <View style={styles.qualityBadgeRow}>
             {items.map((item, index) => (
@@ -9649,7 +9850,7 @@ const QualityBadgeRow = ({ items }: { items: ReturnType<typeof buildAudioQuality
             ))}
         </View>
     );
-};
+});
 
 /**
  * Format-specific quality badge. Picks the matching 16/24/32-bit asset for
@@ -9668,7 +9869,7 @@ const QualityBadgeRow = ({ items }: { items: ReturnType<typeof buildAudioQuality
  *  - default:   standalone (44x44), reserved for the inline "Format" chip
  *               on the album detail page.
  */
-const QualityBadge = ({
+const QualityBadge = memo(({
     mini = false,
     overlay = false,
     player = false,
@@ -9696,9 +9897,9 @@ const QualityBadge = ({
             ]}
         />
     );
-};
+});
 
-const SegmentedSeekBar = ({
+const SegmentedSeekBar = memo(({
     durationMs,
     isLive,
     onSeek,
@@ -9816,32 +10017,9 @@ const SegmentedSeekBar = ({
             ) : null}
         </View>
     );
-};
+});
 
 const SEEK_THUMB_WIDTH = 5;
-
-const findActiveChapterIndex = (
-    chapters: MobilePlaybackSegment[],
-    positionSeconds: number,
-): number => {
-    let index = -1;
-    for (let i = 0; i < chapters.length; i += 1) {
-        if (chapters[i].startSeconds <= positionSeconds) {
-            index = i;
-        } else {
-            break;
-        }
-    }
-    return index;
-};
-
-const formatChapterRange = (chapter: MobilePlaybackSegment): string => {
-    const start = formatPlaybackTime(chapter.startSeconds * 1000);
-    if (chapter.durationSeconds === undefined) {
-        return start;
-    }
-    return `${start} · ${formatPlaybackTime(chapter.durationSeconds * 1000)}`;
-};
 
 const useReducedMotionPreference = (): boolean => {
     const [reduced, setReduced] = useState(false);
@@ -10134,7 +10312,180 @@ const SLEEP_OPTIONS: { label: string; seconds: number; wide?: boolean }[] = [
     { label: 'End of track', seconds: -1, wide: true },
 ];
 
-const FullScreenPlayer = ({
+const ARTWORK_ZOOM_MAX_SCALE = 4;
+const ARTWORK_ZOOM_DOUBLE_TAP_SCALE = 2.35;
+
+const ArtworkZoomModal = memo(({
+    onClose,
+    title,
+    uri,
+    visible,
+}: {
+    onClose: () => void;
+    title: string;
+    uri?: string;
+    visible: boolean;
+}) => {
+    const scale = useSharedValue(1);
+    const savedScale = useSharedValue(1);
+    const translateX = useSharedValue(0);
+    const translateY = useSharedValue(0);
+    const savedTranslateX = useSharedValue(0);
+    const savedTranslateY = useSharedValue(0);
+
+    const resetZoom = useCallback(() => {
+        scale.value = withSpring(1, OPEN_SPRING);
+        savedScale.value = 1;
+        translateX.value = withSpring(0, OPEN_SPRING);
+        translateY.value = withSpring(0, OPEN_SPRING);
+        savedTranslateX.value = 0;
+        savedTranslateY.value = 0;
+    }, [savedScale, savedTranslateX, savedTranslateY, scale, translateX, translateY]);
+
+    useEffect(() => {
+        if (visible) {
+            resetZoom();
+        }
+    }, [resetZoom, uri, visible]);
+
+    const close = useCallback(() => {
+        resetZoom();
+        onClose();
+    }, [onClose, resetZoom]);
+
+    const pinchGesture = useMemo(
+        () =>
+            Gesture.Pinch()
+                .onStart(() => {
+                    'worklet';
+                    savedScale.value = scale.value;
+                })
+                .onUpdate((event) => {
+                    'worklet';
+                    const next = savedScale.value * event.scale;
+                    scale.value = Math.min(
+                        ARTWORK_ZOOM_MAX_SCALE,
+                        Math.max(1, next),
+                    );
+                })
+                .onEnd(() => {
+                    'worklet';
+                    if (scale.value <= 1.04) {
+                        scale.value = withSpring(1, OPEN_SPRING);
+                        translateX.value = withSpring(0, OPEN_SPRING);
+                        translateY.value = withSpring(0, OPEN_SPRING);
+                        savedScale.value = 1;
+                        savedTranslateX.value = 0;
+                        savedTranslateY.value = 0;
+                        return;
+                    }
+                    savedScale.value = scale.value;
+                }),
+        [savedScale, savedTranslateX, savedTranslateY, scale, translateX, translateY],
+    );
+
+    const panGesture = useMemo(
+        () =>
+            Gesture.Pan()
+                .onStart(() => {
+                    'worklet';
+                    savedTranslateX.value = translateX.value;
+                    savedTranslateY.value = translateY.value;
+                })
+                .onUpdate((event) => {
+                    'worklet';
+                    if (scale.value <= 1.01) return;
+                    const maxTravel = ((SCREEN_WIDTH - spacing.lg * 2) * (scale.value - 1)) / 2;
+                    translateX.value = Math.min(
+                        maxTravel,
+                        Math.max(-maxTravel, savedTranslateX.value + event.translationX),
+                    );
+                    translateY.value = Math.min(
+                        maxTravel,
+                        Math.max(-maxTravel, savedTranslateY.value + event.translationY),
+                    );
+                })
+                .onEnd(() => {
+                    'worklet';
+                    savedTranslateX.value = translateX.value;
+                    savedTranslateY.value = translateY.value;
+                }),
+        [savedTranslateX, savedTranslateY, scale, translateX, translateY],
+    );
+
+    const doubleTapGesture = useMemo(
+        () =>
+            Gesture.Tap()
+                .numberOfTaps(2)
+                .onEnd(() => {
+                    'worklet';
+                    if (scale.value > 1.05) {
+                        scale.value = withSpring(1, OPEN_SPRING);
+                        translateX.value = withSpring(0, OPEN_SPRING);
+                        translateY.value = withSpring(0, OPEN_SPRING);
+                        savedScale.value = 1;
+                        savedTranslateX.value = 0;
+                        savedTranslateY.value = 0;
+                        return;
+                    }
+                    scale.value = withSpring(ARTWORK_ZOOM_DOUBLE_TAP_SCALE, OPEN_SPRING);
+                    savedScale.value = ARTWORK_ZOOM_DOUBLE_TAP_SCALE;
+                }),
+        [savedScale, savedTranslateX, savedTranslateY, scale, translateX, translateY],
+    );
+
+    const zoomGesture = useMemo(
+        () => Gesture.Simultaneous(pinchGesture, panGesture, doubleTapGesture),
+        [doubleTapGesture, panGesture, pinchGesture],
+    );
+
+    const zoomStyle = useAnimatedStyle(() => ({
+        transform: [
+            { translateX: translateX.value },
+            { translateY: translateY.value },
+            { scale: scale.value },
+        ],
+    }));
+
+    if (!uri) {
+        return null;
+    }
+
+    return (
+        <Modal animationType="fade" onRequestClose={close} transparent visible={visible}>
+            <View style={styles.artworkZoomModal}>
+                <Pressable
+                    accessibilityLabel="Close artwork"
+                    onPress={close}
+                    style={StyleSheet.absoluteFillObject}
+                />
+                <GestureDetector gesture={zoomGesture}>
+                    <Reanimated.View style={[styles.artworkZoomImageFrame, zoomStyle]}>
+                        <ExpoImage
+                            allowDownscaling={false}
+                            cachePolicy="memory-disk"
+                            contentFit="contain"
+                            priority="high"
+                            recyclingKey={`zoom:${uri}`}
+                            source={{ uri }}
+                            style={styles.artworkZoomImage}
+                        />
+                    </Reanimated.View>
+                </GestureDetector>
+                <Pressable
+                    accessibilityLabel={`Close ${title} artwork`}
+                    accessibilityRole="button"
+                    onPress={close}
+                    style={styles.artworkZoomCloseButton}
+                >
+                    <ClearGlyph color={colors.text} />
+                </Pressable>
+            </View>
+        </Modal>
+    );
+});
+
+const FullScreenPlayer = memo(({
     artworkUrl,
     castState,
     isShuffled,
@@ -10174,6 +10525,7 @@ const FullScreenPlayer = ({
 }) => {
     const [sleepMenuVisible, setSleepMenuVisible] = useState(false);
     const [outputPickerVisible, setOutputPickerVisible] = useState(false);
+    const [isArtworkZoomOpen, setIsArtworkZoomOpen] = useState(false);
     const [sleepSecondsLeft, setSleepSecondsLeft] = useState<null | number>(null);
     // Queue sheet position: 0 = hidden below the screen, 1 = fully expanded.
     // Driven by the same vertical-drag gesture that handles player dismiss,
@@ -10255,6 +10607,9 @@ const FullScreenPlayer = ({
             if (sleepTickRef.current) clearInterval(sleepTickRef.current);
         };
     }, []);
+    useEffect(() => {
+        setIsArtworkZoomOpen(false);
+    }, [artworkUrl]);
 
     const settleSpring = reducedMotion ? REDUCED_MOTION_SPRING : OPEN_SPRING;
     const dismissPlayer = useCallback(() => {
@@ -10713,7 +11068,13 @@ const FullScreenPlayer = ({
 
             {/* Artwork — fixed proportional size so it can never overlap metadata below */}
             <View style={styles.fullPlayerArtworkWrap}>
-                <View style={styles.fullPlayerArtworkShadow}>
+                <Pressable
+                    accessibilityLabel={`Open ${display.title} artwork`}
+                    accessibilityRole="button"
+                    disabled={!artworkUrl}
+                    onPress={() => setIsArtworkZoomOpen(true)}
+                    style={styles.fullPlayerArtworkShadow}
+                >
                     {artworkUrl ? (
                         <ExpoImage
                             // expo-image's default is to decode bitmaps at the
@@ -10747,7 +11108,7 @@ const FullScreenPlayer = ({
                         overlay
                         profile={getPlaybackQualityProfile(displayItem)}
                     />
-                </View>
+                </Pressable>
             </View>
 
             {/* Bottom stack: each block owns its own row — no overlap. */}
@@ -10888,6 +11249,13 @@ const FullScreenPlayer = ({
             sheetStyle={queueSheetStyle}
         />
 
+        <ArtworkZoomModal
+            onClose={() => setIsArtworkZoomOpen(false)}
+            title={display.title}
+            uri={artworkUrl}
+            visible={isArtworkZoomOpen}
+        />
+
         <OutputPickerModal
             castState={castState}
             onClose={() => setOutputPickerVisible(false)}
@@ -10940,7 +11308,7 @@ const FullScreenPlayer = ({
         {/* Universal MediaContextMenu (rendered at App root) handles the "..." menu. */}
         </>
     );
-};
+});
 
 const EMPTY_OUTPUT_ROUTES: AndroidMediaOutputRoute[] = [];
 
@@ -10968,7 +11336,7 @@ const getCastPickerEmptyMessage = (castState: AndroidCastState | undefined): str
     return 'No Chromecast devices found.';
 };
 
-const OutputPickerModal = ({
+const OutputPickerModal = memo(({
     castState,
     onClose,
     visible,
@@ -11039,6 +11407,28 @@ const OutputPickerModal = ({
     const localRoutes = routes.filter((route) => route.kind === 'local');
     const castRoutes = routes.filter((route) => route.kind === 'cast');
     const pickerCastState = outputState?.cast ?? castState;
+    const listScrollYRef = useRef(0);
+    const listDragStartYRef = useRef<number | null>(null);
+    const listDragStartedAtTopRef = useRef(false);
+    const handleListScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
+        listScrollYRef.current = event.nativeEvent.contentOffset.y;
+    }, []);
+    const handleListTouchStart = useCallback((event: GestureResponderEvent) => {
+        listDragStartYRef.current = event.nativeEvent.pageY;
+        listDragStartedAtTopRef.current = listScrollYRef.current <= 2;
+    }, []);
+    const handleListTouchEnd = useCallback((event: GestureResponderEvent) => {
+        const startY = listDragStartYRef.current;
+        listDragStartYRef.current = null;
+
+        if (
+            startY !== null &&
+            listDragStartedAtTopRef.current &&
+            event.nativeEvent.pageY - startY > QUEUE_CLOSE_DISTANCE + 18
+        ) {
+            onClose();
+        }
+    }, [onClose]);
 
     const handleSelectRoute = useCallback(
         async (route: AndroidMediaOutputRoute) => {
@@ -11136,7 +11526,10 @@ const OutputPickerModal = ({
     return (
         <Modal animationType="slide" onRequestClose={onClose} transparent visible={visible}>
             <Pressable onPress={onClose} style={styles.modalBackdrop}>
-                <SwipeDismissSheet onDismiss={onClose} style={styles.actionSheet}>
+                <Pressable
+                    onPress={(event) => event.stopPropagation()}
+                    style={styles.actionSheet}
+                >
                     <View style={styles.actionSheetHandle} />
                     <Text style={styles.actionSheetTitle}>Audio Output</Text>
                     {isLoading && !outputState ? (
@@ -11147,6 +11540,12 @@ const OutputPickerModal = ({
                         <ScrollView
                             contentContainerStyle={styles.outputPickerList}
                             keyboardShouldPersistTaps="handled"
+                            nestedScrollEnabled
+                            onScroll={handleListScroll}
+                            onTouchEnd={handleListTouchEnd}
+                            onTouchStart={handleListTouchStart}
+                            scrollEventThrottle={16}
+                            style={styles.outputPickerScroll}
                         >
                             {localRoutes.length > 0 ? (
                                 <>
@@ -11169,11 +11568,11 @@ const OutputPickerModal = ({
                             ) : null}
                         </ScrollView>
                     )}
-                </SwipeDismissSheet>
+                </Pressable>
             </Pressable>
         </Modal>
     );
-};
+});
 
 /**
  * Inline queue sheet rendered as a child of the fullscreen player. translateY
@@ -11190,7 +11589,7 @@ const QUEUE_SHEET_RENDER_BATCH = 10;
 const QUEUE_SHEET_ROW_HEIGHT = 60;
 const QUEUE_SHEET_WINDOW_SIZE = 7;
 
-const QueueSheetOverlay = ({
+const QueueSheetOverlay = memo(({
     backdropStyle,
     chapters,
     currentPositionMs,
@@ -11231,6 +11630,28 @@ const QueueSheetOverlay = ({
         },
         [chapters, interactive, items, showingChapters],
     );
+    const listScrollYRef = useRef(0);
+    const listDragStartYRef = useRef<number | null>(null);
+    const listDragStartedAtTopRef = useRef(false);
+    const handleListScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
+        listScrollYRef.current = event.nativeEvent.contentOffset.y;
+    }, []);
+    const handleListTouchStart = useCallback((event: GestureResponderEvent) => {
+        listDragStartYRef.current = event.nativeEvent.pageY;
+        listDragStartedAtTopRef.current = listScrollYRef.current <= 2;
+    }, []);
+    const handleListTouchEnd = useCallback((event: GestureResponderEvent) => {
+        const startY = listDragStartYRef.current;
+        listDragStartYRef.current = null;
+
+        if (
+            startY !== null &&
+            listDragStartedAtTopRef.current &&
+            event.nativeEvent.pageY - startY > QUEUE_CLOSE_DISTANCE + 18
+        ) {
+            onClose();
+        }
+    }, [onClose]);
     const dismissGesture = useMemo(
         () =>
             Gesture.Pan()
@@ -11419,8 +11840,12 @@ const QueueSheetOverlay = ({
                     }
                     maxToRenderPerBatch={QUEUE_SHEET_RENDER_BATCH}
                     nestedScrollEnabled
+                    onScroll={handleListScroll}
+                    onTouchEnd={handleListTouchEnd}
+                    onTouchStart={handleListTouchStart}
                     removeClippedSubviews
                     renderItem={renderItem}
+                    scrollEventThrottle={16}
                     showsVerticalScrollIndicator={false}
                     style={styles.queueSheetScroll}
                     windowSize={QUEUE_SHEET_WINDOW_SIZE}
@@ -11428,7 +11853,7 @@ const QueueSheetOverlay = ({
             </Reanimated.View>
         </>
     );
-};
+});
 
 
 interface ErrorBoundaryProps {

@@ -147,6 +147,10 @@ export const loadAbsCurrentProgress = async (
     itemId: string,
     episodeId?: string,
 ): Promise<AbsLoadedProgress | null> => {
+    if (!initialized) {
+        await initAbsProgressStore();
+    }
+
     const path = episodeId
         ? `/api/me/progress/${itemId}/${episodeId}`
         : `/api/me/progress/${itemId}`;

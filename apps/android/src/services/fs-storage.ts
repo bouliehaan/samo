@@ -8,6 +8,17 @@
 import * as FileSystem from 'expo-file-system/legacy';
 
 const CACHE_DIR_NAME = 'samo-cache';
+const CACHE_CLEANUP_INTERVAL_MS = 10 * 60_000;
+const CACHE_CLEANUP_DELAY_MS = 2_500;
+const CACHE_CLEANUP_YIELD_EVERY = 24;
+const MAX_CACHE_BYTES = 48 * 1024 * 1024;
+const MAX_CACHE_FILES = 180;
+
+let cleanupInFlight = false;
+let cleanupTimer: ReturnType<typeof setTimeout> | null = null;
+let lastCleanupAt = 0;
+
+type CacheEntry = { modifiedAt: number; size: number; uri: string };
 
 const getCacheDir = () => `${FileSystem.documentDirectory ?? ''}${CACHE_DIR_NAME}/`;
 
@@ -45,6 +56,93 @@ const tempUriFor = (key: string): string =>
 
 const legacyUriFor = (key: string): string => `${getCacheDir()}${legacySanitizeKey(key)}.json`;
 
+const yieldToEventLoop = (): Promise<void> =>
+    new Promise((resolve) => {
+        setTimeout(resolve, 0);
+    });
+
+const pruneCacheDir = async (): Promise<void> => {
+    if (cleanupInFlight) {
+        return;
+    }
+    cleanupInFlight = true;
+    try {
+        const dir = await ensureCacheDir();
+        const names = await FileSystem.readDirectoryAsync(dir);
+        const entries: CacheEntry[] = [];
+
+        for (let index = 0; index < names.length; index += 1) {
+            if (index > 0 && index % CACHE_CLEANUP_YIELD_EVERY === 0) {
+                await yieldToEventLoop();
+            }
+
+            const name = names[index];
+            if (!name) {
+                continue;
+            }
+
+            const uri = `${dir}${name}`;
+            const info = await FileSystem.getInfoAsync(uri);
+
+            if (!info.exists || info.isDirectory) {
+                continue;
+            }
+
+            if (name.endsWith('.tmp')) {
+                await FileSystem.deleteAsync(uri, { idempotent: true });
+                continue;
+            }
+
+            if (!name.endsWith('.json')) {
+                continue;
+            }
+
+            entries.push({
+                modifiedAt: info.modificationTime ?? 0,
+                size: info.size ?? 0,
+                uri,
+            });
+        }
+
+        const jsonEntries = entries
+            .sort((left, right) => left.modifiedAt - right.modifiedAt);
+        let totalBytes = jsonEntries.reduce((sum, entry) => sum + entry.size, 0);
+        let fileCount = jsonEntries.length;
+        let deletedCount = 0;
+
+        for (const entry of jsonEntries) {
+            if (fileCount <= MAX_CACHE_FILES && totalBytes <= MAX_CACHE_BYTES) {
+                break;
+            }
+            await FileSystem.deleteAsync(entry.uri, { idempotent: true });
+            totalBytes -= entry.size;
+            fileCount -= 1;
+            deletedCount += 1;
+
+            if (deletedCount % CACHE_CLEANUP_YIELD_EVERY === 0) {
+                await yieldToEventLoop();
+            }
+        }
+    } catch {
+        // Cache pruning is opportunistic. A failed cleanup should never make
+        // cache reads or writes fail.
+    } finally {
+        cleanupInFlight = false;
+    }
+};
+
+const scheduleCacheCleanup = () => {
+    const now = Date.now();
+    if (cleanupTimer !== null || now - lastCleanupAt < CACHE_CLEANUP_INTERVAL_MS) {
+        return;
+    }
+    lastCleanupAt = now;
+    cleanupTimer = setTimeout(() => {
+        cleanupTimer = null;
+        void pruneCacheDir();
+    }, CACHE_CLEANUP_DELAY_MS);
+};
+
 export const fsGetItem = async (key: string): Promise<string | null> => {
     try {
         const uri = uriFor(key);
@@ -72,6 +170,7 @@ export const fsSetItem = async (key: string, value: string): Promise<void> => {
         await FileSystem.writeAsStringAsync(tempUri, value);
         await FileSystem.deleteAsync(uri, { idempotent: true });
         await FileSystem.moveAsync({ from: tempUri, to: uri });
+        scheduleCacheCleanup();
     } catch {
         // Cache writes are best-effort. The app still works without
         // persistence — content just won't survive launches.

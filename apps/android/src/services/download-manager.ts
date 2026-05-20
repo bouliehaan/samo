@@ -29,6 +29,7 @@ const MAX_CONCURRENT_DOWNLOADS = 3;
 const PROGRESS_BYTES_THRESHOLD = 256 * 1024;
 const PROGRESS_RATIO_THRESHOLD = 0.01; // 1%
 const LISTENER_NOTIFY_THROTTLE_MS = 150;
+const REGISTRY_PERSIST_DEBOUNCE_MS = 750;
 // Files larger than this stay on internal storage even when an SD card SAF
 // location is configured — copying via SAF moves bytes through a single JS
 // base64 buffer, which OOMs on multi-hundred-MB audiobooks. We can lift this
@@ -103,7 +104,9 @@ const buildLocalUri = async (entry: Pick<DownloadEntry, 'collection' | 'trackId'
 // In-process registry. fs-storage is the source of truth across launches.
 let registryCache: DownloadEntry[] | null = null;
 let registryMutationQueue: Promise<void> = Promise.resolve();
-let registryPersistQueue: Promise<void> = Promise.resolve();
+let pendingRegistryPersist: DownloadEntry[] | null = null;
+let registryPersistTimer: ReturnType<typeof setTimeout> | null = null;
+let registryPersistInFlight = false;
 const listeners = new Set<(entries: DownloadEntry[]) => void>();
 const activeDownloads = new Map<string, { cancel: () => void }>();
 const lastProgressReport = new Map<string, { bytes: number; ratio: number }>();
@@ -155,15 +158,48 @@ const loadRegistryFromDisk = async (): Promise<DownloadEntry[]> => {
     }
 };
 
+const scheduleRegistryPersist = () => {
+    if (registryPersistTimer !== null) {
+        return;
+    }
+    registryPersistTimer = setTimeout(() => {
+        registryPersistTimer = null;
+        void flushRegistryPersist();
+    }, REGISTRY_PERSIST_DEBOUNCE_MS);
+};
+
+const flushRegistryPersist = async (): Promise<void> => {
+    if (registryPersistInFlight) {
+        scheduleRegistryPersist();
+        return;
+    }
+
+    const entries = pendingRegistryPersist;
+    if (!entries) {
+        return;
+    }
+
+    pendingRegistryPersist = null;
+    registryPersistInFlight = true;
+    try {
+        const payload = JSON.stringify(entries);
+        await fsSetItem(REGISTRY_KEY, payload);
+    } catch {
+        // best-effort
+    } finally {
+        registryPersistInFlight = false;
+        if (pendingRegistryPersist) {
+            scheduleRegistryPersist();
+        }
+    }
+};
+
 const saveRegistryToDisk = async (entries: DownloadEntry[]): Promise<void> => {
-    // Best-effort persistence; failures don't break the running session. Writes
-    // are serialized so a slower older status transition cannot land after a
-    // newer completed/canceled state.
-    const payload = JSON.stringify(entries);
-    registryPersistQueue = registryPersistQueue
-        .catch(() => undefined)
-        .then(() => fsSetItem(REGISTRY_KEY, payload));
-    await registryPersistQueue;
+    // Best-effort persistence; failures don't break the running session.
+    // Coalesce writes so enqueueing/downloading large books does not serialize
+    // the entire registry repeatedly on the JS thread.
+    pendingRegistryPersist = entries;
+    scheduleRegistryPersist();
 };
 
 const getRegistry = async (): Promise<DownloadEntry[]> => {
