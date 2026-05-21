@@ -9,6 +9,7 @@ import { useArtistRadioCount, useCurrentServerId, usePlayButtonBehavior } from '
 import { ContextMenu } from '/@/shared/components/context-menu/context-menu';
 import { AlbumArtist, Artist } from '/@/shared/types/domain-types';
 import { Play } from '/@/shared/types/types';
+import { logFn } from '/@/renderer/utils/logger';
 
 interface PlayArtistRadioActionProps {
     artist: AlbumArtist | Artist;
@@ -42,7 +43,7 @@ export const PlayArtistRadioAction = ({ artist, disabled }: PlayArtistRadioActio
                     player.addToQueueByData(artistRadioSongs, playType);
                 }
             } catch (error) {
-                console.error('Failed to load track radio:', error);
+                logFn.error('Failed to load track radio', { meta: { error: error } });
             }
         },
         [artist, artistRadioCount, player, queryClient, serverId],

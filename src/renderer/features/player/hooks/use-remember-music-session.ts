@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 
 import { rememberMusicPlaybackSession } from '/@/renderer/store/last-playback-session.store';
 import { usePlaybackOwnerStore } from '/@/renderer/store/playback-owner.store';
-import { subscribeCurrentTrack, usePlayerStoreBase } from '/@/renderer/store/player.store';
+import { getQueue, subscribeCurrentTrack, usePlayerStoreBase } from '/@/renderer/store/player.store';
 import { useTimestampStoreBase } from '/@/renderer/store/timestamp.store';
 import { PlayerShuffle } from '/@/shared/types/types';
 
@@ -75,7 +75,7 @@ export const useRememberMusicSession = () => {
 
 const writeSessionFromStore = () => {
     const player = usePlayerStoreBase.getState();
-    const queue = player.getQueue();
+    const queue = getQueue(undefined, player);
     let index = player.player.index;
     if (
         player.player.shuffle === PlayerShuffle.TRACK &&

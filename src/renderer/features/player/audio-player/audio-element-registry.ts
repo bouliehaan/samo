@@ -1,3 +1,4 @@
+import { LogCategory, logFn } from '/@/renderer/utils/logger';
 // Module-level registry of every playback <audio> element this app's web
 // players have spawned. We can't rely on React's unmount cleanup to pause
 // audio because by the time a parent component's cleanup runs, child refs
@@ -88,10 +89,14 @@ export const warnIfMultipleAudiblePlaybackElements = () => {
     if (signature === lastDuplicateWarningSignature) return;
     lastDuplicateWarningSignature = signature;
 
-    console.warn(
-        '[Samo playback] Multiple registered Web playback audio elements are playing.',
-        duplicates.map(([audio, registration]) => describeAudioElement(audio, registration)),
-    );
+    logFn.warn('[Samo playback] Multiple registered Web playback audio elements are playing.', {
+        category: LogCategory.PLAYER,
+        meta: {
+            duplicates: duplicates.map(([audio, registration]) =>
+                describeAudioElement(audio, registration),
+            ),
+        },
+    });
 };
 
 export const registerAudioElement = (

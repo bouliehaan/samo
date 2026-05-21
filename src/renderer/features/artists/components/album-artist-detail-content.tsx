@@ -4,6 +4,7 @@ import {
     useSuspenseQuery,
     UseSuspenseQueryResult,
 } from '@tanstack/react-query';
+import { logFn } from '/@/renderer/utils/logger';
 import { motion } from 'motion/react';
 import { memo, Suspense, useCallback, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -1198,7 +1199,7 @@ export const AlbumArtistDetailContent = ({
                 addToQueueByData(artistRadioSongs, Play.NOW);
             }
         } catch (error) {
-            console.error('Failed to load artist radio:', error);
+            logFn.error('Failed to load artist radio', { meta: { error: error } });
         }
     }, [addToQueueByData, artistRadioCount, queryClient, routeId, server.id]);
 

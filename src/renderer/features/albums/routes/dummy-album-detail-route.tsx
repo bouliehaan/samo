@@ -32,6 +32,7 @@ import { Spoiler } from '/@/shared/components/spoiler/spoiler';
 import { Stack } from '/@/shared/components/stack/stack';
 import { Text } from '/@/shared/components/text/text';
 import { LibraryItem, SongDetailResponse } from '/@/shared/types/domain-types';
+import { logFn } from '/@/renderer/utils/logger';
 
 const DummyAlbumDetailRoute = () => {
     const { t } = useTranslation();
@@ -89,7 +90,7 @@ const DummyAlbumDetailRoute = () => {
                 userFavorite: !wasFavorite,
             });
         } catch (error) {
-            console.error(error);
+            logFn.error(error instanceof Error ? error.message : String(error), { meta: { error: error } });
         }
     };
 

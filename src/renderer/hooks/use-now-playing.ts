@@ -4,7 +4,7 @@ import {
     useRadioPlayer,
     useRadioStore,
 } from '/@/renderer/features/radio/hooks/use-radio-player';
-import { usePlayerSong, usePlayerStoreBase } from '/@/renderer/store';
+import { getCurrentSong, usePlayerSong } from '/@/renderer/store';
 import {
     getCurrentChapterIndex,
     useAudiobookChapters,
@@ -96,7 +96,7 @@ export function getNowPlayingSnapshot(): NowPlaying {
         };
     }
 
-    const song = usePlayerStoreBase.getState().getCurrentSong();
+    const song = getCurrentSong();
     const artwork = song
         ? getItemImageUrl({
               id: song.imageId || undefined,

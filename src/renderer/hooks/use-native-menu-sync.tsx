@@ -13,9 +13,7 @@ import {
     useAppStoreActions,
     useCommandPalette,
     usePlayerHydrated,
-    usePlayerRepeat,
-    usePlayerShuffle,
-    usePlayerStatus,
+    usePlayerPlaybackControlsState,
 } from '/@/renderer/store';
 import { PlayerShuffle } from '/@/shared/types/types';
 
@@ -28,9 +26,8 @@ export const useNativeMenuSync = () => {
     const { setPrivateMode, setSideBar } = useAppStoreActions();
     const { open: openCommandPalette } = useCommandPalette();
     const playerHydrated = usePlayerHydrated();
-    const playerRepeat = usePlayerRepeat();
-    const playerShuffle = usePlayerShuffle();
-    const playerStatus = usePlayerStatus();
+    const { repeat: playerRepeat, shuffle: playerShuffle, status: playerStatus } =
+        usePlayerPlaybackControlsState();
 
     useEffect(() => {
         if (!isElectron()) {

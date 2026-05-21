@@ -15,6 +15,7 @@ import {
     useAppStore,
     useDiscordSettings,
     useLastfmApiKey,
+    getCurrentSong,
     usePlayerSong,
     usePlayerStore,
     useSettingsStore,
@@ -413,7 +414,7 @@ export const useDiscordRpc = () => {
 
         const getCurrentActivityState = (): ActivityState => {
             const state = usePlayerStore.getState();
-            const currentSong = state.getCurrentSong();
+            const currentSong = getCurrentSong(state);
             const currentTime = useTimestampStoreBase.getState().timestamp;
             const status = state.player.status;
             return [currentSong, currentTime, status];
@@ -443,7 +444,7 @@ export const useDiscordRpc = () => {
 
         const unsubSongChange = usePlayerStore.subscribe(
             (state): ActivityState => {
-                const currentSong = state.getCurrentSong();
+                const currentSong = getCurrentSong(state);
                 const currentTime = useTimestampStoreBase.getState().timestamp;
                 const status = state.player.status;
 

@@ -9,6 +9,7 @@ import { useCurrentServerId, usePlayButtonBehavior } from '/@/renderer/store';
 import { ContextMenu } from '/@/shared/components/context-menu/context-menu';
 import { Song } from '/@/shared/types/domain-types';
 import { Play } from '/@/shared/types/types';
+import { logFn } from '/@/renderer/utils/logger';
 
 interface PlayTrackRadioActionProps {
     disabled?: boolean;
@@ -41,7 +42,7 @@ export const PlayTrackRadioAction = ({ disabled, song }: PlayTrackRadioActionPro
                     player.addToQueueByData([song, ...similarSongs], playType);
                 }
             } catch (error) {
-                console.error('Failed to load track radio:', error);
+                logFn.error('Failed to load track radio', { meta: { error: error } });
             }
         },
         [player, queryClient, serverId, song],

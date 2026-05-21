@@ -39,7 +39,7 @@ interface PlayerEventsCallbacks {
     onPlayerSeek?: (properties: { seconds: number }, prev: { seconds: number }) => void;
     onPlayerSeekToTimestamp?: (
         properties: { timestamp: number },
-        prev: { timestamp: number },
+        prev?: { timestamp: number },
     ) => void;
     onPlayerShuffle?: (
         properties: { shuffle: PlayerShuffle },

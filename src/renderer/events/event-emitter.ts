@@ -1,6 +1,7 @@
 import { ErrorHandler, EventCallback, TypedEventEmitter } from './types';
 
 import { EventMap } from '/@/renderer/events/events';
+import { logFn } from '/@/renderer/utils/logger';
 
 class TypedEventEmitterImpl implements TypedEventEmitter<EventMap> {
     private errorHandler: ErrorHandler | null = null;
@@ -55,7 +56,7 @@ class TypedEventEmitterImpl implements TypedEventEmitter<EventMap> {
         if (this.errorHandler) {
             this.errorHandler(error, event, payload);
         } else {
-            console.error(`Event emitter error for event "${event}":`, error, payload);
+            logFn.error(`Event emitter error for event "${event}"`, { meta: { error, payload } });
         }
     }
 }

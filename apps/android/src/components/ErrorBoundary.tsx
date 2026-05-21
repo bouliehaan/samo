@@ -9,6 +9,7 @@ import {
     View,
 } from 'react-native';
 
+import { androidLog } from '../utils/log';
 import { styles } from '../theme/styles';
 
 interface ErrorBoundaryProps {
@@ -29,7 +30,10 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
     }
 
     componentDidCatch(error: Error, info: ErrorInfo): void {
-        console.warn(`[${this.props.label}] caught render error:`, error, info.componentStack);
+        androidLog.warn(`[${this.props.label}] caught render error`, {
+            error,
+            stack: info.componentStack,
+        });
     }
 
     private handleRetry = () => {

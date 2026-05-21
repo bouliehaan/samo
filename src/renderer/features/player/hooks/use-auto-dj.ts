@@ -11,7 +11,7 @@ import {
     useAutoDJSettings,
     useCurrentServer,
     useCurrentServerId,
-    usePlayerStore,
+    getQueue,
     usePlayerStoreBase,
     useSettingsStore,
 } from '/@/renderer/store';
@@ -36,7 +36,7 @@ export const useAutoDJ = () => {
     useEffect(() => {
         const unsubscribe = usePlayerStoreBase.subscribe(
             (state) => {
-                const queue = state.getQueue();
+                const queue = getQueue(undefined, state);
                 let index = state.player.index;
                 let remaining: number;
 
@@ -69,7 +69,7 @@ export const useAutoDJ = () => {
                 });
 
                 try {
-                    const queue = usePlayerStore.getState().getQueue();
+                    const queue = getQueue();
                     const queueSongIdSet = new Set(queue.items.map((item) => item.id));
                     let uniqueSimilarSongs: Song[] = [];
 
@@ -211,7 +211,7 @@ export const useAutoDJ = () => {
                         properties.remaining === 0
                     ) {
                         const firstNewSongIndex = properties.index + 1;
-                        const queueAfter = stateAfter.getQueue();
+                        const queueAfter = getQueue(undefined, stateAfter);
                         if (firstNewSongIndex < queueAfter.items.length) {
                             stateAfter.mediaPlayByIndex(firstNewSongIndex);
                         }

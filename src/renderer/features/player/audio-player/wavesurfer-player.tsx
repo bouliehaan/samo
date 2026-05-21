@@ -18,9 +18,8 @@ import {
     usePlaybackSettings,
     usePlayerActions,
     usePlayerData,
-    usePlayerMuted,
     usePlayerProperties,
-    usePlayerVolume,
+    usePlayerVolumeState,
 } from '/@/renderer/store';
 import { PlayerStatus, PlayerStyle } from '/@/shared/types/types';
 
@@ -32,8 +31,7 @@ export function WaveSurferPlayer() {
     const { num, player1, player2, status } = usePlayerData();
     const { mediaAutoNext, setTimestamp } = usePlayerActions();
     const { crossfadeDuration, speed, transitionType } = usePlayerProperties();
-    const isMuted = usePlayerMuted();
-    const volume = usePlayerVolume();
+    const { muted: isMuted, volume } = usePlayerVolumeState();
     const { transcode } = usePlaybackSettings();
 
     const [localPlayerStatus, setLocalPlayerStatus] = useState<PlayerStatus>(status);

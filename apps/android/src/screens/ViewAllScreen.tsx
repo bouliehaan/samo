@@ -24,6 +24,7 @@ import {
 } from 'react-native';
 
 import { ArtworkImage } from '../components/ArtworkImage';
+import { androidLog } from '../utils/log';
 import { QualityBadge } from '../components/QualityBadge';
 import { useMediaContextMenu } from '../contexts/media-context-menu';
 import { type AndroidFullCollectionState } from '../services/full-collection';
@@ -230,7 +231,7 @@ export const ViewAllScreen = memo(({
                     });
                 });
             } catch (error) {
-                console.warn('[ViewAllScreen] scrollToIndex threw', error);
+                androidLog.warn('[ViewAllScreen] scrollToIndex threw', error);
             }
         },
         [letterIndex, showJumpFeedback],

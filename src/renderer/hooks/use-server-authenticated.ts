@@ -352,7 +352,7 @@ export const useServerAuthenticated = () => {
             }
 
             setReady(AuthState.LOADING);
-            authenticateServer(serverWithAuth).catch(console.error);
+            authenticateServer(serverWithAuth).catch((error) => logFn.error(String(error), { category: LogCategory.GENERAL }));
         }
     }, [authHydrated, authenticateServer, serverId]);
 

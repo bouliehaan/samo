@@ -3,6 +3,7 @@ import React, { useCallback, useEffect } from 'react';
 
 import { usePlayerStatus, useSettingsStore, useWindowSettings } from '/@/renderer/store';
 import { PlayerStatus } from '/@/shared/types/types';
+import { logFn } from '/@/renderer/utils/logger';
 
 const ipc = isElectron() ? window.api.ipc : null;
 
@@ -16,7 +17,7 @@ export const usePowerSaveBlocker = () => {
         try {
             await ipc.invoke('power-save-blocker-start');
         } catch (error) {
-            console.error('Failed to start power save blocker:', error);
+            logFn.error('Failed to start power save blocker', { meta: { error: error } });
         }
     }, []);
 
@@ -26,7 +27,7 @@ export const usePowerSaveBlocker = () => {
         try {
             await ipc.invoke('power-save-blocker-stop');
         } catch (error) {
-            console.error('Failed to stop power save blocker:', error);
+            logFn.error('Failed to stop power save blocker', { meta: { error: error } });
         }
     }, []);
 

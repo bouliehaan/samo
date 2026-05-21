@@ -8,6 +8,7 @@ import {
     useOfflineMode,
     usePlaybackOwnerStore,
     usePlaybackSettings,
+    getCurrentSong,
     usePlayerSong,
     usePlayerStore,
     useSettingsStore,
@@ -101,7 +102,7 @@ export const useScrobble = () => {
         (properties: { timestamp: number }, prev: { timestamp: number }) => {
             if (!isScrobbleEnabled || isPrivateModeEnabled || !isMusicPlaybackSource()) return;
 
-            const currentSong = usePlayerStore.getState().getCurrentSong();
+            const currentSong = getCurrentSong();
             const currentStatus = usePlayerStore.getState().player.status;
 
             if (!currentSong?.id || currentStatus !== PlayerStatus.PLAYING) return;
@@ -313,12 +314,12 @@ export const useScrobble = () => {
 
     const handleScrobbleFromSeek = useCallback(
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        (properties: { timestamp: number }, _prev: { timestamp: number }) => {
+        (properties: { timestamp: number }, _prev?: { timestamp: number }) => {
             if (!isScrobbleEnabled || isPrivateModeEnabled || !isMusicPlaybackSource()) {
                 return;
             }
 
-            const currentSong = usePlayerStore.getState().getCurrentSong();
+            const currentSong = getCurrentSong();
 
             if (!currentSong?.id) {
                 return;
@@ -374,7 +375,7 @@ export const useScrobble = () => {
                 return;
             }
 
-            const currentSong = usePlayerStore.getState().getCurrentSong();
+            const currentSong = getCurrentSong();
 
             if (!currentSong?.id) {
                 return;
@@ -448,7 +449,7 @@ export const useScrobble = () => {
             return;
         }
 
-        const currentSong = usePlayerStore.getState().getCurrentSong();
+        const currentSong = getCurrentSong();
         const currentStatus = usePlayerStore.getState().player.status;
 
         if (currentStatus !== PlayerStatus.PLAYING || !currentSong?.id) {

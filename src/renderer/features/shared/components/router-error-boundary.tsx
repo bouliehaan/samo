@@ -11,6 +11,7 @@ import { Icon } from '/@/shared/components/icon/icon';
 import { Stack } from '/@/shared/components/stack/stack';
 import { TextTitle } from '/@/shared/components/text-title/text-title';
 import { Text } from '/@/shared/components/text/text';
+import { LogCategory, logFn } from '/@/renderer/utils/logger';
 
 interface RouterErrorFallbackProps {
     error: Error;
@@ -92,7 +93,10 @@ export const RouterErrorBoundary = ({ children }: RouterErrorBoundaryProps) => {
             FallbackComponent={RouterErrorFallback}
             onError={(error, errorInfo) => {
                 if (process.env.NODE_ENV === 'development') {
-                    console.error('Root error boundary caught an error:', error, errorInfo);
+                    logFn.error('Root error boundary caught an error', {
+                        category: LogCategory.GENERAL,
+                        meta: { error, errorInfo },
+                    });
                 }
             }}
             onReset={() => {}}

@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { logFn } from '/@/renderer/utils/logger';
 
 export const translateLyrics = async (
     originalLyrics: string,
@@ -24,7 +25,7 @@ export const translateLyrics = async (
             });
             TranslatedText = response.data[0].translations[0].text;
         } catch (e) {
-            console.error('Microsoft Azure translate request got an error!', e);
+            logFn.error('Microsoft Azure translate request got an error!', { meta: { error: e } });
             return null;
         }
     } else if (translationApiProvider === 'Google Cloud') {
@@ -42,7 +43,7 @@ export const translateLyrics = async (
             });
             TranslatedText = response.data.data.translations[0].translatedText;
         } catch (e) {
-            console.error('Google Cloud translate request got an error!', e);
+            logFn.error('Google Cloud translate request got an error!', { meta: { error: e } });
             return null;
         }
     }

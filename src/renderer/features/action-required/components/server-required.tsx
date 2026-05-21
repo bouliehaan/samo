@@ -19,6 +19,7 @@ import { Icon } from '/@/shared/components/icon/icon';
 import { ScrollArea } from '/@/shared/components/scroll-area/scroll-area';
 import { Stack } from '/@/shared/components/stack/stack';
 import { Text } from '/@/shared/components/text/text';
+import { logFn } from '/@/renderer/utils/logger';
 import {
     ServerListItem,
     ServerListItemWithCredential,
@@ -80,7 +81,7 @@ function ServerSelector() {
                 password = await localSettings.passwordGet(server.id);
             }
         } catch (error) {
-            console.error(error);
+            logFn.error(error instanceof Error ? error.message : String(error), { meta: { error: error } });
         }
         openModal({
             children: server && (

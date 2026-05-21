@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { api } from '/@/renderer/api';
 import { useCurrentServer } from '/@/renderer/store';
 import { ContextMenu } from '/@/shared/components/context-menu/context-menu';
+import { logFn } from '/@/renderer/utils/logger';
 
 interface DownloadActionProps {
     ids: string[];
@@ -31,7 +32,7 @@ export const DownloadAction = ({ ids }: DownloadActionProps) => {
                 }
             }
         } catch (error) {
-            console.error('Failed to download items:', error);
+            logFn.error('Failed to download items', { meta: { error: error } });
         }
     }, [ids, server]);
 

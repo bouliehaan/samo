@@ -9,12 +9,11 @@ import {
 import { PlayerOnProgressProps } from '/@/renderer/features/player/audio-player/types';
 import { useWebAudio } from '/@/renderer/features/player/hooks/use-webaudio';
 import {
-    subscribePlayerSeekToTimestamp,
+    subscribePlayerSeek,
     subscribePlayerStatus,
     usePlaybackSettings,
-    usePlayerMuted,
     usePlayerStoreBase,
-    usePlayerVolume,
+    usePlayerVolumeState,
 } from '/@/renderer/store';
 import { toast } from '/@/shared/components/toast/toast';
 import { PlayerStatus } from '/@/shared/types/types';
@@ -59,8 +58,7 @@ export function WebMediaEngine({
     syncVolumeToEngineRef = false,
 }: WebMediaEngineProps) {
     const playerRef = useRef<null | WebPlayerEngineHandle>(null);
-    const isMuted = usePlayerMuted();
-    const volume = usePlayerVolume();
+    const { muted: isMuted, volume } = usePlayerVolumeState();
     const { preservePitch } = usePlaybackSettings();
     const { webAudio } = useWebAudio();
 
@@ -136,7 +134,7 @@ export function WebMediaEngine({
     useEffect(() => {
         if (mode !== 'abs-resume') return;
 
-        const unsub = subscribePlayerSeekToTimestamp(({ timestamp }) => {
+        const unsub = subscribePlayerSeek(({ timestamp }) => {
             if (!ownsPlayback()) return;
             playerRef.current?.seekTo(timestamp);
             onSeekTransport?.(timestamp);

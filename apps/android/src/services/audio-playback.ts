@@ -129,6 +129,10 @@ export const isAndroidNativePlaybackAvailable = () => Boolean(samoAudio);
 
 const isNetworkPlaybackUrl = (url?: string) => Boolean(url && /^https?:\/\//i.test(url));
 
+/** Subsonic/Navidrome auth in the query string — Chromecast cannot use httpHeaders. */
+const hasSelfAuthenticatingStreamUrl = (url: string) =>
+    /[?&](?:t|s|p|password|token)=/i.test(url);
+
 const getCastNetworkUrl = (source: MobilePlayableAudio, castSource: MobilePlayableAudio) => {
     const candidates = [
         castSource.castUrl,
@@ -165,7 +169,11 @@ export const playAndroidAudio = async (
     // since the default Chromecast receiver can't send custom headers.
     const castUrl = getCastNetworkUrl(source, castSource);
     const hasSelfAuthCastUrl = Boolean(
-        castUrl && (castUrl === castSource.castUrl || castUrl === source.castUrl),
+        castUrl &&
+            (castUrl === castSource.castUrl ||
+                castUrl === source.castUrl ||
+                ((castUrl === castSource.url || castUrl === source.url) &&
+                    hasSelfAuthenticatingStreamUrl(castUrl))),
     );
 
     // Prefer an explicit castMimeType from the playable. ABS playables hand

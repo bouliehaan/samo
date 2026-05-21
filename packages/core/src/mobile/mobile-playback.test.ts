@@ -5,9 +5,11 @@ import {
     appendAudiobookshelfAuthToken,
     buildRadioPlayback,
     buildSubsonicMusicPlayback,
+    CHROMECAST_MAX_LOSSLESS_SAMPLE_RATE_HZ,
     getSubsonicMusicQuality,
     isSubsonicSongHiRes,
     mimeFromAudiobookshelfExt,
+    needsChromecastCompatibleStream,
 } from './mobile-playback';
 
 const authentication = testServerAuthentication();
@@ -106,8 +108,51 @@ describe('buildSubsonicMusicPlayback', () => {
         expect(playback?.url).toContain('id=song-1');
     });
 
+    it('routes hi-res lossless through a cast transcode URL', () => {
+        const playback = buildSubsonicMusicPlayback(authentication, {
+            bitDepth: 24,
+            contentType: 'audio/flac',
+            id: 'song-hires',
+            samplingRate: 192_000,
+            suffix: 'flac',
+            title: 'Kind of Blue',
+        });
+
+        expect(playback?.castUrl).toContain('/rest/stream.view?');
+        expect(playback?.castUrl).not.toContain('format=raw');
+        expect(playback?.castUrl).toContain('format=mp3');
+        expect(playback?.castMimeType).toBe('audio/mpeg');
+        expect(playback?.url).toContain('format=raw');
+    });
+
     it('returns null when required song fields are missing', () => {
         expect(buildSubsonicMusicPlayback(authentication, { id: 'song-1' })).toBeNull();
+    });
+});
+
+describe('needsChromecastCompatibleStream', () => {
+    it('flags sample rates above the Cast FLAC ceiling', () => {
+        expect(
+            needsChromecastCompatibleStream({
+                container: 'flac',
+                deliveryKind: 'android-direct',
+                losslessRequired: true,
+                sampleRate: CHROMECAST_MAX_LOSSLESS_SAMPLE_RATE_HZ + 1,
+                serverTranscodeRequested: false,
+            }),
+        ).toBe(true);
+    });
+
+    it('leaves CD-rate lossless on the direct cast path', () => {
+        expect(
+            needsChromecastCompatibleStream({
+                container: 'flac',
+                deliveryKind: 'android-direct',
+                losslessRequired: true,
+                sampleRate: 44_100,
+                serverTranscodeRequested: false,
+            }),
+        ).toBe(false);
     });
 });
 

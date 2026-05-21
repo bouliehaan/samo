@@ -43,8 +43,17 @@ const initialAppNavigationState: AppNavigationState = {
 
 type AppNavigationAction =
     | { type: 'patch'; patch: Partial<AppNavigationState> }
-    | { type: 'set-active-tab'; activeTab: SamoMobileTabId }
-    | { type: 'set-active-utility'; activeUtilityScreen: AndroidUtilityScreen | null }
+    | {
+          type: 'set-active-tab';
+          value: SamoMobileTabId | ((current: SamoMobileTabId) => SamoMobileTabId);
+      }
+    | {
+          type: 'set-active-utility';
+          value:
+              | AndroidUtilityScreen
+              | null
+              | ((current: AndroidUtilityScreen | null) => AndroidUtilityScreen | null);
+      }
     | {
           type: 'set-home-content';
           homeContentState:
@@ -86,10 +95,18 @@ const appNavigationReducer = (
     switch (action.type) {
         case 'patch':
             return { ...state, ...action.patch };
-        case 'set-active-tab':
-            return { ...state, activeTab: action.activeTab };
-        case 'set-active-utility':
-            return { ...state, activeUtilityScreen: action.activeUtilityScreen };
+        case 'set-active-tab': {
+            const activeTab =
+                typeof action.value === 'function' ? action.value(state.activeTab) : action.value;
+            return { ...state, activeTab };
+        }
+        case 'set-active-utility': {
+            const activeUtilityScreen =
+                typeof action.value === 'function'
+                    ? action.value(state.activeUtilityScreen)
+                    : action.value;
+            return { ...state, activeUtilityScreen };
+        }
         case 'set-home-content':
             return {
                 ...state,
@@ -166,31 +183,22 @@ export const useAppNavigationState = (options: UseAppNavigationOptions = {}) => 
     const audiobookStartRequestId = useRef(0);
 
     const setActiveTab = useCallback(
-        (activeTab: SamoMobileTabId | ((current: SamoMobileTabId) => SamoMobileTabId)) => {
-            dispatch({
-                type: 'set-active-tab',
-                activeTab: typeof activeTab === 'function' ? activeTab(state.activeTab) : activeTab,
-            });
+        (value: SamoMobileTabId | ((current: SamoMobileTabId) => SamoMobileTabId)) => {
+            dispatch({ type: 'set-active-tab', value });
         },
-        [state.activeTab],
+        [],
     );
 
     const setActiveUtilityScreen = useCallback(
         (
-            activeUtilityScreen:
+            value:
                 | AndroidUtilityScreen
                 | null
                 | ((current: AndroidUtilityScreen | null) => AndroidUtilityScreen | null),
         ) => {
-            dispatch({
-                type: 'set-active-utility',
-                activeUtilityScreen:
-                    typeof activeUtilityScreen === 'function'
-                        ? activeUtilityScreen(state.activeUtilityScreen)
-                        : activeUtilityScreen,
-            });
+            dispatch({ type: 'set-active-utility', value });
         },
-        [state.activeUtilityScreen],
+        [],
     );
 
     const setHomeContentState = useCallback(

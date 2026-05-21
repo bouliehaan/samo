@@ -13,9 +13,7 @@ import {
     usePlaybackSettings,
     usePlayerActions,
     usePlayerData,
-    usePlayerMuted,
-    usePlayerSpeed,
-    usePlayerVolume,
+    usePlayerMpvEngineState,
 } from '/@/renderer/store';
 import { LogCategory, logFn } from '/@/renderer/utils/logger';
 import { toast } from '/@/shared/components/toast/toast';
@@ -79,9 +77,7 @@ const getDirectSongUrl = (song?: QueueSong) => {
 export const MpvPlayer = () => {
     const playback = usePlaybackSettings();
     const playerData = usePlayerData();
-    const volume = usePlayerVolume();
-    const muted = usePlayerMuted();
-    const speed = usePlayerSpeed();
+    const { muted, speed, volume } = usePlayerMpvEngineState();
     const { mediaAutoNext, setTimestamp } = usePlayerActions();
 
     const { currentSong, nextSong, status } = playerData;

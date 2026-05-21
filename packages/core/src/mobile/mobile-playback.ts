@@ -161,6 +161,21 @@ interface AudiobookshelfCastFile {
     mimeType?: string;
 }
 
+/**
+ * Default Google Cast media receiver supports lossless FLAC up to 96 kHz / 24-bit.
+ * Higher sample rates (e.g. 192 kHz hi-res) must use a server-transcoded cast leg.
+ */
+export const CHROMECAST_MAX_LOSSLESS_SAMPLE_RATE_HZ = 96_000;
+
+export const needsChromecastCompatibleStream = (quality: MobilePlaybackQuality) => {
+    if (quality.serverTranscodeRequested) {
+        return false;
+    }
+
+    const sampleRate = quality.sampleRate ?? 0;
+    return sampleRate > CHROMECAST_MAX_LOSSLESS_SAMPLE_RATE_HZ;
+};
+
 const subsonicOriginalStreamUrl = (authentication: ServerAuthenticationResult, id: string) => {
     // format=raw is the Subsonic / Navidrome way to explicitly disable
     // server-side transcoding (since 1.9.0). Without it the server applies
@@ -170,6 +185,19 @@ const subsonicOriginalStreamUrl = (authentication: ServerAuthenticationResult, i
         c: 'Samo',
         format: 'raw',
         id,
+        v: '1.13.0',
+    });
+
+    return `${authentication.url}/rest/stream.view?${params.toString()}&${authentication.credential}`;
+};
+
+/** Cast leg: omit format=raw so Navidrome/Subsonic can transcode for the receiver. */
+const subsonicChromecastStreamUrl = (authentication: ServerAuthenticationResult, id: string) => {
+    const params = new URLSearchParams({
+        c: 'Samo',
+        format: 'mp3',
+        id,
+        maxBitRate: '320',
         v: '1.13.0',
     });
 
@@ -369,6 +397,9 @@ export const buildSubsonicMusicPlayback = (
         return null;
     }
 
+    const quality = getSubsonicMusicQuality(song);
+    const castNeedsTranscode = needsChromecastCompatibleStream(quality);
+
     return {
         album: song.album,
         albumId: song.albumId?.toString() ?? song.parent?.toString(),
@@ -379,11 +410,17 @@ export const buildSubsonicMusicPlayback = (
         durationSeconds: song.duration,
         id: `${authentication.type}:${authentication.url}:music:${id}`,
         mimeType: song.contentType,
-        quality: getSubsonicMusicQuality(song),
+        quality,
         source: 'music',
         subtitle: [song.artist, song.album].filter(Boolean).join(' - '),
         title: song.title,
         url: subsonicOriginalStreamUrl(authentication, id),
+        ...(castNeedsTranscode
+            ? {
+                  castMimeType: 'audio/mpeg',
+                  castUrl: subsonicChromecastStreamUrl(authentication, id),
+              }
+            : {}),
     };
 };
 

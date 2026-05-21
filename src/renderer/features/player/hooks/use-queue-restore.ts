@@ -9,6 +9,7 @@ import { songsQueries } from '/@/renderer/features/songs/api/songs-api';
 import {
     setTimestamp,
     useCurrentServerId,
+    getQueue,
     usePlayerStore,
     useTimestampStoreBase,
 } from '/@/renderer/store';
@@ -47,7 +48,7 @@ export const useSaveQueue = () => {
             }
 
             const state = usePlayerStore.getState();
-            const queue = state.getQueue();
+            const queue = getQueue(undefined, state);
 
             if (queue.items.some((item) => item._serverId !== serverId)) {
                 toast.error({

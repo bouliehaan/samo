@@ -3,6 +3,7 @@ import type { PersistStorage, StateStorage } from 'zustand/middleware';
 
 import { del, get, set } from 'idb-keyval';
 import mergeWith from 'lodash/mergeWith';
+import { logFn } from '/@/renderer/utils/logger';
 
 type PlayerStorePersistedSlice = {
     player?: unknown;
@@ -260,7 +261,7 @@ export const splitSettingsStorage: StateStorage = {
                 }
             } catch (e) {
                 // If parsing fails, continue with reading from split keys
-                console.warn('Failed to migrate old settings format:', e);
+                logFn.warn('Failed to migrate old settings format', { meta: { error: e } });
             }
         }
 
@@ -276,7 +277,7 @@ export const splitSettingsStorage: StateStorage = {
                     mergedState[keyName] = JSON.parse(value);
                     hasData = true;
                 } catch (e) {
-                    console.warn(`Failed to parse ${key}:`, e);
+                    logFn.warn(`Failed to parse ${key}`, { meta: { error: e } });
                 }
             }
         });
@@ -337,7 +338,7 @@ export const splitSettingsStorage: StateStorage = {
                 localStorage.setItem('store_settings_version', data.version.toString());
             }
         } catch (e) {
-            console.error('Failed to split settings storage:', e);
+            logFn.error('Failed to split settings storage', { meta: { error: e } });
             localStorage.setItem(name, value);
         }
     },

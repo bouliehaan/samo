@@ -11,6 +11,7 @@ import {
     useFullScreenPlayerStore,
     useFullScreenPlayerStoreActions,
 } from '/@/renderer/store/full-screen-player.store';
+import { logFn } from '/@/renderer/utils/logger';
 import { usePlayerStatus } from '/@/renderer/store/player.store';
 import { ActionIcon } from '/@/shared/components/action-icon/action-icon';
 import { Group } from '/@/shared/components/group/group';
@@ -44,7 +45,7 @@ const VisualizerInner = () => {
                     setLibraryLoaded(true);
                 }
             } catch (error) {
-                console.error('Failed to load AudioMotionAnalyzer library:', error);
+                logFn.error('Failed to load AudioMotionAnalyzer library', { meta: { error: error } });
             }
         };
 
@@ -213,7 +214,7 @@ const VisualizerInner = () => {
 
                     audioMotionInstance.registerGradient(gradient.name, gradientConfig as any);
                 } catch (error) {
-                    console.error(`Failed to register gradient "${gradient.name}":`, error);
+                    logFn.error(`Failed to register gradient "${gradient.name}"`, { meta: { error: error } });
                 }
             });
 

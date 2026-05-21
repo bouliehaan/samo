@@ -5,7 +5,7 @@ import { getItemImageUrl } from '/@/renderer/components/item-image/item-image';
 import { usePlayerEvents } from '/@/renderer/features/player/audio-player/hooks/use-player-events';
 import { useCreateFavorite } from '/@/renderer/features/shared/mutations/create-favorite-mutation';
 import { useDeleteFavorite } from '/@/renderer/features/shared/mutations/delete-favorite-mutation';
-import { usePlayerActions, usePlayerStore, useRemoteSettings } from '/@/renderer/store';
+import { getCurrentSong, usePlayerActions, useRemoteSettings } from '/@/renderer/store';
 import { LogCategory, logFn } from '/@/renderer/utils/logger';
 import { logMsg } from '/@/renderer/utils/logger-message';
 import { toast } from '/@/shared/components/toast/toast';
@@ -16,8 +16,7 @@ const remote = isElectron() ? window.api.remote : null;
 const ipc = isElectron() ? window.api.ipc : null;
 
 export const useRemote = () => {
-    const { mediaSkipForward, setVolume } = usePlayerActions();
-    const player = usePlayerStore();
+    const { mediaSeekToTimestamp, mediaSkipForward, setVolume } = usePlayerActions();
 
     const remoteSettings = useRemoteSettings();
     const addToFavoritesMutation = useCreateFavorite({});
@@ -69,7 +68,7 @@ export const useRemote = () => {
                 meta: { position: data.position },
             });
             const newTime = data.position;
-            player.mediaSeekToTimestamp(newTime);
+            mediaSeekToTimestamp(newTime);
         });
 
         remote.requestSeek((_e: unknown, data: { offset: number }) => {
@@ -116,8 +115,8 @@ export const useRemote = () => {
     }, [
         addToFavoritesMutation,
         isRemoteEnabled,
+        mediaSeekToTimestamp,
         mediaSkipForward,
-        player,
         removeFromFavoritesMutation,
         setVolume,
     ]);
@@ -131,7 +130,7 @@ export const useRemote = () => {
 
         isInitializedRef.current = true;
 
-        const currentSong = player.getCurrentSong();
+        const currentSong = getCurrentSong();
 
         if (currentSong) {
             logFn.debug(logMsg[LogCategory.REMOTE].sendingInitialSong, {
@@ -155,7 +154,7 @@ export const useRemote = () => {
 
             remote.updateSong(currentSong, imageUrl);
         }
-    }, [isRemoteEnabled, player]);
+    }, [isRemoteEnabled]);
 
     usePlayerEvents(
         {

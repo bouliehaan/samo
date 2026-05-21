@@ -13,6 +13,7 @@ import { ndType } from '/@/shared/api/navidrome/navidrome-types';
 import { resultWithHeaders } from '/@/shared/api/utils';
 import { toast } from '/@/shared/components/toast/toast';
 import { ServerListItemWithCredential, ServerType } from '/@/shared/types/domain-types';
+import { logFn } from '/@/renderer/utils/logger';
 
 const localSettings = isElectron() ? window.api.localSettings : null;
 
@@ -481,10 +482,10 @@ axiosClient.interceptors.response.use(
                     })
                     .catch((newError: any) => {
                         if (newError !== TIMEOUT_ERROR) {
-                            console.error('Error when trying to reauthenticate: ', newError);
+                            logFn.error('Error when trying to reauthenticate', { meta: { error: newError } });
 
                             if (isAxiosError(newError) && newError.code === 'ERR_NETWORK') {
-                                console.log(
+                                logFn.info(
                                     'Network error during reauthentication - preserving credentials',
                                 );
                             } else {
@@ -498,7 +499,7 @@ axiosClient.interceptors.response.use(
             }
 
             if (isAxiosError(error) && error.code === 'ERR_NETWORK') {
-                console.log('Network error during authentication - preserving credentials');
+                logFn.info('Network error during authentication - preserving credentials');
             } else {
                 limitedFail(requestServer);
             }

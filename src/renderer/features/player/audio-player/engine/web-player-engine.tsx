@@ -110,7 +110,7 @@ export const WebPlayerEngine = (props: WebPlayerEngineProps) => {
                     setIsLoading(false);
                 }
             } catch (error) {
-                console.error('Failed to load react-player:', error);
+                logFn.error('Failed to load react-player', { meta: { error: error } });
                 setIsLoading(false);
             }
         };

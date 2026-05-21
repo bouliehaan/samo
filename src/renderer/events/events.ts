@@ -13,6 +13,7 @@ export type EventMap = {
     MPV_RELOAD: MpvReloadEventPayload;
     PLAYER_PLAY: PlayerPlayEventPayload;
     PLAYER_REPEATED: PlayerRepeatedEventPayload;
+    PLAYER_SEEK: PlayerSeekEventPayload;
     PLAYLIST_MOVE_DOWN: PlaylistMoveEventPayload;
     PLAYLIST_MOVE_TO_BOTTOM: PlaylistMoveEventPayload;
     PLAYLIST_MOVE_TO_TOP: PlaylistMoveEventPayload;
@@ -52,6 +53,10 @@ export type PlayerPlayEventPayload = {
 
 export type PlayerRepeatedEventPayload = {
     index: number;
+};
+
+export type PlayerSeekEventPayload = {
+    ms: number;
 };
 
 export type PlaylistMoveEventPayload = {

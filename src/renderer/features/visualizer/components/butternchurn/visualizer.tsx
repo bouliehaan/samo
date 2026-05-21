@@ -13,6 +13,7 @@ import {
     useSettingsStore,
     useSettingsStoreActions,
 } from '/@/renderer/store';
+import { logFn } from '/@/renderer/utils/logger';
 import {
     useFullScreenPlayerStore,
     useFullScreenPlayerStoreActions,
@@ -85,7 +86,7 @@ const VisualizerInner = () => {
                     setLibrariesLoaded(true);
                 }
             } catch (error) {
-                console.error('Failed to load butterchurn libraries:', error);
+                logFn.error('Failed to load butterchurn libraries', { meta: { error: error } });
             }
         };
 
@@ -213,7 +214,7 @@ const VisualizerInner = () => {
                 isInitializedRef.current = true;
                 setIsVisualizerReady(true);
             } catch (error) {
-                console.error('Failed to create butterchurn visualizer:', error);
+                logFn.error('Failed to create butterchurn visualizer', { meta: { error: error } });
                 isInitializedRef.current = false;
                 visualizerRef.current = undefined;
             }
@@ -541,7 +542,7 @@ export const Visualizer = () => {
                     setPresetsLoaded(true);
                 }
             } catch (error) {
-                console.error('Failed to load butterchurn presets:', error);
+                logFn.error('Failed to load butterchurn presets', { meta: { error: error } });
             }
         };
 

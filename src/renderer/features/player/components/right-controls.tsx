@@ -17,9 +17,8 @@ import {
     useFullScreenPlayerStore,
     useHotkeySettings,
     usePlayerData,
-    usePlayerMuted,
     usePlayerSong,
-    usePlayerVolume,
+    usePlayerVolumeState,
     useSetFullScreenPlayerStore,
     useSettingsStoreActions,
     useSidebarRightExpanded,
@@ -334,8 +333,7 @@ const useFavoritePreviousSongHotkeys = ({
 
 const VolumeButton = () => {
     const { bindings } = useHotkeySettings();
-    const volume = usePlayerVolume();
-    const muted = usePlayerMuted();
+    const { muted, volume } = usePlayerVolumeState();
     const volumeWheelStep = useVolumeWheelStep();
     const volumeWidth = useVolumeWidth();
     const { decreaseVolume, increaseVolume, mediaToggleMute, setVolume } = usePlayer();

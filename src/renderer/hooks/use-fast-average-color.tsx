@@ -1,5 +1,6 @@
 import { FastAverageColor, FastAverageColorIgnoredColor } from 'fast-average-color';
 import { useEffect, useRef, useState } from 'react';
+import { logFn } from '/@/renderer/utils/logger';
 
 const ignoredColors: FastAverageColorIgnoredColor = [
     [255, 255, 255, 255, 90], // White
@@ -138,7 +139,7 @@ export const useFastAverageColor = (args: {
                     .catch((e) => {
                         // Only update if this is still the current src being processed
                         if (isMounted && processingSrcRef.current === src) {
-                            console.error('Error fetching average color', e);
+                            logFn.error('Error fetching average color', { meta: { error: e } });
                             idRef.current = id;
                             setBackground({
                                 background: defaultColor ?? transparentBackground,

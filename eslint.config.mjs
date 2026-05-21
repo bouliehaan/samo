@@ -19,6 +19,44 @@ export default tseslint.config(
         },
     },
     {
+        files: ['src/renderer/**/*.{ts,tsx}'],
+        rules: {
+            'no-console': [
+                'error',
+                {
+                    allow: [],
+                },
+            ],
+        },
+    },
+    {
+        files: [
+            'src/renderer/utils/logger.ts',
+            'src/renderer/**/*error-boundary*.{ts,tsx}',
+            'src/renderer/**/router-error-boundary.tsx',
+        ],
+        rules: {
+            'no-console': 'off',
+        },
+    },
+    {
+        files: ['apps/android/src/**/*.{ts,tsx}'],
+        rules: {
+            'no-console': [
+                'error',
+                {
+                    allow: [],
+                },
+            ],
+        },
+    },
+    {
+        files: ['apps/android/src/components/ErrorBoundary.tsx'],
+        rules: {
+            'no-console': 'off',
+        },
+    },
+    {
         files: ['**/*.{ts,tsx}'],
         plugins: {
             'react-hooks': eslintPluginReactHooks,

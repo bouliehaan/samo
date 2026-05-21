@@ -28,13 +28,26 @@ const initialAuthSessionState: AuthSessionState = {
 type AuthSessionAction =
     | { type: 'patch'; patch: Partial<AuthSessionState> }
     | { type: 'reset-credentials' }
-    | { type: 'set-auth-state'; authState: AndroidAuthState }
-    | { type: 'set-password'; password: string }
-    | { type: 'set-server-connections'; serverConnections: ServerAuthenticationResult[] }
-    | { type: 'set-server-health'; serverHealthByKey: AndroidServerHealthMap }
+    | {
+          type: 'set-auth-state';
+          value: AndroidAuthState | ((current: AndroidAuthState) => AndroidAuthState);
+      }
+    | { type: 'set-password'; value: string | ((current: string) => string) }
+    | {
+          type: 'set-server-connections';
+          value:
+              | ServerAuthenticationResult[]
+              | ((current: ServerAuthenticationResult[]) => ServerAuthenticationResult[]);
+      }
+    | {
+          type: 'set-server-health';
+          value:
+              | AndroidServerHealthMap
+              | ((current: AndroidServerHealthMap) => AndroidServerHealthMap);
+      }
     | { type: 'set-server-type'; serverType: ServerType }
-    | { type: 'set-server-url'; serverUrl: string }
-    | { type: 'set-username'; username: string };
+    | { type: 'set-server-url'; value: string | ((current: string) => string) }
+    | { type: 'set-username'; value: string | ((current: string) => string) };
 
 const authSessionReducer = (
     state: AuthSessionState,
@@ -50,20 +63,42 @@ const authSessionReducer = (
                 serverUrl: DEFAULT_SERVER_URL,
                 username: '',
             };
-        case 'set-auth-state':
-            return { ...state, authState: action.authState };
-        case 'set-password':
-            return { ...state, password: action.password };
-        case 'set-server-connections':
-            return { ...state, serverConnections: action.serverConnections };
-        case 'set-server-health':
-            return { ...state, serverHealthByKey: action.serverHealthByKey };
+        case 'set-auth-state': {
+            const authState =
+                typeof action.value === 'function' ? action.value(state.authState) : action.value;
+            return { ...state, authState };
+        }
+        case 'set-password': {
+            const password =
+                typeof action.value === 'function' ? action.value(state.password) : action.value;
+            return { ...state, password };
+        }
+        case 'set-server-connections': {
+            const serverConnections =
+                typeof action.value === 'function'
+                    ? action.value(state.serverConnections)
+                    : action.value;
+            return { ...state, serverConnections };
+        }
+        case 'set-server-health': {
+            const serverHealthByKey =
+                typeof action.value === 'function'
+                    ? action.value(state.serverHealthByKey)
+                    : action.value;
+            return { ...state, serverHealthByKey };
+        }
         case 'set-server-type':
             return { ...state, serverType: action.serverType };
-        case 'set-server-url':
-            return { ...state, serverUrl: action.serverUrl };
-        case 'set-username':
-            return { ...state, username: action.username };
+        case 'set-server-url': {
+            const serverUrl =
+                typeof action.value === 'function' ? action.value(state.serverUrl) : action.value;
+            return { ...state, serverUrl };
+        }
+        case 'set-username': {
+            const username =
+                typeof action.value === 'function' ? action.value(state.username) : action.value;
+            return { ...state, username };
+        }
         default:
             return state;
     }
@@ -73,45 +108,23 @@ export const useAuthSessionState = () => {
     const [state, dispatch] = useReducer(authSessionReducer, initialAuthSessionState);
 
     const setAuthState = useCallback(
-        (authState: AndroidAuthState | ((current: AndroidAuthState) => AndroidAuthState)) => {
-            dispatch({
-                type: 'set-auth-state',
-                authState:
-                    typeof authState === 'function' ? authState(state.authState) : authState,
-            });
+        (value: AndroidAuthState | ((current: AndroidAuthState) => AndroidAuthState)) => {
+            dispatch({ type: 'set-auth-state', value });
         },
-        [state.authState],
+        [],
     );
 
-    const setUsername = useCallback(
-        (username: string | ((current: string) => string)) => {
-            dispatch({
-                type: 'set-username',
-                username: typeof username === 'function' ? username(state.username) : username,
-            });
-        },
-        [state.username],
-    );
+    const setUsername = useCallback((value: string | ((current: string) => string)) => {
+        dispatch({ type: 'set-username', value });
+    }, []);
 
-    const setPassword = useCallback(
-        (password: string | ((current: string) => string)) => {
-            dispatch({
-                type: 'set-password',
-                password: typeof password === 'function' ? password(state.password) : password,
-            });
-        },
-        [state.password],
-    );
+    const setPassword = useCallback((value: string | ((current: string) => string)) => {
+        dispatch({ type: 'set-password', value });
+    }, []);
 
-    const setServerUrl = useCallback(
-        (serverUrl: string | ((current: string) => string)) => {
-            dispatch({
-                type: 'set-server-url',
-                serverUrl: typeof serverUrl === 'function' ? serverUrl(state.serverUrl) : serverUrl,
-            });
-        },
-        [state.serverUrl],
-    );
+    const setServerUrl = useCallback((value: string | ((current: string) => string)) => {
+        dispatch({ type: 'set-server-url', value });
+    }, []);
 
     const setServerType = useCallback((serverType: ServerType) => {
         dispatch({ type: 'set-server-type', serverType });
@@ -119,36 +132,24 @@ export const useAuthSessionState = () => {
 
     const setServerConnections = useCallback(
         (
-            serverConnections:
+            value:
                 | ServerAuthenticationResult[]
                 | ((current: ServerAuthenticationResult[]) => ServerAuthenticationResult[]),
         ) => {
-            dispatch({
-                type: 'set-server-connections',
-                serverConnections:
-                    typeof serverConnections === 'function'
-                        ? serverConnections(state.serverConnections)
-                        : serverConnections,
-            });
+            dispatch({ type: 'set-server-connections', value });
         },
-        [state.serverConnections],
+        [],
     );
 
     const setServerHealthByKey = useCallback(
         (
-            serverHealthByKey:
+            value:
                 | AndroidServerHealthMap
                 | ((current: AndroidServerHealthMap) => AndroidServerHealthMap),
         ) => {
-            dispatch({
-                type: 'set-server-health',
-                serverHealthByKey:
-                    typeof serverHealthByKey === 'function'
-                        ? serverHealthByKey(state.serverHealthByKey)
-                        : serverHealthByKey,
-            });
+            dispatch({ type: 'set-server-health', value });
         },
-        [state.serverHealthByKey],
+        [],
     );
 
     const patchAuthSession = useCallback((patch: Partial<AuthSessionState>) => {

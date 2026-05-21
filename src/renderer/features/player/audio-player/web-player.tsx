@@ -8,6 +8,7 @@ import {
     WebPlayerEngine,
     WebPlayerEngineHandle,
 } from '/@/renderer/features/player/audio-player/engine/web-player-engine';
+import { logFn } from '/@/renderer/utils/logger';
 import { usePlayerEvents } from '/@/renderer/features/player/audio-player/hooks/use-player-events';
 import { useSongUrl } from '/@/renderer/features/player/audio-player/hooks/use-stream-url';
 import {
@@ -23,10 +24,9 @@ import {
     usePlaybackSettings,
     usePlayerActions,
     usePlayerData,
-    usePlayerMuted,
     usePlayerProperties,
     usePlayerStoreBase,
-    usePlayerVolume,
+    usePlayerVolumeState,
 } from '/@/renderer/store';
 import { toast } from '/@/shared/components/toast/toast';
 import { QueueSong } from '/@/shared/types/domain-types';
@@ -44,8 +44,7 @@ export function WebPlayer() {
     const { webAudio } = useWebAudio();
 
     const { crossfadeDuration, crossfadeStyle, speed, transitionType } = usePlayerProperties();
-    const isMuted = usePlayerMuted();
-    const volume = usePlayerVolume();
+    const { muted: isMuted, volume } = usePlayerVolumeState();
     const { audioFadeOnStatusChange, preservePitch, transcode } = usePlaybackSettings();
 
     const [localPlayerStatus, setLocalPlayerStatus] = useState<PlayerStatus>(status);
@@ -423,7 +422,7 @@ export function WebPlayer() {
             try {
                 webAudio.gains[0].gain.setValueAtTime(Math.max(0, newGain), 0);
             } catch (error) {
-                console.error('Error setting gain', error);
+                logFn.error('Error setting gain', { meta: { error: error } });
             }
         }
     }, [calculateReplayGain, num, player1, player1Source, volume, webAudio]);
@@ -436,7 +435,7 @@ export function WebPlayer() {
             try {
                 webAudio.gains[1].gain.setValueAtTime(Math.max(0, newGain), 0);
             } catch (error) {
-                console.error('Error setting gain', error);
+                logFn.error('Error setting gain', { meta: { error: error } });
             }
         }
     }, [calculateReplayGain, num, player1, player2Source, player2, volume, webAudio]);

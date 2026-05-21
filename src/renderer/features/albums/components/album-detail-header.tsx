@@ -14,6 +14,7 @@ import {
     LibraryHeader,
     LibraryHeaderMenu,
 } from '/@/renderer/features/shared/components/library-header';
+import { logFn } from '/@/renderer/utils/logger';
 import { useSetFavorite } from '/@/renderer/features/shared/hooks/use-set-favorite';
 import { songsQueries } from '/@/renderer/features/songs/api/songs-api';
 import { AppRoute } from '/@/renderer/router/routes';
@@ -87,7 +88,7 @@ export const AlbumDetailHeader = forwardRef<HTMLDivElement>((_props, ref) => {
                 addToQueueByData(albumRadioSongs, Play.NOW);
             }
         } catch (error) {
-            console.error('Failed to load album radio:', error);
+            logFn.error('Failed to load album radio', { meta: { error: error } });
         }
     };
 

@@ -3,7 +3,7 @@ import { memo, MouseEvent } from 'react';
 import styles from './mobile-fullscreen-player.module.css';
 
 import { usePlayer } from '/@/renderer/features/player/context/player-context';
-import { usePlayerRepeat, usePlayerShuffle } from '/@/renderer/store';
+import { usePlayerPlaybackControlsState } from '/@/renderer/store';
 import { ActionIcon } from '/@/shared/components/action-icon/action-icon';
 import { Group } from '/@/shared/components/group/group';
 import { PlayerRepeat, PlayerShuffle } from '/@/shared/types/types';
@@ -24,8 +24,7 @@ export const MobileFullscreenPlayerBottomControls = memo(
         onToggleLyrics,
         onToggleQueue,
     }: MobileFullscreenPlayerBottomControlsProps) => {
-        const repeat = usePlayerRepeat();
-        const shuffle = usePlayerShuffle();
+        const { repeat, shuffle } = usePlayerPlaybackControlsState();
         const { toggleRepeat, toggleShuffle } = usePlayer();
 
         return (

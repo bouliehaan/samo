@@ -7,6 +7,7 @@ import { useCurrentServerId } from '/@/renderer/store';
 import { ConfirmModal } from '/@/shared/components/modal/modal';
 import { Text } from '/@/shared/components/text/text';
 import { toast } from '/@/shared/components/toast/toast';
+import { logFn } from '/@/renderer/utils/logger';
 
 export const SaveAndReplaceContextModal = ({
     innerProps,
@@ -19,7 +20,7 @@ export const SaveAndReplaceContextModal = ({
 
     const handleConfirm = useCallback(() => {
         if (!serverId || !playlistId) {
-            console.error('serverId or playlistId is not defined');
+            logFn.error('serverId or playlistId is not defined');
             return;
         }
 
@@ -33,7 +34,7 @@ export const SaveAndReplaceContextModal = ({
             },
             {
                 onError: (err) => {
-                    console.error(err);
+                    logFn.error(err instanceof Error ? err.message : String(err), { meta: { error: err } });
                     toast.error({
                         message: err.message,
                         title: t('error.genericError', {

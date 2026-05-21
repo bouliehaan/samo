@@ -209,6 +209,25 @@ Impact: **44 passing tests** via `pnpm test`. `pnpm run typecheck` passes. No ru
 
 🧪 **PS for the next agent:** F18 floor is real now. Before the "full send" on F2/F3/F13, run `pnpm test` once — it's fast. Player store *actions* (add-to-queue by `Play.*` mode) are still untested; add those if you touch queue behavior. Greenlight granted for mechanical refactors; keep behavior changes in separate commits.
 
+### 2026-05-20 — Android add-server URL wipe (F13 regression)
+
+Fixed functional `setServerUrl` / auth reducers evaluating updaters against **stale hook closure** state instead of reducer state. Blur normalization no longer resets a typed IP back to `http://` default.
+
+- [auth-session.ts](apps/android/src/state/auth-session.ts) — pass `value` through to reducer; apply functional updates inside reducer cases.
+- [app-navigation.ts](apps/android/src/state/app-navigation.ts) — same fix for `setActiveTab` / `setActiveUtilityScreen`.
+- [App.tsx](apps/android/App.tsx) — blur only falls back to default when field is empty.
+
+### 2026-05-20 — F8 player derivations removed from Actions
+
+Completed the audit’s “move pure derivations out of the store interface” slice:
+
+- [player-derived.ts](src/renderer/store/player-derived.ts) — `getQueueOrderFromState`, `getQueueFromState`, `getCurrentSongFromState`, `getPlayerDataFromState`, `isFirstTrackInQueueFromState`, `isLastTrackInQueueFromState`.
+- [player.store.ts](src/renderer/store/player.store.ts) — derivations no longer on `Actions`; exported `getCurrentSong` / `getQueue` / … helpers; `usePlayerActions` wires queue reads through derived helpers.
+- Call sites updated (scrobble, discord RPC, remote, auto-DJ, queue restore, session remember/restore).
+- Tests: **53** passing (`player-derived.test.ts` +3).
+
+**Still open (F8 optional):** split transport vs queue Zustand slices; replace `seekToTimestamp` nanoid stamp with event bus.
+
 ### 2026-05-20 — Full-send batch: F2, F3, F24 (+ F18 tests)
 
 **F2 — `controller.ts` Proxy collapse:** [src/renderer/api/controller.ts](src/renderer/api/controller.ts) is now **~180 lines** (was ~1,050). One `Proxy` handler forwards all server-bound endpoints with shared `enrichEndpointArgs`, `MUSIC_FOLDER_QUERY_ENDPOINTS`, and preserved special cases (`authenticate`, `getAlbumArtistInfo`, `getImageRequest`/`getImageUrl`).
@@ -219,7 +238,21 @@ Impact: **44 passing tests** via `pnpm test`. `pnpm run typecheck` passes. No ru
 
 **Verification:** `pnpm test` (**47** tests), `pnpm run typecheck` (core + node + web + android).
 
-**Still open for a follow-up send:** F4/F5 (audiobook/podcast store factory), F13 (Android root reducers/hooks), F10 (settings store split), F11 (visualizer form), F6 (Kotlin audio module), F7/F12/F14 proxy file split/F15 logging/F17 store versioning.
+### 2026-05-20 — F10 settings store split + F11 visualizer schema form
+
+- **F10:** `src/renderer/store/settings/{schemas,defaults,actions,migrate,store,selectors}.ts` + `settings.store.ts` facade. Same persist name/version/migrations; imports unchanged via re-export.
+- **F11:** Visualizer settings decomposed; declarative schema renders most AudioMotion field groups; preset/custom-gradient/general/color remain dedicated components.
+
+**Still open:** None from the F6/F7/F12/F15 batch; F8 completed 2026-05-20.
+
+### 2026-05-20 — F6 Kotlin split + F7/F12/F15 completion
+
+- **F6:** `SamoAudioModule.kt` is a thin RN bridge (~68 LOC); collaborators under `apps/android/android/app/src/main/java/app/samo/android/audio/` (`SamoAudioEngine`, `SamoCastSessionManager`, `SamoOutputRoutes`, `SamoBitPerfect`, `SamoLiveReconnect`, `SamoServiceBinder`, `SamoReadableMapExt`, `SamoAudioTypes`). Verify on device: `cd apps/android/android && ./gradlew :app:compileDebugKotlin`.
+- **F7:** React Compiler confirmed in [vite.react-plugin.ts](vite.react-plugin.ts); removed redundant `useMemo` in visualizer settings form. Broader memo/callback sweep remains optional (rule-driven per file).
+- **F12:** Combined `useShallow` selectors in `player.store.ts` (`usePlayerVolumeState`, `usePlayerPlaybackControlsState`, `usePlayerMpvEngineState`); wired into native menu sync, mpv/web/wavesurfer engines, right-controls volume, mobile fullscreen controls.
+- **F15:** `no-console` eslint for renderer + android; `androidLog` wrapper; renderer `console.*` → `logFn` (logger.ts retains internal console); error boundaries use `logFn.error` with meta.
+
+### 2026-05-20 — Full-send batch: F2, F3, F24 (+ F18 tests)
 
 🚀 **Dear future AI:** The controller no longer gaslights you with 60 copy-paste methods. ABS HTTP lives in core — do not re-triplicate it or the HLS proxy will haunt your `.m3u8` dreams. Next boss fights: F4 store factory, then F13 Android navigation reducer. Run `pnpm test` before touching queue actions.
 
@@ -464,7 +497,9 @@ Then `AudiobookWebPlayer = () => <WebMediaEngine source="audiobook" />` etc. `We
 
 ### F6. `SamoAudioModule.kt` is 2,275 lines holding 5 unrelated responsibilities
 
-**Where:** [apps/android/android/app/src/main/java/app/samo/android/audio/SamoAudioModule.kt](apps/android/android/app/src/main/java/app/samo/android/audio/SamoAudioModule.kt)
+**Progress (2026-05):** **Done** — split into focused Kotlin modules; [SamoAudioModule.kt](apps/android/android/app/src/main/java/app/samo/android/audio/SamoAudioModule.kt) delegates to `SamoAudioEngine`. Bit-perfect logic moved verbatim to [SamoBitPerfect.kt](apps/android/android/app/src/main/java/app/samo/android/audio/SamoBitPerfect.kt).
+
+**Where:** [apps/android/android/app/src/main/java/app/samo/android/audio/](apps/android/android/app/src/main/java/app/samo/android/audio/)
 
 **Status quo:** One class owns:
 1. RN bridge surface (`@ReactMethod` `play`/`pause`/`resume`/`seekTo`/`stop`/`getStatus`/`getAudioDeviceInfo`/`getOutputRoutes`/`selectOutputRoute`/`getCastState`).
@@ -498,6 +533,8 @@ Then `AudiobookWebPlayer = () => <WebMediaEngine source="audiobook" />` etc. `We
 
 ### F7. With React Compiler enabled, 659 `useMemo` + most `useCallback` calls are dead code
 
+**Progress (2026-05):** Compiler verified enabled in [vite.react-plugin.ts](vite.react-plugin.ts) (documented). Targeted cleanup started (e.g. visualizer settings form `useMemo` → module const). Full rule-driven sweep (`eslint-plugin-react-compiler`) still optional.
+
 **Where:** [vite.react-plugin.ts](vite.react-plugin.ts) sets `babel-plugin-react-compiler`. Compiler is on for the entire renderer build.
 
 **Counts in renderer (`src/renderer/**/*.{ts,tsx}`):**
@@ -526,7 +563,7 @@ Then `AudiobookWebPlayer = () => <WebMediaEngine source="audiobook" />` etc. `We
 
 **Where:** [src/renderer/store/player.store.ts](src/renderer/store/player.store.ts) (2,254 LOC)
 
-**Progress (2026-05):** `computePlayerData` moved to [player-derived.ts](src/renderer/store/player-derived.ts). Store holds `playbackSnapshot`, refreshed via input-keyed subscriber; `usePlayerData` / `usePlayerDuration` / `usePlayerSong` read the cache. `getPlayerData` / `getCurrentSong` delegate to snapshot. Remaining: move derivations off `Actions` interface, optional transport/queue slice split (items 1–3 below).
+**Progress (2026-05):** **Done.** `computePlayerData` + helpers in [player-derived.ts](src/renderer/store/player-derived.ts); `playbackSnapshot` cache with `getPlaybackInputs` subscription; `PLAYER_SEEK` event bus ([player/seek.ts](src/renderer/store/player/seek.ts)) replaces `seekToTimestamp`; transport/queue slice types ([player/slices.ts](src/renderer/store/player/slices.ts)) + `usePlayerTransportSlice` / `usePlayerQueueSlice` selectors.
 
 **Status quo:**
 - The `Actions` interface (lines 45–125) declares `getCurrentSong`, `getQueue`, `getQueueOrder`, `getPlayerData`, `isFirstTrackInQueue`, `isLastTrackInQueue` as *actions*. They are pure derivations, not actions.
@@ -579,7 +616,9 @@ Then `AudiobookWebPlayer = () => <WebMediaEngine source="audiobook" />` etc. `We
 
 ### F10. Renderer's settings store is a 2,738-line catch-all
 
-**Where:** [src/renderer/store/settings.store.ts](src/renderer/store/settings.store.ts) (2,738 LOC)
+**Progress (2026-05):** **Done** — split under [src/renderer/store/settings/](src/renderer/store/settings/): `schemas.ts`, `defaults.ts`, `actions.ts`, `migrate.ts`, `store.ts`, `selectors.ts`. [settings.store.ts](src/renderer/store/settings.store.ts) is a one-line re-export facade; single persisted `store_settings` blob unchanged.
+
+**Where:** [src/renderer/store/settings/](src/renderer/store/settings/) (was one 2,738-line file)
 
 **Status quo:** A single Zustand store holds general settings, playback settings, MPV settings, hotkeys, table column configs for albums/artists/playlists/genres/songs, grid configs, list preferences, theme, window settings, discord-rpc, lyric source order, sample rate, font config, custom CSS, sanitization, env overrides — basically every persisted preference in the app.
 
@@ -606,7 +645,9 @@ Then `AudiobookWebPlayer = () => <WebMediaEngine source="audiobook" />` etc. `We
 
 ### F11. Per-component visualizer settings form is 2,215 LOC
 
-**Where:** [src/renderer/features/visualizer/components/audiomotionanalyzer/visualizer-settings-form.tsx](src/renderer/features/visualizer/components/audiomotionanalyzer/visualizer-settings-form.tsx)
+**Progress (2026-05):** **Done** — orchestrator [visualizer-settings-form.tsx](src/renderer/features/visualizer/components/audiomotionanalyzer/visualizer-settings-form.tsx) (~50 LOC); schema-driven [audiomotion-schema-sections.tsx](src/renderer/features/visualizer/components/audiomotionanalyzer/audiomotion-schema-sections.tsx) for FFT/frequency/sensitivity/linear/peak/radial/reflex/toggles; presets/gradients/general/color/butterchurn in focused modules; shared [visualizer-settings-controls.tsx](src/renderer/features/visualizer/components/audiomotionanalyzer/visualizer-settings-controls.tsx) + [visualizer-settings-options.ts](src/renderer/features/visualizer/components/audiomotionanalyzer/visualizer-settings-options.ts).
+
+**Where:** [src/renderer/features/visualizer/components/audiomotionanalyzer/](src/renderer/features/visualizer/components/audiomotionanalyzer/) (was one 2,215-line form)
 
 **Status quo:** A single form component that knows about every audiomotion-analyzer parameter inline.
 
@@ -619,6 +660,8 @@ Then `AudiobookWebPlayer = () => <WebMediaEngine source="audiobook" />` etc. `We
 ---
 
 ### F12. `useShallow` is dramatically under-used (8 callsites in the entire renderer)
+
+**Progress (2026-05):** **Done** for hot multi-field player subscribers — `usePlayerVolumeState`, `usePlayerPlaybackControlsState`, `usePlayerMpvEngineState` in [player.store.ts](src/renderer/store/player.store.ts); consumers updated (native menu, mpv/web/wavesurfer, volume UI, mobile fullscreen). Settings already expose shallow selectors (`usePlaybackSettings`, etc.).
 
 **Where:** Renderer-wide. Grep shows 8 `useShallow` usages.
 
@@ -687,7 +730,7 @@ State transitions like "user opens add-server flow" require coordinated updates 
 
 ### F15. Logging is inconsistent: 48 raw `console.*` in renderer, 8 in mobile, plus a `logFn` abstraction
 
-**Progress (2026-05):** Audiobook/podcast stores now use `logFn` for play/sync errors. Repo-wide `no-console` + remaining files still open.
+**Progress (2026-05):** **Done** — `no-console` eslint (renderer + android, carve-outs for logger + error boundaries); [apps/android/src/utils/log.ts](apps/android/src/utils/log.ts) `androidLog`; renderer migrated to `logFn` with `{ meta: { error } }` shape; page/router error boundaries use `logFn.error`.
 
 **Where:** `src/renderer/utils/logger.ts` exists with `logFn.info/debug/warn/error`. Yet 48 `console.*` calls remain in renderer source (and 2 in Android App.tsx, plus more in services).
 
@@ -892,14 +935,15 @@ These are ordered for maximum leverage while keeping each step verifiable in iso
 | 3 | **F3** — move ABS API into `packages/core` | −400 | low-medium | **Done** — unlocks F4 |
 | 4 | **F4** — unify audiobook + podcast stores | −600 | medium | **Done** — `createAbsPlaybackStore` |
 | 5 | **F5** — unify ABS / podcast / radio web players | −500 | medium | **Done** — `WebMediaEngine` |
-| 6 | **F11** — schema-drive visualizer form | −1,500 | low | Isolated |
+| 6 | **F11** — schema-drive visualizer form | −1,500 | low | **Done** |
 | 7 | **F1** — split `apps/android/App.tsx` | 0 | low-medium per step | **~done** — F13 reducers/hooks next for Android |
 | 8 | **F13** — Android root state → reducers | 0 | medium | **Done** — five domain hooks |
 | 9 | **F9** — FlashList in Android | 0 | medium | Big UX win |
-| 10 | **F8 + F19** — player store derivations + computed-field cache | −300 | medium | **F19 done**; F8 snapshot + hooks done; slice split / Actions cleanup remain |
+| 10 | **F8 + F19** — player store derivations + computed-field cache | −300 | medium | **Done** (snapshot + derivations off Actions); optional slice split / seek event bus remain |
 | 11 | **F6** — split `SamoAudioModule.kt` | −0 (re-distributed) | medium | Concurrency review needed |
-| 12 | **F10** — split settings store | 0 | high | Incremental; do `lists` slice first |
-| 13 | **F7** — remove dead `useMemo`/`useCallback`/`memo` | −1,500 | low if rule-driven | Verify compiler is live first |
+| 12 | **F10** — split settings store | 0 | high | **Done** — `settings/` modules + facade |
+| 13 | **F11** — schema-drive visualizer form | −1,500 | low | **Done** |
+| 14 | **F7** — remove dead `useMemo`/`useCallback`/`memo` | −1,500 | low if rule-driven | Verify compiler is live first |
 | 14 | **F17** — version every persisted store | +200 (scaffolding) | low | **Done** for gap stores |
 | 15 | **F14** — split ABS proxy from IPC | 0 | low | **Done** |
 | 16 | **F21** — proxy session leak cleanup | +30 | low | **Done** |

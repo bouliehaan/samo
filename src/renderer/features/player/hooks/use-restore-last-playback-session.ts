@@ -18,7 +18,12 @@ import {
     useLastPlaybackSessionStore,
 } from '/@/renderer/store/last-playback-session.store';
 import { usePlaybackOwnerStore } from '/@/renderer/store/playback-owner.store';
-import { usePlayerHydrated, usePlayerStoreBase } from '/@/renderer/store/player.store';
+import {
+    getCurrentSong,
+    getQueue,
+    usePlayerHydrated,
+    usePlayerStoreBase,
+} from '/@/renderer/store/player.store';
 import { usePodcastStore } from '/@/renderer/store/podcast.store';
 import { useSettingsStore } from '/@/renderer/store/settings.store';
 import { setTimestamp } from '/@/renderer/store/timestamp.store';
@@ -106,7 +111,7 @@ const restoreMusicSession = async (
     if (usePlaybackOwnerStore.getState().source) return true;
 
     const player = usePlayerStoreBase.getState();
-    const persistedQueue = player.getQueue();
+    const persistedQueue = getQueue(undefined, player);
     const queueAlreadyRestored = persistedQueue.items.length > 0;
     const restoredQueueContext = player.player.context ?? session.context;
 
@@ -119,7 +124,7 @@ const restoreMusicSession = async (
             setTimestamp(session.position);
         }
 
-        const song = player.getCurrentSong();
+        const song = getCurrentSong(player);
         rememberMusicPlaybackSession({
             context: restoredQueueContext,
             position: session.position,

@@ -3076,8 +3076,14 @@ export default function App() {
         setActiveUtilityScreen('add-server');
     }, []);
     const handleServerUrlBlur = useCallback(() => {
-        setServerUrl((current) => addDefaultHttpScheme(current) || DEFAULT_SERVER_URL);
-    }, []);
+        setServerUrl((current) => {
+            const trimmed = current.trim();
+            if (!trimmed) {
+                return DEFAULT_SERVER_URL;
+            }
+            return addDefaultHttpScheme(current);
+        });
+    }, [setServerUrl]);
     const handleOpenFullPlayer = useCallback(() => {
         setIsFullPlayerOpen(true);
     }, []);
