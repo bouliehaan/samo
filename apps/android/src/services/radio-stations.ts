@@ -25,6 +25,10 @@ export interface AddAndroidRadioStationInput {
     homepageUrl?: string;
     name: string;
     streamUrl: string;
+    thumbnailFile?: {
+        blob: Blob;
+        name?: string;
+    };
     thumbnailUrl?: string;
 }
 
@@ -99,20 +103,35 @@ const findCreatedStation = (
 const uploadNavidromeRadioThumbnail = async (
     authentication: ServerAuthenticationResult,
     stationId: string,
-    thumbnailUrl: string,
+    thumbnail: {
+        blob?: Blob;
+        name?: string;
+        url?: string;
+    },
 ): Promise<void> => {
     if (!authentication.ndCredential) {
         throw new Error('Navidrome image upload requires a Navidrome token.');
     }
 
-    const imageResponse = await fetch(thumbnailUrl);
-    if (!imageResponse.ok) {
-        throw new Error(`Thumbnail download failed (${imageResponse.status})`);
+    let imageBlob = thumbnail.blob;
+    let filename = thumbnail.name?.trim() || 'radio-image';
+    const thumbnailUrl = thumbnail.url?.trim();
+
+    if (!imageBlob) {
+        if (!thumbnailUrl) {
+            throw new Error('No thumbnail image was provided.');
+        }
+
+        const imageResponse = await fetch(thumbnailUrl);
+        if (!imageResponse.ok) {
+            throw new Error(`Thumbnail download failed (${imageResponse.status})`);
+        }
+
+        imageBlob = await imageResponse.blob();
     }
 
-    const imageBlob = await imageResponse.blob();
     const form = new FormData();
-    form.append('image', imageBlob, 'radio-image');
+    form.append('image', imageBlob, filename);
 
     const uploadResponse = await fetch(
         `${authentication.url}/api/radio/${encodeURIComponent(stationId)}/image`,
@@ -135,6 +154,7 @@ export const addAndroidRadioStation = async ({
     homepageUrl,
     name,
     streamUrl,
+    thumbnailFile,
     thumbnailUrl,
 }: AddAndroidRadioStationInput): Promise<AddAndroidRadioStationResult> => {
     if (authentication.type !== ServerType.NAVIDROME) {
@@ -156,7 +176,7 @@ export const addAndroidRadioStation = async ({
     const body = (await response.json()) as SubsonicRadioBody;
     assertSubsonicOk(body['subsonic-response'], 'Failed to add radio station');
 
-    if (!thumbnailUrl?.trim()) {
+    if (!thumbnailFile && !thumbnailUrl?.trim()) {
         return { imageUploaded: false };
     }
 
@@ -174,7 +194,7 @@ export const addAndroidRadioStation = async ({
         await uploadNavidromeRadioThumbnail(
             authentication,
             createdStation.id,
-            thumbnailUrl.trim(),
+            thumbnailFile ?? { url: thumbnailUrl?.trim() },
         );
 
         return {

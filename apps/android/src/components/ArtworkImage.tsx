@@ -12,9 +12,8 @@ import { styles } from '../theme/styles';
 
 /**
  * Artwork tile backed by expo-image so cover art decodes and recycles like a
- * native app without turning browse sessions into unbounded disk-cache writes.
- * List/grid covers use memory cache only; fullscreen/current artwork can still
- * opt into disk because it is one image at a time instead of hundreds of tiles.
+ * native app. List/grid covers opt into disk cache too so returning from a
+ * detail page does not have to refetch visible album art over LAN.
  */
 export const ArtworkImage = ({
     fallbackStyle,
@@ -50,7 +49,7 @@ export const ArtworkImage = ({
     return (
         <ExpoImage
             allowDownscaling
-            cachePolicy="memory"
+            cachePolicy="memory-disk"
             contentFit="cover"
             onError={() => setErrored(true)}
             recyclingKey={uri}

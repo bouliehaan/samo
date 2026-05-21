@@ -2,6 +2,8 @@ import { Platform, StyleSheet } from 'react-native';
 
 import {
     FULL_PLAYER_ARTWORK_SIZE,
+    FULL_PLAYER_PADDING_BOTTOM,
+    FULL_PLAYER_PADDING_TOP,
     HOME_COMPACT_OFFSET,
     HOME_EDGE_PADDING,
     HOME_PRIMARY_TILE,
@@ -13,6 +15,7 @@ import {
     MINI_PLAYER_RADIUS,
     MINI_PLAYER_VERTICAL_PADDING,
     QUEUE_SHEET_HEIGHT,
+    SCREEN_HEIGHT,
     SCREEN_WIDTH,
     VIEW_ALL_SIDEBAR_GUTTER,
     VIEW_ALL_TILE_HEIGHT,
@@ -35,6 +38,58 @@ export const styles = StyleSheet.create({
         letterSpacing: 0.4,
         marginTop: spacing.md,
         textTransform: 'uppercase',
+    },
+    addRadioThumbnailButton: {
+        alignItems: 'center',
+        backgroundColor: 'rgba(255, 255, 255, 0.06)',
+        borderRadius: 8,
+        height: 36,
+        justifyContent: 'center',
+        paddingHorizontal: spacing.sm,
+    },
+    addRadioThumbnailButtonText: {
+        color: colors.text,
+        fontSize: 13,
+        fontWeight: '800',
+    },
+    addRadioThumbnailImage: {
+        height: '100%',
+        width: '100%',
+    },
+    addRadioThumbnailMeta: {
+        flex: 1,
+        minWidth: 0,
+    },
+    addRadioThumbnailPicker: {
+        alignItems: 'center',
+        backgroundColor: colors.surface,
+        borderRadius: 8,
+        flexDirection: 'row',
+        gap: spacing.sm,
+        marginTop: spacing.sm,
+        minHeight: 64,
+        padding: 8,
+    },
+    addRadioThumbnailPreview: {
+        alignItems: 'center',
+        backgroundColor: 'rgba(255, 255, 255, 0.06)',
+        borderRadius: 6,
+        height: 48,
+        justifyContent: 'center',
+        overflow: 'hidden',
+        width: 48,
+    },
+    addRadioThumbnailSubtitle: {
+        color: colors.muted,
+        fontSize: 12,
+        fontWeight: '600',
+        lineHeight: 16,
+        marginTop: 2,
+    },
+    addRadioThumbnailTitle: {
+        color: colors.text,
+        fontSize: 14,
+        fontWeight: '800',
     },
     addRadioServerBlock: {
         marginBottom: spacing.xs,
@@ -1034,6 +1089,7 @@ export const styles = StyleSheet.create({
         fontWeight: '700',
     },
     downloadsStorageActions: {
+        flexWrap: 'wrap',
         flexDirection: 'row',
         gap: spacing.sm,
         marginTop: spacing.sm,
@@ -1273,7 +1329,14 @@ export const styles = StyleSheet.create({
         mixBlendMode: 'soft-light',
     },
     fullPlayerContent: {
-        flex: 1,
+        height: SCREEN_HEIGHT,
+        left: 0,
+        paddingBottom: FULL_PLAYER_PADDING_BOTTOM,
+        paddingHorizontal: spacing.lg,
+        paddingTop: FULL_PLAYER_PADDING_TOP,
+        position: 'absolute',
+        right: 0,
+        top: 0,
     },
     fullPlayerControlSide: {
         alignItems: 'center',
@@ -1572,7 +1635,6 @@ export const styles = StyleSheet.create({
         alignItems: 'center',
         flexDirection: 'row',
         justifyContent: 'space-between',
-        marginTop: spacing.lg,
     },
     libraryHeaderText: {
         flex: 1,
@@ -1582,6 +1644,12 @@ export const styles = StyleSheet.create({
     libraryList: {
         gap: 4,
         marginTop: spacing.md,
+    },
+    libraryListContent: {
+        // tabBar (~62) + miniPlayer (~78) + breathing room
+        paddingBottom: 200,
+        paddingHorizontal: HOME_EDGE_PADDING,
+        paddingTop: spacing.lg,
     },
     libraryRow: {
         alignItems: 'center',
@@ -1639,7 +1707,7 @@ export const styles = StyleSheet.create({
         marginBottom: 2,
     },
     libraryScreen: {
-        marginTop: spacing.sm,
+        flex: 1,
     },
     librarySortBadge: {
         alignItems: 'center',
@@ -1668,6 +1736,12 @@ export const styles = StyleSheet.create({
         fontWeight: '700',
         lineHeight: 17,
         marginTop: 2,
+    },
+    libraryStaticContent: {
+        // Matches normal tab content padding for non-virtualized library states.
+        paddingBottom: 200,
+        paddingHorizontal: HOME_EDGE_PADDING,
+        paddingTop: spacing.lg,
     },
     mediaArtwork: {
         aspectRatio: 1,
@@ -1911,6 +1985,7 @@ export const styles = StyleSheet.create({
         width: HOME_PRIMARY_TILE,
     },
     mediaTileCompact: {
+        height: HOME_PRIMARY_TILE + 58,
         width: HOME_PRIMARY_TILE,
     },
     mediaTileContinue: {
@@ -2464,13 +2539,30 @@ export const styles = StyleSheet.create({
         justifyContent: 'space-between',
         marginTop: spacing.xl,
     },
+    radioGridHeaderCompact: {
+        marginTop: 0,
+    },
+    radioHeaderActions: {
+        alignItems: 'center',
+        flexDirection: 'row',
+        gap: spacing.xs,
+    },
+    radioAddIconButton: {
+        alignItems: 'center',
+        borderRadius: 999,
+        height: 32,
+        justifyContent: 'center',
+        width: 32,
+    },
+    radioEmptyText: {
+        marginTop: spacing.md,
+    },
     radioHero: {
         alignItems: 'center',
         backgroundColor: colors.panel,
         borderRadius: 8,
         flexDirection: 'row',
         gap: spacing.md,
-        marginTop: spacing.sm,
         minHeight: 154,
         padding: spacing.md,
     },
@@ -2526,6 +2618,19 @@ export const styles = StyleSheet.create({
     },
     radioScreen: {
         marginTop: spacing.sm,
+    },
+    radioSortButton: {
+        alignItems: 'center',
+        borderRadius: 999,
+        justifyContent: 'center',
+        minHeight: 32,
+        paddingHorizontal: 4,
+    },
+    radioSortText: {
+        color: colors.muted,
+        fontSize: 12,
+        fontWeight: '700',
+        lineHeight: 17,
     },
     relatedArtistArtwork: {
         backgroundColor: colors.surface,
@@ -3039,6 +3144,26 @@ export const styles = StyleSheet.create({
         paddingTop: 8,
         position: 'absolute',
         right: 0,
+    },
+    tabScene: {
+        ...StyleSheet.absoluteFillObject,
+        backgroundColor: colors.background,
+    },
+    tabSceneActive: {
+        opacity: 1,
+        zIndex: 1,
+    },
+    tabSceneHidden: {
+        opacity: 0,
+        zIndex: 0,
+    },
+    tabSceneHost: {
+        flex: 1,
+        overflow: 'hidden',
+        position: 'relative',
+    },
+    tabUtilityScene: {
+        flex: 1,
     },
     tabButton: {
         alignItems: 'center',

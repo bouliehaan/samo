@@ -9,7 +9,7 @@ import { type ServerAuthenticationResult } from '@samo/core/server';
 // the full fetch when requested; keeping this slice lean avoids a wide album
 // detail fan-out before the first scroll can feel responsive.
 const ANDROID_HOME_CONTENT_LIMIT = 36;
-const ANDROID_HOME_QUALITY_SCAN_LIMIT = ANDROID_HOME_CONTENT_LIMIT;
+const ANDROID_HOME_QUALITY_SCAN_LIMIT = 8;
 
 export type AndroidHomeContentState =
     | { content: MobileHomeContent; status: 'loaded' }

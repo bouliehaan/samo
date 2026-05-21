@@ -12,7 +12,7 @@ export type AndroidFullCollectionState =
     | { status: 'idle' }
     | { status: 'loading' };
 
-const ANDROID_FULL_COLLECTION_QUALITY_SCAN_LIMIT = 48;
+const ANDROID_FULL_COLLECTION_QUALITY_SCAN_LIMIT = 0;
 
 /**
  * Pull the COMPLETE list of items for a View All grid across every connected

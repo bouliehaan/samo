@@ -45,7 +45,7 @@ Impact: moved the app's browse-heavy Home and View All surfaces onto native recy
 Completed the targeted follow-up F9 slice for the animation-coupled lists:
 - Added a `Reanimated.createAnimatedComponent(FlashList)` wrapper for playlist detail so the collapsed header still follows the scroll position through the existing UI-thread scroll handler.
 - Replaced the playlist detail `Reanimated.FlatList` with the animated FlashList wrapper, preserving the same header, search controls, sort/filter controls, and scroll-driven collapsed topbar behavior.
-- Replaced the fullscreen queue sheet's `GestureFlatList` with `FlashList`, preserving the touch tracking used to close the sheet from a downward pull at the top.
+- Replaced the fullscreen queue sheet's `GestureFlatList` with `FlashList`; the top-of-list downward pull-to-close behavior now lives in a manual UI-thread pan recognizer around the FlashList.
 - Removed the remaining JS-side `initialNumToRender`, `maxToRenderPerBatch`, `windowSize`, `getItemLayout`, and `removeClippedSubviews` tuning from these hot lists in favor of FlashList v2 recycling plus bounded `drawDistance`.
 - Hoisted the shared FlashList `maintainVisibleContentPosition` config so list props stay stable across renders.
 
@@ -73,6 +73,49 @@ Completed a larger F1 split slice without changing app behavior:
 - Moved downloaded collection/track key contexts into `apps/android/src/contexts/downloaded-keys.ts`.
 
 Impact: `App.tsx` dropped from roughly 12.4k lines to roughly 11.6k lines while keeping the root as the orchestrator. This removes color math, image fallback handling, badge rendering, seek-bar gesture code, artwork zoom gestures, and downloaded-key context plumbing from the monolith so the later player/screen extraction is much less tangled.
+
+### 2026-05-20 — Android fullscreen player transition frame-budget pass
+
+Completed a focused pass on the animation-critical miniplayer/fullscreen transition and the queue sheet regression:
+- Preserved the fullscreen player's original physical shell motion (`top` + `height`) so the miniplayer still reads as the object sliding up and becoming the fullscreen player.
+- Moved the expensive fullscreen body into a fixed full-size content layer that is clipped by the animated shell, so artwork/controls/metadata lay out once at the open size instead of being recomputed throughout the spring.
+- Replaced the queue sheet's FlashList touch-end close detection with a UI-thread manual pan recognizer that activates only when the list starts at scrollY 0 and the finger moves downward, restoring the "pull down at top to minimize" behavior without stealing normal list scrolls.
+
+Impact: the player keeps the physical mini-to-full expansion while removing the biggest avoidable relayout cost inside the surface, and the queue top-pull behavior lost during the FlashList migration is restored through gesture-handler rather than JS responder callbacks.
+
+### 2026-05-20 — Android tab switching and Radio page pass
+
+Completed a navigation/rendering pass plus the requested Radio surface rework:
+- Added eager tab scene retention for the main Android tabs. Home/Search/Library/Playlists/Radio now mount ahead of tab interaction and stay laid out behind opacity/z-index instead of mounting or using `display: none` on the tap path.
+- Removed the no-op media-detail state write from ordinary tab taps by making `closeMediaDetail()` preserve the existing idle object.
+- Moved tab selection to press-down while keeping `onPress` for accessibility activation, so visual page selection begins at the earliest touch event.
+- Reworked Radio so the first visible content is the current top radio item instead of the "Radio / N stations" header.
+- Replaced the old `+ Add` pill with a compact muted `+` next to the inline `Recent` / `Name` sort control, and made that text open the existing sort selector.
+- Added local thumbnail file picking to the Add Radio Station sheet and passed the selected image blob through the Navidrome radio image upload path.
+- Verified with `pnpm --dir apps/android typecheck`, `git diff --check`, and Android `app:assembleDebug`.
+
+Impact: tab switches avoid the avoidable mount/remount and relayout cost that made page changes feel delayed, including first visits. Radio's add/sort controls now live in the lighter inline header requested by design. The local image picker uses the existing `expo-file-system` dependency, so no new package was added.
+
+### 2026-05-21 — Android exhaustive Library albums/artists on FlashList
+
+Completed the remaining F9 Library scalability pass:
+- Moved the Library tab out of the parent tab `ScrollView` and gave it its own vertical `FlashList`, so massive Library rows recycle instead of rendering every row in JS.
+- Added a post-home-load exhaustive Library fetch for Albums and Artists using the existing full-collection loader. It waits briefly until Home has painted, skips offline mode, and uses the Android full-collection quality-scan limit of `0` so opening Library does not fan out per-album quality requests.
+- Library now merges the exhaustive Albums/Artists results into its normal row model, while other bounded categories still use the existing Home-backed slices.
+- Album/Artist filters show a loading state until the exhaustive result is ready, avoiding the old partial-slice-then-swap behavior for those two filters.
+- Verified with `pnpm --dir apps/android typecheck`, `git diff --check`, and `rg "FlatList" apps/android` returning no matches.
+
+Impact: the Library Albums and Artists filters can now represent the complete Navidrome/Subsonic library without paying the old `rows.map(...)` cost or blocking the launch/Home path with full-library work.
+
+### 2026-05-21 — Android utility screens extracted from `App.tsx`
+
+Completed another F1 screen-split slice focused on the low-risk utility surface:
+- Moved `AddServerScreen`, `SettingsScreen`, `ManageServersScreen`, `DownloadsScreen`, and `ConnectedServerList` out of `apps/android/App.tsx` into `apps/android/src/screens/`.
+- Added `apps/android/src/utils/server-types.ts` so the Add Server form and root connection follow-up logic share the same Android-supported server type list.
+- Left root `App()` as the orchestrator for navigation, auth form state, sync actions, and connection lifecycle; the extracted files remain prop-driven leaves.
+- Verified with `pnpm --dir apps/android typecheck` and `git diff --check`.
+
+Impact: `App.tsx` dropped from 12,191 lines to 11,534 lines while preserving behavior. The Settings/Downloads/Add Server/Manage Servers surface can now be edited without reopening the full player/navigation monolith.
 
 ---
 
@@ -395,13 +438,13 @@ Then `AudiobookWebPlayer = () => <WebMediaEngine source="audiobook" />` etc. `We
 
 ### F9. `apps/android` uses unpartitioned `FlatList` for everything (no FlashList)
 
-**Status:** Completed for the Android app as of 2026-05-20. `@shopify/flash-list@2.0.2` is installed and `rg "FlatList" apps/android` returns no app usage.
+**Status:** Completed for the Android app as of 2026-05-21. `@shopify/flash-list@2.0.2` is installed, `rg "FlatList" apps/android` returns no app usage, and the Library tab's formerly direct-mapped row list now uses its own vertical `FlashList`.
 
 **Where:** Throughout [apps/android/App.tsx](apps/android/App.tsx) — originally 14 `FlatList` usages and no `@shopify/flash-list` dependency.
 
 **Original status quo:**
 - ViewAllScreen pre-chunked items into two-up rows then rendered a single-column `FlatList` (lines 11761–11784) — a workaround for the well-known `FlatList` + `numColumns` + `removeClippedSubviews` bug. It now uses `FlashList` over the same row model.
-- HomeDisplayRow, ViewAllScreen, MediaDetailLoaded's playlist track list, and QueueSheetOverlay now use `FlashList`. Bounded/simple screens render through `ScrollView` or direct mapped rows where virtualization is not useful.
+- HomeDisplayRow, ViewAllScreen, LibraryScreen, MediaDetailLoaded's playlist track list, and QueueSheetOverlay now use `FlashList`. Bounded/simple screens render through `ScrollView` or direct mapped rows where virtualization is not useful.
 
 **Why this matters:**
 - On large libraries (the user has Navidrome + audiobookshelf — could easily be 50k tracks), `FlatList` measurement and recycling cost dominates scroll perf. FlashList is built for exactly this.
@@ -409,8 +452,8 @@ Then `AudiobookWebPlayer = () => <WebMediaEngine source="audiobook" />` etc. `We
 
 **Action:**
 1. [done] Add `@shopify/flash-list` to `apps/android/package.json` via Expo's compatible dependency resolution (completed with version `2.0.2`).
-2. [done] Replace `FlatList` with `FlashList` in screens with > ~50 expected items: ViewAllScreen, Home shelves, QueueSheetOverlay, and MediaDetailLoaded's playlist track list.
-3. Keep `FlatList` for genuinely small lists (sleep timer options, settings rows, output picker — bounded ≤ 10 items).
+2. [done] Replace `FlatList`/direct row mapping with `FlashList` in screens with > ~50 expected items: ViewAllScreen, Home shelves, LibraryScreen, QueueSheetOverlay, and MediaDetailLoaded's playlist track list.
+3. [done] Keep `FlatList` out of the app entirely; genuinely small lists remain direct mapped or `ScrollView`-backed.
 4. FlashList v2's native RecyclerView should replace hand-rolled `getItemLayout`/batch/window tuning. Keep ViewAll's row-chunking until the alphabet jump and cell recycling behavior has been tested on-device.
 
 **Risk:** Medium — FlashList has different scroll semantics (`onScrollToIndexFailed` doesn't exist; uses `flashScrollIndicators`). Need to verify the alphabet sidebar's `scrollToIndex` still lands on the right row. Verify cell recycling doesn't fight with `expo-image`'s `recyclingKey`.

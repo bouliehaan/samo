@@ -82,6 +82,7 @@ class SamoAudioModule(
   private var outputRouteDiscoveryStop: Runnable? = null
   private var noisyHandlingRestore: Runnable? = null
   private var noisyHandlingSuppressedSessionId: String? = null
+  private var sleepTimerStop: Runnable? = null
 
   private val serviceConnection = object : ServiceConnection {
     override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
@@ -365,8 +366,47 @@ class SamoAudioModule(
   }
 
   @ReactMethod
+  fun setSleepTimer(seconds: Double, promise: Promise) {
+    mainHandler.post {
+      cancelNativeSleepTimer()
+      val delayMs = (seconds * 1000.0).toLong().coerceAtLeast(0L)
+      if (delayMs <= 0L) {
+        promise.resolve(getLocalStatusMap())
+        return@post
+      }
+
+      val runnable = Runnable {
+        sleepTimerStop = null
+        val remoteMediaClient = getActiveRemoteMediaClient()
+        if (remoteMediaClient != null) {
+          remoteMediaClient.pause()
+          emitCastPlaybackState("paused")
+          return@Runnable
+        }
+
+        val service = boundService ?: return@Runnable
+        val resolvedPlayer = service.getCurrentPlayer() ?: return@Runnable
+        resolvedPlayer.pause()
+        emitState("paused")
+      }
+      sleepTimerStop = runnable
+      mainHandler.postDelayed(runnable, delayMs)
+      promise.resolve(getLocalStatusMap())
+    }
+  }
+
+  @ReactMethod
+  fun cancelSleepTimer(promise: Promise) {
+    mainHandler.post {
+      cancelNativeSleepTimer()
+      promise.resolve(getLocalStatusMap())
+    }
+  }
+
+  @ReactMethod
   fun stop(promise: Promise) {
     mainHandler.post {
+      cancelNativeSleepTimer()
       val remoteMediaClient = getActiveRemoteMediaClient()
       if (remoteMediaClient != null) {
         remoteMediaClient.stop()
@@ -416,19 +456,99 @@ class SamoAudioModule(
         return@post
       }
 
-      val service = boundService
-      if (service == null) {
-        promise.resolve(getIdleStatusMap())
+      ensureServiceBound(
+        startService = false,
+        onReady = { service ->
+          try {
+            val resolvedPlayer = service.getCurrentPlayer()
+            promise.resolve(
+              if (resolvedPlayer == null) getIdleStatusMap() else getStatusMap(resolvedPlayer)
+            )
+          } catch (error: Exception) {
+            promise.reject("SAMO_AUDIO_ERROR", error.message, error)
+          }
+        },
+        onError = {
+          promise.resolve(getIdleStatusMap())
+        }
+      )
+    }
+  }
+
+  @ReactMethod
+  fun updateNowPlayingMetadata(metadata: ReadableMap, promise: Promise) {
+    mainHandler.post {
+      val metadataSessionId = getOptionalString(metadata, "sessionId")
+      val activeSessionId = currentSessionId
+      if (
+        !metadataSessionId.isNullOrBlank() &&
+        !activeSessionId.isNullOrBlank() &&
+        metadataSessionId != activeSessionId
+      ) {
+        promise.resolve(getLocalStatusMap())
         return@post
       }
-      try {
-        val resolvedPlayer = service.getCurrentPlayer()
-        promise.resolve(
-          if (resolvedPlayer == null) getIdleStatusMap() else getStatusMap(resolvedPlayer)
-        )
-      } catch (error: Exception) {
-        promise.reject("SAMO_AUDIO_ERROR", error.message, error)
-      }
+
+      val previousSource = currentSource
+      val title = getOptionalString(metadata, "title") ?: previousSource?.title ?: "Samo"
+      val subtitle = getOptionalString(metadata, "subtitle") ?: previousSource?.subtitle
+      val artworkUrl = getOptionalString(metadata, "artworkUrl") ?: previousSource?.artworkUrl
+      val mediaId =
+        previousSource?.id ?: getOptionalString(metadata, "id") ?: activeSessionId ?: metadataSessionId ?: "samo"
+      val sourceLabel = previousSource?.source ?: getOptionalString(metadata, "source")
+
+      currentSource = SamoAudioSourceSnapshot(
+        artworkUrl = artworkUrl,
+        id = mediaId,
+        source = sourceLabel,
+        subtitle = subtitle,
+        title = title
+      )
+
+      ensureServiceBound(
+        startService = false,
+        onReady = { service ->
+          try {
+            val resolvedPlayer = service.getCurrentPlayer()
+            if (resolvedPlayer == null) {
+              promise.resolve(getIdleStatusMap())
+              return@ensureServiceBound
+            }
+
+            val currentIndex = resolvedPlayer.currentMediaItemIndex
+            val currentItem = resolvedPlayer.currentMediaItem
+            if (
+              currentItem != null &&
+              currentIndex != C.INDEX_UNSET &&
+              currentIndex >= 0 &&
+              currentIndex < resolvedPlayer.mediaItemCount
+            ) {
+              val metadataBuilder = MediaMetadata.Builder()
+                .setTitle(title)
+                .setArtist(subtitle)
+
+              if (!artworkUrl.isNullOrBlank()) {
+                metadataBuilder.setArtworkUri(Uri.parse(artworkUrl))
+              }
+
+              val updatedItem = currentItem
+                .buildUpon()
+                .setMediaMetadata(metadataBuilder.build())
+                .build()
+              currentMediaItem = updatedItem
+              resolvedPlayer.replaceMediaItem(currentIndex, updatedItem)
+            }
+
+            emitState()
+            promise.resolve(getStatusMap(resolvedPlayer))
+          } catch (error: Exception) {
+            promise.reject("SAMO_AUDIO_ERROR", error.message, error)
+          }
+        },
+        onError = {
+          promise.resolve(getIdleStatusMap())
+        }
+      )
     }
   }
 
@@ -469,6 +589,18 @@ class SamoAudioModule(
     }
   }
 
+  private fun getLocalStatusMap(): WritableMap {
+    val service = boundService ?: return getIdleStatusMap()
+    val resolvedPlayer = service.getCurrentPlayer()
+    return if (resolvedPlayer == null) getIdleStatusMap() else getStatusMap(resolvedPlayer)
+  }
+
+  private fun cancelNativeSleepTimer() {
+    val timer = sleepTimerStop ?: return
+    mainHandler.removeCallbacks(timer)
+    sleepTimerStop = null
+  }
+
   @ReactMethod
   fun getCastState(promise: Promise) {
     withCastContext(
@@ -479,6 +611,7 @@ class SamoAudioModule(
 
   override fun invalidate() {
     mainHandler.post {
+      cancelNativeSleepTimer()
       val service = boundService
       if (service != null) {
         try {
@@ -1179,7 +1312,8 @@ class SamoAudioModule(
    */
   private fun ensureServiceBound(
     onReady: (SamoPlaybackService) -> Unit,
-    onError: ((Throwable) -> Unit)? = null
+    onError: ((Throwable) -> Unit)? = null,
+    startService: Boolean = true
   ) {
     // Confine all reads/writes of boundService, isBinding, and
     // pendingServiceActions to the main thread. ReactMethod calls arrive on
@@ -1215,7 +1349,9 @@ class SamoAudioModule(
         action = SamoPlaybackService.ACTION_BIND_LOCAL
       }
       try {
-        ContextCompat.startForegroundService(reactContext, intent)
+        if (startService) {
+          ContextCompat.startForegroundService(reactContext, intent)
+        }
         val bound = reactContext.bindService(
           intent,
           serviceConnection,

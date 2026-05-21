@@ -1,6 +1,14 @@
-import { NativeModules } from 'react-native';
+import { DeviceEventEmitter, NativeModules } from 'react-native';
 
 interface SamoFileSystemNative {
+    cancelNativeDownload(downloadId: string): Promise<void>;
+    downloadFile(
+        downloadId: string,
+        sourceUrl: string,
+        destinationFileUri: string,
+        headers?: Record<string, string>,
+    ): Promise<{ bytesWritten?: number; totalBytes?: number; uri: string }>;
+    setDownloadThrottle(bytesPerSecond: number): Promise<void>;
     streamCopyToSaf(
         sourceFileUri: string,
         parentTreeUri: string,
@@ -49,3 +57,39 @@ export const streamCopyToSaf = async (
 
 export const isNativeSafCopyAvailable = (): boolean =>
     typeof native?.streamCopyToSaf === 'function';
+
+export const isNativeDownloadAvailable = (): boolean =>
+    typeof native?.downloadFile === 'function';
+
+export const downloadFileNative = async (
+    downloadId: string,
+    sourceUrl: string,
+    destinationFileUri: string,
+    headers?: Record<string, string>,
+) => {
+    if (!native?.downloadFile) {
+        return null;
+    }
+    return native.downloadFile(downloadId, sourceUrl, destinationFileUri, headers);
+};
+
+export const cancelNativeDownload = async (downloadId: string) => {
+    if (!native?.cancelNativeDownload) {
+        return;
+    }
+    await native.cancelNativeDownload(downloadId);
+};
+
+export const setNativeDownloadThrottle = async (bytesPerSecond: number) => {
+    if (!native?.setDownloadThrottle) {
+        return;
+    }
+    await native.setDownloadThrottle(bytesPerSecond);
+};
+
+export const subscribeNativeDownloadProgress = (
+    listener: (event: { bytesWritten?: number; id?: string; totalBytes?: number }) => void,
+) => {
+    const subscription = DeviceEventEmitter.addListener('SamoFileDownloadProgress', listener);
+    return () => subscription.remove();
+};

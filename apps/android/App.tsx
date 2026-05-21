@@ -37,10 +37,10 @@ import {
     type ServerAuthenticationResult,
     ServerConnectionHealthStatus,
     ServerType,
-    supportsServerTypeOnAndroid,
     upsertServerAuthentication,
 } from '@samo/core/server';
 import { FlashList, type FlashListRef } from '@shopify/flash-list';
+import { File } from 'expo-file-system';
 import { Image as ExpoImage } from 'expo-image';
 import { StatusBar } from 'expo-status-bar';
 import { getColors as getImageColors } from 'react-native-image-colors';
@@ -79,7 +79,6 @@ import {
     Pressable,
     ScrollView,
     StyleSheet,
-    Switch,
     Text,
     TextInput,
     View,
@@ -115,10 +114,16 @@ import {
     useDownloadedTrackKeys,
 } from './src/contexts/downloaded-keys';
 import { useReducedMotionPreference } from './src/hooks/use-reduced-motion-preference';
+import { AddServerScreen } from './src/screens/AddServerScreen';
+import { DownloadsScreen } from './src/screens/DownloadsScreen';
+import { ManageServersScreen } from './src/screens/ManageServersScreen';
+import { SettingsScreen } from './src/screens/SettingsScreen';
 import {
     type AndroidCastState,
     type AndroidMediaOutputRoute,
     type AndroidMediaOutputState,
+    type AndroidNativePlaybackEvent,
+    cancelAndroidSleepTimer,
     getAndroidAudioDeviceInfo,
     getAndroidCastState,
     getAndroidOutputRoutes,
@@ -127,12 +132,14 @@ import {
     playAndroidAudio,
     resumeAndroidAudio,
     seekAndroidAudio,
+    setAndroidSleepTimer,
     getAndroidPlaybackStatus,
     selectAndroidOutputRoute,
     subscribeToAndroidAudioEvents,
     subscribeToAndroidCastEvents,
     subscribeToAndroidNavigationRequests,
     subscribeToAndroidOutputRouteEvents,
+    updateAndroidNowPlayingMetadata,
 } from './src/services/audio-playback';
 import {
     getAndroidPlaybackState,
@@ -164,27 +171,19 @@ import {
     pickAlbumEssenceColor,
 } from './src/utils/color';
 import { clamp } from './src/utils/math';
+import { ANDROID_SERVER_TYPES } from './src/utils/server-types';
 import {
-    cancelDownload,
     type DownloadEntry,
-    type DownloadStatus,
     enqueueCollectionDownload,
     enqueueSingleMusicTrackDownload,
     enqueueSinglePodcastEpisodeDownload,
-    getDownloadsRootUri,
     getLocalDownloadForTrack,
     getLocalUriForTrack,
     getOfflineAudiobookFiles,
-    getStorageLocation,
     listDownloads,
     type OfflineAudiobookFile,
-    pickSdCardStorageLocation,
-    removeDownload,
-    resetStorageLocation,
-    retryDownload,
-    type StorageLocationPreference,
+    setDownloadsPlaybackActive,
     subscribeDownloads,
-    subscribeStorageLocation,
 } from './src/services/download-manager';
 import { triggerImpact, triggerSelection } from './src/services/haptics';
 import {
@@ -268,7 +267,6 @@ import {
     DISMISS_DISTANCE,
     DISMISS_VELOCITY,
     FULL_PLAYER_EXPANDED_TOP,
-    FULL_PLAYER_PADDING_BOTTOM,
     FULL_PLAYER_PADDING_TOP,
     HOME_COMPACT_OFFSET,
     HOME_PRIMARY_TILE,
@@ -298,7 +296,6 @@ import {
     DownCaretGlyph,
     DownloadGlyph,
     EllipsisVerticalGlyph,
-    EyeGlyph,
     FullPlayerImageGlyph,
     GearGlyph,
     HeartGlyph,
@@ -326,13 +323,17 @@ const FLASH_LIST_MAINTAIN_POSITION_DISABLED = { disabled: true };
 
 const CAST_ICON_ACTIVE_TINT = 'rgba(202, 160, 79, 0.78)';
 const CAST_ICON_INACTIVE_TINT = 'rgba(245, 245, 245, 0.72)';
-const HOME_ARTWORK_PREFETCH_LIMIT = 24;
+const HOME_ARTWORK_PREFETCH_LIMIT = 48;
+const LIBRARY_FULL_COLLECTION_PREFETCH_DELAY_MS = 500;
+const LIBRARY_ROW_DRAW_DISTANCE = 62 * 12;
 const MEDIA_DETAIL_MEMORY_CACHE_LIMIT = 24;
 const MEDIA_DETAIL_MEMORY_TRACK_LIMIT = 300;
+const DEFAULT_SERVER_URL = 'http://';
 
-const SERVER_TYPES = [ServerType.NAVIDROME, ServerType.SUBSONIC, ServerType.AUDIOBOOKSHELF].filter(
-    supportsServerTypeOnAndroid,
-);
+const EMPTY_LIBRARY_FULL_COLLECTIONS: LibraryFullCollectionsState = {
+    albums: { status: 'idle' },
+    artists: { status: 'idle' },
+};
 
 const addDefaultHttpScheme = (value: string) => {
     const trimmed = value.trim();
@@ -346,6 +347,65 @@ const addDefaultHttpScheme = (value: string) => {
     }
 
     return `http://${trimmed.replace(/^\/+/, '')}`;
+};
+
+const hasServerUrlTarget = (value: string) => {
+    const normalized = addDefaultHttpScheme(value);
+    return normalized.replace(/^[a-z][a-z\d+\-.]*:\/\//i, '').trim().length > 0;
+};
+
+const toPlaybackSource = (value?: string): MobilePlayableAudio['source'] | null => {
+    if (value === 'audiobook' || value === 'music' || value === 'podcast' || value === 'radio') {
+        return value;
+    }
+
+    return null;
+};
+
+const buildRecoveredPlaybackItem = (
+    event: AndroidNativePlaybackEvent,
+    lastPlayedItem: MobilePlayableAudio | null,
+): MobilePlayableAudio | null => {
+    const sourceSnapshot = event.source;
+    if (
+        lastPlayedItem &&
+        (!sourceSnapshot?.id || sourceSnapshot.id === lastPlayedItem.id) &&
+        (!sourceSnapshot?.source || sourceSnapshot.source === lastPlayedItem.source)
+    ) {
+        return {
+            ...lastPlayedItem,
+            artworkUrl: sourceSnapshot?.artworkUrl ?? lastPlayedItem.artworkUrl,
+            durationSeconds:
+                event.durationMs && event.durationMs > 0
+                    ? event.durationMs / 1000
+                    : lastPlayedItem.durationSeconds,
+            subtitle: lastPlayedItem.subtitle ?? sourceSnapshot?.subtitle,
+            title: lastPlayedItem.title,
+        };
+    }
+
+    const source = toPlaybackSource(sourceSnapshot?.source);
+    const id = sourceSnapshot?.id ?? event.sessionId;
+    const title = sourceSnapshot?.title?.trim();
+    if (!source || !id || !title) {
+        return null;
+    }
+
+    return {
+        artworkUrl: sourceSnapshot?.artworkUrl,
+        durationSeconds:
+            event.durationMs && event.durationMs > 0 ? event.durationMs / 1000 : undefined,
+        id,
+        quality: {
+            deliveryKind: 'unknown',
+            losslessRequired: false,
+            serverTranscodeRequested: false,
+        },
+        source,
+        subtitle: sourceSnapshot?.subtitle,
+        title,
+        url: '',
+    };
 };
 
 const getTabTitle = (activeTab: SamoMobileTabId) => {
@@ -616,22 +676,6 @@ const buildDownloadedMusicDetail = async (
     };
 };
 
-interface AddServerScreenProps {
-    authState: AndroidAuthState;
-    canConnect: boolean;
-    onBack: () => void;
-    onConnect: () => void;
-    onPasswordChange: (value: string) => void;
-    onServerTypeChange: (value: ServerType) => void;
-    onServerUrlBlur: () => void;
-    onServerUrlChange: (value: string) => void;
-    onUsernameChange: (value: string) => void;
-    password: string;
-    serverType: ServerType;
-    serverUrl: string;
-    username: string;
-}
-
 type AndroidUtilityScreen =
     | 'add-server'
     | 'downloads'
@@ -678,6 +722,8 @@ interface SearchScreenProps {
 }
 
 interface LibraryScreenProps {
+    fullCollections: LibraryFullCollectionsState;
+    fullCollectionsEnabled: boolean;
     hasServerConnections: boolean;
     homeContentState: AndroidHomeContentState;
     onSelectItem: (item: AndroidRecentContentSourceItem) => void;
@@ -729,6 +775,11 @@ interface LibraryDisplayItem {
     key: string;
     mediaType: LibraryMediaType;
     selectedAt: number;
+}
+
+interface LibraryFullCollectionsState {
+    albums: AndroidFullCollectionState;
+    artists: AndroidFullCollectionState;
 }
 
 interface HomeDisplaySection {
@@ -1097,7 +1148,10 @@ export default function App() {
     const [viewAllFullState, setViewAllFullState] = useState<AndroidFullCollectionState>({
         status: 'idle',
     });
+    const [libraryFullCollections, setLibraryFullCollections] =
+        useState<LibraryFullCollectionsState>(EMPTY_LIBRARY_FULL_COLLECTIONS);
     const viewAllFetchTokenRef = useRef(0);
+    const libraryFullCollectionFetchTokenRef = useRef(0);
     // Unified animation source for the MiniPlayer ↔ FullScreenPlayer transition.
     // 0 = miniplayer visible, 1 = fullscreen visible. Both components derive
     // their frame, opacity, and touchability from this single shared value so
@@ -1130,7 +1184,7 @@ export default function App() {
     const [serverConnections, setServerConnections] = useState<ServerAuthenticationResult[]>([]);
     const [serverHealthByKey, setServerHealthByKey] = useState<AndroidServerHealthMap>({});
     const [serverType, setServerType] = useState<ServerType>(ServerType.NAVIDROME);
-    const [serverUrl, setServerUrl] = useState('');
+    const [serverUrl, setServerUrl] = useState(DEFAULT_SERVER_URL);
     const [searchState, setSearchState] = useState<AndroidSearchState>({ status: 'idle' });
     const [username, setUsername] = useState('');
     const [isShuffled, setIsShuffled] = useState(false);
@@ -1215,13 +1269,77 @@ export default function App() {
     const closeMediaDetail = useCallback(() => {
         mediaDetailRequestId.current += 1;
         audiobookStartRequestId.current += 1;
-        setMediaDetailState({ status: 'idle' });
+        setMediaDetailState((current) => (current.status === 'idle' ? current : { status: 'idle' }));
     }, []);
 
     const closeBookInfo = useCallback(() => {
         bookInfoRequestId.current += 1;
         setBookInfoState({ status: 'idle' });
     }, []);
+
+    const hydrateNativePlaybackState = useCallback(async () => {
+        if (!isAndroidNativePlaybackAvailable()) {
+            return;
+        }
+
+        try {
+            const event = await getAndroidPlaybackStatus();
+            if (event.status === 'idle') {
+                return;
+            }
+
+            const currentPlaybackState = getAndroidPlaybackState();
+            if (currentPlaybackState.status !== 'idle') {
+                if (!event.sessionId || event.sessionId !== currentPlaybackState.sessionId) {
+                    return;
+                }
+            }
+
+            const item =
+                currentPlaybackState.status !== 'idle'
+                    ? currentPlaybackState.item
+                    : buildRecoveredPlaybackItem(event, lastPlayedItem);
+            if (!item) {
+                return;
+            }
+
+            const sessionId =
+                currentPlaybackState.status !== 'idle'
+                    ? currentPlaybackState.sessionId
+                    : (event.sessionId ?? `recovered:${item.id}`);
+            playbackSnapshotRef.current = { item, sessionId };
+            setAndroidPlaybackState((current) => {
+                if (current.status !== 'idle' && current.sessionId !== sessionId) {
+                    return current;
+                }
+
+                const activeItem =
+                    current.status !== 'idle' && current.sessionId === sessionId
+                        ? current.item
+                        : item;
+
+                return {
+                    bitPerfect:
+                        event.bitPerfect ??
+                        (current.status === 'idle' ? undefined : current.bitPerfect),
+                    durationMs: getPlaybackEventDurationMs(event, activeItem),
+                    item: activeItem,
+                    message: event.message ?? (current.status === 'idle' ? undefined : current.message),
+                    positionMs:
+                        current.status === 'idle'
+                            ? event.positionMs
+                            : getStablePlaybackPositionMs(event, current),
+                    sessionId,
+                    status: getActivePlaybackStatus(
+                        event.status,
+                        current.status === 'idle' ? 'paused' : current.status,
+                    ),
+                };
+            });
+        } catch {
+            // Best-effort recovery. The regular native event subscription still owns live updates.
+        }
+    }, [lastPlayedItem]);
 
     useEffect(() => {
         const handler = BackHandler.addEventListener('hardwareBackPress', () => {
@@ -1276,10 +1394,9 @@ export default function App() {
     ]);
 
     const canConnect =
-        serverUrl.trim().length > 0 && username.trim().length > 0 && password.length > 0;
+        hasServerUrlTarget(serverUrl) && username.trim().length > 0 && password.length > 0;
     const isHomeSurface =
         activeTab === 'home' && activeUtilityScreen === null && mediaDetailState.status === 'idle';
-    const title = useMemo(() => getTabTitle(activeTab), [activeTab]);
 
     // When offline mode is on, filter home/library content to items that
     // have at least one completed download. Items without a server source
@@ -1417,6 +1534,45 @@ export default function App() {
         },
         [],
     );
+
+    useEffect(() => {
+        if (
+            isOfflineMode ||
+            serverConnections.length === 0 ||
+            homeContentState.status !== 'loaded'
+        ) {
+            libraryFullCollectionFetchTokenRef.current += 1;
+            setLibraryFullCollections(EMPTY_LIBRARY_FULL_COLLECTIONS);
+            return;
+        }
+
+        const requestId = (libraryFullCollectionFetchTokenRef.current += 1);
+        setLibraryFullCollections({
+            albums: { status: 'loading' },
+            artists: { status: 'loading' },
+        });
+
+        // Let the launch/home render settle before pulling the exhaustive
+        // library. The full lists are for Library + View All, not first paint.
+        const timeout = setTimeout(() => {
+            void (async () => {
+                const [albums, artists] = await Promise.all([
+                    loadAndroidFullCollection(serverConnections, 'album'),
+                    loadAndroidFullCollection(serverConnections, 'artist'),
+                ]);
+
+                if (libraryFullCollectionFetchTokenRef.current !== requestId) {
+                    return;
+                }
+
+                setLibraryFullCollections({ albums, artists });
+            })();
+        }, LIBRARY_FULL_COLLECTION_PREFETCH_DELAY_MS);
+
+        return () => {
+            clearTimeout(timeout);
+        };
+    }, [homeContentState.status, isOfflineMode, serverConnections]);
 
     const playQueuedItem = useCallback(
         async (
@@ -1626,9 +1782,8 @@ export default function App() {
         return () => subscription.remove();
     }, []);
 
-    // Warm only the in-memory artwork cache for the first tiles. Disk-caching
-    // every browsed cover lets the image cache grow with normal use, and that
-    // cache pressure has shown up as app-wide slowdown.
+    // Warm the first visible covers into memory + disk so round-tripping
+    // through detail pages does not refetch art the home screen just showed.
     useEffect(() => {
         if (homeContentState.status !== 'loaded') return;
         const urls = new Set<string>();
@@ -1638,7 +1793,10 @@ export default function App() {
             }
         }
         if (urls.size > 0) {
-            void ExpoImage.prefetch([...urls].slice(0, HOME_ARTWORK_PREFETCH_LIMIT), 'memory');
+            void ExpoImage.prefetch(
+                [...urls].slice(0, HOME_ARTWORK_PREFETCH_LIMIT),
+                'memory-disk',
+            );
         }
     }, [homeContentState]);
 
@@ -1714,6 +1872,10 @@ export default function App() {
 
         return () => clearInterval(interval);
     }, [isFullPlayerOpen, playbackStatus]);
+
+    useEffect(() => {
+        setDownloadsPlaybackActive(playbackStatus !== 'idle');
+    }, [playbackStatus]);
 
     useEffect(() => {
         let isMounted = true;
@@ -2044,6 +2206,20 @@ export default function App() {
         return () => subscription.remove();
     }, [serverConnections]);
 
+    useEffect(() => {
+        void hydrateNativePlaybackState();
+    }, [hydrateNativePlaybackState]);
+
+    useEffect(() => {
+        const subscription = AppState.addEventListener('change', (next) => {
+            if (next === 'active') {
+                void hydrateNativePlaybackState();
+            }
+        });
+
+        return () => subscription.remove();
+    }, [hydrateNativePlaybackState]);
+
     const handleConnect = async () => {
         if (!canConnect || authState.status === 'loading') return;
 
@@ -2062,6 +2238,10 @@ export default function App() {
         setAuthState(nextAuthState);
 
         if (nextAuthState.status === 'connected') {
+            const connectedType = nextAuthState.result.type;
+            const shouldOfferAudiobookshelfNext =
+                connectedType === ServerType.NAVIDROME &&
+                ANDROID_SERVER_TYPES.includes(ServerType.AUDIOBOOKSHELF);
             const nextConnections = upsertServerAuthentication(
                 serverConnections,
                 nextAuthState.result,
@@ -2075,12 +2255,33 @@ export default function App() {
             }));
             closeMediaDetail();
             setPassword('');
-            setServerUrl('');
+            setServerUrl(DEFAULT_SERVER_URL);
             setUsername('');
             setSearchState({ status: 'idle' });
             setActiveUtilityScreen('manage-servers');
             await savePersistedServerAuths(nextConnections);
             await loadHomeForConnections(nextConnections);
+
+            if (shouldOfferAudiobookshelfNext) {
+                Alert.alert(
+                    'Add Audiobookshelf?',
+                    'Want to add an Audiobookshelf server too?',
+                    [
+                        { text: 'Not now', style: 'cancel' },
+                        {
+                            text: 'Add Audiobookshelf',
+                            onPress: () => {
+                                setAuthState({ status: 'idle' });
+                                setPassword('');
+                                setServerType(ServerType.AUDIOBOOKSHELF);
+                                setServerUrl(DEFAULT_SERVER_URL);
+                                setUsername('');
+                                setActiveUtilityScreen('add-server');
+                            },
+                        },
+                    ],
+                );
+            }
         }
     };
 
@@ -2200,17 +2401,8 @@ export default function App() {
         (section: HomeDisplaySection) => {
             const variant = getViewAllVariant(section.variant);
             if (!variant) return;
-            // Show the cached home-content slice immediately so the screen
-            // never opens blank; the full collection fetch below will fill in
-            // every remaining item once the server(s) respond.
-            const wideItems =
-                homeContentState.status === 'loaded'
-                    ? gatherViewAllItems(homeContentState.content.sections, variant)
-                    : section.items.filter(
-                          (item): item is MobileHomeItem => 'type' in item,
-                      );
             setViewAllRoute({
-                items: wideItems,
+                items: [],
                 title: section.title,
                 variant,
             });
@@ -2229,7 +2421,7 @@ export default function App() {
                 setViewAllFullState(result);
             })();
         },
-        [closeMediaDetail, homeContentState, serverConnections],
+        [closeMediaDetail, serverConnections],
     );
 
     const handleSelectMediaItem = async (item: MobileHomeItem | MobileSearchItem) => {
@@ -3702,10 +3894,13 @@ export default function App() {
         setActiveUtilityScreen('downloads');
     }, []);
     const handleOpenAddServer = useCallback(() => {
+        setServerUrl((current) =>
+            current.trim().length === 0 ? DEFAULT_SERVER_URL : addDefaultHttpScheme(current),
+        );
         setActiveUtilityScreen('add-server');
     }, []);
     const handleServerUrlBlur = useCallback(() => {
-        setServerUrl((current) => addDefaultHttpScheme(current));
+        setServerUrl((current) => addDefaultHttpScheme(current) || DEFAULT_SERVER_URL);
     }, []);
     const handleOpenFullPlayer = useCallback(() => {
         setIsFullPlayerOpen(true);
@@ -3773,6 +3968,121 @@ export default function App() {
     const nowPlayingRadioId =
         activePlaybackItem?.source === 'radio' ? activePlaybackItem.id : null;
 
+    const handleTabPress = useCallback(
+        (tabId: SamoMobileTabId) => {
+            setActiveUtilityScreen((current) => (current === null ? current : null));
+            if (mediaDetailState.status !== 'idle') {
+                closeMediaDetail();
+            }
+            setActiveTab((current) => (current === tabId ? current : tabId));
+        },
+        [closeMediaDetail, mediaDetailState.status],
+    );
+
+    const utilityScreenContent =
+        activeUtilityScreen === 'settings' ? (
+            <SettingsScreen
+                isOfflineMode={isOfflineMode}
+                onOpenDownloads={handleOpenDownloads}
+                onOpenManageServers={handleOpenManageServers}
+                onSyncWithServer={handleSyncWithServer}
+                onToggleOfflineMode={handleToggleOfflineMode}
+                serverCount={serverConnections.length}
+            />
+        ) : activeUtilityScreen === 'manage-servers' ? (
+            <ManageServersScreen
+                authState={authState}
+                onAddServer={handleOpenAddServer}
+                onDisconnect={handleDisconnect}
+                serverConnections={serverConnections}
+                serverHealthByKey={serverHealthByKey}
+            />
+        ) : activeUtilityScreen === 'downloads' ? (
+            <DownloadsScreen serverConnections={serverConnections} />
+        ) : activeUtilityScreen === 'add-server' ? (
+            <AddServerScreen
+                authState={authState}
+                canConnect={canConnect}
+                onBack={() => setActiveUtilityScreen('manage-servers')}
+                onConnect={handleConnect}
+                onPasswordChange={setPassword}
+                onServerTypeChange={setServerType}
+                onServerUrlBlur={handleServerUrlBlur}
+                onServerUrlChange={setServerUrl}
+                onUsernameChange={setUsername}
+                password={password}
+                serverType={serverType}
+                serverUrl={serverUrl}
+                username={username}
+            />
+        ) : null;
+
+    const renderTabSceneContent = (tabId: SamoMobileTabId) => (
+        <Fragment>
+            {tabId === 'home' && !isSearchOverlayOpen ? (
+                <View style={styles.header}>
+                    <Text style={styles.homeHeaderTitle}>Home</Text>
+                    <Pressable
+                        accessibilityLabel="Settings"
+                        accessibilityRole="button"
+                        onPress={handleOpenSettings}
+                        style={styles.appIconButton}
+                    >
+                        <Image source={samoLogo} style={styles.appIcon} />
+                    </Pressable>
+                </View>
+            ) : null}
+            {tabId === 'home' ? (
+                <HomeScreen
+                    homeContentState={visibleHomeContentState}
+                    onManageServers={handleOpenManageServers}
+                    onSelectItem={handleSelectMediaItemStable}
+                    onViewAll={handleOpenViewAll}
+                    recentItems={visibleRecentItems}
+                    serverConnections={serverConnections}
+                />
+            ) : tabId === 'playlists' ? (
+                <PlaylistsScreen
+                    homeContentState={visibleHomeContentState}
+                    onSelectItem={handleSelectMediaItemStable}
+                    onShufflePlay={handleShuffleHomeItems}
+                    recentItems={visibleRecentItems}
+                />
+            ) : tabId === 'library' ? (
+                <LibraryScreen
+                    fullCollections={libraryFullCollections}
+                    fullCollectionsEnabled={!isOfflineMode}
+                    hasServerConnections={serverConnections.length > 0}
+                    homeContentState={visibleHomeContentState}
+                    onSelectItem={handleSelectMediaItemStable}
+                    recentItems={visibleRecentItems}
+                />
+            ) : tabId === 'search' ? (
+                <SearchScreen
+                    hasServerConnections={serverConnections.length > 0}
+                    homeContentState={visibleHomeContentState}
+                    onSearch={handleSearch}
+                    onSelectItem={handleSelectMediaItemStable}
+                    onSelectRecentItem={handleSelectMediaItemStable}
+                    recentItems={visibleRecentItems}
+                    searchState={searchState}
+                    serverConnections={serverConnections}
+                />
+            ) : tabId === 'radio' ? (
+                <RadioScreen
+                    homeContentState={visibleHomeContentState}
+                    nowPlayingRadioId={nowPlayingRadioId}
+                    onAddStation={handleAddRadioStation}
+                    onSelectItem={handleSelectMediaItemStable}
+                    recentItems={visibleRecentItems}
+                    serverConnections={serverConnections}
+                />
+            ) : (
+                <EmptyServerBackedScreen tabTitle={getTabTitle(tabId)} />
+            )}
+        </Fragment>
+    );
+
     return (
         <GestureHandlerRootView style={styles.gestureRoot}>
         <ErrorBoundary label="App">
@@ -3810,107 +4120,48 @@ export default function App() {
                             onShufflePlay={handleShuffleDetailTracks}
                             serverConnections={serverConnections}
                         />
+                    ) : utilityScreenContent ? (
+                        <ScrollView
+                            contentContainerStyle={styles.content}
+                            style={styles.tabUtilityScene}
+                        >
+                            {utilityScreenContent}
+                        </ScrollView>
                     ) : (
-                    <ScrollView contentContainerStyle={styles.content}>
-                        {activeTab === 'home' &&
-                        activeUtilityScreen === null &&
-                        mediaDetailState.status === 'idle' &&
-                        !isSearchOverlayOpen ? (
-                            <View style={styles.header}>
-                                <Text style={styles.homeHeaderTitle}>Home</Text>
-                                <Pressable
-                                    accessibilityLabel="Settings"
-                                    accessibilityRole="button"
-                                    onPress={handleOpenSettings}
-                                    style={styles.appIconButton}
-                                >
-                                    <Image source={samoLogo} style={styles.appIcon} />
-                                </Pressable>
-                            </View>
-                        ) : null}
-                        {activeUtilityScreen === 'settings' ? (
-                            <SettingsScreen
-                                isOfflineMode={isOfflineMode}
-                                onOpenDownloads={handleOpenDownloads}
-                                onOpenManageServers={handleOpenManageServers}
-                                onSyncWithServer={handleSyncWithServer}
-                                onToggleOfflineMode={handleToggleOfflineMode}
-                                serverCount={serverConnections.length}
-                            />
-                        ) : activeUtilityScreen === 'manage-servers' ? (
-                            <ManageServersScreen
-                                authState={authState}
-                                onAddServer={handleOpenAddServer}
-                                onDisconnect={handleDisconnect}
-                                serverConnections={serverConnections}
-                                serverHealthByKey={serverHealthByKey}
-                            />
-                        ) : activeUtilityScreen === 'downloads' ? (
-                            <DownloadsScreen serverConnections={serverConnections} />
-                        ) : activeUtilityScreen === 'add-server' ? (
-                            <AddServerScreen
-                                authState={authState}
-                                canConnect={canConnect}
-                                onBack={() => setActiveUtilityScreen('manage-servers')}
-                                onConnect={handleConnect}
-                                onPasswordChange={setPassword}
-                                onServerTypeChange={setServerType}
-                                onServerUrlBlur={handleServerUrlBlur}
-                                onServerUrlChange={setServerUrl}
-                                onUsernameChange={setUsername}
-                                password={password}
-                                serverType={serverType}
-                                serverUrl={serverUrl}
-                                username={username}
-                            />
-                        ) : mediaDetailState.status !== 'idle' ? null : activeTab === 'home' ? (
-                            <HomeScreen
-                                homeContentState={visibleHomeContentState}
-                                onManageServers={handleOpenManageServers}
-                                onSelectItem={handleSelectMediaItemStable}
-                                onViewAll={handleOpenViewAll}
-                                recentItems={visibleRecentItems}
-                                serverConnections={serverConnections}
-                            />
-                        ) : activeTab === 'playlists' ? (
-                            <PlaylistsScreen
-                                homeContentState={visibleHomeContentState}
-                                onSelectItem={handleSelectMediaItemStable}
-                                onShufflePlay={handleShuffleHomeItems}
-                                recentItems={visibleRecentItems}
-                            />
-                        ) : activeTab === 'library' ? (
-                            <LibraryScreen
-                                hasServerConnections={serverConnections.length > 0}
-                                homeContentState={visibleHomeContentState}
-                                onSelectItem={handleSelectMediaItemStable}
-                                recentItems={visibleRecentItems}
-                            />
-                        ) : activeTab === 'search' ? (
-                            <SearchScreen
-                                hasServerConnections={serverConnections.length > 0}
-                                homeContentState={visibleHomeContentState}
-                                onSearch={handleSearch}
-                                onSelectItem={handleSelectMediaItemStable}
-                                onSelectRecentItem={handleSelectMediaItemStable}
-                                recentItems={visibleRecentItems}
-                                searchState={searchState}
-                                serverConnections={serverConnections}
-                            />
-                        ) : activeTab === 'radio' ? (
-                            <RadioScreen
-                                homeContentState={visibleHomeContentState}
-                                nowPlayingRadioId={nowPlayingRadioId}
-                                onAddStation={handleAddRadioStation}
-                                onSelectItem={handleSelectMediaItemStable}
-                                recentItems={visibleRecentItems}
-                                serverConnections={serverConnections}
-                            />
-                        ) : (
-                            <EmptyServerBackedScreen tabTitle={title} />
-                        )}
-                    </ScrollView>
+                        <View style={styles.tabSceneHost}>
+                            {SAMO_MOBILE_TABS.map((tab) => {
+                                const isSceneActive = tab.id === activeTab;
+                                const sceneStyle = [
+                                    styles.tabScene,
+                                    isSceneActive ? styles.tabSceneActive : styles.tabSceneHidden,
+                                ];
+
+                                if (tab.id === 'library') {
+                                    return (
+                                        <View
+                                            key={tab.id}
+                                            pointerEvents={isSceneActive ? 'auto' : 'none'}
+                                            style={sceneStyle}
+                                        >
+                                            {renderTabSceneContent(tab.id)}
+                                        </View>
+                                    );
+                                }
+
+                                return (
+                                    <ScrollView
+                                        contentContainerStyle={styles.content}
+                                        key={tab.id}
+                                        pointerEvents={isSceneActive ? 'auto' : 'none'}
+                                        style={sceneStyle}
+                                    >
+                                        {renderTabSceneContent(tab.id)}
+                                    </ScrollView>
+                                );
+                            })}
+                        </View>
                     )}
+                    <NowPlayingMetadataSync />
                     <ConnectedMiniPlayer
                         artworkUrl={currentHighResArtworkUrl}
                         lastPlayedItem={lastPlayedItem}
@@ -3988,11 +4239,8 @@ export default function App() {
                                 <Pressable
                                     accessibilityRole="button"
                                     key={tab.id}
-                                    onPress={() => {
-                                        setActiveUtilityScreen(null);
-                                        closeMediaDetail();
-                                        setActiveTab(tab.id);
-                                    }}
+                                    onPressIn={() => handleTabPress(tab.id)}
+                                    onPress={() => handleTabPress(tab.id)}
                                     style={[styles.tabButton, isActive && styles.tabButtonActive]}
                                 >
                                     <TabIcon active={isActive} id={tab.id} />
@@ -4326,596 +4574,9 @@ const HomeScreen = memo(({
 HomeScreen.displayName = 'HomeScreen';
 
 
-const SettingsScreen = ({
-    isOfflineMode,
-    onOpenDownloads,
-    onOpenManageServers,
-    onSyncWithServer,
-    onToggleOfflineMode,
-    serverCount,
-}: {
-    isOfflineMode: boolean;
-    onOpenDownloads: () => void;
-    onOpenManageServers: () => void;
-    onSyncWithServer: () => Promise<{ message?: string; ok: boolean }>;
-    onToggleOfflineMode: (next: boolean) => void;
-    serverCount: number;
-}) => {
-    type SyncStatus =
-        | { kind: 'error'; message: string }
-        | { kind: 'idle' }
-        | { kind: 'running' }
-        | { kind: 'success' };
-    const [syncStatus, setSyncStatus] = useState<SyncStatus>({ kind: 'idle' });
-    const handleSyncPress = async () => {
-        if (syncStatus.kind === 'running') return;
-        setSyncStatus({ kind: 'running' });
-        const result = await onSyncWithServer();
-        setSyncStatus(
-            result.ok
-                ? { kind: 'success' }
-                : { kind: 'error', message: result.message ?? 'Sync failed' },
-        );
-    };
-
-    return (
-        <View style={styles.settingsRoot}>
-            <Text style={styles.settingsRootTitle}>Settings</Text>
-            <Pressable
-                accessibilityRole="button"
-                onPress={onOpenManageServers}
-                style={styles.settingsRow}
-            >
-                <PersonGlyph color={colors.text} />
-                <View style={styles.settingsRowText}>
-                    <Text style={styles.settingsRowTitle}>
-                        {serverCount === 1 ? 'Manage Server' : 'Manage Servers'}
-                    </Text>
-                    <Text style={styles.settingsRowSubtitle}>
-                        {serverCount === 0
-                            ? 'Connect a music server, Audiobookshelf, or radio source'
-                            : `${serverCount} connected`}
-                    </Text>
-                </View>
-            </Pressable>
-            <Pressable
-                accessibilityRole="button"
-                disabled={syncStatus.kind === 'running' || serverCount === 0}
-                onPress={() => void handleSyncPress()}
-                style={styles.settingsRow}
-            >
-                {syncStatus.kind === 'running' ? (
-                    <ActivityIndicator color={colors.text} size="small" />
-                ) : (
-                    <RadioWaveGlyph color={colors.text} />
-                )}
-                <View style={styles.settingsRowText}>
-                    <Text style={styles.settingsRowTitle}>Sync with Server</Text>
-                    <Text style={styles.settingsRowSubtitle}>
-                        {syncStatus.kind === 'running'
-                            ? 'Refreshing libraries and pushing pending progress…'
-                            : syncStatus.kind === 'success'
-                              ? 'Up to date'
-                              : syncStatus.kind === 'error'
-                                ? syncStatus.message
-                                : 'Refresh libraries and reconcile playback progress'}
-                    </Text>
-                </View>
-            </Pressable>
-            <Pressable
-                accessibilityRole="button"
-                onPress={onOpenDownloads}
-                style={styles.settingsRow}
-            >
-                <DownloadGlyph color={colors.text} />
-                <View style={styles.settingsRowText}>
-                    <Text style={styles.settingsRowTitle}>Downloads</Text>
-                    <Text style={styles.settingsRowSubtitle}>
-                        Manage offline content
-                    </Text>
-                </View>
-            </Pressable>
-            <View style={styles.settingsRow}>
-                <CheckGlyph color={isOfflineMode ? colors.accent : colors.text} size={16} />
-                <View style={styles.settingsRowText}>
-                    <Text style={styles.settingsRowTitle}>Offline mode</Text>
-                    <Text style={styles.settingsRowSubtitle}>
-                        {isOfflineMode
-                            ? 'Only downloaded items are shown'
-                            : 'Show everything available'}
-                    </Text>
-                </View>
-                <Switch
-                    onValueChange={onToggleOfflineMode}
-                    thumbColor={isOfflineMode ? colors.accent : '#ffffff'}
-                    trackColor={{
-                        false: 'rgba(255, 255, 255, 0.18)',
-                        true: 'rgba(202, 160, 79, 0.45)',
-                    }}
-                    value={isOfflineMode}
-                />
-            </View>
-        </View>
-    );
-};
-
-const ManageServersScreen = ({
-    authState,
-    onAddServer,
-    onDisconnect,
-    serverConnections,
-    serverHealthByKey,
-}: {
-    authState: AndroidAuthState;
-    onAddServer: () => void;
-    onDisconnect: (authentication: ServerAuthenticationResult) => void;
-    serverConnections: ServerAuthenticationResult[];
-    serverHealthByKey: AndroidServerHealthMap;
-}) => {
-    return (
-        <View style={styles.section}>
-            <Text style={styles.sectionTitle}>
-                {serverConnections.length === 1 ? 'Manage Server' : 'Manage Servers'}
-            </Text>
-            <ConnectedServerList
-                authState={authState}
-                onDisconnect={onDisconnect}
-                serverConnections={serverConnections}
-                serverHealthByKey={serverHealthByKey}
-            />
-            <Pressable
-                accessibilityRole="button"
-                onPress={onAddServer}
-                style={styles.primaryButton}
-            >
-                <Text style={styles.primaryButtonText}>Add Server</Text>
-            </Pressable>
-        </View>
-    );
-};
-
-const formatBytes = (bytes: number | undefined): string => {
-    if (!bytes || bytes <= 0) return '';
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-    return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
-};
-
-const getDownloadStatusLabel = (entry: DownloadEntry): string => {
-    if (entry.status === 'downloading') {
-        const pct = entry.progress !== undefined ? Math.round(entry.progress * 100) : null;
-        return pct !== null ? `Downloading ${pct}%` : 'Downloading…';
-    }
-    if (entry.status === 'completed') {
-        return formatBytes(entry.totalBytes ?? entry.bytesDownloaded) || 'Saved';
-    }
-    if (entry.status === 'queued') return 'Queued';
-    if (entry.status === 'canceled') return 'Canceled';
-    return entry.errorMessage ? `Failed: ${entry.errorMessage}` : 'Failed';
-};
-
-const DOWNLOAD_STATUS_ORDER: DownloadStatus[] = [
-    'downloading',
-    'queued',
-    'failed',
-    'completed',
-    'canceled',
-];
-
-const DownloadsScreen = ({
-    serverConnections,
-}: {
-    serverConnections: ServerAuthenticationResult[];
-}) => {
-    const [entries, setEntries] = useState<DownloadEntry[]>([]);
-    const [storage, setStorage] = useState<StorageLocationPreference>({
-        label: 'Internal storage',
-    });
-    const [isPickingStorage, setIsPickingStorage] = useState(false);
-
-    useEffect(() => {
-        const unsubscribe = subscribeDownloads(setEntries);
-        return () => {
-            unsubscribe();
-        };
-    }, []);
-
-    useEffect(() => {
-        const unsubscribe = subscribeStorageLocation(setStorage);
-        void getStorageLocation().then(setStorage);
-        return () => {
-            unsubscribe();
-        };
-    }, []);
-
-    const handlePickSdCard = async () => {
-        if (isPickingStorage) return;
-        setIsPickingStorage(true);
-        try {
-            const result = await pickSdCardStorageLocation();
-            if (!result) {
-                Alert.alert(
-                    'SD card not set',
-                    'Picking a folder was canceled or your device doesn’t expose an SD card via the system file picker.',
-                );
-            }
-        } finally {
-            setIsPickingStorage(false);
-        }
-    };
-
-    const handleResetStorage = async () => {
-        await resetStorageLocation();
-    };
-
-    const sortedEntries = useMemo(() => {
-        return [...entries].sort((a, b) => {
-            const orderA = DOWNLOAD_STATUS_ORDER.indexOf(a.status);
-            const orderB = DOWNLOAD_STATUS_ORDER.indexOf(b.status);
-            if (orderA !== orderB) {
-                return orderA - orderB;
-            }
-            return b.enqueuedAt - a.enqueuedAt;
-        });
-    }, [entries]);
-
-    const grouped = useMemo(() => {
-        const map = new Map<
-            string,
-            { collection: DownloadEntry['collection']; entries: DownloadEntry[] }
-        >();
-        for (const entry of sortedEntries) {
-            const key = `${entry.collection.sourceId}:${entry.collection.id}`;
-            const existing = map.get(key);
-            if (existing) {
-                existing.entries.push(entry);
-            } else {
-                map.set(key, { collection: entry.collection, entries: [entry] });
-            }
-        }
-        return Array.from(map.values());
-    }, [sortedEntries]);
-
-    const totalBytes = useMemo(
-        () =>
-            sortedEntries.reduce(
-                (sum, entry) =>
-                    sum +
-                    (entry.status === 'completed'
-                        ? (entry.totalBytes ?? entry.bytesDownloaded ?? 0)
-                        : 0),
-                0,
-            ),
-        [sortedEntries],
-    );
-
-    return (
-        <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Downloads</Text>
-            <Text style={styles.downloadsSummary}>
-                {sortedEntries.length === 0
-                    ? 'No downloads yet. Tap the download icon on an album, playlist, audiobook, or podcast to save it for offline listening.'
-                    : `${sortedEntries.length} ${sortedEntries.length === 1 ? 'item' : 'items'} · ${formatBytes(totalBytes) || '0 MB on disk'}`}
-            </Text>
-            <View style={styles.downloadsStorageRow}>
-                <Text style={styles.downloadsStorageLabel}>Storage location</Text>
-                <Text numberOfLines={2} style={styles.downloadsStorageValue}>
-                    {storage.treeUri
-                        ? storage.label
-                        : `Internal · ${getDownloadsRootUri().replace(/^file:\/\//, '')}`}
-                </Text>
-                <Text style={styles.downloadsStorageNote}>
-                    {storage.treeUri
-                        ? 'New downloads will be moved to this folder when they finish — long audiobooks too. Existing downloads stay where they are.'
-                        : 'Default: app-private internal storage. Pick a folder on your SD card if you want downloads to live there instead.'}
-                </Text>
-                <View style={styles.downloadsStorageActions}>
-                    <Pressable
-                        accessibilityRole="button"
-                        disabled={isPickingStorage}
-                        onPress={() => void handlePickSdCard()}
-                        style={[
-                            styles.downloadsStorageButton,
-                            isPickingStorage && styles.disabledButton,
-                        ]}
-                    >
-                        <Text style={styles.downloadsStorageButtonLabel}>
-                            {storage.treeUri ? 'Change folder…' : 'Pick SD card folder…'}
-                        </Text>
-                    </Pressable>
-                    {storage.treeUri ? (
-                        <Pressable
-                            accessibilityRole="button"
-                            onPress={() => void handleResetStorage()}
-                            style={styles.downloadsStorageButton}
-                        >
-                            <Text style={styles.downloadsStorageButtonLabel}>
-                                Use internal
-                            </Text>
-                        </Pressable>
-                    ) : null}
-                </View>
-            </View>
-            {grouped.map((group) => (
-                <View
-                    key={`${group.collection.sourceId}:${group.collection.id}`}
-                    style={styles.downloadGroup}
-                >
-                    <View style={styles.downloadGroupHeader}>
-                        {group.collection.artworkUrl ? (
-                            <Image
-                                source={{ uri: group.collection.artworkUrl }}
-                                style={styles.downloadGroupArtwork}
-                            />
-                        ) : (
-                            <View
-                                style={[
-                                    styles.downloadGroupArtwork,
-                                    styles.downloadGroupArtworkFallback,
-                                ]}
-                            />
-                        )}
-                        <View style={styles.downloadGroupText}>
-                            <Text numberOfLines={1} style={styles.downloadGroupTitle}>
-                                {group.collection.title}
-                            </Text>
-                            <Text style={styles.downloadGroupSubtitle}>
-                                {group.entries.length}{' '}
-                                {group.entries.length === 1 ? 'track' : 'tracks'} ·{' '}
-                                {group.collection.type}
-                            </Text>
-                        </View>
-                    </View>
-                    {group.entries.map((entry) => (
-                        <View key={entry.id} style={styles.downloadRow}>
-                            <View style={styles.downloadRowText}>
-                                <Text numberOfLines={1} style={styles.downloadRowTitle}>
-                                    {entry.title}
-                                </Text>
-                                <Text numberOfLines={1} style={styles.downloadRowStatus}>
-                                    {getDownloadStatusLabel(entry)}
-                                </Text>
-                                {entry.status === 'downloading' &&
-                                entry.progress !== undefined ? (
-                                    <View style={styles.downloadProgressTrack}>
-                                        <View
-                                            style={[
-                                                styles.downloadProgressFill,
-                                                {
-                                                    width: `${Math.round(
-                                                        (entry.progress ?? 0) * 100,
-                                                    )}%`,
-                                                },
-                                            ]}
-                                        />
-                                    </View>
-                                ) : null}
-                            </View>
-                            <View style={styles.downloadRowActions}>
-                                {entry.status === 'failed' ? (
-                                    <Pressable
-                                        accessibilityRole="button"
-                                        onPress={() =>
-                                            void retryDownload(entry.id, serverConnections)
-                                        }
-                                        style={styles.downloadActionButton}
-                                    >
-                                        <Text style={styles.downloadActionLabel}>Retry</Text>
-                                    </Pressable>
-                                ) : null}
-                                {entry.status === 'queued' ||
-                                entry.status === 'downloading' ? (
-                                    <Pressable
-                                        accessibilityRole="button"
-                                        onPress={() => void cancelDownload(entry.id)}
-                                        style={styles.downloadActionButton}
-                                    >
-                                        <Text style={styles.downloadActionLabel}>Cancel</Text>
-                                    </Pressable>
-                                ) : null}
-                                <Pressable
-                                    accessibilityRole="button"
-                                    onPress={() => void removeDownload(entry.id)}
-                                    style={styles.downloadActionButton}
-                                >
-                                    <Text
-                                        style={[
-                                            styles.downloadActionLabel,
-                                            styles.downloadActionDestructive,
-                                        ]}
-                                    >
-                                        Remove
-                                    </Text>
-                                </Pressable>
-                            </View>
-                        </View>
-                    ))}
-                </View>
-            ))}
-        </View>
-    );
-};
-
-const AddServerScreen = ({
-    authState,
-    canConnect,
-    onBack,
-    onConnect,
-    onPasswordChange,
-    onServerTypeChange,
-    onServerUrlBlur,
-    onServerUrlChange,
-    onUsernameChange,
-    password,
-    serverType,
-    serverUrl,
-    username,
-}: AddServerScreenProps) => {
-    const [isPasswordVisible, setIsPasswordVisible] = useState(false);
-
-    return (
-        <View style={styles.section}>
-            <Pressable accessibilityRole="button" onPress={onBack} style={styles.secondaryButton}>
-                <Text style={styles.secondaryButtonText}>Back to Servers</Text>
-            </Pressable>
-            <Text style={styles.sectionTitle}>Add Server</Text>
-            <View style={styles.segmentedControl}>
-                {SERVER_TYPES.map((type) => {
-                    const isSelected = type === serverType;
-                    return (
-                        <Pressable
-                            accessibilityRole="button"
-                            key={type}
-                            onPress={() => onServerTypeChange(type)}
-                            style={[styles.segment, isSelected && styles.segmentActive]}
-                        >
-                            <Text
-                                style={[
-                                    styles.segmentLabel,
-                                    isSelected && styles.segmentLabelActive,
-                                ]}
-                            >
-                                {type}
-                            </Text>
-                        </Pressable>
-                    );
-                })}
-            </View>
-            <TextInput
-                autoCapitalize="none"
-                autoCorrect={false}
-                inputMode="url"
-                onBlur={onServerUrlBlur}
-                onChangeText={onServerUrlChange}
-                placeholder="Server URL"
-                placeholderTextColor={colors.muted}
-                style={styles.input}
-                value={serverUrl}
-            />
-            <TextInput
-                autoCapitalize="none"
-                autoCorrect={false}
-                onChangeText={onUsernameChange}
-                placeholder="Username"
-                placeholderTextColor={colors.muted}
-                style={styles.input}
-                value={username}
-            />
-            <View style={styles.inputWithAction}>
-                <TextInput
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    onChangeText={onPasswordChange}
-                    placeholder="Password"
-                    placeholderTextColor={colors.muted}
-                    secureTextEntry={!isPasswordVisible}
-                    style={[styles.input, styles.inputWithActionField]}
-                    value={password}
-                />
-                <Pressable
-                    accessibilityLabel={isPasswordVisible ? 'Hide password' : 'Show password'}
-                    accessibilityRole="button"
-                    onPress={() => setIsPasswordVisible((current) => !current)}
-                    style={styles.inputActionButton}
-                >
-                    <EyeGlyph closed={!isPasswordVisible} color={colors.muted} />
-                </Pressable>
-            </View>
-            <Pressable
-                accessibilityRole="button"
-                disabled={!canConnect || authState.status === 'loading'}
-                onPress={onConnect}
-                style={[
-                    styles.primaryButton,
-                    (!canConnect || authState.status === 'loading') && styles.disabledButton,
-                ]}
-            >
-                {authState.status === 'loading' ? (
-                    <ActivityIndicator color={colors.background} />
-                ) : (
-                    <Text style={styles.primaryButtonText}>Connect</Text>
-                )}
-            </Pressable>
-            {authState.status === 'error' || authState.status === 'loading' ? (
-                <Text style={authState.status === 'error' ? styles.errorText : styles.mutedText}>
-                    {authState.message}
-                </Text>
-            ) : null}
-        </View>
-    );
-};
-
-const ConnectedServerList = ({
-    authState,
-    onDisconnect,
-    serverConnections,
-    serverHealthByKey,
-}: {
-    authState: AndroidAuthState;
-    onDisconnect: (authentication: ServerAuthenticationResult) => void;
-    serverConnections: ServerAuthenticationResult[];
-    serverHealthByKey: AndroidServerHealthMap;
-}) => {
-    const hasMessage = authState.status === 'error' || authState.status === 'loading';
-
-    if (serverConnections.length === 0) {
-        return (
-            <>
-                {hasMessage ? (
-                    <Text
-                        style={authState.status === 'error' ? styles.errorText : styles.mutedText}
-                    >
-                        {authState.message}
-                    </Text>
-                ) : null}
-                <Text style={styles.mutedText}>No server connected.</Text>
-            </>
-        );
-    }
-
-    return (
-        <>
-            {hasMessage ? (
-                <Text style={authState.status === 'error' ? styles.errorText : styles.mutedText}>
-                    {authState.message}
-                </Text>
-            ) : null}
-            <View style={styles.connectedServers}>
-                {serverConnections.map((connection) => {
-                    const connectionKey = getPersistedServerAuthKey(connection);
-                    const healthStatus = serverHealthByKey[connectionKey];
-                    const isHealthy = healthStatus?.status === ServerConnectionHealthStatus.HEALTHY;
-                    const statusMessage = healthStatus?.message ?? 'Session saved.';
-
-                    return (
-                        <View key={connectionKey} style={styles.statusPanel}>
-                            <Text style={styles.statusTitle}>{connection.title}</Text>
-                            <Text
-                                style={[
-                                    styles.mutedText,
-                                    healthStatus && !isHealthy && styles.warningText,
-                                ]}
-                            >
-                                {statusMessage}
-                            </Text>
-                            <Text style={styles.mutedText}>{connection.url}</Text>
-                            <Pressable
-                                accessibilityRole="button"
-                                onPress={() => onDisconnect(connection)}
-                                style={styles.secondaryButton}
-                            >
-                                <Text style={styles.secondaryButtonText}>Disconnect</Text>
-                            </Pressable>
-                        </View>
-                    );
-                })}
-            </View>
-        </>
-    );
-};
-
 const LibraryScreen = memo(({
+    fullCollections,
+    fullCollectionsEnabled,
     hasServerConnections,
     homeContentState,
     onSelectItem,
@@ -4924,23 +4585,50 @@ const LibraryScreen = memo(({
     const [activeFilter, setActiveFilter] = useState<LibraryFilter>('all');
     const [activeSort, setActiveSort] = useState<LibrarySort>('recents');
     const [isSortMenuOpen, setIsSortMenuOpen] = useState(false);
-    const baseItems = useMemo(() => getBaseLibraryItems(homeContentState), [homeContentState]);
+    const baseItems = useMemo(
+        () => getBaseLibraryItems(homeContentState, fullCollections),
+        [fullCollections, homeContentState],
+    );
     const filters = useMemo(
-        () => getAvailableLibraryFilters(baseItems, recentItems),
-        [baseItems, recentItems],
+        () => getAvailableLibraryFilters(baseItems, recentItems, fullCollections),
+        [baseItems, fullCollections, recentItems],
     );
     const rows = useMemo(
         () => getLibraryRows(baseItems, recentItems, activeFilter, '', activeSort),
         [activeFilter, activeSort, baseItems, recentItems],
     );
+    const fullCollectionState =
+        activeFilter === 'albums'
+            ? fullCollections.albums
+            : activeFilter === 'artists'
+              ? fullCollections.artists
+              : null;
+    const isWaitingForFullCollection =
+        fullCollectionsEnabled &&
+        fullCollectionState !== null &&
+        (fullCollectionState.status === 'idle' || fullCollectionState.status === 'loading');
+    const visibleRows = isWaitingForFullCollection ? [] : rows;
+    const renderLibraryRow = useCallback(
+        ({ item }: { item: LibraryDisplayItem }) => (
+            <LibraryListRow
+                displayItem={item}
+                onPress={() => onSelectItem(item.item)}
+            />
+        ),
+        [onSelectItem],
+    );
 
     if (!hasServerConnections) {
-        return <EmptyServerBackedScreen tabTitle="Library" />;
+        return (
+            <View style={styles.libraryStaticContent}>
+                <EmptyServerBackedScreen tabTitle="Library" />
+            </View>
+        );
     }
 
     if (homeContentState.status === 'idle' || homeContentState.status === 'loading') {
         return (
-            <View style={styles.section}>
+            <View style={styles.libraryStaticContent}>
                 <ActivityIndicator color={colors.accent} />
             </View>
         );
@@ -4948,7 +4636,7 @@ const LibraryScreen = memo(({
 
     if (homeContentState.status === 'error') {
         return (
-            <View style={styles.section}>
+            <View style={styles.libraryStaticContent}>
                 <Text style={styles.errorText}>{homeContentState.message}</Text>
             </View>
         );
@@ -4958,50 +4646,63 @@ const LibraryScreen = memo(({
         LIBRARY_FILTERS.find((filter) => filter.id === activeFilter)?.label ?? 'All';
     const activeSortLabel =
         LIBRARY_SORTS.find((sort) => sort.id === activeSort)?.label ?? 'Recents';
+    const summaryText = isWaitingForFullCollection
+        ? `Loading ${activeLabel.toLowerCase()}...`
+        : `${rows.length} ${rows.length === 1 ? 'item' : 'items'} - ${activeLabel}`;
 
     return (
         <View style={styles.libraryScreen}>
-            <View style={styles.libraryHeaderRow}>
-                <View style={styles.libraryHeaderText}>
-                    <Text style={styles.libraryEyebrow}>Your Library</Text>
-                    <Text style={styles.librarySummary} numberOfLines={1}>
-                        {rows.length} {rows.length === 1 ? 'item' : 'items'} - {activeLabel}
-                    </Text>
-                </View>
-                <Pressable
-                    accessibilityLabel={`Sort by ${activeSortLabel}. Tap to change.`}
-                    accessibilityRole="button"
-                    android_ripple={{ borderless: true, color: 'rgba(255, 255, 255, 0.08)' }}
-                    onPress={() => {
-                        triggerImpact('light');
-                        setIsSortMenuOpen(true);
-                    }}
-                    style={styles.librarySortBadge}
-                >
-                    <SortGlyph color={colors.muted} />
-                    <Text style={styles.librarySortText}>{activeSortLabel}</Text>
-                </Pressable>
-            </View>
-            <LibraryFilterPills
-                activeFilter={activeFilter}
-                filters={filters}
-                onChange={setActiveFilter}
-            />
-            <View style={styles.libraryList}>
-                {rows.length === 0 ? (
+            <FlashList
+                contentContainerStyle={styles.libraryListContent}
+                data={visibleRows}
+                drawDistance={LIBRARY_ROW_DRAW_DISTANCE}
+                keyExtractor={(row) => row.key}
+                ListEmptyComponent={
                     <View style={styles.libraryEmptyState}>
-                        <Text style={styles.mutedText}>Nothing to show here yet.</Text>
+                        {isWaitingForFullCollection ? (
+                            <ActivityIndicator color={colors.accent} />
+                        ) : (
+                            <Text style={styles.mutedText}>Nothing to show here yet.</Text>
+                        )}
                     </View>
-                ) : (
-                    rows.map((row) => (
-                        <LibraryListRow
-                            displayItem={row}
-                            key={row.key}
-                            onPress={() => onSelectItem(row.item)}
+                }
+                ListHeaderComponent={
+                    <View>
+                        <View style={styles.libraryHeaderRow}>
+                            <View style={styles.libraryHeaderText}>
+                                <Text style={styles.libraryEyebrow}>Your Library</Text>
+                                <Text style={styles.librarySummary} numberOfLines={1}>
+                                    {summaryText}
+                                </Text>
+                            </View>
+                            <Pressable
+                                accessibilityLabel={`Sort by ${activeSortLabel}. Tap to change.`}
+                                accessibilityRole="button"
+                                android_ripple={{
+                                    borderless: true,
+                                    color: 'rgba(255, 255, 255, 0.08)',
+                                }}
+                                onPress={() => {
+                                    triggerImpact('light');
+                                    setIsSortMenuOpen(true);
+                                }}
+                                style={styles.librarySortBadge}
+                            >
+                                <SortGlyph color={colors.muted} />
+                                <Text style={styles.librarySortText}>{activeSortLabel}</Text>
+                            </Pressable>
+                        </View>
+                        <LibraryFilterPills
+                            activeFilter={activeFilter}
+                            filters={filters}
+                            onChange={setActiveFilter}
                         />
-                    ))
-                )}
-            </View>
+                    </View>
+                }
+                maintainVisibleContentPosition={FLASH_LIST_MAINTAIN_POSITION_DISABLED}
+                renderItem={renderLibraryRow}
+                showsVerticalScrollIndicator={false}
+            />
             <LibrarySortMenu
                 activeSort={activeSort}
                 onClose={() => setIsSortMenuOpen(false)}
@@ -5237,23 +4938,37 @@ const RadioScreen = memo(({
     );
     const activeSortLabel =
         LIBRARY_SORTS.find((sort) => sort.id === activeSort)?.label ?? 'Recents';
-    const addButton = (
-        <Pressable
-            accessibilityLabel="Add radio station"
-            accessibilityRole="button"
-            disabled={navidromeConnections.length === 0}
-            onPress={() => {
-                triggerImpact('light');
-                setIsAddModalOpen(true);
-            }}
-            style={[
-                styles.playlistPillButton,
-                navidromeConnections.length === 0 && styles.disabledButton,
-            ]}
-        >
-            <PlusGlyph color={colors.background} size={16} />
-            <Text style={styles.playlistPillButtonText}>Add</Text>
-        </Pressable>
+    const activeSortShortLabel = activeSort === 'name' ? 'Name' : 'Recent';
+    const radioHeaderActions = (
+        <View style={styles.radioHeaderActions}>
+            <Pressable
+                accessibilityLabel={`Sort by ${activeSortLabel}. Tap to change.`}
+                accessibilityRole="button"
+                android_ripple={{ borderless: true, color: 'rgba(255, 255, 255, 0.08)' }}
+                onPress={() => {
+                    triggerImpact('light');
+                    setIsSortMenuOpen(true);
+                }}
+                style={styles.radioSortButton}
+            >
+                <Text style={styles.radioSortText}>{activeSortShortLabel}</Text>
+            </Pressable>
+            <Pressable
+                accessibilityLabel="Add radio station"
+                accessibilityRole="button"
+                disabled={navidromeConnections.length === 0}
+                onPress={() => {
+                    triggerImpact('light');
+                    setIsAddModalOpen(true);
+                }}
+                style={[
+                    styles.radioAddIconButton,
+                    navidromeConnections.length === 0 && styles.disabledButton,
+                ]}
+            >
+                <PlusGlyph color={colors.muted} size={18} />
+            </Pressable>
+        </View>
     );
 
     if (homeContentState.status === 'idle') {
@@ -5279,18 +4994,24 @@ const RadioScreen = memo(({
     if (stations.length === 0) {
         return (
             <View style={styles.radioScreen}>
-                <View style={styles.playlistTopPanel}>
-                    <View>
-                        <Text style={styles.libraryEyebrow}>Radio</Text>
-                        <Text style={styles.playlistSummary}>0 stations</Text>
-                    </View>
-                    {addButton}
+                <View style={[styles.radioGridHeader, styles.radioGridHeaderCompact]}>
+                    <Text style={styles.sectionTitle}>Stations</Text>
+                    {radioHeaderActions}
                 </View>
-                <Text style={styles.mutedText}>
+                <Text style={[styles.mutedText, styles.radioEmptyText]}>
                     {navidromeConnections.length === 0
                         ? 'Connect a Navidrome server to add radio stations from Android.'
                         : 'No server-backed radio stations returned.'}
                 </Text>
+                <LibrarySortMenu
+                    activeSort={activeSort}
+                    onClose={() => setIsSortMenuOpen(false)}
+                    onSelect={(next) => {
+                        setActiveSort(next);
+                        setIsSortMenuOpen(false);
+                    }}
+                    visible={isSortMenuOpen}
+                />
                 <AddRadioStationModal
                     onClose={() => setIsAddModalOpen(false)}
                     onSubmit={onAddStation}
@@ -5313,30 +5034,6 @@ const RadioScreen = memo(({
 
     return (
         <View style={styles.radioScreen}>
-            <View style={styles.playlistTopPanel}>
-                <View>
-                    <Text style={styles.libraryEyebrow}>Radio</Text>
-                    <Text style={styles.playlistSummary}>
-                        {stations.length} {stations.length === 1 ? 'station' : 'stations'}
-                    </Text>
-                </View>
-                <View style={styles.playlistHeaderActions}>
-                    <Pressable
-                        accessibilityLabel={`Sort by ${activeSortLabel}. Tap to change.`}
-                        accessibilityRole="button"
-                        android_ripple={{ borderless: true, color: 'rgba(255, 255, 255, 0.08)' }}
-                        onPress={() => {
-                            triggerImpact('light');
-                            setIsSortMenuOpen(true);
-                        }}
-                        style={styles.librarySortBadge}
-                    >
-                        <SortGlyph color={colors.muted} />
-                        <Text style={styles.librarySortText}>{activeSortLabel}</Text>
-                    </Pressable>
-                    {addButton}
-                </View>
-            </View>
             <Pressable
                 accessibilityRole="button"
                 onLongPress={() => contextMenu.openForItem(featuredStation)}
@@ -5372,14 +5069,12 @@ const RadioScreen = memo(({
                     </View>
                 ) : null}
             </Pressable>
+            <View style={styles.radioGridHeader}>
+                <Text style={styles.sectionTitle}>Stations</Text>
+                {radioHeaderActions}
+            </View>
             {otherStations.length > 0 ? (
                 <>
-                    <View style={styles.radioGridHeader}>
-                        <Text style={styles.sectionTitle}>All Stations</Text>
-                        <Text style={styles.librarySummary}>
-                            {activeSort === 'name' ? 'Name' : 'Recent'}
-                        </Text>
-                    </View>
                     <View style={styles.radioGrid}>
                         {otherStations.map((station) => {
                             const isPlaying =
@@ -5449,6 +5144,7 @@ const AddRadioStationModal = ({
     const [streamUrl, setStreamUrl] = useState('');
     const [homepageUrl, setHomepageUrl] = useState('');
     const [thumbnailUrl, setThumbnailUrl] = useState('');
+    const [thumbnailFile, setThumbnailFile] = useState<File | null>(null);
     const [status, setStatus] = useState<
         | { kind: 'error'; message: string }
         | { kind: 'idle' }
@@ -5475,6 +5171,32 @@ const AddRadioStationModal = ({
         name.trim().length > 0 &&
         streamUrl.trim().length > 0 &&
         status.kind !== 'saving';
+    const thumbnailPreviewUri = thumbnailFile?.uri ?? null;
+    const thumbnailSourceLabel =
+        thumbnailFile?.name ?? (thumbnailUrl.trim().length > 0 ? 'Remote image URL' : 'No image selected');
+
+    const handlePickThumbnail = async () => {
+        try {
+            triggerImpact('light');
+            const picked = (await File.pickFileAsync(undefined, 'image/*')) as File | File[];
+            const nextFile = Array.isArray(picked) ? picked[0] : picked;
+            if (!nextFile) {
+                return;
+            }
+
+            setThumbnailFile(nextFile);
+            setThumbnailUrl('');
+            setStatus({ kind: 'idle' });
+        } catch (error) {
+            const message =
+                error instanceof Error ? error.message : 'Could not select the thumbnail image.';
+            if (message.toLowerCase().includes('cancel')) {
+                return;
+            }
+
+            setStatus({ kind: 'error', message });
+        }
+    };
 
     const handleSubmit = async () => {
         if (!selectedServer || !canSubmit) {
@@ -5488,6 +5210,9 @@ const AddRadioStationModal = ({
                 homepageUrl: homepageUrl.trim() || undefined,
                 name: name.trim(),
                 streamUrl: streamUrl.trim(),
+                thumbnailFile: thumbnailFile
+                    ? { blob: thumbnailFile, name: thumbnailFile.name }
+                    : undefined,
                 thumbnailUrl: thumbnailUrl.trim() || undefined,
             });
             const message = result.warning ?? 'Radio station added.';
@@ -5497,6 +5222,7 @@ const AddRadioStationModal = ({
                 setStreamUrl('');
                 setHomepageUrl('');
                 setThumbnailUrl('');
+                setThumbnailFile(null);
                 setTimeout(onClose, 450);
             }
         } catch (error) {
@@ -5599,12 +5325,46 @@ const AddRadioStationModal = ({
                                 autoCapitalize="none"
                                 autoCorrect={false}
                                 inputMode="url"
-                                onChangeText={setThumbnailUrl}
+                                onChangeText={(next) => {
+                                    setThumbnailUrl(next);
+                                    if (next.trim().length > 0) {
+                                        setThumbnailFile(null);
+                                    }
+                                }}
                                 placeholder="Optional image URL"
                                 placeholderTextColor={colors.muted}
                                 style={styles.input}
                                 value={thumbnailUrl}
                             />
+                            <View style={styles.addRadioThumbnailPicker}>
+                                <View style={styles.addRadioThumbnailPreview}>
+                                    {thumbnailPreviewUri ? (
+                                        <ExpoImage
+                                            contentFit="cover"
+                                            source={{ uri: thumbnailPreviewUri }}
+                                            style={styles.addRadioThumbnailImage}
+                                        />
+                                    ) : (
+                                        <PlusGlyph color={colors.muted} size={18} />
+                                    )}
+                                </View>
+                                <View style={styles.addRadioThumbnailMeta}>
+                                    <Text numberOfLines={1} style={styles.addRadioThumbnailTitle}>
+                                        Local thumbnail
+                                    </Text>
+                                    <Text numberOfLines={1} style={styles.addRadioThumbnailSubtitle}>
+                                        {thumbnailSourceLabel}
+                                    </Text>
+                                </View>
+                                <Pressable
+                                    accessibilityLabel="Choose local radio thumbnail"
+                                    accessibilityRole="button"
+                                    onPress={() => void handlePickThumbnail()}
+                                    style={styles.addRadioThumbnailButton}
+                                >
+                                    <Text style={styles.addRadioThumbnailButtonText}>Choose</Text>
+                                </Pressable>
+                            </View>
                             {status.kind === 'error' || status.kind === 'success' ? (
                                 <Text
                                     style={
@@ -6491,22 +6251,62 @@ const toLibraryDisplayItem = (
     };
 };
 
-const getBaseLibraryItems = (homeContentState: AndroidHomeContentState): LibraryDisplayItem[] => {
+const putLibraryDisplayItem = (
+    itemsByKey: Map<string, LibraryDisplayItem>,
+    item: AndroidRecentContentSourceItem,
+    selectedAt = 0,
+) => {
+    const displayItem = toLibraryDisplayItem(item, selectedAt);
+
+    if (!displayItem) {
+        return;
+    }
+
+    const existing = itemsByKey.get(displayItem.key);
+    if (!existing) {
+        itemsByKey.set(displayItem.key, displayItem);
+        return;
+    }
+
+    itemsByKey.set(displayItem.key, {
+        ...existing,
+        item: mergeContentItemSignals(existing.item, displayItem.item),
+        selectedAt: Math.max(existing.selectedAt, displayItem.selectedAt),
+    });
+};
+
+const getBaseLibraryItems = (
+    homeContentState: AndroidHomeContentState,
+    fullCollections: LibraryFullCollectionsState = EMPTY_LIBRARY_FULL_COLLECTIONS,
+): LibraryDisplayItem[] => {
     if (homeContentState.status !== 'loaded') {
         return [];
     }
 
     const itemsByKey = new Map<string, LibraryDisplayItem>();
+    const hasFullAlbums = fullCollections.albums.status === 'loaded';
+    const hasFullArtists = fullCollections.artists.status === 'loaded';
 
     homeContentState.content.sections.forEach((section) => {
         section.items.forEach((item) => {
-            const displayItem = toLibraryDisplayItem(item);
+            const mediaType = getLibraryMediaType(item);
 
-            if (displayItem && !itemsByKey.has(displayItem.key)) {
-                itemsByKey.set(displayItem.key, displayItem);
+            if (
+                (mediaType === 'albums' && hasFullAlbums) ||
+                (mediaType === 'artists' && hasFullArtists)
+            ) {
+                return;
             }
+            putLibraryDisplayItem(itemsByKey, item);
         });
     });
+
+    if (fullCollections.albums.status === 'loaded') {
+        fullCollections.albums.items.forEach((item) => putLibraryDisplayItem(itemsByKey, item));
+    }
+    if (fullCollections.artists.status === 'loaded') {
+        fullCollections.artists.items.forEach((item) => putLibraryDisplayItem(itemsByKey, item));
+    }
 
     return [...itemsByKey.values()];
 };
@@ -6514,10 +6314,17 @@ const getBaseLibraryItems = (homeContentState: AndroidHomeContentState): Library
 const getAvailableLibraryFilters = (
     baseItems: LibraryDisplayItem[],
     recentItems: AndroidRecentContentItem[],
+    fullCollections: LibraryFullCollectionsState = EMPTY_LIBRARY_FULL_COLLECTIONS,
 ) => {
     const mediaTypes = new Set<LibraryMediaType>();
 
     baseItems.forEach((item) => mediaTypes.add(item.mediaType));
+    if (fullCollections.albums.status === 'loading') {
+        mediaTypes.add('albums');
+    }
+    if (fullCollections.artists.status === 'loading') {
+        mediaTypes.add('artists');
+    }
     recentItems.forEach((recentItem) => {
         const mediaType = getLibraryMediaType(recentItem.item);
 
@@ -6738,30 +6545,6 @@ const getViewAllVariant = (
         case 'recents':
         case 'wide':
             return null;
-    }
-};
-
-const gatherViewAllItems = (
-    sections: MobileHomeSection[],
-    variant: ViewAllVariant,
-): MobileHomeItem[] => {
-    const sectionsById = new Map(sections.map((section) => [section.id, section]));
-    const byId = (id: MobileHomeSectionId): MobileHomeItem[] =>
-        sectionsById.get(id)?.items ?? [];
-    switch (variant) {
-        case 'album':
-            return getUniqueHomeItems([
-                ...byId(MobileHomeSectionId.FAVORITE_ALBUMS),
-                ...byId(MobileHomeSectionId.RECENTLY_ADDED),
-            ]) as MobileHomeItem[];
-        case 'artist':
-            return byId(MobileHomeSectionId.FAVORITE_ARTISTS);
-        case 'audiobook':
-            return byId(MobileHomeSectionId.AUDIOBOOKS);
-        case 'playlist':
-            return byId(MobileHomeSectionId.PLAYLISTS);
-        case 'podcast':
-            return byId(MobileHomeSectionId.PODCASTS);
     }
 };
 
@@ -9671,9 +9454,10 @@ const MiniPlayer = memo(({
         ? playbackState.item
         : lastPlayedItem;
     const isPlaying = playbackState.status === 'playing' || playbackState.status === 'buffering';
-    const title = displayItem?.title ?? '';
+    const activeDisplay = isActive ? getPlaybackDisplayMetadata(playbackState) : null;
+    const title = activeDisplay?.title ?? displayItem?.title ?? '';
     const subtitle = isActive
-        ? (playbackState.message ?? getPlaybackDisplayMetadata(playbackState).subtitle)
+        ? (playbackState.message ?? activeDisplay?.subtitle)
         : (displayItem?.subtitle ?? undefined);
     const miniBadgeProfile =
         displayItem?.source === 'music' ? getPlaybackQualityProfile(displayItem) : undefined;
@@ -9746,6 +9530,51 @@ const ConnectedMiniPlayer = memo((
 });
 
 ConnectedMiniPlayer.displayName = 'ConnectedMiniPlayer';
+
+const NowPlayingMetadataSync = memo(() => {
+    const metadataKey = useAndroidPlaybackState((state) => {
+        if (state.status === 'idle') {
+            return null;
+        }
+
+        const display = getPlaybackDisplayMetadata(state);
+        return JSON.stringify({
+            artworkUrl: state.item.artworkUrl,
+            id: state.item.id,
+            sessionId: state.sessionId,
+            source: state.item.source,
+            subtitle: display.subtitle,
+            title: display.title || state.item.title,
+        });
+    });
+    const lastSentRef = useRef<string | null>(null);
+
+    useEffect(() => {
+        if (
+            !metadataKey ||
+            metadataKey === lastSentRef.current ||
+            !isAndroidNativePlaybackAvailable()
+        ) {
+            return;
+        }
+
+        lastSentRef.current = metadataKey;
+        const metadata = JSON.parse(metadataKey) as {
+            artworkUrl?: string;
+            id: string;
+            sessionId: string;
+            source: string;
+            subtitle?: string;
+            title: string;
+        };
+
+        void updateAndroidNowPlayingMetadata(metadata).catch(() => undefined);
+    }, [metadataKey]);
+
+    return null;
+});
+
+NowPlayingMetadataSync.displayName = 'NowPlayingMetadataSync';
 
 const SLEEP_OPTIONS: { label: string; seconds: number; wide?: boolean }[] = [
     { label: '15m', seconds: 15 * 60 },
@@ -9854,10 +9683,12 @@ const FullScreenPlayer = memo(({
         if (sleepTimerRef.current) clearTimeout(sleepTimerRef.current);
         if (sleepTickRef.current) clearInterval(sleepTickRef.current);
         if (seconds === -1) {
+            void cancelAndroidSleepTimer().catch(() => undefined);
             setSleepSecondsLeft(-1);
             return;
         }
         setSleepSecondsLeft(seconds);
+        void setAndroidSleepTimer(seconds).catch(() => undefined);
         sleepTimerRef.current = setTimeout(() => {
             onTogglePlayback();
             setSleepSecondsLeft(null);
@@ -9870,6 +9701,7 @@ const FullScreenPlayer = memo(({
     const cancelSleepTimer = useCallback(() => {
         if (sleepTimerRef.current) clearTimeout(sleepTimerRef.current);
         if (sleepTickRef.current) clearInterval(sleepTickRef.current);
+        void cancelAndroidSleepTimer().catch(() => undefined);
         setSleepSecondsLeft(null);
     }, []);
 
@@ -9877,6 +9709,7 @@ const FullScreenPlayer = memo(({
         return () => {
             if (sleepTimerRef.current) clearTimeout(sleepTimerRef.current);
             if (sleepTickRef.current) clearInterval(sleepTickRef.current);
+            void cancelAndroidSleepTimer().catch(() => undefined);
         };
     }, []);
     useEffect(() => {
@@ -10135,10 +9968,10 @@ const FullScreenPlayer = memo(({
         [dragGesture, skipGesture],
     );
 
-    // The fullscreen player's actual frame expands out of the miniplayer's
-    // frame. The container does the physical motion; its contents wait until
-    // the surface has enough room, so the transition reads as one object
-    // unfolding instead of a transparent mini player under a bottom sheet.
+    // The outer shell keeps the original physical frame expansion out of the
+    // miniplayer. The expensive content inside is fixed at the fully-open size
+    // and clipped by this shell, so the gesture still reads as one object
+    // sliding open without forcing the whole player body through layout.
     const playerAnimatedStyle = useAnimatedStyle(() => {
         const p = playerProgress.value;
         return {
@@ -10146,14 +9979,6 @@ const FullScreenPlayer = memo(({
             borderTopRightRadius: interpolate(p, [0, 1], [MINI_PLAYER_RADIUS, 0], 'clamp'),
             height: interpolate(p, [0, 1], [MINI_PLAYER_HEIGHT, SCREEN_HEIGHT], 'clamp'),
             opacity: interpolate(p, [0, 0.035], [0, 1], 'clamp'),
-            paddingBottom: interpolate(
-                p,
-                [0, 1],
-                [0, FULL_PLAYER_PADDING_BOTTOM],
-                'clamp',
-            ),
-            paddingHorizontal: interpolate(p, [0, 1], [0, spacing.lg], 'clamp'),
-            paddingTop: interpolate(p, [0, 1], [0, FULL_PLAYER_PADDING_TOP], 'clamp'),
             top: interpolate(
                 p,
                 [0, 1],
@@ -10165,20 +9990,23 @@ const FullScreenPlayer = memo(({
     const collapsedSurfaceStyle = useAnimatedStyle(() => ({
         opacity: interpolate(playerProgress.value, [0, 0.46], [1, 0], 'clamp'),
     }));
-    const playerContentAnimatedStyle = useAnimatedStyle(() => ({
-        opacity: interpolate(playerProgress.value, [0.34, 0.7], [0, 1], 'clamp'),
-        transform: [
-            {
-                translateY: interpolate(
-                    playerProgress.value,
-                    [0.34, 1],
-                    [26, 0],
-                    'clamp',
-                ),
-            },
-            { scale: interpolate(playerProgress.value, [0.34, 1], [0.97, 1], 'clamp') },
-        ],
-    }));
+    const playerContentAnimatedStyle = useAnimatedStyle(() => {
+        const p = playerProgress.value;
+        const revealTranslateY = interpolate(p, [0.34, 1], [26, 0], 'clamp');
+        const paddingCompensationY = interpolate(
+            p,
+            [0, 1],
+            [-FULL_PLAYER_PADDING_TOP, 0],
+            'clamp',
+        );
+        return {
+            opacity: interpolate(p, [0.34, 0.7], [0, 1], 'clamp'),
+            transform: [
+                { translateY: revealTranslateY + paddingCompensationY },
+                { scale: interpolate(p, [0.34, 1], [0.97, 1], 'clamp') },
+            ],
+        };
+    });
 
     // Stay mounted whenever there's something to play, so close animations
     // triggered from outside the player (back button, navigation) still get to
@@ -10909,28 +10737,16 @@ const QueueSheetOverlay = memo(({
         },
         [chapters, interactive, items, showingChapters],
     );
-    const listScrollYRef = useRef(0);
-    const listDragStartYRef = useRef<number | null>(null);
-    const listDragStartedAtTopRef = useRef(false);
-    const handleListScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
-        listScrollYRef.current = event.nativeEvent.contentOffset.y;
-    }, []);
-    const handleListTouchStart = useCallback((event: GestureResponderEvent) => {
-        listDragStartYRef.current = event.nativeEvent.pageY;
-        listDragStartedAtTopRef.current = listScrollYRef.current <= 2;
-    }, []);
-    const handleListTouchEnd = useCallback((event: GestureResponderEvent) => {
-        const startY = listDragStartYRef.current;
-        listDragStartYRef.current = null;
-
-        if (
-            startY !== null &&
-            listDragStartedAtTopRef.current &&
-            event.nativeEvent.pageY - startY > QUEUE_CLOSE_DISTANCE + 18
-        ) {
-            onClose();
-        }
-    }, [onClose]);
+    const listScrollY = useSharedValue(0);
+    const listTopPullStartX = useSharedValue(0);
+    const listTopPullStartY = useSharedValue(0);
+    const listTopPullStartedAtTop = useSharedValue(false);
+    const listTopPullActive = useSharedValue(false);
+    const handleListScroll = useAnimatedScrollHandler({
+        onScroll: (event) => {
+            listScrollY.value = Math.max(0, event.contentOffset.y);
+        },
+    });
     const dismissGesture = useMemo(
         () =>
             Gesture.Pan()
@@ -10946,6 +10762,78 @@ const QueueSheetOverlay = memo(({
                     }
                 }),
         [onClose],
+    );
+    const listTopPullGesture = useMemo(
+        () =>
+            Gesture.Pan()
+                .enabled(interactive)
+                .manualActivation(true)
+                .onTouchesDown((event) => {
+                    'worklet';
+                    const touch = event.allTouches[0];
+                    if (!touch) {
+                        return;
+                    }
+                    listTopPullStartX.value = touch.absoluteX;
+                    listTopPullStartY.value = touch.absoluteY;
+                    listTopPullStartedAtTop.value = listScrollY.value <= 2;
+                    listTopPullActive.value = false;
+                })
+                .onTouchesMove((event, state) => {
+                    'worklet';
+                    if (listTopPullActive.value) {
+                        return;
+                    }
+
+                    const touch = event.allTouches[0];
+                    if (!touch) {
+                        state.fail();
+                        return;
+                    }
+
+                    const deltaX = touch.absoluteX - listTopPullStartX.value;
+                    const deltaY = touch.absoluteY - listTopPullStartY.value;
+                    if (
+                        !listTopPullStartedAtTop.value ||
+                        listScrollY.value > 2 ||
+                        deltaY < -4 ||
+                        (Math.abs(deltaX) > 28 && Math.abs(deltaX) > deltaY)
+                    ) {
+                        state.fail();
+                        return;
+                    }
+
+                    if (deltaY > 8) {
+                        state.activate();
+                    }
+                })
+                .onStart(() => {
+                    'worklet';
+                    listTopPullActive.value = true;
+                })
+                .onEnd((event) => {
+                    'worklet';
+                    if (
+                        event.translationY > QUEUE_CLOSE_DISTANCE ||
+                        event.velocityY > QUEUE_CLOSE_VELOCITY
+                    ) {
+                        runOnJS(onClose)();
+                    }
+                })
+                .onFinalize(() => {
+                    'worklet';
+                    listTopPullActive.value = false;
+                    listTopPullStartedAtTop.value = false;
+                }),
+        [
+            interactive,
+            listScrollY,
+            listTopPullActive,
+            listTopPullStartX,
+            listTopPullStartY,
+            listTopPullStartedAtTop,
+            onClose,
+        ],
     );
     const keyExtractor = useCallback((row: QueueSheetListItem) => {
         if (row.kind === 'chapter') {
@@ -11097,29 +10985,31 @@ const QueueSheetOverlay = memo(({
                         </View>
                     </View>
                 </GestureDetector>
-                <FlashList
-                    contentContainerStyle={styles.queueSheetContent}
-                    data={queueSheetRows}
-                    drawDistance={QUEUE_SHEET_DRAW_DISTANCE}
-                    extraData={`${activeChapterIndex}:${queue?.index ?? -1}`}
-                    getItemType={getItemType}
-                    keyboardShouldPersistTaps="handled"
-                    keyExtractor={keyExtractor}
-                    ListEmptyComponent={
-                        interactive && !showingChapters ? (
-                            <Text style={styles.queueSheetEmpty}>The queue is empty.</Text>
-                        ) : null
-                    }
-                    maintainVisibleContentPosition={FLASH_LIST_MAINTAIN_POSITION_DISABLED}
-                    nestedScrollEnabled
-                    onScroll={handleListScroll}
-                    onTouchEnd={handleListTouchEnd}
-                    onTouchStart={handleListTouchStart}
-                    renderItem={renderItem}
-                    scrollEventThrottle={16}
-                    showsVerticalScrollIndicator={false}
-                    style={styles.queueSheetScroll}
-                />
+                <GestureDetector gesture={listTopPullGesture}>
+                    <Reanimated.View style={styles.queueSheetScroll}>
+                        <ReanimatedFlashList
+                            contentContainerStyle={styles.queueSheetContent}
+                            data={queueSheetRows}
+                            drawDistance={QUEUE_SHEET_DRAW_DISTANCE}
+                            extraData={`${activeChapterIndex}:${queue?.index ?? -1}`}
+                            getItemType={getItemType}
+                            keyboardShouldPersistTaps="handled"
+                            keyExtractor={keyExtractor}
+                            ListEmptyComponent={
+                                interactive && !showingChapters ? (
+                                    <Text style={styles.queueSheetEmpty}>The queue is empty.</Text>
+                                ) : null
+                            }
+                            maintainVisibleContentPosition={FLASH_LIST_MAINTAIN_POSITION_DISABLED}
+                            nestedScrollEnabled
+                            onScroll={handleListScroll}
+                            renderItem={renderItem}
+                            scrollEventThrottle={16}
+                            showsVerticalScrollIndicator={false}
+                            style={styles.queueSheetScroll}
+                        />
+                    </Reanimated.View>
+                </GestureDetector>
             </Reanimated.View>
         </>
     );

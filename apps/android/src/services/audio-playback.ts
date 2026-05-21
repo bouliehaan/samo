@@ -109,7 +109,17 @@ interface SamoAudioNativeModule {
     selectOutputRoute: (
         route: Pick<AndroidMediaOutputRoute, 'deviceId' | 'kind' | 'routeId'>,
     ) => Promise<AndroidMediaOutputState>;
+    setSleepTimer: (seconds: number) => Promise<AndroidNativePlaybackEvent>;
+    cancelSleepTimer: () => Promise<AndroidNativePlaybackEvent>;
     stop: () => Promise<AndroidNativePlaybackEvent>;
+    updateNowPlayingMetadata: (metadata: {
+        artworkUrl?: string;
+        id: string;
+        sessionId: string;
+        source: string;
+        subtitle?: string;
+        title: string;
+    }) => Promise<AndroidNativePlaybackEvent>;
 }
 
 const samoAudio = NativeModules.SamoAudio as SamoAudioNativeModule | undefined;
@@ -211,6 +221,22 @@ export const seekAndroidAudio = async (positionMs: number) => {
     return samoAudio.seekTo(positionMs);
 };
 
+export const setAndroidSleepTimer = async (seconds: number) => {
+    if (!samoAudio) {
+        throw new Error('Native Android audio engine is not available');
+    }
+
+    return samoAudio.setSleepTimer(seconds);
+};
+
+export const cancelAndroidSleepTimer = async () => {
+    if (!samoAudio) {
+        throw new Error('Native Android audio engine is not available');
+    }
+
+    return samoAudio.cancelSleepTimer();
+};
+
 export const getAndroidAudioDeviceInfo = async () => {
     if (!samoAudio) {
         throw new Error('Native Android audio engine is not available');
@@ -225,6 +251,21 @@ export const getAndroidPlaybackStatus = async () => {
     }
 
     return samoAudio.getStatus();
+};
+
+export const updateAndroidNowPlayingMetadata = async (metadata: {
+    artworkUrl?: string;
+    id: string;
+    sessionId: string;
+    source: string;
+    subtitle?: string;
+    title: string;
+}) => {
+    if (!samoAudio) {
+        throw new Error('Native Android audio engine is not available');
+    }
+
+    return samoAudio.updateNowPlayingMetadata(metadata);
 };
 
 export const getAndroidCastState = async () => {

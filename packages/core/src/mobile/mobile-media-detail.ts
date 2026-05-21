@@ -768,6 +768,8 @@ const loadSubsonicPlaylistDetail = async (
 };
 
 const TOP_SONGS_LIMIT = 8;
+const ARTIST_DETAIL_ALBUM_QUALITY_SCAN_LIMIT = 8;
+const ARTIST_DETAIL_APPEARS_ON_QUALITY_SCAN_LIMIT = 4;
 
 const sanitizeBiography = (raw: string | undefined): string | undefined => {
     if (!raw) return undefined;
@@ -922,17 +924,13 @@ const loadSubsonicArtistDetail = async (
     const rawAlbumItems = (artist.album ?? []).flatMap((album) =>
         toSubsonicAlbumItem(authentication, album),
     );
-    // The artist page lists every album the artist released, but those album
-    // records come back from getArtist.view without per-song quality data.
-    // Re-scan each album's songs (same path as the home/recently-added
-    // annotation) so the artist-page tiles show their format badge instead
-    // of rendering bare. annotateSubsonicAlbumsQuality is safe to call here
-    // even on large discographies — it walks in concurrent chunks and skips
-    // anything past its limit, so a 50-album catalog still resolves quickly.
+    // Keep artist pages snappy: only badge-scan the first visible slice.
+    // Opening an individual album still computes the full album quality.
     const albumItems = await annotateSubsonicAlbumsQuality(
         authentication,
         fetcher,
         rawAlbumItems,
+        ARTIST_DETAIL_ALBUM_QUALITY_SCAN_LIMIT,
     );
     const albumIds = new Set(albumItems.map((album) => album.id));
     const topTracks = topSongs
@@ -945,12 +943,13 @@ const loadSubsonicArtistDetail = async (
         artist.id.toString(),
         [...topSongs, ...searchSongs],
     ).filter((item) => !albumIds.has(item.id));
-    // Same scan as the discography — "Appears On" tiles are also album items
-    // and should carry their format badge.
+    // Same idea for Appears On: badge the first visible row, don't block the
+    // artist page on a wide fan-out.
     const appearsOnItems = await annotateSubsonicAlbumsQuality(
         authentication,
         fetcher,
         rawAppearsOnItems,
+        ARTIST_DETAIL_APPEARS_ON_QUALITY_SCAN_LIMIT,
     );
     const relatedArtists = (infoResponse?.similarArtist ?? []).flatMap((similar) => {
         const similarId = similar.id?.toString();

@@ -13,7 +13,15 @@ import { type ServerAuthenticationResult, ServerType } from '@samo/core/server';
 import * as FileSystem from 'expo-file-system/legacy';
 
 import { fsDeleteItem, fsGetItem, fsSetItem } from './fs-storage';
-import { isNativeSafCopyAvailable, streamCopyToSaf } from './saf-copy';
+import {
+    cancelNativeDownload,
+    downloadFileNative,
+    isNativeDownloadAvailable,
+    isNativeSafCopyAvailable,
+    setNativeDownloadThrottle,
+    streamCopyToSaf,
+    subscribeNativeDownloadProgress,
+} from './saf-copy';
 
 // Persistent registry of offline downloads. Each entry tracks a single
 // downloadable file (a song, an audiobook file, or a podcast episode).
@@ -21,15 +29,17 @@ import { isNativeSafCopyAvailable, streamCopyToSaf } from './saf-copy';
 const REGISTRY_KEY = 'samo.android.downloads.v1';
 const STORAGE_LOCATION_KEY = 'samo.android.downloads.storage-location.v1';
 const DOWNLOADS_DIR_NAME = 'samo-downloads';
-// Run up to N downloads at once. More than this and we saturate phone/Wi-Fi,
-// hammer the server, and make every individual download slower.
-const MAX_CONCURRENT_DOWNLOADS = 3;
+// Keep downloads deliberately serialized. A single large LAN transfer can
+// already compete with ExoPlayer for Wi-Fi, server, and flash I/O; parallel
+// downloads made streaming playback glitch while an album was being saved.
+const MAX_CONCURRENT_DOWNLOADS = 1;
 // Throttle progress updates aggressively so a 50/sec progress callback
 // doesn't turn into a 50/sec re-render storm in the UI.
 const PROGRESS_BYTES_THRESHOLD = 256 * 1024;
 const PROGRESS_RATIO_THRESHOLD = 0.01; // 1%
 const LISTENER_NOTIFY_THROTTLE_MS = 150;
 const REGISTRY_PERSIST_DEBOUNCE_MS = 750;
+const PLAYBACK_DOWNLOAD_THROTTLE_BYTES_PER_SECOND = 2 * 1024 * 1024;
 // Files larger than this stay on internal storage even when an SD card SAF
 // location is configured — copying via SAF moves bytes through a single JS
 // base64 buffer, which OOMs on multi-hundred-MB audiobooks. We can lift this
@@ -110,6 +120,15 @@ let registryPersistInFlight = false;
 const listeners = new Set<(entries: DownloadEntry[]) => void>();
 const activeDownloads = new Map<string, { cancel: () => void }>();
 const lastProgressReport = new Map<string, { bytes: number; ratio: number }>();
+let downloadsPlaybackActive = false;
+
+export const setDownloadsPlaybackActive = (active: boolean) => {
+    if (downloadsPlaybackActive === active) {
+        return;
+    }
+    downloadsPlaybackActive = active;
+    void setNativeDownloadThrottle(active ? PLAYBACK_DOWNLOAD_THROTTLE_BYTES_PER_SECOND : 0);
+};
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
     typeof value === 'object' && value !== null;
@@ -309,6 +328,36 @@ const updateEntry = async (
     });
 };
 
+const reportDownloadProgress = (
+    entryId: string,
+    written: number,
+    total: number | undefined,
+) => {
+    const ratio = total && total > 0 ? written / total : 0;
+    const last = lastProgressReport.get(entryId) ?? { bytes: 0, ratio: 0 };
+    const bytesDelta = written - last.bytes;
+    const ratioDelta = Math.abs(ratio - last.ratio);
+    const isComplete = Boolean(total && total > 0 && written >= total);
+    if (
+        !isComplete &&
+        bytesDelta < PROGRESS_BYTES_THRESHOLD &&
+        ratioDelta < PROGRESS_RATIO_THRESHOLD
+    ) {
+        return;
+    }
+    lastProgressReport.set(entryId, { bytes: written, ratio });
+    void updateEntry(
+        entryId,
+        {
+            bytesDownloaded: written,
+            progress: total && total > 0 ? ratio : undefined,
+            status: 'downloading',
+            totalBytes: total && total > 0 ? total : undefined,
+        },
+        { persist: false },
+    );
+};
+
 const startSingleDownload = async (
     entryId: string,
     authentications: ServerAuthenticationResult[],
@@ -334,6 +383,57 @@ const startSingleDownload = async (
         // Pre-record so the first onProgress fires don't all get through the
         // 1% / 256KB threshold and update state 10 times for the first packet.
         lastProgressReport.set(entry.id, { bytes: 0, ratio: 0 });
+        if (isNativeDownloadAvailable()) {
+            const unsubscribe = subscribeNativeDownloadProgress((event) => {
+                if (event.id !== entry.id) {
+                    return;
+                }
+                reportDownloadProgress(
+                    entry.id,
+                    event.bytesWritten ?? 0,
+                    event.totalBytes && event.totalBytes > 0 ? event.totalBytes : undefined,
+                );
+            });
+            activeDownloads.set(entry.id, {
+                cancel: () => {
+                    void cancelNativeDownload(entry.id).catch(() => undefined);
+                },
+            });
+            await setNativeDownloadThrottle(
+                downloadsPlaybackActive ? PLAYBACK_DOWNLOAD_THROTTLE_BYTES_PER_SECOND : 0,
+            );
+            await updateEntry(entry.id, { status: 'downloading' });
+            try {
+                const result = await downloadFileNative(
+                    entry.id,
+                    entry.sourceUrl,
+                    localUri,
+                    headers,
+                );
+                lastProgressReport.delete(entry.id);
+                if (!result) {
+                    throw new Error('Native Android download engine is not available');
+                }
+                const completed = await updateEntry(entry.id, {
+                    bytesDownloaded: result.bytesWritten,
+                    completedAt: Date.now(),
+                    localUri: result.uri,
+                    progress: 1,
+                    status: 'completed',
+                    totalBytes:
+                        result.totalBytes && result.totalBytes > 0
+                            ? result.totalBytes
+                            : result.bytesWritten,
+                });
+                if (completed) {
+                    await tryMoveCompletedFileToSaf(completed);
+                }
+            } finally {
+                unsubscribe();
+            }
+            return;
+        }
+
         const resumable = FileSystem.createDownloadResumable(
             entry.sourceUrl,
             localUri,
@@ -341,33 +441,10 @@ const startSingleDownload = async (
             (progress) => {
                 const total = progress.totalBytesExpectedToWrite;
                 const written = progress.totalBytesWritten;
-                const ratio = total > 0 ? written / total : 0;
-                const last = lastProgressReport.get(entry.id) ?? { bytes: 0, ratio: 0 };
-                const bytesDelta = written - last.bytes;
-                const ratioDelta = Math.abs(ratio - last.ratio);
-                const isComplete = total > 0 && written >= total;
-                if (
-                    !isComplete &&
-                    bytesDelta < PROGRESS_BYTES_THRESHOLD &&
-                    ratioDelta < PROGRESS_RATIO_THRESHOLD
-                ) {
-                    // Too small a delta to bother re-rendering the UI for.
-                    return;
-                }
-                lastProgressReport.set(entry.id, { bytes: written, ratio });
                 // Don't persist on every progress tick — only status changes
                 // get written to disk. If the app dies mid-download, the
                 // entry comes back as 'queued' and retries from scratch.
-                void updateEntry(
-                    entry.id,
-                    {
-                        bytesDownloaded: written,
-                        progress: total > 0 ? ratio : undefined,
-                        status: 'downloading',
-                        totalBytes: total > 0 ? total : undefined,
-                    },
-                    { persist: false },
-                );
+                reportDownloadProgress(entry.id, written, total > 0 ? total : undefined);
             },
         );
         activeDownloads.set(entry.id, {
@@ -396,8 +473,13 @@ const startSingleDownload = async (
         }
     } catch (error) {
         lastProgressReport.delete(entry.id);
+        const message = error instanceof Error ? error.message : 'Download failed';
+        if (/cancel/i.test(message)) {
+            await updateEntry(entry.id, { status: 'canceled' });
+            return;
+        }
         await updateEntry(entry.id, {
-            errorMessage: error instanceof Error ? error.message : 'Download failed',
+            errorMessage: message,
             status: 'failed',
         });
     } finally {
@@ -1236,6 +1318,53 @@ const tryMoveCompletedFileToSaf = async (
     } catch {
         return entry;
     }
+};
+
+export const migrateCompletedDownloadsToStorage = async (): Promise<{
+    failed: number;
+    migrated: number;
+    reason?: string;
+    skipped: number;
+}> => {
+    const pref = await getStorageLocation();
+    if (!pref.treeUri) {
+        return {
+            failed: 0,
+            migrated: 0,
+            reason: 'Pick an SD card folder before migrating downloads.',
+            skipped: 0,
+        };
+    }
+
+    const entries = await getRegistry();
+    let failed = 0;
+    let migrated = 0;
+    let skipped = 0;
+
+    for (const entry of entries) {
+        if (entry.status !== 'completed' || !entry.localUri) {
+            skipped += 1;
+            continue;
+        }
+        if (entry.localUri.startsWith('content://')) {
+            skipped += 1;
+            continue;
+        }
+
+        try {
+            const beforeUri = entry.localUri;
+            const moved = await tryMoveCompletedFileToSaf(entry);
+            if (moved.localUri && moved.localUri !== beforeUri) {
+                migrated += 1;
+            } else {
+                skipped += 1;
+            }
+        } catch {
+            failed += 1;
+        }
+    }
+
+    return { failed, migrated, skipped };
 };
 
 const updateEntryDirect = (
