@@ -1,6 +1,4 @@
 import isElectron from 'is-electron';
-import cloneDeep from 'lodash/cloneDeep';
-import mergeWith from 'lodash/mergeWith';
 import { generatePath } from 'react-router';
 
 import i18n from '/@/i18n/i18n';
@@ -16,7 +14,7 @@ import {
 } from '/@/renderer/components/item-list/item-table-list/default-columns';
 import { audiomotionanalyzerPresets } from '/@/renderer/features/visualizer/components/audiomotionanalyzer/presets';
 import { AppRoute } from '/@/renderer/router/routes';
-import { getEnvSettingsOverrides } from '/@/renderer/store/env-settings-overrides';
+import { mergeSettingsWithEnv } from '/@/renderer/store/env-settings-overrides';
 import { randomString } from '/@/renderer/utils';
 import { LibraryItem, LyricSource } from '/@/shared/types/domain-types';
 import { AppTheme } from '/@/shared/themes/app-theme-types';
@@ -1069,7 +1067,4 @@ export const initialState: SettingsState = {
     },
 };
 
-export const initialStateWithEnv = mergeWith(
-    cloneDeep(initialState),
-    getEnvSettingsOverrides(),
-) as SettingsState;
+export const initialStateWithEnv = mergeSettingsWithEnv(initialState) as SettingsState;

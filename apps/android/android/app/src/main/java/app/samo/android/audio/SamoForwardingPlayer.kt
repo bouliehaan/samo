@@ -23,11 +23,88 @@ import androidx.media3.exoplayer.ExoPlayer
  * the right track and call play() with it. As a bonus, the same path also
  * powers headphone / Bluetooth media-button skips — they all funnel through
  * the player surface.
+ *
+ * While Chromecast owns playback, play/pause/seek from the notification are
+ * routed to [SamoCastNotificationBridge] instead of the paused local mirror.
+ * [castOverlay] mirrors cast position and play state so the notification UI
+ * stays in sync without starting local audio.
  */
-class SamoForwardingPlayer(
+internal class SamoForwardingPlayer(
     delegate: ExoPlayer,
+    private val castBridge: () -> SamoCastNotificationBridge?,
     private val onNavigate: (direction: Int) -> Unit,
 ) : ForwardingPlayer(delegate) {
+
+    private var castOverlay: SamoCastPlaybackOverlay? = null
+
+    internal fun setCastOverlay(overlay: SamoCastPlaybackOverlay?) {
+        castOverlay = overlay
+    }
+
+    private fun activeCastBridge(): SamoCastNotificationBridge? = castBridge()
+
+    private fun refreshCastOverlayFromBridge() {
+        castOverlay = activeCastBridge()?.getCastOverlayState()
+    }
+
+    override fun getPlayWhenReady(): Boolean =
+        castOverlay?.playWhenReady ?: super.getPlayWhenReady()
+
+    override fun getCurrentPosition(): Long =
+        castOverlay?.currentPositionMs ?: super.getCurrentPosition()
+
+    override fun getDuration(): Long {
+        val overlayDuration = castOverlay?.durationMs ?: -1L
+        return if (overlayDuration > 0) overlayDuration else super.getDuration()
+    }
+
+    override fun getPlaybackState(): Int {
+        if (castOverlay != null && super.getPlaybackState() != Player.STATE_IDLE) {
+            return Player.STATE_READY
+        }
+        return super.getPlaybackState()
+    }
+
+    override fun play() {
+        refreshCastOverlayFromBridge()
+        if (activeCastBridge()?.handleCastPlay() == true) {
+            refreshCastOverlayFromBridge()
+            return
+        }
+        super.play()
+    }
+
+    override fun pause() {
+        refreshCastOverlayFromBridge()
+        if (activeCastBridge()?.handleCastPause() == true) {
+            refreshCastOverlayFromBridge()
+            return
+        }
+        super.pause()
+    }
+
+    override fun setPlayWhenReady(playWhenReady: Boolean) {
+        refreshCastOverlayFromBridge()
+        if (playWhenReady) {
+            if (activeCastBridge()?.handleCastPlay() == true) {
+                refreshCastOverlayFromBridge()
+                return
+            }
+        } else if (activeCastBridge()?.handleCastPause() == true) {
+            refreshCastOverlayFromBridge()
+            return
+        }
+        super.setPlayWhenReady(playWhenReady)
+    }
+
+    override fun seekTo(positionMs: Long) {
+        refreshCastOverlayFromBridge()
+        if (activeCastBridge()?.handleCastSeek(positionMs) == true) {
+            refreshCastOverlayFromBridge()
+            return
+        }
+        super.seekTo(positionMs)
+    }
 
     override fun getAvailableCommands(): Player.Commands {
         return super.getAvailableCommands()

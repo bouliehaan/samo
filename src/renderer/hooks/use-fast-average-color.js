@@ -1,0 +1,182 @@
+import { FastAverageColor } from 'fast-average-color';
+import { useEffect, useRef, useState } from 'react';
+import { logFn } from '/@/renderer/utils/logger';
+const ignoredColors = [
+    [255, 255, 255, 255, 90], // White
+    [255, 255, 255, 255, 50], // Light gray
+    [255, 255, 255, 255, 30], // Very light gray
+    [255, 255, 255, 255, 10], // Very very light gray
+    [0, 0, 0, 255, 30], // Black
+    [0, 0, 0, 0, 40], // Transparent
+];
+const transparentBackground = 'rgba(0, 0, 0, 0)';
+const canReadImagePixels = (src) => {
+    try {
+        const url = new URL(src, window.location.href);
+        if (url.protocol === 'data:' || url.protocol === 'blob:' || url.protocol === 'file:') {
+            return true;
+        }
+        if (url.protocol === 'http:' || url.protocol === 'https:') {
+            return url.origin === window.location.origin;
+        }
+        return true;
+    }
+    catch {
+        return true;
+    }
+};
+export const getFastAverageColor = async (args) => {
+    return new Promise((resolve, reject) => {
+        setTimeout(() => {
+            const fac = new FastAverageColor();
+            fac.getColorAsync(args.src, {
+                algorithm: args.algorithm || 'dominant',
+                ignoredColor: ignoredColors,
+                mode: 'speed',
+            })
+                .then((background) => {
+                resolve(background.rgb);
+                fac.destroy();
+            })
+                .catch((error) => {
+                fac.destroy();
+                reject(error);
+            });
+        });
+    });
+};
+export const useFastAverageColor = (args) => {
+    const { algorithm, default: defaultColor, id, src, srcLoaded } = args;
+    const idRef = useRef(id);
+    const processingSrcRef = useRef(null);
+    const [isLoading, setIsLoading] = useState(false);
+    const [background, setBackground] = useState({
+        background: defaultColor,
+        isDark: true,
+        isLight: false,
+    });
+    useEffect(() => {
+        let isMounted = true;
+        let fac = null;
+        let timeoutId = null;
+        // Reset loading state when src changes or srcLoaded becomes false
+        if (!src || !srcLoaded) {
+            setIsLoading(false);
+            processingSrcRef.current = null;
+        }
+        if (src && srcLoaded && !canReadImagePixels(src)) {
+            if (isMounted) {
+                idRef.current = id;
+                setBackground({
+                    background: defaultColor ?? transparentBackground,
+                    isDark: true,
+                    isLight: false,
+                });
+                setIsLoading(false);
+                processingSrcRef.current = null;
+            }
+            return;
+        }
+        if (src && srcLoaded) {
+            processingSrcRef.current = src;
+            setIsLoading(true);
+            timeoutId = setTimeout(() => {
+                // Check if src has changed since we started processing
+                if (!isMounted || processingSrcRef.current !== src) {
+                    return;
+                }
+                fac = new FastAverageColor();
+                fac.getColorAsync(src, {
+                    algorithm: algorithm || 'dominant',
+                    ignoredColor: ignoredColors,
+                    mode: 'speed',
+                })
+                    .then((color) => {
+                    // Only update if this is still the current src being processed
+                    if (isMounted && processingSrcRef.current === src) {
+                        idRef.current = id;
+                        setBackground({
+                            background: color.rgb,
+                            isDark: color.isDark,
+                            isLight: color.isLight,
+                        });
+                        setIsLoading(false);
+                        processingSrcRef.current = null;
+                    }
+                    if (fac) {
+                        fac.destroy();
+                        fac = null;
+                    }
+                })
+                    .catch((e) => {
+                    // Only update if this is still the current src being processed
+                    if (isMounted && processingSrcRef.current === src) {
+                        logFn.error('Error fetching average color', { meta: { error: e } });
+                        idRef.current = id;
+                        setBackground({
+                            background: defaultColor ?? transparentBackground,
+                            isDark: true,
+                            isLight: false,
+                        });
+                        setIsLoading(false);
+                        processingSrcRef.current = null;
+                    }
+                    if (fac) {
+                        fac.destroy();
+                        fac = null;
+                    }
+                });
+            });
+        }
+        else if (srcLoaded) {
+            if (isMounted) {
+                idRef.current = id;
+                setBackground({
+                    background: 'var(--theme-colors-foreground-muted)',
+                    isDark: true,
+                    isLight: false,
+                });
+                setIsLoading(false);
+                processingSrcRef.current = null;
+            }
+        }
+        return () => {
+            isMounted = false;
+            processingSrcRef.current = null;
+            if (timeoutId) {
+                clearTimeout(timeoutId);
+                timeoutId = null;
+            }
+            if (fac) {
+                fac.destroy();
+                fac = null;
+            }
+        };
+    }, [algorithm, defaultColor, srcLoaded, src, id]);
+    return {
+        background: background.background,
+        colorId: idRef.current,
+        isDark: background.isDark,
+        isLight: background.isLight,
+        isLoading,
+    };
+};
+export const useWaitForColorCalculation = (args) => {
+    const { hasImage, isLoading, routeId, showBlurredImage, timeoutMs = 1000 } = args;
+    const [timeoutReached, setTimeoutReached] = useState(false);
+    const shouldWaitForColor = hasImage && !showBlurredImage;
+    useEffect(() => {
+        setTimeoutReached(false);
+        if (!shouldWaitForColor) {
+            return;
+        }
+        const timeoutId = setTimeout(() => {
+            setTimeoutReached(true);
+        }, timeoutMs);
+        return () => {
+            clearTimeout(timeoutId);
+        };
+    }, [shouldWaitForColor, routeId, timeoutMs]);
+    const isReady = !shouldWaitForColor || !isLoading || timeoutReached;
+    return { isReady };
+};

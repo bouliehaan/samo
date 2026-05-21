@@ -1,4 +1,3 @@
-import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import {
@@ -421,29 +420,19 @@ export const AudiomotionSchemaSections = () => {
     const { updateProperty, visualizer } = useUpdateAudioMotionAnalyzer();
     const settings = visualizer.audiomotionanalyzer;
 
-    const translatedFrequencyScaleOptions = useMemo(
-        () =>
-            frequencyScaleOptions.map((option) => ({
-                label: t(`visualizer.options.frequencyScale.${option.value}`),
-                value: option.value,
-            })),
-        [t],
-    );
+    const translatedFrequencyScaleOptions = frequencyScaleOptions.map((option) => ({
+        label: t(`visualizer.options.frequencyScale.${option.value}`),
+        value: option.value,
+    }));
 
-    const translatedWeightingFilterOptions = useMemo(
-        () =>
-            weightingFilterOptions.map((option) => ({
-                label: t(
-                    `visualizer.options.weightingFilter.${option.value === '' ? 'none' : option.value.toLowerCase()}`,
-                ),
-                value: option.value,
-            })),
-        [t],
-    );
+    const translatedWeightingFilterOptions = weightingFilterOptions.map((option) => ({
+        label: t(
+            `visualizer.options.weightingFilter.${option.value === '' ? 'none' : option.value.toLowerCase()}`,
+        ),
+        value: option.value,
+    }));
 
-    const sections = useMemo(
-        () =>
-            SCHEMA_SECTIONS.map((section) => {
+    const sections = SCHEMA_SECTIONS.map((section) => {
                 if (section.legendKey === 'visualizer.frequencyRangeAndScaling') {
                     return {
                         ...section,
@@ -465,9 +454,7 @@ export const AudiomotionSchemaSections = () => {
                     };
                 }
                 return section;
-            }),
-        [translatedFrequencyScaleOptions, translatedWeightingFilterOptions],
-    );
+            });
 
     return (
         <>

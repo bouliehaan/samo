@@ -20,6 +20,7 @@ internal class SamoServiceBinder(
     fun onServiceDisconnected()
     fun getPreferredOutputDevice(): android.media.AudioDeviceInfo?
     fun onNavigationRequest(direction: Int)
+    fun getCastNotificationBridge(): () -> SamoCastNotificationBridge?
   }
 
   var boundService: SamoPlaybackService? = null
@@ -42,6 +43,7 @@ internal class SamoServiceBinder(
       service.navigationHandler = { direction ->
         callbacks.onNavigationRequest(direction)
       }
+      service.castNotificationBridge = callbacks.getCastNotificationBridge()
       service.preferredOutputDevice = callbacks.getPreferredOutputDevice()
       service.getCurrentPlayer()?.setPreferredAudioDevice(service.preferredOutputDevice)
       val pending = pendingServiceActions.toList()
@@ -52,6 +54,7 @@ internal class SamoServiceBinder(
 
     override fun onServiceDisconnected(name: ComponentName?) {
       boundService?.navigationHandler = null
+      boundService?.castNotificationBridge = null
       boundService = null
       callbacks.onServiceDisconnected()
     }

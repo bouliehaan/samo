@@ -51,6 +51,7 @@ class SamoPlaybackService : MediaSessionService() {
      * track navigation while the native player only ever holds one item.
      */
     var navigationHandler: ((direction: Int) -> Unit)? = null
+    internal var castNotificationBridge: (() -> SamoCastNotificationBridge?)? = null
 
     inner class LocalBinder : Binder() {
         fun getService(): SamoPlaybackService = this@SamoPlaybackService
@@ -218,7 +219,10 @@ class SamoPlaybackService : MediaSessionService() {
         // in JavaScript. The forwarding player claims those commands are
         // always available and routes them back through navigationHandler,
         // which SamoAudioModule wires to a JS event.
-        val sessionPlayer = SamoForwardingPlayer(createdPlayer) { direction ->
+        val sessionPlayer = SamoForwardingPlayer(
+            createdPlayer,
+            castBridge = { castNotificationBridge?.invoke() },
+        ) { direction ->
             mainHandler.post { navigationHandler?.invoke(direction) }
         }
         val builtSession = MediaSession.Builder(this, sessionPlayer).build()
@@ -238,6 +242,18 @@ class SamoPlaybackService : MediaSessionService() {
         val resolvedPlayer = player ?: return
         resolvedPlayer.stop()
         resolvedPlayer.clearMediaItems()
+    }
+
+    internal fun getSessionPlayer(): SamoForwardingPlayer? = mediaSession?.player as? SamoForwardingPlayer
+
+    /**
+     * Rebuild the MediaStyle notification after cast playback state changes.
+     * The local mirror stays paused, so we mirror cast state on [SamoForwardingPlayer]
+     * and ask MediaSessionService to repaint the shade controls.
+     */
+    internal fun refreshPlaybackNotification() {
+        val session = mediaSession ?: return
+        onUpdateNotification(session, false)
     }
 
     private fun ensureNotificationChannel() {

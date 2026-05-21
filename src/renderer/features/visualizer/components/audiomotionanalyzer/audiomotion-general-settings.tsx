@@ -1,4 +1,3 @@
-import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { barSpaceOptions, channelLayoutOptions, modeOptions } from './visualizer-settings-options';
@@ -29,17 +28,13 @@ export const AudiomotionGeneralSettings = () => {
         return layoutMap[value] || 'single';
     };
 
-    const translatedChannelLayoutOptions = useMemo(
-        () =>
-            channelLayoutOptions.map((option) => {
-                const value = option.value || 'single';
-                return {
-                    label: t(`visualizer.options.channelLayout.${getChannelLayoutKey(value)}`),
-                    value: value as string,
-                };
-            }),
-        [t],
-    );
+    const translatedChannelLayoutOptions = channelLayoutOptions.map((option) => {
+        const value = option.value || 'single';
+        return {
+            label: t(`visualizer.options.channelLayout.${getChannelLayoutKey(value)}`),
+            value: value as string,
+        };
+    });
 
     return (
         <Fieldset

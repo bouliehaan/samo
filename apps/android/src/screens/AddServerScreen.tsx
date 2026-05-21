@@ -12,7 +12,10 @@ import { EyeGlyph } from '../components/Glyphs';
 import { type AndroidAuthState } from '../services/server-auth';
 import { styles } from '../theme/styles';
 import { colors } from '../theme/tokens';
-import { ANDROID_SERVER_TYPES } from '../utils/server-types';
+import {
+    ANDROID_SERVER_TYPE_LABELS,
+    ANDROID_SERVER_TYPES,
+} from '../utils/server-types';
 
 interface AddServerScreenProps {
     authState: AndroidAuthState;
@@ -61,15 +64,22 @@ export const AddServerScreen = ({
                             accessibilityRole="button"
                             key={type}
                             onPress={() => onServerTypeChange(type)}
-                            style={[styles.segment, isSelected && styles.segmentActive]}
+                            style={[
+                                styles.segment,
+                                styles.segmentFlexible,
+                                isSelected && styles.segmentActive,
+                            ]}
                         >
                             <Text
+                                adjustsFontSizeToFit
+                                minimumFontScale={0.85}
+                                numberOfLines={1}
                                 style={[
                                     styles.segmentLabel,
                                     isSelected && styles.segmentLabelActive,
                                 ]}
                             >
-                                {type}
+                                {ANDROID_SERVER_TYPE_LABELS[type]}
                             </Text>
                         </Pressable>
                     );

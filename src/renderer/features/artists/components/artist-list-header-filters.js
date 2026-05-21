@@ -1,0 +1,22 @@
+import { jsx as _jsx, Fragment as _Fragment, jsxs as _jsxs } from "react/jsx-runtime";
+import { useQuery } from '@tanstack/react-query';
+import { ALBUM_ARTIST_TABLE_COLUMNS } from '/@/renderer/components/item-list/item-table-list/default-columns';
+import { sharedQueries } from '/@/renderer/features/shared/api/shared-api';
+import { ListConfigMenu } from '/@/renderer/features/shared/components/list-config-menu';
+import { ListDisplayTypeToggleButton } from '/@/renderer/features/shared/components/list-display-type-toggle-button';
+import { ListRefreshButton } from '/@/renderer/features/shared/components/list-refresh-button';
+import { ListSelectFilter } from '/@/renderer/features/shared/components/list-select-filter';
+import { ListSortByDropdown } from '/@/renderer/features/shared/components/list-sort-by-dropdown';
+import { ListSortOrderToggleButton } from '/@/renderer/features/shared/components/list-sort-order-toggle-button';
+import { FILTER_KEYS } from '/@/renderer/features/shared/utils';
+import { useCurrentServer } from '/@/renderer/store';
+import { Divider } from '/@/shared/components/divider/divider';
+import { Flex } from '/@/shared/components/flex/flex';
+import { Group } from '/@/shared/components/group/group';
+import { ArtistListSort, LibraryItem, SortOrder } from '/@/shared/types/domain-types';
+import { ItemListKey } from '/@/shared/types/types';
+export const ArtistListHeaderFilters = () => {
+    const server = useCurrentServer();
+    const rolesQuery = useQuery(sharedQueries.roles({ query: {}, serverId: server.id }));
+    return (_jsxs(Flex, { justify: "space-between", children: [_jsxs(Group, { gap: "sm", w: "100%", children: [_jsx(ListSortByDropdown, { defaultSortByValue: ArtistListSort.NAME, itemType: LibraryItem.ARTIST, listKey: ItemListKey.ARTIST }), _jsx(Divider, { orientation: "vertical" }), _jsx(ListSortOrderToggleButton, { defaultSortOrder: SortOrder.ASC, listKey: ItemListKey.ARTIST }), rolesQuery.data && rolesQuery.data.length > 0 && (_jsxs(_Fragment, { children: [_jsx(Divider, { orientation: "vertical" }), _jsx(ListSelectFilter, { data: rolesQuery.data, filterKey: FILTER_KEYS.ARTIST.ROLE, listKey: ItemListKey.ARTIST })] })), _jsx(ListRefreshButton, { listKey: ItemListKey.ARTIST })] }), _jsxs(Group, { gap: "sm", wrap: "nowrap", children: [_jsx(ListDisplayTypeToggleButton, { listKey: ItemListKey.ARTIST }), _jsx(ListConfigMenu, { listKey: ItemListKey.ARTIST, tableColumnsData: ALBUM_ARTIST_TABLE_COLUMNS })] })] }));
+};

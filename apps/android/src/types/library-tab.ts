@@ -1,5 +1,6 @@
 import { type AndroidFullCollectionState } from '../services/full-collection';
 import { type AndroidHomeContentState } from '../services/home-content';
+import { type AndroidLibraryRelevantState } from '../services/library-content';
 import {
     type AndroidRecentContentItem,
     type AndroidRecentContentSourceItem,
@@ -18,6 +19,8 @@ export type LibraryFilter =
 
 export type LibrarySort = 'name' | 'recents';
 
+export type LibraryScope = 'all' | 'relevant';
+
 export interface LibraryFullCollectionsState {
     albums: AndroidFullCollectionState;
     artists: AndroidFullCollectionState;
@@ -28,6 +31,8 @@ export interface LibraryScreenProps {
     fullCollectionsEnabled: boolean;
     hasServerConnections: boolean;
     homeContentState: AndroidHomeContentState;
+    libraryRelevantState: AndroidLibraryRelevantState;
+    onEnsureFullCollections?: () => void;
     onSelectItem: (item: AndroidRecentContentSourceItem) => void;
     recentItems: AndroidRecentContentItem[];
 }
@@ -38,6 +43,15 @@ export const EMPTY_LIBRARY_FULL_COLLECTIONS: LibraryFullCollectionsState = {
     albums: { status: 'idle' },
     artists: { status: 'idle' },
 };
+
+export const EMPTY_LIBRARY_RELEVANT_STATE: AndroidLibraryRelevantState = {
+    status: 'idle',
+};
+
+export const LIBRARY_SCOPES: Array<{ id: LibraryScope; label: string }> = [
+    { id: 'relevant', label: 'Relevant' },
+    { id: 'all', label: 'All' },
+];
 
 export const LIBRARY_FILTERS: Array<{
     id: LibraryFilter;

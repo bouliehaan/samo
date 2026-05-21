@@ -1225,7 +1225,6 @@ export const styles = StyleSheet.create({
     },
     fullPlayer: {
         elevation: 999,
-        flex: 1,
         flexDirection: 'column',
         left: 0,
         overflow: 'hidden',
@@ -1270,6 +1269,10 @@ export const styles = StyleSheet.create({
     fullPlayerArtworkWrap: {
         alignItems: 'center',
         flex: 1,
+        justifyContent: 'center',
+    },
+    fullPlayerArtworkHeroSlot: {
+        alignItems: 'center',
         justifyContent: 'center',
     },
     fullPlayerBg: {
@@ -1630,6 +1633,25 @@ export const styles = StyleSheet.create({
     },
     libraryFilterPillTextActive: {
         color: colors.background,
+    },
+    libraryBrowseBody: {
+        flex: 1,
+        minHeight: 360,
+        position: 'relative',
+    },
+    libraryBrowseChrome: {
+        paddingHorizontal: HOME_EDGE_PADDING,
+        paddingTop: spacing.lg,
+    },
+    libraryBrowseListContent: {
+        paddingBottom: spacing.xl,
+        paddingRight: 28,
+    },
+    libraryHeaderActions: {
+        alignItems: 'center',
+        flexDirection: 'row',
+        gap: spacing.xs,
+        flexShrink: 0,
     },
     libraryHeaderRow: {
         alignItems: 'center',
@@ -2054,6 +2076,9 @@ export const styles = StyleSheet.create({
         height: MINI_PLAYER_ARTWORK_SIZE,
         position: 'relative',
         width: MINI_PLAYER_ARTWORK_SIZE,
+    },
+    miniPlayerArtworkSlot: {
+        ...StyleSheet.absoluteFillObject,
     },
     miniPlayerArtworkFallback: {
         alignItems: 'center',
@@ -2657,6 +2682,15 @@ export const styles = StyleSheet.create({
     root: {
         backgroundColor: colors.background,
         flex: 1,
+        flexDirection: 'column',
+        position: 'relative',
+    },
+    /** Tab scenes, nav overlays, and player chrome — sits above the in-flow tab bar. */
+    appContent: {
+        flex: 1,
+        minHeight: 0,
+        overflow: 'hidden',
+        position: 'relative',
     },
     row: {
         borderColor: colors.border,
@@ -2939,10 +2973,15 @@ export const styles = StyleSheet.create({
     segment: {
         alignItems: 'center',
         borderRadius: 7,
-        flex: 1,
         justifyContent: 'center',
         minHeight: 38,
-        paddingHorizontal: spacing.xs,
+        paddingHorizontal: spacing.sm,
+        paddingVertical: spacing.xs,
+    },
+    segmentFlexible: {
+        flexGrow: 1,
+        flexShrink: 0,
+        minWidth: '30%',
     },
     segmentActive: {
         backgroundColor: colors.accentSoft,
@@ -2951,7 +2990,8 @@ export const styles = StyleSheet.create({
         backgroundColor: colors.background,
         borderRadius: 8,
         flexDirection: 'row',
-        gap: 4,
+        flexWrap: 'wrap',
+        gap: 6,
         padding: 4,
     },
     segmentedSeekTrack: {
@@ -3136,14 +3176,11 @@ export const styles = StyleSheet.create({
     },
     tabBar: {
         backgroundColor: '#1c1c1e',
-        bottom: 0,
         flexDirection: 'row',
-        left: 0,
         paddingBottom: 12,
         paddingHorizontal: spacing.xs,
         paddingTop: 8,
-        position: 'absolute',
-        right: 0,
+        zIndex: 10,
     },
     tabScene: {
         ...StyleSheet.absoluteFillObject,
@@ -3161,6 +3198,19 @@ export const styles = StyleSheet.create({
         flex: 1,
         overflow: 'hidden',
         position: 'relative',
+    },
+    /** Full-screen layer above the always-mounted tab host (detail, settings, view-all). */
+    navOverlay: {
+        ...StyleSheet.absoluteFillObject,
+        backgroundColor: colors.background,
+        zIndex: 2,
+    },
+    navOverlayTop: {
+        zIndex: 3,
+    },
+    navOverlayHidden: {
+        opacity: 0,
+        zIndex: 0,
     },
     tabUtilityScene: {
         flex: 1,

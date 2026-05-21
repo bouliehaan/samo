@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useReducer, useRef } from 'react';
+import { startTransition, useCallback, useEffect, useReducer, useRef } from 'react';
 import { BackHandler } from 'react-native';
 import { SAMO_MOBILE_TABS, type SamoMobileTabId } from '@samo/core/navigation';
 
@@ -170,17 +170,14 @@ const appNavigationReducer = (
 
 export type UseAppNavigationOptions = {
     onCloseMediaDetailSideEffects?: () => void;
+    onCloseViewAllSideEffects?: () => void;
 };
 
 export const useAppNavigationState = (options: UseAppNavigationOptions = {}) => {
     const [state, dispatch] = useReducer(appNavigationReducer, initialAppNavigationState);
 
-    const viewAllFetchTokenRef = useRef(0);
     const libraryFullCollectionFetchTokenRef = useRef(0);
     const homeLoadRequestId = useRef(0);
-    const mediaDetailRequestId = useRef(0);
-    const searchRequestId = useRef(0);
-    const audiobookStartRequestId = useRef(0);
 
     const setActiveTab = useCallback(
         (value: SamoMobileTabId | ((current: SamoMobileTabId) => SamoMobileTabId)) => {
@@ -269,16 +266,25 @@ export const useAppNavigationState = (options: UseAppNavigationOptions = {}) => 
     );
 
     const closeMediaDetail = useCallback(() => {
-        mediaDetailRequestId.current += 1;
-        audiobookStartRequestId.current += 1;
+        // #region agent log
+        const closedAt = Date.now();
+        fetch('http://127.0.0.1:7498/ingest/65ba3320-fcf4-4bf2-82b0-f3ffc8d708c2',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'c0ca1a'},body:JSON.stringify({sessionId:'c0ca1a',runId:'nav-perf',hypothesisId:'H1',location:'app-navigation.ts:closeMediaDetail',message:'close media detail',data:{},timestamp:closedAt})}).catch(()=>{});
+        // #endregion
         options.onCloseMediaDetailSideEffects?.();
-        setMediaDetailState((current) => (current.status === 'idle' ? current : { status: 'idle' }));
+        startTransition(() => {
+            setMediaDetailState((current) =>
+                current.status === 'idle' ? current : { status: 'idle' },
+            );
+            // #region agent log
+            fetch('http://127.0.0.1:7498/ingest/65ba3320-fcf4-4bf2-82b0-f3ffc8d708c2',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'c0ca1a'},body:JSON.stringify({sessionId:'c0ca1a',runId:'nav-perf',hypothesisId:'H6',location:'app-navigation.ts:closeMediaDetail',message:'close detail transition scheduled',data:{elapsedMs:Date.now()-closedAt},timestamp:Date.now()})}).catch(()=>{});
+            // #endregion
+        });
     }, [options.onCloseMediaDetailSideEffects, setMediaDetailState]);
 
     const closeViewAll = useCallback(() => {
-        viewAllFetchTokenRef.current += 1;
+        options.onCloseViewAllSideEffects?.();
         dispatch({ type: 'close-view-all' });
-    }, []);
+    }, [options.onCloseViewAllSideEffects]);
 
     useEffect(() => {
         const handler = BackHandler.addEventListener('hardwareBackPress', () => {
@@ -336,13 +342,10 @@ export const useAppNavigationState = (options: UseAppNavigationOptions = {}) => 
 
     return {
         ...state,
-        audiobookStartRequestId,
         closeMediaDetail,
         closeViewAll,
         homeLoadRequestId,
         libraryFullCollectionFetchTokenRef,
-        mediaDetailRequestId,
-        searchRequestId,
         setActiveTab,
         setActiveUtilityScreen,
         setHomeContentState,
@@ -354,7 +357,6 @@ export const useAppNavigationState = (options: UseAppNavigationOptions = {}) => 
         setSearchState,
         setViewAllFullState,
         setViewAllRoute,
-        viewAllFetchTokenRef,
     };
 };
 

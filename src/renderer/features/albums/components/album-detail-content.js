@@ -1,0 +1,387 @@
+import { jsx as _jsx, jsxs as _jsxs, Fragment as _Fragment } from "react/jsx-runtime";
+import { useSuspenseQuery } from '@tanstack/react-query';
+import { useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { generatePath, useParams } from 'react-router';
+import styles from './album-detail-content.module.css';
+import { useGridCarouselContainerQuery } from '/@/renderer/components/grid-carousel/grid-carousel-v2';
+import { useItemListStateSubscription } from '/@/renderer/components/item-list/helpers/item-list-state';
+import { useItemListColumnReorder } from '/@/renderer/components/item-list/helpers/use-item-list-column-reorder';
+import { useItemListColumnResize } from '/@/renderer/components/item-list/helpers/use-item-list-column-resize';
+import { SONG_TABLE_COLUMNS } from '/@/renderer/components/item-list/item-table-list/default-columns';
+import { ItemTableList } from '/@/renderer/components/item-list/item-table-list/item-table-list';
+import { ItemTableListColumn } from '/@/renderer/components/item-list/item-table-list/item-table-list-column';
+import { albumQueries } from '/@/renderer/features/albums/api/album-api';
+import { AlbumInfiniteCarousel } from '/@/renderer/features/albums/components/album-infinite-carousel';
+import { usePlayer } from '/@/renderer/features/player/context/player-context';
+import { ListConfigMenu, SONG_DISPLAY_TYPES, } from '/@/renderer/features/shared/components/list-config-menu';
+import { CLIENT_SIDE_SONG_FILTERS, ListSortByDropdownControlled, } from '/@/renderer/features/shared/components/list-sort-by-dropdown';
+import { ListSortOrderToggleButtonControlled } from '/@/renderer/features/shared/components/list-sort-order-toggle-button';
+import { FILTER_KEYS, searchLibraryItems } from '/@/renderer/features/shared/utils';
+import { AppRoute } from '/@/renderer/router/routes';
+import { useCurrentServer, usePlayerSong } from '/@/renderer/store';
+import { useExternalLinks, useSettingsStore } from '/@/renderer/store/settings.store';
+import { sentenceCase, titleCase } from '/@/renderer/utils';
+import { replaceURLWithHTMLLinks } from '/@/renderer/utils/linkify';
+import { normalizeReleaseTypes } from '/@/renderer/utils/normalize-release-types';
+import { setJsonSearchParam } from '/@/renderer/utils/query-params';
+import { sortSongList } from '/@/shared/api/utils';
+import { ActionIcon } from '/@/shared/components/action-icon/action-icon';
+import { Checkbox } from '/@/shared/components/checkbox/checkbox';
+import { Group } from '/@/shared/components/group/group';
+import { Icon } from '/@/shared/components/icon/icon';
+import { Pill, PillLink } from '/@/shared/components/pill/pill';
+import { Spoiler } from '/@/shared/components/spoiler/spoiler';
+import { Stack } from '/@/shared/components/stack/stack';
+import { TextInput } from '/@/shared/components/text-input/text-input';
+import { Text } from '/@/shared/components/text/text';
+import { useDebouncedValue } from '/@/shared/hooks/use-debounced-value';
+import { useHotkeys } from '/@/shared/hooks/use-hotkeys';
+import { AlbumListSort, ExplicitStatus, LibraryItem, ServerType, SongListSort, SortOrder, } from '/@/shared/types/domain-types';
+import { ItemListKey, ListDisplayType, Play } from '/@/shared/types/types';
+const MetadataPillGroup = ({ items, title, }) => {
+    if (!items || items.length === 0)
+        return null;
+    return (_jsxs(Stack, { align: "center", className: styles.metadataPillGroup, gap: "xs", children: [_jsx(Text, { fw: 600, isNoSelect: true, size: "sm", tt: "uppercase", children: title }), _jsx("div", { className: styles['pill-group-wrapper'], children: _jsx(Pill.Group, { children: items.map((tag, index) => (_jsx(Pill, { size: "md", children: tag.value }, `item-${tag.id}-${index}`))) }) })] }));
+};
+const MOOD_TAG = 'mood';
+const GROUPING_TAG = 'grouping';
+const RELEASE_COUNTRY_TAG = 'releasecountry';
+const RELEASE_STATUS_TAG = 'releasestatus';
+const AlbumMetadataTags = ({ album }) => {
+    const { t } = useTranslation();
+    const defaultTagItems = useMemo(() => {
+        if (!album)
+            return [];
+        const releaseTypes = normalizeReleaseTypes(album.releaseTypes ?? [], t).map((type) => ({
+            id: type,
+            value: titleCase(type),
+        }));
+        const releaseCountries = album.tags?.[RELEASE_COUNTRY_TAG]?.map((country) => ({
+            id: country,
+            value: country,
+        })) || [];
+        const releaseStatuses = album.tags?.[RELEASE_STATUS_TAG]?.map((status) => ({
+            id: status,
+            value: status,
+        })) || [];
+        const items = [];
+        items.push(...releaseTypes, {
+            id: 'isCompilation',
+            value: album?.isCompilation
+                ? t('filter.isCompilation', { postProcess: 'sentenceCase' })
+                : undefined,
+        }, ...releaseCountries, ...releaseStatuses, {
+            id: 'explicitStatus',
+            value: album.explicitStatus === ExplicitStatus.EXPLICIT
+                ? t('common.explicit', { postProcess: 'sentenceCase' })
+                : album.explicitStatus === ExplicitStatus.CLEAN
+                    ? t('common.clean', { postProcess: 'sentenceCase' })
+                    : undefined,
+        });
+        return items.filter((item) => item.value);
+    }, [album, t]);
+    const moodTagItems = useMemo(() => {
+        if (!album)
+            return [];
+        return album.tags?.[MOOD_TAG]?.map((tag) => ({
+            id: tag,
+            value: tag,
+        }));
+    }, [album]);
+    const groupingItems = useMemo(() => {
+        if (!album)
+            return [];
+        return (album.tags?.[GROUPING_TAG]?.map((tag) => {
+            if (album._serverType !== ServerType.NAVIDROME) {
+                return { id: tag, label: tag, url: null };
+            }
+            const searchParams = new URLSearchParams();
+            const paramsWithCustom = setJsonSearchParam(searchParams, FILTER_KEYS.ALBUM._CUSTOM, { grouping: [tag] });
+            return {
+                id: tag,
+                label: tag,
+                url: `${AppRoute.LIBRARY_ALBUMS}?${paramsWithCustom.toString()}`,
+            };
+        }) ?? []);
+    }, [album]);
+    const recordLabels = useMemo(() => {
+        if (!album?.recordLabels || album.recordLabels.length === 0)
+            return [];
+        return album.recordLabels.map((label) => {
+            if (album._serverType === ServerType.SUBSONIC) {
+                return { id: label, label: label, url: null };
+            }
+            const searchParams = new URLSearchParams();
+            const customFilters = album._serverType === ServerType.JELLYFIN
+                ? { Studios: [label] }
+                : { recordlabel: [label] };
+            const paramsWithCustom = setJsonSearchParam(searchParams, FILTER_KEYS.ALBUM._CUSTOM, customFilters);
+            const url = `${AppRoute.LIBRARY_ALBUMS}?${paramsWithCustom.toString()}`;
+            return {
+                id: label,
+                label,
+                url,
+            };
+        });
+    }, [album]);
+    return (_jsxs(_Fragment, { children: [_jsx(MetadataPillGroup, { items: defaultTagItems, title: t('common.tags', { postProcess: 'sentenceCase' }) }), recordLabels.length > 0 && (_jsxs(Stack, { align: "center", className: styles.metadataPillGroup, gap: "xs", children: [_jsx(Text, { fw: 600, isNoSelect: true, size: "sm", tt: "uppercase", children: t('common.recordLabel', { postProcess: 'sentenceCase' }) }), _jsx("div", { className: styles['pill-group-wrapper'], children: _jsx(Pill.Group, { children: recordLabels.map((recordLabel) => recordLabel.url ? (_jsx(PillLink, { size: "md", to: recordLabel.url, children: recordLabel.label }, `recordlabel-${recordLabel.id}`)) : (_jsx(Pill, { size: "md", children: recordLabel.label }, `recordlabel-${recordLabel.id}`))) }) })] })), _jsx(MetadataPillGroup, { items: moodTagItems, title: t('common.mood', { postProcess: 'sentenceCase' }) }), groupingItems.length > 0 && (_jsxs(Stack, { align: "center", className: styles.metadataPillGroup, gap: "xs", children: [_jsx(Text, { fw: 600, isNoSelect: true, size: "sm", tt: "uppercase", children: t('common.grouping', { postProcess: 'sentenceCase' }) }), _jsx("div", { className: styles['pill-group-wrapper'], children: _jsx(Pill.Group, { children: groupingItems.map((item) => item.url ? (_jsx(PillLink, { size: "md", to: item.url, children: item.label }, `grouping-${item.id}`)) : (_jsx(Pill, { size: "md", children: item.label }, `grouping-${item.id}`))) }) })] }))] }));
+};
+const AlbumMetadataGenres = ({ genres }) => {
+    const { t } = useTranslation();
+    if (!genres || genres.length === 0)
+        return null;
+    return (_jsxs(Stack, { gap: "xs", children: [_jsx(Text, { fw: 600, isNoSelect: true, size: "sm", tt: "uppercase", children: t('entity.genre', {
+                    count: genres.length,
+                }) }), _jsx(Pill.Group, { children: genres.map((genre) => (_jsx(PillLink, { size: "md", to: generatePath(AppRoute.LIBRARY_GENRES_DETAIL, {
+                        genreId: genre.id,
+                    }), children: genre.name }, `genre-${genre.id}`))) })] }));
+};
+const getListenBrainzUrl = (mbzReleaseGroupId, albumArtist, albumName) => {
+    if (mbzReleaseGroupId) {
+        return `https://listenbrainz.org/album/${mbzReleaseGroupId}`;
+    }
+    if (albumArtist || albumName) {
+        return `https://listenbrainz.org/search/?search_term=${encodeURIComponent([albumArtist, albumName].filter(Boolean).join(' ').trim())}`;
+    }
+    return null;
+};
+const getQobuzUrl = (albumArtist, albumName) => {
+    if (albumArtist || albumName) {
+        return `https://www.qobuz.com/us-en/search/albums/${encodeURIComponent([albumArtist, albumName].filter(Boolean).join(' ').trim())}`;
+    }
+    return null;
+};
+const AlbumMetadataExternalLinks = ({ albumArtist, albumName, externalLinks, lastFM, listenBrainz, mbzId, mbzReleaseGroupId, musicBrainz, nativeSpotify, qobuz, spotify, }) => {
+    const { t } = useTranslation();
+    const listenBrainzUrl = getListenBrainzUrl(mbzReleaseGroupId || null, albumArtist, albumName);
+    const qobuzUrl = getQobuzUrl(albumArtist, albumName);
+    if (!externalLinks || (!lastFM && !listenBrainz && !musicBrainz && !qobuz && !spotify)) {
+        return null;
+    }
+    return (_jsxs(Stack, { gap: "xs", children: [_jsx(Text, { fw: 600, isNoSelect: true, size: "sm", tt: "uppercase", children: t('common.externalLinks', {
+                    postProcess: 'sentenceCase',
+                }) }), _jsxs(Group, { className: styles.externalLinksGroup, gap: "xs", children: [lastFM && (_jsx(ActionIcon, { component: "a", href: `https://www.last.fm/music/${encodeURIComponent(albumArtist || '')}/${encodeURIComponent(albumName || '')}`, icon: "brandLastfm", iconProps: {
+                            size: '2xl',
+                        }, radius: "md", rel: "noopener noreferrer", target: "_blank", tooltip: {
+                            label: t('action.openIn.lastfm'),
+                        }, variant: "subtle" })), mbzId && musicBrainz ? (_jsx(ActionIcon, { component: "a", href: `https://musicbrainz.org/release/${mbzId}`, icon: "brandMusicBrainz", iconProps: {
+                            size: '2xl',
+                        }, radius: "md", rel: "noopener noreferrer", target: "_blank", tooltip: {
+                            label: t('action.openIn.musicbrainz'),
+                        }, variant: "subtle" })) : null, listenBrainz && listenBrainzUrl && (_jsx(ActionIcon, { component: "a", href: listenBrainzUrl, icon: "brandListenBrainz", iconProps: {
+                            size: '2xl',
+                        }, radius: "md", rel: "noopener noreferrer", target: "_blank", tooltip: {
+                            label: t('action.openIn.listenbrainz'),
+                        }, variant: "subtle" })), qobuz && qobuzUrl && (_jsx(ActionIcon, { component: "a", href: qobuzUrl, icon: "brandQobuz", iconProps: {
+                            size: '2xl',
+                        }, radius: "md", rel: "noopener noreferrer", target: "_blank", tooltip: {
+                            label: t('action.openIn.qobuz'),
+                        }, variant: "subtle" })), spotify && (_jsx(ActionIcon, { component: "a", href: nativeSpotify
+                            ? `spotify:search:${encodeURIComponent(albumArtist || '')}%20${encodeURIComponent(albumName || '')}`
+                            : `https://open.spotify.com/search/${encodeURIComponent(albumArtist || '')}%20${encodeURIComponent(albumName || '')}`, icon: "brandSpotify", iconProps: {
+                            size: '2xl',
+                        }, radius: "md", rel: "noopener noreferrer", target: nativeSpotify ? undefined : '_blank', tooltip: {
+                            label: t('action.openIn.spotify'),
+                        }, variant: "subtle" }))] })] }));
+};
+export const AlbumDetailContent = () => {
+    const { albumId } = useParams();
+    const server = useCurrentServer();
+    const detailQuery = useSuspenseQuery(albumQueries.detail({ query: { id: albumId }, serverId: server.id }));
+    const { externalLinks, lastFM, listenBrainz, musicBrainz, nativeSpotify, qobuz, spotify } = useExternalLinks();
+    const comment = detailQuery?.data?.comment;
+    const releaseYear = detailQuery?.data?.releaseYear;
+    const labels = detailQuery?.data?.recordLabels;
+    const mbzId = detailQuery?.data?.mbzId;
+    return (_jsx("div", { className: styles.contentContainer, children: _jsxs("div", { className: styles.detailContainer, children: [comment && (_jsx(Spoiler, { maxHeight: 75, children: _jsx(Text, { pb: "md", children: replaceURLWithHTMLLinks(comment) }) })), _jsxs("div", { className: styles.contentLayout, children: [_jsx("div", { className: styles.songsColumn, children: detailQuery?.data?.songs && detailQuery.data.songs.length > 0 && (_jsx(AlbumDetailSongsTable, { songs: detailQuery.data.songs })) }), _jsxs("div", { className: styles.metadataColumn, children: [_jsx(AlbumMetadataGenres, { genres: detailQuery?.data?.genres }), _jsx(AlbumMetadataTags, { album: detailQuery?.data }), _jsx(AlbumMetadataExternalLinks, { albumArtist: detailQuery?.data?.albumArtistName, albumName: detailQuery?.data?.name, externalLinks: externalLinks, lastFM: lastFM, listenBrainz: listenBrainz, mbzId: mbzId || undefined, mbzReleaseGroupId: detailQuery?.data?.mbzReleaseGroupId, musicBrainz: musicBrainz, nativeSpotify: nativeSpotify, qobuz: qobuz, spotify: spotify })] })] }), labels && (_jsx(Stack, { gap: "xs", children: labels.map((label) => (_jsxs(Text, { isMuted: true, size: "sm", children: ["\u2117", releaseYear ? ` ${releaseYear}` : '', " ", label] }, `label-${label}`))) })), _jsx(AlbumDetailCarousels, { data: detailQuery?.data })] }) }));
+};
+const DiscGroupRow = ({ discGroup, groupItems, internalState, t }) => {
+    const selectionVersion = useItemListStateSubscription(internalState, (state) => state ? state.version : 0);
+    const selectedCount = groupItems.filter((item) => {
+        if (!item || typeof item !== 'object' || !('id' in item))
+            return false;
+        const rowId = internalState.extractRowId(item);
+        return rowId ? internalState.isSelected(rowId) : false;
+    }).length;
+    const isAllSelected = selectedCount === groupItems.length;
+    void selectionVersion;
+    const handleCheckboxChange = () => {
+        const selectableItems = groupItems.filter((item) => item !== null && typeof item === 'object');
+        if (isAllSelected) {
+            // Deselect all items in the group
+            const currentlySelected = internalState.getSelected();
+            const groupItemIds = new Set(selectableItems.map((item) => internalState.extractRowId(item)).filter(Boolean));
+            const itemsToKeep = currentlySelected.filter((item) => !groupItemIds.has(internalState.extractRowId(item) || ''));
+            internalState.setSelected(itemsToKeep);
+        }
+        else {
+            // Select all items in the group (add to existing selection)
+            const currentlySelected = internalState.getSelected();
+            const selectedIds = new Set(currentlySelected.map((item) => internalState.extractRowId(item)).filter(Boolean));
+            const itemsToAdd = selectableItems.filter((item) => !selectedIds.has(internalState.extractRowId(item) || ''));
+            internalState.setSelected([...currentlySelected, ...itemsToAdd]);
+        }
+    };
+    return (_jsx(Group, { align: "center", h: "100%", px: "md", w: "100%", children: _jsx(Checkbox, { checked: isAllSelected, id: `disc-${discGroup.discNumber}`, label: _jsxs(Text, { component: "label", size: "sm", truncate: true, children: [t('common.disc', { postProcess: 'sentenceCase' }), " ", discGroup.discNumber, discGroup.discSubtitle && ` - ${discGroup.discSubtitle}`] }), onChange: handleCheckboxChange, size: "xs" }) }));
+};
+function AlbumDetailCarousels({ data }) {
+    const { t } = useTranslation();
+    const genreCarousels = useMemo(() => {
+        const genreLimit = 2;
+        const selectedGenres = data?.genres?.slice(0, genreLimit);
+        if (!selectedGenres || selectedGenres.length === 0)
+            return [];
+        return selectedGenres
+            .map((genre) => {
+            const uniqueId = `moreFromGenre-${genre.id}`;
+            return {
+                enableRefresh: true,
+                excludeIds: data?.id ? [data.id] : undefined,
+                isHidden: !genre,
+                query: {
+                    genreIds: [genre.id],
+                },
+                rowCount: 1,
+                sortBy: AlbumListSort.RANDOM,
+                sortOrder: SortOrder.ASC,
+                title: sentenceCase(t('page.albumDetail.moreFromGeneric', {
+                    item: genre.name,
+                })),
+                uniqueId,
+            };
+        })
+            .filter((carousel) => !carousel.isHidden);
+    }, [data, t]);
+    const carousels = useMemo(() => {
+        const moreFromArtistUniqueId = 'moreFromArtist';
+        return [
+            {
+                enableRefresh: false,
+                excludeIds: data?.id ? [data.id] : undefined,
+                isHidden: !data?.albumArtists?.[0]?.id,
+                query: {
+                    artistIds: data?.albumArtists.length ? [data?.albumArtists[0].id] : undefined,
+                },
+                rowCount: 1,
+                sortBy: AlbumListSort.YEAR,
+                sortOrder: SortOrder.DESC,
+                title: t('page.albumDetail.moreFromArtist', { postProcess: 'sentenceCase' }),
+                uniqueId: moreFromArtistUniqueId,
+            },
+            ...genreCarousels,
+        ];
+    }, [data.albumArtists, data.id, genreCarousels, t]);
+    const cq = useGridCarouselContainerQuery();
+    return (_jsx(Stack, { gap: "lg", mt: "3rem", ref: cq.ref, children: carousels
+            .filter((c) => !c.isHidden)
+            .map((carousel) => (_jsx(AlbumInfiniteCarousel, { containerQuery: cq, enableRefresh: carousel.enableRefresh, excludeIds: carousel.excludeIds, query: carousel.query, rowCount: carousel.rowCount, sortBy: carousel.sortBy, sortOrder: carousel.sortOrder, title: carousel.title }, `carousel-${carousel.uniqueId}`))) }));
+}
+const AlbumDetailSongsTable = ({ songs }) => {
+    const { t } = useTranslation();
+    const [searchTerm, setSearchTerm] = useState('');
+    const [debouncedSearchTerm] = useDebouncedValue(searchTerm, 300);
+    const tableConfig = useSettingsStore((state) => state.lists[ItemListKey.ALBUM_DETAIL]?.table);
+    const currentSong = usePlayerSong();
+    const [sortBy, setSortBy] = useState(SongListSort.ID);
+    const [sortOrder, setSortOrder] = useState(SortOrder.ASC);
+    const columns = useMemo(() => {
+        return tableConfig?.columns || [];
+    }, [tableConfig?.columns]);
+    const filteredSongs = useMemo(() => {
+        return sortSongList(searchLibraryItems(songs, debouncedSearchTerm, LibraryItem.SONG), sortBy, sortOrder);
+    }, [songs, debouncedSearchTerm, sortBy, sortOrder]);
+    const { handleColumnReordered } = useItemListColumnReorder({
+        itemListKey: ItemListKey.ALBUM_DETAIL,
+    });
+    const { handleColumnResized } = useItemListColumnResize({
+        itemListKey: ItemListKey.ALBUM_DETAIL,
+    });
+    const discGroups = useMemo(() => {
+        if (filteredSongs.length === 0)
+            return [];
+        const groups = [];
+        let lastDiscNumber = -1;
+        let currentGroupStartIndex = 0;
+        filteredSongs.forEach((song, index) => {
+            if (song.discNumber !== lastDiscNumber) {
+                // If we have a previous group, calculate its item count
+                if (groups.length > 0) {
+                    groups[groups.length - 1].itemCount = index - currentGroupStartIndex;
+                }
+                // Start a new group
+                groups.push({
+                    discNumber: song.discNumber,
+                    discSubtitle: song.discSubtitle,
+                    itemCount: 0, // Will be calculated when we encounter the next group or end
+                });
+                currentGroupStartIndex = index;
+                lastDiscNumber = song.discNumber;
+            }
+        });
+        // Set item count for the last group
+        if (groups.length > 0) {
+            groups[groups.length - 1].itemCount = filteredSongs.length - currentGroupStartIndex;
+        }
+        return groups;
+    }, [filteredSongs]);
+    const groups = useMemo(() => {
+        // Remove groups when filtering
+        if (debouncedSearchTerm?.trim()) {
+            return undefined;
+        }
+        // Remove groups when sorting
+        if (sortBy !== SongListSort.ID) {
+            return undefined;
+        }
+        if (discGroups.length <= 1) {
+            return undefined;
+        }
+        return discGroups.map((discGroup) => ({
+            itemCount: discGroup.itemCount,
+            render: ({ data, internalState, startDataIndex, }) => {
+                const groupItems = data.slice(startDataIndex, startDataIndex + discGroup.itemCount);
+                return (_jsx(DiscGroupRow, { discGroup: discGroup, groupItems: groupItems, internalState: internalState, t: t }));
+            },
+            rowHeight: 40,
+        }));
+    }, [debouncedSearchTerm, sortBy, discGroups, t]);
+    const player = usePlayer();
+    const overrideControls = useMemo(() => {
+        return {
+            onDoubleClick: ({ index, internalState, item, meta }) => {
+                if (!item) {
+                    return;
+                }
+                const playType = meta?.playType || Play.NOW;
+                const items = internalState?.getData();
+                if (index !== undefined) {
+                    player.addToQueueByData(items, playType, item.id);
+                }
+            },
+        };
+    }, [player]);
+    const binding = useSettingsStore((state) => state.hotkeys.bindings.localSearch);
+    const searchInputRef = useRef(null);
+    useHotkeys([
+        [
+            binding.hotkey,
+            () => {
+                searchInputRef.current?.focus();
+            },
+        ],
+    ]);
+    if (!tableConfig || columns.length === 0) {
+        return null;
+    }
+    const currentSongId = currentSong?.id;
+    return (_jsxs(Stack, { gap: "md", children: [_jsxs(Group, { gap: "sm", w: "100%", children: [_jsx(TextInput, { classNames: { input: styles.searchTextInput }, flex: 1, leftSection: _jsx(Icon, { icon: "search" }), onChange: (e) => setSearchTerm(e.target.value), placeholder: t('common.search', { postProcess: 'sentenceCase' }), radius: "xl", ref: searchInputRef, rightSection: searchTerm ? (_jsx(ActionIcon, { icon: "x", onClick: () => setSearchTerm(''), size: "sm", variant: "transparent" })) : null, value: searchTerm }), _jsx(ListSortByDropdownControlled, { filters: CLIENT_SIDE_SONG_FILTERS, itemType: LibraryItem.SONG, setSortBy: (value) => setSortBy(value), sortBy: sortBy }), _jsx(ListSortOrderToggleButtonControlled, { setSortOrder: (value) => setSortOrder(value), sortOrder: sortOrder }), _jsx(ListConfigMenu, { displayTypes: [
+                            { hidden: true, value: ListDisplayType.GRID },
+                            ...SONG_DISPLAY_TYPES,
+                        ], listKey: ItemListKey.ALBUM_DETAIL, optionsConfig: {
+                            table: {
+                                itemsPerPage: { hidden: true },
+                                pagination: { hidden: true },
+                            },
+                        }, tableColumnsData: SONG_TABLE_COLUMNS })] }), _jsx(ItemTableList, { activeRowId: currentSongId, autoFitColumns: tableConfig.autoFitColumns, CellComponent: ItemTableListColumn, columns: columns, data: filteredSongs, enableAlternateRowColors: tableConfig.enableAlternateRowColors, enableDrag: true, enableDragScroll: false, enableEntranceAnimation: false, enableExpansion: false, enableHeader: tableConfig.enableHeader, enableHorizontalBorders: tableConfig.enableHorizontalBorders, enableRowHoverHighlight: tableConfig.enableRowHoverHighlight, enableSelection: true, enableSelectionDialog: false, enableStickyGroupRows: true, enableStickyHeader: true, enableVerticalBorders: tableConfig.enableVerticalBorders, groups: groups, itemType: LibraryItem.SONG, onColumnReordered: handleColumnReordered, onColumnResized: handleColumnResized, overrideControls: overrideControls, size: tableConfig.size })] }));
+};

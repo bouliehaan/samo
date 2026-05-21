@@ -926,31 +926,31 @@ const loadSubsonicArtistDetail = async (
     );
     // Keep artist pages snappy: only badge-scan the first visible slice.
     // Opening an individual album still computes the full album quality.
-    const albumItems = await annotateSubsonicAlbumsQuality(
-        authentication,
-        fetcher,
-        rawAlbumItems,
-        ARTIST_DETAIL_ALBUM_QUALITY_SCAN_LIMIT,
-    );
-    const albumIds = new Set(albumItems.map((album) => album.id));
-    const topTracks = topSongs
-        .slice(0, TOP_SONGS_LIMIT)
-        .map((song) => subsonicSongToTrack(authentication, song))
-        .filter((track): track is MobileMediaTrack => Boolean(track));
+    const albumIds = new Set(rawAlbumItems.map((album) => album.id));
     const rawAppearsOnItems = subsonicAppearsOnFromSongs(
         authentication,
         artist.name,
         artist.id.toString(),
         [...topSongs, ...searchSongs],
     ).filter((item) => !albumIds.has(item.id));
-    // Same idea for Appears On: badge the first visible row, don't block the
-    // artist page on a wide fan-out.
-    const appearsOnItems = await annotateSubsonicAlbumsQuality(
-        authentication,
-        fetcher,
-        rawAppearsOnItems,
-        ARTIST_DETAIL_APPEARS_ON_QUALITY_SCAN_LIMIT,
-    );
+    const [albumItems, appearsOnItems] = await Promise.all([
+        annotateSubsonicAlbumsQuality(
+            authentication,
+            fetcher,
+            rawAlbumItems,
+            ARTIST_DETAIL_ALBUM_QUALITY_SCAN_LIMIT,
+        ),
+        annotateSubsonicAlbumsQuality(
+            authentication,
+            fetcher,
+            rawAppearsOnItems,
+            ARTIST_DETAIL_APPEARS_ON_QUALITY_SCAN_LIMIT,
+        ),
+    ]);
+    const topTracks = topSongs
+        .slice(0, TOP_SONGS_LIMIT)
+        .map((song) => subsonicSongToTrack(authentication, song))
+        .filter((track): track is MobileMediaTrack => Boolean(track));
     const relatedArtists = (infoResponse?.similarArtist ?? []).flatMap((similar) => {
         const similarId = similar.id?.toString();
         if (!similarId || !similar.name) return [];

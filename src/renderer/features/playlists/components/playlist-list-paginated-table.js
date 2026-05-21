@@ -1,0 +1,48 @@
+import { jsx as _jsx } from "react/jsx-runtime";
+import { api } from '/@/renderer/api';
+import { useItemListPaginatedLoader } from '/@/renderer/components/item-list/helpers/item-list-paginated-loader';
+import { useItemListColumnReorder } from '/@/renderer/components/item-list/helpers/use-item-list-column-reorder';
+import { useItemListColumnResize } from '/@/renderer/components/item-list/helpers/use-item-list-column-resize';
+import { useItemListScrollPersist } from '/@/renderer/components/item-list/helpers/use-item-list-scroll-persist';
+import { ItemListWithPagination } from '/@/renderer/components/item-list/item-list-pagination/item-list-pagination';
+import { useItemListPagination } from '/@/renderer/components/item-list/item-list-pagination/use-item-list-pagination';
+import { ItemTableList } from '/@/renderer/components/item-list/item-table-list/item-table-list';
+import { ItemTableListColumn } from '/@/renderer/components/item-list/item-table-list/item-table-list-column';
+import { playlistsQueries } from '/@/renderer/features/playlists/api/playlists-api';
+import { LibraryItem, PlaylistListSort, SortOrder, } from '/@/shared/types/domain-types';
+import { ItemListKey } from '/@/shared/types/types';
+export const PlaylistListPaginatedTable = ({ autoFitColumns = false, columns, enableAlternateRowColors = false, enableHeader = true, enableHorizontalBorders = false, enableRowHoverHighlight = true, enableSelection = true, enableVerticalBorders = false, itemsPerPage = 100, query = {
+    sortBy: PlaylistListSort.NAME,
+    sortOrder: SortOrder.ASC,
+}, saveScrollOffset = true, serverId, size = 'default', }) => {
+    const listCountQuery = playlistsQueries.listCount({
+        query: { ...query },
+        serverId: serverId,
+    });
+    const listQueryFn = api.controller.getPlaylistList;
+    const { currentPage, onChange } = useItemListPagination();
+    const { data, pageCount, totalItemCount } = useItemListPaginatedLoader({
+        currentPage,
+        eventKey: ItemListKey.PLAYLIST,
+        itemsPerPage,
+        itemType: LibraryItem.PLAYLIST,
+        listCountQuery,
+        listQueryFn,
+        query,
+        serverId,
+    });
+    const { handleOnScrollEnd, scrollOffset } = useItemListScrollPersist({
+        enabled: saveScrollOffset,
+    });
+    const { handleColumnReordered } = useItemListColumnReorder({
+        itemListKey: ItemListKey.PLAYLIST,
+    });
+    const { handleColumnResized } = useItemListColumnResize({
+        itemListKey: ItemListKey.PLAYLIST,
+    });
+    const startRowIndex = currentPage * itemsPerPage;
+    return (_jsx(ItemListWithPagination, { currentPage: currentPage, itemsPerPage: itemsPerPage, onChange: onChange, pageCount: pageCount, totalItemCount: totalItemCount, children: _jsx(ItemTableList, { autoFitColumns: autoFitColumns, CellComponent: ItemTableListColumn, columns: columns, data: data || [], enableAlternateRowColors: enableAlternateRowColors, enableHeader: enableHeader, enableHorizontalBorders: enableHorizontalBorders, enableRowHoverHighlight: enableRowHoverHighlight, enableSelection: enableSelection, enableVerticalBorders: enableVerticalBorders, initialTop: {
+                to: scrollOffset ?? 0,
+                type: 'offset',
+            }, itemType: LibraryItem.PLAYLIST, onColumnReordered: handleColumnReordered, onColumnResized: handleColumnResized, onScrollEnd: handleOnScrollEnd, size: size, startRowIndex: startRowIndex }) }));
+};

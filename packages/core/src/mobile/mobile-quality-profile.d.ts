@@ -1,0 +1,32 @@
+import { type MobileQualityProfile } from './mobile-home';
+import { type MobileMediaDetail } from './mobile-media-detail';
+import { type MobilePlayableAudio } from './mobile-playback';
+/**
+ * Pull a quality profile from a playback record's quality block.
+ *
+ * Returns undefined when the playback isn't lossless (transcoded, lossy
+ * container). When the playback IS lossless but the server didn't fill in
+ * bitDepth or sampleRate (Subsonic implementations are inconsistent about
+ * populating those numeric fields for FLAC), we default to CD-quality
+ * 16/44.1 — the asset map has that variant and a confirmed-lossless track
+ * deserves a badge even when its exact specs aren't reported. Hi-res
+ * content that DOES report its specs gets the matching format.
+ */
+export declare const getPlaybackQualityProfile: (playback?: MobilePlayableAudio | null) => MobileQualityProfile | undefined;
+/**
+ * Resolve a quality profile from any home/search item. The explicit
+ * qualityProfile set by annotateSubsonicAlbumsQuality wins; we fall back to
+ * the item's playback (covers individual song hits in search) before
+ * giving up. Undefined → caller renders no badge.
+ */
+export declare const getItemQualityProfile: (item?: null | {
+    playback?: MobilePlayableAudio;
+    qualityProfile?: MobileQualityProfile;
+}) => MobileQualityProfile | undefined;
+/**
+ * Album-detail and audiobook-detail: prefer the loader-computed profile,
+ * else walk tracks for the best one. Playlist detail intentionally still
+ * computes a profile here (so per-track badges work) but the UI never
+ * draws it on the playlist hero — see the rendering rule in the album hero.
+ */
+export declare const getDetailQualityProfile: (detail?: MobileMediaDetail | null) => MobileQualityProfile | undefined;

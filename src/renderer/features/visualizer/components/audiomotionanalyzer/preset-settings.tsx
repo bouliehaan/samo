@@ -1,5 +1,5 @@
 import { nanoid } from 'nanoid';
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { VisualizerSelect } from './visualizer-settings-controls';
@@ -435,12 +435,10 @@ export const PresetSettings = () => {
         }
     };
 
-    const presetOptions = useMemo(() => {
-        return visualizer.audiomotionanalyzer.presets.map((preset) => ({
-            label: preset.name,
-            value: preset.id,
-        }));
-    }, [visualizer.audiomotionanalyzer.presets]);
+    const presetOptions = visualizer.audiomotionanalyzer.presets.map((preset) => ({
+        label: preset.name,
+        value: preset.id,
+    }));
 
     return (
         <Fieldset legend={t('visualizer.presets')}>

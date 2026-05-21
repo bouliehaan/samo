@@ -31,7 +31,6 @@ import {
     MobileSearchSectionId,
 } from '@samo/core/mobile';
 import { SAMO_MOBILE_TABS, type SamoMobileTabId } from '@samo/core/navigation';
-import { createPlaybackSession } from '@samo/core/playback';
 import {
     removeServerAuthentication,
     type ServerAuthenticationResult,
@@ -88,7 +87,12 @@ import {
     GestureHandlerRootView,
 } from 'react-native-gesture-handler';
 import LinearGradient from 'react-native-linear-gradient';
-import { useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
+import Reanimated, {
+    useAnimatedStyle,
+    useSharedValue,
+    withSpring,
+    withTiming,
+} from 'react-native-reanimated';
 import ditherTexture from './assets/dither.png';
 import samoLogo from './assets/samo-logo.png';
 import { ArtworkImage } from './src/components/ArtworkImage';
@@ -102,6 +106,16 @@ import {
     useDownloadedCollectionKeys,
     useDownloadedTrackKeys,
 } from './src/contexts/downloaded-keys';
+import { useAndroidAbsProgressSync } from './src/hooks/use-android-abs-progress-sync';
+import { useAndroidCastSync } from './src/hooks/use-android-cast-sync';
+import { useAndroidContextMenu } from './src/hooks/use-android-context-menu';
+import {
+    useAndroidMediaHandlerDeps,
+    useAndroidMediaHandlers,
+} from './src/hooks/use-android-media-handlers';
+import { useAndroidNativePlayback } from './src/hooks/use-android-native-playback';
+import { useAndroidPlaybackControls } from './src/hooks/use-android-playback-controls';
+import { useAndroidServerAuth } from './src/hooks/use-android-server-auth';
 import { useReducedMotionPreference } from './src/hooks/use-reduced-motion-preference';
 import { AddServerScreen } from './src/screens/AddServerScreen';
 import { DownloadsScreen } from './src/screens/DownloadsScreen';
@@ -119,10 +133,15 @@ import { EmptyServerBackedScreen } from './src/screens/EmptyServerBackedScreen';
 import { BookInformationModal } from './src/components/BookInformationModal';
 import {
     MediaContextMenu,
-    type MediaContextMenuAction,
 } from './src/components/MediaContextMenu';
 import { StreamInfoModal } from './src/components/StreamInfoModal';
 import { TrackPlaylistMenu } from './src/components/TrackPlaylistMenu';
+import {
+    PLAYER_CLOSE_SPRING,
+    PLAYER_OPEN_SPRING,
+    tabBarSinkOpacity,
+    tabBarSinkTranslateY,
+} from './src/player/player-motion';
 import {
     ConnectedFullScreenPlayer,
     ConnectedMiniPlayer,
@@ -130,9 +149,6 @@ import {
 } from './src/player/PlayerSurface';
 import {
     MediaContextMenuContext,
-    type MediaContextMenuApi,
-    type MediaContextMenuKind,
-    type MediaContextMenuTarget,
 } from './src/contexts/media-context-menu';
 import { type BookInfoState } from './src/types/book-info';
 import { LibrarySortMenu } from './src/components/LibrarySortMenu';
@@ -142,6 +158,7 @@ import { type HomeDisplaySection } from './src/types/home';
 import { type ViewAllRoute } from './src/types/view-all';
 import {
     EMPTY_LIBRARY_FULL_COLLECTIONS,
+    EMPTY_LIBRARY_RELEVANT_STATE,
     LIBRARY_FILTERS,
     LIBRARY_SORTS,
     type LibraryFilter,
@@ -174,28 +191,10 @@ import {
     type AndroidMediaOutputState,
     type AndroidNativePlaybackEvent,
     cancelAndroidSleepTimer,
-    getAndroidAudioDeviceInfo,
-    getAndroidCastState,
-    getAndroidOutputRoutes,
-    isAndroidNativePlaybackAvailable,
-    pauseAndroidAudio,
-    playAndroidAudio,
-    resumeAndroidAudio,
-    seekAndroidAudio,
     setAndroidSleepTimer,
-    getAndroidPlaybackStatus,
     selectAndroidOutputRoute,
-    subscribeToAndroidAudioEvents,
-    subscribeToAndroidCastEvents,
-    subscribeToAndroidNavigationRequests,
-    subscribeToAndroidOutputRouteEvents,
     updateAndroidNowPlayingMetadata,
 } from './src/services/audio-playback';
-import { useAppNavigationState } from './src/state/app-navigation';
-import { useAppSessionState } from './src/state/app-session';
-import { useAuthSessionState } from './src/state/auth-session';
-import { useDownloadsState } from './src/state/downloads-state';
-import { useMediaOverlaysState } from './src/state/media-overlays';
 import {
     getAndroidPlaybackState,
     selectActiveAndroidPlaybackItem,
@@ -208,16 +207,10 @@ import {
     findActiveChapterIndex,
     formatChapterRange,
     formatPlaybackTime,
-    getActivePlaybackStatus,
-    getAdjacentSegmentTargetMs,
     getDisplaySubtitle,
     getDurationLabel,
     getPlaybackDisplayMetadata,
-    getPlaybackDurationMs,
-    getPlaybackEventDurationMs,
     getPlaybackItemDurationMs,
-    getStablePlaybackPositionMs,
-    isLivePlayback,
     looksLikeUrl,
 } from './src/utils/playback-time';
 import {
@@ -225,7 +218,6 @@ import {
     darkenColor,
     pickAlbumEssenceColor,
 } from './src/utils/color';
-import { clamp } from './src/utils/math';
 import { getPlaylistTargetsForRoot } from './src/utils/playlist-targets';
 import {
     HOME_ARTWORK_PREFETCH_LIMIT,
@@ -237,7 +229,6 @@ import {
     hasServerUrlTarget,
 } from './src/utils/auth-url';
 import { getTabTitle } from './src/utils/tab-title';
-import { buildRecoveredPlaybackItem } from './src/utils/playback-recovery';
 import {
     buildDownloadedCollectionSnapshot,
     EMPTY_DOWNLOADED_COLLECTION_SNAPSHOT,
@@ -256,10 +247,7 @@ import {
     buildOfflinePodcastEpisodePlayable,
     mimeFromCastUri,
     pickAudiobookFileIndexForTime,
-    resolveLocalPlayback,
 } from './src/utils/offline-playback';
-import { inferContextMenuKindFromItem } from './src/utils/context-menu-infer';
-import { isSongSearchItem, synthesizeTrackFromSongItem } from './src/utils/search-tracks';
 import { getHighResolutionArtworkUrl } from './src/utils/artwork-url';
 import { getLastPlayedPersistenceKey } from './src/utils/last-played';
 import { detailHasHiRes } from './src/utils/media-quality';
@@ -274,15 +262,22 @@ import {
     getOfflineAudiobookFiles,
     listDownloads,
     type OfflineAudiobookFile,
-    setDownloadsPlaybackActive,
     subscribeDownloads,
 } from './src/services/download-manager';
-import { triggerImpact, triggerSelection } from './src/services/haptics';
+import { triggerSelection } from './src/services/haptics';
 import {
     type AndroidFullCollectionState,
     loadAndroidFullCollection,
 } from './src/services/full-collection';
 import { type AndroidHomeContentState, loadAndroidHomeContent } from './src/services/home-content';
+import {
+    type AndroidLibraryRelevantState,
+    loadAndroidLibraryRelevantContent,
+} from './src/services/library-content';
+import {
+    buildHomeLoadKey,
+    dedupeInFlight,
+} from './src/services/in-flight-requests';
 import {
     loadCachedHomeContent,
     saveCachedHomeContent,
@@ -337,7 +332,6 @@ import {
 import {
     type AbsProgressContext,
     flushPendingAbsProgress,
-    initAbsProgressStore,
     loadAbsCurrentProgress,
     syncAbsProgressImmediate,
     syncAbsProgressThrottled,
@@ -378,27 +372,18 @@ import {
     VIEW_ALL_ROW_HEIGHT,
 } from './src/theme/layout';
 import {
-    BookInfoGlyph,
     CastGlyph,
-    ChaptersGlyph,
     CheckGlyph,
     CircularDownloadGlyph,
     ClearGlyph,
-    DiscGlyph,
     DownCaretGlyph,
-    DownloadGlyph,
     EllipsisVerticalGlyph,
     FullPlayerImageGlyph,
     GearGlyph,
-    HeartGlyph,
     MoreGlyph,
-    PersonGlyph,
     PlusGlyph,
     PlayCircleGlyph,
     PlayPauseGlyph,
-    PlaylistAddGlyph,
-    QueueAddGlyph,
-    RadioWaveGlyph,
     SearchGlyph,
     ShuffleGlyph,
     SleepTimerGlyph,
@@ -411,10 +396,28 @@ import { styles } from './src/theme/styles';
 import { colors, spacing } from './src/theme/tokens';
 
 export default function App() {
+    const mediaHandlersRef = useRef<ReturnType<typeof useAndroidMediaHandlers> | null>(null);
+    const libraryRelevantFetchTokenRef = useRef(0);
+    const [libraryRelevantState, setLibraryRelevantState] =
+        useState<AndroidLibraryRelevantState>(EMPTY_LIBRARY_RELEVANT_STATE);
+    const { auth, downloads, navigation, overlays, session } = useAndroidMediaHandlerDeps({
+        navigation: {
+            onCloseMediaDetailSideEffects: () => {
+                mediaHandlersRef.current?.invalidateMediaDetailRequests();
+            },
+            onCloseViewAllSideEffects: () => {
+                mediaHandlersRef.current?.bumpViewAllFetchToken();
+            },
+        },
+        overlays: {
+            onCloseBookInfoSideEffects: () => {
+                mediaHandlersRef.current?.bumpBookInfoRequestId();
+            },
+        },
+    });
     const {
         activeTab,
         activeUtilityScreen,
-        audiobookStartRequestId,
         closeMediaDetail,
         closeViewAll,
         homeContentState,
@@ -423,10 +426,8 @@ export default function App() {
         isSearchOverlayOpen,
         libraryFullCollectionFetchTokenRef,
         libraryFullCollections,
-        mediaDetailRequestId,
         mediaDetailState,
         searchOverlayQuery,
-        searchRequestId,
         searchState,
         setActiveTab,
         setActiveUtilityScreen,
@@ -439,11 +440,9 @@ export default function App() {
         setSearchState,
         setViewAllFullState,
         setViewAllRoute,
-        viewAllFetchTokenRef,
         viewAllFullState,
         viewAllRoute,
-    } = useAppNavigationState();
-
+    } = navigation;
     const {
         authState,
         password,
@@ -459,145 +458,123 @@ export default function App() {
         setServerUrl,
         setUsername,
         username,
-    } = useAuthSessionState();
-
+    } = auth;
     const {
         downloadedCollectionKeys,
         downloadedCollections,
         downloadedTrackKeys,
         isOfflineMode,
         setIsOfflineMode,
-    } = useDownloadsState();
-
+    } = downloads;
     const {
-        bookInfoRequestId,
         bookInfoState,
         closeBookInfo,
-        contextMenuFeedback,
-        contextMenuTarget,
         playlistMenuRoot,
         playlistMenuRootState,
         setBookInfoState,
-        setContextMenuFeedback,
-        setContextMenuTarget,
         setPlaylistMenuRoot,
         setPlaylistMenuRootState,
         setStreamInfoItem,
         streamInfoItem,
-    } = useMediaOverlaysState();
-
+    } = overlays;
     const {
         castState,
-        favoritedKeys,
-        forcePlaybackQueueRender,
         isShuffled,
         lastPlayedItem,
+        playbackQueueRevision,
         localFavorites,
         recentContentItems,
-        setCastState,
         setFavoritedKeys,
         setIsShuffled,
         setLastPlayedItem,
         setLocalFavorites,
         setRecentContentItems,
-    } = useAppSessionState();
+    } = session;
     // Unified animation source for the MiniPlayer ↔ FullScreenPlayer transition.
     // 0 = miniplayer visible, 1 = fullscreen visible. Both components derive
     // their frame, opacity, and touchability from this single shared value so
     // the motion reads as one physical object expanding or collapsing.
     const playerProgress = useSharedValue(0);
     const reducedMotion = useReducedMotionPreference();
+    const tabBarAnimatedStyle = useAnimatedStyle(() => {
+        const p = playerProgress.value;
+        return {
+            opacity: tabBarSinkOpacity(p),
+            transform: [{ translateY: tabBarSinkTranslateY(p) }],
+        };
+    });
     useEffect(() => {
-        const spring = reducedMotion ? REDUCED_MOTION_SPRING : OPEN_SPRING;
+        const openSpring = reducedMotion ? REDUCED_MOTION_SPRING : PLAYER_OPEN_SPRING;
+        const closeSpring = reducedMotion ? REDUCED_MOTION_SPRING : PLAYER_CLOSE_SPRING;
         if (isFullPlayerOpen) {
-            playerProgress.value = withSpring(1, spring);
-        } else {
+            playerProgress.value = withSpring(1, openSpring);
+            return;
+        }
+        // Gesture dismiss already animates playerProgress to 0 and calls onClose
+        // from the spring onFinish callback — avoid restarting the close motion.
+        if (playerProgress.value > 0.001) {
             playerProgress.value = reducedMotion
                 ? withTiming(0, { duration: 0 })
-                : withSpring(0, spring);
+                : withSpring(0, closeSpring);
         }
     }, [isFullPlayerOpen, playerProgress, reducedMotion]);
     const playbackStatus = useAndroidPlaybackState(selectAndroidPlaybackStatus);
-    const absContextRef = useRef<AbsProgressContext | null>(null);
+    const {
+        absContextRef,
+        handlePlayItem,
+        playbackQueueRef,
+        playbackSnapshotRef,
+        playQueuedItem,
+        registerNavigatePlayback,
+    } = useAndroidNativePlayback({ isFullPlayerOpen, lastPlayedItem });
+    useAndroidCastSync();
+    useAndroidAbsProgressSync();
     const lastPlayedPersistenceKeyRef = useRef<string | null>(null);
-    const playbackQueueRef = useRef<null | { index: number; items: MobilePlayableAudio[] }>(null);
-    const playbackSequenceRef = useRef(0);
-    // Stale-while-revalidate cache for media detail pages. First open hits the
-    // network; subsequent opens in the same session return instantly while the
-    // background refetch updates the data.
-    const mediaDetailCacheRef = useRef<Map<string, MobileMediaDetail>>(new Map());
-    const playbackSnapshotRef = useRef<null | { item: MobilePlayableAudio; sessionId: string }>(
-        null,
-    );
-
-    const hydrateNativePlaybackState = useCallback(async () => {
-        if (!isAndroidNativePlaybackAvailable()) {
-            return;
-        }
-
-        try {
-            const event = await getAndroidPlaybackStatus();
-            if (event.status === 'idle') {
-                return;
-            }
-
-            const currentPlaybackState = getAndroidPlaybackState();
-            if (currentPlaybackState.status !== 'idle') {
-                if (!event.sessionId || event.sessionId !== currentPlaybackState.sessionId) {
-                    return;
-                }
-            }
-
-            const item =
-                currentPlaybackState.status !== 'idle'
-                    ? currentPlaybackState.item
-                    : buildRecoveredPlaybackItem(event, lastPlayedItem);
-            if (!item) {
-                return;
-            }
-
-            const sessionId =
-                currentPlaybackState.status !== 'idle'
-                    ? currentPlaybackState.sessionId
-                    : (event.sessionId ?? `recovered:${item.id}`);
-            playbackSnapshotRef.current = { item, sessionId };
-            setAndroidPlaybackState((current) => {
-                if (current.status !== 'idle' && current.sessionId !== sessionId) {
-                    return current;
-                }
-
-                const activeItem =
-                    current.status !== 'idle' && current.sessionId === sessionId
-                        ? current.item
-                        : item;
-
-                return {
-                    bitPerfect:
-                        event.bitPerfect ??
-                        (current.status === 'idle' ? undefined : current.bitPerfect),
-                    durationMs: getPlaybackEventDurationMs(event, activeItem),
-                    item: activeItem,
-                    message: event.message ?? (current.status === 'idle' ? undefined : current.message),
-                    positionMs:
-                        current.status === 'idle'
-                            ? event.positionMs
-                            : getStablePlaybackPositionMs(event, current),
-                    sessionId,
-                    status: getActivePlaybackStatus(
-                        event.status,
-                        current.status === 'idle' ? 'paused' : current.status,
-                    ),
-                };
-            });
-        } catch {
-            // Best-effort recovery. The regular native event subscription still owns live updates.
-        }
-    }, [lastPlayedItem]);
-
-    const canConnect =
-        hasServerUrlTarget(serverUrl) && username.trim().length > 0 && password.length > 0;
     const isHomeSurface =
         activeTab === 'home' && activeUtilityScreen === null && mediaDetailState.status === 'idle';
+    const frozenDetailStateRef = useRef(mediaDetailState);
+    if (mediaDetailState.status === 'loaded') {
+        frozenDetailStateRef.current = mediaDetailState;
+    }
+    const detailOverlayOpen =
+        activeUtilityScreen === null && mediaDetailState.status !== 'idle';
+    const hasCachedDetailShell = frozenDetailStateRef.current.status === 'loaded';
+    const prevDetailOverlayOpenRef = useRef(false);
+    useEffect(() => {
+        const wasOpen = prevDetailOverlayOpenRef.current;
+        if (detailOverlayOpen && !wasOpen) {
+            const openedAt = Date.now();
+            requestAnimationFrame(() => {
+                // #region agent log
+                const framePayload = {
+                    sessionId: 'c0ca1a',
+                    runId: 'nav-perf',
+                    hypothesisId: 'H10',
+                    location: 'App.tsx:detailOverlayOpen',
+                    message: 'detail overlay first frame',
+                    data: {
+                        detailStatus: mediaDetailState.status,
+                        sinceOpenMs: Date.now() - openedAt,
+                    },
+                    timestamp: Date.now(),
+                };
+                console.log('[nav-perf]', JSON.stringify(framePayload));
+                fetch(
+                    'http://127.0.0.1:7498/ingest/65ba3320-fcf4-4bf2-82b0-f3ffc8d708c2',
+                    {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-Debug-Session-Id': 'c0ca1a',
+                        },
+                        body: JSON.stringify(framePayload),
+                    },
+                ).catch(() => {});
+                // #endregion
+            });
+        }
+        prevDetailOverlayOpenRef.current = detailOverlayOpen;
+    }, [detailOverlayOpen, mediaDetailState.status]);
 
     // When offline mode is on, filter home/library content to items that
     // have at least one completed download. Items without a server source
@@ -724,7 +701,10 @@ export default function App() {
                 }
                 return { status: 'loading' };
             });
-            const nextHomeContentState = await loadAndroidHomeContent(authentications);
+            const nextHomeContentState = await dedupeInFlight(
+                buildHomeLoadKey(authentications),
+                () => loadAndroidHomeContent(authentications),
+            );
 
             if (requestId === homeLoadRequestId.current) {
                 setHomeContentState(nextHomeContentState);
@@ -736,26 +716,34 @@ export default function App() {
         [],
     );
 
-    useEffect(() => {
+    const { canConnect, handleConnect, handleDisconnect } = useAndroidServerAuth({
+        auth,
+        closeMediaDetail,
+        loadHomeForConnections,
+        setActiveUtilityScreen,
+        setHomeContentState,
+        setSearchState,
+    });
+
+    const startLibraryFullCollectionLoad = useStableCallback(() => {
         if (
             isOfflineMode ||
             serverConnections.length === 0 ||
             homeContentState.status !== 'loaded'
         ) {
-            libraryFullCollectionFetchTokenRef.current += 1;
-            setLibraryFullCollections(EMPTY_LIBRARY_FULL_COLLECTIONS);
             return;
         }
 
-        const requestId = (libraryFullCollectionFetchTokenRef.current += 1);
-        setLibraryFullCollections({
-            albums: { status: 'loading' },
-            artists: { status: 'loading' },
-        });
+        setLibraryFullCollections((current) => {
+            if (
+                current.albums.status === 'loading' ||
+                current.artists.status === 'loading' ||
+                (current.albums.status === 'loaded' && current.artists.status === 'loaded')
+            ) {
+                return current;
+            }
 
-        // Let the launch/home render settle before pulling the exhaustive
-        // library. The full lists are for Library + View All, not first paint.
-        const timeout = setTimeout(() => {
+            const requestId = (libraryFullCollectionFetchTokenRef.current += 1);
             void (async () => {
                 const [albums, artists] = await Promise.all([
                     loadAndroidFullCollection(serverConnections, 'album'),
@@ -768,220 +756,61 @@ export default function App() {
 
                 setLibraryFullCollections({ albums, artists });
             })();
-        }, LIBRARY_FULL_COLLECTION_PREFETCH_DELAY_MS);
+
+            return {
+                albums: { status: 'loading' },
+                artists: { status: 'loading' },
+            };
+        });
+    });
+
+    const ensureLibraryFullCollections = startLibraryFullCollectionLoad;
+
+    const startLibraryRelevantLoad = useStableCallback(() => {
+        if (isOfflineMode || serverConnections.length === 0) {
+            return;
+        }
+
+        setLibraryRelevantState((current) =>
+            current.status === 'loaded' ? current : { status: 'loading' },
+        );
+        const requestId = (libraryRelevantFetchTokenRef.current += 1);
+        void (async () => {
+            const next = await loadAndroidLibraryRelevantContent(serverConnections);
+            if (libraryRelevantFetchTokenRef.current !== requestId) {
+                return;
+            }
+            setLibraryRelevantState(next);
+        })();
+    });
+
+    useEffect(() => {
+        if (isOfflineMode || serverConnections.length === 0) {
+            libraryRelevantFetchTokenRef.current += 1;
+            setLibraryRelevantState(EMPTY_LIBRARY_RELEVANT_STATE);
+            libraryFullCollectionFetchTokenRef.current += 1;
+            setLibraryFullCollections(EMPTY_LIBRARY_FULL_COLLECTIONS);
+            return;
+        }
+
+        if (homeContentState.status !== 'loaded') {
+            return;
+        }
+
+        const timeout = setTimeout(
+            startLibraryRelevantLoad,
+            LIBRARY_FULL_COLLECTION_PREFETCH_DELAY_MS,
+        );
 
         return () => {
             clearTimeout(timeout);
         };
-    }, [homeContentState.status, isOfflineMode, serverConnections]);
-
-    const playQueuedItem = useCallback(
-        async (
-            item: MobilePlayableAudio,
-            queueItems: MobilePlayableAudio[] = [item],
-            queueIndex?: number,
-            options?: { shuffled?: boolean },
-        ) => {
-            if (!isAndroidNativePlaybackAvailable()) {
-                setAndroidPlaybackState({
-                    item,
-                    message: 'Native Android audio engine is not available in this build.',
-                    sessionId: 'unavailable',
-                    status: 'error',
-                });
-                return;
-            }
-
-            const playableQueueItems = queueItems.length > 0 ? queueItems : [item];
-            const requestedQueueIndex =
-                queueIndex ??
-                Math.max(
-                    0,
-                    playableQueueItems.findIndex((candidate) => candidate.id === item.id),
-                );
-            const nextQueueIndex = Math.min(
-                Math.max(0, requestedQueueIndex),
-                Math.max(0, playableQueueItems.length - 1),
-            );
-            const initialPositionMs =
-                item.initialPositionSeconds && item.initialPositionSeconds > 0
-                    ? item.initialPositionSeconds * 1000
-                    : 0;
-            const session = createPlaybackSession({
-                engine: 'android-native',
-                mediaKey: item.id,
-                sequence: (playbackSequenceRef.current += 1),
-                source: item.source,
-            });
-
-            playbackQueueRef.current = {
-                index: nextQueueIndex,
-                items: playableQueueItems,
-            };
-            forcePlaybackQueueRender();
-            if (options?.shuffled !== undefined) {
-                setIsShuffled(options.shuffled);
-            }
-            playbackSnapshotRef.current = { item, sessionId: session.id };
-            setAndroidPlaybackState({
-                durationMs: getPlaybackItemDurationMs(item),
-                item,
-                positionMs: initialPositionMs,
-                sessionId: session.id,
-                status: 'loading',
-            });
-
-            try {
-                const isCurrentPlaybackSession = () =>
-                    playbackSnapshotRef.current?.sessionId === session.id;
-                const deviceInfoPromise = getAndroidAudioDeviceInfo().catch(() => undefined);
-                // Prefer a downloaded local file if we have one for this
-                // track — that's the whole point of the offline downloader.
-                // Falls through to the streaming URL if not downloaded.
-                const playable = castState.isConnected ? item : await resolveLocalPlayback(item);
-                if (!isCurrentPlaybackSession()) return;
-                let event = await playAndroidAudio(playable, session.id, item);
-                if (!isCurrentPlaybackSession()) return;
-
-                if (initialPositionMs > 0) {
-                    event = await seekAndroidAudio(initialPositionMs);
-                    if (!isCurrentPlaybackSession()) return;
-                }
-
-                const deviceInfo = await deviceInfoPromise;
-                if (!isCurrentPlaybackSession()) return;
-
-                setAndroidPlaybackState({
-                    bitPerfect: event.bitPerfect,
-                    deviceInfo,
-                    durationMs: getPlaybackEventDurationMs(event, item),
-                    item,
-                    message: event.message,
-                    positionMs: event.positionMs ?? initialPositionMs,
-                    sessionId: session.id,
-                    status: getActivePlaybackStatus(event.status, 'buffering'),
-                });
-            } catch (error) {
-                if (playbackSnapshotRef.current?.sessionId !== session.id) return;
-                setAndroidPlaybackState({
-                    durationMs: getPlaybackItemDurationMs(item),
-                    item,
-                    message: error instanceof Error ? error.message : 'Playback failed',
-                    positionMs: initialPositionMs,
-                    sessionId: session.id,
-                    status: 'error',
-                });
-            }
-        },
-        [castState.isConnected],
-    );
-
-    const recordRecentContentItem = useCallback((item: AndroidRecentContentSourceItem) => {
-        setRecentContentItems((current) => {
-            const nextItems = upsertRecentContentItem(current, item);
-
-            void savePersistedRecentContentItems(nextItems);
-
-            return nextItems;
-        });
-    }, []);
-
-    const handlePlayItem = useCallback(
-        async (
-            item: MobilePlayableAudio,
-            queueItems: MobilePlayableAudio[] = [item],
-            queueIndex?: number,
-            options?: { shuffled?: boolean },
-        ) => {
-            await playQueuedItem(item, queueItems, queueIndex, options);
-        },
-        [playQueuedItem],
-    );
-
-    useEffect(() => {
-        const subscription = subscribeToAndroidAudioEvents((event) => {
-            const snapshot = playbackSnapshotRef.current;
-
-            if (!snapshot || (event.sessionId && event.sessionId !== snapshot.sessionId)) {
-                return;
-            }
-
-            setAndroidPlaybackState((current) => {
-                if (current.status === 'idle') {
-                    return current;
-                }
-
-                if (event.status === 'ended') {
-                    const absCtx = absContextRef.current;
-                    if (absCtx) {
-                        void syncAbsProgressImmediate(
-                            absCtx,
-                            getAbsProgressSeconds(absCtx, event.positionMs, current.item),
-                        );
-                    }
-                    const queue = playbackQueueRef.current;
-                    const nextIndex = queue ? queue.index + 1 : -1;
-                    const nextItem = queue?.items[nextIndex];
-
-                    if (nextItem) {
-                        void playQueuedItem(nextItem, queue.items, nextIndex);
-                        return current;
-                    }
-                }
-
-                return {
-                    ...current,
-                    bitPerfect: event.bitPerfect ?? current.bitPerfect,
-                    durationMs: getPlaybackEventDurationMs(event, current.item),
-                    message: event.message,
-                    positionMs: getStablePlaybackPositionMs(event, current),
-                    status: getActivePlaybackStatus(event.status, current.status),
-                };
-            });
-        });
-
-        return () => subscription.remove();
-    }, [playQueuedItem]);
-
-    useEffect(() => {
-        if (!isAndroidNativePlaybackAvailable()) {
-            return;
-        }
-
-        const subscription = subscribeToAndroidCastEvents((event) => {
-            setCastState(event);
-        });
-
-        void getAndroidCastState()
-            .then(setCastState)
-            .catch(() =>
-                setCastState({
-                    isConnected: false,
-                    status: 'unavailable',
-                }),
-            );
-
-        return () => subscription.remove();
-    }, []);
-
-    // Notification + Bluetooth media-button previous/next come through here.
-    // SamoForwardingPlayer marks these commands as always-available so the
-    // notification renders both buttons even though the native player only
-    // holds one MediaItem at a time; the actual queue step happens in JS via
-    // handleNavigatePlayback. The ref dance lets us subscribe exactly once
-    // while still calling the most recent closure (which captures live
-    // playback state and queue refs).
-    const navigateRef = useRef<((direction: -1 | 1) => Promise<void>) | null>(null);
-    useEffect(() => {
-        navigateRef.current = handleNavigatePlayback;
-    });
-    useEffect(() => {
-        const subscription = subscribeToAndroidNavigationRequests((event) => {
-            const direction = event.direction === -1 ? -1 : 1;
-            void navigateRef.current?.(direction);
-        });
-        return () => subscription.remove();
-    }, []);
+    }, [
+        homeContentState.status,
+        isOfflineMode,
+        serverConnections,
+        startLibraryRelevantLoad,
+    ]);
 
     // Warm the first visible covers into memory + disk so round-tripping
     // through detail pages does not refetch art the home screen just showed.
@@ -1000,83 +829,6 @@ export default function App() {
             );
         }
     }, [homeContentState]);
-
-    useEffect(() => {
-        if (playbackStatus === 'idle' || !isAndroidNativePlaybackAvailable()) {
-            return;
-        }
-        // Polling now writes to the external playback store, not root App
-        // state. That keeps route rendering insulated from progress ticks
-        // while the player surfaces subscribe directly.
-        const intervalMs = isFullPlayerOpen ? 1000 : 5000;
-        const interval = setInterval(() => {
-            void getAndroidPlaybackStatus()
-                .then((event) => {
-                    const snapshot = playbackSnapshotRef.current;
-
-                    if (!snapshot || (event.sessionId && event.sessionId !== snapshot.sessionId)) {
-                        return;
-                    }
-
-                    const positionMs = event.positionMs;
-                    const absCtx = absContextRef.current;
-
-                    if (absCtx && positionMs && event.status === 'playing') {
-                        const activeItem =
-                            playbackSnapshotRef.current?.item ??
-                            selectActiveAndroidPlaybackItem(getAndroidPlaybackState());
-                        if (!activeItem) {
-                            return;
-                        }
-                        void syncAbsProgressThrottled(
-                            absCtx,
-                            getAbsProgressSeconds(absCtx, positionMs, activeItem),
-                        );
-                    }
-
-                    setAndroidPlaybackState((current) => {
-                        if (current.status === 'idle') {
-                            return current;
-                        }
-
-                        const nextPositionMs = getStablePlaybackPositionMs(event, current);
-                        const nextStatus = getActivePlaybackStatus(event.status, current.status);
-                        const nextDurationMs = getPlaybackEventDurationMs(event, current.item);
-                        const nextMessage = event.message ?? current.message;
-                        const nextBitPerfect = event.bitPerfect ?? current.bitPerfect;
-
-                        // Short-circuit if nothing meaningful changed. Returning the same
-                        // reference here skips a re-render of the entire app tree, which
-                        // happens otherwise once per polling tick (every 1s).
-                        if (
-                            nextStatus === current.status &&
-                            nextDurationMs === current.durationMs &&
-                            nextMessage === current.message &&
-                            nextBitPerfect === current.bitPerfect &&
-                            Math.abs((nextPositionMs ?? 0) - (current.positionMs ?? 0)) < 50
-                        ) {
-                            return current;
-                        }
-
-                        return {
-                            ...current,
-                            bitPerfect: nextBitPerfect,
-                            durationMs: nextDurationMs,
-                            message: nextMessage,
-                            positionMs: nextPositionMs,
-                            status: nextStatus,
-                        };
-                    });
-                })
-                .catch(() => undefined);
-        }, intervalMs);
-
-        return () => clearInterval(interval);
-    }, [isFullPlayerOpen, playbackStatus]);
-
-    useEffect(() => {
-        setDownloadsPlaybackActive(playbackStatus !== 'idle');
-    }, [playbackStatus]);
 
     useEffect(() => {
         let isMounted = true;
@@ -1141,6 +893,36 @@ export default function App() {
 
     const activePlaybackItem = useAndroidPlaybackState(selectActiveAndroidPlaybackItem);
 
+    const mediaHandlers = useAndroidMediaHandlers({
+        absContextRef,
+        activePlaybackItem,
+        closeMediaDetail,
+        deps: { auth, downloads, navigation, overlays, session },
+        handlePlayItem,
+        loadHomeForConnections,
+        playbackQueueRef,
+        playQueuedItem,
+    });
+    mediaHandlersRef.current = mediaHandlers;
+    const {
+        bumpViewAllFetchToken,
+        handleAddMediaTrackToPlaylist,
+        handleAddRadioStation,
+        handleAddToPlaylistFromRoot,
+        handleOpenViewAll,
+        handlePlayMediaTrack,
+        handleSearch,
+        handleSelectMediaItem,
+        handleShuffleDetailTracks,
+        handleShuffleHomeItems,
+        prefetchMediaDetailCache,
+    } = mediaHandlers;
+
+    const contextMenu = useAndroidContextMenu({
+        deps: { overlays, session },
+        handlers: mediaHandlers,
+    });
+
     useEffect(() => {
         if (!activePlaybackItem) {
             return;
@@ -1190,161 +972,6 @@ export default function App() {
         }
     }, [mediaDetailState.status]);
 
-    const enrichRecentAlbumFromDetail = useCallback(
-        (item: AndroidRecentContentSourceItem, detail: MobileMediaDetail) => {
-            if (detail.type !== MobileMediaDetailType.ALBUM) {
-                return;
-            }
-
-            const detailProfile = getDetailQualityProfile(detail);
-            if (!detailProfile && !detail.artworkUrl && !detail.subtitle) {
-                return;
-            }
-
-            const key = getRecentContentItemKey(item);
-            setRecentContentItems((current) => {
-                let changed = false;
-                const nextItems = current.map((entry) => {
-                    if (entry.key !== key) {
-                        return entry;
-                    }
-
-                    const currentProfile = getItemQualityProfile(entry.item);
-                    const nextItem: AndroidRecentContentSourceItem = { ...entry.item };
-                    let itemChanged = false;
-
-                    if (
-                        detailProfile &&
-                        (!currentProfile ||
-                            currentProfile.bitDepth !== detailProfile.bitDepth ||
-                            currentProfile.sampleRate !== detailProfile.sampleRate)
-                    ) {
-                        nextItem.qualityProfile = detailProfile;
-                        itemChanged = true;
-                    }
-
-                    if (detailHasHiRes(detail) && !nextItem.isHiRes) {
-                        nextItem.isHiRes = true;
-                        itemChanged = true;
-                    }
-
-                    if (!nextItem.artworkUrl && detail.artworkUrl) {
-                        nextItem.artworkUrl = detail.artworkUrl;
-                        itemChanged = true;
-                    }
-
-                    if (!nextItem.subtitle && detail.subtitle) {
-                        nextItem.subtitle = detail.subtitle;
-                        itemChanged = true;
-                    }
-
-                    if (!itemChanged) {
-                        return entry;
-                    }
-
-                    changed = true;
-                    return { ...entry, item: nextItem };
-                });
-
-                if (!changed) {
-                    return current;
-                }
-
-                void savePersistedRecentContentItems(nextItems);
-                return nextItems;
-            });
-        },
-        [],
-    );
-
-    useEffect(() => {
-        let isMounted = true;
-
-        const restoreServers = async () => {
-            const persisted = await loadPersistedServerAuthsWithMeta();
-            const persistedAuths = persisted.authentications;
-
-            if (!isMounted) {
-                return;
-            }
-
-            if (persisted.discardedCount > 0) {
-                setAuthState({
-                    message:
-                        persistedAuths.length > 0
-                            ? `Ignored ${persisted.discardedCount} invalid saved server session.`
-                            : 'Saved server session was invalid. Please reconnect.',
-                    status: 'error',
-                });
-            }
-
-            if (persisted.discardedCount > 0 || persisted.migratedLegacySingle) {
-                await savePersistedServerAuths(persistedAuths);
-            }
-
-            if (persistedAuths.length === 0) {
-                return;
-            }
-
-            setServerConnections(persistedAuths);
-            setServerHealthByKey(createCheckingServerHealthMap(persistedAuths));
-            const persistedConnectionSignature = persistedAuths
-                .map(getPersistedServerAuthKey)
-                .join('|');
-            void loadHomeForConnections(persistedAuths);
-
-            const serverHealth = await checkAndroidServerConnections(persistedAuths);
-
-            if (isMounted) {
-                const authorizedAuthentications = serverHealth.authentications.filter(
-                    (authentication) =>
-                        serverHealth.statuses[getPersistedServerAuthKey(authentication)]?.status !==
-                        ServerConnectionHealthStatus.UNAUTHORIZED,
-                );
-                const authorizedHealthStatuses = Object.fromEntries(
-                    Object.entries(serverHealth.statuses).filter(
-                        ([, status]) => status.status !== ServerConnectionHealthStatus.UNAUTHORIZED,
-                    ),
-                );
-                const unauthorizedCount =
-                    serverHealth.authentications.length - authorizedAuthentications.length;
-
-                setServerConnections(authorizedAuthentications);
-                setServerHealthByKey(authorizedHealthStatuses);
-
-                const unhealthySessions = Object.values(authorizedHealthStatuses).filter(
-                    (status) => status.status !== ServerConnectionHealthStatus.HEALTHY,
-                );
-
-                if (unauthorizedCount > 0) {
-                    setAuthState({
-                        message: `${unauthorizedCount} saved server session expired. Please reconnect.`,
-                        status: 'error',
-                    });
-                } else if (unhealthySessions.length > 0) {
-                    setAuthState({
-                        message: `${unhealthySessions.length} saved server session needs attention.`,
-                        status: 'error',
-                    });
-                }
-
-                await savePersistedServerAuths(authorizedAuthentications);
-                const authorizedConnectionSignature = authorizedAuthentications
-                    .map(getPersistedServerAuthKey)
-                    .join('|');
-                if (authorizedConnectionSignature !== persistedConnectionSignature) {
-                    void loadHomeForConnections(authorizedAuthentications);
-                }
-            }
-        };
-
-        void restoreServers();
-
-        return () => {
-            isMounted = false;
-        };
-    }, [loadHomeForConnections]);
-
     // Android 13+ requires runtime POST_NOTIFICATIONS consent before any
     // notification (including the MediaSession one that drives shade controls
     // and lock-screen artwork) can appear. Without this, the media notification
@@ -1357,1396 +984,22 @@ export default function App() {
         ).catch(() => undefined);
     }, []);
 
-    // Boot + foreground replay of any audiobookshelf progress writes that
-    // didn't make it to the server on the previous run (process killed during
-    // playback, dropped network, etc.). Idempotent — flushPendingAbsProgress
-    // only re-attempts entries whose updatedAt > syncedAt.
-    useEffect(() => {
-        if (serverConnections.length === 0) return;
-        void (async () => {
-            await initAbsProgressStore();
-            await flushPendingAbsProgress(serverConnections);
-        })();
-    }, [serverConnections]);
-
-    // Flush pending progress whenever the app loses foreground. AppState fires
-    // 'background' on Android when the user task-switches away or locks the
-    // screen — both moments where the process might be killed before the next
-    // throttled write would otherwise fire.
-    useEffect(() => {
-        const subscription = AppState.addEventListener('change', (next) => {
-            if (next === 'background' || next === 'inactive') {
-                void flushPendingAbsProgress(serverConnections);
-            }
-        });
-        return () => subscription.remove();
-    }, [serverConnections]);
+    const {
+        handleNavigatePlayback,
+        handleSeekPlayback,
+        handleSkipPlayback,
+        handleTogglePlayback,
+        handleToggleShuffle,
+    } = useAndroidPlaybackControls({
+        absContextRef,
+        lastPlayedItem,
+        playbackQueueRef,
+        playQueuedItem,
+    });
 
     useEffect(() => {
-        void hydrateNativePlaybackState();
-    }, [hydrateNativePlaybackState]);
-
-    useEffect(() => {
-        const subscription = AppState.addEventListener('change', (next) => {
-            if (next === 'active') {
-                void hydrateNativePlaybackState();
-            }
-        });
-
-        return () => subscription.remove();
-    }, [hydrateNativePlaybackState]);
-
-    const handleConnect = async () => {
-        if (!canConnect || authState.status === 'loading') return;
-
-        const normalizedServerUrl = addDefaultHttpScheme(serverUrl);
-        setServerUrl(normalizedServerUrl);
-        setAuthState({ message: 'Connecting to server', status: 'loading' });
-        setHomeContentState({ status: 'idle' });
-
-        const nextAuthState = await authenticateServer({
-            password,
-            type: serverType,
-            url: normalizedServerUrl,
-            username: username.trim(),
-        });
-
-        setAuthState(nextAuthState);
-
-        if (nextAuthState.status === 'connected') {
-            const connectedType = nextAuthState.result.type;
-            const shouldOfferAudiobookshelfNext =
-                connectedType === ServerType.NAVIDROME &&
-                ANDROID_SERVER_TYPES.includes(ServerType.AUDIOBOOKSHELF);
-            const nextConnections = upsertServerAuthentication(
-                serverConnections,
-                nextAuthState.result,
-            );
-            const nextConnectionKey = getPersistedServerAuthKey(nextAuthState.result);
-
-            setServerConnections(nextConnections);
-            setServerHealthByKey((current) => ({
-                ...current,
-                [nextConnectionKey]: createConnectedServerHealthStatus(nextAuthState.result),
-            }));
-            closeMediaDetail();
-            setPassword('');
-            setServerUrl(DEFAULT_SERVER_URL);
-            setUsername('');
-            setSearchState({ status: 'idle' });
-            setActiveUtilityScreen('manage-servers');
-            await savePersistedServerAuths(nextConnections);
-            await loadHomeForConnections(nextConnections);
-
-            if (shouldOfferAudiobookshelfNext) {
-                Alert.alert(
-                    'Add Audiobookshelf?',
-                    'Want to add an Audiobookshelf server too?',
-                    [
-                        { text: 'Not now', style: 'cancel' },
-                        {
-                            text: 'Add Audiobookshelf',
-                            onPress: () => {
-                                setAuthState({ status: 'idle' });
-                                setPassword('');
-                                setServerType(ServerType.AUDIOBOOKSHELF);
-                                setServerUrl(DEFAULT_SERVER_URL);
-                                setUsername('');
-                                setActiveUtilityScreen('add-server');
-                            },
-                        },
-                    ],
-                );
-            }
-        }
-    };
-
-    const handleDisconnect = async (authentication: ServerAuthenticationResult) => {
-        const nextConnections = removeServerAuthentication(serverConnections, authentication);
-        const removedConnectionKey = getPersistedServerAuthKey(authentication);
-
-        setServerConnections(nextConnections);
-        setServerHealthByKey((current) => {
-            const nextHealthByKey = { ...current };
-            delete nextHealthByKey[removedConnectionKey];
-            return nextHealthByKey;
-        });
-        closeMediaDetail();
-        setSearchState({ status: 'idle' });
-        setAuthState({ status: 'idle' });
-        await savePersistedServerAuths(nextConnections);
-        await loadHomeForConnections(nextConnections);
-    };
-
-    const handleSearch = useCallback(
-        async (query: string) => {
-            if (serverConnections.length === 0) {
-                return;
-            }
-
-            const trimmedQuery = query.trim();
-            const requestId = (searchRequestId.current += 1);
-
-            if (!trimmedQuery) {
-                setSearchState({ status: 'idle' });
-                return;
-            }
-
-            setSearchState({ query: trimmedQuery, status: 'loading' });
-            const userRecents = new Map(
-                recentContentItems.map((entry) => [entry.key, entry.selectedAt]),
-            );
-            const nextSearchState = await loadAndroidSearchResults(
-                serverConnections,
-                trimmedQuery,
-                userRecents,
-            );
-
-            if (requestId === searchRequestId.current) {
-                setSearchState(nextSearchState);
-            }
-        },
-        [recentContentItems, serverConnections],
-    );
-
-    const loadDetailWithCache = async (
-        item: AndroidRecentContentSourceItem,
-    ): Promise<{ cached: boolean }> => {
-        audiobookStartRequestId.current += 1;
-        const requestId = (mediaDetailRequestId.current += 1);
-        const isCurrentRequest = () => mediaDetailRequestId.current === requestId;
-        const cacheKey = getRecentContentItemKey(item);
-
-        // Layer 1: in-memory cache — instant.
-        let cached = mediaDetailCacheRef.current.get(cacheKey);
-
-        // Layer 2: persistent fs cache — async, but still much faster than
-        // the network and works in airplane mode.
-        if (!cached) {
-            const fromDisk = await loadCachedMediaDetail(cacheKey);
-            if (!isCurrentRequest()) {
-                return { cached: false };
-            }
-            if (fromDisk) {
-                cached = fromDisk;
-                rememberMediaDetail(mediaDetailCacheRef.current, cacheKey, fromDisk);
-            }
-        }
-
-        if (!cached && isOfflineMode) {
-            const downloadedDetail = await buildDownloadedMusicDetail(item);
-            if (!isCurrentRequest()) {
-                return { cached: false };
-            }
-            if (downloadedDetail) {
-                cached = downloadedDetail;
-                rememberMediaDetail(mediaDetailCacheRef.current, cacheKey, downloadedDetail);
-            }
-        }
-
-        if (cached) {
-            enrichRecentAlbumFromDetail(item, cached);
-            setMediaDetailState({ detail: cached, status: 'loaded' });
-        } else {
-            setMediaDetailState({ itemTitle: item.title, status: 'loading' });
-        }
-
-        if (isOfflineMode && cached) {
-            return { cached: true };
-        }
-
-        // Refresh from network in the background. Failure is OK if we have
-        // stale data — the user sees the cached version, which is the whole
-        // point of offline playback.
-        const next = await loadAndroidMediaDetail(serverConnections, item);
-        if (!isCurrentRequest()) {
-            return { cached: Boolean(cached) };
-        }
-        if (next.status === 'loaded') {
-            rememberMediaDetail(mediaDetailCacheRef.current, cacheKey, next.detail);
-            void saveCachedMediaDetail(cacheKey, next.detail);
-            enrichRecentAlbumFromDetail(item, next.detail);
-            setMediaDetailState(next);
-        } else if (!cached) {
-            setMediaDetailState(next);
-        }
-        return { cached: Boolean(cached) };
-    };
-
-    const handleOpenViewAll = useCallback(
-        (section: HomeDisplaySection) => {
-            const variant = getViewAllVariant(section.variant);
-            if (!variant) return;
-            setViewAllRoute({
-                items: [],
-                title: section.title,
-                variant,
-            });
-            setActiveUtilityScreen('view-all');
-            closeMediaDetail();
-
-            // Kick off the exhaustive fetch. The token guards against a stale
-            // response landing after the user has opened a different View All
-            // (or closed the screen entirely).
-            viewAllFetchTokenRef.current += 1;
-            const myToken = viewAllFetchTokenRef.current;
-            setViewAllFullState({ status: 'loading' });
-            void (async () => {
-                const result = await loadAndroidFullCollection(serverConnections, variant);
-                if (viewAllFetchTokenRef.current !== myToken) return;
-                setViewAllFullState(result);
-            })();
-        },
-        [closeMediaDetail, serverConnections],
-    );
-
-    const handleSelectMediaItem = async (item: MobileHomeItem | MobileSearchItem) => {
-        recordRecentContentItem(item);
-
-        if (item.playback) {
-            mediaDetailRequestId.current += 1;
-            audiobookStartRequestId.current += 1;
-            await handlePlayItem(item.playback, [item.playback], 0, { shuffled: false });
-            return;
-        }
-
-        if (item.type === MobileHomeItemType.AUDIOBOOK) {
-            await handleStartAudiobook(item);
-            return;
-        }
-
-        await loadDetailWithCache(item);
-    };
-
-    const handleStartAudiobook = async (item: MobileHomeItem | MobileSearchItem) => {
-        mediaDetailRequestId.current += 1;
-        const requestId = (audiobookStartRequestId.current += 1);
-        const isCurrentRequest = () => audiobookStartRequestId.current === requestId;
-        setAndroidPlaybackState((current) =>
-            current.status === 'idle'
-                ? current
-                : { ...current, message: 'Loading audiobook…' },
-        );
-
-        // Try the network first, then fall back to caches (in-memory or fs),
-        // and finally synthesize a detail from downloaded files if we have
-        // them. This is what makes tap-to-play work offline.
-        const cacheKey = getRecentContentItemKey(item);
-        const networkResult = await loadAndroidMediaDetail(serverConnections, item);
-        if (!isCurrentRequest()) return;
-        let detail: MobileMediaDetail | undefined =
-            networkResult.status === 'loaded' ? networkResult.detail : undefined;
-
-        if (!detail) {
-            detail =
-                mediaDetailCacheRef.current.get(cacheKey) ??
-                (await loadCachedMediaDetail(cacheKey)) ??
-                undefined;
-            if (!isCurrentRequest()) return;
-        }
-
-        if (!detail) {
-            // Last resort: build a synthetic detail from the downloaded files.
-            // Lets the user play an audiobook entirely offline even if the
-            // server's never been reached since launch.
-            const offlineFiles = await getOfflineAudiobookFiles(item.id, item.source?.id ?? '');
-            if (!isCurrentRequest()) return;
-            if (offlineFiles.length > 0 && item.source) {
-                detail = {
-                    artworkUrl: item.artworkUrl,
-                    id: item.id,
-                    source: item.source,
-                    subtitle: item.subtitle,
-                    title: item.title,
-                    tracks: offlineFiles.map((file) => ({
-                        artworkUrl: item.artworkUrl,
-                        durationSeconds: file.durationSeconds,
-                        id: `${item.id}:${file.ino}`,
-                        itemId: item.id,
-                        startSeconds: file.startOffsetSeconds,
-                        subtitle: item.subtitle,
-                        title: item.title,
-                        trackNumber: file.index + 1,
-                    })),
-                    type: MobileMediaDetailType.AUDIOBOOK,
-                };
-            }
-        }
-
-        if (!detail) {
-            // Genuinely no way to play — surface the network error so the
-            // user can recover (e.g. by reconnecting).
-            setMediaDetailState(networkResult);
-            return;
-        }
-
-        // Always refresh the cache when the network succeeded.
-        if (networkResult.status === 'loaded') {
-            rememberMediaDetail(mediaDetailCacheRef.current, cacheKey, networkResult.detail);
-            void saveCachedMediaDetail(cacheKey, networkResult.detail);
-        }
-        const auth = serverConnections.find(
-            (candidate) => getPersistedServerAuthKey(candidate) === detail.source.id,
-        );
-
-        if (!auth || auth.type !== ServerType.AUDIOBOOKSHELF || detail.tracks.length === 0) {
-            setMediaDetailState({ detail, status: 'loaded' });
-            return;
-        }
-
-        const progress = await loadAbsCurrentProgress(auth, detail.id);
-        if (!isCurrentRequest()) return;
-        const resumeSeconds = progress?.currentTimeSeconds ?? 0;
-        const chapterIndex =
-            resumeSeconds > 0
-                ? Math.max(
-                      0,
-                      detail.tracks.findIndex((track, index) => {
-                          const start = track.startSeconds ?? 0;
-                          const next =
-                              detail.tracks[index + 1]?.startSeconds ??
-                              start + (track.durationSeconds ?? Number.POSITIVE_INFINITY);
-                          return resumeSeconds >= start && resumeSeconds < next;
-                      }),
-                  )
-                : 0;
-        const baseTrack = detail.tracks[chapterIndex] ?? detail.tracks[0];
-
-        // For resume, override the chapter's startSeconds with the user's actual
-        // position so loadAudiobookshelfPlayback seeds initialPositionSeconds
-        // correctly inside playQueuedItem.
-        const trackToPlay: MobileMediaTrack =
-            resumeSeconds > 0 && baseTrack
-                ? { ...baseTrack, startSeconds: resumeSeconds }
-                : baseTrack;
-
-        if (!trackToPlay) {
-            setMediaDetailState({ detail, status: 'loaded' });
-            return;
-        }
-
-        if (!isCurrentRequest()) return;
-        await handlePlayMediaTrack(detail, trackToPlay, chapterIndex, undefined, {
-            isCurrentRequest,
-        });
-    };
-
-    const handlePlayMediaTrack = async (
-        detail: MobileMediaDetail,
-        track: MobileMediaTrack,
-        index: number,
-        queueTracks?: MobileMediaTrack[],
-        options?: { isCurrentRequest?: () => boolean },
-    ) => {
-        const isCurrentRequest = () => options?.isCurrentRequest?.() !== false;
-        if (track.playback) {
-            const queueItems = (queueTracks ?? detail.tracks).flatMap((candidate) =>
-                candidate.playback ? [candidate.playback] : [],
-            );
-            const queueIndex = queueItems.findIndex(
-                (candidate) => candidate.id === track.playback?.id,
-            );
-
-            if (!isCurrentRequest()) return;
-            if (queueIndex >= 0) {
-                await handlePlayItem(track.playback, queueItems, queueIndex, { shuffled: false });
-            } else {
-                await handlePlayItem(track.playback, [track.playback], 0, { shuffled: false });
-            }
-            return;
-        }
-
-        let trackToPlay = track;
-        const absAuth = serverConnections.find(
-            (auth) => getPersistedServerAuthKey(auth) === detail.source.id,
-        );
-
-        if (
-            detail.type === MobileMediaDetailType.PODCAST &&
-            absAuth?.type === ServerType.AUDIOBOOKSHELF &&
-            track.itemId
-        ) {
-            const progress = await loadAbsCurrentProgress(
-                absAuth,
-                track.itemId,
-                track.episodeId ?? track.id,
-            );
-            if (!isCurrentRequest()) return;
-            if (progress?.currentTimeSeconds && progress.currentTimeSeconds > 0) {
-                trackToPlay = { ...track, startSeconds: progress.currentTimeSeconds };
-            }
-        }
-
-        // Podcast offline path: the ABS /play endpoint that normally builds the
-        // streaming URL fails offline, so synthesize a MobilePlayableAudio
-        // directly from the downloaded file when one exists for this episode.
-        if (detail.type === MobileMediaDetailType.PODCAST) {
-            const lookupTrackId = trackToPlay.episodeId ?? trackToPlay.id;
-            const localDownload = await getLocalDownloadForTrack(
-                lookupTrackId,
-                detail.source.id,
-            );
-            if (!isCurrentRequest()) return;
-            if (localDownload) {
-                const playable = buildOfflinePodcastEpisodePlayable(
-                    detail,
-                    trackToPlay,
-                    localDownload.localUri,
-                    localDownload.sourceUrl,
-                    absAuth,
-                );
-                if (absAuth && trackToPlay.itemId) {
-                    absContextRef.current = {
-                        authentication: absAuth,
-                        durationSeconds: trackToPlay.durationSeconds ?? 0,
-                        episodeId: trackToPlay.episodeId,
-                        itemId: trackToPlay.itemId,
-                    };
-                } else {
-                    absContextRef.current = null;
-                }
-                if (!isCurrentRequest()) return;
-                await handlePlayItem(playable, [playable], 0, { shuffled: false });
-                return;
-            }
-        }
-
-        // Multi-file audiobook offline path: when more than one file has been
-        // downloaded for this book, build a per-file queue and start at the
-        // file that contains the requested chapter / book time. ExoPlayer
-        // auto-advances through the queue so playback continues seamlessly
-        // across file boundaries.
-        if (detail.type === MobileMediaDetailType.AUDIOBOOK) {
-            const offlineFiles = await getOfflineAudiobookFiles(
-                detail.id,
-                detail.source.id,
-            );
-            if (!isCurrentRequest()) return;
-            if (offlineFiles.length > 1) {
-                const targetBookSeconds = trackToPlay.startSeconds ?? 0;
-                const startIndex = pickAudiobookFileIndexForTime(
-                    offlineFiles,
-                    targetBookSeconds,
-                );
-                const initialOffsetSeconds = Math.max(
-                    0,
-                    targetBookSeconds - offlineFiles[startIndex].startOffsetSeconds,
-                );
-                const queue = offlineFiles.map((file, idx) =>
-                    buildOfflineAudiobookPlayable(
-                        detail,
-                        file,
-                        idx === startIndex ? initialOffsetSeconds : 0,
-                        absAuth,
-                    ),
-                );
-                if (absAuth && trackToPlay.itemId) {
-                    const totalDurationSeconds = offlineFiles.reduce(
-                        (sum, file) => sum + (file.durationSeconds ?? 0),
-                        0,
-                    );
-                    absContextRef.current = {
-                        authentication: absAuth,
-                        durationSeconds: totalDurationSeconds,
-                        episodeId: undefined,
-                        itemId: trackToPlay.itemId,
-                    };
-                } else {
-                    absContextRef.current = null;
-                }
-                if (!isCurrentRequest()) return;
-                await handlePlayItem(queue[startIndex], queue, startIndex, { shuffled: false });
-                return;
-            }
-        }
-
-        try {
-            const playable = await loadAndroidMediaTrackPlayback(
-                serverConnections,
-                detail,
-                trackToPlay,
-            );
-            if (!isCurrentRequest()) return;
-
-            if (
-                absAuth &&
-                (playable.source === 'audiobook' || playable.source === 'podcast') &&
-                trackToPlay.itemId
-            ) {
-                absContextRef.current = {
-                    authentication: absAuth,
-                    durationSeconds: playable.durationSeconds ?? 0,
-                    episodeId: trackToPlay.episodeId,
-                    itemId: trackToPlay.itemId,
-                };
-            } else {
-                absContextRef.current = null;
-            }
-
-            if (!isCurrentRequest()) return;
-            await handlePlayItem(playable, [playable], index, { shuffled: false });
-        } catch (error) {
-            if (!isCurrentRequest()) return;
-            setMediaDetailState({
-                itemTitle: detail.title,
-                message: error instanceof Error ? error.message : 'Playback failed',
-                status: 'error',
-            });
-        }
-    };
-
-    const handleShuffleDetailTracks = useCallback(
-        async (detail: MobileMediaDetail, tracks: MobileMediaTrack[] = detail.tracks) => {
-            const playableTracks = tracks.flatMap((track) =>
-                track.playback ? [track.playback] : [],
-            );
-
-            if (playableTracks.length === 0) {
-                return;
-            }
-
-            const shuffled = [...playableTracks];
-
-            for (let i = shuffled.length - 1; i > 0; i -= 1) {
-                const j = Math.floor(Math.random() * (i + 1));
-                [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-            }
-
-            await handlePlayItem(shuffled[0], shuffled, 0, { shuffled: true });
-        },
-        [handlePlayItem],
-    );
-
-    const handleShuffleHomeItems = useCallback(
-        async (items: MobileHomeItem[]) => {
-            const playableItems = items.flatMap((item) => (item.playback ? [item.playback] : []));
-
-            if (playableItems.length === 0) {
-                return;
-            }
-
-            const shuffled = [...playableItems];
-
-            for (let i = shuffled.length - 1; i > 0; i -= 1) {
-                const j = Math.floor(Math.random() * (i + 1));
-                [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-            }
-
-            await handlePlayItem(shuffled[0], shuffled, 0, { shuffled: true });
-        },
-        [handlePlayItem],
-    );
-
-    const handleAddMediaTrackToPlaylist = async (
-        detail: MobileMediaDetail,
-        track: MobileMediaTrack,
-        playlist: MobileHomeItem,
-    ) => {
-        await addAndroidMediaTrackToPlaylist(serverConnections, detail, track, playlist);
-        await loadHomeForConnections(serverConnections);
-    };
-
-    const handleAddRadioStation = useCallback(
-        async (input: AddAndroidRadioStationInput): Promise<AddAndroidRadioStationResult> => {
-            const result = await addAndroidRadioStation(input);
-            await loadHomeForConnections(serverConnections);
-            return result;
-        },
-        [loadHomeForConnections, serverConnections],
-    );
-
-    const getFavoriteKeyForItem = useCallback(
-        (item: AndroidRecentContentSourceItem) => getRecentContentItemKey(item),
-        [],
-    );
-
-    const getFavoriteKeyForTrack = useCallback(
-        (track: MobileMediaTrack, sourceId: string | undefined) => {
-            return `${sourceId ?? 'server'}:song:${track.id}`;
-        },
-        [],
-    );
-
-    const findAuthForSource = useCallback(
-        (sourceId: string | undefined) =>
-            serverConnections.find((auth) => getPersistedServerAuthKey(auth) === sourceId),
-        [serverConnections],
-    );
-
-    const upsertFavoriteKey = (key: string, add: boolean) => {
-        setFavoritedKeys((current) => {
-            const next = new Set(current);
-            if (add) {
-                next.add(key);
-            } else {
-                next.delete(key);
-            }
-            return next;
-        });
-    };
-
-    const persistLocalFavoriteToggle = async (
-        item: {
-            artworkUrl?: string;
-            id: string;
-            source?: { id: string };
-            subtitle?: string;
-            title: string;
-            type: string;
-        },
-    ) => {
-        let nextFavoritedFlag = false;
-        let nextFavorites: AndroidLocalFavoriteItem[] = localFavorites;
-        setLocalFavorites((current) => {
-            const result = toggleLocalFavorite(current, item);
-            nextFavoritedFlag = result.isFavorited;
-            nextFavorites = result.favorites;
-            return result.favorites;
-        });
-        upsertFavoriteKey(getLocalFavoriteKey(item), nextFavoritedFlag);
-        await saveLocalFavorites(nextFavorites);
-        return nextFavoritedFlag;
-    };
-
-    const handleToggleFavoriteForTrack = async (
-        track: MobileMediaTrack,
-        sourceId: string | undefined,
-    ) => {
-        const key = getFavoriteKeyForTrack(track, sourceId);
-        const auth = findAuthForSource(sourceId);
-
-        if (!auth) {
-            setContextMenuFeedback('Server for this track is no longer connected.');
-            return;
-        }
-
-        const isFavoritedNow = favoritedKeys.has(key);
-
-        try {
-            if (isFavoritedNow) {
-                await unstarSubsonicTrack(auth, track.id);
-                upsertFavoriteKey(key, false);
-                setContextMenuFeedback('Removed from Favorites');
-            } else {
-                await starSubsonicTrack(auth, track.id);
-                upsertFavoriteKey(key, true);
-                setContextMenuFeedback('Added to Favorites');
-            }
-        } catch (error) {
-            setContextMenuFeedback(error instanceof Error ? error.message : 'Favorite failed');
-        }
-    };
-
-    const handleToggleFavoriteForItem = async (item: AndroidRecentContentSourceItem) => {
-        const key = getFavoriteKeyForItem(item);
-        const isFavoritedNow = favoritedKeys.has(key);
-        const auth = findAuthForSource(item.source?.id);
-        const isMusicServer =
-            auth?.type === ServerType.NAVIDROME || auth?.type === ServerType.SUBSONIC;
-        const useServerStar =
-            isMusicServer &&
-            auth &&
-            (item.type === MobileHomeItemType.ALBUM ||
-                item.type === MobileHomeItemType.ARTIST);
-
-        try {
-            if (useServerStar && auth) {
-                if (item.type === MobileHomeItemType.ALBUM) {
-                    if (isFavoritedNow) {
-                        await unstarSubsonicAlbum(auth, item.id);
-                    } else {
-                        await starSubsonicAlbum(auth, item.id);
-                    }
-                } else {
-                    if (isFavoritedNow) {
-                        await unstarSubsonicArtist(auth, item.id);
-                    } else {
-                        await starSubsonicArtist(auth, item.id);
-                    }
-                }
-                upsertFavoriteKey(key, !isFavoritedNow);
-                setContextMenuFeedback(
-                    !isFavoritedNow ? 'Added to Favorites' : 'Removed from Favorites',
-                );
-                return;
-            }
-
-            const wasFavorited = await persistLocalFavoriteToggle(item);
-            setContextMenuFeedback(
-                wasFavorited ? 'Added to Favorites' : 'Removed from Favorites',
-            );
-        } catch (error) {
-            setContextMenuFeedback(error instanceof Error ? error.message : 'Favorite failed');
-        }
-    };
-
-    const handleGoToArtistForTrack = async (
-        track: MobileMediaTrack,
-        source?: MobileContentSource,
-    ) => {
-        if (!track.artistId || !source) {
-            return;
-        }
-
-        const synthetic: MobileHomeItem = {
-            id: track.artistId,
-            title: track.artist ?? 'Artist',
-            type: MobileHomeItemType.ARTIST,
-            source,
-        };
-
-        setContextMenuTarget(null);
-        // The action is reachable from the fullscreen player overflow; without
-        // dismissing it first the new detail page would load behind the modal.
-        setIsFullPlayerOpen(false);
-        await handleSelectMediaItem(synthetic);
-    };
-
-    const handleGoToAlbumForTrack = async (
-        track: MobileMediaTrack,
-        source?: MobileContentSource,
-    ) => {
-        if (!track.albumId || !source) {
-            return;
-        }
-
-        const synthetic: MobileHomeItem = {
-            id: track.albumId,
-            title: track.album ?? 'Album',
-            type: MobileHomeItemType.ALBUM,
-            source,
-        };
-
-        setContextMenuTarget(null);
-        setIsFullPlayerOpen(false);
-        await handleSelectMediaItem(synthetic);
-    };
-
-    const handleStartSongRadio = async (
-        track: MobileMediaTrack,
-        source: MobileContentSource | undefined,
-    ) => {
-        if (track.playback?.source !== 'music' || !source) {
-            setContextMenuFeedback('Song Radio is only available for music tracks.');
-            return;
-        }
-        const auth = findAuthForSource(source.id);
-        if (!auth) {
-            setContextMenuFeedback('The server for this song is no longer connected.');
-            return;
-        }
-
-        setContextMenuTarget(null);
-
-        try {
-            const radioQueue = await loadSongRadioQueue({
-                authentication: auth,
-                seed: {
-                    albumId: track.albumId,
-                    artist: track.artist,
-                    artistId: track.artistId,
-                    songId: track.id,
-                },
-            });
-
-            // Always lead with the seed song so the user hears it first.
-            const seedPlayback = track.playback;
-            const queue = seedPlayback
-                ? [seedPlayback, ...radioQueue.filter((item) => item.id !== seedPlayback.id)]
-                : radioQueue;
-
-            if (queue.length === 0) {
-                setContextMenuFeedback('No similar songs were returned by the server.');
-                return;
-            }
-
-            absContextRef.current = null;
-            await handlePlayItem(queue[0], queue, 0, { shuffled: false });
-        } catch (error) {
-            setContextMenuFeedback(
-                error instanceof Error ? error.message : 'Could not start Song Radio.',
-            );
-        }
-    };
-
-    const canAppendToPlaybackQueue =
-        activePlaybackItem !== null && activePlaybackItem.source !== 'radio';
-
-    const appendPlayableItemsToQueue = useCallback(
-        (items: MobilePlayableAudio[]): number => {
-            const queueableItems = items.filter((item) => item.source !== 'radio');
-            const playbackState = getAndroidPlaybackState();
-
-            if (queueableItems.length === 0) {
-                setContextMenuFeedback('Nothing playable was found for the queue.');
-                return 0;
-            }
-
-            if (playbackState.status === 'idle') {
-                setContextMenuFeedback('Start playback before adding to the queue.');
-                return 0;
-            }
-
-            if (playbackState.item.source === 'radio') {
-                setContextMenuFeedback('Radio playback does not have an Up Next queue.');
-                return 0;
-            }
-
-            const queue = playbackQueueRef.current;
-            if (queue) {
-                playbackQueueRef.current = {
-                    index: queue.index,
-                    items: [...queue.items, ...queueableItems],
-                };
-            } else {
-                playbackQueueRef.current = {
-                    index: 0,
-                    items: [playbackState.item, ...queueableItems],
-                };
-            }
-            forcePlaybackQueueRender();
-
-            return queueableItems.length;
-        },
-        [],
-    );
-
-    const loadDetailForContextAction = useCallback(
-        async (item: AndroidRecentContentSourceItem): Promise<MobileMediaDetail | null> => {
-            const cacheKey = getRecentContentItemKey(item);
-            let detail = mediaDetailCacheRef.current.get(cacheKey);
-
-            if (!detail) {
-                const fromDisk = await loadCachedMediaDetail(cacheKey);
-                if (fromDisk) {
-                    detail = fromDisk;
-                    rememberMediaDetail(mediaDetailCacheRef.current, cacheKey, fromDisk);
-                }
-            }
-
-            if (!detail && isOfflineMode) {
-                const downloadedDetail = await buildDownloadedMusicDetail(item);
-                if (downloadedDetail) {
-                    detail = downloadedDetail;
-                    rememberMediaDetail(mediaDetailCacheRef.current, cacheKey, downloadedDetail);
-                }
-            }
-
-            if (detail && isOfflineMode) {
-                return detail;
-            }
-
-            const next = await loadAndroidMediaDetail(serverConnections, item);
-            if (next.status === 'loaded') {
-                rememberMediaDetail(mediaDetailCacheRef.current, cacheKey, next.detail);
-                void saveCachedMediaDetail(cacheKey, next.detail);
-                return next.detail;
-            }
-
-            return detail ?? null;
-        },
-        [isOfflineMode, serverConnections],
-    );
-
-    const handleAddTrackToQueue = useCallback(
-        (track: MobileMediaTrack) => {
-            const playback = track.playback;
-            if (playback?.source !== 'music') {
-                setContextMenuFeedback('Only music tracks can be added to the queue.');
-                return;
-            }
-
-            const added = appendPlayableItemsToQueue([playback]);
-            if (added > 0) {
-                setContextMenuFeedback('Added to queue');
-            }
-        },
-        [appendPlayableItemsToQueue],
-    );
-
-    const handleAddCollectionToQueue = useCallback(
-        async (item: AndroidRecentContentSourceItem) => {
-            if (
-                item.type !== MobileHomeItemType.ALBUM &&
-                item.type !== MobileHomeItemType.PLAYLIST
-            ) {
-                setContextMenuFeedback('Only music albums and playlists can be added to the queue.');
-                return;
-            }
-
-            setContextMenuFeedback('Adding to queue...');
-            const detail = await loadDetailForContextAction(item);
-            if (!detail) {
-                setContextMenuFeedback('Could not load tracks for this item.');
-                return;
-            }
-
-            const playables = detail.tracks.flatMap((track) =>
-                track.playback?.source === 'music' ? [track.playback] : [],
-            );
-            const added = appendPlayableItemsToQueue(playables);
-            if (added > 0) {
-                setContextMenuFeedback(
-                    added === 1 ? 'Added 1 track to queue' : `Added ${added} tracks to queue`,
-                );
-            }
-        },
-        [appendPlayableItemsToQueue, loadDetailForContextAction],
-    );
-
-    const reportDownloadResult = useCallback(
-        (
-            result: { enqueued: number; reason?: string; skipped: number },
-            _kindWord: string,
-        ) => {
-            // Only surface hard failures. The Spotify-style circular glyph and
-            // the Downloads tab show progress / completion visually now.
-            if (result.reason) {
-                Alert.alert('Download', result.reason);
-            }
-        },
-        [],
-    );
-
-    const handleDownloadCollectionItem = async (
-        item: AndroidRecentContentSourceItem,
-    ) => {
-        setContextMenuTarget(null);
-        // Three-layer detail lookup: in-memory → fs cache → network.
-        const cacheKey = getRecentContentItemKey(item);
-        let detail: MobileMediaDetail | undefined =
-            mediaDetailCacheRef.current.get(cacheKey);
-        if (!detail) {
-            const fromDisk = await loadCachedMediaDetail(cacheKey);
-            if (fromDisk) {
-                detail = fromDisk;
-                rememberMediaDetail(mediaDetailCacheRef.current, cacheKey, fromDisk);
-            }
-        }
-        if (!detail) {
-            const next = await loadAndroidMediaDetail(serverConnections, item);
-            if (next.status === 'loaded') {
-                rememberMediaDetail(mediaDetailCacheRef.current, cacheKey, next.detail);
-                void saveCachedMediaDetail(cacheKey, next.detail);
-                detail = next.detail;
-            } else {
-                Alert.alert('Download', 'Could not load detail to start the download.');
-                return;
-            }
-        }
-        const result = await enqueueCollectionDownload(detail, serverConnections);
-        const kindWord =
-            detail.type === MobileMediaDetailType.AUDIOBOOK
-                ? 'audiobook file'
-                : detail.type === MobileMediaDetailType.PLAYLIST
-                  ? 'track'
-                  : 'track';
-        reportDownloadResult(result, kindWord);
-    };
-
-    const handleDownloadSongTrack = async (
-        track: MobileMediaTrack,
-        detail: MobileMediaDetail | undefined,
-        source: MobileContentSource | undefined,
-    ) => {
-        setContextMenuTarget(null);
-
-        // Audiobook chapter long-press → download the whole book. Individual
-        // chapter files don't exist as separate downloads.
-        if (detail?.type === MobileMediaDetailType.AUDIOBOOK) {
-            const result = await enqueueCollectionDownload(detail, serverConnections);
-            reportDownloadResult(result, 'audiobook file');
-            return;
-        }
-
-        // Podcast episode long-press → download just that episode.
-        if (detail?.type === MobileMediaDetailType.PODCAST) {
-            const outcome = await enqueueSinglePodcastEpisodeDownload(
-                detail,
-                track,
-                serverConnections,
-            );
-            if (outcome.reason) {
-                Alert.alert('Download', outcome.reason);
-            }
-            return;
-        }
-
-        // Music track. Use the source we have.
-        if (!source) {
-            Alert.alert(
-                'Download',
-                'Could not figure out which server this track belongs to.',
-            );
-            return;
-        }
-        const outcome = await enqueueSingleMusicTrackDownload(
-            track,
-            source,
-            track.artworkUrl ?? detail?.artworkUrl,
-            serverConnections,
-        );
-        if (outcome.reason) {
-            Alert.alert('Download', outcome.reason);
-        }
-    };
-
-    const handleOpenStreamInfo = (item: AndroidRecentContentSourceItem) => {
-        setContextMenuTarget(null);
-        setStreamInfoItem(item);
-    };
-
-    const handleViewDetailForItem = async (item: AndroidRecentContentSourceItem) => {
-        setContextMenuTarget(null);
-        // Bypass the playback-on-tap shortcut so we always land on the detail page.
-        recordRecentContentItem(item);
-        await loadDetailWithCache(item);
-    };
-
-    const handleOpenBookInfo = async (
-        item: AndroidRecentContentSourceItem,
-        variant: 'audiobook' | 'podcast',
-    ) => {
-        const requestId = (bookInfoRequestId.current += 1);
-        const isCurrentRequest = () => bookInfoRequestId.current === requestId;
-        setContextMenuTarget(null);
-        setBookInfoState({ item, status: 'loading', variant });
-        const next = await loadAndroidMediaDetail(serverConnections, item);
-        if (!isCurrentRequest()) return;
-
-        if (next.status === 'loaded') {
-            setBookInfoState({ detail: next.detail, item, status: 'loaded', variant });
-        } else if (next.status === 'error') {
-            setBookInfoState({ item, message: next.message, status: 'error', variant });
-        } else {
-            setBookInfoState({ status: 'idle' });
-        }
-    };
-
-    const handleOpenAddToPlaylistForSong = (
-        track: MobileMediaTrack,
-        sourceId: string | undefined,
-    ) => {
-        if (!sourceId) {
-            setContextMenuFeedback('Could not find the server for this song.');
-            return;
-        }
-        if (track.playback?.source !== 'music') {
-            setContextMenuFeedback('Only music tracks can be added to playlists.');
-            return;
-        }
-        setContextMenuTarget(null);
-        setPlaylistMenuRoot({ kind: 'track', sourceId, track });
-        setPlaylistMenuRootState({ status: 'idle' });
-    };
-
-    const handleOpenAddToPlaylistForCollection = (
-        collectionItem: AndroidRecentContentSourceItem,
-    ) => {
-        const sourceId = collectionItem.source?.id;
-        if (!sourceId) {
-            setContextMenuFeedback('Could not find the server for this item.');
-            return;
-        }
-        const auth = findAuthForSource(sourceId);
-        if (
-            !auth ||
-            (auth.type !== ServerType.NAVIDROME && auth.type !== ServerType.SUBSONIC)
-        ) {
-            setContextMenuFeedback(
-                'Adding to playlists is only available for music server items.',
-            );
-            return;
-        }
-        setContextMenuTarget(null);
-        setPlaylistMenuRoot({ collectionItem, kind: 'collection', sourceId });
-        setPlaylistMenuRootState({ status: 'idle' });
-    };
-
-    const handleAddToPlaylistFromRoot = async (playlist: MobileHomeItem) => {
-        if (!playlistMenuRoot) {
-            return;
-        }
-
-        if (playlist.source?.id !== playlistMenuRoot.sourceId) {
-            setPlaylistMenuRootState({
-                message: 'Choose a playlist from the same music server.',
-                status: 'error',
-            });
-            return;
-        }
-
-        const auth = findAuthForSource(playlistMenuRoot.sourceId);
-
-        if (!auth) {
-            setPlaylistMenuRootState({
-                message: 'The server for this item is no longer connected.',
-                status: 'error',
-            });
-            return;
-        }
-
-        setPlaylistMenuRootState({ playlistId: playlist.id, status: 'loading' });
-        try {
-            let songIds: string[];
-
-            if (playlistMenuRoot.kind === 'track') {
-                songIds = [playlistMenuRoot.track.id];
-            } else {
-                const sourceDetail = await loadMobileMediaDetail({
-                    authentication: auth,
-                    id: playlistMenuRoot.collectionItem.id,
-                    type:
-                        playlistMenuRoot.collectionItem.type === MobileHomeItemType.PLAYLIST
-                            ? MobileMediaDetailType.PLAYLIST
-                            : MobileMediaDetailType.ALBUM,
-                });
-                songIds = sourceDetail.tracks
-                    .filter((track) => track.playback?.source === 'music')
-                    .map((track) => track.id);
-                if (songIds.length === 0) {
-                    setPlaylistMenuRootState({
-                        message: 'No music tracks were found to add.',
-                        status: 'error',
-                    });
-                    return;
-                }
-            }
-
-            await addMobileTracksToPlaylist({
-                authentication: auth,
-                playlistId: playlist.id,
-                songIds,
-            });
-            await loadHomeForConnections(serverConnections);
-            const addedCount = songIds.length;
-            setPlaylistMenuRootState({
-                message:
-                    addedCount === 1
-                        ? `Added to ${playlist.title}`
-                        : `Added ${addedCount} songs to ${playlist.title}`,
-                status: 'success',
-            });
-        } catch (error) {
-            setPlaylistMenuRootState({
-                message: error instanceof Error ? error.message : 'Failed to add to playlist',
-                status: 'error',
-            });
-        }
-    };
-
-    const mediaContextMenuApi = useMemo<MediaContextMenuApi>(
-        () => ({
-            openForItem: (item, options) => {
-                if (isSongSearchItem(item)) {
-                    triggerImpact('medium');
-                    setContextMenuFeedback(null);
-                    setContextMenuTarget({
-                        kind: 'song',
-                        source: item.source,
-                        suppressDownloadAction: options?.suppressDownloadAction,
-                        suppressOpenAction: options?.suppressOpenAction,
-                        suppressQueueAction: options?.suppressQueueAction,
-                        track: synthesizeTrackFromSongItem(item),
-                    });
-                    return;
-                }
-                const kind = inferContextMenuKindFromItem(item);
-                if (!kind) {
-                    return;
-                }
-                triggerImpact('medium');
-                setContextMenuFeedback(null);
-                setContextMenuTarget({
-                    item,
-                    kind,
-                    suppressDownloadAction: options?.suppressDownloadAction,
-                    suppressOpenAction: options?.suppressOpenAction,
-                    suppressQueueAction: options?.suppressQueueAction,
-                });
-            },
-            openForTrack: (track, detail) => {
-                triggerImpact('medium');
-                setContextMenuFeedback(null);
-                setContextMenuTarget({
-                    detail,
-                    kind: 'song',
-                    source: detail?.source,
-                    track,
-                });
-            },
-        }),
-        [],
-    );
-
-    const handleTogglePlayback = async () => {
-        const playbackState = getAndroidPlaybackState();
-
-        if (playbackState.status === 'idle' || playbackState.status === 'error') {
-            // Force a full re-play when the previous session errored out, not
-            // just a resume — that goes through ensurePlayer on the native side
-            // which detects the stuck playerError and rebuilds the ExoPlayer
-            // from scratch. Resume alone would dispatch to a wedged player.
-            const fallback =
-                playbackState.status === 'error' ? playbackState.item : lastPlayedItem;
-            if (fallback) {
-                await playQueuedItem(fallback, [fallback], 0);
-            }
-            return;
-        }
-
-        try {
-            if (playbackState.status === 'playing' || playbackState.status === 'buffering') {
-                await pauseAndroidAudio();
-                setAndroidPlaybackState({ ...playbackState, status: 'paused' });
-
-                const absCtx = absContextRef.current;
-
-                if (absCtx) {
-                    void syncAbsProgressImmediate(
-                        absCtx,
-                        getAbsProgressSeconds(
-                            absCtx,
-                            playbackState.positionMs,
-                            playbackState.item,
-                        ),
-                    );
-                }
-
-                return;
-            }
-
-            if (isLivePlayback(playbackState)) {
-                await playQueuedItem(playbackState.item, [playbackState.item], 0, {
-                    shuffled: false,
-                });
-                return;
-            }
-
-            await resumeAndroidAudio();
-            setAndroidPlaybackState({ ...playbackState, status: 'playing' });
-        } catch (error) {
-            setAndroidPlaybackState({
-                ...playbackState,
-                message: error instanceof Error ? error.message : 'Playback command failed',
-                status: 'error',
-            });
-        }
-    };
-
-    const handleSeekPlayback = async (positionMs: number) => {
-        const playbackState = getAndroidPlaybackState();
-
-        if (playbackState.status === 'idle' || isLivePlayback(playbackState)) {
-            return;
-        }
-
-        const durationMs = getPlaybackDurationMs(playbackState);
-        const nextPositionMs = clamp(positionMs, 0, durationMs ?? Math.max(0, positionMs));
-
-        setAndroidPlaybackState((current) =>
-            current.status === 'idle' ? current : { ...current, positionMs: nextPositionMs },
-        );
-
-        try {
-            const event = await seekAndroidAudio(nextPositionMs);
-            const absCtx = absContextRef.current;
-
-            if (absCtx) {
-                void syncAbsProgressImmediate(
-                    absCtx,
-                    getAbsProgressSeconds(absCtx, nextPositionMs, playbackState.item),
-                );
-            }
-
-            setAndroidPlaybackState((current) => {
-                if (current.status === 'idle') {
-                    return current;
-                }
-
-                return {
-                    ...current,
-                    bitPerfect: event.bitPerfect ?? current.bitPerfect,
-                    durationMs: getPlaybackEventDurationMs(event, current.item),
-                    message: event.message ?? current.message,
-                    positionMs: nextPositionMs,
-                    status: getActivePlaybackStatus(event.status, current.status),
-                };
-            });
-        } catch (error) {
-            setAndroidPlaybackState({
-                ...playbackState,
-                message: error instanceof Error ? error.message : 'Seek failed',
-                status: 'error',
-            });
-        }
-    };
-
-    const handleSkipPlayback = async (offsetSeconds: number) => {
-        const playbackState = getAndroidPlaybackState();
-
-        if (playbackState.status === 'idle' || isLivePlayback(playbackState)) {
-            return;
-        }
-
-        await handleSeekPlayback((playbackState.positionMs ?? 0) + offsetSeconds * 1000);
-    };
-
-    const handleToggleShuffle = useCallback(() => {
-        setIsShuffled((current) => {
-            const next = !current;
-            const queue = playbackQueueRef.current;
-
-            if (next && queue) {
-                // Shuffle only the items AFTER the currently-playing index — moving
-                // the current track would feel like an unwanted skip.
-                const before = queue.items.slice(0, queue.index + 1);
-                const after = [...queue.items.slice(queue.index + 1)];
-                for (let i = after.length - 1; i > 0; i -= 1) {
-                    const j = Math.floor(Math.random() * (i + 1));
-                    [after[i], after[j]] = [after[j], after[i]];
-                }
-                playbackQueueRef.current = { index: queue.index, items: [...before, ...after] };
-                forcePlaybackQueueRender();
-            }
-
-            // Turning shuffle off does not restore the original order (matches Apple
-            // Music behavior). Pick the album again to get sequential playback.
-            return next;
-        });
-    }, []);
-
-    const handleNavigatePlayback = async (direction: -1 | 1) => {
-        const playbackState = getAndroidPlaybackState();
-
-        if (playbackState.status === 'idle') {
-            return;
-        }
-
-        const segmentTargetMs = getAdjacentSegmentTargetMs(
-            playbackState.item.timelineSegments,
-            playbackState.positionMs ?? 0,
-            direction,
-        );
-
-        if (segmentTargetMs !== undefined) {
-            await handleSeekPlayback(segmentTargetMs);
-            return;
-        }
-
-        if (direction === -1 && (playbackState.positionMs ?? 0) > 3000) {
-            await handleSeekPlayback(0);
-            return;
-        }
-
-        const queue = playbackQueueRef.current;
-        const nextIndex = queue ? queue.index + direction : -1;
-        const nextItem = queue?.items[nextIndex];
-
-        if (queue && nextItem) {
-            await playQueuedItem(nextItem, queue.items, nextIndex);
-        }
-    };
+        registerNavigatePlayback(handleNavigatePlayback);
+    });
 
     const handleSyncWithServer = useCallback(async (): Promise<{
         message?: string;
@@ -2813,256 +1066,13 @@ export default function App() {
         }
     }, [loadHomeForConnections, serverConnections]);
 
-    const contextMenuActions = useMemo<MediaContextMenuAction[]>(() => {
-        if (!contextMenuTarget) {
-            return [];
-        }
-
-        const actions: MediaContextMenuAction[] = [];
-
-        if (contextMenuTarget.kind === 'song') {
-            const { source, track } = contextMenuTarget;
-            const favoriteKey = getFavoriteKeyForTrack(track, source?.id);
-            const isFavorited = favoritedKeys.has(favoriteKey);
-            const canQueueTrack =
-                canAppendToPlaybackQueue &&
-                !contextMenuTarget.suppressQueueAction &&
-                track.playback?.source === 'music';
-            actions.push({
-                icon: <HeartGlyph color={isFavorited ? colors.accent : colors.text} filled={isFavorited} />,
-                id: 'favorite',
-                label: isFavorited ? 'Remove from Favorites' : 'Add to Favorites',
-                onPress: () => void handleToggleFavoriteForTrack(track, source?.id),
-            });
-            if (canQueueTrack) {
-                actions.push({
-                    icon: <QueueAddGlyph color={colors.text} />,
-                    id: 'queue',
-                    label: 'Add to Queue',
-                    onPress: () => handleAddTrackToQueue(track),
-                });
-            }
-            if (track.playback?.source === 'music' && source) {
-                actions.push({
-                    icon: <PlaylistAddGlyph color={colors.text} />,
-                    id: 'playlist',
-                    label: 'Add to Playlist',
-                    onPress: () => handleOpenAddToPlaylistForSong(track, source.id),
-                });
-            }
-            if (track.artistId && source) {
-                actions.push({
-                    icon: <PersonGlyph color={colors.text} />,
-                    id: 'go-artist',
-                    label: 'Go to Artist',
-                    onPress: () => void handleGoToArtistForTrack(track, source),
-                });
-            }
-            if (track.albumId && source) {
-                actions.push({
-                    icon: <DiscGlyph color={colors.text} />,
-                    id: 'go-album',
-                    label: 'Go to Album',
-                    onPress: () => void handleGoToAlbumForTrack(track, source),
-                });
-            }
-            if (track.playback?.source === 'music' && source) {
-                actions.push({
-                    icon: <RadioWaveGlyph color={colors.text} />,
-                    id: 'song-radio',
-                    label: 'Start Song Radio',
-                    onPress: () => void handleStartSongRadio(track, source),
-                });
-            }
-
-            // Download label is media-aware: chapter long-press → "Download
-            // audiobook" (whole-book file is the only granularity ABS exposes);
-            // episode long-press → "Download episode"; everything else →
-            // "Download" (single music track).
-            const detail = contextMenuTarget.detail;
-            const downloadLabel =
-                detail?.type === MobileMediaDetailType.AUDIOBOOK
-                    ? 'Download audiobook'
-                    : detail?.type === MobileMediaDetailType.PODCAST
-                      ? 'Download episode'
-                      : 'Download';
-            const canDownload =
-                detail?.type === MobileMediaDetailType.AUDIOBOOK ||
-                detail?.type === MobileMediaDetailType.PODCAST ||
-                track.playback?.source === 'music';
-            if (canDownload && !contextMenuTarget.suppressDownloadAction) {
-                actions.push({
-                    icon: <DownloadGlyph color={colors.text} />,
-                    id: 'download',
-                    label: downloadLabel,
-                    onPress: () =>
-                        void handleDownloadSongTrack(track, detail, source),
-                });
-            }
-
-            return actions;
-        }
-
-        const item = contextMenuTarget.item;
-        const favoriteKey = getFavoriteKeyForItem(item);
-        const isFavorited = favoritedKeys.has(favoriteKey);
-        actions.push({
-            icon: <HeartGlyph color={isFavorited ? colors.accent : colors.text} filled={isFavorited} />,
-            id: 'favorite',
-            label: isFavorited ? 'Remove from Favorites' : 'Add to Favorites',
-            onPress: () => void handleToggleFavoriteForItem(item),
-        });
-
-        const suppressOpen = contextMenuTarget.suppressOpenAction === true;
-
-        const suppressDownload = contextMenuTarget.suppressDownloadAction === true;
-        const suppressQueue = contextMenuTarget.suppressQueueAction === true;
-
-        if (contextMenuTarget.kind === 'audiobook') {
-            actions.push({
-                icon: <BookInfoGlyph color={colors.text} />,
-                id: 'book-info',
-                label: 'Book Information',
-                onPress: () => void handleOpenBookInfo(item, 'audiobook'),
-            });
-            if (!suppressDownload) {
-                actions.push({
-                    icon: <DownloadGlyph color={colors.text} />,
-                    id: 'download',
-                    label: 'Download audiobook',
-                    onPress: () => void handleDownloadCollectionItem(item),
-                });
-            }
-            if (!suppressOpen) {
-                actions.push({
-                    icon: <ChaptersGlyph color={colors.text} />,
-                    id: 'view-chapters',
-                    label: 'View Chapters',
-                    onPress: () => void handleViewDetailForItem(item),
-                });
-            }
-        } else if (contextMenuTarget.kind === 'podcast') {
-            actions.push({
-                icon: <BookInfoGlyph color={colors.text} />,
-                id: 'podcast-info',
-                label: 'Podcast Info',
-                onPress: () => void handleOpenBookInfo(item, 'podcast'),
-            });
-            if (!suppressOpen) {
-                actions.push({
-                    icon: <ChaptersGlyph color={colors.text} />,
-                    id: 'view-episodes',
-                    label: 'View Episodes',
-                    onPress: () => void handleViewDetailForItem(item),
-                });
-            }
-        } else if (contextMenuTarget.kind === 'radio') {
-            actions.push({
-                icon: <BookInfoGlyph color={colors.text} />,
-                id: 'stream-info',
-                label: 'Stream Information',
-                onPress: () => handleOpenStreamInfo(item),
-            });
-        } else if (
-            contextMenuTarget.kind === 'album' ||
-            contextMenuTarget.kind === 'playlist'
-        ) {
-            const auth = findAuthForSource(item.source?.id);
-            if (canAppendToPlaybackQueue && !suppressQueue) {
-                actions.push({
-                    icon: <QueueAddGlyph color={colors.text} />,
-                    id: 'queue',
-                    label: 'Add to Queue',
-                    onPress: () => void handleAddCollectionToQueue(item),
-                });
-            }
-            if (
-                auth &&
-                (auth.type === ServerType.NAVIDROME || auth.type === ServerType.SUBSONIC)
-            ) {
-                actions.push({
-                    icon: <PlaylistAddGlyph color={colors.text} />,
-                    id: 'add-collection-to-playlist',
-                    label: 'Add to Playlist',
-                    onPress: () => handleOpenAddToPlaylistForCollection(item),
-                });
-            }
-            if (!suppressDownload) {
-                actions.push({
-                    icon: <DownloadGlyph color={colors.text} />,
-                    id: 'download',
-                    label:
-                        contextMenuTarget.kind === 'album'
-                            ? 'Download album'
-                            : 'Download playlist',
-                    onPress: () => void handleDownloadCollectionItem(item),
-                });
-            }
-            if (!suppressOpen) {
-                actions.push({
-                    icon: <ChaptersGlyph color={colors.text} />,
-                    id: 'open',
-                    label: contextMenuTarget.kind === 'album' ? 'Open Album' : 'Open Playlist',
-                    onPress: () => void handleViewDetailForItem(item),
-                });
-            }
-        } else if (contextMenuTarget.kind === 'artist') {
-            if (!suppressOpen) {
-                actions.push({
-                    icon: <ChaptersGlyph color={colors.text} />,
-                    id: 'open',
-                    label: 'Open Artist',
-                    onPress: () => void handleViewDetailForItem(item),
-                });
-            }
-        }
-
-        return actions;
-    }, [
-        contextMenuTarget,
-        favoritedKeys,
-        canAppendToPlaybackQueue,
-        getFavoriteKeyForItem,
-        getFavoriteKeyForTrack,
-        handleAddCollectionToQueue,
-        handleAddTrackToQueue,
-    ]);
-
-    const contextMenuEyebrow = contextMenuTarget
-        ? contextMenuTarget.kind === 'song'
-            ? 'Song'
-            : contextMenuTarget.kind === 'audiobook'
-              ? 'Audiobook'
-              : contextMenuTarget.kind.charAt(0).toUpperCase() + contextMenuTarget.kind.slice(1)
-        : '';
-
-    const contextMenuArtworkUrl = contextMenuTarget
-        ? contextMenuTarget.kind === 'song'
-            ? contextMenuTarget.track.artworkUrl ?? contextMenuTarget.detail?.artworkUrl
-            : contextMenuTarget.item.artworkUrl
-        : undefined;
-
-    const contextMenuIsCircularArtwork =
-        contextMenuTarget?.kind === 'artist';
-
-    const contextMenuTitle = contextMenuTarget
-        ? contextMenuTarget.kind === 'song'
-            ? contextMenuTarget.track.title
-            : contextMenuTarget.item.title
-        : '';
-
-    const contextMenuSubtitle = contextMenuTarget
-        ? contextMenuTarget.kind === 'song'
-            ? contextMenuTarget.track.artist ??
-              contextMenuTarget.track.subtitle ??
-              undefined
-            : contextMenuTarget.item.subtitle
-        : undefined;
-
     const handleOpenSettings = useCallback(() => {
+        // #region agent log
+        fetch('http://127.0.0.1:7498/ingest/65ba3320-fcf4-4bf2-82b0-f3ffc8d708c2',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'c0ca1a'},body:JSON.stringify({sessionId:'c0ca1a',runId:'nav-perf',hypothesisId:'H1',location:'App.tsx:handleOpenSettings',message:'open settings utility',data:{detailStatus:mediaDetailState.status},timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
         setActiveUtilityScreen('settings');
         closeMediaDetail();
-    }, [closeMediaDetail]);
+    }, [closeMediaDetail, mediaDetailState.status, setActiveUtilityScreen]);
     const handleOpenManageServers = useCallback(() => {
         setActiveUtilityScreen('manage-servers');
     }, []);
@@ -3086,19 +1096,24 @@ export default function App() {
     }, [setServerUrl]);
     const handleOpenFullPlayer = useCallback(() => {
         setIsFullPlayerOpen(true);
-    }, []);
+    }, [setIsFullPlayerOpen]);
     const handleCloseFullPlayer = useCallback(() => {
         setIsFullPlayerOpen(false);
-    }, []);
+    }, [setIsFullPlayerOpen]);
     const handleViewAllBack = useCallback(() => {
         setActiveUtilityScreen(null);
         setViewAllRoute(null);
-        viewAllFetchTokenRef.current += 1;
+        bumpViewAllFetchToken();
         setViewAllFullState({ status: 'idle' });
-    }, []);
+    }, [bumpViewAllFetchToken]);
     const handleSelectMediaItemStable = useStableCallback(
         (item: MobileHomeItem | MobileSearchItem) => {
             void handleSelectMediaItem(item);
+        },
+    );
+    const handlePrefetchMediaItemStable = useStableCallback(
+        (item: AndroidRecentContentSourceItem) => {
+            prefetchMediaDetailCache(item);
         },
     );
     const handleSelectViewAllItem = useCallback(
@@ -3152,14 +1167,103 @@ export default function App() {
 
     const handleTabPress = useCallback(
         (tabId: SamoMobileTabId) => {
+            // #region agent log
+            const tabPressStartedAt = Date.now();
+            fetch('http://127.0.0.1:7498/ingest/65ba3320-fcf4-4bf2-82b0-f3ffc8d708c2',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'c0ca1a'},body:JSON.stringify({sessionId:'c0ca1a',runId:'nav-perf',hypothesisId:'H4',location:'App.tsx:handleTabPress',message:'tab press',data:{tabId,detailStatus:mediaDetailState.status,utilityScreen:activeUtilityScreen},timestamp:tabPressStartedAt})}).catch(()=>{});
+            // #endregion
             setActiveUtilityScreen((current) => (current === null ? current : null));
             if (mediaDetailState.status !== 'idle') {
                 closeMediaDetail();
             }
             setActiveTab((current) => (current === tabId ? current : tabId));
+            // #region agent log
+            fetch('http://127.0.0.1:7498/ingest/65ba3320-fcf4-4bf2-82b0-f3ffc8d708c2',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'c0ca1a'},body:JSON.stringify({sessionId:'c0ca1a',runId:'nav-perf',hypothesisId:'H4',location:'App.tsx:handleTabPress',message:'tab press handlers scheduled',data:{tabId,elapsedMs:Date.now()-tabPressStartedAt},timestamp:Date.now()})}).catch(()=>{});
+            // #endregion
         },
-        [closeMediaDetail, mediaDetailState.status],
+        [activeUtilityScreen, closeMediaDetail, mediaDetailState.status, setActiveTab, setActiveUtilityScreen],
     );
+
+    const navSurface =
+        activeUtilityScreen === 'view-all'
+            ? 'view-all'
+            : activeUtilityScreen
+              ? `utility:${activeUtilityScreen}`
+              : mediaDetailState.status !== 'idle'
+                ? `detail:${mediaDetailState.status}`
+                : 'tabs';
+    const prevNavSurfaceRef = useRef(navSurface);
+    const navSurfaceChangedAtRef = useRef(Date.now());
+    useEffect(() => {
+        const previous = prevNavSurfaceRef.current;
+        if (previous === navSurface) {
+            return;
+        }
+        const changedAt = Date.now();
+        const sinceLastMs = changedAt - navSurfaceChangedAtRef.current;
+        navSurfaceChangedAtRef.current = changedAt;
+        const unmountsTabHost =
+            previous === 'tabs' &&
+            (navSurface.startsWith('detail:') || navSurface.startsWith('utility:'));
+        const remountsTabHost =
+            navSurface === 'tabs' &&
+            (previous.startsWith('detail:') || previous.startsWith('utility:'));
+        const closedDetail =
+            navSurface === 'tabs' && previous.startsWith('detail:');
+        // #region agent log
+        const navPayload = {
+            sessionId: 'c0ca1a',
+            runId: 'nav-perf',
+            hypothesisId: closedDetail ? 'H6' : 'H1',
+            location: 'App.tsx:navSurface',
+            message: 'navigation surface changed',
+            data: {
+                from: previous,
+                to: navSurface,
+                remountsTabHost,
+                tabHostKeptMounted: true,
+                unmountsTabHost,
+                sinceLastMs,
+                detailShellKeptMounted: hasCachedDetailShell,
+            },
+            timestamp: changedAt,
+        };
+        console.log('[nav-perf]', JSON.stringify(navPayload));
+        fetch('http://127.0.0.1:7498/ingest/65ba3320-fcf4-4bf2-82b0-f3ffc8d708c2', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Debug-Session-Id': 'c0ca1a',
+            },
+            body: JSON.stringify(navPayload),
+        }).catch(() => {});
+        if (closedDetail) {
+            requestAnimationFrame(() => {
+                const framePayload = {
+                    sessionId: 'c0ca1a',
+                    runId: 'nav-perf',
+                    hypothesisId: 'H8',
+                    location: 'App.tsx:navSurface',
+                    message: 'detail close first frame',
+                    data: { sinceNavSurfaceMs: Date.now() - changedAt },
+                    timestamp: Date.now(),
+                };
+                console.log('[nav-perf]', JSON.stringify(framePayload));
+                fetch(
+                    'http://127.0.0.1:7498/ingest/65ba3320-fcf4-4bf2-82b0-f3ffc8d708c2',
+                    {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-Debug-Session-Id': 'c0ca1a',
+                        },
+                        body: JSON.stringify(framePayload),
+                    },
+                ).catch(() => {});
+            });
+        }
+        // #endregion
+        prevNavSurfaceRef.current = navSurface;
+    }, [hasCachedDetailShell, navSurface]);
 
     const utilityScreenContent =
         activeUtilityScreen === 'settings' ? (
@@ -3218,6 +1322,7 @@ export default function App() {
                 <HomeScreen
                     homeContentState={visibleHomeContentState}
                     onManageServers={handleOpenManageServers}
+                    onPrefetchItem={handlePrefetchMediaItemStable}
                     onSelectItem={handleSelectMediaItemStable}
                     onViewAll={handleOpenViewAll}
                     recentItems={visibleRecentItems}
@@ -3236,6 +1341,8 @@ export default function App() {
                     fullCollectionsEnabled={!isOfflineMode}
                     hasServerConnections={serverConnections.length > 0}
                     homeContentState={visibleHomeContentState}
+                    libraryRelevantState={libraryRelevantState}
+                    onEnsureFullCollections={ensureLibraryFullCollections}
                     onSelectItem={handleSelectMediaItemStable}
                     recentItems={visibleRecentItems}
                 />
@@ -3268,7 +1375,7 @@ export default function App() {
     return (
         <GestureHandlerRootView style={styles.gestureRoot}>
         <ErrorBoundary label="App">
-        <MediaContextMenuContext.Provider value={mediaContextMenuApi}>
+        <MediaContextMenuContext.Provider value={contextMenu.api}>
         <DownloadedCollectionKeysContext.Provider value={downloadedCollectionKeys}>
         <DownloadedTrackKeysContext.Provider value={downloadedTrackKeys}>
         <View style={styles.safeArea}>
@@ -3277,72 +1384,151 @@ export default function App() {
                 behavior={Platform.OS === 'ios' ? 'padding' : undefined}
                 style={styles.keyboardView}
             >
-                <View style={styles.root}>
-                    {activeUtilityScreen === 'view-all' && viewAllRoute ? (
-                        // ViewAllScreen renders its own recycled list — keep it
-                        // outside the surrounding ScrollView so RN doesn't
-                        // warn about nested VirtualizedLists with the same
-                        // orientation (which also disables windowing).
-                        <ErrorBoundary label="ViewAllScreen">
-                            <ViewAllScreen
-                                fullState={viewAllFullState}
-                                onBack={handleViewAllBack}
-                                onSelectItem={handleSelectViewAllItem}
-                                route={viewAllRoute}
-                            />
-                        </ErrorBoundary>
-                    ) : activeUtilityScreen === null && mediaDetailState.status !== 'idle' ? (
-                        <MediaDetailContent
-                            homeContentState={homeContentState}
-                            mediaDetailState={mediaDetailState}
-                            onAddTrackToPlaylist={handleAddMediaTrackToPlaylistStable}
-                            onBack={closeMediaDetail}
-                            onSelectItem={handleSelectMediaItemStable}
-                            onPlayTrack={handlePlayMediaTrackStable}
-                            onShufflePlay={handleShuffleDetailTracks}
-                            serverConnections={serverConnections}
-                        />
-                    ) : utilityScreenContent ? (
-                        <ScrollView
-                            contentContainerStyle={styles.content}
-                            style={styles.tabUtilityScene}
-                        >
-                            {utilityScreenContent}
-                        </ScrollView>
-                    ) : (
-                        <View style={styles.tabSceneHost}>
-                            {SAMO_MOBILE_TABS.map((tab) => {
-                                const isSceneActive = tab.id === activeTab;
-                                const sceneStyle = [
-                                    styles.tabScene,
-                                    isSceneActive ? styles.tabSceneActive : styles.tabSceneHidden,
-                                ];
+                <View
+                    onLayout={(event) => {
+                        const { height, width, y } = event.nativeEvent.layout;
+                        // #region agent log
+                        const rootPayload = {
+                            sessionId: 'c0ca1a',
+                            runId: 'player-layout-fix',
+                            hypothesisId: 'H2',
+                            location: 'App.tsx:root.onLayout',
+                            message: 'root layout',
+                            data: {
+                                height,
+                                width,
+                                y,
+                                isFullPlayerOpen,
+                                screenHeight: SCREEN_HEIGHT,
+                            },
+                            timestamp: Date.now(),
+                        };
+                        console.log('[player-layout]', JSON.stringify(rootPayload));
+                        fetch(
+                            'http://127.0.0.1:7498/ingest/65ba3320-fcf4-4bf2-82b0-f3ffc8d708c2',
+                            {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                    'X-Debug-Session-Id': 'c0ca1a',
+                                },
+                                body: JSON.stringify(rootPayload),
+                            },
+                        ).catch(() => {});
+                        // #endregion
+                    }}
+                    style={styles.root}
+                >
+                    <View style={styles.appContent}>
+                    <View
+                        pointerEvents={
+                            utilityScreenContent ||
+                            mediaDetailState.status !== 'idle' ||
+                            (activeUtilityScreen === 'view-all' && viewAllRoute)
+                                ? 'none'
+                                : 'auto'
+                        }
+                        style={styles.tabSceneHost}
+                    >
+                        {SAMO_MOBILE_TABS.map((tab) => {
+                            const isSceneActive = tab.id === activeTab;
+                            const sceneStyle = [
+                                styles.tabScene,
+                                isSceneActive ? styles.tabSceneActive : styles.tabSceneHidden,
+                            ];
 
-                                if (tab.id === 'library') {
-                                    return (
-                                        <View
-                                            key={tab.id}
-                                            pointerEvents={isSceneActive ? 'auto' : 'none'}
-                                            style={sceneStyle}
-                                        >
-                                            {renderTabSceneContent(tab.id)}
-                                        </View>
-                                    );
-                                }
-
+                            if (tab.id === 'library') {
                                 return (
-                                    <ScrollView
-                                        contentContainerStyle={styles.content}
+                                    <View
                                         key={tab.id}
                                         pointerEvents={isSceneActive ? 'auto' : 'none'}
                                         style={sceneStyle}
                                     >
                                         {renderTabSceneContent(tab.id)}
-                                    </ScrollView>
+                                    </View>
                                 );
-                            })}
+                            }
+
+                            return (
+                                <ScrollView
+                                    contentContainerStyle={styles.content}
+                                    key={tab.id}
+                                    pointerEvents={isSceneActive ? 'auto' : 'none'}
+                                    style={sceneStyle}
+                                >
+                                    {renderTabSceneContent(tab.id)}
+                                </ScrollView>
+                            );
+                        })}
+                    </View>
+                    {utilityScreenContent ? (
+                        <ScrollView
+                            contentContainerStyle={styles.content}
+                            style={[styles.navOverlay, styles.tabUtilityScene]}
+                        >
+                            {utilityScreenContent}
+                        </ScrollView>
+                    ) : null}
+                    {activeUtilityScreen === null &&
+                    (detailOverlayOpen || hasCachedDetailShell) ? (
+                        <View
+                            pointerEvents={detailOverlayOpen ? 'auto' : 'none'}
+                            style={[
+                                styles.navOverlay,
+                                !detailOverlayOpen && styles.navOverlayHidden,
+                            ]}
+                        >
+                            <MediaDetailContent
+                                homeContentState={homeContentState}
+                                mediaDetailState={
+                                    detailOverlayOpen
+                                        ? mediaDetailState
+                                        : frozenDetailStateRef.current
+                                }
+                                onAddTrackToPlaylist={handleAddMediaTrackToPlaylistStable}
+                                onBack={closeMediaDetail}
+                                onSelectItem={handleSelectMediaItemStable}
+                                onPlayTrack={handlePlayMediaTrackStable}
+                                onShufflePlay={handleShuffleDetailTracks}
+                                serverConnections={serverConnections}
+                            />
                         </View>
-                    )}
+                    ) : null}
+                    {activeUtilityScreen === 'view-all' && viewAllRoute ? (
+                        <View style={[styles.navOverlay, styles.navOverlayTop]}>
+                            <ErrorBoundary label="ViewAllScreen">
+                                <ViewAllScreen
+                                    fullState={viewAllFullState}
+                                    onBack={handleViewAllBack}
+                                    onSelectItem={handleSelectViewAllItem}
+                                    route={viewAllRoute}
+                                />
+                            </ErrorBoundary>
+                        </View>
+                    ) : null}
+                    {isSearchOverlayOpen ? (
+                        <SearchOverlay
+                            homeContentState={homeContentState}
+                            onClose={() => {
+                                setIsSearchOverlayOpen(false);
+                                setSearchOverlayQuery('');
+                            }}
+                            onSearch={(q) => {
+                                setSearchOverlayQuery(q);
+                                void handleSearch(q);
+                            }}
+                            onSelectItem={(item) => {
+                                setIsSearchOverlayOpen(false);
+                                setSearchOverlayQuery('');
+                                handleSelectMediaItemStable(item);
+                            }}
+                            query={searchOverlayQuery}
+                            recentItems={recentContentItems}
+                            searchState={searchState}
+                            serverConnections={serverConnections}
+                        />
+                    ) : null}
+                    </View>
                     <NowPlayingMetadataSync />
                     <ConnectedMiniPlayer
                         artworkUrl={currentHighResArtworkUrl}
@@ -3381,10 +1567,26 @@ export default function App() {
                             lastPlayedItem={lastPlayedItem}
                             onClose={handleCloseFullPlayer}
                             onNext={() => void handleNavigatePlayback(1)}
+                            onPlayQueueIndex={(index) => {
+                                const currentQueue = playbackQueueRef.current;
+                                if (!currentQueue) {
+                                    return;
+                                }
+                                const item = currentQueue.items[index];
+                                if (!item) {
+                                    return;
+                                }
+                                void playQueuedItem(
+                                    item,
+                                    currentQueue.items,
+                                    index,
+                                );
+                            }}
                             onPrevious={() => void handleNavigatePlayback(-1)}
                             onSeek={(positionMs) => void handleSeekPlayback(positionMs)}
                             onTogglePlayback={handleTogglePlayback}
                             onToggleShuffle={handleToggleShuffle}
+                            playbackQueueRevision={playbackQueueRevision}
                             playerProgress={playerProgress}
                             reducedMotion={reducedMotion}
                             serverConnections={serverConnections}
@@ -3392,29 +1594,10 @@ export default function App() {
                             visible={isFullPlayerOpen}
                         />
                     </ErrorBoundary>
-                    {isSearchOverlayOpen ? (
-                        <SearchOverlay
-                            homeContentState={homeContentState}
-                            onClose={() => {
-                                setIsSearchOverlayOpen(false);
-                                setSearchOverlayQuery('');
-                            }}
-                            onSearch={(q) => {
-                                setSearchOverlayQuery(q);
-                                void handleSearch(q);
-                            }}
-                            onSelectItem={(item) => {
-                                setIsSearchOverlayOpen(false);
-                                setSearchOverlayQuery('');
-                                handleSelectMediaItemStable(item);
-                            }}
-                            query={searchOverlayQuery}
-                            recentItems={recentContentItems}
-                            searchState={searchState}
-                            serverConnections={serverConnections}
-                        />
-                    ) : null}
-                    <View style={styles.tabBar}>
+                    <Reanimated.View
+                        pointerEvents={isFullPlayerOpen ? 'none' : 'auto'}
+                        style={[styles.tabBar, tabBarAnimatedStyle]}
+                    >
                         {SAMO_MOBILE_TABS.map((tab) => {
                             const isActive = tab.id === activeTab;
                             return (
@@ -3434,22 +1617,19 @@ export default function App() {
                                 </Pressable>
                             );
                         })}
-                    </View>
+                    </Reanimated.View>
                 </View>
             </KeyboardAvoidingView>
             <MediaContextMenu
-                actions={contextMenuActions}
-                artworkUrl={contextMenuArtworkUrl}
-                eyebrow={contextMenuEyebrow}
-                feedback={contextMenuFeedback}
-                isCircularArtwork={contextMenuIsCircularArtwork}
-                onClose={() => {
-                    setContextMenuTarget(null);
-                    setContextMenuFeedback(null);
-                }}
-                subtitle={contextMenuSubtitle}
-                target={contextMenuTarget}
-                title={contextMenuTitle}
+                actions={contextMenu.actions}
+                artworkUrl={contextMenu.artworkUrl}
+                eyebrow={contextMenu.eyebrow}
+                feedback={contextMenu.feedback}
+                isCircularArtwork={contextMenu.isCircularArtwork}
+                onClose={contextMenu.onClose}
+                subtitle={contextMenu.subtitle}
+                target={contextMenu.target}
+                title={contextMenu.title}
             />
             <StreamInfoModal item={streamInfoItem} onClose={() => setStreamInfoItem(null)} />
             <BookInformationModal

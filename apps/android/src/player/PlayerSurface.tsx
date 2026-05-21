@@ -120,6 +120,22 @@ import {
 import { styles } from '../theme/styles';
 import { colors } from '../theme/tokens';
 import { PlayerIconButton } from './PlayerIconButton';
+import { PlayerMorphArtwork } from './PlayerMorphArtwork';
+import {
+    collapsedLidOpacity,
+    contentRevealOpacity,
+    contentRevealProgress,
+    contentRevealTranslateY,
+    miniHandoffOpacity,
+    miniStaticArtworkOpacity,
+    PLAYER_CLOSE_SPRING,
+    PLAYER_OPEN_SPRING,
+    shellElevation,
+    shellMaterialOpacity,
+    staticHeroArtworkOpacity,
+    washLayerOpacity,
+    washLayerTranslateY,
+} from './player-motion';
 
 const ReanimatedFlashList = Reanimated.createAnimatedComponent(FlashList) as typeof FlashList;
 const FLASH_LIST_MAINTAIN_POSITION_DISABLED = { disabled: true };
@@ -148,7 +164,7 @@ export const MiniPlayer = memo(({
 }) => {
     const [isMiniInteractive, setIsMiniInteractive] = useState(true);
     useAnimatedReaction(
-        () => playerProgress.value < 0.12,
+        () => playerProgress.value < 0.1,
         (interactive, previous) => {
             if (interactive !== previous) {
                 runOnJS(setIsMiniInteractive)(interactive);
@@ -156,21 +172,13 @@ export const MiniPlayer = memo(({
         },
     );
 
-    // Keep the miniplayer visible long enough for the expanding fullscreen
-    // surface to pick up its exact frame, then let the contents recede into it.
+    // Mini chrome stays glued to the dock until the shell has grown over it — no
+    // float-away; one object, not two layers sliding past each other.
     const miniAnimatedStyle = useAnimatedStyle(() => ({
-        opacity: interpolate(playerProgress.value, [0, 0.26, 0.55], [1, 1, 0], 'clamp'),
-        transform: [
-            {
-                translateY: interpolate(
-                    playerProgress.value,
-                    [0, 0.55],
-                    [0, -32],
-                    'clamp',
-                ),
-            },
-            { scale: interpolate(playerProgress.value, [0, 0.55], [1, 0.985], 'clamp') },
-        ],
+        opacity: miniHandoffOpacity(playerProgress.value),
+    }));
+    const miniArtworkAnimatedStyle = useAnimatedStyle(() => ({
+        opacity: miniStaticArtworkOpacity(playerProgress.value),
     }));
     // Drag-up follows the finger by moving progress across the actual distance
     // between the mini player's top edge and the fullscreen top edge. That
@@ -179,6 +187,7 @@ export const MiniPlayer = memo(({
     //
     // Failure offsets keep horizontal swipes and the play/pause tap from
     // accidentally triggering the open gesture.
+    const openSpring = reducedMotion ? REDUCED_MOTION_SPRING : PLAYER_OPEN_SPRING;
     const settleSpring = reducedMotion ? REDUCED_MOTION_SPRING : OPEN_SPRING;
     const miniDragGesture = useMemo(
         () =>
@@ -201,16 +210,22 @@ export const MiniPlayer = memo(({
                         event.velocityY < -760;
                     if (shouldCommit) {
                         runOnJS(onOpenFullPlayer)();
+                        playerProgress.value = reducedMotion
+                            ? withTiming(1, { duration: 0 })
+                            : withSpring(1, {
+                                  ...openSpring,
+                                  velocity: -event.velocityY / PLAYER_EXPANSION_DISTANCE,
+                              });
                     } else {
                         playerProgress.value = reducedMotion
                             ? withTiming(0, { duration: 0 })
                             : withSpring(0, {
-                                  ...settleSpring,
+                                  ...openSpring,
                                   velocity: -event.velocityY / PLAYER_EXPANSION_DISTANCE,
                               });
                     }
                 }),
-        [onOpenFullPlayer, playerProgress, reducedMotion, settleSpring],
+        [onOpenFullPlayer, openSpring, playerProgress, reducedMotion],
     );
 
     const isActive = playbackState.status !== 'idle';
@@ -243,22 +258,24 @@ export const MiniPlayer = memo(({
                 style={styles.miniPlayerTouchable}
             >
                 <View style={styles.miniPlayerArtworkContainer}>
-                    {artworkUrl ? (
-                        <ExpoImage
-                            cachePolicy="memory-disk"
-                            source={artworkUrl}
-                            style={styles.miniPlayerArtwork}
-                            transition={120}
-                        />
-                    ) : (
-                        <View style={styles.miniPlayerArtworkFallback}>
-                            {title ? (
-                                <Text style={styles.miniPlayerArtworkLetter}>
-                                    {title.slice(0, 1)}
-                                </Text>
-                            ) : null}
-                        </View>
-                    )}
+                    <Reanimated.View style={[styles.miniPlayerArtworkSlot, miniArtworkAnimatedStyle]}>
+                        {artworkUrl ? (
+                            <ExpoImage
+                                cachePolicy="memory-disk"
+                                source={artworkUrl}
+                                style={styles.miniPlayerArtwork}
+                                transition={120}
+                            />
+                        ) : (
+                            <View style={styles.miniPlayerArtworkFallback}>
+                                {title ? (
+                                    <Text style={styles.miniPlayerArtworkLetter}>
+                                        {title.slice(0, 1)}
+                                    </Text>
+                                ) : null}
+                            </View>
+                        )}
+                    </Reanimated.View>
                 </View>
                 <View style={styles.miniPlayerText}>
                     <Text numberOfLines={1} style={styles.miniPlayerTitle}>
@@ -357,10 +374,12 @@ export const FullScreenPlayer = memo(({
     lastPlayedItem,
     onClose,
     onNext,
+    onPlayQueueIndex,
     onPrevious,
     onSeek,
     onToggleShuffle,
     onTogglePlayback,
+    playbackQueueRevision: _playbackQueueRevision,
     playbackState,
     playerProgress,
     queue,
@@ -377,10 +396,13 @@ export const FullScreenPlayer = memo(({
     lastPlayedItem: MobilePlayableAudio | null;
     onClose: () => void;
     onNext: () => void;
+    onPlayQueueIndex?: (index: number) => void;
     onPrevious: () => void;
     onSeek: (positionMs: number) => void;
     onTogglePlayback: () => void;
     onToggleShuffle: () => void;
+    /** Bumps when the JS queue ref mutates so memoized player re-reads `queue`. */
+    playbackQueueRevision: number;
     playbackState: AndroidPlaybackState;
     playerProgress: SharedValue<number>;
     queue: { index: number; items: MobilePlayableAudio[] } | null;
@@ -480,11 +502,12 @@ export const FullScreenPlayer = memo(({
         setIsArtworkZoomOpen(false);
     }, [artworkUrl]);
 
+    const openSpring = reducedMotion ? REDUCED_MOTION_SPRING : PLAYER_OPEN_SPRING;
+    const closeSpring = reducedMotion ? REDUCED_MOTION_SPRING : PLAYER_CLOSE_SPRING;
     const settleSpring = reducedMotion ? REDUCED_MOTION_SPRING : OPEN_SPRING;
     const dismissPlayer = useCallback(() => {
-        // Animate playerProgress to 0 and flip the parent's visible state once
-        // the motion finishes; visible stays true for the duration of the close
-        // so the user can actually see the fullscreen sliding away.
+        // Animate closed first; flip parent state only once the motion finishes
+        // so tab chrome and visible stay in sync with what the user sees.
         const onFinish = (finished?: boolean) => {
             'worklet';
             if (finished) {
@@ -493,8 +516,8 @@ export const FullScreenPlayer = memo(({
         };
         playerProgress.value = reducedMotion
             ? withTiming(0, { duration: 0 }, onFinish)
-            : withSpring(0, settleSpring, onFinish);
-    }, [playerProgress, onClose, reducedMotion, settleSpring]);
+            : withSpring(0, closeSpring, onFinish);
+    }, [closeSpring, onClose, playerProgress, reducedMotion]);
 
     const openFullscreenContextMenu = useCallback(() => {
         const item = playbackState.status !== 'idle' ? playbackState.item : lastPlayedItem;
@@ -648,22 +671,25 @@ export const FullScreenPlayer = memo(({
                             : withSpring(
                                   0,
                                   {
-                                      ...settleSpring,
-                                      velocity: -event.velocityY / PLAYER_EXPANSION_DISTANCE,
+                                      ...closeSpring,
+                                      velocity:
+                                          -event.velocityY / PLAYER_EXPANSION_DISTANCE,
                                   },
                                   onFinish,
                               );
                         return;
                     }
                     playerProgress.value = withSpring(1, {
-                        ...settleSpring,
+                        ...openSpring,
                         velocity: -event.velocityY / PLAYER_EXPANSION_DISTANCE,
                     });
                 }),
         [
+            closeSpring,
             dragMode,
             dragStartQueue,
             onClose,
+            openSpring,
             playerProgress,
             queueProgress,
             reducedMotion,
@@ -741,8 +767,9 @@ export const FullScreenPlayer = memo(({
         return {
             borderTopLeftRadius: interpolate(p, [0, 1], [MINI_PLAYER_RADIUS, 0], 'clamp'),
             borderTopRightRadius: interpolate(p, [0, 1], [MINI_PLAYER_RADIUS, 0], 'clamp'),
+            elevation: shellElevation(p),
             height: interpolate(p, [0, 1], [MINI_PLAYER_HEIGHT, SCREEN_HEIGHT], 'clamp'),
-            opacity: interpolate(p, [0, 0.035], [0, 1], 'clamp'),
+            opacity: shellMaterialOpacity(p),
             top: interpolate(
                 p,
                 [0, 1],
@@ -751,12 +778,16 @@ export const FullScreenPlayer = memo(({
             ),
         };
     });
+    const backdropWashStyle = useAnimatedStyle(() => ({
+        opacity: washLayerOpacity(playerProgress.value),
+        transform: [{ translateY: washLayerTranslateY(playerProgress.value) }],
+    }));
     const collapsedSurfaceStyle = useAnimatedStyle(() => ({
-        opacity: interpolate(playerProgress.value, [0, 0.46], [1, 0], 'clamp'),
+        opacity: collapsedLidOpacity(playerProgress.value),
     }));
     const playerContentAnimatedStyle = useAnimatedStyle(() => {
         const p = playerProgress.value;
-        const revealTranslateY = interpolate(p, [0.34, 1], [26, 0], 'clamp');
+        const reveal = contentRevealProgress(p);
         const paddingCompensationY = interpolate(
             p,
             [0, 1],
@@ -764,13 +795,17 @@ export const FullScreenPlayer = memo(({
             'clamp',
         );
         return {
-            opacity: interpolate(p, [0.34, 0.7], [0, 1], 'clamp'),
+            opacity: contentRevealOpacity(reveal),
             transform: [
-                { translateY: revealTranslateY + paddingCompensationY },
-                { scale: interpolate(p, [0.34, 1], [0.97, 1], 'clamp') },
+                {
+                    translateY: contentRevealTranslateY(reveal, paddingCompensationY),
+                },
             ],
         };
     });
+    const staticHeroArtworkStyle = useAnimatedStyle(() => ({
+        opacity: staticHeroArtworkOpacity(playerProgress.value),
+    }));
 
     // Stay mounted whenever there's something to play, so close animations
     // triggered from outside the player (back button, navigation) still get to
@@ -840,65 +875,63 @@ export const FullScreenPlayer = memo(({
                 cross-fade on track change so the new album color rolls in smoothly,
                 and stops are perceptually generated in OKLab so the mid-gradient
                 stays in the album's color family instead of muddying. */}
-            {bgPrev ? (
+            <Reanimated.View
+                pointerEvents="none"
+                style={[StyleSheet.absoluteFillObject, backdropWashStyle]}
+            >
+                {bgPrev ? (
+                    <Animated.View
+                        pointerEvents="none"
+                        style={[
+                            StyleSheet.absoluteFillObject,
+                            {
+                                opacity: bgFade.interpolate({
+                                    inputRange: [0, 1],
+                                    outputRange: [1, 0],
+                                }),
+                            },
+                        ]}
+                    >
+                        <LinearGradient
+                            colors={buildBackdropStops(bgPrev) as unknown as string[]}
+                            end={{ x: 0.82, y: 1 }}
+                            start={{ x: 0.18, y: 0 }}
+                            style={StyleSheet.absoluteFillObject}
+                        />
+                    </Animated.View>
+                ) : null}
                 <Animated.View
                     pointerEvents="none"
                     style={[
                         StyleSheet.absoluteFillObject,
                         {
-                            opacity: bgFade.interpolate({
-                                inputRange: [0, 1],
-                                outputRange: [1, 0],
-                            }),
+                            opacity: bgCurr
+                                ? bgFade.interpolate({
+                                      inputRange: [0, 1],
+                                      outputRange: [0, 1],
+                                  })
+                                : 1,
                         },
                     ]}
                 >
                     <LinearGradient
-                        colors={buildBackdropStops(bgPrev) as unknown as string[]}
+                        colors={buildBackdropStops(bgCurr) as unknown as string[]}
                         end={{ x: 0.82, y: 1 }}
                         start={{ x: 0.18, y: 0 }}
                         style={StyleSheet.absoluteFillObject}
                     />
                 </Animated.View>
-            ) : null}
-            <Animated.View
-                pointerEvents="none"
-                style={[
-                    StyleSheet.absoluteFillObject,
-                    {
-                        opacity: bgCurr
-                            ? bgFade.interpolate({
-                                  inputRange: [0, 1],
-                                  outputRange: [0, 1],
-                              })
-                            : 1,
-                    },
-                ]}
-            >
-                <LinearGradient
-                    colors={buildBackdropStops(bgCurr) as unknown as string[]}
-                    end={{ x: 0.82, y: 1 }}
-                    start={{ x: 0.18, y: 0 }}
-                    style={StyleSheet.absoluteFillObject}
-                />
-            </Animated.View>
-            {/* Dither overlay — breaks 8-bit gradient banding via soft-light
-                blend. The PNG is zero-mean grey noise; soft-light at b≈0.5
-                acts as a small bidirectional perturbation around the
-                underlying brightness, so dark and mid tones both pick up
-                ±2-3/255 of random scatter. Below the collapsed surface and
-                content so the dither doesn't affect anything but the
-                gradient itself. */}
-            <View
-                pointerEvents="none"
-                style={[StyleSheet.absoluteFillObject, styles.fullPlayerDither]}
-            >
-                <Image
-                    resizeMode="repeat"
-                    source={ditherTexture}
-                    style={StyleSheet.absoluteFillObject}
-                />
-            </View>
+                <View
+                    pointerEvents="none"
+                    style={[StyleSheet.absoluteFillObject, styles.fullPlayerDither]}
+                >
+                    <Image
+                        resizeMode="repeat"
+                        source={ditherTexture}
+                        style={StyleSheet.absoluteFillObject}
+                    />
+                </View>
+            </Reanimated.View>
             <Reanimated.View
                 pointerEvents="none"
                 style={[
@@ -906,6 +939,12 @@ export const FullScreenPlayer = memo(({
                     styles.fullPlayerCollapsedSurface,
                     collapsedSurfaceStyle,
                 ]}
+            />
+
+            <PlayerMorphArtwork
+                artworkUrl={artworkUrl}
+                letter={display.title.slice(0, 1)}
+                playerProgress={playerProgress}
             />
 
             <Reanimated.View style={[styles.fullPlayerContent, playerContentAnimatedStyle]}>
@@ -932,6 +971,7 @@ export const FullScreenPlayer = memo(({
 
             {/* Artwork — fixed proportional size so it can never overlap metadata below */}
             <View style={styles.fullPlayerArtworkWrap}>
+                <Reanimated.View style={[styles.fullPlayerArtworkHeroSlot, staticHeroArtworkStyle]}>
                 <Pressable
                     accessibilityLabel={`Open ${display.title} artwork`}
                     accessibilityRole="button"
@@ -973,6 +1013,7 @@ export const FullScreenPlayer = memo(({
                         profile={getPlaybackQualityProfile(displayItem)}
                     />
                 </Pressable>
+                </Reanimated.View>
             </View>
 
             {/* Bottom stack: each block owns its own row — no overlap. */}
@@ -1109,6 +1150,7 @@ export const FullScreenPlayer = memo(({
             interactive={isQueueInteractive}
             onChapterSeek={onSeek}
             onClose={closeQueue}
+            onPlayQueueIndex={onPlayQueueIndex}
             queue={queue}
             sheetStyle={queueSheetStyle}
         />
@@ -1462,6 +1504,7 @@ export const QueueSheetOverlay = memo(({
     interactive,
     onChapterSeek,
     onClose,
+    onPlayQueueIndex,
     queue,
     sheetStyle,
 }: {
@@ -1471,6 +1514,7 @@ export const QueueSheetOverlay = memo(({
     interactive: boolean;
     onChapterSeek?: (positionMs: number) => void;
     onClose: () => void;
+    onPlayQueueIndex?: (index: number) => void;
     queue: { index: number; items: MobilePlayableAudio[] } | null;
     sheetStyle: ReturnType<typeof useAnimatedStyle>;
 }) => {
@@ -1594,6 +1638,10 @@ export const QueueSheetOverlay = memo(({
             onClose,
         ],
     );
+    const listScrollGesture = useMemo(
+        () => Gesture.Simultaneous(Gesture.Native(), listTopPullGesture),
+        [listTopPullGesture],
+    );
     const keyExtractor = useCallback((row: QueueSheetListItem) => {
         if (row.kind === 'chapter') {
             return `${row.chapter.id}-${row.index}`;
@@ -1661,7 +1709,11 @@ export const QueueSheetOverlay = memo(({
             const isActive = queue?.index === row.index;
             const queueRowProfile = getPlaybackQualityProfile(row.item);
             return (
-                <View style={styles.queueRow}>
+                <Pressable
+                    accessibilityRole="button"
+                    onPress={() => onPlayQueueIndex?.(row.index)}
+                    style={styles.queueRow}
+                >
                     <View>
                         <ArtworkImage
                             fallbackStyle={styles.queueRowThumbFallback}
@@ -1704,10 +1756,10 @@ export const QueueSheetOverlay = memo(({
                             />
                         </View>
                     ) : null}
-                </View>
+                </Pressable>
             );
         },
-        [activeChapterIndex, onChapterSeek, queue?.index],
+        [activeChapterIndex, onChapterSeek, onPlayQueueIndex, queue?.index],
     );
     return (
         <>
@@ -1744,7 +1796,7 @@ export const QueueSheetOverlay = memo(({
                         </View>
                     </View>
                 </GestureDetector>
-                <GestureDetector gesture={listTopPullGesture}>
+                <GestureDetector gesture={listScrollGesture}>
                     <Reanimated.View style={styles.queueSheetScroll}>
                         <ReanimatedFlashList
                             contentContainerStyle={styles.queueSheetContent}

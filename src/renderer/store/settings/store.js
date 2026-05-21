@@ -1,0 +1,17 @@
+import { devtools, persist, subscribeWithSelector } from 'zustand/middleware';
+import { immer } from 'zustand/middleware/immer';
+import { createWithEqualityFn } from 'zustand/traditional';
+import { mergeOverridingColumns } from '/@/renderer/store/utils';
+import { createSettingsActions } from './actions';
+import { initialState, initialStateWithEnv } from './defaults';
+import { createSettingsMigrate } from './migrate';
+export const SETTINGS_STORE_VERSION = 33;
+export const useSettingsStore = createWithEqualityFn()(persist(devtools(subscribeWithSelector(immer((set) => ({
+    actions: createSettingsActions(set),
+    ...initialStateWithEnv,
+}))), { name: 'store_settings' }), {
+    merge: mergeOverridingColumns,
+    migrate: createSettingsMigrate(initialState),
+    name: 'store_settings',
+    version: SETTINGS_STORE_VERSION,
+}));

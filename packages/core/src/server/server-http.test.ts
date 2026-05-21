@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
-import { normalizeBaseUrl } from './server-http';
+import { getFetch, normalizeBaseUrl } from './server-http';
 
 describe('normalizeBaseUrl', () => {
     it('trims whitespace and trailing slashes', () => {
@@ -13,5 +13,19 @@ describe('normalizeBaseUrl', () => {
         expect(normalizeBaseUrl('http://localhost:4533/subsonic')).toBe(
             'http://localhost:4533/subsonic',
         );
+    });
+});
+
+describe('getFetch', () => {
+    it('wraps the resolved fetcher with a timeout layer', () => {
+        const fetcher = vi.fn().mockResolvedValue({
+            json: async () => ({}),
+            ok: true,
+            status: 200,
+        });
+
+        const wrapped = getFetch(fetcher);
+
+        expect(wrapped).not.toBe(fetcher);
     });
 });

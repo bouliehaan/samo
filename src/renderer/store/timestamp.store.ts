@@ -1,19 +1,16 @@
-import { subscribeWithSelector } from 'zustand/middleware';
-import { createWithEqualityFn } from 'zustand/traditional';
+import { createSubscribedTraditionalStore } from '/@/renderer/lib/zustand-traditional';
 
 interface TimestampState {
     setTimestamp: (timestamp: number) => void;
     timestamp: number;
 }
 
-export const useTimestampStoreBase = createWithEqualityFn<TimestampState>()(
-    subscribeWithSelector((set) => ({
+export const useTimestampStoreBase = createSubscribedTraditionalStore<TimestampState>()((set) => ({
         setTimestamp: (timestamp: number) => {
             set({ timestamp });
         },
         timestamp: 0,
-    })),
-);
+    }));
 
 export const subscribePlayerProgress = (
     onChange: (properties: { timestamp: number }, prev: { timestamp: number }) => void,

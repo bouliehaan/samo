@@ -245,6 +245,15 @@ Completed the audit’s “move pure derivations out of the store interface” s
 
 **Still open:** None from the F6/F7/F12/F15 batch; F8 completed 2026-05-20.
 
+### 2026-05-20 — Android + `@samo/core` hygiene (IDE green)
+
+- **ESLint:** Fixed broken `no-console` rule (`allow: []` crashed the extension). Android + core overrides at end of flat config (spaces vs tabs, Reanimated `.value` writes, no perfectionist on mobile).
+- **`@samo/core` tsconfig:** Standalone `packages/core/tsconfig.json` (no longer extends renderer `tsconfig.web.json`). Android `tsconfig` no longer `include`s all of `packages/core/src` — avoids duplicate/conflicting diagnostics in the Problems panel.
+- **Artifacts:** Removed stray `test-fixtures.js` / `test-fixtures.d.ts` from core.
+- **Scripts:** `apps/android` → `pnpm run verify` (`typecheck` + `lint`); `packages/core` → `pnpm test` runs core-only vitest from repo root.
+
+**Verify:** `cd apps/android && pnpm run verify`, `pnpm run typecheck:core`, `pnpm test` (56 total), `cd packages/core && pnpm test` (20 core).
+
 ### 2026-05-20 — F6 Kotlin split + F7/F12/F15 completion
 
 - **F6:** `SamoAudioModule.kt` is a thin RN bridge (~68 LOC); collaborators under `apps/android/android/app/src/main/java/app/samo/android/audio/` (`SamoAudioEngine`, `SamoCastSessionManager`, `SamoOutputRoutes`, `SamoBitPerfect`, `SamoLiveReconnect`, `SamoServiceBinder`, `SamoReadableMapExt`, `SamoAudioTypes`). Verify on device: `cd apps/android/android && ./gradlew :app:compileDebugKotlin`.

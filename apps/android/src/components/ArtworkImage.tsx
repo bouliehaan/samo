@@ -18,11 +18,13 @@ import { styles } from '../theme/styles';
 export const ArtworkImage = ({
     fallbackStyle,
     letter,
+    onLoad,
     style,
     uri,
 }: {
     fallbackStyle?: StyleProp<ViewStyle>;
     letter: string;
+    onLoad?: () => void;
     style: StyleProp<ImageStyle>;
     uri?: string;
 }) => {
@@ -52,6 +54,7 @@ export const ArtworkImage = ({
             cachePolicy="memory-disk"
             contentFit="cover"
             onError={() => setErrored(true)}
+            onLoad={onLoad}
             recyclingKey={uri}
             source={uri}
             style={style as StyleProp<ImageStyle>}

@@ -53,13 +53,49 @@ export const RadioScreen = memo(({
             ? getSectionsById(homeContentState, [MobileHomeSectionId.RADIO])[0]
             : undefined;
     const stations = section?.items ?? [];
-    const sortedStations = useMemo(
-        () =>
-            activeSort === 'name'
-                ? [...stations].sort((left, right) => left.title.localeCompare(right.title))
-                : sortHomeItemsByRecents(stations, recentItems),
-        [activeSort, recentItems, stations],
+    const stationsByRecentKey = useMemo(
+        () => new Map(stations.map((station) => [getRecentContentItemKey(station), station])),
+        [stations],
     );
+    const featuredStation = useMemo(() => {
+        if (stations.length === 0) {
+            return null;
+        }
+
+        for (const recent of recentItems) {
+            if (recent.item.type !== MobileHomeItemType.RADIO) {
+                continue;
+            }
+
+            const station = stationsByRecentKey.get(recent.key);
+            if (station) {
+                return station;
+            }
+        }
+
+        if (nowPlayingRadioId) {
+            const playing = stations.find(
+                (station) => station.playback?.id === nowPlayingRadioId,
+            );
+            if (playing) {
+                return playing;
+            }
+        }
+
+        return [...stations].sort((left, right) => left.title.localeCompare(right.title))[0]!;
+    }, [nowPlayingRadioId, recentItems, stations, stationsByRecentKey]);
+    const otherStations = useMemo(() => {
+        if (!featuredStation) {
+            return [];
+        }
+
+        const featuredKey = getContentItemKey(featuredStation);
+        const rest = stations.filter((station) => getContentItemKey(station) !== featuredKey);
+
+        return activeSort === 'name'
+            ? [...rest].sort((left, right) => left.title.localeCompare(right.title))
+            : sortHomeItemsByRecents(rest, recentItems);
+    }, [activeSort, featuredStation, recentItems, stations]);
     const activeSortLabel =
         LIBRARY_SORTS.find((sort) => sort.id === activeSort)?.label ?? 'Recents';
     const activeSortShortLabel = activeSort === 'name' ? 'Name' : 'Recent';
@@ -146,13 +182,15 @@ export const RadioScreen = memo(({
         );
     }
 
+    if (!featuredStation) {
+        return null;
+    }
+
     const recentRadioKeys = new Set(
         recentItems
             .filter((r) => r.item.type === MobileHomeItemType.RADIO)
             .map((r) => getRecentContentItemKey(r.item)),
     );
-    const featuredStation = sortedStations[0]!;
-    const otherStations = sortedStations.slice(1);
     const featuredIsPlaying =
         nowPlayingRadioId !== null && featuredStation.playback?.id === nowPlayingRadioId;
 

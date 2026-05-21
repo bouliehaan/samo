@@ -18,7 +18,12 @@ import { getPersistedServerAuthKey } from './persisted-server';
 export type AndroidMediaDetailState =
     | { detail: MobileMediaDetail; status: 'loaded' }
     | { itemTitle: string; message: string; status: 'error' }
-    | { itemTitle: string; status: 'loading' }
+    | {
+          itemArtworkUrl?: string;
+          itemTitle: string;
+          itemType?: MobileHomeItem['type'];
+          status: 'loading';
+      }
     | { status: 'idle' };
 
 type AndroidSelectableMediaItem = MobileHomeItem | MobileSearchItem;

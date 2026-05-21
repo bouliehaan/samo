@@ -16,6 +16,7 @@
     },
     "types": "./src/index.ts",
     "scripts": {
-        "test": "vitest run --config ../../vitest.config.ts packages/core/src"
+        "typecheck": "tsc --noEmit -p tsconfig.json",
+        "test": "pnpm -C ../.. exec vitest run --config vitest.config.ts packages/core/src"
     }
 }

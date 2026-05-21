@@ -1,0 +1,11 @@
+# Prettier also discovers the repo root config when run from apps/android.
+# This file documents the intended profile for an Android-only format pass.
+singleQuote: true
+semi: true
+printWidth: 100
+tabWidth: 4
+trailingComma: all
+useTabs: false
+arrowParens: always
+endOfLine: lf
+bracketSpacing: true

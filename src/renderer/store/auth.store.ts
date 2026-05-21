@@ -3,7 +3,8 @@ import { nanoid } from 'nanoid/non-secure';
 import { devtools, persist } from 'zustand/middleware';
 import { immer } from 'zustand/middleware/immer';
 import { shallow } from 'zustand/shallow';
-import { createWithEqualityFn } from 'zustand/traditional';
+
+import { createSubscribedTraditionalStore } from '/@/renderer/lib/zustand-traditional';
 
 import {
     ServerListItem,
@@ -102,7 +103,7 @@ const getFallbackActiveServerIds = (state: Partial<AuthState>) => {
     };
 };
 
-export const useAuthStore = createWithEqualityFn<AuthSlice>()(
+export const useAuthStore = createSubscribedTraditionalStore<AuthSlice>()(
     persist(
         devtools(
             immer((set, get) => ({

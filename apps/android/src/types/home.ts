@@ -29,6 +29,7 @@ export interface HomeDisplaySection {
 export interface HomeScreenProps {
     homeContentState: AndroidHomeContentState;
     onManageServers: () => void;
+    onPrefetchItem?: (item: AndroidRecentContentSourceItem) => void;
     onSelectItem: (item: AndroidRecentContentSourceItem) => void;
     onViewAll: (section: HomeDisplaySection) => void;
     recentItems: AndroidRecentContentItem[];

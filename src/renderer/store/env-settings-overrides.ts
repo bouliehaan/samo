@@ -1,3 +1,6 @@
+import cloneDeep from 'lodash/cloneDeep';
+import mergeWith from 'lodash/mergeWith';
+
 import type { SettingsState } from './settings.store';
 
 import { sanitizeCss } from '/@/renderer/utils/sanitize';
@@ -318,6 +321,11 @@ const ENV_SETTING_SPECS: EnvSettingSpec[] = [
         type: 'string',
     },
 ];
+
+/** Deep-merge persisted settings defaults with `FS_*` window env overrides. */
+export function mergeSettingsWithEnv<T extends object>(base: T): T {
+    return mergeWith(cloneDeep(base), getEnvSettingsOverrides()) as T;
+}
 
 export function getEnvSettingsOverrides(): EnvSettingsOverrides {
     const w = getWin();

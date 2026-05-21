@@ -14,14 +14,41 @@ export const MINI_PLAYER_RADIUS = 28;
 export const FULL_PLAYER_EXPANDED_TOP = -PLAYER_SAFE_TOP;
 export const FULL_PLAYER_PADDING_TOP = Platform.OS === 'android' ? 42 : 24;
 export const FULL_PLAYER_PADDING_BOTTOM = 28;
+// Match the absolute miniplayer (`bottom: MINI_PLAYER_BOTTOM`) so the
+// expanding shell lands on the same pixel row at progress 0.
 export const MINI_PLAYER_COLLAPSED_TOP =
-    SCREEN_HEIGHT - PLAYER_SAFE_TOP - MINI_PLAYER_BOTTOM - MINI_PLAYER_HEIGHT;
+    SCREEN_HEIGHT - MINI_PLAYER_BOTTOM - MINI_PLAYER_HEIGHT;
 export const PLAYER_EXPANSION_DISTANCE = MINI_PLAYER_COLLAPSED_TOP - FULL_PLAYER_EXPANDED_TOP;
 export const FULL_PLAYER_ARTWORK_SIZE = Math.min(SCREEN_WIDTH - 64, SCREEN_HEIGHT * 0.42);
 
-// Tuned for a "weighty but settling" feel — never overshoots more than ~3%, lands
-// in under 400 ms. Shared by the fullscreen player open and drag-cancel paths so
-// both motions read as the same physical object.
+/** Mini row inset — must match `miniPlayerTouchable` padding. */
+export const MINI_PLAYER_ARTWORK_LEFT = 18;
+export const MINI_PLAYER_ARTWORK_RADIUS = 10;
+
+export const FULL_PLAYER_HEADER_HEIGHT = 44;
+/** Music layout: metadata + seek + controls + cast row below the flex artwork well. */
+export const FULL_PLAYER_BELOW_ARTWORK_CHROME = 310;
+export const FULL_PLAYER_HERO_SHADOW_OFFSET = 8;
+
+const FULL_PLAYER_ARTWORK_WELL =
+    SCREEN_HEIGHT -
+    FULL_PLAYER_PADDING_TOP -
+    FULL_PLAYER_PADDING_BOTTOM -
+    FULL_PLAYER_HEADER_HEIGHT -
+    FULL_PLAYER_BELOW_ARTWORK_CHROME -
+    FULL_PLAYER_ARTWORK_SIZE;
+
+/** Hero center in the shell's full-size content coordinate space. */
+export const FULL_PLAYER_HERO_TOP =
+    FULL_PLAYER_PADDING_TOP +
+    FULL_PLAYER_HEADER_HEIGHT +
+    Math.max(0, FULL_PLAYER_ARTWORK_WELL / 2) +
+    FULL_PLAYER_HERO_SHADOW_OFFSET;
+
+export const FULL_PLAYER_HERO_LEFT =
+    (SCREEN_WIDTH - FULL_PLAYER_ARTWORK_SIZE) / 2;
+
+// Default settle spring for sheets/queue. Player open/close use player-motion springs.
 export const OPEN_SPRING = { damping: 26, mass: 0.9, stiffness: 220 } as const;
 // When the OS-level "reduce motion" setting is on, use an effectively
 // over-damped spring so the same code path arrives at the target without any

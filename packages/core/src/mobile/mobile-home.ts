@@ -1004,3 +1004,248 @@ export const loadMobileHomeContentForServers = async ({
         serverTitle: authentications.map((authentication) => authentication.title).join(' + '),
     };
 };
+
+/** Target size for the Library "Relevant" catalog — fast to load, feels personal. */
+export const LIBRARY_RELEVANT_MAX_ITEMS = 300;
+const LIBRARY_RELEVANT_ALBUM_LIST_SIZE = 50;
+const LIBRARY_RELEVANT_ABS_LIMIT = 80;
+const LIBRARY_RELEVANT_QUALITY_SCAN_LIMIT = 0;
+
+export interface MobileLibraryRelevantContent {
+    errors: string[];
+    items: MobileHomeItem[];
+    loadedAt: number;
+}
+
+export interface MobileLibraryRelevantContentForServersInput {
+    authentications: ServerAuthenticationResult[];
+    fetch?: SamoFetch;
+    maxItems?: number;
+}
+
+const mergeLibraryRelevantItems = (
+    batches: MobileHomeItem[][],
+    maxItems: number,
+): MobileHomeItem[] => {
+    const itemsByKey = new Map<string, MobileHomeItem>();
+
+    for (const batch of batches) {
+        for (const item of batch) {
+            const key = `${item.source?.id ?? 'server'}:${item.type}:${item.id}`;
+            if (!itemsByKey.has(key)) {
+                itemsByKey.set(key, item);
+            }
+        }
+        if (itemsByKey.size >= maxItems) {
+            break;
+        }
+    }
+
+    return [...itemsByKey.values()].slice(0, maxItems);
+};
+
+const loadSubsonicAlbumListItems = async (
+    authentication: ServerAuthenticationResult,
+    fetcher: SamoFetch,
+    type: string,
+    size: number,
+): Promise<MobileHomeItem[]> => {
+    const body = await requestJson<SubsonicAlbumListBody>(
+        fetcher,
+        subsonicUrl(authentication, 'getAlbumList2.view', {
+            size,
+            type,
+        }),
+    );
+    const response = body['subsonic-response'];
+    assertSubsonicOk(response, `Failed to load ${type} albums`);
+
+    const source = getMobileContentSource(authentication);
+
+    return (response?.albumList2?.album ?? []).flatMap((album) => {
+        const id = album.id?.toString();
+        const title = album.name ?? album.title;
+
+        if (!id || !title) {
+            return [];
+        }
+
+        const createdMs = album.created ? Date.parse(album.created) : NaN;
+
+        return {
+            addedAt: Number.isFinite(createdMs) ? createdMs : undefined,
+            artworkUrl: subsonicCoverArtUrl(authentication, album.coverArt, album.id),
+            id,
+            source,
+            subtitle: album.artist ?? (album.year ? String(album.year) : undefined),
+            title,
+            type: MobileHomeItemType.ALBUM,
+        };
+    });
+};
+
+const loadSubsonicLibraryRelevantItems = async (
+    authentication: ServerAuthenticationResult,
+    fetcher: SamoFetch,
+): Promise<MobileHomeItem[]> => {
+    const listSize = LIBRARY_RELEVANT_ALBUM_LIST_SIZE;
+    const [
+        recentAlbumsResult,
+        frequentAlbumsResult,
+        newestAlbumsResult,
+        favoritesResult,
+        playlistsResult,
+        radioResult,
+    ] = await Promise.allSettled([
+        loadSubsonicAlbumListItems(authentication, fetcher, 'recent', listSize),
+        loadSubsonicAlbumListItems(authentication, fetcher, 'frequent', listSize),
+        loadSubsonicAlbumListItems(authentication, fetcher, 'newest', listSize),
+        loadSubsonicFavoriteAlbumsAndArtists(
+            authentication,
+            fetcher,
+            listSize,
+            LIBRARY_RELEVANT_QUALITY_SCAN_LIMIT,
+        ),
+        loadSubsonicPlaylists(authentication, fetcher),
+        loadSubsonicRadio(authentication, fetcher),
+    ]);
+
+    const batches: MobileHomeItem[][] = [];
+
+    if (recentAlbumsResult.status === 'fulfilled') {
+        batches.push(recentAlbumsResult.value);
+    }
+    if (frequentAlbumsResult.status === 'fulfilled') {
+        batches.push(frequentAlbumsResult.value);
+    }
+    if (newestAlbumsResult.status === 'fulfilled') {
+        batches.push(newestAlbumsResult.value);
+    }
+    if (favoritesResult.status === 'fulfilled') {
+        batches.push(favoritesResult.value.flatMap((section) => section.items));
+    }
+    if (playlistsResult.status === 'fulfilled') {
+        batches.push(playlistsResult.value.items);
+    }
+    if (radioResult.status === 'fulfilled') {
+        batches.push(radioResult.value.items);
+    }
+
+    return mergeLibraryRelevantItems(batches, LIBRARY_RELEVANT_MAX_ITEMS);
+};
+
+const loadAudiobookshelfLibraryRelevantItems = async (
+    authentication: ServerAuthenticationResult,
+    fetcher: SamoFetch,
+): Promise<MobileHomeItem[]> => {
+    const librariesBody = await requestJson<AudiobookshelfLibrariesBody>(
+        fetcher,
+        `${authentication.url}/api/libraries`,
+        {
+            headers: { Authorization: `Bearer ${authentication.credential}` },
+            method: 'GET',
+        },
+    );
+    const libraries = librariesBody.libraries ?? [];
+    const bookLibraries = libraries.filter((library) => library.mediaType === 'book');
+    const podcastLibraries = libraries.filter((library) => library.mediaType === 'podcast');
+    const [audiobooksResult, podcastsResult] = await Promise.allSettled([
+        Promise.all(
+            bookLibraries.map((library) =>
+                loadAudiobookshelfItems(
+                    authentication,
+                    fetcher,
+                    library,
+                    MobileHomeItemType.AUDIOBOOK,
+                    LIBRARY_RELEVANT_ABS_LIMIT,
+                ),
+            ),
+        ),
+        Promise.all(
+            podcastLibraries.map((library) =>
+                loadAudiobookshelfItems(
+                    authentication,
+                    fetcher,
+                    library,
+                    MobileHomeItemType.PODCAST,
+                    LIBRARY_RELEVANT_ABS_LIMIT,
+                ),
+            ),
+        ),
+    ]);
+
+    const batches: MobileHomeItem[][] = [];
+
+    if (audiobooksResult.status === 'fulfilled') {
+        batches.push(audiobooksResult.value.flat());
+    }
+    if (podcastsResult.status === 'fulfilled') {
+        batches.push(podcastsResult.value.flat());
+    }
+
+    return mergeLibraryRelevantItems(batches, LIBRARY_RELEVANT_MAX_ITEMS);
+};
+
+const loadMobileLibraryRelevantContent = async ({
+    authentication,
+    fetch: fetcher,
+    maxItems = LIBRARY_RELEVANT_MAX_ITEMS,
+}: {
+    authentication: ServerAuthenticationResult;
+    fetch?: SamoFetch;
+    maxItems?: number;
+}): Promise<MobileHomeItem[]> => {
+    const request = getFetch(fetcher);
+
+    if (authentication.type === ServerType.AUDIOBOOKSHELF) {
+        return loadAudiobookshelfLibraryRelevantItems(authentication, request);
+    }
+
+    if (
+        authentication.type === ServerType.NAVIDROME ||
+        authentication.type === ServerType.SUBSONIC
+    ) {
+        return loadSubsonicLibraryRelevantItems(authentication, request);
+    }
+
+    return [];
+};
+
+/**
+ * Build the Library "Relevant" catalog: server-side recency signals (recent /
+ * frequent / newest albums, favorites, playlists, radio, ABS recents) merged
+ * across every connected server, capped for a fast first paint.
+ */
+export const loadMobileLibraryRelevantContentForServers = async ({
+    authentications,
+    fetch: fetcher,
+    maxItems = LIBRARY_RELEVANT_MAX_ITEMS,
+}: MobileLibraryRelevantContentForServersInput): Promise<MobileLibraryRelevantContent> => {
+    const loadedAt = Date.now();
+
+    if (authentications.length === 0) {
+        return { errors: [], items: [], loadedAt };
+    }
+
+    const results = await Promise.allSettled(
+        authentications.map((authentication) =>
+            loadMobileLibraryRelevantContent({ authentication, fetch: fetcher, maxItems }),
+        ),
+    );
+    const batches: MobileHomeItem[][] = [];
+    const errors: string[] = [];
+
+    results.forEach((result, index) => {
+        if (result.status === 'fulfilled') {
+            batches.push(result.value);
+        } else {
+            errors.push(`${authentications[index].title}: ${getErrorMessage(result.reason)}`);
+        }
+    });
+
+    return {
+        errors,
+        items: mergeLibraryRelevantItems(batches, maxItems),
+        loadedAt,
+    };
+};

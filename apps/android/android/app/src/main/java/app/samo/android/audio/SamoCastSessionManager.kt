@@ -68,6 +68,7 @@ internal interface SamoAudioCastHost {
   fun ensureOutputRouteDiscovery(context: CastContext)
   fun cancelPendingLiveReconnect()
   fun isCastActive(): Boolean
+  fun syncCastNotificationState()
 }
 
 internal class SamoCastSessionManager(
@@ -242,6 +243,7 @@ internal class SamoCastSessionManager(
     currentRemoteMediaClient?.removeProgressListener(castProgressListener)
     currentRemoteMediaClient?.unregisterCallback(remoteMediaClientCallback)
     currentRemoteMediaClient = null
+    host.syncCastNotificationState()
   }
 
   fun getActiveRemoteMediaClient(): RemoteMediaClient? {
@@ -455,10 +457,12 @@ internal class SamoCastSessionManager(
 
   fun emitCastPlaybackState(status: String? = null) {
     if (getActiveRemoteMediaClient() == null || host.currentCastSource == null) {
+      host.syncCastNotificationState()
       return
     }
 
     host.emit("SamoAudioPlaybackState", getCastStatusMap(status))
+    host.syncCastNotificationState()
   }
 
   fun getCastStatusMap(status: String? = null): WritableMap {

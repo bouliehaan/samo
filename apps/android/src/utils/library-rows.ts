@@ -1,4 +1,5 @@
 import { type AndroidHomeContentState } from '../services/home-content';
+import { type AndroidLibraryRelevantState } from '../services/library-content';
 import {
     type AndroidRecentContentItem,
     type AndroidRecentContentSourceItem,
@@ -11,6 +12,7 @@ import {
     LIBRARY_FILTERS,
     type LibraryFilter,
     type LibraryFullCollectionsState,
+    type LibraryScope,
     type LibrarySort,
 } from '../types/library-tab';
 import { type LibraryMediaType } from '../types/library-display';
@@ -41,7 +43,23 @@ export const putLibraryDisplayItem = (
     });
 };
 
-export const getBaseLibraryItems = (
+export const getRelevantLibraryItems = (
+    libraryRelevantState: AndroidLibraryRelevantState,
+): LibraryDisplayItem[] => {
+    if (libraryRelevantState.status !== 'loaded') {
+        return [];
+    }
+
+    const itemsByKey = new Map<string, LibraryDisplayItem>();
+
+    libraryRelevantState.items.forEach((item) => {
+        putLibraryDisplayItem(itemsByKey, item);
+    });
+
+    return [...itemsByKey.values()];
+};
+
+export const getAllLibraryItems = (
     homeContentState: AndroidHomeContentState,
     fullCollections: LibraryFullCollectionsState = EMPTY_LIBRARY_FULL_COLLECTIONS,
 ): LibraryDisplayItem[] => {
@@ -75,6 +93,19 @@ export const getBaseLibraryItems = (
     }
 
     return [...itemsByKey.values()];
+};
+
+export const getLibraryBaseItems = (
+    scope: LibraryScope,
+    homeContentState: AndroidHomeContentState,
+    libraryRelevantState: AndroidLibraryRelevantState,
+    fullCollections: LibraryFullCollectionsState = EMPTY_LIBRARY_FULL_COLLECTIONS,
+): LibraryDisplayItem[] => {
+    if (scope === 'relevant') {
+        return getRelevantLibraryItems(libraryRelevantState);
+    }
+
+    return getAllLibraryItems(homeContentState, fullCollections);
 };
 
 export const getAvailableLibraryFilters = (

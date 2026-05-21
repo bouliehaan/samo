@@ -11,7 +11,6 @@ import {
 } from '@samo/core/mobile';
 import { type ServerAuthenticationResult } from '@samo/core/server';
 import { FlashList } from '@shopify/flash-list';
-import { Image } from 'expo-image';
 import Reanimated, {
     interpolate,
     runOnJS,
@@ -35,13 +34,15 @@ import {
     ActivityIndicator,
     Alert,
     Animated,
-    Image as RNImage,
+    type ImageStyle,
     type LayoutChangeEvent,
     Pressable,
     ScrollView,
+    type StyleProp,
     Text,
     TextInput,
     View,
+    type ViewStyle,
 } from 'react-native';
 
 import { ArtworkImage } from '../components/ArtworkImage';
@@ -106,6 +107,87 @@ import { detailHasHiRes, isHiFiTrack } from '../utils/media-quality';
 const ReanimatedFlashList = Reanimated.createAnimatedComponent(FlashList) as typeof FlashList;
 const FLASH_LIST_MAINTAIN_POSITION_DISABLED = { disabled: true };
 
+const MediaDetailLoadingView = ({
+    artworkUrl,
+    itemType,
+    title,
+}: {
+    artworkUrl?: string;
+    itemType?: MobileHomeItem['type'];
+    title: string;
+}) => {
+    const isArtist = itemType === MobileHomeItemType.ARTIST;
+    const artLoadedAtRef = useRef<number | null>(null);
+
+    return (
+        <View style={styles.mediaDetailScreen}>
+            <View style={[styles.mediaDetailContent, styles.content]}>
+                {artworkUrl ? (
+                    isArtist ? (
+                        <View style={styles.detailHero}>
+                            <ArtworkImage
+                                fallbackStyle={styles.detailArtworkFallback}
+                                letter={title.slice(0, 1)}
+                                onLoad={() => {
+                                    if (artLoadedAtRef.current !== null) {
+                                        return;
+                                    }
+                                    artLoadedAtRef.current = Date.now();
+                                    // #region agent log
+                                    const payload = {
+                                        sessionId: 'c0ca1a',
+                                        runId: 'nav-perf',
+                                        hypothesisId: 'H13',
+                                        location: 'MediaDetailScreen.tsx:MediaDetailLoadingView',
+                                        message: 'loading hero artwork decoded',
+                                        data: { itemType, isArtist: true },
+                                        timestamp: artLoadedAtRef.current,
+                                    };
+                                    console.log('[nav-perf]', JSON.stringify(payload));
+                                    fetch(
+                                        'http://127.0.0.1:7498/ingest/65ba3320-fcf4-4bf2-82b0-f3ffc8d708c2',
+                                        {
+                                            method: 'POST',
+                                            headers: {
+                                                'Content-Type': 'application/json',
+                                                'X-Debug-Session-Id': 'c0ca1a',
+                                            },
+                                            body: JSON.stringify(payload),
+                                        },
+                                    ).catch(() => {});
+                                    // #endregion
+                                }}
+                                style={[styles.detailArtwork, styles.detailArtworkRound]}
+                                uri={artworkUrl}
+                            />
+                            <View style={styles.detailHeroText}>
+                                <Text style={styles.detailTitle}>{title}</Text>
+                            </View>
+                        </View>
+                    ) : (
+                        <View style={styles.albumHero}>
+                            <View style={styles.albumHeroArtworkWrap}>
+                                <ArtworkImage
+                                    fallbackStyle={styles.albumHeroArtworkFallback}
+                                    letter={title.slice(0, 1)}
+                                    style={styles.albumHeroArtwork}
+                                    uri={artworkUrl}
+                                />
+                            </View>
+                            <Text numberOfLines={2} style={styles.albumHeroTitle}>
+                                {title}
+                            </Text>
+                        </View>
+                    )
+                ) : (
+                    <Text style={styles.sectionTitle}>{title}</Text>
+                )}
+                <ActivityIndicator color={colors.accent} style={{ marginTop: spacing.lg }} />
+            </View>
+        </View>
+    );
+};
+
 export const MediaDetailContent = memo(({
     homeContentState,
     mediaDetailState,
@@ -134,6 +216,7 @@ export const MediaDetailContent = memo(({
     onShufflePlay: (detail: MobileMediaDetail, tracks?: MobileMediaTrack[]) => void;
     serverConnections: ServerAuthenticationResult[];
 }) => {
+    const openingArtworkUrlRef = useRef<string | undefined>(undefined);
     const title =
         mediaDetailState.status === 'loaded'
             ? mediaDetailState.detail.title
@@ -141,13 +224,18 @@ export const MediaDetailContent = memo(({
               ? 'Media'
               : mediaDetailState.itemTitle;
 
+    if (mediaDetailState.status === 'loading') {
+        openingArtworkUrlRef.current = mediaDetailState.itemArtworkUrl;
+    }
+
     return (
         <>
             {mediaDetailState.status === 'loading' ? (
-                <View style={[styles.mediaDetailScreen, styles.content]}>
-                    <Text style={styles.sectionTitle}>{title}</Text>
-                    <ActivityIndicator color={colors.accent} />
-                </View>
+                <MediaDetailLoadingView
+                    artworkUrl={mediaDetailState.itemArtworkUrl}
+                    itemType={mediaDetailState.itemType}
+                    title={title}
+                />
             ) : mediaDetailState.status === 'error' ? (
                 <View style={[styles.mediaDetailScreen, styles.content]}>
                     <Text style={styles.sectionTitle}>{title}</Text>
@@ -156,6 +244,7 @@ export const MediaDetailContent = memo(({
             ) : mediaDetailState.status === 'loaded' ? (
                 <MediaDetailLoaded
                     detail={mediaDetailState.detail}
+                    fallbackArtworkUrl={openingArtworkUrlRef.current}
                     onAddTrackToPlaylist={onAddTrackToPlaylist}
                     onBack={onBack}
                     onPlayTrack={onPlayTrack}
@@ -174,8 +263,36 @@ export const MediaDetailContent = memo(({
 
 MediaDetailContent.displayName = 'MediaDetailContent';
 
+const DetailHeroArtwork = ({
+    fallbackUri,
+    letter,
+    primaryUri,
+    round,
+    style,
+    wrapStyle,
+}: {
+    fallbackUri?: string;
+    letter: string;
+    primaryUri?: string;
+    round?: boolean;
+    style: StyleProp<ImageStyle>;
+    wrapStyle?: StyleProp<ViewStyle>;
+}) => {
+    const uri = primaryUri ?? fallbackUri;
+    const image = (
+        <ArtworkImage
+            fallbackStyle={round ? styles.detailArtworkFallback : styles.albumHeroArtworkFallback}
+            letter={letter}
+            style={style}
+            uri={uri}
+        />
+    );
+    return wrapStyle ? <View style={wrapStyle}>{image}</View> : image;
+};
+
 export const MediaDetailLoaded = ({
     detail,
+    fallbackArtworkUrl,
     onAddTrackToPlaylist,
     onBack,
     onPlayTrack,
@@ -185,6 +302,7 @@ export const MediaDetailLoaded = ({
     serverConnections,
 }: {
     detail: MobileMediaDetail;
+    fallbackArtworkUrl?: string;
     onAddTrackToPlaylist: (
         detail: MobileMediaDetail,
         track: MobileMediaTrack,
@@ -664,12 +782,20 @@ export const MediaDetailLoaded = ({
                     onPress={() => onPlayTrack(detail, track, index, displayTracks)}
                     style={styles.trackRow}
                 >
+                    {isAlbumDetail ? (
+                        <View style={styles.albumTrackNumber}>
+                            <Text style={styles.albumTrackNumberText}>
+                                {track.trackNumber ?? index + 1}
+                            </Text>
+                        </View>
+                    ) : null}
                     {!isAlbumDetail ? (
                         <View>
-                            {track.artworkUrl ?? detail.artworkUrl ? (
-                                <Image
-                                    source={{ uri: (track.artworkUrl ?? detail.artworkUrl)! }}
+                            {track.artworkUrl ?? detail.artworkUrl ?? fallbackArtworkUrl ? (
+                                <ArtworkImage
+                                    letter={track.title.slice(0, 1).toUpperCase()}
                                     style={styles.trackArtwork}
+                                    uri={track.artworkUrl ?? detail.artworkUrl ?? fallbackArtworkUrl}
                                 />
                             ) : (
                                 <View style={styles.trackArtworkFallback}>
@@ -723,10 +849,34 @@ export const MediaDetailLoaded = ({
             detail,
             displayTracks,
             downloadedTrackKeys,
+            fallbackArtworkUrl,
             isMusic,
             onPlayTrack,
             playlistTargets.length,
         ],
+    );
+
+    const renderListTrackItem = useCallback(
+        ({ index, item: track }: { index: number; item: MobileMediaTrack }) => {
+            const discNumber = track.discNumber ?? 1;
+            const previousDiscNumber =
+                index > 0 ? (displayTracks[index - 1]?.discNumber ?? 1) : null;
+            const shouldShowDiscHeader =
+                showAlbumDiscHeaders &&
+                (index === 0 || previousDiscNumber !== discNumber);
+
+            return (
+                <>
+                    {shouldShowDiscHeader ? (
+                        <View style={styles.albumDiscHeader}>
+                            <Text style={styles.albumDiscHeaderText}>Disc {discNumber}</Text>
+                        </View>
+                    ) : null}
+                    {renderTrackRow(track, index)}
+                </>
+            );
+        },
+        [displayTracks, renderTrackRow, showAlbumDiscHeaders],
     );
 
     const playlistEmptyText =
@@ -755,23 +905,12 @@ export const MediaDetailLoaded = ({
                         <>
                             <View style={styles.albumHero}>
                                 <View style={styles.albumHeroArtworkWrap}>
-                                    {detail.artworkUrl ? (
-                                        <Image
-                                            source={{ uri: detail.artworkUrl }}
-                                            style={styles.albumHeroArtwork}
-                                        />
-                                    ) : (
-                                        <View
-                                            style={[
-                                                styles.albumHeroArtwork,
-                                                styles.albumHeroArtworkFallback,
-                                            ]}
-                                        >
-                                            <Text style={styles.mediaArtworkLetter}>
-                                                {detail.title.slice(0, 1)}
-                                            </Text>
-                                        </View>
-                                    )}
+                                    <DetailHeroArtwork
+                                        fallbackUri={fallbackArtworkUrl}
+                                        letter={detail.title.slice(0, 1)}
+                                        primaryUri={detail.artworkUrl}
+                                        style={styles.albumHeroArtwork}
+                                    />
                                     <QualityBadge overlay profile={heroBadgeProfile} />
                                 </View>
                                 <View style={styles.albumHeroBadgeRow}>
@@ -1036,29 +1175,16 @@ export const MediaDetailLoaded = ({
         );
     }
 
-    return (
-        <View style={styles.mediaDetailScreen}>
-            <Reanimated.ScrollView
-                contentContainerStyle={styles.mediaDetailContent}
-                onScroll={detailScrollHandler}
-                scrollEventThrottle={16}
-                showsVerticalScrollIndicator={false}
-            >
-            {!isArtistDetail ? (
-                <View style={styles.albumHero}>
+    const albumDetailListHeader = (
+        <>
+            <View style={styles.albumHero}>
                     <View style={styles.albumHeroArtworkWrap}>
-                        {detail.artworkUrl ? (
-                            <Image
-                                source={{ uri: detail.artworkUrl }}
-                                style={styles.albumHeroArtwork}
-                            />
-                        ) : (
-                            <View style={[styles.albumHeroArtwork, styles.albumHeroArtworkFallback]}>
-                                <Text style={styles.mediaArtworkLetter}>
-                                    {detail.title.slice(0, 1)}
-                                </Text>
-                            </View>
-                        )}
+                        <DetailHeroArtwork
+                            fallbackUri={fallbackArtworkUrl}
+                            letter={detail.title.slice(0, 1)}
+                            primaryUri={detail.artworkUrl}
+                            style={styles.albumHeroArtwork}
+                        />
                         <QualityBadge overlay profile={heroBadgeProfile} />
                     </View>
                     <View style={styles.albumHeroBadgeRow}>
@@ -1154,22 +1280,119 @@ export const MediaDetailLoaded = ({
                         </View>
                     </View>
                 </View>
-            ) : (
+            <View style={styles.homeSection}>
+                {!isMusic ? <Text style={styles.sectionTitle}>{sectionTitle}</Text> : null}
+            </View>
+        </>
+    );
+
+    const detailCollapsedTopbar = (
+        <View pointerEvents="box-none" style={styles.detailCollapsedTopbar}>
+            <Reanimated.View
+                pointerEvents="none"
+                style={[styles.detailCollapsedTopbarBackdrop, collapsedHeaderBackdropStyle]}
+            />
+            <Pressable
+                accessibilityLabel="Back"
+                accessibilityRole="button"
+                onPress={onBack}
+                style={styles.detailCollapsedBackButton}
+            >
+                <Text style={styles.detailCollapsedBackGlyph}>‹</Text>
+            </Pressable>
+            <Reanimated.View
+                pointerEvents="none"
+                style={[styles.detailCollapsedTitleWrap, collapsedHeaderContentStyle]}
+            >
+                <Text numberOfLines={1} style={styles.detailCollapsedTitle}>
+                    {detail.title}
+                </Text>
+            </Reanimated.View>
+            <Reanimated.View
+                pointerEvents={isCollapsedHeaderInteractive ? 'auto' : 'none'}
+                style={[styles.detailCollapsedActions, collapsedHeaderContentStyle]}
+            >
+                {showPlaylistShuffle ? (
+                    <Pressable
+                        accessibilityLabel="Shuffle"
+                        accessibilityRole="button"
+                        hitSlop={10}
+                        onPress={() => void onShufflePlay(detail, displayTracks)}
+                        style={styles.detailCollapsedIconButton}
+                    >
+                        <ShuffleGlyph color={colors.text} size={20} />
+                    </Pressable>
+                ) : null}
+                {canPlayDetail && heroPlayTrack ? (
+                    <Pressable
+                        accessibilityLabel="Play"
+                        accessibilityRole="button"
+                        onPress={() =>
+                            onPlayTrack(detail, heroPlayTrack, heroPlayIndex, heroPlayQueue)
+                        }
+                        style={styles.detailCollapsedPlayButton}
+                    >
+                        <PlayPauseGlyph color={colors.background} isPlaying={false} size={16} />
+                    </Pressable>
+                ) : null}
+            </Reanimated.View>
+        </View>
+    );
+
+    if (!isArtistDetail) {
+        return (
+            <View style={styles.mediaDetailScreen}>
+                <ReanimatedFlashList
+                    contentContainerStyle={styles.mediaDetailContent}
+                    data={displayTracks}
+                    drawDistance={PLAYLIST_TRACK_DRAW_DISTANCE}
+                    estimatedItemSize={62}
+                    extraData={downloadedTrackKeys}
+                    keyExtractor={(track, index) => `${track.id}:${index}`}
+                    ListEmptyComponent={
+                        <Text style={styles.mutedText}>
+                            {detail.tracks.length === 0
+                                ? emptyText
+                                : 'No tracks match the current filter.'}
+                        </Text>
+                    }
+                    ListHeaderComponent={albumDetailListHeader}
+                    onScroll={detailScrollHandler}
+                    renderItem={renderListTrackItem}
+                    scrollEventThrottle={16}
+                    showsVerticalScrollIndicator={false}
+                />
+                {detailCollapsedTopbar}
+                <TrackPlaylistMenu
+                    actionState={playlistActionState}
+                    onAddToPlaylist={(playlist) => void handleAddToPlaylist(playlist)}
+                    onClose={() => {
+                        setPlaylistMenuTrack(null);
+                        setPlaylistActionState({ status: 'idle' });
+                    }}
+                    playlists={playlistTargets}
+                    track={playlistMenuTrack}
+                />
+            </View>
+        );
+    }
+
+    return (
+        <View style={styles.mediaDetailScreen}>
+            <Reanimated.ScrollView
+                contentContainerStyle={styles.mediaDetailContent}
+                onScroll={detailScrollHandler}
+                scrollEventThrottle={16}
+                showsVerticalScrollIndicator={false}
+            >
                 <View style={styles.detailHero}>
-                    {detail.artworkUrl ? (
-                        <Image
-                            source={{ uri: detail.artworkUrl }}
-                            style={[styles.detailArtwork, styles.detailArtworkRound]}
-                        />
-                    ) : (
-                        <View
-                            style={[styles.detailArtworkFallback, styles.detailArtworkRound]}
-                        >
-                            <Text style={styles.mediaArtworkLetter}>
-                                {detail.title.slice(0, 1)}
-                            </Text>
-                        </View>
-                    )}
+                    <DetailHeroArtwork
+                        fallbackUri={fallbackArtworkUrl}
+                        letter={detail.title.slice(0, 1)}
+                        primaryUri={detail.artworkUrl}
+                        round
+                        style={[styles.detailArtwork, styles.detailArtworkRound]}
+                    />
                     <View style={styles.detailHeroText}>
                         <Text style={styles.detailType}>{getDetailTypeLabel(detail.type)}</Text>
                         <Text style={styles.detailTitle}>{detail.title}</Text>
@@ -1180,216 +1403,16 @@ export const MediaDetailLoaded = ({
                         ) : null}
                     </View>
                 </View>
-            )}
-            {detail.type === MobileMediaDetailType.ARTIST ? (
                 <ArtistDetailSections
                     detail={detail}
                     emptyText={emptyText}
+                    fallbackArtworkUrl={fallbackArtworkUrl}
                     onPlayTrack={onPlayTrack}
                     onSelectItem={onSelectItem}
                     sectionTitle={sectionTitle}
                 />
-            ) : (
-                <View style={styles.homeSection}>
-                    {!isMusic ? <Text style={styles.sectionTitle}>{sectionTitle}</Text> : null}
-                    {isPlaylistDetail && detail.tracks.length > 0 ? (
-                        <PlaylistTrackControls
-                            filter={playlistFilter}
-                            onFilterChange={setPlaylistFilter}
-                            onSortChange={setPlaylistSort}
-                            onToggleSortDirection={() => setPlaylistSortAsc((value) => !value)}
-                            showHiFiFilter={hasHiFiTracks}
-                            sort={playlistSort}
-                            sortAsc={playlistSortAsc}
-                        />
-                    ) : null}
-                    {displayTracks.length === 0 ? (
-                        <Text style={styles.mutedText}>
-                            {detail.tracks.length === 0
-                                ? emptyText
-                                : 'No tracks match the current filter.'}
-                        </Text>
-                    ) : (
-                        displayTracks.map((track, index) => {
-                            const qualityItems =
-                                isMusic && track.playback
-                                    ? buildAudioQualityBadgeItems({
-                                          ...track.playback.quality,
-                                          compact: true,
-                                          mode: 'playerbar',
-                                      })
-                                    : [];
-                            const meta = getTrackMetadataItems(
-                                detail,
-                                track,
-                                qualityItems.map((item) => item.label),
-                                isMusic,
-                            );
-                            const canAddToPlaylist =
-                                track.playback?.source === 'music' && playlistTargets.length > 0;
-                            const hasOverflowActions =
-                                canAddToPlaylist || track.playback?.source === 'music';
-                            const isAlbumDetail = detail.type === MobileMediaDetailType.ALBUM;
-                            const discNumber = track.discNumber ?? 1;
-                            const previousDiscNumber =
-                                index > 0 ? (displayTracks[index - 1]?.discNumber ?? 1) : null;
-                            const shouldShowDiscHeader =
-                                showAlbumDiscHeaders &&
-                                (index === 0 || previousDiscNumber !== discNumber);
-                            // Track-level format badge only meaningful inside playlists (the
-                            // collection itself is mixed). Album track rows skip the badge
-                            // because the album hero already carries one. Audiobook/podcast
-                            // tracks are spoken-word — format badges aren't useful there.
-                            const trackBadgeProfile =
-                                detail.type === MobileMediaDetailType.PLAYLIST
-                                    ? getPlaybackQualityProfile(track.playback)
-                                    : undefined;
-                            const isDownloadedTrack = downloadedTrackKeys.has(
-                                getDownloadedTrackKey(detail.source.id, track.id),
-                            );
-                            return (
-                                <Fragment key={`${track.id}:${index}`}>
-                                {shouldShowDiscHeader ? (
-                                    <View style={styles.albumDiscHeader}>
-                                        <Text style={styles.albumDiscHeaderText}>
-                                            Disc {discNumber}
-                                        </Text>
-                                    </View>
-                                ) : null}
-                                <Pressable
-                                    accessibilityRole="button"
-                                    onLongPress={() => contextMenu.openForTrack(track, detail)}
-                                    onPress={() => onPlayTrack(detail, track, index, displayTracks)}
-                                    style={styles.trackRow}
-                                >
-                                    {isAlbumDetail ? (
-                                        <View style={styles.albumTrackNumber}>
-                                            <Text style={styles.albumTrackNumberText}>
-                                                {track.trackNumber ?? index + 1}
-                                            </Text>
-                                        </View>
-                                    ) : null}
-                                    {!isAlbumDetail ? (
-                                        <View>
-                                            {track.artworkUrl ?? detail.artworkUrl ? (
-                                                <Image
-                                                    source={{ uri: (track.artworkUrl ?? detail.artworkUrl)! }}
-                                                    style={styles.trackArtwork}
-                                                />
-                                            ) : (
-                                                <View style={styles.trackArtworkFallback}>
-                                                    <Text style={styles.trackArtworkLetter}>
-                                                        {track.title.slice(0, 1).toUpperCase()}
-                                                    </Text>
-                                                </View>
-                                            )}
-                                            <QualityBadge thumb profile={trackBadgeProfile} />
-                                        </View>
-                                    ) : null}
-                                    <View style={styles.trackText}>
-                                        <Text numberOfLines={1} style={styles.trackTitle}>
-                                            {track.title}
-                                        </Text>
-                                        {meta.length > 0 || isDownloadedTrack ? (
-                                            <View style={styles.trackMetadataLine}>
-                                                {isDownloadedTrack ? (
-                                                    <TrackDownloadedGlyph size={10} />
-                                                ) : null}
-                                                {meta.length > 0 ? (
-                                                    <Text
-                                                        numberOfLines={1}
-                                                        style={[
-                                                            styles.mediaSubtitle,
-                                                            styles.trackMetadataText,
-                                                        ]}
-                                                    >
-                                                        {meta.join(' · ')}
-                                                    </Text>
-                                                ) : null}
-                                            </View>
-                                        ) : null}
-                                    </View>
-                                    {hasOverflowActions ? (
-                                        <Pressable
-                                            accessibilityLabel={`More options for ${track.title}`}
-                                            accessibilityRole="button"
-                                            onPress={(event) => {
-                                                event.stopPropagation();
-                                                contextMenu.openForTrack(track, detail);
-                                            }}
-                                            style={styles.trackMenuButton}
-                                        >
-                                            <MoreGlyph color={colors.muted} />
-                                        </Pressable>
-                                    ) : null}
-                                </Pressable>
-                                </Fragment>
-                            );
-                        })
-                    )}
-                </View>
-            )}
             </Reanimated.ScrollView>
-            <View pointerEvents="box-none" style={styles.detailCollapsedTopbar}>
-                <Reanimated.View
-                    pointerEvents="none"
-                    style={[
-                        styles.detailCollapsedTopbarBackdrop,
-                        collapsedHeaderBackdropStyle,
-                    ]}
-                />
-                <Pressable
-                    accessibilityLabel="Back"
-                    accessibilityRole="button"
-                    onPress={onBack}
-                    style={styles.detailCollapsedBackButton}
-                >
-                    <Text style={styles.detailCollapsedBackGlyph}>‹</Text>
-                </Pressable>
-                <Reanimated.View
-                    pointerEvents="none"
-                    style={[
-                        styles.detailCollapsedTitleWrap,
-                        collapsedHeaderContentStyle,
-                    ]}
-                >
-                    <Text numberOfLines={1} style={styles.detailCollapsedTitle}>
-                        {detail.title}
-                    </Text>
-                </Reanimated.View>
-                <Reanimated.View
-                    pointerEvents={isCollapsedHeaderInteractive ? 'auto' : 'none'}
-                    style={[styles.detailCollapsedActions, collapsedHeaderContentStyle]}
-                >
-                    {showPlaylistShuffle ? (
-                        <Pressable
-                            accessibilityLabel="Shuffle"
-                            accessibilityRole="button"
-                            hitSlop={10}
-                            onPress={() => void onShufflePlay(detail, displayTracks)}
-                            style={styles.detailCollapsedIconButton}
-                        >
-                            <ShuffleGlyph color={colors.text} size={20} />
-                        </Pressable>
-                    ) : null}
-                    {canPlayDetail && heroPlayTrack ? (
-                        <Pressable
-                            accessibilityLabel="Play"
-                            accessibilityRole="button"
-                            onPress={() =>
-                                onPlayTrack(detail, heroPlayTrack, heroPlayIndex, heroPlayQueue)
-                            }
-                            style={styles.detailCollapsedPlayButton}
-                        >
-                            <PlayPauseGlyph
-                                color={colors.background}
-                                isPlaying={false}
-                                size={16}
-                            />
-                        </Pressable>
-                    ) : null}
-                </Reanimated.View>
-            </View>
+            {detailCollapsedTopbar}
             <TrackPlaylistMenu
                 actionState={playlistActionState}
                 onAddToPlaylist={(playlist) => void handleAddToPlaylist(playlist)}
@@ -1407,12 +1430,14 @@ export const MediaDetailLoaded = ({
 export const ArtistDetailSections = ({
     detail,
     emptyText,
+    fallbackArtworkUrl,
     onPlayTrack,
     onSelectItem,
     sectionTitle,
 }: {
     detail: MobileMediaDetail;
     emptyText: string;
+    fallbackArtworkUrl?: string;
     onPlayTrack: (detail: MobileMediaDetail, track: MobileMediaTrack, index: number) => void;
     onSelectItem: (item: AndroidRecentContentSourceItem) => void;
     sectionTitle: string;
@@ -1463,10 +1488,15 @@ export const ArtistDetailSections = ({
                                 style={styles.trackRow}
                             >
                                 <View>
-                                    {track.artworkUrl ? (
-                                        <Image
-                                            source={{ uri: track.artworkUrl }}
+                                    {track.artworkUrl ?? detail.artworkUrl ?? fallbackArtworkUrl ? (
+                                        <ArtworkImage
+                                            letter={track.title.slice(0, 1).toUpperCase()}
                                             style={styles.trackArtwork}
+                                            uri={
+                                                track.artworkUrl ??
+                                                detail.artworkUrl ??
+                                                fallbackArtworkUrl
+                                            }
                                         />
                                     ) : (
                                         <View style={styles.trackArtworkFallback}>

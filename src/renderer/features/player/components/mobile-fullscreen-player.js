@@ -1,0 +1,287 @@
+import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
+import { AnimatePresence, motion } from 'motion/react';
+import { memo, useCallback, useEffect, useRef, useState, } from 'react';
+import { useTranslation } from 'react-i18next';
+import styles from './mobile-fullscreen-player.module.css';
+import { useItemImageUrl } from '/@/renderer/components/item-image/item-image';
+import { ContextMenuController } from '/@/renderer/features/context-menu/context-menu-controller';
+import { Lyrics } from '/@/renderer/features/lyrics/lyrics';
+import { PlayQueue } from '/@/renderer/features/now-playing/components/play-queue';
+import { MobileFullscreenPlayerAlbumArt } from '/@/renderer/features/player/components/mobile-fullscreen-player-album-art';
+import { MobileFullscreenPlayerBottomControls } from '/@/renderer/features/player/components/mobile-fullscreen-player-bottom-controls';
+import { MobileFullscreenPlayerControls } from '/@/renderer/features/player/components/mobile-fullscreen-player-controls';
+import { MobileFullscreenPlayerHeader } from '/@/renderer/features/player/components/mobile-fullscreen-player-header';
+import { MobileFullscreenPlayerMetadata } from '/@/renderer/features/player/components/mobile-fullscreen-player-metadata';
+import { MobileFullscreenPlayerProgress } from '/@/renderer/features/player/components/mobile-fullscreen-player-progress';
+import { useIsRadioActive, useRadioPlayer, } from '/@/renderer/features/radio/hooks/use-radio-player';
+import { useSetFavorite } from '/@/renderer/features/shared/hooks/use-set-favorite';
+import { useFastAverageColor } from '/@/renderer/hooks';
+import { useNowPlaying } from '/@/renderer/hooks/use-now-playing';
+import { useFullScreenPlayerStore, useFullScreenPlayerStoreActions, usePlayerData, usePlayerSong, useSetFullScreenPlayerStore, } from '/@/renderer/store';
+import { useAudiobookItem } from '/@/renderer/store/audiobook.store';
+import { useCurrentServerWithCredential } from '/@/renderer/store/auth.store';
+import { usePodcastItem, usePodcastServer } from '/@/renderer/store/podcast.store';
+import { ActionIcon } from '/@/shared/components/action-icon/action-icon';
+import { Text } from '/@/shared/components/text/text';
+import { LibraryItem } from '/@/shared/types/domain-types';
+import { ItemListKey } from '/@/shared/types/types';
+const mainBackground = 'var(--theme-colors-background)';
+const backgroundImageVariants = {
+    closed: {
+        opacity: 0,
+        transition: {
+            duration: 0.8,
+            ease: 'linear',
+        },
+    },
+    initial: {
+        opacity: 0,
+    },
+    open: (custom) => {
+        const { isOpen } = custom;
+        return {
+            opacity: isOpen ? 1 : 0,
+            transition: {
+                duration: 0.4,
+                ease: 'linear',
+            },
+        };
+    },
+};
+const BackgroundImage = memo(({ dynamicBackground, dynamicIsImage }) => {
+    const currentSong = usePlayerSong();
+    const { nextSong } = usePlayerData();
+    const currentImageUrl = useItemImageUrl({
+        id: currentSong?.imageId || undefined,
+        itemType: LibraryItem.SONG,
+        type: 'itemCard',
+    });
+    const nextImageUrl = useItemImageUrl({
+        id: nextSong?.imageId || undefined,
+        itemType: LibraryItem.SONG,
+        type: 'itemCard',
+    });
+    const [imageState, setImageState] = useState({
+        bottomImage: nextImageUrl,
+        current: 0,
+        topImage: currentImageUrl,
+    });
+    const previousSongRef = useRef(currentSong?._uniqueId);
+    const imageStateRef = useRef(imageState);
+    useEffect(() => {
+        imageStateRef.current = imageState;
+    }, [imageState]);
+    // Update images when song changes
+    useEffect(() => {
+        if (currentSong?._uniqueId === previousSongRef.current) {
+            return;
+        }
+        const isTop = imageStateRef.current.current === 0;
+        setImageState({
+            bottomImage: isTop ? currentImageUrl : nextImageUrl,
+            current: isTop ? 1 : 0,
+            topImage: isTop ? nextImageUrl : currentImageUrl,
+        });
+        previousSongRef.current = currentSong?._uniqueId;
+    }, [currentSong?._uniqueId, currentImageUrl, nextSong?._uniqueId, nextImageUrl]);
+    if (!dynamicBackground || !dynamicIsImage) {
+        return null;
+    }
+    const getBackgroundImageUrl = (imageUrl, songId, albumId) => {
+        if (!imageUrl || !songId || !albumId) {
+            return imageUrl;
+        }
+        return imageUrl.replace(songId, albumId);
+    };
+    // Determine which song IDs to use for keys and image URLs
+    const topSongId = imageState.current === 0 ? currentSong?._uniqueId : nextSong?._uniqueId;
+    const bottomSongId = imageState.current === 0 ? nextSong?._uniqueId : currentSong?._uniqueId;
+    const topSong = imageState.current === 0 ? currentSong : nextSong;
+    const bottomSong = imageState.current === 0 ? nextSong : currentSong;
+    return (_jsxs(AnimatePresence, { initial: false, mode: "sync", children: [imageState.current === 0 && imageState.topImage && (_jsx(motion.div, { animate: "open", className: styles.backgroundImage, custom: { isOpen: imageState.current === 0 }, exit: "closed", initial: "open", style: {
+                    backgroundImage: imageState.topImage
+                        ? `url("${getBackgroundImageUrl(imageState.topImage, topSong?.id, topSong?.albumId)}"), url("${imageState.topImage}")`
+                        : undefined,
+                }, variants: backgroundImageVariants }, `top-${topSongId || 'none'}`)), imageState.current === 1 && imageState.bottomImage && (_jsx(motion.div, { animate: "open", className: styles.backgroundImage, custom: { isOpen: imageState.current === 1 }, exit: "closed", initial: "open", style: {
+                    backgroundImage: imageState.bottomImage
+                        ? `url("${getBackgroundImageUrl(imageState.bottomImage, bottomSong?.id, bottomSong?.albumId)}"), url("${imageState.bottomImage}")`
+                        : undefined,
+                }, variants: backgroundImageVariants }, `bottom-${bottomSongId || 'none'}`))] }));
+});
+BackgroundImage.displayName = 'BackgroundImage';
+const overlayVariants = {
+    closed: {
+        opacity: 0,
+        transition: {
+            duration: 0,
+        },
+    },
+    initial: {
+        opacity: 1,
+    },
+    open: {
+        opacity: 1,
+        transition: {
+            duration: 0,
+        },
+    },
+};
+const BackgroundImageOverlay = memo(({ dynamicBackground, dynamicImageBlur }) => {
+    const currentSong = usePlayerSong();
+    const { nextSong } = usePlayerData();
+    const [overlayState, setOverlayState] = useState({
+        bottomSongId: nextSong?._uniqueId,
+        current: 0,
+        topSongId: currentSong?._uniqueId,
+    });
+    const previousSongRef = useRef(currentSong?._uniqueId);
+    const overlayStateRef = useRef(overlayState);
+    useEffect(() => {
+        overlayStateRef.current = overlayState;
+    }, [overlayState]);
+    // Update overlays when song changes
+    useEffect(() => {
+        if (currentSong?._uniqueId === previousSongRef.current) {
+            return;
+        }
+        const isTop = overlayStateRef.current.current === 0;
+        setOverlayState({
+            bottomSongId: isTop ? currentSong?._uniqueId : nextSong?._uniqueId,
+            current: isTop ? 1 : 0,
+            topSongId: isTop ? nextSong?._uniqueId : currentSong?._uniqueId,
+        });
+        previousSongRef.current = currentSong?._uniqueId;
+    }, [currentSong?._uniqueId, nextSong?._uniqueId]);
+    if (!dynamicBackground) {
+        return null;
+    }
+    return (_jsxs(AnimatePresence, { initial: false, mode: "sync", children: [overlayState.current === 0 && (_jsx(motion.div, { animate: "open", className: styles.backgroundImageOverlay, exit: "closed", initial: "open", style: {
+                    '--image-blur': `${dynamicImageBlur ?? 0}rem`,
+                }, variants: overlayVariants }, `top-${overlayState.topSongId || 'none'}`)), overlayState.current === 1 && (_jsx(motion.div, { animate: "open", className: styles.backgroundImageOverlay, exit: "closed", initial: "open", style: {
+                    '--image-blur': `${dynamicImageBlur ?? 0}rem`,
+                }, variants: overlayVariants }, `bottom-${overlayState.bottomSongId || 'none'}`))] }));
+});
+BackgroundImageOverlay.displayName = 'BackgroundImageOverlay';
+const MobilePlayerContainer = memo(({ children, dynamicBackground, dynamicIsImage }) => {
+    const currentSong = usePlayerSong();
+    const imageUrl = useItemImageUrl({
+        id: currentSong?.imageId || undefined,
+        imageUrl: currentSong?.imageUrl,
+        itemType: LibraryItem.SONG,
+        type: 'itemCard',
+    });
+    const { background } = useFastAverageColor({
+        algorithm: 'dominant',
+        src: imageUrl,
+        srcLoaded: true,
+    });
+    let backgroundColor = mainBackground;
+    if (dynamicBackground) {
+        if (dynamicIsImage && background) {
+            const rgbMatch = background.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/);
+            if (rgbMatch) {
+                backgroundColor = `rgba(${rgbMatch[1]}, ${rgbMatch[2]}, ${rgbMatch[3]}, 0.3)`;
+            }
+            else {
+                backgroundColor = background;
+            }
+        }
+        else {
+            backgroundColor = background || mainBackground;
+        }
+    }
+    return (_jsxs(motion.div, { animate: "open", className: styles.container, exit: "closed", initial: "closed", style: {
+            backgroundColor,
+        }, variants: mobileContainerVariants, children: [_jsx(BackgroundImage, { dynamicBackground: dynamicBackground, dynamicIsImage: dynamicIsImage }), children] }));
+});
+MobilePlayerContainer.displayName = 'MobilePlayerContainer';
+const mobileContainerVariants = {
+    closed: {
+        transition: {
+            duration: 0.5,
+            ease: 'easeInOut',
+        },
+        y: '100%',
+    },
+    open: {
+        transition: {
+            duration: 0.5,
+            ease: 'easeInOut',
+        },
+        y: 0,
+    },
+};
+export const MobileFullscreenPlayer = () => {
+    const { t } = useTranslation();
+    const setFullScreenPlayerStore = useSetFullScreenPlayerStore();
+    const { setStore } = useFullScreenPlayerStoreActions();
+    const { activeTab, dynamicBackground, dynamicImageBlur, dynamicIsImage } = useFullScreenPlayerStore();
+    const currentSong = usePlayerSong();
+    const { currentSong: currentSongData } = usePlayerData();
+    const isRadioActive = useIsRadioActive();
+    const { isPlaying: isRadioPlaying, metadata: radioMetadata, stationName } = useRadioPlayer();
+    const isPlayingRadio = isRadioActive && isRadioPlaying;
+    const effectiveDynamicBackground = dynamicBackground && !isPlayingRadio;
+    const setFavorite = useSetFavorite();
+    const nowPlaying = useNowPlaying();
+    const podcastItem = usePodcastItem();
+    const podcastServer = usePodcastServer();
+    const audiobookItem = useAudiobookItem();
+    const currentServer = useCurrentServerWithCredential();
+    const isAudiobookMode = nowPlaying.source === 'audiobook';
+    const isPodcastMode = nowPlaying.source === 'podcast';
+    const [isPageHovered, setIsPageHovered] = useState(false);
+    const handleToggleFullScreenPlayer = useCallback(() => {
+        setFullScreenPlayerStore({ expanded: false });
+    }, [setFullScreenPlayerStore]);
+    const handleToggleContextMenu = useCallback((e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (isPodcastMode && podcastItem && podcastServer) {
+            ContextMenuController.call({
+                cmd: { items: [podcastItem], server: podcastServer, type: 'podcast' },
+                event: e,
+            });
+        }
+        else if (isAudiobookMode && audiobookItem && currentServer) {
+            ContextMenuController.call({
+                cmd: { items: [audiobookItem], server: currentServer, type: 'audiobook' },
+                event: e,
+            });
+        }
+        else if (currentSong) {
+            ContextMenuController.call({
+                cmd: { items: [currentSong], type: LibraryItem.SONG },
+                event: e,
+            });
+        }
+    }, [
+        currentSong,
+        isPodcastMode,
+        podcastItem,
+        podcastServer,
+        isAudiobookMode,
+        audiobookItem,
+        currentServer,
+    ]);
+    const handleToggleQueue = useCallback(() => {
+        setStore({ activeTab: activeTab === 'queue' ? 'player' : 'queue' });
+    }, [activeTab, setStore]);
+    const handleToggleFavorite = useCallback((e) => {
+        e.stopPropagation();
+        const song = currentSongData;
+        if (!song?.id)
+            return;
+        setFavorite(song._serverId, [song.id], LibraryItem.SONG, !song.userFavorite);
+    }, [currentSongData, setFavorite]);
+    const handleToggleLyrics = useCallback(() => {
+        setStore({ activeTab: activeTab === 'lyrics' ? 'player' : 'lyrics' });
+    }, [activeTab, setStore]);
+    const isPlayerState = activeTab !== 'queue' && activeTab !== 'lyrics';
+    const isQueueState = activeTab === 'queue';
+    const isLyricsState = activeTab === 'lyrics';
+    return (_jsxs(MobilePlayerContainer, { dynamicBackground: effectiveDynamicBackground, dynamicIsImage: dynamicIsImage, children: [_jsx(BackgroundImageOverlay, { dynamicBackground: effectiveDynamicBackground, dynamicImageBlur: dynamicImageBlur }), _jsxs(motion.div, { animate: {
+                    opacity: isPlayerState ? 1 : 0,
+                    zIndex: isPlayerState ? 2 : 1,
+                }, className: styles.playerState, onMouseEnter: () => setIsPageHovered(true), onMouseLeave: () => setIsPageHovered(false), transition: { duration: 0.3, ease: 'easeInOut' }, children: [_jsx(MobileFullscreenPlayerHeader, { currentSong: currentSong, isPageHovered: isPageHovered, onClose: handleToggleFullScreenPlayer }), _jsx(MobileFullscreenPlayerAlbumArt, {}), _jsx(MobileFullscreenPlayerMetadata, { currentSong: currentSong, onToggleFavorite: handleToggleFavorite, radioArtist: isPlayingRadio ? (radioMetadata?.artist ?? undefined) : undefined, radioStationName: isPlayingRadio ? (stationName ?? undefined) : undefined, radioTitle: isPlayingRadio ? (radioMetadata?.title ?? undefined) : undefined }), _jsx(MobileFullscreenPlayerProgress, { currentSong: currentSong }), _jsx(MobileFullscreenPlayerControls, { currentSong: currentSong }), _jsx(MobileFullscreenPlayerBottomControls, { isLyricsActive: isLyricsState, isQueueActive: isQueueState, onToggleContextMenu: handleToggleContextMenu, onToggleLyrics: handleToggleLyrics, onToggleQueue: handleToggleQueue })] }), _jsx(AnimatePresence, { children: isQueueState && (_jsxs(motion.div, { animate: { opacity: 1 }, className: styles.queueState, exit: { opacity: 0 }, initial: { opacity: 0 }, style: { zIndex: 2 }, transition: { duration: 0.3, ease: 'easeInOut' }, children: [_jsxs("div", { className: styles.queueHeader, children: [_jsx(ActionIcon, { icon: "arrowDownS", onClick: handleToggleFullScreenPlayer, size: "sm", variant: isPageHovered ? 'default' : 'subtle' }), _jsx(ActionIcon, { icon: "x", iconProps: { size: 'xl' }, onClick: handleToggleQueue, size: "sm", variant: isPageHovered ? 'default' : 'subtle' })] }), _jsx("div", { className: styles.queueContent, children: _jsx(PlayQueue, { listKey: ItemListKey.FULL_SCREEN, searchTerm: undefined }) })] })) }), _jsx(AnimatePresence, { children: isLyricsState && (_jsxs(motion.div, { animate: { opacity: 1 }, className: styles.lyricsState, exit: { opacity: 0 }, initial: { opacity: 0 }, style: { zIndex: 2 }, transition: { duration: 0.3, ease: 'easeInOut' }, children: [_jsxs("div", { className: styles.lyricsHeader, children: [_jsx(ActionIcon, { icon: "arrowDownS", onClick: handleToggleFullScreenPlayer, size: "sm", variant: isPageHovered ? 'default' : 'subtle' }), _jsx(Text, { fw: 600, size: "lg", children: t('page.fullscreenPlayer.lyrics', { postProcess: 'sentenceCase' }) }), _jsx(ActionIcon, { icon: "x", iconProps: { size: 'xl' }, onClick: handleToggleLyrics, size: "sm", variant: isPageHovered ? 'default' : 'subtle' })] }), _jsx("div", { className: styles.lyricsContent, children: _jsx(Lyrics, {}) })] })) })] }));
+};

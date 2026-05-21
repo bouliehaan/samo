@@ -1,12 +1,13 @@
 {
-  "extends": "expo/tsconfig.base",
-  "compilerOptions": {
-    "baseUrl": ".",
-    "paths": {
-      "@samo/core": ["../../packages/core/src/index.ts"],
-      "@samo/core/*": ["../../packages/core/src/*"]
+    "extends": "expo/tsconfig.base",
+    "compilerOptions": {
+        "baseUrl": ".",
+        "paths": {
+            "@samo/core": ["../../packages/core/src/index.ts"],
+            "@samo/core/*": ["../../packages/core/src/*"]
+        },
+        "strict": true
     },
-    "strict": true
-  },
-  "include": ["**/*.ts", "**/*.tsx", "../../packages/core/src/**/*"]
+    "include": ["**/*.ts", "**/*.tsx"],
+    "exclude": ["node_modules", "android"]
 }

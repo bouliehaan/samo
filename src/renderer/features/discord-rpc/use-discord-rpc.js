@@ -1,0 +1,418 @@
+import isElectron from 'is-electron';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { api } from '/@/renderer/api';
+import { useItemImageUrl } from '/@/renderer/components/item-image/item-image';
+import { useIsRadioActive, useRadioPlayer, } from '/@/renderer/features/radio/hooks/use-radio-player';
+import { DiscordDisplayType, DiscordLinkType, useAppStore, useDiscordSettings, useLastfmApiKey, getCurrentSong, usePlayerSong, usePlayerStore, useSettingsStore, useTimestampStoreBase, } from '/@/renderer/store';
+import { sentenceCase } from '/@/renderer/utils';
+import { LogCategory, logFn } from '/@/renderer/utils/logger';
+import { logMsg } from '/@/renderer/utils/logger-message';
+import { useDebouncedCallback } from '/@/shared/hooks/use-debounced-callback';
+import { LibraryItem, ServerType } from '/@/shared/types/domain-types';
+import { PlayerStatus } from '/@/shared/types/types';
+const discordRpc = isElectron() ? window.api.discordRpc : null;
+const DiscordStatusDisplayType = {
+    DETAILS: 2,
+    NAME: 0,
+    STATE: 1,
+};
+const MAX_FIELD_LENGTH = 127;
+const MAX_URL_LENGTH = 256;
+const truncate = (field) => field.length <= MAX_FIELD_LENGTH ? field : field.substring(0, MAX_FIELD_LENGTH - 1) + '…';
+export const useDiscordRpc = () => {
+    const discordSettings = useDiscordSettings();
+    const lastfmApiKey = useLastfmApiKey();
+    const privateMode = useAppStore((state) => state.privateMode);
+    const [lastUniqueId, setlastUniqueId] = useState('');
+    const isRadioActive = useIsRadioActive();
+    const { isPlaying: isRadioPlaying, metadata: radioMetadata, stationName } = useRadioPlayer();
+    const currentSong = usePlayerSong();
+    const imageUrl = useItemImageUrl({
+        id: currentSong?.imageId || undefined,
+        imageUrl: currentSong?.imageUrl,
+        itemType: LibraryItem.SONG,
+        type: 'table',
+        useRemoteUrl: true,
+    });
+    const imageUrlRef = useRef(imageUrl);
+    const previousEnabledRef = useRef(discordSettings.enabled);
+    const intervalRef = useRef(null);
+    const previousActivityStateRef = useRef(null);
+    // Update imageUrl ref when it changes
+    useEffect(() => {
+        imageUrlRef.current = imageUrl;
+    }, [imageUrl]);
+    const setActivity = useCallback(async (current, previous) => {
+        // Check if track changed by comparing with previous state
+        const song = current[0];
+        const previousSong = previous[0];
+        const trackChangedByState = song && previousSong
+            ? song._uniqueId !== previousSong._uniqueId
+            : song !== previousSong;
+        const trackChanged = song ? lastUniqueId !== song._uniqueId : false;
+        const isPlayingRadio = isRadioActive && isRadioPlaying;
+        const hasTrackOrRadio = Boolean(current[0]) || isPlayingRadio;
+        if (!hasTrackOrRadio || // No track and not playing radio
+            (current[2] === 'paused' && !discordSettings.showPaused) // Paused with show paused setting disabled
+        ) {
+            let reason;
+            if (!hasTrackOrRadio) {
+                reason = current[0] ? 'no_track' : 'no_track_or_radio';
+            }
+            else if (current[1] === 0 && !isPlayingRadio) {
+                reason = 'start_of_track';
+            }
+            else {
+                reason = 'paused_with_show_paused_disabled';
+            }
+            logFn.debug(logMsg[LogCategory.EXTERNAL].discordRpcActivityCleared, {
+                category: LogCategory.EXTERNAL,
+                meta: {
+                    reason,
+                    status: current[2],
+                },
+            });
+            return discordRpc?.clearActivity();
+        }
+        if (isPlayingRadio) {
+            const title = radioMetadata?.title || stationName || 'Radio';
+            const artist = radioMetadata?.artist || stationName || '';
+            const activity = {
+                details: truncate(title),
+                instance: false,
+                largeImageKey: 'icon',
+                largeImageText: truncate(stationName || 'Radio'),
+                smallImageKey: current[2] === PlayerStatus.PLAYING
+                    ? discordSettings.showStateIcon
+                        ? 'playing'
+                        : undefined
+                    : 'paused',
+                smallImageText: current[2] === PlayerStatus.PLAYING
+                    ? discordSettings.showStateIcon
+                        ? sentenceCase(current[2])
+                        : undefined
+                    : sentenceCase(current[2]),
+                state: truncate(artist),
+                statusDisplayType: DiscordStatusDisplayType.STATE,
+                type: discordSettings.showAsListening ? 2 : 0,
+            };
+            const isConnected = await discordRpc?.isConnected();
+            if (!isConnected) {
+                logFn.debug(logMsg[LogCategory.EXTERNAL].discordRpcInitialized, {
+                    category: LogCategory.EXTERNAL,
+                    meta: { clientId: discordSettings.clientId },
+                });
+                previousEnabledRef.current = true;
+                await discordRpc?.initialize(discordSettings.clientId);
+            }
+            logFn.debug(logMsg[LogCategory.EXTERNAL].discordRpcSetActivity, {
+                category: LogCategory.EXTERNAL,
+                meta: {
+                    currentStatus: current[2],
+                    reason: 'radio',
+                    showAsListening: discordSettings.showAsListening,
+                    stationName: stationName || 'Radio',
+                    title,
+                },
+            });
+            discordRpc?.setActivity(activity);
+            return;
+        }
+        if (!song) {
+            return;
+        }
+        /*
+            1. If the song has just started, update status
+            2. If we jump more then 1.2 seconds from last state, update status to match
+            3. If the current song id is completely different, update status
+            4. If the player state changed, update status
+        */
+        if (previous[1] === 0 ||
+            Math.abs(current[1] - previous[1]) > 1.2 ||
+            trackChangedByState ||
+            trackChanged ||
+            current[2] !== previous[2]) {
+            if (trackChangedByState || trackChanged) {
+                logFn.debug(logMsg[LogCategory.EXTERNAL].discordRpcTrackChanged, {
+                    category: LogCategory.EXTERNAL,
+                    meta: {
+                        artistName: song.artists?.[0]?.name,
+                        songId: song._uniqueId,
+                        songName: song.name,
+                    },
+                });
+                setlastUniqueId(song._uniqueId);
+            }
+            let reason;
+            if (trackChangedByState || trackChanged) {
+                reason = 'track_changed';
+            }
+            else if (previous[1] === 0) {
+                reason = 'song_started';
+            }
+            else if (Math.abs(current[1] - previous[1]) > 1.2) {
+                reason = 'time_jump';
+            }
+            else {
+                reason = 'player_state_changed';
+            }
+            const start = Math.round(Date.now() - current[1] * 1000);
+            const end = Math.round(start + song.duration);
+            const artists = song?.artists.map((artist) => artist.name).join(', ');
+            const statusDisplayMap = {
+                [DiscordDisplayType.ARTIST_NAME]: DiscordStatusDisplayType.STATE,
+                [DiscordDisplayType.SAMO]: DiscordStatusDisplayType.NAME,
+                [DiscordDisplayType.SONG_NAME]: DiscordStatusDisplayType.DETAILS,
+            };
+            const activity = {
+                details: truncate((song?.name && song.name.padEnd(2, ' ')) || 'Idle'),
+                instance: false,
+                largeImageKey: undefined,
+                largeImageText: truncate((song?.album && song.album.padEnd(2, ' ')) || 'Unknown album'),
+                smallImageKey: undefined,
+                smallImageText: undefined,
+                state: truncate((artists && artists.padEnd(2, ' ')) || 'Unknown artist'),
+                statusDisplayType: statusDisplayMap[discordSettings.displayType],
+                // I would love to use the actual type as opposed to hardcoding to 2,
+                // but manually installing the discord-types package appears to break things
+                type: discordSettings.showAsListening ? 2 : 0,
+            };
+            if ((discordSettings.linkType == DiscordLinkType.LAST_FM ||
+                discordSettings.linkType == DiscordLinkType.MBZ_LAST_FM) &&
+                song?.artistName) {
+                activity.stateUrl =
+                    'https://www.last.fm/music/' + encodeURIComponent(song.artists[0].name);
+                const detailsUrl = 'https://www.last.fm/music/' +
+                    encodeURIComponent(song.albumArtists[0].name) +
+                    '/' +
+                    encodeURIComponent(song.album || '_') +
+                    '/' +
+                    encodeURIComponent(song.name);
+                // The details URL has a max length, only set it if it doesn't exceed it
+                if (detailsUrl.length <= MAX_URL_LENGTH) {
+                    activity.detailsUrl = detailsUrl;
+                }
+            }
+            if (discordSettings.linkType == DiscordLinkType.MBZ ||
+                discordSettings.linkType == DiscordLinkType.MBZ_LAST_FM) {
+                if (song?.mbzTrackId) {
+                    activity.detailsUrl = 'https://musicbrainz.org/track/' + song.mbzTrackId;
+                }
+                else if (song?.mbzRecordingId) {
+                    activity.detailsUrl =
+                        'https://musicbrainz.org/recording/' + song.mbzRecordingId;
+                }
+            }
+            if (current[2] === PlayerStatus.PLAYING) {
+                if (start && end) {
+                    activity.startTimestamp = start;
+                    activity.endTimestamp = end;
+                }
+                if (discordSettings.showStateIcon) {
+                    activity.smallImageKey = 'playing';
+                    activity.smallImageText = sentenceCase(current[2]);
+                }
+            }
+            else {
+                activity.smallImageKey = 'paused';
+                activity.smallImageText = sentenceCase(current[2]);
+            }
+            if (discordSettings.showServerImage && song) {
+                if (song._uniqueId === currentSong?._uniqueId && imageUrlRef.current) {
+                    if (song._serverType === ServerType.JELLYFIN) {
+                        activity.largeImageKey = imageUrlRef.current;
+                    }
+                    else if (song._serverType === ServerType.NAVIDROME ||
+                        song._serverType === ServerType.SUBSONIC) {
+                        try {
+                            const info = await api.controller.getAlbumInfo({
+                                apiClientProps: { serverId: song._serverId },
+                                query: { id: song.albumId },
+                            });
+                            if (info.imageUrl) {
+                                activity.largeImageKey = info.imageUrl;
+                            }
+                        }
+                        catch {
+                            /* empty */
+                        }
+                    }
+                }
+            }
+            if (activity.largeImageKey === undefined &&
+                lastfmApiKey &&
+                song?.album &&
+                song?.albumArtists.length) {
+                const albumInfo = await fetch(`https://ws.audioscrobbler.com/2.0/?method=album.getinfo&api_key=${lastfmApiKey}&artist=${encodeURIComponent(song.albumArtists[0].name)}&album=${encodeURIComponent(song.album)}&format=json`);
+                const albumInfoJson = await albumInfo.json();
+                if (albumInfoJson.album?.image?.[3]['#text']) {
+                    activity.largeImageKey = albumInfoJson.album.image[3]['#text'];
+                }
+            }
+            // Fall back to default icon if not set
+            if (!activity.largeImageKey) {
+                activity.largeImageKey = 'icon';
+            }
+            // Initialize if needed
+            const isConnected = await discordRpc?.isConnected();
+            if (!isConnected) {
+                logFn.debug(logMsg[LogCategory.EXTERNAL].discordRpcInitialized, {
+                    category: LogCategory.EXTERNAL,
+                    meta: {
+                        clientId: discordSettings.clientId,
+                    },
+                });
+                previousEnabledRef.current = true;
+                await discordRpc?.initialize(discordSettings.clientId);
+            }
+            logFn.debug(logMsg[LogCategory.EXTERNAL].discordRpcSetActivity, {
+                category: LogCategory.EXTERNAL,
+                meta: {
+                    albumName: song.album,
+                    artistName: song.artists?.[0]?.name,
+                    currentStatus: current[2],
+                    currentTime: current[1],
+                    displayType: discordSettings.displayType,
+                    hasLargeImage: !!activity.largeImageKey,
+                    hasTimestamps: !!(activity.startTimestamp && activity.endTimestamp),
+                    previousStatus: previous[2],
+                    previousTime: previous[1],
+                    reason,
+                    showAsListening: discordSettings.showAsListening,
+                    songName: song.name,
+                    trackChanged: trackChangedByState || trackChanged,
+                },
+            });
+            discordRpc?.setActivity(activity);
+        }
+        else {
+            logFn.debug(logMsg[LogCategory.EXTERNAL].discordRpcUpdateSkipped, {
+                category: LogCategory.EXTERNAL,
+                meta: {
+                    currentStatus: current[2],
+                    currentTime: current[1],
+                    previousStatus: previous[2],
+                    previousTime: previous[1],
+                    timeDiff: Math.abs(current[1] - previous[1]),
+                    trackChanged: trackChangedByState || trackChanged,
+                },
+            });
+        }
+    }, [
+        discordSettings.showAsListening,
+        discordSettings.showServerImage,
+        discordSettings.showStateIcon,
+        discordSettings.showPaused,
+        lastfmApiKey,
+        discordSettings.clientId,
+        discordSettings.displayType,
+        discordSettings.linkType,
+        lastUniqueId,
+        currentSong?._uniqueId,
+        isRadioActive,
+        isRadioPlaying,
+        radioMetadata?.artist,
+        radioMetadata?.title,
+        stationName,
+    ]);
+    const debouncedSetActivity = useDebouncedCallback(setActivity, 500);
+    // Quit Discord RPC if it was enabled and is now disabled
+    useEffect(() => {
+        if ((!discordSettings.enabled || privateMode) && Boolean(previousEnabledRef.current)) {
+            logFn.info(logMsg[LogCategory.EXTERNAL].discordRpcQuit, {
+                category: LogCategory.EXTERNAL,
+                meta: {
+                    enabled: discordSettings.enabled,
+                    privateMode,
+                },
+            });
+            previousEnabledRef.current = false;
+            return discordRpc?.quit();
+        }
+    }, [discordSettings.clientId, privateMode, discordSettings.enabled]);
+    useEffect(() => {
+        if (!discordSettings.enabled || privateMode) {
+            return;
+        }
+        const getCurrentActivityState = () => {
+            const state = usePlayerStore.getState();
+            const currentSong = getCurrentSong(state);
+            const currentTime = useTimestampStoreBase.getState().timestamp;
+            const status = state.player.status;
+            return [currentSong, currentTime, status];
+        };
+        const resetInterval = () => {
+            if (intervalRef.current) {
+                clearInterval(intervalRef.current);
+            }
+            intervalRef.current = setInterval(() => {
+                const current = getCurrentActivityState();
+                const previous = previousActivityStateRef.current || current;
+                debouncedSetActivity(current, previous);
+                previousActivityStateRef.current = current;
+            }, 15000);
+        };
+        resetInterval();
+        const initialState = getCurrentActivityState();
+        let previousUniqueId = initialState[0]?._uniqueId || '';
+        previousActivityStateRef.current = initialState;
+        // Set activity immediately when Discord RPC is enabled
+        debouncedSetActivity(initialState, initialState);
+        const unsubSongChange = usePlayerStore.subscribe((state) => {
+            const currentSong = getCurrentSong(state);
+            const currentTime = useTimestampStoreBase.getState().timestamp;
+            const status = state.player.status;
+            return [currentSong, currentTime, status];
+        }, (current, previous) => {
+            const currentUniqueId = current[0]?._uniqueId || '';
+            const trackChanged = previousUniqueId !== currentUniqueId;
+            if (trackChanged && current[0]) {
+                resetInterval();
+                previousUniqueId = currentUniqueId;
+            }
+            const activity = [
+                current[0],
+                current[1],
+                current[2],
+            ];
+            // Use the ref as the source of truth for previous state
+            const previousActivity = previousActivityStateRef.current ||
+                (previous
+                    ? [
+                        previous[0],
+                        previous[1],
+                        previous[2],
+                    ]
+                    : activity);
+            debouncedSetActivity(activity, previousActivity);
+            previousActivityStateRef.current = activity;
+        });
+        return () => {
+            unsubSongChange();
+            if (intervalRef.current) {
+                clearInterval(intervalRef.current);
+                intervalRef.current = null;
+            }
+        };
+    }, [
+        debouncedSetActivity,
+        discordSettings.clientId,
+        discordSettings.enabled,
+        privateMode,
+        setActivity,
+    ]);
+};
+const DiscordRpcHookInner = () => {
+    useDiscordRpc();
+    return null;
+};
+export const DiscordRpcHook = () => {
+    const isElectronEnv = isElectron();
+    const isDiscordRpcEnabled = useSettingsStore((state) => state.discord.enabled);
+    const isPrivateMode = useAppStore((state) => state.privateMode);
+    const discordRpc = isElectronEnv ? window.api.discordRpc : null;
+    if (!isElectronEnv || !discordRpc || !isDiscordRpcEnabled || isPrivateMode) {
+        return null;
+    }
+    return React.createElement(DiscordRpcHookInner);
+};

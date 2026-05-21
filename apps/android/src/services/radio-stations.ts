@@ -114,7 +114,7 @@ const uploadNavidromeRadioThumbnail = async (
     }
 
     let imageBlob = thumbnail.blob;
-    let filename = thumbnail.name?.trim() || 'radio-image';
+    const filename = thumbnail.name?.trim() || 'radio-image';
     const thumbnailUrl = thumbnail.url?.trim();
 
     if (!imageBlob) {

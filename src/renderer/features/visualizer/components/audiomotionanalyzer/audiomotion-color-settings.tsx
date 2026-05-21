@@ -1,4 +1,3 @@
-import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { CustomGradientsManager } from './custom-gradients-manager';
@@ -16,22 +15,19 @@ export const AudiomotionColorSettings = () => {
     const isGradientLeftDisabled = visualizer.audiomotionanalyzer.channelLayout === 'single';
     const isGradientRightDisabled = visualizer.audiomotionanalyzer.channelLayout === 'single';
 
-    const allGradientOptions = useMemo(
-        () => [
-            {
-                group: t('visualizer.custom'),
-                items: (visualizer.audiomotionanalyzer.customGradients || []).map((gradient) => ({
-                    label: gradient.name,
-                    value: gradient.name,
-                })),
-            },
-            {
-                group: t('visualizer.builtIn'),
-                items: gradientOptions,
-            },
-        ],
-        [t, visualizer.audiomotionanalyzer.customGradients],
-    );
+    const allGradientOptions = [
+        {
+            group: t('visualizer.custom'),
+            items: (visualizer.audiomotionanalyzer.customGradients || []).map((gradient) => ({
+                label: gradient.name,
+                value: gradient.name,
+            })),
+        },
+        {
+            group: t('visualizer.builtIn'),
+            items: gradientOptions,
+        },
+    ];
 
     return (
         <Fieldset legend={t('visualizer.colors')}>

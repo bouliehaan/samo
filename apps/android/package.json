@@ -9,7 +9,9 @@
         "android:metro": "expo start --android",
         "ios": "expo run:ios",
         "start": "expo start --dev-client",
+        "lint": "eslint --max-warnings=0 src",
         "typecheck": "tsc --noEmit -p tsconfig.json",
+        "verify": "pnpm run typecheck && pnpm run lint",
         "web": "expo start --web"
     },
     "dependencies": {

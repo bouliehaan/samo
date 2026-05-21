@@ -1,0 +1,27 @@
+import type { MotionProps } from 'motion/react';
+export declare const animationProps: {
+    bounce: MotionProps;
+    fadeIn: MotionProps;
+    fadeInDown: MotionProps;
+    fadeInUp: MotionProps;
+    fadeOut: MotionProps;
+    flip: MotionProps;
+    pulse: MotionProps;
+    rotate: MotionProps;
+    rotateIn: MotionProps;
+    rotateScale: MotionProps;
+    rubberBand: MotionProps;
+    scale: MotionProps;
+    shake: MotionProps;
+    slideInDown: MotionProps;
+    slideInLeft: MotionProps;
+    slideInRight: MotionProps;
+    slideInUp: MotionProps;
+    slideOutDown: MotionProps;
+    slideOutLeft: MotionProps;
+    slideOutRight: MotionProps;
+    slideOutUp: MotionProps;
+    swing: MotionProps;
+    zoomIn: MotionProps;
+    zoomOut: MotionProps;
+};

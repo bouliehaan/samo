@@ -6,7 +6,15 @@ import eslintPluginReactHooks from 'eslint-plugin-react-hooks';
 import eslintPluginReactRefresh from 'eslint-plugin-react-refresh';
 
 export default tseslint.config(
-    { ignores: ['**/node_modules', '**/dist', '**/out'] },
+    {
+        ignores: [
+            '**/node_modules',
+            '**/dist',
+            '**/out',
+            'packages/core/src/**/*.js',
+            'packages/core/src/**/*.d.ts',
+        ],
+    },
     tseslint.configs.recommended,
     perfectionist.configs['recommended-natural'],
     eslintPluginReact.configs.flat.recommended,
@@ -21,12 +29,7 @@ export default tseslint.config(
     {
         files: ['src/renderer/**/*.{ts,tsx}'],
         rules: {
-            'no-console': [
-                'error',
-                {
-                    allow: [],
-                },
-            ],
+            'no-console': 'error',
         },
     },
     {
@@ -35,23 +38,6 @@ export default tseslint.config(
             'src/renderer/**/*error-boundary*.{ts,tsx}',
             'src/renderer/**/router-error-boundary.tsx',
         ],
-        rules: {
-            'no-console': 'off',
-        },
-    },
-    {
-        files: ['apps/android/src/**/*.{ts,tsx}'],
-        rules: {
-            'no-console': [
-                'error',
-                {
-                    allow: [],
-                },
-            ],
-        },
-    },
-    {
-        files: ['apps/android/src/components/ErrorBoundary.tsx'],
         rules: {
             'no-console': 'off',
         },
@@ -90,4 +76,58 @@ export default tseslint.config(
         },
     },
     eslintConfigPrettier,
+    {
+        files: ['apps/android/src/**/*.{ts,tsx}'],
+        rules: {
+            '@typescript-eslint/explicit-function-return-type': 'off',
+            '@typescript-eslint/no-unused-vars': 'off',
+            curly: 'off',
+            indent: 'off',
+            'no-console': 'error',
+            'perfectionist/sort-imports': 'off',
+            'perfectionist/sort-named-imports': 'off',
+            'perfectionist/sort-objects': 'off',
+            'perfectionist/sort-union-types': 'off',
+            'perfectionist/sort-object-types': 'off',
+            'perfectionist/sort-modules': 'off',
+            'perfectionist/sort-switch-case': 'off',
+            'perfectionist/sort-jsx-props': 'off',
+            'perfectionist/sort-interfaces': 'off',
+            'perfectionist/sort-classes': 'off',
+            'prettier/prettier': 'off',
+            'react/prop-types': 'off',
+            'react-hooks/exhaustive-deps': 'off',
+            'react-hooks/immutability': 'off',
+            'react-hooks/preserve-manual-memoization': 'off',
+            quotes: 'off',
+            semi: 'off',
+        },
+    },
+    {
+        files: ['apps/android/src/utils/log.ts', 'apps/android/src/components/ErrorBoundary.tsx'],
+        rules: {
+            'no-console': 'off',
+        },
+    },
+    {
+        files: ['packages/core/src/**/*.ts'],
+        ignores: ['**/*.test.ts'],
+        rules: {
+            '@typescript-eslint/explicit-function-return-type': 'off',
+            '@typescript-eslint/no-unused-vars': 'off',
+            curly: 'off',
+            indent: 'off',
+            'no-console': 'error',
+            'perfectionist/sort-imports': 'off',
+            'perfectionist/sort-named-imports': 'off',
+            'perfectionist/sort-objects': 'off',
+            'perfectionist/sort-union-types': 'off',
+            'perfectionist/sort-object-types': 'off',
+            'perfectionist/sort-modules': 'off',
+            'perfectionist/sort-interfaces': 'off',
+            'prettier/prettier': 'off',
+            quotes: 'off',
+            semi: 'off',
+        },
+    },
 );

@@ -1,4 +1,4 @@
-import { useCallback, useReducer, useRef } from 'react';
+import { useCallback, useReducer } from 'react';
 import { type MobileMediaTrack } from '@samo/core/mobile';
 
 import { type MediaContextMenuTarget } from '../contexts/media-context-menu';
@@ -92,9 +92,12 @@ const mediaOverlaysReducer = (
     }
 };
 
-export const useMediaOverlaysState = () => {
+export type UseMediaOverlaysOptions = {
+    onCloseBookInfoSideEffects?: () => void;
+};
+
+export const useMediaOverlaysState = (options: UseMediaOverlaysOptions = {}) => {
     const [state, dispatch] = useReducer(mediaOverlaysReducer, initialMediaOverlaysState);
-    const bookInfoRequestId = useRef(0);
 
     const setBookInfoState = useCallback(
         (bookInfoState: BookInfoState | ((current: BookInfoState) => BookInfoState)) => {
@@ -104,9 +107,9 @@ export const useMediaOverlaysState = () => {
     );
 
     const closeBookInfo = useCallback(() => {
-        bookInfoRequestId.current += 1;
+        options.onCloseBookInfoSideEffects?.();
         dispatch({ type: 'set-book-info', bookInfoState: { status: 'idle' } });
-    }, []);
+    }, [options.onCloseBookInfoSideEffects]);
 
     const setContextMenuTarget = useCallback((contextMenuTarget: MediaContextMenuTarget | null) => {
         dispatch({ type: 'set-context-menu-target', contextMenuTarget });
@@ -140,7 +143,6 @@ export const useMediaOverlaysState = () => {
 
     return {
         ...state,
-        bookInfoRequestId,
         closeBookInfo,
         setBookInfoState,
         setContextMenuFeedback,

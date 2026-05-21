@@ -69,8 +69,61 @@ internal class SamoAudioEngine(
         event.putInt("direction", direction)
         emit("SamoAudioNavigationRequest", event)
       }
+      override fun getCastNotificationBridge(): () -> SamoCastNotificationBridge? = {
+        if (isCastActive()) castNotificationBridge else null
+      }
     },
   )
+  private val castNotificationBridge = object : SamoCastNotificationBridge {
+    override fun getCastOverlayState(): SamoCastPlaybackOverlay? {
+      val remoteMediaClient = castManager.getActiveRemoteMediaClient() ?: return null
+      if (!isCastActive()) {
+        return null
+      }
+
+      val status = castManager.getCurrentCastPlaybackStatus(remoteMediaClient)
+      return SamoCastPlaybackOverlay(
+        currentPositionMs = remoteMediaClient.approximateStreamPosition,
+        durationMs = remoteMediaClient.streamDuration.coerceAtLeast(0L),
+        playWhenReady = status == "playing" || status == "buffering",
+      )
+    }
+
+    override fun handleCastPlay(): Boolean {
+      val remoteMediaClient = castManager.getActiveRemoteMediaClient() ?: return false
+      if (!isCastActive()) {
+        return false
+      }
+
+      remoteMediaClient.play()
+      castManager.emitCastPlaybackState("playing")
+      return true
+    }
+
+    override fun handleCastPause(): Boolean {
+      val remoteMediaClient = castManager.getActiveRemoteMediaClient() ?: return false
+      if (!isCastActive()) {
+        return false
+      }
+
+      remoteMediaClient.pause()
+      castManager.emitCastPlaybackState("paused")
+      return true
+    }
+
+    override fun handleCastSeek(positionMs: Long): Boolean {
+      val remoteMediaClient = castManager.getActiveRemoteMediaClient() ?: return false
+      if (!isCastActive()) {
+        return false
+      }
+
+      val nextPositionMs = positionMs.coerceAtLeast(0L)
+      remoteMediaClient.seek(nextPositionMs)
+      lastCastPositionMs = nextPositionMs
+      castManager.emitCastPlaybackState()
+      return true
+    }
+  }
   private val outputRoutes = SamoOutputRoutes(reactContext, mainHandler)
   private val liveReconnect = SamoLiveReconnect(mainHandler, this)
   private lateinit var castManager: SamoCastSessionManager
@@ -637,6 +690,17 @@ internal class SamoAudioEngine(
    */
   override fun isCastActive(): Boolean =
     castManager.getActiveRemoteMediaClient() != null && currentCastSource != null
+
+  override fun syncCastNotificationState() {
+    mainHandler.post {
+      val service = boundService ?: return@post
+      val forwarding = service.getSessionPlayer() ?: return@post
+      forwarding.setCastOverlay(
+        if (isCastActive()) castNotificationBridge.getCastOverlayState() else null,
+      )
+      service.refreshPlaybackNotification()
+    }
+  }
 
   override fun emitState(status: String?) {
     if (castManager.getActiveRemoteMediaClient() != null && currentCastSource != null) {

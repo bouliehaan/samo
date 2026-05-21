@@ -1,0 +1,104 @@
+import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
+import clsx from 'clsx';
+import { AnimatePresence, LayoutGroup, motion } from 'motion/react';
+import React from 'react';
+import { useTranslation } from 'react-i18next';
+import { generatePath, Link } from 'react-router';
+import styles from './mobile-playerbar.module.css';
+import { ItemImage } from '/@/renderer/components/item-image/item-image';
+import { ContextMenuController } from '/@/renderer/features/context-menu/context-menu-controller';
+import { MainPlayButton, PlayerButton } from '/@/renderer/features/player/components/player-button';
+import { usePlayer } from '/@/renderer/features/player/context/player-context';
+import { useNowPlaying } from '/@/renderer/hooks/use-now-playing';
+import { AppRoute } from '/@/renderer/router/routes';
+import { useFullScreenPlayerStore, useFullScreenPlayerStoreActions, usePlayerSong, usePlayerStatus, useSetFullScreenPlayerStore, } from '/@/renderer/store';
+import { useAudiobookItem } from '/@/renderer/store/audiobook.store';
+import { useCurrentServerWithCredential } from '/@/renderer/store/auth.store';
+import { usePodcastItem, usePodcastServer } from '/@/renderer/store/podcast.store';
+import { ActionIcon } from '/@/shared/components/action-icon/action-icon';
+import { Group } from '/@/shared/components/group/group';
+import { Icon } from '/@/shared/components/icon/icon';
+import { Separator } from '/@/shared/components/separator/separator';
+import { Text } from '/@/shared/components/text/text';
+import { Tooltip } from '/@/shared/components/tooltip/tooltip';
+import { PlaybackSelectors } from '/@/shared/constants/playback-selectors';
+import { LibraryItem } from '/@/shared/types/domain-types';
+import { PlayerStatus } from '/@/shared/types/types';
+export const MobilePlayerbar = () => {
+    const { t } = useTranslation();
+    const { expanded: isFullScreenPlayerExpanded } = useFullScreenPlayerStore();
+    const setFullScreenPlayerStore = useSetFullScreenPlayerStore();
+    const { setStore } = useFullScreenPlayerStoreActions();
+    const currentSong = usePlayerSong();
+    const status = usePlayerStatus();
+    const { mediaNext, mediaPrevious, mediaTogglePlayPause } = usePlayer();
+    const nowPlaying = useNowPlaying();
+    const podcastItem = usePodcastItem();
+    const podcastServer = usePodcastServer();
+    const audiobookItem = useAudiobookItem();
+    const currentServer = useCurrentServerWithCredential();
+    const isAudiobookMode = nowPlaying.source === 'audiobook';
+    const isPodcastMode = nowPlaying.source === 'podcast';
+    const title = currentSong?.name;
+    const artists = currentSong?.artists;
+    const isSongDefined = Boolean(currentSong?.id);
+    const handleToggleFullScreenPlayer = (e) => {
+        e?.stopPropagation();
+        // Set active tab to player when opening fullscreen player
+        setStore({ activeTab: 'player' });
+        setFullScreenPlayerStore({ expanded: !isFullScreenPlayerExpanded });
+    };
+    const handleToggleContextMenu = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (isPodcastMode && podcastItem && podcastServer) {
+            ContextMenuController.call({
+                cmd: { items: [podcastItem], server: podcastServer, type: 'podcast' },
+                event: e,
+            });
+        }
+        else if (isAudiobookMode && audiobookItem && currentServer) {
+            ContextMenuController.call({
+                cmd: { items: [audiobookItem], server: currentServer, type: 'audiobook' },
+                event: e,
+            });
+        }
+        else if (currentSong) {
+            ContextMenuController.call({
+                cmd: { items: [currentSong], type: LibraryItem.SONG },
+                event: e,
+            });
+        }
+    };
+    const stopPropagation = (e) => e?.stopPropagation();
+    return (_jsxs("div", { className: clsx(styles.container, PlaybackSelectors.mediaPlayer), children: [_jsx("div", { className: styles.contentWrapper, children: _jsxs(LayoutGroup, { children: [_jsx(AnimatePresence, { initial: false, mode: "popLayout", children: currentSong?.id && (_jsx("div", { className: styles.imageWrapper, children: _jsx(motion.div, { animate: { opacity: 1, scale: 1 }, className: styles.image, exit: { opacity: 0 }, initial: { opacity: 0 }, onClick: handleToggleFullScreenPlayer, onContextMenu: handleToggleContextMenu, role: "button", transition: { duration: 0.2, ease: 'easeIn' }, children: _jsx(Tooltip, { label: t('player.toggleFullscreenPlayer', {
+                                            postProcess: 'sentenceCase',
+                                        }), openDelay: 0, children: _jsx(ItemImage, { className: clsx(styles.playerbarImage, PlaybackSelectors.playerCoverArt), enableDebounce: false, enableViewport: false, explicitStatus: currentSong.explicitStatus, fetchPriority: "high", id: currentSong.imageId, itemType: LibraryItem.SONG, type: "table" }) }) }, "mobile-playerbar-image") })) }), _jsxs(motion.div, { className: styles.metadataStack, layout: "position", children: [_jsx("div", { className: styles.lineItem, onClick: stopPropagation, children: _jsxs(Group, { align: "center", gap: "xs", wrap: "nowrap", children: [_jsx(Text, { className: PlaybackSelectors.songTitle, component: Link, fw: 500, isLink: true, onClick: handleToggleFullScreenPlayer, onContextMenu: handleToggleContextMenu, overflow: "hidden", size: "sm", to: AppRoute.NOW_PLAYING, truncate: true, children: title || '—' }), isSongDefined && (_jsx(ActionIcon, { icon: "ellipsisVertical", onClick: handleToggleContextMenu, size: "xs", styles: {
+                                                    root: {
+                                                        '--ai-size-xs': '1.15rem',
+                                                    },
+                                                }, variant: "subtle" }))] }) }), _jsx("div", { className: clsx(styles.lineItem, styles.secondary, PlaybackSelectors.songArtist), onClick: stopPropagation, children: artists?.map((artist, index) => (_jsxs(React.Fragment, { children: [index > 0 && _jsx(Separator, {}), _jsx(Text, { component: artist.id ? Link : undefined, fw: 500, isLink: artist.id !== '', onClick: handleToggleFullScreenPlayer, overflow: "hidden", size: "xs", to: artist.id
+                                                    ? generatePath(AppRoute.LIBRARY_ALBUM_ARTISTS_DETAIL, {
+                                                        albumArtistId: artist.id,
+                                                    })
+                                                    : undefined, children: artist.name || '—' })] }, `bar-${artist.id}`))) }), _jsx("div", { className: clsx(styles.lineItem, styles.secondary, PlaybackSelectors.songAlbum), onClick: stopPropagation, children: _jsx(Text, { component: Link, fw: 500, isLink: true, onClick: handleToggleFullScreenPlayer, overflow: "hidden", size: "xs", to: currentSong?.albumId
+                                            ? generatePath(AppRoute.LIBRARY_ALBUMS_DETAIL, {
+                                                albumId: currentSong.albumId,
+                                            })
+                                            : '', children: currentSong?.album || '—' }) })] })] }) }), _jsxs("div", { className: styles.controlsWrapper, children: [_jsx(PlayerButton, { icon: _jsx(Icon, { fill: "default", icon: "mediaPrevious", size: "md" }), onClick: (e) => {
+                            e.stopPropagation();
+                            mediaPrevious();
+                        }, tooltip: {
+                            label: t('player.previous', { postProcess: 'sentenceCase' }),
+                            openDelay: 0,
+                        }, variant: "tertiary" }), _jsx(MainPlayButton, { disabled: currentSong?.id === undefined, isPaused: status === PlayerStatus.PAUSED, onClick: (e) => {
+                            e.stopPropagation();
+                            mediaTogglePlayPause();
+                        } }), _jsx(PlayerButton, { icon: _jsx(Icon, { fill: "default", icon: "mediaNext", size: "md" }), onClick: (e) => {
+                            e.stopPropagation();
+                            mediaNext();
+                        }, tooltip: {
+                            label: t('player.next', { postProcess: 'sentenceCase' }),
+                            openDelay: 0,
+                        }, variant: "tertiary" })] })] }));
+};

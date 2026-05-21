@@ -1,0 +1,33 @@
+import { jsx as _jsx } from "react/jsx-runtime";
+import isElectron from 'is-electron';
+import { useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
+import { api } from '/@/renderer/api';
+import { useCurrentServer } from '/@/renderer/store';
+import { ContextMenu } from '/@/shared/components/context-menu/context-menu';
+import { logFn } from '/@/renderer/utils/logger';
+const utils = isElectron() ? window.api.utils : null;
+export const DownloadAction = ({ ids }) => {
+    const { t } = useTranslation();
+    const server = useCurrentServer();
+    const onSelect = useCallback(async () => {
+        try {
+            for (const id of ids) {
+                const downloadUrl = api.controller.getDownloadUrl({
+                    apiClientProps: { serverId: server.id },
+                    query: { id },
+                });
+                if (isElectron()) {
+                    utils?.download(downloadUrl);
+                }
+                else {
+                    window.open(downloadUrl, '_blank');
+                }
+            }
+        }
+        catch (error) {
+            logFn.error('Failed to download items', { meta: { error: error } });
+        }
+    }, [ids, server]);
+    return (_jsx(ContextMenu.Item, { disabled: ids.length > 1, leftIcon: "download", onSelect: onSelect, children: t('page.contextMenu.download', { postProcess: 'sentenceCase' }) }));
+};
