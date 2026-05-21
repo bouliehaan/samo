@@ -13,38 +13,22 @@ import {
 import { toast } from '/@/shared/components/toast/toast';
 import { ServerListItemWithCredential } from '/@/shared/types/domain-types';
 import { PlayerStatus } from '/@/shared/types/types';
+import {
+    clampPosition,
+    normalizeResumePosition,
+} from '/@/renderer/store/audiobook-resume-math';
 
 // How often (in seconds of drift) to flush position to the persisted resume map.
 const POSITION_PERSIST_DEBOUNCE_S = 10;
 const SERVER_PROGRESS_SYNC_INTERVAL_S = 30;
-const RESUME_NEAR_END_MINIMUM_S = 30;
-const RESUME_NEAR_END_MAXIMUM_S = 120;
 
-const clampPosition = (seconds: number, duration: number) => {
-    if (!Number.isFinite(seconds)) return 0;
-    const floor = Math.max(0, seconds);
-    return duration > 0 ? Math.min(floor, duration) : floor;
-};
+import { getCurrentChapterIndex } from '/@/renderer/store/audiobook-chapters';
 
-const normalizeResumePosition = (seconds: number, duration: number) => {
-    const clamped = clampPosition(seconds, duration);
-    if (duration <= 0 || clamped <= 0) return clamped;
-
-    const nearEndThreshold = Math.min(
-        RESUME_NEAR_END_MAXIMUM_S,
-        Math.max(RESUME_NEAR_END_MINIMUM_S, duration * 0.02),
-    );
-
-    return duration - clamped <= nearEndThreshold ? 0 : clamped;
-};
-
-export interface AudiobookChapterListItem {
-    chapter: AudiobookshelfChapter;
-    duration: number;
-    end: number;
-    originalIndex: number;
-    start: number;
-}
+export type { AudiobookChapterListItem } from '/@/renderer/store/audiobook-chapters';
+export {
+    getCurrentChapterIndex,
+    getOrderedAudiobookChapters,
+} from '/@/renderer/store/audiobook-chapters';
 
 interface AudiobookState {
     actions: {
@@ -71,73 +55,6 @@ interface AudiobookState {
     resumeByItemId: Record<string, number>;
     server: null | ServerListItemWithCredential;
     sessionId: null | string;
-}
-
-/**
- * Single source of truth for "which chapter is the listener currently in?".
- * Used by playerbar metadata, next/previous chapter navigation, and the macOS
- * Now Playing surface so they can never disagree.
- *
- * Returns -1 when the audiobook has no chapter data; otherwise returns the
- * highest index whose `start <= position`. Position is clamped to [0, duration]
- * when duration is known so an overshoot at end-of-book doesn't return -1.
- */
-export function getCurrentChapterIndex(
-    chapters: AudiobookshelfChapter[],
-    position: number,
-    duration: number,
-): number {
-    if (chapters.length === 0) return -1;
-    const max = duration > 0 ? duration : Number.POSITIVE_INFINITY;
-    const clamped = Math.min(Math.max(position, 0), max);
-    for (let i = chapters.length - 1; i >= 0; i--) {
-        if (chapters[i].start <= clamped) return i;
-    }
-    // Position is before chapter 0's start (rare) — clamp to first chapter.
-    return 0;
-}
-
-export function getOrderedAudiobookChapters(
-    chapters: AudiobookshelfChapter[],
-    duration: number,
-): AudiobookChapterListItem[] {
-    if (chapters.length <= 1 || !Number.isFinite(duration) || duration <= 0) return [];
-
-    const orderedChapters = chapters
-        .map((chapter, originalIndex) => ({ chapter, originalIndex }))
-        .filter(
-            ({ chapter }) =>
-                Number.isFinite(chapter.start) && chapter.start >= 0 && chapter.start < duration,
-        )
-        .sort((a, b) => a.chapter.start - b.chapter.start)
-        .filter(
-            ({ chapter }, index, ordered) =>
-                index === 0 || chapter.start !== ordered[index - 1].chapter.start,
-        );
-
-    if (orderedChapters.length <= 1 || orderedChapters[0].chapter.start > 0.5) return [];
-
-    return orderedChapters
-        .map(({ chapter, originalIndex }, index) => {
-            const start = chapter.start;
-            const end = Math.min(
-                index === orderedChapters.length - 1
-                    ? duration
-                    : orderedChapters[index + 1].chapter.start,
-                duration,
-            );
-
-            if (end <= start) return null;
-
-            return {
-                chapter,
-                duration: end - start,
-                end,
-                originalIndex,
-                start,
-            };
-        })
-        .filter((chapter): chapter is AudiobookChapterListItem => chapter !== null);
 }
 
 // Internal: tracks the last position value that was flushed to resumeByItemId.

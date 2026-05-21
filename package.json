@@ -63,6 +63,8 @@
         "publish:win-arm64:alpha": "pnpm run build && electron-builder --config electron-builder-alpha.yml --publish always --win --arm64",
         "publish:win-arm64:beta": "pnpm run build && electron-builder --config electron-builder-beta.yml --publish always --win --arm64",
         "start": "electron-vite preview",
+        "test": "vitest run",
+        "test:watch": "vitest",
         "typecheck": "pnpm run typecheck:core && pnpm run typecheck:node && pnpm run typecheck:web",
         "typecheck:core": "tsc --noEmit -p packages/core/tsconfig.json --composite false",
         "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
@@ -186,7 +188,8 @@
         "vite-plugin-conditional-import": "^0.1.7",
         "vite-plugin-dynamic-import": "^1.6.0",
         "vite-plugin-ejs": "^1.7.0",
-        "vite-plugin-pwa": "^1.2.0"
+        "vite-plugin-pwa": "^1.2.0",
+        "vitest": "^4.1.7"
     },
     "pnpm": {
         "onlyBuiltDependencies": [

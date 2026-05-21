@@ -39,7 +39,6 @@ import {
     ServerType,
     upsertServerAuthentication,
 } from '@samo/core/server';
-import { FlashList, type FlashListRef } from '@shopify/flash-list';
 import { File } from 'expo-file-system';
 import { Image as ExpoImage } from 'expo-image';
 import { StatusBar } from 'expo-status-bar';
@@ -89,17 +88,7 @@ import {
     GestureHandlerRootView,
 } from 'react-native-gesture-handler';
 import LinearGradient from 'react-native-linear-gradient';
-import Reanimated, {
-    interpolate,
-    runOnJS,
-    type SharedValue,
-    useAnimatedReaction,
-    useAnimatedScrollHandler,
-    useAnimatedStyle,
-    useSharedValue,
-    withSpring,
-    withTiming,
-} from 'react-native-reanimated';
+import { useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 import ditherTexture from './assets/dither.png';
 import samoLogo from './assets/samo-logo.png';
 import { ArtworkImage } from './src/components/ArtworkImage';
@@ -148,7 +137,9 @@ import {
 import { type BookInfoState } from './src/types/book-info';
 import { LibrarySortMenu } from './src/components/LibrarySortMenu';
 import { useStableCallback } from './src/hooks/use-stable-callback';
+import { type AndroidUtilityScreen } from './src/types/app-navigation';
 import { type HomeDisplaySection } from './src/types/home';
+import { type ViewAllRoute } from './src/types/view-all';
 import {
     EMPTY_LIBRARY_FULL_COLLECTIONS,
     LIBRARY_FILTERS,
@@ -231,6 +222,42 @@ import {
 } from './src/utils/color';
 import { clamp } from './src/utils/math';
 import { getPlaylistTargetsForRoot } from './src/utils/playlist-targets';
+import {
+    HOME_ARTWORK_PREFETCH_LIMIT,
+    LIBRARY_FULL_COLLECTION_PREFETCH_DELAY_MS,
+} from './src/utils/app-constants';
+import {
+    addDefaultHttpScheme,
+    DEFAULT_SERVER_URL,
+    hasServerUrlTarget,
+} from './src/utils/auth-url';
+import { getTabTitle } from './src/utils/tab-title';
+import { buildRecoveredPlaybackItem } from './src/utils/playback-recovery';
+import {
+    buildDownloadedCollectionSnapshot,
+    EMPTY_DOWNLOADED_COLLECTION_SNAPSHOT,
+    type DownloadedCollectionSnapshot,
+    type DownloadedCollectionSummary,
+} from './src/utils/downloaded-collections';
+import { buildOfflineHomeContentState } from './src/utils/offline-home';
+import { buildDownloadedMusicDetail } from './src/utils/offline-music-detail';
+import { rememberMediaDetail } from './src/utils/media-detail-cache';
+import {
+    getAbsProgressSeconds,
+    getPlayerPositionMsForAbsProgress,
+} from './src/utils/abs-progress-math';
+import {
+    buildOfflineAudiobookPlayable,
+    buildOfflinePodcastEpisodePlayable,
+    mimeFromCastUri,
+    pickAudiobookFileIndexForTime,
+    resolveLocalPlayback,
+} from './src/utils/offline-playback';
+import { inferContextMenuKindFromItem } from './src/utils/context-menu-infer';
+import { isSongSearchItem, synthesizeTrackFromSongItem } from './src/utils/search-tracks';
+import { getHighResolutionArtworkUrl } from './src/utils/artwork-url';
+import { getLastPlayedPersistenceKey } from './src/utils/last-played';
+import { detailHasHiRes } from './src/utils/media-quality';
 import { ANDROID_SERVER_TYPES } from './src/utils/server-types';
 import {
     type DownloadEntry,
@@ -377,616 +404,6 @@ import {
 } from './src/components/Glyphs';
 import { styles } from './src/theme/styles';
 import { colors, spacing } from './src/theme/tokens';
-
-const ReanimatedFlashList = Reanimated.createAnimatedComponent(FlashList) as typeof FlashList;
-const FLASH_LIST_MAINTAIN_POSITION_DISABLED = { disabled: true };
-
-const CAST_ICON_ACTIVE_TINT = 'rgba(202, 160, 79, 0.78)';
-const CAST_ICON_INACTIVE_TINT = 'rgba(245, 245, 245, 0.72)';
-const HOME_ARTWORK_PREFETCH_LIMIT = 48;
-const LIBRARY_FULL_COLLECTION_PREFETCH_DELAY_MS = 500;
-const MEDIA_DETAIL_MEMORY_CACHE_LIMIT = 24;
-const MEDIA_DETAIL_MEMORY_TRACK_LIMIT = 300;
-const DEFAULT_SERVER_URL = 'http://';
-
-const addDefaultHttpScheme = (value: string) => {
-    const trimmed = value.trim();
-
-    if (!trimmed) {
-        return '';
-    }
-
-    if (/^[a-z][a-z\d+\-.]*:\/\//i.test(trimmed)) {
-        return trimmed;
-    }
-
-    return `http://${trimmed.replace(/^\/+/, '')}`;
-};
-
-const hasServerUrlTarget = (value: string) => {
-    const normalized = addDefaultHttpScheme(value);
-    return normalized.replace(/^[a-z][a-z\d+\-.]*:\/\//i, '').trim().length > 0;
-};
-
-const toPlaybackSource = (value?: string): MobilePlayableAudio['source'] | null => {
-    if (value === 'audiobook' || value === 'music' || value === 'podcast' || value === 'radio') {
-        return value;
-    }
-
-    return null;
-};
-
-const buildRecoveredPlaybackItem = (
-    event: AndroidNativePlaybackEvent,
-    lastPlayedItem: MobilePlayableAudio | null,
-): MobilePlayableAudio | null => {
-    const sourceSnapshot = event.source;
-    if (
-        lastPlayedItem &&
-        (!sourceSnapshot?.id || sourceSnapshot.id === lastPlayedItem.id) &&
-        (!sourceSnapshot?.source || sourceSnapshot.source === lastPlayedItem.source)
-    ) {
-        return {
-            ...lastPlayedItem,
-            artworkUrl: sourceSnapshot?.artworkUrl ?? lastPlayedItem.artworkUrl,
-            durationSeconds:
-                event.durationMs && event.durationMs > 0
-                    ? event.durationMs / 1000
-                    : lastPlayedItem.durationSeconds,
-            subtitle: lastPlayedItem.subtitle ?? sourceSnapshot?.subtitle,
-            title: lastPlayedItem.title,
-        };
-    }
-
-    const source = toPlaybackSource(sourceSnapshot?.source);
-    const id = sourceSnapshot?.id ?? event.sessionId;
-    const title = sourceSnapshot?.title?.trim();
-    if (!source || !id || !title) {
-        return null;
-    }
-
-    return {
-        artworkUrl: sourceSnapshot?.artworkUrl,
-        durationSeconds:
-            event.durationMs && event.durationMs > 0 ? event.durationMs / 1000 : undefined,
-        id,
-        quality: {
-            deliveryKind: 'unknown',
-            losslessRequired: false,
-            serverTranscodeRequested: false,
-        },
-        source,
-        subtitle: sourceSnapshot?.subtitle,
-        title,
-        url: '',
-    };
-};
-
-const getTabTitle = (activeTab: SamoMobileTabId) => {
-    return SAMO_MOBILE_TABS.find((tab) => tab.id === activeTab)?.label ?? 'Samo';
-};
-
-type DownloadedCollectionSummary = {
-    collection: DownloadEntry['collection'];
-    latestCompletedAt: number;
-};
-
-type DownloadedCollectionSnapshot = {
-    collections: DownloadedCollectionSummary[];
-    keys: Set<string>;
-    signature: string;
-    trackKeys: Set<string>;
-};
-
-const EMPTY_DOWNLOADED_COLLECTION_SNAPSHOT: DownloadedCollectionSnapshot = {
-    collections: [],
-    keys: new Set(),
-    signature: '',
-    trackKeys: new Set(),
-};
-
-const buildDownloadedCollectionSnapshot = (
-    entries: DownloadEntry[],
-): DownloadedCollectionSnapshot => {
-    const keys = new Set<string>();
-    const trackKeys = new Set<string>();
-    const collections = new Map<string, DownloadedCollectionSummary>();
-
-    for (const entry of entries) {
-        if (entry.status !== 'completed') continue;
-
-        const key = getDownloadedCollectionKey(entry.collection.sourceId, entry.collection.id);
-        keys.add(key);
-        trackKeys.add(getDownloadedTrackKey(entry.collection.sourceId, entry.trackId));
-        const existing = collections.get(key);
-        const latestCompletedAt = entry.completedAt ?? entry.enqueuedAt;
-        if (!existing || latestCompletedAt > existing.latestCompletedAt) {
-            collections.set(key, {
-                collection: entry.collection,
-                latestCompletedAt,
-            });
-        }
-    }
-
-    const summaries = [...collections.values()];
-    const collectionSignature = summaries
-        .map(
-            ({ collection, latestCompletedAt }) =>
-                [
-                    collection.sourceId,
-                    collection.id,
-                    collection.type,
-                    collection.title,
-                    collection.artworkUrl ?? '',
-                    latestCompletedAt,
-                ].join(':'),
-        )
-        .sort()
-        .join('|');
-    const trackSignature = [...trackKeys].sort().join('|');
-    const signature = `${collectionSignature}::${trackSignature}`;
-
-    return { collections: summaries, keys, signature, trackKeys };
-};
-
-const getLastPlayedPersistenceKey = (item: MobilePlayableAudio): string =>
-    `${item.contentSourceId ?? 'server'}:${item.id}`;
-
-const isPlaybackHiRes = (playback?: MobilePlayableAudio | null): boolean =>
-    Boolean(playback && isHiResAudioQuality(playback.quality));
-
-const detailHasHiRes = (detail: MobileMediaDetail): boolean =>
-    Boolean(detail.isHiRes || detail.tracks.some((track) => isPlaybackHiRes(track.playback)));
-
-const isContentItemHiRes = (
-    item?: null | { isHiRes?: boolean; playback?: MobilePlayableAudio },
-): boolean => Boolean(item?.isHiRes || isPlaybackHiRes(item?.playback));
-
-const getSourceFromSourceId = (
-    sourceId: string,
-    serverConnections: ServerAuthenticationResult[],
-): MobileContentSource | undefined => {
-    const connected = serverConnections.find(
-        (connection) => getPersistedServerAuthKey(connection) === sourceId,
-    );
-    if (connected) {
-        return getMobileContentSource(connected);
-    }
-
-    const separator = sourceId.indexOf(':');
-    if (separator <= 0) {
-        return undefined;
-    }
-
-    const type = sourceId.slice(0, separator) as ServerType;
-    const url = sourceId.slice(separator + 1);
-    if (!Object.values(ServerType).includes(type) || !url) {
-        return undefined;
-    }
-
-    return {
-        id: sourceId,
-        title: url.replace(/^https?:\/\//i, ''),
-        type,
-        url,
-    };
-};
-
-const buildOfflineHomeContentState = (
-    downloadedCollections: DownloadedCollectionSummary[],
-    serverConnections: ServerAuthenticationResult[],
-): AndroidHomeContentState => {
-    const sectionItems = new Map<MobileHomeSectionId, MobileHomeItem[]>();
-    const sortedCollections = [...downloadedCollections].sort(
-        (left, right) => right.latestCompletedAt - left.latestCompletedAt,
-    );
-
-    for (const { collection } of sortedCollections) {
-        const source = getSourceFromSourceId(collection.sourceId, serverConnections);
-        if (!source) {
-            continue;
-        }
-
-        const itemType =
-            collection.type === 'album'
-                ? MobileHomeItemType.ALBUM
-                : collection.type === 'playlist'
-                  ? MobileHomeItemType.PLAYLIST
-                  : collection.type === 'audiobook'
-                    ? MobileHomeItemType.AUDIOBOOK
-                    : MobileHomeItemType.PODCAST;
-        const sectionId =
-            collection.type === 'album'
-                ? MobileHomeSectionId.RECENTLY_ADDED
-                : collection.type === 'playlist'
-                  ? MobileHomeSectionId.PLAYLISTS
-                  : collection.type === 'audiobook'
-                    ? MobileHomeSectionId.AUDIOBOOKS
-                    : MobileHomeSectionId.PODCASTS;
-        const items = sectionItems.get(sectionId) ?? [];
-        items.push({
-            artworkUrl: collection.artworkUrl,
-            id: collection.id,
-            source,
-            subtitle: collection.subtitle,
-            title: collection.title,
-            type: itemType,
-        });
-        sectionItems.set(sectionId, items);
-    }
-
-    const sections: MobileHomeSection[] = [
-        {
-            id: MobileHomeSectionId.RECENTLY_ADDED,
-            items: sectionItems.get(MobileHomeSectionId.RECENTLY_ADDED) ?? [],
-            title: 'Downloaded Albums',
-        },
-        {
-            id: MobileHomeSectionId.PLAYLISTS,
-            items: sectionItems.get(MobileHomeSectionId.PLAYLISTS) ?? [],
-            title: 'Downloaded Playlists',
-        },
-        {
-            id: MobileHomeSectionId.AUDIOBOOKS,
-            items: sectionItems.get(MobileHomeSectionId.AUDIOBOOKS) ?? [],
-            title: 'Downloaded Audiobooks',
-        },
-        {
-            id: MobileHomeSectionId.PODCASTS,
-            items: sectionItems.get(MobileHomeSectionId.PODCASTS) ?? [],
-            title: 'Downloaded Podcasts',
-        },
-    ].filter((section) => section.items.length > 0);
-
-    return {
-        content: {
-            errors: [],
-            loadedAt: Date.now(),
-            sections,
-            serverTitle: 'Offline Downloads',
-        },
-        status: 'loaded',
-    };
-};
-
-const buildDownloadedMusicDetail = async (
-    item: AndroidRecentContentSourceItem,
-): Promise<MobileMediaDetail | null> => {
-    if (
-        !item.source ||
-        (item.type !== MobileHomeItemType.ALBUM && item.type !== MobileHomeItemType.PLAYLIST)
-    ) {
-        return null;
-    }
-
-    const entries = (await listDownloads())
-        .filter(
-            (entry) =>
-                entry.status === 'completed' &&
-                Boolean(entry.localUri) &&
-                entry.collection.sourceId === item.source!.id &&
-                entry.collection.id === item.id &&
-                (entry.collection.type === 'album' || entry.collection.type === 'playlist'),
-        )
-        .sort((left, right) => left.enqueuedAt - right.enqueuedAt);
-
-    if (entries.length === 0) {
-        return null;
-    }
-
-    const tracks: MobileMediaTrack[] = entries.map((entry, index) => {
-        const playback: MobilePlayableAudio = {
-            artworkUrl: item.artworkUrl ?? entry.collection.artworkUrl,
-            // Chromecast can't read the phone's filesystem; preserve the
-            // original streaming URL so a route hand-off still works.
-            castUrl: entry.sourceUrl,
-            contentSourceId: item.source!.id,
-            id: `${item.source!.id}:music:${entry.trackId}`,
-            quality: {
-                container: null,
-                deliveryKind: 'android-direct',
-                losslessRequired: true,
-                serverTranscodeRequested: false,
-            },
-            source: 'music',
-            subtitle: entry.trackSubtitle ?? item.title,
-            title: entry.title,
-            url: entry.localUri!,
-        };
-
-        return {
-            artworkUrl: item.artworkUrl ?? entry.collection.artworkUrl,
-            id: entry.trackId,
-            playback,
-            subtitle: entry.trackSubtitle ?? item.title,
-            title: entry.title,
-            trackNumber: index + 1,
-        };
-    });
-
-    return {
-        artworkUrl: item.artworkUrl,
-        id: item.id,
-        source: item.source,
-        subtitle: item.subtitle,
-        title: item.title,
-        tracks,
-        type:
-            item.type === MobileHomeItemType.ALBUM
-                ? MobileMediaDetailType.ALBUM
-                : MobileMediaDetailType.PLAYLIST,
-    };
-};
-
-type AndroidUtilityScreen =
-    | 'add-server'
-    | 'downloads'
-    | 'manage-servers'
-    | 'settings'
-    | 'view-all';
-
-type ViewAllVariant = 'album' | 'artist' | 'audiobook' | 'playlist' | 'podcast';
-
-interface ViewAllRoute {
-    items: MobileHomeItem[];
-    title: string;
-    variant: ViewAllVariant;
-}
-
-type LibraryMediaType = Exclude<LibraryFilter, 'all'>;
-
-const rememberMediaDetail = (
-    cache: Map<string, MobileMediaDetail>,
-    key: string,
-    detail: MobileMediaDetail,
-) => {
-    if (detail.tracks.length > MEDIA_DETAIL_MEMORY_TRACK_LIMIT) {
-        cache.delete(key);
-        return;
-    }
-    if (cache.has(key)) {
-        cache.delete(key);
-    }
-    cache.set(key, detail);
-
-    while (cache.size > MEDIA_DETAIL_MEMORY_CACHE_LIMIT) {
-        const oldestKey = cache.keys().next().value;
-        if (!oldestKey) break;
-        cache.delete(oldestKey);
-    }
-};
-
-const getAbsProgressSeconds = (
-    context: AbsProgressContext,
-    positionMs: number | undefined,
-    item: MobilePlayableAudio | undefined,
-): number => {
-    const offsetSeconds = item?.progressOffsetSeconds ?? 0;
-    const positionSeconds = Math.max(0, (positionMs ?? 0) / 1000);
-    const absoluteSeconds = offsetSeconds + positionSeconds;
-
-    return context.durationSeconds > 0
-        ? clamp(absoluteSeconds, 0, context.durationSeconds)
-        : absoluteSeconds;
-};
-
-const getPlayerPositionMsForAbsProgress = (
-    absoluteSeconds: number,
-    item: MobilePlayableAudio | undefined,
-): number => Math.max(0, (absoluteSeconds - (item?.progressOffsetSeconds ?? 0)) * 1000);
-
-/**
- * Pick which downloaded audiobook file contains a given book-time. Files
- * are sorted by startOffset; we pick the last file whose start is <= the
- * target. Defaults to 0 if nothing matches (shouldn't happen for valid
- * book-time inside the book's duration).
- */
-const pickAudiobookFileIndexForTime = (
-    files: OfflineAudiobookFile[],
-    bookTimeSeconds: number,
-): number => {
-    if (files.length === 0) {
-        return 0;
-    }
-    let chosen = 0;
-    for (let i = 0; i < files.length; i += 1) {
-        const file = files[i];
-        if (file.startOffsetSeconds <= bookTimeSeconds) {
-            chosen = i;
-        } else {
-            break;
-        }
-    }
-    return chosen;
-};
-
-/**
- * Wrap a single downloaded audiobook file as a MobilePlayableAudio so
- * ExoPlayer can play it through the same queue infrastructure as music
- * tracks. Each file becomes its own queue entry; the playback session
- * id namespaces them under the book so resolveLocalPlayback doesn't try
- * to second-guess us with a streaming swap.
- */
-const buildOfflineAudiobookPlayable = (
-    detail: MobileMediaDetail,
-    file: OfflineAudiobookFile,
-    initialPositionSeconds: number,
-    authentication?: ServerAuthenticationResult,
-): MobilePlayableAudio => {
-    return {
-        artworkUrl: detail.artworkUrl,
-        // The cast leg points at ABS's `/api/items/.../file/:ino` URL which
-        // has no file extension, so the native receiver can't infer mime
-        // from the path — pass it explicitly from the downloaded file's
-        // extension. Without this an M4B audiobook hits the cast as
-        // audio/mpeg and silently fails to decode on most receivers.
-        castMimeType: mimeFromCastUri(file.localUri),
-        // Chromecast can't read local files; route casting through the ABS
-        // server URL with `?token=…` so the receiver can self-authenticate.
-        castUrl: authentication
-            ? appendAudiobookshelfAuthToken(file.sourceUrl, authentication.credential)
-            : undefined,
-        contentSourceId: detail.source.id,
-        durationSeconds: file.durationSeconds,
-        id: `${detail.source.type}:${detail.source.url}:audiobook:${detail.id}:offline:${file.ino}`,
-        initialPositionSeconds,
-        progressOffsetSeconds: file.startOffsetSeconds,
-        quality: {
-            container: null,
-            deliveryKind: 'unknown',
-            losslessRequired: false,
-            serverTranscodeRequested: false,
-        },
-        source: 'audiobook',
-        subtitle: detail.subtitle,
-        title: detail.title,
-        url: file.localUri,
-    };
-};
-
-// Podcast episodes don't get a track.playback baked into the detail loader —
-// the streaming URL is fetched on demand from the ABS /play endpoint. That
-// network call fails offline, so for downloaded episodes we synthesize the
-// MobilePlayableAudio directly from the local file. The id keeps the same
-// `<authType>:<authUrl>:podcast:<itemId>:<episodeId>` shape playback uses
-// elsewhere so MediaSession metadata, progress sync, and resolveLocalPlayback
-// all behave consistently.
-const buildOfflinePodcastEpisodePlayable = (
-    detail: MobileMediaDetail,
-    track: MobileMediaTrack,
-    localUri: string,
-    sourceUrl?: string,
-    authentication?: ServerAuthenticationResult,
-): MobilePlayableAudio => {
-    const itemId = track.itemId ?? detail.id;
-    const episodeId = track.episodeId ?? track.id;
-    return {
-        artworkUrl: track.artworkUrl ?? detail.artworkUrl,
-        // ABS file URLs have no extension — pass the downloaded file's mime
-        // explicitly so the cast receiver doesn't fall back to audio/mpeg.
-        castMimeType: mimeFromCastUri(localUri),
-        // Same as offline audiobooks: cast routes through the ABS server URL.
-        castUrl:
-            sourceUrl && authentication
-                ? appendAudiobookshelfAuthToken(sourceUrl, authentication.credential)
-                : undefined,
-        contentSourceId: detail.source.id,
-        durationSeconds: track.durationSeconds,
-        id: `${detail.source.type}:${detail.source.url}:podcast:${itemId}:${episodeId}`,
-        initialPositionSeconds: track.startSeconds,
-        quality: {
-            container: null,
-            deliveryKind: 'unknown',
-            losslessRequired: false,
-            serverTranscodeRequested: false,
-        },
-        source: 'podcast',
-        subtitle: track.subtitle ?? detail.title,
-        title: track.title,
-        url: localUri,
-    };
-};
-
-/** Pull a `.ext` off the end of a local file URI and map it to the mime
- *  type the cast receiver should advertise for the corresponding ABS file
- *  URL (which the receiver can't sniff because the URL has no extension). */
-const mimeFromCastUri = (localUri: string | undefined): string | undefined => {
-    if (!localUri) return undefined;
-    const match = localUri.match(/\.([a-z0-9]+)(?:$|[?#])/i);
-    return mimeFromAudiobookshelfExt(match?.[1]) ?? undefined;
-};
-
-// Map a streaming `MobilePlayableAudio` to a local-file version if the track
-// has been downloaded. The download manager keys by the inner track id and
-// the server's content-source id; we recover both from playback.id's
-// `<authType>:<authUrl>:<source>:<innerId>` shape.
-const resolveLocalPlayback = async (
-    item: MobilePlayableAudio,
-): Promise<MobilePlayableAudio> => {
-    const sourceId = item.contentSourceId ?? item.id.match(/^([^:]+:[^:]+):/)?.[1];
-    const innerIdMatch = item.id.match(/:(music|audiobook|podcast|radio):(.+)$/);
-    if (!sourceId || !innerIdMatch) {
-        return item;
-    }
-    const [, sourceKind, innerId] = innerIdMatch;
-    // For podcasts, the inner part is `<itemId>:<episodeId>` — and we keyed
-    // the download by episodeId so each episode resolves to its own file.
-    const lookupTrackId =
-        sourceKind === 'podcast' ? (innerId.split(':').pop() ?? innerId) : innerId;
-    try {
-        const localUri = await getLocalUriForTrack(lookupTrackId, sourceId);
-        if (!localUri) {
-            return item;
-        }
-        // Local file — no auth headers, no need for the streaming URL.
-        return { ...item, httpHeaders: undefined, url: localUri };
-    } catch {
-        return item;
-    }
-};
-
-const inferContextMenuKindFromItem = (
-    item: AndroidRecentContentSourceItem,
-): Exclude<MediaContextMenuKind, 'song'> | null => {
-    switch (item.type) {
-        case MobileHomeItemType.ALBUM:
-            return 'album';
-        case MobileHomeItemType.ARTIST:
-            return 'artist';
-        case MobileHomeItemType.AUDIOBOOK:
-            return 'audiobook';
-        case MobileHomeItemType.PLAYLIST:
-            return 'playlist';
-        case MobileHomeItemType.PODCAST:
-            return 'podcast';
-        case MobileHomeItemType.RADIO:
-            return 'radio';
-        default:
-            return null;
-    }
-};
-
-const isSongSearchItem = (
-    item: AndroidRecentContentSourceItem,
-): item is MobileSearchItem & { type: MobileSearchItemType.SONG } =>
-    (item as MobileSearchItem).type === MobileSearchItemType.SONG;
-
-const synthesizeTrackFromSongItem = (item: MobileSearchItem): MobileMediaTrack => ({
-    album: item.album,
-    albumId: item.albumId,
-    artist: item.artist,
-    artistId: item.artistId,
-    artworkUrl: item.artworkUrl,
-    id: item.id,
-    playback: item.playback,
-    subtitle: item.subtitle,
-    title: item.title,
-});
-
-const isHiFiPlayback = (playback?: MobilePlayableAudio): boolean =>
-    Boolean(playback && isLosslessAudioQuality(playback.quality));
-
-const isHiFiTrack = (track: MobileMediaTrack): boolean => isHiFiPlayback(track.playback);
-
-const getHighResolutionArtworkUrl = (
-    artworkUrl: string | null | undefined,
-    size = 1200,
-): string | undefined => {
-    if (!artworkUrl) return undefined;
-
-    try {
-        const url = new URL(artworkUrl);
-        const isSubsonicCoverArt = url.pathname.toLowerCase().includes('getcoverart');
-
-        if (url.searchParams.has('size') || isSubsonicCoverArt) {
-            url.searchParams.set('size', String(size));
-        }
-
-        return url.toString();
-    } catch {
-        return artworkUrl;
-    }
-};
 
 export default function App() {
     const [activeTab, setActiveTab] = useState<SamoMobileTabId>('home');

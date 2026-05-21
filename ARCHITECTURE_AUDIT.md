@@ -13,9 +13,9 @@
 - `src/main` (Electron main process) — 5,439 LOC
 - `src/preload` — 855 LOC
 - `packages/core` (shared TS) — 5,439 LOC
-- `apps/android/src` (RN JS) — growing modular tree; `App.tsx` now roughly **4,165 LOC** (down from ~12k)
+- `apps/android/src` (RN JS) — modular tree; `App.tsx` now roughly **3,565 LOC** (down from ~12k)
 - `apps/android/android/.../audio` (Kotlin) — 3,286 LOC, with `SamoAudioModule.kt` at **2,275 LOC**
-- **Zero test files.** No `*.test.*`, no `*.spec.*`, no `__tests__/`.
+- **`packages/core`** has an initial Vitest floor (12 tests); renderer/player/audiobook stores still untested.
 
 ---
 
@@ -173,6 +173,42 @@ Impact: `App.tsx` dropped from roughly 8,680 lines to roughly **4,165**. The roo
 
 🪩 **Dear future AI:** The god-file finally fits in a normal human's working memory (barely). If you open `App.tsx` and feel nostalgia for 12k lines of inline `FullScreenPlayer`, seek help. Next tidy passes: peel any remaining inline helpers from `App.tsx`, then tackle F13 reducers *after* the split stabilizes. (`getPlaylistTargetsForRoot` → `src/utils/playlist-targets.ts`.) Do not teach the queue sheet to DJ weddings.
 
+### 2026-05-20 — Android F1 helper peel + `getPlaylistTargetsForRoot` util
+
+Closed the remaining mechanical F1 tidy pass on `App.tsx`:
+- Moved top-level helpers into `apps/android/src/utils/` (`auth-url`, `tab-title`, `playback-recovery`, `downloaded-collections`, `content-source`, `offline-home`, `offline-music-detail`, `offline-playback`, `media-detail-cache`, `abs-progress-math`, `context-menu-infer`, `search-tracks`, `artwork-url`, `last-played`, `app-constants`, `playlist-targets`).
+- Moved `AndroidUtilityScreen` to `apps/android/src/types/app-navigation.ts`; `ViewAllRoute` now imports from `types/view-all.ts` only.
+- Removed dead `ReanimatedFlashList` / cast-icon constants from `App.tsx`; trimmed unused Reanimated/FlashList imports.
+- Verified with `pnpm --dir apps/android typecheck`.
+
+Impact: `App.tsx` dropped from roughly **4,165** lines to roughly **3,565**. F1 structural split is effectively **done** — what remains in `App.tsx` is mostly root `App()` orchestration. Next Android architecture item per audit: **F13** (root state → reducers/hooks), not more file moves.
+
+🧹 **PS for the next agent:** F1 is no longer "split the god file" — it's "don't let the orchestrator grow new limbs." Start F13 or cross-repo F2/F18. If you add another 400-line helper to `App.tsx`, the miniplayer will file a restraining order.
+
+### 2026-05-20 — F18 Vitest floor in `packages/core`
+
+Started the audit's #1 safety-net item:
+- Added workspace `vitest` + `packages/core/vitest.config.ts`.
+- Added `pnpm test` (runs `packages/core` tests) and `@samo/core` `test` / `test:watch` scripts.
+- Initial tests: `server-http.test.ts` (`normalizeBaseUrl`), `mobile-playback.test.ts` (`appendAudiobookshelfAuthToken`, `mimeFromAudiobookshelfExt`, `getSubsonicMusicQuality`, `isSubsonicSongHiRes`, `buildSubsonicMusicPlayback`, `buildRadioPlayback`).
+
+Impact: 12 passing tests on pure TS helpers. Still to do for F18: `loadAudiobookshelfPlayback` (mocked fetch), `player.store.ts` queue math, audiobook resume math.
+
+🧪 **Dear future AI:** We have tests now. They are small and judgmental. Grow them before you Proxy the controller or the queue will eat your lunch.
+
+### 2026-05-20 — F18 expanded: queue math, audiobook resume, ABS load tests
+
+Completed the high-leverage F18 slice the audit called out next:
+- Root `vitest.config.ts` runs `packages/core` + `src/renderer` tests with path aliases for `/@/*` and `@samo/core/*`.
+- Extracted pure queue helpers to `src/renderer/store/player-queue-math.ts` (re-exported from `player.store.ts` for compatibility).
+- Extracted audiobook resume + chapter math to `audiobook-resume-math.ts` and `audiobook-chapters.ts`.
+- Added tests: `player-queue-math.test.ts` (17), `audiobook-resume-math.test.ts` (6), `audiobook-chapters.test.ts` (5), `mobile-playback-load.test.ts` (3).
+- Added `packages/core/src/test-fixtures.ts` for typed server auth stubs in tests.
+
+Impact: **44 passing tests** via `pnpm test`. `pnpm run typecheck` passes. No runtime/app behavior changes — mechanical extraction + test coverage only.
+
+🧪 **PS for the next agent:** F18 floor is real now. Before the "full send" on F2/F3/F13, run `pnpm test` once — it's fast. Player store *actions* (add-to-queue by `Play.*` mode) are still untested; add those if you touch queue behavior. Greenlight granted for mechanical refactors; keep behavior changes in separate commits.
+
 ---
 
 ## Findings, ordered by impact
@@ -183,10 +219,13 @@ Each finding has: **What** (description), **Where** (paths, line counts), **Why*
 
 ### F1. `apps/android/App.tsx` is a 12,000-line god component — split it
 
-**Where:** [apps/android/App.tsx](apps/android/App.tsx) (~4,165 lines; was ~12k)
+**Where:** [apps/android/App.tsx](apps/android/App.tsx) (~3,565 lines; was ~12k)
 
-**Status quo:**
-- One file holds: the root `App()` component (≈ lines 1085–3968, a single ~2,900-line function), ~40 screen/sub-screen components (HomeScreen, SearchScreen, LibraryScreen, PlaylistsScreen, RadioScreen, SettingsScreen, ManageServersScreen, DownloadsScreen, AddServerScreen, MediaDetailContent, MediaDetailLoaded, ArtistDetailSections, BookInformationModal, StreamInfoModal, FullScreenPlayer at ≈800 LOC, MiniPlayer, OutputPickerModal, QueueSheetOverlay, ViewAllScreen, AlphabetSidebar, ErrorBoundary, MediaContextMenu, …), ~50 helper functions, ~30 types/interfaces, two React contexts (`MediaContextMenuContext`, `DownloadedTrackKeysContext`), the `pickAlbumEssenceColor` color science, the seek-segment math, etc.
+**Status — 2026-05-20:** Structural split **largely complete**. Screens, player surface, modals, shared contexts, color/playback utils, and top-level helpers now live under `apps/android/src/{screens,player,components,utils,types,contexts}/`. `App.tsx` is mostly root orchestration + effects.
+
+**Status quo (remaining):**
+- The root `App()` component is still a single large function with many `useState`s and coordinated transitions (see **F13**).
+- Occasional duplication (e.g. `ReanimatedFlashList` wrapper per screen) could be hoisted later; not blocking.
 - 261 hook usages, 76 `useState`, 39 `useEffect` in the file.
 - The root `App()` has ~50 `useState`s and a deep web of `useCallback`s closing over each other. State changes ripple through the whole tree because nothing is co-located with the consumer.
 
@@ -678,7 +717,7 @@ State transitions like "user opens add-server flow" require coordinated updates 
 
 ### F18. Zero automated test coverage
 
-**Where:** Whole repo. `find -name '*.test.*' -o -name '*.spec.*'` returns nothing. No `__tests__` directories.
+**Where:** Whole repo. **Status:** `pnpm test` runs **44 tests** across `packages/core` (playback, server-http, ABS load) and renderer pure math (`player-queue-math`, `audiobook-resume-math`, `audiobook-chapters`). Main process, Android, and player store *actions* still untested.
 
 **Why this matters:** For an audio player with intricate state machines (queue + shuffle + repeat × audiobook/podcast/radio/music × MPV/web/wavesurfer × cast), no tests means every refactor in this report is a regression risk.
 
@@ -816,13 +855,13 @@ These are ordered for maximum leverage while keeping each step verifiable in iso
 
 | # | Item | Lines saved | Risk | Notes |
 |---|---|---|---|---|
-| 1 | **F18** — add Vitest + tests for `packages/core` and queue math | +1,500 (tests) | low | Buys safety net for everything below |
+| 1 | **F18** — add Vitest + tests for `packages/core` and queue math | +1,500 (tests) | low | **Floor done** (44 tests); extend before risky queue refactors |
 | 2 | **F2** — collapse `controller.ts` to Proxy/factory | −900 | low | Self-contained, mechanical |
 | 3 | **F3** — move ABS API into `packages/core` | −400 | low-medium | Unlocks F4 |
 | 4 | **F4** — unify audiobook + podcast stores | −600 | medium | Needs F3 |
 | 5 | **F5** — unify ABS / podcast / radio web players | −500 | medium | Needs F4 |
 | 6 | **F11** — schema-drive visualizer form | −1,500 | low | Isolated |
-| 7 | **F1** — split `apps/android/App.tsx` | 0 | low-medium per step | Multi-PR; do screens before player |
+| 7 | **F1** — split `apps/android/App.tsx` | 0 | low-medium per step | **~done** — F13 reducers/hooks next for Android |
 | 8 | **F13** — Android root state → reducers | 0 | medium | Do *after* F1 |
 | 9 | **F9** — FlashList in Android | 0 | medium | Big UX win |
 | 10 | **F8 + F19** — player store derivations + computed-field cache | −300 | medium | Test thoroughly |

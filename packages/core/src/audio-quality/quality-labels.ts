@@ -140,7 +140,7 @@ export const isLosslessAudioQuality = ({
     bitRate,
     container,
     deliveryKind,
-    sampleRate,
+    sampleRate: _sampleRate,
 }: {
     bitDepth?: null | number;
     bitRate?: null | number;

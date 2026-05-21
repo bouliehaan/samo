@@ -26,7 +26,23 @@ import {
     playerStoreStorage,
     setPlayerStoreHydratedForPersistence,
 } from '/@/renderer/store/utils';
+import {
+    addIndexesToShuffled,
+    adjustShuffledIndexesForInsertion,
+    calculateNextIndex,
+    calculateNextSong,
+    findShuffledPositionForQueueIndex,
+    generateShuffledIndexes,
+    isShuffleEnabled,
+    mapShuffledToQueueIndex,
+    regenerateShuffledIndexesIfNeeded,
+} from '/@/renderer/store/player-queue-math';
 import { shuffleInPlace } from '/@/renderer/utils/shuffle';
+export {
+    calculateNextSong,
+    isShuffleEnabled,
+    mapShuffledToQueueIndex,
+} from '/@/renderer/store/player-queue-math';
 import { PlayerData, QueueData, QueueSong, Song } from '/@/shared/types/domain-types';
 import {
     CrossfadeStyle,
@@ -155,105 +171,6 @@ interface State {
     queue: QueueData;
 }
 
-// Calculates the next song based on repeat mode and current position
-export function calculateNextSong(
-    currentIndex: number,
-    queueItems: QueueSong[],
-    repeat: PlayerRepeat,
-): QueueSong | undefined {
-    if (queueItems.length === 0) {
-        return undefined;
-    }
-
-    if (repeat === PlayerRepeat.ONE) {
-        // When repeating one, next song is the same as current
-        return queueItems[currentIndex];
-    } else if (repeat === PlayerRepeat.ALL) {
-        // When repeating all, next song wraps to first if at the end
-        const isLastTrack = currentIndex === queueItems.length - 1;
-        if (isLastTrack) {
-            return queueItems[0];
-        } else {
-            return queueItems[currentIndex + 1];
-        }
-    } else {
-        // When repeat is none, next song is undefined if at the end
-        return queueItems[currentIndex + 1];
-    }
-}
-
-// Helper function to check if shuffle is enabled
-export function isShuffleEnabled(state: {
-    player: { shuffle: PlayerShuffle };
-    queue: { shuffled: number[] };
-}): boolean {
-    return state.player.shuffle === PlayerShuffle.TRACK && state.queue.shuffled.length > 0;
-}
-
-// Helper function to map shuffled position to actual queue position
-export function mapShuffledToQueueIndex(shuffledIndex: number, shuffled: number[]): number {
-    if (shuffledIndex >= 0 && shuffledIndex < shuffled.length) {
-        return shuffled[shuffledIndex];
-    }
-    return shuffledIndex;
-}
-
-// Helper function to add new indexes to shuffled array after current position
-function addIndexesToShuffled(
-    shuffled: number[],
-    currentShuffledIndex: number,
-    newIndexes: number[],
-): number[] {
-    // Keep everything before and including current position
-    const beforeCurrent = shuffled.slice(0, currentShuffledIndex + 1);
-    // Shuffle everything after current position plus new indexes
-    const afterCurrent = shuffled.slice(currentShuffledIndex + 1);
-    const toShuffle = [...afterCurrent, ...newIndexes];
-    return [...beforeCurrent, ...shuffleInPlace(toShuffle)];
-}
-
-// Helper function to adjust shuffled indexes when items are inserted
-function adjustShuffledIndexesForInsertion(
-    shuffled: number[],
-    insertPosition: number,
-    insertCount: number,
-): number[] {
-    return shuffled.map((idx) => {
-        if (idx >= insertPosition) {
-            return idx + insertCount;
-        }
-        return idx;
-    });
-}
-
-// Calculates the next index based on repeat mode and current position
-function calculateNextIndex(
-    currentIndex: number,
-    queueLength: number,
-    repeat: PlayerRepeat,
-): { nextIndex: number; shouldPause: boolean } {
-    const isLastTrack = currentIndex === queueLength - 1;
-
-    if (repeat === PlayerRepeat.ONE) {
-        // Repeat one: stay on the same track
-        return { nextIndex: currentIndex, shouldPause: false };
-    } else if (repeat === PlayerRepeat.ALL) {
-        // Repeat all: loop to first track if at the end
-        if (isLastTrack) {
-            return { nextIndex: 0, shouldPause: false };
-        } else {
-            return { nextIndex: currentIndex + 1, shouldPause: false };
-        }
-    } else {
-        // Repeat none: move to next track, or pause if at the end
-        if (isLastTrack) {
-            return { nextIndex: 0, shouldPause: true };
-        } else {
-            return { nextIndex: currentIndex + 1, shouldPause: false };
-        }
-    }
-}
-
 function emitPlayerPlayEvent(
     targetSongUniqueId: string | undefined,
     set: (fn: (state: PlayerState) => void) => void,
@@ -313,31 +230,6 @@ function emitPlayerPlayEvent(
                 index: currentIndex,
             });
         }
-    }
-}
-
-// Helper function to find shuffled position for a given queue index
-function findShuffledPositionForQueueIndex(
-    queueIndex: number,
-    shuffled: number[],
-): number | undefined {
-    const shuffledPosition = shuffled.findIndex((idx) => idx === queueIndex);
-    return shuffledPosition !== -1 ? shuffledPosition : undefined;
-}
-
-// Helper function to generate shuffled indexes for a queue of given length
-function generateShuffledIndexes(length: number): number[] {
-    const indexes = Array.from({ length }, (_, i) => i);
-    return shuffleInPlace(indexes);
-}
-
-// Helper function to regenerate shuffled indexes if shuffle is enabled
-function regenerateShuffledIndexesIfNeeded(state: {
-    player: { shuffle: PlayerShuffle };
-    queue: { default: string[]; shuffled: number[] };
-}): void {
-    if (isShuffleEnabled(state)) {
-        state.queue.shuffled = generateShuffledIndexes(state.queue.default.length);
     }
 }
 
