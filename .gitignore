@@ -9,3 +9,11 @@ release
 # Android emulator/device bug reports — large ZIPs that may include device
 # identifiers and full system logs; generated under apps/android/ on demand.
 apps/android/bugreport-*.zip
+
+# TypeScript/build output accidentally emitted beside source
+*.tsbuildinfo
+src/**/*.js
+src/**/*.jsx
+src/**/*.d.ts
+vite.react-plugin.js
+vite.react-plugin.d.ts
