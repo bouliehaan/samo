@@ -224,15 +224,11 @@ export const useMediaSession = () => {
             debouncedUpdateMetadata();
         });
 
-        const unsubscribePodcast = usePodcastStore.subscribe(
-            (state) =>
-                `${state.item?.id ?? ''}:${state.episode?.id ?? ''}:${state.episode?.title ?? ''}`,
-            () => {
-                if (!isMediaSessionEnabledRef.current) return;
-                if (usePlaybackOwnerStore.getState().source !== 'podcast') return;
-                debouncedUpdateMetadata();
-            },
-        );
+        const unsubscribePodcast = usePodcastStore.subscribe(() => {
+            if (!isMediaSessionEnabledRef.current) return;
+            if (usePlaybackOwnerStore.getState().source !== 'podcast') return;
+            debouncedUpdateMetadata();
+        });
 
         const unsubscribeStatus = subscribePlayerStatus(({ status }) => {
             if (!isMediaSessionEnabledRef.current) return;

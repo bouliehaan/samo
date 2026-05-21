@@ -1,6 +1,11 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
+import {
+    identityPersistMigrate,
+    PERSIST_VERSION_INITIAL,
+} from '/@/renderer/store/persist-migrate';
+
 import { AudiobookshelfLibraryItem } from '/@/shared/api/audiobookshelf/audiobookshelf-types';
 import {
     Album,
@@ -139,9 +144,10 @@ export const usePlayHistoryStore = create<PlayHistoryState>()(
             items: [],
         }),
         {
+            migrate: identityPersistMigrate<Pick<PlayHistoryState, 'items'>>,
             name: 'recent-items-store',
             partialize: (state) => ({ items: state.items }),
-            version: 1,
+            version: PERSIST_VERSION_INITIAL,
         },
     ),
 );

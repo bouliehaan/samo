@@ -384,6 +384,8 @@ Plus the main process re-implements `fetch` + `Bearer` + error-throw boilerplate
 
 ### F4. `audiobook.store.ts` and `podcast.store.ts` are 90% copy-paste — extract a generic ABS playback store
 
+**Progress (2026-05):** **Done** — [abs-playback.store.ts](src/renderer/store/abs-playback.store.ts) `createAbsPlaybackStore` factory; [audiobook.store.ts](src/renderer/store/audiobook.store.ts) and [podcast.store.ts](src/renderer/store/podcast.store.ts) are thin configs over shared play/release/seek/sync + [abs-playback-sync.ts](src/renderer/store/abs-playback-sync.ts).
+
 **Where:**
 - [src/renderer/store/audiobook.store.ts](src/renderer/store/audiobook.store.ts) (555 LOC)
 - [src/renderer/store/podcast.store.ts](src/renderer/store/podcast.store.ts) (548 LOC)
@@ -429,6 +431,8 @@ Plus the main process re-implements `fetch` + `Bearer` + error-throw boilerplate
 ---
 
 ### F5. `WebPlayer` × `AudiobookWebPlayer` × `PodcastWebPlayer` × `RadioWebPlayer` — extract a single source-driven engine wrapper
+
+**Progress (2026-05):** **Done** — [web-media-engine.tsx](src/renderer/features/player/audio-player/web-media-engine.tsx) unifies ABS resume + radio single-stream playback; audiobook/podcast/radio components are thin wrappers (~40 LOC each). Music `web-player.tsx` unchanged (dual-player crossfade).
 
 **Where:**
 - [src/renderer/features/player/audio-player/web-player.tsx](src/renderer/features/player/audio-player/web-player.tsx) (740 LOC)
@@ -632,7 +636,9 @@ Then `AudiobookWebPlayer = () => <WebMediaEngine source="audiobook" />` etc. `We
 
 ### F13. Android's `App.tsx` root has ~50 `useState` calls — should be a reducer
 
-**Where:** [apps/android/App.tsx:1085–1212](apps/android/App.tsx) (the `App()` body's state declarations).
+**Progress (2026-05):** **Done** — root `useState` replaced with `useAppNavigationState`, `useAuthSessionState`, `useDownloadsState`, `useMediaOverlaysState`, `useAppSessionState` under [apps/android/src/state/](apps/android/src/state/). Hardware back handling and download subscription live in hooks. Playback remains in [playback-store.ts](apps/android/src/state/playback-store.ts).
+
+**Where:** [apps/android/App.tsx](apps/android/App.tsx) (orchestrator; refs for playback queue/cache remain local).
 
 **Status quo:** Root component holds (counting): `activeTab`, `activeUtilityScreen`, `authState`, `homeContentState`, `isFullPlayerOpen`, `viewAllRoute`, `viewAllFullState`, `playerProgress` (shared value), `isSearchOverlayOpen`, `searchOverlayQuery`, `mediaDetailState`, `password`, `playbackState`, `castState`, `lastPlayedItem`, `recentContentItems`, `serverConnections`, `serverHealthByKey`, `serverType`, `serverUrl`, `searchState`, `username`, `isShuffled`, `localFavorites`, `favoritedKeys`, `isOfflineMode`, `downloadedCollectionKeys`, `downloadedTrackKeys`, `downloadedCollections`, `contextMenuTarget`, `contextMenuFeedback`, `streamInfoItem`, `bookInfoState`, `playlistMenuRoot`, `playlistMenuRootState`, plus a dozen `useRef`s.
 
@@ -655,7 +661,9 @@ State transitions like "user opens add-server flow" require coordinated updates 
 
 ### F14. The main process bundles two HTTP servers and one stream parser — keep them but isolate
 
-**Where:** [src/main/features/core/audiobookshelf/index.ts](src/main/features/core/audiobookshelf/index.ts) (491 LOC, contains an ad-hoc `http.createServer` for HLS proxying); [src/main/features/core/remote/index.ts](src/main/features/core/remote/index.ts) (the remote-control server).
+**Where:** [src/main/features/core/audiobookshelf/](src/main/features/core/audiobookshelf/) — `audiobookshelf-proxy.ts`, `audiobookshelf-ipc.ts`, `index.ts`.
+
+**Progress (2026-05):** **Done** — proxy and IPC split; `/health` on proxy; `getAudiobookshelfProxyHealthUrl()` exported.
 
 **Status quo:** ABS HLS proxy is mixed with IPC handlers. The proxy is a long-lived `Server` started lazily on first ABS play; sessions expire after 6 hours.
 
@@ -678,6 +686,8 @@ State transitions like "user opens add-server flow" require coordinated updates 
 ---
 
 ### F15. Logging is inconsistent: 48 raw `console.*` in renderer, 8 in mobile, plus a `logFn` abstraction
+
+**Progress (2026-05):** Audiobook/podcast stores now use `logFn` for play/sync errors. Repo-wide `no-console` + remaining files still open.
 
 **Where:** `src/renderer/utils/logger.ts` exists with `logFn.info/debug/warn/error`. Yet 48 `console.*` calls remain in renderer source (and 2 in Android App.tsx, plus more in services).
 
@@ -713,6 +723,8 @@ State transitions like "user opens add-server flow" require coordinated updates 
 ---
 
 ### F17. Persisted Zustand stores have no migration versioning visible at the call sites
+
+**Progress (2026-05):** [persist-migrate.ts](src/renderer/store/persist-migrate.ts) + `version`/`migrate` on audiobook, podcast, last-playback-session, play-history, library-favorites, lyrics-overrides, radio. Player/settings/auth/app/full-screen-player already had versions.
 
 **Where:** `migratePlayerStorePersist` exists in [src/renderer/store/utils.ts](src/renderer/store/utils.ts) (344 LOC). Other persisted stores (`audiobook`, `podcast`, `app`, `library-favorites`, `play-history`, `lyrics-overrides`, `auth`, `settings`, `full-screen-player`, `last-playback-session`) use `persist()` without explicit version+migrate config visible from the file structure.
 
@@ -790,7 +802,9 @@ State transitions like "user opens add-server flow" require coordinated updates 
 
 ### F21. The audiobook proxy session map can leak on renderer crash
 
-**Where:** [src/main/features/core/audiobookshelf/index.ts:16](src/main/features/core/audiobookshelf/index.ts) — `audiobookshelfProxySessions: Map<string, AudiobookshelfProxySession>`. Sessions are cleaned only by `releaseProxySession(id)` (manual close) or the 6-hour TTL.
+**Where:** [src/main/features/core/audiobookshelf/audiobookshelf-proxy.ts](src/main/features/core/audiobookshelf/audiobookshelf-proxy.ts).
+
+**Progress (2026-05):** **Done** — `webContentsId` per session, cleanup on `destroyed`, max 48 sessions with LRU eviction.
 
 **Status quo:**
 - Renderer crash → main keeps the proxy session alive until the 6h timer fires.
@@ -876,20 +890,20 @@ These are ordered for maximum leverage while keeping each step verifiable in iso
 | 1 | **F18** — add Vitest + tests for `packages/core` and queue math | +1,500 (tests) | low | **Floor done** (47 tests); extend before risky queue refactors |
 | 2 | **F2** — collapse `controller.ts` to Proxy/factory | −900 | low | **Done** (~180 LOC) |
 | 3 | **F3** — move ABS API into `packages/core` | −400 | low-medium | **Done** — unlocks F4 |
-| 4 | **F4** — unify audiobook + podcast stores | −600 | medium | Needs F3 |
-| 5 | **F5** — unify ABS / podcast / radio web players | −500 | medium | Needs F4 |
+| 4 | **F4** — unify audiobook + podcast stores | −600 | medium | **Done** — `createAbsPlaybackStore` |
+| 5 | **F5** — unify ABS / podcast / radio web players | −500 | medium | **Done** — `WebMediaEngine` |
 | 6 | **F11** — schema-drive visualizer form | −1,500 | low | Isolated |
 | 7 | **F1** — split `apps/android/App.tsx` | 0 | low-medium per step | **~done** — F13 reducers/hooks next for Android |
-| 8 | **F13** — Android root state → reducers | 0 | medium | Do *after* F1 |
+| 8 | **F13** — Android root state → reducers | 0 | medium | **Done** — five domain hooks |
 | 9 | **F9** — FlashList in Android | 0 | medium | Big UX win |
 | 10 | **F8 + F19** — player store derivations + computed-field cache | −300 | medium | **F19 done**; F8 snapshot + hooks done; slice split / Actions cleanup remain |
 | 11 | **F6** — split `SamoAudioModule.kt` | −0 (re-distributed) | medium | Concurrency review needed |
 | 12 | **F10** — split settings store | 0 | high | Incremental; do `lists` slice first |
 | 13 | **F7** — remove dead `useMemo`/`useCallback`/`memo` | −1,500 | low if rule-driven | Verify compiler is live first |
-| 14 | **F17** — version every persisted store | +200 (scaffolding) | low | Forward-compatible |
-| 15 | **F14** — split ABS proxy from IPC | 0 | low | After F3 |
-| 16 | **F21** — proxy session leak cleanup | +30 | low | Pair with F14 |
-| 17 | **F12, F15, F16, F20, F23, F24** | small | low | Tidy passes |
+| 14 | **F17** — version every persisted store | +200 (scaffolding) | low | **Done** for gap stores |
+| 15 | **F14** — split ABS proxy from IPC | 0 | low | **Done** |
+| 16 | **F21** — proxy session leak cleanup | +30 | low | **Done** |
+| 17 | **F12, F15, F16, F20, F23, F24** | small | low | F15 partial (ABS stores); F24 done |
 | 18 | **F24** — lodash subpath imports | −0 | none | **Done** |
 | 19 | **F22, F25** | small | low | Only if relevant context |
 

@@ -7,6 +7,11 @@ import type { PlaybackSource } from '/@/renderer/store/playback-owner.store';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
+import {
+    identityPersistMigrate,
+    PERSIST_VERSION_INITIAL,
+} from '/@/renderer/store/persist-migrate';
+
 export type MusicPlaybackContext =
     | { albumId: string; kind: 'album'; serverId: string }
     | { kind: 'playlist'; playlistId: string; serverId: string }
@@ -98,8 +103,10 @@ export const useLastPlaybackSessionStore = create<LastPlaybackSessionState>()(
                     (persistedState as Partial<LastPlaybackSessionState> | undefined)?.session ??
                     currentState.session,
             }),
+            migrate: identityPersistMigrate<Pick<LastPlaybackSessionState, 'session'>>,
             name: 'last-playback-session-store',
             partialize: (state) => ({ session: state.session }),
+            version: PERSIST_VERSION_INITIAL,
         },
     ),
 );

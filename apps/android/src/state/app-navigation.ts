@@ -1,0 +1,353 @@
+import { useCallback, useEffect, useReducer, useRef } from 'react';
+import { BackHandler } from 'react-native';
+import { SAMO_MOBILE_TABS, type SamoMobileTabId } from '@samo/core/navigation';
+
+import { type AndroidUtilityScreen } from '../types/app-navigation';
+import { type ViewAllRoute } from '../types/view-all';
+import {
+    EMPTY_LIBRARY_FULL_COLLECTIONS,
+    type LibraryFullCollectionsState,
+} from '../types/library-tab';
+import { type AndroidFullCollectionState } from '../services/full-collection';
+import { type AndroidHomeContentState } from '../services/home-content';
+import { type AndroidMediaDetailState } from '../services/media-detail';
+import { type AndroidSearchState } from '../services/search-content';
+
+export type AppNavigationState = {
+    activeTab: SamoMobileTabId;
+    activeUtilityScreen: AndroidUtilityScreen | null;
+    homeContentState: AndroidHomeContentState;
+    isFullPlayerOpen: boolean;
+    isSearchOverlayOpen: boolean;
+    libraryFullCollections: LibraryFullCollectionsState;
+    mediaDetailState: AndroidMediaDetailState;
+    searchOverlayQuery: string;
+    searchState: AndroidSearchState;
+    viewAllFullState: AndroidFullCollectionState;
+    viewAllRoute: null | ViewAllRoute;
+};
+
+const initialAppNavigationState: AppNavigationState = {
+    activeTab: 'home',
+    activeUtilityScreen: null,
+    homeContentState: { status: 'idle' },
+    isFullPlayerOpen: false,
+    isSearchOverlayOpen: false,
+    libraryFullCollections: EMPTY_LIBRARY_FULL_COLLECTIONS,
+    mediaDetailState: { status: 'idle' },
+    searchOverlayQuery: '',
+    searchState: { status: 'idle' },
+    viewAllFullState: { status: 'idle' },
+    viewAllRoute: null,
+};
+
+type AppNavigationAction =
+    | { type: 'patch'; patch: Partial<AppNavigationState> }
+    | { type: 'set-active-tab'; activeTab: SamoMobileTabId }
+    | { type: 'set-active-utility'; activeUtilityScreen: AndroidUtilityScreen | null }
+    | {
+          type: 'set-home-content';
+          homeContentState:
+              | AndroidHomeContentState
+              | ((current: AndroidHomeContentState) => AndroidHomeContentState);
+      }
+    | { type: 'set-full-player-open'; isFullPlayerOpen: boolean }
+    | { type: 'set-search-overlay-open'; isSearchOverlayOpen: boolean }
+    | {
+          type: 'set-library-full-collections';
+          libraryFullCollections:
+              | LibraryFullCollectionsState
+              | ((current: LibraryFullCollectionsState) => LibraryFullCollectionsState);
+      }
+    | {
+          type: 'set-media-detail';
+          mediaDetailState:
+              | AndroidMediaDetailState
+              | ((current: AndroidMediaDetailState) => AndroidMediaDetailState);
+      }
+    | { type: 'set-search-overlay-query'; searchOverlayQuery: string }
+    | {
+          type: 'set-search-state';
+          searchState: AndroidSearchState | ((current: AndroidSearchState) => AndroidSearchState);
+      }
+    | {
+          type: 'set-view-all-full';
+          viewAllFullState:
+              | AndroidFullCollectionState
+              | ((current: AndroidFullCollectionState) => AndroidFullCollectionState);
+      }
+    | { type: 'set-view-all-route'; viewAllRoute: null | ViewAllRoute }
+    | { type: 'close-view-all' };
+
+const appNavigationReducer = (
+    state: AppNavigationState,
+    action: AppNavigationAction,
+): AppNavigationState => {
+    switch (action.type) {
+        case 'patch':
+            return { ...state, ...action.patch };
+        case 'set-active-tab':
+            return { ...state, activeTab: action.activeTab };
+        case 'set-active-utility':
+            return { ...state, activeUtilityScreen: action.activeUtilityScreen };
+        case 'set-home-content':
+            return {
+                ...state,
+                homeContentState:
+                    typeof action.homeContentState === 'function'
+                        ? action.homeContentState(state.homeContentState)
+                        : action.homeContentState,
+            };
+        case 'set-full-player-open':
+            return { ...state, isFullPlayerOpen: action.isFullPlayerOpen };
+        case 'set-search-overlay-open':
+            return { ...state, isSearchOverlayOpen: action.isSearchOverlayOpen };
+        case 'set-library-full-collections':
+            return {
+                ...state,
+                libraryFullCollections:
+                    typeof action.libraryFullCollections === 'function'
+                        ? action.libraryFullCollections(state.libraryFullCollections)
+                        : action.libraryFullCollections,
+            };
+        case 'set-media-detail':
+            return {
+                ...state,
+                mediaDetailState:
+                    typeof action.mediaDetailState === 'function'
+                        ? action.mediaDetailState(state.mediaDetailState)
+                        : action.mediaDetailState,
+            };
+        case 'set-search-overlay-query':
+            return { ...state, searchOverlayQuery: action.searchOverlayQuery };
+        case 'set-search-state':
+            return {
+                ...state,
+                searchState:
+                    typeof action.searchState === 'function'
+                        ? action.searchState(state.searchState)
+                        : action.searchState,
+            };
+        case 'set-view-all-full':
+            return {
+                ...state,
+                viewAllFullState:
+                    typeof action.viewAllFullState === 'function'
+                        ? action.viewAllFullState(state.viewAllFullState)
+                        : action.viewAllFullState,
+            };
+        case 'set-view-all-route':
+            return { ...state, viewAllRoute: action.viewAllRoute };
+        case 'close-view-all':
+            return {
+                ...state,
+                activeUtilityScreen:
+                    state.activeUtilityScreen === 'view-all' ? null : state.activeUtilityScreen,
+                viewAllFullState: { status: 'idle' },
+                viewAllRoute: null,
+            };
+        default:
+            return state;
+    }
+};
+
+export type UseAppNavigationOptions = {
+    onCloseMediaDetailSideEffects?: () => void;
+};
+
+export const useAppNavigationState = (options: UseAppNavigationOptions = {}) => {
+    const [state, dispatch] = useReducer(appNavigationReducer, initialAppNavigationState);
+
+    const viewAllFetchTokenRef = useRef(0);
+    const libraryFullCollectionFetchTokenRef = useRef(0);
+    const homeLoadRequestId = useRef(0);
+    const mediaDetailRequestId = useRef(0);
+    const searchRequestId = useRef(0);
+    const audiobookStartRequestId = useRef(0);
+
+    const setActiveTab = useCallback(
+        (activeTab: SamoMobileTabId | ((current: SamoMobileTabId) => SamoMobileTabId)) => {
+            dispatch({
+                type: 'set-active-tab',
+                activeTab: typeof activeTab === 'function' ? activeTab(state.activeTab) : activeTab,
+            });
+        },
+        [state.activeTab],
+    );
+
+    const setActiveUtilityScreen = useCallback(
+        (
+            activeUtilityScreen:
+                | AndroidUtilityScreen
+                | null
+                | ((current: AndroidUtilityScreen | null) => AndroidUtilityScreen | null),
+        ) => {
+            dispatch({
+                type: 'set-active-utility',
+                activeUtilityScreen:
+                    typeof activeUtilityScreen === 'function'
+                        ? activeUtilityScreen(state.activeUtilityScreen)
+                        : activeUtilityScreen,
+            });
+        },
+        [state.activeUtilityScreen],
+    );
+
+    const setHomeContentState = useCallback(
+        (
+            homeContentState:
+                | AndroidHomeContentState
+                | ((current: AndroidHomeContentState) => AndroidHomeContentState),
+        ) => {
+            dispatch({ type: 'set-home-content', homeContentState });
+        },
+        [],
+    );
+
+    const setIsFullPlayerOpen = useCallback((isFullPlayerOpen: boolean) => {
+        dispatch({ type: 'set-full-player-open', isFullPlayerOpen });
+    }, []);
+
+    const setIsSearchOverlayOpen = useCallback((isSearchOverlayOpen: boolean) => {
+        dispatch({ type: 'set-search-overlay-open', isSearchOverlayOpen });
+    }, []);
+
+    const setSearchOverlayQuery = useCallback((searchOverlayQuery: string) => {
+        dispatch({ type: 'set-search-overlay-query', searchOverlayQuery });
+    }, []);
+
+    const setMediaDetailState = useCallback(
+        (
+            mediaDetailState:
+                | AndroidMediaDetailState
+                | ((current: AndroidMediaDetailState) => AndroidMediaDetailState),
+        ) => {
+            dispatch({ type: 'set-media-detail', mediaDetailState });
+        },
+        [],
+    );
+
+    const setViewAllRoute = useCallback((viewAllRoute: null | ViewAllRoute) => {
+        dispatch({ type: 'set-view-all-route', viewAllRoute });
+    }, []);
+
+    const setViewAllFullState = useCallback(
+        (
+            viewAllFullState:
+                | AndroidFullCollectionState
+                | ((current: AndroidFullCollectionState) => AndroidFullCollectionState),
+        ) => {
+            dispatch({ type: 'set-view-all-full', viewAllFullState });
+        },
+        [],
+    );
+
+    const setLibraryFullCollections = useCallback(
+        (
+            libraryFullCollections:
+                | LibraryFullCollectionsState
+                | ((current: LibraryFullCollectionsState) => LibraryFullCollectionsState),
+        ) => {
+            dispatch({ type: 'set-library-full-collections', libraryFullCollections });
+        },
+        [],
+    );
+
+    const setSearchState = useCallback(
+        (searchState: AndroidSearchState | ((current: AndroidSearchState) => AndroidSearchState)) => {
+            dispatch({ type: 'set-search-state', searchState });
+        },
+        [],
+    );
+
+    const closeMediaDetail = useCallback(() => {
+        mediaDetailRequestId.current += 1;
+        audiobookStartRequestId.current += 1;
+        options.onCloseMediaDetailSideEffects?.();
+        setMediaDetailState((current) => (current.status === 'idle' ? current : { status: 'idle' }));
+    }, [options.onCloseMediaDetailSideEffects, setMediaDetailState]);
+
+    const closeViewAll = useCallback(() => {
+        viewAllFetchTokenRef.current += 1;
+        dispatch({ type: 'close-view-all' });
+    }, []);
+
+    useEffect(() => {
+        const handler = BackHandler.addEventListener('hardwareBackPress', () => {
+            if (state.isSearchOverlayOpen) {
+                setIsSearchOverlayOpen(false);
+                setSearchOverlayQuery('');
+                return true;
+            }
+
+            if (state.isFullPlayerOpen) {
+                setIsFullPlayerOpen(false);
+                return true;
+            }
+
+            if (state.mediaDetailState.status !== 'idle') {
+                closeMediaDetail();
+                return true;
+            }
+
+            if (
+                state.activeUtilityScreen === 'add-server' ||
+                state.activeUtilityScreen === 'downloads' ||
+                state.activeUtilityScreen === 'manage-servers'
+            ) {
+                setActiveUtilityScreen('settings');
+                return true;
+            }
+
+            if (state.activeUtilityScreen === 'view-all') {
+                closeViewAll();
+                return true;
+            }
+
+            if (state.activeUtilityScreen === 'settings') {
+                setActiveUtilityScreen(null);
+                return true;
+            }
+
+            return false;
+        });
+
+        return () => handler.remove();
+    }, [
+        closeMediaDetail,
+        closeViewAll,
+        setActiveUtilityScreen,
+        setIsFullPlayerOpen,
+        setIsSearchOverlayOpen,
+        setSearchOverlayQuery,
+        state.activeUtilityScreen,
+        state.isFullPlayerOpen,
+        state.isSearchOverlayOpen,
+        state.mediaDetailState.status,
+    ]);
+
+    return {
+        ...state,
+        audiobookStartRequestId,
+        closeMediaDetail,
+        closeViewAll,
+        homeLoadRequestId,
+        libraryFullCollectionFetchTokenRef,
+        mediaDetailRequestId,
+        searchRequestId,
+        setActiveTab,
+        setActiveUtilityScreen,
+        setHomeContentState,
+        setIsFullPlayerOpen,
+        setIsSearchOverlayOpen,
+        setLibraryFullCollections,
+        setMediaDetailState,
+        setSearchOverlayQuery,
+        setSearchState,
+        setViewAllFullState,
+        setViewAllRoute,
+        viewAllFetchTokenRef,
+    };
+};
+
+export { SAMO_MOBILE_TABS };

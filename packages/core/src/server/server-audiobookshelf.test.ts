@@ -34,7 +34,7 @@ describe('absGetLibraries', () => {
                 ok: true,
                 status: 200,
                 headers: { get: () => null },
-            })) as typeof fetch,
+            })) as unknown as typeof fetch,
         );
 
         const result = await absGetLibraries(fetcher, {

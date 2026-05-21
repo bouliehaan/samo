@@ -4,6 +4,10 @@ import { devtools, persist } from 'zustand/middleware';
 import { immer } from 'zustand/middleware/immer';
 import { createWithEqualityFn } from 'zustand/traditional';
 
+import {
+    identityPersistMigrate,
+    PERSIST_VERSION_INITIAL,
+} from '/@/renderer/store/persist-migrate';
 import { InternetRadioStation } from '/@/shared/types/domain-types';
 
 export interface RadioStoreSlice extends RadioStoreState {
@@ -92,8 +96,9 @@ export const useRadioStore = createWithEqualityFn<RadioStoreSlice>()(
         ),
         {
             merge: (persistedState, currentState) => merge(currentState, persistedState),
+            migrate: identityPersistMigrate<Pick<RadioStoreState, 'stations'>>,
             name: 'store_radio',
-            version: 1,
+            version: PERSIST_VERSION_INITIAL,
         },
     ),
 );

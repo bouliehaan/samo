@@ -191,6 +191,11 @@ import {
     subscribeToAndroidOutputRouteEvents,
     updateAndroidNowPlayingMetadata,
 } from './src/services/audio-playback';
+import { useAppNavigationState } from './src/state/app-navigation';
+import { useAppSessionState } from './src/state/app-session';
+import { useAuthSessionState } from './src/state/auth-session';
+import { useDownloadsState } from './src/state/downloads-state';
+import { useMediaOverlaysState } from './src/state/media-overlays';
 import {
     getAndroidPlaybackState,
     selectActiveAndroidPlaybackItem,
@@ -406,23 +411,96 @@ import { styles } from './src/theme/styles';
 import { colors, spacing } from './src/theme/tokens';
 
 export default function App() {
-    const [activeTab, setActiveTab] = useState<SamoMobileTabId>('home');
-    const [activeUtilityScreen, setActiveUtilityScreen] = useState<AndroidUtilityScreen | null>(
-        null,
-    );
-    const [authState, setAuthState] = useState<AndroidAuthState>({ status: 'idle' });
-    const [homeContentState, setHomeContentState] = useState<AndroidHomeContentState>({
-        status: 'idle',
-    });
-    const [isFullPlayerOpen, setIsFullPlayerOpen] = useState(false);
-    const [viewAllRoute, setViewAllRoute] = useState<null | ViewAllRoute>(null);
-    const [viewAllFullState, setViewAllFullState] = useState<AndroidFullCollectionState>({
-        status: 'idle',
-    });
-    const [libraryFullCollections, setLibraryFullCollections] =
-        useState<LibraryFullCollectionsState>(EMPTY_LIBRARY_FULL_COLLECTIONS);
-    const viewAllFetchTokenRef = useRef(0);
-    const libraryFullCollectionFetchTokenRef = useRef(0);
+    const {
+        activeTab,
+        activeUtilityScreen,
+        audiobookStartRequestId,
+        closeMediaDetail,
+        closeViewAll,
+        homeContentState,
+        homeLoadRequestId,
+        isFullPlayerOpen,
+        isSearchOverlayOpen,
+        libraryFullCollectionFetchTokenRef,
+        libraryFullCollections,
+        mediaDetailRequestId,
+        mediaDetailState,
+        searchOverlayQuery,
+        searchRequestId,
+        searchState,
+        setActiveTab,
+        setActiveUtilityScreen,
+        setHomeContentState,
+        setIsFullPlayerOpen,
+        setIsSearchOverlayOpen,
+        setLibraryFullCollections,
+        setMediaDetailState,
+        setSearchOverlayQuery,
+        setSearchState,
+        setViewAllFullState,
+        setViewAllRoute,
+        viewAllFetchTokenRef,
+        viewAllFullState,
+        viewAllRoute,
+    } = useAppNavigationState();
+
+    const {
+        authState,
+        password,
+        serverConnections,
+        serverHealthByKey,
+        serverType,
+        serverUrl,
+        setAuthState,
+        setPassword,
+        setServerConnections,
+        setServerHealthByKey,
+        setServerType,
+        setServerUrl,
+        setUsername,
+        username,
+    } = useAuthSessionState();
+
+    const {
+        downloadedCollectionKeys,
+        downloadedCollections,
+        downloadedTrackKeys,
+        isOfflineMode,
+        setIsOfflineMode,
+    } = useDownloadsState();
+
+    const {
+        bookInfoRequestId,
+        bookInfoState,
+        closeBookInfo,
+        contextMenuFeedback,
+        contextMenuTarget,
+        playlistMenuRoot,
+        playlistMenuRootState,
+        setBookInfoState,
+        setContextMenuFeedback,
+        setContextMenuTarget,
+        setPlaylistMenuRoot,
+        setPlaylistMenuRootState,
+        setStreamInfoItem,
+        streamInfoItem,
+    } = useMediaOverlaysState();
+
+    const {
+        castState,
+        favoritedKeys,
+        forcePlaybackQueueRender,
+        isShuffled,
+        lastPlayedItem,
+        localFavorites,
+        recentContentItems,
+        setCastState,
+        setFavoritedKeys,
+        setIsShuffled,
+        setLastPlayedItem,
+        setLocalFavorites,
+        setRecentContentItems,
+    } = useAppSessionState();
     // Unified animation source for the MiniPlayer ↔ FullScreenPlayer transition.
     // 0 = miniplayer visible, 1 = fullscreen visible. Both components derive
     // their frame, opacity, and touchability from this single shared value so
@@ -439,93 +517,9 @@ export default function App() {
                 : withSpring(0, spring);
         }
     }, [isFullPlayerOpen, playerProgress, reducedMotion]);
-    const [isSearchOverlayOpen, setIsSearchOverlayOpen] = useState(false);
-    const [searchOverlayQuery, setSearchOverlayQuery] = useState('');
-    const [mediaDetailState, setMediaDetailState] = useState<AndroidMediaDetailState>({
-        status: 'idle',
-    });
-    const [password, setPassword] = useState('');
     const playbackStatus = useAndroidPlaybackState(selectAndroidPlaybackStatus);
-    const [castState, setCastState] = useState<AndroidCastState>({
-        isConnected: false,
-        status: 'unavailable',
-    });
-    const [lastPlayedItem, setLastPlayedItem] = useState<MobilePlayableAudio | null>(null);
-    const [recentContentItems, setRecentContentItems] = useState<AndroidRecentContentItem[]>([]);
-    const [serverConnections, setServerConnections] = useState<ServerAuthenticationResult[]>([]);
-    const [serverHealthByKey, setServerHealthByKey] = useState<AndroidServerHealthMap>({});
-    const [serverType, setServerType] = useState<ServerType>(ServerType.NAVIDROME);
-    const [serverUrl, setServerUrl] = useState(DEFAULT_SERVER_URL);
-    const [searchState, setSearchState] = useState<AndroidSearchState>({ status: 'idle' });
-    const [username, setUsername] = useState('');
-    const [isShuffled, setIsShuffled] = useState(false);
-    const [localFavorites, setLocalFavorites] = useState<AndroidLocalFavoriteItem[]>([]);
-    const [favoritedKeys, setFavoritedKeys] = useState<Set<string>>(new Set());
-    const [isOfflineMode, setIsOfflineMode] = useState(false);
-    // Set of `${sourceId}:${collectionId}` keys for items where at least one
-    // file is completely downloaded. Used to filter the home/library views
-    // when offline mode is on.
-    const [downloadedCollectionKeys, setDownloadedCollectionKeys] = useState<Set<string>>(
-        new Set(),
-    );
-    const [downloadedTrackKeys, setDownloadedTrackKeys] = useState<Set<string>>(new Set());
-    const [downloadedCollections, setDownloadedCollections] = useState<
-        DownloadedCollectionSummary[]
-    >([]);
-    const [, forcePlaybackQueueRender] = useState(0);
-    const [contextMenuTarget, setContextMenuTarget] =
-        useState<MediaContextMenuTarget | null>(null);
-    const [contextMenuFeedback, setContextMenuFeedback] = useState<string | null>(null);
-    const [streamInfoItem, setStreamInfoItem] =
-        useState<AndroidRecentContentSourceItem | null>(null);
-    const [bookInfoState, setBookInfoState] = useState<
-        | {
-              detail: MobileMediaDetail;
-              item: AndroidRecentContentSourceItem;
-              status: 'loaded';
-              variant: 'audiobook' | 'podcast';
-          }
-        | {
-              item: AndroidRecentContentSourceItem;
-              message: string;
-              status: 'error';
-              variant: 'audiobook' | 'podcast';
-          }
-        | {
-              item: AndroidRecentContentSourceItem;
-              status: 'loading';
-              variant: 'audiobook' | 'podcast';
-          }
-        | { status: 'idle' }
-    >({ status: 'idle' });
-    const [playlistMenuRoot, setPlaylistMenuRoot] = useState<
-        | {
-              collectionItem: AndroidRecentContentSourceItem;
-              kind: 'collection';
-              sourceId: string;
-          }
-        | {
-              kind: 'track';
-              sourceId: string;
-              track: MobileMediaTrack;
-          }
-        | null
-    >(null);
-    const [playlistMenuRootState, setPlaylistMenuRootState] = useState<
-        | { message: string; status: 'error' }
-        | { message: string; status: 'success' }
-        | { playlistId: string; status: 'loading' }
-        | { status: 'idle' }
-    >({ status: 'idle' });
     const absContextRef = useRef<AbsProgressContext | null>(null);
-    const audiobookStartRequestId = useRef(0);
-    const bookInfoRequestId = useRef(0);
-    const downloadedCollectionSnapshotRef = useRef<DownloadedCollectionSnapshot>(
-        EMPTY_DOWNLOADED_COLLECTION_SNAPSHOT,
-    );
-    const homeLoadRequestId = useRef(0);
     const lastPlayedPersistenceKeyRef = useRef<string | null>(null);
-    const mediaDetailRequestId = useRef(0);
     const playbackQueueRef = useRef<null | { index: number; items: MobilePlayableAudio[] }>(null);
     const playbackSequenceRef = useRef(0);
     // Stale-while-revalidate cache for media detail pages. First open hits the
@@ -535,18 +529,6 @@ export default function App() {
     const playbackSnapshotRef = useRef<null | { item: MobilePlayableAudio; sessionId: string }>(
         null,
     );
-    const searchRequestId = useRef(0);
-
-    const closeMediaDetail = useCallback(() => {
-        mediaDetailRequestId.current += 1;
-        audiobookStartRequestId.current += 1;
-        setMediaDetailState((current) => (current.status === 'idle' ? current : { status: 'idle' }));
-    }, []);
-
-    const closeBookInfo = useCallback(() => {
-        bookInfoRequestId.current += 1;
-        setBookInfoState({ status: 'idle' });
-    }, []);
 
     const hydrateNativePlaybackState = useCallback(async () => {
         if (!isAndroidNativePlaybackAvailable()) {
@@ -611,58 +593,6 @@ export default function App() {
             // Best-effort recovery. The regular native event subscription still owns live updates.
         }
     }, [lastPlayedItem]);
-
-    useEffect(() => {
-        const handler = BackHandler.addEventListener('hardwareBackPress', () => {
-            if (isSearchOverlayOpen) {
-                setIsSearchOverlayOpen(false);
-                setSearchOverlayQuery('');
-                return true;
-            }
-
-            if (isFullPlayerOpen) {
-                setIsFullPlayerOpen(false);
-                return true;
-            }
-
-            if (mediaDetailState.status !== 'idle') {
-                closeMediaDetail();
-                return true;
-            }
-
-            if (
-                activeUtilityScreen === 'add-server' ||
-                activeUtilityScreen === 'downloads' ||
-                activeUtilityScreen === 'manage-servers'
-            ) {
-                setActiveUtilityScreen('settings');
-                return true;
-            }
-
-            if (activeUtilityScreen === 'view-all') {
-                setActiveUtilityScreen(null);
-                setViewAllRoute(null);
-                viewAllFetchTokenRef.current += 1;
-                setViewAllFullState({ status: 'idle' });
-                return true;
-            }
-
-            if (activeUtilityScreen === 'settings') {
-                setActiveUtilityScreen(null);
-                return true;
-            }
-
-            return false;
-        });
-
-        return () => handler.remove();
-    }, [
-        activeUtilityScreen,
-        closeMediaDetail,
-        isFullPlayerOpen,
-        isSearchOverlayOpen,
-        mediaDetailState.status,
-    ]);
 
     const canConnect =
         hasServerUrlTarget(serverUrl) && username.trim().length > 0 && password.length > 0;
@@ -888,7 +818,7 @@ export default function App() {
                 index: nextQueueIndex,
                 items: playableQueueItems,
             };
-            forcePlaybackQueueRender((version) => version + 1);
+            forcePlaybackQueueRender();
             if (options?.shuffled !== undefined) {
                 setIsShuffled(options.shuffled);
             }
@@ -1190,12 +1120,6 @@ export default function App() {
             });
         });
 
-        void loadOfflineModePreference().then((next) => {
-            if (isMounted) {
-                setIsOfflineMode(next);
-            }
-        });
-
         // In dev mode, Metro serves the brand logo over HTTP. Prefetch it
         // immediately on launch so it lands in Fresco's disk cache — that
         // way the logo still renders if you later flip to airplane mode and
@@ -1212,25 +1136,6 @@ export default function App() {
 
         return () => {
             isMounted = false;
-        };
-    }, []);
-
-    // Build the set of "collection has at least one completed download" keys
-    // by subscribing to the download manager. Used by Home/Library when
-    // offline mode is on so we only show items the user can actually play.
-    useEffect(() => {
-        const unsubscribe = subscribeDownloads((entries) => {
-            const nextSnapshot = buildDownloadedCollectionSnapshot(entries);
-            if (downloadedCollectionSnapshotRef.current.signature === nextSnapshot.signature) {
-                return;
-            }
-            downloadedCollectionSnapshotRef.current = nextSnapshot;
-            setDownloadedCollectionKeys(nextSnapshot.keys);
-            setDownloadedTrackKeys(nextSnapshot.trackKeys);
-            setDownloadedCollections(nextSnapshot.collections);
-        });
-        return () => {
-            unsubscribe();
         };
     }, []);
 
@@ -2299,7 +2204,7 @@ export default function App() {
                     items: [playbackState.item, ...queueableItems],
                 };
             }
-            forcePlaybackQueueRender((version) => version + 1);
+            forcePlaybackQueueRender();
 
             return queueableItems.length;
         },
@@ -2802,7 +2707,7 @@ export default function App() {
                     [after[i], after[j]] = [after[j], after[i]];
                 }
                 playbackQueueRef.current = { index: queue.index, items: [...before, ...after] };
-                forcePlaybackQueueRender((version) => version + 1);
+                forcePlaybackQueueRender();
             }
 
             // Turning shuffle off does not restore the original order (matches Apple

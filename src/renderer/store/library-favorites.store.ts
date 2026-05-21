@@ -2,6 +2,11 @@ import { useMemo } from 'react';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
+import {
+    identityPersistMigrate,
+    PERSIST_VERSION_INITIAL,
+} from '/@/renderer/store/persist-migrate';
+
 // Local favorites for media types whose backends do not expose a first-class
 // "favorite" concept (Audiobookshelf books/podcasts, playlists) or where we deliberately
 // keep them client-side (radio stations) so the home page surfaces what *this
@@ -78,6 +83,12 @@ export const useLibraryFavoritesStore = create<LibraryFavoritesState>()(
             radioKeys: {},
         }),
         {
+            migrate: identityPersistMigrate<
+                Pick<
+                    LibraryFavoritesState,
+                    'audiobookKeys' | 'playlistKeys' | 'podcastKeys' | 'radioKeys'
+                >
+            >,
             name: 'library-favorites-store',
             partialize: (state) => ({
                 audiobookKeys: state.audiobookKeys,
@@ -85,7 +96,7 @@ export const useLibraryFavoritesStore = create<LibraryFavoritesState>()(
                 podcastKeys: state.podcastKeys,
                 radioKeys: state.radioKeys,
             }),
-            version: 1,
+            version: PERSIST_VERSION_INITIAL,
         },
     ),
 );
