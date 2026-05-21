@@ -1,0 +1,693 @@
+import {
+    getItemQualityProfile,
+    MobileHomeItemType,
+} from '@samo/core/mobile';
+import { FlashList } from '@shopify/flash-list';
+import { memo, useCallback, useMemo, useState } from 'react';
+import {
+    ActivityIndicator,
+    Pressable,
+    ScrollView,
+    Text,
+    View,
+} from 'react-native';
+
+import { ArtworkImage } from '../components/ArtworkImage';
+import { QualityBadge } from '../components/QualityBadge';
+import { TrackDownloadedGlyph } from '../components/Glyphs';
+import { WarningList } from '../components/WarningList';
+import {
+    useDownloadedCollectionKeys,
+    useDownloadedTrackKeys,
+} from '../contexts/downloaded-keys';
+import { useMediaContextMenu } from '../contexts/media-context-menu';
+import { useStableCallback } from '../hooks/use-stable-callback';
+import {
+    HOME_COMPACT_OFFSET,
+    HOME_PRIMARY_TILE,
+    HOME_ROUNDED_OFFSET,
+    HOME_TILE_GAP,
+} from '../theme/layout';
+import { styles } from '../theme/styles';
+import { colors, spacing } from '../theme/tokens';
+import { type AndroidHomeContentState } from '../services/home-content';
+import {
+    type AndroidRecentContentItem,
+    type AndroidRecentContentSourceItem,
+} from '../services/recent-content';
+import { type ServerAuthenticationResult } from '@samo/core/server';
+import {
+    type ContentBackedScreenProps,
+    type HomeDisplaySection,
+    type HomeFilter,
+    type HomeScreenProps,
+} from '../types/home';
+import { type LibraryMediaType } from '../types/library-display';
+import { type ViewAllVariant } from '../types/view-all';
+import { getContentItemKey } from '../utils/content-item';
+import {
+    getDownloadedCollectionKey,
+    getDownloadedTrackKey,
+} from '../utils/download-keys';
+import {
+    filterHomeDisplaySections,
+    getAvailableHomeFilters,
+    getContentItemProgress,
+    getHomeDisplaySections,
+    getSectionsById,
+    getUniqueHomeItems,
+    getViewAllVariant,
+} from '../utils/home-display';
+import { getDisplaySubtitle } from '../utils/playback-time';
+import { getLibraryMediaType } from '../utils/library-display';
+import { EmptyServerBackedScreen } from './EmptyServerBackedScreen';
+
+const FLASH_LIST_MAINTAIN_POSITION_DISABLED = { disabled: true };
+
+export const HomeScreen = memo(({
+    homeContentState,
+    onManageServers,
+    onSelectItem,
+    onViewAll,
+    recentItems,
+    serverConnections,
+}: HomeScreenProps) => {
+    const [homeFilter, setHomeFilter] = useState<HomeFilter>('all');
+
+    if (serverConnections.length === 0) {
+        return (
+            <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Connect Your Library</Text>
+                <Text style={styles.mutedText}>
+                    Connect Navidrome, Subsonic, or Audiobookshelf to load your real library.
+                </Text>
+                <Pressable
+                    accessibilityRole="button"
+                    onPress={onManageServers}
+                    style={styles.primaryButton}
+                >
+                    <Text style={styles.primaryButtonText}>Manage Servers</Text>
+                </Pressable>
+            </View>
+        );
+    }
+
+    return (
+        <HomeContentStatus
+            activeFilter={homeFilter}
+            homeContentState={homeContentState}
+            onFilterChange={setHomeFilter}
+            onSelectItem={onSelectItem}
+            onViewAll={onViewAll}
+            recentItems={recentItems}
+            serverConnections={serverConnections}
+        />
+    );
+});
+
+HomeScreen.displayName = 'HomeScreen';
+
+export const HomeContentStatus = ({
+    activeFilter,
+    homeContentState,
+    onFilterChange,
+    onSelectItem,
+    onViewAll,
+    recentItems,
+    serverConnections,
+}: {
+    activeFilter: HomeFilter;
+    homeContentState: AndroidHomeContentState;
+    onFilterChange: (filter: HomeFilter) => void;
+    onSelectItem: (item: AndroidRecentContentSourceItem) => void;
+    onViewAll?: (section: HomeDisplaySection) => void;
+    recentItems: AndroidRecentContentItem[];
+    serverConnections: ServerAuthenticationResult[];
+}) => {
+    const stableSelectItem = useStableCallback(onSelectItem);
+    const stableViewAll = useStableCallback((section: HomeDisplaySection): void => {
+        onViewAll?.(section);
+    });
+    const loadedContent = homeContentState.status === 'loaded' ? homeContentState.content : null;
+    const allSections = useMemo(
+        () =>
+            loadedContent
+                ? getHomeDisplaySections(
+                      loadedContent.sections,
+                      recentItems,
+                      serverConnections,
+                  )
+                : [],
+        [loadedContent, recentItems, serverConnections],
+    );
+    const availableFilters = useMemo(
+        () => getAvailableHomeFilters(allSections),
+        [allSections],
+    );
+    const filteredSections = useMemo(
+        () => filterHomeDisplaySections(allSections, activeFilter),
+        [activeFilter, allSections],
+    );
+    const filteredGridItems = useMemo(
+        () => {
+            if (activeFilter !== 'podcasts' && activeFilter !== 'audiobooks') {
+                return [];
+            }
+
+            const mediaType = activeFilter === 'podcasts' ? 'podcasts' : 'audiobooks';
+            return getUniqueHomeItems(
+                filteredSections
+                    .flatMap((section) => section.items)
+                    .filter((item) => getLibraryMediaType(item) === mediaType),
+            );
+        },
+        [activeFilter, filteredSections],
+    );
+
+    if (homeContentState.status === 'idle') {
+        return null;
+    }
+
+    if (homeContentState.status === 'loading') {
+        return (
+            <View style={styles.section}>
+                <ActivityIndicator color={colors.accent} />
+            </View>
+        );
+    }
+
+    if (homeContentState.status === 'error') {
+        return (
+            <View style={styles.section}>
+                <Text style={styles.errorText}>{homeContentState.message}</Text>
+            </View>
+        );
+    }
+
+    if (homeContentState.content.sections.length === 0) {
+        const isOfflineContent = homeContentState.content.serverTitle === 'Offline Downloads';
+        return (
+            <>
+                <View style={styles.section}>
+                    <Text style={styles.sectionTitle}>
+                        {isOfflineContent ? 'Offline Downloads' : 'Home'}
+                    </Text>
+                    <Text style={styles.mutedText}>
+                        {isOfflineContent
+                            ? 'No downloads yet. Download albums, playlists, podcasts, or audiobooks to use offline mode.'
+                            : 'No server-backed Home content returned.'}
+                    </Text>
+                </View>
+                <WarningList errors={homeContentState.content.errors} title="Server warnings" />
+            </>
+        );
+    }
+
+    return (
+        <>
+            {availableFilters.length > 2 ? (
+                <ScrollView
+                    contentContainerStyle={styles.homeFilterPills}
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                >
+                    {availableFilters.map((filter) => {
+                        const isActive = filter.id === activeFilter;
+
+                        return (
+                            <Pressable
+                                accessibilityRole="button"
+                                key={filter.id}
+                                onPress={() => onFilterChange(filter.id)}
+                                style={[
+                                    styles.homeFilterPill,
+                                    isActive && styles.homeFilterPillActive,
+                                ]}
+                            >
+                                <Text
+                                    style={[
+                                        styles.homeFilterPillText,
+                                        isActive && styles.homeFilterPillTextActive,
+                                    ]}
+                                >
+                                    {filter.label}
+                                </Text>
+                            </Pressable>
+                        );
+                    })}
+                </ScrollView>
+            ) : null}
+            {filteredSections.length === 0 ? (
+                <View style={[styles.section, { marginTop: spacing.md }]}>
+                    <Text style={styles.mutedText}>
+                        No {activeFilter === 'all' ? '' : activeFilter + ' '}content loaded yet.
+                    </Text>
+                </View>
+            ) : activeFilter === 'podcasts' || activeFilter === 'audiobooks' ? (
+                <HomeFilterGrid
+                    items={filteredGridItems}
+                    onSelectItem={stableSelectItem}
+                    variant={activeFilter === 'podcasts' ? 'podcast' : 'book'}
+                />
+            ) : (
+                <ContentSections
+                    onSelectItem={stableSelectItem}
+                    onViewAll={onViewAll ? stableViewAll : undefined}
+                    sections={filteredSections}
+                />
+            )}
+            <WarningList errors={homeContentState.content.errors} title="Server warnings" />
+        </>
+    );
+};
+
+export const ContentBackedScreen = memo(({
+    emptyTitle,
+    homeContentState,
+    onSelectItem,
+    sectionIds,
+}: ContentBackedScreenProps) => {
+    if (homeContentState.status === 'idle') {
+        return <EmptyServerBackedScreen tabTitle={emptyTitle} />;
+    }
+
+    if (homeContentState.status === 'loading') {
+        return (
+            <View style={styles.section}>
+                <ActivityIndicator color={colors.accent} />
+            </View>
+        );
+    }
+
+    if (homeContentState.status === 'error') {
+        return (
+            <View style={styles.section}>
+                <Text style={styles.errorText}>{homeContentState.message}</Text>
+            </View>
+        );
+    }
+
+    const sections = getSectionsById(homeContentState, sectionIds);
+
+    if (sections.length === 0) {
+        return (
+            <View style={styles.section}>
+                <Text style={styles.sectionTitle}>{emptyTitle}</Text>
+                <Text style={styles.mutedText}>No server-backed content returned.</Text>
+            </View>
+        );
+    }
+
+    return (
+        <ContentSections
+            onSelectItem={onSelectItem}
+            sections={sections.map((section) => ({
+                items: section.items,
+                key: section.id,
+                title: section.title,
+                variant: 'album',
+            }))}
+        />
+    );
+});
+
+ContentBackedScreen.displayName = 'ContentBackedScreen';
+
+const getHomeItemSubtitle = (
+    item: AndroidRecentContentSourceItem,
+    variant: HomeDisplaySection['variant'],
+) => {
+    if (variant === 'radio') {
+        return undefined;
+    }
+
+    return getDisplaySubtitle(item.subtitle);
+};
+
+const HomeFilterGridTile = memo(({
+    isPodcast,
+    item,
+    onSelectItem,
+    variant,
+}: {
+    isPodcast: boolean;
+    item: AndroidRecentContentSourceItem;
+    onSelectItem: (item: AndroidRecentContentSourceItem) => void;
+    variant: 'book' | 'podcast';
+}) => {
+    const subtitle = getHomeItemSubtitle(item, variant);
+
+    return (
+        <Pressable
+            key={getContentItemKey(item)}
+            onPress={() => onSelectItem(item)}
+            style={styles.homeFilterGridTile}
+        >
+            <ArtworkImage
+                fallbackStyle={[
+                    styles.homeFilterGridArtworkFallback,
+                    isPodcast && styles.homeFilterGridArtworkPodcast,
+                ]}
+                letter={item.title.slice(0, 1)}
+                style={[
+                    styles.homeFilterGridArtwork,
+                    isPodcast && styles.homeFilterGridArtworkPodcast,
+                ]}
+                uri={item.artworkUrl}
+            />
+            <Text numberOfLines={2} style={styles.mediaTitle}>
+                {item.title}
+            </Text>
+            {subtitle ? (
+                <Text numberOfLines={1} style={styles.mediaSubtitle}>
+                    {subtitle}
+                </Text>
+            ) : null}
+        </Pressable>
+    );
+});
+
+HomeFilterGridTile.displayName = 'HomeFilterGridTile';
+
+const HomeFilterGrid = memo(({
+    items,
+    onSelectItem,
+    variant,
+}: {
+    items: AndroidRecentContentSourceItem[];
+    onSelectItem: (item: AndroidRecentContentSourceItem) => void;
+    variant: 'book' | 'podcast';
+}) => {
+    const isPodcast = variant === 'podcast';
+    return (
+        <View style={styles.homeFilterGrid}>
+            {items.map((item) => (
+                <HomeFilterGridTile
+                    isPodcast={isPodcast}
+                    item={item}
+                    key={getContentItemKey(item)}
+                    onSelectItem={onSelectItem}
+                    variant={variant}
+                />
+            ))}
+        </View>
+    );
+});
+
+HomeFilterGrid.displayName = 'HomeFilterGrid';
+
+const getHomeRowItemLength = (variant: HomeDisplaySection['variant']): number => {
+    switch (variant) {
+        case 'artist':
+            return HOME_PRIMARY_TILE - HOME_COMPACT_OFFSET + HOME_TILE_GAP;
+        case 'podcast':
+        case 'radio':
+            return HOME_PRIMARY_TILE - HOME_ROUNDED_OFFSET + HOME_TILE_GAP;
+        case 'continue':
+        case 'wide':
+            return 320 + HOME_TILE_GAP;
+        case 'album':
+        case 'book':
+        case 'playlist':
+        case 'recents':
+            return HOME_PRIMARY_TILE + HOME_TILE_GAP;
+    }
+};
+
+interface HomeMediaTileProps {
+    item: AndroidRecentContentSourceItem;
+    onSelectItem: (item: AndroidRecentContentSourceItem) => void;
+    sectionVariant: HomeDisplaySection['variant'];
+}
+
+const isDownloadableCollectionMediaType = (mediaType: LibraryMediaType | undefined): boolean =>
+    mediaType === 'albums' ||
+    mediaType === 'audiobooks' ||
+    mediaType === 'playlists' ||
+    mediaType === 'podcasts';
+
+const HomeMediaTile = memo(({ item, onSelectItem, sectionVariant }: HomeMediaTileProps) => {
+    const contextMenu = useMediaContextMenu();
+    const downloadedCollectionKeys = useDownloadedCollectionKeys();
+    const downloadedTrackKeys = useDownloadedTrackKeys();
+
+    const isAlbum = sectionVariant === 'album';
+    const isArtist = sectionVariant === 'artist';
+    const isBook = sectionVariant === 'book';
+    const isContinue = sectionVariant === 'continue';
+    const isPlaylist = sectionVariant === 'playlist';
+    const isPodcast = sectionVariant === 'podcast';
+    const isRadioSection = sectionVariant === 'radio';
+    const isRecent = sectionVariant === 'recents';
+    const isWide = sectionVariant === 'wide' || isContinue;
+    const isRadio = item.type === MobileHomeItemType.RADIO;
+    const mediaType = getLibraryMediaType(item);
+    // An artist tile rendered inside a Recents/mixed row must still
+    // be circular — never a square with a letter.
+    const isArtistItem = item.type === MobileHomeItemType.ARTIST;
+    const progress = getContentItemProgress(item);
+    const subtitle = getHomeItemSubtitle(item, sectionVariant);
+    const isDownloadedTrack =
+        mediaType === 'songs' &&
+        downloadedTrackKeys.has(getDownloadedTrackKey(item.source?.id, item.id));
+    const isDownloadedCollection =
+        isDownloadableCollectionMediaType(mediaType) &&
+        downloadedCollectionKeys.has(getDownloadedCollectionKey(item.source?.id, item.id));
+    const isDownloaded = isDownloadedTrack || isDownloadedCollection;
+    // Playlists are never a single quality, so per the UX rule we
+    // suppress the format badge on playlist tiles even when the
+    // item happens to carry an isHiRes flag from an older path.
+    const tileBadgeProfile =
+        item.type === MobileHomeItemType.PLAYLIST ? undefined : getItemQualityProfile(item);
+    const tileStyle = [
+        styles.mediaTile,
+        isAlbum && styles.mediaTileAlbum,
+        isArtist && styles.mediaTileArtist,
+        isRecent && styles.mediaTileCompact,
+        isRadioSection && styles.mediaTileGrid,
+        isWide && styles.mediaTileWide,
+        isContinue && styles.mediaTileContinue,
+        isBook && styles.mediaTileBook,
+        isPlaylist && styles.mediaTilePlaylist,
+        isPodcast && styles.mediaTilePodcast,
+    ];
+    const artworkStyle = [
+        styles.mediaArtwork,
+        isAlbum && styles.mediaArtworkAlbum,
+        isArtist && styles.mediaArtworkArtist,
+        isRecent && styles.mediaArtworkCompact,
+        isRadioSection && styles.mediaArtworkGrid,
+        isWide && styles.mediaArtworkWide,
+        isBook && styles.mediaArtworkBook,
+        isPlaylist && styles.mediaArtworkPlaylist,
+        isPodcast && styles.mediaArtworkPodcast,
+        isRadio && styles.mediaArtworkRadio,
+        isArtistItem && styles.libraryArtworkRound,
+    ];
+    const fallbackStyle = [
+        styles.mediaArtworkFallback,
+        isAlbum && styles.mediaArtworkAlbum,
+        isArtist && styles.mediaArtworkArtist,
+        isRecent && styles.mediaArtworkCompact,
+        isRadioSection && styles.mediaArtworkGrid,
+        isWide && styles.mediaArtworkWide,
+        isBook && styles.mediaArtworkBook,
+        isPlaylist && styles.mediaArtworkPlaylist,
+        isPodcast && styles.mediaArtworkPodcast,
+        isRadio && styles.mediaArtworkRadio,
+        isArtistItem && styles.libraryArtworkRound,
+    ];
+
+    return (
+        <Pressable
+            onLongPress={() => contextMenu.openForItem(item)}
+            onPress={() => onSelectItem(item)}
+            style={tileStyle}
+        >
+            <ArtworkImage
+                fallbackStyle={fallbackStyle}
+                letter={item.title.slice(0, 1)}
+                style={artworkStyle}
+                uri={item.artworkUrl}
+            />
+            <QualityBadge overlay profile={tileBadgeProfile} />
+            <View
+                style={[
+                    styles.mediaText,
+                    isWide && styles.mediaTextWide,
+                    isArtist && styles.mediaTextCentered,
+                ]}
+            >
+                <Text
+                    numberOfLines={2}
+                    style={[
+                        styles.mediaTitle,
+                        (isArtist || isRadioSection) && styles.mediaTitleCentered,
+                        isWide && styles.mediaTitleWide,
+                    ]}
+                >
+                    {item.title}
+                </Text>
+                {subtitle || isDownloaded ? (
+                    <View
+                        style={[
+                            styles.mediaInfoRow,
+                            isArtist && styles.mediaInfoRowCentered,
+                        ]}
+                    >
+                        {isDownloaded ? (
+                            <View style={styles.mediaDownloadIndicator}>
+                                <TrackDownloadedGlyph size={11} />
+                            </View>
+                        ) : null}
+                        {subtitle ? (
+                            <Text
+                                numberOfLines={isWide ? 2 : 1}
+                                style={[
+                                    styles.mediaSubtitle,
+                                    styles.mediaSubtitleInline,
+                                    isArtist && styles.mediaSubtitleCentered,
+                                ]}
+                            >
+                                {subtitle}
+                            </Text>
+                        ) : null}
+                    </View>
+                ) : null}
+                {isContinue && progress !== undefined ? (
+                    <View style={styles.continueProgressTrack}>
+                        <View
+                            style={[
+                                styles.continueProgressFill,
+                                { width: `${progress * 100}%` },
+                            ]}
+                        />
+                    </View>
+                ) : null}
+            </View>
+        </Pressable>
+    );
+});
+
+HomeMediaTile.displayName = 'HomeMediaTile';
+
+interface HomeDisplayRowProps {
+    onSelectItem: (item: AndroidRecentContentSourceItem) => void;
+    onViewAll?: (section: HomeDisplaySection) => void;
+    section: HomeDisplaySection;
+}
+
+const chunkHomeSectionItems = (
+    items: AndroidRecentContentSourceItem[],
+    rowCount: number,
+): AndroidRecentContentSourceItem[][] => {
+    const columns: AndroidRecentContentSourceItem[][] = [];
+    for (let index = 0; index < items.length; index += rowCount) {
+        columns.push(items.slice(index, index + rowCount));
+    }
+    return columns;
+};
+
+const HomeDisplayRow = memo(({ onSelectItem, onViewAll, section }: HomeDisplayRowProps) => {
+    const viewAllVariant = getViewAllVariant(section.variant);
+    const canViewAll = viewAllVariant !== null && Boolean(onViewAll);
+    const rowCount = section.rowCount ?? 1;
+    const itemLength = getHomeRowItemLength(section.variant);
+    const drawDistance = itemLength * 4;
+    const columns = useMemo(
+        () => (rowCount > 1 ? chunkHomeSectionItems(section.items, rowCount) : []),
+        [rowCount, section.items],
+    );
+    const renderItem = useCallback(
+        ({ item }: { item: AndroidRecentContentSourceItem }) => (
+            <HomeMediaTile
+                item={item}
+                onSelectItem={onSelectItem}
+                sectionVariant={section.variant}
+            />
+        ),
+        [onSelectItem, section.variant],
+    );
+    const renderColumn = useCallback(
+        ({ item: column }: { item: AndroidRecentContentSourceItem[] }) => (
+            <View style={styles.homeMultiRowColumn}>
+                {column.map((item) => (
+                    <HomeMediaTile
+                        item={item}
+                        key={getContentItemKey(item)}
+                        onSelectItem={onSelectItem}
+                        sectionVariant={section.variant}
+                    />
+                ))}
+            </View>
+        ),
+        [onSelectItem, section.variant],
+    );
+
+    return (
+        <View style={styles.homeSection}>
+            <View style={styles.sectionHeaderRow}>
+                <Text style={styles.sectionTitle}>{section.title}</Text>
+                {canViewAll ? (
+                    <Pressable
+                        accessibilityLabel={`View all ${section.title}`}
+                        accessibilityRole="button"
+                        hitSlop={8}
+                        onPress={() => onViewAll?.(section)}
+                        style={styles.sectionViewAll}
+                    >
+                        <Text style={styles.sectionViewAllLabel}>View All</Text>
+                    </Pressable>
+                ) : null}
+            </View>
+            {rowCount > 1 ? (
+                <FlashList
+                    data={columns}
+                    drawDistance={drawDistance}
+                    horizontal
+                    keyExtractor={(column) => column.map(getContentItemKey).join('|')}
+                    maintainVisibleContentPosition={FLASH_LIST_MAINTAIN_POSITION_DISABLED}
+                    renderItem={renderColumn}
+                    showsHorizontalScrollIndicator={false}
+                />
+            ) : (
+                <FlashList
+                    data={section.items}
+                    drawDistance={drawDistance}
+                    horizontal
+                    keyExtractor={getContentItemKey}
+                    maintainVisibleContentPosition={FLASH_LIST_MAINTAIN_POSITION_DISABLED}
+                    renderItem={renderItem}
+                    showsHorizontalScrollIndicator={false}
+                />
+            )}
+        </View>
+    );
+});
+
+HomeDisplayRow.displayName = 'HomeDisplayRow';
+
+const ContentSections = memo(({
+    onSelectItem,
+    onViewAll,
+    sections,
+}: {
+    onSelectItem: (item: AndroidRecentContentSourceItem) => void;
+    onViewAll?: (section: HomeDisplaySection) => void;
+    sections: HomeDisplaySection[];
+}) => {
+    return (
+        <>
+            {sections.map((section) => (
+                <HomeDisplayRow
+                    key={section.key}
+                    onSelectItem={onSelectItem}
+                    onViewAll={onViewAll}
+                    section={section}
+                />
+            ))}
+        </>
+    );
+});
+
+ContentSections.displayName = 'ContentSections';

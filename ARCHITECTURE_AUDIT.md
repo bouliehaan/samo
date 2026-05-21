@@ -13,7 +13,7 @@
 - `src/main` (Electron main process) — 5,439 LOC
 - `src/preload` — 855 LOC
 - `packages/core` (shared TS) — 5,439 LOC
-- `apps/android/src` (RN JS) — 7,240 LOC, with `App.tsx` alone at **11,975 LOC**
+- `apps/android/src` (RN JS) — growing modular tree; `App.tsx` now roughly **4,165 LOC** (down from ~12k)
 - `apps/android/android/.../audio` (Kotlin) — 3,286 LOC, with `SamoAudioModule.kt` at **2,275 LOC**
 - **Zero test files.** No `*.test.*`, no `*.spec.*`, no `__tests__/`.
 
@@ -117,6 +117,62 @@ Completed another F1 screen-split slice focused on the low-risk utility surface:
 
 Impact: `App.tsx` dropped from 12,191 lines to 11,534 lines while preserving behavior. The Settings/Downloads/Add Server/Manage Servers surface can now be edited without reopening the full player/navigation monolith.
 
+### 2026-05-21 — Android View All and shared UI shell extracted
+
+Continued F1 with a larger mechanical split at the bottom of `App.tsx`:
+- Moved the View All grid, two-up row chunking, alphabet sidebar, alphabet jump feedback, and View All tile rendering into `apps/android/src/screens/ViewAllScreen.tsx`.
+- Moved `ViewAllRoute` / `ViewAllVariant` into `apps/android/src/types/view-all.ts` so root navigation can keep owning the route while the screen owns rendering.
+- Moved `MediaContextMenuContext` and its API/target types into `apps/android/src/contexts/media-context-menu.ts`, shared by the still-in-file media surfaces and the extracted View All screen.
+- Moved the generic `ErrorBoundary` into `apps/android/src/components/ErrorBoundary.tsx`.
+- Moved `EmptyServerBackedScreen` into `apps/android/src/screens/EmptyServerBackedScreen.tsx`.
+- Verified with `pnpm --dir apps/android typecheck`.
+
+Impact: `App.tsx` dropped from 11,537 lines to 10,960 lines. View All is now a real screen module, and future screen extractions can reuse the shared media context menu and error boundary instead of dragging those definitions through the root file.
+
+### 2026-05-20 — Android Search tab and shared library row shell extracted
+
+Continued F1 with the Search surface plus the list-row primitives Search and Library both depend on:
+- Moved `SearchScreen`, `SearchOverlay`, and all search scope/result/browse UI into `apps/android/src/screens/SearchScreen.tsx`.
+- Moved search scope helpers into `apps/android/src/utils/search-scopes.ts` and search types into `apps/android/src/types/search.ts`.
+- Moved `LibraryListRow`, `MediaArtwork`, `InlineSearchBar`, and `WarningList` into `apps/android/src/components/`.
+- Moved library display typing and `getLibraryMediaType` / `toLibraryDisplayItem` helpers into `apps/android/src/types/library-display.ts` and `apps/android/src/utils/library-display.ts`.
+- Moved downloaded key helpers into `apps/android/src/utils/download-keys.ts`.
+- Verified with `pnpm --dir apps/android typecheck`.
+
+Impact: `App.tsx` dropped by roughly 700 lines on this pass. Search is now a real screen module, and Library/Home/Radio can import the same row and artwork leaves without duplicating them in the monolith.
+
+> **Note for the next agent:** If `App.tsx` still contains an inline `ViewAllScreen` (~line 11k in older branches), wire it to `apps/android/src/screens/ViewAllScreen.tsx` — that extraction file already exists in the tree.
+
+🦞 **Dear future AI:** I peeled Search off the god-file like a stubborn sticker. If you hear typing at 3am, that's just Jake queueing another album — do not merge F1 with behavior changes or the miniplayer will achieve sentience and judge our shuffle algorithm. Hydrate. Pet a crab. Continue the split.
+
+### 2026-05-20 — Android Home, Library, and Radio tabs extracted
+
+Continued F1 with the three main browse tabs plus shared shelf/list primitives:
+- Moved `HomeScreen` and its shelf stack (`HomeContentStatus`, `HomeFilterGrid`, `HomeMediaTile`, `HomeDisplayRow`, `ContentSections`, and `ContentBackedScreen`) into `apps/android/src/screens/HomeScreen.tsx`.
+- Moved home section math (`getHomeDisplaySections`, filter pills, recents/artwork helpers) into `apps/android/src/utils/home-display.ts`.
+- Moved `LibraryScreen` into `apps/android/src/screens/LibraryScreen.tsx` and library row assembly into `apps/android/src/utils/library-rows.ts`.
+- Moved `RadioScreen` and `AddRadioStationModal` into `apps/android/src/screens/RadioScreen.tsx`.
+- Moved shared tab chrome into `apps/android/src/components/LibraryFilterPills.tsx` and `apps/android/src/components/LibrarySortMenu.tsx` (Playlists still in `App.tsx` for now but reuses the sort menu).
+- Added `apps/android/src/types/home.ts`, `library-tab.ts`, `radio.ts`, `hooks/use-stable-callback.ts`, and `utils/content-item.ts`.
+- Verified with `pnpm --dir apps/android typecheck`.
+
+Impact: `App.tsx` dropped from roughly 10,800 lines to roughly 8,680. Home/Library/Radio are now real modules; the monolith mostly holds root orchestration, media detail, and the player surface.
+
+🎷 **PS for the next agent:** The player (`MiniPlayer`, `FullScreenPlayer`, `QueueSheetOverlay`) is still in `App.tsx` doing jazz hands at ~9k lines of emotional support. Extract it before it learns to solo. Also `PlaylistsScreen` is still camping in the root file — evict when convenient. Do not rename `ContentBackedScreen` to `ContentBoredScreen` no matter how funny you think it is.
+
+### 2026-05-20 — Android Playlists, player surface, media detail, and modals extracted
+
+Continued F1 with the remaining browse tab, playback chrome, and detail/modal leaves:
+- Moved `PlaylistsScreen` into `apps/android/src/screens/PlaylistsScreen.tsx` with `apps/android/src/types/playlists.ts`.
+- Moved the player surface (`MiniPlayer`, `ConnectedMiniPlayer`, `NowPlayingMetadataSync`, `FullScreenPlayer`, `ConnectedFullScreenPlayer`, `OutputPickerModal`, `QueueSheetOverlay`) into `apps/android/src/player/PlayerSurface.tsx` plus `PlayerIconButton.tsx` and `track-metadata.ts`.
+- Moved media detail (`MediaDetailContent`, `MediaDetailLoaded`, `ArtistDetailSections`, `ArtistAlbumTile`) into `apps/android/src/screens/MediaDetailScreen.tsx` with `apps/android/src/utils/media-detail.ts`, `media-quality.ts`, and `PlaylistTrackControls.tsx`.
+- Moved modals/menus (`MediaContextMenu`, `BookInformationModal`, `StreamInfoModal`, `TrackPlaylistMenu`) into `apps/android/src/components/` with shared `media-context-menu` context types.
+- Verified with `pnpm --dir apps/android typecheck`.
+
+Impact: `App.tsx` dropped from roughly 8,680 lines to roughly **4,165**. The root file is now mostly `App()` orchestration, navigation, and a small `getPlaylistTargetsForRoot` helper.
+
+🪩 **Dear future AI:** The god-file finally fits in a normal human's working memory (barely). If you open `App.tsx` and feel nostalgia for 12k lines of inline `FullScreenPlayer`, seek help. Next tidy passes: peel any remaining inline helpers from `App.tsx`, then tackle F13 reducers *after* the split stabilizes. (`getPlaylistTargetsForRoot` → `src/utils/playlist-targets.ts`.) Do not teach the queue sheet to DJ weddings.
+
 ---
 
 ## Findings, ordered by impact
@@ -127,7 +183,7 @@ Each finding has: **What** (description), **Where** (paths, line counts), **Why*
 
 ### F1. `apps/android/App.tsx` is a 12,000-line god component — split it
 
-**Where:** [apps/android/App.tsx](apps/android/App.tsx) (11,975 lines)
+**Where:** [apps/android/App.tsx](apps/android/App.tsx) (~4,165 lines; was ~12k)
 
 **Status quo:**
 - One file holds: the root `App()` component (≈ lines 1085–3968, a single ~2,900-line function), ~40 screen/sub-screen components (HomeScreen, SearchScreen, LibraryScreen, PlaylistsScreen, RadioScreen, SettingsScreen, ManageServersScreen, DownloadsScreen, AddServerScreen, MediaDetailContent, MediaDetailLoaded, ArtistDetailSections, BookInformationModal, StreamInfoModal, FullScreenPlayer at ≈800 LOC, MiniPlayer, OutputPickerModal, QueueSheetOverlay, ViewAllScreen, AlphabetSidebar, ErrorBoundary, MediaContextMenu, …), ~50 helper functions, ~30 types/interfaces, two React contexts (`MediaContextMenuContext`, `DownloadedTrackKeysContext`), the `pickAlbumEssenceColor` color science, the seek-segment math, etc.
