@@ -7,10 +7,30 @@ export type SamoFetchInit = {
 };
 
 export interface SamoFetchResponse {
+    arrayBuffer?: () => Promise<ArrayBuffer>;
+    headers?: { get: (name: string) => null | string };
     json: () => Promise<unknown>;
     ok: boolean;
     status: number;
+    text?: () => Promise<string>;
 }
+
+export const adaptNativeFetch = (
+    fetchFn: (url: string, init?: SamoFetchInit) => Promise<Response>,
+): SamoFetch => {
+    return async (url, init) => {
+        const response = await fetchFn(url, init);
+
+        return {
+            arrayBuffer: () => response.arrayBuffer(),
+            headers: { get: (name) => response.headers.get(name) },
+            json: () => response.json(),
+            ok: response.ok,
+            status: response.status,
+            text: () => response.text(),
+        };
+    };
+};
 
 export const getFetch = (fetcher?: SamoFetch): SamoFetch => {
     const globalFetch = (globalThis as { fetch?: SamoFetch }).fetch;

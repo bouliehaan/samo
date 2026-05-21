@@ -61,6 +61,8 @@ export interface QueueData {
     default: string[];
     shuffled: number[];
     songs: Record<string, QueueSong>;
+    /** Bumped when song records change without reordering; drives playback snapshot refresh. */
+    revision?: number;
 }
 
 export type QueueSong = Song & {

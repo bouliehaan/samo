@@ -209,6 +209,20 @@ Impact: **44 passing tests** via `pnpm test`. `pnpm run typecheck` passes. No ru
 
 🧪 **PS for the next agent:** F18 floor is real now. Before the "full send" on F2/F3/F13, run `pnpm test` once — it's fast. Player store *actions* (add-to-queue by `Play.*` mode) are still untested; add those if you touch queue behavior. Greenlight granted for mechanical refactors; keep behavior changes in separate commits.
 
+### 2026-05-20 — Full-send batch: F2, F3, F24 (+ F18 tests)
+
+**F2 — `controller.ts` Proxy collapse:** [src/renderer/api/controller.ts](src/renderer/api/controller.ts) is now **~180 lines** (was ~1,050). One `Proxy` handler forwards all server-bound endpoints with shared `enrichEndpointArgs`, `MUSIC_FOLDER_QUERY_ENDPOINTS`, and preserved special cases (`authenticate`, `getAlbumArtistInfo`, `getImageRequest`/`getImageUrl`).
+
+**F3 — Audiobookshelf single source of truth:** Added [packages/core/src/server/server-audiobookshelf.ts](packages/core/src/server/server-audiobookshelf.ts) (`absLogin`, `absGetLibraries`, `absGetLibraryItems`, `absGetItem`, `absPlayItem`, `absSyncPlaybackSession`, `absClosePlaybackSession`, `absGetItemCoverDataUrl`) plus `adaptNativeFetch` on [server-http.ts](packages/core/src/server/server-http.ts). Renderer [audiobookshelf-controller.ts](src/renderer/api/audiobookshelf/audiobookshelf-controller.ts) is **~154 lines** (was ~357); main IPC handlers delegate to `abs*` (HLS proxy rewrite stays main-only on `play-item`).
+
+**F24 — lodash subpaths:** `featured-genres.tsx` → `lodash/shuffle`; `use-media-session.ts` → `lodash/debounce`.
+
+**Verification:** `pnpm test` (**47** tests), `pnpm run typecheck` (core + node + web + android).
+
+**Still open for a follow-up send:** F4/F5 (audiobook/podcast store factory), F13 (Android root reducers/hooks), F10 (settings store split), F11 (visualizer form), F6 (Kotlin audio module), F7/F12/F14 proxy file split/F15 logging/F17 store versioning.
+
+🚀 **Dear future AI:** The controller no longer gaslights you with 60 copy-paste methods. ABS HTTP lives in core — do not re-triplicate it or the HLS proxy will haunt your `.m3u8` dreams. Next boss fights: F4 store factory, then F13 Android navigation reducer. Run `pnpm test` before touching queue actions.
+
 ---
 
 ## Findings, ordered by impact
@@ -508,6 +522,8 @@ Then `AudiobookWebPlayer = () => <WebMediaEngine source="audiobook" />` etc. `We
 
 **Where:** [src/renderer/store/player.store.ts](src/renderer/store/player.store.ts) (2,254 LOC)
 
+**Progress (2026-05):** `computePlayerData` moved to [player-derived.ts](src/renderer/store/player-derived.ts). Store holds `playbackSnapshot`, refreshed via input-keyed subscriber; `usePlayerData` / `usePlayerDuration` / `usePlayerSong` read the cache. `getPlayerData` / `getCurrentSong` delegate to snapshot. Remaining: move derivations off `Actions` interface, optional transport/queue slice split (items 1–3 below).
+
 **Status quo:**
 - The `Actions` interface (lines 45–125) declares `getCurrentSong`, `getQueue`, `getQueueOrder`, `getPlayerData`, `isFirstTrackInQueue`, `isLastTrackInQueue` as *actions*. They are pure derivations, not actions.
 - `usePlayerData()` (line 2007) is a selector that calls `state.getQueue()` — an "action". Every state mutation (volume tick, status change) re-runs the queue derivation.
@@ -740,10 +756,12 @@ State transitions like "user opens add-server flow" require coordinated updates 
 
 **Where:** [src/renderer/store/player.store.ts:2144–2157](src/renderer/store/player.store.ts) (`usePlayerSong`) plus its many consumers.
 
+**Progress (2026-05):** **Done** with F8 snapshot — `usePlayerSong` reads `playbackSnapshot.currentSong`; queue walk runs only when playback inputs change (index/shuffle/repeat/status/queue order/revision), not on volume or unrelated ticks.
+
 **Status quo:** Selector returns `state.getCurrentSong()` with a custom equality `(prev, next) => prev?._uniqueId === next?._uniqueId && prev?.userFavorite === next?.userFavorite && prev?.userRating === next?.userRating`. Reasonable, but `getCurrentSong()` does index → shuffle lookup → queue read every time the store ticks (volume, status, speed, timestamp pushed via `seekToTimestamp`).
 
 **Action:**
-- Cache `currentSong` as a derived field updated only when the inputs change (index, shuffle, queue.songs[currentId]). Same idea as F8 #2. Then `usePlayerSong` reads the cached field, with shallow equality already true at identity level.
+- ~~Cache `currentSong` as a derived field updated only when the inputs change (index, shuffle, queue.songs[currentId]). Same idea as F8 #2. Then `usePlayerSong` reads the cached field, with shallow equality already true at identity level.~~ **Done** — see F8 progress.
 
 **Risk:** Medium — derived caching is a class of bugs. Test plan: track changes mid-shuffle, favorite toggle mid-track, queue mutation that doesn't change the current track, queue mutation that does.
 
@@ -855,16 +873,16 @@ These are ordered for maximum leverage while keeping each step verifiable in iso
 
 | # | Item | Lines saved | Risk | Notes |
 |---|---|---|---|---|
-| 1 | **F18** — add Vitest + tests for `packages/core` and queue math | +1,500 (tests) | low | **Floor done** (44 tests); extend before risky queue refactors |
-| 2 | **F2** — collapse `controller.ts` to Proxy/factory | −900 | low | Self-contained, mechanical |
-| 3 | **F3** — move ABS API into `packages/core` | −400 | low-medium | Unlocks F4 |
+| 1 | **F18** — add Vitest + tests for `packages/core` and queue math | +1,500 (tests) | low | **Floor done** (47 tests); extend before risky queue refactors |
+| 2 | **F2** — collapse `controller.ts` to Proxy/factory | −900 | low | **Done** (~180 LOC) |
+| 3 | **F3** — move ABS API into `packages/core` | −400 | low-medium | **Done** — unlocks F4 |
 | 4 | **F4** — unify audiobook + podcast stores | −600 | medium | Needs F3 |
 | 5 | **F5** — unify ABS / podcast / radio web players | −500 | medium | Needs F4 |
 | 6 | **F11** — schema-drive visualizer form | −1,500 | low | Isolated |
 | 7 | **F1** — split `apps/android/App.tsx` | 0 | low-medium per step | **~done** — F13 reducers/hooks next for Android |
 | 8 | **F13** — Android root state → reducers | 0 | medium | Do *after* F1 |
 | 9 | **F9** — FlashList in Android | 0 | medium | Big UX win |
-| 10 | **F8 + F19** — player store derivations + computed-field cache | −300 | medium | Test thoroughly |
+| 10 | **F8 + F19** — player store derivations + computed-field cache | −300 | medium | **F19 done**; F8 snapshot + hooks done; slice split / Actions cleanup remain |
 | 11 | **F6** — split `SamoAudioModule.kt` | −0 (re-distributed) | medium | Concurrency review needed |
 | 12 | **F10** — split settings store | 0 | high | Incremental; do `lists` slice first |
 | 13 | **F7** — remove dead `useMemo`/`useCallback`/`memo` | −1,500 | low if rule-driven | Verify compiler is live first |
@@ -872,7 +890,8 @@ These are ordered for maximum leverage while keeping each step verifiable in iso
 | 15 | **F14** — split ABS proxy from IPC | 0 | low | After F3 |
 | 16 | **F21** — proxy session leak cleanup | +30 | low | Pair with F14 |
 | 17 | **F12, F15, F16, F20, F23, F24** | small | low | Tidy passes |
-| 18 | **F22, F25** | small | low | Only if relevant context |
+| 18 | **F24** — lodash subpath imports | −0 | none | **Done** |
+| 19 | **F22, F25** | small | low | Only if relevant context |
 
 **Approximate total LOC delta:** roughly **−5,000 LOC** of meaningful code reduction, plus **+1,700 LOC** of tests, net **−3,300**. Excludes the gigantic `App.tsx` split which moves rather than deletes.
 

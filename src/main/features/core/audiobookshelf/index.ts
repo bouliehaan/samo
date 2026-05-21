@@ -1,4 +1,16 @@
-import { normalizeBaseUrl } from '@samo/core/server';
+import {
+    absClosePlaybackSession,
+    normalizeBaseUrl,
+    absGetItem,
+    absGetItemCoverDataUrl,
+    absGetLibraries,
+    absGetLibraryItems,
+    absLogin,
+    absPlayItem,
+    absSyncPlaybackSession,
+    adaptNativeFetch,
+    type AbsPlaybackSessionResponse,
+} from '@samo/core/server';
 import { app, ipcMain } from 'electron';
 import log from 'electron-log/main';
 import { randomUUID } from 'node:crypto';
@@ -12,6 +24,7 @@ type AudiobookshelfProxySession = {
 };
 
 const PROXY_SESSION_TTL_MS = 6 * 60 * 60 * 1000;
+const absFetch = adaptNativeFetch(fetch);
 
 const audiobookshelfProxySessions = new Map<string, AudiobookshelfProxySession>();
 let audiobookshelfProxyServer: null | Server = null;
@@ -216,31 +229,19 @@ ipcMain.handle(
     async (
         _event,
         data: {
-            // Optional — when present, /play/:episodeId is hit (podcasts).
             episodeId?: string;
             itemId: string;
             token: string;
             url: string;
         },
     ) => {
-        const baseUrl = normalizeBaseUrl(data.url);
-        const playPath = data.episodeId
-            ? `/api/items/${data.itemId}/play/${data.episodeId}`
-            : `/api/items/${data.itemId}/play`;
-        const response = await fetch(`${baseUrl}${playPath}`, {
-            body: JSON.stringify({}),
-            headers: {
-                Authorization: `Bearer ${data.token}`,
-                'Content-Type': 'application/json',
-            },
-            method: 'POST',
-        });
-
-        if (!response.ok) {
-            throw new Error(`Audiobookshelf play request failed: ${response.status}`);
-        }
-
-        const playbackSession = await response.json();
+        const server = { credential: data.token, url: data.url };
+        const playbackSession = await absPlayItem(
+            absFetch,
+            server,
+            data.itemId,
+            data.episodeId,
+        );
         const ownerSessionId =
             typeof playbackSession.id === 'string' && playbackSession.id.trim()
                 ? playbackSession.id
@@ -248,7 +249,7 @@ ipcMain.handle(
 
         if (Array.isArray(playbackSession.audioTracks)) {
             playbackSession.audioTracks = await Promise.all(
-                playbackSession.audioTracks.map(async (track: { contentUrl?: string }) => {
+                playbackSession.audioTracks.map(async (track) => {
                     if (!track.contentUrl) {
                         return track;
                     }
@@ -256,7 +257,7 @@ ipcMain.handle(
                     return {
                         ...track,
                         contentUrl: await createAudiobookshelfProxyUrl(
-                            baseUrl,
+                            server.url,
                             data.token,
                             track.contentUrl,
                             ownerSessionId,
@@ -266,225 +267,53 @@ ipcMain.handle(
             );
         }
 
-        return playbackSession;
+        return playbackSession as AbsPlaybackSessionResponse;
     },
 );
 
-ipcMain.handle(
-    'audiobookshelf-sync-playback-session',
-    async (
-        _event,
-        data: {
-            body: {
-                currentTime: number;
-                duration: number;
-                timeListened: number;
-            };
-            sessionId: string;
-            token: string;
-            url: string;
-        },
-    ) => {
-        const baseUrl = normalizeBaseUrl(data.url);
-        const response = await fetch(
-            `${baseUrl}/api/session/${encodeURIComponent(data.sessionId)}/sync`,
-            {
-                body: JSON.stringify(data.body),
-                headers: {
-                    Authorization: `Bearer ${data.token}`,
-                    'Content-Type': 'application/json',
-                },
-                method: 'POST',
-            },
+ipcMain.handle('audiobookshelf-sync-playback-session', async (_event, data) =>
+    absSyncPlaybackSession(
+        absFetch,
+        { credential: data.token, url: data.url },
+        data.sessionId,
+        data.body,
+    ),
+);
+
+ipcMain.handle('audiobookshelf-close-playback-session', async (_event, data) => {
+    try {
+        await absClosePlaybackSession(
+            absFetch,
+            { credential: data.token, url: data.url },
+            data.sessionId,
+            data.body,
         );
+    } finally {
+        releaseProxySessionsForOwner(data.sessionId);
+    }
+});
 
-        if (!response.ok) {
-            throw new Error(`Audiobookshelf session sync failed: ${response.status}`);
-        }
-
-        await response.text();
-    },
+ipcMain.handle('audiobookshelf-get-item-cover-data-url', async (_event, data) =>
+    absGetItemCoverDataUrl(absFetch, { credential: data.token, url: data.url }, data.itemId),
 );
 
-ipcMain.handle(
-    'audiobookshelf-close-playback-session',
-    async (
-        _event,
-        data: {
-            body: {
-                currentTime: number;
-                duration: number;
-                timeListened: number;
-            };
-            sessionId: string;
-            token: string;
-            url: string;
-        },
-    ) => {
-        const baseUrl = normalizeBaseUrl(data.url);
-
-        try {
-            const response = await fetch(
-                `${baseUrl}/api/session/${encodeURIComponent(data.sessionId)}/close`,
-                {
-                    body: JSON.stringify(data.body),
-                    headers: {
-                        Authorization: `Bearer ${data.token}`,
-                        'Content-Type': 'application/json',
-                    },
-                    method: 'POST',
-                },
-            );
-
-            if (!response.ok) {
-                throw new Error(`Audiobookshelf session close failed: ${response.status}`);
-            }
-        } finally {
-            releaseProxySessionsForOwner(data.sessionId);
-        }
-    },
+ipcMain.handle('audiobookshelf-get-libraries', async (_event, data) =>
+    absGetLibraries(absFetch, { credential: data.token, url: data.url }),
 );
 
-ipcMain.handle(
-    'audiobookshelf-get-item-cover-data-url',
-    async (
-        _event,
-        data: {
-            itemId: string;
-            token: string;
-            url: string;
-        },
-    ) => {
-        const baseUrl = normalizeBaseUrl(data.url);
-        const response = await fetch(`${baseUrl}/api/items/${data.itemId}/cover`, {
-            headers: {
-                Authorization: `Bearer ${data.token}`,
-            },
-            method: 'GET',
-        });
-
-        if (response.status === 404) {
-            return null;
-        }
-
-        if (!response.ok) {
-            throw new Error(`Audiobookshelf cover request failed: ${response.status}`);
-        }
-
-        const contentType = response.headers.get('content-type') ?? 'image/jpeg';
-        const arrayBuffer = await response.arrayBuffer();
-        const base64 = Buffer.from(arrayBuffer).toString('base64');
-
-        return `data:${contentType};base64,${base64}`;
-    },
+ipcMain.handle('audiobookshelf-get-library-items', async (_event, data) =>
+    absGetLibraryItems(absFetch, { credential: data.token, url: data.url }, data.libraryId),
 );
 
-ipcMain.handle(
-    'audiobookshelf-get-libraries',
-    async (
-        _event,
-        data: {
-            token: string;
-            url: string;
-        },
-    ) => {
-        const baseUrl = normalizeBaseUrl(data.url);
-        const response = await fetch(`${baseUrl}/api/libraries`, {
-            headers: {
-                Authorization: `Bearer ${data.token}`,
-            },
-            method: 'GET',
-        });
-
-        if (!response.ok) {
-            throw new Error(`Audiobookshelf libraries request failed: ${response.status}`);
-        }
-
-        return response.json();
-    },
+ipcMain.handle('audiobookshelf-get-item', async (_event, data) =>
+    absGetItem(absFetch, { credential: data.token, url: data.url }, data.itemId),
 );
 
-ipcMain.handle(
-    'audiobookshelf-get-library-items',
-    async (
-        _event,
-        data: {
-            libraryId: string;
-            token: string;
-            url: string;
-        },
-    ) => {
-        const baseUrl = normalizeBaseUrl(data.url);
-        const response = await fetch(`${baseUrl}/api/libraries/${data.libraryId}/items`, {
-            headers: {
-                Authorization: `Bearer ${data.token}`,
-            },
-            method: 'GET',
-        });
-
-        if (!response.ok) {
-            throw new Error(`Audiobookshelf library items request failed: ${response.status}`);
-        }
-
-        return response.json();
-    },
-);
-
-ipcMain.handle(
-    'audiobookshelf-get-item',
-    async (
-        _event,
-        data: {
-            itemId: string;
-            token: string;
-            url: string;
-        },
-    ) => {
-        const baseUrl = normalizeBaseUrl(data.url);
-        // ?expanded=1 ensures media.episodes / media.chapters are returned.
-        const response = await fetch(`${baseUrl}/api/items/${data.itemId}?expanded=1`, {
-            headers: {
-                Authorization: `Bearer ${data.token}`,
-            },
-            method: 'GET',
-        });
-
-        if (!response.ok) {
-            throw new Error(`Audiobookshelf item request failed: ${response.status}`);
-        }
-
-        return response.json();
-    },
-);
-
-ipcMain.handle(
-    'audiobookshelf-login',
-    async (
-        _event,
-        data: {
-            password: string;
-            url: string;
-            username: string;
-        },
-    ) => {
-        const baseUrl = normalizeBaseUrl(data.url);
-        const response = await fetch(`${baseUrl}/login`, {
-            body: JSON.stringify({
-                password: data.password,
-                username: data.username,
-            }),
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            method: 'POST',
-        });
-
-        if (!response.ok) {
-            throw new Error(`Audiobookshelf authentication failed: ${response.status}`);
-        }
-
-        return response.json();
-    },
+ipcMain.handle('audiobookshelf-login', async (_event, data) =>
+    absLogin(absFetch, data.url, {
+        password: data.password,
+        username: data.username,
+    }),
 );
 
 app.on('before-quit', shutdownAudiobookshelfProxy);
