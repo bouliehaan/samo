@@ -1,0 +1,40 @@
+name: Cast receiver (GitHub Pages)
+
+on:
+    push:
+        branches: [development]
+        paths:
+            - 'apps/android/cast-receiver/**'
+            - '.github/workflows/cast-receiver-pages.yml'
+    workflow_dispatch:
+
+permissions:
+    contents: read
+    pages: write
+    id-token: write
+
+concurrency:
+    group: pages
+    cancel-in-progress: false
+
+jobs:
+    deploy:
+        runs-on: ubuntu-latest
+        environment:
+            name: github-pages
+            url: ${{ steps.deployment.outputs.page_url }}
+        steps:
+            - uses: actions/checkout@v4
+            - uses: actions/configure-pages@v5
+            - name: Stage site root
+              run: |
+                  rm -rf _site
+                  mkdir -p _site
+                  cp apps/android/cast-receiver/index.html _site/index.html
+                  cp apps/android/cast-receiver/.nojekyll _site/.nojekyll 2>/dev/null || touch _site/.nojekyll
+                  test -f _site/index.html
+            - uses: actions/upload-pages-artifact@v3
+              with:
+                  path: _site
+            - uses: actions/deploy-pages@v4
+              id: deployment
