@@ -139,13 +139,15 @@ import { TrackPlaylistMenu } from './src/components/TrackPlaylistMenu';
 import {
     PLAYER_CLOSE_SPRING,
     PLAYER_OPEN_SPRING,
-    tabBarSinkOpacity,
+    tabBarSinkScale,
     tabBarSinkTranslateY,
+    worldDimOpacity,
 } from './src/player/player-motion';
 import {
     ConnectedFullScreenPlayer,
     ConnectedMiniPlayer,
     NowPlayingMetadataSync,
+    OutputPickerModal,
 } from './src/player/PlayerSurface';
 import {
     MediaContextMenuContext,
@@ -198,7 +200,6 @@ import {
 import {
     getAndroidPlaybackState,
     selectActiveAndroidPlaybackItem,
-    selectAndroidPlaybackStatus,
     setAndroidPlaybackState,
     useAndroidPlaybackState,
 } from './src/state/playback-store';
@@ -495,14 +496,19 @@ export default function App() {
     // their frame, opacity, and touchability from this single shared value so
     // the motion reads as one physical object expanding or collapsing.
     const playerProgress = useSharedValue(0);
+    const [outputPickerVisible, setOutputPickerVisible] = useState(false);
     const reducedMotion = useReducedMotionPreference();
     const tabBarAnimatedStyle = useAnimatedStyle(() => {
         const p = playerProgress.value;
         return {
-            opacity: tabBarSinkOpacity(p),
-            transform: [{ translateY: tabBarSinkTranslateY(p) }],
+            transform: [{ translateY: tabBarSinkTranslateY(p) }, { scale: tabBarSinkScale(p) }],
         };
     });
+    // World dim — the desk going darker under the card lifting off it. Lives
+    // above the page content + tab bar, below the player shell.
+    const worldDimStyle = useAnimatedStyle(() => ({
+        opacity: worldDimOpacity(playerProgress.value),
+    }));
     useEffect(() => {
         const openSpring = reducedMotion ? REDUCED_MOTION_SPRING : PLAYER_OPEN_SPRING;
         const closeSpring = reducedMotion ? REDUCED_MOTION_SPRING : PLAYER_CLOSE_SPRING;
@@ -518,7 +524,6 @@ export default function App() {
                 : withSpring(0, closeSpring);
         }
     }, [isFullPlayerOpen, playerProgress, reducedMotion]);
-    const playbackStatus = useAndroidPlaybackState(selectAndroidPlaybackStatus);
     const {
         absContextRef,
         handlePlayItem,
@@ -1100,6 +1105,12 @@ export default function App() {
     const handleCloseFullPlayer = useCallback(() => {
         setIsFullPlayerOpen(false);
     }, [setIsFullPlayerOpen]);
+    const handleOpenOutputPicker = useCallback(() => {
+        setOutputPickerVisible(true);
+    }, []);
+    const handleCloseOutputPicker = useCallback(() => {
+        setOutputPickerVisible(false);
+    }, []);
     const handleViewAllBack = useCallback(() => {
         setActiveUtilityScreen(null);
         setViewAllRoute(null);
@@ -1530,6 +1541,14 @@ export default function App() {
                     ) : null}
                     </View>
                     <NowPlayingMetadataSync />
+                    {/* World dim — fades in over the page + tab bar as the
+                        player rises. Below the player shells (zIndex 9000 vs
+                        their 9999/10000). pointerEvents:none so the page
+                        below stays interactive while the player is closed. */}
+                    <Reanimated.View
+                        pointerEvents="none"
+                        style={[styles.playerWorldDim, worldDimStyle]}
+                    />
                     <ConnectedMiniPlayer
                         artworkUrl={currentHighResArtworkUrl}
                         lastPlayedItem={lastPlayedItem}
@@ -1566,6 +1585,7 @@ export default function App() {
                             isShuffled={isShuffled}
                             lastPlayedItem={lastPlayedItem}
                             onClose={handleCloseFullPlayer}
+                            onOpenOutputPicker={handleOpenOutputPicker}
                             onNext={() => void handleNavigatePlayback(1)}
                             onPlayQueueIndex={(index) => {
                                 const currentQueue = playbackQueueRef.current;
@@ -1594,6 +1614,11 @@ export default function App() {
                             visible={isFullPlayerOpen}
                         />
                     </ErrorBoundary>
+                    <OutputPickerModal
+                        castState={castState}
+                        onClose={handleCloseOutputPicker}
+                        visible={outputPickerVisible}
+                    />
                     <Reanimated.View
                         pointerEvents={isFullPlayerOpen ? 'none' : 'auto'}
                         style={[styles.tabBar, tabBarAnimatedStyle]}

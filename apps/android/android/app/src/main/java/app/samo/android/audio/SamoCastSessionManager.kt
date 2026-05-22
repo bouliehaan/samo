@@ -2,6 +2,7 @@ package app.samo.android.audio
 
 import android.net.Uri
 import android.os.Handler
+import android.os.SystemClock
 import android.util.Log
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -352,9 +353,36 @@ internal class SamoCastSessionManager(
       }
     )
 
-    loadCastSource(castSource, startPositionMs, true)
-    host.emitState("buffering")
-    promise.resolve(getCastStatusMap("buffering"))
+    withCastContext(
+      onReady = { context ->
+        val deadlineMs = SystemClock.elapsedRealtime() + 8_000L
+        fun attemptLoad() {
+          if (getActiveRemoteMediaClient() != null) {
+            try {
+              loadCastSource(castSource, startPositionMs, true)
+              host.emitState("buffering")
+              promise.resolve(getCastStatusMap("buffering"))
+            } catch (error: Exception) {
+              promise.reject("SAMO_CAST_ERROR", error.message, error)
+            }
+            return
+          }
+
+          val castState = context.castState
+          if (
+            castState == CastState.CONNECTING &&
+            SystemClock.elapsedRealtime() < deadlineMs
+          ) {
+            mainHandler.postDelayed({ attemptLoad() }, 200)
+            return
+          }
+
+          promise.reject("SAMO_CAST_ERROR", "Chromecast is not connected")
+        }
+        attemptLoad()
+      },
+      onError = { error -> promise.reject("SAMO_CAST_ERROR", error.message, error) },
+    )
   }
 
   fun handOffLocalPlaybackToCast() {

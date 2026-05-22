@@ -1230,7 +1230,11 @@ export const styles = StyleSheet.create({
         overflow: 'hidden',
         position: 'absolute',
         right: 0,
-        zIndex: 9999,
+        zIndex: 10000,
+    },
+    fullPlayerExpandedPanel: {
+        minHeight: 0,
+        overflow: 'hidden',
     },
     fullPlayerArtwork: {
         borderRadius: 4,
@@ -1321,6 +1325,11 @@ export const styles = StyleSheet.create({
     },
     fullPlayerCollapsedSurface: {
         backgroundColor: '#1c1c1e',
+        bottom: 0,
+        left: 0,
+        position: 'absolute',
+        right: 0,
+        top: 0,
     },
     fullPlayerDither: {
         // Soft-light blend means the noise PNG (mean grey 128, ±18 spread)
@@ -1332,14 +1341,11 @@ export const styles = StyleSheet.create({
         mixBlendMode: 'soft-light',
     },
     fullPlayerContent: {
-        height: SCREEN_HEIGHT,
-        left: 0,
+        flex: 1,
+        minHeight: 0,
         paddingBottom: FULL_PLAYER_PADDING_BOTTOM,
         paddingHorizontal: spacing.lg,
         paddingTop: FULL_PLAYER_PADDING_TOP,
-        position: 'absolute',
-        right: 0,
-        top: 0,
     },
     fullPlayerControlSide: {
         alignItems: 'center',
@@ -1671,7 +1677,6 @@ export const styles = StyleSheet.create({
         // tabBar (~62) + miniPlayer (~78) + breathing room
         paddingBottom: 200,
         paddingHorizontal: HOME_EDGE_PADDING,
-        paddingTop: spacing.lg,
     },
     libraryRow: {
         alignItems: 'center',
@@ -2061,11 +2066,9 @@ export const styles = StyleSheet.create({
         overflow: 'hidden',
         position: 'absolute',
         right: 0,
-        // zIndex puts the MiniPlayer hit area above the ScrollView on every
-        // page (the issue on artist/album/playlist detail). No elevation —
-        // that draws an Android drop shadow which broke the visual seam with
-        // the tab bar.
-        zIndex: 10000,
+        // Above the expanding shell and scroll content; no elevation — that
+        // draws an Android drop shadow which broke the seam with the tab bar.
+        zIndex: 10001,
     },
     miniPlayerArtwork: {
         borderRadius: 10,
@@ -2181,6 +2184,27 @@ export const styles = StyleSheet.create({
     playerControlButtonSpacer: {
         height: 44,
         width: 44,
+    },
+    /** Invisible 68×68 layout slot in the transport row. The morphing play
+     *  button is rendered outside the row in screen coords and lands here at
+     *  progress=1 — the slot reserves space for space-between layout but the
+     *  morph element is the only visible/tappable play affordance. */
+    playerControlPrimarySlot: {
+        height: 68,
+        width: 68,
+    },
+    /** Thin dimming layer over the home content while the player rises —
+     *  the desk going dim under the card lifting off it. Sits below the
+     *  player shell, above the page + tab bar. */
+    playerWorldDim: {
+        backgroundColor: '#000000',
+        bottom: 0,
+        left: 0,
+        position: 'absolute',
+        right: 0,
+        top: 0,
+        // Above page + tab bar (zIndex 10), below mini (10000) and full (9999).
+        zIndex: 9000,
     },
     playGlyph: {
         borderBottomColor: 'transparent',

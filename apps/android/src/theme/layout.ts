@@ -7,9 +7,10 @@ export const PLAYER_SAFE_TOP = Platform.OS === 'android' ? 24 : 0;
 
 export const MINI_PLAYER_BOTTOM = 75;
 export const MINI_PLAYER_ARTWORK_SIZE = 58;
-export const MINI_PLAYER_VERTICAL_PADDING = 10;
+export const MINI_PLAYER_VERTICAL_PADDING = 16;
 export const MINI_PLAYER_HEIGHT = MINI_PLAYER_ARTWORK_SIZE + MINI_PLAYER_VERTICAL_PADDING * 2;
-export const MINI_PLAYER_RADIUS = 28;
+/** Slightly rounder than flat; echoes display bottom corners without a pill shape. */
+export const MINI_PLAYER_RADIUS = 34;
 
 export const FULL_PLAYER_EXPANDED_TOP = -PLAYER_SAFE_TOP;
 export const FULL_PLAYER_PADDING_TOP = Platform.OS === 'android' ? 42 : 24;
@@ -24,6 +25,22 @@ export const FULL_PLAYER_ARTWORK_SIZE = Math.min(SCREEN_WIDTH - 64, SCREEN_HEIGH
 /** Mini row inset — must match `miniPlayerTouchable` padding. */
 export const MINI_PLAYER_ARTWORK_LEFT = 18;
 export const MINI_PLAYER_ARTWORK_RADIUS = 10;
+
+/** Mini play button dimensions + center (in screen coords at progress=0). */
+export const MINI_PLAYER_PLAY_SIZE = 50;
+export const MINI_PLAYER_PLAY_GLYPH_SIZE = 24;
+export const MINI_PLAYER_PLAY_CENTER_X =
+    SCREEN_WIDTH - MINI_PLAYER_ARTWORK_LEFT - MINI_PLAYER_PLAY_SIZE / 2;
+export const MINI_PLAYER_PLAY_CENTER_Y =
+    SCREEN_HEIGHT - MINI_PLAYER_BOTTOM - MINI_PLAYER_HEIGHT / 2;
+
+/** Full primary play button — final size, centered horizontally. Vertical is
+ * measured at runtime in PlayerSurface (bottom-block layout varies with track
+ * type), with this estimate as the initial value before measurement settles. */
+export const FULL_PLAYER_PLAY_SIZE = 68;
+export const FULL_PLAYER_PLAY_GLYPH_SIZE = 44;
+export const FULL_PLAYER_PLAY_CENTER_X = SCREEN_WIDTH / 2;
+export const FULL_PLAYER_PLAY_CENTER_Y_ESTIMATE = SCREEN_HEIGHT - 150;
 
 export const FULL_PLAYER_HEADER_HEIGHT = 44;
 /** Music layout: metadata + seek + controls + cast row below the flex artwork well. */

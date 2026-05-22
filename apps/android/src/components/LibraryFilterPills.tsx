@@ -1,9 +1,10 @@
+import { memo } from 'react';
 import { Pressable, ScrollView, Text } from 'react-native';
 
 import { styles } from '../theme/styles';
 import { type LibraryFilter } from '../types/library-tab';
 
-export const LibraryFilterPills = ({
+export const LibraryFilterPills = memo(({
     activeFilter,
     filters,
     onChange,
@@ -44,4 +45,6 @@ export const LibraryFilterPills = ({
             })}
         </ScrollView>
     );
-};
+});
+
+LibraryFilterPills.displayName = 'LibraryFilterPills';

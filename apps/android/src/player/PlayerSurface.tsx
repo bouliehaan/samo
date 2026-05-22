@@ -42,6 +42,7 @@ import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import LinearGradient from 'react-native-linear-gradient';
 import Reanimated, {
     interpolate,
+    interpolateColor,
     runOnJS,
     type SharedValue,
     useAnimatedReaction,
@@ -105,9 +106,9 @@ import {
     DISMISS_VELOCITY,
     FULL_PLAYER_EXPANDED_TOP,
     FULL_PLAYER_PADDING_TOP,
+    FULL_PLAYER_PLAY_GLYPH_SIZE,
     MINI_PLAYER_COLLAPSED_TOP,
     MINI_PLAYER_HEIGHT,
-    MINI_PLAYER_RADIUS,
     OPEN_SPRING,
     PLAYER_EXPANSION_DISTANCE,
     QUEUE_CLOSE_DISTANCE,
@@ -120,21 +121,14 @@ import {
 import { styles } from '../theme/styles';
 import { colors } from '../theme/tokens';
 import { PlayerIconButton } from './PlayerIconButton';
-import { PlayerMorphArtwork } from './PlayerMorphArtwork';
 import {
-    collapsedLidOpacity,
-    contentRevealOpacity,
-    contentRevealProgress,
-    contentRevealTranslateY,
-    miniHandoffOpacity,
-    miniStaticArtworkOpacity,
+    expandedPanelFlex,
     PLAYER_CLOSE_SPRING,
     PLAYER_OPEN_SPRING,
     shellElevation,
-    shellMaterialOpacity,
-    staticHeroArtworkOpacity,
+    shellRevealOpacity,
+    shellTopRadius,
     washLayerOpacity,
-    washLayerTranslateY,
 } from './player-motion';
 
 const ReanimatedFlashList = Reanimated.createAnimatedComponent(FlashList) as typeof FlashList;
@@ -151,9 +145,6 @@ export const MiniPlayer = memo(({
     playerProgress,
     reducedMotion,
 }: {
-    // The canonical high-res artwork URL for the current playback. Same URL
-    // the FullScreenPlayer uses, so opening fullscreen is a guaranteed cache
-    // hit — no flicker, no "low-res first" state.
     artworkUrl: string | undefined;
     lastPlayedItem: MobilePlayableAudio | null;
     onOpenFullPlayer: () => void;
@@ -164,7 +155,7 @@ export const MiniPlayer = memo(({
 }) => {
     const [isMiniInteractive, setIsMiniInteractive] = useState(true);
     useAnimatedReaction(
-        () => playerProgress.value < 0.1,
+        () => playerProgress.value < 0.12,
         (interactive, previous) => {
             if (interactive !== previous) {
                 runOnJS(setIsMiniInteractive)(interactive);
@@ -172,22 +163,23 @@ export const MiniPlayer = memo(({
         },
     );
 
-    // Mini chrome stays glued to the dock until the shell has grown over it — no
-    // float-away; one object, not two layers sliding past each other.
     const miniAnimatedStyle = useAnimatedStyle(() => ({
-        opacity: miniHandoffOpacity(playerProgress.value),
+        opacity: interpolate(playerProgress.value, [0, 0.26, 0.55], [1, 1, 0], 'clamp'),
+        transform: [
+            {
+                translateY: interpolate(
+                    playerProgress.value,
+                    [0, 0.55],
+                    [0, -32],
+                    'clamp',
+                ),
+            },
+            {
+                scale: interpolate(playerProgress.value, [0, 0.55], [1, 0.985], 'clamp'),
+            },
+        ],
     }));
-    const miniArtworkAnimatedStyle = useAnimatedStyle(() => ({
-        opacity: miniStaticArtworkOpacity(playerProgress.value),
-    }));
-    // Drag-up follows the finger by moving progress across the actual distance
-    // between the mini player's top edge and the fullscreen top edge. That
-    // keeps the expanding surface under the finger instead of behaving like a
-    // generic modal sheet.
-    //
-    // Failure offsets keep horizontal swipes and the play/pause tap from
-    // accidentally triggering the open gesture.
-    const openSpring = reducedMotion ? REDUCED_MOTION_SPRING : PLAYER_OPEN_SPRING;
+
     const settleSpring = reducedMotion ? REDUCED_MOTION_SPRING : OPEN_SPRING;
     const miniDragGesture = useMemo(
         () =>
@@ -210,22 +202,16 @@ export const MiniPlayer = memo(({
                         event.velocityY < -760;
                     if (shouldCommit) {
                         runOnJS(onOpenFullPlayer)();
-                        playerProgress.value = reducedMotion
-                            ? withTiming(1, { duration: 0 })
-                            : withSpring(1, {
-                                  ...openSpring,
-                                  velocity: -event.velocityY / PLAYER_EXPANSION_DISTANCE,
-                              });
                     } else {
                         playerProgress.value = reducedMotion
                             ? withTiming(0, { duration: 0 })
                             : withSpring(0, {
-                                  ...openSpring,
+                                  ...settleSpring,
                                   velocity: -event.velocityY / PLAYER_EXPANSION_DISTANCE,
                               });
                     }
                 }),
-        [onOpenFullPlayer, openSpring, playerProgress, reducedMotion],
+        [onOpenFullPlayer, playerProgress, reducedMotion, settleSpring],
     );
 
     const isActive = playbackState.status !== 'idle';
@@ -246,25 +232,28 @@ export const MiniPlayer = memo(({
         onTogglePlayback();
     };
 
+    if (!displayItem) {
+        return null;
+    }
+
     return (
         <GestureDetector gesture={miniDragGesture}>
-        <Reanimated.View
-            pointerEvents={isMiniInteractive ? 'auto' : 'none'}
-            style={[styles.miniPlayer, miniAnimatedStyle]}
-        >
-            <Pressable
-                accessibilityRole="button"
-                onPress={onOpenFullPlayer}
-                style={styles.miniPlayerTouchable}
+            <Reanimated.View
+                pointerEvents={isMiniInteractive ? 'auto' : 'none'}
+                style={[styles.miniPlayer, miniAnimatedStyle]}
             >
-                <View style={styles.miniPlayerArtworkContainer}>
-                    <Reanimated.View style={[styles.miniPlayerArtworkSlot, miniArtworkAnimatedStyle]}>
+                <Pressable
+                    accessibilityRole="button"
+                    onPress={onOpenFullPlayer}
+                    style={styles.miniPlayerTouchable}
+                >
+                    <View style={styles.miniPlayerArtworkContainer}>
                         {artworkUrl ? (
                             <ExpoImage
                                 cachePolicy="memory-disk"
                                 source={artworkUrl}
                                 style={styles.miniPlayerArtwork}
-                                transition={120}
+                                transition={0}
                             />
                         ) : (
                             <View style={styles.miniPlayerArtworkFallback}>
@@ -275,33 +264,37 @@ export const MiniPlayer = memo(({
                                 ) : null}
                             </View>
                         )}
-                    </Reanimated.View>
-                </View>
-                <View style={styles.miniPlayerText}>
-                    <Text numberOfLines={1} style={styles.miniPlayerTitle}>
-                        {title || 'Nothing playing'}
-                    </Text>
-                    {subtitle ? (
-                        <Text numberOfLines={1} style={styles.miniPlayerSubtitle}>
-                            {subtitle}
+                    </View>
+                    <View style={styles.miniPlayerText}>
+                        <Text numberOfLines={1} style={styles.miniPlayerTitle}>
+                            {title || 'Nothing playing'}
                         </Text>
-                    ) : null}
-                </View>
-                <QualityBadge player profile={miniBadgeProfile} />
-                <Pressable
-                    accessibilityLabel={isPlaying ? 'Pause' : 'Play'}
-                    accessibilityRole="button"
-                    disabled={!displayItem}
-                    onPress={handlePlayPress}
-                    style={styles.miniPlayerPlayButton}
-                >
-                    <PlayPauseGlyph color={colors.text} isPlaying={isPlaying} size={24} />
+                        {subtitle ? (
+                            <Text numberOfLines={1} style={styles.miniPlayerSubtitle}>
+                                {subtitle}
+                            </Text>
+                        ) : null}
+                    </View>
+                    <QualityBadge player profile={miniBadgeProfile} />
+                    <Pressable
+                        accessibilityLabel={isPlaying ? 'Pause' : 'Play'}
+                        accessibilityRole="button"
+                        onPress={handlePlayPress}
+                        style={styles.miniPlayerPlayButton}
+                    >
+                        <PlayPauseGlyph
+                            color={colors.text}
+                            isPlaying={isPlaying}
+                            size={24}
+                        />
+                    </Pressable>
                 </Pressable>
-            </Pressable>
-        </Reanimated.View>
+            </Reanimated.View>
         </GestureDetector>
     );
 });
+
+MiniPlayer.displayName = 'MiniPlayer';
 
 export const ConnectedMiniPlayer = memo((
     props: Omit<ComponentProps<typeof MiniPlayer>, 'playbackState'>,
@@ -374,6 +367,7 @@ export const FullScreenPlayer = memo(({
     lastPlayedItem,
     onClose,
     onNext,
+    onOpenOutputPicker,
     onPlayQueueIndex,
     onPrevious,
     onSeek,
@@ -396,6 +390,7 @@ export const FullScreenPlayer = memo(({
     lastPlayedItem: MobilePlayableAudio | null;
     onClose: () => void;
     onNext: () => void;
+    onOpenOutputPicker: () => void;
     onPlayQueueIndex?: (index: number) => void;
     onPrevious: () => void;
     onSeek: (positionMs: number) => void;
@@ -411,7 +406,6 @@ export const FullScreenPlayer = memo(({
     visible: boolean;
 }) => {
     const [sleepMenuVisible, setSleepMenuVisible] = useState(false);
-    const [outputPickerVisible, setOutputPickerVisible] = useState(false);
     const [isArtworkZoomOpen, setIsArtworkZoomOpen] = useState(false);
     const [sleepSecondsLeft, setSleepSecondsLeft] = useState<null | number>(null);
     // Queue sheet position: 0 = hidden below the screen, 1 = fully expanded.
@@ -593,22 +587,16 @@ export const FullScreenPlayer = memo(({
         }
     }, [contextMenu, lastPlayedItem, playbackState, serverConnections]);
 
-    // One vertical-drag gesture handles three intents based on direction and
-    // current state: swipe-down dismisses the player; swipe-up opens the queue
-    // sheet (replacing the old queue button); a swipe-down while the queue is
-    // open closes the queue instead of dismissing the player. Mode is locked
-    // at the moment the first significant drag direction is detected so the
-    // motion stays predictable.
+    // One vertical pan on the shell: drag up from the dock opens the panel;
+    // drag down dismisses; upward while open can raise the queue sheet.
     const dragGesture = useMemo(
         () =>
             Gesture.Pan()
-                .activeOffsetY([-10, 10])
-                .failOffsetX([-30, 30])
+                .activeOffsetY([-8, 10])
+                .failOffsetX([-28, 28])
                 .onStart(() => {
                     'worklet';
                     dragStartQueue.value = queueProgress.value;
-                    // Tentative: if the queue is already open, this drag is
-                    // about the queue; otherwise wait for direction to decide.
                     dragMode.value = queueProgress.value > 0 ? 'queue' : 'player';
                 })
                 .onChange((event) => {
@@ -617,7 +605,6 @@ export const FullScreenPlayer = memo(({
                         dragMode.value === 'player' &&
                         event.translationY < -10
                     ) {
-                        // First upward motion: switch to queue-mode.
                         dragMode.value = 'queue';
                     }
 
@@ -758,18 +745,23 @@ export const FullScreenPlayer = memo(({
         [dragGesture, skipGesture],
     );
 
-    // The outer shell keeps the original physical frame expansion out of the
-    // miniplayer. The expensive content inside is fixed at the fully-open size
-    // and clipped by this shell, so the gesture still reads as one object
-    // sliding open without forcing the whole player body through layout.
+    // The outer shell expands from the mini's dock position to fullscreen.
+    // Expensive content is laid out at the fully-open size and clipped by
+    // this shell (overflow: hidden), so the gesture reads as one slab sliding
+    // open without forcing the whole player body through layout.
     const playerAnimatedStyle = useAnimatedStyle(() => {
         const p = playerProgress.value;
         return {
-            borderTopLeftRadius: interpolate(p, [0, 1], [MINI_PLAYER_RADIUS, 0], 'clamp'),
-            borderTopRightRadius: interpolate(p, [0, 1], [MINI_PLAYER_RADIUS, 0], 'clamp'),
+            backgroundColor: interpolateColor(
+                p,
+                [0, 0.2, 1],
+                ['#1c1c1e', '#0a0a0a', '#000000'],
+            ),
+            borderTopLeftRadius: shellTopRadius(p),
+            borderTopRightRadius: shellTopRadius(p),
             elevation: shellElevation(p),
             height: interpolate(p, [0, 1], [MINI_PLAYER_HEIGHT, SCREEN_HEIGHT], 'clamp'),
-            opacity: shellMaterialOpacity(p),
+            opacity: shellRevealOpacity(p),
             top: interpolate(
                 p,
                 [0, 1],
@@ -778,34 +770,24 @@ export const FullScreenPlayer = memo(({
             ),
         };
     });
+    const expandedPanelStyle = useAnimatedStyle(() => ({
+        flex: expandedPanelFlex(playerProgress.value),
+    }));
     const backdropWashStyle = useAnimatedStyle(() => ({
         opacity: washLayerOpacity(playerProgress.value),
-        transform: [{ translateY: washLayerTranslateY(playerProgress.value) }],
     }));
-    const collapsedSurfaceStyle = useAnimatedStyle(() => ({
-        opacity: collapsedLidOpacity(playerProgress.value),
-    }));
-    const playerContentAnimatedStyle = useAnimatedStyle(() => {
-        const p = playerProgress.value;
-        const reveal = contentRevealProgress(p);
-        const paddingCompensationY = interpolate(
-            p,
-            [0, 1],
-            [-FULL_PLAYER_PADDING_TOP, 0],
-            'clamp',
-        );
-        return {
-            opacity: contentRevealOpacity(reveal),
-            transform: [
-                {
-                    translateY: contentRevealTranslateY(reveal, paddingCompensationY),
-                },
-            ],
-        };
-    });
-    const staticHeroArtworkStyle = useAnimatedStyle(() => ({
-        opacity: staticHeroArtworkOpacity(playerProgress.value),
-    }));
+
+    // Settle haptic — fires exactly once whenever the spring lands at fully
+    // open, whatever path got us there (tap, drag, programmatic). Does not
+    // fire on close, on initial mount, or on partial drags that snap back.
+    useAnimatedReaction(
+        () => playerProgress.value > 0.985,
+        (settled, previous) => {
+            if (settled && previous === false) {
+                runOnJS(triggerImpact)('light');
+            }
+        },
+    );
 
     // Stay mounted whenever there's something to play, so close animations
     // triggered from outside the player (back button, navigation) still get to
@@ -841,7 +823,7 @@ export const FullScreenPlayer = memo(({
                     : 'Choose audio output'
             }
             accessibilityRole="button"
-            onPress={() => setOutputPickerVisible(true)}
+            onPress={onOpenOutputPicker}
             style={styles.fullPlayerBottomBarButton}
         >
             <CastGlyph
@@ -861,14 +843,12 @@ export const FullScreenPlayer = memo(({
         <>
         <GestureDetector gesture={playerGesture}>
         <Reanimated.View
-            pointerEvents={visible ? 'auto' : 'none'}
+            pointerEvents="box-none"
             style={[
                 styles.fullPlayer,
                 playerAnimatedStyle,
             ]}
         >
-            {/* OLED base; remains under the gradients so unfilled corners stay black. */}
-            <View pointerEvents="none" style={styles.fullPlayerBg} />
             {/* Tidal-style backdrop: a single album-derived color holds the whole screen
                 in one family, with a gentle vertical darkening that adds depth without
                 breaking into a separate tone. Two stacked native linear gradients
@@ -932,23 +912,9 @@ export const FullScreenPlayer = memo(({
                     />
                 </View>
             </Reanimated.View>
-            <Reanimated.View
-                pointerEvents="none"
-                style={[
-                    StyleSheet.absoluteFillObject,
-                    styles.fullPlayerCollapsedSurface,
-                    collapsedSurfaceStyle,
-                ]}
-            />
 
-            <PlayerMorphArtwork
-                artworkUrl={artworkUrl}
-                letter={display.title.slice(0, 1)}
-                playerProgress={playerProgress}
-            />
-
-            <Reanimated.View style={[styles.fullPlayerContent, playerContentAnimatedStyle]}>
-            {/* Header: down chevron / spacer / more menu */}
+            <Reanimated.View style={[styles.fullPlayerExpandedPanel, expandedPanelStyle]}>
+            <View style={styles.fullPlayerContent}>
             <View style={styles.fullPlayerHeader}>
                 <Pressable
                     accessibilityLabel="Close player"
@@ -969,9 +935,7 @@ export const FullScreenPlayer = memo(({
                 </Pressable>
             </View>
 
-            {/* Artwork — fixed proportional size so it can never overlap metadata below */}
             <View style={styles.fullPlayerArtworkWrap}>
-                <Reanimated.View style={[styles.fullPlayerArtworkHeroSlot, staticHeroArtworkStyle]}>
                 <Pressable
                     accessibilityLabel={`Open ${display.title} artwork`}
                     accessibilityRole="button"
@@ -981,14 +945,6 @@ export const FullScreenPlayer = memo(({
                 >
                     {artworkUrl ? (
                         <ExpoImage
-                            // expo-image's default is to decode bitmaps at the
-                            // view's current size. The fullscreen player's
-                            // artwork view is shrunk by flex while the player
-                            // is collapsed, so the default would cache a tiny
-                            // bitmap and then re-decode from disk at full size
-                            // mid-open — the "low-res until it gets big"
-                            // flash. Forcing a full-res decode up front means
-                            // one bitmap, same pixels at every player state.
                             allowDownscaling={false}
                             cachePolicy="memory-disk"
                             contentFit="cover"
@@ -996,7 +952,7 @@ export const FullScreenPlayer = memo(({
                             recyclingKey={artworkUrl}
                             source={{ uri: artworkUrl }}
                             style={styles.fullPlayerArtwork}
-                            transition={90}
+                            transition={0}
                         />
                     ) : (
                         <View style={styles.fullPlayerArtworkFallback}>
@@ -1005,18 +961,14 @@ export const FullScreenPlayer = memo(({
                             </Text>
                         </View>
                     )}
-                    {/* Format badge sits in the corner of the artwork — the same
-                        artwork-overlay treatment used on home and view-all tiles,
-                        scaled up for the hero. */}
                     <QualityBadge
                         overlay
                         profile={getPlaybackQualityProfile(displayItem)}
                     />
                 </Pressable>
-                </Reanimated.View>
             </View>
 
-            {/* Bottom stack: each block owns its own row — no overlap. */}
+            {/* Bottom stack — revealed by the growing shell clip, fixed layout. */}
             <View
                 style={[
                     styles.fullPlayerBottom,
@@ -1087,7 +1039,11 @@ export const FullScreenPlayer = memo(({
                         onPress={onTogglePlayback}
                         primary
                     >
-                        <PlayPauseGlyph color="#ffffff" isPlaying={isPlaying} size={44} />
+                        <PlayPauseGlyph
+                            color={colors.text}
+                            isPlaying={isPlaying}
+                            size={FULL_PLAYER_PLAY_GLYPH_SIZE}
+                        />
                     </PlayerIconButton>
                     <View style={[styles.fullPlayerControlSide, styles.fullPlayerControlSideRight]}>
                         {showSkipControls ? (
@@ -1136,6 +1092,7 @@ export const FullScreenPlayer = memo(({
                     </Text>
                 ) : null}
             </View>
+            </View>
             </Reanimated.View>
 
         </Reanimated.View>
@@ -1160,12 +1117,6 @@ export const FullScreenPlayer = memo(({
             title={display.title}
             uri={artworkUrl}
             visible={isArtworkZoomOpen}
-        />
-
-        <OutputPickerModal
-            castState={castState}
-            onClose={() => setOutputPickerVisible(false)}
-            visible={outputPickerVisible}
         />
 
         {/* Sleep timer picker */}
@@ -1241,12 +1192,18 @@ export const getOutputRouteGlyphLabel = (route: AndroidMediaOutputRoute): string
     return 'SP';
 };
 
-export const getCastPickerEmptyMessage = (castState: AndroidCastState | undefined): string => {
+export const getCastPickerEmptyMessage = (
+    castState: AndroidCastState | undefined,
+    isScanning = false,
+): string => {
     if (castState?.status === 'unavailable') {
         return 'Chromecast is unavailable on this device.';
     }
-    if (castState?.status === 'connecting') {
+    if (castState?.status === 'connecting' || isScanning) {
         return 'Looking for Chromecast devices...';
+    }
+    if (castState?.status === 'no-devices') {
+        return 'No Chromecast on this Wi‑Fi. Use the same network as the TV, or register the device in the Google Cast developer console for app 062D005A.';
     }
     return 'No Chromecast devices found.';
 };
@@ -1305,15 +1262,20 @@ export const OutputPickerModal = memo(({
             setIsLoading(false);
             setError(null);
         });
+        // Active scan can take a few seconds — keep polling while the sheet
+        // is open so Chromecast rows populate after the first empty snapshot.
         const refreshTimers: Array<ReturnType<typeof setTimeout>> = [
-            setTimeout(() => void loadRoutes(false), 850),
-            setTimeout(() => void loadRoutes(false), 2200),
-        ];
+            400, 900, 1600, 2500, 4000, 6000, 9000, 12_000, 16_000, 22_000,
+        ].map((delay) => setTimeout(() => void loadRoutes(false), delay));
+        const refreshInterval = setInterval(() => {
+            void loadRoutes(false);
+        }, 2500);
 
         return () => {
             cancelled = true;
             subscription.remove();
             refreshTimers.forEach(clearTimeout);
+            clearInterval(refreshInterval);
             setSelectingRouteId(null);
         };
     }, [visible]);
@@ -1322,6 +1284,8 @@ export const OutputPickerModal = memo(({
     const localRoutes = routes.filter((route) => route.kind === 'local');
     const castRoutes = routes.filter((route) => route.kind === 'cast');
     const pickerCastState = outputState?.cast ?? castState;
+    const isScanningForCast =
+        castRoutes.length === 0 && pickerCastState?.status !== 'unavailable';
     const listScrollYRef = useRef(0);
     const listDragStartYRef = useRef<number | null>(null);
     const listDragStartedAtTopRef = useRef(false);
@@ -1475,7 +1439,10 @@ export const OutputPickerModal = memo(({
                                 castRoutes.map(renderRoute)
                             ) : (
                                 <Text style={styles.outputPickerEmpty}>
-                                    {getCastPickerEmptyMessage(pickerCastState)}
+                                    {getCastPickerEmptyMessage(
+                                        pickerCastState,
+                                        isLoading || isScanningForCast,
+                                    )}
                                 </Text>
                             )}
                             {error ? (

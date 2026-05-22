@@ -3,8 +3,10 @@ package app.samo.android
 import android.app.Application
 import android.content.res.Configuration
 
+import android.util.Log
 import app.samo.android.audio.SamoAudioPackage
 import com.facebook.react.PackageList
+import com.google.android.gms.cast.framework.CastContext
 import com.facebook.react.ReactApplication
 import com.facebook.react.ReactNativeApplicationEntryPoint.loadReactNative
 import com.facebook.react.ReactNativeHost
@@ -42,6 +44,12 @@ class MainApplication : Application(), ReactApplication {
 
   override fun onCreate() {
     super.onCreate()
+    // Warm up Cast SDK discovery early so the output picker isn't empty on first open.
+    try {
+      CastContext.getSharedInstance(this)
+    } catch (error: Exception) {
+      Log.w("SamoCast", "CastContext init deferred: ${error.message}")
+    }
     DefaultNewArchitectureEntryPoint.releaseLevel = try {
       ReleaseLevel.valueOf(BuildConfig.REACT_NATIVE_RELEASE_LEVEL.uppercase())
     } catch (e: IllegalArgumentException) {

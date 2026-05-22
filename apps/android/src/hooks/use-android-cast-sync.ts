@@ -2,17 +2,29 @@ import { useEffect } from 'react';
 
 import {
     getAndroidCastState,
+    getAndroidOutputRoutes,
     subscribeToAndroidCastEvents,
+    subscribeToAndroidOutputRouteEvents,
 } from '../services/audio-playback';
 import { useAppSessionState } from '../state/app-session';
 
-/** Subscribes to native Cast session updates and hydrates initial cast state on mount. */
+/**
+ * Hydrates cast state and pre-warms the Cast SDK + MediaRouter discovery on
+ * mount so Chromecast devices are already being scanned before the user opens
+ * the output picker.
+ */
 export function useAndroidCastSync(): void {
     const { setCastState } = useAppSessionState();
 
     useEffect(() => {
-        const subscription = subscribeToAndroidCastEvents((event) => {
+        const castSubscription = subscribeToAndroidCastEvents((event) => {
             setCastState(event);
+        });
+
+        const routesSubscription = subscribeToAndroidOutputRouteEvents((state) => {
+            if (state.cast) {
+                setCastState(state.cast);
+            }
         });
 
         void getAndroidCastState()
@@ -24,6 +36,14 @@ export function useAndroidCastSync(): void {
                 }),
             );
 
-        return () => subscription.remove();
+        // Kick off CastContext init and an active route scan immediately —
+        // discovery used to start only when the output sheet opened, so the
+        // first snapshot was often an empty Chromecast list.
+        void getAndroidOutputRoutes().catch(() => undefined);
+
+        return () => {
+            castSubscription.remove();
+            routesSubscription.remove();
+        };
     }, [setCastState]);
 }

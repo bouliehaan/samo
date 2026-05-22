@@ -1,0 +1,3 @@
+# Copy to application-id.properties and paste your Cast Application ID from
+# https://cast.google.com/publish (Custom Receiver named "samo").
+applicationId=YOUR_APPLICATION_ID_HERE

@@ -81,6 +81,32 @@ def enableMinifyInReleaseBuilds = (findProperty('android.enableMinifyInReleaseBu
  */
 def jscFlavor = 'io.github.react-native-community:jsc-android:2026004.+'
 
+def resolveCastReceiverApplicationId = {
+    def fromGradle = (findProperty('samo.castReceiverAppId') ?: '').toString().trim()
+    if (!fromGradle.isEmpty()) {
+        return fromGradle
+    }
+    def localPropsFile = rootProject.file('local.properties')
+    if (localPropsFile.exists()) {
+        def localProps = new Properties()
+        localPropsFile.withInputStream { localProps.load(it) }
+        def fromLocal = (localProps.getProperty('samo.castReceiverAppId') ?: '').trim()
+        if (!fromLocal.isEmpty()) {
+            return fromLocal
+        }
+    }
+    def castIdFile = rootProject.file('../cast-receiver/application-id.properties')
+    if (castIdFile.exists()) {
+        def castIdProps = new Properties()
+        castIdFile.withInputStream { castIdProps.load(it) }
+        def fromFile = (castIdProps.getProperty('applicationId') ?: '').trim()
+        if (!fromFile.isEmpty()) {
+            return fromFile
+        }
+    }
+    return ''
+}
+
 android {
     ndkVersion = rootProject.ext.ndkVersion
 
@@ -96,7 +122,7 @@ android {
         versionName "1.0.0"
 
         buildConfigField "String", "REACT_NATIVE_RELEASE_LEVEL", "\"${findProperty('reactNativeReleaseLevel') ?: 'stable'}\""
-        buildConfigField "String", "CAST_RECEIVER_APPLICATION_ID", "\"${findProperty('samo.castReceiverAppId') ?: ''}\""
+        buildConfigField "String", "CAST_RECEIVER_APPLICATION_ID", "\"${resolveCastReceiverApplicationId()}\""
     }
     signingConfigs {
         debug {

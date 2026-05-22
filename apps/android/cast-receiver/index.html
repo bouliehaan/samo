@@ -3,30 +3,22 @@
 <head>
   <meta charset="utf-8" />
   <title>samo</title>
+  <link rel="stylesheet" href="https://www.gstatic.com/cast/sdk/libs/caf_receiver/css/player.css" />
   <style>
-    html, body {
-      background: #000;
-      color: #f5f5f5;
-      font-family: system-ui, sans-serif;
-      height: 100%;
-      margin: 0;
-    }
     body {
-      align-items: center;
-      display: flex;
-      justify-content: center;
+      background: #000;
+      margin: 0;
+      overflow: hidden;
     }
-    #idle {
-      font-size: 42px;
-      font-weight: 700;
-      letter-spacing: 0.08em;
-      text-transform: lowercase;
+    cast-media-player {
+      --playback-logo-image: none;
+      --theme-hue: 0;
     }
   </style>
-  <script src="//www.gstatic.com/cast/sdk/libs/caf_receiver/v3/cast_receiver_framework.js"></script>
+  <script src="https://www.gstatic.com/cast/sdk/libs/caf_receiver/v3/cast_receiver_framework.js"></script>
 </head>
 <body>
-  <div id="idle">samo</div>
+  <cast-media-player></cast-media-player>
   <script>
     const context = cast.framework.CastReceiverContext.getInstance();
     const playerManager = context.getPlayerManager();
@@ -46,6 +38,12 @@
     playerManager.addEventListener(
       cast.framework.events.EventType.IDLE,
       setIdleLabel,
+    );
+    playerManager.addEventListener(
+      cast.framework.events.EventType.PLAYER_LOAD_COMPLETE,
+      () => {
+        context.setApplicationState('');
+      },
     );
 
     context.start();

@@ -10,7 +10,9 @@ import androidx.mediarouter.media.MediaRouter
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.WritableMap
+import com.google.android.gms.cast.CastMediaControlIntent
 import com.google.android.gms.cast.framework.CastContext
+import app.samo.android.BuildConfig
 
 internal class SamoOutputRoutes(
   private val reactContext: ReactApplicationContext,
@@ -18,6 +20,28 @@ internal class SamoOutputRoutes(
 ) {
   private var outputRouteDiscoveryCallback: MediaRouter.Callback? = null
   private var outputRouteDiscoveryStop: Runnable? = null
+
+  /**
+   * Custom receiver app IDs only match routes registered for that app in the Cast
+   * console. Union the default Cast category so nearby Chromecasts still appear in
+   * the picker; sessions still launch [SamoCastOptionsProvider]'s receiver id.
+   */
+  private fun buildCastDiscoverySelector(castContext: CastContext): MediaRouteSelector {
+    val builder = MediaRouteSelector.Builder()
+    castContext.getMergedSelector()?.controlCategories?.forEach { category ->
+      builder.addControlCategory(category)
+    }
+    val customReceiverId = BuildConfig.CAST_RECEIVER_APPLICATION_ID.trim()
+    if (customReceiverId.isNotEmpty()) {
+      builder.addControlCategory(CastMediaControlIntent.categoryForCast(customReceiverId))
+    }
+    builder.addControlCategory(
+      CastMediaControlIntent.categoryForCast(
+        CastMediaControlIntent.DEFAULT_MEDIA_RECEIVER_APPLICATION_ID,
+      ),
+    )
+    return builder.build()
+  }
 
   fun ensureOutputRouteDiscovery(castContext: CastContext, selectedLocalOutputDeviceId: Int?, getCastStateMap: (Int?) -> com.facebook.react.bridge.WritableMap, getUnavailableCastStateMap: () -> com.facebook.react.bridge.WritableMap, emitOutputRoutes: (com.facebook.react.bridge.WritableMap) -> Unit) {
     val router = MediaRouter.getInstance(reactContext.applicationContext)
@@ -46,15 +70,25 @@ internal class SamoOutputRoutes(
     }
 
     outputRouteDiscoveryCallback = callback
+    val discoverySelector = buildCastDiscoverySelector(castContext)
     router.addCallback(
-      castContext.getMergedSelector() ?: MediaRouteSelector.EMPTY,
+      discoverySelector,
       callback,
       MediaRouter.CALLBACK_FLAG_REQUEST_DISCOVERY or MediaRouter.CALLBACK_FLAG_PERFORM_ACTIVE_SCAN
     )
 
     outputRouteDiscoveryStop?.let { mainHandler.removeCallbacks(it) }
     outputRouteDiscoveryStop = Runnable { stopOutputRouteDiscovery() }
-    mainHandler.postDelayed(outputRouteDiscoveryStop!!, 12_000)
+    mainHandler.postDelayed(outputRouteDiscoveryStop!!, 90_000)
+
+    emitOutputRoutes(
+      getOutputRoutesMap(
+        castContext,
+        selectedLocalOutputDeviceId,
+        getCastStateMap,
+        getUnavailableCastStateMap,
+      ),
+    )
   }
 
   fun stopOutputRouteDiscovery() {
@@ -130,7 +164,7 @@ internal class SamoOutputRoutes(
 
     if (castContext != null) {
       val router = MediaRouter.getInstance(reactContext.applicationContext)
-      val selector = castContext.getMergedSelector() ?: MediaRouteSelector.EMPTY
+      val selector = buildCastDiscoverySelector(castContext)
       router.getRoutes()
         .filter { route ->
           route.isEnabled &&

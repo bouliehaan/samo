@@ -164,111 +164,8 @@ export const LibraryScreen = memo(({
         ? `${rows.length} ${rows.length === 1 ? 'item' : 'items'} - loading all ${activeLabel.toLowerCase()}...`
         : `${rows.length} ${rows.length === 1 ? 'item' : 'items'} - ${activeLabel}`;
 
-    const header = (
-        <View>
-            <View style={styles.libraryHeaderRow}>
-                <View style={styles.libraryHeaderText}>
-                    <Text style={styles.libraryEyebrow}>Your Library</Text>
-                    <Text style={styles.librarySummary} numberOfLines={1}>
-                        {summaryText}
-                    </Text>
-                </View>
-                <View style={styles.libraryHeaderActions}>
-                    <Pressable
-                        accessibilityLabel={`Library scope: ${activeScopeLabel}. Tap to change.`}
-                        accessibilityRole="button"
-                        android_ripple={{
-                            borderless: true,
-                            color: 'rgba(255, 255, 255, 0.08)',
-                        }}
-                        onPress={() => {
-                            triggerImpact('light');
-                            setIsScopeMenuOpen(true);
-                        }}
-                        style={styles.librarySortBadge}
-                    >
-                        <Text style={styles.librarySortText}>{activeScopeLabel}</Text>
-                    </Pressable>
-                    <Pressable
-                        accessibilityLabel={`Sort by ${activeSortLabel}. Tap to change.`}
-                        accessibilityRole="button"
-                        android_ripple={{
-                            borderless: true,
-                            color: 'rgba(255, 255, 255, 0.08)',
-                        }}
-                        onPress={() => {
-                            triggerImpact('light');
-                            setIsSortMenuOpen(true);
-                        }}
-                        style={styles.librarySortBadge}
-                    >
-                        <SortGlyph color={colors.muted} />
-                        <Text style={styles.librarySortText}>{activeSortLabel}</Text>
-                    </Pressable>
-                </View>
-            </View>
-            <LibraryFilterPills
-                activeFilter={activeFilter}
-                filters={filters}
-                onChange={setActiveFilter}
-            />
-        </View>
-    );
-
-    if (isCollectionBrowseFilter(activeFilter)) {
-        return (
-            <View style={styles.libraryScreen}>
-                <View style={styles.libraryBrowseChrome}>{header}</View>
-                <CollectionBrowseGrid
-                    emptyMessage={
-                        isEnrichingFullCollection
-                            ? undefined
-                            : 'Nothing to show here yet.'
-                    }
-                    fullItems={browseFullItems}
-                    isLoading={isEnrichingFullCollection && browseSeedItems.length === 0}
-                    onSelectItem={onSelectItem}
-                    seedItems={browseSeedItems}
-                />
-                <LibraryScopeMenu
-                    activeScope={activeScope}
-                    onClose={() => setIsScopeMenuOpen(false)}
-                    onSelect={(next) => {
-                        setActiveScope(next);
-                        setIsScopeMenuOpen(false);
-                    }}
-                    visible={isScopeMenuOpen}
-                />
-                <LibrarySortMenu
-                    activeSort={activeSort}
-                    onClose={() => setIsSortMenuOpen(false)}
-                    onSelect={(next) => {
-                        setActiveSort(next);
-                        setIsSortMenuOpen(false);
-                    }}
-                    visible={isSortMenuOpen}
-                />
-            </View>
-        );
-    }
-
-    return (
-        <View style={styles.libraryScreen}>
-            <FlashList
-                contentContainerStyle={styles.libraryListContent}
-                data={rows}
-                drawDistance={LIBRARY_ROW_DRAW_DISTANCE}
-                keyExtractor={(row) => row.key}
-                ListEmptyComponent={
-                    <View style={styles.libraryEmptyState}>
-                        <Text style={styles.mutedText}>Nothing to show here yet.</Text>
-                    </View>
-                }
-                ListHeaderComponent={header}
-                maintainVisibleContentPosition={FLASH_LIST_MAINTAIN_POSITION_DISABLED}
-                renderItem={renderLibraryRow}
-                showsVerticalScrollIndicator={false}
-            />
+    const scopeAndSortMenus = (
+        <>
             <LibraryScopeMenu
                 activeScope={activeScope}
                 onClose={() => setIsScopeMenuOpen(false)}
@@ -287,6 +184,89 @@ export const LibraryScreen = memo(({
                 }}
                 visible={isSortMenuOpen}
             />
+        </>
+    );
+
+    return (
+        <View style={styles.libraryScreen}>
+            <View style={styles.libraryBrowseChrome}>
+                <View style={styles.libraryHeaderRow}>
+                    <View style={styles.libraryHeaderText}>
+                        <Text style={styles.libraryEyebrow}>Your Library</Text>
+                        <Text style={styles.librarySummary} numberOfLines={1}>
+                            {summaryText}
+                        </Text>
+                    </View>
+                    <View style={styles.libraryHeaderActions}>
+                        <Pressable
+                            accessibilityLabel={`Library scope: ${activeScopeLabel}. Tap to change.`}
+                            accessibilityRole="button"
+                            android_ripple={{
+                                borderless: true,
+                                color: 'rgba(255, 255, 255, 0.08)',
+                            }}
+                            onPress={() => {
+                                triggerImpact('light');
+                                setIsScopeMenuOpen(true);
+                            }}
+                            style={styles.librarySortBadge}
+                        >
+                            <Text style={styles.librarySortText}>{activeScopeLabel}</Text>
+                        </Pressable>
+                        <Pressable
+                            accessibilityLabel={`Sort by ${activeSortLabel}. Tap to change.`}
+                            accessibilityRole="button"
+                            android_ripple={{
+                                borderless: true,
+                                color: 'rgba(255, 255, 255, 0.08)',
+                            }}
+                            onPress={() => {
+                                triggerImpact('light');
+                                setIsSortMenuOpen(true);
+                            }}
+                            style={styles.librarySortBadge}
+                        >
+                            <SortGlyph color={colors.muted} />
+                            <Text style={styles.librarySortText}>{activeSortLabel}</Text>
+                        </Pressable>
+                    </View>
+                </View>
+                <LibraryFilterPills
+                    activeFilter={activeFilter}
+                    filters={filters}
+                    onChange={setActiveFilter}
+                />
+            </View>
+            {isCollectionBrowseFilter(activeFilter) ? (
+                <CollectionBrowseGrid
+                    emptyMessage={
+                        isEnrichingFullCollection
+                            ? undefined
+                            : 'Nothing to show here yet.'
+                    }
+                    fullItems={browseFullItems}
+                    isLoading={isEnrichingFullCollection && browseSeedItems.length === 0}
+                    onSelectItem={onSelectItem}
+                    seedItems={browseSeedItems}
+                />
+            ) : (
+                <FlashList
+                    contentContainerStyle={styles.libraryListContent}
+                    data={rows}
+                    drawDistance={LIBRARY_ROW_DRAW_DISTANCE}
+                    keyExtractor={(row) => row.key}
+                    ListEmptyComponent={
+                        <View style={styles.libraryEmptyState}>
+                            <Text style={styles.mutedText}>Nothing to show here yet.</Text>
+                        </View>
+                    }
+                    maintainVisibleContentPosition={FLASH_LIST_MAINTAIN_POSITION_DISABLED}
+                    renderItem={renderLibraryRow}
+                    showsVerticalScrollIndicator={false}
+                    style={styles.libraryBrowseBody}
+                />
+            )}
+            {scopeAndSortMenus}
         </View>
     );
 });
