@@ -26,4 +26,6 @@ testing only (not recommended for production):
    - `apps/android/android/local.properties` as `samo.castReceiverAppId=…` (gitignored).
 6. Rebuild the Android app. Allow up to ~15 minutes for new receivers to propagate to devices.
 
-Until an Application ID is set, the app falls back to Google's default receiver.
+### Desktop (Electron)
+
+The desktop app always uses Google's **Default Media Receiver** (`CC1AD845`). No Application ID or settings entry is required — use the cast button in the player bar.

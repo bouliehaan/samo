@@ -13,7 +13,7 @@ import {
     useSettingsStore,
     useSettingsStoreActions,
 } from '/@/renderer/store';
-import { logFn } from '/@/renderer/utils/logger';
+import { logFn } from '/@/shared/utils/logger';
 import {
     useFullScreenPlayerStore,
     useFullScreenPlayerStoreActions,

@@ -1189,11 +1189,9 @@ const loadAudiobookshelfLibraryRelevantItems = async (
 const loadMobileLibraryRelevantContent = async ({
     authentication,
     fetch: fetcher,
-    maxItems = LIBRARY_RELEVANT_MAX_ITEMS,
 }: {
     authentication: ServerAuthenticationResult;
     fetch?: SamoFetch;
-    maxItems?: number;
 }): Promise<MobileHomeItem[]> => {
     const request = getFetch(fetcher);
 
@@ -1229,7 +1227,7 @@ export const loadMobileLibraryRelevantContentForServers = async ({
 
     const results = await Promise.allSettled(
         authentications.map((authentication) =>
-            loadMobileLibraryRelevantContent({ authentication, fetch: fetcher, maxItems }),
+            loadMobileLibraryRelevantContent({ authentication, fetch: fetcher }),
         ),
     );
     const batches: MobileHomeItem[][] = [];

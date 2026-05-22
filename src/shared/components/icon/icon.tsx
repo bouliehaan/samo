@@ -29,6 +29,7 @@ import {
     LuBookOpen,
     LuBraces,
     LuCamera,
+    LuCast,
     LuCheck,
     LuChevronDown,
     LuChevronLast,
@@ -141,6 +142,7 @@ import listenbrainzLogoIcon from './listenbrainz_logo_icon.svg';
 import musicbrainzLogoIcon from './musicbrainz_logo_icon.svg';
 import qobuzLogoIcon from './qobuz_logo_icon.png';
 import spotifyLogoIcon from './spotify_logo_icon.svg';
+import monitorIcon from '../../../../assets/monitor.png';
 
 export type AppIconSelection = keyof typeof AppIcon;
 
@@ -217,6 +219,34 @@ const LastfmLogoIcon = forwardRef<HTMLImageElement, LogoImgProps>(
     ),
 );
 
+type MaskIconProps = Omit<ImgHTMLAttributes<HTMLSpanElement>, 'style'> & {
+    size?: number | string;
+    style?: CSSProperties;
+};
+
+const OutputPickerIcon = forwardRef<HTMLSpanElement, MaskIconProps>(
+    ({ className, size, style, ...props }, ref) => {
+        const dim = size === undefined ? undefined : typeof size === 'number' ? `${size}px` : size;
+        return (
+            <span
+                aria-label="Output picker"
+                className={clsx(styles.maskIcon, className)}
+                ref={ref}
+                role="img"
+                style={{
+                    maskImage: `url(${monitorIcon})`,
+                    WebkitMaskImage: `url(${monitorIcon})`,
+                    ...(dim ? { height: dim, width: dim } : null),
+                    ...style,
+                }}
+                {...props}
+            />
+        );
+    },
+);
+
+OutputPickerIcon.displayName = 'OutputPickerIcon';
+
 export const AppIcon = {
     add: LuPlus,
     album: LuDisc3,
@@ -248,6 +278,8 @@ export const AppIcon = {
     cache: LuCloudDownload,
     check: LuCheck,
     clipboardCopy: LuClipboardCopy,
+    cast: LuCast,
+    outputPicker: OutputPickerIcon,
     collection: LuPackage2,
     delete: LuTrash,
     disc: LuDisc,

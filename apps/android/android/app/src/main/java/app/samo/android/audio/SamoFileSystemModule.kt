@@ -1,6 +1,7 @@
 package app.samo.android.audio
 
 import android.content.ContentResolver
+import android.database.Cursor
 import android.net.Uri
 import android.provider.DocumentsContract
 import com.facebook.react.bridge.Arguments
@@ -270,6 +271,79 @@ class SamoFileSystemModule(
         }
     }
 
+    @ReactMethod
+    fun listDownloadAudioFiles(treeUriString: String, promise: Promise) {
+        ioExecutor.execute {
+            try {
+                val treeUri = Uri.parse(treeUriString)
+                val treeDocId = DocumentsContract.getTreeDocumentId(treeUri)
+                val results = Arguments.createArray()
+                collectDownloadAudioFiles(reactContext.contentResolver, treeUri, treeDocId, results)
+                promise.resolve(results)
+            } catch (error: Exception) {
+                promise.reject("SAMO_FS_ERROR", error.message ?: "Could not list folder", error)
+            }
+        }
+    }
+
+    @ReactMethod
+    fun readTextDocument(documentUriString: String, promise: Promise) {
+        ioExecutor.execute {
+            try {
+                val documentUri = Uri.parse(documentUriString)
+                val text =
+                    reactContext.contentResolver.openInputStream(documentUri)?.use { input ->
+                        input.bufferedReader().readText()
+                    } ?: ""
+                promise.resolve(text)
+            } catch (error: Exception) {
+                promise.reject("SAMO_FS_ERROR", error.message ?: "Could not read document", error)
+            }
+        }
+    }
+
+    private fun collectDownloadAudioFiles(
+        resolver: ContentResolver,
+        treeUri: Uri,
+        documentId: String,
+        out: com.facebook.react.bridge.WritableArray,
+    ) {
+        val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, documentId)
+        val projection =
+            arrayOf(
+                DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                DocumentsContract.Document.COLUMN_MIME_TYPE,
+            )
+        val cursor = resolver.query(childrenUri, projection, null, null, null) ?: return
+        cursor.use {
+            val idIndex =
+                it.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
+            val nameIndex =
+                it.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+            val mimeIndex =
+                it.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_MIME_TYPE)
+            while (it.moveToNext()) {
+                val childId = it.getString(idIndex) ?: continue
+                val name = it.getString(nameIndex) ?: continue
+                val mimeType = it.getString(mimeIndex) ?: ""
+                if (mimeType == DocumentsContract.Document.MIME_TYPE_DIR) {
+                    collectDownloadAudioFiles(resolver, treeUri, childId, out)
+                    continue
+                }
+                if (
+                    name.endsWith(".audio", ignoreCase = true) ||
+                        name == REGISTRY_SIDEcar_FILE_NAME
+                ) {
+                    val map = Arguments.createMap()
+                    map.putString("uri", DocumentsContract.buildDocumentUriUsingTree(treeUri, childId).toString())
+                    map.putString("name", name)
+                    out.pushMap(map)
+                }
+            }
+        }
+    }
+
     private fun fileFromUri(uri: String): File {
         return try {
             File(Uri.parse(uri).path ?: uri.removePrefix("file://"))
@@ -292,5 +366,6 @@ class SamoFileSystemModule(
     companion object {
         private const val PROGRESS_EVENT_BYTES = 512L * 1024L
         private const val PROGRESS_EVENT_MS = 750L
+        private const val REGISTRY_SIDEcar_FILE_NAME = "samo-download-registry.json"
     }
 }

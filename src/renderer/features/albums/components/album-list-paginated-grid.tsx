@@ -10,8 +10,10 @@ import { useItemListPagination } from '/@/renderer/components/item-list/item-lis
 import { ItemListGridComponentProps } from '/@/renderer/components/item-list/types';
 import { useListContext } from '/@/renderer/context/list-context';
 import { albumQueries } from '/@/renderer/features/albums/api/album-api';
+import { useAlbumQualityProfiles } from '/@/renderer/hooks/use-album-quality-profiles';
 import { useGeneralSettings } from '/@/renderer/store';
 import {
+    Album,
     AlbumListQuery,
     AlbumListSort,
     LibraryItem,
@@ -61,6 +63,8 @@ export const AlbumListPaginatedGrid = ({
     const rows = useGridRows(LibraryItem.ALBUM, ItemListKey.ALBUM, size);
     const { enableGridMultiSelect } = useGeneralSettings();
 
+    const itemsWithQuality = useAlbumQualityProfiles((data as Album[]) || []);
+
     return (
         <ItemListWithPagination
             currentPage={currentPage}
@@ -71,7 +75,7 @@ export const AlbumListPaginatedGrid = ({
         >
             <ItemGridList
                 currentPage={currentPage}
-                data={data || []}
+                data={itemsWithQuality}
                 enableExpansion
                 enableMultiSelect={enableGridMultiSelect}
                 gap={gap}

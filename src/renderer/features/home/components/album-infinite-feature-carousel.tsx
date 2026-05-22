@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef } from 'react';
 import { api } from '/@/renderer/api';
 import { queryKeys } from '/@/renderer/api/query-keys';
 import { FeatureCarousel } from '/@/renderer/components/feature-carousel/feature-carousel';
+import { useAlbumQualityProfiles } from '/@/renderer/hooks/use-album-quality-profiles';
 import { useCurrentServerId } from '/@/renderer/store';
 import { Album, AlbumListResponse, AlbumListSort, SortOrder } from '/@/shared/types/domain-types';
 
@@ -87,9 +88,11 @@ export const AlbumInfiniteFeatureCarousel = ({
         }
     }, [albumsWithImages.length, hasNextPage, isFetchingNextPage, fetchNextPage, itemLimit]);
 
-    if (isError || albumsWithImages.length === 0) {
+    const albumsWithQuality = useAlbumQualityProfiles(albumsWithImages);
+
+    if (isError || albumsWithQuality.length === 0) {
         return null;
     }
 
-    return <FeatureCarousel data={albumsWithImages} onNearEnd={handleNearEnd} />;
+    return <FeatureCarousel data={albumsWithQuality} onNearEnd={handleNearEnd} />;
 };

@@ -12,6 +12,7 @@ import { lazy, memo, Suspense, useEffect, useMemo, useRef, useState } from 'reac
 import i18n from '/@/i18n/i18n';
 import { WebAudioContext } from '/@/renderer/features/player/context/webaudio-context';
 import { useCheckForUpdates } from '/@/renderer/hooks/use-check-for-updates';
+import { useDesktopCastSync } from '/@/renderer/hooks/use-desktop-cast-sync';
 import { useLyricsPrefetch } from '/@/renderer/hooks/use-lyrics-prefetch';
 import { useNativeMenuSync } from '/@/renderer/hooks/use-native-menu-sync';
 import { useSyncSettingsToMain } from '/@/renderer/hooks/use-sync-settings-to-main';
@@ -23,6 +24,7 @@ import { WebAudio } from '/@/shared/types/types';
 import '/@/shared/styles/global.css';
 import { PlayerProvider } from '/@/renderer/features/player/context/player-context';
 import { AudioPlayers } from '/@/renderer/features/player/components/audio-players';
+import { useCastPlaybackSync } from '/@/renderer/hooks/use-cast-playback-sync';
 
 const UpdateAvailableDialog = lazy(() =>
     import('./update-available-dialog').then((module) => ({
@@ -74,6 +76,7 @@ const AppShell = memo(function AppShell() {
             />
             <WebAudioContext.Provider value={webAudioProvider}>
                 <PlayerProvider>
+                    <CastPlaybackSyncEffect />
                     <AudioPlayers />
                     <AppRouter />
                 </PlayerProvider>
@@ -94,8 +97,19 @@ const AppEffects = () => (
         <LanguageEffect />
         <NativeMenuSyncEffect />
         <LyricsPrefetchEffect />
+        <DesktopCastSyncEffect />
     </>
 );
+
+const DesktopCastSyncEffect = () => {
+    useDesktopCastSync();
+    return null;
+};
+
+const CastPlaybackSyncEffect = () => {
+    useCastPlaybackSync();
+    return null;
+};
 
 const SyncSettingsEffect = () => {
     useSyncSettingsToMain();

@@ -42,9 +42,31 @@ img.size-xl,
 img.size-2xl,
 img.size-3xl,
 img.size-4xl,
-img.size-5xl {
+img.size-5xl,
+.maskIcon.size-xs,
+.maskIcon.size-sm,
+.maskIcon.size-md,
+.maskIcon.size-lg,
+.maskIcon.size-xl,
+.maskIcon.size-2xl,
+.maskIcon.size-3xl,
+.maskIcon.size-4xl,
+.maskIcon.size-5xl {
     width: 1em;
     height: 1em;
+}
+
+.maskIcon {
+    display: inline-block;
+    flex-shrink: 0;
+    vertical-align: middle;
+    background-color: currentColor;
+    mask-position: center;
+    mask-repeat: no-repeat;
+    mask-size: contain;
+    -webkit-mask-position: center;
+    -webkit-mask-repeat: no-repeat;
+    -webkit-mask-size: contain;
 }
 
 .color-default {

@@ -1,4 +1,4 @@
-import { LogCategory, logFn } from '/@/renderer/utils/logger';
+import { LogCategory, logFn } from '/@/shared/utils/logger';
 // Module-level registry of every playback <audio> element this app's web
 // players have spawned. We can't rely on React's unmount cleanup to pause
 // audio because by the time a parent component's cleanup runs, child refs

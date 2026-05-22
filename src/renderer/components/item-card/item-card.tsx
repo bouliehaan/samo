@@ -8,6 +8,7 @@ import styles from './item-card.module.css';
 import i18n from '/@/i18n/i18n';
 import { ItemCardControls } from '/@/renderer/components/item-card/item-card-controls';
 import { ItemImage } from '/@/renderer/components/item-image/item-image';
+import { QualityBadge } from '/@/renderer/components/quality-badge/quality-badge';
 import { getDraggedItems } from '/@/renderer/components/item-list/helpers/get-dragged-items';
 import { getTitlePath } from '/@/renderer/components/item-list/helpers/get-title-path';
 import {
@@ -34,6 +35,10 @@ import { Separator } from '/@/shared/components/separator/separator';
 import { Skeleton } from '/@/shared/components/skeleton/skeleton';
 import { Text } from '/@/shared/components/text/text';
 import { useDoubleClick } from '/@/shared/hooks/use-double-click';
+import {
+    type AlbumWithQualityProfile,
+    getAlbumQualityProfile,
+} from '/@/renderer/utils/quality-profile';
 import {
     Album,
     AlbumArtist,
@@ -234,6 +239,10 @@ const ItemCardStandardImageArea = memo(function ItemCardStandardImageArea({
     });
 
     const hasRating = false;
+    const albumQualityProfile =
+        itemType === LibraryItem.ALBUM && data
+            ? getAlbumQualityProfile(data as AlbumWithQualityProfile, (data as Album).songs)
+            : undefined;
 
     const imageContainerContent = (
         <>
@@ -260,6 +269,9 @@ const ItemCardStandardImageArea = memo(function ItemCardStandardImageArea({
                     type="itemCard"
                 />
             )}
+            {albumQualityProfile ? (
+                <QualityBadge overlay profile={albumQualityProfile} />
+            ) : null}
             {hasRating && <div className={styles.ratingBadge} />}
             <AnimatePresence>
                 {withControls && showControls && (

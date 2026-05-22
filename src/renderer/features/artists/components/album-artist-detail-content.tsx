@@ -4,7 +4,7 @@ import {
     useSuspenseQuery,
     UseSuspenseQueryResult,
 } from '@tanstack/react-query';
-import { logFn } from '/@/renderer/utils/logger';
+import { logFn } from '/@/shared/utils/logger';
 import { motion } from 'motion/react';
 import { memo, Suspense, useCallback, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -14,6 +14,7 @@ import styles from './album-artist-detail-content.module.css';
 
 import { queryKeys } from '/@/renderer/api/query-keys';
 import { DataRow, MemoizedItemCard } from '/@/renderer/components/item-card/item-card';
+import { useAlbumQualityProfiles } from '/@/renderer/hooks/use-album-quality-profiles';
 import { useDefaultItemListControls } from '/@/renderer/components/item-list/helpers/item-list-controls';
 import { useGridRows } from '/@/renderer/components/item-list/helpers/use-grid-rows';
 import { useItemListColumnReorder } from '/@/renderer/components/item-list/helpers/use-item-list-column-reorder';
@@ -1308,7 +1309,8 @@ const AlbumSection = memo(function AlbumSection({
     const player = usePlayer();
     const serverId = useCurrentServerId();
 
-    const displayedAlbums = showAll ? albums : albums.slice(0, MAX_SECTION_CARDS);
+    const visibleAlbums = showAll ? albums : albums.slice(0, MAX_SECTION_CARDS);
+    const displayedAlbums = useAlbumQualityProfiles(visibleAlbums);
     const hasMoreAlbums = albums.length > MAX_SECTION_CARDS;
 
     const handlePlay = useCallback(

@@ -1,6 +1,6 @@
 import formatDuration from 'format-duration';
 import debounce from 'lodash/debounce';
-import { useCallback } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 import { RiPauseFill, RiPlayFill, RiVolumeUpFill } from 'react-icons/ri';
 
 import { PlayerImage } from '/@/remote/components/player-image';
@@ -29,7 +29,9 @@ export const RemoteContainer = () => {
         [send, id],
     );
 
-    const debouncedSetRating = debounce(setRating, 400);
+    const debouncedSetRating = useMemo(() => debounce(setRating, 400), [setRating]);
+
+    useEffect(() => () => debouncedSetRating.cancel(), [debouncedSetRating]);
 
     return (
         <Stack gap="md" h="100dvh" w="100%">

@@ -10,8 +10,6 @@ import { useRadioPlayer } from '/@/renderer/features/radio/hooks/use-radio-playe
 import { useAppStore, usePlayerData, usePlayerStatus, useWindowSettings } from '/@/renderer/store';
 import { Platform, PlayerStatus } from '/@/shared/types/types';
 
-const localSettings = isElectron() ? window.api.localSettings : null;
-
 const browser = isElectron() ? window.api.browser : null;
 const close = () => browser?.exit();
 const minimize = () => browser?.minimize();
@@ -60,7 +58,22 @@ export const WindowBar = () => {
     const { currentSong, index, queueLength } = usePlayerData();
     const { isPlaying: isRadioPlaying, metadata, stationName } = useRadioPlayer();
     const isRadioActive = Boolean(stationName || metadata);
-    const [max, setMax] = useState(localSettings?.env.START_MAXIMIZED || false);
+    const [max, setMax] = useState(false);
+
+    useEffect(() => {
+        if (!browser) return;
+        let cancelled = false;
+        browser.isMaximized().then((value) => {
+            if (!cancelled) setMax(value);
+        });
+        const unsubscribe = browser.onMaximizeStateChanged((_event, maximized) => {
+            setMax(maximized);
+        });
+        return () => {
+            cancelled = true;
+            unsubscribe();
+        };
+    }, []);
 
     const handleMaximize = useCallback(() => {
         if (max) {
@@ -68,7 +81,6 @@ export const WindowBar = () => {
         } else {
             maximize();
         }
-        setMax(!max);
     }, [max]);
 
     const handleClose = useCallback(() => close(), []);

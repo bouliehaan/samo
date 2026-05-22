@@ -6,7 +6,7 @@ import { api } from '/@/renderer/api';
 import { queryKeys } from '/@/renderer/api/query-keys';
 import { usePlayerEvents } from '/@/renderer/features/player/audio-player/hooks/use-player-events';
 import { updateQueueSong } from '/@/renderer/store/player.store';
-import { LogCategory, logFn } from '/@/renderer/utils/logger';
+import { LogCategory, logFn } from '/@/shared/utils/logger';
 import { QueueSong, SongDetailQuery } from '/@/shared/types/domain-types';
 
 export const useUpdateCurrentSong = () => {

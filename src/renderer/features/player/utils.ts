@@ -4,8 +4,8 @@ import { api } from '/@/renderer/api';
 import { queryKeys } from '/@/renderer/api/query-keys';
 import { folderQueries } from '/@/renderer/features/folders/api/folder-api';
 import { PlayerFilter, useSettingsStore } from '/@/renderer/store';
-import { LogCategory, logFn } from '/@/renderer/utils/logger';
-import { logMsg } from '/@/renderer/utils/logger-message';
+import { LogCategory, logFn } from '/@/shared/utils/logger';
+import { logMsg } from '/@/shared/utils/logger-message';
 import { sortSongList } from '/@/shared/api/utils';
 import {
     PlaylistSongListQuery,
@@ -17,6 +17,30 @@ import {
     SongListSort,
     SortOrder,
 } from '/@/shared/types/domain-types';
+
+const SONG_LIST_GC_MS = 1000 * 60;
+
+const fetchSongList = async (
+    queryClient: QueryClient,
+    serverId: string,
+    queryFilter: SongListQuery,
+) => {
+    const queryKey = queryKeys.songs.list(serverId, queryFilter);
+
+    return queryClient.fetchQuery({
+        gcTime: SONG_LIST_GC_MS,
+        queryFn: async ({ signal }) =>
+            api.controller.getSongList({
+                apiClientProps: {
+                    serverId,
+                    signal,
+                },
+                query: queryFilter,
+            }),
+        queryKey,
+        staleTime: SONG_LIST_GC_MS,
+    });
+};
 
 export const getPlaylistSongsById = async (args: {
     id: string;
@@ -33,7 +57,7 @@ export const getPlaylistSongsById = async (args: {
     const queryKey = queryKeys.playlists.songList(serverId, id);
 
     const res = await queryClient.fetchQuery({
-        gcTime: 1000 * 60,
+        gcTime: SONG_LIST_GC_MS,
         queryFn: async ({ signal }) =>
             api.controller.getPlaylistSongList({
                 apiClientProps: {
@@ -43,7 +67,7 @@ export const getPlaylistSongsById = async (args: {
                 query: queryFilter,
             }),
         queryKey,
-        staleTime: 1000 * 60,
+        staleTime: SONG_LIST_GC_MS,
     });
 
     if (res) {
@@ -63,35 +87,14 @@ export const getAlbumSongsById = async (args: {
     query?: Partial<SongListQuery>;
     queryClient: QueryClient;
     serverId: string;
-}) => {
-    const { id, query, queryClient, serverId } = args;
-
-    const queryFilter: SongListQuery = {
-        albumIds: id,
+}) =>
+    fetchSongList(args.queryClient, args.serverId, {
+        albumIds: args.id,
         sortBy: SongListSort.ALBUM,
         sortOrder: SortOrder.ASC,
         startIndex: 0,
-        ...query,
-    };
-
-    const queryKey = queryKeys.songs.list(serverId, queryFilter);
-
-    const res = await queryClient.fetchQuery({
-        gcTime: 1000 * 60,
-        queryFn: async ({ signal }) =>
-            api.controller.getSongList({
-                apiClientProps: {
-                    serverId,
-                    signal,
-                },
-                query: queryFilter,
-            }),
-        queryKey,
-        staleTime: 1000 * 60,
+        ...args.query,
     });
-
-    return res;
-};
 
 export const getGenreSongsById = async (args: {
     id: string[];
@@ -101,35 +104,15 @@ export const getGenreSongsById = async (args: {
     serverId: string;
 }) => {
     const { id, query, queryClient, serverId } = args;
+    const data: SongListResponse = { items: [], startIndex: 0, totalRecordCount: 0 };
 
-    const data: SongListResponse = {
-        items: [],
-        startIndex: 0,
-        totalRecordCount: 0,
-    };
     for (const genreId of id) {
-        const queryFilter: SongListQuery = {
+        const res = await fetchSongList(queryClient, serverId, {
             genreIds: [genreId],
             sortBy: SongListSort.GENRE,
             sortOrder: SortOrder.ASC,
             startIndex: 0,
             ...query,
-        };
-
-        const queryKey = queryKeys.songs.list(serverId, queryFilter);
-
-        const res = await queryClient.fetchQuery({
-            gcTime: 1000 * 60,
-            queryFn: async ({ signal }) =>
-                api.controller.getSongList({
-                    apiClientProps: {
-                        serverId,
-                        signal,
-                    },
-                    query: queryFilter,
-                }),
-            queryKey,
-            staleTime: 1000 * 60,
         });
 
         data.items.push(...res!.items);
@@ -147,104 +130,40 @@ export const getAlbumArtistSongsById = async (args: {
     query?: Partial<SongListQuery>;
     queryClient: QueryClient;
     serverId: string;
-}) => {
-    const { id, query, queryClient, serverId } = args;
-
-    const queryFilter: SongListQuery = {
-        albumArtistIds: id || [],
+}) =>
+    fetchSongList(args.queryClient, args.serverId, {
+        albumArtistIds: args.id || [],
         sortBy: SongListSort.ALBUM_ARTIST,
         sortOrder: SortOrder.ASC,
         startIndex: 0,
-        ...query,
-    };
-
-    const queryKey = queryKeys.songs.list(serverId, queryFilter);
-
-    const res = await queryClient.fetchQuery({
-        gcTime: 1000 * 60,
-        queryFn: async ({ signal }) =>
-            api.controller.getSongList({
-                apiClientProps: {
-                    serverId,
-                    signal,
-                },
-                query: queryFilter,
-            }),
-        queryKey,
-        staleTime: 1000 * 60,
+        ...args.query,
     });
-
-    return res;
-};
 
 export const getArtistSongsById = async (args: {
     id: string[];
     query?: Partial<SongListQuery>;
     queryClient: QueryClient;
     serverId: string;
-}) => {
-    const { id, query, queryClient, serverId } = args;
-
-    const queryFilter: SongListQuery = {
-        artistIds: id,
+}) =>
+    fetchSongList(args.queryClient, args.serverId, {
+        artistIds: args.id,
         sortBy: SongListSort.ALBUM,
         sortOrder: SortOrder.ASC,
         startIndex: 0,
-        ...query,
-    };
-
-    const queryKey = queryKeys.songs.list(serverId, queryFilter);
-
-    const res = await queryClient.fetchQuery({
-        gcTime: 1000 * 60,
-        queryFn: async ({ signal }) =>
-            api.controller.getSongList({
-                apiClientProps: {
-                    serverId,
-                    signal,
-                },
-                query: queryFilter,
-            }),
-        queryKey,
-        staleTime: 1000 * 60,
+        ...args.query,
     });
-
-    return res;
-};
 
 export const getSongsByQuery = async (args: {
     query?: Partial<SongListQuery>;
     queryClient: QueryClient;
     serverId: string;
-}) => {
-    const { query, queryClient, serverId } = args;
-
-    const queryFilter: SongListQuery = {
+}) =>
+    fetchSongList(args.queryClient, args.serverId, {
         sortBy: SongListSort.ALBUM,
         sortOrder: SortOrder.ASC,
         startIndex: 0,
-        ...query,
-    };
-
-    const queryKey = queryKeys.songs.list(serverId, queryFilter);
-
-    const res = await queryClient.fetchQuery({
-        gcTime: 1000 * 60,
-        queryFn: async ({ signal }) => {
-            return api.controller.getSongList({
-                apiClientProps: {
-                    serverId,
-                    signal,
-                },
-                query: queryFilter,
-            });
-        },
-        queryKey,
-        staleTime: 1000 * 60,
+        ...args.query,
     });
-
-    return res;
-};
 
 export const getSongsByFolder = async (args: {
     id: string[];

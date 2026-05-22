@@ -3,7 +3,7 @@ import React, { useCallback, useEffect } from 'react';
 
 import { usePlayerStatus, useSettingsStore, useWindowSettings } from '/@/renderer/store';
 import { PlayerStatus } from '/@/shared/types/types';
-import { logFn } from '/@/renderer/utils/logger';
+import { logFn } from '/@/shared/utils/logger';
 
 const ipc = isElectron() ? window.api.ipc : null;
 

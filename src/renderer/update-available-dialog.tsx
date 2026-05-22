@@ -28,11 +28,7 @@ export const UpdateAvailableDialog = () => {
             }
         };
 
-        window.api.ipc.on('update-available', handleUpdateAvailable);
-
-        return () => {
-            window.api.ipc.removeListener?.('update-available', handleUpdateAvailable);
-        };
+        return window.api.utils.onUpdateAvailable(handleUpdateAvailable);
     }, [versionDismissed]);
 
     if (!opened) return null;

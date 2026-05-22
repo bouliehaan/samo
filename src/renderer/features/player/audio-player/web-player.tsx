@@ -8,7 +8,7 @@ import {
     WebPlayerEngine,
     WebPlayerEngineHandle,
 } from '/@/renderer/features/player/audio-player/engine/web-player-engine';
-import { logFn } from '/@/renderer/utils/logger';
+import { logFn } from '/@/shared/utils/logger';
 import { usePlayerEvents } from '/@/renderer/features/player/audio-player/hooks/use-player-events';
 import { useSongUrl } from '/@/renderer/features/player/audio-player/hooks/use-stream-url';
 import {

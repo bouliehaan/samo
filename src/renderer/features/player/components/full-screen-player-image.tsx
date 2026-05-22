@@ -13,6 +13,7 @@ import { generatePath, Link } from 'react-router';
 import styles from './full-screen-player-image.module.css';
 
 import { useItemImageUrl } from '/@/renderer/components/item-image/item-image';
+import { QualityBadge } from '/@/renderer/components/quality-badge/quality-badge';
 import { AudioPathBadge } from '/@/renderer/features/player/components/audio-path-badge';
 import {
     useIsRadioActive,
@@ -28,6 +29,7 @@ import {
     usePlayerData,
     usePlayerSong,
 } from '/@/renderer/store';
+import { getQueueSongQualityProfile } from '/@/renderer/utils/quality-profile';
 import { usePlaybackSource } from '/@/renderer/store/playback-owner.store';
 import { Badge } from '/@/shared/components/badge/badge';
 import { Center } from '/@/shared/components/center/center';
@@ -139,6 +141,10 @@ export const FullScreenPlayerImage = () => {
     const effectiveContainer = isTranscoded ? transcode.format : currentSong?.container;
     const effectiveBitRate = isTranscoded ? transcode.bitrate : currentSong?.bitRate;
     const isPremiumQualityDirect = !isTranscoded && isPremiumQualityContainer(effectiveContainer);
+    const formatProfile = getQueueSongQualityProfile(currentSong, {
+        playbackType,
+        transcodeEnabled: transcode.enabled,
+    });
 
     const currentImageUrl = useItemImageUrl({
         id: currentSong?.imageId || undefined,
@@ -267,7 +273,10 @@ export const FullScreenPlayerImage = () => {
             justify="flex-start"
             p="1rem"
         >
-            <div className={styles.imageContainer} ref={mainImageRef}>
+            <div className={styles['image-container']} ref={mainImageRef}>
+                {showAudioPathBadge && formatProfile ? (
+                    <QualityBadge className={styles['format-badge']} overlay profile={formatProfile} />
+                ) : null}
                 <AnimatePresence initial={false} mode="sync">
                     {isNonMusicMode && (
                         <ImageWithPlaceholder

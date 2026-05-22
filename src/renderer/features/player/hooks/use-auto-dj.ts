@@ -15,8 +15,8 @@ import {
     usePlayerStoreBase,
     useSettingsStore,
 } from '/@/renderer/store';
-import { LogCategory, logFn } from '/@/renderer/utils/logger';
-import { logMsg } from '/@/renderer/utils/logger-message';
+import { LogCategory, logFn } from '/@/shared/utils/logger';
+import { logMsg } from '/@/shared/utils/logger-message';
 import { shuffleInPlace } from '/@/renderer/utils/shuffle';
 import { hasFeature } from '/@/shared/api/utils';
 import { Played, Song, SongListSort, SortOrder } from '/@/shared/types/domain-types';

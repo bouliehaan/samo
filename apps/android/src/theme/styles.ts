@@ -14,6 +14,9 @@ import {
     MINI_PLAYER_HEIGHT,
     MINI_PLAYER_RADIUS,
     MINI_PLAYER_VERTICAL_PADDING,
+    TAB_BAR_BUTTON_MIN_HEIGHT,
+    TAB_BAR_PADDING_BOTTOM,
+    TAB_BAR_PADDING_TOP,
     QUEUE_SHEET_HEIGHT,
     SCREEN_HEIGHT,
     SCREEN_WIDTH,
@@ -732,7 +735,7 @@ export const styles = StyleSheet.create({
         marginTop: spacing.md,
     },
     content: {
-        // tabBar (~62) + miniPlayer (~78) + breathing room
+        // tabBar (~86) + miniPlayer (~82) + breathing room
         paddingBottom: 200,
         paddingHorizontal: HOME_EDGE_PADDING,
         paddingTop: spacing.lg,
@@ -1674,7 +1677,7 @@ export const styles = StyleSheet.create({
         marginTop: spacing.md,
     },
     libraryListContent: {
-        // tabBar (~62) + miniPlayer (~78) + breathing room
+        // tabBar (~86) + miniPlayer (~82) + breathing room
         paddingBottom: 200,
         paddingHorizontal: HOME_EDGE_PADDING,
     },
@@ -3201,9 +3204,9 @@ export const styles = StyleSheet.create({
     tabBar: {
         backgroundColor: '#1c1c1e',
         flexDirection: 'row',
-        paddingBottom: 12,
+        paddingBottom: TAB_BAR_PADDING_BOTTOM,
         paddingHorizontal: spacing.xs,
-        paddingTop: 8,
+        paddingTop: TAB_BAR_PADDING_TOP,
         zIndex: 10,
     },
     tabScene: {
@@ -3244,7 +3247,7 @@ export const styles = StyleSheet.create({
         borderRadius: 8,
         flex: 1,
         justifyContent: 'center',
-        minHeight: 56,
+        minHeight: TAB_BAR_BUTTON_MIN_HEIGHT,
         paddingHorizontal: 2,
     },
     tabButtonActive: {},

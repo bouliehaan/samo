@@ -1309,110 +1309,62 @@ export const NavidromeController: InternalControllerEndpoint = {
 
         return null;
     },
-    uploadArtistImage: async (args: UploadArtistImageArgs): Promise<UploadArtistImageResponse> => {
-        const { apiClientProps, body, query } = args;
-
-        const server = apiClientProps.server;
-        const serverUrl = server?.url?.replace(/\/$/, '');
-
-        if (!serverUrl) {
-            throw new Error('Server is required');
-        }
-
-        const form = new FormData();
-        const bytes = body.image as Uint8Array<ArrayBuffer>;
-        const fileLike =
-            typeof File !== 'undefined'
-                ? new File([bytes], 'image', { type: 'application/octet-stream' })
-                : new Blob([bytes], { type: 'application/octet-stream' });
-        form.append('image', fileLike as any);
-
-        const res = await axios.post(`${serverUrl}/api/artist/${query.id}/image`, form, {
-            headers: {
-                'Content-Type': 'multipart/form-data',
-                ...(server?.ndCredential && {
-                    'x-nd-authorization': `Bearer ${server.ndCredential}`,
-                }),
-            },
-            signal: apiClientProps.signal,
-        });
-
-        if (res.status !== 200) {
-            throw new Error('Failed to upload artist image');
-        }
-
-        return res.data?.status === 'ok';
-    },
-    uploadInternetRadioStationImage: async (
+    uploadArtistImage: (args: UploadArtistImageArgs): Promise<UploadArtistImageResponse> =>
+        uploadNdImage(args, 'artist'),
+    uploadInternetRadioStationImage: (
         args: UploadInternetRadioStationImageArgs,
-    ): Promise<UploadInternetRadioStationImageResponse> => {
-        const { apiClientProps, body, query } = args;
-
-        const server = apiClientProps.server;
-        const serverUrl = server?.url?.replace(/\/$/, '');
-
-        if (!serverUrl) {
-            throw new Error('Server is required');
-        }
-
-        const form = new FormData();
-        const bytes = body.image as Uint8Array<ArrayBuffer>;
-        const fileLike =
-            typeof File !== 'undefined'
-                ? new File([bytes], 'image', { type: 'application/octet-stream' })
-                : new Blob([bytes], { type: 'application/octet-stream' });
-        form.append('image', fileLike as any);
-
-        const res = await axios.post(`${serverUrl}/api/radio/${query.id}/image`, form, {
-            headers: {
-                'Content-Type': 'multipart/form-data',
-                ...(server?.ndCredential && {
-                    'x-nd-authorization': `Bearer ${server.ndCredential}`,
-                }),
-            },
-            signal: apiClientProps.signal,
-        });
-
-        if (res.status !== 200) {
-            throw new Error('Failed to upload internet radio station image');
-        }
-
-        return res.data?.status === 'ok';
-    },
-    uploadPlaylistImage: async (
-        args: UploadPlaylistImageArgs,
-    ): Promise<UploadPlaylistImageResponse> => {
-        const { apiClientProps, body, query } = args;
-
-        const server = apiClientProps.server;
-        const serverUrl = server?.url?.replace(/\/$/, '');
-
-        if (!serverUrl) {
-            throw new Error('Server is required');
-        }
-
-        const form = new FormData();
-        const bytes = body.image as Uint8Array<ArrayBuffer>;
-        const fileLike =
-            typeof File !== 'undefined'
-                ? new File([bytes], 'image', { type: 'application/octet-stream' })
-                : new Blob([bytes], { type: 'application/octet-stream' });
-        form.append('image', fileLike as any);
-
-        const res = await axios.post(`${serverUrl}/api/playlist/${query.id}/image`, form, {
-            headers: {
-                'Content-Type': 'multipart/form-data',
-                ...(server?.ndCredential && {
-                    'x-nd-authorization': `Bearer ${server.ndCredential}`,
-                }),
-            },
-            signal: apiClientProps.signal,
-        });
-
-        if (res.status !== 200) {
-            throw new Error('Failed to upload playlist image');
-        }
-
-        return res.data?.status === 'ok';
-    },
+    ): Promise<UploadInternetRadioStationImageResponse> => uploadNdImage(args, 'radio'),
+    uploadPlaylistImage: (args: UploadPlaylistImageArgs): Promise<UploadPlaylistImageResponse> =>
+        uploadNdImage(args, 'playlist'),
 };
+
+type NdImageEntity = 'artist' | 'playlist' | 'radio';
+
+type NdImageUploadArgs = {
+    apiClientProps: {
+        server?: { ndCredential?: string; url?: string } | null;
+        signal?: AbortSignal;
+    };
+    body: { image: ArrayBuffer | Uint8Array };
+    query: { id: string };
+};
+
+const failureLabel: Record<NdImageEntity, string> = {
+    artist: 'artist image',
+    playlist: 'playlist image',
+    radio: 'internet radio station image',
+};
+
+async function uploadNdImage(args: NdImageUploadArgs, entity: NdImageEntity): Promise<boolean> {
+    const { apiClientProps, body, query } = args;
+    const server = apiClientProps.server;
+    const serverUrl = server?.url?.replace(/\/$/, '');
+
+    if (!serverUrl) {
+        throw new Error('Server is required');
+    }
+
+    const form = new FormData();
+    const bytes = body.image as Uint8Array<ArrayBuffer>;
+    const fileLike =
+        typeof File !== 'undefined'
+            ? new File([bytes], 'image', { type: 'application/octet-stream' })
+            : new Blob([bytes], { type: 'application/octet-stream' });
+    form.append('image', fileLike as any);
+
+    const res = await axios.post(`${serverUrl}/api/${entity}/${query.id}/image`, form, {
+        headers: {
+            'Content-Type': 'multipart/form-data',
+            ...(server?.ndCredential && {
+                'x-nd-authorization': `Bearer ${server.ndCredential}`,
+            }),
+        },
+        signal: apiClientProps.signal,
+    });
+
+    if (res.status !== 200) {
+        throw new Error(`Failed to upload ${failureLabel[entity]}`);
+    }
+
+    return res.data?.status === 'ok';
+}

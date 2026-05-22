@@ -13,8 +13,8 @@ import {
     useAuthStoreActions,
     useCurrentServerId,
 } from '/@/renderer/store';
-import { LogCategory, logFn } from '/@/renderer/utils/logger';
-import { logMsg } from '/@/renderer/utils/logger-message';
+import { LogCategory, logFn } from '/@/shared/utils/logger';
+import { logMsg } from '/@/shared/utils/logger-message';
 import { toast } from '/@/shared/components/toast/toast';
 import { AuthState } from '/@/shared/types/types';
 

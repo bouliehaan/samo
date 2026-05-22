@@ -32,7 +32,7 @@ import { Spoiler } from '/@/shared/components/spoiler/spoiler';
 import { Stack } from '/@/shared/components/stack/stack';
 import { Text } from '/@/shared/components/text/text';
 import { LibraryItem, SongDetailResponse } from '/@/shared/types/domain-types';
-import { logFn } from '/@/renderer/utils/logger';
+import { logFn } from '/@/shared/utils/logger';
 
 const DummyAlbumDetailRoute = () => {
     const { t } = useTranslation();

@@ -1,6 +1,6 @@
 import { FastAverageColor, FastAverageColorIgnoredColor } from 'fast-average-color';
 import { useEffect, useRef, useState } from 'react';
-import { logFn } from '/@/renderer/utils/logger';
+import { logFn } from '/@/shared/utils/logger';
 
 const ignoredColors: FastAverageColorIgnoredColor = [
     [255, 255, 255, 255, 90], // White

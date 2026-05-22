@@ -18,6 +18,8 @@ import {
     downloadFileNative,
     isNativeDownloadAvailable,
     isNativeSafCopyAvailable,
+    listSafDownloadAudioFiles,
+    readSafTextDocument,
     setNativeDownloadThrottle,
     streamCopyToSaf,
     subscribeNativeDownloadProgress,
@@ -29,6 +31,7 @@ import {
 const REGISTRY_KEY = 'samo.android.downloads.v1';
 const STORAGE_LOCATION_KEY = 'samo.android.downloads.storage-location.v1';
 const DOWNLOADS_DIR_NAME = 'samo-downloads';
+const REGISTRY_SIDECAR_FILENAME = 'samo-download-registry.json';
 // Keep downloads deliberately serialized. A single large LAN transfer can
 // already compete with ExoPlayer for Wi-Fi, server, and flash I/O; parallel
 // downloads made streaming playback glitch while an album was being saved.
@@ -159,12 +162,8 @@ const parseEntry = (value: unknown): DownloadEntry | null => {
     return value as unknown as DownloadEntry;
 };
 
-const loadRegistryFromDisk = async (): Promise<DownloadEntry[]> => {
+const parseRegistryPayload = (raw: string): DownloadEntry[] => {
     try {
-        const raw = await fsGetItem(REGISTRY_KEY);
-        if (!raw) {
-            return [];
-        }
         const parsed = JSON.parse(raw) as unknown;
         if (!Array.isArray(parsed)) {
             return [];
@@ -176,6 +175,241 @@ const loadRegistryFromDisk = async (): Promise<DownloadEntry[]> => {
         return [];
     }
 };
+
+const loadRegistryFromDisk = async (): Promise<DownloadEntry[]> => {
+    try {
+        const raw = await fsGetItem(REGISTRY_KEY);
+        if (!raw) {
+            return [];
+        }
+        return parseRegistryPayload(raw);
+    } catch {
+        return [];
+    }
+};
+
+type DiscoveredDownloadFile = {
+    collectionId: string;
+    localUri: string;
+    sourceId: string;
+    trackId: string;
+};
+
+const buildDownloadTrackKey = (sourceId: string, collectionId: string, trackId: string) =>
+    `${sourceId}:${collectionId}:${trackId}`;
+
+const exportRegistrySidecar = async (entries: DownloadEntry[]): Promise<void> => {
+    const payload = JSON.stringify(entries);
+    try {
+        const root = await ensureDownloadsDirectory();
+        await FileSystem.writeAsStringAsync(`${root}${REGISTRY_SIDECAR_FILENAME}`, payload);
+    } catch {
+        // best-effort
+    }
+};
+
+const loadInternalRegistrySidecar = async (): Promise<DownloadEntry[]> => {
+    try {
+        const root = buildDownloadsRootUri();
+        const path = `${root}${REGISTRY_SIDECAR_FILENAME}`;
+        const info = await FileSystem.getInfoAsync(path);
+        if (!info.exists) {
+            return [];
+        }
+        return parseRegistryPayload(await FileSystem.readAsStringAsync(path));
+    } catch {
+        return [];
+    }
+};
+
+const loadSafRegistrySidecar = async (treeUri: string): Promise<DownloadEntry[]> => {
+    const listed = await listSafDownloadAudioFiles(treeUri);
+    const registryDoc = listed.find((item) => item.name === REGISTRY_SIDECAR_FILENAME);
+    if (!registryDoc) {
+        return [];
+    }
+    const raw = await readSafTextDocument(registryDoc.uri);
+    if (!raw) {
+        return [];
+    }
+    return parseRegistryPayload(raw);
+};
+
+const scanInternalDownloadFiles = async (): Promise<DiscoveredDownloadFile[]> => {
+    const root = buildDownloadsRootUri();
+    const rootInfo = await FileSystem.getInfoAsync(root);
+    if (!rootInfo.exists) {
+        return [];
+    }
+
+    const discovered: DiscoveredDownloadFile[] = [];
+    const sourceIds = await FileSystem.readDirectoryAsync(root);
+    for (const sourceId of sourceIds) {
+        if (sourceId === REGISTRY_SIDECAR_FILENAME) {
+            continue;
+        }
+        const sourcePath = `${root}${sourceId}/`;
+        const sourceInfo = await FileSystem.getInfoAsync(sourcePath);
+        if (!sourceInfo.exists || !sourceInfo.isDirectory) {
+            continue;
+        }
+
+        const collectionIds = await FileSystem.readDirectoryAsync(sourcePath);
+        for (const collectionId of collectionIds) {
+            const collectionPath = `${sourcePath}${collectionId}/`;
+            const collectionInfo = await FileSystem.getInfoAsync(collectionPath);
+            if (!collectionInfo.exists || !collectionInfo.isDirectory) {
+                continue;
+            }
+
+            const fileNames = await FileSystem.readDirectoryAsync(collectionPath);
+            for (const fileName of fileNames) {
+                if (!fileName.endsWith('.audio')) {
+                    continue;
+                }
+                discovered.push({
+                    collectionId,
+                    localUri: `${collectionPath}${fileName}`,
+                    sourceId,
+                    trackId: fileName.replace(/\.audio$/i, ''),
+                });
+            }
+        }
+    }
+    return discovered;
+};
+
+const scanSafDownloadFiles = async (
+    treeUri: string | undefined,
+): Promise<DiscoveredDownloadFile[]> => {
+    if (!treeUri) {
+        return [];
+    }
+
+    const listed = await listSafDownloadAudioFiles(treeUri);
+    return listed
+        .filter((item) => item.name.endsWith('.audio'))
+        .map((item) => ({
+            collectionId: 'sd-card',
+            localUri: item.uri,
+            sourceId: 'recovered',
+            trackId: item.name.replace(/\.audio$/i, ''),
+        }));
+};
+
+const mergeRegistryEntries = (
+    primary: DownloadEntry[],
+    secondary: DownloadEntry[],
+): DownloadEntry[] => {
+    const byKey = new Map(primary.map((entry) => [entry.id, entry]));
+    for (const entry of secondary) {
+        if (!byKey.has(entry.id)) {
+            byKey.set(entry.id, entry);
+        }
+    }
+    return [...byKey.values()];
+};
+
+const findExistingForDiscovered = (
+    entries: DownloadEntry[],
+    file: DiscoveredDownloadFile,
+): DownloadEntry | undefined => {
+    const byUri = entries.find((entry) => entry.localUri === file.localUri);
+    if (byUri) {
+        return byUri;
+    }
+
+    const trackKey = buildDownloadTrackKey(file.sourceId, file.collectionId, file.trackId);
+    const byPathKey = entries.find(
+        (entry) =>
+            buildDownloadTrackKey(
+                entry.collection.sourceId,
+                entry.collection.id,
+                entry.trackId,
+            ) === trackKey,
+    );
+    if (byPathKey) {
+        return byPathKey;
+    }
+
+    return entries.find(
+        (entry) => entry.trackId === file.trackId && entry.status === 'completed',
+    );
+};
+
+const createEntryFromDiscovered = (
+    file: DiscoveredDownloadFile,
+    existing?: DownloadEntry,
+): DownloadEntry => {
+    const now = Date.now();
+    const collection =
+        existing?.collection ??
+        ({
+            id: file.collectionId,
+            sourceId: file.sourceId,
+            title: file.collectionId,
+            type: 'album',
+        } satisfies DownloadCollectionInfo);
+
+    return {
+        audiobookSegment: existing?.audiobookSegment,
+        collection,
+        completedAt: existing?.completedAt ?? now,
+        enqueuedAt: existing?.enqueuedAt ?? now,
+        id:
+            existing?.id ??
+            `discovered-${sanitizeForPath(file.sourceId)}-${sanitizeForPath(file.collectionId)}-${sanitizeForPath(file.trackId)}`,
+        localUri: file.localUri,
+        sourceUrl: existing?.sourceUrl ?? file.localUri,
+        status: 'completed',
+        title: existing?.title ?? file.trackId,
+        trackId: file.trackId,
+        trackSubtitle: existing?.trackSubtitle,
+    };
+};
+
+const reconcileDownloadRegistry = async (current: DownloadEntry[]): Promise<DownloadEntry[]> => {
+    const storage = await getStorageLocation();
+    const sidecarEntries = mergeRegistryEntries(
+        await loadInternalRegistrySidecar(),
+        storage.treeUri ? await loadSafRegistrySidecar(storage.treeUri) : [],
+    );
+
+    let merged = mergeRegistryEntries(current, sidecarEntries);
+    const discoveredFiles = [
+        ...(await scanInternalDownloadFiles()),
+        ...(storage.treeUri ? await scanSafDownloadFiles(storage.treeUri) : []),
+    ];
+
+    if (discoveredFiles.length === 0 && sidecarEntries.length === 0) {
+        return current;
+    }
+
+    let changed = merged.length !== current.length || sidecarEntries.length > 0;
+    const next = [...merged];
+
+    for (const file of discoveredFiles) {
+        const existing = findExistingForDiscovered(next, file);
+        if (!existing) {
+            const created = createEntryFromDiscovered(file);
+            next.push(created);
+            changed = true;
+            continue;
+        }
+
+        if (existing.localUri !== file.localUri || existing.status !== 'completed') {
+            const index = next.findIndex((entry) => entry.id === existing.id);
+            if (index >= 0) {
+                next[index] = createEntryFromDiscovered(file, existing);
+                changed = true;
+            }
+        }
+    }
+
+    return changed ? next : current;
+};
+
+let discoveryInFlight: Promise<void> | null = null;
 
 const scheduleRegistryPersist = () => {
     if (registryPersistTimer !== null) {
@@ -203,6 +437,7 @@ const flushRegistryPersist = async (): Promise<void> => {
     try {
         const payload = JSON.stringify(entries);
         await fsSetItem(REGISTRY_KEY, payload);
+        await exportRegistrySidecar(entries);
     } catch {
         // best-effort
     } finally {
@@ -231,8 +466,34 @@ const getRegistry = async (): Promise<DownloadEntry[]> => {
                 ? { ...entry, progress: undefined, status: 'queued' as const }
                 : entry,
         );
+        registryCache = await reconcileDownloadRegistry(registryCache);
+        if (registryCache.length > 0) {
+            void saveRegistryToDisk(registryCache);
+        }
     }
     return registryCache;
+};
+
+export const discoverDownloadsOnDisk = async (): Promise<void> => {
+    if (discoveryInFlight) {
+        await discoveryInFlight;
+        return;
+    }
+
+    discoveryInFlight = (async () => {
+        await registryMutationQueue;
+        if (registryCache === null) {
+            registryCache = await loadRegistryFromDisk();
+        }
+        const reconciled = await reconcileDownloadRegistry(registryCache);
+        if (reconciled !== registryCache) {
+            setRegistry(reconciled, true);
+        }
+    })().finally(() => {
+        discoveryInFlight = null;
+    });
+
+    await discoveryInFlight;
 };
 
 // "persist" controls whether we also write the registry to disk. Progress
@@ -1207,6 +1468,7 @@ export const pickSdCardStorageLocation = async (): Promise<
             treeUri: permission.directoryUri,
         };
         await persistStorageLocation(pref);
+        await discoverDownloadsOnDisk();
         return pref;
     } catch {
         return null;

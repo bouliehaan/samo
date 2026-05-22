@@ -63,10 +63,14 @@ export const SegmentedSeekBar = memo(({
     const panResponder = useMemo(
         () =>
             PanResponder.create({
-                onMoveShouldSetPanResponder: () => isSeekable,
+                // Only claim horizontal drags so vertical swipes dismiss the player.
+                onMoveShouldSetPanResponder: (_event, gestureState) =>
+                    isSeekable &&
+                    Math.abs(gestureState.dx) > Math.abs(gestureState.dy) &&
+                    Math.abs(gestureState.dx) > 6,
                 onPanResponderGrant: (event) => seekFromLocation(event.nativeEvent.locationX),
                 onPanResponderMove: (event) => seekFromLocation(event.nativeEvent.locationX),
-                onStartShouldSetPanResponder: () => isSeekable,
+                onStartShouldSetPanResponder: () => false,
             }),
         [isSeekable, seekFromLocation],
     );

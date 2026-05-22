@@ -11,6 +11,7 @@ import {
 import { DataRow, MemoizedItemCard } from '/@/renderer/components/item-card/item-card';
 import { useDefaultItemListControls } from '/@/renderer/components/item-list/helpers/item-list-controls';
 import { useGridRows } from '/@/renderer/components/item-list/helpers/use-grid-rows';
+import { useAlbumQualityProfiles } from '/@/renderer/hooks/use-album-quality-profiles';
 import { useCurrentServerId } from '/@/renderer/store';
 import {
     Album,
@@ -59,13 +60,15 @@ const BaseAlbumInfiniteCarousel = (props: AlbumCarouselProps & { rows: DataRow[]
 
     const controls = useDefaultItemListControls();
 
-    const cards = useMemo(() => {
+    const flattenedItems = useMemo(() => {
         const allItems = albums?.pages.flatMap((page: AlbumListResponse) => page.items) || [];
-        const filteredItems = excludeIds
-            ? allItems.filter((album) => !excludeIds.includes(album.id))
-            : allItems;
+        return excludeIds ? allItems.filter((album) => !excludeIds.includes(album.id)) : allItems;
+    }, [albums, excludeIds]);
 
-        return filteredItems.map((album: Album) => ({
+    const itemsWithQuality = useAlbumQualityProfiles(flattenedItems);
+
+    const cards = useMemo(() => {
+        return itemsWithQuality.map((album: Album) => ({
             content: (
                 <MemoizedItemCard
                     controls={controls}
@@ -81,7 +84,7 @@ const BaseAlbumInfiniteCarousel = (props: AlbumCarouselProps & { rows: DataRow[]
             ),
             id: album.id,
         }));
-    }, [albums, controls, excludeIds, rows]);
+    }, [itemsWithQuality, controls, rows]);
 
     const handleNextPage = useCallback(() => {}, []);
 

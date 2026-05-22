@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { api } from '/@/renderer/api';
 import { useCurrentServer } from '/@/renderer/store';
 import { ContextMenu } from '/@/shared/components/context-menu/context-menu';
-import { logFn } from '/@/renderer/utils/logger';
+import { logFn } from '/@/shared/utils/logger';
 
 interface DownloadActionProps {
     ids: string[];

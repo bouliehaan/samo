@@ -5,7 +5,7 @@ import type {
     UseMutationOptions,
     UseQueryOptions,
 } from '@tanstack/react-query';
-import { logFn } from '/@/renderer/utils/logger';
+import { logFn } from '/@/shared/utils/logger';
 
 import { QueryCache, QueryClient } from '@tanstack/react-query';
 

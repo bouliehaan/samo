@@ -9,7 +9,7 @@ import { useArtistRadioCount, useCurrentServerId, usePlayButtonBehavior } from '
 import { ContextMenu } from '/@/shared/components/context-menu/context-menu';
 import { AlbumArtist, Artist } from '/@/shared/types/domain-types';
 import { Play } from '/@/shared/types/types';
-import { logFn } from '/@/renderer/utils/logger';
+import { logFn } from '/@/shared/utils/logger';
 
 interface PlayArtistRadioActionProps {
     artist: AlbumArtist | Artist;

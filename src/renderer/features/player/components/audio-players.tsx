@@ -38,7 +38,7 @@ import {
     useSettingsStoreActions,
 } from '/@/renderer/store';
 import { usePlaybackSession } from '/@/renderer/store/playback-owner.store';
-import { logFn } from '/@/renderer/utils/logger';
+import { logFn } from '/@/shared/utils/logger';
 import { toast } from '/@/shared/components/toast/toast';
 import { LibraryItem } from '/@/shared/types/domain-types';
 import { PlayerType } from '/@/shared/types/types';

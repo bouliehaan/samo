@@ -407,6 +407,9 @@ export const FullScreenPlayer = memo(({
 }) => {
     const [sleepMenuVisible, setSleepMenuVisible] = useState(false);
     const [isArtworkZoomOpen, setIsArtworkZoomOpen] = useState(false);
+    // Collapsed shell is invisible but was still above the tab bar (zIndex 10000).
+    // Gate hits so the navbar stays tappable at rest; enable once expansion starts.
+    const [isShellInteractive, setIsShellInteractive] = useState(false);
     const [sleepSecondsLeft, setSleepSecondsLeft] = useState<null | number>(null);
     // Queue sheet position: 0 = hidden below the screen, 1 = fully expanded.
     // Driven by the same vertical-drag gesture that handles player dismiss,
@@ -789,6 +792,15 @@ export const FullScreenPlayer = memo(({
         },
     );
 
+    useAnimatedReaction(
+        () => playerProgress.value > 0.035,
+        (interactive, previous) => {
+            if (interactive !== previous) {
+                runOnJS(setIsShellInteractive)(interactive);
+            }
+        },
+    );
+
     // Stay mounted whenever there's something to play, so close animations
     // triggered from outside the player (back button, navigation) still get to
     // run. Visibility/interactivity is now derived from playerProgress + visible.
@@ -843,7 +855,7 @@ export const FullScreenPlayer = memo(({
         <>
         <GestureDetector gesture={playerGesture}>
         <Reanimated.View
-            pointerEvents="box-none"
+            pointerEvents={isShellInteractive ? 'auto' : 'none'}
             style={[
                 styles.fullPlayer,
                 playerAnimatedStyle,

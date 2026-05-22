@@ -7,7 +7,7 @@ import {
 } from '/@/shared/api/audiobookshelf/audiobookshelf-types';
 import { ServerListItemWithCredential } from '/@/shared/types/domain-types';
 import { PlayerStatus } from '/@/shared/types/types';
-import { logFn, LogCategory } from '/@/renderer/utils/logger';
+import { logFn, LogCategory } from '/@/shared/utils/logger';
 import {
     type PlaybackSource,
     usePlaybackOwnerStore,

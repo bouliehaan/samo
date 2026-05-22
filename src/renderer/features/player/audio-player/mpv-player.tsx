@@ -15,7 +15,7 @@ import {
     usePlayerData,
     usePlayerMpvEngineState,
 } from '/@/renderer/store';
-import { LogCategory, logFn } from '/@/renderer/utils/logger';
+import { LogCategory, logFn } from '/@/shared/utils/logger';
 import { toast } from '/@/shared/components/toast/toast';
 import { QueueSong } from '/@/shared/types/domain-types';
 import { PlayerStatus } from '/@/shared/types/types';

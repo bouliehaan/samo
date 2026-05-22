@@ -23,7 +23,7 @@ import {
 import { toast } from '/@/shared/components/toast/toast';
 import { ServerListItemWithCredential } from '/@/shared/types/domain-types';
 import { PlayerStatus } from '/@/shared/types/types';
-import { logFn, LogCategory } from '/@/renderer/utils/logger';
+import { logFn, LogCategory } from '/@/shared/utils/logger';
 
 export interface AbsPlaybackBaseActions {
     release: () => void;

@@ -24,8 +24,8 @@ import {
     usePlayerActions,
     useSettingsStore,
 } from '/@/renderer/store';
-import { LogCategory, logFn } from '/@/renderer/utils/logger';
-import { logMsg } from '/@/renderer/utils/logger-message';
+import { LogCategory, logFn } from '/@/shared/utils/logger';
+import { logMsg } from '/@/shared/utils/logger-message';
 import { shuffle as shuffleArray } from '/@/renderer/utils/shuffle';
 import { sortSongsByFetchedOrder } from '/@/shared/api/utils';
 import { Checkbox } from '/@/shared/components/checkbox/checkbox';

@@ -1203,7 +1203,6 @@ export const usePlayerStoreBase = createSubscribedTraditionalStore<PlayerState>(
                     });
                 },
             })),
-        ),
         {
             merge: (persistedState: any, currentState: any) => {
                 const merged = merge(currentState, persistedState) as PlayerState;

@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { logFn } from '/@/renderer/utils/logger';
+import { logFn } from '/@/shared/utils/logger';
 
 export const translateLyrics = async (
     originalLyrics: string,

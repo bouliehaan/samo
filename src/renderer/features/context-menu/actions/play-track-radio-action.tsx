@@ -9,7 +9,7 @@ import { useCurrentServerId, usePlayButtonBehavior } from '/@/renderer/store';
 import { ContextMenu } from '/@/shared/components/context-menu/context-menu';
 import { Song } from '/@/shared/types/domain-types';
 import { Play } from '/@/shared/types/types';
-import { logFn } from '/@/renderer/utils/logger';
+import { logFn } from '/@/shared/utils/logger';
 
 interface PlayTrackRadioActionProps {
     disabled?: boolean;

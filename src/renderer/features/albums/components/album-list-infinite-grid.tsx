@@ -1,4 +1,5 @@
 import { UseSuspenseQueryOptions } from '@tanstack/react-query';
+import { useCallback, useMemo } from 'react';
 
 import { api } from '/@/renderer/api';
 import { useItemListInfiniteLoader } from '/@/renderer/components/item-list/helpers/item-list-infinite-loader';
@@ -8,8 +9,13 @@ import { ItemGridList } from '/@/renderer/components/item-list/item-grid-list/it
 import { ItemListGridComponentProps } from '/@/renderer/components/item-list/types';
 import { useListContext } from '/@/renderer/context/list-context';
 import { albumQueries } from '/@/renderer/features/albums/api/album-api';
+import {
+    type AlbumWithQualityProfile,
+    useAlbumQualityProfiles,
+} from '/@/renderer/hooks/use-album-quality-profiles';
 import { useGeneralSettings } from '/@/renderer/store';
 import {
+    Album,
     AlbumListQuery,
     AlbumListSort,
     LibraryItem,
@@ -58,6 +64,28 @@ export const AlbumListInfiniteGrid = ({
     const rows = useGridRows(LibraryItem.ALBUM, ItemListKey.ALBUM, size);
     const { enableGridMultiSelect } = useGeneralSettings();
 
+    // Match the Android library badge sweep: stamp quality profiles on whatever
+    // albums have loaded so the grid can render lossless badges as the user scrolls.
+    const itemsWithQuality = useAlbumQualityProfiles(loadedItems as Album[]);
+    const profileById = useMemo(() => {
+        const map = new Map<string, AlbumWithQualityProfile['qualityProfile']>();
+        for (const album of itemsWithQuality) {
+            const profile = (album as AlbumWithQualityProfile).qualityProfile;
+            if (profile) map.set(`${album._serverId}:${album.id}`, profile);
+        }
+        return map;
+    }, [itemsWithQuality]);
+
+    const getItemWithQuality = useCallback(
+        (index: number) => {
+            const album = getItem(index) as Album | undefined;
+            if (!album) return album;
+            const profile = profileById.get(`${album._serverId}:${album.id}`);
+            return profile ? ({ ...album, qualityProfile: profile } as Album) : album;
+        },
+        [getItem, profileById],
+    );
+
     return (
         <ItemGridList
             data={loadedItems}
@@ -65,7 +93,7 @@ export const AlbumListInfiniteGrid = ({
             enableExpansion
             enableMultiSelect={enableGridMultiSelect}
             gap={gap}
-            getItem={getItem}
+            getItem={getItemWithQuality}
             getItemIndex={getItemIndex}
             initialTop={{
                 to: scrollOffset ?? 0,

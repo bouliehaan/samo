@@ -1,4 +1,14 @@
 declare const api: {
+    audiobookshelf: {
+        closePlaybackSession: (payload: { body: import("../shared/api/audiobookshelf/audiobookshelf-types").AudiobookshelfPlaybackSessionSyncRequest; sessionId: string; token: string; url: string; }) => Promise<void>;
+        getItem: (payload: { itemId: string; token: string; url: string; }) => Promise<import("../shared/api/audiobookshelf/audiobookshelf-types").AudiobookshelfLibraryItem>;
+        getItemCoverDataUrl: (payload: { itemId: string; token: string; url: string; }) => Promise<null | string>;
+        getLibraries: (payload: { token: string; url: string; }) => Promise<import("../shared/api/audiobookshelf/audiobookshelf-types").AudiobookshelfLibrariesResponse>;
+        getLibraryItems: (payload: { libraryId: string; token: string; url: string; }) => Promise<import("../shared/api/audiobookshelf/audiobookshelf-types").AudiobookshelfLibraryItemsResponse>;
+        login: (payload: { password: string; url: string; username: string; }) => Promise<import("../shared/api/audiobookshelf/audiobookshelf-types").AudiobookshelfLoginResponse>;
+        playItem: (payload: { episodeId?: string; itemId: string; token: string; url: string; }) => Promise<import("../shared/api/audiobookshelf/audiobookshelf-types").AudiobookshelfPlaybackSessionResponse>;
+        syncPlaybackSession: (payload: { body: import("../shared/api/audiobookshelf/audiobookshelf-types").AudiobookshelfPlaybackSessionSyncRequest; sessionId: string; token: string; url: string; }) => Promise<void>;
+    };
     autodiscover: {
         discover: (onReply: (server: import("../shared/types/types").DiscoveredServerItem) => void) => Promise<void>;
     };
@@ -6,8 +16,10 @@ declare const api: {
         clearCache: () => Promise<void>;
         devtools: () => void;
         exit: () => void;
+        isMaximized: () => Promise<boolean>;
         maximize: () => void;
         minimize: () => void;
+        onMaximizeStateChanged: (cb: (event: Electron.CrossProcessExports.IpcRendererEvent, maximized: boolean) => void) => () => void;
         quit: () => void;
         setIgnoreMouseEvents: (ignore: boolean) => void;
         unmaximize: () => void;
@@ -19,13 +31,6 @@ declare const api: {
         quit: () => void;
         setActivity: (activity: import("@xhayper/discord-rpc").SetActivity) => void;
     };
-    ipc: {
-        invoke: (channel: string, ...args: any[]) => Promise<any>;
-        on: (channel: string, listener: (event: any, ...args: any[]) => void) => void;
-        removeAllListeners: (channel: string) => void;
-        removeListener: (channel: string, listener: (event: any, ...args: any[]) => void) => void;
-        send: (channel: string, ...args: any[]) => void;
-    };
     localSettings: {
         disableMediaKeys: () => void;
         enableMediaKeys: () => void;
@@ -36,7 +41,6 @@ declare const api: {
             SERVER_NAME: string;
             SERVER_TYPE: string | null;
             SERVER_URL: string;
-            START_MAXIMIZED: boolean | undefined;
         };
         fontError: (cb: (event: Electron.CrossProcessExports.IpcRendererEvent, file: string) => void) => void;
         get: (property: string) => Promise<any>;
@@ -98,6 +102,7 @@ declare const api: {
         play: () => void;
         previous: () => void;
         quit: () => void;
+        refreshAudioDevices: () => Promise<any>;
         restart: (data: {
             binaryPath?: string;
             extraParameters?: string[];
@@ -177,14 +182,11 @@ declare const api: {
         isLinux: () => boolean;
         isMacOS: () => boolean;
         isWindows: () => boolean;
-        logger: (cb: (event: Electron.CrossProcessExports.IpcRendererEvent, data: {
-            message: string;
-            type: "debug" | "error" | "info" | "verbose" | "warning";
-        }) => void) => void;
         mainMessageListener: (cb: (event: Electron.CrossProcessExports.IpcRendererEvent, data: {
             message: string;
             type: "error" | "info" | "success" | "warning";
         }) => void) => void;
+        onUpdateAvailable: (cb: (event: Electron.CrossProcessExports.IpcRendererEvent, version: string) => void) => () => void;
         openApplicationDirectory: () => Promise<any>;
         openItem: (path: string) => Promise<any>;
         playerErrorListener: (cb: (event: Electron.CrossProcessExports.IpcRendererEvent, data: {

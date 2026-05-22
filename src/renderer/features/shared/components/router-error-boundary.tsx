@@ -11,7 +11,7 @@ import { Icon } from '/@/shared/components/icon/icon';
 import { Stack } from '/@/shared/components/stack/stack';
 import { TextTitle } from '/@/shared/components/text-title/text-title';
 import { Text } from '/@/shared/components/text/text';
-import { LogCategory, logFn } from '/@/renderer/utils/logger';
+import { LogCategory, logFn } from '/@/shared/utils/logger';
 
 interface RouterErrorFallbackProps {
     error: Error;

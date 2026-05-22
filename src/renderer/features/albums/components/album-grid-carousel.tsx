@@ -4,6 +4,7 @@ import { GridCarousel } from '/@/renderer/components/grid-carousel/grid-carousel
 import { MemoizedItemCard } from '/@/renderer/components/item-card/item-card';
 import { useDefaultItemListControls } from '/@/renderer/components/item-list/helpers/item-list-controls';
 import { useGridRows } from '/@/renderer/components/item-list/helpers/use-grid-rows';
+import { useAlbumQualityProfiles } from '/@/renderer/hooks/use-album-quality-profiles';
 import { Album, LibraryItem } from '/@/shared/types/domain-types';
 import { ItemListKey } from '/@/shared/types/types';
 
@@ -19,12 +20,15 @@ export function AlbumGridCarousel(props: AlbumGridCarouselProps) {
     const rows = useGridRows(LibraryItem.ALBUM, ItemListKey.ALBUM);
     const controls = useDefaultItemListControls();
 
-    const cards = useMemo(() => {
-        const filteredItems = excludeIds
-            ? data.filter((album) => !excludeIds.includes(album.id))
-            : data;
+    const filteredItems = useMemo(
+        () => (excludeIds ? data.filter((album) => !excludeIds.includes(album.id)) : data),
+        [data, excludeIds],
+    );
 
-        return filteredItems.map((album: Album) => ({
+    const itemsWithQuality = useAlbumQualityProfiles(filteredItems);
+
+    const cards = useMemo(() => {
+        return itemsWithQuality.map((album: Album) => ({
             content: (
                 <MemoizedItemCard
                     controls={controls}
@@ -40,7 +44,7 @@ export function AlbumGridCarousel(props: AlbumGridCarouselProps) {
             ),
             id: album.id,
         }));
-    }, [data, excludeIds, controls, rows]);
+    }, [itemsWithQuality, controls, rows]);
 
     const handleNextPage = () => {};
     const handlePrevPage = () => {};

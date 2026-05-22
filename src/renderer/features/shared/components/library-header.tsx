@@ -14,7 +14,7 @@ import {
     PlayTextButton,
     WideShuffleButton,
 } from '/@/renderer/features/shared/components/play-button';
-import { logFn } from '/@/renderer/utils/logger';
+import { logFn } from '/@/shared/utils/logger';
 import { usePlayButtonClick } from '/@/renderer/features/shared/hooks/use-play-button-click';
 import { useIsMutatingCreateFavorite } from '/@/renderer/features/shared/mutations/create-favorite-mutation';
 import { useIsMutatingDeleteFavorite } from '/@/renderer/features/shared/mutations/delete-favorite-mutation';

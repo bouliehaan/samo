@@ -23,18 +23,6 @@ const mainMessageListener = (
     ipcRenderer.on('toast-from-main', cb);
 };
 
-const logger = (
-    cb: (
-        event: IpcRendererEvent,
-        data: {
-            message: string;
-            type: 'debug' | 'error' | 'info' | 'verbose' | 'warning';
-        },
-    ) => void,
-) => {
-    ipcRenderer.send('logger', cb);
-};
-
 const download = (url: string) => {
     ipcRenderer.send('download-url', url);
 };
@@ -85,6 +73,13 @@ const rendererOpenReleaseNotes = (cb: (event: IpcRendererEvent) => void) => {
     ipcRenderer.on('renderer-open-release-notes', cb);
 };
 
+const onUpdateAvailable = (cb: (event: IpcRendererEvent, version: string) => void) => {
+    ipcRenderer.on('update-available', cb);
+    return () => {
+        ipcRenderer.removeListener('update-available', cb);
+    };
+};
+
 export const utils = {
     checkForUpdates,
     disableAutoUpdates,
@@ -93,8 +88,8 @@ export const utils = {
     isLinux,
     isMacOS,
     isWindows,
-    logger,
     mainMessageListener,
+    onUpdateAvailable,
     openApplicationDirectory,
     openItem,
     playerErrorListener,

@@ -1,5 +1,9 @@
+import type { PreloadApi } from '../preload/index';
+
 declare global {
     interface Window {
+        api: PreloadApi;
+        electron?: typeof import('@electron-toolkit/preload').electronAPI;
         FS_AUTO_DJ_ENABLED?: string;
         FS_AUTO_DJ_ITEM_COUNT?: string;
         FS_AUTO_DJ_TIMING?: string;

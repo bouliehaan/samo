@@ -2,7 +2,10 @@
 <html>
     <head>
         <meta charset="utf-8" />
-        <meta http-equiv="Content-Security-Policy" />
+        <meta
+            http-equiv="Content-Security-Policy"
+            content="default-src 'self'; img-src 'self' data: blob: https: http:; connect-src 'self' ws: wss: http: https:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self' data:;"
+        />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
         <meta http-equiv="Pragma" content="no-cache" />
@@ -18,7 +21,6 @@
         </script>
         <link rel="icon" href="./samologo.svg" type="image/svg+xml" />
         <script defer="defer" src="./remote.js"></script>
-        <script defer="defer" src="./worker.js"></script>
         <link rel="stylesheet" href="./remote.css" />
     </head>
 

@@ -22,8 +22,8 @@ import {
     useTimestampStoreBase,
 } from '/@/renderer/store';
 import { sentenceCase } from '/@/renderer/utils';
-import { LogCategory, logFn } from '/@/renderer/utils/logger';
-import { logMsg } from '/@/renderer/utils/logger-message';
+import { LogCategory, logFn } from '/@/shared/utils/logger';
+import { logMsg } from '/@/shared/utils/logger-message';
 import { useDebouncedCallback } from '/@/shared/hooks/use-debounced-callback';
 import { LibraryItem, QueueSong, ServerType } from '/@/shared/types/domain-types';
 import { PlayerStatus } from '/@/shared/types/types';

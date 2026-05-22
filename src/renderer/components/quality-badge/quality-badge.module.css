@@ -1,0 +1,81 @@
+.badge {
+    display: block;
+    flex-shrink: 0;
+    object-fit: contain;
+    pointer-events: none;
+    user-select: none;
+}
+
+.overlay {
+    position: absolute;
+    top: 4px;
+    left: 4px;
+    width: 44px;
+    height: 44px;
+    z-index: 6;
+}
+
+.thumb {
+    position: absolute;
+    bottom: 2px;
+    right: 2px;
+    width: 18px;
+    height: 18px;
+    z-index: 6;
+}
+
+.mini {
+    width: 22px;
+    height: 22px;
+}
+
+.player {
+    width: 36px;
+    height: 36px;
+    margin-right: -2px;
+}
+
+.row {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: 6px;
+    align-items: center;
+}
+
+.textBadge {
+    flex-shrink: 1;
+    max-width: 100%;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+}
+
+.textBadgeDirect {
+    color: #d6b25e;
+    background: rgb(202 160 79 / 24%);
+    border: 1px solid rgb(202 160 79 / 58%);
+}
+
+.textBadgeTranscoded {
+    color: #e0a06d;
+    background: rgb(220 110 40 / 18%);
+    border: 1px solid rgb(220 110 40 / 34%);
+}
+
+.textBadgeUnknown {
+    color: var(--theme-colors-foreground-muted);
+    background: rgb(255 255 255 / 7%);
+    border: 1px solid rgb(255 255 255 / 14%);
+}
+
+.textBadgeNeutral {
+    color: var(--theme-colors-foreground);
+    background: rgb(255 255 255 / 10%);
+    border: 1px solid rgb(255 255 255 / 16%);
+}
+
+.imageWrap {
+    position: relative;
+    display: inline-flex;
+}

@@ -7,8 +7,8 @@ import { useDeleteInternetRadioStationImage } from '/@/renderer/features/radio/m
 import { useUpdateRadioStation } from '/@/renderer/features/radio/mutations/update-radio-station-mutation';
 import { useUploadInternetRadioStationImage } from '/@/renderer/features/radio/mutations/upload-internet-radio-station-image-mutation';
 import { useCurrentServer } from '/@/renderer/store';
-import { logFn } from '/@/renderer/utils/logger';
-import { logMsg } from '/@/renderer/utils/logger-message';
+import { logFn } from '/@/shared/utils/logger';
+import { logMsg } from '/@/shared/utils/logger-message';
 import { hasFeature } from '/@/shared/api/utils';
 import { ActionIcon } from '/@/shared/components/action-icon/action-icon';
 import { Box } from '/@/shared/components/box/box';

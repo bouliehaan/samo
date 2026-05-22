@@ -16,7 +16,7 @@
         "android": {
             "adaptiveIcon": {
                 "foregroundImage": "./assets/adaptive-icon.png",
-                "backgroundColor": "#17130d"
+                "backgroundColor": "#000000"
             },
             "package": "app.samo.android",
             "edgeToEdgeEnabled": true,

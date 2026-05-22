@@ -6,6 +6,7 @@ import { Link, useParams } from 'react-router';
 import styles from './album-detail-header.module.css';
 
 import { queryKeys } from '/@/renderer/api/query-keys';
+import { QualityBadge } from '/@/renderer/components/quality-badge/quality-badge';
 import { albumQueries } from '/@/renderer/features/albums/api/album-api';
 import { JoinedArtists } from '/@/renderer/features/albums/components/joined-artists';
 import { ContextMenuController } from '/@/renderer/features/context-menu/context-menu-controller';
@@ -14,7 +15,11 @@ import {
     LibraryHeader,
     LibraryHeaderMenu,
 } from '/@/renderer/features/shared/components/library-header';
-import { logFn } from '/@/renderer/utils/logger';
+import {
+    getAlbumQualityProfile,
+    usePlaybackDeliveryKind,
+} from '/@/renderer/utils/quality-profile';
+import { logFn } from '/@/shared/utils/logger';
 import { useSetFavorite } from '/@/renderer/features/shared/hooks/use-set-favorite';
 import { songsQueries } from '/@/renderer/features/songs/api/songs-api';
 import { AppRoute } from '/@/renderer/router/routes';
@@ -234,9 +239,19 @@ export const AlbumDetailHeader = forwardRef<HTMLDivElement>((_props, ref) => {
         return null;
     }, [detailQuery?.data, t]);
 
+    const deliveryKind = usePlaybackDeliveryKind();
+    const albumQualityProfile = detailQuery?.data
+        ? getAlbumQualityProfile(detailQuery.data, detailQuery.data.songs, deliveryKind)
+        : undefined;
+
     return (
         <Stack ref={ref}>
             <LibraryHeader
+                imageOverlay={
+                    albumQualityProfile ? (
+                        <QualityBadge overlay profile={albumQualityProfile} />
+                    ) : undefined
+                }
                 item={{
                     children: headerItem,
                     explicitStatus: detailQuery?.data?.explicitStatus ?? null,

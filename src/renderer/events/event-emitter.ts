@@ -1,7 +1,7 @@
 import { ErrorHandler, EventCallback, TypedEventEmitter } from './types';
 
 import { EventMap } from '/@/renderer/events/events';
-import { logFn } from '/@/renderer/utils/logger';
+import { logFn } from '/@/shared/utils/logger';
 
 class TypedEventEmitterImpl implements TypedEventEmitter<EventMap> {
     private errorHandler: ErrorHandler | null = null;

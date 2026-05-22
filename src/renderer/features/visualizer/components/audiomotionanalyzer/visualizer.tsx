@@ -11,7 +11,7 @@ import {
     useFullScreenPlayerStore,
     useFullScreenPlayerStoreActions,
 } from '/@/renderer/store/full-screen-player.store';
-import { logFn } from '/@/renderer/utils/logger';
+import { logFn } from '/@/shared/utils/logger';
 import { usePlayerStatus } from '/@/renderer/store/player.store';
 import { ActionIcon } from '/@/shared/components/action-icon/action-icon';
 import { Group } from '/@/shared/components/group/group';

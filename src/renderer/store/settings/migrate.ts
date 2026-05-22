@@ -395,5 +395,9 @@ export const createSettingsMigrate =
                     }
                 }
 
+                if (version <= 33 && !state.playback.castReceiverAppId) {
+                    state.playback.castReceiverAppId = initialState.playback.castReceiverAppId;
+                }
+
                 return persistedState;
     };

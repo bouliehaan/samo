@@ -5,7 +5,9 @@
     "main": "index.ts",
     "scripts": {
         "android": "NODE_ENV=development JAVA_HOME=\"/Applications/Android Studio.app/Contents/jbr/Contents/Home\" expo run:android",
-        "android:build": "cd android && NODE_ENV=development JAVA_HOME=\"/Applications/Android Studio.app/Contents/jbr/Contents/Home\" ./gradlew app:assembleDebug -x lint -x test",
+        "android:emu": "NODE_ENV=development JAVA_HOME=\"/Applications/Android Studio.app/Contents/jbr/Contents/Home\" expo run:android -- -PreactNativeArchitectures=x86_64",
+        "android:build": "cd android && NODE_ENV=development JAVA_HOME=\"/Applications/Android Studio.app/Contents/jbr/Contents/Home\" ./gradlew app:assembleDebug -PreactNativeArchitectures=arm64-v8a -x lint -x test",
+        "android:release": "cd android && JAVA_HOME=\"/Applications/Android Studio.app/Contents/jbr/Contents/Home\" ./gradlew app:assembleRelease -PreactNativeArchitectures=armeabi-v7a,arm64-v8a,x86,x86_64 -x lint -x test",
         "android:metro": "expo start --android",
         "ios": "expo run:ios",
         "start": "expo start --dev-client",

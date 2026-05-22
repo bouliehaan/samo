@@ -7,7 +7,7 @@ import { useCurrentServerId } from '/@/renderer/store';
 import { ConfirmModal } from '/@/shared/components/modal/modal';
 import { Text } from '/@/shared/components/text/text';
 import { toast } from '/@/shared/components/toast/toast';
-import { logFn } from '/@/renderer/utils/logger';
+import { logFn } from '/@/shared/utils/logger';
 
 export const SaveAndReplaceContextModal = ({
     innerProps,

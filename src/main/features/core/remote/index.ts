@@ -1,19 +1,17 @@
 import axios from 'axios';
-import { app, ipcMain } from 'electron';
-import { promises, Stats } from 'fs';
-import { readFile } from 'fs/promises';
-import { createServer, IncomingMessage, Server, ServerResponse } from 'http';
-import { join } from 'path';
+import { ipcMain } from 'electron';
+import { createServer, IncomingMessage, Server } from 'http';
 import { WebSocket, WebSocketServer, Server as WsServer } from 'ws';
-import { deflate, gzip } from 'zlib';
 
 import manifest from './manifest.json';
 
+import { subscribePlayerStateEvent } from '/@/main/features/core/player-state-broadcast';
 import { getMainWindow } from '/@/main/index';
 import { isLinux } from '/@/main/utils';
-import { QueueSong } from '/@/shared/types/domain-types';
 import { ClientEvent, ServerEvent } from '/@/shared/types/remote-types';
-import { PlayerRepeat, PlayerStatus, SongState } from '/@/shared/types/types';
+import { PlayerRepeat, SongState } from '/@/shared/types/types';
+
+import { serveFile } from './http-static';
 
 let mprisPlayer: any | undefined;
 
@@ -25,15 +23,6 @@ async function initMpris() {
 }
 
 initMpris();
-
-interface MimeType {
-    css: string;
-    html: string;
-    ico: string;
-    js: string;
-    png: string;
-    svg: string;
-}
 
 interface RemoteConfig {
     enabled: boolean;
@@ -90,45 +79,10 @@ export const shutdownServer = () => {
     }
 };
 
-const MIME_TYPES: MimeType = {
-    css: 'text/css',
-    html: 'text/html; charset=UTF-8',
-    ico: 'image/x-icon',
-    js: 'application/javascript',
-    png: 'image/png',
-    svg: 'image/svg+xml',
-};
-
 const PING_TIMEOUT_MS = 10000;
 const UP_TIMEOUT_MS = 5000;
 
-enum Encoding {
-    GZIP = 'gzip',
-    NONE = 'none',
-    ZLIB = 'deflate',
-}
-
-const GZIP_REGEX = /\bgzip\b/;
-const ZLIB_REGEX = /bdeflate\b/;
-
 const currentState: SongState = {};
-
-const getEncoding = (encoding: string | string[]): Encoding => {
-    const encodingArray = Array.isArray(encoding) ? encoding : [encoding];
-
-    for (const code of encodingArray) {
-        if (code.match(GZIP_REGEX)) {
-            return Encoding.GZIP;
-        }
-        if (code.match(ZLIB_REGEX)) {
-            return Encoding.ZLIB;
-        }
-    }
-
-    return Encoding.NONE;
-};
-
-const cache = new Map<string, Map<Encoding, [number, Buffer]>>();
 
 function authorize(req: IncomingMessage): boolean {
     if (settings.username || settings.password) {
@@ -141,137 +95,6 @@ function authorize(req: IncomingMessage): boolean {
     }
 
     return true;
-}
-
-async function serveFile(
-    req: IncomingMessage,
-    file: string,
-    extension: keyof MimeType,
-    res: ServerResponse,
-): Promise<void> {
-    const fileName = `${file}.${extension}`;
-    const path = app.isPackaged
-        ? join(__dirname, '../remote', fileName)
-        : join(__dirname, '../../out/remote', fileName);
-
-    let stats: Stats;
-
-    try {
-        stats = await promises.stat(path);
-    } catch (error) {
-        res.statusCode = 404;
-        res.setHeader('Content-Type', 'text/plain');
-        res.end((error as Error).message);
-        // This is a resolve, even though it is an error, because we want specific (non 500) status
-        return Promise.resolve();
-    }
-
-    const encodings = req.headers['accept-encoding'] ?? '';
-    const selectedEncoding = getEncoding(encodings);
-
-    const ifMatch = req.headers['if-none-match'];
-
-    const fileInfo = cache.get(fileName);
-    let cached = fileInfo?.get(selectedEncoding);
-
-    if (cached && cached[0] !== stats.mtimeMs) {
-        cache.get(fileName)!.delete(selectedEncoding);
-        cached = undefined;
-    }
-
-    if (ifMatch && cached) {
-        const options = ifMatch.split(',');
-
-        for (const option of options) {
-            const mTime = Number(option.replaceAll('"', '').trim());
-
-            if (cached[0] === mTime) {
-                setOk(res, cached[0], extension, selectedEncoding);
-                return Promise.resolve();
-            }
-        }
-    }
-
-    if (!cached || cached[0] !== stats.mtimeMs) {
-        const content = await readFile(path);
-
-        switch (selectedEncoding) {
-            case Encoding.GZIP:
-                return new Promise((resolve, reject) => {
-                    gzip(content, (error, result) => {
-                        if (error) {
-                            reject(error);
-                            return;
-                        }
-
-                        const newEntry: [number, Buffer] = [stats.mtimeMs, result];
-
-                        if (fileInfo) {
-                            fileInfo.set(selectedEncoding, newEntry);
-                        } else {
-                            cache.set(fileName, new Map([[selectedEncoding, newEntry]]));
-                        }
-
-                        setOk(res, stats.mtimeMs, extension, selectedEncoding, result);
-                        resolve();
-                    });
-                });
-
-            case Encoding.ZLIB:
-                return new Promise((resolve, reject) => {
-                    deflate(content, (error, result) => {
-                        if (error) {
-                            reject(error);
-                            return;
-                        }
-
-                        const newEntry: [number, Buffer] = [stats.mtimeMs, result];
-
-                        if (fileInfo) {
-                            fileInfo.set(selectedEncoding, newEntry);
-                        } else {
-                            cache.set(fileName, new Map([[selectedEncoding, newEntry]]));
-                        }
-
-                        setOk(res, stats.mtimeMs, extension, selectedEncoding, result);
-                        resolve();
-                    });
-                });
-            default: {
-                const newEntry: [number, Buffer] = [stats.mtimeMs, content];
-
-                if (fileInfo) {
-                    fileInfo.set(selectedEncoding, newEntry);
-                } else {
-                    cache.set(fileName, new Map([[selectedEncoding, newEntry]]));
-                }
-
-                setOk(res, stats.mtimeMs, extension, selectedEncoding, content);
-                return Promise.resolve();
-            }
-        }
-    }
-
-    setOk(res, cached[0], extension, selectedEncoding, cached[1]);
-
-    return Promise.resolve();
-}
-
-function setOk(
-    res: ServerResponse,
-    mtimeMs: number,
-    extension: keyof MimeType,
-    encoding: Encoding,
-    data?: Buffer,
-) {
-    res.statusCode = data ? 200 : 304;
-
-    res.setHeader('Content-Type', MIME_TYPES[extension]);
-    res.setHeader('ETag', `"${mtimeMs}"`);
-    res.setHeader('Cache-Control', 'public');
-
-    if (encoding !== 'none') res.setHeader('Content-Encoding', encoding);
-    res.end(data);
 }
 
 const enableServer = (config: RemoteConfig): Promise<void> => {
@@ -585,7 +408,7 @@ ipcMain.on('remote-username', (_event, username: string) => {
     wsServer?.clients.forEach((client) => client.close(4002));
 });
 
-ipcMain.on('update-favorite', (_event, favorite: boolean, serverId: string, ids: string[]) => {
+subscribePlayerStateEvent('favorite', ({ favorite, ids, serverId }) => {
     if (currentState.song?._serverId !== serverId) return;
 
     const id = currentState.song.id;
@@ -599,7 +422,7 @@ ipcMain.on('update-favorite', (_event, favorite: boolean, serverId: string, ids:
     }
 });
 
-ipcMain.on('update-rating', (_event, rating: number, serverId: string, ids: string[]) => {
+subscribePlayerStateEvent('rating', ({ ids, rating, serverId }) => {
     if (currentState.song?._serverId !== serverId) return;
 
     const id = currentState.song.id;
@@ -613,22 +436,22 @@ ipcMain.on('update-rating', (_event, rating: number, serverId: string, ids: stri
     }
 });
 
-ipcMain.on('update-repeat', (_event, repeat: PlayerRepeat) => {
+subscribePlayerStateEvent('repeat', (repeat) => {
     currentState.repeat = repeat;
     broadcast({ data: repeat, event: 'repeat' });
 });
 
-ipcMain.on('update-shuffle', (_event, shuffle: boolean) => {
+subscribePlayerStateEvent('shuffle', (shuffle) => {
     currentState.shuffle = shuffle;
     broadcast({ data: shuffle, event: 'shuffle' });
 });
 
-ipcMain.on('update-playback', (_event, status: PlayerStatus) => {
+subscribePlayerStateEvent('playback', (status) => {
     currentState.status = status;
     broadcast({ data: status, event: 'playback' });
 });
 
-ipcMain.on('update-song', (_event, song: QueueSong | undefined, imageUrl?: null | string) => {
+subscribePlayerStateEvent('song', ({ imageUrl, song }) => {
     const songChanged = song?.id !== currentState.song?.id;
     if (song) {
         song.imageUrl = imageUrl || null;
@@ -640,7 +463,7 @@ ipcMain.on('update-song', (_event, song: QueueSong | undefined, imageUrl?: null 
     }
 });
 
-ipcMain.on('update-volume', (_event, volume: number) => {
+subscribePlayerStateEvent('volume', (volume) => {
     currentState.volume = volume;
     broadcast({ data: volume, event: 'volume' });
 });
@@ -674,7 +497,7 @@ if (mprisPlayer) {
     });
 }
 
-ipcMain.on('update-position', (_event, position: number) => {
+subscribePlayerStateEvent('position', (position) => {
     currentState.position = position;
     broadcast({ data: position, event: 'position' });
 });

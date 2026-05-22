@@ -1,6 +1,6 @@
-import { ipcMain } from 'electron';
 import Player from 'mpris-service';
 
+import { subscribePlayerStateEvent } from '/@/main/features/core/player-state-broadcast';
 import { getMainWindow } from '/@/main/index';
 import { QueueSong } from '/@/shared/types/domain-types';
 import { PlayerRepeat, PlayerStatus } from '/@/shared/types/types';
@@ -111,19 +111,19 @@ mprisPlayer.on('raise', () => {
     getMainWindow()?.show();
 });
 
-ipcMain.on('update-position', (_event, arg: number) => {
+subscribePlayerStateEvent('position', (arg) => {
     mprisPlayer.getPosition = () => arg * 1e6;
 });
 
-ipcMain.on('update-seek', (_event, arg) => {
+subscribePlayerStateEvent('seek', (arg) => {
     mprisPlayer.seeked(arg * 1e6);
 });
 
-ipcMain.on('update-volume', (_event, volume) => {
+subscribePlayerStateEvent('volume', (volume) => {
     mprisPlayer.volume = Number(volume) / 100;
 });
 
-ipcMain.on('update-playback', (_event, status: PlayerStatus) => {
+subscribePlayerStateEvent('playback', (status) => {
     mprisPlayer.playbackStatus = status === PlayerStatus.PLAYING ? 'Playing' : 'Paused';
 });
 
@@ -133,73 +133,70 @@ const REPEAT_TO_MPRIS: Record<PlayerRepeat, string> = {
     [PlayerRepeat.ONE]: 'Track',
 };
 
-ipcMain.on('update-repeat', (_event, arg: PlayerRepeat) => {
+subscribePlayerStateEvent('repeat', (arg) => {
     mprisPlayer.loopStatus = REPEAT_TO_MPRIS[arg];
 });
 
-ipcMain.on('update-shuffle', (_event, shuffle: boolean) => {
+subscribePlayerStateEvent('shuffle', (shuffle) => {
     mprisPlayer.shuffle = shuffle;
 });
 
-ipcMain.on(
-    'update-song',
-    (_event, song: QueueSong | undefined, imageUrl: null | string | undefined) => {
-        try {
-            if (!song?.id) {
-                mprisPlayer.metadata = {};
-                return;
-            }
+subscribePlayerStateEvent('song', ({ imageUrl, song }: { imageUrl?: null | string; song: QueueSong | undefined }) => {
+    try {
+        if (!song?.id) {
+            mprisPlayer.metadata = {};
+            return;
+        }
 
-            // If the served id is an empty string, this is a radio
-            // Use a limited subset of the fields
-            if (song._serverId === '') {
-                // The id as passed in from use-mpris is radio- plus the radio ID
-                // If there are spaces or some other characters, this causes MPRIS to error and
-                // disconnect the bus. To prevent this, just use a fake track/radio
-                mprisPlayer.metadata = {
-                    'mpris:trackid': mprisPlayer.objectPath(`track/radio`),
-                    'xesam:album': song.album || null,
-                    'xesam:artist': song.artists?.length
-                        ? song.artists.map((artist) => artist.name)
-                        : null,
-                    'xesam:title': song.name || null,
-                };
-                return;
-            }
-
+        // If the served id is an empty string, this is a radio
+        // Use a limited subset of the fields
+        if (song._serverId === '') {
+            // The id as passed in from use-mpris is radio- plus the radio ID
+            // If there are spaces or some other characters, this causes MPRIS to error and
+            // disconnect the bus. To prevent this, just use a fake track/radio
             mprisPlayer.metadata = {
-                'mpris:artUrl': imageUrl || null,
-                'mpris:length': song.duration ? Math.round((song.duration || 0) * 1e3) : null,
-                'mpris:trackid': song.id
-                    ? mprisPlayer.objectPath(`track/${song.id?.replace('-', '')}`)
-                    : '',
+                'mpris:trackid': mprisPlayer.objectPath(`track/radio`),
                 'xesam:album': song.album || null,
-                'xesam:albumArtist': song.albumArtists?.length
-                    ? song.albumArtists.map((artist) => artist.name)
-                    : null,
                 'xesam:artist': song.artists?.length
                     ? song.artists.map((artist) => artist.name)
                     : null,
-                'xesam:audioBpm': song.bpm,
-                // Comment is a `list of strings` type
-                'xesam:comment': song.comment ? [song.comment] : null,
-                'xesam:contentCreated': song.releaseDate,
-                'xesam:discNumber': song.discNumber ? song.discNumber : null,
-                'xesam:genre': song.genres?.length
-                    ? song.genres.map((genre: any) => genre.name)
-                    : null,
-                'xesam:lastUsed': song.lastPlayedAt,
                 'xesam:title': song.name || null,
-                'xesam:trackNumber': song.trackNumber ? song.trackNumber : null,
-                'xesam:useCount':
-                    song.playCount !== null && song.playCount !== undefined ? song.playCount : null,
-                // User ratings are only on Navidrome/Subsonic and are on a scale of 1-5
-                'xesam:userRating': song.userRating ? song.userRating / 5 : null,
             };
-        } catch (err) {
-            console.error(err);
+            return;
         }
-    },
-);
+
+        mprisPlayer.metadata = {
+            'mpris:artUrl': imageUrl || null,
+            'mpris:length': song.duration ? Math.round((song.duration || 0) * 1e3) : null,
+            'mpris:trackid': song.id
+                ? mprisPlayer.objectPath(`track/${song.id?.replace('-', '')}`)
+                : '',
+            'xesam:album': song.album || null,
+            'xesam:albumArtist': song.albumArtists?.length
+                ? song.albumArtists.map((artist) => artist.name)
+                : null,
+            'xesam:artist': song.artists?.length
+                ? song.artists.map((artist) => artist.name)
+                : null,
+            'xesam:audioBpm': song.bpm,
+            // Comment is a `list of strings` type
+            'xesam:comment': song.comment ? [song.comment] : null,
+            'xesam:contentCreated': song.releaseDate,
+            'xesam:discNumber': song.discNumber ? song.discNumber : null,
+            'xesam:genre': song.genres?.length
+                ? song.genres.map((genre: any) => genre.name)
+                : null,
+            'xesam:lastUsed': song.lastPlayedAt,
+            'xesam:title': song.name || null,
+            'xesam:trackNumber': song.trackNumber ? song.trackNumber : null,
+            'xesam:useCount':
+                song.playCount !== null && song.playCount !== undefined ? song.playCount : null,
+            // User ratings are only on Navidrome/Subsonic and are on a scale of 1-5
+            'xesam:userRating': song.userRating ? song.userRating / 5 : null,
+        };
+    } catch (err) {
+        console.error(err);
+    }
+});
 
 export { mprisPlayer };

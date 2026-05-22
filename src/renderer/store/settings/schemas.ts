@@ -5,6 +5,7 @@ import { FontValueSchema } from '/@/renderer/types/fonts';
 import { sanitizeCss } from '/@/renderer/utils/sanitize';
 import { AppTheme } from '/@/shared/themes/app-theme-types';
 import { LibraryItem, LyricSource, SavedCollection } from '/@/shared/types/domain-types';
+import { BindingActions } from '/@/shared/types/hotkeys';
 import {
     FontType,
     ItemListKey,
@@ -71,47 +72,7 @@ const ArtistReleaseTypeItemSchema = z.enum([
     'releaseTypeSpokenWord',
 ]);
 
-const BindingActionsSchema = z.enum([
-    'browserBack',
-    'browserForward',
-    'favoriteCurrentAdd',
-    'favoriteCurrentRemove',
-    'favoriteCurrentToggle',
-    'favoritePreviousAdd',
-    'favoritePreviousRemove',
-    'favoritePreviousToggle',
-    'globalSearch',
-    'localSearch',
-    'volumeMute',
-    'navigateHome',
-    'next',
-    'pause',
-    'play',
-    'playPause',
-    'previous',
-    'rate0',
-    'rate1',
-    'rate2',
-    'rate3',
-    'rate4',
-    'rate5',
-    'toggleShuffle',
-    'skipBackward',
-    'skipForward',
-    'stop',
-    'toggleFullscreenPlayer',
-    'toggleQueue',
-    'toggleRepeat',
-    'volumeDown',
-    'volumeUp',
-    'zoomIn',
-    'zoomOut',
-    'listPlayDefault',
-    'listPlayNow',
-    'listPlayNext',
-    'listPlayLast',
-    'listNavigateToPage',
-]);
+const BindingActionsSchema = z.nativeEnum(BindingActions);
 
 const DiscordDisplayTypeSchema = z.enum(['artist', 'samo', 'song']);
 
@@ -478,7 +439,7 @@ const HotkeysSettingsSchema = z.object({
     bindings: z
         .record(BindingActionsSchema, HotkeyBindingSchema)
         .refine((obj): obj is Required<typeof obj> =>
-            BindingActionsSchema.options.every((key) => obj[key] != null),
+            Object.values(BindingActions).every((key) => obj[key] != null),
         ),
     globalMediaHotkeys: z.boolean(),
 });
@@ -564,6 +525,8 @@ const PlayerFilterSchema = z.object({
 const PlaybackSettingsSchema = z.object({
     audioDeviceId: z.string().nullable().optional(),
     audioFadeOnStatusChange: z.boolean(),
+    /** @deprecated Unused — desktop Cast always uses the Google default media receiver. */
+    castReceiverAppId: z.string().optional(),
     filters: z.array(PlayerFilterSchema),
     mediaSession: z.boolean(),
     mpvAudioDeviceId: z.string().nullable().optional(),
@@ -690,47 +653,7 @@ export enum BarAlign {
     TOP = 'top',
 }
 
-export enum BindingActions {
-    BROWSER_BACK = 'browserBack',
-    BROWSER_FORWARD = 'browserForward',
-    FAVORITE_CURRENT_ADD = 'favoriteCurrentAdd',
-    FAVORITE_CURRENT_REMOVE = 'favoriteCurrentRemove',
-    FAVORITE_CURRENT_TOGGLE = 'favoriteCurrentToggle',
-    FAVORITE_PREVIOUS_ADD = 'favoritePreviousAdd',
-    FAVORITE_PREVIOUS_REMOVE = 'favoritePreviousRemove',
-    FAVORITE_PREVIOUS_TOGGLE = 'favoritePreviousToggle',
-    GLOBAL_SEARCH = 'globalSearch',
-    LIST_NAVIGATE_TO_PAGE = 'listNavigateToPage',
-    LIST_PLAY_DEFAULT = 'listPlayDefault',
-    LIST_PLAY_LAST = 'listPlayLast',
-    LIST_PLAY_NEXT = 'listPlayNext',
-    LIST_PLAY_NOW = 'listPlayNow',
-    LOCAL_SEARCH = 'localSearch',
-    MUTE = 'volumeMute',
-    NAVIGATE_HOME = 'navigateHome',
-    NEXT = 'next',
-    PAUSE = 'pause',
-    PLAY = 'play',
-    PLAY_PAUSE = 'playPause',
-    PREVIOUS = 'previous',
-    RATE_0 = 'rate0',
-    RATE_1 = 'rate1',
-    RATE_2 = 'rate2',
-    RATE_3 = 'rate3',
-    RATE_4 = 'rate4',
-    RATE_5 = 'rate5',
-    SHUFFLE = 'toggleShuffle',
-    SKIP_BACKWARD = 'skipBackward',
-    SKIP_FORWARD = 'skipForward',
-    STOP = 'stop',
-    TOGGLE_FULLSCREEN_PLAYER = 'toggleFullscreenPlayer',
-    TOGGLE_QUEUE = 'toggleQueue',
-    TOGGLE_REPEAT = 'toggleRepeat',
-    VOLUME_DOWN = 'volumeDown',
-    VOLUME_UP = 'volumeUp',
-    ZOOM_IN = 'zoomIn',
-    ZOOM_OUT = 'zoomOut',
-}
+export { BindingActions } from '/@/shared/types/hotkeys';
 
 export enum DiscordDisplayType {
     ARTIST_NAME = 'artist',

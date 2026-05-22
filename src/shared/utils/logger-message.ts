@@ -1,4 +1,4 @@
-import { LogCategory } from '/@/renderer/utils/logger';
+import { LogCategory } from '/@/shared/utils/logger';
 
 export const logMsg = {
     [LogCategory.ANALYTICS]: {

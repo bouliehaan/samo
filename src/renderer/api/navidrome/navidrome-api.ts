@@ -13,7 +13,7 @@ import { ndType } from '/@/shared/api/navidrome/navidrome-types';
 import { resultWithHeaders } from '/@/shared/api/utils';
 import { toast } from '/@/shared/components/toast/toast';
 import { ServerListItemWithCredential, ServerType } from '/@/shared/types/domain-types';
-import { logFn } from '/@/renderer/utils/logger';
+import { logFn } from '/@/shared/utils/logger';
 
 const localSettings = isElectron() ? window.api.localSettings : null;
 

@@ -8,7 +8,7 @@ import {
     SettingOption,
     SettingsSection,
 } from '/@/renderer/features/settings/components/settings-section';
-import { logFn } from '/@/renderer/utils/logger';
+import { logFn } from '/@/shared/utils/logger';
 import { Button } from '/@/shared/components/button/button';
 import { ConfirmModal } from '/@/shared/components/modal/modal';
 import { toast } from '/@/shared/components/toast/toast';

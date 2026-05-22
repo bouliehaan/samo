@@ -13,7 +13,7 @@ import { Stack } from '/@/shared/components/stack/stack';
 import { Table } from '/@/shared/components/table/table';
 import { useDisclosure } from '/@/shared/hooks/use-disclosure';
 import { ServerListItem as ServerItem } from '/@/shared/types/domain-types';
-import { logFn } from '/@/renderer/utils/logger';
+import { logFn } from '/@/shared/utils/logger';
 
 const localSettings = isElectron() ? window.api.localSettings : null;
 

@@ -951,6 +951,7 @@ export const initialState: SettingsState = {
     playback: {
         audioDeviceId: undefined,
         audioFadeOnStatusChange: true,
+        castReceiverAppId: undefined,
         filters: [],
         mediaSession: false,
         mpvAudioDeviceId: undefined,

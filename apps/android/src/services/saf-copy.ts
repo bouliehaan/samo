@@ -1,5 +1,10 @@
 import { DeviceEventEmitter, NativeModules } from 'react-native';
 
+interface SafListedFile {
+    name: string;
+    uri: string;
+}
+
 interface SamoFileSystemNative {
     cancelNativeDownload(downloadId: string): Promise<void>;
     downloadFile(
@@ -8,6 +13,8 @@ interface SamoFileSystemNative {
         destinationFileUri: string,
         headers?: Record<string, string>,
     ): Promise<{ bytesWritten?: number; totalBytes?: number; uri: string }>;
+    listDownloadAudioFiles(treeUri: string): Promise<SafListedFile[]>;
+    readTextDocument(documentUri: string): Promise<string>;
     setDownloadThrottle(bytesPerSecond: number): Promise<void>;
     streamCopyToSaf(
         sourceFileUri: string,
@@ -57,6 +64,31 @@ export const streamCopyToSaf = async (
 
 export const isNativeSafCopyAvailable = (): boolean =>
     typeof native?.streamCopyToSaf === 'function';
+
+export const listSafDownloadAudioFiles = async (
+    treeUri: string,
+): Promise<SafListedFile[]> => {
+    if (!native?.listDownloadAudioFiles) {
+        return [];
+    }
+    try {
+        const listed = await native.listDownloadAudioFiles(treeUri);
+        return Array.isArray(listed) ? listed : [];
+    } catch {
+        return [];
+    }
+};
+
+export const readSafTextDocument = async (documentUri: string): Promise<string | null> => {
+    if (!native?.readTextDocument) {
+        return null;
+    }
+    try {
+        return await native.readTextDocument(documentUri);
+    } catch {
+        return null;
+    }
+};
 
 export const isNativeDownloadAvailable = (): boolean =>
     typeof native?.downloadFile === 'function';

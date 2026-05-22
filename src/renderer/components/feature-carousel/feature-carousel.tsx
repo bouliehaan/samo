@@ -7,6 +7,8 @@ import { generatePath, Link } from 'react-router';
 import styles from './feature-carousel.module.css';
 
 import { ItemImage, useItemImageUrl } from '/@/renderer/components/item-image/item-image';
+import { QualityBadge } from '/@/renderer/components/quality-badge/quality-badge';
+import { type AlbumWithQualityProfile, getAlbumQualityProfile } from '/@/renderer/utils/quality-profile';
 import { usePlayer } from '/@/renderer/features/player/context/player-context';
 import { BackgroundOverlay } from '/@/renderer/features/shared/components/library-background-overlay';
 import { PlayButtonGroup } from '/@/renderer/features/shared/components/play-button-group';
@@ -74,7 +76,7 @@ const getItemsPerRow = (breakpoints: {
 };
 
 interface CarouselItemProps {
-    album: Album;
+    album: AlbumWithQualityProfile;
 }
 
 const CarouselItem = ({ album }: CarouselItemProps) => {
@@ -116,18 +118,23 @@ const CarouselItem = ({ album }: CarouselItemProps) => {
                     </div>
 
                     <div className={styles.imageSection}>
-                        <ItemImage
-                            className={styles.albumImage}
-                            containerClassName={styles.albumImageContainer}
-                            enableDebounce={false}
-                            enableViewport={false}
-                            explicitStatus={album.explicitStatus}
-                            fetchPriority="high"
-                            id={album.imageId}
-                            itemType={LibraryItem.ALBUM}
-                            src={imageUrl}
-                            type="itemCard"
-                        />
+                        <div className={styles['album-image-container']}>
+                            <ItemImage
+                                className={styles.albumImage}
+                                enableDebounce={false}
+                                enableViewport={false}
+                                explicitStatus={album.explicitStatus}
+                                fetchPriority="high"
+                                id={album.imageId}
+                                itemType={LibraryItem.ALBUM}
+                                src={imageUrl}
+                                type="itemCard"
+                            />
+                            <QualityBadge
+                                overlay
+                                profile={getAlbumQualityProfile(album)}
+                            />
+                        </div>
                         <div className={styles.playButtonOverlay}>
                             <PlayButtonGroup onPlay={handlePlay} />
                         </div>

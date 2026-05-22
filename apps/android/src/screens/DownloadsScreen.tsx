@@ -14,6 +14,7 @@ import {
 
 import {
     cancelDownload,
+    discoverDownloadsOnDisk,
     type DownloadEntry,
     type DownloadStatus,
     getDownloadsRootUri,
@@ -74,6 +75,7 @@ export const DownloadsScreen = ({
 
     useEffect(() => {
         const unsubscribe = subscribeDownloads(setEntries);
+        void discoverDownloadsOnDisk();
         return () => {
             unsubscribe();
         };

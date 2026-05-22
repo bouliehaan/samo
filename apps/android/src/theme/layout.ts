@@ -5,9 +5,17 @@ export const SCREEN_WIDTH = Dimensions.get('window').width;
 
 export const PLAYER_SAFE_TOP = Platform.OS === 'android' ? 24 : 0;
 
-export const MINI_PLAYER_BOTTOM = 75;
+/** Tab bar chrome — keep in sync with `styles.tabBar`. */
+export const TAB_BAR_PADDING_TOP = 8;
+export const TAB_BAR_PADDING_BOTTOM = 16;
+export const TAB_BAR_BUTTON_MIN_HEIGHT = 62;
+export const TAB_BAR_HEIGHT =
+    TAB_BAR_PADDING_TOP + TAB_BAR_BUTTON_MIN_HEIGHT + TAB_BAR_PADDING_BOTTOM;
+
+/** Mini player sits flush on the tab bar — one unified bottom dock. */
+export const MINI_PLAYER_BOTTOM = TAB_BAR_HEIGHT;
 export const MINI_PLAYER_ARTWORK_SIZE = 58;
-export const MINI_PLAYER_VERTICAL_PADDING = 16;
+export const MINI_PLAYER_VERTICAL_PADDING = 12;
 export const MINI_PLAYER_HEIGHT = MINI_PLAYER_ARTWORK_SIZE + MINI_PLAYER_VERTICAL_PADDING * 2;
 /** Slightly rounder than flat; echoes display bottom corners without a pill shape. */
 export const MINI_PLAYER_RADIUS = 34;

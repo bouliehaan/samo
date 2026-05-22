@@ -9,7 +9,7 @@ import { initialState, initialStateWithEnv } from './defaults';
 import { createSettingsMigrate } from './migrate';
 import type { SettingsSlice } from './schemas';
 
-export const SETTINGS_STORE_VERSION = 33;
+export const SETTINGS_STORE_VERSION = 34;
 
 export const useSettingsStore = createWithEqualityFn<SettingsSlice>()(
     persist(

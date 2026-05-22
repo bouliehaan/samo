@@ -102,6 +102,10 @@ const getAudioDevices = async () => {
     return ipcRenderer.invoke('player-get-audio-devices');
 };
 
+const refreshAudioDevices = async () => {
+    return ipcRenderer.invoke('player-refresh-audio-devices');
+};
+
 const rendererAutoNext = (cb: (event: IpcRendererEvent, data: PlayerData) => void) => {
     ipcRenderer.on('renderer-player-auto-next', cb);
 };
@@ -190,6 +194,7 @@ export const mpvPlayer = {
     play,
     previous,
     quit,
+    refreshAudioDevices,
     restart,
     seek,
     seekTo,

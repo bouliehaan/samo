@@ -6,8 +6,8 @@ import { usePlayerEvents } from '/@/renderer/features/player/audio-player/hooks/
 import { useCreateFavorite } from '/@/renderer/features/shared/mutations/create-favorite-mutation';
 import { useDeleteFavorite } from '/@/renderer/features/shared/mutations/delete-favorite-mutation';
 import { getCurrentSong, usePlayerActions, useRemoteSettings } from '/@/renderer/store';
-import { LogCategory, logFn } from '/@/renderer/utils/logger';
-import { logMsg } from '/@/renderer/utils/logger-message';
+import { LogCategory, logFn } from '/@/shared/utils/logger';
+import { logMsg } from '/@/shared/utils/logger-message';
 import { toast } from '/@/shared/components/toast/toast';
 import { LibraryItem } from '/@/shared/types/domain-types';
 import { PlayerShuffle } from '/@/shared/types/types';

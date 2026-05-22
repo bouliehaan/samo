@@ -10,6 +10,10 @@
     filter: blur(30px);
 }
 
+.format-badge {
+    z-index: 8;
+}
+
 .image-container {
     position: relative;
     display: flex;
