@@ -1,43 +1,7 @@
-import { shuffleInPlace } from '/@/renderer/utils/shuffle';
 import { PlayerRepeat, PlayerShuffle } from '@samo/core/playback';
 
+import { shuffleInPlace } from '/@/renderer/utils/shuffle';
 import { QueueSong } from '/@/shared/types/domain-types';
-
-/** Calculates the next song based on repeat mode and current position. */
-export function calculateNextSong(
-    currentIndex: number,
-    queueItems: QueueSong[],
-    repeat: PlayerRepeat,
-): QueueSong | undefined {
-    if (queueItems.length === 0) {
-        return undefined;
-    }
-
-    if (repeat === PlayerRepeat.ONE) {
-        return queueItems[currentIndex];
-    }
-
-    if (repeat === PlayerRepeat.ALL) {
-        const isLastTrack = currentIndex === queueItems.length - 1;
-        return isLastTrack ? queueItems[0] : queueItems[currentIndex + 1];
-    }
-
-    return queueItems[currentIndex + 1];
-}
-
-export function isShuffleEnabled(state: {
-    player: { shuffle: PlayerShuffle };
-    queue: { shuffled: number[] };
-}): boolean {
-    return state.player.shuffle === PlayerShuffle.TRACK && state.queue.shuffled.length > 0;
-}
-
-export function mapShuffledToQueueIndex(shuffledIndex: number, shuffled: number[]): number {
-    if (shuffledIndex >= 0 && shuffledIndex < shuffled.length) {
-        return shuffled[shuffledIndex];
-    }
-    return shuffledIndex;
-}
 
 export function addIndexesToShuffled(
     shuffled: number[],
@@ -87,6 +51,28 @@ export function calculateNextIndex(
     return { nextIndex: currentIndex + 1, shouldPause: false };
 }
 
+/** Calculates the next song based on repeat mode and current position. */
+export function calculateNextSong(
+    currentIndex: number,
+    queueItems: QueueSong[],
+    repeat: PlayerRepeat,
+): QueueSong | undefined {
+    if (queueItems.length === 0) {
+        return undefined;
+    }
+
+    if (repeat === PlayerRepeat.ONE) {
+        return queueItems[currentIndex];
+    }
+
+    if (repeat === PlayerRepeat.ALL) {
+        const isLastTrack = currentIndex === queueItems.length - 1;
+        return isLastTrack ? queueItems[0] : queueItems[currentIndex + 1];
+    }
+
+    return queueItems[currentIndex + 1];
+}
+
 export function findShuffledPositionForQueueIndex(
     queueIndex: number,
     shuffled: number[],
@@ -98,6 +84,20 @@ export function findShuffledPositionForQueueIndex(
 export function generateShuffledIndexes(length: number): number[] {
     const indexes = Array.from({ length }, (_, i) => i);
     return shuffleInPlace(indexes);
+}
+
+export function isShuffleEnabled(state: {
+    player: { shuffle: PlayerShuffle };
+    queue: { shuffled: number[] };
+}): boolean {
+    return state.player.shuffle === PlayerShuffle.TRACK && state.queue.shuffled.length > 0;
+}
+
+export function mapShuffledToQueueIndex(shuffledIndex: number, shuffled: number[]): number {
+    if (shuffledIndex >= 0 && shuffledIndex < shuffled.length) {
+        return shuffled[shuffledIndex];
+    }
+    return shuffledIndex;
 }
 
 export function regenerateShuffledIndexesIfNeeded(state: {

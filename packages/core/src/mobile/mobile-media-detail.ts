@@ -2,6 +2,36 @@ import { isHiResAudioQuality, isLosslessAudioQuality } from '../audio-quality';
 import { annotateSubsonicAlbumsQuality } from './mobile-subsonic-quality';
 import { type ServerAuthenticationResult } from '../server/server-auth';
 import { getFetch, requestJson, type SamoFetch } from '../server/server-http';
+import {
+    type SamoAudioChapter,
+    type SamoBookmark,
+    type SamoListeningSession,
+    type SamoMusicAlbum,
+    type SamoMusicTrack,
+    getSamoAudiobook,
+    getSamoMusicAlbum,
+    getSamoMusicArtist,
+    getSamoMusicPlaylist,
+    listSamoMusicAlbumTracks,
+    listSamoMusicTracks,
+    createSamoMusicPlaylist,
+    getSamoPodcastShow,
+    listSamoAudiobookBookmarks,
+    listSamoAudiobookSessions,
+    listSamoMusicArtistAlbums,
+    listSamoMusicPlaylistTracks,
+    listSamoPodcastEpisodes,
+    resolveSamoAlbumArtworkUrl,
+    resolveSamoArtistArtworkUrl,
+    pickSamoImageId,
+    resolveSamoArtworkImageId,
+    resolveSamoAudiobookArtworkUrl,
+    resolveSamoPlaylistArtworkUrl,
+    resolveSamoPodcastArtworkUrl,
+    resolveSamoPodcastEpisodeArtworkUrl,
+    samoItemsOf,
+} from '../server/server-samo';
+import { ensureSamoStreamToken } from '../server/server-samo-stream-token';
 import { ServerType } from '../server/server-types';
 import {
     buildAudiobookshelfArtworkUrl,
@@ -10,6 +40,9 @@ import {
 } from './mobile-content-source';
 import { type MobileHomeItem, MobileHomeItemType, type MobileQualityProfile } from './mobile-home';
 import {
+    buildSamoAudiobookPlayback,
+    buildSamoMusicPlayback,
+    buildSamoPodcastEpisodePlayback,
     buildSubsonicMusicPlayback,
     type MobilePlayableAudio,
     type MobilePlaybackSegment,
@@ -31,14 +64,81 @@ export interface AddMobileTracksToPlaylistInput {
     songIds: string[];
 }
 
+export interface MobileMediaDetailContributor {
+    id?: string;
+    name: string;
+    role?: string;
+}
+
+export interface MobileMediaDetailBookmark {
+    chapterTitle?: string;
+    createdAt?: number;
+    id: string;
+    note?: string;
+    positionSeconds?: number;
+    title?: string;
+}
+
+export interface MobileMediaDetailSession {
+    durationSeconds?: number;
+    endedAt?: number;
+    id: string;
+    startedAt?: number;
+}
+
+export interface MobileMediaDetailPodcastFeed {
+    consecutiveErrors?: number;
+    feedUrl?: string;
+    lastPollFinishedAt?: number;
+    lastPollStartedAt?: number;
+    nextPollAt?: number;
+    pollEnabled?: boolean;
+    pollIntervalSeconds?: number;
+}
+
 export interface MobileMediaDetail {
     appearsOnItems?: MobileHomeItem[];
     artworkUrl?: string;
+    /** Samo metadata `images[].id` for display-time URL rebuild. */
+    artworkImageId?: string;
+    /**
+     * Audiobook-only — joined "Author Name" string for the hero subtitle.
+     */
+    authorsSummary?: string;
     biography?: string;
+    /**
+     * Audiobook-only — bookmarks the current user has saved against this book.
+     * Populated when the server type is `samo` (Samo native bookmarks). Other
+     * server types leave it undefined.
+     */
+    bookmarks?: MobileMediaDetailBookmark[];
+    /**
+     * Audiobook-only — chapter list parsed from samo's `audiobook_chapters`
+     * data. Empty array when the book has no chapters; undefined for music
+     * and podcast details.
+     */
+    chapters?: MobileMediaDetailBookmark[];
+    /**
+     * Audiobook-only — display string for the audiobook's contributors who
+     * are not the author (typically narrators).
+     */
+    contributors?: MobileMediaDetailContributor[];
+    /**
+     * Podcast-only — feed source + poll state for the show.
+     */
+    feed?: MobileMediaDetailPodcastFeed;
     id: string;
     isHiRes?: boolean;
     items?: MobileHomeItem[];
+    /**
+     * Audiobook-only — recent listening sessions for the current user.
+     */
+    listeningSessions?: MobileMediaDetailSession[];
     metadataLines?: string[];
+    /**
+     * Audiobook-only — narrator display string (joined names).
+     */
+    narratorsSummary?: string;
     /**
      * Representative bit-depth/sample-rate for the whole detail (albums
      * only). Computed by walking detail.tracks at load time; surfaces as
@@ -46,6 +146,16 @@ export interface MobileMediaDetail {
      */
     qualityProfile?: MobileQualityProfile;
     relatedArtists?: MobileHomeItem[];
+    /**
+     * Album-only — number of discs when the server knows it. Used to decide
+     * whether track lists should show disc headers instead of inferring from
+     * partial track payloads.
+     */
+    discCount?: number;
+    /**
+     * Audiobook-only — series sequence summary (e.g. "Lyrik Saga, Book 3").
+     */
+    seriesSummary?: string;
     source: MobileContentSource;
     subtitle?: string;
     title: string;
@@ -67,6 +177,8 @@ export interface MobileMediaTrack {
     artist?: string;
     artistId?: string;
     artworkUrl?: string;
+    /** Samo metadata `images[].id` for display-time URL rebuild. */
+    artworkImageId?: string;
     durationSeconds?: number;
     discNumber?: number;
     episodeId?: string;
@@ -280,6 +392,14 @@ interface SubsonicSong extends SubsonicPlayableSong {
 interface SubsonicUpdatePlaylistBody {
     'subsonic-response'?: {
         error?: SubsonicError;
+        status?: string;
+    };
+}
+
+interface SubsonicCreatePlaylistBody {
+    'subsonic-response'?: {
+        error?: SubsonicError;
+        playlist?: { id?: string; name?: string };
         status?: string;
     };
 }
@@ -1092,6 +1212,529 @@ export const getMobileMediaDetailErrorMessage = (error: unknown) => {
     return error instanceof Error ? error.message : 'Failed to load media detail';
 };
 
+// ---------------------------------------------------------------------------
+// Samo native detail loaders
+// ---------------------------------------------------------------------------
+
+const samoChaptersToBookmarks = (
+    chapters: SamoAudioChapter[] | undefined,
+): MobileMediaDetailBookmark[] => {
+    if (!chapters) return [];
+    return chapters.flatMap((chapter, index) => {
+        const startSeconds = chapter.startSeconds;
+        if (startSeconds === undefined) return [];
+        return [
+            {
+                chapterTitle: chapter.title,
+                id: chapter.id ?? `chapter-${index}`,
+                positionSeconds: startSeconds,
+                title: chapter.title ?? `Chapter ${chapter.index ?? index + 1}`,
+            },
+        ];
+    });
+};
+
+const samoBookmarksToDetail = (
+    bookmarks: SamoBookmark[] | undefined,
+): MobileMediaDetailBookmark[] => {
+    return (bookmarks ?? []).map((bookmark) => ({
+        createdAt: bookmark.createdAt ? Date.parse(bookmark.createdAt) : undefined,
+        id: bookmark.id,
+        note: bookmark.note,
+        positionSeconds: bookmark.positionSeconds,
+        title: bookmark.title,
+    }));
+};
+
+const samoSessionsToDetail = (
+    sessions: SamoListeningSession[] | undefined,
+): MobileMediaDetailSession[] => {
+    return (sessions ?? []).map((session) => ({
+        durationSeconds: session.durationSeconds,
+        endedAt: session.endedAt ? Date.parse(session.endedAt) : undefined,
+        id: session.id,
+        startedAt: session.startedAt ? Date.parse(session.startedAt) : undefined,
+    }));
+};
+
+const samoTrackToMediaTrack = (
+    authentication: ServerAuthenticationResult,
+    track: SamoMusicTrack,
+    albumArtworkUrl: string | undefined,
+    streamToken: string | undefined,
+    albumArtworkImageId?: string,
+): MobileMediaTrack => {
+    const artworkUrl =
+        resolveSamoAlbumArtworkUrl(authentication, { images: track.images }, streamToken) ??
+        albumArtworkUrl;
+    const artworkImageId = pickSamoImageId(track.images) ?? albumArtworkImageId;
+    const playback = buildSamoMusicPlayback(
+        authentication,
+        track,
+        artworkUrl,
+        streamToken,
+        artworkImageId,
+    );
+
+    const artist =
+        track.displayArtist ??
+        track.artistNames?.filter(Boolean).join(', ');
+
+    return {
+        album: track.albumTitle,
+        albumId: track.albumId,
+        artist,
+        artworkUrl,
+        artworkImageId,
+        discNumber: normalizeSamoDiscNumber(track.discNumber),
+        durationSeconds: track.durationSeconds,
+        id: track.id,
+        playback: playback ?? undefined,
+        subtitle: track.displayArtist,
+        title: track.title,
+        trackNumber: track.trackNumber,
+    };
+};
+
+const normalizeSamoDiscNumber = (discNumber?: number): number => {
+    if (!discNumber || discNumber < 1) {
+        return 1;
+    }
+
+    return discNumber;
+};
+
+const sortSamoTracks = (tracks: SamoMusicTrack[]): SamoMusicTrack[] => {
+    return [...tracks].sort((left, right) => {
+        const leftDisc = normalizeSamoDiscNumber(left.discNumber);
+        const rightDisc = normalizeSamoDiscNumber(right.discNumber);
+        if (leftDisc !== rightDisc) {
+            return leftDisc - rightDisc;
+        }
+        return (left.trackNumber ?? 0) - (right.trackNumber ?? 0);
+    });
+};
+
+const samoAlbumQualityProfile = (
+    album: SamoMusicAlbum,
+): MobileQualityProfile | undefined => {
+    const file = album.primaryAudioFile;
+    if (file?.bitDepth && file.sampleRate) {
+        return { bitDepth: file.bitDepth, sampleRate: file.sampleRate };
+    }
+    const top = album.tracks
+        ?.map((track) => track.primaryAudioFile)
+        .find((candidate) => candidate?.bitDepth && candidate.sampleRate);
+    if (top?.bitDepth && top.sampleRate) {
+        return { bitDepth: top.bitDepth, sampleRate: top.sampleRate };
+    }
+    return undefined;
+};
+
+const loadSamoAlbumTracks = async (
+    authentication: ServerAuthenticationResult,
+    fetcher: SamoFetch,
+    albumId: string,
+    album: SamoMusicAlbum,
+): Promise<SamoMusicTrack[]> => {
+    if (album.tracks && album.tracks.length > 0) {
+        return album.tracks;
+    }
+
+    try {
+        const tracksResponse = await listSamoMusicAlbumTracks(fetcher, authentication, albumId, {
+            limit: 500,
+        });
+        const tracks = samoItemsOf(tracksResponse);
+        if (tracks.length > 0) {
+            return tracks;
+        }
+    } catch {
+        // Fall back to scanning the global track list below.
+    }
+
+    const collected: SamoMusicTrack[] = [];
+    const targetCount = album.trackCount ?? Number.POSITIVE_INFINITY;
+
+    for (let offset = 0; offset < 50_000; offset += 500) {
+        const tracksResponse = await listSamoMusicTracks(fetcher, authentication, {
+            limit: 500,
+            offset,
+        });
+        const batch = samoItemsOf(tracksResponse);
+        if (batch.length === 0) {
+            break;
+        }
+
+        collected.push(...batch.filter((track) => track.albumId === albumId));
+        if (collected.length >= targetCount) {
+            break;
+        }
+        if (batch.length < 500) {
+            break;
+        }
+    }
+
+    return collected;
+};
+
+const loadSamoAlbumDetail = async (
+    authentication: ServerAuthenticationResult,
+    fetcher: SamoFetch,
+    id: string,
+): Promise<MobileMediaDetail> => {
+    const streamToken = await ensureSamoStreamToken(authentication, fetcher).catch(() => undefined);
+    const album = await getSamoMusicAlbum(fetcher, authentication, id);
+    const albumTracks = sortSamoTracks(await loadSamoAlbumTracks(authentication, fetcher, id, album));
+    let artworkUrl = resolveSamoAlbumArtworkUrl(authentication, album, streamToken);
+    if (!artworkUrl) {
+        for (const track of albumTracks) {
+            artworkUrl = resolveSamoAlbumArtworkUrl(
+                authentication,
+                { images: track.images },
+                streamToken,
+            );
+            if (artworkUrl) {
+                break;
+            }
+        }
+    }
+    const artworkImageId = resolveSamoArtworkImageId(album.images, albumTracks);
+    const tracks = albumTracks.map((track) =>
+        samoTrackToMediaTrack(
+            authentication,
+            track,
+            artworkUrl,
+            streamToken,
+            artworkImageId,
+        ),
+    );
+
+    const metadataLines: string[] = [];
+    if (album.releaseYear) metadataLines.push(String(album.releaseYear));
+    if (album.genres && album.genres.length > 0) metadataLines.push(album.genres.join(', '));
+    if (album.recordLabel) metadataLines.push(album.recordLabel);
+
+    return {
+        artworkUrl,
+        artworkImageId,
+        discCount: album.discCount,
+        id: album.id,
+        metadataLines: metadataLines.length > 0 ? metadataLines : undefined,
+        qualityProfile: samoAlbumQualityProfile(album),
+        source: getMobileContentSource(authentication),
+        subtitle: album.displayArtist ?? album.albumArtistNames?.filter(Boolean).join(', '),
+        title: album.title,
+        tracks,
+        type: MobileMediaDetailType.ALBUM,
+    };
+};
+
+const loadSamoArtistDetail = async (
+    authentication: ServerAuthenticationResult,
+    fetcher: SamoFetch,
+    id: string,
+): Promise<MobileMediaDetail> => {
+    const streamToken = await ensureSamoStreamToken(authentication, fetcher).catch(() => undefined);
+    const [artist, albumsResponse] = await Promise.all([
+        getSamoMusicArtist(fetcher, authentication, id),
+        listSamoMusicArtistAlbums(fetcher, authentication, id, { limit: 200 }),
+    ]);
+    const source = getMobileContentSource(authentication);
+    const items: MobileHomeItem[] = samoItemsOf(albumsResponse).flatMap((album) => {
+        if (!album.id || !album.title) return [];
+        return [
+            {
+                addedAt: album.addedAt ? Date.parse(album.addedAt) : undefined,
+                artworkImageId: pickSamoImageId(album.images),
+                artworkUrl: resolveSamoAlbumArtworkUrl(authentication, album, streamToken),
+                id: album.id,
+                qualityProfile:
+                    album.primaryAudioFile?.bitDepth && album.primaryAudioFile.sampleRate
+                        ? {
+                              bitDepth: album.primaryAudioFile.bitDepth,
+                              sampleRate: album.primaryAudioFile.sampleRate,
+                          }
+                        : undefined,
+                source,
+                subtitle: album.releaseYear ? String(album.releaseYear) : undefined,
+                title: album.title,
+                type: MobileHomeItemType.ALBUM,
+            },
+        ];
+    });
+
+    const metadataLines: string[] = [];
+    if (artist.albumCount) metadataLines.push(`${artist.albumCount} albums`);
+    if (artist.trackCount) metadataLines.push(`${artist.trackCount} tracks`);
+    if (artist.country) metadataLines.push(artist.country);
+
+    return {
+        artworkUrl: resolveSamoArtistArtworkUrl(authentication, artist, streamToken),
+        artworkImageId: pickSamoImageId(artist.images),
+        biography: artist.biography,
+        id: artist.id,
+        items,
+        metadataLines: metadataLines.length > 0 ? metadataLines : undefined,
+        source,
+        subtitle: artist.disambiguation,
+        title: artist.name,
+        tracks: [],
+        type: MobileMediaDetailType.ARTIST,
+    };
+};
+
+const loadSamoPlaylistDetail = async (
+    authentication: ServerAuthenticationResult,
+    fetcher: SamoFetch,
+    id: string,
+): Promise<MobileMediaDetail> => {
+    const streamToken = await ensureSamoStreamToken(authentication, fetcher).catch(() => undefined);
+    const [playlist, tracksResponse] = await Promise.all([
+        getSamoMusicPlaylist(fetcher, authentication, id),
+        listSamoMusicPlaylistTracks(fetcher, authentication, id, { limit: 500 }),
+    ]);
+    const items = samoItemsOf(tracksResponse);
+    const tracks = items.map((track) =>
+        samoTrackToMediaTrack(authentication, track, undefined, streamToken),
+    );
+
+    return {
+        artworkUrl: resolveSamoPlaylistArtworkUrl(authentication, playlist, streamToken),
+        artworkImageId: pickSamoImageId(playlist.images),
+        id: playlist.id,
+        metadataLines: playlist.description ? [playlist.description] : undefined,
+        source: getMobileContentSource(authentication),
+        subtitle:
+            playlist.ownerName ??
+            (playlist.trackCount ? `${playlist.trackCount} tracks` : undefined),
+        title: playlist.name,
+        tracks,
+        type: MobileMediaDetailType.PLAYLIST,
+    };
+};
+
+const loadSamoAudiobookDetail = async (
+    authentication: ServerAuthenticationResult,
+    fetcher: SamoFetch,
+    id: string,
+): Promise<MobileMediaDetail> => {
+    const streamToken = await ensureSamoStreamToken(authentication, fetcher).catch(() => undefined);
+    const [audiobook, bookmarksResponse, sessionsResponse] = await Promise.all([
+        getSamoAudiobook(fetcher, authentication, id),
+        listSamoAudiobookBookmarks(fetcher, authentication, id).catch(() => undefined),
+        listSamoAudiobookSessions(fetcher, authentication, id, { limit: 25 }).catch(
+            () => undefined,
+        ),
+    ]);
+    const artworkUrl = resolveSamoAudiobookArtworkUrl(authentication, audiobook, streamToken);
+    const artworkImageId = pickSamoImageId(audiobook.cover ? [audiobook.cover] : undefined);
+    const title = audiobook.book?.title ?? 'Untitled audiobook';
+    const playback = buildSamoAudiobookPlayback(authentication, audiobook, artworkUrl, streamToken);
+
+    const chapters = samoChaptersToBookmarks(audiobook.chapters);
+    const timelineSegments: MobilePlaybackSegment[] = chapters.flatMap((chapter, index, list) => {
+        const startSeconds = chapter.positionSeconds;
+        if (startSeconds === undefined) return [];
+        const next = list[index + 1]?.positionSeconds;
+        const durationSeconds =
+            next !== undefined ? Math.max(0, next - startSeconds) : undefined;
+        return [
+            {
+                durationSeconds,
+                id: chapter.id,
+                startSeconds,
+                title: chapter.title,
+            },
+        ];
+    });
+
+    const tracks: MobileMediaTrack[] = chapters.length > 0
+        ? chapters.map((chapter, index, list) => {
+              const startSeconds = chapter.positionSeconds ?? 0;
+              const next = list[index + 1]?.positionSeconds;
+              const durationSeconds =
+                  next !== undefined ? Math.max(0, next - startSeconds) : undefined;
+              return {
+                  artworkUrl,
+                  durationSeconds,
+                  id: chapter.id,
+                  itemId: audiobook.id,
+                  playback: playback ? { ...playback, timelineSegments } : undefined,
+                  startSeconds,
+                  subtitle: title,
+                  timelineSegments,
+                  title: chapter.title ?? `Chapter ${index + 1}`,
+                  trackNumber: index + 1,
+              };
+          })
+        : playback
+        ? [
+              {
+                  artworkUrl,
+                  durationSeconds: audiobook.durationSeconds,
+                  id: audiobook.id,
+                  itemId: audiobook.id,
+                  playback,
+                  subtitle: title,
+                  title,
+                  trackNumber: 1,
+              },
+          ]
+        : [];
+
+    const authorsSummary =
+        audiobook.book?.authors?.map((author) => author.name).filter(Boolean).join(', ') ||
+        undefined;
+    const narratorsSummary =
+        audiobook.book?.narrators?.map((person) => person.name).filter(Boolean).join(', ') ||
+        undefined;
+    const seriesSummary = audiobook.series && audiobook.series.length > 0
+        ? audiobook.series
+              .map((entry) =>
+                  audiobook.book?.seriesSequence
+                      ? `${entry.name}, Book ${audiobook.book.seriesSequence}`
+                      : entry.name,
+              )
+              .filter(Boolean)
+              .join(' • ')
+        : undefined;
+
+    const metadataLines: string[] = [];
+    if (authorsSummary) metadataLines.push(authorsSummary);
+    if (narratorsSummary) metadataLines.push(`Narrated by ${narratorsSummary}`);
+    if (seriesSummary) metadataLines.push(seriesSummary);
+    if (audiobook.book?.publisher) metadataLines.push(audiobook.book.publisher);
+    if (audiobook.book?.publishedYear)
+        metadataLines.push(String(audiobook.book.publishedYear));
+
+    return {
+        artworkImageId,
+        artworkUrl,
+        authorsSummary,
+        bookmarks: samoBookmarksToDetail(samoItemsOf(bookmarksResponse)),
+        chapters,
+        contributors: audiobook.book?.narrators?.map((person) => ({
+            id: person.id,
+            name: person.name,
+            role: 'narrator',
+        })),
+        id: audiobook.id,
+        listeningSessions: samoSessionsToDetail(samoItemsOf(sessionsResponse)),
+        metadataLines: metadataLines.length > 0 ? metadataLines : undefined,
+        narratorsSummary,
+        seriesSummary,
+        source: getMobileContentSource(authentication),
+        subtitle: authorsSummary,
+        title,
+        tracks,
+        type: MobileMediaDetailType.AUDIOBOOK,
+    };
+};
+
+const loadSamoPodcastDetail = async (
+    authentication: ServerAuthenticationResult,
+    fetcher: SamoFetch,
+    id: string,
+): Promise<MobileMediaDetail> => {
+    const streamToken = await ensureSamoStreamToken(authentication, fetcher).catch(() => undefined);
+    const [podcast, episodesResponse] = await Promise.all([
+        getSamoPodcastShow(fetcher, authentication, id),
+        listSamoPodcastEpisodes(fetcher, authentication, id, { limit: 500 }),
+    ]);
+    const showArtwork = resolveSamoPodcastArtworkUrl(authentication, podcast, streamToken);
+    const artworkImageId = pickSamoImageId(podcast.cover ? [podcast.cover] : undefined);
+    const showMeta = podcast.podcast;
+    const title = showMeta?.title ?? 'Untitled podcast';
+    const episodes = samoItemsOf(episodesResponse);
+
+    const tracks: MobileMediaTrack[] = episodes.flatMap((episode) => {
+        if (!episode.id) return [];
+        const playback = buildSamoPodcastEpisodePlayback(
+            authentication,
+            episode,
+            podcast.id,
+            resolveSamoPodcastEpisodeArtworkUrl(authentication, episode, streamToken) ?? showArtwork,
+            streamToken,
+        );
+        const episodeTitle = episode.title ?? episode.name ?? 'Untitled episode';
+        return [
+            {
+                artworkUrl: resolveSamoPodcastEpisodeArtworkUrl(authentication, episode, streamToken)
+                    ?? showArtwork,
+                durationSeconds: episode.duration,
+                episodeId: episode.id,
+                id: episode.id,
+                itemId: podcast.id,
+                playback: playback ?? undefined,
+                publishedAt: episode.publishedAt ? Date.parse(episode.publishedAt) : undefined,
+                subtitle: episode.subtitle,
+                title: episodeTitle,
+                trackNumber: episode.episodeNumber,
+            },
+        ];
+    });
+
+    const feed = podcast.feed?.poll
+        ? {
+              consecutiveErrors: podcast.feed.poll.consecutiveErrors,
+              feedUrl: showMeta?.feedUrl ?? podcast.feed.feedUrl,
+              lastPollFinishedAt: podcast.feed.poll.lastPollFinishedAt
+                  ? Date.parse(podcast.feed.poll.lastPollFinishedAt)
+                  : undefined,
+              lastPollStartedAt: podcast.feed.poll.lastPollStartedAt
+                  ? Date.parse(podcast.feed.poll.lastPollStartedAt)
+                  : undefined,
+              nextPollAt: podcast.feed.poll.nextPollAt
+                  ? Date.parse(podcast.feed.poll.nextPollAt)
+                  : undefined,
+              pollEnabled: podcast.feed.poll.pollEnabled,
+              pollIntervalSeconds: podcast.feed.poll.pollIntervalSeconds,
+          }
+        : showMeta?.feedUrl
+        ? { feedUrl: showMeta.feedUrl }
+        : undefined;
+
+    const metadataLines: string[] = [];
+    if (showMeta?.author) metadataLines.push(showMeta.author);
+    if (showMeta?.categories && showMeta.categories.length > 0)
+        metadataLines.push(showMeta.categories.join(', '));
+    if (showMeta?.episodeCount) metadataLines.push(`${showMeta.episodeCount} episodes`);
+
+    return {
+        artworkImageId,
+        artworkUrl: showArtwork,
+        feed,
+        id: podcast.id,
+        metadataLines: metadataLines.length > 0 ? metadataLines : undefined,
+        source: getMobileContentSource(authentication),
+        subtitle: showMeta?.author,
+        title,
+        tracks,
+        type: MobileMediaDetailType.PODCAST,
+    };
+};
+
+const loadSamoMediaDetail = async (
+    authentication: ServerAuthenticationResult,
+    fetcher: SamoFetch,
+    id: string,
+    type: MobileMediaDetailType,
+): Promise<MobileMediaDetail> => {
+    switch (type) {
+        case MobileMediaDetailType.ALBUM:
+            return loadSamoAlbumDetail(authentication, fetcher, id);
+        case MobileMediaDetailType.ARTIST:
+            return loadSamoArtistDetail(authentication, fetcher, id);
+        case MobileMediaDetailType.AUDIOBOOK:
+            return loadSamoAudiobookDetail(authentication, fetcher, id);
+        case MobileMediaDetailType.PLAYLIST:
+            return loadSamoPlaylistDetail(authentication, fetcher, id);
+        case MobileMediaDetailType.PODCAST:
+            return loadSamoPodcastDetail(authentication, fetcher, id);
+    }
+};
+
 export const loadMobileMediaDetail = async ({
     authentication,
     fetch: fetcher,
@@ -1123,6 +1766,10 @@ export const loadMobileMediaDetail = async ({
         if (type === MobileMediaDetailType.ARTIST) {
             return loadSubsonicArtistDetail(authentication, request, id);
         }
+    }
+
+    if (authentication.type === ServerType.SAMO) {
+        return loadSamoMediaDetail(authentication, request, id, type);
     }
 
     throw new Error('Opening this media type is not wired for Android yet.');
@@ -1416,19 +2063,87 @@ export const loadAudiobookshelfPodcastEpisodeFiles = async ({
         }));
 };
 
+export interface CreateMobilePlaylistInput {
+    authentication: ServerAuthenticationResult;
+    fetch?: SamoFetch;
+    name: string;
+    songIds?: string[];
+}
+
+export const createMobilePlaylist = async ({
+    authentication,
+    fetch: fetcher,
+    name,
+    songIds,
+}: CreateMobilePlaylistInput): Promise<MobileHomeItem> => {
+    const trimmedName = name.trim();
+
+    if (!trimmedName) {
+        throw new Error('Playlist name is required.');
+    }
+
+    const filteredSongIds = songIds?.filter(Boolean) ?? [];
+    const request = getFetch(fetcher);
+    const source = getMobileContentSource(authentication);
+
+    if (authentication.type === ServerType.SAMO) {
+        const streamToken = await ensureSamoStreamToken(authentication, request).catch(
+            () => undefined,
+        );
+        const playlist = await createSamoMusicPlaylist(request, authentication, {
+            name: trimmedName,
+            trackIds: filteredSongIds.length > 0 ? filteredSongIds : undefined,
+        });
+
+        return {
+            artworkUrl: resolveSamoPlaylistArtworkUrl(authentication, playlist, streamToken),
+            id: playlist.id,
+            source,
+            subtitle: playlist.trackCount
+                ? `${playlist.trackCount} tracks`
+                : playlist.ownerName ?? undefined,
+            title: playlist.name,
+            type: MobileHomeItemType.PLAYLIST,
+        };
+    }
+
+    if (
+        authentication.type !== ServerType.NAVIDROME &&
+        authentication.type !== ServerType.SUBSONIC
+    ) {
+        throw new Error('Creating playlists is only available for music servers.');
+    }
+
+    const body = await requestJson<SubsonicCreatePlaylistBody>(
+        request,
+        subsonicUrlWithMultiValueQuery(authentication, 'createPlaylist.view', {
+            name: trimmedName,
+            ...(filteredSongIds.length > 0 ? { songId: filteredSongIds } : {}),
+        }),
+    );
+
+    assertSubsonicOk(body['subsonic-response'], 'Failed to create playlist');
+    const created = body['subsonic-response']?.playlist;
+
+    if (!created?.id) {
+        throw new Error('Server did not return a playlist id.');
+    }
+
+    return {
+        id: created.id,
+        source,
+        subtitle: filteredSongIds.length > 0 ? `${filteredSongIds.length} tracks` : undefined,
+        title: created.name ?? trimmedName,
+        type: MobileHomeItemType.PLAYLIST,
+    };
+};
+
 export const addMobileTracksToPlaylist = async ({
     authentication,
     fetch: fetcher,
     playlistId,
     songIds,
 }: AddMobileTracksToPlaylistInput): Promise<void> => {
-    if (
-        authentication.type !== ServerType.NAVIDROME &&
-        authentication.type !== ServerType.SUBSONIC
-    ) {
-        throw new Error('Adding tracks to playlists is only available for music servers.');
-    }
-
     const filteredSongIds = songIds.filter(Boolean);
 
     if (filteredSongIds.length === 0) {
@@ -1436,6 +2151,39 @@ export const addMobileTracksToPlaylist = async ({
     }
 
     const request = getFetch(fetcher);
+
+    if (authentication.type === ServerType.SAMO) {
+        // Samo's playlist update API replaces the trackIds list wholesale, so
+        // load the current track set and append. Single round-trip in/out.
+        const current = await listSamoMusicPlaylistTracks(request, authentication, playlistId, {
+            limit: 500,
+        });
+        const existingIds = samoItemsOf(current)
+            .map((track) => track.id)
+            .filter(Boolean) as string[];
+        const merged = [...existingIds];
+        for (const id of filteredSongIds) {
+            if (!merged.includes(id)) merged.push(id);
+        }
+
+        await requestJson<unknown>(request, `${authentication.url}/api/v1/music/playlists/${playlistId}`, {
+            body: JSON.stringify({ trackIds: merged }),
+            headers: {
+                Authorization: `Bearer ${authentication.credential}`,
+                'Content-Type': 'application/json',
+            },
+            method: 'PATCH',
+        });
+        return;
+    }
+
+    if (
+        authentication.type !== ServerType.NAVIDROME &&
+        authentication.type !== ServerType.SUBSONIC
+    ) {
+        throw new Error('Adding tracks to playlists is only available for music servers.');
+    }
+
     const body = await requestJson<SubsonicUpdatePlaylistBody>(
         request,
         subsonicUrlWithMultiValueQuery(authentication, 'updatePlaylist.view', {

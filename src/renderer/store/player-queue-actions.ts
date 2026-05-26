@@ -20,21 +20,7 @@ export interface PlayerQueueMutationState {
     };
 }
 
-export function registerQueueSongs(
-    state: PlayerQueueMutationState,
-    items: QueueSong[],
-): string[] {
-    const uniqueIds = items.map((item) => item._uniqueId);
-    items.forEach((item) => {
-        state.queue.songs[item._uniqueId] = item;
-    });
-    return uniqueIds;
-}
-
-export function applyAddToQueueLast(
-    state: PlayerQueueMutationState,
-    uniqueIds: string[],
-): void {
+export function applyAddToQueueLast(state: PlayerQueueMutationState, uniqueIds: string[]): void {
     const oldQueueLength = state.queue.default.length;
     state.queue.default = [...state.queue.default, ...uniqueIds];
 
@@ -63,10 +49,7 @@ export function applyAddToQueueLastShuffle(
     state.queue.shuffled = [...state.queue.shuffled, ...shuffledNewIndexes];
 }
 
-export function applyAddToQueueNext(
-    state: PlayerQueueMutationState,
-    uniqueIds: string[],
-): void {
+export function applyAddToQueueNext(state: PlayerQueueMutationState, uniqueIds: string[]): void {
     const currentShuffledIndex = state.player.index;
     const insertPosition =
         state.player.shuffle === PlayerShuffle.TRACK
@@ -163,4 +146,12 @@ export function applyAddToQueueShuffle(
     state.queue.default = shuffledIds;
     state.player.index = 0;
     state.queue.shuffled = generateShuffledIndexes(shuffledIds.length);
+}
+
+export function registerQueueSongs(state: PlayerQueueMutationState, items: QueueSong[]): string[] {
+    const uniqueIds = items.map((item) => item._uniqueId);
+    items.forEach((item) => {
+        state.queue.songs[item._uniqueId] = item;
+    });
+    return uniqueIds;
 }

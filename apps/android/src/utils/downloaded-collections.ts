@@ -55,6 +55,7 @@ export const buildDownloadedCollectionSnapshot = (
                     collection.id,
                     collection.type,
                     collection.title,
+                    collection.artworkImageId ?? '',
                     collection.artworkUrl ?? '',
                     latestCompletedAt,
                 ].join(':'),

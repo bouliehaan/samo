@@ -14,6 +14,7 @@ import {
     MINI_PLAYER_HEIGHT,
     MINI_PLAYER_RADIUS,
     MINI_PLAYER_VERTICAL_PADDING,
+    SCROLL_CONTENT_BOTTOM_INSET,
     TAB_BAR_BUTTON_MIN_HEIGHT,
     TAB_BAR_PADDING_BOTTOM,
     TAB_BAR_PADDING_TOP,
@@ -467,7 +468,7 @@ export const styles = StyleSheet.create({
     },
     alphabetSidebar: {
         alignItems: 'center',
-        bottom: MINI_PLAYER_BOTTOM + MINI_PLAYER_HEIGHT + spacing.sm,
+        bottom: SCROLL_CONTENT_BOTTOM_INSET,
         justifyContent: 'center',
         position: 'absolute',
         right: 0,
@@ -735,8 +736,12 @@ export const styles = StyleSheet.create({
         marginTop: spacing.md,
     },
     content: {
-        // tabBar (~86) + miniPlayer (~82) + breathing room
-        paddingBottom: 200,
+        paddingBottom: SCROLL_CONTENT_BOTTOM_INSET,
+        paddingHorizontal: HOME_EDGE_PADDING,
+        paddingTop: spacing.lg,
+    },
+    tabContent: {
+        paddingBottom: SCROLL_CONTENT_BOTTOM_INSET,
         paddingHorizontal: HOME_EDGE_PADDING,
         paddingTop: spacing.lg,
     },
@@ -807,6 +812,11 @@ export const styles = StyleSheet.create({
         fontSize: 19,
         fontWeight: '900',
         lineHeight: 24,
+    },
+    playlistCreateSection: {
+        gap: spacing.sm,
+        marginBottom: spacing.sm,
+        marginTop: spacing.sm,
     },
     continueProgressFill: {
         backgroundColor: colors.accent,
@@ -932,7 +942,7 @@ export const styles = StyleSheet.create({
         flex: 1,
     },
     mediaDetailContent: {
-        paddingBottom: 200,
+        paddingBottom: SCROLL_CONTENT_BOTTOM_INSET,
         paddingHorizontal: HOME_EDGE_PADDING,
         paddingTop: 58,
     },
@@ -1518,7 +1528,11 @@ export const styles = StyleSheet.create({
         lineHeight: 36,
     },
     homeSection: {
+        marginBottom: spacing.md,
         marginTop: 0,
+    },
+    homeRowList: {
+        overflow: 'hidden',
     },
     homeMultiRowColumn: {
         gap: spacing.lg,
@@ -1653,7 +1667,7 @@ export const styles = StyleSheet.create({
         paddingTop: spacing.lg,
     },
     libraryBrowseListContent: {
-        paddingBottom: spacing.xl,
+        paddingBottom: SCROLL_CONTENT_BOTTOM_INSET,
         paddingRight: 28,
     },
     libraryHeaderActions: {
@@ -1677,8 +1691,7 @@ export const styles = StyleSheet.create({
         marginTop: spacing.md,
     },
     libraryListContent: {
-        // tabBar (~86) + miniPlayer (~82) + breathing room
-        paddingBottom: 200,
+        paddingBottom: SCROLL_CONTENT_BOTTOM_INSET,
         paddingHorizontal: HOME_EDGE_PADDING,
     },
     libraryRow: {
@@ -1768,8 +1781,7 @@ export const styles = StyleSheet.create({
         marginTop: 2,
     },
     libraryStaticContent: {
-        // Matches normal tab content padding for non-virtualized library states.
-        paddingBottom: 200,
+        paddingBottom: SCROLL_CONTENT_BOTTOM_INSET,
         paddingHorizontal: HOME_EDGE_PADDING,
         paddingTop: spacing.lg,
     },
@@ -2288,6 +2300,20 @@ export const styles = StyleSheet.create({
     playlistSearchBar: {
         marginBottom: spacing.sm,
         marginTop: spacing.xs,
+    },
+    playlistFloatingSearchBar: {
+        borderColor: 'rgba(255,255,255,0.15)',
+        shadowColor: '#000000',
+        shadowOffset: { height: 10, width: 0 },
+        shadowOpacity: 0.28,
+        shadowRadius: 18,
+    },
+    playlistFloatingSearchWrapper: {
+        elevation: 24,
+        left: spacing.lg,
+        position: 'absolute',
+        right: spacing.lg,
+        zIndex: 24,
     },
     playlistHeaderActions: {
         alignItems: 'center',
@@ -3492,8 +3518,7 @@ export const styles = StyleSheet.create({
     },
     viewAllListContent: {
         gap: HOME_TILE_GAP,
-        paddingBottom: MINI_PLAYER_BOTTOM + MINI_PLAYER_HEIGHT + spacing.xl,
-        // Leave room on the right edge so tiles don't sit under the sidebar.
+        paddingBottom: SCROLL_CONTENT_BOTTOM_INSET,
         paddingRight: VIEW_ALL_SIDEBAR_GUTTER,
     },
     viewAllScreen: {

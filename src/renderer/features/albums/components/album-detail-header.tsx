@@ -1,3 +1,4 @@
+import { formatQualityProfileLabel } from '@samo/core/audio-quality';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { forwardRef, Fragment, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -15,11 +16,6 @@ import {
     LibraryHeader,
     LibraryHeaderMenu,
 } from '/@/renderer/features/shared/components/library-header';
-import {
-    getAlbumQualityProfile,
-    usePlaybackDeliveryKind,
-} from '/@/renderer/utils/quality-profile';
-import { logFn } from '/@/shared/utils/logger';
 import { useSetFavorite } from '/@/renderer/features/shared/hooks/use-set-favorite';
 import { songsQueries } from '/@/renderer/features/songs/api/songs-api';
 import { AppRoute } from '/@/renderer/router/routes';
@@ -27,12 +23,14 @@ import { recordRecentAlbum, useCurrentServer } from '/@/renderer/store';
 import { useArtistRadioCount, usePlayButtonBehavior } from '/@/renderer/store/settings.store';
 import { formatDurationString, formatPartialIsoDateUTC, formatSizeString } from '/@/renderer/utils';
 import { normalizeReleaseTypes } from '/@/renderer/utils/normalize-release-types';
+import { getAlbumQualityProfile, usePlaybackDeliveryKind } from '/@/renderer/utils/quality-profile';
 import { Group } from '/@/shared/components/group/group';
 import { Separator } from '/@/shared/components/separator/separator';
 import { Stack } from '/@/shared/components/stack/stack';
 import { Text } from '/@/shared/components/text/text';
 import { LibraryItem } from '/@/shared/types/domain-types';
 import { Play } from '/@/shared/types/types';
+import { logFn } from '/@/shared/utils/logger';
 
 export const AlbumDetailHeader = forwardRef<HTMLDivElement>((_props, ref) => {
     const { albumId } = useParams() as { albumId: string };
@@ -99,6 +97,12 @@ export const AlbumDetailHeader = forwardRef<HTMLDivElement>((_props, ref) => {
 
     const releaseYear = detailQuery?.data?.releaseYear;
     const releaseDate = detailQuery?.data?.releaseDate;
+
+    const deliveryKind = usePlaybackDeliveryKind();
+    const albumQualityProfile = detailQuery?.data
+        ? getAlbumQualityProfile(detailQuery.data, detailQuery.data.songs, deliveryKind)
+        : undefined;
+    const albumQualityLabel = formatQualityProfileLabel(albumQualityProfile);
 
     const metadataItems = useMemo(() => {
         const items: Array<{ id: string; value: React.ReactNode | string | undefined }> = [];
@@ -194,11 +198,15 @@ export const AlbumDetailHeader = forwardRef<HTMLDivElement>((_props, ref) => {
                     id: 'playCount',
                     value: playCount ? t('entity.play', { count: playCount }) : undefined,
                 },
+                {
+                    id: 'quality',
+                    value: albumQualityLabel || undefined,
+                },
             ],
         );
 
         return items.filter((item) => !!item.value);
-    }, [detailQuery?.data, releaseDate, releaseYear, t]);
+    }, [albumQualityLabel, detailQuery?.data, releaseDate, releaseYear, t]);
 
     const headerItem = useMemo(() => {
         const album = detailQuery?.data;
@@ -239,15 +247,10 @@ export const AlbumDetailHeader = forwardRef<HTMLDivElement>((_props, ref) => {
         return null;
     }, [detailQuery?.data, t]);
 
-    const deliveryKind = usePlaybackDeliveryKind();
-    const albumQualityProfile = detailQuery?.data
-        ? getAlbumQualityProfile(detailQuery.data, detailQuery.data.songs, deliveryKind)
-        : undefined;
-
     return (
         <Stack ref={ref}>
             <LibraryHeader
-                imageOverlay={
+                imageBadge={
                     albumQualityProfile ? (
                         <QualityBadge overlay profile={albumQualityProfile} />
                     ) : undefined

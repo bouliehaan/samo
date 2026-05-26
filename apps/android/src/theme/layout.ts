@@ -1,5 +1,7 @@
 import { Dimensions, Platform } from 'react-native';
 
+import { spacing } from './tokens';
+
 export const SCREEN_HEIGHT = Dimensions.get('window').height;
 export const SCREEN_WIDTH = Dimensions.get('window').width;
 
@@ -17,6 +19,8 @@ export const MINI_PLAYER_BOTTOM = TAB_BAR_HEIGHT;
 export const MINI_PLAYER_ARTWORK_SIZE = 58;
 export const MINI_PLAYER_VERTICAL_PADDING = 12;
 export const MINI_PLAYER_HEIGHT = MINI_PLAYER_ARTWORK_SIZE + MINI_PLAYER_VERTICAL_PADDING * 2;
+/** Mini player overlaps scroll content by its height only — tab bar is already out of flow. */
+export const SCROLL_CONTENT_BOTTOM_INSET = MINI_PLAYER_HEIGHT + spacing.sm;
 /** Slightly rounder than flat; echoes display bottom corners without a pill shape. */
 export const MINI_PLAYER_RADIUS = 34;
 
@@ -100,6 +104,14 @@ export const HOME_PRIMARY_TILE = Math.floor(
 );
 export const HOME_COMPACT_OFFSET = 30;
 export const HOME_ROUNDED_OFFSET = 22;
+/** Title + subtitle block under a home carousel tile (`mediaTileCompact`). */
+export const HOME_MEDIA_TILE_CHROME = 58;
+export const HOME_MEDIA_ROW_HEIGHT = HOME_PRIMARY_TILE + HOME_MEDIA_TILE_CHROME;
+export const HOME_MEDIA_ROW_HEIGHT_ARTIST =
+    HOME_PRIMARY_TILE - HOME_COMPACT_OFFSET + HOME_MEDIA_TILE_CHROME;
+export const HOME_MEDIA_ROW_HEIGHT_ROUNDED =
+    HOME_PRIMARY_TILE - HOME_ROUNDED_OFFSET + HOME_MEDIA_TILE_CHROME;
+export const HOME_MEDIA_ROW_HEIGHT_WIDE = 136;
 export const HOME_ROW_INITIAL_ITEMS = 6;
 export const HOME_ROW_RENDER_BATCH = 6;
 export const HOME_ROW_WINDOW_SIZE = 5;

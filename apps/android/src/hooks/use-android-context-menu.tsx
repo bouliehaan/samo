@@ -1,5 +1,5 @@
-import { MobileMediaDetailType } from '@samo/core/mobile';
-import { ServerType } from '@samo/core/server';
+import { MobileMediaDetailType, type MobileContentSource } from '@samo/core/mobile';
+import { ServerType, type ServerAuthenticationResult } from '@samo/core/server';
 import { useMemo } from 'react';
 
 import {
@@ -22,6 +22,7 @@ import {
 } from '../contexts/media-context-menu';
 import { triggerImpact } from '../services/haptics';
 import { colors } from '../theme/tokens';
+import { getContentSourceFromPlaybackItem } from '../utils/content-source';
 import { inferContextMenuKindFromItem } from '../utils/context-menu-infer';
 import { isSongSearchItem, synthesizeTrackFromSongItem } from '../utils/search-tracks';
 import {
@@ -32,7 +33,9 @@ import {
 export interface AndroidContextMenuSurface {
     actions: MediaContextMenuAction[];
     api: MediaContextMenuApi;
+    artworkImageId?: string;
     artworkUrl?: string;
+    contentSource?: MobileContentSource;
     eyebrow: string;
     feedback: string | null;
     isCircularArtwork: boolean;
@@ -67,8 +70,9 @@ type ContextMenuHandlers = Pick<
 export function useAndroidContextMenu(options: {
     deps: Pick<AndroidMediaHandlerDeps, 'overlays' | 'session'>;
     handlers: ContextMenuHandlers;
+    serverConnections: ServerAuthenticationResult[];
 }): AndroidContextMenuSurface {
-    const { deps, handlers } = options;
+    const { deps, handlers, serverConnections } = options;
     const {
         contextMenuFeedback,
         contextMenuTarget,
@@ -389,6 +393,25 @@ export function useAndroidContextMenu(options: {
             : contextMenuTarget.item.artworkUrl
         : undefined;
 
+    const artworkImageId = contextMenuTarget
+        ? contextMenuTarget.kind === 'song'
+            ? contextMenuTarget.track.artworkImageId ??
+              contextMenuTarget.track.playback?.artworkImageId ??
+              contextMenuTarget.detail?.artworkImageId
+            : contextMenuTarget.item.artworkImageId
+        : undefined;
+
+    const contentSource = contextMenuTarget
+        ? contextMenuTarget.kind === 'song'
+            ? contextMenuTarget.track.playback
+                ? getContentSourceFromPlaybackItem(
+                      contextMenuTarget.track.playback,
+                      serverConnections,
+                  ) ?? contextMenuTarget.detail?.source
+                : contextMenuTarget.detail?.source
+            : contextMenuTarget.item.source
+        : undefined;
+
     const isCircularArtwork = contextMenuTarget?.kind === 'artist';
 
     const title = contextMenuTarget
@@ -413,7 +436,9 @@ export function useAndroidContextMenu(options: {
     return {
         actions,
         api,
+        artworkImageId,
         artworkUrl,
+        contentSource,
         eyebrow,
         feedback: contextMenuFeedback,
         isCircularArtwork,

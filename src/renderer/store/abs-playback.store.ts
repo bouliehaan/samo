@@ -1,21 +1,19 @@
+import type { PlaybackSource } from '/@/renderer/store/playback-owner.store';
+
 import { create, type StoreApi, type UseBoundStore } from 'zustand';
 import { persist, subscribeWithSelector } from 'zustand/middleware';
 
 import {
-    createAbsPlaybackSyncHandle,
     type AbsPlaybackSyncHandle,
+    createAbsPlaybackSyncHandle,
     POSITION_PERSIST_DEBOUNCE_S,
     wireAbsPauseProgressFlush,
     wireAbsPlaybackOwnerHandoff,
 } from '/@/renderer/store/abs-playback-sync';
 import { clampPosition } from '/@/renderer/store/audiobook-resume-math';
-import {
-    identityPersistMigrate,
-    PERSIST_VERSION_INITIAL,
-} from '/@/renderer/store/persist-migrate';
-import { usePlayerStoreBase } from '/@/renderer/store/player.store';
-import type { PlaybackSource } from '/@/renderer/store/playback-owner.store';
+import { identityPersistMigrate, PERSIST_VERSION_INITIAL } from '/@/renderer/store/persist-migrate';
 import { usePlaybackOwnerStore } from '/@/renderer/store/playback-owner.store';
+import { usePlayerStoreBase } from '/@/renderer/store/player.store';
 import {
     AudiobookshelfLibraryItem,
     AudiobookshelfPodcastEpisode,
@@ -23,7 +21,7 @@ import {
 import { toast } from '/@/shared/components/toast/toast';
 import { ServerListItemWithCredential } from '/@/shared/types/domain-types';
 import { PlayerStatus } from '/@/shared/types/types';
-import { logFn, LogCategory } from '/@/shared/utils/logger';
+import { LogCategory, logFn } from '/@/shared/utils/logger';
 
 export interface AbsPlaybackBaseActions {
     release: () => void;
@@ -39,70 +37,8 @@ export interface AbsPlaybackCoreState {
     isLoading: boolean;
     item: AudiobookshelfLibraryItem | null;
     position: number;
-    server: null | ServerListItemWithCredential | null;
+    server: null | null | ServerListItemWithCredential;
     sessionId: null | string;
-}
-
-type AbsStoreSet<TState> = (
-    partial: Partial<TState> | ((state: TState) => Partial<TState>),
-) => void;
-
-type AbsStoreGet<TState> = () => TState;
-
-export interface AbsPlaySessionResult {
-    contentUrl: string;
-    duration: number;
-    episode?: AudiobookshelfPodcastEpisode | null;
-    item: AudiobookshelfLibraryItem;
-    position: number;
-    sessionId: string | null;
-    patch?: Partial<AbsPlaybackCoreState>;
-}
-
-export interface CreateAbsPlaybackStoreConfig<
-    TResume extends object,
-    TExtra extends object,
-    TActions extends AbsPlaybackBaseActions,
-    TResumeField extends keyof TResume & string,
-> {
-    clearTransientExtra: () => TExtra;
-    extendActions: (api: {
-        base: AbsPlaybackBaseActions;
-        get: AbsStoreGet<AbsPlaybackCoreState & TExtra & { actions: TActions } & TResume>;
-        play: (...playArgs: unknown[]) => Promise<void>;
-        set: AbsStoreSet<AbsPlaybackCoreState & TExtra & { actions: TActions } & TResume>;
-        sync: AbsPlaybackSyncHandle;
-    }) => TActions;
-    failureToastLabel: string;
-    getEpisodeForSync: (state: AbsPlaybackCoreState & TExtra) => AudiobookshelfPodcastEpisode | null;
-    getLoadingSeed: (...playArgs: unknown[]) => Partial<AbsPlaybackCoreState & TExtra>;
-    getResumeKey: (state: AbsPlaybackCoreState & TExtra) => string | null;
-    initialExtra: TExtra;
-    logLabel: string;
-    onBeforePlay?: (
-        current: AbsPlaybackCoreState & TExtra,
-        set: AbsStoreSet<AbsPlaybackCoreState & TExtra & { actions: TActions } & TResume>,
-        getResumeMap: () => TResume,
-    ) => void;
-    onLoseOwnershipExtra?: (state: AbsPlaybackCoreState & TExtra) => void;
-    persistName: string;
-    playArgsLabel: string;
-    recordRecent: (item: AudiobookshelfLibraryItem, serverId: string) => void;
-    rememberSession: (args: {
-        episode?: AudiobookshelfPodcastEpisode | null;
-        item: AudiobookshelfLibraryItem;
-        position?: number;
-        server: ServerListItemWithCredential;
-    }) => void;
-    requiresEpisode: boolean;
-    resolvePlaySession: (...playArgs: unknown[]) => Promise<AbsPlaySessionResult>;
-    resumeField: TResumeField;
-    resumeInitial: TResume;
-    source: PlaybackSource;
-    updateResumeOnSeek: (
-        state: AbsPlaybackCoreState & TExtra,
-        position: number,
-    ) => { key: string; position: number } | null;
 }
 
 export interface AbsPlaybackStoreBundle<
@@ -123,8 +59,71 @@ export interface AbsPlaybackStoreBundle<
     sync: AbsPlaybackSyncHandle;
 }
 
-const isPlayingForSync = () =>
-    usePlayerStoreBase.getState().player.status === PlayerStatus.PLAYING;
+export interface AbsPlaySessionResult {
+    contentUrl: string;
+    duration: number;
+    episode?: AudiobookshelfPodcastEpisode | null;
+    item: AudiobookshelfLibraryItem;
+    patch?: Partial<AbsPlaybackCoreState>;
+    position: number;
+    sessionId: null | string;
+}
+
+export interface CreateAbsPlaybackStoreConfig<
+    TResume extends object,
+    TExtra extends object,
+    TActions extends AbsPlaybackBaseActions,
+    TResumeField extends keyof TResume & string,
+> {
+    clearTransientExtra: () => TExtra;
+    extendActions: (api: {
+        base: AbsPlaybackBaseActions;
+        get: AbsStoreGet<AbsPlaybackCoreState & TExtra & TResume & { actions: TActions }>;
+        play: (...playArgs: unknown[]) => Promise<void>;
+        set: AbsStoreSet<AbsPlaybackCoreState & TExtra & TResume & { actions: TActions }>;
+        sync: AbsPlaybackSyncHandle;
+    }) => TActions;
+    failureToastLabel: string;
+    getEpisodeForSync: (
+        state: AbsPlaybackCoreState & TExtra,
+    ) => AudiobookshelfPodcastEpisode | null;
+    getLoadingSeed: (...playArgs: unknown[]) => Partial<AbsPlaybackCoreState & TExtra>;
+    getResumeKey: (state: AbsPlaybackCoreState & TExtra) => null | string;
+    initialExtra: TExtra;
+    logLabel: string;
+    onBeforePlay?: (
+        current: AbsPlaybackCoreState & TExtra,
+        set: AbsStoreSet<AbsPlaybackCoreState & TExtra & TResume & { actions: TActions }>,
+        getResumeMap: () => TResume,
+    ) => void;
+    onLoseOwnershipExtra?: (state: AbsPlaybackCoreState & TExtra) => void;
+    persistName: string;
+    playArgsLabel: string;
+    recordRecent: (item: AudiobookshelfLibraryItem, serverId: string) => void;
+    rememberSession: (args: {
+        episode?: AudiobookshelfPodcastEpisode | null;
+        item: AudiobookshelfLibraryItem;
+        position?: number;
+        server: ServerListItemWithCredential;
+    }) => void;
+    requiresEpisode: boolean;
+    resolvePlaySession: (...playArgs: unknown[]) => Promise<AbsPlaySessionResult>;
+    resumeField: TResumeField;
+    resumeInitial: TResume;
+    source: PlaybackSource;
+    updateResumeOnSeek: (
+        state: AbsPlaybackCoreState & TExtra,
+        position: number,
+    ) => null | { key: string; position: number };
+}
+
+type AbsStoreGet<TState> = () => TState;
+
+type AbsStoreSet<TState> = (
+    partial: ((state: TState) => Partial<TState>) | Partial<TState>,
+) => void;
+
+const isPlayingForSync = () => usePlayerStoreBase.getState().player.status === PlayerStatus.PLAYING;
 
 export function createAbsPlaybackStore<
     TResume extends object,
@@ -150,12 +149,15 @@ export function createAbsPlaybackStore<
                             return;
                         }
 
-                        set((state) => ({
-                            [config.resumeField]: {
-                                ...(state[config.resumeField] as TResume),
-                                [key]: current.position,
-                            },
-                        } as Partial<FullState>));
+                        set(
+                            (state) =>
+                                ({
+                                    [config.resumeField]: {
+                                        ...(state[config.resumeField] as TResume),
+                                        [key]: current.position,
+                                    },
+                                }) as Partial<FullState>,
+                        );
                     };
 
                     const baseActions: AbsPlaybackBaseActions = {
@@ -164,12 +166,15 @@ export function createAbsPlaybackStore<
                             const state = get();
                             const key = config.getResumeKey(state);
                             if (key) {
-                                set((s) => ({
-                                    [config.resumeField]: {
-                                        ...(s[config.resumeField] as TResume),
-                                        [key]: state.position,
-                                    },
-                                } as Partial<FullState>));
+                                set(
+                                    (s) =>
+                                        ({
+                                            [config.resumeField]: {
+                                                ...(s[config.resumeField] as TResume),
+                                                [key]: state.position,
+                                            },
+                                        }) as Partial<FullState>,
+                                );
                                 if (state.server && state.item) {
                                     config.rememberSession({
                                         episode: config.getEpisodeForSync(state),
@@ -211,12 +216,15 @@ export function createAbsPlaybackStore<
                             const state = get();
                             const resumeUpdate = config.updateResumeOnSeek(state, nextPosition);
                             if (resumeUpdate && state.server && state.item) {
-                                set((s) => ({
-                                    [config.resumeField]: {
-                                        ...(s[config.resumeField] as TResume),
-                                        [resumeUpdate.key]: resumeUpdate.position,
-                                    },
-                                } as Partial<FullState>));
+                                set(
+                                    (s) =>
+                                        ({
+                                            [config.resumeField]: {
+                                                ...(s[config.resumeField] as TResume),
+                                                [resumeUpdate.key]: resumeUpdate.position,
+                                            },
+                                        }) as Partial<FullState>,
+                                );
                                 config.rememberSession({
                                     episode: config.getEpisodeForSync(state),
                                     item: state.item,
@@ -245,12 +253,15 @@ export function createAbsPlaybackStore<
                                 const state = get();
                                 const resumeUpdate = config.updateResumeOnSeek(state, nextPosition);
                                 if (resumeUpdate) {
-                                    set((s) => ({
-                                        [config.resumeField]: {
-                                            ...(s[config.resumeField] as TResume),
-                                            [resumeUpdate.key]: nextPosition,
-                                        },
-                                    } as Partial<FullState>));
+                                    set(
+                                        (s) =>
+                                            ({
+                                                [config.resumeField]: {
+                                                    ...(s[config.resumeField] as TResume),
+                                                    [resumeUpdate.key]: nextPosition,
+                                                },
+                                            }) as Partial<FullState>,
+                                    );
                                     sync.setLastFlushedPosition(nextPosition);
                                     const { server } = get();
                                     if (server && state.item) {
@@ -337,7 +348,9 @@ export function createAbsPlaybackStore<
                                 item: result.item,
                                 position: result.position,
                                 sessionId: result.sessionId,
-                                ...(result.episode !== undefined ? { episode: result.episode } : {}),
+                                ...(result.episode !== undefined
+                                    ? { episode: result.episode }
+                                    : {}),
                                 ...result.patch,
                             } as Partial<FullState>);
 
@@ -435,12 +448,15 @@ export function createAbsPlaybackStore<
             const state = useStore.getState();
             const key = config.getResumeKey(state);
             if (key) {
-                useStore.setState((s) => ({
-                    [config.resumeField]: {
-                        ...(s[config.resumeField] as TResume),
-                        [key]: state.position,
-                    },
-                } as Partial<FullState>));
+                useStore.setState(
+                    (s) =>
+                        ({
+                            [config.resumeField]: {
+                                ...(s[config.resumeField] as TResume),
+                                [key]: state.position,
+                            },
+                        }) as Partial<FullState>,
+                );
             }
             config.onLoseOwnershipExtra?.(state);
             sync.syncProgress({

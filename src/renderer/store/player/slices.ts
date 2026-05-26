@@ -1,9 +1,14 @@
-import { CrossfadeStyle, PlayerRepeat, PlayerShuffle, PlayerStatus, PlayerStyle } from '/@/shared/types/types';
-
 import {
-    SONG_CONTEXT,
     type MusicPlaybackContext,
+    SONG_CONTEXT,
 } from '/@/renderer/store/last-playback-session.store';
+import {
+    CrossfadeStyle,
+    PlayerRepeat,
+    PlayerShuffle,
+    PlayerStatus,
+    PlayerStyle,
+} from '/@/shared/types/types';
 
 /** Ephemeral transport controls — volume, status, speed, repeat, shuffle. */
 export interface PlayerTransportSlice {

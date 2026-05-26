@@ -1,5 +1,22 @@
 import { type ServerAuthenticationResult } from '../server/server-auth';
 import { getFetch, requestJson, type SamoFetch } from '../server/server-http';
+import {
+    type SamoAudiobook,
+    type SamoMusicAlbum,
+    type SamoMusicArtist,
+    type SamoMusicTrack,
+    type SamoPodcast,
+    resolveSamoAlbumArtworkUrl,
+    resolveSamoArtistArtworkUrl,
+    resolveSamoAudiobookArtworkUrl,
+    resolveSamoPodcastArtworkUrl,
+    pickSamoImageId,
+    searchSamoAudiobooks,
+    searchSamoMusic,
+    searchSamoPodcasts,
+    samoItemsOf,
+} from '../server/server-samo';
+import { ensureSamoStreamToken } from '../server/server-samo-stream-token';
 import { ServerType } from '../server/server-types';
 import {
     buildAudiobookshelfArtworkUrl,
@@ -9,6 +26,7 @@ import {
 } from './mobile-content-source';
 import {
     buildRadioPlayback,
+    buildSamoMusicPlayback,
     buildSubsonicMusicPlayback,
     type MobilePlayableAudio,
 } from './mobile-playback';
@@ -58,6 +76,7 @@ export interface MobileSearchItem {
     artist?: string;
     artistId?: string;
     artworkUrl?: string;
+    artworkImageId?: string;
     id: string;
     isHiRes?: boolean;
     lastPlayedAt?: number;
@@ -802,6 +821,206 @@ const loadSubsonicSearch = async (
     );
 };
 
+const samoAlbumToSearchItem = (
+    authentication: ServerAuthenticationResult,
+    album: SamoMusicAlbum,
+    streamToken: string | undefined,
+    source: MobileContentSource,
+): MobileSearchItem | null => {
+    if (!album.id || !album.title) return null;
+    return {
+        artworkImageId: pickSamoImageId(album.images),
+        artworkUrl: resolveSamoAlbumArtworkUrl(authentication, album, streamToken),
+        id: album.id,
+        qualityProfile:
+            album.primaryAudioFile?.bitDepth && album.primaryAudioFile.sampleRate
+                ? {
+                      bitDepth: album.primaryAudioFile.bitDepth,
+                      sampleRate: album.primaryAudioFile.sampleRate,
+                  }
+                : undefined,
+        source,
+        subtitle: album.displayArtist ?? album.albumArtistNames?.filter(Boolean).join(', '),
+        title: album.title,
+        type: MobileSearchItemType.ALBUM,
+    };
+};
+
+const samoArtistToSearchItem = (
+    authentication: ServerAuthenticationResult,
+    artist: SamoMusicArtist,
+    streamToken: string | undefined,
+    source: MobileContentSource,
+): MobileSearchItem | null => {
+    if (!artist.id || !artist.name) return null;
+    return {
+        artworkImageId: pickSamoImageId(artist.images),
+        artworkUrl: resolveSamoArtistArtworkUrl(authentication, artist, streamToken),
+        id: artist.id,
+        source,
+        subtitle: artist.albumCount ? `${artist.albumCount} albums` : undefined,
+        title: artist.name,
+        type: MobileSearchItemType.ARTIST,
+    };
+};
+
+const samoTrackToSearchItem = (
+    authentication: ServerAuthenticationResult,
+    track: SamoMusicTrack,
+    streamToken: string | undefined,
+    source: MobileContentSource,
+): MobileSearchItem | null => {
+    if (!track.id || !track.title) return null;
+    const playback = buildSamoMusicPlayback(authentication, track, undefined, streamToken);
+    const artist =
+        track.displayArtist ?? track.artistNames?.filter(Boolean).join(', ');
+    return {
+        album: track.albumTitle,
+        albumId: track.albumId,
+        artist,
+        artworkImageId: pickSamoImageId(track.images),
+        artworkUrl: resolveSamoAlbumArtworkUrl(
+            authentication,
+            { images: track.images },
+            streamToken,
+        ),
+        id: track.id,
+        lastPlayedAt: track.playback?.lastPlayedAt ? Date.parse(track.playback.lastPlayedAt) : undefined,
+        playback: playback ?? undefined,
+        playCount: track.playback?.playCount,
+        source,
+        subtitle: [track.displayArtist, track.albumTitle].filter(Boolean).join(' - ')
+            || undefined,
+        title: track.title,
+        type: MobileSearchItemType.SONG,
+    };
+};
+
+const samoAudiobookToSearchItem = (
+    authentication: ServerAuthenticationResult,
+    audiobook: SamoAudiobook,
+    streamToken: string | undefined,
+    source: MobileContentSource,
+): MobileSearchItem | null => {
+    if (!audiobook.id) return null;
+    const title = audiobook.book?.title;
+    if (!title) return null;
+    const authors = audiobook.book?.authors?.map((author) => author.name).filter(Boolean).join(', ');
+
+    return {
+        artworkUrl: resolveSamoAudiobookArtworkUrl(authentication, audiobook, streamToken),
+        id: audiobook.id,
+        source,
+        subtitle: authors,
+        title,
+        type: MobileSearchItemType.AUDIOBOOK,
+    };
+};
+
+const samoPodcastToSearchItem = (
+    authentication: ServerAuthenticationResult,
+    podcast: SamoPodcast,
+    streamToken: string | undefined,
+    source: MobileContentSource,
+): MobileSearchItem | null => {
+    if (!podcast.id) return null;
+    const inner = podcast.podcast;
+    const title = inner?.title;
+    if (!title) return null;
+    return {
+        artworkUrl: resolveSamoPodcastArtworkUrl(authentication, podcast, streamToken),
+        id: podcast.id,
+        source,
+        subtitle: inner?.episodeCount ? `${inner.episodeCount} episodes` : inner?.author,
+        title,
+        type: MobileSearchItemType.PODCAST,
+    };
+};
+
+const loadSamoSearch = async (
+    authentication: ServerAuthenticationResult,
+    fetcher: SamoFetch,
+    query: string,
+    limit: number,
+): Promise<MobileSearchResults> => {
+    const source = getMobileContentSource(authentication);
+    const streamToken = await ensureSamoStreamToken(authentication, fetcher).catch(() => undefined);
+
+    const [musicResult, audiobookResult, podcastResult] = await Promise.allSettled([
+        searchSamoMusic(fetcher, authentication, query, { limit }),
+        searchSamoAudiobooks(fetcher, authentication, query, { limit }),
+        searchSamoPodcasts(fetcher, authentication, query, { limit }),
+    ]);
+
+    const errors: MobileSearchSectionError[] = [];
+    if (musicResult.status === 'rejected') {
+        errors.push({
+            message: getErrorMessage(musicResult.reason),
+            sectionId: MobileSearchSectionId.SONGS,
+        });
+    }
+    if (audiobookResult.status === 'rejected') {
+        errors.push({
+            message: getErrorMessage(audiobookResult.reason),
+            sectionId: MobileSearchSectionId.AUDIOBOOKS,
+        });
+    }
+    if (podcastResult.status === 'rejected') {
+        errors.push({
+            message: getErrorMessage(podcastResult.reason),
+            sectionId: MobileSearchSectionId.PODCASTS,
+        });
+    }
+
+    const albums =
+        musicResult.status === 'fulfilled'
+            ? (musicResult.value.albums ?? []).flatMap((album) => {
+                  const item = samoAlbumToSearchItem(authentication, album, streamToken, source);
+                  return item ? [item] : [];
+              })
+            : [];
+    const artists =
+        musicResult.status === 'fulfilled'
+            ? (musicResult.value.artists ?? []).flatMap((artist) => {
+                  const item = samoArtistToSearchItem(authentication, artist, streamToken, source);
+                  return item ? [item] : [];
+              })
+            : [];
+    const songs =
+        musicResult.status === 'fulfilled'
+            ? (musicResult.value.tracks ?? []).flatMap((track) => {
+                  const item = samoTrackToSearchItem(authentication, track, streamToken, source);
+                  return item ? [item] : [];
+              })
+            : [];
+    const audiobooks =
+        audiobookResult.status === 'fulfilled'
+            ? samoItemsOf(audiobookResult.value).flatMap((audiobook) => {
+                  const item = samoAudiobookToSearchItem(authentication, audiobook, streamToken, source);
+                  return item ? [item] : [];
+              })
+            : [];
+    const podcasts =
+        podcastResult.status === 'fulfilled'
+            ? samoItemsOf(podcastResult.value).flatMap((podcast) => {
+                  const item = samoPodcastToSearchItem(authentication, podcast, streamToken, source);
+                  return item ? [item] : [];
+              })
+            : [];
+
+    return toSearchResults(
+        query,
+        [
+            { id: MobileSearchSectionId.SONGS, items: songs, title: 'Songs' },
+            { id: MobileSearchSectionId.ALBUMS, items: albums, title: 'Albums' },
+            { id: MobileSearchSectionId.ARTISTS, items: artists, title: 'Artists' },
+            { id: MobileSearchSectionId.AUDIOBOOKS, items: audiobooks, title: 'Audiobooks' },
+            { id: MobileSearchSectionId.PODCASTS, items: podcasts, title: 'Podcasts' },
+        ],
+        errors,
+    );
+};
+
 export const searchMobileContent = async ({
     authentication,
     fetch: fetcher,
@@ -832,6 +1051,10 @@ export const searchMobileContent = async ({
             limit,
             qualityScanLimit,
         );
+    }
+
+    if (authentication.type === ServerType.SAMO) {
+        return loadSamoSearch(authentication, request, trimmedQuery, limit);
     }
 
     throw new Error('Search is not wired for this server type');

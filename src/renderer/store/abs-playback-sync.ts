@@ -1,5 +1,6 @@
 import { audiobookshelfController } from '/@/renderer/api/audiobookshelf/audiobookshelf-controller';
 import { clampPosition } from '/@/renderer/store/audiobook-resume-math';
+import { type PlaybackSource, usePlaybackOwnerStore } from '/@/renderer/store/playback-owner.store';
 import { subscribePlayerStatus } from '/@/renderer/store/player.store';
 import {
     AudiobookshelfLibraryItem,
@@ -7,16 +8,10 @@ import {
 } from '/@/shared/api/audiobookshelf/audiobookshelf-types';
 import { ServerListItemWithCredential } from '/@/shared/types/domain-types';
 import { PlayerStatus } from '/@/shared/types/types';
-import { logFn, LogCategory } from '/@/shared/utils/logger';
-import {
-    type PlaybackSource,
-    usePlaybackOwnerStore,
-} from '/@/renderer/store/playback-owner.store';
+import { LogCategory, logFn } from '/@/shared/utils/logger';
 
 export const POSITION_PERSIST_DEBOUNCE_S = 10;
 export const SERVER_PROGRESS_SYNC_INTERVAL_S = 30;
-
-export type AbsProgressReason = 'close' | 'pause' | 'progress' | 'seek';
 
 export interface AbsPlaybackProgressSlice {
     duration: number;
@@ -24,7 +19,7 @@ export interface AbsPlaybackProgressSlice {
     item: AudiobookshelfLibraryItem | null;
     position: number;
     requiresEpisode: boolean;
-    server: ServerListItemWithCredential | null;
+    server: null | ServerListItemWithCredential;
     sessionId: null | string;
 }
 
@@ -44,6 +39,8 @@ export interface AbsPlaybackSyncHandle {
     }) => void;
 }
 
+export type AbsProgressReason = 'close' | 'pause' | 'progress' | 'seek';
+
 export function createAbsPlaybackSyncHandle(
     logLabel: string,
     getSlice: () => AbsPlaybackProgressSlice,
@@ -60,7 +57,8 @@ export function createAbsPlaybackSyncHandle(
     };
 
     const syncProgress: AbsPlaybackSyncHandle['syncProgress'] = (options) => {
-        const { duration, episode, item, position, requiresEpisode, server, sessionId } = getSlice();
+        const { duration, episode, item, position, requiresEpisode, server, sessionId } =
+            getSlice();
 
         if (!item || !server) {
             return;
@@ -145,24 +143,6 @@ export function createAbsPlaybackSyncHandle(
     };
 }
 
-export function wireAbsPlaybackOwnerHandoff(options: {
-    clearTransientState: () => void;
-    onLoseOwnership: () => void;
-    source: PlaybackSource;
-    sync: AbsPlaybackSyncHandle;
-}) {
-    usePlaybackOwnerStore.subscribe(
-        (state) => state.source,
-        (source) => {
-            if (source !== options.source) {
-                options.onLoseOwnership();
-                options.clearTransientState();
-                options.sync.resetAfterClose();
-            }
-        },
-    );
-}
-
 export function wireAbsPauseProgressFlush(options: {
     source: PlaybackSource;
     sync: AbsPlaybackSyncHandle;
@@ -180,4 +160,22 @@ export function wireAbsPauseProgressFlush(options: {
             });
         }
     });
+}
+
+export function wireAbsPlaybackOwnerHandoff(options: {
+    clearTransientState: () => void;
+    onLoseOwnership: () => void;
+    source: PlaybackSource;
+    sync: AbsPlaybackSyncHandle;
+}) {
+    usePlaybackOwnerStore.subscribe(
+        (state) => state.source,
+        (source) => {
+            if (source !== options.source) {
+                options.onLoseOwnership();
+                options.clearTransientState();
+                options.sync.resetAfterClose();
+            }
+        },
+    );
 }

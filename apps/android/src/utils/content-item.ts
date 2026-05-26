@@ -33,10 +33,12 @@ export const mergeContentItemSignals = (
 
     return {
         ...current,
+        artworkImageId: current.artworkImageId ?? incoming.artworkImageId,
         artworkUrl: current.artworkUrl ?? incoming.artworkUrl,
         isHiRes: current.isHiRes || incoming.isHiRes ? true : current.isHiRes,
         playback: current.playback ?? incoming.playback,
         qualityProfile,
+        source: current.source ?? incoming.source,
         subtitle: current.subtitle ?? incoming.subtitle,
     };
 };

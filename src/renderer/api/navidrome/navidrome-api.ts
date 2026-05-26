@@ -482,7 +482,9 @@ axiosClient.interceptors.response.use(
                     })
                     .catch((newError: any) => {
                         if (newError !== TIMEOUT_ERROR) {
-                            logFn.error('Error when trying to reauthenticate', { meta: { error: newError } });
+                            logFn.error('Error when trying to reauthenticate', {
+                                meta: { error: newError },
+                            });
 
                             if (isAxiosError(newError) && newError.code === 'ERR_NETWORK') {
                                 logFn.info(

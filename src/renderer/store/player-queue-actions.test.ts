@@ -1,16 +1,16 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { QueueSong } from '/@/shared/types/domain-types';
-import { PlayerShuffle } from '/@/shared/types/types';
-
 import {
     applyAddToQueueLast,
     applyAddToQueueNext,
     applyAddToQueueNow,
     applyAddToQueueShuffle,
-    registerQueueSongs,
     type PlayerQueueMutationState,
+    registerQueueSongs,
 } from './player-queue-actions';
+
+import { QueueSong } from '/@/shared/types/domain-types';
+import { PlayerShuffle } from '/@/shared/types/types';
 
 vi.mock('/@/renderer/utils/shuffle', () => ({
     shuffleInPlace: <T>(items: T[]) => {

@@ -19,9 +19,11 @@ export function PodcastWebPlayer() {
             mode="abs-resume"
             onEnded={() => release()}
             onError={() => {
-                usePodcastStore.getState().actions.setError(
-                    'Podcast playback error. Check the stream URL or server connection.',
-                );
+                usePodcastStore
+                    .getState()
+                    .actions.setError(
+                        'Podcast playback error. Check the stream URL or server connection.',
+                    );
             }}
             onProgress={(playedSeconds) => setPosition(playedSeconds)}
             onSeekTransport={seekTo}

@@ -3,7 +3,7 @@ import {
     loadMobileLibraryRelevantContentForServers,
     type MobileHomeItem,
 } from '@samo/core/mobile';
-import { type ServerAuthenticationResult } from '@samo/core/server';
+import { ensureSamoStreamToken, ServerType, type ServerAuthenticationResult } from '@samo/core/server';
 
 export type AndroidLibraryRelevantState =
     | { items: MobileHomeItem[]; loadedAt: number; status: 'loaded' }
@@ -19,6 +19,14 @@ export const loadAndroidLibraryRelevantContent = async (
     }
 
     try {
+        await Promise.all(
+            authentications
+                .filter((authentication) => authentication.type === ServerType.SAMO)
+                .map((authentication) =>
+                    ensureSamoStreamToken(authentication).catch(() => undefined),
+                ),
+        );
+
         const { errors, items, loadedAt } = await loadMobileLibraryRelevantContentForServers({
             authentications,
         });

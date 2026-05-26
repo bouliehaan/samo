@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { VisualizerSelect } from './visualizer-settings-controls';
+
 import { useSettingsStoreActions, useVisualizerSettings } from '/@/renderer/store/settings.store';
 import { Button } from '/@/shared/components/button/button';
 import { Fieldset } from '/@/shared/components/fieldset/fieldset';

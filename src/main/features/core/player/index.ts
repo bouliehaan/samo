@@ -1,9 +1,6 @@
 import { app, ipcMain } from 'electron';
 import MpvAPI from 'node-mpv';
 
-import { getMainWindow } from '/@/main/index';
-import { PlayerData } from '/@/shared/types/domain-types';
-
 import { fetchIcyMetadata } from './icy-metadata';
 import {
     cleanupMpv,
@@ -21,6 +18,9 @@ import {
     setMpvState,
     shutdownMpvInstance,
 } from './mpv-lifecycle';
+
+import { getMainWindow } from '/@/main/index';
+import { PlayerData } from '/@/shared/types/domain-types';
 
 export { getMpvInstance } from './mpv-lifecycle';
 
@@ -342,7 +342,7 @@ ipcMain.handle(
 type AudioDevice = { label: string; value: string };
 
 const AUDIO_DEVICES_CACHE_TTL_MS = 60_000;
-let audioDevicesCache: { expiresAt: number; value: AudioDevice[] } | null = null;
+let audioDevicesCache: null | { expiresAt: number; value: AudioDevice[] } = null;
 
 const invalidateAudioDevicesCache = () => {
     audioDevicesCache = null;

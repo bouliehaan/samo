@@ -1,4 +1,5 @@
 import { type ServerAuthenticationResult } from '../server/server-auth';
+import { getServerConnectionKey } from '../server/server-session';
 import { type ServerType } from '../server/server-types';
 
 export interface MobileContentSource {
@@ -11,7 +12,7 @@ export interface MobileContentSource {
 export const getMobileContentSource = (
     authentication: ServerAuthenticationResult,
 ): MobileContentSource => ({
-    id: `${authentication.type}:${authentication.url}`,
+    id: getServerConnectionKey(authentication),
     title: authentication.title,
     type: authentication.type,
     url: authentication.url,

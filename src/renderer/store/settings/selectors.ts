@@ -1,10 +1,11 @@
 import { useMemo } from 'react';
 import { shallow } from 'zustand/shallow';
 
-import { ItemListKey } from '/@/shared/types/types';
-
 import type { ItemListSettings, SettingsState } from './schemas';
+
 import { useSettingsStore } from './store';
+
+import { ItemListKey } from '/@/shared/types/types';
 
 export const useSettingsStoreActions = () => useSettingsStore((state) => state.actions);
 

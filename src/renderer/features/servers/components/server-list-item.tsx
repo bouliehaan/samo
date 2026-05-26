@@ -46,7 +46,9 @@ export const ServerListItem = ({ server }: ServerListItemProps) => {
                     return null;
                 })
                 .catch((error: any) => {
-                    logFn.error(error instanceof Error ? error.message : String(error), { meta: { error: error } });
+                    logFn.error(error instanceof Error ? error.message : String(error), {
+                        meta: { error: error },
+                    });
                     setSavedPassword('');
                     editHandlers.open();
                 });

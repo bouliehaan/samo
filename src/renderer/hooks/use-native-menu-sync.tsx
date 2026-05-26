@@ -26,8 +26,11 @@ export const useNativeMenuSync = () => {
     const { setPrivateMode, setSideBar } = useAppStoreActions();
     const { open: openCommandPalette } = useCommandPalette();
     const playerHydrated = usePlayerHydrated();
-    const { repeat: playerRepeat, shuffle: playerShuffle, status: playerStatus } =
-        usePlayerPlaybackControlsState();
+    const {
+        repeat: playerRepeat,
+        shuffle: playerShuffle,
+        status: playerStatus,
+    } = usePlayerPlaybackControlsState();
 
     useEffect(() => {
         if (!isElectron()) {

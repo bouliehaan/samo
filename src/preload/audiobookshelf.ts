@@ -1,5 +1,3 @@
-import { ipcRenderer } from 'electron';
-
 import type {
     AudiobookshelfLibrariesResponse,
     AudiobookshelfLibraryItem,
@@ -9,12 +7,13 @@ import type {
     AudiobookshelfPlaybackSessionSyncRequest,
 } from '/@/shared/api/audiobookshelf/audiobookshelf-types';
 
+import { ipcRenderer } from 'electron';
+
 const login = (payload: {
     password: string;
     url: string;
     username: string;
-}): Promise<AudiobookshelfLoginResponse> =>
-    ipcRenderer.invoke('audiobookshelf-login', payload);
+}): Promise<AudiobookshelfLoginResponse> => ipcRenderer.invoke('audiobookshelf-login', payload);
 
 const playItem = (payload: {
     episodeId?: string;
@@ -42,8 +41,7 @@ const getItemCoverDataUrl = (payload: {
     itemId: string;
     token: string;
     url: string;
-}): Promise<null | string> =>
-    ipcRenderer.invoke('audiobookshelf-get-item-cover-data-url', payload);
+}): Promise<null | string> => ipcRenderer.invoke('audiobookshelf-get-item-cover-data-url', payload);
 
 const getLibraries = (payload: {
     token: string;
@@ -62,8 +60,7 @@ const getItem = (payload: {
     itemId: string;
     token: string;
     url: string;
-}): Promise<AudiobookshelfLibraryItem> =>
-    ipcRenderer.invoke('audiobookshelf-get-item', payload);
+}): Promise<AudiobookshelfLibraryItem> => ipcRenderer.invoke('audiobookshelf-get-item', payload);
 
 export const audiobookshelf = {
     closePlaybackSession,

@@ -1,6 +1,23 @@
 import isElectron from 'is-electron';
 import { generatePath } from 'react-router';
 
+import {
+    ArtistItem,
+    ArtistReleaseTypeItem,
+    BarAlign,
+    DiscordDisplayType,
+    DiscordLinkType,
+    GenreTarget,
+    HomeFeatureStyle,
+    HomeItem,
+    PlayerbarSliderType,
+    PlayerItem,
+    PlaylistTarget,
+    type SettingsState,
+    type SidebarItemType,
+    type SortableItem,
+} from './schemas';
+
 import i18n from '/@/i18n/i18n';
 import {
     ALBUM_ARTIST_TABLE_COLUMNS,
@@ -16,8 +33,8 @@ import { audiomotionanalyzerPresets } from '/@/renderer/features/visualizer/comp
 import { AppRoute } from '/@/renderer/router/routes';
 import { mergeSettingsWithEnv } from '/@/renderer/store/env-settings-overrides';
 import { randomString } from '/@/renderer/utils';
-import { LibraryItem, LyricSource } from '/@/shared/types/domain-types';
 import { AppTheme } from '/@/shared/themes/app-theme-types';
+import { LibraryItem, LyricSource } from '/@/shared/types/domain-types';
 import {
     FontType,
     ItemListKey,
@@ -28,23 +45,6 @@ import {
     PlayerType,
     TableColumn,
 } from '/@/shared/types/types';
-
-import {
-    ArtistItem,
-    ArtistReleaseTypeItem,
-    BarAlign,
-    DiscordDisplayType,
-    DiscordLinkType,
-    GenreTarget,
-    HomeFeatureStyle,
-    HomeItem,
-    PlayerItem,
-    PlayerbarSliderType,
-    PlaylistTarget,
-    type SettingsState,
-    type SidebarItemType,
-    type SortableItem,
-} from './schemas';
 
 const utils = isElectron() ? window.api.utils : null;
 

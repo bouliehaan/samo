@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useUpdateAudioMotionAnalyzer, VisualizerSlider } from './visualizer-settings-controls';
+
 import { ActionIcon } from '/@/shared/components/action-icon/action-icon';
 import { Button } from '/@/shared/components/button/button';
 import { Checkbox } from '/@/shared/components/checkbox/checkbox';
@@ -11,8 +12,8 @@ import { Fieldset } from '/@/shared/components/fieldset/fieldset';
 import { Group } from '/@/shared/components/group/group';
 import { SegmentedControl } from '/@/shared/components/segmented-control/segmented-control';
 import { Stack } from '/@/shared/components/stack/stack';
-import { Text } from '/@/shared/components/text/text';
 import { TextInput } from '/@/shared/components/text-input/text-input';
+import { Text } from '/@/shared/components/text/text';
 import { Textarea } from '/@/shared/components/textarea/textarea';
 import { toast } from '/@/shared/components/toast/toast';
 

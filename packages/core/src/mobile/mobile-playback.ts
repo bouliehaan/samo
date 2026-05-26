@@ -1,7 +1,33 @@
-import { isHiResAudioQuality, type AudioDeliveryKind } from '../audio-quality';
+import { type AudioDeliveryKind } from '../audio-quality';
+import {
+    getSubsonicMusicQuality,
+    type SubsonicPlayableSong,
+} from '../audio-quality/subsonic-quality-scan';
 import { type PlaybackSource } from '../playback';
 import { type ServerAuthenticationResult } from '../server/server-auth';
 import { getFetch, requestJson, type SamoFetch } from '../server/server-http';
+import {
+    type SamoAudiobook,
+    type SamoAudioFile,
+    type SamoInternetRadioStation,
+    type SamoMusicTrack,
+    type SamoPodcastEpisode,
+    getSamoAudiobookStreamUrl,
+    getSamoMusicTrackStreamUrl,
+    getSamoPodcastEpisodeStreamUrl,
+    pickSamoImageId,
+    pickSamoCatalogImageId,
+} from '../server/server-samo';
+import { ensureSamoStreamToken } from '../server/server-samo-stream-token';
+import { getServerConnectionKey } from '../server/server-session';
+import { ServerType } from '../server/server-types';
+
+// Re-exports for Android back-compat — these symbols used to live here.
+export {
+    getSubsonicMusicQuality,
+    isSubsonicSongHiRes,
+    type SubsonicPlayableSong,
+} from '../audio-quality/subsonic-quality-scan';
 
 export interface AudiobookshelfPlayableInput {
     artworkUrl?: string;
@@ -29,6 +55,8 @@ export interface MobilePlayableAudio {
     artist?: string;
     artistId?: string;
     artworkUrl?: string;
+    /** Samo metadata `images[].id` for display-time URL rebuild. */
+    artworkImageId?: string;
     /**
      * Mime type to advertise to the Chromecast receiver, when it differs
      * from `mimeType` (which is what the local ExoPlayer sees). Audiobookshelf
@@ -96,25 +124,6 @@ export interface SubsonicPlayableRadioStation {
     streamUrl?: string;
 }
 
-export interface SubsonicPlayableSong {
-    album?: string;
-    albumArtist?: string;
-    albumId?: number | string;
-    artist?: string;
-    artistId?: number | string;
-    bitDepth?: number | string;
-    bitRate?: number | string;
-    channelCount?: number | string;
-    contentType?: string;
-    coverArt?: string;
-    duration?: number;
-    id?: number | string;
-    parent?: number | string;
-    sampleRate?: number | string;
-    samplingRate?: number | string;
-    suffix?: string;
-    title?: string;
-}
 
 interface AudiobookshelfPlaybackSessionBody {
     audioTracks?: AudiobookshelfPlaybackTrack[];
@@ -202,14 +211,6 @@ const subsonicChromecastStreamUrl = (authentication: ServerAuthenticationResult,
     });
 
     return `${authentication.url}/rest/stream.view?${params.toString()}&${authentication.credential}`;
-};
-
-const getContainerFromContentType = (contentType: string | undefined) => {
-    if (!contentType?.startsWith('audio/')) {
-        return null;
-    }
-
-    return contentType.split('/')[1] ?? null;
 };
 
 const normalizeContentUrl = (baseUrl: string, contentUrl: string) => {
@@ -357,35 +358,6 @@ const getContainerFromMimeType = (mimeType: string | undefined) => {
     return mimeType.split('/')[1] ?? null;
 };
 
-const toAudioNumber = (value: null | number | string | undefined) => {
-    if (typeof value === 'number') {
-        return Number.isFinite(value) ? value : null;
-    }
-
-    if (typeof value === 'string') {
-        const parsed = Number(value);
-        return Number.isFinite(parsed) ? parsed : null;
-    }
-
-    return null;
-};
-
-export const getSubsonicMusicQuality = (
-    song: SubsonicPlayableSong,
-): MobilePlaybackQuality => ({
-    bitDepth: toAudioNumber(song.bitDepth),
-    bitRate: toAudioNumber(song.bitRate),
-    channelCount: toAudioNumber(song.channelCount),
-    container: song.suffix ?? getContainerFromContentType(song.contentType),
-    deliveryKind: 'android-direct',
-    losslessRequired: true,
-    sampleRate: toAudioNumber(song.samplingRate ?? song.sampleRate),
-    serverTranscodeRequested: false,
-});
-
-export const isSubsonicSongHiRes = (song: SubsonicPlayableSong) =>
-    isHiResAudioQuality(getSubsonicMusicQuality(song));
-
 export const buildSubsonicMusicPlayback = (
     authentication: ServerAuthenticationResult,
     song: SubsonicPlayableSong,
@@ -406,7 +378,7 @@ export const buildSubsonicMusicPlayback = (
         artist: song.artist,
         artistId: song.artistId?.toString(),
         artworkUrl,
-        contentSourceId: `${authentication.type}:${authentication.url}`,
+        contentSourceId: getServerConnectionKey(authentication),
         durationSeconds: song.duration,
         id: `${authentication.type}:${authentication.url}:music:${id}`,
         mimeType: song.contentType,
@@ -435,7 +407,7 @@ export const buildRadioPlayback = (
 
     return {
         artworkUrl,
-        contentSourceId: `${authentication.type}:${authentication.url}`,
+        contentSourceId: getServerConnectionKey(authentication),
         homepageUrl: station.homepageUrl,
         id: `${authentication.type}:${authentication.url}:radio:${station.id}`,
         isLive: true,
@@ -449,6 +421,205 @@ export const buildRadioPlayback = (
         title: station.name,
         url: station.streamUrl,
     };
+};
+
+// ---------------------------------------------------------------------------
+// Samo native playback builders
+// ---------------------------------------------------------------------------
+
+/** Matches `podcast:<showId>:<episodeId>` and legacy `podcast-episode:<episodeId>`. */
+export const SAMO_PODCAST_PLAYBACK_ID_INNER =
+    /:(?:podcast:([^:]+(?::[^:]+)?)|podcast-episode:([^:]+))$/;
+
+export const buildSamoPodcastPlaybackId = (
+    authentication: Pick<ServerAuthenticationResult, 'type' | 'url'>,
+    showId: string,
+    episodeId: string,
+) => `${authentication.type}:${authentication.url}:podcast:${showId}:${episodeId}`;
+
+export const parsePodcastPlaybackEpisodeId = (playbackId: string): string | undefined => {
+    const match = playbackId.match(SAMO_PODCAST_PLAYBACK_ID_INNER);
+    if (!match) {
+        return undefined;
+    }
+
+    if (match[1]) {
+        const segments = match[1].split(':');
+        return segments[segments.length - 1];
+    }
+
+    return match[2];
+};
+
+export const parsePodcastPlaybackShowId = (playbackId: string): string | undefined => {
+    const match = playbackId.match(/:podcast:([^:]+):[^:]+$/);
+    return match?.[1];
+};
+
+const samoQualityForFile = (
+    audioFile: SamoAudioFile | undefined,
+    deliveryKind: AudioDeliveryKind,
+    losslessRequired: boolean,
+): MobilePlaybackQuality => ({
+    bitDepth: audioFile?.bitDepth ?? null,
+    bitRate: audioFile?.bitrate ?? null,
+    channelCount: audioFile?.channels ?? null,
+    container: audioFile?.container ?? null,
+    deliveryKind,
+    losslessRequired,
+    sampleRate: audioFile?.sampleRate ?? null,
+    serverTranscodeRequested: false,
+});
+
+export const buildSamoMusicPlayback = (
+    authentication: ServerAuthenticationResult,
+    track: SamoMusicTrack,
+    artworkUrl?: string,
+    streamToken?: string,
+    artworkImageId?: string,
+): MobilePlayableAudio | null => {
+    if (!track.id || !track.title) return null;
+
+    const audioFile = track.primaryAudioFile ?? track.audioFiles?.[0];
+    const quality = samoQualityForFile(audioFile, 'android-direct', true);
+    const subtitle = [track.displayArtist, track.albumTitle].filter(Boolean).join(' - ')
+        || undefined;
+
+    return {
+        album: track.albumTitle,
+        albumId: track.albumId,
+        artist: track.displayArtist,
+        artworkUrl,
+        artworkImageId: pickSamoImageId(track.images) ?? artworkImageId,
+        contentSourceId: getServerConnectionKey(authentication),
+        durationSeconds: track.durationSeconds,
+        id: `${authentication.type}:${authentication.url}:music:${track.id}`,
+        mimeType: audioFile?.mimeType,
+        quality,
+        source: 'music',
+        subtitle,
+        title: track.title,
+        url: getSamoMusicTrackStreamUrl(authentication, track.id, { streamToken }),
+    };
+};
+
+export const buildSamoAudiobookPlayback = (
+    authentication: ServerAuthenticationResult,
+    audiobook: SamoAudiobook,
+    artworkUrl?: string,
+    streamToken?: string,
+): MobilePlayableAudio | null => {
+    if (!audiobook.id) return null;
+    const title = audiobook.book?.title;
+    if (!title) return null;
+
+    const audioFile = audiobook.primaryAudioFile ?? audiobook.audioFiles?.[0];
+    const progressSeconds = audiobook.progress?.progressSeconds;
+    const quality = samoQualityForFile(audioFile, 'android-direct', false);
+
+    const authors = audiobook.book?.authors
+        ?.map((author) => author.name)
+        .filter(Boolean)
+        .join(', ');
+
+    return {
+        artworkUrl,
+        contentSourceId: getServerConnectionKey(authentication),
+        durationSeconds: audiobook.durationSeconds,
+        id: `${authentication.type}:${authentication.url}:audiobook:${audiobook.id}`,
+        initialPositionSeconds: progressSeconds,
+        mimeType: audioFile?.mimeType,
+        quality,
+        source: 'audiobook',
+        subtitle: authors,
+        title,
+        url: getSamoAudiobookStreamUrl(authentication, audiobook.id, {
+            progressSeconds,
+            streamToken,
+        }),
+    };
+};
+
+export const buildSamoPodcastEpisodePlayback = (
+    authentication: ServerAuthenticationResult,
+    episode: SamoPodcastEpisode,
+    showId: string | undefined,
+    artworkUrl?: string,
+    streamToken?: string,
+): MobilePlayableAudio | null => {
+    if (!episode.id) return null;
+    const title = episode.title ?? episode.name;
+    if (!title) return null;
+
+    const resolvedShowId = showId ?? episode.podcastId;
+    if (!resolvedShowId) return null;
+
+    const audioFile = episode.audioFiles?.[0];
+    const progressSeconds = episode.playback?.progressSeconds;
+    const quality = samoQualityForFile(audioFile, 'android-direct', false);
+
+    return {
+        artworkUrl,
+        contentSourceId: getServerConnectionKey(authentication),
+        durationSeconds: episode.duration,
+        id: buildSamoPodcastPlaybackId(authentication, resolvedShowId, episode.id),
+        initialPositionSeconds: progressSeconds,
+        mimeType: audioFile?.mimeType ?? episode.enclosureType,
+        quality,
+        source: 'podcast',
+        subtitle: episode.podcastTitle,
+        title,
+        url: getSamoPodcastEpisodeStreamUrl(authentication, episode.id, {
+            offsetSeconds: progressSeconds,
+            streamToken,
+        }),
+    };
+};
+
+export const buildSamoInternetRadioPlayback = (
+    authentication: ServerAuthenticationResult,
+    station: SamoInternetRadioStation,
+    artworkUrl?: string,
+): MobilePlayableAudio | null => {
+    const streamUrl = station.publicStreamUrl ?? station.streamUrl;
+
+    if (!station.id || !station.name || !streamUrl) {
+        return null;
+    }
+
+    return {
+        artworkImageId: pickSamoCatalogImageId(station.coverId),
+        artworkUrl,
+        contentSourceId: getServerConnectionKey(authentication),
+        homepageUrl: station.homepageUrl,
+        id: `${getServerConnectionKey(authentication)}:internet-radio:${station.id}`,
+        isLive: true,
+        mimeType: station.contentType,
+        quality: {
+            bitRate: station.bitrate ?? null,
+            container: station.codec ?? null,
+            deliveryKind: 'android-direct',
+            losslessRequired: false,
+            serverTranscodeRequested: false,
+        },
+        source: 'radio',
+        title: station.name,
+        url: streamUrl,
+    };
+};
+
+/**
+ * Mint or reuse a Samo stream token before building a playback URL. Used
+ * before queueing a track so the URL embedded in `MobilePlayableAudio` is
+ * authenticated for the next 25 minutes — long enough for the player to
+ * start without a refresh round-trip.
+ */
+export const refreshSamoStreamToken = async (
+    authentication: ServerAuthenticationResult,
+    fetcher?: SamoFetch,
+): Promise<string | undefined> => {
+    if (authentication.type !== ServerType.SAMO) return undefined;
+    return ensureSamoStreamToken(authentication, fetcher);
 };
 
 export const loadAudiobookshelfPlayback = async ({
@@ -536,7 +707,7 @@ export const loadAudiobookshelfPlayback = async ({
         // URL — preferring the direct file when ABS gives us the inode so
         // segment auth in HLS playlists never enters the picture.
         castUrl: castTarget.url,
-        contentSourceId: `${authentication.type}:${authentication.url}`,
+        contentSourceId: getServerConnectionKey(authentication),
         durationSeconds,
         httpHeaders: {
             Authorization: `Bearer ${authentication.credential}`,

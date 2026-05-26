@@ -4,6 +4,7 @@ import {
 } from '@samo/core/server';
 
 export const ANDROID_SERVER_TYPES = [
+    ServerType.SAMO,
     ServerType.NAVIDROME,
     ServerType.SUBSONIC,
     ServerType.AUDIOBOOKSHELF,
@@ -13,5 +14,6 @@ export const ANDROID_SERVER_TYPE_LABELS: Record<ServerType, string> = {
     [ServerType.AUDIOBOOKSHELF]: 'Audiobookshelf',
     [ServerType.JELLYFIN]: 'Jellyfin',
     [ServerType.NAVIDROME]: 'Navidrome',
+    [ServerType.SAMO]: 'Samo',
     [ServerType.SUBSONIC]: 'Subsonic',
 };

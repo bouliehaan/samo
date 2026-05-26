@@ -1,8 +1,5 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
-
 import { PlayerRepeat, PlayerShuffle } from '@samo/core/playback';
-
-import { QueueSong } from '/@/shared/types/domain-types';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
     addIndexesToShuffled,
@@ -15,6 +12,8 @@ import {
     mapShuffledToQueueIndex,
     regenerateShuffledIndexesIfNeeded,
 } from './player-queue-math';
+
+import { QueueSong } from '/@/shared/types/domain-types';
 
 const song = (id: string): QueueSong =>
     ({

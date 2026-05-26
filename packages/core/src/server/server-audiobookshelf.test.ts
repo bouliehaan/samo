@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { adaptNativeFetch } from './server-http';
 import { absGetLibraries, absLogin } from './server-audiobookshelf';
+import { adaptNativeFetch } from './server-http';
 
 describe('absLogin', () => {
     it('posts credentials to /login', async () => {
@@ -30,10 +30,12 @@ describe('absGetLibraries', () => {
     it('requests /api/libraries with bearer auth', async () => {
         const fetcher = adaptNativeFetch(
             vi.fn(async () => ({
-                json: async () => ({ libraries: [{ id: 'lib-1', mediaType: 'book', name: 'Books' }] }),
+                headers: { get: () => null },
+                json: async () => ({
+                    libraries: [{ id: 'lib-1', mediaType: 'book', name: 'Books' }],
+                }),
                 ok: true,
                 status: 200,
-                headers: { get: () => null },
             })) as unknown as typeof fetch,
         );
 

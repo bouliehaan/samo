@@ -1,14 +1,20 @@
+import { type MobileContentSource } from '@samo/core/mobile';
+
 import { ArtworkImage } from './ArtworkImage';
 import { styles } from '../theme/styles';
 import { type LibraryMediaType } from '../types/library-display';
 
 export const MediaArtwork = ({
+    artworkImageId,
     artworkUrl,
+    contentSource,
     mediaType,
     size,
     title,
 }: {
+    artworkImageId?: string;
     artworkUrl?: string;
+    contentSource?: Pick<MobileContentSource, 'id' | 'type' | 'url'>;
     mediaType: LibraryMediaType;
     size: 'card' | 'hero' | 'row';
     title: string;
@@ -29,6 +35,8 @@ export const MediaArtwork = ({
 
     return (
         <ArtworkImage
+            artworkImageId={artworkImageId}
+            contentSource={contentSource}
             fallbackStyle={[fallbackStyle, shouldRound && styles.libraryArtworkRound]}
             letter={title.slice(0, 1)}
             style={[artworkStyle, shouldRound && styles.libraryArtworkRound]}

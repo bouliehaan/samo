@@ -202,14 +202,16 @@ export const RadioScreen = memo(({
                 onPress={() => onSelectItem(featuredStation)}
                 style={styles.radioHero}
             >
-                <View style={styles.radioHeroArtworkWrap}>
-                    <MediaArtwork
-                        artworkUrl={featuredStation.artworkUrl}
-                        mediaType="radio"
-                        size="hero"
-                        title={featuredStation.title}
-                    />
-                </View>
+                        <View style={styles.radioHeroArtworkWrap}>
+                            <MediaArtwork
+                                artworkImageId={featuredStation.artworkImageId}
+                                artworkUrl={featuredStation.artworkUrl}
+                                contentSource={featuredStation.source}
+                                mediaType="radio"
+                                size="hero"
+                                title={featuredStation.title}
+                            />
+                        </View>
                 <View style={styles.radioHeroText}>
                     {recentRadioKeys.has(getRecentContentItemKey(featuredStation)) ? (
                         <Text style={styles.radioHeroEyebrow}>Recently played</Text>
@@ -252,7 +254,9 @@ export const RadioScreen = memo(({
                                     style={styles.radioCard}
                                 >
                                     <MediaArtwork
+                                        artworkImageId={station.artworkImageId}
                                         artworkUrl={station.artworkUrl}
+                                        contentSource={station.source}
                                         mediaType="radio"
                                         size="card"
                                         title={station.title}

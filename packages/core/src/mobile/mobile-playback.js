@@ -1,5 +1,11 @@
-import { isHiResAudioQuality } from '../audio-quality';
+import { getSubsonicMusicQuality } from '../audio-quality/subsonic-quality-scan';
 import { getFetch, requestJson } from '../server/server-http';
+
+// Re-exports for Android back-compat — these symbols used to live here.
+export {
+    getSubsonicMusicQuality,
+    isSubsonicSongHiRes,
+} from '../audio-quality/subsonic-quality-scan';
 /**
  * Default Google Cast media receiver supports lossless FLAC up to 96 kHz / 24-bit.
  * Higher sample rates (e.g. 192 kHz hi-res) must use a server-transcoded cast leg.
@@ -35,12 +41,6 @@ const subsonicChromecastStreamUrl = (authentication, id) => {
         v: '1.13.0',
     });
     return `${authentication.url}/rest/stream.view?${params.toString()}&${authentication.credential}`;
-};
-const getContainerFromContentType = (contentType) => {
-    if (!contentType?.startsWith('audio/')) {
-        return null;
-    }
-    return contentType.split('/')[1] ?? null;
 };
 const normalizeContentUrl = (baseUrl, contentUrl) => {
     return new URL(contentUrl, baseUrl).toString();
@@ -167,27 +167,6 @@ const getContainerFromMimeType = (mimeType) => {
     }
     return mimeType.split('/')[1] ?? null;
 };
-const toAudioNumber = (value) => {
-    if (typeof value === 'number') {
-        return Number.isFinite(value) ? value : null;
-    }
-    if (typeof value === 'string') {
-        const parsed = Number(value);
-        return Number.isFinite(parsed) ? parsed : null;
-    }
-    return null;
-};
-export const getSubsonicMusicQuality = (song) => ({
-    bitDepth: toAudioNumber(song.bitDepth),
-    bitRate: toAudioNumber(song.bitRate),
-    channelCount: toAudioNumber(song.channelCount),
-    container: song.suffix ?? getContainerFromContentType(song.contentType),
-    deliveryKind: 'android-direct',
-    losslessRequired: true,
-    sampleRate: toAudioNumber(song.samplingRate ?? song.sampleRate),
-    serverTranscodeRequested: false,
-});
-export const isSubsonicSongHiRes = (song) => isHiResAudioQuality(getSubsonicMusicQuality(song));
 export const buildSubsonicMusicPlayback = (authentication, song, artworkUrl) => {
     const id = song.id?.toString();
     if (!id || !song.title) {

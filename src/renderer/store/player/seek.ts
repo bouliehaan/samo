@@ -5,10 +5,7 @@ export function emitPlayerSeek(ms: number) {
 }
 
 export function subscribePlayerSeek(
-    onChange: (
-        properties: { timestamp: number },
-        prev?: { timestamp: number },
-    ) => void,
+    onChange: (properties: { timestamp: number }, prev?: { timestamp: number }) => void,
 ) {
     const handler = ({ ms }: { ms: number }) => {
         onChange({ timestamp: ms });

@@ -7,6 +7,7 @@ import { type FocusEvent, useCallback, useEffect, useLayoutEffect, useRef, useSt
 import { useTranslation } from 'react-i18next';
 
 import AudiobookshelfIcon from '../../../../../assets/icons/audiobookshelf.svg';
+import SamoIcon from '../../../../../build/samologo.svg';
 
 import { api } from '/@/renderer/api';
 import {
@@ -88,6 +89,10 @@ const SERVER_TYPES: Record<ServerType, ServerDetails> = {
     [ServerType.NAVIDROME]: {
         icon: NavidromeIcon,
         name: 'Navidrome',
+    },
+    [ServerType.SAMO]: {
+        icon: SamoIcon,
+        name: 'Samo',
     },
     [ServerType.SUBSONIC]: {
         icon: SubsonicIcon,

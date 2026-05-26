@@ -26,83 +26,49 @@ const GITHUB_UPDATER_CONFIG = {
     repo: 'samo',
 };
 
-export type UpdaterInstance = AppImageUpdater | MacUpdater | NsisUpdater | typeof autoUpdater;
 export type ChannelName = 'alpha' | 'beta' | 'latest';
+export type UpdaterInstance = AppImageUpdater | MacUpdater | NsisUpdater | typeof autoUpdater;
 
-function applyChannelConfig(updater: UpdaterInstance, channel: ChannelName): void {
-    log.transports.file.level = 'info';
-    updater.logger = autoUpdaterLogInterface;
-    updater.autoInstallOnAppQuit = true;
-    updater.autoRunAppAfterInstall = true;
+export class AppUpdater {
+    constructor(getMainWindow: () => Electron.BrowserWindow | null) {
+        const effectiveChannel = store.get('release_channel') as string;
+        console.log('Effective update channel:', effectiveChannel);
+        if (effectiveChannel === 'alpha') {
+            checkAllChannelsAndGetBest().then(({ result, updater: updaterInstance }) => {
+                updaterInstance.autoInstallOnAppQuit = true;
+                updaterInstance.autoRunAppAfterInstall = true;
+                if (isMacOS()) {
+                    if (result?.isUpdateAvailable) {
+                        getMainWindow()?.webContents.send(
+                            'update-available',
+                            result.updateInfo.version,
+                        );
+                    }
+                } else {
+                    updaterInstance.checkForUpdatesAndNotify();
+                }
+            });
+            return;
+        }
 
-    switch (channel) {
-        case 'alpha':
-            updater.channel = ALPHA_UPDATER_CONFIG.channel;
-            updater.allowPrerelease = true;
-            updater.allowDowngrade = true;
-            updater.disableDifferentialDownload = true;
-            break;
-        case 'beta':
-            updater.channel = 'beta';
-            updater.allowPrerelease = true;
-            updater.allowDowngrade = true;
-            updater.disableDifferentialDownload = true;
-            break;
-        case 'latest':
-            updater.channel = 'latest';
-            updater.allowPrerelease = false;
-            break;
+        configureAndGetUpdater();
+        if (isMacOS()) {
+            autoUpdater.autoDownload = false;
+            autoUpdater
+                .checkForUpdates()
+                .then((result) => {
+                    if (result?.isUpdateAvailable) {
+                        getMainWindow()?.webContents.send(
+                            'update-available',
+                            result.updateInfo.version,
+                        );
+                    }
+                })
+                .catch((err) => console.error('Check for updates failed', err));
+        } else {
+            autoUpdater.checkForUpdatesAndNotify();
+        }
     }
-}
-
-function createAlphaUpdaterInstance(): AppImageUpdater | MacUpdater | NsisUpdater {
-    if (isMacOS()) {
-        return new MacUpdater(ALPHA_UPDATER_CONFIG);
-    }
-
-    if (isLinux()) {
-        return new AppImageUpdater(ALPHA_UPDATER_CONFIG);
-    }
-
-    return new NsisUpdater(ALPHA_UPDATER_CONFIG);
-}
-
-export function configureAndGetUpdater(): UpdaterInstance {
-    const isBetaVersion = packageJson.version.includes('-beta');
-    const isAlphaVersion = packageJson.version.includes('-alpha');
-    let releaseChannel = store.get('release_channel');
-    const isNotConfigured = !releaseChannel;
-
-    console.log('Release channel:', releaseChannel);
-    console.log('Is beta version:', isBetaVersion);
-    console.log('Is alpha version:', isAlphaVersion);
-    console.log('Is not configured:', isNotConfigured);
-
-    if (isNotConfigured) {
-        console.log('Release channel not configured, setting default channel');
-        const defaultChannel: ChannelName = isAlphaVersion
-            ? 'alpha'
-            : isBetaVersion
-              ? 'beta'
-              : 'latest';
-        store.set('release_channel', defaultChannel);
-        releaseChannel = defaultChannel;
-    }
-
-    const effectiveChannel = store.get('release_channel') as ChannelName;
-
-    if (effectiveChannel === 'alpha') {
-        const updater = createAlphaUpdaterInstance();
-        applyChannelConfig(updater, 'alpha');
-        return updater;
-    }
-
-    applyChannelConfig(autoUpdater, effectiveChannel);
-    return autoUpdater;
-}
-
-function configureAutoUpdaterForChannel(channel: 'beta' | 'latest'): void {
-    applyChannelConfig(autoUpdater, channel);
 }
 
 // When release channel is alpha, check alpha and latest for updates and return
@@ -173,44 +139,78 @@ export async function checkAllChannelsAndGetBest(): Promise<{
     return { result: best.result, updater: best.updater };
 }
 
-export class AppUpdater {
-    constructor(getMainWindow: () => Electron.BrowserWindow | null) {
-        const effectiveChannel = store.get('release_channel') as string;
-        console.log('Effective update channel:', effectiveChannel);
-        if (effectiveChannel === 'alpha') {
-            checkAllChannelsAndGetBest().then(({ result, updater: updaterInstance }) => {
-                updaterInstance.autoInstallOnAppQuit = true;
-                updaterInstance.autoRunAppAfterInstall = true;
-                if (isMacOS()) {
-                    if (result?.isUpdateAvailable) {
-                        getMainWindow()?.webContents.send(
-                            'update-available',
-                            result.updateInfo.version,
-                        );
-                    }
-                } else {
-                    updaterInstance.checkForUpdatesAndNotify();
-                }
-            });
-            return;
-        }
+export function configureAndGetUpdater(): UpdaterInstance {
+    const isBetaVersion = packageJson.version.includes('-beta');
+    const isAlphaVersion = packageJson.version.includes('-alpha');
+    let releaseChannel = store.get('release_channel');
+    const isNotConfigured = !releaseChannel;
 
-        configureAndGetUpdater();
-        if (isMacOS()) {
-            autoUpdater.autoDownload = false;
-            autoUpdater
-                .checkForUpdates()
-                .then((result) => {
-                    if (result?.isUpdateAvailable) {
-                        getMainWindow()?.webContents.send(
-                            'update-available',
-                            result.updateInfo.version,
-                        );
-                    }
-                })
-                .catch((err) => console.error('Check for updates failed', err));
-        } else {
-            autoUpdater.checkForUpdatesAndNotify();
-        }
+    console.log('Release channel:', releaseChannel);
+    console.log('Is beta version:', isBetaVersion);
+    console.log('Is alpha version:', isAlphaVersion);
+    console.log('Is not configured:', isNotConfigured);
+
+    if (isNotConfigured) {
+        console.log('Release channel not configured, setting default channel');
+        const defaultChannel: ChannelName = isAlphaVersion
+            ? 'alpha'
+            : isBetaVersion
+              ? 'beta'
+              : 'latest';
+        store.set('release_channel', defaultChannel);
+        releaseChannel = defaultChannel;
     }
+
+    const effectiveChannel = store.get('release_channel') as ChannelName;
+
+    if (effectiveChannel === 'alpha') {
+        const updater = createAlphaUpdaterInstance();
+        applyChannelConfig(updater, 'alpha');
+        return updater;
+    }
+
+    applyChannelConfig(autoUpdater, effectiveChannel);
+    return autoUpdater;
+}
+
+function applyChannelConfig(updater: UpdaterInstance, channel: ChannelName): void {
+    log.transports.file.level = 'info';
+    updater.logger = autoUpdaterLogInterface;
+    updater.autoInstallOnAppQuit = true;
+    updater.autoRunAppAfterInstall = true;
+
+    switch (channel) {
+        case 'alpha':
+            updater.channel = ALPHA_UPDATER_CONFIG.channel;
+            updater.allowPrerelease = true;
+            updater.allowDowngrade = true;
+            updater.disableDifferentialDownload = true;
+            break;
+        case 'beta':
+            updater.channel = 'beta';
+            updater.allowPrerelease = true;
+            updater.allowDowngrade = true;
+            updater.disableDifferentialDownload = true;
+            break;
+        case 'latest':
+            updater.channel = 'latest';
+            updater.allowPrerelease = false;
+            break;
+    }
+}
+
+function configureAutoUpdaterForChannel(channel: 'beta' | 'latest'): void {
+    applyChannelConfig(autoUpdater, channel);
+}
+
+function createAlphaUpdaterInstance(): AppImageUpdater | MacUpdater | NsisUpdater {
+    if (isMacOS()) {
+        return new MacUpdater(ALPHA_UPDATER_CONFIG);
+    }
+
+    if (isLinux()) {
+        return new AppImageUpdater(ALPHA_UPDATER_CONFIG);
+    }
+
+    return new NsisUpdater(ALPHA_UPDATER_CONFIG);
 }

@@ -1,10 +1,10 @@
 import { audiobookshelfController } from '/@/renderer/api/audiobookshelf/audiobookshelf-controller';
-import { getCurrentChapterIndex } from '/@/renderer/store/audiobook-chapters';
 import {
-    createAbsPlaybackStore,
     type AbsPlaybackBaseActions,
     type AbsPlaybackCoreState,
+    createAbsPlaybackStore,
 } from '/@/renderer/store/abs-playback.store';
+import { getCurrentChapterIndex } from '/@/renderer/store/audiobook-chapters';
 import { normalizeResumePosition } from '/@/renderer/store/audiobook-resume-math';
 import { useLastPlaybackSessionStore } from '/@/renderer/store/last-playback-session.store';
 import { recordRecentAudiobook } from '/@/renderer/store/play-history.store';
@@ -21,10 +21,6 @@ export {
     getOrderedAudiobookChapters,
 } from '/@/renderer/store/audiobook-chapters';
 
-type AudiobookExtra = { chapters: AudiobookshelfChapter[] };
-
-type AudiobookResume = { resumeByItemId: Record<string, number> };
-
 export interface AudiobookActions extends AbsPlaybackBaseActions {
     play: (server: ServerListItemWithCredential, item: AudiobookshelfLibraryItem) => Promise<void>;
     seekToNextChapter: () => void;
@@ -32,9 +28,15 @@ export interface AudiobookActions extends AbsPlaybackBaseActions {
     setDuration: (seconds: number) => void;
 }
 
-export type AudiobookState = AbsPlaybackCoreState & AudiobookExtra & AudiobookResume & {
-    actions: AudiobookActions;
-};
+export type AudiobookState = AbsPlaybackCoreState &
+    AudiobookExtra &
+    AudiobookResume & {
+        actions: AudiobookActions;
+    };
+
+type AudiobookExtra = { chapters: AudiobookshelfChapter[] };
+
+type AudiobookResume = { resumeByItemId: Record<string, number> };
 
 const rememberAudiobookPlaybackSession = (
     server: ServerListItemWithCredential,
@@ -49,7 +51,7 @@ const rememberAudiobookPlaybackSession = (
     });
 };
 
-const { store: useAudiobookStore, selectors } = createAbsPlaybackStore<
+const { selectors, store: useAudiobookStore } = createAbsPlaybackStore<
     AudiobookResume,
     AudiobookExtra,
     AudiobookActions,
@@ -112,10 +114,8 @@ const { store: useAudiobookStore, selectors } = createAbsPlaybackStore<
             throw new Error('Audiobookshelf did not return an audio URL');
         }
 
-        const chapters =
-            session.libraryItem?.media?.chapters ?? libraryItem.media?.chapters ?? [];
-        const duration =
-            session.libraryItem?.media?.duration ?? libraryItem.media?.duration ?? 0;
+        const chapters = session.libraryItem?.media?.chapters ?? libraryItem.media?.chapters ?? [];
+        const duration = session.libraryItem?.media?.duration ?? libraryItem.media?.duration ?? 0;
         const localResume = useAudiobookStore.getState().resumeByItemId[libraryItem.id];
         const serverResume = session.currentTime ?? 0;
         const resumePosition = localResume !== undefined ? localResume : serverResume;
@@ -132,8 +132,7 @@ const { store: useAudiobookStore, selectors } = createAbsPlaybackStore<
     resumeField: 'resumeByItemId',
     resumeInitial: { resumeByItemId: {} },
     source: 'audiobook',
-    updateResumeOnSeek: (state, position) =>
-        state.item ? { key: state.item.id, position } : null,
+    updateResumeOnSeek: (state, position) => (state.item ? { key: state.item.id, position } : null),
 });
 
 export { useAudiobookStore };

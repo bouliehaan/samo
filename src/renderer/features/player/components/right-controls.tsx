@@ -3,15 +3,14 @@ import isElectron from 'is-electron';
 import { useCallback, useEffect, useState, WheelEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { QualityBadge } from '/@/renderer/components/quality-badge/quality-badge';
 import { PopoverPlayQueue } from '/@/renderer/features/now-playing/components/popover-play-queue';
-import { OutputPickerModal } from '/@/renderer/features/player/components/output-picker-modal';
 import { AudiobookChapterListButton } from '/@/renderer/features/player/components/audiobook-chapter-list-button';
+import { OutputPickerModal } from '/@/renderer/features/player/components/output-picker-modal';
 import { PlayerConfig } from '/@/renderer/features/player/components/player-config';
 import { CustomPlayerbarSlider } from '/@/renderer/features/player/components/playerbar-slider';
 import { SleepTimerButton } from '/@/renderer/features/player/components/sleep-timer-button';
-import { QualityBadge } from '/@/renderer/components/quality-badge/quality-badge';
 import { usePlayer } from '/@/renderer/features/player/context/player-context';
-import { useDesktopCastState } from '/@/renderer/store/cast.store';
 import { useCreateFavorite } from '/@/renderer/features/shared/mutations/create-favorite-mutation';
 import { useDeleteFavorite } from '/@/renderer/features/shared/mutations/delete-favorite-mutation';
 import {
@@ -30,17 +29,18 @@ import {
     useVolumeWheelStep,
     useVolumeWidth,
 } from '/@/renderer/store';
+import { useDesktopCastState } from '/@/renderer/store/cast.store';
 import { useFullScreenPlayerStoreActions } from '/@/renderer/store/full-screen-player.store';
 import { usePlaybackSource } from '/@/renderer/store/playback-owner.store';
+import { getQueueSongQualityProfile } from '/@/renderer/utils/quality-profile';
 import { ActionIcon } from '/@/shared/components/action-icon/action-icon';
 import { Button } from '/@/shared/components/button/button';
 import { Flex } from '/@/shared/components/flex/flex';
 import { Group } from '/@/shared/components/group/group';
-import { useHotkeys } from '/@/shared/hooks/use-hotkeys';
 import { useDisclosure } from '/@/shared/hooks/use-disclosure';
+import { useHotkeys } from '/@/shared/hooks/use-hotkeys';
 import { useMediaQuery } from '/@/shared/hooks/use-media-query';
 import { useThrottledCallback } from '/@/shared/hooks/use-throttled-callback';
-import { getQueueSongQualityProfile } from '/@/renderer/utils/quality-profile';
 import { LibraryItem, QueueSong } from '/@/shared/types/domain-types';
 
 const calculateVolumeUp = (volume: number, volumeWheelStep: number) => {
@@ -74,8 +74,8 @@ export const RightControls = () => {
     const source = usePlaybackSource();
     const { transcode, type: playbackType } = usePlaybackSettings();
     const formatProfile = getQueueSongQualityProfile(badgeSong, {
-        transcodeEnabled: transcode.enabled,
         playbackType,
+        transcodeEnabled: transcode.enabled,
     });
     const [outputPickerOpened, outputPickerHandlers] = useDisclosure(false);
     return (
@@ -84,12 +84,12 @@ export const RightControls = () => {
                 <AutoDJButton />
             </Group>
             <Group align="center" gap="xs" wrap="nowrap">
-                {isElectron() && (source === 'music' || source == null) ? (
-                    <CastOutputButton onOpen={outputPickerHandlers.open} />
-                ) : null}
                 {(source === 'music' || source == null) && (
                     <QualityBadge player profile={formatProfile} />
                 )}
+                {isElectron() && (source === 'music' || source == null) ? (
+                    <CastOutputButton onOpen={outputPickerHandlers.open} />
+                ) : null}
                 <AudiobookChapterListButton />
                 <SleepTimerButton />
                 <PlayerConfig />

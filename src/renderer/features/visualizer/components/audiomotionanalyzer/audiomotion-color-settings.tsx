@@ -1,8 +1,9 @@
 import { useTranslation } from 'react-i18next';
 
 import { CustomGradientsManager } from './custom-gradients-manager';
-import { colorModeOptions, gradientOptions } from './visualizer-settings-options';
 import { useUpdateAudioMotionAnalyzer, VisualizerSelect } from './visualizer-settings-controls';
+import { colorModeOptions, gradientOptions } from './visualizer-settings-options';
+
 import { Fieldset } from '/@/shared/components/fieldset/fieldset';
 import { Group } from '/@/shared/components/group/group';
 import { Stack } from '/@/shared/components/stack/stack';

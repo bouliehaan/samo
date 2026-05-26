@@ -9,6 +9,7 @@ import {
     isLastTrackInQueueFromState,
     playbackInputsEqual,
 } from './player-derived';
+
 import { QueueSong } from '/@/shared/types/domain-types';
 import { PlayerRepeat, PlayerShuffle, PlayerStatus } from '/@/shared/types/types';
 
@@ -153,7 +154,7 @@ describe('playbackInputsEqual', () => {
                 shuffle: PlayerShuffle.NONE,
                 status: PlayerStatus.PLAYING,
             },
-            queue: { default: ['u0'], shuffled: [], songs: {}, revision: 0 },
+            queue: { default: ['u0'], revision: 0, shuffled: [], songs: {} },
         });
 
         const bumped = getPlaybackInputs({
@@ -164,7 +165,7 @@ describe('playbackInputsEqual', () => {
                 shuffle: PlayerShuffle.NONE,
                 status: PlayerStatus.PLAYING,
             },
-            queue: { default: ['u0'], shuffled: [], songs: {}, revision: 1 },
+            queue: { default: ['u0'], revision: 1, shuffled: [], songs: {} },
         });
 
         expect(playbackInputsEqual(base, bumped)).toBe(false);

@@ -23,6 +23,7 @@ export enum ServerType {
     AUDIOBOOKSHELF = 'audiobookshelf',
     JELLYFIN = 'jellyfin',
     NAVIDROME = 'navidrome',
+    SAMO = 'samo',
     SUBSONIC = 'subsonic',
 }
 
@@ -58,6 +59,8 @@ export const toServerType = (value?: string): null | ServerType => {
             return ServerType.JELLYFIN;
         case ServerType.NAVIDROME:
             return ServerType.NAVIDROME;
+        case ServerType.SAMO:
+            return ServerType.SAMO;
         case ServerType.SUBSONIC:
             return ServerType.SUBSONIC;
         default:

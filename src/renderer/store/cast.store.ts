@@ -1,12 +1,5 @@
 import { create } from 'zustand';
 
-export type DesktopCastStatus =
-    | 'connected'
-    | 'connecting'
-    | 'disconnected'
-    | 'no-devices'
-    | 'unavailable';
-
 export interface DesktopCastDevice {
     id: string;
     isSelected: boolean;
@@ -14,12 +7,19 @@ export interface DesktopCastDevice {
 }
 
 export interface DesktopCastState {
-    deviceName: string | null;
+    deviceName: null | string;
     devices: DesktopCastDevice[];
     isConnected: boolean;
     isScanning: boolean;
     status: DesktopCastStatus;
 }
+
+export type DesktopCastStatus =
+    | 'connected'
+    | 'connecting'
+    | 'disconnected'
+    | 'no-devices'
+    | 'unavailable';
 
 const initialCastState: DesktopCastState = {
     deviceName: null,

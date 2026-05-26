@@ -22,6 +22,11 @@ interface SamoFileSystemNative {
         fileName: string,
         mimeType: string,
     ): Promise<string>;
+    writeTextDocument(
+        treeUri: string,
+        fileName: string,
+        text: string,
+    ): Promise<string>;
 }
 
 const native: SamoFileSystemNative | undefined =
@@ -87,6 +92,22 @@ export const readSafTextDocument = async (documentUri: string): Promise<string |
         return await native.readTextDocument(documentUri);
     } catch {
         return null;
+    }
+};
+
+export const writeSafTextDocument = async (
+    treeUri: string,
+    fileName: string,
+    text: string,
+): Promise<boolean> => {
+    if (!native?.writeTextDocument) {
+        return false;
+    }
+    try {
+        await native.writeTextDocument(treeUri, fileName, text);
+        return true;
+    } catch {
+        return false;
     }
 };
 

@@ -6,10 +6,18 @@ declare namespace chrome.cast {
         constructor(url: string);
     }
     namespace media {
+        enum StreamType {
+            BUFFERED = 'BUFFERED',
+        }
         class LoadRequest {
-            constructor(mediaInfo: MediaInfo);
             autoplay: boolean;
             currentTime: number;
+            constructor(mediaInfo: MediaInfo);
+        }
+        class MediaInfo {
+            metadata: MusicTrackMediaMetadata;
+            streamType: StreamType;
+            constructor(contentId: string, contentType: string);
         }
         class MusicTrackMediaMetadata {
             albumName?: string;
@@ -17,16 +25,8 @@ declare namespace chrome.cast {
             images?: Image[];
             title?: string;
         }
-        class MediaInfo {
-            constructor(contentId: string, contentType: string);
-            metadata: MusicTrackMediaMetadata;
-            streamType: StreamType;
-        }
         class SeekRequest {
             currentTime: number;
-        }
-        enum StreamType {
-            BUFFERED = 'BUFFERED',
         }
     }
 }
@@ -58,8 +58,8 @@ declare namespace cast.framework {
     }
     class CastSession {
         endSession(stopCasting: boolean): Promise<void>;
-        getCastDevice(): { friendlyName?: string } | null;
-        getMediaClient(): RemoteMediaClient | null;
+        getCastDevice(): null | { friendlyName?: string };
+        getMediaClient(): null | RemoteMediaClient;
         getSessionId(): string;
     }
     class RemoteMediaClient {
@@ -68,16 +68,8 @@ declare namespace cast.framework {
             onSuccess: () => void,
             onError: (error: unknown) => void,
         ): void;
-        pause(
-            request: null,
-            onSuccess: () => void,
-            onError: (error: unknown) => void,
-        ): void;
-        play(
-            request: null,
-            onSuccess: () => void,
-            onError: (error: unknown) => void,
-        ): void;
+        pause(request: null, onSuccess: () => void, onError: (error: unknown) => void): void;
+        play(request: null, onSuccess: () => void, onError: (error: unknown) => void): void;
         seek(
             request: chrome.cast.media.SeekRequest,
             onSuccess: () => void,

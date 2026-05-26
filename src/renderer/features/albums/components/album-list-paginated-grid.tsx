@@ -10,10 +10,8 @@ import { useItemListPagination } from '/@/renderer/components/item-list/item-lis
 import { ItemListGridComponentProps } from '/@/renderer/components/item-list/types';
 import { useListContext } from '/@/renderer/context/list-context';
 import { albumQueries } from '/@/renderer/features/albums/api/album-api';
-import { useAlbumQualityProfiles } from '/@/renderer/hooks/use-album-quality-profiles';
 import { useGeneralSettings } from '/@/renderer/store';
 import {
-    Album,
     AlbumListQuery,
     AlbumListSort,
     LibraryItem,
@@ -63,7 +61,8 @@ export const AlbumListPaginatedGrid = ({
     const rows = useGridRows(LibraryItem.ALBUM, ItemListKey.ALBUM, size);
     const { enableGridMultiSelect } = useGeneralSettings();
 
-    const itemsWithQuality = useAlbumQualityProfiles((data as Album[]) || []);
+    // Badge sweep is bounded to home/carousel surfaces — see the note in
+    // album-list-infinite-grid for why we don't stamp quality profiles here.
 
     return (
         <ItemListWithPagination
@@ -75,7 +74,7 @@ export const AlbumListPaginatedGrid = ({
         >
             <ItemGridList
                 currentPage={currentPage}
-                data={itemsWithQuality}
+                data={data || []}
                 enableExpansion
                 enableMultiSelect={enableGridMultiSelect}
                 gap={gap}

@@ -29,6 +29,8 @@ export const BookInformationModal = ({
     const title = detail?.title ?? fallbackItem.title;
     const subtitle = detail?.subtitle ?? fallbackItem.subtitle;
     const artworkUrl = detail?.artworkUrl ?? fallbackItem.artworkUrl;
+    const artworkImageId = detail?.artworkImageId ?? fallbackItem.artworkImageId;
+    const contentSource = detail?.source ?? fallbackItem.source;
     const metadataLines = detail?.metadataLines ?? [];
     const description = detail?.biography;
     const eyebrow = variant === 'audiobook' ? 'About the book' : 'About the podcast';
@@ -47,6 +49,8 @@ export const BookInformationModal = ({
                     >
                         <View style={styles.bookInfoArtworkWrap}>
                             <ArtworkImage
+                                artworkImageId={artworkImageId}
+                                contentSource={contentSource}
                                 fallbackStyle={styles.bookInfoArtworkFallback}
                                 letter={title.slice(0, 1)}
                                 style={styles.bookInfoArtwork}

@@ -17,12 +17,12 @@ import {
 } from '/@/renderer/store';
 import { toast } from '/@/shared/components/toast/toast';
 import { PlayerStatus } from '/@/shared/types/types';
-import { logFn, LogCategory } from '/@/shared/utils/logger';
+import { LogCategory, logFn } from '/@/shared/utils/logger';
 
 export type WebMediaEngineMode = 'abs-resume' | 'radio';
 
 export interface WebMediaEngineProps {
-    contentUrl: string | null;
+    contentUrl: null | string;
     errorMessage: string;
     isActive: boolean;
     mode: WebMediaEngineMode;
@@ -31,12 +31,12 @@ export interface WebMediaEngineProps {
     onProgress?: (playedSeconds: number) => void;
     onSeekTransport?: (timestamp: number) => void;
     ownsPlayback: () => boolean;
+    radioIsPlaying?: boolean;
     releaseOnError: () => void;
     resetResumeOnEnd?: () => void;
     resumePosition?: number;
     /** Radio drives status from `isPlaying` instead of universal transport. */
     statusFromRadio?: boolean;
-    radioIsPlaying?: boolean;
     syncVolumeToEngineRef?: boolean;
 }
 
@@ -50,11 +50,11 @@ export function WebMediaEngine({
     onProgress,
     onSeekTransport,
     ownsPlayback,
+    radioIsPlaying = false,
     releaseOnError,
     resetResumeOnEnd,
     resumePosition = 0,
     statusFromRadio = false,
-    radioIsPlaying = false,
     syncVolumeToEngineRef = false,
 }: WebMediaEngineProps) {
     const playerRef = useRef<null | WebPlayerEngineHandle>(null);

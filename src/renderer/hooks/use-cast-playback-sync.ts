@@ -1,12 +1,12 @@
-import { useEffect } from 'react';
 import isElectron from 'is-electron';
+import { useEffect } from 'react';
 
 import { useItemImageUrl } from '/@/renderer/components/item-image/item-image';
+import { usePlayer } from '/@/renderer/features/player/context/player-context';
 import {
     isDesktopCastConnected,
     loadDesktopCastMedia,
 } from '/@/renderer/services/chromecast/desktop-cast-service';
-import { usePlayer } from '/@/renderer/features/player/context/player-context';
 import {
     usePlaybackSettings,
     usePlaybackSource,
@@ -36,7 +36,7 @@ export function useCastPlaybackSync(): void {
     });
 
     useEffect(() => {
-        if (!isElectron() || playbackSource !== 'music' && playbackSource !== null) {
+        if (!isElectron() || (playbackSource !== 'music' && playbackSource !== null)) {
             return;
         }
         if (!isDesktopCastConnected() || !currentSong) {

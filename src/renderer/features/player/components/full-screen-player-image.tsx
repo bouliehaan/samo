@@ -29,8 +29,8 @@ import {
     usePlayerData,
     usePlayerSong,
 } from '/@/renderer/store';
-import { getQueueSongQualityProfile } from '/@/renderer/utils/quality-profile';
 import { usePlaybackSource } from '/@/renderer/store/playback-owner.store';
+import { getQueueSongQualityProfile } from '/@/renderer/utils/quality-profile';
 import { Badge } from '/@/shared/components/badge/badge';
 import { Center } from '/@/shared/components/center/center';
 import { Flex } from '/@/shared/components/flex/flex';
@@ -275,7 +275,11 @@ export const FullScreenPlayerImage = () => {
         >
             <div className={styles['image-container']} ref={mainImageRef}>
                 {showAudioPathBadge && formatProfile ? (
-                    <QualityBadge className={styles['format-badge']} overlay profile={formatProfile} />
+                    <QualityBadge
+                        className={styles['format-badge']}
+                        overlay
+                        profile={formatProfile}
+                    />
                 ) : null}
                 <AnimatePresence initial={false} mode="sync">
                     {isNonMusicMode && (

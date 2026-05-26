@@ -9,6 +9,8 @@ import {
     View,
 } from 'react-native';
 
+import { type MobileContentSource } from '@samo/core/mobile';
+
 import { ArtworkImage } from './ArtworkImage';
 import { type MediaContextMenuTarget } from '../contexts/media-context-menu';
 import { triggerImpact } from '../services/haptics';
@@ -25,7 +27,9 @@ export interface MediaContextMenuAction {
 
 export const MediaContextMenu = ({
     actions,
+    artworkImageId,
     artworkUrl,
+    contentSource,
     eyebrow,
     feedback,
     isCircularArtwork,
@@ -35,7 +39,9 @@ export const MediaContextMenu = ({
     title,
 }: {
     actions: MediaContextMenuAction[];
+    artworkImageId?: string;
     artworkUrl?: string;
+    contentSource?: MobileContentSource;
     eyebrow: string;
     feedback: string | null;
     isCircularArtwork?: boolean;
@@ -96,6 +102,8 @@ export const MediaContextMenu = ({
                 >
                     <View style={styles.mediaContextHeaderRow}>
                         <ArtworkImage
+                            artworkImageId={artworkImageId}
+                            contentSource={contentSource}
                             fallbackStyle={[
                                 styles.mediaContextArtworkFallback,
                                 isCircularArtwork && styles.mediaContextArtworkRound,

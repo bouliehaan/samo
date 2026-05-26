@@ -1,14 +1,13 @@
 import {
-    buildAudioQualityBadgeItems,
     type AudioQualityBadgeItem,
     type AudioQualityBadgeTone,
+    buildAudioQualityBadgeItems,
 } from '@samo/core/audio-quality';
+import { type QualityBadgeProfile } from '@samo/core/audio-quality';
 import clsx from 'clsx';
 import { memo, type ReactNode } from 'react';
 
 import styles from './quality-badge.module.css';
-
-import { type QualityBadgeProfile } from '@samo/core/audio-quality';
 
 import { pickQualityBadgeAsset } from '/@/renderer/services/quality-badge-assets';
 import { Badge } from '/@/shared/components/badge/badge';
@@ -95,7 +94,11 @@ export const QualityBadgeImageWrap = memo(
     }) => (
         <span className={styles.imageWrap}>
             {children}
-            <QualityBadge overlay={variant === 'overlay'} profile={profile} thumb={variant === 'thumb'} />
+            <QualityBadge
+                overlay={variant === 'overlay'}
+                profile={profile}
+                thumb={variant === 'thumb'}
+            />
         </span>
     ),
 );

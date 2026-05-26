@@ -17,7 +17,7 @@ import { type MobilePlayableAudio } from './mobile-playback';
 export const getPlaybackQualityProfile = (
     playback?: MobilePlayableAudio | null,
 ): MobileQualityProfile | undefined => {
-    if (!playback) return undefined;
+    if (!playback?.quality) return undefined;
     if (!isLosslessAudioQuality(playback.quality)) return undefined;
     const bitDepth = playback.quality.bitDepth ?? 16;
     const sampleRate = playback.quality.sampleRate ?? 44100;

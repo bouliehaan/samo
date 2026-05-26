@@ -1322,7 +1322,7 @@ type NdImageEntity = 'artist' | 'playlist' | 'radio';
 
 type NdImageUploadArgs = {
     apiClientProps: {
-        server?: { ndCredential?: string; url?: string } | null;
+        server?: null | { ndCredential?: string; url?: string };
         signal?: AbortSignal;
     };
     body: { image: ArrayBuffer | Uint8Array };

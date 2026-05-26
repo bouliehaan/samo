@@ -8,13 +8,16 @@ import styles from './feature-carousel.module.css';
 
 import { ItemImage, useItemImageUrl } from '/@/renderer/components/item-image/item-image';
 import { QualityBadge } from '/@/renderer/components/quality-badge/quality-badge';
-import { type AlbumWithQualityProfile, getAlbumQualityProfile } from '/@/renderer/utils/quality-profile';
 import { usePlayer } from '/@/renderer/features/player/context/player-context';
 import { BackgroundOverlay } from '/@/renderer/features/shared/components/library-background-overlay';
 import { PlayButtonGroup } from '/@/renderer/features/shared/components/play-button-group';
 import { useContainerQuery, useFastAverageColor } from '/@/renderer/hooks';
 import { AppRoute } from '/@/renderer/router/routes';
 import { useCurrentServer } from '/@/renderer/store';
+import {
+    type AlbumWithQualityProfile,
+    getAlbumQualityProfile,
+} from '/@/renderer/utils/quality-profile';
 import { ActionIcon } from '/@/shared/components/action-icon/action-icon';
 import { Badge } from '/@/shared/components/badge/badge';
 import { Group } from '/@/shared/components/group/group';
@@ -130,10 +133,7 @@ const CarouselItem = ({ album }: CarouselItemProps) => {
                                 src={imageUrl}
                                 type="itemCard"
                             />
-                            <QualityBadge
-                                overlay
-                                profile={getAlbumQualityProfile(album)}
-                            />
+                            <QualityBadge overlay profile={getAlbumQualityProfile(album)} />
                         </div>
                         <div className={styles.playButtonOverlay}>
                             <PlayButtonGroup onPlay={handlePlay} />

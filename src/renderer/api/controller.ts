@@ -1,7 +1,10 @@
+import { authenticateServerConnection } from '@samo/core/server';
+
 import i18n from '/@/i18n/i18n';
 import { audiobookshelfController } from '/@/renderer/api/audiobookshelf/audiobookshelf-controller';
 import { JellyfinController } from '/@/renderer/api/jellyfin/jellyfin-controller';
 import { NavidromeController } from '/@/renderer/api/navidrome/navidrome-controller';
+import { SamoController } from '/@/renderer/api/samo/samo-controller';
 import { SubsonicController } from '/@/renderer/api/subsonic/subsonic-controller';
 import { mergeMusicFolderId } from '/@/renderer/api/utils-music-folder';
 import {
@@ -18,12 +21,13 @@ import {
     ServerType,
 } from '/@/shared/types/domain-types';
 
-type ApiController = Record<ServerType, Partial<InternalControllerEndpoint>>;
+type ApiController = Partial<Record<ServerType, Partial<InternalControllerEndpoint>>>;
 
 const endpoints: ApiController = {
     [ServerType.AUDIOBOOKSHELF]: audiobookshelfController,
     [ServerType.JELLYFIN]: JellyfinController,
     [ServerType.NAVIDROME]: NavidromeController,
+    [ServerType.SAMO]: SamoController as Partial<InternalControllerEndpoint>,
     [ServerType.SUBSONIC]: SubsonicController,
 };
 
@@ -116,16 +120,9 @@ const enrichEndpointArgs = <T extends { apiClientProps: { serverId: string }; qu
 
     return {
         ...enriched,
-        query: mergeMusicFolderId(
-            args.query as { musicFolderId?: string | string[] },
-            server,
-        ),
+        query: mergeMusicFolderId(args.query as { musicFolderId?: string | string[] }, server),
     };
 };
-
-type ServerBoundEndpoint = Exclude<keyof ControllerEndpoint, 'authenticate'>;
-
-type EndpointHandler = (args: unknown) => unknown;
 
 export interface GeneralController extends Omit<Required<ControllerEndpoint>, 'authenticate'> {
     authenticate: (
@@ -135,11 +132,38 @@ export interface GeneralController extends Omit<Required<ControllerEndpoint>, 'a
     ) => Promise<AuthenticationResponse>;
 }
 
+type EndpointHandler = (args: unknown) => unknown;
+
+type ServerBoundEndpoint = Exclude<keyof ControllerEndpoint, 'authenticate'>;
+
 export const controller = new Proxy({} as GeneralController, {
     get(_target, property) {
         if (property === 'authenticate') {
-            return (url: string, body: { legacy?: boolean; password: string; username: string }, type: ServerType) =>
-                apiController('authenticate', type)(url, body);
+            return async (
+                url: string,
+                body: { legacy?: boolean; password: string; username: string },
+                type: ServerType,
+            ) => {
+                if (type === ServerType.SAMO) {
+                    const result = await authenticateServerConnection({
+                        deviceLabel: 'Samo desktop',
+                        password: body.password,
+                        type,
+                        url,
+                        username: body.username,
+                    });
+
+                    return {
+                        credential: result.credential,
+                        isAdmin: result.isAdmin,
+                        ndCredential: result.ndCredential,
+                        userId: result.userId ?? null,
+                        username: result.username,
+                    };
+                }
+
+                return apiController('authenticate', type)(url, body);
+            };
         }
 
         if (typeof property !== 'string') {

@@ -59,10 +59,10 @@ export interface PlayerData {
 
 export interface QueueData {
     default: string[];
-    shuffled: number[];
-    songs: Record<string, QueueSong>;
     /** Bumped when song records change without reordering; drives playback snapshot refresh. */
     revision?: number;
+    shuffled: number[];
+    songs: Record<string, QueueSong>;
 }
 
 export type QueueSong = Song & {
@@ -403,6 +403,7 @@ type BaseEndpointArgs = {
 type GenreListSortMap = {
     jellyfin: Record<GenreListSort, JFGenreListSort | undefined>;
     navidrome: Record<GenreListSort, NDGenreListSort | undefined>;
+    samo: Record<GenreListSort, undefined>;
     subsonic: Record<UserListSort, undefined>;
 };
 
@@ -413,6 +414,9 @@ export const genreListSortMap: GenreListSortMap = {
     navidrome: {
         name: NDGenreListSort.NAME,
     },
+    samo: {
+        name: undefined,
+    },
     subsonic: {
         name: undefined,
     },
@@ -421,6 +425,7 @@ export const genreListSortMap: GenreListSortMap = {
 type TagListSortMap = {
     jellyfin: Record<TagListSort, undefined>;
     navidrome: Record<TagListSort, NDTagListSort | undefined>;
+    samo: Record<TagListSort, undefined>;
     subsonic: Record<TagListSort, undefined>;
 };
 
@@ -430,6 +435,9 @@ export const tagListSortMap: TagListSortMap = {
     },
     navidrome: {
         name: NDTagListSort.TAG_VALUE,
+    },
+    samo: {
+        name: undefined,
     },
     subsonic: {
         name: undefined,
@@ -488,6 +496,7 @@ interface AlbumListNavidromeQuery {
 type AlbumListSortMap = {
     jellyfin: Record<AlbumListSort, JFAlbumListSort | undefined>;
     navidrome: Record<AlbumListSort, NDAlbumListSort | undefined>;
+    samo: Record<AlbumListSort, undefined>;
     subsonic: Record<AlbumListSort, undefined>;
 };
 
@@ -532,6 +541,26 @@ export const albumListSortMap: AlbumListSortMap = {
         songCount: NDAlbumListSort.SONG_COUNT,
         sortName: NDAlbumListSort.NAME,
         year: NDAlbumListSort.YEAR,
+    },
+    samo: {
+        albumArtist: undefined,
+        artist: undefined,
+        communityRating: undefined,
+        criticRating: undefined,
+        duration: undefined,
+        explicitStatus: undefined,
+        favorited: undefined,
+        id: undefined,
+        name: undefined,
+        playCount: undefined,
+        random: undefined,
+        rating: undefined,
+        recentlyAdded: undefined,
+        recentlyPlayed: undefined,
+        releaseDate: undefined,
+        songCount: undefined,
+        sortName: undefined,
+        year: undefined,
     },
     subsonic: {
         albumArtist: undefined,
@@ -617,6 +646,7 @@ export type SongListResponse = BasePaginatedResponse<Song[]>;
 type SongListSortMap = {
     jellyfin: Record<SongListSort, JFSongListSort | undefined>;
     navidrome: Record<SongListSort, NDSongListSort | undefined>;
+    samo: Record<SongListSort, undefined>;
     subsonic: Record<SongListSort, undefined>;
 };
 
@@ -664,6 +694,28 @@ export const songListSortMap: SongListSortMap = {
         releaseDate: undefined,
         sortName: NDSongListSort.TITLE,
         year: NDSongListSort.YEAR,
+    },
+    samo: {
+        album: undefined,
+        albumArtist: undefined,
+        artist: undefined,
+        bpm: undefined,
+        channels: undefined,
+        comment: undefined,
+        duration: undefined,
+        explicitStatus: undefined,
+        favorited: undefined,
+        genre: undefined,
+        id: undefined,
+        name: undefined,
+        playCount: undefined,
+        random: undefined,
+        rating: undefined,
+        recentlyAdded: undefined,
+        recentlyPlayed: undefined,
+        releaseDate: undefined,
+        sortName: undefined,
+        year: undefined,
     },
     subsonic: {
         album: undefined,
@@ -731,6 +783,7 @@ export type SongDetailResponse = Song;
 type AlbumArtistListSortMap = {
     jellyfin: Record<AlbumArtistListSort, JFAlbumArtistListSort | undefined>;
     navidrome: Record<AlbumArtistListSort, NDAlbumArtistListSort | undefined>;
+    samo: Record<AlbumArtistListSort, undefined>;
     subsonic: Record<AlbumArtistListSort, undefined>;
 };
 
@@ -760,6 +813,19 @@ export const albumArtistListSortMap: AlbumArtistListSortMap = {
         recentlyAdded: undefined,
         releaseDate: undefined,
         songCount: NDAlbumArtistListSort.SONG_COUNT,
+    },
+    samo: {
+        album: undefined,
+        albumCount: undefined,
+        duration: undefined,
+        favorited: undefined,
+        name: undefined,
+        playCount: undefined,
+        random: undefined,
+        rating: undefined,
+        recentlyAdded: undefined,
+        releaseDate: undefined,
+        songCount: undefined,
     },
     subsonic: {
         album: undefined,
@@ -828,6 +894,7 @@ export type ArtistListResponse = BasePaginatedResponse<AlbumArtist[]>;
 type ArtistListSortMap = {
     jellyfin: Record<ArtistListSort, JFArtistListSort | undefined>;
     navidrome: Record<ArtistListSort, undefined>;
+    samo: Record<ArtistListSort, undefined>;
     subsonic: Record<ArtistListSort, undefined>;
 };
 
@@ -846,6 +913,19 @@ export const artistListSortMap: ArtistListSortMap = {
         songCount: undefined,
     },
     navidrome: {
+        album: undefined,
+        albumCount: undefined,
+        duration: undefined,
+        favorited: undefined,
+        name: undefined,
+        playCount: undefined,
+        random: undefined,
+        rating: undefined,
+        recentlyAdded: undefined,
+        releaseDate: undefined,
+        songCount: undefined,
+    },
+    samo: {
         album: undefined,
         albumCount: undefined,
         duration: undefined,
@@ -1163,6 +1243,7 @@ export type UploadPlaylistImageResponse = boolean;
 type PlaylistListSortMap = {
     jellyfin: Record<PlaylistListSort, JFPlaylistListSort | undefined>;
     navidrome: Record<PlaylistListSort, NDPlaylistListSort | undefined>;
+    samo: Record<PlaylistListSort, undefined>;
     subsonic: Record<PlaylistListSort, undefined>;
 };
 
@@ -1182,6 +1263,14 @@ export const playlistListSortMap: PlaylistListSortMap = {
         public: NDPlaylistListSort.PUBLIC,
         songCount: NDPlaylistListSort.SONG_COUNT,
         updatedAt: NDPlaylistListSort.UPDATED_AT,
+    },
+    samo: {
+        duration: undefined,
+        name: undefined,
+        owner: undefined,
+        public: undefined,
+        songCount: undefined,
+        updatedAt: undefined,
     },
     subsonic: {
         duration: undefined,
@@ -1247,6 +1336,7 @@ export type UserListResponse = BasePaginatedResponse<User[]>;
 type UserListSortMap = {
     jellyfin: Record<UserListSort, undefined>;
     navidrome: Record<UserListSort, NDUserListSort | undefined>;
+    samo: Record<UserListSort, undefined>;
     subsonic: Record<UserListSort, undefined>;
 };
 
@@ -1256,6 +1346,9 @@ export const userListSortMap: UserListSortMap = {
     },
     navidrome: {
         name: NDUserListSort.NAME,
+    },
+    samo: {
+        name: undefined,
     },
     subsonic: {
         name: undefined,

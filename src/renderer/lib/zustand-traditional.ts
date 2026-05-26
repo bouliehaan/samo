@@ -1,4 +1,5 @@
 import type { StateCreator, StoreMutatorIdentifier } from 'zustand';
+
 import { subscribeWithSelector } from 'zustand/middleware';
 import { createWithEqualityFn } from 'zustand/traditional';
 

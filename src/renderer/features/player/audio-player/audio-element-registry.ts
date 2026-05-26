@@ -154,9 +154,25 @@ export const unregisterAudioElement = (audio: HTMLAudioElement) => {
 // Intentionally keep mounted elements registered: ReactPlayer may reuse the
 // same DOM node for the next URL, and onReady is not guaranteed to re-register
 // that reused node.
+//
+// Defense-in-depth: also sweep every <audio> currently in the DOM. The
+// long-standing "headless radio" bug is that ReactPlayer occasionally
+// produces an <audio> element that never makes it through onReady (or makes
+// it through and is then swapped internally), so the registry can't pause
+// it. The orphaned element keeps streaming until the renderer is destroyed.
+// The DOM sweep guarantees that even untracked elements are paused at every
+// session boundary.
 export const stopAllAudioElements = () => {
     ACTIVE_AUDIO_ELEMENTS.forEach((_registration, audio) => {
         stopAudioElement(audio);
     });
+
+    if (typeof document !== 'undefined') {
+        document.querySelectorAll<HTMLAudioElement>('audio').forEach((audio) => {
+            if (ACTIVE_AUDIO_ELEMENTS.has(audio)) return;
+            stopAudioElement(audio);
+        });
+    }
+
     warnIfMultipleAudiblePlaybackElements();
 };

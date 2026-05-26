@@ -14,7 +14,6 @@ import {
     getDirectPlayProfiles,
 } from '/@/renderer/features/player/components/audio-players';
 import { randomString } from '/@/renderer/utils';
-import { logFn } from '/@/shared/utils/logger';
 import { getServerUrl } from '/@/renderer/utils/normalize-server-url';
 import { ssNormalize } from '/@/shared/api/subsonic/subsonic-normalize';
 import {
@@ -38,6 +37,7 @@ import {
     SortOrder,
 } from '/@/shared/types/domain-types';
 import { ServerFeature, ServerFeatures } from '/@/shared/types/features-types';
+import { logFn } from '/@/shared/utils/logger';
 
 const getSubsonicImageRequest = ({
     apiClientProps: { server },

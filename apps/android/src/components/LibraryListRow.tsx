@@ -38,7 +38,9 @@ export const LibraryListRow = ({
         >
             <View>
                 <MediaArtwork
+                    artworkImageId={item.artworkImageId}
                     artworkUrl={item.artworkUrl}
+                    contentSource={item.source}
                     mediaType={mediaType}
                     size="row"
                     title={item.title}

@@ -1,7 +1,4 @@
-import {
-    isLosslessAudioQuality,
-    type QualityBadgeProfile,
-} from '@samo/core/audio-quality';
+import { isLosslessAudioQuality, type QualityBadgeProfile } from '@samo/core/audio-quality';
 import isElectron from 'is-electron';
 
 import { usePlaybackSettings, usePlaybackType } from '/@/renderer/store';
@@ -31,7 +28,7 @@ export const getSongQualityProfile = (
 
 export const getQueueSongQualityProfile = (
     song: QueueSong | undefined,
-    options: { transcodeEnabled: boolean; playbackType: PlayerType },
+    options: { playbackType: PlayerType; transcodeEnabled: boolean },
 ): QualityBadgeProfile | undefined => {
     const deliveryKind =
         isElectron() && options.playbackType === PlayerType.LOCAL

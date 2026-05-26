@@ -12,21 +12,21 @@ import {
 import {
     DiscordDisplayType,
     DiscordLinkType,
+    getCurrentSong,
     useAppStore,
     useDiscordSettings,
     useLastfmApiKey,
-    getCurrentSong,
     usePlayerSong,
     usePlayerStore,
     useSettingsStore,
     useTimestampStoreBase,
 } from '/@/renderer/store';
 import { sentenceCase } from '/@/renderer/utils';
-import { LogCategory, logFn } from '/@/shared/utils/logger';
-import { logMsg } from '/@/shared/utils/logger-message';
 import { useDebouncedCallback } from '/@/shared/hooks/use-debounced-callback';
 import { LibraryItem, QueueSong, ServerType } from '/@/shared/types/domain-types';
 import { PlayerStatus } from '/@/shared/types/types';
+import { LogCategory, logFn } from '/@/shared/utils/logger';
+import { logMsg } from '/@/shared/utils/logger-message';
 
 const discordRpc = isElectron() ? window.api.discordRpc : null;
 

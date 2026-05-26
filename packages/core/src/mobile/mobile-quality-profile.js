@@ -11,7 +11,7 @@ import { isLosslessAudioQuality } from '../audio-quality';
  * content that DOES report its specs gets the matching format.
  */
 export const getPlaybackQualityProfile = (playback) => {
-    if (!playback)
+    if (!playback?.quality)
         return undefined;
     if (!isLosslessAudioQuality(playback.quality))
         return undefined;

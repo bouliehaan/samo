@@ -1,27 +1,35 @@
 import {
     addMobileTracksToPlaylist,
+    buildSamoPodcastEpisodePlayback,
     getMobileMediaDetailErrorMessage,
     loadAudiobookshelfPlayback,
     loadMobileMediaDetail,
     type MobileHomeItem,
+    MobileHomeItemType,
     type MobileMediaDetail,
     MobileMediaDetailType,
     type MobileMediaTrack,
     type MobilePlayableAudio,
     type MobilePlaybackSegment,
     type MobileSearchItem,
+    MobileSearchItemType,
 } from '@samo/core/mobile';
-import { type ServerAuthenticationResult } from '@samo/core/server';
-
-import { getPersistedServerAuthKey } from './persisted-server';
+import {
+    ensureSamoStreamToken,
+    findServerAuthenticationForSource,
+    ServerType,
+    type ServerAuthenticationResult,
+} from '@samo/core/server';
 
 export type AndroidMediaDetailState =
     | { detail: MobileMediaDetail; status: 'loaded' }
     | { itemTitle: string; message: string; status: 'error' }
     | {
+          itemArtworkImageId?: string;
           itemArtworkUrl?: string;
+          itemSource?: MobileHomeItem['source'];
           itemTitle: string;
-          itemType?: MobileHomeItem['type'];
+          itemType?: MobileHomeItem['type'] | MobileSearchItem['type'];
           status: 'loading';
       }
     | { status: 'idle' };
@@ -31,30 +39,56 @@ type AndroidSelectableMediaItem = MobileHomeItem | MobileSearchItem;
 const findAuthenticationForSource = (
     authentications: ServerAuthenticationResult[],
     sourceId: string | undefined,
+    source?: { id?: string; type?: ServerAuthenticationResult['type']; url?: string },
 ) => {
-    return authentications.find((candidate) => getPersistedServerAuthKey(candidate) === sourceId);
+    return findServerAuthenticationForSource(authentications, {
+        id: sourceId ?? source?.id,
+        type: source?.type,
+        url: source?.url,
+    });
 };
 
 const toDetailType = (type: AndroidSelectableMediaItem['type']) => {
     const normalizedType = String(type);
 
-    if (normalizedType === MobileMediaDetailType.ALBUM) {
+    if (
+        normalizedType === MobileMediaDetailType.ALBUM ||
+        normalizedType === MobileHomeItemType.ALBUM ||
+        normalizedType === MobileSearchItemType.ALBUM ||
+        normalizedType === MobileSearchItemType.SONG
+    ) {
         return MobileMediaDetailType.ALBUM;
     }
 
-    if (normalizedType === MobileMediaDetailType.ARTIST) {
+    if (
+        normalizedType === MobileMediaDetailType.ARTIST ||
+        normalizedType === MobileHomeItemType.ARTIST ||
+        normalizedType === MobileSearchItemType.ARTIST
+    ) {
         return MobileMediaDetailType.ARTIST;
     }
 
-    if (normalizedType === MobileMediaDetailType.PLAYLIST) {
+    if (
+        normalizedType === MobileMediaDetailType.PLAYLIST ||
+        normalizedType === MobileHomeItemType.PLAYLIST ||
+        normalizedType === MobileSearchItemType.PLAYLIST
+    ) {
         return MobileMediaDetailType.PLAYLIST;
     }
 
-    if (normalizedType === MobileMediaDetailType.AUDIOBOOK) {
+    if (
+        normalizedType === MobileMediaDetailType.AUDIOBOOK ||
+        normalizedType === MobileHomeItemType.AUDIOBOOK ||
+        normalizedType === MobileSearchItemType.AUDIOBOOK
+    ) {
         return MobileMediaDetailType.AUDIOBOOK;
     }
 
-    if (normalizedType === MobileMediaDetailType.PODCAST) {
+    if (
+        normalizedType === MobileMediaDetailType.PODCAST ||
+        normalizedType === MobileHomeItemType.PODCAST ||
+        normalizedType === MobileSearchItemType.PODCAST
+    ) {
         return MobileMediaDetailType.PODCAST;
     }
 
@@ -118,6 +152,54 @@ const withPlaybackTimeline = (
     };
 };
 
+export const isValidTrackPlayback = (
+    playback: MobileMediaTrack['playback'],
+): playback is MobilePlayableAudio =>
+    Boolean(
+        playback?.id &&
+            playback.title &&
+            playback.url &&
+            playback.quality &&
+            playback.source,
+    );
+
+const rebuildSamoPodcastTrackPlayback = async (
+    authentication: ServerAuthenticationResult,
+    detail: MobileMediaDetail,
+    track: MobileMediaTrack,
+): Promise<MobilePlayableAudio> => {
+    const episodeId = track.episodeId ?? track.id;
+    if (!episodeId) {
+        throw new Error('This episode is missing an id.');
+    }
+
+    const streamToken =
+        authentication.type === ServerType.SAMO
+            ? await ensureSamoStreamToken(authentication).catch(() => undefined)
+            : undefined;
+
+    const playback = buildSamoPodcastEpisodePlayback(
+        authentication,
+        {
+            duration: track.durationSeconds,
+            id: episodeId,
+            name: track.title,
+            podcastId: track.itemId ?? detail.id,
+            podcastTitle: track.subtitle ?? detail.subtitle,
+            title: track.title,
+        },
+        track.itemId ?? detail.id,
+        track.artworkUrl ?? detail.artworkUrl,
+        streamToken,
+    );
+
+    if (!playback) {
+        throw new Error('This episode cannot be played.');
+    }
+
+    return withPlaybackTimeline(detail, track, playback);
+};
+
 export const loadAndroidMediaDetail = async (
     authentications: ServerAuthenticationResult[],
     item: AndroidSelectableMediaItem,
@@ -132,7 +214,11 @@ export const loadAndroidMediaDetail = async (
         };
     }
 
-    const authentication = findAuthenticationForSource(authentications, item.source?.id);
+    const authentication = findAuthenticationForSource(
+        authentications,
+        item.source?.id,
+        item.source,
+    );
 
     if (!authentication) {
         return {
@@ -143,6 +229,10 @@ export const loadAndroidMediaDetail = async (
     }
 
     try {
+        if (authentication.type === ServerType.SAMO) {
+            await ensureSamoStreamToken(authentication).catch(() => undefined);
+        }
+
         return {
             detail: await loadMobileMediaDetail({
                 authentication,
@@ -165,7 +255,7 @@ export const loadAndroidMediaTrackPlayback = async (
     detail: MobileMediaDetail,
     track: MobileMediaTrack,
 ): Promise<MobilePlayableAudio> => {
-    if (track.playback) {
+    if (isValidTrackPlayback(track.playback)) {
         return withPlaybackTimeline(detail, track, track.playback);
     }
 
@@ -173,6 +263,13 @@ export const loadAndroidMediaTrackPlayback = async (
 
     if (!authentication) {
         throw new Error('The server for this item is no longer connected.');
+    }
+
+    if (
+        authentication.type === ServerType.SAMO &&
+        detail.type === MobileMediaDetailType.PODCAST
+    ) {
+        return rebuildSamoPodcastTrackPlayback(authentication, detail, track);
     }
 
     const timelineSegments = getTrackTimelineSegments(detail, track);

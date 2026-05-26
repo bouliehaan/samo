@@ -8,10 +8,10 @@ import {
     SettingOption,
     SettingsSection,
 } from '/@/renderer/features/settings/components/settings-section';
-import { logFn } from '/@/shared/utils/logger';
 import { Button } from '/@/shared/components/button/button';
 import { ConfirmModal } from '/@/shared/components/modal/modal';
 import { toast } from '/@/shared/components/toast/toast';
+import { logFn } from '/@/shared/utils/logger';
 
 const browser = isElectron() ? window.api.browser : null;
 
@@ -35,7 +35,9 @@ export const CacheSettings = memo(() => {
                     message: t('setting.clearCacheSuccess', { postProcess: 'sentenceCase' }),
                 });
             } catch (error) {
-                logFn.error(error instanceof Error ? error.message : String(error), { meta: { error: error } });
+                logFn.error(error instanceof Error ? error.message : String(error), {
+                    meta: { error: error },
+                });
                 toast.error({ message: (error as Error).message });
             }
 

@@ -4,30 +4,30 @@ import {
     type QualityBadgeProfile,
 } from '@samo/core/audio-quality';
 
-import badge16_441 from '../../../assets/icons/quality-badges/samo_hires_16bit_441khz_ultra_premium.png';
 import badge16_48 from '../../../assets/icons/quality-badges/samo_hires_16bit_48khz_ultra_premium.png';
-import badge16_882 from '../../../assets/icons/quality-badges/samo_hires_16bit_882khz_ultra_premium.png';
 import badge16_96 from '../../../assets/icons/quality-badges/samo_hires_16bit_96khz_ultra_premium.png';
-import badge16_1764 from '../../../assets/icons/quality-badges/samo_hires_16bit_1764khz_ultra_premium.png';
 import badge16_192 from '../../../assets/icons/quality-badges/samo_hires_16bit_192khz_ultra_premium.png';
-import badge16_3528 from '../../../assets/icons/quality-badges/samo_hires_16bit_3528khz_ultra_premium.png';
 import badge16_384 from '../../../assets/icons/quality-badges/samo_hires_16bit_384khz_ultra_premium.png';
-import badge24_441 from '../../../assets/icons/quality-badges/samo_hires_24bit_441khz_ultra_premium.png';
+import badge16_441 from '../../../assets/icons/quality-badges/samo_hires_16bit_441khz_ultra_premium.png';
+import badge16_882 from '../../../assets/icons/quality-badges/samo_hires_16bit_882khz_ultra_premium.png';
+import badge16_1764 from '../../../assets/icons/quality-badges/samo_hires_16bit_1764khz_ultra_premium.png';
+import badge16_3528 from '../../../assets/icons/quality-badges/samo_hires_16bit_3528khz_ultra_premium.png';
 import badge24_48 from '../../../assets/icons/quality-badges/samo_hires_24bit_48khz_ultra_premium.png';
-import badge24_882 from '../../../assets/icons/quality-badges/samo_hires_24bit_882khz_ultra_premium.png';
 import badge24_96 from '../../../assets/icons/quality-badges/samo_hires_24bit_96khz_ultra_premium.png';
-import badge24_1764 from '../../../assets/icons/quality-badges/samo_hires_24bit_1764khz_ultra_premium.png';
 import badge24_192 from '../../../assets/icons/quality-badges/samo_hires_24bit_192khz_ultra_premium.png';
-import badge24_3528 from '../../../assets/icons/quality-badges/samo_hires_24bit_3528khz_ultra_premium.png';
 import badge24_384 from '../../../assets/icons/quality-badges/samo_hires_24bit_384khz_ultra_premium.png';
-import badge32_441 from '../../../assets/icons/quality-badges/samo_hires_32bit_441khz_ultra_premium.png';
+import badge24_441 from '../../../assets/icons/quality-badges/samo_hires_24bit_441khz_ultra_premium.png';
+import badge24_882 from '../../../assets/icons/quality-badges/samo_hires_24bit_882khz_ultra_premium.png';
+import badge24_1764 from '../../../assets/icons/quality-badges/samo_hires_24bit_1764khz_ultra_premium.png';
+import badge24_3528 from '../../../assets/icons/quality-badges/samo_hires_24bit_3528khz_ultra_premium.png';
 import badge32_48 from '../../../assets/icons/quality-badges/samo_hires_32bit_48khz_ultra_premium.png';
-import badge32_882 from '../../../assets/icons/quality-badges/samo_hires_32bit_882khz_ultra_premium.png';
 import badge32_96 from '../../../assets/icons/quality-badges/samo_hires_32bit_96khz_ultra_premium.png';
-import badge32_1764 from '../../../assets/icons/quality-badges/samo_hires_32bit_1764khz_ultra_premium.png';
 import badge32_192 from '../../../assets/icons/quality-badges/samo_hires_32bit_192khz_ultra_premium.png';
-import badge32_3528 from '../../../assets/icons/quality-badges/samo_hires_32bit_3528khz_ultra_premium.png';
 import badge32_384 from '../../../assets/icons/quality-badges/samo_hires_32bit_384khz_ultra_premium.png';
+import badge32_441 from '../../../assets/icons/quality-badges/samo_hires_32bit_441khz_ultra_premium.png';
+import badge32_882 from '../../../assets/icons/quality-badges/samo_hires_32bit_882khz_ultra_premium.png';
+import badge32_1764 from '../../../assets/icons/quality-badges/samo_hires_32bit_1764khz_ultra_premium.png';
+import badge32_3528 from '../../../assets/icons/quality-badges/samo_hires_32bit_3528khz_ultra_premium.png';
 
 const QUALITY_BADGE_ASSETS: Record<string, string> = {
     '16/44.1': badge16_441,
@@ -56,9 +56,7 @@ const QUALITY_BADGE_ASSETS: Record<string, string> = {
     '32/384': badge32_384,
 };
 
-export const pickQualityBadgeAsset = (
-    profile: QualityBadgeProfile | undefined,
-): null | string => {
+export const pickQualityBadgeAsset = (profile: QualityBadgeProfile | undefined): null | string => {
     const key = getQualityBadgeKey(profile);
     if (!key) return null;
     return QUALITY_BADGE_ASSETS[key] ?? null;

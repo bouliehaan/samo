@@ -13,10 +13,10 @@ import {
     useAuthStoreActions,
     useCurrentServerId,
 } from '/@/renderer/store';
-import { LogCategory, logFn } from '/@/shared/utils/logger';
-import { logMsg } from '/@/shared/utils/logger-message';
 import { toast } from '/@/shared/components/toast/toast';
 import { AuthState } from '/@/shared/types/types';
+import { LogCategory, logFn } from '/@/shared/utils/logger';
+import { logMsg } from '/@/shared/utils/logger-message';
 
 const localSettings = isElectron() ? window.api.localSettings : null;
 
@@ -352,7 +352,9 @@ export const useServerAuthenticated = () => {
             }
 
             setReady(AuthState.LOADING);
-            authenticateServer(serverWithAuth).catch((error) => logFn.error(String(error), { category: LogCategory.GENERAL }));
+            authenticateServer(serverWithAuth).catch((error) =>
+                logFn.error(String(error), { category: LogCategory.GENERAL }),
+            );
         }
     }, [authHydrated, authenticateServer, serverId]);
 

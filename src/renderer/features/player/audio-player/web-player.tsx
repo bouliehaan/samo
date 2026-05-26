@@ -8,7 +8,6 @@ import {
     WebPlayerEngine,
     WebPlayerEngineHandle,
 } from '/@/renderer/features/player/audio-player/engine/web-player-engine';
-import { logFn } from '/@/shared/utils/logger';
 import { usePlayerEvents } from '/@/renderer/features/player/audio-player/hooks/use-player-events';
 import { useSongUrl } from '/@/renderer/features/player/audio-player/hooks/use-stream-url';
 import {
@@ -31,6 +30,7 @@ import {
 import { toast } from '/@/shared/components/toast/toast';
 import { QueueSong } from '/@/shared/types/domain-types';
 import { CrossfadeStyle, PlayerStatus, PlayerStyle } from '/@/shared/types/types';
+import { logFn } from '/@/shared/utils/logger';
 
 const PLAY_PAUSE_FADE_DURATION = 300;
 const PLAY_PAUSE_FADE_INTERVAL = 10;

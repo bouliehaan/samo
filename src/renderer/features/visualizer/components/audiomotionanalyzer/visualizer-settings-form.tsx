@@ -1,14 +1,16 @@
-import styles from './visualizer-settings-form.module.css';
 import { useTranslation } from 'react-i18next';
-import { useSettingsStoreActions, useVisualizerSettings } from '/@/renderer/store/settings.store';
-import { Fieldset } from '/@/shared/components/fieldset/fieldset';
-import { SegmentedControl } from '/@/shared/components/segmented-control/segmented-control';
-import { Stack } from '/@/shared/components/stack/stack';
+
 import { AudiomotionColorSettings } from './audiomotion-color-settings';
 import { AudiomotionGeneralSettings } from './audiomotion-general-settings';
 import { AudiomotionSchemaSections } from './audiomotion-schema-sections';
 import { ButterchurnSettings } from './butterchurn-settings';
 import { PresetSettings } from './preset-settings';
+import styles from './visualizer-settings-form.module.css';
+
+import { useSettingsStoreActions, useVisualizerSettings } from '/@/renderer/store/settings.store';
+import { Fieldset } from '/@/shared/components/fieldset/fieldset';
+import { SegmentedControl } from '/@/shared/components/segmented-control/segmented-control';
+import { Stack } from '/@/shared/components/stack/stack';
 
 const VISUALIZER_TYPE_OPTIONS = [
     { label: 'AudioMotion Analyzer', value: 'audiomotionanalyzer' },

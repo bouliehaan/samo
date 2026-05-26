@@ -136,13 +136,13 @@ import { MdOutlineVisibility, MdOutlineVisibilityOff } from 'react-icons/md';
 import { PiMouseLeftClickFill, PiMouseRightClickFill } from 'react-icons/pi';
 import { RiPlayListAddLine, RiRepeat2Line, RiRepeatOneLine } from 'react-icons/ri';
 
+import monitorIcon from '../../../../assets/monitor.png';
 import styles from './icon.module.css';
 import lastfmLogoIcon from './lastfm_logo_icon.png';
 import listenbrainzLogoIcon from './listenbrainz_logo_icon.svg';
 import musicbrainzLogoIcon from './musicbrainz_logo_icon.svg';
 import qobuzLogoIcon from './qobuz_logo_icon.png';
 import spotifyLogoIcon from './spotify_logo_icon.svg';
-import monitorIcon from '../../../../assets/monitor.png';
 
 export type AppIconSelection = keyof typeof AppIcon;
 
@@ -276,10 +276,9 @@ export const AppIcon = {
     brandQobuz: QobuzLogoIcon,
     brandSpotify: SpotifyLogoIcon,
     cache: LuCloudDownload,
+    cast: LuCast,
     check: LuCheck,
     clipboardCopy: LuClipboardCopy,
-    cast: LuCast,
-    outputPicker: OutputPickerIcon,
     collection: LuPackage2,
     delete: LuTrash,
     disc: LuDisc,
@@ -348,6 +347,7 @@ export const AppIcon = {
     minus: LuMinus,
     mouseLeftClick: PiMouseLeftClickFill,
     mouseRightClick: PiMouseRightClickFill,
+    outputPicker: OutputPickerIcon,
     panelRightClose: LuPanelRightClose,
     panelRightOpen: LuPanelRightOpen,
     pin: LuPin,

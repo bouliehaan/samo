@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import type { DeepPartial } from './utils';
+
 import { AppRoute } from '/@/renderer/router/routes';
 import { FontValueSchema } from '/@/renderer/types/fonts';
 import { sanitizeCss } from '/@/renderer/utils/sanitize';
@@ -16,8 +18,6 @@ import {
     PlayerType,
     TableColumn,
 } from '/@/shared/types/types';
-
-import type { DeepPartial } from './utils';
 
 const HomeItemSchema = z.enum([
     'genres',

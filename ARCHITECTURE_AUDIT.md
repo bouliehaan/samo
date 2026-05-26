@@ -21,6 +21,24 @@
 
 ## Implementation progress
 
+### 2026-05-22 — Desktop ↛ `@samo/core/mobile` (architecture correction)
+
+Jake caught a real architectural smell during the badge-sweep review: the desktop `useAlbumQualityProfiles` was reaching into `@samo/core/mobile` for the album quality scan. None of the scan code is mobile-specific — it's pure Subsonic API protocol work that cursor parked under `/mobile/` because mobile was the first consumer.
+
+**The move:**
+- New canonical home: [packages/core/src/audio-quality/subsonic-quality-scan.ts](packages/core/src/audio-quality/subsonic-quality-scan.ts) owns `SubsonicPlayableSong`, `getSubsonicMusicQuality`, `isSubsonicSongHiRes`, `loadSubsonicAlbumQualityProfile`, `annotateSubsonicAlbumsQuality`, `annotateSubsonicHiResCollections`. The functions now return `QualityBadgeProfile` (the existing audio-quality type) instead of the structurally-identical `MobileQualityProfile`.
+- [packages/core/src/mobile/mobile-home.ts](packages/core/src/mobile/mobile-home.ts) — `MobileQualityProfile` is now a `type` alias for `QualityBadgeProfile`. Identical shape, zero Android callsite churn.
+- [packages/core/src/mobile/mobile-subsonic-quality.ts](packages/core/src/mobile/mobile-subsonic-quality.ts) reduced to a back-compat re-export shim. Android keeps importing from `./mobile-subsonic-quality` and gets the new audio-quality implementation underneath.
+- [packages/core/src/mobile/mobile-playback.ts](packages/core/src/mobile/mobile-playback.ts) — `getSubsonicMusicQuality` / `isSubsonicSongHiRes` / `SubsonicPlayableSong` re-exported from audio-quality for Android back-compat; the inline definitions plus the now-unused `toAudioNumber` / `getContainerFromContentType` helpers were deleted.
+- [src/renderer/hooks/use-album-quality-profiles.ts](src/renderer/hooks/use-album-quality-profiles.ts) imports `annotateSubsonicAlbumsQuality` from `@samo/core/audio-quality` directly — desktop no longer touches `@samo/core/mobile`.
+- Reverted the wrong-direction re-export I added to [packages/core/src/mobile/index.ts](packages/core/src/mobile/index.ts) yesterday.
+
+**Stale-artifact lesson learned:** `packages/core` uses `noEmit: true` in tsconfig but ships hand-maintained `.js` + `.d.ts` files alongside every `.ts` source. Vite's bundler-mode resolution can prefer the stale `.js` over `.ts` for sub-path imports, so every TS edit in this package needs a matching update to the JS + dts artifacts. Synced everywhere I touched (`subsonic-quality-scan` × 3 files, `mobile/index` × 3 files, `mobile-home` × 3 files, `mobile-subsonic-quality` × 3 files, `mobile-playback` × 3 files, `audio-quality/index` × 3 files).
+
+**Followup item (not done this pass):** the same `.ts`/`.js`/`.d.ts` triple-maintenance pattern is a footgun across all of `packages/core`. Either move to a real build step (tsc with emit, or rollup) or delete the `.js`/`.d.ts` checkouts and let Vite/Metro consume `.ts` directly. Tracked as a desktop-side audit item.
+
+**Verification:** `pnpm run typecheck` (core + node + web all clean), `pnpm test` (62 passing).
+
 ### 2026-05-22 — Chromecast / quality-badge review (cursor cleanup)
 
 Jake flagged cursor's recent Chromecast / quality-badge / output-picker work as incomplete. Reviewed and fixed:

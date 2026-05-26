@@ -37,7 +37,7 @@ export const OutputPickerModal = memo(
     ({ handlers, opened }: { handlers: ModalProps['handlers']; opened: boolean }) => {
         const castState = useDesktopCastState();
         const [isLoading, setIsLoading] = useState(false);
-        const [error, setError] = useState<string | null>(null);
+        const [error, setError] = useState<null | string>(null);
 
         useEffect(() => {
             if (!opened) return;

@@ -1,5 +1,11 @@
+import { type MobilePlayableAudio } from '@samo/core/mobile';
 import { getMobileContentSource, type MobileContentSource } from '@samo/core/mobile';
-import { ServerType, type ServerAuthenticationResult } from '@samo/core/server';
+import {
+    findServerAuthenticationForSource,
+    normalizeServerContentSourceId,
+    ServerType,
+    type ServerAuthenticationResult,
+} from '@samo/core/server';
 
 import { getPersistedServerAuthKey } from '../services/persisted-server';
 
@@ -7,9 +13,7 @@ export const getSourceFromSourceId = (
     sourceId: string,
     serverConnections: ServerAuthenticationResult[],
 ): MobileContentSource | undefined => {
-    const connected = serverConnections.find(
-        (connection) => getPersistedServerAuthKey(connection) === sourceId,
-    );
+    const connected = findServerAuthenticationForSource(serverConnections, { id: sourceId });
     if (connected) {
         return getMobileContentSource(connected);
     }
@@ -26,9 +30,37 @@ export const getSourceFromSourceId = (
     }
 
     return {
-        id: sourceId,
+        id: normalizeServerContentSourceId(sourceId),
         title: url.replace(/^https?:\/\//i, ''),
         type,
         url,
     };
+};
+
+export const getContentSourceFromDownloadCollection = (
+    collection: Pick<{ sourceId: string }, 'sourceId'>,
+    serverConnections: ServerAuthenticationResult[],
+): MobileContentSource | undefined =>
+    getSourceFromSourceId(collection.sourceId, serverConnections);
+
+export const getContentSourceFromPlaybackItem = (
+    item: Pick<MobilePlayableAudio, 'contentSourceId' | 'id'>,
+    serverConnections: ServerAuthenticationResult[],
+): MobileContentSource | undefined => {
+    const idPrefixMatch = item.id.match(
+        /^([^:]+:[^:]+):(?:music|audiobook|podcast(?:-episode)?|radio):/,
+    );
+    const sourceId = item.contentSourceId ?? idPrefixMatch?.[1];
+    if (!sourceId) {
+        return undefined;
+    }
+
+    const connected = serverConnections.find(
+        (candidate) => getPersistedServerAuthKey(candidate) === sourceId,
+    );
+    if (connected) {
+        return getMobileContentSource(connected);
+    }
+
+    return getSourceFromSourceId(sourceId, serverConnections);
 };

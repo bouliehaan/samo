@@ -4,10 +4,7 @@ import { devtools, persist } from 'zustand/middleware';
 import { immer } from 'zustand/middleware/immer';
 import { createWithEqualityFn } from 'zustand/traditional';
 
-import {
-    identityPersistMigrate,
-    PERSIST_VERSION_INITIAL,
-} from '/@/renderer/store/persist-migrate';
+import { identityPersistMigrate, PERSIST_VERSION_INITIAL } from '/@/renderer/store/persist-migrate';
 import { InternetRadioStation } from '/@/shared/types/domain-types';
 
 export interface RadioStoreSlice extends RadioStoreState {

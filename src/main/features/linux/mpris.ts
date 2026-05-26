@@ -141,62 +141,65 @@ subscribePlayerStateEvent('shuffle', (shuffle) => {
     mprisPlayer.shuffle = shuffle;
 });
 
-subscribePlayerStateEvent('song', ({ imageUrl, song }: { imageUrl?: null | string; song: QueueSong | undefined }) => {
-    try {
-        if (!song?.id) {
-            mprisPlayer.metadata = {};
-            return;
-        }
+subscribePlayerStateEvent(
+    'song',
+    ({ imageUrl, song }: { imageUrl?: null | string; song: QueueSong | undefined }) => {
+        try {
+            if (!song?.id) {
+                mprisPlayer.metadata = {};
+                return;
+            }
 
-        // If the served id is an empty string, this is a radio
-        // Use a limited subset of the fields
-        if (song._serverId === '') {
-            // The id as passed in from use-mpris is radio- plus the radio ID
-            // If there are spaces or some other characters, this causes MPRIS to error and
-            // disconnect the bus. To prevent this, just use a fake track/radio
+            // If the served id is an empty string, this is a radio
+            // Use a limited subset of the fields
+            if (song._serverId === '') {
+                // The id as passed in from use-mpris is radio- plus the radio ID
+                // If there are spaces or some other characters, this causes MPRIS to error and
+                // disconnect the bus. To prevent this, just use a fake track/radio
+                mprisPlayer.metadata = {
+                    'mpris:trackid': mprisPlayer.objectPath(`track/radio`),
+                    'xesam:album': song.album || null,
+                    'xesam:artist': song.artists?.length
+                        ? song.artists.map((artist) => artist.name)
+                        : null,
+                    'xesam:title': song.name || null,
+                };
+                return;
+            }
+
             mprisPlayer.metadata = {
-                'mpris:trackid': mprisPlayer.objectPath(`track/radio`),
+                'mpris:artUrl': imageUrl || null,
+                'mpris:length': song.duration ? Math.round((song.duration || 0) * 1e3) : null,
+                'mpris:trackid': song.id
+                    ? mprisPlayer.objectPath(`track/${song.id?.replace('-', '')}`)
+                    : '',
                 'xesam:album': song.album || null,
+                'xesam:albumArtist': song.albumArtists?.length
+                    ? song.albumArtists.map((artist) => artist.name)
+                    : null,
                 'xesam:artist': song.artists?.length
                     ? song.artists.map((artist) => artist.name)
                     : null,
+                'xesam:audioBpm': song.bpm,
+                // Comment is a `list of strings` type
+                'xesam:comment': song.comment ? [song.comment] : null,
+                'xesam:contentCreated': song.releaseDate,
+                'xesam:discNumber': song.discNumber ? song.discNumber : null,
+                'xesam:genre': song.genres?.length
+                    ? song.genres.map((genre: any) => genre.name)
+                    : null,
+                'xesam:lastUsed': song.lastPlayedAt,
                 'xesam:title': song.name || null,
+                'xesam:trackNumber': song.trackNumber ? song.trackNumber : null,
+                'xesam:useCount':
+                    song.playCount !== null && song.playCount !== undefined ? song.playCount : null,
+                // User ratings are only on Navidrome/Subsonic and are on a scale of 1-5
+                'xesam:userRating': song.userRating ? song.userRating / 5 : null,
             };
-            return;
+        } catch (err) {
+            console.error(err);
         }
-
-        mprisPlayer.metadata = {
-            'mpris:artUrl': imageUrl || null,
-            'mpris:length': song.duration ? Math.round((song.duration || 0) * 1e3) : null,
-            'mpris:trackid': song.id
-                ? mprisPlayer.objectPath(`track/${song.id?.replace('-', '')}`)
-                : '',
-            'xesam:album': song.album || null,
-            'xesam:albumArtist': song.albumArtists?.length
-                ? song.albumArtists.map((artist) => artist.name)
-                : null,
-            'xesam:artist': song.artists?.length
-                ? song.artists.map((artist) => artist.name)
-                : null,
-            'xesam:audioBpm': song.bpm,
-            // Comment is a `list of strings` type
-            'xesam:comment': song.comment ? [song.comment] : null,
-            'xesam:contentCreated': song.releaseDate,
-            'xesam:discNumber': song.discNumber ? song.discNumber : null,
-            'xesam:genre': song.genres?.length
-                ? song.genres.map((genre: any) => genre.name)
-                : null,
-            'xesam:lastUsed': song.lastPlayedAt,
-            'xesam:title': song.name || null,
-            'xesam:trackNumber': song.trackNumber ? song.trackNumber : null,
-            'xesam:useCount':
-                song.playCount !== null && song.playCount !== undefined ? song.playCount : null,
-            // User ratings are only on Navidrome/Subsonic and are on a scale of 1-5
-            'xesam:userRating': song.userRating ? song.userRating / 5 : null,
-        };
-    } catch (err) {
-        console.error(err);
-    }
-});
+    },
+);
 
 export { mprisPlayer };

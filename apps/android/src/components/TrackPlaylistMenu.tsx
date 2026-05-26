@@ -1,10 +1,12 @@
 import { type MobileHomeItem, type MobileMediaTrack } from '@samo/core/mobile';
+import { useState } from 'react';
 import {
     ActivityIndicator,
     Modal,
     Pressable,
     ScrollView,
     Text,
+    TextInput,
     View,
 } from 'react-native';
 
@@ -14,8 +16,10 @@ import { getContentItemKey } from '../utils/content-item';
 
 export const TrackPlaylistMenu = ({
     actionState,
+    canCreatePlaylist = false,
     onAddToPlaylist,
     onClose,
+    onCreatePlaylist,
     playlists,
     track,
 }: {
@@ -24,11 +28,17 @@ export const TrackPlaylistMenu = ({
         | { playlistId: string; status: 'loading' }
         | { message: string; status: 'success' }
         | { status: 'idle' };
+    canCreatePlaylist?: boolean;
     onAddToPlaylist: (playlist: MobileHomeItem) => void;
     onClose: () => void;
+    onCreatePlaylist?: (name: string) => void;
     playlists: MobileHomeItem[];
     track: MobileMediaTrack | null;
 }) => {
+    const [newPlaylistName, setNewPlaylistName] = useState('');
+    const isCreating =
+        actionState.status === 'loading' && actionState.playlistId === '__create__';
+
     return (
         <Modal animationType="fade" onRequestClose={onClose} transparent visible={Boolean(track)}>
             <Pressable onPress={onClose} style={styles.contextMenuBackdrop}>
@@ -39,10 +49,40 @@ export const TrackPlaylistMenu = ({
                     <Text numberOfLines={2} style={styles.contextMenuTitle}>
                         {track?.title ?? 'Track'}
                     </Text>
+                    {canCreatePlaylist && onCreatePlaylist ? (
+                        <View style={styles.playlistCreateSection}>
+                            <TextInput
+                                autoCapitalize="words"
+                                editable={actionState.status !== 'loading'}
+                                onChangeText={setNewPlaylistName}
+                                placeholder="New playlist name"
+                                placeholderTextColor={colors.muted}
+                                style={styles.input}
+                                value={newPlaylistName}
+                            />
+                            <Pressable
+                                accessibilityRole="button"
+                                disabled={
+                                    actionState.status === 'loading' ||
+                                    newPlaylistName.trim().length === 0
+                                }
+                                onPress={() => onCreatePlaylist(newPlaylistName.trim())}
+                                style={styles.inputActionButton}
+                            >
+                                {isCreating ? (
+                                    <ActivityIndicator color={colors.accent} size="small" />
+                                ) : (
+                                    <Text style={styles.primaryButtonText}>Create playlist</Text>
+                                )}
+                            </Pressable>
+                        </View>
+                    ) : null}
                     <ScrollView style={styles.contextMenuList}>
                         {playlists.length === 0 ? (
                             <Text style={styles.mutedText}>
-                                No playlists from this music server yet.
+                                {canCreatePlaylist
+                                    ? 'No playlists yet — create one above.'
+                                    : 'No playlists from this music server yet.'}
                             </Text>
                         ) : (
                             playlists.map((playlist) => {

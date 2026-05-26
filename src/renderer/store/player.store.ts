@@ -6,14 +6,9 @@ import { persist } from 'zustand/middleware';
 import { immer } from 'zustand/middleware/immer';
 import { useShallow } from 'zustand/react/shallow';
 
-import { createSubscribedTraditionalStore } from '/@/renderer/lib/zustand-traditional';
 import { eventEmitter } from '/@/renderer/events/event-emitter';
-import { emitPlayerSeek, subscribePlayerSeek } from '/@/renderer/store/player/seek';
-import {
-    createInitialPlayerTransportSlice,
-    type PlayerTransportSlice,
-} from '/@/renderer/store/player/slices';
 import { createSelectors } from '/@/renderer/lib/zustand';
+import { createSubscribedTraditionalStore } from '/@/renderer/lib/zustand-traditional';
 import {
     isStructuredMusicContext,
     type MusicPlaybackContext,
@@ -21,16 +16,19 @@ import {
     SONG_CONTEXT,
 } from '/@/renderer/store/last-playback-session.store';
 import { usePlaybackOwnerStore } from '/@/renderer/store/playback-owner.store';
-import { useSettingsStore } from '/@/renderer/store/settings.store';
 import {
-    setTimestamp as setTimestampStore,
-    useTimestampStoreBase,
-} from '/@/renderer/store/timestamp.store';
-import {
-    migratePlayerStorePersist,
-    playerStoreStorage,
-    setPlayerStoreHydratedForPersistence,
-} from '/@/renderer/store/utils';
+    computePlayerData,
+    getCurrentSongFromState,
+    getPlaybackInputs,
+    getPlayerDataFromState,
+    getQueueFromState,
+    getQueueOrderFromState,
+    isFirstTrackInQueueFromState,
+    isLastTrackInQueueFromState,
+    playbackInputsEqual,
+    QueueGroupingProperty,
+    touchQueueRevision,
+} from '/@/renderer/store/player-derived';
 import {
     applyAddToQueueLast,
     applyAddToQueueLastShuffle,
@@ -50,19 +48,21 @@ import {
     mapShuffledToQueueIndex,
     regenerateShuffledIndexesIfNeeded,
 } from '/@/renderer/store/player-queue-math';
+import { emitPlayerSeek, subscribePlayerSeek } from '/@/renderer/store/player/seek';
 import {
-    computePlayerData,
-    getCurrentSongFromState,
-    getPlayerDataFromState,
-    getPlaybackInputs,
-    getQueueFromState,
-    getQueueOrderFromState,
-    isFirstTrackInQueueFromState,
-    isLastTrackInQueueFromState,
-    playbackInputsEqual,
-    QueueGroupingProperty,
-    touchQueueRevision,
-} from '/@/renderer/store/player-derived';
+    createInitialPlayerTransportSlice,
+    type PlayerTransportSlice,
+} from '/@/renderer/store/player/slices';
+import { useSettingsStore } from '/@/renderer/store/settings.store';
+import {
+    setTimestamp as setTimestampStore,
+    useTimestampStoreBase,
+} from '/@/renderer/store/timestamp.store';
+import {
+    migratePlayerStorePersist,
+    playerStoreStorage,
+    setPlayerStoreHydratedForPersistence,
+} from '/@/renderer/store/utils';
 export type { GroupedQueue, QueueGroupingProperty } from '/@/renderer/store/player-derived';
 import { shuffleInPlace } from '/@/renderer/utils/shuffle';
 export {
@@ -256,953 +256,936 @@ const claimMusicPlayback = () => {
 export const usePlayerStoreBase = createSubscribedTraditionalStore<PlayerState>()(
     persist(
         immer((set, get) => ({
-                addToQueueByType: (items, playType, playSongId, context) => {
-                    claimMusicPlayback();
-
-                    // Fresh-start play types replace the listening intent. Default to
-                    // `SONG_CONTEXT` so an old album/playlist context can't bleed into a
-                    // single-track play; structured callers (album/playlist headers) pass
-                    // their own context. Additive play types (LAST, NEXT, SHUFFLE variants
-                    // for inserts) intentionally fall through and preserve the current
-                    // context — adding "Play next" to an album doesn't end the album.
-                    const isFreshStart = playType === Play.NOW || playType === Play.SHUFFLE;
-                    if (isFreshStart) {
-                        const nextContext = context ?? SONG_CONTEXT;
-                        set((state) => {
-                            state.player.context = nextContext;
-                        });
-                        rememberMusicPlaybackSession({ context: nextContext });
-                    }
-
-                    const newItems = items.map(toQueueSong);
-                    const newUniqueIds = newItems.map((item) => item._uniqueId);
-
-                    // Find the target song's uniqueId if playSongId is provided
-                    const targetSongUniqueId = playSongId
-                        ? newItems.find((item) => item.id === playSongId)?._uniqueId
-                        : undefined;
-
-                    switch (playType) {
-                        case Play.LAST: {
-                            set((state) => {
-                                registerQueueSongs(state, newItems);
-                                applyAddToQueueLast(state, newUniqueIds);
-                            });
-                            break;
-                        }
-                        case Play.LAST_SHUFFLE: {
-                            set((state) => {
-                                registerQueueSongs(state, newItems);
-                                applyAddToQueueLastShuffle(
-                                    state,
-                                    shuffleInPlace([...newUniqueIds]),
-                                );
-                            });
-                            break;
-                        }
-                        case Play.NEXT: {
-                            set((state) => {
-                                registerQueueSongs(state, newItems);
-                                applyAddToQueueNext(state, newUniqueIds);
-                            });
-                            break;
-                        }
-                        case Play.NEXT_SHUFFLE: {
-                            set((state) => {
-                                registerQueueSongs(state, newItems);
-                                applyAddToQueueNextShuffle(state, shuffleInPlace([...newUniqueIds]));
-                            });
-                            break;
-                        }
-                        case Play.NOW: {
-                            set((state) => {
-                                registerQueueSongs(state, newItems);
-                                state.player.status = PlayerStatus.PLAYING;
-                                state.player.playerNum = 1;
-                                setTimestampStore(0);
-                                applyAddToQueueNow(state, newUniqueIds, targetSongUniqueId);
-                            });
-
-                            emitPlayerPlayEvent(targetSongUniqueId, set, get);
-                            break;
-                        }
-                        case Play.SHUFFLE: {
-                            set((state) => {
-                                registerQueueSongs(state, newItems);
-                                state.player.status = PlayerStatus.PLAYING;
-                                state.player.playerNum = 1;
-                                setTimestampStore(0);
-                                applyAddToQueueShuffle(state, shuffleInPlace([...newUniqueIds]));
-                            });
-
-                            emitPlayerPlayEvent(targetSongUniqueId, set, get);
-                            break;
-                        }
-                    }
-                },
-                addToQueueByUniqueId: (items, uniqueId, edge, playSongId) => {
-                    const newItems = items.map(toQueueSong);
-                    const newUniqueIds = newItems.map((item) => item._uniqueId);
-
-                    // Find the target song's uniqueId if playSongId is provided
-                    const targetSongUniqueId = playSongId
-                        ? newItems.find((item) => item.id === playSongId)?._uniqueId
-                        : undefined;
-
-                    set((state) => {
-                        // Add new songs to songs object
-                        newItems.forEach((item) => {
-                            state.queue.songs[item._uniqueId] = item;
-                        });
-
-                        const index = state.queue.default.findIndex((id) => id === uniqueId);
-
-                        const insertIndex = Math.max(0, edge === 'top' ? index : index + 1);
-
-                        const newQueue = [
-                            ...state.queue.default.slice(0, insertIndex),
-                            ...newUniqueIds,
-                            ...state.queue.default.slice(insertIndex),
-                        ];
-
-                        state.queue.default = newQueue;
-
-                        if (state.player.shuffle === PlayerShuffle.TRACK) {
-                            const currentTrack = getCurrentSongFromState(state);
-                            const currentTrackUniqueId = currentTrack?._uniqueId;
-
-                            if (currentTrackUniqueId) {
-                                // Adjust existing shuffled indexes that are >= insertIndex
-                                const adjustedShuffled = state.queue.shuffled.map((idx) => {
-                                    if (idx >= insertIndex) {
-                                        return idx + newUniqueIds.length;
-                                    }
-                                    return idx;
-                                });
-
-                                // New items will be at indexes starting from insertIndex
-                                const newIndexes = Array.from(
-                                    { length: newUniqueIds.length },
-                                    (_, i) => insertIndex + i,
-                                );
-
-                                const currentShuffledIndex = state.player.index;
-                                state.queue.shuffled = addIndexesToShuffled(
-                                    adjustedShuffled,
-                                    currentShuffledIndex,
-                                    newIndexes,
-                                );
-
-                                // Recalculate player index to the shuffled position
-                                const queueIndex = newQueue.findIndex(
-                                    (id) => id === currentTrackUniqueId,
-                                );
-                                if (queueIndex !== -1) {
-                                    const shuffledPosition = state.queue.shuffled.findIndex(
-                                        (idx) => idx === queueIndex,
-                                    );
-                                    if (shuffledPosition !== -1) {
-                                        state.player.index = shuffledPosition;
-                                    }
-                                }
-                            } else {
-                                // No current track, regenerate shuffled indexes
-                                state.queue.shuffled = generateShuffledIndexes(newQueue.length);
-                            }
-                        } else {
-                            // Recalculate the player index if we're inserting items above the current index
-                            if (insertIndex <= state.player.index) {
-                                state.player.index = state.player.index + newUniqueIds.length;
-                            }
-
-                            recalculatePlayerIndex(state, newQueue);
-                        }
-                    });
-
-                    // If playSongId is provided, find the song and start playback on it
-                    if (targetSongUniqueId) {
-                        let playIndex: number | undefined;
-                        set((state) => {
-                            const queue = getQueueFromState(state);
-                            const queueIndex = queue.items.findIndex(
-                                (item) => item._uniqueId === targetSongUniqueId,
-                            );
-
-                            if (queueIndex !== -1) {
-                                if (
-                                    state.player.shuffle === PlayerShuffle.TRACK &&
-                                    state.queue.shuffled.length > 0
-                                ) {
-                                    // Find the shuffled position for this queue index
-                                    const shuffledPosition = state.queue.shuffled.findIndex(
-                                        (idx) => idx === queueIndex,
-                                    );
-                                    if (shuffledPosition !== -1) {
-                                        state.player.index = shuffledPosition;
-                                        playIndex = shuffledPosition;
-                                    } else {
-                                        state.player.index = queueIndex;
-                                        playIndex = queueIndex;
-                                    }
-                                } else {
-                                    state.player.index = queueIndex;
-                                    playIndex = queueIndex;
-                                }
-                                state.player.status = PlayerStatus.PLAYING;
-                                setTimestampStore(0);
-                            }
-                        });
-
-                        // Emit PLAYER_PLAY event if playback was started
-                        if (playIndex !== undefined) {
-                            eventEmitter.emit('PLAYER_PLAY', {
-                                id: targetSongUniqueId,
-                                index: playIndex,
-                            });
-                        }
-                    }
-                },
-                clearQueue: () => {
-                    set((state) => {
-                        state.player.index = -1;
-                        state.queue.default = [];
-                        state.queue.shuffled = [];
-                        state.queue.songs = {};
-                    });
-                },
-                clearSelected: (items: QueueSong[]) => {
-                    set((state) => {
-                        const uniqueIds = new Set(items.map((item) => item._uniqueId));
-
-                        const indexesToRemove = new Set<number>();
-
-                        state.queue.default.forEach((id, index) => {
-                            if (uniqueIds.has(id)) {
-                                indexesToRemove.add(index);
-                            }
-                        });
-
-                        state.queue.default = state.queue.default.filter(
-                            (id) => !uniqueIds.has(id),
-                        );
-
-                        if (isShuffleEnabled(state)) {
-                            // Remove indexes from shuffled array and adjust remaining indexes
-                            const newShuffled = state.queue.shuffled
-                                .filter((idx) => !indexesToRemove.has(idx))
-                                .map((idx) => {
-                                    // Count how many removed indexes are before this index
-                                    let adjustment = 0;
-                                    for (const removedIdx of indexesToRemove) {
-                                        if (removedIdx < idx) {
-                                            adjustment++;
-                                        }
-                                    }
-                                    return idx - adjustment;
-                                });
-                            state.queue.shuffled = newShuffled;
-                        } else {
-                            state.queue.shuffled = [];
-                        }
-
-                        cleanupOrphanedSongs(state);
-
-                        recalculatePlayerIndex(state, state.queue.default);
-                    });
-                },
-                decreaseVolume: (value: number) => {
-                    set((state) => {
-                        state.player.volume = Math.max(0, state.player.volume - value);
-                    });
-                },
-                increaseVolume: (value: number) => {
-                    set((state) => {
-                        state.player.volume = Math.min(100, state.player.volume + value);
-                    });
-                },
-                mediaAutoNext: () => {
-                    const stateSnapshot = get();
-                    const currentIndex = stateSnapshot.player.index;
-                    const player = stateSnapshot.player;
-                    const repeat = player.repeat;
-                    const queue = getQueueOrderFromState(stateSnapshot);
-                    const isShuffle = isShuffleEnabled(stateSnapshot);
-
-                    const playbackLength = isShuffle
-                        ? stateSnapshot.queue.shuffled.length
-                        : queue.items.length;
-
-                    const newPlayerNum = player.playerNum === 1 ? 2 : 1;
-                    const { nextIndex: nextPlaybackIndex, shouldPause } = calculateNextIndex(
-                        currentIndex,
-                        playbackLength,
-                        repeat,
-                    );
-                    const pauseOnNext = player.pauseOnNextSongEnd;
-                    const newStatus =
-                        shouldPause || pauseOnNext ? PlayerStatus.PAUSED : PlayerStatus.PLAYING;
-
-                    set((state) => {
-                        state.player.index = nextPlaybackIndex;
-                        state.player.playerNum = newPlayerNum;
-                        setTimestampStore(0);
-                        state.player.status = newStatus;
-
-                        if (pauseOnNext) {
-                            state.player.pauseOnNextSongEnd = false;
-                        }
-                    });
-
-                    if (repeat === PlayerRepeat.ONE && nextPlaybackIndex === currentIndex) {
-                        eventEmitter.emit('PLAYER_REPEATED', {
-                            index: nextPlaybackIndex,
-                        });
-                    }
-
-                    // Compute current/next/previous using the same shuffle-aware mapping as getPlayerData().
-                    let currentQueueIndex = nextPlaybackIndex;
-                    if (isShuffle) {
-                        currentQueueIndex = mapShuffledToQueueIndex(
-                            nextPlaybackIndex,
-                            stateSnapshot.queue.shuffled,
-                        );
-                    }
-
-                    const currentSong = queue.items[currentQueueIndex];
-
-                    let nextSong: QueueSong | undefined;
-                    if (isShuffle && repeat !== PlayerRepeat.ONE) {
-                        const nextShuffledIndex = nextPlaybackIndex + 1;
-                        if (nextShuffledIndex < stateSnapshot.queue.shuffled.length) {
-                            const nextQueueIndex = stateSnapshot.queue.shuffled[nextShuffledIndex];
-                            nextSong = queue.items[nextQueueIndex];
-                        } else if (repeat === PlayerRepeat.ALL) {
-                            const firstQueueIndex = stateSnapshot.queue.shuffled[0];
-                            nextSong = queue.items[firstQueueIndex];
-                        }
-                    } else {
-                        nextSong = calculateNextSong(currentQueueIndex, queue.items, repeat);
-                    }
-
-                    let previousSong: QueueSong | undefined;
-                    if (isShuffle) {
-                        const prevShuffledIndex = nextPlaybackIndex - 1;
-                        if (prevShuffledIndex >= 0) {
-                            const prevQueueIndex = stateSnapshot.queue.shuffled[prevShuffledIndex];
-                            previousSong = queue.items[prevQueueIndex];
-                        } else if (repeat === PlayerRepeat.ALL) {
-                            const lastShuffledIndex = stateSnapshot.queue.shuffled.length - 1;
-                            const lastQueueIndex = stateSnapshot.queue.shuffled[lastShuffledIndex];
-                            previousSong = queue.items[lastQueueIndex];
-                        }
-                    } else {
-                        previousSong =
-                            currentQueueIndex > 0 ? queue.items[currentQueueIndex - 1] : undefined;
-                    }
-
-                    return {
-                        currentSong,
-                        index: currentQueueIndex,
-                        nextSong,
-                        num: newPlayerNum,
-                        player1: newPlayerNum === 1 ? currentSong : nextSong,
-                        player2: newPlayerNum === 2 ? currentSong : nextSong,
-                        previousSong,
-                        queueLength: queue.items.length,
-                        status: newStatus,
-                    };
-                },
-                mediaNext: () => {
-                    const state = get();
-                    const currentIndex = state.player.index;
-                    const player = state.player;
-                    const queue = getQueueOrderFromState(state);
-                    const isLastTrack = currentIndex === queue.items.length - 1;
-
-                    let nextIndex: number;
-
-                    if (player.repeat === PlayerRepeat.ALL && isLastTrack) {
-                        // Repeat all: wrap to first track when on last track
-                        nextIndex = 0;
-                    } else if (player.repeat === PlayerRepeat.NONE && isLastTrack) {
-                        // Repeat none: stay on last track if already there
-                        nextIndex = currentIndex;
-                    } else {
-                        // Otherwise, advance to next track (including repeat ONE for manual navigation)
-                        // When shuffle is enabled, currentIndex is already the position in the shuffled array
-                        nextIndex = Math.min(queue.items.length - 1, currentIndex + 1);
-                    }
-
-                    set((state) => {
-                        state.player.index = nextIndex;
-                        state.player.playerNum = 1;
-                        setTimestampStore(0);
-                    });
-
-                    eventEmitter.emit('MEDIA_NEXT', {
-                        currentIndex,
-                        nextIndex,
-                    });
-                },
-                mediaPause: () => {
-                    set((state) => {
-                        state.player.status = PlayerStatus.PAUSED;
-                    });
-                },
-                mediaPlay: (id?: string) => {
-                    if (id) {
-                        claimMusicPlayback();
-                    }
-
-                    let playIndex: number | undefined;
-
-                    set((state) => {
-                        if (id) {
-                            const queue = getQueueFromState(state);
-
-                            // Find the song in the original queue
-                            const queueIndex = queue.items.findIndex(
-                                (item) => item._uniqueId === id,
-                            );
-
-                            if (queueIndex !== -1) {
-                                if (
-                                    state.player.shuffle === PlayerShuffle.TRACK &&
-                                    state.queue.shuffled.length > 0
-                                ) {
-                                    // Find the shuffled position for this queue index
-                                    const shuffledPosition = state.queue.shuffled.findIndex(
-                                        (idx) => idx === queueIndex,
-                                    );
-                                    if (shuffledPosition !== -1) {
-                                        state.player.index = shuffledPosition;
-                                        playIndex = shuffledPosition;
-                                    } else {
-                                        state.player.index = queueIndex;
-                                        playIndex = queueIndex;
-                                    }
-                                } else {
-                                    state.player.index = queueIndex;
-                                    playIndex = queueIndex;
-                                }
-                                setTimestampStore(0);
-                            }
-                        }
-
-                        state.player.status = PlayerStatus.PLAYING;
-                    });
-
-                    if (id && playIndex !== undefined) {
-                        eventEmitter.emit('PLAYER_PLAY', {
-                            id,
-                            index: playIndex,
-                        });
-                    }
-                },
-                mediaPlayByIndex: (index: number) => {
-                    claimMusicPlayback();
-
-                    let playIndex: number | undefined;
-                    let songId: string | undefined;
-
-                    set((state) => {
-                        const queue = getQueueFromState(state);
-
-                        if (index === -1 || index >= queue.items.length) {
-                            state.player.status = PlayerStatus.PAUSED;
-                            return;
-                        }
-
-                        // Get the song's unique ID from the queue
-                        const song = queue.items[index];
-                        if (song) {
-                            songId = song._uniqueId;
-                        }
-
-                        // index is the position in the original queue
-                        if (isShuffleEnabled(state)) {
-                            // Find the shuffled position for this queue index
-                            const shuffledPosition = findShuffledPositionForQueueIndex(
-                                index,
-                                state.queue.shuffled,
-                            );
-                            playIndex = shuffledPosition !== undefined ? shuffledPosition : index;
-                            state.player.index = playIndex;
-                        } else {
-                            playIndex = index;
-                            state.player.index = index;
-                        }
-                        setTimestampStore(0);
-
-                        state.player.status = PlayerStatus.PLAYING;
-                    });
-
-                    if (songId && playIndex !== undefined) {
-                        eventEmitter.emit('PLAYER_PLAY', {
-                            id: songId,
-                            index: playIndex,
-                        });
-                    }
-                },
-                mediaPrevious: () => {
-                    const currentIndex = get().player.index;
-                    const player = get().player;
-                    const queue = getQueueOrderFromState(get());
-                    const currentTimestamp = useTimestampStoreBase.getState().timestamp;
-                    const isFirstTrack = currentIndex === 0;
-
-                    // If timestamp is greater than 5 seconds, restart current song
-                    if (currentTimestamp > 5) {
-                        emitPlayerSeek(0);
-                        return;
-                    }
-
-                    let previousIndex: number;
-
-                    if (player.repeat === PlayerRepeat.ALL && isFirstTrack) {
-                        // Repeat all: wrap to last track when on first track
-                        previousIndex = queue.items.length - 1;
-                    } else if (player.repeat === PlayerRepeat.NONE && isFirstTrack) {
-                        // Repeat none: stay on first track if already there
-                        previousIndex = currentIndex;
-                    } else {
-                        // Otherwise, go to previous track
-                        previousIndex = Math.max(0, currentIndex - 1);
-                    }
-
-                    set((state) => {
-                        state.player.index = previousIndex;
-                        state.player.playerNum = 1;
-                        setTimestampStore(0);
-                    });
-
-                    eventEmitter.emit('MEDIA_PREV', {
-                        currentIndex,
-                        prevIndex: previousIndex,
-                    });
-                },
-                mediaSeekToTimestamp: (timestamp: number) => {
-                    emitPlayerSeek(timestamp);
-                },
-                mediaSkipBackward: (offset?: number) => {
-                    const offsetFromSettings =
-                        useSettingsStore.getState().general.skipButtons.skipBackwardSeconds;
-                    const timeToSkip = offset ?? offsetFromSettings ?? 5;
-                    const currentTimestamp = useTimestampStoreBase.getState().timestamp;
-                    const newTimestamp = Math.max(0, currentTimestamp - timeToSkip);
-
-                    emitPlayerSeek(newTimestamp);
-                },
-                mediaSkipForward: (offset?: number) => {
-                    const state = get();
-                    const queue = getQueueFromState(state);
-                    const index = state.player.index;
-                    const currentTrack = queue.items[index];
-                    const duration = currentTrack?.duration;
-                    const offsetFromSettings =
-                        useSettingsStore.getState().general.skipButtons.skipForwardSeconds;
-                    const timeToSkip = offset ?? offsetFromSettings ?? 5;
-
-                    if (!duration) {
-                        return;
-                    }
-
-                    const currentTimestamp = useTimestampStoreBase.getState().timestamp;
-                    const newTimestamp = Math.min(duration - 1, currentTimestamp + timeToSkip);
-
-                    emitPlayerSeek(newTimestamp);
-                },
-                mediaStop: (options?: { reset?: boolean }) => {
-                    const reset = options?.reset !== false;
-                    set((state) => {
-                        state.player.status = PlayerStatus.PAUSED;
-                        setTimestampStore(0);
-                    });
-                    if (reset) {
-                        emitPlayerSeek(0);
-                    }
-                },
-                mediaToggleMute: () => {
-                    set((state) => {
-                        state.player.muted = !state.player.muted;
-                    });
-                },
-                mediaTogglePlayPause: () => {
-                    set((state) => {
-                        if (state.player.status === PlayerStatus.PLAYING) {
-                            state.player.status = PlayerStatus.PAUSED;
-                        } else {
-                            state.player.status = PlayerStatus.PLAYING;
-                        }
-                    });
-                },
-                moveSelectedTo: (items: QueueSong[], uniqueId: string, edge: 'bottom' | 'top') => {
-                    const itemUniqueIds = items.map((item) => item._uniqueId);
-
-                    set((state) => {
-                        const existingIds = new Set(Object.keys(state.queue.songs));
-
-                        // Add new songs to songs object (avoiding duplicates)
-                        items.forEach((item) => {
-                            if (!existingIds.has(item._uniqueId)) {
-                                state.queue.songs[item._uniqueId] = item;
-                            }
-                        });
-
-                        // Find the index of the drop target
-                        const index = state.queue.default.findIndex((id) => id === uniqueId);
-
-                        // Get the new index based on the edge
-                        const insertIndex = Math.max(0, edge === 'top' ? index : index + 1);
-
-                        const idsBefore = state.queue.default
-                            .slice(0, insertIndex)
-                            .filter((id) => !itemUniqueIds.includes(id));
-
-                        const idsAfter = state.queue.default
-                            .slice(insertIndex)
-                            .filter((id) => !itemUniqueIds.includes(id));
-
-                        const newQueue = [...idsBefore, ...itemUniqueIds, ...idsAfter];
-
-                        recalculatePlayerIndex(state, newQueue);
-                        state.queue.default = newQueue;
-                    });
-                },
-                moveSelectedToBottom: (items: QueueSong[]) => {
-                    set((state) => {
-                        const uniqueIds = items.map((item) => item._uniqueId);
-
-                        // Add new songs to songs object
-                        items.forEach((item) => {
-                            state.queue.songs[item._uniqueId] = item;
-                        });
-
-                        const filtered = state.queue.default.filter(
-                            (id) => !uniqueIds.includes(id),
-                        );
-
-                        const newQueue = [...filtered, ...uniqueIds];
-
-                        recalculatePlayerIndex(state, newQueue);
-
-                        state.queue.default = newQueue;
-                    });
-                },
-                moveSelectedToNext: (items: QueueSong[]) => {
-                    set((state) => {
-                        const uniqueIds = items.map((item) => item._uniqueId);
-
-                        // Add new songs to songs object
-                        items.forEach((item) => {
-                            state.queue.songs[item._uniqueId] = item;
-                        });
-
-                        const currentIndex = state.player.index;
-                        let beforeCurrent = 0;
-                        const filtered = state.queue.default.filter((id, idx) => {
-                            const shouldMove = uniqueIds.includes(id);
-                            if (shouldMove && idx < currentIndex) {
-                                beforeCurrent++;
-                            }
-
-                            return !shouldMove;
-                        });
-
-                        // For every item that is before the current item, subtract one as
-                        // these items will shift the queue up
-                        const insertIndex = currentIndex + 1 - beforeCurrent;
-
-                        const newQueue = [
-                            ...filtered.slice(0, insertIndex),
-                            ...uniqueIds,
-                            ...filtered.slice(insertIndex),
-                        ];
-
-                        recalculatePlayerIndex(state, newQueue);
-                        state.queue.default = newQueue;
-                    });
-                },
-                moveSelectedToTop: (items: QueueSong[]) => {
-                    set((state) => {
-                        const uniqueIds = items.map((item) => item._uniqueId);
-
-                        // Add new songs to songs object
-                        items.forEach((item) => {
-                            state.queue.songs[item._uniqueId] = item;
-                        });
-
-                        const filtered = state.queue.default.filter(
-                            (id) => !uniqueIds.includes(id),
-                        );
-
-                        const newQueue = [...uniqueIds, ...filtered];
-
-                        recalculatePlayerIndex(state, newQueue);
-
-                        state.queue.default = newQueue;
-                    });
-                },
-                setQueue: (items, index, position, context, autoPlay = true) => {
-                    claimMusicPlayback();
-
+            addToQueueByType: (items, playType, playSongId, context) => {
+                claimMusicPlayback();
+
+                // Fresh-start play types replace the listening intent. Default to
+                // `SONG_CONTEXT` so an old album/playlist context can't bleed into a
+                // single-track play; structured callers (album/playlist headers) pass
+                // their own context. Additive play types (LAST, NEXT, SHUFFLE variants
+                // for inserts) intentionally fall through and preserve the current
+                // context — adding "Play next" to an album doesn't end the album.
+                const isFreshStart = playType === Play.NOW || playType === Play.SHUFFLE;
+                if (isFreshStart) {
                     const nextContext = context ?? SONG_CONTEXT;
-
-                    const newItems = items.map(toQueueSong);
-                    const newUniqueIds = newItems.map((item) => item._uniqueId);
-
                     set((state) => {
-                        newItems.forEach((item) => {
-                            state.queue.songs[item._uniqueId] = item;
+                        state.player.context = nextContext;
+                    });
+                    rememberMusicPlaybackSession({ context: nextContext });
+                }
+
+                const newItems = items.map(toQueueSong);
+                const newUniqueIds = newItems.map((item) => item._uniqueId);
+
+                // Find the target song's uniqueId if playSongId is provided
+                const targetSongUniqueId = playSongId
+                    ? newItems.find((item) => item.id === playSongId)?._uniqueId
+                    : undefined;
+
+                switch (playType) {
+                    case Play.LAST: {
+                        set((state) => {
+                            registerQueueSongs(state, newItems);
+                            applyAddToQueueLast(state, newUniqueIds);
+                        });
+                        break;
+                    }
+                    case Play.LAST_SHUFFLE: {
+                        set((state) => {
+                            registerQueueSongs(state, newItems);
+                            applyAddToQueueLastShuffle(state, shuffleInPlace([...newUniqueIds]));
+                        });
+                        break;
+                    }
+                    case Play.NEXT: {
+                        set((state) => {
+                            registerQueueSongs(state, newItems);
+                            applyAddToQueueNext(state, newUniqueIds);
+                        });
+                        break;
+                    }
+                    case Play.NEXT_SHUFFLE: {
+                        set((state) => {
+                            registerQueueSongs(state, newItems);
+                            applyAddToQueueNextShuffle(state, shuffleInPlace([...newUniqueIds]));
+                        });
+                        break;
+                    }
+                    case Play.NOW: {
+                        set((state) => {
+                            registerQueueSongs(state, newItems);
+                            state.player.status = PlayerStatus.PLAYING;
+                            state.player.playerNum = 1;
+                            setTimestampStore(0);
+                            applyAddToQueueNow(state, newUniqueIds, targetSongUniqueId);
                         });
 
-                        state.player.index = index ?? 0;
-                        state.player.status = autoPlay ? PlayerStatus.PLAYING : PlayerStatus.PAUSED;
-                        state.player.playerNum = 1;
-                        state.player.context = nextContext;
-                        state.queue.default = newUniqueIds;
+                        emitPlayerPlayEvent(targetSongUniqueId, set, get);
+                        break;
+                    }
+                    case Play.SHUFFLE: {
+                        set((state) => {
+                            registerQueueSongs(state, newItems);
+                            state.player.status = PlayerStatus.PLAYING;
+                            state.player.playerNum = 1;
+                            setTimestampStore(0);
+                            applyAddToQueueShuffle(state, shuffleInPlace([...newUniqueIds]));
+                        });
+
+                        emitPlayerPlayEvent(targetSongUniqueId, set, get);
+                        break;
+                    }
+                }
+            },
+            addToQueueByUniqueId: (items, uniqueId, edge, playSongId) => {
+                const newItems = items.map(toQueueSong);
+                const newUniqueIds = newItems.map((item) => item._uniqueId);
+
+                // Find the target song's uniqueId if playSongId is provided
+                const targetSongUniqueId = playSongId
+                    ? newItems.find((item) => item.id === playSongId)?._uniqueId
+                    : undefined;
+
+                set((state) => {
+                    // Add new songs to songs object
+                    newItems.forEach((item) => {
+                        state.queue.songs[item._uniqueId] = item;
                     });
 
-                    rememberMusicPlaybackSession({ context: nextContext });
+                    const index = state.queue.default.findIndex((id) => id === uniqueId);
 
-                    eventEmitter.emit('QUEUE_RESTORED', {
-                        data: items,
-                        index: index ?? 0,
-                        position: position ?? 0,
-                    });
-                },
-                ...initialState,
-                setCrossfadeDuration: (duration: number) => {
-                    set((state) => {
-                        const normalizedDuration = Math.max(0, Math.min(10, duration));
-                        state.player.crossfadeDuration = normalizedDuration;
-                    });
-                },
-                setCrossfadeStyle: (style: CrossfadeStyle) => {
-                    set((state) => {
-                        state.player.crossfadeStyle = style;
-                    });
-                },
-                setMusicPlaybackContext: (context: MusicPlaybackContext) => {
-                    set((state) => {
-                        state.player.context = context;
-                    });
-                    rememberMusicPlaybackSession({ context });
-                },
-                setPauseOnNextSongEnd: (value: boolean) => {
-                    set((state) => {
-                        state.player.pauseOnNextSongEnd = value;
-                    });
-                },
-                setRepeat: (repeat: PlayerRepeat) => {
-                    set((state) => {
-                        state.player.repeat = repeat;
-                    });
-                },
-                setShuffle: (shuffle: PlayerShuffle) => {
-                    set((state) => {
-                        const wasShuffled = state.player.shuffle === PlayerShuffle.TRACK;
-                        const willBeShuffled = shuffle === PlayerShuffle.TRACK;
-                        const currentIndex = state.player.index;
+                    const insertIndex = Math.max(0, edge === 'top' ? index : index + 1);
 
-                        state.player.shuffle = shuffle;
+                    const newQueue = [
+                        ...state.queue.default.slice(0, insertIndex),
+                        ...newUniqueIds,
+                        ...state.queue.default.slice(insertIndex),
+                    ];
 
-                        if (willBeShuffled) {
-                            state.queue.shuffled = generateShuffledIndexes(
-                                state.queue.default.length,
+                    state.queue.default = newQueue;
+
+                    if (state.player.shuffle === PlayerShuffle.TRACK) {
+                        const currentTrack = getCurrentSongFromState(state);
+                        const currentTrackUniqueId = currentTrack?._uniqueId;
+
+                        if (currentTrackUniqueId) {
+                            // Adjust existing shuffled indexes that are >= insertIndex
+                            const adjustedShuffled = state.queue.shuffled.map((idx) => {
+                                if (idx >= insertIndex) {
+                                    return idx + newUniqueIds.length;
+                                }
+                                return idx;
+                            });
+
+                            // New items will be at indexes starting from insertIndex
+                            const newIndexes = Array.from(
+                                { length: newUniqueIds.length },
+                                (_, i) => insertIndex + i,
                             );
 
-                            // Convert current index to shuffled position if there's a current song
-                            if (currentIndex >= 0 && currentIndex < state.queue.default.length) {
-                                // Find the shuffled position that corresponds to the current queue position
-                                const shuffledPosition = findShuffledPositionForQueueIndex(
-                                    currentIndex,
-                                    state.queue.shuffled,
+                            const currentShuffledIndex = state.player.index;
+                            state.queue.shuffled = addIndexesToShuffled(
+                                adjustedShuffled,
+                                currentShuffledIndex,
+                                newIndexes,
+                            );
+
+                            // Recalculate player index to the shuffled position
+                            const queueIndex = newQueue.findIndex(
+                                (id) => id === currentTrackUniqueId,
+                            );
+                            if (queueIndex !== -1) {
+                                const shuffledPosition = state.queue.shuffled.findIndex(
+                                    (idx) => idx === queueIndex,
                                 );
-                                if (shuffledPosition !== undefined) {
+                                if (shuffledPosition !== -1) {
                                     state.player.index = shuffledPosition;
                                 }
                             }
                         } else {
-                            // When disabling shuffle, convert shuffled position back to queue position
-                            if (
-                                wasShuffled &&
-                                currentIndex >= 0 &&
-                                currentIndex < state.queue.shuffled.length
-                            ) {
-                                const queuePosition = state.queue.shuffled[currentIndex];
-                                if (queuePosition !== undefined) {
-                                    state.player.index = queuePosition;
-                                }
-                            }
-                            state.queue.shuffled = [];
+                            // No current track, regenerate shuffled indexes
+                            state.queue.shuffled = generateShuffledIndexes(newQueue.length);
                         }
-                        cleanupOrphanedSongs(state);
-                    });
-                },
-                setSpeed: (speed: number) => {
-                    set((state) => {
-                        const normalizedSpeed = Math.max(0.5, Math.min(2, speed));
-                        state.player.speed = normalizedSpeed;
-                    });
-                },
-                setTransitionType: (transitionType: PlayerStyle) => {
-                    set((state) => {
-                        state.player.transitionType = transitionType;
-                    });
-                },
-                setVolume: (volume: number) => {
-                    set((state) => {
-                        state.player.volume = volume;
-                    });
-                },
-                shuffle: () => {
-                    set((state) => {
-                        if (state.player.shuffle === PlayerShuffle.TRACK) {
-                            state.queue.shuffled = generateShuffledIndexes(
-                                state.queue.default.length,
-                            );
+                    } else {
+                        // Recalculate the player index if we're inserting items above the current index
+                        if (insertIndex <= state.player.index) {
+                            state.player.index = state.player.index + newUniqueIds.length;
                         }
-                    });
-                },
-                shuffleAll: () => {
+
+                        recalculatePlayerIndex(state, newQueue);
+                    }
+                });
+
+                // If playSongId is provided, find the song and start playback on it
+                if (targetSongUniqueId) {
+                    let playIndex: number | undefined;
                     set((state) => {
                         const queue = getQueueFromState(state);
-                        const currentIndex = state.player.index;
-                        const currentSong = queue.items[currentIndex];
-
-                        // If there's a current song playing, keep it in place
-                        if (currentSong && currentIndex >= 0 && currentIndex < queue.items.length) {
-                            const currentUniqueId = currentSong._uniqueId;
-                            const currentQueueIndex = state.queue.default.findIndex(
-                                (id) => id === currentUniqueId,
-                            );
-
-                            if (currentQueueIndex !== -1) {
-                                const beforeItems = state.queue.default.slice(0, currentQueueIndex);
-                                const afterItems = state.queue.default.slice(currentQueueIndex + 1);
-
-                                const shuffledBefore = shuffleInPlace([...beforeItems]);
-                                const shuffledAfter = shuffleInPlace([...afterItems]);
-
-                                state.queue.default = [
-                                    ...shuffledBefore,
-                                    currentUniqueId,
-                                    ...shuffledAfter,
-                                ];
-                            } else {
-                                // Current song not in default queue, just shuffle everything
-                                state.queue.default = shuffleInPlace([...state.queue.default]);
-                            }
-                        } else {
-                            // No current song, shuffle everything
-                            state.queue.default = shuffleInPlace([...state.queue.default]);
-                        }
-
-                        // Regenerate shuffled indexes if shuffle is enabled
-                        regenerateShuffledIndexesIfNeeded(state);
-                    });
-                },
-                shuffleSelected: (items: QueueSong[]) => {
-                    set((state) => {
-                        const itemUniqueIds = items.map((item) => item._uniqueId);
-
-                        // Find positions of selected items in the default queue
-                        const selectedPositions = itemUniqueIds
-                            .map((id) => state.queue.default.findIndex((i) => i === id))
-                            .filter((idx) => idx !== -1)
-                            .sort((a, b) => a - b); // Sort to maintain order
-
-                        if (selectedPositions.length === 0) {
-                            return;
-                        }
-
-                        // Get the selected items in their current order
-                        const selectedItems = selectedPositions.map(
-                            (pos) => state.queue.default[pos],
+                        const queueIndex = queue.items.findIndex(
+                            (item) => item._uniqueId === targetSongUniqueId,
                         );
 
-                        // Shuffle the selected items
-                        const shuffledItems = shuffleInPlace([...selectedItems]);
-
-                        // Rebuild the default queue with shuffled selected items
-                        const newDefaultQueue = [...state.queue.default];
-                        selectedPositions.forEach((pos, i) => {
-                            newDefaultQueue[pos] = shuffledItems[i];
-                        });
-
-                        state.queue.default = newDefaultQueue;
-
-                        // Regenerate shuffled indexes if shuffle is enabled
-                        regenerateShuffledIndexesIfNeeded(state);
-                    });
-                },
-                toggleRepeat: () => {
-                    set((state) => {
-                        if (state.player.repeat === PlayerRepeat.NONE) {
-                            state.player.repeat = PlayerRepeat.ONE;
-                        } else if (state.player.repeat === PlayerRepeat.ONE) {
-                            state.player.repeat = PlayerRepeat.ALL;
-                        } else {
-                            state.player.repeat = PlayerRepeat.NONE;
-                        }
-                    });
-                },
-                toggleShuffle: () => {
-                    set((state) => {
-                        const wasShuffled = state.player.shuffle === PlayerShuffle.TRACK;
-                        const willBeShuffled = state.player.shuffle !== PlayerShuffle.TRACK;
-                        const currentIndex = state.player.index;
-
-                        state.player.shuffle =
-                            state.player.shuffle === PlayerShuffle.NONE
-                                ? PlayerShuffle.TRACK
-                                : PlayerShuffle.NONE;
-
-                        if (willBeShuffled) {
-                            // Enabling shuffle: create shuffled indexes with current track as first
-                            const combinedLength = state.queue.default.length;
-
+                        if (queueIndex !== -1) {
                             if (
-                                combinedLength > 0 &&
-                                currentIndex >= 0 &&
-                                currentIndex < combinedLength
+                                state.player.shuffle === PlayerShuffle.TRACK &&
+                                state.queue.shuffled.length > 0
                             ) {
-                                // Get the current queue position (actual index in combined queue)
-                                const currentQueuePosition = currentIndex;
-
-                                // Create shuffled indexes with current track first
-                                const remainingIndexes = Array.from(
-                                    { length: combinedLength },
-                                    (_, i) => i,
-                                ).filter((idx) => idx !== currentQueuePosition);
-                                const shuffledRemaining = shuffleInPlace([...remainingIndexes]);
-
-                                state.queue.shuffled = [currentQueuePosition, ...shuffledRemaining];
-
-                                // Set player index to 0 since current track is now first in shuffled array
-                                state.player.index = 0;
-                            } else {
-                                // No current track, just generate shuffled indexes normally
-                                state.queue.shuffled = generateShuffledIndexes(combinedLength);
-                            }
-                        } else {
-                            // Disabling shuffle: clear shuffled indexes and convert index back
-                            if (
-                                wasShuffled &&
-                                currentIndex >= 0 &&
-                                currentIndex < state.queue.shuffled.length
-                            ) {
-                                const queuePosition = state.queue.shuffled[currentIndex];
-                                if (queuePosition !== undefined) {
-                                    state.player.index = queuePosition;
+                                // Find the shuffled position for this queue index
+                                const shuffledPosition = state.queue.shuffled.findIndex(
+                                    (idx) => idx === queueIndex,
+                                );
+                                if (shuffledPosition !== -1) {
+                                    state.player.index = shuffledPosition;
+                                    playIndex = shuffledPosition;
+                                } else {
+                                    state.player.index = queueIndex;
+                                    playIndex = queueIndex;
                                 }
+                            } else {
+                                state.player.index = queueIndex;
+                                playIndex = queueIndex;
                             }
-                            state.queue.shuffled = [];
+                            state.player.status = PlayerStatus.PLAYING;
+                            setTimestampStore(0);
                         }
                     });
-                },
-            })),
+
+                    // Emit PLAYER_PLAY event if playback was started
+                    if (playIndex !== undefined) {
+                        eventEmitter.emit('PLAYER_PLAY', {
+                            id: targetSongUniqueId,
+                            index: playIndex,
+                        });
+                    }
+                }
+            },
+            clearQueue: () => {
+                set((state) => {
+                    state.player.index = -1;
+                    state.queue.default = [];
+                    state.queue.shuffled = [];
+                    state.queue.songs = {};
+                });
+            },
+            clearSelected: (items: QueueSong[]) => {
+                set((state) => {
+                    const uniqueIds = new Set(items.map((item) => item._uniqueId));
+
+                    const indexesToRemove = new Set<number>();
+
+                    state.queue.default.forEach((id, index) => {
+                        if (uniqueIds.has(id)) {
+                            indexesToRemove.add(index);
+                        }
+                    });
+
+                    state.queue.default = state.queue.default.filter((id) => !uniqueIds.has(id));
+
+                    if (isShuffleEnabled(state)) {
+                        // Remove indexes from shuffled array and adjust remaining indexes
+                        const newShuffled = state.queue.shuffled
+                            .filter((idx) => !indexesToRemove.has(idx))
+                            .map((idx) => {
+                                // Count how many removed indexes are before this index
+                                let adjustment = 0;
+                                for (const removedIdx of indexesToRemove) {
+                                    if (removedIdx < idx) {
+                                        adjustment++;
+                                    }
+                                }
+                                return idx - adjustment;
+                            });
+                        state.queue.shuffled = newShuffled;
+                    } else {
+                        state.queue.shuffled = [];
+                    }
+
+                    cleanupOrphanedSongs(state);
+
+                    recalculatePlayerIndex(state, state.queue.default);
+                });
+            },
+            decreaseVolume: (value: number) => {
+                set((state) => {
+                    state.player.volume = Math.max(0, state.player.volume - value);
+                });
+            },
+            increaseVolume: (value: number) => {
+                set((state) => {
+                    state.player.volume = Math.min(100, state.player.volume + value);
+                });
+            },
+            mediaAutoNext: () => {
+                const stateSnapshot = get();
+                const currentIndex = stateSnapshot.player.index;
+                const player = stateSnapshot.player;
+                const repeat = player.repeat;
+                const queue = getQueueOrderFromState(stateSnapshot);
+                const isShuffle = isShuffleEnabled(stateSnapshot);
+
+                const playbackLength = isShuffle
+                    ? stateSnapshot.queue.shuffled.length
+                    : queue.items.length;
+
+                const newPlayerNum = player.playerNum === 1 ? 2 : 1;
+                const { nextIndex: nextPlaybackIndex, shouldPause } = calculateNextIndex(
+                    currentIndex,
+                    playbackLength,
+                    repeat,
+                );
+                const pauseOnNext = player.pauseOnNextSongEnd;
+                const newStatus =
+                    shouldPause || pauseOnNext ? PlayerStatus.PAUSED : PlayerStatus.PLAYING;
+
+                set((state) => {
+                    state.player.index = nextPlaybackIndex;
+                    state.player.playerNum = newPlayerNum;
+                    setTimestampStore(0);
+                    state.player.status = newStatus;
+
+                    if (pauseOnNext) {
+                        state.player.pauseOnNextSongEnd = false;
+                    }
+                });
+
+                if (repeat === PlayerRepeat.ONE && nextPlaybackIndex === currentIndex) {
+                    eventEmitter.emit('PLAYER_REPEATED', {
+                        index: nextPlaybackIndex,
+                    });
+                }
+
+                // Compute current/next/previous using the same shuffle-aware mapping as getPlayerData().
+                let currentQueueIndex = nextPlaybackIndex;
+                if (isShuffle) {
+                    currentQueueIndex = mapShuffledToQueueIndex(
+                        nextPlaybackIndex,
+                        stateSnapshot.queue.shuffled,
+                    );
+                }
+
+                const currentSong = queue.items[currentQueueIndex];
+
+                let nextSong: QueueSong | undefined;
+                if (isShuffle && repeat !== PlayerRepeat.ONE) {
+                    const nextShuffledIndex = nextPlaybackIndex + 1;
+                    if (nextShuffledIndex < stateSnapshot.queue.shuffled.length) {
+                        const nextQueueIndex = stateSnapshot.queue.shuffled[nextShuffledIndex];
+                        nextSong = queue.items[nextQueueIndex];
+                    } else if (repeat === PlayerRepeat.ALL) {
+                        const firstQueueIndex = stateSnapshot.queue.shuffled[0];
+                        nextSong = queue.items[firstQueueIndex];
+                    }
+                } else {
+                    nextSong = calculateNextSong(currentQueueIndex, queue.items, repeat);
+                }
+
+                let previousSong: QueueSong | undefined;
+                if (isShuffle) {
+                    const prevShuffledIndex = nextPlaybackIndex - 1;
+                    if (prevShuffledIndex >= 0) {
+                        const prevQueueIndex = stateSnapshot.queue.shuffled[prevShuffledIndex];
+                        previousSong = queue.items[prevQueueIndex];
+                    } else if (repeat === PlayerRepeat.ALL) {
+                        const lastShuffledIndex = stateSnapshot.queue.shuffled.length - 1;
+                        const lastQueueIndex = stateSnapshot.queue.shuffled[lastShuffledIndex];
+                        previousSong = queue.items[lastQueueIndex];
+                    }
+                } else {
+                    previousSong =
+                        currentQueueIndex > 0 ? queue.items[currentQueueIndex - 1] : undefined;
+                }
+
+                return {
+                    currentSong,
+                    index: currentQueueIndex,
+                    nextSong,
+                    num: newPlayerNum,
+                    player1: newPlayerNum === 1 ? currentSong : nextSong,
+                    player2: newPlayerNum === 2 ? currentSong : nextSong,
+                    previousSong,
+                    queueLength: queue.items.length,
+                    status: newStatus,
+                };
+            },
+            mediaNext: () => {
+                const state = get();
+                const currentIndex = state.player.index;
+                const player = state.player;
+                const queue = getQueueOrderFromState(state);
+                const isLastTrack = currentIndex === queue.items.length - 1;
+
+                let nextIndex: number;
+
+                if (player.repeat === PlayerRepeat.ALL && isLastTrack) {
+                    // Repeat all: wrap to first track when on last track
+                    nextIndex = 0;
+                } else if (player.repeat === PlayerRepeat.NONE && isLastTrack) {
+                    // Repeat none: stay on last track if already there
+                    nextIndex = currentIndex;
+                } else {
+                    // Otherwise, advance to next track (including repeat ONE for manual navigation)
+                    // When shuffle is enabled, currentIndex is already the position in the shuffled array
+                    nextIndex = Math.min(queue.items.length - 1, currentIndex + 1);
+                }
+
+                set((state) => {
+                    state.player.index = nextIndex;
+                    state.player.playerNum = 1;
+                    setTimestampStore(0);
+                });
+
+                eventEmitter.emit('MEDIA_NEXT', {
+                    currentIndex,
+                    nextIndex,
+                });
+            },
+            mediaPause: () => {
+                set((state) => {
+                    state.player.status = PlayerStatus.PAUSED;
+                });
+            },
+            mediaPlay: (id?: string) => {
+                if (id) {
+                    claimMusicPlayback();
+                }
+
+                let playIndex: number | undefined;
+
+                set((state) => {
+                    if (id) {
+                        const queue = getQueueFromState(state);
+
+                        // Find the song in the original queue
+                        const queueIndex = queue.items.findIndex((item) => item._uniqueId === id);
+
+                        if (queueIndex !== -1) {
+                            if (
+                                state.player.shuffle === PlayerShuffle.TRACK &&
+                                state.queue.shuffled.length > 0
+                            ) {
+                                // Find the shuffled position for this queue index
+                                const shuffledPosition = state.queue.shuffled.findIndex(
+                                    (idx) => idx === queueIndex,
+                                );
+                                if (shuffledPosition !== -1) {
+                                    state.player.index = shuffledPosition;
+                                    playIndex = shuffledPosition;
+                                } else {
+                                    state.player.index = queueIndex;
+                                    playIndex = queueIndex;
+                                }
+                            } else {
+                                state.player.index = queueIndex;
+                                playIndex = queueIndex;
+                            }
+                            setTimestampStore(0);
+                        }
+                    }
+
+                    state.player.status = PlayerStatus.PLAYING;
+                });
+
+                if (id && playIndex !== undefined) {
+                    eventEmitter.emit('PLAYER_PLAY', {
+                        id,
+                        index: playIndex,
+                    });
+                }
+            },
+            mediaPlayByIndex: (index: number) => {
+                claimMusicPlayback();
+
+                let playIndex: number | undefined;
+                let songId: string | undefined;
+
+                set((state) => {
+                    const queue = getQueueFromState(state);
+
+                    if (index === -1 || index >= queue.items.length) {
+                        state.player.status = PlayerStatus.PAUSED;
+                        return;
+                    }
+
+                    // Get the song's unique ID from the queue
+                    const song = queue.items[index];
+                    if (song) {
+                        songId = song._uniqueId;
+                    }
+
+                    // index is the position in the original queue
+                    if (isShuffleEnabled(state)) {
+                        // Find the shuffled position for this queue index
+                        const shuffledPosition = findShuffledPositionForQueueIndex(
+                            index,
+                            state.queue.shuffled,
+                        );
+                        playIndex = shuffledPosition !== undefined ? shuffledPosition : index;
+                        state.player.index = playIndex;
+                    } else {
+                        playIndex = index;
+                        state.player.index = index;
+                    }
+                    setTimestampStore(0);
+
+                    state.player.status = PlayerStatus.PLAYING;
+                });
+
+                if (songId && playIndex !== undefined) {
+                    eventEmitter.emit('PLAYER_PLAY', {
+                        id: songId,
+                        index: playIndex,
+                    });
+                }
+            },
+            mediaPrevious: () => {
+                const currentIndex = get().player.index;
+                const player = get().player;
+                const queue = getQueueOrderFromState(get());
+                const currentTimestamp = useTimestampStoreBase.getState().timestamp;
+                const isFirstTrack = currentIndex === 0;
+
+                // If timestamp is greater than 5 seconds, restart current song
+                if (currentTimestamp > 5) {
+                    emitPlayerSeek(0);
+                    return;
+                }
+
+                let previousIndex: number;
+
+                if (player.repeat === PlayerRepeat.ALL && isFirstTrack) {
+                    // Repeat all: wrap to last track when on first track
+                    previousIndex = queue.items.length - 1;
+                } else if (player.repeat === PlayerRepeat.NONE && isFirstTrack) {
+                    // Repeat none: stay on first track if already there
+                    previousIndex = currentIndex;
+                } else {
+                    // Otherwise, go to previous track
+                    previousIndex = Math.max(0, currentIndex - 1);
+                }
+
+                set((state) => {
+                    state.player.index = previousIndex;
+                    state.player.playerNum = 1;
+                    setTimestampStore(0);
+                });
+
+                eventEmitter.emit('MEDIA_PREV', {
+                    currentIndex,
+                    prevIndex: previousIndex,
+                });
+            },
+            mediaSeekToTimestamp: (timestamp: number) => {
+                emitPlayerSeek(timestamp);
+            },
+            mediaSkipBackward: (offset?: number) => {
+                const offsetFromSettings =
+                    useSettingsStore.getState().general.skipButtons.skipBackwardSeconds;
+                const timeToSkip = offset ?? offsetFromSettings ?? 5;
+                const currentTimestamp = useTimestampStoreBase.getState().timestamp;
+                const newTimestamp = Math.max(0, currentTimestamp - timeToSkip);
+
+                emitPlayerSeek(newTimestamp);
+            },
+            mediaSkipForward: (offset?: number) => {
+                const state = get();
+                const queue = getQueueFromState(state);
+                const index = state.player.index;
+                const currentTrack = queue.items[index];
+                const duration = currentTrack?.duration;
+                const offsetFromSettings =
+                    useSettingsStore.getState().general.skipButtons.skipForwardSeconds;
+                const timeToSkip = offset ?? offsetFromSettings ?? 5;
+
+                if (!duration) {
+                    return;
+                }
+
+                const currentTimestamp = useTimestampStoreBase.getState().timestamp;
+                const newTimestamp = Math.min(duration - 1, currentTimestamp + timeToSkip);
+
+                emitPlayerSeek(newTimestamp);
+            },
+            mediaStop: (options?: { reset?: boolean }) => {
+                const reset = options?.reset !== false;
+                set((state) => {
+                    state.player.status = PlayerStatus.PAUSED;
+                    setTimestampStore(0);
+                });
+                if (reset) {
+                    emitPlayerSeek(0);
+                }
+            },
+            mediaToggleMute: () => {
+                set((state) => {
+                    state.player.muted = !state.player.muted;
+                });
+            },
+            mediaTogglePlayPause: () => {
+                set((state) => {
+                    if (state.player.status === PlayerStatus.PLAYING) {
+                        state.player.status = PlayerStatus.PAUSED;
+                    } else {
+                        state.player.status = PlayerStatus.PLAYING;
+                    }
+                });
+            },
+            moveSelectedTo: (items: QueueSong[], uniqueId: string, edge: 'bottom' | 'top') => {
+                const itemUniqueIds = items.map((item) => item._uniqueId);
+
+                set((state) => {
+                    const existingIds = new Set(Object.keys(state.queue.songs));
+
+                    // Add new songs to songs object (avoiding duplicates)
+                    items.forEach((item) => {
+                        if (!existingIds.has(item._uniqueId)) {
+                            state.queue.songs[item._uniqueId] = item;
+                        }
+                    });
+
+                    // Find the index of the drop target
+                    const index = state.queue.default.findIndex((id) => id === uniqueId);
+
+                    // Get the new index based on the edge
+                    const insertIndex = Math.max(0, edge === 'top' ? index : index + 1);
+
+                    const idsBefore = state.queue.default
+                        .slice(0, insertIndex)
+                        .filter((id) => !itemUniqueIds.includes(id));
+
+                    const idsAfter = state.queue.default
+                        .slice(insertIndex)
+                        .filter((id) => !itemUniqueIds.includes(id));
+
+                    const newQueue = [...idsBefore, ...itemUniqueIds, ...idsAfter];
+
+                    recalculatePlayerIndex(state, newQueue);
+                    state.queue.default = newQueue;
+                });
+            },
+            moveSelectedToBottom: (items: QueueSong[]) => {
+                set((state) => {
+                    const uniqueIds = items.map((item) => item._uniqueId);
+
+                    // Add new songs to songs object
+                    items.forEach((item) => {
+                        state.queue.songs[item._uniqueId] = item;
+                    });
+
+                    const filtered = state.queue.default.filter((id) => !uniqueIds.includes(id));
+
+                    const newQueue = [...filtered, ...uniqueIds];
+
+                    recalculatePlayerIndex(state, newQueue);
+
+                    state.queue.default = newQueue;
+                });
+            },
+            moveSelectedToNext: (items: QueueSong[]) => {
+                set((state) => {
+                    const uniqueIds = items.map((item) => item._uniqueId);
+
+                    // Add new songs to songs object
+                    items.forEach((item) => {
+                        state.queue.songs[item._uniqueId] = item;
+                    });
+
+                    const currentIndex = state.player.index;
+                    let beforeCurrent = 0;
+                    const filtered = state.queue.default.filter((id, idx) => {
+                        const shouldMove = uniqueIds.includes(id);
+                        if (shouldMove && idx < currentIndex) {
+                            beforeCurrent++;
+                        }
+
+                        return !shouldMove;
+                    });
+
+                    // For every item that is before the current item, subtract one as
+                    // these items will shift the queue up
+                    const insertIndex = currentIndex + 1 - beforeCurrent;
+
+                    const newQueue = [
+                        ...filtered.slice(0, insertIndex),
+                        ...uniqueIds,
+                        ...filtered.slice(insertIndex),
+                    ];
+
+                    recalculatePlayerIndex(state, newQueue);
+                    state.queue.default = newQueue;
+                });
+            },
+            moveSelectedToTop: (items: QueueSong[]) => {
+                set((state) => {
+                    const uniqueIds = items.map((item) => item._uniqueId);
+
+                    // Add new songs to songs object
+                    items.forEach((item) => {
+                        state.queue.songs[item._uniqueId] = item;
+                    });
+
+                    const filtered = state.queue.default.filter((id) => !uniqueIds.includes(id));
+
+                    const newQueue = [...uniqueIds, ...filtered];
+
+                    recalculatePlayerIndex(state, newQueue);
+
+                    state.queue.default = newQueue;
+                });
+            },
+            setQueue: (items, index, position, context, autoPlay = true) => {
+                claimMusicPlayback();
+
+                const nextContext = context ?? SONG_CONTEXT;
+
+                const newItems = items.map(toQueueSong);
+                const newUniqueIds = newItems.map((item) => item._uniqueId);
+
+                set((state) => {
+                    newItems.forEach((item) => {
+                        state.queue.songs[item._uniqueId] = item;
+                    });
+
+                    state.player.index = index ?? 0;
+                    state.player.status = autoPlay ? PlayerStatus.PLAYING : PlayerStatus.PAUSED;
+                    state.player.playerNum = 1;
+                    state.player.context = nextContext;
+                    state.queue.default = newUniqueIds;
+                });
+
+                rememberMusicPlaybackSession({ context: nextContext });
+
+                eventEmitter.emit('QUEUE_RESTORED', {
+                    data: items,
+                    index: index ?? 0,
+                    position: position ?? 0,
+                });
+            },
+            ...initialState,
+            setCrossfadeDuration: (duration: number) => {
+                set((state) => {
+                    const normalizedDuration = Math.max(0, Math.min(10, duration));
+                    state.player.crossfadeDuration = normalizedDuration;
+                });
+            },
+            setCrossfadeStyle: (style: CrossfadeStyle) => {
+                set((state) => {
+                    state.player.crossfadeStyle = style;
+                });
+            },
+            setMusicPlaybackContext: (context: MusicPlaybackContext) => {
+                set((state) => {
+                    state.player.context = context;
+                });
+                rememberMusicPlaybackSession({ context });
+            },
+            setPauseOnNextSongEnd: (value: boolean) => {
+                set((state) => {
+                    state.player.pauseOnNextSongEnd = value;
+                });
+            },
+            setRepeat: (repeat: PlayerRepeat) => {
+                set((state) => {
+                    state.player.repeat = repeat;
+                });
+            },
+            setShuffle: (shuffle: PlayerShuffle) => {
+                set((state) => {
+                    const wasShuffled = state.player.shuffle === PlayerShuffle.TRACK;
+                    const willBeShuffled = shuffle === PlayerShuffle.TRACK;
+                    const currentIndex = state.player.index;
+
+                    state.player.shuffle = shuffle;
+
+                    if (willBeShuffled) {
+                        state.queue.shuffled = generateShuffledIndexes(state.queue.default.length);
+
+                        // Convert current index to shuffled position if there's a current song
+                        if (currentIndex >= 0 && currentIndex < state.queue.default.length) {
+                            // Find the shuffled position that corresponds to the current queue position
+                            const shuffledPosition = findShuffledPositionForQueueIndex(
+                                currentIndex,
+                                state.queue.shuffled,
+                            );
+                            if (shuffledPosition !== undefined) {
+                                state.player.index = shuffledPosition;
+                            }
+                        }
+                    } else {
+                        // When disabling shuffle, convert shuffled position back to queue position
+                        if (
+                            wasShuffled &&
+                            currentIndex >= 0 &&
+                            currentIndex < state.queue.shuffled.length
+                        ) {
+                            const queuePosition = state.queue.shuffled[currentIndex];
+                            if (queuePosition !== undefined) {
+                                state.player.index = queuePosition;
+                            }
+                        }
+                        state.queue.shuffled = [];
+                    }
+                    cleanupOrphanedSongs(state);
+                });
+            },
+            setSpeed: (speed: number) => {
+                set((state) => {
+                    const normalizedSpeed = Math.max(0.5, Math.min(2, speed));
+                    state.player.speed = normalizedSpeed;
+                });
+            },
+            setTransitionType: (transitionType: PlayerStyle) => {
+                set((state) => {
+                    state.player.transitionType = transitionType;
+                });
+            },
+            setVolume: (volume: number) => {
+                set((state) => {
+                    state.player.volume = volume;
+                });
+            },
+            shuffle: () => {
+                set((state) => {
+                    if (state.player.shuffle === PlayerShuffle.TRACK) {
+                        state.queue.shuffled = generateShuffledIndexes(state.queue.default.length);
+                    }
+                });
+            },
+            shuffleAll: () => {
+                set((state) => {
+                    const queue = getQueueFromState(state);
+                    const currentIndex = state.player.index;
+                    const currentSong = queue.items[currentIndex];
+
+                    // If there's a current song playing, keep it in place
+                    if (currentSong && currentIndex >= 0 && currentIndex < queue.items.length) {
+                        const currentUniqueId = currentSong._uniqueId;
+                        const currentQueueIndex = state.queue.default.findIndex(
+                            (id) => id === currentUniqueId,
+                        );
+
+                        if (currentQueueIndex !== -1) {
+                            const beforeItems = state.queue.default.slice(0, currentQueueIndex);
+                            const afterItems = state.queue.default.slice(currentQueueIndex + 1);
+
+                            const shuffledBefore = shuffleInPlace([...beforeItems]);
+                            const shuffledAfter = shuffleInPlace([...afterItems]);
+
+                            state.queue.default = [
+                                ...shuffledBefore,
+                                currentUniqueId,
+                                ...shuffledAfter,
+                            ];
+                        } else {
+                            // Current song not in default queue, just shuffle everything
+                            state.queue.default = shuffleInPlace([...state.queue.default]);
+                        }
+                    } else {
+                        // No current song, shuffle everything
+                        state.queue.default = shuffleInPlace([...state.queue.default]);
+                    }
+
+                    // Regenerate shuffled indexes if shuffle is enabled
+                    regenerateShuffledIndexesIfNeeded(state);
+                });
+            },
+            shuffleSelected: (items: QueueSong[]) => {
+                set((state) => {
+                    const itemUniqueIds = items.map((item) => item._uniqueId);
+
+                    // Find positions of selected items in the default queue
+                    const selectedPositions = itemUniqueIds
+                        .map((id) => state.queue.default.findIndex((i) => i === id))
+                        .filter((idx) => idx !== -1)
+                        .sort((a, b) => a - b); // Sort to maintain order
+
+                    if (selectedPositions.length === 0) {
+                        return;
+                    }
+
+                    // Get the selected items in their current order
+                    const selectedItems = selectedPositions.map((pos) => state.queue.default[pos]);
+
+                    // Shuffle the selected items
+                    const shuffledItems = shuffleInPlace([...selectedItems]);
+
+                    // Rebuild the default queue with shuffled selected items
+                    const newDefaultQueue = [...state.queue.default];
+                    selectedPositions.forEach((pos, i) => {
+                        newDefaultQueue[pos] = shuffledItems[i];
+                    });
+
+                    state.queue.default = newDefaultQueue;
+
+                    // Regenerate shuffled indexes if shuffle is enabled
+                    regenerateShuffledIndexesIfNeeded(state);
+                });
+            },
+            toggleRepeat: () => {
+                set((state) => {
+                    if (state.player.repeat === PlayerRepeat.NONE) {
+                        state.player.repeat = PlayerRepeat.ONE;
+                    } else if (state.player.repeat === PlayerRepeat.ONE) {
+                        state.player.repeat = PlayerRepeat.ALL;
+                    } else {
+                        state.player.repeat = PlayerRepeat.NONE;
+                    }
+                });
+            },
+            toggleShuffle: () => {
+                set((state) => {
+                    const wasShuffled = state.player.shuffle === PlayerShuffle.TRACK;
+                    const willBeShuffled = state.player.shuffle !== PlayerShuffle.TRACK;
+                    const currentIndex = state.player.index;
+
+                    state.player.shuffle =
+                        state.player.shuffle === PlayerShuffle.NONE
+                            ? PlayerShuffle.TRACK
+                            : PlayerShuffle.NONE;
+
+                    if (willBeShuffled) {
+                        // Enabling shuffle: create shuffled indexes with current track as first
+                        const combinedLength = state.queue.default.length;
+
+                        if (
+                            combinedLength > 0 &&
+                            currentIndex >= 0 &&
+                            currentIndex < combinedLength
+                        ) {
+                            // Get the current queue position (actual index in combined queue)
+                            const currentQueuePosition = currentIndex;
+
+                            // Create shuffled indexes with current track first
+                            const remainingIndexes = Array.from(
+                                { length: combinedLength },
+                                (_, i) => i,
+                            ).filter((idx) => idx !== currentQueuePosition);
+                            const shuffledRemaining = shuffleInPlace([...remainingIndexes]);
+
+                            state.queue.shuffled = [currentQueuePosition, ...shuffledRemaining];
+
+                            // Set player index to 0 since current track is now first in shuffled array
+                            state.player.index = 0;
+                        } else {
+                            // No current track, just generate shuffled indexes normally
+                            state.queue.shuffled = generateShuffledIndexes(combinedLength);
+                        }
+                    } else {
+                        // Disabling shuffle: clear shuffled indexes and convert index back
+                        if (
+                            wasShuffled &&
+                            currentIndex >= 0 &&
+                            currentIndex < state.queue.shuffled.length
+                        ) {
+                            const queuePosition = state.queue.shuffled[currentIndex];
+                            if (queuePosition !== undefined) {
+                                state.player.index = queuePosition;
+                            }
+                        }
+                        state.queue.shuffled = [];
+                    }
+                });
+            },
+        })),
         {
             merge: (persistedState: any, currentState: any) => {
                 const merged = merge(currentState, persistedState) as PlayerState;
@@ -1353,8 +1336,7 @@ export const usePlayerActions = () => {
             ...actions,
             getQueue: (groupBy?: QueueGroupingProperty) =>
                 getQueueFromState(usePlayerStoreBase.getState(), groupBy),
-            isFirstTrackInQueue: () =>
-                isFirstTrackInQueueFromState(usePlayerStoreBase.getState()),
+            isFirstTrackInQueue: () => isFirstTrackInQueueFromState(usePlayerStoreBase.getState()),
             isLastTrackInQueue: () => isLastTrackInQueueFromState(usePlayerStoreBase.getState()),
             setTimestamp: setTimestampStore,
         }),

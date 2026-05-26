@@ -2,6 +2,7 @@ import { buildAudioQualityBadgeItems } from '@samo/core/audio-quality';
 import {
     getMobileContentSource,
     getPlaybackQualityProfile,
+    parsePodcastPlaybackShowId,
     MobileHomeItemType,
     MobileSearchItemType,
     type MobileHomeItem,
@@ -83,8 +84,16 @@ import {
     subscribeToAndroidOutputRouteEvents,
     updateAndroidNowPlayingMetadata,
 } from '../services/audio-playback';
+import { getContentSourceFromPlaybackItem } from '../utils/content-source';
 import { getPersistedServerAuthKey } from '../services/persisted-server';
-import { useAndroidPlaybackState } from '../state/playback-store';
+import { useServerConnections } from '../contexts/server-connections';
+import { artworkSourceUri, resolvePlaybackArtworkSourceForDisplay } from '../utils/samo-artwork-url';
+import {
+    getAndroidPlaybackState,
+    subscribeAndroidPlaybackState,
+    useAndroidPlaybackState,
+    useMiniPlayerPlaybackState,
+} from '../state/playback-store';
 import { type AndroidPlaybackState } from '../types/playback';
 import {
     findActiveChapterIndex,
@@ -137,21 +146,27 @@ const CAST_ICON_ACTIVE_TINT = 'rgba(202, 160, 79, 0.78)';
 const CAST_ICON_INACTIVE_TINT = 'rgba(245, 245, 245, 0.72)';
 
 export const MiniPlayer = memo(({
+    artworkImageId,
     artworkUrl,
+    contentSource,
     lastPlayedItem,
     onOpenFullPlayer,
     onTogglePlayback,
     playbackState,
     playerProgress,
     reducedMotion,
+    serverConnections,
 }: {
+    artworkImageId?: string;
     artworkUrl: string | undefined;
+    contentSource?: import('@samo/core/mobile').MobileContentSource;
     lastPlayedItem: MobilePlayableAudio | null;
     onOpenFullPlayer: () => void;
     onTogglePlayback: () => void;
     playbackState: AndroidPlaybackState;
     playerProgress: SharedValue<number>;
     reducedMotion: boolean;
+    serverConnections: ServerAuthenticationResult[];
 }) => {
     const [isMiniInteractive, setIsMiniInteractive] = useState(true);
     useAnimatedReaction(
@@ -248,12 +263,15 @@ export const MiniPlayer = memo(({
                     style={styles.miniPlayerTouchable}
                 >
                     <View style={styles.miniPlayerArtworkContainer}>
-                        {artworkUrl ? (
-                            <ExpoImage
-                                cachePolicy="memory-disk"
-                                source={artworkUrl}
+                        {artworkUrl || artworkImageId ? (
+                            <ArtworkImage
+                                artworkImageId={artworkImageId}
+                                contentSource={contentSource}
+                                fallbackStyle={styles.miniPlayerArtworkFallback}
+                                letter={title.slice(0, 1)}
+                                serverConnections={serverConnections}
                                 style={styles.miniPlayerArtwork}
-                                transition={0}
+                                uri={artworkUrl}
                             />
                         ) : (
                             <View style={styles.miniPlayerArtworkFallback}>
@@ -299,51 +317,66 @@ MiniPlayer.displayName = 'MiniPlayer';
 export const ConnectedMiniPlayer = memo((
     props: Omit<ComponentProps<typeof MiniPlayer>, 'playbackState'>,
 ) => {
-    const playbackState = useAndroidPlaybackState();
+    const playbackState = useMiniPlayerPlaybackState();
     return <MiniPlayer {...props} playbackState={playbackState} />;
 });
 
 ConnectedMiniPlayer.displayName = 'ConnectedMiniPlayer';
 
 export const NowPlayingMetadataSync = memo(() => {
-    const metadataKey = useAndroidPlaybackState((state) => {
-        if (state.status === 'idle') {
-            return null;
-        }
-
-        const display = getPlaybackDisplayMetadata(state);
-        return JSON.stringify({
-            artworkUrl: state.item.artworkUrl,
-            id: state.item.id,
-            sessionId: state.sessionId,
-            source: state.item.source,
-            subtitle: display.subtitle,
-            title: display.title || state.item.title,
-        });
-    });
+    const serverConnections = useServerConnections();
     const lastSentRef = useRef<string | null>(null);
+    const serverConnectionsRef = useRef(serverConnections);
+    serverConnectionsRef.current = serverConnections;
 
     useEffect(() => {
-        if (
-            !metadataKey ||
-            metadataKey === lastSentRef.current ||
-            !isAndroidNativePlaybackAvailable()
-        ) {
+        if (!isAndroidNativePlaybackAvailable()) {
             return;
         }
 
-        lastSentRef.current = metadataKey;
-        const metadata = JSON.parse(metadataKey) as {
-            artworkUrl?: string;
-            id: string;
-            sessionId: string;
-            source: string;
-            subtitle?: string;
-            title: string;
+        const syncMetadata = () => {
+            const state = getAndroidPlaybackState();
+            if (state.status === 'idle') {
+                return;
+            }
+
+            const display = getPlaybackDisplayMetadata(state);
+            const artworkUrl =
+                artworkSourceUri(
+                    resolvePlaybackArtworkSourceForDisplay(
+                        state.item,
+                        serverConnectionsRef.current,
+                    ),
+                ) ?? state.item.artworkUrl;
+            const metadataKey = JSON.stringify({
+                artworkUrl,
+                id: state.item.id,
+                sessionId: state.sessionId,
+                source: state.item.source,
+                subtitle: display.subtitle,
+                title: display.title || state.item.title,
+            });
+
+            if (metadataKey === lastSentRef.current) {
+                return;
+            }
+
+            lastSentRef.current = metadataKey;
+            const metadata = JSON.parse(metadataKey) as {
+                artworkUrl?: string;
+                id: string;
+                sessionId: string;
+                source: string;
+                subtitle?: string;
+                title: string;
+            };
+
+            void updateAndroidNowPlayingMetadata(metadata).catch(() => undefined);
         };
 
-        void updateAndroidNowPlayingMetadata(metadata).catch(() => undefined);
-    }, [metadataKey]);
+        syncMetadata();
+        return subscribeAndroidPlaybackState(syncMetadata);
+    }, []);
 
     return null;
 });
@@ -361,7 +394,9 @@ const SLEEP_OPTIONS: { label: string; seconds: number; wide?: boolean }[] = [
 ];
 
 export const FullScreenPlayer = memo(({
+    artworkImageId,
     artworkUrl,
+    contentSource,
     castState,
     isShuffled,
     lastPlayedItem,
@@ -384,7 +419,9 @@ export const FullScreenPlayer = memo(({
     // Canonical high-res artwork URL — same string the MiniPlayer renders.
     // Derived once in the parent so the two players share one expo-image
     // cache entry and one in-flight load.
+    artworkImageId?: string;
     artworkUrl: string | undefined;
+    contentSource?: import('@samo/core/mobile').MobileContentSource;
     castState: AndroidCastState;
     isShuffled: boolean;
     lastPlayedItem: MobilePlayableAudio | null;
@@ -427,14 +464,24 @@ export const FullScreenPlayer = memo(({
     const displayItem: MobilePlayableAudio | null = activeItem ?? lastPlayedItem;
     const isResting = !activeItem && Boolean(displayItem);
     const canSkipPlayback = Boolean(displayItem && displayItem.source !== 'radio');
+    const artworkColorUrl = useMemo(() => {
+        if (!displayItem) {
+            return artworkUrl;
+        }
+        return (
+            artworkSourceUri(
+                resolvePlaybackArtworkSourceForDisplay(displayItem, serverConnections),
+            ) ?? artworkUrl
+        );
+    }, [artworkUrl, displayItem, serverConnections]);
 
     useEffect(() => {
-        if (!artworkUrl) return;
+        if (!artworkColorUrl) return;
         let cancelled = false;
-        getImageColors(artworkUrl, {
+        getImageColors(artworkColorUrl, {
             cache: true,
             fallback: '#101010',
-            key: artworkUrl,
+            key: artworkColorUrl,
             // High-quality extraction picks more swatches and clusters them
             // more carefully, which dramatically improves the OKLab scorer's
             // chance of finding a characteristic muted swatch.
@@ -460,7 +507,7 @@ export const FullScreenPlayer = memo(({
         return () => {
             cancelled = true;
         };
-    }, [artworkUrl, bgFade]);
+    }, [artworkColorUrl, bgFade]);
 
     const startSleepTimer = useCallback((seconds: number) => {
         if (sleepTimerRef.current) clearTimeout(sleepTimerRef.current);
@@ -526,7 +573,9 @@ export const FullScreenPlayer = memo(({
         // persisted as lastPlayedItem before this build won't have it — so
         // also fall back to extracting the prefix from the well-known playback
         // id format `<authType>:<authUrl>:<source>:<innerId>[:<episodeId>]`.
-        const idPrefixMatch = item.id.match(/^([^:]+:[^:]+):(?:music|audiobook|podcast|radio):/);
+        const idPrefixMatch = item.id.match(
+            /^([^:]+:[^:]+):(?:music|audiobook|podcast(?:-episode)?|radio):/,
+        );
         const sourceId = item.contentSourceId ?? idPrefixMatch?.[1];
         const auth = sourceId
             ? serverConnections.find(
@@ -536,7 +585,7 @@ export const FullScreenPlayer = memo(({
         const contentSource = auth ? getMobileContentSource(auth) : undefined;
         // Playback ids look like `<authType>:<authUrl>:<source>:<innerId>[:<episodeId>]`.
         // Strip the prefix so menu actions like "Go to Album" hit real Subsonic ids.
-        const idMatch = item.id.match(/:(?:music|audiobook|podcast|radio):(.+)$/);
+        const idMatch = item.id.match(/:(?:music|audiobook|podcast(?:-episode)?|radio):(.+)$/);
         const innerId = idMatch ? idMatch[1] : item.id;
 
         if (item.source === 'music') {
@@ -545,6 +594,7 @@ export const FullScreenPlayer = memo(({
                 albumId: item.albumId,
                 artist: item.artist,
                 artistId: item.artistId,
+                artworkImageId: item.artworkImageId,
                 artworkUrl: item.artworkUrl,
                 id: innerId,
                 playback: item,
@@ -572,9 +622,9 @@ export const FullScreenPlayer = memo(({
         }
 
         if (item.source === 'audiobook' || item.source === 'podcast') {
-            // For podcasts the inner id is `<itemId>:<episodeId>`; for audiobooks it's
-            // just `<itemId>`. Either way we want the library item id for the menu.
-            const ownerId = innerId.split(':')[0];
+            const ownerId =
+                parsePodcastPlaybackShowId(item.id) ??
+                (item.source === 'podcast' ? innerId.split(':')[0] : innerId);
             const homeItem: MobileHomeItem = {
                 artworkUrl: item.artworkUrl,
                 id: ownerId,
@@ -815,7 +865,8 @@ export const FullScreenPlayer = memo(({
     const isPlaying = playbackState.status === 'playing' || playbackState.status === 'buffering';
     const display = activeItem
         ? getPlaybackDisplayMetadata(playbackState)
-        : { subtitle: displayItem.subtitle, title: displayItem.title };
+        : { subtitle: displayItem.subtitle, title: displayItem.title ?? 'Unknown title' };
+    const displayTitle = display.title || displayItem.title || 'Unknown title';
     const isMusicSource = displayItem.source === 'music';
     const qualityItems = isMusicSource
         ? buildAudioQualityBadgeItems({
@@ -949,27 +1000,26 @@ export const FullScreenPlayer = memo(({
 
             <View style={styles.fullPlayerArtworkWrap}>
                 <Pressable
-                    accessibilityLabel={`Open ${display.title} artwork`}
+                    accessibilityLabel={`Open ${displayTitle} artwork`}
                     accessibilityRole="button"
-                    disabled={!artworkUrl}
+                    disabled={!artworkUrl && !artworkImageId}
                     onPress={() => setIsArtworkZoomOpen(true)}
                     style={styles.fullPlayerArtworkShadow}
                 >
-                    {artworkUrl ? (
-                        <ExpoImage
-                            allowDownscaling={false}
-                            cachePolicy="memory-disk"
-                            contentFit="cover"
-                            priority="high"
-                            recyclingKey={artworkUrl}
-                            source={{ uri: artworkUrl }}
+                    {artworkUrl || artworkImageId ? (
+                        <ArtworkImage
+                            artworkImageId={artworkImageId}
+                            contentSource={contentSource}
+                            fallbackStyle={styles.fullPlayerArtworkFallback}
+                            letter={displayTitle.slice(0, 1)}
+                            serverConnections={serverConnections}
                             style={styles.fullPlayerArtwork}
-                            transition={0}
+                            uri={artworkUrl}
                         />
                     ) : (
                         <View style={styles.fullPlayerArtworkFallback}>
                             <Text style={styles.fullPlayerArtworkLetter}>
-                                {display.title.slice(0, 1)}
+                                {displayTitle.slice(0, 1)}
                             </Text>
                         </View>
                     )}
@@ -992,7 +1042,7 @@ export const FullScreenPlayer = memo(({
                         numberOfLines={2}
                         style={styles.fullPlayerTitle}
                     >
-                        {display.title}
+                        {displayTitle}
                     </Text>
                     {display.subtitle ? (
                         <Text numberOfLines={1} style={styles.fullPlayerSubtitle}>
@@ -1121,12 +1171,16 @@ export const FullScreenPlayer = memo(({
             onClose={closeQueue}
             onPlayQueueIndex={onPlayQueueIndex}
             queue={queue}
+            serverConnections={serverConnections}
             sheetStyle={queueSheetStyle}
         />
 
         <ArtworkZoomModal
+            artworkImageId={artworkImageId}
+            contentSource={contentSource}
             onClose={() => setIsArtworkZoomOpen(false)}
-            title={display.title}
+            serverConnections={serverConnections}
+            title={displayTitle}
             uri={artworkUrl}
             visible={isArtworkZoomOpen}
         />
@@ -1182,7 +1236,9 @@ export const FullScreenPlayer = memo(({
 export const ConnectedFullScreenPlayer = memo((
     props: Omit<ComponentProps<typeof FullScreenPlayer>, 'playbackState'>,
 ) => {
-    const playbackState = useAndroidPlaybackState();
+    const fullPlaybackState = useAndroidPlaybackState();
+    const miniPlaybackState = useMiniPlayerPlaybackState();
+    const playbackState = props.visible ? fullPlaybackState : miniPlaybackState;
     return <FullScreenPlayer {...props} playbackState={playbackState} />;
 });
 
@@ -1485,6 +1541,7 @@ export const QueueSheetOverlay = memo(({
     onClose,
     onPlayQueueIndex,
     queue,
+    serverConnections,
     sheetStyle,
 }: {
     backdropStyle: ReturnType<typeof useAnimatedStyle>;
@@ -1495,6 +1552,7 @@ export const QueueSheetOverlay = memo(({
     onClose: () => void;
     onPlayQueueIndex?: (index: number) => void;
     queue: { index: number; items: MobilePlayableAudio[] } | null;
+    serverConnections: ServerAuthenticationResult[];
     sheetStyle: ReturnType<typeof useAnimatedStyle>;
 }) => {
     const items = queue?.items ?? [];
@@ -1695,8 +1753,14 @@ export const QueueSheetOverlay = memo(({
                 >
                     <View>
                         <ArtworkImage
+                            artworkImageId={row.item.artworkImageId}
+                            contentSource={getContentSourceFromPlaybackItem(
+                                row.item,
+                                serverConnections,
+                            )}
                             fallbackStyle={styles.queueRowThumbFallback}
-                            letter={row.item.title.slice(0, 1).toUpperCase()}
+                            letter={(row.item.title ?? '?').slice(0, 1).toUpperCase()}
+                            serverConnections={serverConnections}
                             style={styles.queueRowThumb}
                             uri={row.item.artworkUrl}
                         />

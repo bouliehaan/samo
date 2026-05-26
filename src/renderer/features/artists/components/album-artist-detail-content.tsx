@@ -4,7 +4,6 @@ import {
     useSuspenseQuery,
     UseSuspenseQueryResult,
 } from '@tanstack/react-query';
-import { logFn } from '/@/shared/utils/logger';
 import { motion } from 'motion/react';
 import { memo, Suspense, useCallback, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -14,7 +13,6 @@ import styles from './album-artist-detail-content.module.css';
 
 import { queryKeys } from '/@/renderer/api/query-keys';
 import { DataRow, MemoizedItemCard } from '/@/renderer/components/item-card/item-card';
-import { useAlbumQualityProfiles } from '/@/renderer/hooks/use-album-quality-profiles';
 import { useDefaultItemListControls } from '/@/renderer/components/item-list/helpers/item-list-controls';
 import { useGridRows } from '/@/renderer/components/item-list/helpers/use-grid-rows';
 import { useItemListColumnReorder } from '/@/renderer/components/item-list/helpers/use-item-list-column-reorder';
@@ -44,6 +42,7 @@ import { usePlayButtonClick } from '/@/renderer/features/shared/hooks/use-play-b
 import { searchLibraryItems } from '/@/renderer/features/shared/utils';
 import { songsQueries } from '/@/renderer/features/songs/api/songs-api';
 import { useContainerQuery } from '/@/renderer/hooks';
+import { useAlbumQualityProfiles } from '/@/renderer/hooks/use-album-quality-profiles';
 import { useGenreRoute } from '/@/renderer/hooks/use-genre-route';
 import { AppRoute } from '/@/renderer/router/routes';
 import {
@@ -93,6 +92,7 @@ import {
     SortOrder,
 } from '/@/shared/types/domain-types';
 import { ItemListKey, ListDisplayType, Play } from '/@/shared/types/types';
+import { logFn } from '/@/shared/utils/logger';
 
 interface AlbumArtistActionButtonsProps {
     artistDiscographyLink: string;

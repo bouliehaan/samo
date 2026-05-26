@@ -7,9 +7,9 @@ import { usePlayerEvents } from '/@/renderer/features/player/audio-player/hooks/
 import { usePlayer } from '/@/renderer/features/player/context/player-context';
 import { songsQueries } from '/@/renderer/features/songs/api/songs-api';
 import {
+    getQueue,
     setTimestamp,
     useCurrentServerId,
-    getQueue,
     usePlayerStore,
     useTimestampStoreBase,
 } from '/@/renderer/store';

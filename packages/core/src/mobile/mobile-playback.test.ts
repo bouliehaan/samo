@@ -22,9 +22,9 @@ describe('appendAudiobookshelfAuthToken', () => {
     });
 
     it('appends token with & when the URL already has query params', () => {
-        expect(
-            appendAudiobookshelfAuthToken('https://abs.example.com/play?foo=1', 'token'),
-        ).toBe('https://abs.example.com/play?foo=1&token=token');
+        expect(appendAudiobookshelfAuthToken('https://abs.example.com/play?foo=1', 'token')).toBe(
+            'https://abs.example.com/play?foo=1&token=token',
+        );
     });
 });
 
@@ -158,15 +158,12 @@ describe('needsChromecastCompatibleStream', () => {
 
 describe('buildRadioPlayback', () => {
     it('marks live radio streams and preserves the homepage URL', () => {
-        const playback = buildRadioPlayback(
-            authentication,
-            {
-                homepageUrl: 'https://station.example',
-                id: 'station-1',
-                name: 'Jazz FM',
-                streamUrl: 'https://stream.example/live',
-            },
-        );
+        const playback = buildRadioPlayback(authentication, {
+            homepageUrl: 'https://station.example',
+            id: 'station-1',
+            name: 'Jazz FM',
+            streamUrl: 'https://stream.example/live',
+        });
 
         expect(playback).toMatchObject({
             homepageUrl: 'https://station.example',

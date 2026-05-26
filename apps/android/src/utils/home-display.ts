@@ -6,7 +6,11 @@ import {
     MobileSearchItemType,
 } from '@samo/core/mobile';
 import { buildAudiobookshelfArtworkUrl } from '@samo/core/mobile';
-import { ServerType, type ServerAuthenticationResult } from '@samo/core/server';
+import {
+    findServerAuthenticationForSource,
+    ServerType,
+    type ServerAuthenticationResult,
+} from '@samo/core/server';
 
 import { type AndroidHomeContentState } from '../services/home-content';
 import {
@@ -14,13 +18,19 @@ import {
     type AndroidRecentContentSourceItem,
     getRecentContentItemKey,
 } from '../services/recent-content';
-import { getPersistedServerAuthKey } from '../services/persisted-server';
 import { type HomeDisplaySection, type HomeFilter } from '../types/home';
 import { type ViewAllVariant } from '../types/view-all';
 import { type LibraryMediaType } from '../types/library-display';
 import { clamp } from './math';
 import { mergeContentItemSignals } from './content-item';
 import { getLibraryMediaType } from './library-display';
+import {
+    collectAlbumCanonicalKeys,
+    dedupeItemsByAlbumCanonicalIdentity,
+    filterItemsExcludingAlbumCanonicalKeys,
+    getCanonicalAlbumIdentityKey,
+} from './recent-content-dedupe';
+import { resolveSamoItemArtworkSourceForDisplay } from './samo-artwork-url';
 
 const HOME_FILTER_DEFINITIONS: Array<{ id: HomeFilter; label: string }> = [
     { id: 'all', label: 'All' },
@@ -169,9 +179,7 @@ export const resolveItemArtworkUrl = (
     if (item.artworkUrl) return item.artworkUrl;
     const sourceId = item.source?.id;
     if (!sourceId) return undefined;
-    const auth = serverConnections.find(
-        (candidate) => getPersistedServerAuthKey(candidate) === sourceId,
-    );
+    const auth = findServerAuthenticationForSource(serverConnections, { id: sourceId });
     if (!auth) return undefined;
     if (
         auth.type === ServerType.NAVIDROME ||
@@ -189,6 +197,10 @@ export const resolveItemArtworkUrl = (
     if (auth.type === ServerType.AUDIOBOOKSHELF) {
         return buildAudiobookshelfArtworkUrl(auth, item.id, undefined);
     }
+    if (auth.type === ServerType.SAMO) {
+        const resolved = resolveSamoItemArtworkSourceForDisplay(item, serverConnections);
+        return typeof resolved === 'string' ? resolved : resolved?.uri;
+    }
     return undefined;
 };
 
@@ -203,10 +215,27 @@ export const withResolvedArtwork = <T extends AndroidRecentContentSourceItem>(
     serverConnections: ServerAuthenticationResult[],
 ): T[] => {
     return items.map((item) => {
-        if (item.artworkUrl) return item;
-        const resolved = resolveItemArtworkUrl(item, serverConnections);
-        return resolved ? ({ ...item, artworkUrl: resolved } as T) : item;
+        const imageSource = resolveSamoItemArtworkSourceForDisplay(item, serverConnections);
+        const artworkUrl =
+            typeof imageSource === 'string' ? imageSource : imageSource?.uri;
+
+        if (!artworkUrl || (artworkUrl === item.artworkUrl && item.artworkImageId)) {
+            return item;
+        }
+
+        return {
+            ...item,
+            artworkUrl,
+            artworkImageId: item.artworkImageId,
+        } as T;
     });
+};
+
+export const getArtworkImageSourceForItem = (
+    item: AndroidRecentContentSourceItem,
+    serverConnections: ServerAuthenticationResult[],
+) => {
+    return resolveSamoItemArtworkSourceForDisplay(item, serverConnections);
 };
 export const sortHomeItemsByRecents = <T extends AndroidRecentContentSourceItem>(
     items: T[],
@@ -241,6 +270,32 @@ export const getUniqueHomeItems = (items: AndroidRecentContentSourceItem[]) => {
     });
 
     return [...itemsByKey.values()];
+};
+
+const dedupeRecentDisplayItems = <T extends AndroidRecentContentSourceItem>(items: T[]): T[] => {
+    const seenKeys = new Set<string>();
+    const seenAlbumCanonical = new Set<string>();
+    const deduped: T[] = [];
+
+    for (const item of items) {
+        const key = getRecentContentItemKey(item);
+        if (seenKeys.has(key)) {
+            continue;
+        }
+
+        const canonical = getCanonicalAlbumIdentityKey(item);
+        if (canonical && seenAlbumCanonical.has(canonical)) {
+            continue;
+        }
+
+        seenKeys.add(key);
+        if (canonical) {
+            seenAlbumCanonical.add(canonical);
+        }
+        deduped.push(item);
+    }
+
+    return deduped;
 };
 
 export const getHomeItemsForSection = (
@@ -278,6 +333,7 @@ export const getViewAllVariant = (
 };
 export const buildRecentlyAddedHeroRow = (
     sectionsById: Map<MobileHomeSectionId, MobileHomeSection>,
+    excludedAlbumCanonicalKeys: Set<string> = new Set(),
 ): MobileHomeItem[] => {
     const candidates: MobileHomeItem[] = [
         ...(sectionsById.get(MobileHomeSectionId.RECENTLY_ADDED)?.items ?? []),
@@ -285,11 +341,17 @@ export const buildRecentlyAddedHeroRow = (
         ...(sectionsById.get(MobileHomeSectionId.PODCASTS)?.items ?? []),
     ];
     const seenKeys = new Set<string>();
+    const seenAlbumCanonical = new Set(excludedAlbumCanonicalKeys);
     const deduped: MobileHomeItem[] = [];
     for (const item of candidates) {
         const key = getRecentContentItemKey(item);
         if (seenKeys.has(key)) continue;
+        const canonical = getCanonicalAlbumIdentityKey(item);
+        if (canonical && seenAlbumCanonical.has(canonical)) continue;
         seenKeys.add(key);
+        if (canonical) {
+            seenAlbumCanonical.add(canonical);
+        }
         deduped.push(item);
     }
     deduped.sort((left, right) => {
@@ -324,12 +386,16 @@ export const getHomeDisplaySections = (
     serverConnections: ServerAuthenticationResult[],
 ): HomeDisplaySection[] => {
     const displaySections: HomeDisplaySection[] = [];
-    const sectionsById = new Map(sections.map((section) => [section.id, section]));
+    const resolvedSections = sections.map((section) => ({
+        ...section,
+        items: withResolvedArtwork(section.items, serverConnections),
+    }));
+    const sectionsById = new Map(resolvedSections.map((section) => [section.id, section]));
     // Look up fresh home items by recent-key so we can swap in current artwork URLs
     // for recents. Persisted recents can carry stale Audiobookshelf JWT tokens or
     // expired cover-art URLs; using the freshly-loaded equivalent fixes that.
     const freshItemsByKey = new Map<string, MobileHomeItem>();
-    for (const section of sections) {
+    for (const section of resolvedSections) {
         for (const item of section.items) {
             const key = getRecentContentItemKey(item);
             const existing = freshItemsByKey.get(key);
@@ -341,28 +407,38 @@ export const getHomeDisplaySections = (
         }
     }
     const recentDisplayItems = withResolvedArtwork(
-        recentItems.flatMap((recentItem) => {
-            if (!getLibraryMediaType(recentItem.item)) {
-                return [];
-            }
-            const fresh = freshItemsByKey.get(recentItem.key);
-            if (!fresh) {
-                return [recentItem.item];
-            }
+        dedupeRecentDisplayItems(
+            recentItems.flatMap((recentItem) => {
+                if (!getLibraryMediaType(recentItem.item)) {
+                    return [];
+                }
+                const fresh = freshItemsByKey.get(recentItem.key);
+                if (!fresh) {
+                    return [recentItem.item];
+                }
 
-            return [
-                {
-                    ...recentItem.item,
-                    ...fresh,
-                    artworkUrl: fresh.artworkUrl ?? recentItem.item.artworkUrl,
-                    isHiRes: fresh.isHiRes ?? recentItem.item.isHiRes,
-                    playback: fresh.playback ?? recentItem.item.playback,
-                    qualityProfile: fresh.qualityProfile ?? recentItem.item.qualityProfile,
-                },
-            ];
-        }),
+                return [
+                    {
+                        ...recentItem.item,
+                        ...fresh,
+                        artworkUrl: fresh.artworkUrl ?? recentItem.item.artworkUrl,
+                        isHiRes: fresh.isHiRes ?? recentItem.item.isHiRes,
+                        playback: fresh.playback ?? recentItem.item.playback,
+                        qualityProfile: fresh.qualityProfile ?? recentItem.item.qualityProfile,
+                    },
+                ];
+            }),
+        ),
         serverConnections,
     );
+    const seenAlbumCanonicalKeys = collectAlbumCanonicalKeys(recentDisplayItems);
+    const recentlyAddedItems = buildRecentlyAddedHeroRow(sectionsById, seenAlbumCanonicalKeys);
+    for (const item of recentlyAddedItems) {
+        const canonical = getCanonicalAlbumIdentityKey(item);
+        if (canonical) {
+            seenAlbumCanonicalKeys.add(canonical);
+        }
+    }
     const favoriteAlbumItems = getHomeItemsForSection(
         sectionsById,
         MobileHomeSectionId.FAVORITE_ALBUMS,
@@ -373,12 +449,28 @@ export const getHomeDisplaySections = (
         MobileHomeSectionId.RECENTLY_ADDED,
         recentItems,
     );
-    const albumItems = getUniqueHomeItems([...favoriteAlbumItems, ...recentlyAddedAlbumItems]);
+    const albumItems = filterItemsExcludingAlbumCanonicalKeys(
+        dedupeItemsByAlbumCanonicalIdentity(
+            getUniqueHomeItems([...favoriteAlbumItems, ...recentlyAddedAlbumItems]).filter(
+                (item) => item.type === MobileHomeItemType.ALBUM,
+            ),
+        ),
+        seenAlbumCanonicalKeys,
+    );
     const favoriteArtistItems = getHomeItemsForSection(
         sectionsById,
         MobileHomeSectionId.FAVORITE_ARTISTS,
         recentItems,
     );
+    const recentlyAddedArtistItems = getHomeItemsForSection(
+        sectionsById,
+        MobileHomeSectionId.RECENTLY_ADDED,
+        recentItems,
+    ).filter((item) => item.type === MobileHomeItemType.ARTIST);
+    const artistItems = getUniqueHomeItems([
+        ...favoriteArtistItems,
+        ...recentlyAddedArtistItems,
+    ]).filter((item) => item.type === MobileHomeItemType.ARTIST);
     const podcastItems = getHomeItemsForSection(
         sectionsById,
         MobileHomeSectionId.PODCASTS,
@@ -395,14 +487,18 @@ export const getHomeDisplaySections = (
         recentItems,
     );
     const sortedAllItems = sortHomeItemsByRecents(
-        getUniqueHomeItems(sections.flatMap((section) => section.items)),
+        getUniqueHomeItems(resolvedSections.flatMap((section) => section.items)),
         recentItems,
     );
     const recentKeys = new Set(recentItems.map((item) => item.key));
-    const discoverItems = sortedAllItems.filter(
-        (item) =>
-            !recentKeys.has(getRecentContentItemKey(item)) &&
-            (item.type === MobileHomeItemType.ALBUM || item.type === MobileHomeItemType.PLAYLIST),
+    const discoverItems = filterItemsExcludingAlbumCanonicalKeys(
+        sortedAllItems.filter(
+            (item) =>
+                !recentKeys.has(getRecentContentItemKey(item)) &&
+                (item.type === MobileHomeItemType.ALBUM ||
+                    item.type === MobileHomeItemType.PLAYLIST),
+        ),
+        seenAlbumCanonicalKeys,
     );
 
     if (recentDisplayItems.length > 0) {
@@ -418,7 +514,6 @@ export const getHomeDisplaySections = (
     // Newest items each server has, interleaved across categories so albums,
     // audiobooks, and podcasts all get a turn. Keep it under Recently Played
     // because the user asked for listening history to lead Home.
-    const recentlyAddedItems = buildRecentlyAddedHeroRow(sectionsById);
     if (recentlyAddedItems.length > 0) {
         displaySections.push({
             items: recentlyAddedItems,
@@ -455,9 +550,9 @@ export const getHomeDisplaySections = (
         });
     }
 
-    if (favoriteArtistItems.length > 0) {
+    if (artistItems.length > 0) {
         displaySections.push({
-            items: favoriteArtistItems.slice(0, 16),
+            items: artistItems.slice(0, 16),
             key: MobileHomeSectionId.FAVORITE_ARTISTS,
             title: 'Artists',
             variant: 'artist',

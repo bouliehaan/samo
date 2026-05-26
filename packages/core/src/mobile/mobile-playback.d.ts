@@ -2,6 +2,12 @@ import { type AudioDeliveryKind } from '../audio-quality';
 import { type PlaybackSource } from '../playback';
 import { type ServerAuthenticationResult } from '../server/server-auth';
 import { type SamoFetch } from '../server/server-http';
+export {
+    getSubsonicMusicQuality,
+    isSubsonicSongHiRes,
+    type SubsonicPlayableSong,
+} from '../audio-quality/subsonic-quality-scan';
+import { type SubsonicPlayableSong } from '../audio-quality/subsonic-quality-scan';
 export interface AudiobookshelfPlayableInput {
     artworkUrl?: string;
     authentication: ServerAuthenticationResult;
@@ -90,25 +96,6 @@ export interface SubsonicPlayableRadioStation {
     name?: string;
     streamUrl?: string;
 }
-export interface SubsonicPlayableSong {
-    album?: string;
-    albumArtist?: string;
-    albumId?: number | string;
-    artist?: string;
-    artistId?: number | string;
-    bitDepth?: number | string;
-    bitRate?: number | string;
-    channelCount?: number | string;
-    contentType?: string;
-    coverArt?: string;
-    duration?: number;
-    id?: number | string;
-    parent?: number | string;
-    sampleRate?: number | string;
-    samplingRate?: number | string;
-    suffix?: string;
-    title?: string;
-}
 /**
  * Default Google Cast media receiver supports lossless FLAC up to 96 kHz / 24-bit.
  * Higher sample rates (e.g. 192 kHz hi-res) must use a server-transcoded cast leg.
@@ -129,8 +116,6 @@ export declare const appendAudiobookshelfAuthToken: (url: string, credential: st
  * silently failing on segment auth).
  */
 export declare const mimeFromAudiobookshelfExt: (rawExt: string | undefined) => null | string;
-export declare const getSubsonicMusicQuality: (song: SubsonicPlayableSong) => MobilePlaybackQuality;
-export declare const isSubsonicSongHiRes: (song: SubsonicPlayableSong) => boolean;
 export declare const buildSubsonicMusicPlayback: (authentication: ServerAuthenticationResult, song: SubsonicPlayableSong, artworkUrl?: string) => MobilePlayableAudio | null;
 export declare const buildRadioPlayback: (authentication: ServerAuthenticationResult, station: SubsonicPlayableRadioStation, artworkUrl?: string) => MobilePlayableAudio | null;
 export declare const loadAudiobookshelfPlayback: ({ artworkUrl, authentication, durationSeconds, episodeId, fetch: fetcher, itemId, startSeconds, subtitle, timelineSegments, title, }: AudiobookshelfPlayableInput) => Promise<MobilePlayableAudio>;

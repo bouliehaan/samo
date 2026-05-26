@@ -1,8 +1,8 @@
 import { audiobookshelfController } from '/@/renderer/api/audiobookshelf/audiobookshelf-controller';
 import {
-    createAbsPlaybackStore,
     type AbsPlaybackBaseActions,
     type AbsPlaybackCoreState,
+    createAbsPlaybackStore,
 } from '/@/renderer/store/abs-playback.store';
 import { normalizeResumePosition } from '/@/renderer/store/audiobook-resume-math';
 import { useLastPlaybackSessionStore } from '/@/renderer/store/last-playback-session.store';
@@ -15,10 +15,6 @@ import { ServerListItemWithCredential } from '/@/shared/types/domain-types';
 
 const resumeKey = (itemId: string, episodeId: string) => `${itemId}::${episodeId}`;
 
-type PodcastExtra = { episode: AudiobookshelfPodcastEpisode | null };
-
-type PodcastResume = { resumeByEpisodeKey: Record<string, number> };
-
 export interface PodcastActions extends AbsPlaybackBaseActions {
     play: (
         server: ServerListItemWithCredential,
@@ -29,9 +25,15 @@ export interface PodcastActions extends AbsPlaybackBaseActions {
     seekToPreviousEpisode: () => Promise<void>;
 }
 
-export type PodcastState = AbsPlaybackCoreState & PodcastExtra & PodcastResume & {
-    actions: PodcastActions;
-};
+export type PodcastState = AbsPlaybackCoreState &
+    PodcastExtra &
+    PodcastResume & {
+        actions: PodcastActions;
+    };
+
+type PodcastExtra = { episode: AudiobookshelfPodcastEpisode | null };
+
+type PodcastResume = { resumeByEpisodeKey: Record<string, number> };
 
 const rememberPodcastPlaybackSession = (
     server: ServerListItemWithCredential,
@@ -53,7 +55,7 @@ const sortedEpisodes = (item: AudiobookshelfLibraryItem) =>
         .slice()
         .sort((a, b) => (a.publishedAt ?? 0) - (b.publishedAt ?? 0));
 
-const { store: usePodcastStore, selectors } = createAbsPlaybackStore<
+const { selectors, store: usePodcastStore } = createAbsPlaybackStore<
     PodcastResume,
     PodcastExtra,
     PodcastActions,
@@ -99,12 +101,7 @@ const { store: usePodcastStore, selectors } = createAbsPlaybackStore<
     logLabel: 'podcast.store',
     onLoseOwnershipExtra: (state) => {
         if (state.item && state.episode && state.server) {
-            rememberPodcastPlaybackSession(
-                state.server,
-                state.item,
-                state.episode,
-                state.position,
-            );
+            rememberPodcastPlaybackSession(state.server, state.item, state.episode, state.position);
         }
     },
     persistName: 'podcast-store',
@@ -136,9 +133,7 @@ const { store: usePodcastStore, selectors } = createAbsPlaybackStore<
             (e) => e.id === ep.id,
         );
         const duration =
-            playSessionEpisode?.duration ??
-            playSessionEpisode?.audioFile?.duration ??
-            seedDuration;
+            playSessionEpisode?.duration ?? playSessionEpisode?.audioFile?.duration ?? seedDuration;
 
         const sessionEpisodes = session.libraryItem?.media?.episodes;
         const itemToStore =

@@ -2,10 +2,7 @@ import { useMemo } from 'react';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
-import {
-    identityPersistMigrate,
-    PERSIST_VERSION_INITIAL,
-} from '/@/renderer/store/persist-migrate';
+import { identityPersistMigrate, PERSIST_VERSION_INITIAL } from '/@/renderer/store/persist-migrate';
 
 // Local favorites for media types whose backends do not expose a first-class
 // "favorite" concept (Audiobookshelf books/podcasts, playlists) or where we deliberately

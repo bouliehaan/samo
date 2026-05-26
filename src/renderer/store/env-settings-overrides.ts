@@ -322,11 +322,6 @@ const ENV_SETTING_SPECS: EnvSettingSpec[] = [
     },
 ];
 
-/** Deep-merge persisted settings defaults with `FS_*` window env overrides. */
-export function mergeSettingsWithEnv<T extends object>(base: T): T {
-    return mergeWith(cloneDeep(base), getEnvSettingsOverrides()) as T;
-}
-
 export function getEnvSettingsOverrides(): EnvSettingsOverrides {
     const w = getWin();
     const get = (key: string): string | undefined => {
@@ -347,6 +342,11 @@ export function getEnvSettingsOverrides(): EnvSettingsOverrides {
     }
 
     return overrides;
+}
+
+/** Deep-merge persisted settings defaults with `FS_*` window env overrides. */
+export function mergeSettingsWithEnv<T extends object>(base: T): T {
+    return mergeWith(cloneDeep(base), getEnvSettingsOverrides()) as T;
 }
 
 function getWin(): Record<string, unknown> & Window {

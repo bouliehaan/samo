@@ -24,8 +24,6 @@ import {
     usePlayerActions,
     useSettingsStore,
 } from '/@/renderer/store';
-import { LogCategory, logFn } from '/@/shared/utils/logger';
-import { logMsg } from '/@/shared/utils/logger-message';
 import { shuffle as shuffleArray } from '/@/renderer/utils/shuffle';
 import { sortSongsByFetchedOrder } from '/@/shared/api/utils';
 import { Checkbox } from '/@/shared/components/checkbox/checkbox';
@@ -43,6 +41,8 @@ import {
     Song,
 } from '/@/shared/types/domain-types';
 import { Play, PlayerRepeat, PlayerShuffle } from '/@/shared/types/types';
+import { LogCategory, logFn } from '/@/shared/utils/logger';
+import { logMsg } from '/@/shared/utils/logger-message';
 
 export interface PlayerContext {
     addToQueueByData: (

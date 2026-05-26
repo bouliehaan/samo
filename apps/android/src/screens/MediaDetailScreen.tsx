@@ -3,13 +3,15 @@ import {
     getDetailQualityProfile,
     getItemQualityProfile,
     getPlaybackQualityProfile,
+    createMobilePlaylist,
     type MobileHomeItem,
     MobileHomeItemType,
     type MobileMediaDetail,
     MobileMediaDetailType,
     type MobileMediaTrack,
+    type MobileSearchItem,
 } from '@samo/core/mobile';
-import { type ServerAuthenticationResult } from '@samo/core/server';
+import { type ServerAuthenticationResult, findServerAuthenticationForSource, ServerType } from '@samo/core/server';
 import { FlashList } from '@shopify/flash-list';
 import Reanimated, {
     interpolate,
@@ -35,6 +37,7 @@ import {
     Alert,
     Animated,
     type ImageStyle,
+    Keyboard,
     type LayoutChangeEvent,
     Pressable,
     ScrollView,
@@ -106,14 +109,21 @@ import { detailHasHiRes, isHiFiTrack } from '../utils/media-quality';
 
 const ReanimatedFlashList = Reanimated.createAnimatedComponent(FlashList) as typeof FlashList;
 const FLASH_LIST_MAINTAIN_POSITION_DISABLED = { disabled: true };
+const PLAYLIST_SEARCH_FLOATING_HEIGHT = 54;
 
 const MediaDetailLoadingView = ({
+    artworkImageId,
     artworkUrl,
+    contentSource,
     itemType,
+    serverConnections,
     title,
 }: {
+    artworkImageId?: string;
     artworkUrl?: string;
-    itemType?: MobileHomeItem['type'];
+    contentSource?: MobileHomeItem['source'];
+    itemType?: MobileHomeItem['type'] | MobileSearchItem['type'];
+    serverConnections?: ServerAuthenticationResult[];
     title: string;
 }) => {
     const isArtist = itemType === MobileHomeItemType.ARTIST;
@@ -122,10 +132,12 @@ const MediaDetailLoadingView = ({
     return (
         <View style={styles.mediaDetailScreen}>
             <View style={[styles.mediaDetailContent, styles.content]}>
-                {artworkUrl ? (
+                {artworkUrl || artworkImageId ? (
                     isArtist ? (
                         <View style={styles.detailHero}>
                             <ArtworkImage
+                                artworkImageId={artworkImageId}
+                                contentSource={contentSource}
                                 fallbackStyle={styles.detailArtworkFallback}
                                 letter={title.slice(0, 1)}
                                 onLoad={() => {
@@ -158,6 +170,7 @@ const MediaDetailLoadingView = ({
                                     // #endregion
                                 }}
                                 style={[styles.detailArtwork, styles.detailArtworkRound]}
+                                serverConnections={serverConnections}
                                 uri={artworkUrl}
                             />
                             <View style={styles.detailHeroText}>
@@ -168,8 +181,11 @@ const MediaDetailLoadingView = ({
                         <View style={styles.albumHero}>
                             <View style={styles.albumHeroArtworkWrap}>
                                 <ArtworkImage
+                                    artworkImageId={artworkImageId}
+                                    contentSource={contentSource}
                                     fallbackStyle={styles.albumHeroArtworkFallback}
                                     letter={title.slice(0, 1)}
+                                    serverConnections={serverConnections}
                                     style={styles.albumHeroArtwork}
                                     uri={artworkUrl}
                                 />
@@ -232,8 +248,11 @@ export const MediaDetailContent = memo(({
         <>
             {mediaDetailState.status === 'loading' ? (
                 <MediaDetailLoadingView
+                    artworkImageId={mediaDetailState.itemArtworkImageId}
                     artworkUrl={mediaDetailState.itemArtworkUrl}
+                    contentSource={mediaDetailState.itemSource}
                     itemType={mediaDetailState.itemType}
+                    serverConnections={serverConnections}
                     title={title}
                 />
             ) : mediaDetailState.status === 'error' ? (
@@ -264,25 +283,34 @@ export const MediaDetailContent = memo(({
 MediaDetailContent.displayName = 'MediaDetailContent';
 
 const DetailHeroArtwork = ({
+    artworkImageId,
+    contentSource,
     fallbackUri,
     letter,
     primaryUri,
     round,
+    serverConnections,
     style,
     wrapStyle,
 }: {
+    artworkImageId?: string;
+    contentSource?: MobileMediaDetail['source'];
     fallbackUri?: string;
     letter: string;
     primaryUri?: string;
     round?: boolean;
+    serverConnections?: ServerAuthenticationResult[];
     style: StyleProp<ImageStyle>;
     wrapStyle?: StyleProp<ViewStyle>;
 }) => {
     const uri = primaryUri ?? fallbackUri;
     const image = (
         <ArtworkImage
+            artworkImageId={artworkImageId}
+            contentSource={contentSource}
             fallbackStyle={round ? styles.detailArtworkFallback : styles.albumHeroArtworkFallback}
             letter={letter}
+            serverConnections={serverConnections}
             style={style}
             uri={uri}
         />
@@ -337,14 +365,16 @@ export const MediaDetailLoaded = ({
     const [playlistSortAsc, setPlaylistSortAsc] = useState(true);
     const [playlistSearchVisible, setPlaylistSearchVisible] = useState(false);
     const [playlistSearchQuery, setPlaylistSearchQuery] = useState('');
+    const mediaDetailScreenRef = useRef<View>(null);
     const playlistSearchInputRef = useRef<TextInput>(null);
-    // Height/opacity track linearly so the track list below slides predictably;
-    // the search bar rises into place so it stays visually above the keyboard
-    // instead of dropping toward it.
+    const [mediaDetailRootFrame, setMediaDetailRootFrame] = useState({
+        height: SCREEN_HEIGHT,
+        y: 0,
+    });
+    const [playlistKeyboardScreenY, setPlaylistKeyboardScreenY] = useState<number | null>(null);
     const playlistSearchLayoutProgress = useSharedValue(0);
     const playlistSearchBubbleProgress = useSharedValue(0);
     const playlistSearchAnimatedStyle = useAnimatedStyle(() => ({
-        height: interpolate(playlistSearchLayoutProgress.value, [0, 1], [0, 70]),
         opacity: interpolate(playlistSearchLayoutProgress.value, [0, 0.5, 1], [0, 1, 1]),
         transform: [
             {
@@ -358,6 +388,25 @@ export const MediaDetailLoaded = ({
         ],
         transformOrigin: ['65%', '100%', 0],
     }));
+    const playlistSearchFloatingTop = useMemo(() => {
+        const fallbackTop =
+            mediaDetailRootFrame.height - PLAYLIST_SEARCH_FLOATING_HEIGHT - spacing.lg;
+        if (!playlistKeyboardScreenY) {
+            return Math.max(spacing.md, fallbackTop);
+        }
+        return Math.max(
+            spacing.md,
+            playlistKeyboardScreenY -
+                mediaDetailRootFrame.y -
+                PLAYLIST_SEARCH_FLOATING_HEIGHT -
+                spacing.md,
+        );
+    }, [mediaDetailRootFrame.height, mediaDetailRootFrame.y, playlistKeyboardScreenY]);
+    const measureMediaDetailRoot = useCallback(() => {
+        mediaDetailScreenRef.current?.measureInWindow((_x, y, _width, height) => {
+            setMediaDetailRootFrame({ height, y });
+        });
+    }, []);
     const firstTrack = detail.tracks[0];
     const contextMenu = useMediaContextMenu();
     const downloadedTrackKeys = useDownloadedTrackKeys();
@@ -374,6 +423,30 @@ export const MediaDetailLoaded = ({
         setPlaylistSearchVisible(false);
         setPlaylistSearchQuery('');
     }, [detail.id, detail.source.id]);
+    useEffect(() => {
+        const showSubscription = Keyboard.addListener('keyboardDidShow', (event) => {
+            measureMediaDetailRoot();
+            setPlaylistKeyboardScreenY(event.endCoordinates.screenY);
+        });
+        const frameSubscription = Keyboard.addListener('keyboardDidChangeFrame', (event) => {
+            measureMediaDetailRoot();
+            setPlaylistKeyboardScreenY(event.endCoordinates.screenY);
+        });
+        const hideSubscription = Keyboard.addListener('keyboardDidHide', () => {
+            setPlaylistKeyboardScreenY(null);
+        });
+
+        return () => {
+            showSubscription.remove();
+            frameSubscription.remove();
+            hideSubscription.remove();
+        };
+    }, [measureMediaDetailRoot]);
+    useEffect(() => {
+        if (playlistSearchVisible) {
+            measureMediaDetailRoot();
+        }
+    }, [measureMediaDetailRoot, playlistSearchVisible]);
     useEffect(() => {
         if (!playlistSearchVisible) return;
         const id = setTimeout(() => playlistSearchInputRef.current?.focus(), 80);
@@ -392,6 +465,12 @@ export const MediaDetailLoaded = ({
             playlistSearchLayoutProgress.value = withTiming(0, { duration: 200 });
         }
     }, [playlistSearchBubbleProgress, playlistSearchLayoutProgress, playlistSearchVisible]);
+    const closePlaylistSearch = useCallback(() => {
+        setPlaylistSearchQuery('');
+        setPlaylistSearchVisible(false);
+        playlistSearchInputRef.current?.blur();
+        Keyboard.dismiss();
+    }, []);
 
     /**
      * Track list after the playlist's filter + sort controls are applied.
@@ -447,8 +526,7 @@ export const MediaDetailLoaded = ({
     const canPlayDetail = Boolean(heroPlayTrack);
     const showPlaylistShuffle = isPlaylistDetail && playableDisplayTracks.length > 0;
     const showAlbumDiscHeaders =
-        detail.type === MobileMediaDetailType.ALBUM &&
-        new Set(displayTracks.map((track) => track.discNumber ?? 1)).size > 1;
+        detail.type === MobileMediaDetailType.ALBUM && (detail.discCount ?? 0) > 1;
     const detailScrollY = useSharedValue(0);
     const detailScrollHandler = useAnimatedScrollHandler({
         onScroll: (event) => {
@@ -544,6 +622,49 @@ export const MediaDetailLoaded = ({
         } catch (error) {
             setPlaylistActionState({
                 message: error instanceof Error ? error.message : 'Failed to add to playlist',
+                status: 'error',
+            });
+        }
+    };
+    const canCreatePlaylist = useMemo(() => {
+        const auth = findServerAuthenticationForSource(serverConnections, detail.source);
+
+        return (
+            auth?.type === ServerType.SAMO ||
+            auth?.type === ServerType.NAVIDROME ||
+            auth?.type === ServerType.SUBSONIC
+        );
+    }, [detail.source, serverConnections]);
+    const handleCreatePlaylist = async (name: string) => {
+        if (!playlistMenuTrack) {
+            return;
+        }
+
+        const auth = findServerAuthenticationForSource(serverConnections, detail.source);
+
+        if (!auth) {
+            setPlaylistActionState({
+                message: 'The server for this item is no longer connected.',
+                status: 'error',
+            });
+            return;
+        }
+
+        setPlaylistActionState({ playlistId: '__create__', status: 'loading' });
+
+        try {
+            const playlist = await createMobilePlaylist({
+                authentication: auth,
+                name,
+                songIds: [playlistMenuTrack.id],
+            });
+            setPlaylistActionState({
+                message: `Created ${playlist.title}`,
+                status: 'success',
+            });
+        } catch (error) {
+            setPlaylistActionState({
+                message: error instanceof Error ? error.message : 'Failed to create playlist',
                 status: 'error',
             });
         }
@@ -793,7 +914,12 @@ export const MediaDetailLoaded = ({
                         <View>
                             {track.artworkUrl ?? detail.artworkUrl ?? fallbackArtworkUrl ? (
                                 <ArtworkImage
+                                    artworkImageId={
+                                        track.artworkImageId ?? detail.artworkImageId
+                                    }
+                                    contentSource={detail.source}
                                     letter={track.title.slice(0, 1).toUpperCase()}
+                                    serverConnections={serverConnections}
                                     style={styles.trackArtwork}
                                     uri={track.artworkUrl ?? detail.artworkUrl ?? fallbackArtworkUrl}
                                 />
@@ -888,7 +1014,11 @@ export const MediaDetailLoaded = ({
 
     if (isPlaylistDetail) {
         return (
-            <View style={styles.mediaDetailScreen}>
+            <View
+                onLayout={measureMediaDetailRoot}
+                ref={mediaDetailScreenRef}
+                style={styles.mediaDetailScreen}
+            >
                 <ReanimatedFlashList
                     contentContainerStyle={styles.mediaDetailContent}
                     data={displayTracks}
@@ -906,9 +1036,12 @@ export const MediaDetailLoaded = ({
                             <View style={styles.albumHero}>
                                 <View style={styles.albumHeroArtworkWrap}>
                                     <DetailHeroArtwork
+                                        artworkImageId={detail.artworkImageId}
+                                        contentSource={detail.source}
                                         fallbackUri={fallbackArtworkUrl}
                                         letter={detail.title.slice(0, 1)}
                                         primaryUri={detail.artworkUrl}
+                                        serverConnections={serverConnections}
                                         style={styles.albumHeroArtwork}
                                     />
                                     <QualityBadge overlay profile={heroBadgeProfile} />
@@ -922,64 +1055,22 @@ export const MediaDetailLoaded = ({
                                     {detail.title}
                                 </Text>
                                 <View style={styles.albumHeroMeta}>
-                                    <Reanimated.View
-                                        pointerEvents={playlistSearchVisible ? 'auto' : 'none'}
-                                        style={[
-                                            styles.playlistSearchAnimatedWrapper,
-                                            styles.playlistHeroSearchWrapper,
-                                            playlistSearchAnimatedStyle,
-                                        ]}
-                                    >
-                                        <View
-                                            style={[
-                                                styles.inlineSearchBar,
-                                                styles.playlistHeroSearchBar,
-                                            ]}
+                                    {(detail.metadataLines && detail.metadataLines.length > 0
+                                        ? detail.metadataLines
+                                        : detail.subtitle
+                                          ? [detail.subtitle]
+                                          : []
+                                    ).map((line, index) => (
+                                        <Text
+                                            key={`${line}-${index}`}
+                                            numberOfLines={1}
+                                            style={styles.albumHeroMetaLine}
                                         >
-                                            <SearchGlyph color={colors.muted} />
-                                            <TextInput
-                                                autoCapitalize="none"
-                                                autoCorrect={false}
-                                                onChangeText={setPlaylistSearchQuery}
-                                                placeholder="Search this playlist"
-                                                placeholderTextColor={colors.muted}
-                                                ref={playlistSearchInputRef}
-                                                returnKeyType="search"
-                                                style={styles.inlineSearchInput}
-                                                value={playlistSearchQuery}
-                                            />
-                                            {playlistSearchQuery.length > 0 ? (
-                                                <Pressable
-                                                    accessibilityLabel="Clear playlist search"
-                                                    accessibilityRole="button"
-                                                    onPress={() => setPlaylistSearchQuery('')}
-                                                    style={styles.inlineSearchIconButton}
-                                                >
-                                                    <ClearGlyph color={colors.muted} />
-                                                </Pressable>
-                                            ) : null}
-                                        </View>
-                                    </Reanimated.View>
-                                    {!playlistSearchVisible ? (
-                                        <>
-                                            {(detail.metadataLines && detail.metadataLines.length > 0
-                                                ? detail.metadataLines
-                                                : detail.subtitle
-                                                  ? [detail.subtitle]
-                                                  : []
-                                            ).map((line, index) => (
-                                                <Text
-                                                    key={`${line}-${index}`}
-                                                    numberOfLines={1}
-                                                    style={styles.albumHeroMetaLine}
-                                                >
-                                                    {line}
-                                                </Text>
-                                            ))}
-                                            {heroFormatLabel ? (
-                                                <Text style={styles.formatBadgeMeta}>{heroFormatLabel}</Text>
-                                            ) : null}
-                                        </>
+                                            {line}
+                                        </Text>
+                                    ))}
+                                    {heroFormatLabel ? (
+                                        <Text style={styles.formatBadgeMeta}>{heroFormatLabel}</Text>
                                     ) : null}
                                 </View>
                                 <View
@@ -1025,8 +1116,7 @@ export const MediaDetailLoaded = ({
                                                 hitSlop={8}
                                                 onPress={() => {
                                                     if (playlistSearchVisible) {
-                                                        setPlaylistSearchQuery('');
-                                                        setPlaylistSearchVisible(false);
+                                                        closePlaylistSearch();
                                                         return;
                                                     }
                                                     setPlaylistSearchVisible(true);
@@ -1096,6 +1186,45 @@ export const MediaDetailLoaded = ({
                     scrollEventThrottle={16}
                     showsVerticalScrollIndicator={false}
                 />
+                <Reanimated.View
+                    pointerEvents={playlistSearchVisible ? 'auto' : 'none'}
+                    style={[
+                        styles.playlistFloatingSearchWrapper,
+                        { top: playlistSearchFloatingTop },
+                        playlistSearchAnimatedStyle,
+                    ]}
+                >
+                    <View
+                        style={[
+                            styles.inlineSearchBar,
+                            styles.inlineSearchBarElevated,
+                            styles.playlistFloatingSearchBar,
+                        ]}
+                    >
+                        <SearchGlyph color={colors.muted} />
+                        <TextInput
+                            autoCapitalize="none"
+                            autoCorrect={false}
+                            onChangeText={setPlaylistSearchQuery}
+                            placeholder="Search this playlist"
+                            placeholderTextColor={colors.muted}
+                            ref={playlistSearchInputRef}
+                            returnKeyType="search"
+                            style={styles.inlineSearchInput}
+                            value={playlistSearchQuery}
+                        />
+                        {playlistSearchQuery.length > 0 ? (
+                            <Pressable
+                                accessibilityLabel="Clear playlist search"
+                                accessibilityRole="button"
+                                onPress={() => setPlaylistSearchQuery('')}
+                                style={styles.inlineSearchIconButton}
+                            >
+                                <ClearGlyph color={colors.muted} />
+                            </Pressable>
+                        ) : null}
+                    </View>
+                </Reanimated.View>
                 <View pointerEvents="box-none" style={styles.detailCollapsedTopbar}>
                     <Reanimated.View
                         pointerEvents="none"
@@ -1163,11 +1292,13 @@ export const MediaDetailLoaded = ({
                 </View>
                 <TrackPlaylistMenu
                     actionState={playlistActionState}
+                    canCreatePlaylist={canCreatePlaylist}
                     onAddToPlaylist={(playlist) => void handleAddToPlaylist(playlist)}
                     onClose={() => {
                         setPlaylistMenuTrack(null);
                         setPlaylistActionState({ status: 'idle' });
                     }}
+                    onCreatePlaylist={(name) => void handleCreatePlaylist(name)}
                     playlists={playlistTargets}
                     track={playlistMenuTrack}
                 />
@@ -1180,9 +1311,12 @@ export const MediaDetailLoaded = ({
             <View style={styles.albumHero}>
                     <View style={styles.albumHeroArtworkWrap}>
                         <DetailHeroArtwork
+                            artworkImageId={detail.artworkImageId}
+                            contentSource={detail.source}
                             fallbackUri={fallbackArtworkUrl}
                             letter={detail.title.slice(0, 1)}
                             primaryUri={detail.artworkUrl}
+                            serverConnections={serverConnections}
                             style={styles.albumHeroArtwork}
                         />
                         <QualityBadge overlay profile={heroBadgeProfile} />
@@ -1346,7 +1480,6 @@ export const MediaDetailLoaded = ({
                     contentContainerStyle={styles.mediaDetailContent}
                     data={displayTracks}
                     drawDistance={PLAYLIST_TRACK_DRAW_DISTANCE}
-                    estimatedItemSize={62}
                     extraData={downloadedTrackKeys}
                     keyExtractor={(track, index) => `${track.id}:${index}`}
                     ListEmptyComponent={
@@ -1365,11 +1498,13 @@ export const MediaDetailLoaded = ({
                 {detailCollapsedTopbar}
                 <TrackPlaylistMenu
                     actionState={playlistActionState}
+                    canCreatePlaylist={canCreatePlaylist}
                     onAddToPlaylist={(playlist) => void handleAddToPlaylist(playlist)}
                     onClose={() => {
                         setPlaylistMenuTrack(null);
                         setPlaylistActionState({ status: 'idle' });
                     }}
+                    onCreatePlaylist={(name) => void handleCreatePlaylist(name)}
                     playlists={playlistTargets}
                     track={playlistMenuTrack}
                 />
@@ -1387,10 +1522,13 @@ export const MediaDetailLoaded = ({
             >
                 <View style={styles.detailHero}>
                     <DetailHeroArtwork
+                        artworkImageId={detail.artworkImageId}
+                        contentSource={detail.source}
                         fallbackUri={fallbackArtworkUrl}
                         letter={detail.title.slice(0, 1)}
                         primaryUri={detail.artworkUrl}
                         round
+                        serverConnections={serverConnections}
                         style={[styles.detailArtwork, styles.detailArtworkRound]}
                     />
                     <View style={styles.detailHeroText}>
@@ -1410,16 +1548,19 @@ export const MediaDetailLoaded = ({
                     onPlayTrack={onPlayTrack}
                     onSelectItem={onSelectItem}
                     sectionTitle={sectionTitle}
+                    serverConnections={serverConnections}
                 />
             </Reanimated.ScrollView>
             {detailCollapsedTopbar}
             <TrackPlaylistMenu
                 actionState={playlistActionState}
+                canCreatePlaylist={canCreatePlaylist}
                 onAddToPlaylist={(playlist) => void handleAddToPlaylist(playlist)}
                 onClose={() => {
                     setPlaylistMenuTrack(null);
                     setPlaylistActionState({ status: 'idle' });
                 }}
+                onCreatePlaylist={(name) => void handleCreatePlaylist(name)}
                 playlists={playlistTargets}
                 track={playlistMenuTrack}
             />
@@ -1434,6 +1575,7 @@ export const ArtistDetailSections = ({
     onPlayTrack,
     onSelectItem,
     sectionTitle,
+    serverConnections,
 }: {
     detail: MobileMediaDetail;
     emptyText: string;
@@ -1441,6 +1583,7 @@ export const ArtistDetailSections = ({
     onPlayTrack: (detail: MobileMediaDetail, track: MobileMediaTrack, index: number) => void;
     onSelectItem: (item: AndroidRecentContentSourceItem) => void;
     sectionTitle: string;
+    serverConnections: ServerAuthenticationResult[];
 }) => {
     const [bioExpanded, setBioExpanded] = useState(false);
     const contextMenu = useMediaContextMenu();
@@ -1490,7 +1633,12 @@ export const ArtistDetailSections = ({
                                 <View>
                                     {track.artworkUrl ?? detail.artworkUrl ?? fallbackArtworkUrl ? (
                                         <ArtworkImage
+                                            artworkImageId={
+                                                track.artworkImageId ?? detail.artworkImageId
+                                            }
+                                            contentSource={detail.source}
                                             letter={track.title.slice(0, 1).toUpperCase()}
+                                            serverConnections={serverConnections}
                                             style={styles.trackArtwork}
                                             uri={
                                                 track.artworkUrl ??
@@ -1534,6 +1682,7 @@ export const ArtistDetailSections = ({
                                 item={item}
                                 key={item.id}
                                 onSelectItem={onSelectItem}
+                                serverConnections={serverConnections}
                             />
                         ))}
                     </View>
@@ -1549,6 +1698,7 @@ export const ArtistDetailSections = ({
                                 item={item}
                                 key={item.id}
                                 onSelectItem={onSelectItem}
+                                serverConnections={serverConnections}
                             />
                         ))}
                     </View>
@@ -1568,8 +1718,11 @@ export const ArtistDetailSections = ({
                                 style={styles.relatedArtistTile}
                             >
                                 <ArtworkImage
+                                    artworkImageId={item.artworkImageId}
+                                    contentSource={item.source}
                                     fallbackStyle={styles.relatedArtistArtworkFallback}
                                     letter={item.title.slice(0, 1)}
+                                    serverConnections={serverConnections}
                                     style={styles.relatedArtistArtwork}
                                     uri={item.artworkUrl}
                                 />
@@ -1588,9 +1741,11 @@ export const ArtistDetailSections = ({
 export const ArtistAlbumTile = ({
     item,
     onSelectItem,
+    serverConnections,
 }: {
     item: MobileHomeItem;
     onSelectItem: (item: AndroidRecentContentSourceItem) => void;
+    serverConnections: ServerAuthenticationResult[];
 }) => {
     const contextMenu = useMediaContextMenu();
     const tileBadgeProfile = getItemQualityProfile(item);
@@ -1602,8 +1757,11 @@ export const ArtistAlbumTile = ({
             style={styles.artistAlbumGridItem}
         >
             <ArtworkImage
+                artworkImageId={item.artworkImageId}
+                contentSource={item.source}
                 fallbackStyle={styles.artistAlbumGridFallback}
                 letter={item.title.slice(0, 1)}
+                serverConnections={serverConnections}
                 style={styles.artistAlbumGridArtwork}
                 uri={item.artworkUrl}
             />
@@ -1619,4 +1777,3 @@ export const ArtistAlbumTile = ({
         </Pressable>
     );
 };
-

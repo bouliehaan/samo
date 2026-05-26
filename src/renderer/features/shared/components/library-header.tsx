@@ -14,7 +14,6 @@ import {
     PlayTextButton,
     WideShuffleButton,
 } from '/@/renderer/features/shared/components/play-button';
-import { logFn } from '/@/shared/utils/logger';
 import { usePlayButtonClick } from '/@/renderer/features/shared/hooks/use-play-button-click';
 import { useIsMutatingCreateFavorite } from '/@/renderer/features/shared/mutations/create-favorite-mutation';
 import { useIsMutatingDeleteFavorite } from '/@/renderer/features/shared/mutations/delete-favorite-mutation';
@@ -30,11 +29,18 @@ import { Spinner } from '/@/shared/components/spinner/spinner';
 import { Text } from '/@/shared/components/text/text';
 import { ExplicitStatus, LibraryItem } from '/@/shared/types/domain-types';
 import { Play } from '/@/shared/types/types';
+import { logFn } from '/@/shared/utils/logger';
 
 interface LibraryHeaderProps {
     children?: ReactNode;
     compact?: boolean;
     containerClassName?: string;
+    /**
+     * Always-visible decoration anchored to the artwork — e.g. the lossless
+     * quality badge. Renders independently of `imageOverlay` (which is
+     * hover-revealed for upload/edit affordances).
+     */
+    imageBadge?: ReactNode;
     imageOverlay?: ReactNode;
     imagePlaceholderUrl?: null | string;
     imageUrl?: null | string;
@@ -58,6 +64,7 @@ export const LibraryHeader = forwardRef(
             children,
             compact,
             containerClassName,
+            imageBadge,
             imageOverlay,
             imageUrl,
             item,
@@ -189,6 +196,7 @@ export const LibraryHeader = forwardRef(
                                 {imageOverlay}
                             </div>
                         )}
+                        {imageBadge}
                     </DragDropZone>
                 ) : (
                     <div className={styles.imageSection} {...imageSectionSharedProps}>
@@ -214,6 +222,7 @@ export const LibraryHeader = forwardRef(
                                 {imageOverlay}
                             </div>
                         )}
+                        {imageBadge}
                     </div>
                 )}
                 {title && (

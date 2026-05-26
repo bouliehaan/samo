@@ -302,6 +302,74 @@ class SamoFileSystemModule(
         }
     }
 
+    @ReactMethod
+    fun writeTextDocument(
+        treeUriString: String,
+        fileName: String,
+        text: String,
+        promise: Promise,
+    ) {
+        ioExecutor.execute {
+            try {
+                val resolver: ContentResolver = reactContext.contentResolver
+                val treeUri = Uri.parse(treeUriString)
+                val treeDocId = DocumentsContract.getTreeDocumentId(treeUri)
+                val parentDocUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, treeDocId)
+                val safeFileName = fileName.ifBlank { REGISTRY_SIDECAR_FILE_NAME }
+                val documentUri =
+                    findDirectChildDocumentUri(resolver, treeUri, treeDocId, safeFileName)
+                        ?: DocumentsContract.createDocument(
+                            resolver,
+                            parentDocUri,
+                            "application/json",
+                            safeFileName,
+                        )
+                        ?: throw IllegalStateException(
+                            "Could not create metadata file in the chosen folder.",
+                        )
+                val output =
+                    resolver.openOutputStream(documentUri, "wt")
+                        ?: throw IllegalStateException("Could not open metadata file for writing.")
+                output.bufferedWriter(Charsets.UTF_8).use { writer ->
+                    writer.write(text)
+                    writer.flush()
+                }
+                promise.resolve(documentUri.toString())
+            } catch (error: Exception) {
+                promise.reject("SAMO_FS_ERROR", error.message ?: "Could not write document", error)
+            }
+        }
+    }
+
+    private fun findDirectChildDocumentUri(
+        resolver: ContentResolver,
+        treeUri: Uri,
+        documentId: String,
+        displayName: String,
+    ): Uri? {
+        val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, documentId)
+        val projection =
+            arrayOf(
+                DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+            )
+        val cursor = resolver.query(childrenUri, projection, null, null, null) ?: return null
+        cursor.use {
+            val idIndex =
+                it.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
+            val nameIndex =
+                it.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+            while (it.moveToNext()) {
+                val childId = it.getString(idIndex) ?: continue
+                val name = it.getString(nameIndex) ?: continue
+                if (name == displayName) {
+                    return DocumentsContract.buildDocumentUriUsingTree(treeUri, childId)
+                }
+            }
+        }
+        return null
+    }
+
     private fun collectDownloadAudioFiles(
         resolver: ContentResolver,
         treeUri: Uri,
@@ -333,7 +401,7 @@ class SamoFileSystemModule(
                 }
                 if (
                     name.endsWith(".audio", ignoreCase = true) ||
-                        name == REGISTRY_SIDEcar_FILE_NAME
+                        name == REGISTRY_SIDECAR_FILE_NAME
                 ) {
                     val map = Arguments.createMap()
                     map.putString("uri", DocumentsContract.buildDocumentUriUsingTree(treeUri, childId).toString())
@@ -366,6 +434,6 @@ class SamoFileSystemModule(
     companion object {
         private const val PROGRESS_EVENT_BYTES = 512L * 1024L
         private const val PROGRESS_EVENT_MS = 750L
-        private const val REGISTRY_SIDEcar_FILE_NAME = "samo-download-registry.json"
+        private const val REGISTRY_SIDECAR_FILE_NAME = "samo-download-registry.json"
     }
 }

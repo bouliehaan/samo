@@ -1,18 +1,19 @@
 import { useTranslation } from 'react-i18next';
 
 import {
+    useUpdateAudioMotionAnalyzer,
+    VisualizerSelect,
+    VisualizerSlider,
+    VisualizerToggle,
+} from './visualizer-settings-controls';
+import {
     fftSizeOptions,
     frequencyScaleOptions,
     maxFreqOptions,
     minFreqOptions,
     weightingFilterOptions,
 } from './visualizer-settings-options';
-import {
-    useUpdateAudioMotionAnalyzer,
-    VisualizerSelect,
-    VisualizerSlider,
-    VisualizerToggle,
-} from './visualizer-settings-controls';
+
 import { Fieldset } from '/@/shared/components/fieldset/fieldset';
 import { Group } from '/@/shared/components/group/group';
 import { Stack } from '/@/shared/components/stack/stack';
@@ -21,10 +22,13 @@ type AudioMotionSettings = ReturnType<
     typeof useUpdateAudioMotionAnalyzer
 >['visualizer']['audiomotionanalyzer'];
 
-type UpdateProperty = <K extends keyof AudioMotionSettings>(
-    property: K,
-    value: AudioMotionSettings[K],
-) => void;
+type SchemaField = SelectField | SliderField | ToggleField | ToggleRowField;
+
+type SchemaSection = {
+    fields: SchemaField[];
+    grow?: boolean;
+    legendKey: string;
+};
 
 type SelectField = {
     disabled?: (settings: AudioMotionSettings) => boolean;
@@ -58,229 +62,240 @@ type ToggleRowField = {
     toggles: { key: keyof AudioMotionSettings; labelKey: string }[];
 };
 
-type SchemaField = SelectField | SliderField | ToggleField | ToggleRowField;
-
-type SchemaSection = {
-    fields: SchemaField[];
-    grow?: boolean;
-    legendKey: string;
-};
+type UpdateProperty = <K extends keyof AudioMotionSettings>(
+    property: K,
+    value: AudioMotionSettings[K],
+) => void;
 
 const fftSection: SchemaSection = {
-    legendKey: 'visualizer.fft',
     fields: [
         {
-            kind: 'select',
             key: 'fftSize',
+            kind: 'select',
             labelKey: 'visualizer.fftSize',
             options: fftSizeOptions,
             parse: (value) => Number(value),
         },
         {
-            kind: 'slider',
             key: 'smoothing',
+            kind: 'slider',
             labelKey: 'visualizer.smoothing',
-            min: 0,
             max: 1,
+            min: 0,
             step: 0.1,
         },
     ],
+    legendKey: 'visualizer.fft',
 };
 
 const frequencySection: SchemaSection = {
-    legendKey: 'visualizer.frequencyRangeAndScaling',
     fields: [
         {
-            kind: 'select',
             key: 'minFreq',
+            kind: 'select',
             labelKey: 'visualizer.minimumFrequency',
             options: minFreqOptions,
             parse: (value) => Number(value),
         },
         {
-            kind: 'select',
             key: 'maxFreq',
+            kind: 'select',
             labelKey: 'visualizer.maximumFrequency',
             options: maxFreqOptions,
             parse: (value) => Number(value),
         },
         {
-            kind: 'select',
             key: 'frequencyScale',
+            kind: 'select',
             labelKey: 'visualizer.frequencyScale',
             options: frequencyScaleOptions,
             parse: (value) => value as AudioMotionSettings['frequencyScale'],
         },
     ],
+    legendKey: 'visualizer.frequencyRangeAndScaling',
 };
 
 const sensitivitySection: SchemaSection = {
-    legendKey: 'visualizer.sensitivity',
     fields: [
         {
-            kind: 'select',
             key: 'weightingFilter',
+            kind: 'select',
             labelKey: 'visualizer.weightingFilter',
             options: weightingFilterOptions,
             parse: (value) => value as AudioMotionSettings['weightingFilter'],
         },
         {
-            kind: 'slider',
             key: 'minDecibels',
+            kind: 'slider',
             labelKey: 'visualizer.minDecibels',
-            min: -120,
             max: 0,
+            min: -120,
         },
         {
-            kind: 'slider',
             key: 'maxDecibels',
+            kind: 'slider',
             labelKey: 'visualizer.maxDecibels',
-            min: -120,
             max: 0,
+            min: -120,
         },
     ],
+    legendKey: 'visualizer.sensitivity',
 };
 
 const linearAmplitudeSection: SchemaSection = {
-    legendKey: 'visualizer.linearAmplitude',
     fields: [
         {
-            kind: 'toggle',
             key: 'linearAmplitude',
+            kind: 'toggle',
             labelKey: 'visualizer.linearAmplitude',
         },
         {
-            kind: 'slider',
-            key: 'linearBoost',
-            labelKey: 'visualizer.linearBoost',
-            min: 1,
-            max: 4,
-            step: 0.1,
             disabled: (settings) => !settings.linearAmplitude,
+            key: 'linearBoost',
+            kind: 'slider',
+            labelKey: 'visualizer.linearBoost',
+            max: 4,
+            min: 1,
+            step: 0.1,
         },
     ],
+    legendKey: 'visualizer.linearAmplitude',
 };
 
 const reflexMirrorSection: SchemaSection = {
-    legendKey: 'visualizer.reflexMirror',
     fields: [
-        { kind: 'toggle', key: 'reflexFit', labelKey: 'visualizer.reflexFit' },
+        { key: 'reflexFit', kind: 'toggle', labelKey: 'visualizer.reflexFit' },
         {
-            kind: 'slider',
             key: 'reflexRatio',
+            kind: 'slider',
             labelKey: 'visualizer.reflexRatio',
-            min: 0,
             max: 1,
+            min: 0,
             step: 0.1,
         },
         {
-            kind: 'slider',
             key: 'reflexAlpha',
+            kind: 'slider',
             labelKey: 'visualizer.reflexAlpha',
-            min: 0,
             max: 1,
+            min: 0,
             step: 0.05,
         },
         {
-            kind: 'slider',
             key: 'reflexBright',
+            kind: 'slider',
             labelKey: 'visualizer.reflexBrightness',
-            min: 0,
             max: 2,
+            min: 0,
             step: 0.1,
         },
         {
-            kind: 'slider',
             key: 'mirror',
+            kind: 'slider',
             labelKey: 'visualizer.mirror',
-            min: -1,
             max: 1,
+            min: -1,
             step: 1,
         },
     ],
+    legendKey: 'visualizer.reflexMirror',
 };
 
 const radialSection: SchemaSection = {
-    legendKey: 'visualizer.radialSpectrum',
     fields: [
-        { kind: 'toggle', key: 'radial', labelKey: 'visualizer.radial' },
+        { key: 'radial', kind: 'toggle', labelKey: 'visualizer.radial' },
         {
-            kind: 'toggle',
+            disabled: (settings) => !settings.radial,
             key: 'radialInvert',
+            kind: 'toggle',
             labelKey: 'visualizer.radialInvert',
-            disabled: (settings) => !settings.radial,
         },
         {
-            kind: 'slider',
+            disabled: (settings) => !settings.radial,
             key: 'radius',
+            kind: 'slider',
             labelKey: 'visualizer.radius',
-            min: 0,
             max: 1,
+            min: 0,
             step: 0.05,
-            disabled: (settings) => !settings.radial,
         },
         {
-            kind: 'slider',
-            key: 'spinSpeed',
-            labelKey: 'visualizer.spinSpeed',
-            min: -5,
-            max: 5,
-            step: 0.1,
             disabled: (settings) => !settings.radial,
+            key: 'spinSpeed',
+            kind: 'slider',
+            labelKey: 'visualizer.spinSpeed',
+            max: 5,
+            min: -5,
+            step: 0.1,
         },
     ],
+    legendKey: 'visualizer.radialSpectrum',
 };
 
 const peakSection: SchemaSection = {
-    legendKey: 'visualizer.peakBehavior',
     fields: [
         {
-            kind: 'toggle-row',
-            toggles: [
-                { key: 'showPeaks', labelKey: 'visualizer.showPeaks' },
-                { key: 'fadePeaks', labelKey: 'visualizer.fadePeaks' },
-                { key: 'peakLine', labelKey: 'visualizer.peakLine' },
-            ],
             disabled: (settings, key) => {
                 if (key === 'fadePeaks' || key === 'peakLine') {
                     return !settings.showPeaks;
                 }
                 return false;
             },
+            kind: 'toggle-row',
+            toggles: [
+                { key: 'showPeaks', labelKey: 'visualizer.showPeaks' },
+                { key: 'fadePeaks', labelKey: 'visualizer.fadePeaks' },
+                { key: 'peakLine', labelKey: 'visualizer.peakLine' },
+            ],
         },
         {
-            kind: 'slider',
+            disabled: (settings) => !settings.showPeaks,
             key: 'gravity',
+            kind: 'slider',
             labelKey: 'visualizer.gravity',
-            min: 0.1,
             max: 20,
-            disabled: (settings) => !settings.showPeaks,
+            min: 0.1,
         },
         {
-            kind: 'slider',
-            key: 'peakFadeTime',
-            labelKey: 'visualizer.peakFadeTime',
-            min: 0,
-            max: 2000,
-            step: 1,
             disabled: (settings) => !settings.showPeaks || !settings.fadePeaks,
+            key: 'peakFadeTime',
+            kind: 'slider',
+            labelKey: 'visualizer.peakFadeTime',
+            max: 2000,
+            min: 0,
+            step: 1,
         },
         {
-            kind: 'slider',
-            key: 'peakHoldTime',
-            labelKey: 'visualizer.peakHoldTime',
-            min: 0,
-            max: 1000,
-            step: 1,
             disabled: (settings) => !settings.showPeaks,
+            key: 'peakHoldTime',
+            kind: 'slider',
+            labelKey: 'visualizer.peakHoldTime',
+            max: 1000,
+            min: 0,
+            step: 1,
         },
     ],
+    legendKey: 'visualizer.peakBehavior',
 };
 
 const toggleSection: SchemaSection = {
-    legendKey: 'visualizer.miscellaneousSettings',
     fields: [
         {
+            disabled: (settings, key) => {
+                const radialBlocked = [
+                    'ledBars',
+                    'trueLeds',
+                    'lumiBars',
+                    'outlineBars',
+                    'roundBars',
+                    'loRes',
+                    'splitGradient',
+                    'showFPS',
+                ];
+                if (radialBlocked.includes(key) && settings.radial) return true;
+                if (key === 'noteLabels') return !settings.showScaleX;
+                return false;
+            },
             kind: 'toggle-row',
             toggles: [
                 { key: 'alphaBars', labelKey: 'visualizer.alphaBars' },
@@ -297,23 +312,9 @@ const toggleSection: SchemaSection = {
                 { key: 'noteLabels', labelKey: 'visualizer.noteLabels' },
                 { key: 'showScaleY', labelKey: 'visualizer.showScaleY' },
             ],
-            disabled: (settings, key) => {
-                const radialBlocked = [
-                    'ledBars',
-                    'trueLeds',
-                    'lumiBars',
-                    'outlineBars',
-                    'roundBars',
-                    'loRes',
-                    'splitGradient',
-                    'showFPS',
-                ];
-                if (radialBlocked.includes(key) && settings.radial) return true;
-                if (key === 'noteLabels') return !settings.showScaleX;
-                return false;
-            },
         },
     ],
+    legendKey: 'visualizer.miscellaneousSettings',
 };
 
 const SCHEMA_SECTIONS = [
@@ -372,7 +373,10 @@ const SchemaSectionView = ({
                     key={String(field.key)}
                     label={t(field.labelKey)}
                     onChange={(value) =>
-                        updateProperty(field.key, field.parse(value ?? '') as AudioMotionSettings[typeof field.key])
+                        updateProperty(
+                            field.key,
+                            field.parse(value ?? '') as AudioMotionSettings[typeof field.key],
+                        )
                     }
                 />
             );
@@ -386,7 +390,9 @@ const SchemaSectionView = ({
                 label={t(field.labelKey)}
                 max={field.max}
                 min={field.min}
-                onChangeEnd={(value) => updateProperty(field.key, value as AudioMotionSettings[typeof field.key])}
+                onChangeEnd={(value) =>
+                    updateProperty(field.key, value as AudioMotionSettings[typeof field.key])
+                }
                 step={field.step}
             />
         );
@@ -433,28 +439,28 @@ export const AudiomotionSchemaSections = () => {
     }));
 
     const sections = SCHEMA_SECTIONS.map((section) => {
-                if (section.legendKey === 'visualizer.frequencyRangeAndScaling') {
-                    return {
-                        ...section,
-                        fields: section.fields.map((field) =>
-                            field.kind === 'select' && field.key === 'frequencyScale'
-                                ? { ...field, options: translatedFrequencyScaleOptions }
-                                : field,
-                        ),
-                    };
-                }
-                if (section.legendKey === 'visualizer.sensitivity') {
-                    return {
-                        ...section,
-                        fields: section.fields.map((field) =>
-                            field.kind === 'select' && field.key === 'weightingFilter'
-                                ? { ...field, options: translatedWeightingFilterOptions }
-                                : field,
-                        ),
-                    };
-                }
-                return section;
-            });
+        if (section.legendKey === 'visualizer.frequencyRangeAndScaling') {
+            return {
+                ...section,
+                fields: section.fields.map((field) =>
+                    field.kind === 'select' && field.key === 'frequencyScale'
+                        ? { ...field, options: translatedFrequencyScaleOptions }
+                        : field,
+                ),
+            };
+        }
+        if (section.legendKey === 'visualizer.sensitivity') {
+            return {
+                ...section,
+                fields: section.fields.map((field) =>
+                    field.kind === 'select' && field.key === 'weightingFilter'
+                        ? { ...field, options: translatedWeightingFilterOptions }
+                        : field,
+                ),
+            };
+        }
+        return section;
+    });
 
     return (
         <>

@@ -8,7 +8,6 @@ import styles from './item-card.module.css';
 import i18n from '/@/i18n/i18n';
 import { ItemCardControls } from '/@/renderer/components/item-card/item-card-controls';
 import { ItemImage } from '/@/renderer/components/item-image/item-image';
-import { QualityBadge } from '/@/renderer/components/quality-badge/quality-badge';
 import { getDraggedItems } from '/@/renderer/components/item-list/helpers/get-dragged-items';
 import { getTitlePath } from '/@/renderer/components/item-list/helpers/get-title-path';
 import {
@@ -17,6 +16,7 @@ import {
     useItemSelectionState,
 } from '/@/renderer/components/item-list/helpers/item-list-state';
 import { ItemControls } from '/@/renderer/components/item-list/types';
+import { QualityBadge } from '/@/renderer/components/quality-badge/quality-badge';
 import { JoinedArtists } from '/@/renderer/features/albums/components/joined-artists';
 import { useDragDrop } from '/@/renderer/hooks/use-drag-drop';
 import { AppRoute } from '/@/renderer/router/routes';
@@ -27,6 +27,10 @@ import {
     formatDurationString,
     formatPartialIsoDateUTC,
 } from '/@/renderer/utils/format';
+import {
+    type AlbumWithQualityProfile,
+    getAlbumQualityProfile,
+} from '/@/renderer/utils/quality-profile';
 import { SEPARATOR_STRING } from '/@/shared/api/utils';
 import { ExplicitIndicator } from '/@/shared/components/explicit-indicator/explicit-indicator';
 import { Group } from '/@/shared/components/group/group';
@@ -35,10 +39,6 @@ import { Separator } from '/@/shared/components/separator/separator';
 import { Skeleton } from '/@/shared/components/skeleton/skeleton';
 import { Text } from '/@/shared/components/text/text';
 import { useDoubleClick } from '/@/shared/hooks/use-double-click';
-import {
-    type AlbumWithQualityProfile,
-    getAlbumQualityProfile,
-} from '/@/renderer/utils/quality-profile';
 import {
     Album,
     AlbumArtist,
@@ -269,9 +269,7 @@ const ItemCardStandardImageArea = memo(function ItemCardStandardImageArea({
                     type="itemCard"
                 />
             )}
-            {albumQualityProfile ? (
-                <QualityBadge overlay profile={albumQualityProfile} />
-            ) : null}
+            {albumQualityProfile ? <QualityBadge overlay profile={albumQualityProfile} /> : null}
             {hasRating && <div className={styles.ratingBadge} />}
             <AnimatePresence>
                 {withControls && showControls && (

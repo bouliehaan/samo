@@ -12,9 +12,9 @@ import {
 import { AudioPlayer, PlayerOnProgressProps } from '/@/renderer/features/player/audio-player/types';
 import { convertToLogVolume } from '/@/renderer/features/player/audio-player/utils/player-utils';
 import { usePlaybackSession } from '/@/renderer/store/playback-owner.store';
+import { PlayerStatus } from '/@/shared/types/types';
 import { LogCategory, logFn } from '/@/shared/utils/logger';
 import { logMsg } from '/@/shared/utils/logger-message';
-import { PlayerStatus } from '/@/shared/types/types';
 
 export interface WebPlayerEngineHandle extends AudioPlayer {
     player1(): {

@@ -2,12 +2,13 @@ import { devtools, persist, subscribeWithSelector } from 'zustand/middleware';
 import { immer } from 'zustand/middleware/immer';
 import { createWithEqualityFn } from 'zustand/traditional';
 
-import { mergeOverridingColumns } from '/@/renderer/store/utils';
+import type { SettingsSlice } from './schemas';
 
 import { createSettingsActions } from './actions';
 import { initialState, initialStateWithEnv } from './defaults';
 import { createSettingsMigrate } from './migrate';
-import type { SettingsSlice } from './schemas';
+
+import { mergeOverridingColumns } from '/@/renderer/store/utils';
 
 export const SETTINGS_STORE_VERSION = 34;
 

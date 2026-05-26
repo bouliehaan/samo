@@ -90,7 +90,9 @@ const DummyAlbumDetailRoute = () => {
                 userFavorite: !wasFavorite,
             });
         } catch (error) {
-            logFn.error(error instanceof Error ? error.message : String(error), { meta: { error: error } });
+            logFn.error(error instanceof Error ? error.message : String(error), {
+                meta: { error: error },
+            });
         }
     };
 

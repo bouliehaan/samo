@@ -23,6 +23,7 @@ import {
     setNativeDownloadThrottle,
     streamCopyToSaf,
     subscribeNativeDownloadProgress,
+    writeSafTextDocument,
 } from './saf-copy';
 
 // Persistent registry of offline downloads. Each entry tracks a single
@@ -42,7 +43,7 @@ const PROGRESS_BYTES_THRESHOLD = 256 * 1024;
 const PROGRESS_RATIO_THRESHOLD = 0.01; // 1%
 const LISTENER_NOTIFY_THROTTLE_MS = 150;
 const REGISTRY_PERSIST_DEBOUNCE_MS = 750;
-const PLAYBACK_DOWNLOAD_THROTTLE_BYTES_PER_SECOND = 2 * 1024 * 1024;
+const PLAYBACK_DOWNLOAD_THROTTLE_BYTES_PER_SECOND = 512 * 1024;
 // Files larger than this stay on internal storage even when an SD card SAF
 // location is configured — copying via SAF moves bytes through a single JS
 // base64 buffer, which OOMs on multi-hundred-MB audiobooks. We can lift this
@@ -50,6 +51,7 @@ const PLAYBACK_DOWNLOAD_THROTTLE_BYTES_PER_SECOND = 2 * 1024 * 1024;
 const SAF_COPY_MAX_BYTES = 200 * 1024 * 1024;
 
 export interface DownloadCollectionInfo {
+    artworkImageId?: string;
     artworkUrl?: string;
     id: string;
     sourceId: string;
@@ -206,6 +208,18 @@ const exportRegistrySidecar = async (entries: DownloadEntry[]): Promise<void> =>
     } catch {
         // best-effort
     }
+    try {
+        const storage = await getStorageLocation();
+        if (storage.treeUri) {
+            await writeSafTextDocument(
+                storage.treeUri,
+                REGISTRY_SIDECAR_FILENAME,
+                payload,
+            );
+        }
+    } catch {
+        // best-effort
+    }
 };
 
 const loadInternalRegistrySidecar = async (): Promise<DownloadEntry[]> => {
@@ -314,27 +328,90 @@ const findExistingForDiscovered = (
     entries: DownloadEntry[],
     file: DiscoveredDownloadFile,
 ): DownloadEntry | undefined => {
-    const byUri = entries.find((entry) => entry.localUri === file.localUri);
+    const byUri = pickBestRecoveryCandidate(
+        entries.filter((entry) => entry.localUri === file.localUri),
+    );
     if (byUri) {
         return byUri;
     }
 
     const trackKey = buildDownloadTrackKey(file.sourceId, file.collectionId, file.trackId);
-    const byPathKey = entries.find(
-        (entry) =>
-            buildDownloadTrackKey(
-                entry.collection.sourceId,
-                entry.collection.id,
-                entry.trackId,
-            ) === trackKey,
+    const byPathKey = pickBestRecoveryCandidate(
+        entries.filter(
+            (entry) =>
+                buildDownloadTrackKey(
+                    entry.collection.sourceId,
+                    entry.collection.id,
+                    entry.trackId,
+                ) === trackKey,
+        ),
     );
     if (byPathKey) {
         return byPathKey;
     }
 
-    return entries.find(
-        (entry) => entry.trackId === file.trackId && entry.status === 'completed',
+    return pickBestRecoveryCandidate(
+        entries.filter(
+            (entry) =>
+                (entry.trackId === file.trackId ||
+                    sanitizeForPath(entry.trackId) === file.trackId) &&
+                entry.status === 'completed',
+        ),
     );
+};
+
+const recoveryMetadataScore = (entry: DownloadEntry): number => {
+    let score = 0;
+    if (!entry.id.startsWith('discovered-')) score += 1;
+    if (entry.collection.sourceId !== 'recovered') score += 4;
+    if (entry.collection.id !== 'sd-card') score += 2;
+    if (entry.collection.title !== entry.collection.id) score += 1;
+    if (entry.title !== entry.trackId) score += 1;
+    if (entry.collection.artworkUrl) score += 1;
+    return score;
+};
+
+const pickBestRecoveryCandidate = (
+    candidates: DownloadEntry[],
+): DownloadEntry | undefined => {
+    return candidates.reduce<DownloadEntry | undefined>((best, candidate) => {
+        if (!best || recoveryMetadataScore(candidate) > recoveryMetadataScore(best)) {
+            return candidate;
+        }
+        return best;
+    }, undefined);
+};
+
+const dedupeRecoveredRegistryEntries = (entries: DownloadEntry[]): DownloadEntry[] => {
+    const byIdentity = new Map<string, DownloadEntry>();
+    const passthrough: DownloadEntry[] = [];
+
+    for (const entry of entries) {
+        const identity =
+            entry.status === 'completed' && entry.localUri
+                ? `uri:${entry.localUri}`
+                : entry.id;
+        const existing = byIdentity.get(identity);
+        if (!existing) {
+            byIdentity.set(identity, entry);
+            continue;
+        }
+        if (recoveryMetadataScore(entry) > recoveryMetadataScore(existing)) {
+            byIdentity.set(identity, entry);
+        }
+    }
+
+    for (const entry of entries) {
+        const identity =
+            entry.status === 'completed' && entry.localUri
+                ? `uri:${entry.localUri}`
+                : entry.id;
+        if (byIdentity.get(identity) === entry) {
+            passthrough.push(entry);
+        }
+    }
+
+    return passthrough;
 };
 
 const createEntryFromDiscovered = (
@@ -363,7 +440,7 @@ const createEntryFromDiscovered = (
         sourceUrl: existing?.sourceUrl ?? file.localUri,
         status: 'completed',
         title: existing?.title ?? file.trackId,
-        trackId: file.trackId,
+        trackId: existing?.trackId ?? file.trackId,
         trackSubtitle: existing?.trackSubtitle,
     };
 };
@@ -375,7 +452,7 @@ const reconcileDownloadRegistry = async (current: DownloadEntry[]): Promise<Down
         storage.treeUri ? await loadSafRegistrySidecar(storage.treeUri) : [],
     );
 
-    let merged = mergeRegistryEntries(current, sidecarEntries);
+    const merged = mergeRegistryEntries(current, sidecarEntries);
     const discoveredFiles = [
         ...(await scanInternalDownloadFiles()),
         ...(storage.treeUri ? await scanSafDownloadFiles(storage.treeUri) : []),
@@ -406,7 +483,12 @@ const reconcileDownloadRegistry = async (current: DownloadEntry[]): Promise<Down
         }
     }
 
-    return changed ? next : current;
+    const compacted = dedupeRecoveredRegistryEntries(next);
+    if (compacted.length !== next.length) {
+        changed = true;
+    }
+
+    return changed ? compacted : current;
 };
 
 let discoveryInFlight: Promise<void> | null = null;
@@ -848,6 +930,7 @@ const enqueueMusicCollectionDownload = async (
     }
 
     const collection: DownloadCollectionInfo = {
+        artworkImageId: detail.artworkImageId,
         artworkUrl: detail.artworkUrl,
         id: detail.id,
         sourceId: detail.source.id,
@@ -938,6 +1021,7 @@ const enqueueAudiobookDownload = async (
     }
 
     const collection: DownloadCollectionInfo = {
+        artworkImageId: detail.artworkImageId,
         artworkUrl: detail.artworkUrl,
         id: detail.id,
         sourceId: detail.source.id,
@@ -1028,6 +1112,7 @@ const enqueuePodcastDownload = async (
     }
 
     const collection: DownloadCollectionInfo = {
+        artworkImageId: detail.artworkImageId,
         artworkUrl: detail.artworkUrl,
         id: detail.id,
         sourceId: detail.source.id,
@@ -1153,7 +1238,8 @@ export const enqueueSinglePodcastEpisodeDownload = async (
             };
         }
         const collection: DownloadCollectionInfo = {
-            artworkUrl: detail.artworkUrl,
+            artworkImageId: detail.artworkImageId,
+        artworkUrl: detail.artworkUrl,
             id: detail.id,
             sourceId: detail.source.id,
             subtitle: detail.subtitle,
@@ -1444,6 +1530,9 @@ const persistStorageLocation = async (
             return;
         }
         await fsSetItem(STORAGE_LOCATION_KEY, JSON.stringify(pref));
+        if (registryCache && registryCache.length > 0) {
+            void exportRegistrySidecar(registryCache);
+        }
     } catch {
         // best-effort
     }
@@ -1534,12 +1623,13 @@ const tryMoveCompletedFileToSaf = async (
             } catch {
                 // best-effort
             }
-            return (
+            const updated =
                 updateEntryDirect(entry.id, { localUri: safUri }) ?? {
                     ...entry,
                     localUri: safUri,
-                }
-            );
+                };
+            await flushRegistryPersist();
+            return updated;
         }
         // Native bridge returned null (e.g., permission revoked). Fall back
         // to the JS bridge below for files small enough to make it through.
@@ -1571,12 +1661,13 @@ const tryMoveCompletedFileToSaf = async (
         } catch {
             // best-effort
         }
-        return (
+        const updated =
             updateEntryDirect(entry.id, { localUri: safFileUri }) ?? {
                 ...entry,
                 localUri: safFileUri,
-            }
-        );
+            };
+        await flushRegistryPersist();
+        return updated;
     } catch {
         return entry;
     }

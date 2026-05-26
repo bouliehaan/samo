@@ -5,16 +5,18 @@ import type {
     UseMutationOptions,
     UseQueryOptions,
 } from '@tanstack/react-query';
-import { logFn } from '/@/shared/utils/logger';
 
 import { QueryCache, QueryClient } from '@tanstack/react-query';
 
 import { toast } from '/@/shared/components/toast/toast';
+import { logFn } from '/@/shared/utils/logger';
 
 const queryCache = new QueryCache({
     onError: (error: any, query) => {
         if (query.state.data !== undefined) {
-            logFn.error(error instanceof Error ? error.message : String(error), { meta: { error: error } });
+            logFn.error(error instanceof Error ? error.message : String(error), {
+                meta: { error: error },
+            });
             toast.show({ message: `${error.message}`, type: 'error' });
         }
     },

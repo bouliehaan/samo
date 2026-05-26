@@ -28,9 +28,9 @@ import { shutdownServer } from './features/core/remote';
 import { store } from './features/core/settings';
 import {
     AppUpdater,
-    type UpdaterInstance,
     checkAllChannelsAndGetBest,
     configureAndGetUpdater,
+    type UpdaterInstance,
 } from './features/core/updater';
 import MenuBuilder, { MenuPlaybackState } from './menu';
 import {
@@ -404,7 +404,7 @@ async function createWindow(first = true): Promise<void> {
             try {
                 console.log('Checking for updates');
                 const effectiveChannel = store.get('release_channel') as string;
-                let result: null | Awaited<ReturnType<UpdaterInstance['checkForUpdates']>>;
+                let result: Awaited<ReturnType<UpdaterInstance['checkForUpdates']>> | null;
                 let updater: UpdaterInstance;
 
                 if (effectiveChannel === 'alpha') {
@@ -629,7 +629,6 @@ app.commandLine.appendSwitch('gtk-version', '3');
 
 // Enable garbage collection API
 app.commandLine.appendSwitch('js-flags', '--expose-gc');
-
 
 const textEntryMenuAcceleratorHotkeys = new Set([
     'backspace',

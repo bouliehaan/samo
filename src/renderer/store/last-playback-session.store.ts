@@ -7,10 +7,7 @@ import type { PlaybackSource } from '/@/renderer/store/playback-owner.store';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
-import {
-    identityPersistMigrate,
-    PERSIST_VERSION_INITIAL,
-} from '/@/renderer/store/persist-migrate';
+import { identityPersistMigrate, PERSIST_VERSION_INITIAL } from '/@/renderer/store/persist-migrate';
 
 export type MusicPlaybackContext =
     | { albumId: string; kind: 'album'; serverId: string }

@@ -3,6 +3,7 @@ import type { PersistStorage, StateStorage } from 'zustand/middleware';
 
 import { del, get, set } from 'idb-keyval';
 import mergeWith from 'lodash/mergeWith';
+
 import { logFn } from '/@/shared/utils/logger';
 
 type PlayerStorePersistedSlice = {

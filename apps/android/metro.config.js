@@ -24,8 +24,8 @@ config.resolver.nodeModulesPaths = [
 const REACT_ROOT = path.resolve(projectRoot, 'node_modules/react');
 const REACT_ALIASES = {
     react: path.join(REACT_ROOT, 'index.js'),
-    'react/jsx-runtime': path.join(REACT_ROOT, 'jsx-runtime.js'),
     'react/jsx-dev-runtime': path.join(REACT_ROOT, 'jsx-dev-runtime.js'),
+    'react/jsx-runtime': path.join(REACT_ROOT, 'jsx-runtime.js'),
 };
 
 // pnpm + workspaces leaves two physical copies of several packages around:
@@ -68,9 +68,7 @@ const dedupeWorkspaceRootCopy = (filePath) => {
     const tail = filePath.substring(WORKSPACE_NM_PREFIX.length);
     const parts = tail.split(path.sep);
     if (parts.length === 0) return filePath;
-    const pkgName = parts[0].startsWith('@')
-        ? `${parts[0]}/${parts[1] ?? ''}`
-        : parts[0];
+    const pkgName = parts[0].startsWith('@') ? `${parts[0]}/${parts[1] ?? ''}` : parts[0];
     if (!pkgName || pkgName.endsWith('/')) return filePath;
 
     const realProjectPkg = getProjectPkgRealpath(pkgName);
@@ -85,7 +83,7 @@ const defaultResolveRequest = config.resolver.resolveRequest;
 config.resolver.resolveRequest = (context, moduleName, platform) => {
     const aliased = REACT_ALIASES[moduleName];
     if (aliased) {
-        return { type: 'sourceFile', filePath: aliased };
+        return { filePath: aliased, type: 'sourceFile' };
     }
     const result = defaultResolveRequest
         ? defaultResolveRequest(context, moduleName, platform)

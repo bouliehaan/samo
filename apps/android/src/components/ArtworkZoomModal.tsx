@@ -1,4 +1,3 @@
-import { Image as ExpoImage } from 'expo-image';
 import { memo, useCallback, useEffect, useMemo } from 'react';
 import { Modal, Pressable, StyleSheet, View } from 'react-native';
 import {
@@ -11,21 +10,35 @@ import Reanimated, {
     withSpring,
 } from 'react-native-reanimated';
 
+import { type MobileContentSource } from '@samo/core/mobile';
+import { type ServerAuthenticationResult } from '@samo/core/server';
+
+import { ArtworkImage } from './ArtworkImage';
 import { ClearGlyph } from './Glyphs';
 import { OPEN_SPRING, SCREEN_WIDTH } from '../theme/layout';
 import { styles } from '../theme/styles';
 import { colors, spacing } from '../theme/tokens';
+import {
+    artworkSourceUri,
+    resolveSamoItemArtworkSourceForDisplay,
+} from '../utils/samo-artwork-url';
 
 const ARTWORK_ZOOM_MAX_SCALE = 4;
 const ARTWORK_ZOOM_DOUBLE_TAP_SCALE = 2.35;
 
 export const ArtworkZoomModal = memo(({
+    artworkImageId,
+    contentSource,
     onClose,
+    serverConnections,
     title,
     uri,
     visible,
 }: {
+    artworkImageId?: string;
+    contentSource?: MobileContentSource;
     onClose: () => void;
+    serverConnections?: ServerAuthenticationResult[];
     title: string;
     uri?: string;
     visible: boolean;
@@ -36,6 +49,17 @@ export const ArtworkZoomModal = memo(({
     const translateY = useSharedValue(0);
     const savedTranslateX = useSharedValue(0);
     const savedTranslateY = useSharedValue(0);
+    const resolvedSource = useMemo(
+        () =>
+            contentSource && serverConnections
+                ? resolveSamoItemArtworkSourceForDisplay(
+                      { artworkImageId, artworkUrl: uri, source: contentSource },
+                      serverConnections,
+                  )
+                : uri,
+        [artworkImageId, contentSource, serverConnections, uri],
+    );
+    const displayUri = artworkSourceUri(resolvedSource) ?? uri;
 
     const resetZoom = useCallback(() => {
         scale.value = withSpring(1, OPEN_SPRING);
@@ -50,7 +74,7 @@ export const ArtworkZoomModal = memo(({
         if (visible) {
             resetZoom();
         }
-    }, [resetZoom, uri, visible]);
+    }, [displayUri, resetZoom, visible]);
 
     const close = useCallback(() => {
         resetZoom();
@@ -151,7 +175,7 @@ export const ArtworkZoomModal = memo(({
         ],
     }));
 
-    if (!uri) {
+    if (!displayUri && !artworkImageId) {
         return null;
     }
 
@@ -165,14 +189,14 @@ export const ArtworkZoomModal = memo(({
                 />
                 <GestureDetector gesture={zoomGesture}>
                     <Reanimated.View style={[styles.artworkZoomImageFrame, zoomStyle]}>
-                        <ExpoImage
-                            allowDownscaling={false}
-                            cachePolicy="memory-disk"
-                            contentFit="contain"
-                            priority="high"
-                            recyclingKey={`zoom:${uri}`}
-                            source={{ uri }}
+                        <ArtworkImage
+                            artworkImageId={artworkImageId}
+                            contentSource={contentSource}
+                            letter={title.slice(0, 1)}
+                            serverConnections={serverConnections}
+                            source={resolvedSource}
                             style={styles.artworkZoomImage}
+                            uri={uri}
                         />
                     </Reanimated.View>
                 </GestureDetector>

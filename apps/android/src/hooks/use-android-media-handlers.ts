@@ -1,5 +1,6 @@
 import {
     addMobileTracksToPlaylist,
+    createMobilePlaylist,
     getDetailQualityProfile,
     getItemQualityProfile,
     loadMobileMediaDetail,
@@ -16,6 +17,7 @@ import {
 } from '@samo/core/mobile';
 import {
     type ServerAuthenticationResult,
+    findServerAuthenticationForSource,
     ServerType,
 } from '@samo/core/server';
 import { startTransition, useCallback, useRef, type MutableRefObject } from 'react';
@@ -35,6 +37,7 @@ import {
     addAndroidMediaTrackToPlaylist,
     loadAndroidMediaDetail,
     loadAndroidMediaTrackPlayback,
+    isValidTrackPlayback,
 } from '../services/media-detail';
 import {
     loadCachedMediaDetail,
@@ -63,6 +66,7 @@ import {
     savePersistedRecentContentItems,
     upsertRecentContentItem,
 } from '../services/recent-content';
+import { dedupeRecentContentItemsByAlbumIdentity } from '../utils/recent-content-dedupe';
 import { loadAndroidSearchResults } from '../services/search-content';
 import {
     addAndroidRadioStation,
@@ -163,6 +167,7 @@ export interface AndroidMediaHandlers {
         input: AddAndroidRadioStationInput,
     ) => Promise<AddAndroidRadioStationResult>;
     handleAddToPlaylistFromRoot: (playlist: MobileHomeItem) => Promise<void>;
+    handleCreatePlaylistFromRoot: (name: string) => Promise<void>;
     handleAddTrackToQueue: (track: MobileMediaTrack) => void;
     handleDownloadCollectionItem: (item: AndroidRecentContentSourceItem) => Promise<void>;
     handleDownloadSongTrack: (
@@ -284,7 +289,9 @@ export function useAndroidMediaHandlers(
 
     const recordRecentContentItem = useCallback((item: AndroidRecentContentSourceItem) => {
         setRecentContentItems((current) => {
-            const nextItems = upsertRecentContentItem(current, item);
+            const nextItems = dedupeRecentContentItemsByAlbumIdentity(
+                upsertRecentContentItem(current, item),
+            );
 
             void savePersistedRecentContentItems(nextItems);
 
@@ -332,6 +339,11 @@ export function useAndroidMediaHandlers(
 
                     if (!nextItem.artworkUrl && detail.artworkUrl) {
                         nextItem.artworkUrl = detail.artworkUrl;
+                        itemChanged = true;
+                    }
+
+                    if (!nextItem.artworkImageId && detail.artworkImageId) {
+                        nextItem.artworkImageId = detail.artworkImageId;
                         itemChanged = true;
                     }
 
@@ -394,11 +406,24 @@ export function useAndroidMediaHandlers(
         if (item.playback || item.type === MobileHomeItemType.AUDIOBOOK) {
             return;
         }
-        prefetchArtworkUrl(item.artworkUrl);
+        prefetchArtworkUrl(
+            {
+                artworkImageId: item.artworkImageId,
+                artworkUrl: item.artworkUrl,
+                source: item.source,
+            },
+            serverConnections,
+        );
         const cacheKey = getRecentContentItemKey(item);
         const memoryCached = mediaDetailCacheRef.current.get(cacheKey);
         if (memoryCached) {
-            prefetchDetailArtworkUrls(memoryCached, [item.artworkUrl]);
+            prefetchDetailArtworkUrls(memoryCached, serverConnections, [
+                {
+                    artworkImageId: item.artworkImageId,
+                    artworkUrl: item.artworkUrl,
+                    source: item.source,
+                },
+            ]);
             return;
         }
         void loadCachedMediaDetail(cacheKey).then((fromDisk) => {
@@ -406,22 +431,43 @@ export function useAndroidMediaHandlers(
                 return;
             }
             rememberMediaDetail(mediaDetailCacheRef.current, cacheKey, fromDisk);
-            prefetchDetailArtworkUrls(fromDisk, [item.artworkUrl]);
+            prefetchDetailArtworkUrls(fromDisk, serverConnections, [
+                {
+                    artworkImageId: item.artworkImageId,
+                    artworkUrl: item.artworkUrl,
+                    source: item.source,
+                },
+            ]);
         });
-    }, []);
+    }, [serverConnections]);
 
     const beginOpenMediaDetail = useCallback(
         (item: AndroidRecentContentSourceItem) => {
             const cacheKey = getRecentContentItemKey(item);
             const memoryCached = mediaDetailCacheRef.current.get(cacheKey);
             const openStartedAt = Date.now();
-            prefetchArtworkUrl(item.artworkUrl);
+            prefetchArtworkUrl(
+                {
+                    artworkImageId: item.artworkImageId,
+                    artworkUrl: item.artworkUrl,
+                    source: item.source,
+                },
+                serverConnections,
+            );
             if (memoryCached) {
-                prefetchDetailArtworkUrls(memoryCached, [item.artworkUrl]);
+                prefetchDetailArtworkUrls(memoryCached, serverConnections, [
+                    {
+                        artworkImageId: item.artworkImageId,
+                        artworkUrl: item.artworkUrl,
+                        source: item.source,
+                    },
+                ]);
                 setMediaDetailState({ detail: memoryCached, status: 'loaded' });
             } else {
                 setMediaDetailState({
+                    itemArtworkImageId: item.artworkImageId,
                     itemArtworkUrl: item.artworkUrl,
+                    itemSource: item.source,
                     itemTitle: item.title,
                     itemType: item.type,
                     status: 'loading',
@@ -455,7 +501,7 @@ export function useAndroidMediaHandlers(
             ).catch(() => {});
             // #endregion
         },
-        [setMediaDetailState],
+        [setMediaDetailState, serverConnections],
     );
 
     const loadDetailWithCache = async (
@@ -503,7 +549,13 @@ export function useAndroidMediaHandlers(
         }
 
         if (cached) {
-            prefetchDetailArtworkUrls(cached, [item.artworkUrl]);
+            prefetchDetailArtworkUrls(cached, serverConnections, [
+                {
+                    artworkImageId: item.artworkImageId,
+                    artworkUrl: item.artworkUrl,
+                    source: item.source,
+                },
+            ]);
             startTransition(() => {
                 enrichRecentAlbumFromDetail(item, cached);
                 const alreadyShowingLoaded =
@@ -534,7 +586,13 @@ export function useAndroidMediaHandlers(
             if (next.status === 'loaded') {
                 rememberMediaDetail(mediaDetailCacheRef.current, cacheKey, next.detail);
                 void saveCachedMediaDetail(cacheKey, next.detail);
-                prefetchDetailArtworkUrls(next.detail, [item.artworkUrl]);
+                prefetchDetailArtworkUrls(next.detail, serverConnections, [
+                    {
+                        artworkImageId: item.artworkImageId,
+                        artworkUrl: item.artworkUrl,
+                        source: item.source,
+                    },
+                ]);
                 startTransition(() => {
                     enrichRecentAlbumFromDetail(item, next.detail);
                 });
@@ -731,9 +789,9 @@ export function useAndroidMediaHandlers(
         options?: { isCurrentRequest?: () => boolean },
     ) => {
         const isCurrentRequest = () => options?.isCurrentRequest?.() !== false;
-        if (track.playback) {
+        if (isValidTrackPlayback(track.playback)) {
             const queueItems = (queueTracks ?? detail.tracks).flatMap((candidate) =>
-                candidate.playback ? [candidate.playback] : [],
+                isValidTrackPlayback(candidate.playback) ? [candidate.playback] : [],
             );
             const queueIndex = queueItems.findIndex(
                 (candidate) => candidate.id === track.playback?.id,
@@ -890,7 +948,7 @@ export function useAndroidMediaHandlers(
     const handleShuffleDetailTracks = useCallback(
         async (detail: MobileMediaDetail, tracks: MobileMediaTrack[] = detail.tracks) => {
             const playableTracks = tracks.flatMap((track) =>
-                track.playback ? [track.playback] : [],
+                isValidTrackPlayback(track.playback) ? [track.playback] : [],
             );
 
             if (playableTracks.length === 0) {
@@ -960,8 +1018,12 @@ export function useAndroidMediaHandlers(
     );
 
     const findAuthForSource = useCallback(
-        (sourceId: string | undefined) =>
-            serverConnections.find((auth) => getPersistedServerAuthKey(auth) === sourceId),
+        (sourceId: string | undefined, source?: MobileContentSource) =>
+            findServerAuthenticationForSource(serverConnections, {
+                id: sourceId ?? source?.id,
+                type: source?.type,
+                url: source?.url,
+            }),
         [serverConnections],
     );
 
@@ -1447,7 +1509,9 @@ export function useAndroidMediaHandlers(
         const auth = findAuthForSource(sourceId);
         if (
             !auth ||
-            (auth.type !== ServerType.NAVIDROME && auth.type !== ServerType.SUBSONIC)
+            (auth.type !== ServerType.NAVIDROME &&
+                auth.type !== ServerType.SUBSONIC &&
+                auth.type !== ServerType.SAMO)
         ) {
             setContextMenuFeedback(
                 'Adding to playlists is only available for music server items.',
@@ -1457,6 +1521,79 @@ export function useAndroidMediaHandlers(
         setContextMenuTarget(null);
         setPlaylistMenuRoot({ collectionItem, kind: 'collection', sourceId });
         setPlaylistMenuRootState({ status: 'idle' });
+    };
+
+    const handleCreatePlaylistFromRoot = async (name: string) => {
+        if (!playlistMenuRoot) {
+            return;
+        }
+
+        const auth = findAuthForSource(playlistMenuRoot.sourceId);
+
+        if (!auth) {
+            setPlaylistMenuRootState({
+                message: 'The server for this item is no longer connected.',
+                status: 'error',
+            });
+            return;
+        }
+
+        if (
+            auth.type !== ServerType.NAVIDROME &&
+            auth.type !== ServerType.SUBSONIC &&
+            auth.type !== ServerType.SAMO
+        ) {
+            setPlaylistMenuRootState({
+                message: 'Creating playlists is only available for music servers.',
+                status: 'error',
+            });
+            return;
+        }
+
+        setPlaylistMenuRootState({ playlistId: '__create__', status: 'loading' });
+
+        try {
+            const songIds =
+                playlistMenuRoot.kind === 'track' ? [playlistMenuRoot.track.id] : undefined;
+            const playlist = await createMobilePlaylist({
+                authentication: auth,
+                name,
+                songIds,
+            });
+
+            if (playlistMenuRoot.kind === 'collection') {
+                const sourceDetail = await loadMobileMediaDetail({
+                    authentication: auth,
+                    id: playlistMenuRoot.collectionItem.id,
+                    type:
+                        playlistMenuRoot.collectionItem.type === MobileHomeItemType.PLAYLIST
+                            ? MobileMediaDetailType.PLAYLIST
+                            : MobileMediaDetailType.ALBUM,
+                });
+                const collectionSongIds = sourceDetail.tracks
+                    .filter((track) => track.playback?.source === 'music')
+                    .map((track) => track.id);
+
+                if (collectionSongIds.length > 0) {
+                    await addMobileTracksToPlaylist({
+                        authentication: auth,
+                        playlistId: playlist.id,
+                        songIds: collectionSongIds,
+                    });
+                }
+            }
+
+            await loadHomeForConnections(serverConnections);
+            setPlaylistMenuRootState({
+                message: `Created ${playlist.title}`,
+                status: 'success',
+            });
+        } catch (error) {
+            setPlaylistMenuRootState({
+                message: error instanceof Error ? error.message : 'Failed to create playlist',
+                status: 'error',
+            });
+        }
     };
 
     const handleAddToPlaylistFromRoot = async (playlist: MobileHomeItem) => {
@@ -1543,6 +1680,7 @@ export function useAndroidMediaHandlers(
         handleAddMediaTrackToPlaylist,
         handleAddRadioStation,
         handleAddToPlaylistFromRoot,
+        handleCreatePlaylistFromRoot,
         handleAddTrackToQueue,
         handleDownloadCollectionItem,
         handleDownloadSongTrack,

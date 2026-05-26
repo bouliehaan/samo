@@ -1,5 +1,4 @@
 import type { SavedCollection } from '/@/shared/types/domain-types';
-import { ItemListKey } from '/@/shared/types/types';
 
 import type {
     ArtistReleaseTypeItem,
@@ -16,7 +15,10 @@ import type {
     SortableItem,
     TranscodingConfig,
 } from './schemas';
+
 import { deepMergeIntoState, type DeepPartial } from './utils';
+
+import { ItemListKey } from '/@/shared/types/types';
 
 type SettingsSetter = (
     fn: (state: SettingsSlice) => void,

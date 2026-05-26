@@ -1,7 +1,7 @@
 const CAST_SENDER_SCRIPT =
     'https://www.gstatic.com/cv/js/sender/v1/cast_sender.js?loadCastFramework=1';
 
-let loadPromise: Promise<boolean> | null = null;
+let loadPromise: null | Promise<boolean> = null;
 
 export const isCastApiAvailable = () =>
     typeof window !== 'undefined' &&

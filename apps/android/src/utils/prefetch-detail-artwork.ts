@@ -1,49 +1,83 @@
-import { type MobileMediaDetail } from '@samo/core/mobile';
-import { Image as ExpoImage } from 'expo-image';
+import {
+    type MobileContentSource,
+    type MobileMediaDetail,
+    type MobilePlayableAudio,
+} from '@samo/core/mobile';
+import { type ServerAuthenticationResult } from '@samo/core/server';
+
+import {
+    prefetchArtworkSource,
+    resolvePlaybackArtworkSourceForDisplay,
+    resolveSamoItemArtworkSourceForDisplay,
+} from './samo-artwork-url';
 
 const MAX_PREFETCH_URLS = 18;
 
+export type ArtworkPrefetchItem = {
+    artworkImageId?: string;
+    artworkUrl?: string;
+    source?: Pick<MobileContentSource, 'id' | 'type' | 'url'>;
+};
+
+export const prefetchArtworkForItem = (
+    item: ArtworkPrefetchItem,
+    serverConnections: ServerAuthenticationResult[],
+): void => {
+    prefetchArtworkSource(
+        resolveSamoItemArtworkSourceForDisplay(item, serverConnections),
+    );
+};
+
+export const prefetchPlaybackArtwork = (
+    item: Pick<
+        MobilePlayableAudio,
+        'artworkImageId' | 'artworkUrl' | 'contentSourceId' | 'id'
+    > | null | undefined,
+    serverConnections: ServerAuthenticationResult[],
+): void => {
+    prefetchArtworkSource(resolvePlaybackArtworkSourceForDisplay(item, serverConnections));
+};
+
 export const prefetchDetailArtworkUrls = (
     detail: MobileMediaDetail,
-    extraUrls: Array<string | undefined> = [],
+    serverConnections: ServerAuthenticationResult[],
+    extraItems: ArtworkPrefetchItem[] = [],
 ): void => {
-    const urls = new Set<string>();
-    for (const url of extraUrls) {
-        if (url) {
-            urls.add(url);
+    prefetchArtworkForItem(
+        {
+            artworkImageId: detail.artworkImageId,
+            artworkUrl: detail.artworkUrl,
+            source: detail.source,
+        },
+        serverConnections,
+    );
+
+    const seen = new Set<string>();
+    const queue = [
+        ...extraItems,
+        ...(detail.items?.slice(0, MAX_PREFETCH_URLS) ?? []),
+        ...(detail.topTracks?.slice(0, 8) ?? []).map((track) => ({
+            artworkImageId: track.artworkImageId,
+            artworkUrl: track.artworkUrl,
+            source: detail.source,
+        })),
+        ...(detail.appearsOnItems?.slice(0, 6) ?? []),
+        ...(detail.relatedArtists?.slice(0, 6) ?? []),
+    ];
+
+    for (const item of queue) {
+        const key = `${item.source?.id ?? ''}:${item.artworkImageId ?? item.artworkUrl ?? ''}`;
+        if (!key || seen.has(key)) {
+            continue;
         }
-    }
-    if (detail.artworkUrl) {
-        urls.add(detail.artworkUrl);
-    }
-    for (const item of detail.items?.slice(0, MAX_PREFETCH_URLS) ?? []) {
-        if (item.artworkUrl) {
-            urls.add(item.artworkUrl);
-        }
-    }
-    for (const track of detail.topTracks?.slice(0, 8) ?? []) {
-        if (track.artworkUrl) {
-            urls.add(track.artworkUrl);
-        }
-    }
-    for (const item of detail.appearsOnItems?.slice(0, 6) ?? []) {
-        if (item.artworkUrl) {
-            urls.add(item.artworkUrl);
-        }
-    }
-    for (const item of detail.relatedArtists?.slice(0, 6) ?? []) {
-        if (item.artworkUrl) {
-            urls.add(item.artworkUrl);
-        }
-    }
-    for (const url of urls) {
-        void ExpoImage.prefetch(url, 'memory-disk');
+        seen.add(key);
+        prefetchArtworkForItem(item, serverConnections);
     }
 };
 
-export const prefetchArtworkUrl = (url: string | undefined): void => {
-    if (!url) {
-        return;
-    }
-    void ExpoImage.prefetch(url, 'memory-disk');
+export const prefetchArtworkUrl = (
+    item: ArtworkPrefetchItem,
+    serverConnections: ServerAuthenticationResult[],
+): void => {
+    prefetchArtworkForItem(item, serverConnections);
 };

@@ -3,7 +3,7 @@ import { type MobileHomeItem, type MobileSearchItem } from '@samo/core/mobile';
 import { fsDeleteItem, fsGetItem, fsSetItem } from './fs-storage';
 
 const RECENT_CONTENT_KEY = 'samo.android.recent-content.v1';
-const MAX_RECENT_CONTENT_ITEMS = 80;
+export const MAX_RECENT_CONTENT_ITEMS = 80;
 
 export type AndroidRecentContentSourceItem = MobileHomeItem | MobileSearchItem;
 
@@ -80,8 +80,6 @@ export const upsertRecentContentItem = (
         selectedAt: Date.now(),
     };
 
-    return [nextItem, ...items.filter((candidate) => candidate.key !== key)].slice(
-        0,
-        MAX_RECENT_CONTENT_ITEMS,
-    );
+    const withoutSameKey = items.filter((candidate) => candidate.key !== key);
+    return [nextItem, ...withoutSameKey].slice(0, MAX_RECENT_CONTENT_ITEMS);
 };

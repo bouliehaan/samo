@@ -70,6 +70,21 @@ export const getDefaultServerCapabilities = (type: ServerType): ServerCapabiliti
         };
     }
 
+    if (type === ServerType.SAMO) {
+        return {
+            content: [
+                ...MUSIC_CAPABILITIES,
+                ServerContentCapability.AUDIOBOOKS,
+                ServerContentCapability.PODCASTS,
+            ],
+            search: [
+                ...MUSIC_CAPABILITIES,
+                ServerContentCapability.AUDIOBOOKS,
+                ServerContentCapability.PODCASTS,
+            ],
+        };
+    }
+
     return {
         content: [],
         search: [],

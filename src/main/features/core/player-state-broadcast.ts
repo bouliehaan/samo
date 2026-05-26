@@ -67,20 +67,14 @@ ipcMain.on('update-shuffle', (_event, shuffle: boolean) => dispatch('shuffle', s
 ipcMain.on('update-volume', (_event, volume: number) => dispatch('volume', volume));
 ipcMain.on('update-position', (_event, position: number) => dispatch('position', position));
 ipcMain.on('update-seek', (_event, offset: number) => dispatch('seek', offset));
-ipcMain.on(
-    'update-song',
-    (_event, song: QueueSong | undefined, imageUrl?: null | string) =>
-        dispatch('song', { imageUrl, song }),
+ipcMain.on('update-song', (_event, song: QueueSong | undefined, imageUrl?: null | string) =>
+    dispatch('song', { imageUrl, song }),
 );
-ipcMain.on(
-    'update-favorite',
-    (_event, favorite: boolean, serverId: string, ids: string[]) =>
-        dispatch('favorite', { favorite, ids, serverId }),
+ipcMain.on('update-favorite', (_event, favorite: boolean, serverId: string, ids: string[]) =>
+    dispatch('favorite', { favorite, ids, serverId }),
 );
-ipcMain.on(
-    'update-rating',
-    (_event, rating: number, serverId: string, ids: string[]) =>
-        dispatch('rating', { ids, rating, serverId }),
+ipcMain.on('update-rating', (_event, rating: number, serverId: string, ids: string[]) =>
+    dispatch('rating', { ids, rating, serverId }),
 );
 ipcMain.on('update-private-mode', (_event, privateMode: boolean) =>
     dispatch('privateMode', privateMode),

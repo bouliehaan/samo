@@ -65,10 +65,10 @@ export interface MobileHomeItem {
     title: string;
     type: MobileHomeItemType;
 }
-export interface MobileQualityProfile {
-    bitDepth: number;
-    sampleRate: number;
-}
+/**
+ * @deprecated Use `QualityBadgeProfile` from `@samo/core/audio-quality`.
+ */
+export type MobileQualityProfile = import('../audio-quality/quality-badge-key').QualityBadgeProfile;
 export interface MobileHomeSection {
     id: MobileHomeSectionId;
     items: MobileHomeItem[];

@@ -77,10 +77,7 @@ const installSessionListener = () => {
     const framework = getCastFramework();
     if (!context || !framework || sessionListenerInstalled) return;
     sessionListenerInstalled = true;
-    context.addEventListener(
-        framework.CastContextEventType.CAST_STATE_CHANGED,
-        refreshCastState,
-    );
+    context.addEventListener(framework.CastContextEventType.CAST_STATE_CHANGED, refreshCastState);
     context.addEventListener(
         framework.CastContextEventType.SESSION_STATE_CHANGED,
         refreshCastState,
@@ -178,7 +175,7 @@ export const loadDesktopCastMedia = async ({
     song,
     transcode,
 }: {
-    artworkUrl?: string | null;
+    artworkUrl?: null | string;
     positionMs?: number;
     song: QueueSong;
     transcode: { bitrate?: number; enabled: boolean; format?: string };

@@ -80,10 +80,27 @@ export const requestJson = async <T>(
     init?: SamoFetchInit,
 ): Promise<T> => {
     const response = await fetcher(url, init);
+    const bodyText = response.text ? await response.text() : '';
 
     if (!response.ok) {
-        throw new Error(`Request failed (${response.status})`);
+        const detail = bodyText.trim().slice(0, 200);
+        throw new Error(
+            detail
+                ? `Request failed (${response.status}): ${detail}`
+                : `Request failed (${response.status})`,
+        );
     }
 
-    return response.json() as Promise<T>;
+    if (!bodyText.trim()) {
+        throw new Error(`Empty response from ${url}`);
+    }
+
+    try {
+        return JSON.parse(bodyText) as T;
+    } catch {
+        const detail = bodyText.trim().slice(0, 200);
+        throw new Error(
+            detail ? `Invalid JSON response: ${detail}` : `Invalid JSON response from ${url}`,
+        );
+    }
 };

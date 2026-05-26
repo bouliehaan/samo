@@ -5,7 +5,6 @@ import { immer } from 'zustand/middleware/immer';
 import { shallow } from 'zustand/shallow';
 
 import { createSubscribedTraditionalStore } from '/@/renderer/lib/zustand-traditional';
-
 import {
     ServerListItem,
     ServerListItemWithCredential,

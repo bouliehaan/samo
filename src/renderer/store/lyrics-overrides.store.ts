@@ -2,10 +2,7 @@ import { devtools, persist, subscribeWithSelector } from 'zustand/middleware';
 import { immer } from 'zustand/middleware/immer';
 import { createWithEqualityFn } from 'zustand/traditional';
 
-import {
-    identityPersistMigrate,
-    PERSIST_VERSION_INITIAL,
-} from '/@/renderer/store/persist-migrate';
+import { identityPersistMigrate, PERSIST_VERSION_INITIAL } from '/@/renderer/store/persist-migrate';
 import { LyricsOverride } from '/@/shared/types/domain-types';
 
 export type LyricsOverrideEntry = {

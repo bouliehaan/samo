@@ -38,10 +38,10 @@ import {
     useSettingsStoreActions,
 } from '/@/renderer/store';
 import { usePlaybackSession } from '/@/renderer/store/playback-owner.store';
-import { logFn } from '/@/shared/utils/logger';
 import { toast } from '/@/shared/components/toast/toast';
 import { LibraryItem } from '/@/shared/types/domain-types';
 import { PlayerType } from '/@/shared/types/types';
+import { logFn } from '/@/shared/utils/logger';
 
 const CODEC_PROBES = [
     { codec: 'mp3', container: 'mp3', mime: 'audio/mpeg' },

@@ -32,6 +32,8 @@ import {
 } from '@samo/core/mobile';
 import { SAMO_MOBILE_TABS, type SamoMobileTabId } from '@samo/core/navigation';
 import {
+    ensureSamoStreamToken,
+    findServerAuthenticationForSource,
     removeServerAuthentication,
     type ServerAuthenticationResult,
     ServerConnectionHealthStatus,
@@ -41,7 +43,6 @@ import {
 import { File } from 'expo-file-system';
 import { Image as ExpoImage } from 'expo-image';
 import { StatusBar } from 'expo-status-bar';
-import { getColors as getImageColors } from 'react-native-image-colors';
 import {
     Component,
     type ComponentProps,
@@ -81,11 +82,8 @@ import {
     TextInput,
     View,
 } from 'react-native';
-import {
-    Gesture,
-    GestureDetector,
-    GestureHandlerRootView,
-} from 'react-native-gesture-handler';
+import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
+import { getColors as getImageColors } from 'react-native-image-colors';
 import LinearGradient from 'react-native-linear-gradient';
 import Reanimated, {
     useAnimatedStyle,
@@ -93,19 +91,53 @@ import Reanimated, {
     withSpring,
     withTiming,
 } from 'react-native-reanimated';
+
 import ditherTexture from './assets/dither.png';
 import samoLogo from './assets/samo-logo.png';
 import { ArtworkImage } from './src/components/ArtworkImage';
 import { ArtworkZoomModal } from './src/components/ArtworkZoomModal';
+import { BookInformationModal } from './src/components/BookInformationModal';
+import { ErrorBoundary } from './src/components/ErrorBoundary';
+import {
+    CastGlyph,
+    CheckGlyph,
+    CircularDownloadGlyph,
+    ClearGlyph,
+    DownCaretGlyph,
+    EllipsisVerticalGlyph,
+    FullPlayerImageGlyph,
+    GearGlyph,
+    MoreGlyph,
+    PlayCircleGlyph,
+    PlayPauseGlyph,
+    PlusGlyph,
+    SearchGlyph,
+    ShuffleGlyph,
+    SleepTimerGlyph,
+    SortGlyph,
+    TabIcon,
+    TrackDownloadedGlyph,
+    TrackSkipGlyph,
+} from './src/components/Glyphs';
+import { InlineSearchBar } from './src/components/InlineSearchBar';
+import { LibraryListRow } from './src/components/LibraryListRow';
+import { LibrarySortMenu } from './src/components/LibrarySortMenu';
+import { MediaArtwork } from './src/components/MediaArtwork';
+import { MediaContextMenu } from './src/components/MediaContextMenu';
 import { QualityBadge, QualityBadgeRow } from './src/components/QualityBadge';
 import { SegmentedSeekBar } from './src/components/SegmentedSeekBar';
+import { StreamInfoModal } from './src/components/StreamInfoModal';
 import { SwipeDismissSheet } from './src/components/SwipeDismissSheet';
+import { TrackPlaylistMenu } from './src/components/TrackPlaylistMenu';
+import { WarningList } from './src/components/WarningList';
 import {
     DownloadedCollectionKeysContext,
     DownloadedTrackKeysContext,
     useDownloadedCollectionKeys,
     useDownloadedTrackKeys,
 } from './src/contexts/downloaded-keys';
+import { MediaContextMenuContext } from './src/contexts/media-context-menu';
+import { ServerConnectionsContext } from './src/contexts/server-connections';
 import { useAndroidAbsProgressSync } from './src/hooks/use-android-abs-progress-sync';
 import { useAndroidCastSync } from './src/hooks/use-android-cast-sync';
 import { useAndroidContextMenu } from './src/hooks/use-android-context-menu';
@@ -117,25 +149,7 @@ import { useAndroidNativePlayback } from './src/hooks/use-android-native-playbac
 import { useAndroidPlaybackControls } from './src/hooks/use-android-playback-controls';
 import { useAndroidServerAuth } from './src/hooks/use-android-server-auth';
 import { useReducedMotionPreference } from './src/hooks/use-reduced-motion-preference';
-import { AddServerScreen } from './src/screens/AddServerScreen';
-import { DownloadsScreen } from './src/screens/DownloadsScreen';
-import { ManageServersScreen } from './src/screens/ManageServersScreen';
-import { SettingsScreen } from './src/screens/SettingsScreen';
-import { HomeScreen } from './src/screens/HomeScreen';
-import { LibraryScreen } from './src/screens/LibraryScreen';
-import { RadioScreen } from './src/screens/RadioScreen';
-import { SearchOverlay, SearchScreen } from './src/screens/SearchScreen';
-import { PlaylistsScreen } from './src/screens/PlaylistsScreen';
-import { MediaDetailContent } from './src/screens/MediaDetailScreen';
-import { ViewAllScreen } from './src/screens/ViewAllScreen';
-import { ErrorBoundary } from './src/components/ErrorBoundary';
-import { EmptyServerBackedScreen } from './src/screens/EmptyServerBackedScreen';
-import { BookInformationModal } from './src/components/BookInformationModal';
-import {
-    MediaContextMenu,
-} from './src/components/MediaContextMenu';
-import { StreamInfoModal } from './src/components/StreamInfoModal';
-import { TrackPlaylistMenu } from './src/components/TrackPlaylistMenu';
+import { useStableCallback } from './src/hooks/use-stable-callback';
 import {
     PLAYER_CLOSE_SPRING,
     PLAYER_OPEN_SPRING,
@@ -149,110 +163,35 @@ import {
     NowPlayingMetadataSync,
     OutputPickerModal,
 } from './src/player/PlayerSurface';
+import { AddServerScreen } from './src/screens/AddServerScreen';
+import { DownloadsScreen } from './src/screens/DownloadsScreen';
+import { EmptyServerBackedScreen } from './src/screens/EmptyServerBackedScreen';
+import { HomeScreen } from './src/screens/HomeScreen';
+import { LibraryScreen } from './src/screens/LibraryScreen';
+import { ManageServersScreen } from './src/screens/ManageServersScreen';
+import { MediaDetailContent } from './src/screens/MediaDetailScreen';
+import { PlaylistsScreen } from './src/screens/PlaylistsScreen';
+import { RadioScreen } from './src/screens/RadioScreen';
+import { SearchOverlay, SearchScreen } from './src/screens/SearchScreen';
+import { SettingsScreen } from './src/screens/SettingsScreen';
+import { ViewAllScreen } from './src/screens/ViewAllScreen';
 import {
-    MediaContextMenuContext,
-} from './src/contexts/media-context-menu';
-import { type BookInfoState } from './src/types/book-info';
-import { LibrarySortMenu } from './src/components/LibrarySortMenu';
-import { useStableCallback } from './src/hooks/use-stable-callback';
-import { type AndroidUtilityScreen } from './src/types/app-navigation';
-import { type HomeDisplaySection } from './src/types/home';
-import { type ViewAllRoute } from './src/types/view-all';
-import {
-    EMPTY_LIBRARY_FULL_COLLECTIONS,
-    EMPTY_LIBRARY_RELEVANT_STATE,
-    LIBRARY_FILTERS,
-    LIBRARY_SORTS,
-    type LibraryFilter,
-    type LibraryFullCollectionsState,
-    type LibrarySort,
-} from './src/types/library-tab';
-import { getContentItemKey } from './src/utils/content-item';
-import {
-    getSectionsById,
-    getViewAllVariant,
-    resolveItemArtworkUrl,
-    sortHomeItemsByRecents,
-} from './src/utils/home-display';
-import { InlineSearchBar } from './src/components/InlineSearchBar';
-import { LibraryListRow } from './src/components/LibraryListRow';
-import { MediaArtwork } from './src/components/MediaArtwork';
-import { WarningList } from './src/components/WarningList';
-import { type LibraryDisplayItem } from './src/types/library-display';
-import {
-    getDownloadedCollectionKey,
-    getDownloadedTrackKey,
-} from './src/utils/download-keys';
-import {
-    getLibraryMediaType,
-    toLibraryDisplayItem,
-} from './src/utils/library-display';
+    type AbsProgressContext,
+    flushPendingAbsProgress,
+    loadAbsCurrentProgress,
+    syncAbsProgressImmediate,
+    syncAbsProgressThrottled,
+} from './src/services/abs-progress';
 import {
     type AndroidCastState,
     type AndroidMediaOutputRoute,
     type AndroidMediaOutputState,
     type AndroidNativePlaybackEvent,
     cancelAndroidSleepTimer,
-    setAndroidSleepTimer,
     selectAndroidOutputRoute,
+    setAndroidSleepTimer,
     updateAndroidNowPlayingMetadata,
 } from './src/services/audio-playback';
-import {
-    getAndroidPlaybackState,
-    selectActiveAndroidPlaybackItem,
-    setAndroidPlaybackState,
-    useAndroidPlaybackState,
-} from './src/state/playback-store';
-import { type AndroidPlaybackState } from './src/types/playback';
-import {
-    findActiveChapterIndex,
-    formatChapterRange,
-    formatPlaybackTime,
-    getDisplaySubtitle,
-    getDurationLabel,
-    getPlaybackDisplayMetadata,
-    getPlaybackItemDurationMs,
-    looksLikeUrl,
-} from './src/utils/playback-time';
-import {
-    buildBackdropStops,
-    darkenColor,
-    pickAlbumEssenceColor,
-} from './src/utils/color';
-import { getPlaylistTargetsForRoot } from './src/utils/playlist-targets';
-import {
-    HOME_ARTWORK_PREFETCH_LIMIT,
-    LIBRARY_FULL_COLLECTION_PREFETCH_DELAY_MS,
-} from './src/utils/app-constants';
-import {
-    addDefaultHttpScheme,
-    DEFAULT_SERVER_URL,
-    hasServerUrlTarget,
-} from './src/utils/auth-url';
-import { getTabTitle } from './src/utils/tab-title';
-import {
-    buildDownloadedCollectionSnapshot,
-    EMPTY_DOWNLOADED_COLLECTION_SNAPSHOT,
-    type DownloadedCollectionSnapshot,
-    type DownloadedCollectionSummary,
-} from './src/utils/downloaded-collections';
-import { buildOfflineHomeContentState } from './src/utils/offline-home';
-import { buildDownloadedMusicDetail } from './src/utils/offline-music-detail';
-import { rememberMediaDetail } from './src/utils/media-detail-cache';
-import {
-    getAbsProgressSeconds,
-    getPlayerPositionMsForAbsProgress,
-} from './src/utils/abs-progress-math';
-import {
-    buildOfflineAudiobookPlayable,
-    buildOfflinePodcastEpisodePlayable,
-    mimeFromCastUri,
-    pickAudiobookFileIndexForTime,
-} from './src/utils/offline-playback';
-import { getHighResolutionArtworkUrl } from './src/utils/artwork-url';
-import { getLastPlayedPersistenceKey } from './src/utils/last-played';
-import { detailHasHiRes } from './src/utils/media-quality';
-import { ANDROID_SERVER_TYPES } from './src/utils/server-types';
 import {
     type DownloadEntry,
     enqueueCollectionDownload,
@@ -265,43 +204,22 @@ import {
     type OfflineAudiobookFile,
     subscribeDownloads,
 } from './src/services/download-manager';
-import { triggerSelection } from './src/services/haptics';
 import {
     type AndroidFullCollectionState,
     loadAndroidFullCollection,
 } from './src/services/full-collection';
+import { triggerSelection } from './src/services/haptics';
 import { type AndroidHomeContentState, loadAndroidHomeContent } from './src/services/home-content';
+import { loadCachedHomeContent, saveCachedHomeContent } from './src/services/home-content-cache';
+import { buildHomeLoadKey, dedupeInFlight } from './src/services/in-flight-requests';
+import {
+    loadPersistedLastPlayedItem,
+    savePersistedLastPlayedItem,
+} from './src/services/last-played-item';
 import {
     type AndroidLibraryRelevantState,
     loadAndroidLibraryRelevantContent,
 } from './src/services/library-content';
-import {
-    buildHomeLoadKey,
-    dedupeInFlight,
-} from './src/services/in-flight-requests';
-import {
-    loadCachedHomeContent,
-    saveCachedHomeContent,
-} from './src/services/home-content-cache';
-import {
-    loadCachedMediaDetail,
-    saveCachedMediaDetail,
-} from './src/services/media-detail-cache';
-import {
-    loadOfflineModePreference,
-    saveOfflineModePreference,
-} from './src/services/offline-mode';
-import {
-    type AndroidMediaDetailState,
-    addAndroidMediaTrackToPlaylist,
-    loadAndroidMediaDetail,
-    loadAndroidMediaTrackPlayback,
-} from './src/services/media-detail';
-import {
-    getPersistedServerAuthKey,
-    loadPersistedServerAuthsWithMeta,
-    savePersistedServerAuths,
-} from './src/services/persisted-server';
 import {
     type AndroidLocalFavoriteItem,
     getLocalFavoriteKey,
@@ -309,6 +227,33 @@ import {
     saveLocalFavorites,
     toggleLocalFavorite,
 } from './src/services/local-favorites';
+import {
+    addAndroidMediaTrackToPlaylist,
+    type AndroidMediaDetailState,
+    loadAndroidMediaDetail,
+    loadAndroidMediaTrackPlayback,
+} from './src/services/media-detail';
+import { loadCachedMediaDetail, saveCachedMediaDetail } from './src/services/media-detail-cache';
+import {
+    starSubsonicAlbum,
+    starSubsonicArtist,
+    starSubsonicTrack,
+    unstarSubsonicAlbum,
+    unstarSubsonicArtist,
+    unstarSubsonicTrack,
+} from './src/services/media-favorites';
+import { loadOfflineModePreference, saveOfflineModePreference } from './src/services/offline-mode';
+import {
+    getPersistedServerAuthKey,
+    loadPersistedServerAuthsWithMeta,
+    savePersistedServerAuths,
+} from './src/services/persisted-server';
+import { formatQualityProfile } from './src/services/quality-badge-assets';
+import {
+    addAndroidRadioStation,
+    type AddAndroidRadioStationInput,
+    type AddAndroidRadioStationResult,
+} from './src/services/radio-stations';
 import {
     type AndroidRecentContentItem,
     type AndroidRecentContentSourceItem,
@@ -318,10 +263,9 @@ import {
     upsertRecentContentItem,
 } from './src/services/recent-content';
 import {
-    loadPersistedLastPlayedItem,
-    savePersistedLastPlayedItem,
-} from './src/services/last-played-item';
-import { formatQualityProfile } from './src/services/quality-badge-assets';
+    collectFreshAlbumItems,
+    reconcileRecentContentItemsIfChanged,
+} from './src/utils/recent-content-dedupe';
 import { type AndroidSearchState, loadAndroidSearchResults } from './src/services/search-content';
 import { type AndroidAuthState, authenticateServer } from './src/services/server-auth';
 import {
@@ -331,25 +275,11 @@ import {
     createConnectedServerHealthStatus,
 } from './src/services/server-health';
 import {
-    type AbsProgressContext,
-    flushPendingAbsProgress,
-    loadAbsCurrentProgress,
-    syncAbsProgressImmediate,
-    syncAbsProgressThrottled,
-} from './src/services/abs-progress';
-import {
-    starSubsonicAlbum,
-    starSubsonicArtist,
-    starSubsonicTrack,
-    unstarSubsonicAlbum,
-    unstarSubsonicArtist,
-    unstarSubsonicTrack,
-} from './src/services/media-favorites';
-import {
-    addAndroidRadioStation,
-    type AddAndroidRadioStationInput,
-    type AddAndroidRadioStationResult,
-} from './src/services/radio-stations';
+    getAndroidPlaybackState,
+    selectActiveAndroidPlaybackItem,
+    setAndroidPlaybackState,
+    useAndroidPlaybackState,
+} from './src/state/playback-store';
 import {
     DISMISS_DISTANCE,
     DISMISS_VELOCITY,
@@ -372,35 +302,87 @@ import {
     SCREEN_WIDTH,
     VIEW_ALL_ROW_HEIGHT,
 } from './src/theme/layout';
-import {
-    CastGlyph,
-    CheckGlyph,
-    CircularDownloadGlyph,
-    ClearGlyph,
-    DownCaretGlyph,
-    EllipsisVerticalGlyph,
-    FullPlayerImageGlyph,
-    GearGlyph,
-    MoreGlyph,
-    PlusGlyph,
-    PlayCircleGlyph,
-    PlayPauseGlyph,
-    SearchGlyph,
-    ShuffleGlyph,
-    SleepTimerGlyph,
-    SortGlyph,
-    TabIcon,
-    TrackDownloadedGlyph,
-    TrackSkipGlyph,
-} from './src/components/Glyphs';
 import { styles } from './src/theme/styles';
 import { colors, spacing } from './src/theme/tokens';
+import { type AndroidUtilityScreen } from './src/types/app-navigation';
+import { type BookInfoState } from './src/types/book-info';
+import { type HomeDisplaySection } from './src/types/home';
+import { type LibraryDisplayItem } from './src/types/library-display';
+import {
+    EMPTY_LIBRARY_FULL_COLLECTIONS,
+    EMPTY_LIBRARY_RELEVANT_STATE,
+    LIBRARY_FILTERS,
+    LIBRARY_SORTS,
+    type LibraryFilter,
+    type LibraryFullCollectionsState,
+    type LibrarySort,
+} from './src/types/library-tab';
+import { type AndroidPlaybackState } from './src/types/playback';
+import { type ViewAllRoute } from './src/types/view-all';
+import {
+    getAbsProgressSeconds,
+    getPlayerPositionMsForAbsProgress,
+} from './src/utils/abs-progress-math';
+import {
+    HOME_ARTWORK_PREFETCH_LIMIT,
+    LIBRARY_FULL_COLLECTION_PREFETCH_DELAY_MS,
+} from './src/utils/app-constants';
+import { getContentSourceFromPlaybackItem } from './src/utils/content-source';
+import { addDefaultHttpScheme, DEFAULT_SERVER_URL, hasServerUrlTarget } from './src/utils/auth-url';
+import { buildBackdropStops, darkenColor, pickAlbumEssenceColor } from './src/utils/color';
+import { getContentItemKey } from './src/utils/content-item';
+import { getDownloadedCollectionKey, getDownloadedTrackKey } from './src/utils/download-keys';
+import {
+    buildDownloadedCollectionSnapshot,
+    type DownloadedCollectionSnapshot,
+    type DownloadedCollectionSummary,
+    EMPTY_DOWNLOADED_COLLECTION_SNAPSHOT,
+} from './src/utils/downloaded-collections';
+import {
+    getSectionsById,
+    getViewAllVariant,
+    resolveItemArtworkUrl,
+    sortHomeItemsByRecents,
+} from './src/utils/home-display';
+import { getLastPlayedPersistenceKey } from './src/utils/last-played';
+import { getLibraryMediaType, toLibraryDisplayItem } from './src/utils/library-display';
+import {
+    artworkSourceUri,
+    backfillItemArtworkFields,
+    prefetchArtworkSource,
+    preparePlaybackItemForNative,
+    resolvePlaybackArtworkSourceForDisplay,
+    resolveSamoItemArtworkSourceForDisplay,
+} from './src/utils/samo-artwork-url';
+import { detailHasHiRes } from './src/utils/media-quality';
+import { buildOfflineHomeContentState } from './src/utils/offline-home';
+import { buildDownloadedMusicDetail } from './src/utils/offline-music-detail';
+import {
+    buildOfflineAudiobookPlayable,
+    buildOfflinePodcastEpisodePlayable,
+    mimeFromCastUri,
+    pickAudiobookFileIndexForTime,
+} from './src/utils/offline-playback';
+import {
+    findActiveChapterIndex,
+    formatChapterRange,
+    formatPlaybackTime,
+    getDisplaySubtitle,
+    getDurationLabel,
+    getPlaybackDisplayMetadata,
+    getPlaybackItemDurationMs,
+    looksLikeUrl,
+} from './src/utils/playback-time';
+import { getPlaylistTargetsForRoot } from './src/utils/playlist-targets';
+import { ANDROID_SERVER_TYPES } from './src/utils/server-types';
+import { getTabTitle } from './src/utils/tab-title';
 
 export default function App() {
-    const mediaHandlersRef = useRef<ReturnType<typeof useAndroidMediaHandlers> | null>(null);
+    const mediaHandlersRef = useRef<null | ReturnType<typeof useAndroidMediaHandlers>>(null);
     const libraryRelevantFetchTokenRef = useRef(0);
-    const [libraryRelevantState, setLibraryRelevantState] =
-        useState<AndroidLibraryRelevantState>(EMPTY_LIBRARY_RELEVANT_STATE);
+    const [libraryRelevantState, setLibraryRelevantState] = useState<AndroidLibraryRelevantState>(
+        EMPTY_LIBRARY_RELEVANT_STATE,
+    );
     const { auth, downloads, navigation, overlays, session } = useAndroidMediaHandlerDeps({
         navigation: {
             onCloseMediaDetailSideEffects: () => {
@@ -482,8 +464,8 @@ export default function App() {
         castState,
         isShuffled,
         lastPlayedItem,
-        playbackQueueRevision,
         localFavorites,
+        playbackQueueRevision,
         recentContentItems,
         setFavoritedKeys,
         setIsShuffled,
@@ -531,18 +513,17 @@ export default function App() {
         playbackSnapshotRef,
         playQueuedItem,
         registerNavigatePlayback,
-    } = useAndroidNativePlayback({ isFullPlayerOpen, lastPlayedItem });
+    } = useAndroidNativePlayback({ isFullPlayerOpen, lastPlayedItem, serverConnections });
     useAndroidCastSync();
     useAndroidAbsProgressSync();
-    const lastPlayedPersistenceKeyRef = useRef<string | null>(null);
+    const lastPlayedPersistenceKeyRef = useRef<null | string>(null);
     const isHomeSurface =
         activeTab === 'home' && activeUtilityScreen === null && mediaDetailState.status === 'idle';
     const frozenDetailStateRef = useRef(mediaDetailState);
     if (mediaDetailState.status === 'loaded') {
         frozenDetailStateRef.current = mediaDetailState;
     }
-    const detailOverlayOpen =
-        activeUtilityScreen === null && mediaDetailState.status !== 'idle';
+    const detailOverlayOpen = activeUtilityScreen === null && mediaDetailState.status !== 'idle';
     const hasCachedDetailShell = frozenDetailStateRef.current.status === 'loaded';
     const prevDetailOverlayOpenRef = useRef(false);
     useEffect(() => {
@@ -552,29 +533,26 @@ export default function App() {
             requestAnimationFrame(() => {
                 // #region agent log
                 const framePayload = {
-                    sessionId: 'c0ca1a',
-                    runId: 'nav-perf',
-                    hypothesisId: 'H10',
-                    location: 'App.tsx:detailOverlayOpen',
-                    message: 'detail overlay first frame',
                     data: {
                         detailStatus: mediaDetailState.status,
                         sinceOpenMs: Date.now() - openedAt,
                     },
+                    hypothesisId: 'H10',
+                    location: 'App.tsx:detailOverlayOpen',
+                    message: 'detail overlay first frame',
+                    runId: 'nav-perf',
+                    sessionId: 'c0ca1a',
                     timestamp: Date.now(),
                 };
                 console.log('[nav-perf]', JSON.stringify(framePayload));
-                fetch(
-                    'http://127.0.0.1:7498/ingest/65ba3320-fcf4-4bf2-82b0-f3ffc8d708c2',
-                    {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'X-Debug-Session-Id': 'c0ca1a',
-                        },
-                        body: JSON.stringify(framePayload),
+                fetch('http://127.0.0.1:7498/ingest/65ba3320-fcf4-4bf2-82b0-f3ffc8d708c2', {
+                    body: JSON.stringify(framePayload),
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Debug-Session-Id': 'c0ca1a',
                     },
-                ).catch(() => {});
+                    method: 'POST',
+                }).catch(() => {});
                 // #endregion
             });
         }
@@ -659,11 +637,12 @@ export default function App() {
             const merged: AndroidRecentContentSourceItem = fresh
                 ? {
                       ...entry.item,
+                      artworkImageId: entry.item.artworkImageId ?? fresh.artworkImageId,
                       artworkUrl: entry.item.artworkUrl ?? fresh.artworkUrl,
                       isHiRes: entry.item.isHiRes ?? fresh.isHiRes,
                       qualityProfile:
                           'qualityProfile' in entry.item
-                              ? entry.item.qualityProfile ?? fresh.qualityProfile
+                              ? (entry.item.qualityProfile ?? fresh.qualityProfile)
                               : fresh.qualityProfile,
                   }
                 : entry.item;
@@ -671,7 +650,7 @@ export default function App() {
             // entity-id fallback were stored without artworkUrl. Backfill
             // at render time so they pick up real covers as soon as the
             // matching server is connected, without rewriting storage.
-            if (!merged.artworkUrl) {
+            if (!merged.artworkUrl && !merged.artworkImageId) {
                 const resolved = resolveItemArtworkUrl(merged, serverConnections);
                 if (resolved) {
                     return { ...entry, item: { ...merged, artworkUrl: resolved } };
@@ -715,6 +694,16 @@ export default function App() {
                 setHomeContentState(nextHomeContentState);
                 if (nextHomeContentState.status === 'loaded') {
                     void saveCachedHomeContent(nextHomeContentState.content);
+                    setRecentContentItems((current) => {
+                        const next = reconcileRecentContentItemsIfChanged(
+                            current,
+                            collectFreshAlbumItems(nextHomeContentState.content.sections),
+                        );
+                        if (next !== current) {
+                            void savePersistedRecentContentItems(next);
+                        }
+                        return next;
+                    });
                 }
             }
         },
@@ -810,30 +799,89 @@ export default function App() {
         return () => {
             clearTimeout(timeout);
         };
-    }, [
-        homeContentState.status,
-        isOfflineMode,
-        serverConnections,
-        startLibraryRelevantLoad,
-    ]);
+    }, [homeContentState.status, isOfflineMode, serverConnections, startLibraryRelevantLoad]);
+
+    useEffect(() => {
+        if (serverConnections.length === 0) {
+            return;
+        }
+
+        void Promise.all(
+            serverConnections
+                .filter((authentication) => authentication.type === ServerType.SAMO)
+                .map((authentication) =>
+                    ensureSamoStreamToken(authentication).catch(() => undefined),
+                ),
+        );
+    }, [serverConnections]);
 
     // Warm the first visible covers into memory + disk so round-tripping
     // through detail pages does not refetch art the home screen just showed.
     useEffect(() => {
         if (homeContentState.status !== 'loaded') return;
-        const urls = new Set<string>();
+        const sources: Array<string | { headers: Record<string, string>; uri: string }> = [];
         for (const section of homeContentState.content.sections) {
-            for (const item of section.items) {
-                if (item.artworkUrl) urls.add(item.artworkUrl);
+            for (const item of section.items.slice(0, HOME_ARTWORK_PREFETCH_LIMIT)) {
+                const resolved = resolveSamoItemArtworkSourceForDisplay(
+                    {
+                        artworkImageId: item.artworkImageId,
+                        artworkUrl: item.artworkUrl,
+                        source: item.source,
+                    },
+                    serverConnections,
+                );
+                if (resolved) {
+                    sources.push(resolved);
+                }
             }
         }
-        if (urls.size > 0) {
-            void ExpoImage.prefetch(
-                [...urls].slice(0, HOME_ARTWORK_PREFETCH_LIMIT),
-                'memory-disk',
-            );
+        if (sources.length > 0) {
+            for (const source of sources.slice(0, HOME_ARTWORK_PREFETCH_LIMIT)) {
+                prefetchArtworkSource(source);
+            }
         }
-    }, [homeContentState]);
+    }, [homeContentState, serverConnections]);
+
+    useEffect(() => {
+        if (serverConnections.length === 0) {
+            return;
+        }
+
+        setRecentContentItems((current) => {
+            let changed = false;
+            const next = current.map((entry) => {
+                const patched = backfillItemArtworkFields(entry.item, serverConnections);
+                if (patched === entry.item) {
+                    return entry;
+                }
+                changed = true;
+                return { ...entry, item: patched };
+            });
+            return changed ? next : current;
+        });
+    }, [serverConnections, setRecentContentItems]);
+
+    useEffect(() => {
+        if (serverConnections.length === 0 || !lastPlayedItem) {
+            return;
+        }
+
+        let cancelled = false;
+        void preparePlaybackItemForNative(lastPlayedItem, serverConnections).then((patched) => {
+            if (
+                cancelled ||
+                (patched.artworkUrl === lastPlayedItem.artworkUrl &&
+                    patched.artworkImageId === lastPlayedItem.artworkImageId)
+            ) {
+                return;
+            }
+            setLastPlayedItem(patched);
+        });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [lastPlayedItem?.id, lastPlayedItem?.artworkImageId, serverConnections, setLastPlayedItem]);
 
     useEffect(() => {
         let isMounted = true;
@@ -875,6 +923,16 @@ export default function App() {
                 }
                 return { content: cached.content, status: 'loaded' };
             });
+            setRecentContentItems((current) => {
+                const next = reconcileRecentContentItemsIfChanged(
+                    current,
+                    collectFreshAlbumItems(cached.content.sections),
+                );
+                if (next !== current) {
+                    void savePersistedRecentContentItems(next);
+                }
+                return next;
+            });
         });
 
         // In dev mode, Metro serves the brand logo over HTTP. Prefetch it
@@ -914,6 +972,7 @@ export default function App() {
         handleAddMediaTrackToPlaylist,
         handleAddRadioStation,
         handleAddToPlaylistFromRoot,
+        handleCreatePlaylistFromRoot,
         handleOpenViewAll,
         handlePlayMediaTrack,
         handleSearch,
@@ -926,6 +985,7 @@ export default function App() {
     const contextMenu = useAndroidContextMenu({
         deps: { overlays, session },
         handlers: mediaHandlers,
+        serverConnections,
     });
 
     useEffect(() => {
@@ -952,18 +1012,21 @@ export default function App() {
     // a fast open/close gesture could leave the player painting the wrong
     // variant ("stick on low-res"). One URL → one image → one load → never
     // a quality mismatch.
-    const playbackArtworkSourceUrl = activePlaybackItem?.artworkUrl ?? lastPlayedItem?.artworkUrl;
+    const playbackItem = activePlaybackItem ?? lastPlayedItem;
+    const playbackArtworkSource = useMemo(
+        () => resolvePlaybackArtworkSourceForDisplay(playbackItem, serverConnections),
+        [playbackItem, serverConnections],
+    );
     const currentHighResArtworkUrl = useMemo(
-        () => getHighResolutionArtworkUrl(playbackArtworkSourceUrl),
-        [playbackArtworkSourceUrl],
+        () => artworkSourceUri(playbackArtworkSource),
+        [playbackArtworkSource],
     );
     // Prefetch into both memory + disk so even fast taps after track start
     // hit cache. expo-image dedupes in-flight requests with the same URL,
     // so this races safely against the miniplayer's component-level load.
     useEffect(() => {
-        if (!currentHighResArtworkUrl) return;
-        void ExpoImage.prefetch(currentHighResArtworkUrl, 'memory-disk');
-    }, [currentHighResArtworkUrl]);
+        prefetchArtworkSource(playbackArtworkSource);
+    }, [playbackArtworkSource]);
 
     useEffect(() => {
         // Close fullscreen only on the navigation EDGE — when the detail starts
@@ -984,9 +1047,9 @@ export default function App() {
     // simply mean no notification.
     useEffect(() => {
         if (Platform.OS !== 'android' || Platform.Version < 33) return;
-        void PermissionsAndroid.request(
-            PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS,
-        ).catch(() => undefined);
+        void PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS).catch(
+            () => undefined,
+        );
     }, []);
 
     const {
@@ -1046,10 +1109,7 @@ export default function App() {
                               playbackState.item,
                           ) * 1000
                         : 0;
-                if (
-                    fresh &&
-                    fresh.currentTimeSeconds * 1000 > currentPosMs + 5_000
-                ) {
+                if (fresh && fresh.currentTimeSeconds * 1000 > currentPosMs + 5_000) {
                     // Only seek forward and only if the gap is meaningful; a
                     // 5-second buffer keeps us from interrupting playback when
                     // local and server values trivially differ.
@@ -1064,8 +1124,7 @@ export default function App() {
             return { ok: true };
         } catch (error) {
             return {
-                message:
-                    error instanceof Error ? error.message : 'Sync failed',
+                message: error instanceof Error ? error.message : 'Sync failed',
                 ok: false,
             };
         }
@@ -1073,7 +1132,19 @@ export default function App() {
 
     const handleOpenSettings = useCallback(() => {
         // #region agent log
-        fetch('http://127.0.0.1:7498/ingest/65ba3320-fcf4-4bf2-82b0-f3ffc8d708c2',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'c0ca1a'},body:JSON.stringify({sessionId:'c0ca1a',runId:'nav-perf',hypothesisId:'H1',location:'App.tsx:handleOpenSettings',message:'open settings utility',data:{detailStatus:mediaDetailState.status},timestamp:Date.now()})}).catch(()=>{});
+        fetch('http://127.0.0.1:7498/ingest/65ba3320-fcf4-4bf2-82b0-f3ffc8d708c2', {
+            body: JSON.stringify({
+                data: { detailStatus: mediaDetailState.status },
+                hypothesisId: 'H1',
+                location: 'App.tsx:handleOpenSettings',
+                message: 'open settings utility',
+                runId: 'nav-perf',
+                sessionId: 'c0ca1a',
+                timestamp: Date.now(),
+            }),
+            headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'c0ca1a' },
+            method: 'POST',
+        }).catch(() => {});
         // #endregion
         setActiveUtilityScreen('settings');
         closeMediaDetail();
@@ -1145,11 +1216,8 @@ export default function App() {
         },
     );
     const handleAddMediaTrackToPlaylistStable = useStableCallback(
-        (
-            detail: MobileMediaDetail,
-            track: MobileMediaTrack,
-            playlist: MobileHomeItem,
-        ) => handleAddMediaTrackToPlaylist(detail, track, playlist),
+        (detail: MobileMediaDetail, track: MobileMediaTrack, playlist: MobileHomeItem) =>
+            handleAddMediaTrackToPlaylist(detail, track, playlist),
     );
     const handleToggleOfflineMode = useCallback((next: boolean) => {
         setIsOfflineMode(next);
@@ -1159,6 +1227,21 @@ export default function App() {
         () => getPlaylistTargetsForRoot(homeContentState, playlistMenuRoot?.sourceId),
         [homeContentState, playlistMenuRoot?.sourceId],
     );
+    const rootPlaylistCanCreate = useMemo(() => {
+        if (!playlistMenuRoot?.sourceId) {
+            return false;
+        }
+
+        const auth = findServerAuthenticationForSource(serverConnections, {
+            id: playlistMenuRoot.sourceId,
+        });
+
+        return (
+            auth?.type === ServerType.SAMO ||
+            auth?.type === ServerType.NAVIDROME ||
+            auth?.type === ServerType.SUBSONIC
+        );
+    }, [playlistMenuRoot?.sourceId, serverConnections]);
     const rootPlaylistTrack = useMemo<MobileMediaTrack | null>(() => {
         if (!playlistMenuRoot) {
             return null;
@@ -1173,14 +1256,29 @@ export default function App() {
             title: playlistMenuRoot.collectionItem.title,
         } as MobileMediaTrack;
     }, [playlistMenuRoot]);
-    const nowPlayingRadioId =
-        activePlaybackItem?.source === 'radio' ? activePlaybackItem.id : null;
+    const nowPlayingRadioId = activePlaybackItem?.source === 'radio' ? activePlaybackItem.id : null;
 
     const handleTabPress = useCallback(
         (tabId: SamoMobileTabId) => {
             // #region agent log
             const tabPressStartedAt = Date.now();
-            fetch('http://127.0.0.1:7498/ingest/65ba3320-fcf4-4bf2-82b0-f3ffc8d708c2',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'c0ca1a'},body:JSON.stringify({sessionId:'c0ca1a',runId:'nav-perf',hypothesisId:'H4',location:'App.tsx:handleTabPress',message:'tab press',data:{tabId,detailStatus:mediaDetailState.status,utilityScreen:activeUtilityScreen},timestamp:tabPressStartedAt})}).catch(()=>{});
+            fetch('http://127.0.0.1:7498/ingest/65ba3320-fcf4-4bf2-82b0-f3ffc8d708c2', {
+                body: JSON.stringify({
+                    data: {
+                        detailStatus: mediaDetailState.status,
+                        tabId,
+                        utilityScreen: activeUtilityScreen,
+                    },
+                    hypothesisId: 'H4',
+                    location: 'App.tsx:handleTabPress',
+                    message: 'tab press',
+                    runId: 'nav-perf',
+                    sessionId: 'c0ca1a',
+                    timestamp: tabPressStartedAt,
+                }),
+                headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'c0ca1a' },
+                method: 'POST',
+            }).catch(() => {});
             // #endregion
             setActiveUtilityScreen((current) => (current === null ? current : null));
             if (mediaDetailState.status !== 'idle') {
@@ -1188,10 +1286,28 @@ export default function App() {
             }
             setActiveTab((current) => (current === tabId ? current : tabId));
             // #region agent log
-            fetch('http://127.0.0.1:7498/ingest/65ba3320-fcf4-4bf2-82b0-f3ffc8d708c2',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'c0ca1a'},body:JSON.stringify({sessionId:'c0ca1a',runId:'nav-perf',hypothesisId:'H4',location:'App.tsx:handleTabPress',message:'tab press handlers scheduled',data:{tabId,elapsedMs:Date.now()-tabPressStartedAt},timestamp:Date.now()})}).catch(()=>{});
+            fetch('http://127.0.0.1:7498/ingest/65ba3320-fcf4-4bf2-82b0-f3ffc8d708c2', {
+                body: JSON.stringify({
+                    data: { elapsedMs: Date.now() - tabPressStartedAt, tabId },
+                    hypothesisId: 'H4',
+                    location: 'App.tsx:handleTabPress',
+                    message: 'tab press handlers scheduled',
+                    runId: 'nav-perf',
+                    sessionId: 'c0ca1a',
+                    timestamp: Date.now(),
+                }),
+                headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'c0ca1a' },
+                method: 'POST',
+            }).catch(() => {});
             // #endregion
         },
-        [activeUtilityScreen, closeMediaDetail, mediaDetailState.status, setActiveTab, setActiveUtilityScreen],
+        [
+            activeUtilityScreen,
+            closeMediaDetail,
+            mediaDetailState.status,
+            setActiveTab,
+            setActiveUtilityScreen,
+        ],
     );
 
     const navSurface =
@@ -1218,58 +1334,54 @@ export default function App() {
         const remountsTabHost =
             navSurface === 'tabs' &&
             (previous.startsWith('detail:') || previous.startsWith('utility:'));
-        const closedDetail =
-            navSurface === 'tabs' && previous.startsWith('detail:');
+        const closedDetail = navSurface === 'tabs' && previous.startsWith('detail:');
         // #region agent log
         const navPayload = {
-            sessionId: 'c0ca1a',
-            runId: 'nav-perf',
+            data: {
+                detailShellKeptMounted: hasCachedDetailShell,
+                from: previous,
+                remountsTabHost,
+                sinceLastMs,
+                tabHostKeptMounted: true,
+                to: navSurface,
+                unmountsTabHost,
+            },
             hypothesisId: closedDetail ? 'H6' : 'H1',
             location: 'App.tsx:navSurface',
             message: 'navigation surface changed',
-            data: {
-                from: previous,
-                to: navSurface,
-                remountsTabHost,
-                tabHostKeptMounted: true,
-                unmountsTabHost,
-                sinceLastMs,
-                detailShellKeptMounted: hasCachedDetailShell,
-            },
+            runId: 'nav-perf',
+            sessionId: 'c0ca1a',
             timestamp: changedAt,
         };
         console.log('[nav-perf]', JSON.stringify(navPayload));
         fetch('http://127.0.0.1:7498/ingest/65ba3320-fcf4-4bf2-82b0-f3ffc8d708c2', {
-            method: 'POST',
+            body: JSON.stringify(navPayload),
             headers: {
                 'Content-Type': 'application/json',
                 'X-Debug-Session-Id': 'c0ca1a',
             },
-            body: JSON.stringify(navPayload),
+            method: 'POST',
         }).catch(() => {});
         if (closedDetail) {
             requestAnimationFrame(() => {
                 const framePayload = {
-                    sessionId: 'c0ca1a',
-                    runId: 'nav-perf',
+                    data: { sinceNavSurfaceMs: Date.now() - changedAt },
                     hypothesisId: 'H8',
                     location: 'App.tsx:navSurface',
                     message: 'detail close first frame',
-                    data: { sinceNavSurfaceMs: Date.now() - changedAt },
+                    runId: 'nav-perf',
+                    sessionId: 'c0ca1a',
                     timestamp: Date.now(),
                 };
                 console.log('[nav-perf]', JSON.stringify(framePayload));
-                fetch(
-                    'http://127.0.0.1:7498/ingest/65ba3320-fcf4-4bf2-82b0-f3ffc8d708c2',
-                    {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'X-Debug-Session-Id': 'c0ca1a',
-                        },
-                        body: JSON.stringify(framePayload),
+                fetch('http://127.0.0.1:7498/ingest/65ba3320-fcf4-4bf2-82b0-f3ffc8d708c2', {
+                    body: JSON.stringify(framePayload),
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Debug-Session-Id': 'c0ca1a',
                     },
-                ).catch(() => {});
+                    method: 'POST',
+                }).catch(() => {});
             });
         }
         // #endregion
@@ -1385,297 +1497,370 @@ export default function App() {
 
     return (
         <GestureHandlerRootView style={styles.gestureRoot}>
-        <ErrorBoundary label="App">
-        <MediaContextMenuContext.Provider value={contextMenu.api}>
-        <DownloadedCollectionKeysContext.Provider value={downloadedCollectionKeys}>
-        <DownloadedTrackKeysContext.Provider value={downloadedTrackKeys}>
-        <View style={styles.safeArea}>
-            <StatusBar style="light" />
-            <KeyboardAvoidingView
-                behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-                style={styles.keyboardView}
-            >
-                <View
-                    onLayout={(event) => {
-                        const { height, width, y } = event.nativeEvent.layout;
-                        // #region agent log
-                        const rootPayload = {
-                            sessionId: 'c0ca1a',
-                            runId: 'player-layout-fix',
-                            hypothesisId: 'H2',
-                            location: 'App.tsx:root.onLayout',
-                            message: 'root layout',
-                            data: {
-                                height,
-                                width,
-                                y,
-                                isFullPlayerOpen,
-                                screenHeight: SCREEN_HEIGHT,
-                            },
-                            timestamp: Date.now(),
-                        };
-                        console.log('[player-layout]', JSON.stringify(rootPayload));
-                        fetch(
-                            'http://127.0.0.1:7498/ingest/65ba3320-fcf4-4bf2-82b0-f3ffc8d708c2',
-                            {
-                                method: 'POST',
-                                headers: {
-                                    'Content-Type': 'application/json',
-                                    'X-Debug-Session-Id': 'c0ca1a',
-                                },
-                                body: JSON.stringify(rootPayload),
-                            },
-                        ).catch(() => {});
-                        // #endregion
-                    }}
-                    style={styles.root}
-                >
-                    <View style={styles.appContent}>
-                    <View
-                        pointerEvents={
-                            utilityScreenContent ||
-                            mediaDetailState.status !== 'idle' ||
-                            (activeUtilityScreen === 'view-all' && viewAllRoute)
-                                ? 'none'
-                                : 'auto'
-                        }
-                        style={styles.tabSceneHost}
-                    >
-                        {SAMO_MOBILE_TABS.map((tab) => {
-                            const isSceneActive = tab.id === activeTab;
-                            const sceneStyle = [
-                                styles.tabScene,
-                                isSceneActive ? styles.tabSceneActive : styles.tabSceneHidden,
-                            ];
-
-                            if (tab.id === 'library') {
-                                return (
-                                    <View
-                                        key={tab.id}
-                                        pointerEvents={isSceneActive ? 'auto' : 'none'}
-                                        style={sceneStyle}
-                                    >
-                                        {renderTabSceneContent(tab.id)}
-                                    </View>
-                                );
-                            }
-
-                            return (
-                                <ScrollView
-                                    contentContainerStyle={styles.content}
-                                    key={tab.id}
-                                    pointerEvents={isSceneActive ? 'auto' : 'none'}
-                                    style={sceneStyle}
+            <ErrorBoundary label="App">
+                <ServerConnectionsContext.Provider value={serverConnections}>
+                <MediaContextMenuContext.Provider value={contextMenu.api}>
+                    <DownloadedCollectionKeysContext.Provider value={downloadedCollectionKeys}>
+                        <DownloadedTrackKeysContext.Provider value={downloadedTrackKeys}>
+                            <View style={styles.safeArea}>
+                                <StatusBar style="light" />
+                                <KeyboardAvoidingView
+                                    behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+                                    style={styles.keyboardView}
                                 >
-                                    {renderTabSceneContent(tab.id)}
-                                </ScrollView>
-                            );
-                        })}
-                    </View>
-                    {utilityScreenContent ? (
-                        <ScrollView
-                            contentContainerStyle={styles.content}
-                            style={[styles.navOverlay, styles.tabUtilityScene]}
-                        >
-                            {utilityScreenContent}
-                        </ScrollView>
-                    ) : null}
-                    {activeUtilityScreen === null &&
-                    (detailOverlayOpen || hasCachedDetailShell) ? (
-                        <View
-                            pointerEvents={detailOverlayOpen ? 'auto' : 'none'}
-                            style={[
-                                styles.navOverlay,
-                                !detailOverlayOpen && styles.navOverlayHidden,
-                            ]}
-                        >
-                            <MediaDetailContent
-                                homeContentState={homeContentState}
-                                mediaDetailState={
-                                    detailOverlayOpen
-                                        ? mediaDetailState
-                                        : frozenDetailStateRef.current
-                                }
-                                onAddTrackToPlaylist={handleAddMediaTrackToPlaylistStable}
-                                onBack={closeMediaDetail}
-                                onSelectItem={handleSelectMediaItemStable}
-                                onPlayTrack={handlePlayMediaTrackStable}
-                                onShufflePlay={handleShuffleDetailTracks}
-                                serverConnections={serverConnections}
-                            />
-                        </View>
-                    ) : null}
-                    {activeUtilityScreen === 'view-all' && viewAllRoute ? (
-                        <View style={[styles.navOverlay, styles.navOverlayTop]}>
-                            <ErrorBoundary label="ViewAllScreen">
-                                <ViewAllScreen
-                                    fullState={viewAllFullState}
-                                    onBack={handleViewAllBack}
-                                    onSelectItem={handleSelectViewAllItem}
-                                    route={viewAllRoute}
-                                />
-                            </ErrorBoundary>
-                        </View>
-                    ) : null}
-                    {isSearchOverlayOpen ? (
-                        <SearchOverlay
-                            homeContentState={homeContentState}
-                            onClose={() => {
-                                setIsSearchOverlayOpen(false);
-                                setSearchOverlayQuery('');
-                            }}
-                            onSearch={(q) => {
-                                setSearchOverlayQuery(q);
-                                void handleSearch(q);
-                            }}
-                            onSelectItem={(item) => {
-                                setIsSearchOverlayOpen(false);
-                                setSearchOverlayQuery('');
-                                handleSelectMediaItemStable(item);
-                            }}
-                            query={searchOverlayQuery}
-                            recentItems={recentContentItems}
-                            searchState={searchState}
-                            serverConnections={serverConnections}
-                        />
-                    ) : null}
-                    </View>
-                    <NowPlayingMetadataSync />
-                    {/* World dim — fades in over the page + tab bar as the
+                                    <View
+                                        onLayout={(event) => {
+                                            const { height, width, y } = event.nativeEvent.layout;
+                                            // #region agent log
+                                            const rootPayload = {
+                                                data: {
+                                                    height,
+                                                    isFullPlayerOpen,
+                                                    screenHeight: SCREEN_HEIGHT,
+                                                    width,
+                                                    y,
+                                                },
+                                                hypothesisId: 'H2',
+                                                location: 'App.tsx:root.onLayout',
+                                                message: 'root layout',
+                                                runId: 'player-layout-fix',
+                                                sessionId: 'c0ca1a',
+                                                timestamp: Date.now(),
+                                            };
+                                            console.log(
+                                                '[player-layout]',
+                                                JSON.stringify(rootPayload),
+                                            );
+                                            fetch(
+                                                'http://127.0.0.1:7498/ingest/65ba3320-fcf4-4bf2-82b0-f3ffc8d708c2',
+                                                {
+                                                    body: JSON.stringify(rootPayload),
+                                                    headers: {
+                                                        'Content-Type': 'application/json',
+                                                        'X-Debug-Session-Id': 'c0ca1a',
+                                                    },
+                                                    method: 'POST',
+                                                },
+                                            ).catch(() => {});
+                                            // #endregion
+                                        }}
+                                        style={styles.root}
+                                    >
+                                        <View style={styles.appContent}>
+                                            <View
+                                                pointerEvents={
+                                                    utilityScreenContent ||
+                                                    mediaDetailState.status !== 'idle' ||
+                                                    (activeUtilityScreen === 'view-all' &&
+                                                        viewAllRoute)
+                                                        ? 'none'
+                                                        : 'auto'
+                                                }
+                                                style={styles.tabSceneHost}
+                                            >
+                                                {SAMO_MOBILE_TABS.map((tab) => {
+                                                    const isSceneActive = tab.id === activeTab;
+                                                    const sceneStyle = [
+                                                        styles.tabScene,
+                                                        isSceneActive
+                                                            ? styles.tabSceneActive
+                                                            : styles.tabSceneHidden,
+                                                    ];
+
+                                                    if (tab.id === 'library') {
+                                                        return (
+                                                            <View
+                                                                key={tab.id}
+                                                                pointerEvents={
+                                                                    isSceneActive ? 'auto' : 'none'
+                                                                }
+                                                                style={sceneStyle}
+                                                            >
+                                                                {renderTabSceneContent(tab.id)}
+                                                            </View>
+                                                        );
+                                                    }
+
+                                                    return (
+                                                        <ScrollView
+                                                            contentContainerStyle={styles.tabContent}
+                                                            key={tab.id}
+                                                            pointerEvents={
+                                                                isSceneActive ? 'auto' : 'none'
+                                                            }
+                                                            style={sceneStyle}
+                                                        >
+                                                            {renderTabSceneContent(tab.id)}
+                                                        </ScrollView>
+                                                    );
+                                                })}
+                                            </View>
+                                            {utilityScreenContent ? (
+                                                <ScrollView
+                                                    contentContainerStyle={styles.content}
+                                                    style={[
+                                                        styles.navOverlay,
+                                                        styles.tabUtilityScene,
+                                                    ]}
+                                                >
+                                                    {utilityScreenContent}
+                                                </ScrollView>
+                                            ) : null}
+                                            {activeUtilityScreen === null &&
+                                            (detailOverlayOpen || hasCachedDetailShell) ? (
+                                                <View
+                                                    pointerEvents={
+                                                        detailOverlayOpen ? 'auto' : 'none'
+                                                    }
+                                                    style={[
+                                                        styles.navOverlay,
+                                                        !detailOverlayOpen &&
+                                                            styles.navOverlayHidden,
+                                                    ]}
+                                                >
+                                                    <MediaDetailContent
+                                                        homeContentState={homeContentState}
+                                                        mediaDetailState={
+                                                            detailOverlayOpen
+                                                                ? mediaDetailState
+                                                                : frozenDetailStateRef.current
+                                                        }
+                                                        onAddTrackToPlaylist={
+                                                            handleAddMediaTrackToPlaylistStable
+                                                        }
+                                                        onBack={closeMediaDetail}
+                                                        onPlayTrack={handlePlayMediaTrackStable}
+                                                        onSelectItem={handleSelectMediaItemStable}
+                                                        onShufflePlay={handleShuffleDetailTracks}
+                                                        serverConnections={serverConnections}
+                                                    />
+                                                </View>
+                                            ) : null}
+                                            {activeUtilityScreen === 'view-all' && viewAllRoute ? (
+                                                <View
+                                                    style={[
+                                                        styles.navOverlay,
+                                                        styles.navOverlayTop,
+                                                    ]}
+                                                >
+                                                    <ErrorBoundary label="ViewAllScreen">
+                                                        <ViewAllScreen
+                                                            fullState={viewAllFullState}
+                                                            onBack={handleViewAllBack}
+                                                            onSelectItem={handleSelectViewAllItem}
+                                                            route={viewAllRoute}
+                                                        />
+                                                    </ErrorBoundary>
+                                                </View>
+                                            ) : null}
+                                            {isSearchOverlayOpen ? (
+                                                <SearchOverlay
+                                                    homeContentState={homeContentState}
+                                                    onClose={() => {
+                                                        setIsSearchOverlayOpen(false);
+                                                        setSearchOverlayQuery('');
+                                                    }}
+                                                    onSearch={(q) => {
+                                                        setSearchOverlayQuery(q);
+                                                        void handleSearch(q);
+                                                    }}
+                                                    onSelectItem={(item) => {
+                                                        setIsSearchOverlayOpen(false);
+                                                        setSearchOverlayQuery('');
+                                                        handleSelectMediaItemStable(item);
+                                                    }}
+                                                    query={searchOverlayQuery}
+                                                    recentItems={recentContentItems}
+                                                    searchState={searchState}
+                                                    serverConnections={serverConnections}
+                                                />
+                                            ) : null}
+                                        </View>
+                                        <NowPlayingMetadataSync />
+                                        {/* World dim — fades in over the page + tab bar as the
                         player rises. Below the player shells (zIndex 9000 vs
                         their 9999/10000). pointerEvents:none so the page
                         below stays interactive while the player is closed. */}
-                    <Reanimated.View
-                        pointerEvents="none"
-                        style={[styles.playerWorldDim, worldDimStyle]}
-                    />
-                    <ConnectedMiniPlayer
-                        artworkUrl={currentHighResArtworkUrl}
-                        lastPlayedItem={lastPlayedItem}
-                        onOpenFullPlayer={handleOpenFullPlayer}
-                        onTogglePlayback={handleTogglePlayback}
-                        playerProgress={playerProgress}
-                        reducedMotion={reducedMotion}
-                    />
-                    <ErrorBoundary
-                        fallback={(error, retry) => (
-                            // If the fullscreen player throws, just dismiss it
-                            // rather than blocking the whole app. The user can
-                            // still see the miniplayer and tap to reopen.
-                            <View style={styles.errorBoundaryRoot}>
-                                <Text style={styles.errorBoundaryTitle}>Player error</Text>
-                                <Text style={styles.errorBoundarySubtitle}>{error.message}</Text>
-                                <Pressable
-                                    accessibilityRole="button"
-                                    onPress={() => {
-                                        setIsFullPlayerOpen(false);
-                                        retry();
+                                        <Reanimated.View
+                                            pointerEvents="none"
+                                            style={[styles.playerWorldDim, worldDimStyle]}
+                                        />
+                                        <ErrorBoundary label="MiniPlayer">
+                                        <ConnectedMiniPlayer
+                                            artworkImageId={playbackItem?.artworkImageId}
+                                            artworkUrl={currentHighResArtworkUrl}
+                                            contentSource={
+                                                playbackItem
+                                                    ? getContentSourceFromPlaybackItem(
+                                                          playbackItem,
+                                                          serverConnections,
+                                                      )
+                                                    : undefined
+                                            }
+                                            lastPlayedItem={lastPlayedItem}
+                                            onOpenFullPlayer={handleOpenFullPlayer}
+                                            onTogglePlayback={handleTogglePlayback}
+                                            playerProgress={playerProgress}
+                                            reducedMotion={reducedMotion}
+                                            serverConnections={serverConnections}
+                                        />
+                                        </ErrorBoundary>
+                                        <ErrorBoundary
+                                            fallback={(error, retry) => (
+                                                // If the fullscreen player throws, just dismiss it
+                                                // rather than blocking the whole app. The user can
+                                                // still see the miniplayer and tap to reopen.
+                                                <View style={styles.errorBoundaryRoot}>
+                                                    <Text style={styles.errorBoundaryTitle}>
+                                                        Player error
+                                                    </Text>
+                                                    <Text style={styles.errorBoundarySubtitle}>
+                                                        {error.message}
+                                                    </Text>
+                                                    <Pressable
+                                                        accessibilityRole="button"
+                                                        onPress={() => {
+                                                            setIsFullPlayerOpen(false);
+                                                            retry();
+                                                        }}
+                                                        style={styles.errorBoundaryButton}
+                                                    >
+                                                        <Text
+                                                            style={styles.errorBoundaryButtonText}
+                                                        >
+                                                            Dismiss
+                                                        </Text>
+                                                    </Pressable>
+                                                </View>
+                                            )}
+                                            label="FullScreenPlayer"
+                                        >
+                                            <ConnectedFullScreenPlayer
+                                                artworkImageId={playbackItem?.artworkImageId}
+                                                artworkUrl={currentHighResArtworkUrl}
+                                                contentSource={
+                                                    playbackItem
+                                                        ? getContentSourceFromPlaybackItem(
+                                                              playbackItem,
+                                                              serverConnections,
+                                                          )
+                                                        : undefined
+                                                }
+                                                castState={castState}
+                                                isShuffled={isShuffled}
+                                                lastPlayedItem={lastPlayedItem}
+                                                onClose={handleCloseFullPlayer}
+                                                onNext={() => void handleNavigatePlayback(1)}
+                                                onOpenOutputPicker={handleOpenOutputPicker}
+                                                onPlayQueueIndex={(index) => {
+                                                    const currentQueue = playbackQueueRef.current;
+                                                    if (!currentQueue) {
+                                                        return;
+                                                    }
+                                                    const item = currentQueue.items[index];
+                                                    if (!item) {
+                                                        return;
+                                                    }
+                                                    void playQueuedItem(
+                                                        item,
+                                                        currentQueue.items,
+                                                        index,
+                                                    );
+                                                }}
+                                                onPrevious={() => void handleNavigatePlayback(-1)}
+                                                onSeek={(positionMs) =>
+                                                    void handleSeekPlayback(positionMs)
+                                                }
+                                                onTogglePlayback={handleTogglePlayback}
+                                                onToggleShuffle={handleToggleShuffle}
+                                                playbackQueueRevision={playbackQueueRevision}
+                                                playerProgress={playerProgress}
+                                                queue={playbackQueueRef.current}
+                                                reducedMotion={reducedMotion}
+                                                serverConnections={serverConnections}
+                                                visible={isFullPlayerOpen}
+                                            />
+                                        </ErrorBoundary>
+                                        <OutputPickerModal
+                                            castState={castState}
+                                            onClose={handleCloseOutputPicker}
+                                            visible={outputPickerVisible}
+                                        />
+                                        <Reanimated.View
+                                            pointerEvents={isFullPlayerOpen ? 'none' : 'auto'}
+                                            style={[styles.tabBar, tabBarAnimatedStyle]}
+                                        >
+                                            {SAMO_MOBILE_TABS.map((tab) => {
+                                                const isActive = tab.id === activeTab;
+                                                return (
+                                                    <Pressable
+                                                        accessibilityRole="button"
+                                                        key={tab.id}
+                                                        onPress={() => handleTabPress(tab.id)}
+                                                        onPressIn={() => handleTabPress(tab.id)}
+                                                        style={[
+                                                            styles.tabButton,
+                                                            isActive && styles.tabButtonActive,
+                                                        ]}
+                                                    >
+                                                        <TabIcon active={isActive} id={tab.id} />
+                                                        <Text
+                                                            style={[
+                                                                styles.tabLabel,
+                                                                isActive && styles.tabLabelActive,
+                                                            ]}
+                                                        >
+                                                            {tab.label}
+                                                        </Text>
+                                                    </Pressable>
+                                                );
+                                            })}
+                                        </Reanimated.View>
+                                    </View>
+                                </KeyboardAvoidingView>
+                                <MediaContextMenu
+                                    actions={contextMenu.actions}
+                                    artworkImageId={contextMenu.artworkImageId}
+                                    artworkUrl={contextMenu.artworkUrl}
+                                    contentSource={contextMenu.contentSource}
+                                    eyebrow={contextMenu.eyebrow}
+                                    feedback={contextMenu.feedback}
+                                    isCircularArtwork={contextMenu.isCircularArtwork}
+                                    onClose={contextMenu.onClose}
+                                    subtitle={contextMenu.subtitle}
+                                    target={contextMenu.target}
+                                    title={contextMenu.title}
+                                />
+                                <StreamInfoModal
+                                    item={streamInfoItem}
+                                    onClose={() => setStreamInfoItem(null)}
+                                />
+                                <BookInformationModal
+                                    onClose={closeBookInfo}
+                                    state={bookInfoState}
+                                />
+                                <TrackPlaylistMenu
+                                    actionState={playlistMenuRootState}
+                                    canCreatePlaylist={rootPlaylistCanCreate}
+                                    onAddToPlaylist={(playlist) =>
+                                        void handleAddToPlaylistFromRoot(playlist)
+                                    }
+                                    onClose={() => {
+                                        setPlaylistMenuRoot(null);
+                                        setPlaylistMenuRootState({ status: 'idle' });
                                     }}
-                                    style={styles.errorBoundaryButton}
-                                >
-                                    <Text style={styles.errorBoundaryButtonText}>Dismiss</Text>
-                                </Pressable>
+                                    onCreatePlaylist={(name) =>
+                                        void handleCreatePlaylistFromRoot(name)
+                                    }
+                                    playlists={rootPlaylistTargets}
+                                    track={rootPlaylistTrack}
+                                />
                             </View>
-                        )}
-                        label="FullScreenPlayer"
-                    >
-                        <ConnectedFullScreenPlayer
-                            artworkUrl={currentHighResArtworkUrl}
-                            castState={castState}
-                            isShuffled={isShuffled}
-                            lastPlayedItem={lastPlayedItem}
-                            onClose={handleCloseFullPlayer}
-                            onOpenOutputPicker={handleOpenOutputPicker}
-                            onNext={() => void handleNavigatePlayback(1)}
-                            onPlayQueueIndex={(index) => {
-                                const currentQueue = playbackQueueRef.current;
-                                if (!currentQueue) {
-                                    return;
-                                }
-                                const item = currentQueue.items[index];
-                                if (!item) {
-                                    return;
-                                }
-                                void playQueuedItem(
-                                    item,
-                                    currentQueue.items,
-                                    index,
-                                );
-                            }}
-                            onPrevious={() => void handleNavigatePlayback(-1)}
-                            onSeek={(positionMs) => void handleSeekPlayback(positionMs)}
-                            onTogglePlayback={handleTogglePlayback}
-                            onToggleShuffle={handleToggleShuffle}
-                            playbackQueueRevision={playbackQueueRevision}
-                            playerProgress={playerProgress}
-                            reducedMotion={reducedMotion}
-                            serverConnections={serverConnections}
-                            queue={playbackQueueRef.current}
-                            visible={isFullPlayerOpen}
-                        />
-                    </ErrorBoundary>
-                    <OutputPickerModal
-                        castState={castState}
-                        onClose={handleCloseOutputPicker}
-                        visible={outputPickerVisible}
-                    />
-                    <Reanimated.View
-                        pointerEvents={isFullPlayerOpen ? 'none' : 'auto'}
-                        style={[styles.tabBar, tabBarAnimatedStyle]}
-                    >
-                        {SAMO_MOBILE_TABS.map((tab) => {
-                            const isActive = tab.id === activeTab;
-                            return (
-                                <Pressable
-                                    accessibilityRole="button"
-                                    key={tab.id}
-                                    onPressIn={() => handleTabPress(tab.id)}
-                                    onPress={() => handleTabPress(tab.id)}
-                                    style={[styles.tabButton, isActive && styles.tabButtonActive]}
-                                >
-                                    <TabIcon active={isActive} id={tab.id} />
-                                    <Text
-                                        style={[styles.tabLabel, isActive && styles.tabLabelActive]}
-                                    >
-                                        {tab.label}
-                                    </Text>
-                                </Pressable>
-                            );
-                        })}
-                    </Reanimated.View>
-                </View>
-            </KeyboardAvoidingView>
-            <MediaContextMenu
-                actions={contextMenu.actions}
-                artworkUrl={contextMenu.artworkUrl}
-                eyebrow={contextMenu.eyebrow}
-                feedback={contextMenu.feedback}
-                isCircularArtwork={contextMenu.isCircularArtwork}
-                onClose={contextMenu.onClose}
-                subtitle={contextMenu.subtitle}
-                target={contextMenu.target}
-                title={contextMenu.title}
-            />
-            <StreamInfoModal item={streamInfoItem} onClose={() => setStreamInfoItem(null)} />
-            <BookInformationModal
-                onClose={closeBookInfo}
-                state={bookInfoState}
-            />
-            <TrackPlaylistMenu
-                actionState={playlistMenuRootState}
-                onAddToPlaylist={(playlist) => void handleAddToPlaylistFromRoot(playlist)}
-                onClose={() => {
-                    setPlaylistMenuRoot(null);
-                    setPlaylistMenuRootState({ status: 'idle' });
-                }}
-                playlists={rootPlaylistTargets}
-                track={rootPlaylistTrack}
-            />
-        </View>
-        </DownloadedTrackKeysContext.Provider>
-        </DownloadedCollectionKeysContext.Provider>
-        </MediaContextMenuContext.Provider>
-        </ErrorBoundary>
+                        </DownloadedTrackKeysContext.Provider>
+                    </DownloadedCollectionKeysContext.Provider>
+                </MediaContextMenuContext.Provider>
+                </ServerConnectionsContext.Provider>
+            </ErrorBoundary>
         </GestureHandlerRootView>
     );
 }

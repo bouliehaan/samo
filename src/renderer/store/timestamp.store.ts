@@ -6,11 +6,11 @@ interface TimestampState {
 }
 
 export const useTimestampStoreBase = createSubscribedTraditionalStore<TimestampState>()((set) => ({
-        setTimestamp: (timestamp: number) => {
-            set({ timestamp });
-        },
-        timestamp: 0,
-    }));
+    setTimestamp: (timestamp: number) => {
+        set({ timestamp });
+    },
+    timestamp: 0,
+}));
 
 export const subscribePlayerProgress = (
     onChange: (properties: { timestamp: number }, prev: { timestamp: number }) => void,

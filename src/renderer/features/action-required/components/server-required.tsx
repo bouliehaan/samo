@@ -19,12 +19,12 @@ import { Icon } from '/@/shared/components/icon/icon';
 import { ScrollArea } from '/@/shared/components/scroll-area/scroll-area';
 import { Stack } from '/@/shared/components/stack/stack';
 import { Text } from '/@/shared/components/text/text';
-import { logFn } from '/@/shared/utils/logger';
 import {
     ServerListItem,
     ServerListItemWithCredential,
     ServerType,
 } from '/@/shared/types/domain-types';
+import { logFn } from '/@/shared/utils/logger';
 
 const localSettings = isElectron() ? window.api.localSettings : null;
 
@@ -81,7 +81,9 @@ function ServerSelector() {
                 password = await localSettings.passwordGet(server.id);
             }
         } catch (error) {
-            logFn.error(error instanceof Error ? error.message : String(error), { meta: { error: error } });
+            logFn.error(error instanceof Error ? error.message : String(error), {
+                meta: { error: error },
+            });
         }
         openModal({
             children: server && (

@@ -3,6 +3,7 @@ import { resolve } from 'path';
 import conditionalImportPlugin from 'vite-plugin-conditional-import';
 import dynamicImportPlugin from 'vite-plugin-dynamic-import';
 import { ViteEjsPlugin } from 'vite-plugin-ejs';
+
 import { createReactPlugin } from './vite.react-plugin';
 const currentOSEnv = process.platform;
 const electronRendererTarget = 'chrome87';

@@ -24,6 +24,10 @@ import { useMediaContextMenu } from '../contexts/media-context-menu';
 import { useStableCallback } from '../hooks/use-stable-callback';
 import {
     HOME_COMPACT_OFFSET,
+    HOME_MEDIA_ROW_HEIGHT,
+    HOME_MEDIA_ROW_HEIGHT_ARTIST,
+    HOME_MEDIA_ROW_HEIGHT_ROUNDED,
+    HOME_MEDIA_ROW_HEIGHT_WIDE,
     HOME_PRIMARY_TILE,
     HOME_ROUNDED_OFFSET,
     HOME_TILE_GAP,
@@ -253,6 +257,7 @@ export const HomeContentStatus = ({
                     items={filteredGridItems}
                     onPrefetchItem={stablePrefetchItem}
                     onSelectItem={stableSelectItem}
+                    serverConnections={serverConnections}
                     variant={activeFilter === 'podcasts' ? 'podcast' : 'book'}
                 />
             ) : (
@@ -261,6 +266,7 @@ export const HomeContentStatus = ({
                     onSelectItem={stableSelectItem}
                     onViewAll={onViewAll ? stableViewAll : undefined}
                     sections={filteredSections}
+                    serverConnections={serverConnections}
                 />
             )}
             <WarningList errors={homeContentState.content.errors} title="Server warnings" />
@@ -336,12 +342,14 @@ const HomeFilterGridTile = memo(({
     item,
     onPrefetchItem,
     onSelectItem,
+    serverConnections,
     variant,
 }: {
     isPodcast: boolean;
     item: AndroidRecentContentSourceItem;
     onPrefetchItem?: (item: AndroidRecentContentSourceItem) => void;
     onSelectItem: (item: AndroidRecentContentSourceItem) => void;
+    serverConnections: ServerAuthenticationResult[];
     variant: 'book' | 'podcast';
 }) => {
     const subtitle = getHomeItemSubtitle(item, variant);
@@ -354,11 +362,14 @@ const HomeFilterGridTile = memo(({
             style={styles.homeFilterGridTile}
         >
             <ArtworkImage
+                artworkImageId={item.artworkImageId}
+                contentSource={item.source}
                 fallbackStyle={[
                     styles.homeFilterGridArtworkFallback,
                     isPodcast && styles.homeFilterGridArtworkPodcast,
                 ]}
                 letter={item.title.slice(0, 1)}
+                serverConnections={serverConnections}
                 style={[
                     styles.homeFilterGridArtwork,
                     isPodcast && styles.homeFilterGridArtworkPodcast,
@@ -383,11 +394,13 @@ const HomeFilterGrid = memo(({
     items,
     onPrefetchItem,
     onSelectItem,
+    serverConnections,
     variant,
 }: {
     items: AndroidRecentContentSourceItem[];
     onPrefetchItem?: (item: AndroidRecentContentSourceItem) => void;
     onSelectItem: (item: AndroidRecentContentSourceItem) => void;
+    serverConnections: ServerAuthenticationResult[];
     variant: 'book' | 'podcast';
 }) => {
     const isPodcast = variant === 'podcast';
@@ -400,6 +413,7 @@ const HomeFilterGrid = memo(({
                     key={getContentItemKey(item)}
                     onPrefetchItem={onPrefetchItem}
                     onSelectItem={onSelectItem}
+                    serverConnections={serverConnections}
                     variant={variant}
                 />
             ))}
@@ -427,11 +441,36 @@ const getHomeRowItemLength = (variant: HomeDisplaySection['variant']): number =>
     }
 };
 
+const getHomeSectionRowHeight = (
+    variant: HomeDisplaySection['variant'],
+    rowCount: number,
+): number => {
+    let singleHeight: number;
+    switch (variant) {
+        case 'artist':
+            singleHeight = HOME_MEDIA_ROW_HEIGHT_ARTIST;
+            break;
+        case 'podcast':
+        case 'radio':
+            singleHeight = HOME_MEDIA_ROW_HEIGHT_ROUNDED;
+            break;
+        case 'continue':
+        case 'wide':
+            singleHeight = HOME_MEDIA_ROW_HEIGHT_WIDE;
+            break;
+        default:
+            singleHeight = HOME_MEDIA_ROW_HEIGHT;
+    }
+
+    return rowCount > 1 ? singleHeight * 2 + spacing.lg : singleHeight;
+};
+
 interface HomeMediaTileProps {
     item: AndroidRecentContentSourceItem;
     onPrefetchItem?: (item: AndroidRecentContentSourceItem) => void;
     onSelectItem: (item: AndroidRecentContentSourceItem) => void;
     sectionVariant: HomeDisplaySection['variant'];
+    serverConnections: ServerAuthenticationResult[];
 }
 
 const isDownloadableCollectionMediaType = (mediaType: LibraryMediaType | undefined): boolean =>
@@ -440,7 +479,13 @@ const isDownloadableCollectionMediaType = (mediaType: LibraryMediaType | undefin
     mediaType === 'playlists' ||
     mediaType === 'podcasts';
 
-const HomeMediaTile = memo(({ item, onPrefetchItem, onSelectItem, sectionVariant }: HomeMediaTileProps) => {
+const HomeMediaTile = memo(({
+    item,
+    onPrefetchItem,
+    onSelectItem,
+    sectionVariant,
+    serverConnections,
+}: HomeMediaTileProps) => {
     const contextMenu = useMediaContextMenu();
     const downloadedCollectionKeys = useDownloadedCollectionKeys();
     const downloadedTrackKeys = useDownloadedTrackKeys();
@@ -520,8 +565,11 @@ const HomeMediaTile = memo(({ item, onPrefetchItem, onSelectItem, sectionVariant
             style={tileStyle}
         >
             <ArtworkImage
+                artworkImageId={item.artworkImageId}
+                contentSource={item.source}
                 fallbackStyle={fallbackStyle}
                 letter={item.title.slice(0, 1)}
+                serverConnections={serverConnections}
                 style={artworkStyle}
                 uri={item.artworkUrl}
             />
@@ -591,6 +639,7 @@ interface HomeDisplayRowProps {
     onSelectItem: (item: AndroidRecentContentSourceItem) => void;
     onViewAll?: (section: HomeDisplaySection) => void;
     section: HomeDisplaySection;
+    serverConnections: ServerAuthenticationResult[];
 }
 
 /** TL → TR → BL → BR per 2-row band, then continue columns to the right. */
@@ -621,11 +670,18 @@ const chunkHomeSectionItems = (
     return columns;
 };
 
-const HomeDisplayRow = memo(({ onPrefetchItem, onSelectItem, onViewAll, section }: HomeDisplayRowProps) => {
+const HomeDisplayRow = memo(({
+    onPrefetchItem,
+    onSelectItem,
+    onViewAll,
+    section,
+    serverConnections,
+}: HomeDisplayRowProps) => {
     const viewAllVariant = getViewAllVariant(section.variant);
     const canViewAll = viewAllVariant !== null && Boolean(onViewAll);
     const rowCount = section.rowCount ?? 1;
     const itemLength = getHomeRowItemLength(section.variant);
+    const rowHeight = getHomeSectionRowHeight(section.variant, rowCount);
     const drawDistance = itemLength * 4;
     const columns = useMemo(
         () => (rowCount > 1 ? chunkHomeSectionItems(section.items, rowCount) : []),
@@ -638,9 +694,10 @@ const HomeDisplayRow = memo(({ onPrefetchItem, onSelectItem, onViewAll, section 
                 onPrefetchItem={onPrefetchItem}
                 onSelectItem={onSelectItem}
                 sectionVariant={section.variant}
+                serverConnections={serverConnections}
             />
         ),
-        [onPrefetchItem, onSelectItem, section.variant],
+        [onPrefetchItem, onSelectItem, section.variant, serverConnections],
     );
     const renderColumn = useCallback(
         ({ item: column }: { item: AndroidRecentContentSourceItem[] }) => (
@@ -652,11 +709,12 @@ const HomeDisplayRow = memo(({ onPrefetchItem, onSelectItem, onViewAll, section 
                         onPrefetchItem={onPrefetchItem}
                         onSelectItem={onSelectItem}
                         sectionVariant={section.variant}
+                        serverConnections={serverConnections}
                     />
                 ))}
             </View>
         ),
-        [onPrefetchItem, onSelectItem, section.variant],
+        [onPrefetchItem, onSelectItem, section.variant, serverConnections],
     );
 
     return (
@@ -684,6 +742,7 @@ const HomeDisplayRow = memo(({ onPrefetchItem, onSelectItem, onViewAll, section 
                     maintainVisibleContentPosition={FLASH_LIST_MAINTAIN_POSITION_DISABLED}
                     renderItem={renderColumn}
                     showsHorizontalScrollIndicator={false}
+                    style={{ ...styles.homeRowList, height: rowHeight }}
                 />
             ) : (
                 <FlashList
@@ -694,6 +753,7 @@ const HomeDisplayRow = memo(({ onPrefetchItem, onSelectItem, onViewAll, section 
                     maintainVisibleContentPosition={FLASH_LIST_MAINTAIN_POSITION_DISABLED}
                     renderItem={renderItem}
                     showsHorizontalScrollIndicator={false}
+                    style={{ ...styles.homeRowList, height: rowHeight }}
                 />
             )}
         </View>
@@ -707,11 +767,13 @@ const ContentSections = memo(({
     onSelectItem,
     onViewAll,
     sections,
+    serverConnections,
 }: {
     onPrefetchItem?: (item: AndroidRecentContentSourceItem) => void;
     onSelectItem: (item: AndroidRecentContentSourceItem) => void;
     onViewAll?: (section: HomeDisplaySection) => void;
     sections: HomeDisplaySection[];
+    serverConnections?: ServerAuthenticationResult[];
 }) => {
     return (
         <>
@@ -722,6 +784,7 @@ const ContentSections = memo(({
                     onSelectItem={onSelectItem}
                     onViewAll={onViewAll}
                     section={section}
+                    serverConnections={serverConnections ?? []}
                 />
             ))}
         </>

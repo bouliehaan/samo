@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { Navigate } from 'react-router';
 
 import AudiobookshelfIcon from '../../../../../assets/icons/audiobookshelf.svg';
+import SamoIcon from '../../../../../build/samologo.svg';
 
 import { api } from '/@/renderer/api';
 import { PageHeader } from '/@/renderer/components/page-header/page-header';
@@ -45,6 +46,7 @@ const SERVER_ICONS: Record<ServerType, string> = {
     [ServerType.AUDIOBOOKSHELF]: AudiobookshelfIcon,
     [ServerType.JELLYFIN]: JellyfinIcon,
     [ServerType.NAVIDROME]: NavidromeIcon,
+    [ServerType.SAMO]: SamoIcon,
     [ServerType.SUBSONIC]: SubsonicIcon,
 };
 
@@ -52,6 +54,7 @@ const SERVER_NAMES: Record<ServerType, string> = {
     [ServerType.AUDIOBOOKSHELF]: 'Audiobookshelf',
     [ServerType.JELLYFIN]: 'Jellyfin',
     [ServerType.NAVIDROME]: 'Navidrome',
+    [ServerType.SAMO]: 'Samo',
     [ServerType.SUBSONIC]: 'OpenSubsonic',
 };
 

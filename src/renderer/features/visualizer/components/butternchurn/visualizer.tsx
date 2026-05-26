@@ -13,7 +13,6 @@ import {
     useSettingsStore,
     useSettingsStoreActions,
 } from '/@/renderer/store';
-import { logFn } from '/@/shared/utils/logger';
 import {
     useFullScreenPlayerStore,
     useFullScreenPlayerStoreActions,
@@ -23,6 +22,7 @@ import { ActionIcon } from '/@/shared/components/action-icon/action-icon';
 import { Group } from '/@/shared/components/group/group';
 import { Text } from '/@/shared/components/text/text';
 import { PlayerStatus, PlayerType } from '/@/shared/types/types';
+import { logFn } from '/@/shared/utils/logger';
 
 // Ignore presets that are erroring out
 const IGNORED_PRESETS = ['Flexi + Martin - astral projection'];

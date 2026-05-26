@@ -26,9 +26,9 @@ const { PNG } = require('pngjs');
 
 const SIZE = 256;
 const CENTER = 128;
-const RAW_AMPLITUDE = 64;      // pre-filter amplitude (white noise span)
+const RAW_AMPLITUDE = 64; // pre-filter amplitude (white noise span)
 const SEED = 0xc01dface;
-const BLUR_RADIUS = 1;         // 3x3 box blur for low-frequency removal
+const BLUR_RADIUS = 1; // 3x3 box blur for low-frequency removal
 const HIGHPASS_STRENGTH = 0.92; // how much of the blur to subtract back out
 
 const mulberry32 = (seed) => {
@@ -90,13 +90,10 @@ for (let i = 0; i < raw.length; i++) {
 const TARGET_PEAK = 18;
 const scale = TARGET_PEAK / maxAbs;
 
-const png = new PNG({ width: SIZE, height: SIZE, colorType: 6 });
+const png = new PNG({ colorType: 6, height: SIZE, width: SIZE });
 for (let y = 0; y < SIZE; y++) {
     for (let x = 0; x < SIZE; x++) {
-        const v = Math.max(
-            0,
-            Math.min(255, Math.round(CENTER + filtered[y * SIZE + x] * scale)),
-        );
+        const v = Math.max(0, Math.min(255, Math.round(CENTER + filtered[y * SIZE + x] * scale)));
         const idx = (y * SIZE + x) * 4;
         png.data[idx + 0] = v;
         png.data[idx + 1] = v;
@@ -106,8 +103,10 @@ for (let y = 0; y < SIZE; y++) {
 }
 
 const outPath = path.resolve(process.argv[2]);
-png.pack().pipe(fs.createWriteStream(outPath)).on('finish', () => {
-    console.log(
-        `wrote ${outPath} (${SIZE}x${SIZE}, high-pass blue noise, peak ±${TARGET_PEAK} around ${CENTER})`,
-    );
-});
+png.pack()
+    .pipe(fs.createWriteStream(outPath))
+    .on('finish', () => {
+        console.log(
+            `wrote ${outPath} (${SIZE}x${SIZE}, high-pass blue noise, peak ±${TARGET_PEAK} around ${CENTER})`,
+        );
+    });

@@ -113,7 +113,9 @@ export const getPlaybackDisplayMetadata = (playbackState: AndroidPlaybackState) 
 
     return {
         subtitle: chapterSubtitle ?? getDisplaySubtitle(item.subtitle) ?? fallbackSubtitle,
-        title: useSegmentTitle ? (activeSegment.title ?? item.title) : item.title,
+        title: useSegmentTitle
+            ? (activeSegment.title ?? item.title ?? 'Unknown title')
+            : (item.title ?? 'Unknown title'),
     };
 };
 

@@ -1,6 +1,7 @@
 import {
     appendAudiobookshelfAuthToken,
     mimeFromAudiobookshelfExt,
+    parsePodcastPlaybackEpisodeId,
     type MobileMediaDetail,
     type MobileMediaTrack,
     type MobilePlayableAudio,
@@ -104,13 +105,15 @@ export const resolveLocalPlayback = async (
     item: MobilePlayableAudio,
 ): Promise<MobilePlayableAudio> => {
     const sourceId = item.contentSourceId ?? item.id.match(/^([^:]+:[^:]+):/)?.[1];
-    const innerIdMatch = item.id.match(/:(music|audiobook|podcast|radio):(.+)$/);
+    const innerIdMatch = item.id.match(/:(music|audiobook|podcast(?:-episode)?|radio):(.+)$/);
     if (!sourceId || !innerIdMatch) {
         return item;
     }
     const [, sourceKind, innerId] = innerIdMatch;
     const lookupTrackId =
-        sourceKind === 'podcast' ? (innerId.split(':').pop() ?? innerId) : innerId;
+        sourceKind === 'podcast' || sourceKind === 'podcast-episode'
+            ? (parsePodcastPlaybackEpisodeId(item.id) ?? innerId.split(':').pop() ?? innerId)
+            : innerId;
     try {
         const localUri = await getLocalUriForTrack(lookupTrackId, sourceId);
         if (!localUri) {

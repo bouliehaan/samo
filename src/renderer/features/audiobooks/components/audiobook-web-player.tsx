@@ -19,9 +19,11 @@ export function AudiobookWebPlayer() {
             mode="abs-resume"
             onEnded={() => release()}
             onError={() => {
-                useAudiobookStore.getState().actions.setError(
-                    'Audiobook playback error. Check the stream URL or server connection.',
-                );
+                useAudiobookStore
+                    .getState()
+                    .actions.setError(
+                        'Audiobook playback error. Check the stream URL or server connection.',
+                    );
             }}
             onProgress={(playedSeconds) => setPosition(playedSeconds)}
             onSeekTransport={seekTo}

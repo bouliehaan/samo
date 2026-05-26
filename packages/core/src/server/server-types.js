@@ -24,6 +24,7 @@ export var ServerType;
     ServerType["AUDIOBOOKSHELF"] = "audiobookshelf";
     ServerType["JELLYFIN"] = "jellyfin";
     ServerType["NAVIDROME"] = "navidrome";
+    ServerType["SAMO"] = "samo";
     ServerType["SUBSONIC"] = "subsonic";
 })(ServerType || (ServerType = {}));
 export const toServerType = (value) => {
@@ -34,6 +35,8 @@ export const toServerType = (value) => {
             return ServerType.JELLYFIN;
         case ServerType.NAVIDROME:
             return ServerType.NAVIDROME;
+        case ServerType.SAMO:
+            return ServerType.SAMO;
         case ServerType.SUBSONIC:
             return ServerType.SUBSONIC;
         default:

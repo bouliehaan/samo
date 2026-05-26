@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import { AudiobookshelfChapter } from '/@/shared/api/audiobookshelf/audiobookshelf-types';
-
 import { getCurrentChapterIndex, getOrderedAudiobookChapters } from './audiobook-chapters';
+
+import { AudiobookshelfChapter } from '/@/shared/api/audiobookshelf/audiobookshelf-types';
 
 const chapter = (start: number, title: string): AudiobookshelfChapter => ({
     id: `${start}`,
@@ -39,8 +39,8 @@ describe('getOrderedAudiobookChapters', () => {
         );
 
         expect(items).toHaveLength(3);
-        expect(items[0]).toMatchObject({ start: 0, end: 120, originalIndex: 0 });
-        expect(items[1]).toMatchObject({ start: 120, end: 300, originalIndex: 1 });
-        expect(items[2]).toMatchObject({ start: 300, end: 600, originalIndex: 2 });
+        expect(items[0]).toMatchObject({ end: 120, originalIndex: 0, start: 0 });
+        expect(items[1]).toMatchObject({ end: 300, originalIndex: 1, start: 120 });
+        expect(items[2]).toMatchObject({ end: 600, originalIndex: 2, start: 300 });
     });
 });

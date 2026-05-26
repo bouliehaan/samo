@@ -5,6 +5,7 @@ import {
     getDefaultServerCapabilities,
 } from './server-capabilities';
 import { getFetch, normalizeBaseUrl, type SamoFetch } from './server-http';
+import { getSamoBearerToken, getSamoCapabilities, getSamoSetupStatus } from './server-samo';
 import { getSubsonicUser } from './server-subsonic';
 import { ServerType } from './server-types';
 
@@ -141,6 +142,34 @@ const checkSubsonicCompatibleHealth = async (
     };
 };
 
+const checkSamoHealth = async (
+    authentication: ServerAuthenticationResult,
+    fetcher: SamoFetch,
+) => {
+    const baseUrl = normalizeBaseUrl(authentication.url);
+    const setup = await getSamoSetupStatus(fetcher, baseUrl);
+
+    if (setup.needsSetup) {
+        throw new ServerHealthResponseError('Samo Server setup is not finished.', 503);
+    }
+
+    const response = await fetcher(`${baseUrl}/api/v1/users/me`, {
+        headers: { Authorization: `Bearer ${getSamoBearerToken(authentication)}` },
+        method: 'GET',
+    });
+
+    assertOkResponse(response, 'Samo Server user check');
+
+    const capabilities = getSamoCapabilities();
+
+    return {
+        ...authentication,
+        capabilities,
+        details: `Samo Server: ${formatServerCapabilities(capabilities)}`,
+        url: baseUrl,
+    };
+};
+
 const checkServerHealth = async (
     authentication: ServerAuthenticationResult,
     fetcher: SamoFetch,
@@ -154,6 +183,10 @@ const checkServerHealth = async (
         authentication.type === ServerType.SUBSONIC
     ) {
         return checkSubsonicCompatibleHealth(authentication, fetcher);
+    }
+
+    if (authentication.type === ServerType.SAMO) {
+        return checkSamoHealth(authentication, fetcher);
     }
 
     return null;

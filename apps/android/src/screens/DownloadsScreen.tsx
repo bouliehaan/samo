@@ -6,11 +6,13 @@ import {
 } from 'react';
 import {
     Alert,
-    Image,
     Pressable,
     Text,
     View,
 } from 'react-native';
+
+import { ArtworkImage } from '../components/ArtworkImage';
+import { getContentSourceFromDownloadCollection } from '../utils/content-source';
 
 import {
     cancelDownload,
@@ -238,10 +240,21 @@ export const DownloadsScreen = ({
                     style={styles.downloadGroup}
                 >
                     <View style={styles.downloadGroupHeader}>
-                        {group.collection.artworkUrl ? (
-                            <Image
-                                source={{ uri: group.collection.artworkUrl }}
+                        {group.collection.artworkUrl || group.collection.artworkImageId ? (
+                            <ArtworkImage
+                                artworkImageId={group.collection.artworkImageId}
+                                contentSource={getContentSourceFromDownloadCollection(
+                                    group.collection,
+                                    serverConnections,
+                                )}
+                                fallbackStyle={[
+                                    styles.downloadGroupArtwork,
+                                    styles.downloadGroupArtworkFallback,
+                                ]}
+                                letter={group.collection.title.slice(0, 1)}
+                                serverConnections={serverConnections}
                                 style={styles.downloadGroupArtwork}
+                                uri={group.collection.artworkUrl}
                             />
                         ) : (
                             <View

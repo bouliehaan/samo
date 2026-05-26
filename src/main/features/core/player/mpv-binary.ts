@@ -2,9 +2,9 @@ import { app } from 'electron';
 import { accessSync, chmodSync, constants, existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { createLog, isLinux, isMacOS } from '/@/main/utils';
-
 import { store } from '../settings';
+
+import { createLog, isLinux, isMacOS } from '/@/main/utils';
 
 type MpvLogger = (data: { action: string; type?: 'debug' | 'info' | 'warning' }) => void;
 

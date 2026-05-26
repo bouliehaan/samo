@@ -3,11 +3,11 @@ import MpvAPI from 'node-mpv';
 import { rm } from 'node:fs/promises';
 import { pid } from 'node:process';
 
+import { resolveMpvBinaryPath } from './mpv-binary';
+
 import { getMainWindow, sendToastToRenderer } from '/@/main/index';
 import { createLog, isWindows } from '/@/main/utils';
 import { PlayerData } from '/@/shared/types/domain-types';
-
-import { resolveMpvBinaryPath } from './mpv-binary';
 
 declare module 'node-mpv';
 
@@ -293,7 +293,12 @@ export const createMpv = async (data: {
             auto_restart: false,
             binary,
             socket: socketPath,
-            time_update: 1,
+            // Anchor the renderer's playback clock 4× per second. The renderer
+            // interpolates between anchors via performance.now(); a 1-second
+            // anchor (node-mpv's default) leaves enough wall-clock-vs-audio
+            // drift between refreshes for lyrics to perceptibly lag. 250 ms
+            // brings the per-window error well under audible sync.
+            time_update: 0.25,
         },
         params,
     );

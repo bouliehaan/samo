@@ -3,6 +3,7 @@ import { ipcMain } from 'electron';
 import { createServer, IncomingMessage, Server } from 'http';
 import { WebSocket, WebSocketServer, Server as WsServer } from 'ws';
 
+import { serveFile } from './http-static';
 import manifest from './manifest.json';
 
 import { subscribePlayerStateEvent } from '/@/main/features/core/player-state-broadcast';
@@ -10,8 +11,6 @@ import { getMainWindow } from '/@/main/index';
 import { isLinux } from '/@/main/utils';
 import { ClientEvent, ServerEvent } from '/@/shared/types/remote-types';
 import { PlayerRepeat, SongState } from '/@/shared/types/types';
-
-import { serveFile } from './http-static';
 
 let mprisPlayer: any | undefined;
 

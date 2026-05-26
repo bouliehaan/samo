@@ -6,22 +6,22 @@ import { eventEmitter } from '/@/renderer/events/event-emitter';
 import { useIsPlayerFetching, usePlayer } from '/@/renderer/features/player/context/player-context';
 import { songsQueries } from '/@/renderer/features/songs/api/songs-api';
 import {
+    getQueue,
     isShuffleEnabled,
     mapShuffledToQueueIndex,
     useAutoDJSettings,
     useCurrentServer,
     useCurrentServerId,
-    getQueue,
     usePlayerStoreBase,
     useSettingsStore,
 } from '/@/renderer/store';
-import { LogCategory, logFn } from '/@/shared/utils/logger';
-import { logMsg } from '/@/shared/utils/logger-message';
 import { shuffleInPlace } from '/@/renderer/utils/shuffle';
 import { hasFeature } from '/@/shared/api/utils';
 import { Played, Song, SongListSort, SortOrder } from '/@/shared/types/domain-types';
 import { ServerFeature } from '/@/shared/types/features-types';
 import { Play, PlayerStatus } from '/@/shared/types/types';
+import { LogCategory, logFn } from '/@/shared/utils/logger';
+import { logMsg } from '/@/shared/utils/logger-message';
 
 export const useAutoDJ = () => {
     const queryClient = useQueryClient();

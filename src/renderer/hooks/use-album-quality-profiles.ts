@@ -1,5 +1,4 @@
-import { type QualityBadgeProfile } from '@samo/core/audio-quality';
-import { annotateSubsonicAlbumsQuality } from '@samo/core/mobile';
+import { annotateSubsonicAlbumsQuality, type QualityBadgeProfile } from '@samo/core/audio-quality';
 import {
     getDefaultServerCapabilities,
     ServerAuthenticationKind,

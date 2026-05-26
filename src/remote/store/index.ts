@@ -3,10 +3,10 @@ import { devtools, persist } from 'zustand/middleware';
 import { immer } from 'zustand/middleware/immer';
 import { createWithEqualityFn } from 'zustand/traditional';
 
-import { LogCategory, logFn } from '/@/shared/utils/logger';
-import { logMsg } from '/@/shared/utils/logger-message';
 import { toast } from '/@/shared/components/toast/toast';
 import { ClientEvent, ServerEvent, SongUpdateSocket } from '/@/shared/types/remote-types';
+import { LogCategory, logFn } from '/@/shared/utils/logger';
+import { logMsg } from '/@/shared/utils/logger-message';
 
 export interface SettingsSlice extends SettingsState {
     actions: {

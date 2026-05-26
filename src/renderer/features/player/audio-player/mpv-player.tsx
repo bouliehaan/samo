@@ -15,10 +15,10 @@ import {
     usePlayerData,
     usePlayerMpvEngineState,
 } from '/@/renderer/store';
-import { LogCategory, logFn } from '/@/shared/utils/logger';
 import { toast } from '/@/shared/components/toast/toast';
 import { QueueSong } from '/@/shared/types/domain-types';
 import { PlayerStatus } from '/@/shared/types/types';
+import { LogCategory, logFn } from '/@/shared/utils/logger';
 
 const mpvPlayer = isElectron() ? window.api.mpvPlayer : null;
 const mpvPlayerListener = isElectron() ? window.api.mpvPlayerListener : null;

@@ -4,7 +4,7 @@ import {
     type MobileFullCollectionVariant,
     type MobileHomeItem,
 } from '@samo/core/mobile';
-import { type ServerAuthenticationResult } from '@samo/core/server';
+import { ensureSamoStreamToken, ServerType, type ServerAuthenticationResult } from '@samo/core/server';
 
 export type AndroidFullCollectionState =
     | { items: MobileHomeItem[]; status: 'loaded' }
@@ -30,6 +30,14 @@ export const loadAndroidFullCollection = async (
     }
 
     try {
+        await Promise.all(
+            authentications
+                .filter((authentication) => authentication.type === ServerType.SAMO)
+                .map((authentication) =>
+                    ensureSamoStreamToken(authentication).catch(() => undefined),
+                ),
+        );
+
         const { errors, items } = await loadMobileFullCollection({
             authentications,
             qualityScanLimit: ANDROID_FULL_COLLECTION_QUALITY_SCAN_LIMIT,

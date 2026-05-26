@@ -1,3 +1,4 @@
+import { type ServerAuthenticationResult } from '@samo/core/server';
 import type { MobilePlayableAudio } from '@samo/core/mobile';
 import { createPlaybackSession } from '@samo/core/playback';
 import { useCallback, useEffect, useRef, type MutableRefObject } from 'react';
@@ -27,6 +28,7 @@ import {
     useAndroidPlaybackState,
 } from '../state/playback-store';
 import { buildRecoveredPlaybackItem } from '../utils/playback-recovery';
+import { preparePlaybackItemForNative } from '../utils/samo-artwork-url';
 import { resolveLocalPlayback } from '../utils/offline-playback';
 import {
     getActivePlaybackStatus,
@@ -62,8 +64,9 @@ export interface AndroidNativePlaybackController {
 export function useAndroidNativePlayback(options: {
     isFullPlayerOpen: boolean;
     lastPlayedItem: MobilePlayableAudio | null;
+    serverConnections: ServerAuthenticationResult[];
 }): AndroidNativePlaybackController {
-    const { isFullPlayerOpen, lastPlayedItem } = options;
+    const { isFullPlayerOpen, lastPlayedItem, serverConnections } = options;
     const {
         castState,
         forcePlaybackQueueRender,
@@ -191,10 +194,12 @@ export function useAndroidNativePlayback(options: {
             if (playOptions?.shuffled !== undefined) {
                 setIsShuffled(playOptions.shuffled);
             }
-            playbackSnapshotRef.current = { item, sessionId: session.id };
+
+            const nativeItem = await preparePlaybackItemForNative(item, serverConnections);
+            playbackSnapshotRef.current = { item: nativeItem, sessionId: session.id };
             setAndroidPlaybackState({
-                durationMs: getPlaybackItemDurationMs(item),
-                item,
+                durationMs: getPlaybackItemDurationMs(nativeItem),
+                item: nativeItem,
                 positionMs: initialPositionMs,
                 sessionId: session.id,
                 status: 'loading',
@@ -204,9 +209,11 @@ export function useAndroidNativePlayback(options: {
                 const isCurrentPlaybackSession = () =>
                     playbackSnapshotRef.current?.sessionId === session.id;
                 const deviceInfoPromise = getAndroidAudioDeviceInfo().catch(() => undefined);
-                const playable = castState.isConnected ? item : await resolveLocalPlayback(item);
+                const playable = castState.isConnected
+                    ? nativeItem
+                    : await resolveLocalPlayback(nativeItem);
                 if (!isCurrentPlaybackSession()) return;
-                let event = await playAndroidAudio(playable, session.id, item);
+                let event = await playAndroidAudio(playable, session.id, nativeItem);
                 if (!isCurrentPlaybackSession()) return;
 
                 if (initialPositionMs > 0) {
@@ -220,8 +227,8 @@ export function useAndroidNativePlayback(options: {
                 setAndroidPlaybackState({
                     bitPerfect: event.bitPerfect,
                     deviceInfo,
-                    durationMs: getPlaybackEventDurationMs(event, item),
-                    item,
+                    durationMs: getPlaybackEventDurationMs(event, nativeItem),
+                    item: nativeItem,
                     message: event.message,
                     positionMs: event.positionMs ?? initialPositionMs,
                     sessionId: session.id,
@@ -230,8 +237,8 @@ export function useAndroidNativePlayback(options: {
             } catch (error) {
                 if (playbackSnapshotRef.current?.sessionId !== session.id) return;
                 setAndroidPlaybackState({
-                    durationMs: getPlaybackItemDurationMs(item),
-                    item,
+                    durationMs: getPlaybackItemDurationMs(nativeItem),
+                    item: nativeItem,
                     message: error instanceof Error ? error.message : 'Playback failed',
                     positionMs: initialPositionMs,
                     sessionId: session.id,
@@ -239,7 +246,7 @@ export function useAndroidNativePlayback(options: {
                 });
             }
         },
-        [castState.isConnected, forcePlaybackQueueRender, setIsShuffled],
+        [castState.isConnected, forcePlaybackQueueRender, serverConnections, setIsShuffled],
     );
 
     const handlePlayItem = useCallback(
@@ -312,7 +319,7 @@ export function useAndroidNativePlayback(options: {
             return;
         }
 
-        const intervalMs = isFullPlayerOpen ? 1000 : 5000;
+        const intervalMs = isFullPlayerOpen ? 1000 : absContextRef.current ? 3000 : 8000;
         const interval = setInterval(() => {
             void getAndroidPlaybackStatus()
                 .then((event) => {
@@ -354,7 +361,7 @@ export function useAndroidNativePlayback(options: {
                             nextDurationMs === current.durationMs &&
                             nextMessage === current.message &&
                             nextBitPerfect === current.bitPerfect &&
-                            Math.abs((nextPositionMs ?? 0) - (current.positionMs ?? 0)) < 50
+                            Math.abs((nextPositionMs ?? 0) - (current.positionMs ?? 0)) < 250
                         ) {
                             return current;
                         }

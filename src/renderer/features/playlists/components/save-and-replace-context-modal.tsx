@@ -34,7 +34,9 @@ export const SaveAndReplaceContextModal = ({
             },
             {
                 onError: (err) => {
-                    logFn.error(err instanceof Error ? err.message : String(err), { meta: { error: err } });
+                    logFn.error(err instanceof Error ? err.message : String(err), {
+                        meta: { error: err },
+                    });
                     toast.error({
                         message: err.message,
                         title: t('error.genericError', {

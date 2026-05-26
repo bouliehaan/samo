@@ -3,13 +3,17 @@ import {
     loadMobileHomeContentForServers,
     type MobileHomeContent,
 } from '@samo/core/mobile';
-import { type ServerAuthenticationResult } from '@samo/core/server';
+import {
+    ensureSamoStreamToken,
+    ServerType,
+    type ServerAuthenticationResult,
+} from '@samo/core/server';
 
 // Home is a launch surface, not the exhaustive library browser. View All does
 // the full fetch when requested; keeping this slice lean avoids a wide album
 // detail fan-out before the first scroll can feel responsive.
 const ANDROID_HOME_CONTENT_LIMIT = 36;
-const ANDROID_HOME_QUALITY_SCAN_LIMIT = 8;
+const ANDROID_HOME_QUALITY_SCAN_LIMIT = ANDROID_HOME_CONTENT_LIMIT;
 
 export type AndroidHomeContentState =
     | { content: MobileHomeContent; status: 'loaded' }
@@ -25,6 +29,14 @@ export const loadAndroidHomeContent = async (
     }
 
     try {
+        await Promise.all(
+            authentications
+                .filter((authentication) => authentication.type === ServerType.SAMO)
+                .map((authentication) =>
+                    ensureSamoStreamToken(authentication).catch(() => undefined),
+                ),
+        );
+
         return {
             content: await loadMobileHomeContentForServers({
                 authentications,

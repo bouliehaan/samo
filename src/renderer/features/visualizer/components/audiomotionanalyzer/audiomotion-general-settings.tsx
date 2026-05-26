@@ -1,11 +1,12 @@
 import { useTranslation } from 'react-i18next';
 
-import { barSpaceOptions, channelLayoutOptions, modeOptions } from './visualizer-settings-options';
 import {
     useUpdateAudioMotionAnalyzer,
     VisualizerSelect,
     VisualizerSlider,
 } from './visualizer-settings-controls';
+import { barSpaceOptions, channelLayoutOptions, modeOptions } from './visualizer-settings-options';
+
 import { ActionIcon } from '/@/shared/components/action-icon/action-icon';
 import { Fieldset } from '/@/shared/components/fieldset/fieldset';
 import { Group } from '/@/shared/components/group/group';
