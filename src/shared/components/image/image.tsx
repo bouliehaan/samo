@@ -19,6 +19,7 @@ import { Skeleton } from '/@/shared/components/skeleton/skeleton';
 import { useDebouncedValue } from '/@/shared/hooks/use-debounced-value';
 import { useInViewport } from '/@/shared/hooks/use-in-viewport';
 import { ImageRequest } from '/@/shared/types/domain-types';
+import { isSamoApiMediaUrl } from '@samo/core/server';
 
 const loadedImageCacheKeys = new Set<string>();
 
@@ -77,7 +78,16 @@ export function BaseImage({
     const { className: containerPropsClassName, ...restContainerProps } = imageContainerProps || {};
 
     const rawImageRequest = useMemo(
-        () => imageRequest ?? (src ? { cacheKey: src, url: src } : undefined),
+        () => {
+            if (src && isSamoApiMediaUrl(src) && src.includes('stream_token=')) {
+                return undefined;
+            }
+
+            return (
+                imageRequest ??
+                (src && !isSamoApiMediaUrl(src) ? { cacheKey: src, url: src } : undefined)
+            );
+        },
         [imageRequest, src],
     );
     const isInSessionCache = Boolean(
@@ -100,8 +110,28 @@ export function BaseImage({
         (!enableViewport || isInSessionCache || inViewport || hasLoadedInInstance),
     );
 
+    const samoDirectSrc = useMemo(() => {
+        const candidates = [src, effectiveImageRequest?.url];
+        for (const candidate of candidates) {
+            if (
+                candidate &&
+                isSamoApiMediaUrl(candidate) &&
+                candidate.includes('stream_token=')
+            ) {
+                return candidate;
+            }
+        }
+        return undefined;
+    }, [src, effectiveImageRequest?.url]);
+
+    const [directImageFailed, setDirectImageFailed] = useState(false);
+
+    useEffect(() => {
+        setDirectImageFailed(false);
+    }, [samoDirectSrc]);
+
     const nativeImage = useNativeImage({
-        enabled: shouldLoadImage,
+        enabled: shouldLoadImage && (!samoDirectSrc || directImageFailed),
         fetchPriority,
         onFetchError: src
             ? () => {
@@ -127,7 +157,22 @@ export function BaseImage({
             ref={ref}
             {...restContainerProps}
         >
-            {nativeImage.displaySrc ? (
+            {samoDirectSrc && !directImageFailed ? (
+                <img
+                    className={clsx(styles.image, className, {
+                        [styles.animated]: enableAnimation,
+                    })}
+                    decoding="async"
+                    fetchPriority={fetchPriority}
+                    onError={(event) => {
+                        setDirectImageFailed(true);
+                        onError?.(event);
+                    }}
+                    onLoad={onLoad}
+                    src={samoDirectSrc}
+                    {...props}
+                />
+            ) : nativeImage.displaySrc ? (
                 <img
                     className={clsx(styles.image, className, {
                         [styles.animated]: enableAnimation,
@@ -139,9 +184,9 @@ export function BaseImage({
                     src={nativeImage.displaySrc}
                     {...props}
                 />
-            ) : !src ? (
+            ) : !src && !samoDirectSrc ? (
                 <ImageUnloader className={className} icon={unloaderIcon} />
-            ) : nativeImage.isError ? (
+            ) : nativeImage.isError || directImageFailed ? (
                 includeUnloader ? (
                     <ImageUnloader className={className} icon={unloaderIcon} />
                 ) : null

@@ -973,6 +973,7 @@ export default function App() {
         handleAddRadioStation,
         handleAddToPlaylistFromRoot,
         handleCreatePlaylistFromRoot,
+        handleOpenCreatePlaylistStandalone,
         handleOpenViewAll,
         handlePlayMediaTrack,
         handleSearch,
@@ -1062,6 +1063,7 @@ export default function App() {
         absContextRef,
         lastPlayedItem,
         playbackQueueRef,
+        playbackSnapshotRef,
         playQueuedItem,
     });
 
@@ -1242,8 +1244,33 @@ export default function App() {
             auth?.type === ServerType.SUBSONIC
         );
     }, [playlistMenuRoot?.sourceId, serverConnections]);
+    const rootPlaylistMenuMode = useMemo(() => {
+        if (!playlistMenuRoot) {
+            return 'add' as const;
+        }
+
+        if (playlistMenuRoot.kind === 'standalone') {
+            return 'standalone' as const;
+        }
+
+        return playlistMenuRoot.mode ?? 'add';
+    }, [playlistMenuRoot]);
+    const canCreatePlaylistsOnDevice = useMemo(
+        () =>
+            serverConnections.some(
+                (connection) =>
+                    connection.type === ServerType.SAMO ||
+                    connection.type === ServerType.NAVIDROME ||
+                    connection.type === ServerType.SUBSONIC,
+            ),
+        [serverConnections],
+    );
     const rootPlaylistTrack = useMemo<MobileMediaTrack | null>(() => {
         if (!playlistMenuRoot) {
+            return null;
+        }
+
+        if (playlistMenuRoot.kind === 'standalone') {
             return null;
         }
 
@@ -1454,9 +1481,11 @@ export default function App() {
             ) : tabId === 'playlists' ? (
                 <PlaylistsScreen
                     homeContentState={visibleHomeContentState}
+                    onCreatePlaylist={handleOpenCreatePlaylistStandalone}
                     onSelectItem={handleSelectMediaItemStable}
                     onShufflePlay={handleShuffleHomeItems}
                     recentItems={visibleRecentItems}
+                    showCreatePlaylist={canCreatePlaylistsOnDevice}
                 />
             ) : tabId === 'library' ? (
                 <LibraryScreen
@@ -1597,7 +1626,11 @@ export default function App() {
                                             </View>
                                             {utilityScreenContent ? (
                                                 <ScrollView
-                                                    contentContainerStyle={styles.content}
+                                                    contentContainerStyle={[
+                                                        styles.content,
+                                                        styles.utilityScrollContent,
+                                                    ]}
+                                                    keyboardShouldPersistTaps="handled"
                                                     style={[
                                                         styles.navOverlay,
                                                         styles.tabUtilityScene,
@@ -1842,6 +1875,7 @@ export default function App() {
                                 <TrackPlaylistMenu
                                     actionState={playlistMenuRootState}
                                     canCreatePlaylist={rootPlaylistCanCreate}
+                                    mode={rootPlaylistMenuMode}
                                     onAddToPlaylist={(playlist) =>
                                         void handleAddToPlaylistFromRoot(playlist)
                                     }
@@ -1852,6 +1886,7 @@ export default function App() {
                                     onCreatePlaylist={(name) =>
                                         void handleCreatePlaylistFromRoot(name)
                                     }
+                                    open={playlistMenuRoot !== null}
                                     playlists={rootPlaylistTargets}
                                     track={rootPlaylistTrack}
                                 />

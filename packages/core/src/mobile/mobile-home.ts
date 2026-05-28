@@ -793,6 +793,45 @@ const samoQualityProfile = (
     return { bitDepth, sampleRate };
 };
 
+/**
+ * Album quality for list/search/home tiles. Uses server-aggregated
+ * maxBitDepth/maxSampleRate when present, then primaryAudioFile or embedded
+ * tracks on detail payloads.
+ */
+export const samoAlbumQualityProfile = (
+    album: Pick<
+        SamoMusicAlbum,
+        'maxBitDepth' | 'maxSampleRate' | 'primaryAudioFile' | 'tracks'
+    >,
+): MobileQualityProfile | undefined => {
+    const fromAggregate = samoQualityProfile(
+        album.maxBitDepth && album.maxSampleRate
+            ? { bitDepth: album.maxBitDepth, sampleRate: album.maxSampleRate }
+            : undefined,
+    );
+    if (fromAggregate) return fromAggregate;
+
+    const fromPrimary = samoQualityProfile(album.primaryAudioFile);
+    if (fromPrimary) return fromPrimary;
+
+    let best: MobileQualityProfile | undefined;
+    for (const track of album.tracks ?? []) {
+        const file = track.primaryAudioFile ?? track.audioFiles?.[0];
+        const profile = samoQualityProfile(file);
+        if (
+            profile
+            && (
+                !best
+                || profile.bitDepth > best.bitDepth
+                || (profile.bitDepth === best.bitDepth && profile.sampleRate > best.sampleRate)
+            )
+        ) {
+            best = profile;
+        }
+    }
+    return best;
+};
+
 const samoArtistRefsFromParallelArrays = (
     ids: string[] | undefined,
     names: string[] | undefined,
@@ -836,7 +875,7 @@ const samoAlbumToHomeItem = (
         artworkImageId: pickSamoImageId(album.images),
         artworkUrl: resolveSamoAlbumArtworkUrl(authentication, album, streamToken),
         id: album.id,
-        qualityProfile: samoQualityProfile(album.primaryAudioFile),
+        qualityProfile: samoAlbumQualityProfile(album),
         source,
         subtitle,
         title: album.title,

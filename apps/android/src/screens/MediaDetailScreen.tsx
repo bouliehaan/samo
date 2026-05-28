@@ -1299,6 +1299,7 @@ export const MediaDetailLoaded = ({
                         setPlaylistActionState({ status: 'idle' });
                     }}
                     onCreatePlaylist={(name) => void handleCreatePlaylist(name)}
+                    open={Boolean(playlistMenuTrack)}
                     playlists={playlistTargets}
                     track={playlistMenuTrack}
                 />
@@ -1505,6 +1506,7 @@ export const MediaDetailLoaded = ({
                         setPlaylistActionState({ status: 'idle' });
                     }}
                     onCreatePlaylist={(name) => void handleCreatePlaylist(name)}
+                    open={Boolean(playlistMenuTrack)}
                     playlists={playlistTargets}
                     track={playlistMenuTrack}
                 />
@@ -1561,6 +1563,7 @@ export const MediaDetailLoaded = ({
                     setPlaylistActionState({ status: 'idle' });
                 }}
                 onCreatePlaylist={(name) => void handleCreatePlaylist(name)}
+                open={Boolean(playlistMenuTrack)}
                 playlists={playlistTargets}
                 track={playlistMenuTrack}
             />

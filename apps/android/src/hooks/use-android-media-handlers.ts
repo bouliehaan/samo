@@ -3,6 +3,7 @@ import {
     createMobilePlaylist,
     getDetailQualityProfile,
     getItemQualityProfile,
+    getMobileContentSource,
     loadMobileMediaDetail,
     loadSongRadioQueue,
     type MobileContentSource,
@@ -187,6 +188,14 @@ export interface AndroidMediaHandlers {
         collectionItem: AndroidRecentContentSourceItem,
     ) => void;
     handleOpenAddToPlaylistForSong: (track: MobileMediaTrack, sourceId: string | undefined) => void;
+    handleOpenCreatePlaylistForCollection: (
+        collectionItem: AndroidRecentContentSourceItem,
+    ) => void;
+    handleOpenCreatePlaylistForSong: (
+        track: MobileMediaTrack,
+        sourceId: string | undefined,
+    ) => void;
+    handleOpenCreatePlaylistStandalone: () => void;
     handleOpenBookInfo: (
         item: AndroidRecentContentSourceItem,
         variant: 'audiobook' | 'podcast',
@@ -1494,7 +1503,24 @@ export function useAndroidMediaHandlers(
             return;
         }
         setContextMenuTarget(null);
-        setPlaylistMenuRoot({ kind: 'track', sourceId, track });
+        setPlaylistMenuRoot({ kind: 'track', mode: 'add', sourceId, track });
+        setPlaylistMenuRootState({ status: 'idle' });
+    };
+
+    const handleOpenCreatePlaylistForSong = (
+        track: MobileMediaTrack,
+        sourceId: string | undefined,
+    ) => {
+        if (!sourceId) {
+            setContextMenuFeedback('Could not find the server for this song.');
+            return;
+        }
+        if (track.playback?.source !== 'music') {
+            setContextMenuFeedback('Only music tracks can be added to playlists.');
+            return;
+        }
+        setContextMenuTarget(null);
+        setPlaylistMenuRoot({ kind: 'track', mode: 'create', sourceId, track });
         setPlaylistMenuRootState({ status: 'idle' });
     };
 
@@ -1519,7 +1545,56 @@ export function useAndroidMediaHandlers(
             return;
         }
         setContextMenuTarget(null);
-        setPlaylistMenuRoot({ collectionItem, kind: 'collection', sourceId });
+        setPlaylistMenuRoot({ collectionItem, kind: 'collection', mode: 'add', sourceId });
+        setPlaylistMenuRootState({ status: 'idle' });
+    };
+
+    const handleOpenCreatePlaylistForCollection = (
+        collectionItem: AndroidRecentContentSourceItem,
+    ) => {
+        const sourceId = collectionItem.source?.id;
+        if (!sourceId) {
+            setContextMenuFeedback('Could not find the server for this item.');
+            return;
+        }
+        const auth = findAuthForSource(sourceId);
+        if (
+            !auth ||
+            (auth.type !== ServerType.NAVIDROME &&
+                auth.type !== ServerType.SUBSONIC &&
+                auth.type !== ServerType.SAMO)
+        ) {
+            setContextMenuFeedback(
+                'Creating playlists is only available for music server items.',
+            );
+            return;
+        }
+        setContextMenuTarget(null);
+        setPlaylistMenuRoot({ collectionItem, kind: 'collection', mode: 'create', sourceId });
+        setPlaylistMenuRootState({ status: 'idle' });
+    };
+
+    const handleOpenCreatePlaylistStandalone = () => {
+        const auth = serverConnections.find(
+            (connection) =>
+                connection.type === ServerType.SAMO ||
+                connection.type === ServerType.NAVIDROME ||
+                connection.type === ServerType.SUBSONIC,
+        );
+
+        if (!auth) {
+            Alert.alert(
+                'No music server',
+                'Connect a Samo, Navidrome, or Subsonic server to create playlists.',
+            );
+            return;
+        }
+
+        setContextMenuTarget(null);
+        setPlaylistMenuRoot({
+            kind: 'standalone',
+            sourceId: getMobileContentSource(auth).id,
+        });
         setPlaylistMenuRootState({ status: 'idle' });
     };
 
@@ -1619,6 +1694,10 @@ export function useAndroidMediaHandlers(
             return;
         }
 
+        if (playlistMenuRoot.kind === 'standalone') {
+            return;
+        }
+
         setPlaylistMenuRootState({ playlistId: playlist.id, status: 'loading' });
         try {
             let songIds: string[];
@@ -1688,6 +1767,9 @@ export function useAndroidMediaHandlers(
         handleGoToArtistForTrack,
         handleOpenAddToPlaylistForCollection,
         handleOpenAddToPlaylistForSong,
+        handleOpenCreatePlaylistForCollection,
+        handleOpenCreatePlaylistForSong,
+        handleOpenCreatePlaylistStandalone,
         handleOpenBookInfo,
         handleOpenStreamInfo,
         handleOpenViewAll,

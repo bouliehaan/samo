@@ -15,6 +15,7 @@ internal class SamoLiveReconnect(
     var currentMediaItem: MediaItem?
     var currentHlsFallbackAttempted: Boolean
     val currentSource: SamoAudioSourceSnapshot?
+    var lastKnownPlaybackPositionMs: Long
     fun emitState(status: String? = null)
   }
 
@@ -47,6 +48,8 @@ internal class SamoLiveReconnect(
     PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS,
     PlaybackException.ERROR_CODE_IO_READ_POSITION_OUT_OF_RANGE,
     PlaybackException.ERROR_CODE_IO_NO_PERMISSION,
+    PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW,
+    PlaybackException.ERROR_CODE_REMOTE_ERROR,
   )
 
   /**
@@ -74,7 +77,12 @@ internal class SamoLiveReconnect(
 
     liveReconnectAttempts += 1
     val attempt = liveReconnectAttempts
-    val savedPositionMs = if (isLive) 0L else resolvedPlayer.currentPosition.coerceAtLeast(0L)
+    val savedPositionMs = if (isLive) {
+      0L
+    } else {
+      val fromPlayer = resolvedPlayer.currentPosition.coerceAtLeast(0L)
+      maxOf(fromPlayer, host.lastKnownPlaybackPositionMs)
+    }
     Log.w(
       "SamoAudio",
       "${source ?: "unknown"} stream error (${error.errorCodeName}); reconnect attempt $attempt/$maxLiveReconnectAttempts at ${savedPositionMs}ms"
@@ -103,6 +111,9 @@ internal class SamoLiveReconnect(
         resolvedPlayer.seekTo(savedPositionMs)
       }
       resolvedPlayer.playWhenReady = true
+      if (savedPositionMs > 0) {
+        host.lastKnownPlaybackPositionMs = savedPositionMs
+      }
       host.emitState("buffering")
     }
     pendingLiveReconnect = reconnect
@@ -110,6 +121,8 @@ internal class SamoLiveReconnect(
     host.emitState("buffering")
     return true
   }
+
+  fun hasPendingReconnect(): Boolean = pendingLiveReconnect != null
 
   fun cancelPendingLiveReconnect() {
     pendingLiveReconnect?.let { mainHandler.removeCallbacks(it) }

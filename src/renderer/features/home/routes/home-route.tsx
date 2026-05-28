@@ -96,7 +96,7 @@ const HomeRecentlyAddedAlbums = ({
 }) => {
     const server = useCurrentServer();
 
-    if (server?.type !== ServerType.NAVIDROME) {
+    if (server?.type !== ServerType.NAVIDROME && server?.type !== ServerType.SAMO) {
         return null;
     }
 

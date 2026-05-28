@@ -1,6 +1,12 @@
 import { memo, useMemo } from 'react';
 import z from 'zod';
 
+import {
+    buildSamoAuthenticatedImageRequest,
+    isSamoApiMediaUrl,
+    normalizeBaseUrl,
+    ServerType,
+} from '@samo/core/server';
 import { api } from '/@/renderer/api';
 import {
     GeneralSettingsSchema,
@@ -89,6 +95,64 @@ interface UseItemImageUrlProps {
     useRemoteUrl?: boolean;
 }
 
+const hasConfiguredServerUrl = (server: ReturnType<typeof getServerById>) =>
+    Boolean(server?.url && normalizeBaseUrl(server.url));
+
+const resolveItemImageRequest = (
+    args: UseItemImageUrlProps & { serverId: string; sizeByType?: number },
+): ImageRequest | undefined => {
+    const { id, imageUrl, itemType, serverId, size, sizeByType, useRemoteUrl } = args;
+
+    if (imageUrl && !isSamoApiMediaUrl(imageUrl)) {
+        return {
+            cacheKey: imageUrl,
+            url: imageUrl,
+        };
+    }
+
+    if (imageUrl && isSamoApiMediaUrl(imageUrl)) {
+        const server = getServerById(serverId);
+        if (server?.type === ServerType.SAMO && hasConfiguredServerUrl(server)) {
+            return buildSamoAuthenticatedImageRequest(
+                {
+                    credential: server.credential,
+                    ndCredential: server.ndCredential,
+                    type: ServerType.SAMO,
+                    url: server.url,
+                },
+                imageUrl,
+                ['samo', server.id, 'url', imageUrl].join(':'),
+            );
+        }
+    }
+
+    if (id) {
+        const server = getServerById(serverId);
+        if (!hasConfiguredServerUrl(server)) {
+            return undefined;
+        }
+
+        let baseUrl: string | undefined;
+
+        if (useRemoteUrl) {
+            baseUrl = server?.remoteUrl || server?.url;
+        }
+
+        const request =
+            api.controller.getImageRequest({
+                apiClientProps: { serverId },
+                baseUrl,
+                query: { id, itemType, size: size ?? sizeByType },
+            }) ?? undefined;
+
+        if (request) {
+            return request;
+        }
+    }
+
+    return undefined;
+};
+
 export const useItemImageUrl = (args: UseItemImageUrlProps) => {
     const { id, imageUrl, itemType, size, type, useRemoteUrl } = args;
     const serverId = useCurrentServerId();
@@ -97,30 +161,17 @@ export const useItemImageUrl = (args: UseItemImageUrlProps) => {
     const sizeByType: number | undefined = type ? imageRes[type] : undefined;
 
     return useMemo(() => {
-        if (imageUrl) {
-            return imageUrl;
-        }
-
-        if (!id) {
+        const targetServerId = args.serverId || serverId;
+        if (!targetServerId) {
             return undefined;
         }
 
-        const targetServerId = args.serverId || serverId;
-        let baseUrl: string | undefined;
-
-        if (useRemoteUrl) {
-            const server = getServerById(targetServerId);
-            baseUrl = server?.remoteUrl || server?.url;
-        }
-
-        return (
-            api.controller.getImageUrl({
-                apiClientProps: { serverId: targetServerId },
-                baseUrl,
-                query: { id, itemType, size: size ?? sizeByType },
-            }) || undefined
-        );
-    }, [args.serverId, id, imageUrl, itemType, serverId, size, sizeByType, useRemoteUrl]);
+        return resolveItemImageRequest({
+            ...args,
+            serverId: targetServerId,
+            sizeByType,
+        })?.url;
+    }, [args.serverId, id, imageUrl, itemType, serverId, size, sizeByType, type, useRemoteUrl]);
 };
 
 export const useItemImageRequest = (args: UseItemImageUrlProps) => {
@@ -131,100 +182,38 @@ export const useItemImageRequest = (args: UseItemImageUrlProps) => {
     const sizeByType: number | undefined = type ? imageRes[type] : undefined;
 
     return useMemo(() => {
-        if (imageUrl) {
-            return {
-                cacheKey: imageUrl,
-                url: imageUrl,
-            } satisfies ImageRequest;
-        }
-
-        if (!id) {
+        const targetServerId = args.serverId || serverId;
+        if (!targetServerId) {
             return undefined;
         }
 
-        const targetServerId = args.serverId || serverId;
-        let baseUrl: string | undefined;
-
-        if (useRemoteUrl) {
-            const server = getServerById(targetServerId);
-            baseUrl = server?.remoteUrl || server?.url;
-        }
-
-        return (
-            api.controller.getImageRequest({
-                apiClientProps: { serverId: targetServerId },
-                baseUrl,
-                query: { id, itemType, size: size ?? sizeByType },
-            }) || undefined
-        );
-    }, [args.serverId, id, imageUrl, itemType, serverId, size, sizeByType, useRemoteUrl]);
+        return resolveItemImageRequest({
+            ...args,
+            serverId: targetServerId,
+            sizeByType,
+        });
+    }, [args, id, imageUrl, itemType, serverId, size, sizeByType, type, useRemoteUrl]);
 };
 
 export function getItemImageRequest(args: UseItemImageUrlProps) {
-    const { id, imageUrl, itemType, size, type, useRemoteUrl } = args;
     const authStore = useAuthStore.getState();
     const currentServerId = getActiveMusicServer(authStore)?.id;
     const serverId = (args.serverId || currentServerId) as string;
 
     const imageRes = useSettingsStore.getState().general.imageRes;
-    const sizeByType: number | undefined = type ? imageRes[type] : undefined;
+    const sizeByType: number | undefined = args.type ? imageRes[args.type] : undefined;
 
-    if (imageUrl) {
-        return {
-            cacheKey: imageUrl,
-            url: imageUrl,
-        } satisfies ImageRequest;
-    }
-
-    if (!id) {
+    if (!serverId) {
         return undefined;
     }
 
-    let baseUrl: string | undefined;
-
-    if (useRemoteUrl) {
-        const server = getServerById(serverId);
-        baseUrl = server?.remoteUrl || server?.url;
-    }
-
-    return (
-        api.controller.getImageRequest({
-            apiClientProps: { serverId },
-            baseUrl,
-            query: { id, itemType, size: size ?? sizeByType },
-        }) || undefined
-    );
+    return resolveItemImageRequest({
+        ...args,
+        serverId,
+        sizeByType,
+    });
 }
 
 export function getItemImageUrl(args: UseItemImageUrlProps) {
-    const { id, imageUrl, itemType, size, type, useRemoteUrl } = args;
-    const authStore = useAuthStore.getState();
-    const currentServerId = getActiveMusicServer(authStore)?.id;
-    const serverId = (args.serverId || currentServerId) as string;
-
-    const imageRes = useSettingsStore.getState().general.imageRes;
-    const sizeByType: number | undefined = type ? imageRes[type] : undefined;
-
-    if (imageUrl) {
-        return imageUrl;
-    }
-
-    if (!id) {
-        return undefined;
-    }
-
-    let baseUrl: string | undefined;
-
-    if (useRemoteUrl) {
-        const server = getServerById(serverId);
-        baseUrl = server?.remoteUrl || server?.url;
-    }
-
-    return (
-        api.controller.getImageUrl({
-            apiClientProps: { serverId },
-            baseUrl,
-            query: { id, itemType, size: size ?? sizeByType },
-        }) || undefined
-    );
+    return getItemImageRequest(args)?.url;
 }

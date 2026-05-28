@@ -13,6 +13,7 @@ import {
     JoinedArtists,
 } from '/@/renderer/features/albums/components/joined-artists';
 import { ContextMenuController } from '/@/renderer/features/context-menu/context-menu-controller';
+import { LongFormPlayerArtwork } from '/@/renderer/features/player/components/long-form-player-artwork';
 import { RadioMetadataDisplay } from '/@/renderer/features/player/components/radio-metadata-display';
 import {
     useIsRadioActive,
@@ -71,7 +72,6 @@ export const LeftControls = () => {
     const longFormTitle = nowPlaying.title;
     const longFormArtist = nowPlaying.artist;
     const longFormSubtitle = nowPlaying.subtitle;
-    const longFormCoverUrl = nowPlaying.artwork ?? '';
     const isRadioActive = useIsRadioActive();
     const { currentStationArt } = useRadioPlayer();
     const { bindings } = useHotkeySettings();
@@ -185,14 +185,22 @@ export const LeftControls = () => {
                                         >
                                             <Icon color="muted" icon="radio" size="40%" />
                                         </Center>
-                                    ) : isLongFormMode && longFormCoverUrl ? (
-                                        <img
+                                    ) : isLongFormMode ? (
+                                        <LongFormPlayerArtwork
                                             alt={longFormTitle || 'Cover art'}
                                             className={clsx(
                                                 styles.playerbarImage,
                                                 PlaybackSelectors.playerCoverArt,
                                             )}
-                                            src={longFormCoverUrl}
+                                            fallbackIcon={
+                                                isPodcastMode ? 'microphone' : 'metadata'
+                                            }
+                                            item={
+                                                isPodcastMode ? podcastItem : audiobookItem
+                                            }
+                                            server={
+                                                isPodcastMode ? podcastServer : currentServer
+                                            }
                                         />
                                     ) : (
                                         <ItemImage

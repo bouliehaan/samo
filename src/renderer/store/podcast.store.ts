@@ -1,5 +1,8 @@
 import { audiobookshelfController } from '/@/renderer/api/audiobookshelf/audiobookshelf-controller';
 import {
+    resolveSamoPodcastPlaySession,
+} from '/@/renderer/api/samo/samo-long-form';
+import {
     type AbsPlaybackBaseActions,
     type AbsPlaybackCoreState,
     createAbsPlaybackStore,
@@ -11,7 +14,7 @@ import {
     AudiobookshelfLibraryItem,
     AudiobookshelfPodcastEpisode,
 } from '/@/shared/api/audiobookshelf/audiobookshelf-types';
-import { ServerListItemWithCredential } from '/@/shared/types/domain-types';
+import { ServerListItemWithCredential, ServerType } from '/@/shared/types/domain-types';
 
 const resumeKey = (itemId: string, episodeId: string) => `${itemId}::${episodeId}`;
 
@@ -116,6 +119,11 @@ const { selectors, store: usePodcastStore } = createAbsPlaybackStore<
         const server = _server as ServerListItemWithCredential;
         const libraryItem = item as AudiobookshelfLibraryItem;
         const ep = episode as AudiobookshelfPodcastEpisode;
+
+        if (server.type === ServerType.SAMO) {
+            return resolveSamoPodcastPlaySession(server, libraryItem, ep);
+        }
+
         const session = await audiobookshelfController.playItem(server, libraryItem.id, ep.id);
         const contentUrl = session.audioTracks?.[0]?.contentUrl;
 

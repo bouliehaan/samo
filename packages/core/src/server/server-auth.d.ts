@@ -4,9 +4,11 @@ import { ServerType } from './server-types';
 export declare enum ServerAuthenticationKind {
     AUDIOBOOKSHELF_TOKEN = "audiobookshelf-token",
     NAVIDROME_TOKEN = "navidrome-token",
+    SAMO_TOKEN = "samo-token",
     SUBSONIC_LEGACY_PASSWORD = "subsonic-legacy-password"
 }
 export interface ServerAuthenticationInput {
+    deviceLabel?: string;
     fetch?: SamoFetch;
     password: string;
     type: ServerType;

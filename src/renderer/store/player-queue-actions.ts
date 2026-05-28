@@ -1,3 +1,4 @@
+import { touchQueueRevision } from '/@/renderer/store/player-derived';
 import {
     adjustShuffledIndexesForInsertion,
     generateShuffledIndexes,
@@ -15,6 +16,7 @@ export interface PlayerQueueMutationState {
     };
     queue: {
         default: string[];
+        revision?: number;
         shuffled: number[];
         songs: Record<string, QueueSong>;
     };
@@ -120,6 +122,7 @@ export function applyAddToQueueNow(
 ): void {
     state.queue.default = uniqueIds;
     state.player.index = 0;
+    touchQueueRevision(state.queue);
 
     if (state.player.shuffle !== PlayerShuffle.TRACK) {
         return;
@@ -146,6 +149,7 @@ export function applyAddToQueueShuffle(
     state.queue.default = shuffledIds;
     state.player.index = 0;
     state.queue.shuffled = generateShuffledIndexes(shuffledIds.length);
+    touchQueueRevision(state.queue);
 }
 
 export function registerQueueSongs(state: PlayerQueueMutationState, items: QueueSong[]): string[] {

@@ -14,6 +14,11 @@ describe('normalizeBaseUrl', () => {
             'http://localhost:4533/subsonic',
         );
     });
+
+    it('treats missing values as empty', () => {
+        expect(normalizeBaseUrl(undefined)).toBe('');
+        expect(normalizeBaseUrl(null)).toBe('');
+    });
 });
 
 describe('getFetch', () => {

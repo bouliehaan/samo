@@ -1,16 +1,23 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect } from 'react';
 import { Navigate, Outlet } from 'react-router';
 import { shallow } from 'zustand/shallow';
 
 import { isServerLock } from '/@/renderer/features/action-required/utils/window-properties';
 import { AppRoute } from '/@/renderer/router/routes';
-import { getActiveMusicServer, useAuthStore, useAuthStoreActions } from '/@/renderer/store';
+import {
+    getConfiguredMusicServer,
+    useAuthHydrated,
+    useAuthStore,
+    useAuthStoreActions,
+} from '/@/renderer/store';
 
 const normalizeUrl = (url: string) => url.replace(/\/$/, '');
 
 export const AppOutlet = () => {
-    const activeMusicServer = useAuthStore((state) => {
-        const server = getActiveMusicServer(state);
+    const authHydrated = useAuthHydrated();
+    const { ensureActiveServers } = useAuthStoreActions();
+    const configuredMusicServer = useAuthStore((state) => {
+        const server = getConfiguredMusicServer(state);
 
         return server
             ? {
@@ -19,27 +26,22 @@ export const AppOutlet = () => {
               }
             : null;
     }, shallow);
-    const { deleteServer, setCurrentServer } = useAuthStoreActions();
-
-    const hasServerLockMismatch = useMemo(() => {
-        if (!isServerLock() || !activeMusicServer || !window.SERVER_URL) {
-            return false;
-        }
-
-        const configuredUrl = normalizeUrl(window.SERVER_URL);
-        const persistedUrl = normalizeUrl(activeMusicServer.url);
-
-        return configuredUrl !== persistedUrl;
-    }, [activeMusicServer]);
 
     useEffect(() => {
-        if (hasServerLockMismatch && activeMusicServer) {
-            deleteServer(activeMusicServer.id);
-            setCurrentServer(null);
+        if (authHydrated) {
+            ensureActiveServers();
         }
-    }, [activeMusicServer, deleteServer, hasServerLockMismatch, setCurrentServer]);
+    }, [authHydrated, ensureActiveServers]);
 
-    const isActionsRequired = !activeMusicServer || hasServerLockMismatch;
+    const hasServerLockMismatch =
+        isServerLock() &&
+        configuredMusicServer &&
+        window.SERVER_URL &&
+        normalizeUrl(window.SERVER_URL) !== 'http:/' &&
+        normalizeUrl(window.SERVER_URL) !== 'https:/' &&
+        normalizeUrl(window.SERVER_URL) !== normalizeUrl(configuredMusicServer.url);
+
+    const isActionsRequired = !authHydrated || !configuredMusicServer || hasServerLockMismatch;
 
     if (isActionsRequired) {
         return <Navigate replace to={AppRoute.ACTION_REQUIRED} />;

@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router';
 
 import { api } from '/@/renderer/api';
+import { samoFetch } from '/@/renderer/api/samo/samo-fetch';
 import { controller } from '/@/renderer/api/controller';
 import { AppRoute } from '/@/renderer/router/routes';
 import {
@@ -17,8 +18,30 @@ import { toast } from '/@/shared/components/toast/toast';
 import { AuthState } from '/@/shared/types/types';
 import { LogCategory, logFn } from '/@/shared/utils/logger';
 import { logMsg } from '/@/shared/utils/logger-message';
+import { ensureSamoStreamToken, ServerType } from '@samo/core/server';
 
 const localSettings = isElectron() ? window.api.localSettings : null;
+
+const prefetchSamoStreamToken = (
+    server: Pick<
+        NonNullable<ReturnType<typeof getServerById>>,
+        'credential' | 'ndCredential' | 'type' | 'url'
+    >,
+) => {
+    if (server.type !== ServerType.SAMO) {
+        return;
+    }
+
+    void ensureSamoStreamToken(
+        {
+            credential: server.credential,
+            ndCredential: server.ndCredential,
+            type: ServerType.SAMO,
+            url: server.url,
+        },
+        samoFetch,
+    ).catch(() => undefined);
+};
 
 const MAX_NETWORK_RETRIES = 1;
 const NETWORK_RETRY_DELAY_MS = 500;
@@ -139,6 +162,7 @@ export const useServerAuthenticated = () => {
                     });
 
                     void refreshServerInfo(serverWithAuth);
+                    prefetchSamoStreamToken(serverWithAuth);
 
                     logFn.info(logMsg[LogCategory.SYSTEM].serverAuthenticationSuccess, {
                         category: LogCategory.SYSTEM,
@@ -208,6 +232,10 @@ export const useServerAuthenticated = () => {
                             updateServer(serverWithAuth.id, updatedServer);
 
                             void refreshServerInfo(serverWithAuth);
+                            prefetchSamoStreamToken({
+                                ...serverWithAuth,
+                                ...updatedServer,
+                            });
 
                             logFn.info(logMsg[LogCategory.SYSTEM].serverAuthenticationSuccess, {
                                 category: LogCategory.SYSTEM,
@@ -289,6 +317,22 @@ export const useServerAuthenticated = () => {
                         serverType: serverWithAuth.type,
                     },
                 });
+
+                // For Samo, keep the saved server usable even if validation fails transiently.
+                if (serverWithAuth.type === ServerType.SAMO && serverWithAuth.credential) {
+                    logFn.warn(logMsg[LogCategory.SYSTEM].serverAuthenticationFailed, {
+                        category: LogCategory.SYSTEM,
+                        meta: {
+                            action: 'samo_validation_fallback',
+                            error: errorMessage,
+                            serverId: serverWithAuth.id,
+                            serverName: serverWithAuth.name,
+                            serverType: serverWithAuth.type,
+                        },
+                    });
+                    setReady(AuthState.VALID);
+                    return;
+                }
 
                 // Clear server credentials and saved password on failure
                 if (serverWithAuth.savePassword && localSettings) {

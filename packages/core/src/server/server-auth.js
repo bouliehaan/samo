@@ -1,11 +1,13 @@
 import { formatServerCapabilities, getAudiobookshelfCapabilitiesFromLibraries, getDefaultServerCapabilities, } from './server-capabilities';
 import { getFetch, normalizeBaseUrl } from './server-http';
+import { authenticateSamo } from './server-samo';
 import { getSubsonicUser } from './server-subsonic';
 import { ServerType } from './server-types';
 export var ServerAuthenticationKind;
 (function (ServerAuthenticationKind) {
     ServerAuthenticationKind["AUDIOBOOKSHELF_TOKEN"] = "audiobookshelf-token";
     ServerAuthenticationKind["NAVIDROME_TOKEN"] = "navidrome-token";
+    ServerAuthenticationKind["SAMO_TOKEN"] = "samo-token";
     ServerAuthenticationKind["SUBSONIC_LEGACY_PASSWORD"] = "subsonic-legacy-password";
 })(ServerAuthenticationKind || (ServerAuthenticationKind = {}));
 export const getServerAuthenticationErrorMessage = (error) => {
@@ -112,8 +114,11 @@ export const authenticateServerConnection = async (input) => {
     if (input.type === ServerType.NAVIDROME) {
         return authenticateNavidrome(input);
     }
+    if (input.type === ServerType.SAMO) {
+        return authenticateSamo(input);
+    }
     if (input.type === ServerType.SUBSONIC) {
         return authenticateSubsonicLegacy(input);
     }
-    throw new Error('Jellyfin auth is not wired in this Android milestone');
+    throw new Error(`Authentication is not supported for server type "${input.type}"`);
 };

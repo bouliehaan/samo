@@ -163,6 +163,12 @@ function SetupWizard({ onExit }: { onExit: () => void }) {
 
     const handleSubmitSuccess = (server: ServerListItemWithCredential) => {
         setLastAddedName(server.name);
+
+        if (server.type === ServerType.SAMO) {
+            onExit();
+            return;
+        }
+
         setStep('prompt');
     };
 

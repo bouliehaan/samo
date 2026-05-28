@@ -8,7 +8,7 @@ import { Link } from 'react-router';
 
 import styles from './library-header.module.css';
 
-import { getItemImageUrl, ItemImage } from '/@/renderer/components/item-image/item-image';
+import { getItemImageRequest, ItemImage } from '/@/renderer/components/item-image/item-image';
 import { useIsPlayerFetching } from '/@/renderer/features/player/context/player-context';
 import {
     PlayTextButton,
@@ -102,12 +102,13 @@ export const LibraryHeader = forwardRef(
                 return;
             }
 
-            const imageUrl = getItemImageUrl({
+            const imageRequest = getItemImageRequest({
                 id: imageId,
+                imageUrl: item.imageUrl,
                 itemType,
             });
 
-            if (!imageUrl) {
+            if (!imageRequest) {
                 logFn.error('No image URL found');
                 return;
             }
@@ -127,11 +128,12 @@ export const LibraryHeader = forwardRef(
                             enableDebounce={false}
                             enableViewport={false}
                             fetchPriority="high"
+                            imageRequest={imageRequest}
                             isExplicit={
                                 blurExplicitImages &&
                                 item.explicitStatus === ExplicitStatus.EXPLICIT
                             }
-                            src={imageUrl}
+                            src={undefined}
                             style={{
                                 maxHeight: '100%',
                                 maxWidth: '100%',
@@ -143,7 +145,7 @@ export const LibraryHeader = forwardRef(
                 ),
                 fullScreen: true,
             });
-        }, [blurExplicitImages, item.explicitStatus, item.imageId, item.type]);
+        }, [blurExplicitImages, item.explicitStatus, item.imageId, item.imageUrl, item.type]);
 
         const imageSectionSharedProps = {
             onClick: () => {

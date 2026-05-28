@@ -48,7 +48,7 @@ export const getFetch = (fetcher) => {
     return withRequestTimeout(resolvedFetch);
 };
 
-export const normalizeBaseUrl = (url) => url.trim().replace(/\/+$/, '');
+export const normalizeBaseUrl = (url) => (typeof url === 'string' ? url : '').trim().replace(/\/+$/, '');
 
 export const requestJson = async (fetcher, url, init) => {
     const response = await fetcher(url, init);

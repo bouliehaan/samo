@@ -13,7 +13,13 @@ import { generatePath, useNavigate } from 'react-router';
 
 import styles from './global-search-bar.module.css';
 
+import { QualityBadge } from '/@/renderer/components/quality-badge/quality-badge';
 import { ItemImage } from '/@/renderer/components/item-image/item-image';
+import {
+    getAlbumQualityProfile,
+    getSongQualityProfile,
+    usePlaybackDeliveryKind,
+} from '/@/renderer/utils/quality-profile';
 import { usePlayer } from '/@/renderer/features/player/context/player-context';
 import { useRadioControls } from '/@/renderer/features/radio/hooks/use-radio-player';
 import { AbsCoverImage } from '/@/renderer/features/search/components/abs-cover-image';
@@ -40,8 +46,8 @@ import {
     recordRecentPlaylist,
     recordRecentPodcast,
     recordRecentSong,
-    useAudiobookshelfServer,
     useCurrentServer,
+    useLongFormMediaServer,
     usePlayButtonBehavior,
 } from '/@/renderer/store';
 import { useAudiobookActions } from '/@/renderer/store/audiobook.store';
@@ -85,6 +91,7 @@ interface ResultRowProps {
         onToggle: () => void;
     };
     onSelect: ResultClickHandler;
+    qualityProfile?: import('@samo/core/audio-quality').QualityBadgeProfile;
     subtitle?: string;
     tag: string;
     title: string;
@@ -100,6 +107,7 @@ const ResultRow = ({
     fallbackIcon,
     favorite,
     onSelect,
+    qualityProfile,
     subtitle,
     tag,
     title,
@@ -125,23 +133,32 @@ const ResultRow = ({
                     artVariant === 'circle' ? ` ${styles.rowArtCircle}` : ''
                 }`}
             >
-                {artNode ? (
-                    artNode
-                ) : showImage ? (
-                    <ItemImage
-                        alt={title}
-                        height={40}
-                        id={artImageId ?? null}
-                        itemType={artItemType!}
-                        loading="lazy"
-                        serverId={artServerId ?? null}
-                        src={artImageUrl ?? null}
-                        type="itemCard"
-                        width={40}
+                <div className={styles.rowArtCover}>
+                    {artNode ? (
+                        artNode
+                    ) : showImage ? (
+                        <ItemImage
+                            alt={title}
+                            height={40}
+                            id={artImageId ?? null}
+                            itemType={artItemType!}
+                            loading="lazy"
+                            serverId={artServerId ?? null}
+                            src={artImageUrl ?? null}
+                            type="itemCard"
+                            width={40}
+                        />
+                    ) : (
+                        <Icon icon={fallbackIcon} size="lg" />
+                    )}
+                </div>
+                {qualityProfile ? (
+                    <QualityBadge
+                        className={styles.rowQualityBadge}
+                        thumb
+                        profile={qualityProfile}
                     />
-                ) : (
-                    <Icon icon={fallbackIcon} size="lg" />
-                )}
+                ) : null}
             </div>
             <div className={styles.rowText}>
                 <span className={styles.rowTitle}>{title}</span>
@@ -225,6 +242,7 @@ interface GlobalSearchBarProps {
 
 interface RowFactoryDeps {
     audiobookFavoriteIds: Set<string>;
+    deliveryKind: ReturnType<typeof usePlaybackDeliveryKind>;
     musicServerId?: null | string;
     onSelectAlbum: (album: Album) => void;
     onSelectArtist: (artist: AlbumArtist) => void;
@@ -260,6 +278,7 @@ const renderRow = (entry: RankedResult, deps: RowFactoryDeps): ReactNode => {
                     }}
                     key={`album-${album.id}`}
                     onSelect={() => deps.onSelectAlbum(album)}
+                    qualityProfile={getAlbumQualityProfile(album, undefined, deps.deliveryKind)}
                     subtitle={album.albumArtistName || undefined}
                     tag="Album"
                     title={album.name}
@@ -295,6 +314,7 @@ const renderRow = (entry: RankedResult, deps: RowFactoryDeps): ReactNode => {
                         <AbsCoverImage
                             alt={getAbsTitle(item)}
                             fallbackIcon="metadata"
+                            imageUrl={item.media?.metadata?.imageUrl}
                             itemId={item.id}
                         />
                     }
@@ -319,6 +339,7 @@ const renderRow = (entry: RankedResult, deps: RowFactoryDeps): ReactNode => {
                         <AbsCoverImage
                             alt={episode.episode.title ?? getAbsTitle(episode.show)}
                             fallbackIcon="microphone"
+                            imageUrl={episode.show.media?.metadata?.imageUrl}
                             itemId={episode.show.id}
                         />
                     }
@@ -356,6 +377,7 @@ const renderRow = (entry: RankedResult, deps: RowFactoryDeps): ReactNode => {
                         <AbsCoverImage
                             alt={getAbsTitle(item)}
                             fallbackIcon="microphone"
+                            imageUrl={item.media?.metadata?.imageUrl}
                             itemId={item.id}
                         />
                     }
@@ -376,6 +398,7 @@ const renderRow = (entry: RankedResult, deps: RowFactoryDeps): ReactNode => {
             const { station } = entry as RankedRadio;
             return (
                 <ResultRow
+                    artImageId={station.imageId}
                     artImageUrl={station.imageUrl}
                     artItemType={LibraryItem.RADIO_STATION}
                     artServerId={deps.musicServerId ?? null}
@@ -402,6 +425,7 @@ const renderRow = (entry: RankedResult, deps: RowFactoryDeps): ReactNode => {
                     }}
                     key={`song-${song.id}`}
                     onSelect={() => deps.onSelectSong(song)}
+                    qualityProfile={getSongQualityProfile(song, deps.deliveryKind)}
                     subtitle={song.artistName ?? song.album ?? undefined}
                     tag="Track"
                     title={song.name}
@@ -451,13 +475,14 @@ export const GlobalSearchBar = ({ className }: GlobalSearchBarProps) => {
 
     const { bestMatches, groupOrder, hasAnyResults, isLoading, results, sourceErrors } =
         useUnifiedSearch(debounced);
+    const deliveryKind = usePlaybackDeliveryKind();
 
     const player = usePlayer();
     const playButtonBehavior = usePlayButtonBehavior();
     const musicServer = useCurrentServer();
     const musicServerId = musicServer?.id;
-    const audiobookshelfServer = useAudiobookshelfServer();
-    const audiobookshelfServerId = audiobookshelfServer?.id;
+    const longFormMediaServer = useLongFormMediaServer();
+    const audiobookshelfServerId = longFormMediaServer?.id;
     const audiobookActions = useAudiobookActions();
     const podcastActions = usePodcastActions();
     const radioControls = useRadioControls();
@@ -565,35 +590,35 @@ export const GlobalSearchBar = ({ className }: GlobalSearchBarProps) => {
 
     const handleAudiobookSelect = useCallback(
         (item: AudiobookshelfLibraryItem) => {
-            if (!audiobookshelfServer) return;
-            recordRecentAudiobook(item, audiobookshelfServer.id);
-            audiobookActions.play(audiobookshelfServer, item);
+            if (!longFormMediaServer) return;
+            recordRecentAudiobook(item, longFormMediaServer.id);
+            audiobookActions.play(longFormMediaServer, item);
             closeDropdown();
         },
-        [audiobookActions, audiobookshelfServer, closeDropdown],
+        [audiobookActions, closeDropdown, longFormMediaServer],
     );
 
     const handlePodcastShowSelect = useCallback(
         (item: AudiobookshelfLibraryItem) => {
-            if (audiobookshelfServer) {
-                recordRecentPodcast(item, audiobookshelfServer.id);
+            if (longFormMediaServer) {
+                recordRecentPodcast(item, longFormMediaServer.id);
             }
             navigate(generatePath(AppRoute.PODCASTS_DETAIL, { itemId: item.id }));
             closeDropdown();
         },
-        [audiobookshelfServer, closeDropdown, navigate],
+        [closeDropdown, longFormMediaServer, navigate],
     );
 
     const handlePodcastEpisodeSelect = useCallback(
         ({ episode, show }: UnifiedPodcastEpisodeResult) => {
             navigate(generatePath(AppRoute.PODCASTS_DETAIL, { itemId: show.id }));
-            if (audiobookshelfServer) {
-                recordRecentPodcast(show, audiobookshelfServer.id);
-                void podcastActions.play(audiobookshelfServer, show, episode);
+            if (longFormMediaServer) {
+                recordRecentPodcast(show, longFormMediaServer.id);
+                void podcastActions.play(longFormMediaServer, show, episode);
             }
             closeDropdown();
         },
-        [audiobookshelfServer, closeDropdown, navigate, podcastActions],
+        [closeDropdown, longFormMediaServer, navigate, podcastActions],
     );
 
     const handleToggleFavorite = useCallback(
@@ -625,6 +650,7 @@ export const GlobalSearchBar = ({ className }: GlobalSearchBarProps) => {
     const rowDeps: RowFactoryDeps = useMemo(
         () => ({
             audiobookFavoriteIds,
+            deliveryKind,
             musicServerId: musicServerId ?? null,
             onSelectAlbum: handleAlbumSelect,
             onSelectArtist: handleArtistSelect,
@@ -641,6 +667,7 @@ export const GlobalSearchBar = ({ className }: GlobalSearchBarProps) => {
         }),
         [
             audiobookFavoriteIds,
+            deliveryKind,
             handleAlbumSelect,
             handleArtistSelect,
             handleAudiobookSelect,

@@ -18,9 +18,11 @@ import { EmptyServerBackedScreen } from './EmptyServerBackedScreen';
 
 export const PlaylistsScreen = memo(({
     homeContentState,
+    onCreatePlaylist,
     onSelectItem,
     onShufflePlay,
     recentItems,
+    showCreatePlaylist = false,
 }: PlaylistsScreenProps) => {
     const [activeSort, setActiveSort] = useState<LibrarySort>('recents');
     const [isSortMenuOpen, setIsSortMenuOpen] = useState(false);
@@ -70,6 +72,15 @@ export const PlaylistsScreen = memo(({
             <View style={styles.section}>
                 <Text style={styles.sectionTitle}>Playlists</Text>
                 <Text style={styles.mutedText}>No server-backed playlists returned.</Text>
+                {showCreatePlaylist && onCreatePlaylist ? (
+                    <Pressable
+                        accessibilityRole="button"
+                        onPress={onCreatePlaylist}
+                        style={styles.primaryButton}
+                    >
+                        <Text style={styles.primaryButtonText}>Create Playlist</Text>
+                    </Pressable>
+                ) : null}
             </View>
         );
     }
@@ -84,6 +95,15 @@ export const PlaylistsScreen = memo(({
                     </Text>
                 </View>
                 <View style={styles.playlistHeaderActions}>
+                    {showCreatePlaylist && onCreatePlaylist ? (
+                        <Pressable
+                            accessibilityRole="button"
+                            onPress={onCreatePlaylist}
+                            style={styles.playlistPillButton}
+                        >
+                            <Text style={styles.playlistPillButtonText}>Create</Text>
+                        </Pressable>
+                    ) : null}
                     <Pressable
                         accessibilityLabel={`Sort by ${activeSortLabel}. Tap to change.`}
                         accessibilityRole="button"

@@ -41,8 +41,12 @@ export const ListSortByDropdown = ({
 
     const { setSortBy, sortBy } = useSortByFilter(defaultSortByValue, listKey);
 
-    const sortByLabel =
-        (itemType && FILTERS[itemType][server.type].find((f) => f.value === sortBy)?.name) || '—';
+    const availableFilters =
+        (itemType && FILTERS[itemType]?.[server.type]) ||
+        (itemType && FILTERS[itemType]?.[ServerType.NAVIDROME]) ||
+        [];
+
+    const sortByLabel = availableFilters.find((f) => f.value === sortBy)?.name || '—';
 
     const handleSortByChange = (sortBy: string) => {
         setSortBy(sortBy);
@@ -61,7 +65,7 @@ export const ListSortByDropdown = ({
                 )}
             </DropdownMenu.Target>
             <DropdownMenu.Dropdown>
-                {FILTERS[itemType][server.type].map((f) => (
+                {availableFilters.map((f) => (
                     <DropdownMenu.Item
                         isSelected={f.value === sortBy}
                         key={`filter-${f.name}`}
@@ -939,6 +943,28 @@ const RADIO_LIST_FILTERS: Partial<
         },
     ],
 };
+
+/** Samo list pages sort client-side today — reuse Navidrome's sort options. */
+const assignSamoListSortFilters = (
+    map: Partial<
+        Record<ServerType, Array<{ defaultOrder: SortOrder; name: string; value: string }>>
+    >,
+    source: ServerType = ServerType.NAVIDROME,
+) => {
+    if (!map[ServerType.SAMO] && map[source]) {
+        map[ServerType.SAMO] = map[source]!;
+    }
+};
+
+assignSamoListSortFilters(ALBUM_LIST_FILTERS);
+assignSamoListSortFilters(SONG_LIST_FILTERS);
+assignSamoListSortFilters(FOLDER_LIST_FILTERS);
+assignSamoListSortFilters(ALBUM_ARTIST_LIST_FILTERS);
+assignSamoListSortFilters(ARTIST_LIST_FILTERS);
+assignSamoListSortFilters(GENRE_LIST_FILTERS);
+assignSamoListSortFilters(PLAYLIST_LIST_FILTERS);
+assignSamoListSortFilters(RADIO_LIST_FILTERS);
+PLAYLIST_SONG_LIST_FILTERS[ServerType.SAMO] = CLIENT_SIDE_SONG_FILTERS;
 
 const FILTERS: Partial<Record<LibraryItem, any>> = {
     [LibraryItem.ALBUM]: ALBUM_LIST_FILTERS,

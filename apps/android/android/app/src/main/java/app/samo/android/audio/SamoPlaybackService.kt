@@ -17,6 +17,7 @@ import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionParameters
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
@@ -42,6 +43,7 @@ class SamoPlaybackService : MediaSessionService() {
     private var mediaSession: MediaSession? = null
     private var player: ExoPlayer? = null
     private var playerRequestHeaders: Map<String, String> = emptyMap()
+    private var playerPrefetchOnDemand: Boolean = false
     var preferredMixerDevice: AudioDeviceInfo? = null
     var preferredOutputDevice: AudioDeviceInfo? = null
     /**
@@ -133,15 +135,18 @@ class SamoPlaybackService : MediaSessionService() {
      * do inline before this service existed; nothing has changed except that
      * the player now lives in a long-lived process-keeping component.
      */
-    fun ensurePlayer(requestHeaders: Map<String, String>): ExoPlayer {
+    fun ensurePlayer(
+        requestHeaders: Map<String, String>,
+        prefetchOnDemand: Boolean = false,
+    ): ExoPlayer {
         val existing = player
 
-        // Reuse the existing player only if headers match AND it's not in a
-        // stuck error state. A lingering playerError means the player will
-        // silently swallow play commands until rebuilt — that was the
-        // "audio cuts out and won't recover until APK rebuild" bug.
+        // Reuse the existing player only if headers match, prefetch mode
+        // matches, and it's not in a stuck error state. A lingering playerError
+        // means the player will silently swallow play commands until rebuilt.
         if (existing != null &&
             playerRequestHeaders == requestHeaders &&
+            playerPrefetchOnDemand == prefetchOnDemand &&
             existing.playerError == null
         ) {
             return existing
@@ -173,11 +178,32 @@ class SamoPlaybackService : MediaSessionService() {
             .setConnectTimeoutMs(15_000)
             .setReadTimeoutMs(15_000)
             .setAllowCrossProtocolRedirects(true)
-        val dataSourceFactory = DefaultDataSource.Factory(this, httpDataSourceFactory)
+        // Disk cache is opt-in: progressive podcast streams with auth query
+        // params and Range seeks are unreliable through SimpleCache today.
+        val dataSourceFactory = SamoStreamCache.buildDataSourceFactory(
+            this,
+            httpDataSourceFactory,
+            enableDiskCache = false,
+        )
         val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory)
             .setLoadErrorHandlingPolicy(SamoLoadErrorHandlingPolicy())
+        val loadControl = if (prefetchOnDemand) {
+            // Extra buffer for Wi-Fi handoffs without blocking start on a full
+            // minute of media (which left podcasts stuck at 0:00).
+            DefaultLoadControl.Builder()
+                .setBufferDurationsMs(
+                    /* minBufferMs = */ 15_000,
+                    /* maxBufferMs = */ 60_000,
+                    /* bufferForPlaybackMs = */ 2_500,
+                    /* bufferForPlaybackAfterRebufferMs = */ 5_000,
+                )
+                .build()
+        } else {
+            DefaultLoadControl.Builder().build()
+        }
         val createdPlayer = ExoPlayer.Builder(this, renderersFactory)
             .setMediaSourceFactory(mediaSourceFactory)
+            .setLoadControl(loadControl)
             .build()
 
         createdPlayer.setAudioAttributes(audioAttributes, true)
@@ -234,6 +260,7 @@ class SamoPlaybackService : MediaSessionService() {
         mediaSession = builtSession
         player = createdPlayer
         playerRequestHeaders = requestHeaders
+        playerPrefetchOnDemand = prefetchOnDemand
 
         return createdPlayer
     }

@@ -740,6 +740,10 @@ export const styles = StyleSheet.create({
         paddingHorizontal: HOME_EDGE_PADDING,
         paddingTop: spacing.lg,
     },
+    utilityScrollContent: {
+        flexGrow: 1,
+        paddingBottom: SCROLL_CONTENT_BOTTOM_INSET,
+    },
     tabContent: {
         paddingBottom: SCROLL_CONTENT_BOTTOM_INSET,
         paddingHorizontal: HOME_EDGE_PADDING,
@@ -817,6 +821,10 @@ export const styles = StyleSheet.create({
         gap: spacing.sm,
         marginBottom: spacing.sm,
         marginTop: spacing.sm,
+    },
+    contextMenuPrimaryButton: {
+        alignSelf: 'stretch',
+        marginTop: 0,
     },
     continueProgressFill: {
         backgroundColor: colors.accent,
@@ -3032,9 +3040,10 @@ export const styles = StyleSheet.create({
         paddingVertical: spacing.xs,
     },
     segmentFlexible: {
-        flexGrow: 1,
+        flexBasis: '48%',
+        flexGrow: 0,
         flexShrink: 0,
-        minWidth: '30%',
+        maxWidth: '48%',
     },
     segmentActive: {
         backgroundColor: colors.accentSoft,

@@ -101,6 +101,6 @@ config.resolver.resolveRequest = (context, moduleName, platform) => {
 // 2026-05-16: bumped a second time after adding the workspace-root dedupe
 // hook above — the bundle's module identity is keyed by filePath, so the
 // dedupe materially changes module assignments.
-config.cacheVersion = 'single-react-v8-dedupe';
+config.cacheVersion = 'single-react-v9-samo-core-ts';
 
 module.exports = config;

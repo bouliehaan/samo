@@ -28,6 +28,11 @@ import {
     useAndroidPlaybackState,
 } from '../state/playback-store';
 import { buildRecoveredPlaybackItem } from '../utils/playback-recovery';
+import {
+    getResumePositionSeconds,
+    shouldAutoRecoverPlayback,
+    withResumePosition,
+} from '../utils/playback-resume';
 import { preparePlaybackItemForNative } from '../utils/samo-artwork-url';
 import { resolveLocalPlayback } from '../utils/offline-playback';
 import {
@@ -77,6 +82,8 @@ export function useAndroidNativePlayback(options: {
     const absContextRef = useRef<AbsProgressContext | null>(null);
     const playbackQueueRef = useRef<null | { index: number; items: MobilePlayableAudio[] }>(null);
     const playbackSequenceRef = useRef(0);
+    const playbackRecoveryAttemptRef = useRef(0);
+    const playbackStartedAtRef = useRef(0);
     const playbackSnapshotRef = useRef<null | { item: MobilePlayableAudio; sessionId: string }>(
         null,
     );
@@ -103,7 +110,10 @@ export function useAndroidNativePlayback(options: {
             const item =
                 currentPlaybackState.status !== 'idle'
                     ? currentPlaybackState.item
-                    : buildRecoveredPlaybackItem(event, lastPlayedItem);
+                    : buildRecoveredPlaybackItem(
+                          event,
+                          playbackSnapshotRef.current?.item ?? lastPlayedItem,
+                      );
             if (!item) {
                 return;
             }
@@ -175,10 +185,11 @@ export function useAndroidNativePlayback(options: {
                 Math.max(0, requestedQueueIndex),
                 Math.max(0, playableQueueItems.length - 1),
             );
+            const playbackState = getAndroidPlaybackState();
+            const resumeSeconds = getResumePositionSeconds(item, playbackState);
+            const itemToPlay = withResumePosition(item, resumeSeconds);
             const initialPositionMs =
-                item.initialPositionSeconds && item.initialPositionSeconds > 0
-                    ? item.initialPositionSeconds * 1000
-                    : 0;
+                resumeSeconds && resumeSeconds > 0 ? resumeSeconds * 1000 : 0;
             const session = createPlaybackSession({
                 engine: 'android-native',
                 mediaKey: item.id,
@@ -195,8 +206,10 @@ export function useAndroidNativePlayback(options: {
                 setIsShuffled(playOptions.shuffled);
             }
 
-            const nativeItem = await preparePlaybackItemForNative(item, serverConnections);
+            const nativeItem = await preparePlaybackItemForNative(itemToPlay, serverConnections);
             playbackSnapshotRef.current = { item: nativeItem, sessionId: session.id };
+            playbackRecoveryAttemptRef.current = 0;
+            playbackStartedAtRef.current = Date.now();
             setAndroidPlaybackState({
                 durationMs: getPlaybackItemDurationMs(nativeItem),
                 item: nativeItem,
@@ -269,27 +282,92 @@ export function useAndroidNativePlayback(options: {
                 return;
             }
 
+            if (event.status === 'playing') {
+                playbackRecoveryAttemptRef.current = 0;
+            }
+
+            if (event.status === 'error') {
+                const absCtx = absContextRef.current;
+                const playbackState = getAndroidPlaybackState();
+                const positionMs =
+                    playbackState.status !== 'idle' ? playbackState.positionMs : undefined;
+
+                if (
+                    absCtx &&
+                    playbackState.status !== 'idle' &&
+                    (positionMs ?? 0) > 0
+                ) {
+                    void syncAbsProgressImmediate(
+                        absCtx,
+                        getAbsProgressSeconds(absCtx, positionMs, playbackState.item),
+                    );
+                }
+
+                // Native SamoLiveReconnect already retries transient network
+                // errors. Only fall back to a full JS restart after that path
+                // surfaces an error, and never during the first seconds of a
+                // new session (avoids fighting native prepare/reconnect).
+                const elapsedMs = Date.now() - playbackStartedAtRef.current;
+                const nativeReconnectLikelyDone = elapsedMs > 12_000;
+
+                if (
+                    nativeReconnectLikelyDone &&
+                    shouldAutoRecoverPlayback(snapshot.item.source) &&
+                    playbackRecoveryAttemptRef.current < 1
+                ) {
+                    playbackRecoveryAttemptRef.current += 1;
+                    setAndroidPlaybackState((current) =>
+                        current.status === 'idle'
+                            ? current
+                            : {
+                                  ...current,
+                                  message: 'Reconnecting…',
+                                  status: 'buffering',
+                              },
+                    );
+                    setTimeout(() => {
+                        if (playbackSnapshotRef.current?.sessionId !== snapshot.sessionId) {
+                            return;
+                        }
+                        void playQueuedItem(
+                            withResumePosition(
+                                snapshot.item,
+                                positionMs && positionMs > 0
+                                    ? Math.floor(positionMs / 1000)
+                                    : getResumePositionSeconds(snapshot.item, playbackState),
+                            ),
+                            playbackQueueRef.current?.items,
+                            playbackQueueRef.current?.index,
+                        );
+                    }, 1500);
+                    return;
+                }
+            }
+
+            if (event.status === 'ended') {
+                const playbackState = getAndroidPlaybackState();
+                const absCtx = absContextRef.current;
+
+                if (absCtx && playbackState.status !== 'idle') {
+                    void syncAbsProgressImmediate(
+                        absCtx,
+                        getAbsProgressSeconds(absCtx, event.positionMs, playbackState.item),
+                    );
+                }
+
+                const queue = playbackQueueRef.current;
+                const nextIndex = queue ? queue.index + 1 : -1;
+                const nextItem = queue?.items[nextIndex];
+
+                if (nextItem && queue) {
+                    void playQueuedItem(nextItem, queue.items, nextIndex);
+                    return;
+                }
+            }
+
             setAndroidPlaybackState((current) => {
                 if (current.status === 'idle') {
                     return current;
-                }
-
-                if (event.status === 'ended') {
-                    const absCtx = absContextRef.current;
-                    if (absCtx) {
-                        void syncAbsProgressImmediate(
-                            absCtx,
-                            getAbsProgressSeconds(absCtx, event.positionMs, current.item),
-                        );
-                    }
-                    const queue = playbackQueueRef.current;
-                    const nextIndex = queue ? queue.index + 1 : -1;
-                    const nextItem = queue?.items[nextIndex];
-
-                    if (nextItem) {
-                        void playQueuedItem(nextItem, queue.items, nextIndex);
-                        return current;
-                    }
                 }
 
                 return {

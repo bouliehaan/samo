@@ -3,6 +3,15 @@ import { type MobileQualityProfile } from './mobile-home';
 import { type MobileMediaDetail } from './mobile-media-detail';
 import { type MobilePlayableAudio } from './mobile-playback';
 
+const isHigherQualityProfile = (
+    left: MobileQualityProfile,
+    right: MobileQualityProfile | undefined,
+): boolean => {
+    if (!right) return true;
+    if (left.bitDepth !== right.bitDepth) return left.bitDepth > right.bitDepth;
+    return left.sampleRate > right.sampleRate;
+};
+
 /**
  * Pull a quality profile from a playback record's quality block.
  *
@@ -38,6 +47,49 @@ export const getItemQualityProfile = (
     if (!item) return undefined;
     if (item.qualityProfile) return item.qualityProfile;
     return getPlaybackQualityProfile(item.playback);
+};
+
+/**
+ * When album search hits lack a collection profile (Subsonic scan limit, etc.),
+ * promote the best song playback profile from the same result set.
+ */
+export const propagateSearchAlbumQualityFromSongs = <
+    A extends { id: string; isHiRes?: boolean; qualityProfile?: MobileQualityProfile },
+    S extends { albumId?: string; playback?: MobilePlayableAudio; qualityProfile?: MobileQualityProfile },
+>(
+    albumItems: A[],
+    songItems: S[],
+): A[] => {
+    if (albumItems.length === 0 || songItems.length === 0) {
+        return albumItems;
+    }
+
+    const profileByAlbumId = new Map<string, MobileQualityProfile>();
+    for (const song of songItems) {
+        const albumId = song.albumId;
+        if (!albumId) continue;
+        const profile = getItemQualityProfile(song);
+        if (!profile) continue;
+        const existing = profileByAlbumId.get(albumId);
+        if (isHigherQualityProfile(profile, existing)) {
+            profileByAlbumId.set(albumId, profile);
+        }
+    }
+
+    if (profileByAlbumId.size === 0) {
+        return albumItems;
+    }
+
+    return albumItems.map((album) => {
+        if (album.qualityProfile) {
+            return album;
+        }
+        const profile = profileByAlbumId.get(album.id);
+        if (!profile) {
+            return album;
+        }
+        return { ...album, isHiRes: true, qualityProfile: profile };
+    });
 };
 
 /**

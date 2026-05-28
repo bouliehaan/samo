@@ -1,4 +1,8 @@
+import { samoAlbumQualityProfile } from './samo-quality';
+
 import {
+    pickSamoCatalogImageId,
+    pickSamoImageId,
     resolveSamoAlbumArtworkUrl,
     resolveSamoArtistArtworkUrl,
     resolveSamoAudiobookArtworkUrl,
@@ -35,6 +39,25 @@ import {
 // internal types. These are NOT translations between server backends — they
 // are just data binding for the UI components. Samo's field names appear
 // directly on the wire and we slot them into the well-known internal types.
+
+const toStoredImageUrl = (url: string | undefined): string | null => url ?? null;
+
+const metadataArtworkUrl = (
+    auth: ReturnType<typeof toAuthBundle>,
+    images: SamoMusicAlbum['images'] | SamoMusicTrack['images'] | undefined,
+    entity?: { id?: string; images?: SamoMusicAlbum['images'] },
+): string | null => {
+    if (!auth || !pickSamoImageId(images)) {
+        return null;
+    }
+
+    return toStoredImageUrl(
+        resolveSamoAlbumArtworkUrl(auth, {
+            id: entity?.id,
+            images: images ?? entity?.images,
+        }),
+    );
+};
 
 const toRelatedArtist = (ref: SamoMusicArtistRef): RelatedArtist => ({
     id: ref.id ?? '',
@@ -149,13 +172,10 @@ export const normalizeSamoMusicTrack = (
         year: releaseYearFromDate(track.releaseDate, track.releaseYear),
     };
     const auth = toAuthBundle(server);
-    const imageId = track.images?.[0]?.id ?? null;
-    const imageUrl = auth
-        ? (resolveSamoAlbumArtworkUrl(auth, {
-              id: track.albumId ?? track.id,
-              images: track.images,
-          }) ?? null)
-        : null;
+    const imageId = pickSamoCatalogImageId(pickSamoImageId(track.images)) ?? null;
+    const imageUrl = metadataArtworkUrl(auth, track.images, {
+        id: track.albumId ?? track.id,
+    });
 
     return {
         _itemType: LibraryItem.SONG,
@@ -227,10 +247,8 @@ export const normalizeSamoMusicAlbum = (
     const trackArtistRefs = refsFromParallelArrays(album.trackArtistIds, album.trackArtistNames);
     const albumArtistName = album.displayArtist ?? joinNames(albumArtistRefs) ?? 'Unknown Artist';
     const auth = toAuthBundle(server);
-    const imageId = album.images?.[0]?.id ?? null;
-    const imageUrl = auth
-        ? (resolveSamoAlbumArtworkUrl(auth, { id: album.id, images: album.images }) ?? null)
-        : null;
+    const imageId = pickSamoCatalogImageId(pickSamoImageId(album.images)) ?? null;
+    const imageUrl = metadataArtworkUrl(auth, album.images, { id: album.id, images: album.images });
 
     return {
         _itemType: LibraryItem.ALBUM,
@@ -272,6 +290,7 @@ export const normalizeSamoMusicAlbum = (
         userFavorite: album.playback?.favorite ?? false,
         userRating: album.playback?.rating ?? null,
         version: null,
+        qualityProfile: samoAlbumQualityProfile(album),
     };
 };
 
@@ -281,7 +300,11 @@ export const normalizeSamoMusicArtist = (
     role: LibraryItem.ALBUM_ARTIST | LibraryItem.ARTIST = LibraryItem.ALBUM_ARTIST,
 ): AlbumArtist | Artist => {
     const auth = toAuthBundle(server);
-    const imageUrl = auth ? (resolveSamoArtistArtworkUrl(auth, artist) ?? null) : null;
+    const imageId = pickSamoCatalogImageId(pickSamoImageId(artist.images)) ?? null;
+    const imageUrl =
+        auth && pickSamoImageId(artist.images)
+            ? toStoredImageUrl(resolveSamoArtistArtworkUrl(auth, artist))
+            : null;
     const base = {
         _serverId: server?.id || 'unknown',
         _serverType: ServerType.SAMO,
@@ -290,7 +313,7 @@ export const normalizeSamoMusicArtist = (
         duration: null,
         genres: toGenres(artist.genres, server),
         id: artist.id,
-        imageId: artist.images?.[0]?.id ?? null,
+        imageId,
         imageUrl,
         lastPlayedAt: artist.playback?.lastPlayedAt ?? null,
         mbz: artist.externalIds?.musicbrainzArtist ?? null,
@@ -314,7 +337,7 @@ export const normalizeSamoMusicPlaylist = (
     server: null | ServerListItemWithCredential | undefined,
 ): Playlist => {
     const auth = toAuthBundle(server);
-    const imageUrl = auth ? (resolveSamoPlaylistArtworkUrl(auth, playlist) ?? null) : null;
+    const imageUrl = auth ? toStoredImageUrl(resolveSamoPlaylistArtworkUrl(auth, playlist)) : null;
     return {
         _itemType: LibraryItem.PLAYLIST,
         _serverId: server?.id || 'unknown',
@@ -324,7 +347,7 @@ export const normalizeSamoMusicPlaylist = (
         duration: playlist.duration ? playlist.duration * 1000 : null,
         genres: [],
         id: playlist.id,
-        imageId: playlist.images?.[0]?.id ?? null,
+        imageId: pickSamoCatalogImageId(pickSamoImageId(playlist.images)) ?? null,
         imageUrl,
         name: playlist.name,
         owner: playlist.ownerName ?? null,
@@ -341,7 +364,7 @@ export const normalizeSamoInternetRadioStation = (
     server?: null | ServerListItemWithCredential,
 ): InternetRadioStation => {
     const auth = toAuthBundle(server);
-    const imageUrl = auth ? (resolveSamoStationArtworkUrl(auth, station) ?? null) : null;
+    const imageUrl = auth ? toStoredImageUrl(resolveSamoStationArtworkUrl(auth, station)) : null;
     return {
         homepageUrl: station.homepageUrl ?? null,
         id: station.id,
@@ -377,7 +400,7 @@ export const normalizeSamoAudiobookAsAlbum = (
     );
     const audioFile = audiobook.primaryAudioFile ?? audiobook.audioFiles?.[0];
     const auth = toAuthBundle(server);
-    const imageUrl = auth ? (resolveSamoAudiobookArtworkUrl(auth, audiobook) ?? null) : null;
+    const imageUrl = auth ? toStoredImageUrl(resolveSamoAudiobookArtworkUrl(auth, audiobook)) : null;
     const publishedYear =
         typeof audiobook.book?.publishedYear === 'string'
             ? Number.parseInt(audiobook.book.publishedYear, 10)
@@ -396,7 +419,7 @@ export const normalizeSamoAudiobookAsAlbum = (
         explicitStatus: null,
         genres: toGenres(audiobook.book?.genres ?? audiobook.genres, server),
         id: audiobook.id,
-        imageId: audiobook.cover?.id ?? null,
+        imageId: audiobook.cover?.id ?? audiobook.id,
         imageUrl,
         isCompilation: null,
         lastPlayedAt: audiobook.progress?.lastPlayedAt ?? null,
@@ -428,7 +451,7 @@ export const normalizeSamoPodcastAsPlaylist = (
     server: null | ServerListItemWithCredential | undefined,
 ): Playlist => {
     const auth = toAuthBundle(server);
-    const imageUrl = auth ? (resolveSamoPodcastArtworkUrl(auth, podcast) ?? null) : null;
+    const imageUrl = auth ? toStoredImageUrl(resolveSamoPodcastArtworkUrl(auth, podcast)) : null;
     const inner = podcast.podcast;
     return {
         _itemType: LibraryItem.PLAYLIST,
@@ -439,7 +462,7 @@ export const normalizeSamoPodcastAsPlaylist = (
         duration: null,
         genres: [],
         id: podcast.id,
-        imageId: podcast.cover?.id ?? null,
+        imageId: podcast.cover?.id ?? podcast.id,
         imageUrl,
         name: inner?.title ?? 'Untitled podcast',
         owner: inner?.author ?? null,

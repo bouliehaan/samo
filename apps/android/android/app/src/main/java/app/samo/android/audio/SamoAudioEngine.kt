@@ -143,6 +143,7 @@ internal class SamoAudioEngine(
   override var currentSource: SamoAudioSourceSnapshot? = null
   override var currentSessionId: String? = null
   override var lastCastPositionMs = 0L
+  override var lastKnownPlaybackPositionMs = 0L
   private var playerListenersInstalledOn: ExoPlayer? = null
   override var resumeLocalPlaybackAfterCastDisconnect = false
   private var selectedLocalOutputDeviceId: Int? = null
@@ -187,6 +188,9 @@ internal class SamoAudioEngine(
     val sourceLabel = source.getOptionalString("source")
 
     binder.withService(promise) { service ->
+      val isLiveStream =
+        source.getOptionalBoolean("isLive") == true || sourceLabel == "radio"
+      val prefetchOnDemand = !isLiveStream
       val mediaMetadataBuilder = MediaMetadata.Builder()
         .setTitle(title)
         .setArtist(subtitle)
@@ -201,7 +205,9 @@ internal class SamoAudioEngine(
         .setMimeType(mimeType)
         .setUri(Uri.parse(url))
         .build()
-      val resolvedPlayer = service.ensurePlayer(requestHeaders)
+      val resolvedPlayer = service.ensurePlayer(requestHeaders, prefetchOnDemand)
+      lastKnownPlaybackPositionMs =
+        source.getOptionalDouble("initialPositionSeconds")?.times(1000)?.toLong() ?: 0L
       service.preferredOutputDevice = getSelectedLocalOutputDevice()
       resolvedPlayer.setPreferredAudioDevice(service.preferredOutputDevice)
       installListenersIfNeeded(resolvedPlayer)
@@ -289,6 +295,13 @@ internal class SamoAudioEngine(
         }
         installListenersIfNeeded(resolvedPlayer)
         restoreNoisyHandlingNow(resolvedPlayer)
+        val playerError = resolvedPlayer.playerError
+        if (playerError != null) {
+          if (liveReconnect.scheduleAutoReconnect(resolvedPlayer, playerError)) {
+            promise.resolve(getStatusMap(resolvedPlayer, "buffering"))
+            return@withService
+          }
+        }
         resolvedPlayer.play()
         emitState("playing")
         promise.resolve(getStatusMap(resolvedPlayer, "playing"))
@@ -626,6 +639,11 @@ internal class SamoAudioEngine(
           return
         }
 
+        val positionMs = player.currentPosition.coerceAtLeast(0L)
+        if (positionMs > 0) {
+          lastKnownPlaybackPositionMs = maxOf(lastKnownPlaybackPositionMs, positionMs)
+        }
+
         if (liveReconnect.retryCurrentSourceAsHls(player, error)) {
           return
         }
@@ -710,6 +728,10 @@ internal class SamoAudioEngine(
 
     val resolvedPlayer = binder.boundService?.getCurrentPlayer()
     if (resolvedPlayer != null) {
+      val positionMs = resolvedPlayer.currentPosition.coerceAtLeast(0L)
+      if (positionMs > 0) {
+        lastKnownPlaybackPositionMs = maxOf(lastKnownPlaybackPositionMs, positionMs)
+      }
       emit("SamoAudioPlaybackState", getStatusMap(resolvedPlayer, status))
       return
     }

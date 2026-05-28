@@ -1,4 +1,5 @@
 import { authenticateServerConnection } from '@samo/core/server';
+import isElectron from 'is-electron';
 
 import i18n from '/@/i18n/i18n';
 import { audiobookshelfController } from '/@/renderer/api/audiobookshelf/audiobookshelf-controller';
@@ -145,13 +146,20 @@ export const controller = new Proxy({} as GeneralController, {
                 type: ServerType,
             ) => {
                 if (type === ServerType.SAMO) {
-                    const result = await authenticateServerConnection({
-                        deviceLabel: 'Samo desktop',
-                        password: body.password,
-                        type,
-                        url,
-                        username: body.username,
-                    });
+                    const result = isElectron()
+                        ? await window.api.samo.authenticate({
+                              deviceLabel: 'Samo desktop',
+                              password: body.password,
+                              url,
+                              username: body.username,
+                          })
+                        : await authenticateServerConnection({
+                              deviceLabel: 'Samo desktop',
+                              password: body.password,
+                              type,
+                              url,
+                              username: body.username,
+                          });
 
                     return {
                         credential: result.credential,

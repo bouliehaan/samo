@@ -9,10 +9,16 @@ export type PlaylistMenuRoot =
     | {
           collectionItem: AndroidRecentContentSourceItem;
           kind: 'collection';
+          mode?: 'add' | 'create';
+          sourceId: string;
+      }
+    | {
+          kind: 'standalone';
           sourceId: string;
       }
     | {
           kind: 'track';
+          mode?: 'add' | 'create';
           sourceId: string;
           track: MobileMediaTrack;
       }

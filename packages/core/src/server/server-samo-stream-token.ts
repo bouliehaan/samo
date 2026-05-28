@@ -2,6 +2,7 @@ import { type ServerAuthenticationResult } from './server-auth';
 import { getFetch, type SamoFetch } from './server-http';
 import {
     type SamoStreamTokenResponse,
+    finalizeSamoMediaUrl,
     getSamoBearerToken,
     mintSamoStreamToken,
 } from './server-samo';
@@ -92,6 +93,27 @@ export const ensureSamoStreamToken = async (
     } finally {
         inflight.delete(key);
     }
+};
+
+/** Build a fetchable image request for Samo `/api/v1/...` media URLs. */
+export const buildSamoAuthenticatedImageRequest = (
+    authentication: Pick<
+        ServerAuthenticationResult,
+        'credential' | 'ndCredential' | 'type' | 'url'
+    >,
+    url: string,
+    cacheKey: string,
+): { cacheKey: string; headers?: Record<string, string>; url: string } => {
+    const streamToken = getCachedSamoStreamToken(authentication);
+    const bearer = getSamoBearerToken(authentication);
+    const finalizedUrl = finalizeSamoMediaUrl(authentication, url, streamToken) ?? url;
+    const usesStreamToken = finalizedUrl.includes('stream_token=');
+
+    return {
+        cacheKey,
+        headers: bearer && !usesStreamToken ? { Authorization: `Bearer ${bearer}` } : undefined,
+        url: finalizedUrl,
+    };
 };
 
 export const clearSamoStreamTokenCache = (

@@ -191,4 +191,8 @@ const FILTERS = {
         [LibraryItem.ALBUM]: SubsonicAlbumFilters,
         [LibraryItem.SONG]: SubsonicSongFilters,
     },
+    [ServerType.SAMO]: {
+        [LibraryItem.ALBUM]: NavidromeAlbumFilters,
+        [LibraryItem.SONG]: NavidromeSongFilters,
+    },
 };

@@ -1,5 +1,8 @@
 import { audiobookshelfController } from '/@/renderer/api/audiobookshelf/audiobookshelf-controller';
 import {
+    resolveSamoAudiobookPlaySession,
+} from '/@/renderer/api/samo/samo-long-form';
+import {
     type AbsPlaybackBaseActions,
     type AbsPlaybackCoreState,
     createAbsPlaybackStore,
@@ -13,7 +16,7 @@ import {
     AudiobookshelfChapter,
     AudiobookshelfLibraryItem,
 } from '/@/shared/api/audiobookshelf/audiobookshelf-types';
-import { ServerListItemWithCredential } from '/@/shared/types/domain-types';
+import { ServerListItemWithCredential, ServerType } from '/@/shared/types/domain-types';
 
 export type { AudiobookChapterListItem } from '/@/renderer/store/audiobook-chapters';
 export {
@@ -107,6 +110,11 @@ const { selectors, store: useAudiobookStore } = createAbsPlaybackStore<
     resolvePlaySession: async (_server, item) => {
         const server = _server as ServerListItemWithCredential;
         const libraryItem = item as AudiobookshelfLibraryItem;
+
+        if (server.type === ServerType.SAMO) {
+            return resolveSamoAudiobookPlaySession(server, libraryItem);
+        }
+
         const session = await audiobookshelfController.playItem(server, libraryItem.id);
         const contentUrl = session.audioTracks?.[0]?.contentUrl;
 

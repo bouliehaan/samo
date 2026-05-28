@@ -78,5 +78,6 @@ export const serializeServerAuthentications = (authentications) => {
 export const supportsServerTypeOnAndroid = (type) => {
     return (type === ServerType.AUDIOBOOKSHELF ||
         type === ServerType.NAVIDROME ||
+        type === ServerType.SAMO ||
         type === ServerType.SUBSONIC);
 };

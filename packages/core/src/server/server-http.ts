@@ -72,7 +72,8 @@ export const getFetch = (fetcher?: SamoFetch): SamoFetch => {
     return withRequestTimeout(resolvedFetch);
 };
 
-export const normalizeBaseUrl = (url: string) => url.trim().replace(/\/+$/, '');
+export const normalizeBaseUrl = (url: string | null | undefined) =>
+    (typeof url === 'string' ? url : '').trim().replace(/\/+$/, '');
 
 export const requestJson = async <T>(
     fetcher: SamoFetch,

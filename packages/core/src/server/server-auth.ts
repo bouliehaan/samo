@@ -230,5 +230,5 @@ export const authenticateServerConnection = async (
         return authenticateSubsonicLegacy(input);
     }
 
-    throw new Error('Jellyfin auth is not wired in this Android milestone');
+    throw new Error(`Authentication is not supported for server type "${input.type}"`);
 };

@@ -1,3 +1,4 @@
+import { isSamoBackedLibraryItem } from '/@/renderer/api/samo/samo-long-form';
 import { getItemImageUrl } from '/@/renderer/components/item-image/item-image';
 import {
     type RadioCurrentStationArt,
@@ -208,12 +209,13 @@ export function useNowPlaying(): NowPlaying {
     };
 }
 
-// Builds a direct cover URL for ABS items using the token query param.
-// ABS supports /api/items/:id/cover?token=<token> for browser-side art fetching.
 function audiobookArtworkUrl(
     server: ServerListItemWithCredential,
     item: AudiobookshelfLibraryItem,
 ): string | undefined {
+    if (isSamoBackedLibraryItem(item)) {
+        return item.media?.metadata?.imageUrl;
+    }
     if (!item.id || !server.url || !server.credential) return undefined;
     const base = server.url.replace(/\/+$/, '');
     return `${base}/api/items/${item.id}/cover?token=${encodeURIComponent(server.credential)}`;
@@ -239,7 +241,10 @@ function podcastArtworkUrl(
     server: ServerListItemWithCredential,
     item: AudiobookshelfLibraryItem,
 ): string | undefined {
-    return item.media?.metadata?.imageUrl || audiobookArtworkUrl(server, item);
+    if (item.media?.metadata?.imageUrl) {
+        return item.media.metadata.imageUrl;
+    }
+    return audiobookArtworkUrl(server, item);
 }
 
 function podcastAuthor(item: AudiobookshelfLibraryItem): string {

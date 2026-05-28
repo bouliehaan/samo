@@ -145,6 +145,40 @@ describe('queue position helpers', () => {
 });
 
 describe('playbackInputsEqual', () => {
+    it('detects when the current track changes at the same index', () => {
+        const base = getPlaybackInputs({
+            player: {
+                index: 0,
+                playerNum: 1,
+                repeat: PlayerRepeat.NONE,
+                shuffle: PlayerShuffle.NONE,
+                status: PlayerStatus.PLAYING,
+            },
+            queue: {
+                default: ['u0'],
+                shuffled: [],
+                songs: { u0: song('a', 'u0') },
+            },
+        });
+
+        const replaced = getPlaybackInputs({
+            player: {
+                index: 0,
+                playerNum: 1,
+                repeat: PlayerRepeat.NONE,
+                shuffle: PlayerShuffle.NONE,
+                status: PlayerStatus.PLAYING,
+            },
+            queue: {
+                default: ['u1'],
+                shuffled: [],
+                songs: { u1: song('b', 'u1') },
+            },
+        });
+
+        expect(playbackInputsEqual(base, replaced)).toBe(false);
+    });
+
     it('detects queue revision bumps', () => {
         const base = getPlaybackInputs({
             player: {

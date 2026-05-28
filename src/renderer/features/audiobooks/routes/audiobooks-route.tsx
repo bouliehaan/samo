@@ -3,16 +3,24 @@ import { useQueries, useQuery } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 
 import { audiobookshelfController } from '/@/renderer/api/audiobookshelf/audiobookshelf-controller';
+import {
+    isSamoLongFormServer,
+    listSamoAudiobookLibraryItems,
+    useLongFormMediaServer,
+} from '/@/renderer/api/samo/samo-long-form';
 import { ContextMenuController } from '/@/renderer/features/context-menu/context-menu-controller';
 import { AnimatedPage } from '/@/renderer/features/shared/components/animated-page';
 import { PageErrorBoundary } from '/@/renderer/features/shared/components/page-error-boundary';
-import { useAudiobookshelfServer } from '/@/renderer/store';
 import { useAudiobookActions } from '/@/renderer/store/audiobook.store';
 import {
     useIsLibraryFavorite,
     useLibraryFavoritesActions,
 } from '/@/renderer/store/library-favorites.store';
 import { AudiobookshelfLibraryItem } from '/@/shared/api/audiobookshelf/audiobookshelf-types';
+import {
+    buildSamoAuthenticatedImageRequest,
+    ServerType,
+} from '@samo/core/server';
 import { ActionIcon } from '/@/shared/components/action-icon/action-icon';
 import { Image } from '/@/shared/components/image/image';
 import { Text } from '/@/shared/components/text/text';
@@ -42,14 +50,35 @@ const getAudiobookSearchText = (item: AudiobookshelfLibraryItem) => {
 };
 
 const AudiobookCover = ({ item }: { item: AudiobookshelfLibraryItem }) => {
-    const server = useAudiobookshelfServer();
+    const server = useLongFormMediaServer();
 
     const coverQuery = useQuery({
-        enabled: Boolean(server?.id && item.id),
+        enabled: Boolean(server?.id && item.id && !isSamoLongFormServer(server)),
         queryFn: () => audiobookshelfController.getItemCoverDataUrl(server!, item.id),
         queryKey: ['audiobookshelf', 'cover', server?.id, item.id],
         staleTime: 1000 * 60 * 60,
     });
+
+    const coverSrc = isSamoLongFormServer(server)
+        ? (item.media?.metadata?.imageUrl ?? undefined)
+        : (coverQuery.data ?? undefined);
+
+    const imageRequest = useMemo(() => {
+        if (!isSamoLongFormServer(server) || !coverSrc) {
+            return undefined;
+        }
+
+        return buildSamoAuthenticatedImageRequest(
+            {
+                credential: server!.credential,
+                ndCredential: server!.ndCredential,
+                type: ServerType.SAMO,
+                url: server!.url,
+            },
+            coverSrc,
+            ['samo', server!.id, 'audiobook-cover', item.id].join(':'),
+        );
+    }, [coverSrc, item.id, server]);
 
     return (
         <Image
@@ -64,7 +93,8 @@ const AudiobookCover = ({ item }: { item: AudiobookshelfLibraryItem }) => {
                     overflow: 'hidden',
                 },
             }}
-            src={coverQuery.data}
+            imageRequest={imageRequest}
+            src={coverSrc}
             style={{ objectFit: 'cover', objectPosition: 'center' }}
             unloaderIcon="album"
         />
@@ -79,7 +109,7 @@ const AudiobookCard = ({
 }: {
     item: AudiobookshelfLibraryItem;
     onPlay: (item: AudiobookshelfLibraryItem) => void;
-    server: ReturnType<typeof useAudiobookshelfServer>;
+    server: ReturnType<typeof useLongFormMediaServer>;
     serverId: string | undefined;
 }) => {
     const title = getAudiobookTitle(item);
@@ -157,12 +187,13 @@ const AudiobookCard = ({
 };
 
 const AudiobooksRoute = () => {
-    const server = useAudiobookshelfServer();
+    const server = useLongFormMediaServer();
     const { play: playAudiobook } = useAudiobookActions();
     const [searchQuery, setSearchQuery] = useState('');
+    const isSamo = isSamoLongFormServer(server);
 
     const librariesQuery = useQuery({
-        enabled: Boolean(server),
+        enabled: Boolean(server) && !isSamo,
         queryFn: () => audiobookshelfController.getLibraries(server!),
         queryKey: ['audiobookshelf', 'libraries', server?.id],
     });
@@ -170,23 +201,33 @@ const AudiobooksRoute = () => {
     const audiobookLibraries =
         librariesQuery.data?.libraries.filter((library) => library.mediaType === 'book') ?? [];
 
-    const itemQueries = useQueries({
+    const absItemQueries = useQueries({
         queries: audiobookLibraries.map((library) => ({
-            enabled: Boolean(server?.id),
+            enabled: Boolean(server?.id) && !isSamo,
             queryFn: () => audiobookshelfController.getLibraryItems(server!, library.id),
             queryKey: ['audiobookshelf', 'library-items', server?.id, library.id],
         })),
     });
 
-    const items = itemQueries.flatMap((query) => query.data?.results ?? []);
+    const samoItemsQuery = useQuery({
+        enabled: Boolean(server?.id) && isSamo,
+        queryFn: () => listSamoAudiobookLibraryItems(server!),
+        queryKey: ['samo', 'audiobooks', server?.id],
+        staleTime: 1000 * 60 * 5,
+    });
+
+    const items = isSamo
+        ? (samoItemsQuery.data ?? [])
+        : absItemQueries.flatMap((query) => query.data?.results ?? []);
     const filteredItems = useMemo(() => {
         const trimmedQuery = searchQuery.trim().toLowerCase();
         if (!trimmedQuery) return items;
 
         return items.filter((item) => getAudiobookSearchText(item).includes(trimmedQuery));
     }, [items, searchQuery]);
-    const isLoading =
-        librariesQuery.isLoading || itemQueries.some((query) => query.isLoading || query.isPending);
+    const isLoading = isSamo
+        ? samoItemsQuery.isLoading
+        : librariesQuery.isLoading || absItemQueries.some((query) => query.isLoading || query.isPending);
 
     const handlePlay = (item: AudiobookshelfLibraryItem) => {
         if (!server) {
@@ -205,11 +246,17 @@ const AudiobooksRoute = () => {
                         <Text fw={700} size="xl">
                             Audiobooks
                         </Text>
-                        <Text isMuted>Browse your Audiobookshelf library.</Text>
+                        <Text isMuted>
+                            {isSamo
+                                ? 'Browse audiobooks from your Samo server.'
+                                : 'Browse your Audiobookshelf library.'}
+                        </Text>
                     </Stack>
 
                     {!server ? (
-                        <Text isMuted>Add an Audiobookshelf server to browse audiobooks.</Text>
+                        <Text isMuted>
+                            Add a Samo or Audiobookshelf server to browse audiobooks.
+                        </Text>
                     ) : isLoading ? (
                         <Text isMuted>Loading audiobooks…</Text>
                     ) : !items.length ? (

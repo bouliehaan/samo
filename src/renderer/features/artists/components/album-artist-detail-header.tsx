@@ -5,7 +5,6 @@ import { useParams } from 'react-router';
 
 import styles from './album-artist-detail-header.module.css';
 
-import { useItemImageUrl } from '/@/renderer/components/item-image/item-image';
 import { artistsQueries } from '/@/renderer/features/artists/api/artists-api';
 import { getArtistAlbumsGrouped } from '/@/renderer/features/artists/hooks/use-artist-albums-grouped';
 import { useDeleteArtistImage } from '/@/renderer/features/artists/mutations/delete-artist-image-mutation';
@@ -210,13 +209,6 @@ export const AlbumArtistDetailHeader = forwardRef<HTMLDivElement, AlbumArtistDet
             [detailQuery.data],
         );
 
-        const headerImageUrl = useItemImageUrl({
-            id: detailQuery.data?.imageId || undefined,
-            imageUrl: detailQuery.data?.imageUrl,
-            itemType: LibraryItem.ALBUM_ARTIST,
-            type: 'header',
-        });
-
         const canUploadArtistImage =
             hasFeature(server, ServerFeature.ARTIST_IMAGE_UPLOAD) &&
             Boolean(detailQuery.data?._serverId);
@@ -246,7 +238,6 @@ export const AlbumArtistDetailHeader = forwardRef<HTMLDivElement, AlbumArtistDet
                         onUploadFile={handleArtistImageUpload}
                     />
                 }
-                imageUrl={headerImageUrl}
                 item={{
                     imageId: detailQuery.data?.imageId,
                     imageUrl: detailQuery.data?.imageUrl,

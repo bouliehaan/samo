@@ -20,7 +20,7 @@ import {
     RecentItem,
     recordRecentItem,
     useAudiobookActions,
-    useAudiobookshelfServer,
+    useLongFormMediaServer,
     useRecentItems,
 } from '/@/renderer/store';
 import { Center } from '/@/shared/components/center/center';
@@ -78,7 +78,7 @@ export const HomeContinueListening = ({
     const radioControls = useRadioControls();
     const { currentStreamUrl, isPlaying } = useRadioPlayer();
     const audiobookActions = useAudiobookActions();
-    const audiobookshelfServer = useAudiobookshelfServer();
+    const longFormMediaServer = useLongFormMediaServer();
 
     const items = useMemo(
         () =>
@@ -96,8 +96,8 @@ export const HomeContinueListening = ({
     const openItem = (item: RecentItem) => {
         switch (item.mediaType) {
             case 'audiobook':
-                if (audiobookshelfServer && item.rawAbsItem) {
-                    audiobookActions.play(audiobookshelfServer, item.rawAbsItem);
+                if (longFormMediaServer && item.rawAbsItem) {
+                    audiobookActions.play(longFormMediaServer, item.rawAbsItem);
                     return;
                 }
                 navigate(AppRoute.AUDIOBOOKS);
@@ -175,6 +175,7 @@ const RecentArtwork = ({ item }: { item: RecentItem }) => {
             <AbsCoverImage
                 alt={item.title}
                 fallbackIcon={item.artwork.fallbackIcon}
+                imageUrl={item.artwork.imageUrl ?? item.rawAbsItem?.media?.metadata?.imageUrl}
                 itemId={item.artwork.itemId}
             />
         );

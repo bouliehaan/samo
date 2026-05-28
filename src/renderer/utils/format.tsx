@@ -102,7 +102,7 @@ const PARTIAL_ISO_YEAR = /^\d{4}$/;
 const PARTIAL_ISO_YEAR_MONTH = /^\d{4}-\d{2}$/;
 
 export const formatPartialIsoDateUTC = (key: null | string): string => {
-    if (!key) {
+    if (typeof key !== 'string' || !key) {
         return '';
     }
 

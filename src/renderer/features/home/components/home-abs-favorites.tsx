@@ -7,6 +7,13 @@ import styles from './home-continue-listening.module.css';
 
 import { audiobookshelfController } from '/@/renderer/api/audiobookshelf/audiobookshelf-controller';
 import {
+    isSamoLongFormServer,
+    listSamoAudiobookLibraryItems,
+    listSamoPodcastLibraryItems,
+    loadSamoPodcastLibraryItem,
+} from '/@/renderer/api/samo/samo-long-form';
+import { useLongFormMediaServer } from '/@/renderer/store';
+import {
     GridCarousel,
     useGridCarouselContainerQuery,
 } from '/@/renderer/components/grid-carousel/grid-carousel-v2';
@@ -19,7 +26,6 @@ import { AppRoute } from '/@/renderer/router/routes';
 import {
     recordRecentPodcast,
     useAudiobookActions,
-    useAudiobookshelfServer,
 } from '/@/renderer/store';
 import {
     useFavoriteAudiobookIds,
@@ -121,11 +127,12 @@ const isItemForKind = (
 };
 
 const useHomeAbsItems = (kind: AbsMediaKind) => {
-    const server = useAudiobookshelfServer();
+    const server = useLongFormMediaServer();
     const serverId = server?.id ?? '';
+    const isSamo = isSamoLongFormServer(server);
 
     const librariesQuery = useQuery({
-        enabled: Boolean(server),
+        enabled: Boolean(server) && !isSamo,
         gcTime: ABS_LIBRARY_GC_TIME_MS,
         queryFn: () => audiobookshelfController.getLibraries(server!),
         queryKey: ['audiobookshelf', 'home', 'libraries', serverId],
@@ -137,9 +144,9 @@ const useHomeAbsItems = (kind: AbsMediaKind) => {
         [librariesQuery.data?.libraries, kind],
     );
 
-    const itemQueries = useQueries({
+    const absItemQueries = useQueries({
         queries: libraries.map((library) => ({
-            enabled: Boolean(server),
+            enabled: Boolean(server) && !isSamo,
             gcTime: ABS_LIBRARY_GC_TIME_MS,
             queryFn: () => audiobookshelfController.getLibraryItems(server!, library.id),
             queryKey: ['audiobookshelf', 'home', 'library-items', serverId, kind, library.id],
@@ -147,17 +154,30 @@ const useHomeAbsItems = (kind: AbsMediaKind) => {
         })),
     });
 
-    const items = useMemo(
-        () =>
-            itemQueries.flatMap((query, index) => {
-                const library = libraries[index];
+    const samoItemsQuery = useQuery({
+        enabled: Boolean(server) && isSamo,
+        gcTime: ABS_LIBRARY_GC_TIME_MS,
+        queryFn: () =>
+            kind === 'audiobook'
+                ? listSamoAudiobookLibraryItems(server!)
+                : listSamoPodcastLibraryItems(server!),
+        queryKey: ['samo', 'home', kind, serverId],
+        staleTime: ABS_LIBRARY_STALE_TIME_MS,
+    });
 
-                return (query.data?.results ?? []).filter((item) =>
-                    isItemForKind(item, library, kind),
-                );
-            }),
-        [itemQueries, libraries, kind],
-    );
+    const items = useMemo(() => {
+        if (isSamo) {
+            return samoItemsQuery.data ?? [];
+        }
+
+        return absItemQueries.flatMap((query, index) => {
+            const library = libraries[index];
+
+            return (query.data?.results ?? []).filter((item) =>
+                isItemForKind(item, library, kind),
+            );
+        });
+    }, [absItemQueries, isSamo, kind, libraries, samoItemsQuery.data]);
 
     return { items, server };
 };
@@ -208,7 +228,9 @@ const HomeAbsFavoriteCarousel = ({
             }
 
             try {
-                const fullItem = await audiobookshelfController.getItem(server, item.id);
+                const fullItem = isSamoLongFormServer(server)
+                    ? await loadSamoPodcastLibraryItem(server, item.id)
+                    : await audiobookshelfController.getItem(server, item.id);
                 const episodes = (fullItem?.media?.episodes ?? [])
                     .slice()
                     .sort((a, b) => (b.publishedAt ?? 0) - (a.publishedAt ?? 0));
@@ -273,7 +295,7 @@ const HomeAbsFavoriteCard = ({
     kind: AbsMediaKind;
     onClick: () => void;
     onPlay: () => void;
-    server: NonNullable<ReturnType<typeof useAudiobookshelfServer>>;
+    server: NonNullable<ReturnType<typeof useLongFormMediaServer>>;
 }) => {
     const title = getAbsTitle(item);
     const favoritesActions = useLibraryFavoritesActions();
@@ -300,6 +322,7 @@ const HomeAbsFavoriteCard = ({
                 <AbsCoverImage
                     alt={title}
                     fallbackIcon={kind === 'audiobook' ? 'metadata' : 'microphone'}
+                    imageUrl={item.media?.metadata?.imageUrl}
                     itemId={item.id}
                 />
                 <div className={styles.overlayControls}>

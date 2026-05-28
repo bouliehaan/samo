@@ -104,6 +104,19 @@ ipcMain.handle('password-set', (_event, password: string, server: string) => {
     return false;
 });
 
+ipcMain.handle('auth-persist-get', (_event, name: string): null | string => {
+    const value = store.get(`authPersist.${name}`) as string | undefined;
+    return value ?? null;
+});
+
+ipcMain.handle('auth-persist-set', (_event, name: string, value: string) => {
+    store.set(`authPersist.${name}`, value);
+});
+
+ipcMain.on('auth-persist-remove', (_event, name: string) => {
+    store.delete(`authPersist.${name}`);
+});
+
 ipcMain.on('theme-set', (_event, theme: TitleTheme) => {
     store.set('theme', theme);
     nativeTheme.themeSource = theme;

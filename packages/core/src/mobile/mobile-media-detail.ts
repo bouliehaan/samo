@@ -38,7 +38,12 @@ import {
     getMobileContentSource,
     type MobileContentSource,
 } from './mobile-content-source';
-import { type MobileHomeItem, MobileHomeItemType, type MobileQualityProfile } from './mobile-home';
+import {
+    type MobileHomeItem,
+    MobileHomeItemType,
+    type MobileQualityProfile,
+    samoAlbumQualityProfile,
+} from './mobile-home';
 import {
     buildSamoAudiobookPlayback,
     buildSamoMusicPlayback,
@@ -1315,22 +1320,6 @@ const sortSamoTracks = (tracks: SamoMusicTrack[]): SamoMusicTrack[] => {
     });
 };
 
-const samoAlbumQualityProfile = (
-    album: SamoMusicAlbum,
-): MobileQualityProfile | undefined => {
-    const file = album.primaryAudioFile;
-    if (file?.bitDepth && file.sampleRate) {
-        return { bitDepth: file.bitDepth, sampleRate: file.sampleRate };
-    }
-    const top = album.tracks
-        ?.map((track) => track.primaryAudioFile)
-        .find((candidate) => candidate?.bitDepth && candidate.sampleRate);
-    if (top?.bitDepth && top.sampleRate) {
-        return { bitDepth: top.bitDepth, sampleRate: top.sampleRate };
-    }
-    return undefined;
-};
-
 const loadSamoAlbumTracks = async (
     authentication: ServerAuthenticationResult,
     fetcher: SamoFetch,
@@ -1449,13 +1438,7 @@ const loadSamoArtistDetail = async (
                 artworkImageId: pickSamoImageId(album.images),
                 artworkUrl: resolveSamoAlbumArtworkUrl(authentication, album, streamToken),
                 id: album.id,
-                qualityProfile:
-                    album.primaryAudioFile?.bitDepth && album.primaryAudioFile.sampleRate
-                        ? {
-                              bitDepth: album.primaryAudioFile.bitDepth,
-                              sampleRate: album.primaryAudioFile.sampleRate,
-                          }
-                        : undefined,
+                qualityProfile: samoAlbumQualityProfile(album),
                 source,
                 subtitle: album.releaseYear ? String(album.releaseYear) : undefined,
                 title: album.title,

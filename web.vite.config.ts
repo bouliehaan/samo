@@ -4,6 +4,7 @@ import { ViteEjsPlugin } from 'vite-plugin-ejs';
 import { VitePWA } from 'vite-plugin-pwa';
 
 import { createReactPlugin } from './vite.react-plugin';
+import { samoCoreAliases } from './vite.samo-core-aliases';
 
 export default defineConfig({
     base: './',
@@ -133,13 +134,13 @@ export default defineConfig({
         }),
     ],
     resolve: {
-        alias: {
-            '/@/i18n': path.resolve(__dirname, './src/i18n'),
-            '/@/remote': path.resolve(__dirname, './src/remote'),
-            '/@/renderer': path.resolve(__dirname, './src/renderer'),
-            '/@/shared': path.resolve(__dirname, './src/shared'),
-            '@samo/core': path.resolve(__dirname, './packages/core/src'),
-        },
+        alias: [
+            { find: '/@/i18n', replacement: path.resolve(__dirname, './src/i18n') },
+            { find: '/@/remote', replacement: path.resolve(__dirname, './src/remote') },
+            { find: '/@/renderer', replacement: path.resolve(__dirname, './src/renderer') },
+            { find: '/@/shared', replacement: path.resolve(__dirname, './src/shared') },
+            ...samoCoreAliases,
+        ],
     },
     root: path.resolve(__dirname, './src/renderer'),
 });

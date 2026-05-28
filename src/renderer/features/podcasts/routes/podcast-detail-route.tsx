@@ -1,12 +1,17 @@
 import { Box, Group, Stack } from '@mantine/core';
 import { useQuery } from '@tanstack/react-query';
 import formatDuration from 'format-duration';
+import { useMemo } from 'react';
 import { useParams } from 'react-router';
 
 import { audiobookshelfController } from '/@/renderer/api/audiobookshelf/audiobookshelf-controller';
+import {
+    isSamoLongFormServer,
+    loadSamoPodcastLibraryItem,
+    useLongFormMediaServer,
+} from '/@/renderer/api/samo/samo-long-form';
 import { AnimatedPage } from '/@/renderer/features/shared/components/animated-page';
 import { PageErrorBoundary } from '/@/renderer/features/shared/components/page-error-boundary';
-import { useAudiobookshelfServer } from '/@/renderer/store';
 import {
     useIsLibraryFavorite,
     useLibraryFavoritesActions,
@@ -16,6 +21,10 @@ import {
     AudiobookshelfLibraryItem,
     AudiobookshelfPodcastEpisode,
 } from '/@/shared/api/audiobookshelf/audiobookshelf-types';
+import {
+    buildSamoAuthenticatedImageRequest,
+    ServerType,
+} from '@samo/core/server';
 import { ActionIcon } from '/@/shared/components/action-icon/action-icon';
 import { Image } from '/@/shared/components/image/image';
 import { Text } from '/@/shared/components/text/text';
@@ -47,15 +56,45 @@ const formatEpisodeDuration = (episode: AudiobookshelfPodcastEpisode) => {
     return formatDuration(seconds * 1000);
 };
 
-const PodcastCover = ({ alt, itemId }: { alt: string; itemId: string }) => {
-    const server = useAudiobookshelfServer();
+const PodcastCover = ({
+    alt,
+    imageUrl,
+    itemId,
+}: {
+    alt: string;
+    imageUrl?: string;
+    itemId: string;
+}) => {
+    const server = useLongFormMediaServer();
+
     const coverQuery = useQuery({
-        enabled: Boolean(server?.id && itemId),
+        enabled: Boolean(server?.id && itemId && !isSamoLongFormServer(server)),
         queryFn: async () =>
             (await audiobookshelfController.getItemCoverDataUrl(server!, itemId)) ?? null,
         queryKey: ['audiobookshelf', 'cover', server?.id, itemId],
         staleTime: 1000 * 60 * 60,
     });
+
+    const coverSrc = isSamoLongFormServer(server)
+        ? imageUrl
+        : (coverQuery.data ?? undefined);
+
+    const imageRequest = useMemo(() => {
+        if (!isSamoLongFormServer(server) || !coverSrc) {
+            return undefined;
+        }
+
+        return buildSamoAuthenticatedImageRequest(
+            {
+                credential: server!.credential,
+                ndCredential: server!.ndCredential,
+                type: ServerType.SAMO,
+                url: server!.url,
+            },
+            coverSrc,
+            ['samo', server!.id, 'podcast-cover', itemId].join(':'),
+        );
+    }, [coverSrc, itemId, server]);
 
     return (
         <Image
@@ -69,7 +108,8 @@ const PodcastCover = ({ alt, itemId }: { alt: string; itemId: string }) => {
                     width: '14rem',
                 },
             }}
-            src={coverQuery.data ?? undefined}
+            imageRequest={imageRequest}
+            src={coverSrc ?? undefined}
             unloaderIcon="album"
         />
     );
@@ -135,15 +175,19 @@ const EpisodeRow = ({
 
 const PodcastDetailRoute = () => {
     const { itemId } = useParams<{ itemId: string }>();
-    const server = useAudiobookshelfServer();
+    const server = useLongFormMediaServer();
+    const isSamo = isSamoLongFormServer(server);
     const { play: playPodcast } = usePodcastActions();
     const isFavorite = useIsLibraryFavorite('podcast', server?.id, itemId ?? '');
     const { toggle: toggleFavorite } = useLibraryFavoritesActions();
 
     const itemQuery = useQuery({
         enabled: Boolean(server?.id && itemId),
-        queryFn: () => audiobookshelfController.getItem(server!, itemId!),
-        queryKey: ['audiobookshelf', 'item', server?.id, itemId],
+        queryFn: () =>
+            isSamo
+                ? loadSamoPodcastLibraryItem(server!, itemId!)
+                : audiobookshelfController.getItem(server!, itemId!),
+        queryKey: [isSamo ? 'samo' : 'audiobookshelf', 'item', server?.id, itemId],
     });
 
     const item = itemQuery.data;
@@ -163,7 +207,7 @@ const PodcastDetailRoute = () => {
             <Box h="100%" style={{ overflowY: 'auto' }}>
                 <Stack gap="xl" p="2rem" pb="6rem">
                     {!server ? (
-                        <Text isMuted>Add an Audiobookshelf server to browse podcasts.</Text>
+                        <Text isMuted>Add a Samo or Audiobookshelf server to browse podcasts.</Text>
                     ) : itemQuery.isLoading ? (
                         <Text isMuted>Loading podcast…</Text>
                     ) : !item ? (
@@ -171,7 +215,11 @@ const PodcastDetailRoute = () => {
                     ) : (
                         <>
                             <Group align="flex-start" gap="xl" wrap="nowrap">
-                                <PodcastCover alt={podcastTitle(item)} itemId={item.id} />
+                                <PodcastCover
+                                    alt={podcastTitle(item)}
+                                    imageUrl={item.media?.metadata?.imageUrl}
+                                    itemId={item.id}
+                                />
                                 <Stack gap="sm" style={{ flex: 1, minWidth: 0 }}>
                                     <Text fw={700} size="xl">
                                         {podcastTitle(item)}

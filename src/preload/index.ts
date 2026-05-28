@@ -11,6 +11,7 @@ import { lyrics } from './lyrics';
 import { mpris } from './mpris';
 import { mpvPlayer, mpvPlayerListener } from './mpv-player';
 import { remote } from './remote';
+import { samo } from './samo';
 import { utils } from './utils';
 
 // Custom APIs for renderer
@@ -26,6 +27,7 @@ const api = {
     mpvPlayer,
     mpvPlayerListener,
     remote,
+    samo,
     utils,
 };
 

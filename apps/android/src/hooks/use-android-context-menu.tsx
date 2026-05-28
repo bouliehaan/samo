@@ -59,6 +59,8 @@ type ContextMenuHandlers = Pick<
     | 'handleGoToArtistForTrack'
     | 'handleOpenAddToPlaylistForCollection'
     | 'handleOpenAddToPlaylistForSong'
+    | 'handleOpenCreatePlaylistForCollection'
+    | 'handleOpenCreatePlaylistForSong'
     | 'handleOpenBookInfo'
     | 'handleOpenStreamInfo'
     | 'handleStartSongRadio'
@@ -94,6 +96,8 @@ export function useAndroidContextMenu(options: {
         handleGoToArtistForTrack,
         handleOpenAddToPlaylistForCollection,
         handleOpenAddToPlaylistForSong,
+        handleOpenCreatePlaylistForCollection,
+        handleOpenCreatePlaylistForSong,
         handleOpenBookInfo,
         handleOpenStreamInfo,
         handleStartSongRadio,
@@ -186,6 +190,12 @@ export function useAndroidContextMenu(options: {
                     id: 'playlist',
                     label: 'Add to Playlist',
                     onPress: () => handleOpenAddToPlaylistForSong(track, source.id),
+                });
+                menuActions.push({
+                    icon: <PlaylistAddGlyph color={colors.text} />,
+                    id: 'create-playlist',
+                    label: 'Create Playlist',
+                    onPress: () => handleOpenCreatePlaylistForSong(track, source.id),
                 });
             }
             if (track.artistId && source) {
@@ -315,7 +325,9 @@ export function useAndroidContextMenu(options: {
             }
             if (
                 auth &&
-                (auth.type === ServerType.NAVIDROME || auth.type === ServerType.SUBSONIC)
+                (auth.type === ServerType.NAVIDROME ||
+                    auth.type === ServerType.SUBSONIC ||
+                    auth.type === ServerType.SAMO)
             ) {
                 menuActions.push({
                     icon: <PlaylistAddGlyph color={colors.text} />,
@@ -323,6 +335,14 @@ export function useAndroidContextMenu(options: {
                     label: 'Add to Playlist',
                     onPress: () => handleOpenAddToPlaylistForCollection(item),
                 });
+                if (contextMenuTarget.kind === 'album') {
+                    menuActions.push({
+                        icon: <PlaylistAddGlyph color={colors.text} />,
+                        id: 'create-collection-playlist',
+                        label: 'Create Playlist',
+                        onPress: () => handleOpenCreatePlaylistForCollection(item),
+                    });
+                }
             }
             if (!suppressDownload) {
                 menuActions.push({
@@ -371,6 +391,8 @@ export function useAndroidContextMenu(options: {
         handleGoToArtistForTrack,
         handleOpenAddToPlaylistForCollection,
         handleOpenAddToPlaylistForSong,
+        handleOpenCreatePlaylistForCollection,
+        handleOpenCreatePlaylistForSong,
         handleOpenBookInfo,
         handleOpenStreamInfo,
         handleStartSongRadio,

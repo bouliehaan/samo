@@ -4,6 +4,7 @@ import { useCallback, type MutableRefObject } from 'react';
 import type { AbsProgressContext } from '../services/abs-progress';
 import { syncAbsProgressImmediate } from '../services/abs-progress';
 import {
+    getAndroidPlaybackStatus,
     pauseAndroidAudio,
     resumeAndroidAudio,
     seekAndroidAudio,
@@ -15,6 +16,8 @@ import {
 } from '../state/playback-store';
 import { getAbsProgressSeconds } from '../utils/abs-progress-math';
 import { clamp } from '../utils/math';
+import { resolvePlaybackResumeItem } from '../utils/playback-recovery';
+import { getResumePositionSeconds, withResumePosition } from '../utils/playback-resume';
 import {
     getActivePlaybackStatus,
     getAdjacentSegmentTargetMs,
@@ -35,6 +38,10 @@ export function useAndroidPlaybackControls(options: {
     absContextRef: MutableRefObject<AbsProgressContext | null>;
     lastPlayedItem: MobilePlayableAudio | null;
     playbackQueueRef: MutableRefObject<null | { index: number; items: MobilePlayableAudio[] }>;
+    playbackSnapshotRef: MutableRefObject<null | {
+        item: MobilePlayableAudio;
+        sessionId: string;
+    }>;
     playQueuedItem: (
         item: MobilePlayableAudio,
         queueItems?: MobilePlayableAudio[],
@@ -42,7 +49,8 @@ export function useAndroidPlaybackControls(options: {
         playOptions?: { shuffled?: boolean },
     ) => Promise<void>;
 }): AndroidPlaybackControls {
-    const { absContextRef, lastPlayedItem, playbackQueueRef, playQueuedItem } = options;
+    const { absContextRef, lastPlayedItem, playbackQueueRef, playbackSnapshotRef, playQueuedItem } =
+        options;
     const { forcePlaybackQueueRender, setIsShuffled } = useAppSessionState();
 
     const handleSeekPlayback = useCallback(async (positionMs: number) => {
@@ -93,14 +101,38 @@ export function useAndroidPlaybackControls(options: {
         }
     }, [absContextRef]);
 
+    const restartPlaybackItem = useCallback(
+        async (item: MobilePlayableAudio) => {
+            const playbackState = getAndroidPlaybackState();
+            const itemToPlay = withResumePosition(
+                item,
+                getResumePositionSeconds(item, playbackState),
+            );
+            const queue = playbackQueueRef.current;
+            const queueIndex =
+                queue?.items.findIndex((candidate) => candidate.id === item.id) ?? -1;
+
+            if (queue && queueIndex >= 0) {
+                await playQueuedItem(itemToPlay, queue.items, queueIndex);
+                return;
+            }
+
+            await playQueuedItem(itemToPlay, [item], 0);
+        },
+        [playbackQueueRef, playQueuedItem],
+    );
+
     const handleTogglePlayback = useCallback(async () => {
         const playbackState = getAndroidPlaybackState();
+        const resumeItem = resolvePlaybackResumeItem(
+            playbackState,
+            playbackSnapshotRef.current?.item,
+            lastPlayedItem,
+        );
 
         if (playbackState.status === 'idle' || playbackState.status === 'error') {
-            const fallback =
-                playbackState.status === 'error' ? playbackState.item : lastPlayedItem;
-            if (fallback) {
-                await playQueuedItem(fallback, [fallback], 0);
+            if (resumeItem) {
+                await restartPlaybackItem(resumeItem);
             }
             return;
         }
@@ -126,6 +158,11 @@ export function useAndroidPlaybackControls(options: {
                 return;
             }
 
+            if (playbackState.status === 'loading') {
+                await restartPlaybackItem(playbackState.item);
+                return;
+            }
+
             if (isLivePlayback(playbackState)) {
                 await playQueuedItem(playbackState.item, [playbackState.item], 0, {
                     shuffled: false,
@@ -133,8 +170,34 @@ export function useAndroidPlaybackControls(options: {
                 return;
             }
 
-            await resumeAndroidAudio();
-            setAndroidPlaybackState({ ...playbackState, status: 'playing' });
+            const event = await resumeAndroidAudio();
+            if (event.status === 'idle') {
+                if (resumeItem) {
+                    await restartPlaybackItem(resumeItem);
+                }
+                return;
+            }
+
+            setAndroidPlaybackState({
+                ...playbackState,
+                bitPerfect: event.bitPerfect ?? playbackState.bitPerfect,
+                durationMs: getPlaybackEventDurationMs(event, playbackState.item),
+                message: event.message ?? playbackState.message,
+                positionMs: event.positionMs ?? playbackState.positionMs,
+                status: getActivePlaybackStatus(event.status, 'playing'),
+            });
+
+            // Native can report idle while JS still shows paused after a failed stream.
+            const statusCheck = await getAndroidPlaybackStatus().catch(() => null);
+            if (
+                statusCheck?.status === 'idle' &&
+                (!statusCheck.sessionId ||
+                    statusCheck.sessionId === playbackSnapshotRef.current?.sessionId)
+            ) {
+                if (resumeItem) {
+                    await restartPlaybackItem(resumeItem);
+                }
+            }
         } catch (error) {
             setAndroidPlaybackState({
                 ...playbackState,
@@ -142,7 +205,7 @@ export function useAndroidPlaybackControls(options: {
                 status: 'error',
             });
         }
-    }, [absContextRef, lastPlayedItem, playQueuedItem]);
+    }, [absContextRef, lastPlayedItem, playbackSnapshotRef, restartPlaybackItem]);
 
     const handleSkipPlayback = useCallback(
         async (offsetSeconds: number) => {

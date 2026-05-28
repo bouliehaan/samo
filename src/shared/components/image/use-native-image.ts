@@ -16,6 +16,47 @@ interface UseNativeImageArgs {
     request?: ImageRequest | null;
 }
 
+const hasCustomFetchOptions = (request: ImageRequest): boolean => {
+    if (request.headers && Object.keys(request.headers).length > 0) {
+        return true;
+    }
+
+    return Boolean(request.credentials && request.credentials !== 'omit');
+};
+
+const canLoadImageDirectly = (request: ImageRequest): boolean => !hasCustomFetchOptions(request);
+
+const canFetchMediaViaMain = (): boolean =>
+    typeof window !== 'undefined' &&
+    Boolean(window.api?.utils?.fetchMedia);
+
+const base64ToBlob = (data: string, contentType: string): Blob => {
+    const binary = atob(data);
+    const bytes = new Uint8Array(binary.length);
+
+    for (let index = 0; index < binary.length; index += 1) {
+        bytes[index] = binary.charCodeAt(index);
+    }
+
+    return new Blob([bytes], { type: contentType });
+};
+
+const fetchImageViaMain = async (
+    request: ImageRequest,
+    signal: AbortSignal,
+): Promise<Blob> => {
+    const result = await window.api.utils.fetchMedia({
+        headers: request.headers,
+        url: request.url,
+    });
+
+    if (signal.aborted) {
+        throw new DOMException('Aborted', 'AbortError');
+    }
+
+    return base64ToBlob(result.data, result.contentType);
+};
+
 export function useNativeImage({
     enabled,
     fetchPriority,
@@ -25,6 +66,7 @@ export function useNativeImage({
     const abortControllerRef = useRef<AbortController | null>(null);
     const loadedRequestSignatureRef = useRef<null | string>(null);
     const objectUrlRef = useRef<null | string>(null);
+    const directUrlRef = useRef<null | string>(null);
     const onFetchErrorRef = useRef(onFetchError);
     const [state, setState] = useState<NativeImageState>({ status: 'idle' });
 
@@ -50,12 +92,12 @@ export function useNativeImage({
         };
 
         const revokeObjectUrl = () => {
-            if (!objectUrlRef.current) {
-                return;
+            if (objectUrlRef.current) {
+                URL.revokeObjectURL(objectUrlRef.current);
+                objectUrlRef.current = null;
             }
 
-            URL.revokeObjectURL(objectUrlRef.current);
-            objectUrlRef.current = null;
+            directUrlRef.current = null;
             loadedRequestSignatureRef.current = null;
         };
 
@@ -68,16 +110,18 @@ export function useNativeImage({
 
         if (!enabled) {
             abortCurrentRequest();
-            setState((currentState) =>
-                currentState.displaySrc
-                    ? { ...currentState, status: 'loaded' }
+            const cachedSrc = objectUrlRef.current ?? directUrlRef.current;
+            setState(
+                cachedSrc
+                    ? { displaySrc: cachedSrc, status: 'loaded' }
                     : { status: 'idle' },
             );
             return;
         }
 
-        if (loadedRequestSignatureRef.current === requestSignature && objectUrlRef.current) {
-            setState({ displaySrc: objectUrlRef.current, status: 'loaded' });
+        const cachedSrc = objectUrlRef.current ?? directUrlRef.current;
+        if (loadedRequestSignatureRef.current === requestSignature && cachedSrc) {
+            setState({ displaySrc: cachedSrc, status: 'loaded' });
             return;
         }
 
@@ -90,23 +134,40 @@ export function useNativeImage({
 
         void (async () => {
             try {
-                const init = {
-                    credentials: request.credentials,
-                    headers: request.headers,
-                    signal: abortController.signal,
-                } as RequestInit & { priority?: FetchPriority };
+                if (canLoadImageDirectly(request)) {
+                    if (abortController.signal.aborted) {
+                        return;
+                    }
 
-                if (fetchPriority) {
-                    init.priority = fetchPriority;
+                    directUrlRef.current = request.url;
+                    loadedRequestSignatureRef.current = requestSignature;
+                    setState({ displaySrc: request.url, status: 'loaded' });
+                    return;
                 }
 
-                const response = await fetch(request.url, init);
+                let blob: Blob;
 
-                if (!response.ok) {
-                    throw new Error(`Failed to load image: ${response.status}`);
+                if (canFetchMediaViaMain()) {
+                    blob = await fetchImageViaMain(request, abortController.signal);
+                } else {
+                    const init = {
+                        credentials: request.credentials,
+                        headers: request.headers,
+                        signal: abortController.signal,
+                    } as RequestInit & { priority?: FetchPriority };
+
+                    if (fetchPriority) {
+                        init.priority = fetchPriority;
+                    }
+
+                    const response = await fetch(request.url, init);
+
+                    if (!response.ok) {
+                        throw new Error(`Failed to load image: ${response.status}`);
+                    }
+
+                    blob = await response.blob();
                 }
-
-                const blob = await response.blob();
 
                 if (abortController.signal.aborted) {
                     return;

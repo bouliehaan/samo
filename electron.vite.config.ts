@@ -5,6 +5,7 @@ import dynamicImportPlugin from 'vite-plugin-dynamic-import';
 import { ViteEjsPlugin } from 'vite-plugin-ejs';
 
 import { createReactPlugin } from './vite.react-plugin';
+import { samoCoreAliases } from './vite.samo-core-aliases';
 
 const currentOSEnv = process.platform;
 const electronRendererTarget = 'chrome87';
@@ -31,11 +32,12 @@ const config: UserConfig = {
             }),
         ],
         resolve: {
-            alias: {
-                '/@/main': resolve('src/main'),
-                '/@/shared': resolve('src/shared'),
-                '@samo/core': resolve('packages/core/src'),
-            },
+            alias: [
+                ...samoCoreAliases,
+                { find: '/@/main', replacement: resolve('src/main') },
+                { find: '/@/shared', replacement: resolve('src/shared') },
+            ],
+            extensions: ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.json'],
         },
     },
     preload: {
@@ -44,11 +46,12 @@ const config: UserConfig = {
         },
         plugins: [externalizeDepsPlugin()],
         resolve: {
-            alias: {
-                '/@/preload': resolve('src/preload'),
-                '/@/shared': resolve('src/shared'),
-                '@samo/core': resolve('packages/core/src'),
-            },
+            alias: [
+                ...samoCoreAliases,
+                { find: '/@/preload', replacement: resolve('src/preload') },
+                { find: '/@/shared', replacement: resolve('src/shared') },
+            ],
+            extensions: ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.json'],
         },
     },
     renderer: {
@@ -69,13 +72,14 @@ const config: UserConfig = {
         },
         plugins: [createReactPlugin(), ViteEjsPlugin({ web: false })],
         resolve: {
-            alias: {
-                '/@/i18n': resolve('src/i18n'),
-                '/@/remote': resolve('src/remote'),
-                '/@/renderer': resolve('src/renderer'),
-                '/@/shared': resolve('src/shared'),
-                '@samo/core': resolve('packages/core/src'),
-            },
+            alias: [
+                ...samoCoreAliases,
+                { find: '/@/i18n', replacement: resolve('src/i18n') },
+                { find: '/@/remote', replacement: resolve('src/remote') },
+                { find: '/@/renderer', replacement: resolve('src/renderer') },
+                { find: '/@/shared', replacement: resolve('src/shared') },
+            ],
+            extensions: ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.json'],
         },
     },
 };

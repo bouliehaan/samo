@@ -70,9 +70,12 @@ export const useSendScrobble = (options?: MutationOptions) => {
                     queryKey: ['home', 'recentlyPlayed'],
                 });
 
-                // Invalidate most played carousel on home route
+                // Invalidate most played / unplayed carousels on home route
                 queryClient.invalidateQueries({
                     queryKey: ['home', 'mostPlayed'],
+                });
+                queryClient.invalidateQueries({
+                    queryKey: ['home', 'unplayed'],
                 });
 
                 // Invalidate album artist top songs

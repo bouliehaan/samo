@@ -37,6 +37,16 @@ const passwordSet = async (password: string, server: string): Promise<boolean> =
     return ipcRenderer.invoke('password-set', password, server);
 };
 
+const authPersistGet = async (name: string): Promise<null | string> =>
+    ipcRenderer.invoke('auth-persist-get', name);
+
+const authPersistSet = async (name: string, value: string): Promise<void> =>
+    ipcRenderer.invoke('auth-persist-set', name, value);
+
+const authPersistRemove = (name: string) => {
+    ipcRenderer.send('auth-persist-remove', name);
+};
+
 const setZoomFactor = (zoomFactor: number) => {
     webFrame.setZoomFactor(zoomFactor / 100);
 };
@@ -56,10 +66,14 @@ const openFileSelector = async (options?: OpenDialogOptions) => {
 
 export const toServerType = (value?: string): null | string => {
     switch (value?.toLowerCase()) {
+        case 'audiobookshelf':
+            return 'audiobookshelf';
         case 'jellyfin':
             return 'jellyfin';
         case 'navidrome':
             return 'navidrome';
+        case 'samo':
+            return 'samo';
         case 'subsonic':
             return 'subsonic';
         default:
@@ -83,6 +97,9 @@ const env = {
 };
 
 export const localSettings = {
+    authPersistGet,
+    authPersistRemove,
+    authPersistSet,
     disableMediaKeys,
     enableMediaKeys,
     env,

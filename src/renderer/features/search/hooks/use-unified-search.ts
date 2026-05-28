@@ -3,15 +3,21 @@ import { useMemo } from 'react';
 
 import { api } from '/@/renderer/api';
 import { audiobookshelfController } from '/@/renderer/api/audiobookshelf/audiobookshelf-controller';
+import {
+    isSamoLongFormServer,
+    listSamoAudiobookLibraryItems,
+    listSamoPodcastLibraryItems,
+} from '/@/renderer/api/samo/samo-long-form';
 import { queryKeys } from '/@/renderer/api/query-keys';
 import { playlistsQueries } from '/@/renderer/features/playlists/api/playlists-api';
 import { searchQueries } from '/@/renderer/features/search/api/search-api';
 import {
     buildNeedleContext,
     NeedleContext,
+    normalize,
     scoreCandidate,
 } from '/@/renderer/features/search/utils/relevance';
-import { useAudiobookshelfServer, useCurrentServer } from '/@/renderer/store';
+import { useLongFormMediaServer, useCurrentServer } from '/@/renderer/store';
 import {
     AudiobookshelfLibraryItem,
     AudiobookshelfLibraryItemsResponse,
@@ -168,8 +174,19 @@ const rankAlbums = (albums: Album[], ctx: NeedleContext): RankedAlbum[] =>
         .sort((a, b) => b.score - a.score || a.album.name.localeCompare(b.album.name))
         .slice(0, RESULT_LIMIT_PER_GROUP);
 
-const rankArtists = (artists: AlbumArtist[], ctx: NeedleContext): RankedArtist[] =>
-    artists
+/** When the library has an exact artist name match, hide "Artist & …" collab rows. */
+const preferPrimaryArtistMatches = (ranked: RankedArtist[], needle: string): RankedArtist[] => {
+    const exactMatches = ranked.filter((entry) => normalize(entry.artist.name) === needle);
+    if (exactMatches.length > 0) {
+        return exactMatches;
+    }
+
+    const collaborationPattern = /\s(?:&|feat\.?|ft\.?|vs\.?)\s/i;
+    return ranked.filter((entry) => !collaborationPattern.test(entry.artist.name));
+};
+
+const rankArtists = (artists: AlbumArtist[], ctx: NeedleContext): RankedArtist[] => {
+    const ranked = artists
         .map<RankedArtist>((artist) => ({
             artist,
             kind: 'artist',
@@ -178,8 +195,10 @@ const rankArtists = (artists: AlbumArtist[], ctx: NeedleContext): RankedArtist[]
                 entityBumpFor('artists', ctx),
         }))
         .filter((entry) => entry.score > 0)
-        .sort((a, b) => b.score - a.score || a.artist.name.localeCompare(b.artist.name))
-        .slice(0, RESULT_LIMIT_PER_GROUP);
+        .sort((a, b) => b.score - a.score || a.artist.name.localeCompare(b.artist.name));
+
+    return preferPrimaryArtistMatches(ranked, ctx.needle).slice(0, RESULT_LIMIT_PER_GROUP);
+};
 
 const rankPlaylists = (playlists: Playlist[], ctx: NeedleContext): RankedPlaylist[] =>
     playlists
@@ -344,7 +363,9 @@ const combineAudiobookshelfItemsQueries = (
  */
 export const useUnifiedSearch = (rawQuery: string): UnifiedSearchState => {
     const musicServer = useCurrentServer();
-    const audiobookshelfServer = useAudiobookshelfServer();
+    const longFormMediaServer = useLongFormMediaServer();
+    const isSamoLongForm = isSamoLongFormServer(longFormMediaServer);
+    const audiobookshelfServer = isSamoLongForm ? null : longFormMediaServer;
     const ctx = useMemo(() => buildNeedleContext(rawQuery), [rawQuery]);
     const enabled = ctx.needle.length > 0;
 
@@ -412,24 +433,46 @@ export const useUnifiedSearch = (rawQuery: string): UnifiedSearchState => {
         })),
     });
 
-    const audiobookshelfItems = audiobookshelfItemsQueryState.items;
+    const samoLongFormItemsQuery = useQuery({
+        enabled: enabled && isSamoLongForm && Boolean(longFormMediaServer),
+        gcTime: ABS_LIBRARY_GC_TIME_MS,
+        queryFn: async () => {
+            const [audiobooks, podcasts] = await Promise.all([
+                listSamoAudiobookLibraryItems(longFormMediaServer!),
+                listSamoPodcastLibraryItems(longFormMediaServer!),
+            ]);
+            return [...audiobooks, ...podcasts];
+        },
+        queryKey: ['samo', 'search-long-form', longFormMediaServer?.id],
+        staleTime: ABS_LIBRARY_STALE_TIME_MS,
+    });
+
+    const longFormItems = isSamoLongForm
+        ? (samoLongFormItemsQuery.data ?? [])
+        : audiobookshelfItemsQueryState.items;
 
     const hasMusicServer = Boolean(musicServer?.id);
-    const hasAudiobookshelfServer = Boolean(audiobookshelfServer?.id);
+    const hasLongFormServer = Boolean(longFormMediaServer?.id);
 
     const isLoading =
         enabled &&
         ((hasMusicServer && musicSearchQuery.isPending) ||
             (hasMusicServer && playlistsQuery.isPending) ||
             (hasMusicServer && radioStationsQuery.isPending) ||
-            (hasAudiobookshelfServer && audiobookshelfLibrariesQuery.isPending) ||
-            (hasAudiobookshelfServer && audiobookshelfItemsQueryState.isPending));
+            (hasLongFormServer &&
+                !isSamoLongForm &&
+                audiobookshelfLibrariesQuery.isPending) ||
+            (hasLongFormServer &&
+                !isSamoLongForm &&
+                audiobookshelfItemsQueryState.isPending) ||
+            (hasLongFormServer && isSamoLongForm && samoLongFormItemsQuery.isPending));
 
     const sourceErrors = useMemo<UnifiedSearchSourceErrors>(
         () => ({
             abs:
                 getErrorMessage(audiobookshelfLibrariesQuery.error) ??
                 audiobookshelfItemsQueryState.error ??
+                getErrorMessage(samoLongFormItemsQuery.error) ??
                 undefined,
             music: getErrorMessage(musicSearchQuery.error),
             playlists: getErrorMessage(playlistsQuery.error),
@@ -438,6 +481,7 @@ export const useUnifiedSearch = (rawQuery: string): UnifiedSearchState => {
         [
             audiobookshelfItemsQueryState.error,
             audiobookshelfLibrariesQuery.error,
+            samoLongFormItemsQuery.error,
             musicSearchQuery.error,
             playlistsQuery.error,
             radioStationsQuery.error,
@@ -450,10 +494,10 @@ export const useUnifiedSearch = (rawQuery: string): UnifiedSearchState => {
         return {
             albums: rankAlbums(musicSearchQuery.data?.albums ?? [], ctx),
             artists: rankArtists(musicSearchQuery.data?.albumArtists ?? [], ctx),
-            audiobooks: rankAudiobooks(audiobookshelfItems, ctx),
-            episodes: rankPodcastEpisodes(audiobookshelfItems, ctx),
+            audiobooks: rankAudiobooks(longFormItems, ctx),
+            episodes: rankPodcastEpisodes(longFormItems, ctx),
             playlists: rankPlaylists(playlistsQuery.data?.items ?? [], ctx),
-            podcastShows: rankPodcastShows(audiobookshelfItems, ctx),
+            podcastShows: rankPodcastShows(longFormItems, ctx),
             radioStations: rankRadio(radioStationsQuery.data ?? [], ctx),
             songs: rankSongs(musicSearchQuery.data?.songs ?? [], ctx),
         };
@@ -463,7 +507,7 @@ export const useUnifiedSearch = (rawQuery: string): UnifiedSearchState => {
         musicSearchQuery.data,
         playlistsQuery.data,
         radioStationsQuery.data,
-        audiobookshelfItems,
+        longFormItems,
     ]);
 
     const groupOrder = useMemo(() => buildGroupOrder(results), [results]);

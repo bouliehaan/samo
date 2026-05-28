@@ -30,7 +30,8 @@ import {
     buildSubsonicMusicPlayback,
     type MobilePlayableAudio,
 } from './mobile-playback';
-import { type MobileQualityProfile } from './mobile-home';
+import { samoAlbumQualityProfile, type MobileQualityProfile } from './mobile-home';
+import { propagateSearchAlbumQualityFromSongs } from './mobile-quality-profile';
 import { annotateSubsonicHiResCollections } from './mobile-subsonic-quality';
 
 export enum MobileSearchItemType {
@@ -676,30 +677,58 @@ const loadSubsonicSearch = async (
     const radioResponse =
         radioResult.status === 'fulfilled' ? radioResult.value['subsonic-response'] : undefined;
     const source = getMobileContentSource(authentication);
-    const albumItems: MobileSearchItem[] = await annotateSubsonicHiResCollections(
-        authentication,
-        fetcher,
-        'album',
-        (response.searchResult3?.album ?? []).flatMap((album) => {
-            const id = album.id?.toString();
-            const title = album.name ?? album.title;
+    const songItems: MobileSearchItem[] = mergedSongs.flatMap((song) => {
+        const id = song.id?.toString();
+        const artworkUrl = subsonicCoverArtUrl(authentication, song.coverArt);
+        const playback = buildSubsonicMusicPlayback(authentication, song, artworkUrl);
 
-            if (!id || !title) {
-                return [];
-            }
+        if (!id || !song.title) {
+            return [];
+        }
 
-            return {
-                artworkUrl: subsonicCoverArtUrl(authentication, album.coverArt, album.id),
-                id,
-                lastPlayedAt: parseIsoTimestamp(album.played),
-                playCount: album.playCount,
-                source,
-                subtitle: album.artist ?? (album.year ? String(album.year) : undefined),
-                title,
-                type: MobileSearchItemType.ALBUM,
-            };
-        }),
-        qualityScanLimit,
+        return {
+            album: song.album,
+            albumId: song.albumId?.toString() ?? song.parent?.toString(),
+            artist: song.artist,
+            artistId: song.artistId?.toString(),
+            artworkUrl,
+            id,
+            lastPlayedAt: parseIsoTimestamp(song.played),
+            playback: playback ?? undefined,
+            playCount: song.playCount,
+            source: getMobileContentSource(authentication),
+            subtitle: [song.artist, song.album].filter(Boolean).join(' - '),
+            title: song.title,
+            type: MobileSearchItemType.SONG,
+        };
+    });
+    const albumItems: MobileSearchItem[] = propagateSearchAlbumQualityFromSongs(
+        await annotateSubsonicHiResCollections(
+            authentication,
+            fetcher,
+            'album',
+            (response.searchResult3?.album ?? []).flatMap((album) => {
+                const id = album.id?.toString();
+                const title = album.name ?? album.title;
+
+                if (!id || !title) {
+                    return [];
+                }
+
+                return {
+                    artworkUrl: subsonicCoverArtUrl(authentication, album.coverArt, album.id),
+                    id,
+                    lastPlayedAt: parseIsoTimestamp(album.played),
+                    playCount: album.playCount,
+                    source,
+                    subtitle: album.artist ?? (album.year ? String(album.year) : undefined),
+                    title,
+                    type: MobileSearchItemType.ALBUM,
+                };
+            }),
+            qualityScanLimit,
+        ),
+        songItems,
     );
     // Playlists never carry a collection-level quality badge — they're mixed
     // by definition. Skip the hi-res scan entirely.
@@ -732,31 +761,7 @@ const loadSubsonicSearch = async (
         [
             {
                 id: MobileSearchSectionId.SONGS,
-                items: mergedSongs.flatMap((song) => {
-                    const id = song.id?.toString();
-                    const artworkUrl = subsonicCoverArtUrl(authentication, song.coverArt);
-                    const playback = buildSubsonicMusicPlayback(authentication, song, artworkUrl);
-
-                    if (!id || !song.title) {
-                        return [];
-                    }
-
-                    return {
-                        album: song.album,
-                        albumId: song.albumId?.toString() ?? song.parent?.toString(),
-                        artist: song.artist,
-                        artistId: song.artistId?.toString(),
-                        artworkUrl,
-                        id,
-                        lastPlayedAt: parseIsoTimestamp(song.played),
-                        playback: playback ?? undefined,
-                        playCount: song.playCount,
-                        source: getMobileContentSource(authentication),
-                        subtitle: [song.artist, song.album].filter(Boolean).join(' - '),
-                        title: song.title,
-                        type: MobileSearchItemType.SONG,
-                    };
-                }),
+                items: songItems,
                 title: 'Songs',
             },
             {
@@ -832,13 +837,8 @@ const samoAlbumToSearchItem = (
         artworkImageId: pickSamoImageId(album.images),
         artworkUrl: resolveSamoAlbumArtworkUrl(authentication, album, streamToken),
         id: album.id,
-        qualityProfile:
-            album.primaryAudioFile?.bitDepth && album.primaryAudioFile.sampleRate
-                ? {
-                      bitDepth: album.primaryAudioFile.bitDepth,
-                      sampleRate: album.primaryAudioFile.sampleRate,
-                  }
-                : undefined,
+        qualityProfile: samoAlbumQualityProfile(album),
+        isHiRes: album.hiRes || undefined,
         source,
         subtitle: album.displayArtist ?? album.albumArtistNames?.filter(Boolean).join(', '),
         title: album.title,
@@ -972,24 +972,26 @@ const loadSamoSearch = async (
         });
     }
 
-    const albums =
+    const songs =
+        musicResult.status === 'fulfilled'
+            ? (musicResult.value.tracks ?? []).flatMap((track) => {
+                  const item = samoTrackToSearchItem(authentication, track, streamToken, source);
+                  return item ? [item] : [];
+              })
+            : [];
+    const albums = propagateSearchAlbumQualityFromSongs(
         musicResult.status === 'fulfilled'
             ? (musicResult.value.albums ?? []).flatMap((album) => {
                   const item = samoAlbumToSearchItem(authentication, album, streamToken, source);
                   return item ? [item] : [];
               })
-            : [];
+            : [],
+        songs,
+    );
     const artists =
         musicResult.status === 'fulfilled'
             ? (musicResult.value.artists ?? []).flatMap((artist) => {
                   const item = samoArtistToSearchItem(authentication, artist, streamToken, source);
-                  return item ? [item] : [];
-              })
-            : [];
-    const songs =
-        musicResult.status === 'fulfilled'
-            ? (musicResult.value.tracks ?? []).flatMap((track) => {
-                  const item = samoTrackToSearchItem(authentication, track, streamToken, source);
                   return item ? [item] : [];
               })
             : [];

@@ -48,6 +48,45 @@ import { Play } from '/@/shared/types/types';
 
 const SHELF_LIMIT = 8;
 const LIST_LIMIT = 10;
+const HOME_SONG_POOL = 500;
+const UNPLAYED_LIMIT = 8;
+
+const shuffleSongs = <T,>(items: T[]): T[] => {
+    const copy = [...items];
+    for (let index = copy.length - 1; index > 0; index -= 1) {
+        const swapIndex = Math.floor(Math.random() * (index + 1));
+        [copy[index], copy[swapIndex]] = [copy[swapIndex], copy[index]];
+    }
+    return copy;
+};
+
+const isUnplayedSong = (song: Song) => (song.playCount ?? 0) === 0;
+
+const pickMostPlayedSongs = (songs: Song[], limit: number) =>
+    songs
+        .filter((song) => (song.playCount ?? 0) > 0)
+        .sort(
+            (left, right) =>
+                (right.playCount ?? 0) - (left.playCount ?? 0) ||
+                left.name.localeCompare(right.name, undefined, { sensitivity: 'base' }),
+        )
+        .slice(0, limit);
+
+const pickDiscoveryUnplayedSongs = (songs: Song[], limit: number) => {
+    const unplayed = songs.filter(isUnplayedSong);
+    if (!unplayed.length) return [];
+
+    const candidates = [...unplayed]
+        .sort((left, right) => Date.parse(right.createdAt ?? '') - Date.parse(left.createdAt ?? ''))
+        .slice(0, Math.max(limit * 4, 32));
+
+    return shuffleSongs(candidates).slice(0, limit);
+};
+
+const getUnplayedDiscoverySubtitle = (song: Song) => {
+    if (song.createdAt) return `Added ${formatDateRelative(song.createdAt)}`;
+    return 'Never played';
+};
 
 const HomeHeader = ({ title, to }: { title: string; to?: string }) => (
     <div className={styles.sectionHeader}>
@@ -271,22 +310,16 @@ const PlaylistCard = ({
             tabIndex={0}
         >
             <div className={styles.mediaArt}>
-                {playlist.imageId || playlist.imageUrl ? (
-                    <ItemImage
+                <ItemImage
                         alt={playlist.name}
                         enableViewport={false}
-                        id={playlist.imageId}
+                        id={playlist.imageId ?? playlist.id}
                         imageContainerProps={{ className: styles.imageContainer }}
                         itemType={LibraryItem.PLAYLIST}
                         serverId={playlist._serverId}
                         src={playlist.imageUrl}
                         type="itemCard"
                     />
-                ) : (
-                    <div className={styles.playlistPlaceholder}>
-                        <Icon icon="playlist" size="34%" />
-                    </div>
-                )}
                 <span className={styles.badge}>
                     <Icon icon="playlist" size="0.78rem" />
                     Playlist
@@ -479,7 +512,13 @@ export const HomeFavoriteTracks = () => {
     );
 };
 
-const TrackRow = ({ song }: { song: Song }) => {
+const TrackRow = ({
+    song,
+    subtitle,
+}: {
+    song: Song;
+    subtitle?: string;
+}) => {
     const player = usePlayer();
 
     return (
@@ -517,7 +556,7 @@ const TrackRow = ({ song }: { song: Song }) => {
                     {song.name}
                 </Text>
                 <Text className={styles.subtitle} isMuted size="xs">
-                    {getSongSubtitle(song)}
+                    {subtitle ?? getSongSubtitle(song)}
                 </Text>
             </div>
             <Text className={styles.trackExtra} size="xs">
@@ -526,6 +565,10 @@ const TrackRow = ({ song }: { song: Song }) => {
         </button>
     );
 };
+
+const DiscoveryTrackRow = ({ song }: { song: Song }) => (
+    <TrackRow song={song} subtitle={`${getSongSubtitle(song)} · ${getUnplayedDiscoverySubtitle(song)}`} />
+);
 
 export const HomeRediscoverySection = () => {
     const server = useCurrentServer();
@@ -714,9 +757,67 @@ const RediscoverySupport = ({ item }: { item: Album | Song }) => {
     );
 };
 
+const useHomeMostPlayedSongs = () => {
+    const serverId = useCurrentServerId();
+    const server = useCurrentServer();
+
+    return useQuery({
+        enabled: Boolean(serverId),
+        queryFn: async ({ signal }) => {
+            if (server?.type === ServerType.JELLYFIN) {
+                const response = await api.controller.getTopSongs({
+                    apiClientProps: { serverId, signal },
+                    query: {
+                        artist: '',
+                        artistId: '',
+                        limit: LIST_LIMIT,
+                        type: 'personal',
+                    },
+                });
+                return pickMostPlayedSongs(response.items ?? [], LIST_LIMIT);
+            }
+
+            const response = await api.controller.getSongList({
+                apiClientProps: { serverId, signal },
+                query: {
+                    limit: HOME_SONG_POOL,
+                    sortBy: SongListSort.PLAY_COUNT,
+                    sortOrder: SortOrder.DESC,
+                    startIndex: 0,
+                },
+            });
+
+            return pickMostPlayedSongs(response.items ?? [], LIST_LIMIT);
+        },
+        queryKey: ['home', 'mostPlayed', serverId],
+    });
+};
+
+const useHomeUnplayedSongs = () => {
+    const serverId = useCurrentServerId();
+
+    return useQuery({
+        enabled: Boolean(serverId),
+        queryFn: async ({ signal }) => {
+            const response = await api.controller.getSongList({
+                apiClientProps: { serverId, signal },
+                query: {
+                    limit: HOME_SONG_POOL,
+                    sortBy: SongListSort.RECENTLY_ADDED,
+                    sortOrder: SortOrder.DESC,
+                    startIndex: 0,
+                },
+            });
+
+            return pickDiscoveryUnplayedSongs(response.items ?? [], UNPLAYED_LIMIT);
+        },
+        queryKey: ['home', 'unplayed', serverId],
+    });
+};
+
 export const HomeUnplayedSection = () => {
-    const songsQuery = useSongs('unplayed', SongListSort.PLAY_COUNT, SortOrder.ASC, 8);
-    const songs = (songsQuery.data?.items ?? []).filter((song) => !song.playCount);
+    const songsQuery = useHomeUnplayedSongs();
+    const songs = songsQuery.data ?? [];
 
     if (!songs.length) return null;
 
@@ -725,7 +826,7 @@ export const HomeUnplayedSection = () => {
             <HomeHeader title="Unplayed in Your Library" to={AppRoute.LIBRARY_SONGS} />
             <div className={styles.discoveryGrid}>
                 {songs.map((song) => (
-                    <TrackRow key={song.id} song={song} />
+                    <DiscoveryTrackRow key={song.id} song={song} />
                 ))}
             </div>
         </section>
@@ -733,8 +834,8 @@ export const HomeUnplayedSection = () => {
 };
 
 export const HomeMostPlayedSection = () => {
-    const songsQuery = useSongs('most-played', SongListSort.PLAY_COUNT, SortOrder.DESC, LIST_LIMIT);
-    const songs = songsQuery.data?.items ?? [];
+    const songsQuery = useHomeMostPlayedSongs();
+    const songs = songsQuery.data ?? [];
 
     if (!songs.length) return null;
 

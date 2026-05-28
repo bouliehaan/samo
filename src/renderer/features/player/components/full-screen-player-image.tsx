@@ -15,11 +15,14 @@ import styles from './full-screen-player-image.module.css';
 import { useItemImageUrl } from '/@/renderer/components/item-image/item-image';
 import { QualityBadge } from '/@/renderer/components/quality-badge/quality-badge';
 import { AudioPathBadge } from '/@/renderer/features/player/components/audio-path-badge';
+import { LongFormPlayerArtwork } from '/@/renderer/features/player/components/long-form-player-artwork';
 import {
     useIsRadioActive,
     useRadioPlayer,
 } from '/@/renderer/features/radio/hooks/use-radio-player';
 import { useNowPlaying } from '/@/renderer/hooks/use-now-playing';
+import { useAudiobookItem, useAudiobookServer } from '/@/renderer/store/audiobook.store';
+import { usePodcastItem, usePodcastServer } from '/@/renderer/store/podcast.store';
 import { AppRoute } from '/@/renderer/router/routes';
 import {
     useGeneralSettings,
@@ -127,6 +130,10 @@ export const FullScreenPlayerImage = () => {
     const playbackType = usePlaybackType();
     const playbackSource = usePlaybackSource();
     const nowPlaying = useNowPlaying();
+    const audiobookItem = useAudiobookItem();
+    const audiobookServer = useAudiobookServer();
+    const podcastItem = usePodcastItem();
+    const podcastServer = usePodcastServer();
 
     const isRadioMode = playbackSource === 'radio' || (isRadioActive && isRadioPlaying);
     const isAudiobookMode = playbackSource === 'audiobook';
@@ -282,7 +289,26 @@ export const FullScreenPlayerImage = () => {
                     />
                 ) : null}
                 <AnimatePresence initial={false} mode="sync">
-                    {isNonMusicMode && (
+                    {isLongFormMode && (
+                        <motion.div
+                            animate="open"
+                            className="full-screen-player-image"
+                            custom={{ isOpen: true }}
+                            exit="closed"
+                            initial="closed"
+                            key={`${nowPlaying.source}-${nowPlaying.title}-${audiobookItem?.id ?? podcastItem?.id ?? 'none'}`}
+                            variants={imageVariants}
+                        >
+                            <LongFormPlayerArtwork
+                                alt={nowPlaying.title}
+                                className={styles.image}
+                                fallbackIcon={isPodcastMode ? 'microphone' : 'metadata'}
+                                item={isPodcastMode ? podcastItem : audiobookItem}
+                                server={isPodcastMode ? podcastServer : audiobookServer}
+                            />
+                        </motion.div>
+                    )}
+                    {isRadioMode && (
                         <ImageWithPlaceholder
                             animate="open"
                             className="full-screen-player-image"
@@ -292,7 +318,7 @@ export const FullScreenPlayerImage = () => {
                             initial="closed"
                             key={`${nowPlaying.source}-${nowPlaying.title}-${nowPlaying.artwork ?? 'none'}`}
                             placeholder="var(--theme-colors-foreground-muted)"
-                            placeholderIcon={isPodcastMode || isRadioMode ? 'radio' : 'itemAlbum'}
+                            placeholderIcon="radio"
                             src={nowPlaying.artwork ?? ''}
                             variants={imageVariants}
                         />

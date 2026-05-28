@@ -1,5 +1,7 @@
 import './autodiscover';
 import './audiobookshelf';
+import './media-fetch';
+import './samo';
 import './lyrics';
 import './player';
 import './player-state-broadcast';

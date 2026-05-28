@@ -1,6 +1,7 @@
 import { type MobilePlayableAudio } from '@samo/core/mobile';
 
 import { type AndroidNativePlaybackEvent } from '../services/audio-playback';
+import { type AndroidPlaybackState } from '../types/playback';
 
 const toPlaybackSource = (value?: string): MobilePlayableAudio['source'] | null => {
     if (value === 'audiobook' || value === 'music' || value === 'podcast' || value === 'radio') {
@@ -8,6 +9,19 @@ const toPlaybackSource = (value?: string): MobilePlayableAudio['source'] | null 
     }
 
     return null;
+};
+
+/** Prefer the live session track over persisted last-played (may be another device). */
+export const resolvePlaybackResumeItem = (
+    playbackState: AndroidPlaybackState,
+    sessionItem: MobilePlayableAudio | null | undefined,
+    lastPlayedItem: MobilePlayableAudio | null,
+): MobilePlayableAudio | null => {
+    if (playbackState.status !== 'idle') {
+        return playbackState.item;
+    }
+
+    return sessionItem ?? lastPlayedItem;
 };
 
 export const buildRecoveredPlaybackItem = (

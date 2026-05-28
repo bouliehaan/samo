@@ -1,16 +1,18 @@
 import {
-    adaptNativeFetch,
     authenticateSamo,
     createSamoAudiobookBookmark,
     createSamoMusicPlaylist,
     deleteSamoBookmark,
     deleteSamoMusicPlaylist,
     ensureSamoStreamToken,
+    buildSamoAuthenticatedImageRequest,
     getCachedSamoStreamToken,
-    getFetch,
     getSamoApiUrl,
     getSamoAudiobook,
     getSamoAudiobookCoverUrl,
+    getSamoMusicAlbumCoverUrl,
+    getSamoMusicArtistCoverUrl,
+    getSamoMusicPlaylistCoverUrl,
     getSamoAudiobookStreamUrl,
     getSamoCatalogOverview,
     getSamoExtractedCoverUrl,
@@ -29,6 +31,7 @@ import {
     listSamoBookmarks,
     listSamoInternetRadioStations,
     listSamoMusicAlbums,
+    listSamoMusicAlbumTracks,
     listSamoMusicArtistAlbums,
     listSamoMusicArtists,
     listSamoMusicGenres,
@@ -38,6 +41,7 @@ import {
     listSamoPodcastEpisodes,
     listSamoPodcasts,
     patchSamoPlayback,
+    pickSamoImageId,
     resolveSamoAlbumArtworkUrl,
     resolveSamoArtistArtworkUrl,
     resolveSamoAudiobookArtworkUrl,
@@ -49,7 +53,9 @@ import {
     type SamoPaginatedResponse,
     updateSamoMusicPlaylist,
 } from '@samo/core/server';
+import isElectron from 'is-electron';
 
+import { samoFetch } from '/@/renderer/api/samo/samo-fetch';
 import { samoNormalize } from '/@/shared/api/samo/samo-normalize';
 import {
     type AlbumArtist,
@@ -64,10 +70,12 @@ import {
     ServerType,
     type Song,
     type SongListResponse,
+    SongListSort,
     SortOrder,
 } from '/@/shared/types/domain-types';
 
-const browserFetch = getFetch(adaptNativeFetch(fetch));
+// Electron routes Samo HTTP through main-process IPC to avoid renderer CORS limits.
+const browserFetch = samoFetch;
 
 // Some Samo endpoints page in chunks of 500 to avoid pulling enormous lists
 // at once. Mirrors the Android `mobile-home` collection loaders.
@@ -86,19 +94,15 @@ const samoAuthentication = (server: {
 });
 
 /**
- * Route a renderer-supplied image ID to the correct samo image endpoint
- * based on its prefix. Samo's `imageId` field on normalized entities is
- * either a `cover_*` (extracted cover) or `image_*` (raw catalog image).
- * Entity-level IDs (`album_*`, `artist_*`, `playlist_*`) can't resolve to
- * artwork directly — `/api/v1/music/albums/{id}/cover` returns 404 and
- * there's no equivalent for artists/playlists. Audiobook and podcast IDs
- * resolve through their own cover endpoints.
+ * Route a renderer-supplied image ID to the correct samo image endpoint.
+ * Catalog image ids use `cover_*` / `image_*` prefixes; entity ids are opaque
+ * (e.g. `album-1`) and resolve through cover routes using `itemType`.
  */
 const resolveSamoImageUrlFromQueryId = (
     auth: { credential: string; ndCredential?: string; url: string },
     id: string | undefined,
     streamToken: string | undefined,
-    _itemType: LibraryItem | undefined,
+    itemType: LibraryItem | undefined,
 ): string | undefined => {
     if (!id) return undefined;
     if (id.startsWith('cover_')) {
@@ -110,11 +114,32 @@ const resolveSamoImageUrlFromQueryId = (
     if (id.startsWith('podcast_')) {
         return getSamoPodcastCoverUrl(auth, id, streamToken);
     }
-    // Audiobooks ship as `item_*` IDs in the catalog; the spec's
-    // `audiobook_*` prefix doesn't appear on the wire. Either is wired to
-    // /api/v1/audiobooks/{id}/cover on the server.
     if (id.startsWith('audiobook_') || id.startsWith('item_')) {
         return getSamoAudiobookCoverUrl(auth, id, streamToken);
+    }
+
+    switch (itemType) {
+        case LibraryItem.ALBUM:
+            return getSamoMusicAlbumCoverUrl(auth, id, streamToken);
+        case LibraryItem.ALBUM_ARTIST:
+        case LibraryItem.ARTIST:
+            return getSamoMusicArtistCoverUrl(auth, id, streamToken);
+        case LibraryItem.PLAYLIST:
+            return getSamoMusicPlaylistCoverUrl(auth, id, streamToken);
+        case LibraryItem.SONG:
+            return getSamoMusicAlbumCoverUrl(auth, id, streamToken);
+        default:
+            break;
+    }
+
+    if (id.startsWith('album_')) {
+        return getSamoMusicAlbumCoverUrl(auth, id, streamToken);
+    }
+    if (id.startsWith('playlist_')) {
+        return getSamoMusicPlaylistCoverUrl(auth, id, streamToken);
+    }
+    if (id.startsWith('artist_')) {
+        return getSamoMusicArtistCoverUrl(auth, id, streamToken);
     }
     return undefined;
 };
@@ -149,7 +174,10 @@ const paginate = <T>(
 ): { items: T[]; startIndex: number; total: number } => {
     const total = items.length;
     const offset = startIndex ?? 0;
-    const slice = limit ? items.slice(offset, offset + limit) : items.slice(offset);
+    const slice =
+        limit !== undefined && limit > 0
+            ? items.slice(offset, offset + limit)
+            : items.slice(offset);
     return { items: slice, startIndex: offset, total };
 };
 
@@ -163,7 +191,9 @@ const sortAlbums = (
     switch (sortBy) {
         case 'name' as AlbumListSort:
             list.sort(
-                (a, b) => (a.sortName ?? a.title).localeCompare(b.sortName ?? b.title) * order,
+                (a, b) =>
+                    (a.sortName ?? a.title ?? '').localeCompare(b.sortName ?? b.title ?? '') *
+                    order,
             );
             break;
         case 'playCount' as AlbumListSort:
@@ -178,7 +208,24 @@ const sortAlbums = (
             list.sort((a, b) => {
                 const aTime = Date.parse(a.addedAt ?? '') || 0;
                 const bTime = Date.parse(b.addedAt ?? '') || 0;
-                return (aTime - bTime) * order * -1;
+                return sortOrder === SortOrder.DESC ? bTime - aTime : aTime - bTime;
+            });
+            break;
+        case 'recentlyPlayed' as AlbumListSort:
+            list.sort((a, b) => {
+                const aTime = Date.parse(a.playback?.lastPlayedAt ?? '') || 0;
+                const bTime = Date.parse(b.playback?.lastPlayedAt ?? '') || 0;
+                return sortOrder === SortOrder.DESC ? bTime - aTime : aTime - bTime;
+            });
+            break;
+        case 'favorited' as AlbumListSort:
+            list.sort((a, b) => {
+                const aFav = a.playback?.favorite ? 1 : 0;
+                const bFav = b.playback?.favorite ? 1 : 0;
+                if (aFav !== bFav) {
+                    return (aFav - bFav) * order * -1;
+                }
+                return (a.sortName ?? a.title ?? '').localeCompare(b.sortName ?? b.title ?? '') * order;
             });
             break;
         case 'releaseDate' as AlbumListSort:
@@ -197,17 +244,135 @@ const sortArtists = (
 ): SamoMusicArtist[] => {
     const order = sortOrder === SortOrder.DESC ? -1 : 1;
     return [...items].sort(
-        (a, b) => (a.sortName ?? a.name).localeCompare(b.sortName ?? b.name) * order,
+        (a, b) => (a.sortName ?? a.name ?? '').localeCompare(b.sortName ?? b.name ?? '') * order,
     );
 };
 
 const sortSongs = (items: SamoMusicTrack[]): SamoMusicTrack[] => {
-    return [...items].sort((a, b) => {
-        const aDisc = a.discNumber ?? 1;
-        const bDisc = b.discNumber ?? 1;
-        if (aDisc !== bDisc) return aDisc - bDisc;
-        return (a.trackNumber ?? 0) - (b.trackNumber ?? 0);
-    });
+    return items
+        .map((track, index) => ({ index, track }))
+        .sort((a, b) => {
+            const aDisc = a.track.discNumber ?? 1;
+            const bDisc = b.track.discNumber ?? 1;
+            if (aDisc !== bDisc) return aDisc - bDisc;
+
+            const aNum = a.track.trackNumber;
+            const bNum = b.track.trackNumber;
+            if (aNum != null && bNum != null && aNum !== bNum) {
+                return aNum - bNum;
+            }
+            if (aNum != null && bNum == null) return -1;
+            if (aNum == null && bNum != null) return 1;
+
+            return a.index - b.index;
+        })
+        .map(({ track }) => track);
+};
+
+const sortTracksForList = (
+    items: SamoMusicTrack[],
+    sortBy: SongListSort | undefined,
+    sortOrder: SortOrder | undefined,
+): SamoMusicTrack[] => {
+    const order = sortOrder === SortOrder.DESC ? -1 : 1;
+    const list = [...items];
+    switch (sortBy) {
+        case SongListSort.PLAY_COUNT:
+            list.sort(
+                (a, b) =>
+                    ((a.playback?.playCount ?? 0) - (b.playback?.playCount ?? 0)) * order,
+            );
+            break;
+        case SongListSort.RECENTLY_PLAYED:
+            list.sort((a, b) => {
+                const aTime = Date.parse(a.playback?.lastPlayedAt ?? '') || 0;
+                const bTime = Date.parse(b.playback?.lastPlayedAt ?? '') || 0;
+                return sortOrder === SortOrder.DESC ? bTime - aTime : aTime - bTime;
+            });
+            break;
+        case SongListSort.RECENTLY_ADDED:
+            list.sort((a, b) => {
+                const aTime = Date.parse(a.addedAt ?? '') || 0;
+                const bTime = Date.parse(b.addedAt ?? '') || 0;
+                return sortOrder === SortOrder.DESC ? bTime - aTime : aTime - bTime;
+            });
+            break;
+        case SongListSort.RANDOM:
+            list.sort(() => Math.random() - 0.5);
+            break;
+        case SongListSort.NAME:
+            list.sort(
+                (a, b) =>
+                    (a.sortTitle ?? a.title ?? '').localeCompare(b.sortTitle ?? b.title ?? '') *
+                    order,
+            );
+            break;
+        default:
+            break;
+    }
+    return list;
+};
+
+const samoTrackListSort = (sortBy: SongListSort | undefined): 'az' | 'playCount' | 'recent' | undefined => {
+    switch (sortBy) {
+        case SongListSort.PLAY_COUNT:
+            return 'playCount';
+        case SongListSort.RECENTLY_ADDED:
+            return 'recent';
+        case SongListSort.NAME:
+            return 'az';
+        default:
+            return undefined;
+    }
+};
+
+const samoListDirection = (sortOrder: SortOrder | undefined): 'asc' | 'desc' | undefined =>
+    sortOrder === SortOrder.DESC ? 'desc' : sortOrder === SortOrder.ASC ? 'asc' : undefined;
+
+const fetchSamoAlbumTracks = async (
+    auth: { credential: string; ndCredential?: string; url: string },
+    albumIds: string[],
+): Promise<SamoMusicTrack[]> => {
+    const uniqueAlbumIds = [...new Set(albumIds.filter(Boolean))];
+    if (uniqueAlbumIds.length === 0) {
+        return [];
+    }
+
+    const trackLists = await Promise.all(
+        uniqueAlbumIds.map(async (albumId) => {
+            const response = await listSamoMusicAlbumTracks(browserFetch, auth, albumId, {
+                limit: 500,
+            });
+            const album = await getSamoMusicAlbum(browserFetch, auth, albumId);
+            return samoItemsOf(response).map((track) => ({
+                ...track,
+                albumId: track.albumId ?? album.id,
+                albumTitle: track.albumTitle ?? album.title,
+            }));
+        }),
+    );
+
+    return trackLists.flatMap((tracks) => sortSongs(tracks));
+};
+
+const fetchSamoArtistTracks = async (
+    auth: { credential: string; ndCredential?: string; url: string },
+    artistIds: string[],
+): Promise<SamoMusicTrack[]> => {
+    const uniqueArtistIds = [...new Set(artistIds.filter(Boolean))];
+    if (uniqueArtistIds.length === 0) {
+        return [];
+    }
+
+    const albumLists = await Promise.all(
+        uniqueArtistIds.map((artistId) =>
+            listSamoMusicArtistAlbums(browserFetch, auth, artistId, { limit: 500 }).then(
+                (response) => samoItemsOf(response),
+            ),
+        ),
+    );
+    const albumIds = [...new Set(albumLists.flat().map((album) => album.id))];
+    return fetchSamoAlbumTracks(auth, albumIds);
 };
 
 const fetchAllPages = async <T>(
@@ -250,13 +415,20 @@ export const SamoController: Partial<InternalControllerEndpoint> = {
     },
 
     authenticate: async (url, body) => {
-        const result = await authenticateSamo({
-            deviceLabel: 'Samo desktop',
-            fetch: browserFetch,
-            password: body.password,
-            url,
-            username: body.username,
-        });
+        const result = isElectron()
+            ? await window.api.samo.authenticate({
+                  deviceLabel: 'Samo desktop',
+                  password: body.password,
+                  url,
+                  username: body.username,
+              })
+            : await authenticateSamo({
+                  deviceLabel: 'Samo desktop',
+                  fetch: browserFetch,
+                  password: body.password,
+                  url,
+                  username: body.username,
+              });
         return {
             credential: result.credential,
             isAdmin: result.isAdmin,
@@ -428,8 +600,19 @@ export const SamoController: Partial<InternalControllerEndpoint> = {
         const server = apiClientProps.server;
         if (!server) throw new Error('No server');
         const auth = samoAuthentication(server);
-        const album = await getSamoMusicAlbum(browserFetch, auth, query.id);
-        return samoNormalize.album(album, server);
+        const [album, tracksResponse] = await Promise.all([
+            getSamoMusicAlbum(browserFetch, auth, query.id),
+            listSamoMusicAlbumTracks(browserFetch, auth, query.id, { limit: 500 }),
+        ]);
+        const tracks = sortSongs(samoItemsOf(tracksResponse));
+        const enrichedAlbum = { ...album, tracks };
+        if (!pickSamoImageId(album.images)) {
+            const trackWithArt = tracks.find((track) => pickSamoImageId(track.images));
+            if (trackWithArt?.images?.length) {
+                enrichedAlbum.images = trackWithArt.images;
+            }
+        }
+        return samoNormalize.album(enrichedAlbum, server);
     },
 
     getAlbumList: async ({ apiClientProps, query }): Promise<AlbumListResponse> => {
@@ -438,6 +621,7 @@ export const SamoController: Partial<InternalControllerEndpoint> = {
         const auth = samoAuthentication(server);
 
         let albums: SamoMusicAlbum[];
+        let preserveSortOrder = false;
 
         if (query.favorite) {
             const browse = await getSamoMusicBrowse(browserFetch, auth, 'favorites', {
@@ -446,6 +630,31 @@ export const SamoController: Partial<InternalControllerEndpoint> = {
             albums = samoItemsOf(
                 browse.albums as SamoPaginatedResponse<SamoMusicAlbum> | undefined,
             );
+            preserveSortOrder = true;
+        } else if (
+            query.sortBy === ('recentlyPlayed' as AlbumListSort) &&
+            !query.artistIds?.length &&
+            !query.searchTerm
+        ) {
+            const browse = await getSamoMusicBrowse(browserFetch, auth, 'recently-played', {
+                limit: query.limit ?? 500,
+            });
+            albums = samoItemsOf(
+                browse.albums as SamoPaginatedResponse<SamoMusicAlbum> | undefined,
+            );
+            preserveSortOrder = true;
+        } else if (
+            query.sortBy === ('recentlyAdded' as AlbumListSort) &&
+            !query.artistIds?.length &&
+            !query.searchTerm
+        ) {
+            const browse = await getSamoMusicBrowse(browserFetch, auth, 'recently-added', {
+                limit: query.limit ?? 500,
+            });
+            albums = samoItemsOf(
+                browse.albums as SamoPaginatedResponse<SamoMusicAlbum> | undefined,
+            );
+            preserveSortOrder = true;
         } else if (query.artistIds && query.artistIds.length > 0) {
             const results = await Promise.all(
                 query.artistIds.map((artistId) =>
@@ -464,7 +673,9 @@ export const SamoController: Partial<InternalControllerEndpoint> = {
         let filtered = albums;
         if (query.searchTerm) {
             const needle = query.searchTerm.toLowerCase();
-            filtered = filtered.filter((album) => album.title.toLowerCase().includes(needle));
+            filtered = filtered.filter((album) =>
+                (album.title ?? '').toLowerCase().includes(needle),
+            );
         }
         if (typeof query.minYear === 'number') {
             filtered = filtered.filter(
@@ -477,7 +688,9 @@ export const SamoController: Partial<InternalControllerEndpoint> = {
             );
         }
 
-        const sorted = sortAlbums(filtered, query.sortBy, query.sortOrder);
+        const sorted = preserveSortOrder
+            ? filtered
+            : sortAlbums(filtered, query.sortBy, query.sortOrder);
         const page = paginate(sorted, query.startIndex, query.limit);
 
         return {
@@ -505,8 +718,12 @@ export const SamoController: Partial<InternalControllerEndpoint> = {
         const server = apiClientProps.server;
         if (!server) return [];
         const auth = samoAuthentication(server);
+        const tracksResponse = await listSamoMusicAlbumTracks(browserFetch, auth, query.albumId, {
+            limit: 500,
+        });
         const album = await getSamoMusicAlbum(browserFetch, auth, query.albumId);
-        return (album.tracks ?? []).map((track) =>
+        const tracks = sortSongs(samoItemsOf(tracksResponse));
+        return tracks.map((track) =>
             samoNormalize.song(track, server, { albumName: album.title }),
         );
     },
@@ -559,15 +776,12 @@ export const SamoController: Partial<InternalControllerEndpoint> = {
         const albums = await listSamoMusicArtistAlbums(browserFetch, auth, query.artistId, {
             limit: 5,
         });
-        const tracks: Song[] = [];
-        for (const album of samoItemsOf(albums)) {
-            const fullAlbum = await getSamoMusicAlbum(browserFetch, auth, album.id);
-            for (const track of fullAlbum.tracks ?? []) {
-                tracks.push(samoNormalize.song(track, server, { albumName: fullAlbum.title }));
-            }
-            if (query.count && tracks.length >= query.count) break;
-        }
-        return query.count ? tracks.slice(0, query.count) : tracks;
+        const albumIds = samoItemsOf(albums).map((album) => album.id);
+        const tracks = await fetchSamoAlbumTracks(auth, albumIds);
+        const songs = tracks.map((track) =>
+            samoNormalize.song(track, server, { albumName: track.albumTitle }),
+        );
+        return query.count ? songs.slice(0, query.count) : songs;
     },
 
     getDownloadUrl: ({ apiClientProps, query }) => {
@@ -605,21 +819,22 @@ export const SamoController: Partial<InternalControllerEndpoint> = {
 
     getImageRequest: ({ apiClientProps, query }) => {
         const server = apiClientProps.server;
-        if (!server) return null;
+        if (!server?.url?.trim()) return null;
         const auth = samoAuthentication(server);
         const streamToken = getCachedSamoStreamToken(auth);
         const url = resolveSamoImageUrlFromQueryId(auth, query.id, streamToken, query.itemType);
         if (!url) return null;
 
-        return {
-            cacheKey: ['samo', server.id, query.id, query.size ?? ''].join(':'),
+        return buildSamoAuthenticatedImageRequest(
+            auth,
             url,
-        };
+            ['samo', server.id, query.id, query.size ?? ''].join(':'),
+        );
     },
 
     getImageUrl: ({ apiClientProps, query }) => {
         const server = apiClientProps.server;
-        if (!server) return null;
+        if (!server?.url?.trim()) return null;
         const auth = samoAuthentication(server);
         const streamToken = getCachedSamoStreamToken(auth);
         return resolveSamoImageUrlFromQueryId(auth, query.id, streamToken, query.itemType) ?? null;
@@ -764,17 +979,11 @@ export const SamoController: Partial<InternalControllerEndpoint> = {
         let tracks: SamoMusicTrack[] = [];
 
         if (query.albumIds && query.albumIds.length > 0) {
-            const albumsTracks = await Promise.all(
-                query.albumIds.map((albumId) => getSamoMusicAlbum(browserFetch, auth, albumId)),
-            );
-            tracks = albumsTracks.flatMap((album) =>
-                (album.tracks ?? []).map((track) => ({
-                    ...track,
-                    albumId: track.albumId ?? album.id,
-                    albumTitle: track.albumTitle ?? album.title,
-                })),
-            );
-            tracks = sortSongs(tracks);
+            tracks = await fetchSamoAlbumTracks(auth, query.albumIds);
+        } else if (query.albumArtistIds && query.albumArtistIds.length > 0) {
+            tracks = await fetchSamoArtistTracks(auth, query.albumArtistIds);
+        } else if (query.artistIds && query.artistIds.length > 0) {
+            tracks = await fetchSamoArtistTracks(auth, query.artistIds);
         } else if (query.favorite) {
             const browse = await getSamoMusicBrowse(browserFetch, auth, 'favorites', {
                 limit: query.limit ?? 500,
@@ -784,10 +993,16 @@ export const SamoController: Partial<InternalControllerEndpoint> = {
             );
         } else {
             const response = await listSamoMusicTracks(browserFetch, auth, {
+                direction: samoListDirection(query.sortOrder),
                 limit: query.limit ?? 500,
                 offset: query.startIndex ?? 0,
+                sort: samoTrackListSort(query.sortBy),
             });
             tracks = samoItemsOf(response);
+        }
+
+        if (!samoTrackListSort(query.sortBy)) {
+            tracks = sortTracksForList(tracks, query.sortBy, query.sortOrder);
         }
 
         if (query.searchTerm) {
@@ -813,10 +1028,16 @@ export const SamoController: Partial<InternalControllerEndpoint> = {
         if (!server) return 0;
         const auth = samoAuthentication(server);
         if (query.albumIds && query.albumIds.length > 0) {
-            const albums = await Promise.all(
-                query.albumIds.map((id) => getSamoMusicAlbum(browserFetch, auth, id)),
-            );
-            return albums.reduce((sum, album) => sum + (album.tracks?.length ?? 0), 0);
+            const tracks = await fetchSamoAlbumTracks(auth, query.albumIds);
+            return tracks.length;
+        }
+        if (query.albumArtistIds && query.albumArtistIds.length > 0) {
+            const tracks = await fetchSamoArtistTracks(auth, query.albumArtistIds);
+            return tracks.length;
+        }
+        if (query.artistIds && query.artistIds.length > 0) {
+            const tracks = await fetchSamoArtistTracks(auth, query.artistIds);
+            return tracks.length;
         }
         const response = await listSamoMusicTracks(browserFetch, auth, { limit: 1 });
         return response.total ?? 0;
@@ -846,37 +1067,44 @@ export const SamoController: Partial<InternalControllerEndpoint> = {
     getUserInfo: async ({ apiClientProps }) => {
         const server = apiClientProps.server;
         if (!server) throw new Error('No server');
-        const auth = samoAuthentication(server);
-        try {
-            const response = await browserFetch(getSamoApiUrl(auth, '/users/me'), {
-                headers: { Authorization: `Bearer ${server.credential}` },
-                method: 'GET',
+
+        if (isElectron()) {
+            const body = await window.api.samo.getUserInfo({
+                credential: server.credential,
+                url: server.url,
             });
-            if (!response.ok) {
-                return {
-                    id: server.userId ?? '',
-                    isAdmin: server.isAdmin ?? false,
-                    name: server.username ?? '',
-                };
-            }
-            const body = (await response.json()) as {
-                displayName?: string;
-                id?: string;
-                role?: string;
-                username?: string;
-            };
+
             return {
-                id: body.id ?? server.userId ?? '',
-                isAdmin: body.role === 'admin',
-                name: body.displayName ?? body.username ?? server.username ?? '',
-            };
-        } catch {
-            return {
-                id: server.userId ?? '',
-                isAdmin: server.isAdmin ?? false,
-                name: server.username ?? '',
+                id: body.id || server.userId || '',
+                isAdmin: body.isAdmin,
+                name: body.name || server.username || '',
             };
         }
+
+        const auth = samoAuthentication(server);
+        const response = await browserFetch(getSamoApiUrl(auth, '/users/me'), {
+            headers: { Authorization: `Bearer ${server.credential}` },
+            method: 'GET',
+        });
+        if (!response.ok) {
+            if (response.status === 401 || response.status === 403) {
+                throw new Error(`Unauthorized (${response.status})`);
+            }
+
+            throw new Error(`Failed to reach Samo server (${response.status})`);
+        }
+
+        const body = (await response.json()) as {
+            displayName?: string;
+            id?: string;
+            role?: string;
+            username?: string;
+        };
+        return {
+            id: body.id ?? server.userId ?? '',
+            isAdmin: body.role === 'admin',
+            name: body.displayName ?? body.username ?? server.username ?? '',
+        };
     },
 
     removeFromPlaylist: async ({ apiClientProps, query }) => {

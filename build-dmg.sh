@@ -39,3 +39,4 @@ fi
 echo ""
 echo "To open the dist folder:"
 echo "open \"$PROJECT_ROOT/dist\""
+open dist/mac-arm64

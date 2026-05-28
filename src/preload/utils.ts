@@ -80,10 +80,18 @@ const onUpdateAvailable = (cb: (event: IpcRendererEvent, version: string) => voi
     };
 };
 
+const fetchMedia = (data: {
+    headers?: Record<string, string>;
+    url: string;
+}): Promise<{ contentType: string; data: string }> => {
+    return ipcRenderer.invoke('fetch-media', data);
+};
+
 export const utils = {
     checkForUpdates,
     disableAutoUpdates,
     download,
+    fetchMedia,
     forceGarbageCollection,
     isLinux,
     isMacOS,

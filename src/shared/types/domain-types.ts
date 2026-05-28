@@ -1,3 +1,4 @@
+import type { QualityBadgeProfile } from '@samo/core/audio-quality';
 import { ExplicitStatus, LibraryItem } from '@samo/core/library';
 import {
     type ServerListItemCore,
@@ -176,6 +177,8 @@ export type Album = {
     userFavorite: boolean;
     userRating: null | number;
     version: null | string;
+    /** Populated for Samo albums (and Subsonic annotate sweep) for hi-res badges. */
+    qualityProfile?: QualityBadgeProfile;
 } & { songs?: Song[] };
 
 export type AlbumArtist = {

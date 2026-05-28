@@ -225,9 +225,17 @@ export interface SamoMusicAlbum {
     originalReleaseYear?: number;
     playback?: SamoPlaybackState;
     /**
-     * Single audio file representative of the album, used to surface bit
-     * depth / sample rate without a per-track fetch. Only populated on
-     * detail responses; list responses leave this undefined.
+     * Aggregated from track media files at catalog load so list/search/home
+     * responses can show quality badges without per-track fetches.
+     */
+    maxBitDepth?: number;
+    maxSampleRate?: number;
+    /** Human label such as "24/192" when the album exceeds CD quality. */
+    audioQuality?: string;
+    hiRes?: boolean;
+    /**
+     * Optional single-file representative (not sent on list/search today).
+     * Prefer maxBitDepth / maxSampleRate when present.
      */
     primaryAudioFile?: SamoAudioFile;
     /** Label name (server returns `recordLabel`). */
@@ -629,10 +637,15 @@ export const getSamoApiUrl = (
     path: string,
     query?: Record<string, boolean | number | string | undefined>,
 ) => {
+    const baseUrl = normalizeBaseUrl(server.url);
+    if (!baseUrl) {
+        throw new Error('Samo server URL is not configured');
+    }
+
     const apiPath = path.startsWith('/api/v1')
         ? path
         : `/api/v1${path.startsWith('/') ? path : `/${path}`}`;
-    const url = new URL(apiPath, `${normalizeBaseUrl(server.url)}/`);
+    const url = new URL(apiPath, `${baseUrl}/`);
 
     for (const [key, value] of Object.entries(query ?? {})) {
         if (value === undefined) continue;
@@ -808,7 +821,7 @@ export interface SamoListQuery {
     limit?: number;
     offset?: number;
     signal?: AbortSignal;
-    sort?: 'az' | 'recent';
+    sort?: 'az' | 'playCount' | 'recent';
 }
 
 const listQuery = (input?: SamoListQuery) => {
@@ -1564,6 +1577,12 @@ export const getSamoMusicAlbumCoverUrl = (
     streamToken?: string,
 ) => buildStreamUrl(authentication, `/music/albums/${encodeSamoId(albumId)}/cover`, { streamToken });
 
+export const getSamoMusicPlaylistCoverUrl = (
+    authentication: Pick<ServerAuthenticationResult, 'url'>,
+    playlistId: string,
+    streamToken?: string,
+) => buildStreamUrl(authentication, `/music/playlists/${encodeSamoId(playlistId)}/cover`, { streamToken });
+
 export const getSamoMusicArtistCoverUrl = (
     authentication: Pick<ServerAuthenticationResult, 'url'>,
     artistId: string,
@@ -1581,14 +1600,12 @@ export const getSamoMetadataImageUrl = (
     streamToken?: string,
 ) => buildStreamUrl(authentication, `/media/images/${encodeSamoId(imageId)}/image`, { streamToken });
 
-/**
- * @deprecated Use {@link getSamoMetadataImageUrl} with the image id from metadata.
- */
+/** Stream bytes for an extracted `cover_*` id from `/api/v1/media/covers/{id}/image`. */
 export const getSamoExtractedCoverUrl = (
     authentication: Pick<ServerAuthenticationResult, 'url'>,
     coverId: string,
     streamToken?: string,
-) => getSamoMetadataImageUrl(authentication, coverId, streamToken);
+) => buildStreamUrl(authentication, `/media/covers/${encodeSamoId(coverId)}/image`, { streamToken });
 
 /**
  * @deprecated No standalone route — use {@link getSamoMetadataImageUrl}.
@@ -1703,6 +1720,14 @@ const appendSamoStreamTokenToUrl = (
     }
 };
 
+export const isSamoApiMediaUrl = (url: string): boolean => {
+    try {
+        return new URL(url).pathname.includes('/api/v1/');
+    } catch {
+        return false;
+    }
+};
+
 /** Ensure Samo media/cover URLs include a stream token for unauthenticated image loaders. */
 export const finalizeSamoMediaUrl = (
     authentication: Pick<ServerAuthenticationResult, 'url'>,
@@ -1801,10 +1826,17 @@ export const resolveSamoArtistArtworkUrl = (
 
 export const resolveSamoPlaylistArtworkUrl = (
     authentication: Pick<ServerAuthenticationResult, 'url'>,
-    playlist: Pick<SamoMusicPlaylist, 'images'>,
+    playlist: Pick<SamoMusicPlaylist, 'id' | 'images'>,
     streamToken?: string,
 ): string | undefined => {
-    return resolveSamoImageUrl(authentication, pickImage(playlist.images), streamToken);
+    const fromImage = resolveSamoImageUrl(authentication, pickImage(playlist.images), streamToken);
+    if (fromImage) {
+        return fromImage;
+    }
+    if (playlist.id) {
+        return getSamoMusicPlaylistCoverUrl(authentication, playlist.id, streamToken);
+    }
+    return undefined;
 };
 
 export const resolveSamoStationArtworkUrl = (

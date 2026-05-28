@@ -118,7 +118,7 @@ export const AddServerForm = ({
     const focusTrapRef = useFocusTrap(true);
     const urlInputRef = useRef<HTMLInputElement>(null);
     const [isLoading, setIsLoading] = useState(false);
-    const { addServer, setCurrentServer } = useAuthStoreActions();
+    const { addServer, ensureActiveServers, setCurrentServer } = useAuthStoreActions();
     const serverList = useServerList();
     const { servers: discovered } = useAutodiscovery();
     const configuredServerUrl = localSettings ? localSettings.env.SERVER_URL : window.SERVER_URL;
@@ -319,6 +319,8 @@ export const AddServerForm = ({
             if (serverItem.type !== ServerType.AUDIOBOOKSHELF) {
                 setCurrentServer(serverItem);
             }
+
+            ensureActiveServers();
             void queryClient.invalidateQueries({ queryKey: ['home'] });
             void queryClient.invalidateQueries({ queryKey: ['audiobookshelf'] });
             void queryClient.invalidateQueries({ queryKey: ['search'] });

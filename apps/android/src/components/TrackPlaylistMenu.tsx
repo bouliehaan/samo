@@ -14,12 +14,16 @@ import { styles } from '../theme/styles';
 import { colors } from '../theme/tokens';
 import { getContentItemKey } from '../utils/content-item';
 
+export type TrackPlaylistMenuMode = 'add' | 'create' | 'standalone';
+
 export const TrackPlaylistMenu = ({
     actionState,
     canCreatePlaylist = false,
+    mode = 'add',
     onAddToPlaylist,
     onClose,
     onCreatePlaylist,
+    open,
     playlists,
     track,
 }: {
@@ -29,27 +33,33 @@ export const TrackPlaylistMenu = ({
         | { message: string; status: 'success' }
         | { status: 'idle' };
     canCreatePlaylist?: boolean;
+    mode?: TrackPlaylistMenuMode;
     onAddToPlaylist: (playlist: MobileHomeItem) => void;
     onClose: () => void;
     onCreatePlaylist?: (name: string) => void;
+    open: boolean;
     playlists: MobileHomeItem[];
     track: MobileMediaTrack | null;
 }) => {
     const [newPlaylistName, setNewPlaylistName] = useState('');
     const isCreating =
         actionState.status === 'loading' && actionState.playlistId === '__create__';
+    const isCreateMode = mode === 'create' || mode === 'standalone';
+    const showCreateSection =
+        isCreateMode || (canCreatePlaylist && Boolean(onCreatePlaylist));
+    const showExistingPlaylists = mode === 'add';
 
     return (
-        <Modal animationType="fade" onRequestClose={onClose} transparent visible={Boolean(track)}>
+        <Modal animationType="fade" onRequestClose={onClose} transparent visible={open}>
             <Pressable onPress={onClose} style={styles.contextMenuBackdrop}>
                 <Pressable onPress={(event) => event.stopPropagation()} style={styles.contextMenu}>
                     <Text numberOfLines={1} style={styles.contextMenuEyebrow}>
-                        Add to playlist
+                        {isCreateMode ? 'Create playlist' : 'Add to playlist'}
                     </Text>
                     <Text numberOfLines={2} style={styles.contextMenuTitle}>
-                        {track?.title ?? 'Track'}
+                        {track?.title ?? (mode === 'standalone' ? 'New playlist' : 'Track')}
                     </Text>
-                    {canCreatePlaylist && onCreatePlaylist ? (
+                    {showCreateSection && onCreatePlaylist ? (
                         <View style={styles.playlistCreateSection}>
                             <TextInput
                                 autoCapitalize="words"
@@ -67,48 +77,56 @@ export const TrackPlaylistMenu = ({
                                     newPlaylistName.trim().length === 0
                                 }
                                 onPress={() => onCreatePlaylist(newPlaylistName.trim())}
-                                style={styles.inputActionButton}
+                                style={[
+                                    styles.primaryButton,
+                                    styles.contextMenuPrimaryButton,
+                                    (actionState.status === 'loading' ||
+                                        newPlaylistName.trim().length === 0) &&
+                                        styles.disabledButton,
+                                ]}
                             >
                                 {isCreating ? (
-                                    <ActivityIndicator color={colors.accent} size="small" />
+                                    <ActivityIndicator color="#050505" size="small" />
                                 ) : (
                                     <Text style={styles.primaryButtonText}>Create playlist</Text>
                                 )}
                             </Pressable>
                         </View>
                     ) : null}
-                    <ScrollView style={styles.contextMenuList}>
-                        {playlists.length === 0 ? (
-                            <Text style={styles.mutedText}>
-                                {canCreatePlaylist
-                                    ? 'No playlists yet — create one above.'
-                                    : 'No playlists from this music server yet.'}
-                            </Text>
-                        ) : (
-                            playlists.map((playlist) => {
-                                const isLoading =
-                                    actionState.status === 'loading' &&
-                                    actionState.playlistId === playlist.id;
+                    {showExistingPlaylists ? (
+                        <ScrollView style={styles.contextMenuList}>
+                            {playlists.length === 0 ? (
+                                <Text style={styles.mutedText}>
+                                    {canCreatePlaylist
+                                        ? 'No playlists yet — create one above.'
+                                        : 'No playlists from this music server yet.'}
+                                </Text>
+                            ) : (
+                                playlists.map((playlist) => {
+                                    const isLoading =
+                                        actionState.status === 'loading' &&
+                                        actionState.playlistId === playlist.id;
 
-                                return (
-                                    <Pressable
-                                        accessibilityRole="button"
-                                        disabled={actionState.status === 'loading'}
-                                        key={getContentItemKey(playlist)}
-                                        onPress={() => onAddToPlaylist(playlist)}
-                                        style={styles.contextMenuRow}
-                                    >
-                                        <Text numberOfLines={1} style={styles.contextMenuRowText}>
-                                            {playlist.title}
-                                        </Text>
-                                        {isLoading ? (
-                                            <ActivityIndicator color={colors.accent} size="small" />
-                                        ) : null}
-                                    </Pressable>
-                                );
-                            })
-                        )}
-                    </ScrollView>
+                                    return (
+                                        <Pressable
+                                            accessibilityRole="button"
+                                            disabled={actionState.status === 'loading'}
+                                            key={getContentItemKey(playlist)}
+                                            onPress={() => onAddToPlaylist(playlist)}
+                                            style={styles.contextMenuRow}
+                                        >
+                                            <Text numberOfLines={1} style={styles.contextMenuRowText}>
+                                                {playlist.title}
+                                            </Text>
+                                            {isLoading ? (
+                                                <ActivityIndicator color={colors.accent} size="small" />
+                                            ) : null}
+                                        </Pressable>
+                                    );
+                                })
+                            )}
+                        </ScrollView>
+                    ) : null}
                     {actionState.status === 'error' ? (
                         <Text style={styles.contextMenuError}>{actionState.message}</Text>
                     ) : actionState.status === 'success' ? (

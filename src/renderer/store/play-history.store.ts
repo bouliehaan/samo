@@ -28,6 +28,7 @@ export interface PlayHistoryRef {
 export type RecentArtwork =
     | {
           fallbackIcon: 'metadata' | 'microphone';
+          imageUrl?: string;
           itemId: string;
           kind: 'abs';
       }
@@ -288,6 +289,7 @@ export const recordRecentAudiobook = (item: AudiobookshelfLibraryItem, serverId:
     recordRecentItem({
         artwork: {
             fallbackIcon: 'metadata',
+            imageUrl: item.media?.metadata?.imageUrl,
             itemId: item.id,
             kind: 'abs',
         },
@@ -305,6 +307,7 @@ export const recordRecentPodcast = (item: AudiobookshelfLibraryItem, serverId: s
     recordRecentItem({
         artwork: {
             fallbackIcon: 'microphone',
+            imageUrl: item.media?.metadata?.imageUrl,
             itemId: item.id,
             kind: 'abs',
         },

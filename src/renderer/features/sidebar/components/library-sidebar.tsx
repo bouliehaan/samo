@@ -6,6 +6,10 @@ import { generatePath, useLocation, useNavigate } from 'react-router';
 import styles from './library-sidebar.module.css';
 
 import { audiobookshelfController } from '/@/renderer/api/audiobookshelf/audiobookshelf-controller';
+import {
+    listSamoAudiobookLibraryItems,
+    listSamoPodcastLibraryItems,
+} from '/@/renderer/api/samo/samo-long-form';
 import { ItemImage } from '/@/renderer/components/item-image/item-image';
 import { albumQueries } from '/@/renderer/features/albums/api/album-api';
 import { artistsQueries } from '/@/renderer/features/artists/api/artists-api';
@@ -28,8 +32,8 @@ import {
     recordRecentItem,
     useAudiobookActions,
     useAudiobookItem,
-    useAudiobookshelfServer,
-    useCurrentServer,
+    useCurrentServerWithCredential,
+    useLongFormMediaServer,
     usePermissions,
     usePlaybackSource,
     usePlayerSong,
@@ -57,6 +61,7 @@ import {
     Song,
     SongListSort,
     SortOrder,
+    ServerType,
 } from '/@/shared/types/domain-types';
 import { Play, PlayerStatus } from '/@/shared/types/types';
 
@@ -306,6 +311,7 @@ const recentAudiobookFromLibrary = (
     return {
         artwork: {
             fallbackIcon: 'metadata',
+            imageUrl: item.media?.metadata?.imageUrl,
             itemId: item.id,
             kind: 'abs',
         },
@@ -327,6 +333,7 @@ const recentPodcastFromLibrary = (
 ): RecentItem => ({
     artwork: {
         fallbackIcon: 'microphone',
+        imageUrl: item.media?.metadata?.imageUrl,
         itemId: item.id,
         kind: 'abs',
     },
@@ -357,6 +364,13 @@ const mergeLibraryItemsWithRecents = (
 };
 
 const getSidebarArtwork = (item: RecentItem): RecentItem['artwork'] => {
+    if (item.artwork.kind === 'abs' && !item.artwork.imageUrl && item.rawAbsItem?.media?.metadata?.imageUrl) {
+        return {
+            ...item.artwork,
+            imageUrl: item.rawAbsItem.media.metadata.imageUrl,
+        };
+    }
+
     if (
         item.mediaType !== 'artist' ||
         item.artwork.kind !== 'music' ||
@@ -375,8 +389,8 @@ const getSidebarArtwork = (item: RecentItem): RecentItem['artwork'] => {
 export const LibrarySidebar = () => {
     const navigate = useNavigate();
     const location = useLocation();
-    const musicServer = useCurrentServer();
-    const audiobookshelfServer = useAudiobookshelfServer();
+    const musicServer = useCurrentServerWithCredential();
+    const longFormServer = useLongFormMediaServer();
     const permissions = usePermissions();
     const recentItems = useRecentItems();
     const radioControls = useRadioControls();
@@ -392,12 +406,13 @@ export const LibrarySidebar = () => {
     const [searchQuery, setSearchQuery] = useState('');
 
     const musicServerId = musicServer?.id ?? '';
-    const absServerId = audiobookshelfServer?.id ?? '';
+    const longFormServerId = longFormServer?.id ?? '';
     const hasMusicServer = Boolean(musicServerId);
-    const hasAbsServer = Boolean(absServerId);
+    const hasLongFormCatalog = Boolean(longFormServer);
+    const isSamoLongForm = longFormServer?.type === ServerType.SAMO;
     const playerIsPlaying = playerStatus === PlayerStatus.PLAYING;
-    const shouldLoadAbsTypeView =
-        hasAbsServer && (activeFilter === 'audiobooks' || activeFilter === 'podcasts');
+    const shouldLoadLongFormView =
+        hasLongFormCatalog && (activeFilter === 'audiobooks' || activeFilter === 'podcasts');
 
     const playlistsQuery = useQuery({
         ...playlistsQueries.list({
@@ -465,10 +480,10 @@ export const LibrarySidebar = () => {
     });
 
     const absLibrariesQuery = useQuery({
-        enabled: shouldLoadAbsTypeView,
+        enabled: shouldLoadLongFormView && !isSamoLongForm,
         gcTime: ABS_LIBRARY_GC_TIME_MS,
-        queryFn: () => audiobookshelfController.getLibraries(audiobookshelfServer!),
-        queryKey: ['audiobookshelf', 'libraries', absServerId],
+        queryFn: () => audiobookshelfController.getLibraries(longFormServer!),
+        queryKey: ['audiobookshelf', 'libraries', longFormServerId],
         staleTime: ABS_LIBRARY_STALE_TIME_MS,
     });
 
@@ -489,13 +504,29 @@ export const LibrarySidebar = () => {
 
     const absItemQueries = useQueries({
         queries: absTypeLibraries.map((library) => ({
-            enabled: shouldLoadAbsTypeView,
+            enabled: shouldLoadLongFormView && !isSamoLongForm,
             gcTime: ABS_LIBRARY_GC_TIME_MS,
             queryFn: () =>
-                audiobookshelfController.getLibraryItems(audiobookshelfServer!, library.id),
-            queryKey: ['audiobookshelf', 'library-items', absServerId, library.id],
+                audiobookshelfController.getLibraryItems(longFormServer!, library.id),
+            queryKey: ['audiobookshelf', 'library-items', longFormServerId, library.id],
             staleTime: ABS_LIBRARY_STALE_TIME_MS,
         })),
+    });
+
+    const samoAudiobooksQuery = useQuery({
+        enabled: shouldLoadLongFormView && isSamoLongForm && activeFilter === 'audiobooks',
+        gcTime: ABS_LIBRARY_GC_TIME_MS,
+        queryFn: () => listSamoAudiobookLibraryItems(longFormServer!),
+        queryKey: ['samo', 'sidebar', 'audiobooks', longFormServerId],
+        staleTime: ABS_LIBRARY_STALE_TIME_MS,
+    });
+
+    const samoPodcastsQuery = useQuery({
+        enabled: shouldLoadLongFormView && isSamoLongForm && activeFilter === 'podcasts',
+        gcTime: ABS_LIBRARY_GC_TIME_MS,
+        queryFn: () => listSamoPodcastLibraryItems(longFormServer!),
+        queryKey: ['samo', 'sidebar', 'podcasts', longFormServerId],
+        staleTime: ABS_LIBRARY_STALE_TIME_MS,
     });
 
     const absEntries = useMemo<AbsLibraryEntry[]>(
@@ -512,21 +543,31 @@ export const LibrarySidebar = () => {
 
     const audiobookEntries = useMemo(
         () =>
-            absEntries.filter(
-                (entry) => entry.mediaType === 'book' || entry.item.mediaType === 'book',
-            ),
-        [absEntries],
+            isSamoLongForm
+                ? (samoAudiobooksQuery.data ?? []).map((item) => ({
+                      item,
+                      mediaType: 'book',
+                  }))
+                : absEntries.filter(
+                      (entry) => entry.mediaType === 'book' || entry.item.mediaType === 'book',
+                  ),
+        [absEntries, isSamoLongForm, samoAudiobooksQuery.data],
     );
 
     const podcastEntries = useMemo(
         () =>
-            absEntries.filter(
-                (entry) =>
-                    entry.mediaType === 'podcast' ||
-                    entry.item.mediaType === 'podcast' ||
-                    Boolean(entry.item.media?.episodes),
-            ),
-        [absEntries],
+            isSamoLongForm
+                ? (samoPodcastsQuery.data ?? []).map((item) => ({
+                      item,
+                      mediaType: 'podcast',
+                  }))
+                : absEntries.filter(
+                      (entry) =>
+                          entry.mediaType === 'podcast' ||
+                          entry.item.mediaType === 'podcast' ||
+                          Boolean(entry.item.media?.episodes),
+                  ),
+        [absEntries, isSamoLongForm, samoPodcastsQuery.data],
     );
 
     const pruneStaleRecents = usePlayHistoryStore((state) => state.actions.pruneStale);
@@ -573,26 +614,35 @@ export const LibrarySidebar = () => {
         });
     }, [musicServerId, pruneStaleRecents, radioQuery.data, radioQuery.isSuccess]);
 
-    const absItemQueriesAllSuccess =
-        absItemQueries.length > 0 && absItemQueries.every((query) => query.isSuccess);
+    const longFormItemsReady = isSamoLongForm
+        ? activeFilter === 'audiobooks'
+            ? samoAudiobooksQuery.isSuccess
+            : samoPodcastsQuery.isSuccess
+        : absItemQueries.length > 0 && absItemQueries.every((query) => query.isSuccess);
 
     useEffect(() => {
-        if (!absServerId || activeFilter !== 'audiobooks' || !absItemQueriesAllSuccess) return;
+        if (!longFormServerId || activeFilter !== 'audiobooks' || !longFormItemsReady) return;
         pruneStaleRecents({
             knownItemIds: new Set(audiobookEntries.map((entry) => entry.item.id)),
             mediaType: 'audiobook',
-            serverId: absServerId,
+            serverId: longFormServerId,
         });
-    }, [absItemQueriesAllSuccess, absServerId, activeFilter, audiobookEntries, pruneStaleRecents]);
+    }, [
+        activeFilter,
+        audiobookEntries,
+        longFormItemsReady,
+        longFormServerId,
+        pruneStaleRecents,
+    ]);
 
     useEffect(() => {
-        if (!absServerId || activeFilter !== 'podcasts' || !absItemQueriesAllSuccess) return;
+        if (!longFormServerId || activeFilter !== 'podcasts' || !longFormItemsReady) return;
         pruneStaleRecents({
             knownItemIds: new Set(podcastEntries.map((entry) => entry.item.id)),
             mediaType: 'podcast',
-            serverId: absServerId,
+            serverId: longFormServerId,
         });
-    }, [absItemQueriesAllSuccess, absServerId, activeFilter, podcastEntries, pruneStaleRecents]);
+    }, [activeFilter, longFormItemsReady, longFormServerId, podcastEntries, pruneStaleRecents]);
 
     const currentMusicArtistIds = useMemo(
         () =>
@@ -655,8 +705,8 @@ export const LibrarySidebar = () => {
                     }
                     return;
                 case 'audiobook':
-                    if (audiobookshelfServer && item.rawAbsItem) {
-                        audiobookActions.play(audiobookshelfServer, item.rawAbsItem);
+                    if (longFormServer && item.rawAbsItem) {
+                        audiobookActions.play(longFormServer, item.rawAbsItem);
                     } else {
                         navigate(AppRoute.AUDIOBOOKS);
                     }
@@ -664,7 +714,7 @@ export const LibrarySidebar = () => {
         },
         [
             audiobookActions,
-            audiobookshelfServer,
+            longFormServer,
             currentStreamUrl,
             isRadioPlaying,
             navigate,
@@ -834,10 +884,10 @@ export const LibrarySidebar = () => {
 
     const audiobookSidebarItems = useMemo(() => {
         const libraryItems = audiobookEntries.map(({ item }) => {
-            const key = recentKey('audiobook', absServerId, item.id);
+            const key = recentKey('audiobook', longFormServerId, item.id);
             return recentAudiobookFromLibrary(
                 item,
-                absServerId,
+                longFormServerId,
                 recentItemsByKey.get(key)?.selectedAt ?? 0,
             );
         });
@@ -845,14 +895,14 @@ export const LibrarySidebar = () => {
         return mergeLibraryItemsWithRecents(libraryItems, recentItems, 'audiobook').map(
             toSidebarItem,
         );
-    }, [absServerId, audiobookEntries, recentItems, recentItemsByKey, toSidebarItem]);
+    }, [audiobookEntries, longFormServerId, recentItems, recentItemsByKey, toSidebarItem]);
 
     const podcastSidebarItems = useMemo(() => {
         const libraryItems = podcastEntries.map(({ item }) => {
-            const key = recentKey('podcast', absServerId, item.id);
+            const key = recentKey('podcast', longFormServerId, item.id);
             return recentPodcastFromLibrary(
                 item,
-                absServerId,
+                longFormServerId,
                 recentItemsByKey.get(key)?.selectedAt ?? 0,
             );
         });
@@ -860,7 +910,7 @@ export const LibrarySidebar = () => {
         return mergeLibraryItemsWithRecents(libraryItems, recentItems, 'podcast').map(
             toSidebarItem,
         );
-    }, [absServerId, podcastEntries, recentItems, recentItemsByKey, toSidebarItem]);
+    }, [longFormServerId, podcastEntries, recentItems, recentItemsByKey, toSidebarItem]);
 
     const baseRows = useMemo(() => {
         if (activeFilter === 'playlists') return playlistSidebarItems;
@@ -916,12 +966,12 @@ export const LibrarySidebar = () => {
             if (filter.id === 'artists') return hasMusicServer;
             if (filter.id === 'songs') return hasMusicServer;
             if (filter.id === 'radio') return hasMusicServer;
-            if (filter.id === 'audiobooks') return hasAbsServer;
-            if (filter.id === 'podcasts') return hasAbsServer;
+            if (filter.id === 'audiobooks') return hasLongFormCatalog;
+            if (filter.id === 'podcasts') return hasLongFormCatalog;
 
             return false;
         });
-    }, [hasAbsServer, hasMusicServer, recentSidebarItems]);
+    }, [hasLongFormCatalog, hasMusicServer, recentSidebarItems]);
 
     const browseTarget = FILTER_BROWSE_TARGETS[activeFilter];
     const isLoading =
@@ -930,15 +980,21 @@ export const LibrarySidebar = () => {
         (activeFilter === 'albums' && albumsQuery.isLoading) ||
         (activeFilter === 'artists' && artistsQuery.isLoading) ||
         (activeFilter === 'songs' && songsQuery.isLoading) ||
-        (shouldLoadAbsTypeView &&
-            (absLibrariesQuery.isLoading ||
-                absItemQueries.some((query) => query.isLoading || query.isPending)));
+        (shouldLoadLongFormView &&
+            (isSamoLongForm
+                ? (activeFilter === 'audiobooks'
+                      ? samoAudiobooksQuery.isLoading
+                      : samoPodcastsQuery.isLoading)
+                : absLibrariesQuery.isLoading ||
+                  absItemQueries.some((query) => query.isLoading || query.isPending)));
     const createAction =
         activeFilter === 'all' || activeFilter === 'playlists'
             ? {
                   label: 'Create playlist',
-                  onClick: (event: MouseEvent<HTMLButtonElement>) =>
-                      openCreatePlaylistModal(musicServer, event),
+                  onClick: (event: MouseEvent<HTMLButtonElement>) => {
+                      if (!musicServer) return;
+                      openCreatePlaylistModal(musicServer, event);
+                  },
               }
             : activeFilter === 'radio' && permissions.radio.create
               ? {
@@ -1173,6 +1229,7 @@ const LibraryArtwork = ({ item }: { item: LibrarySidebarItem }): ReactNode => {
             <AbsCoverImage
                 alt={item.title}
                 fallbackIcon={item.artwork.fallbackIcon}
+                imageUrl={item.artwork.imageUrl}
                 itemId={item.artwork.itemId}
             />
         );

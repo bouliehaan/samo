@@ -37,6 +37,7 @@ export const EMPTY_PLAYER_DATA: PlayerData = {
 };
 
 export type PlaybackInputs = {
+    currentUniqueId: string;
     defaultLen: number;
     index: number;
     playerNum: 1 | 2;
@@ -45,6 +46,22 @@ export type PlaybackInputs = {
     shuffle: PlayerShuffle;
     shuffledKey: string;
     status: PlayerStatus;
+};
+
+const resolveCurrentQueueUniqueId = (state: PlayerSnapshotSlice): string => {
+    const queueItems = getQueueItemsFromState(state);
+    const index = state.player.index;
+
+    if (index < 0 || queueItems.length === 0) {
+        return '';
+    }
+
+    let queueIndex = index;
+    if (isShuffleEnabled(state)) {
+        queueIndex = mapShuffledToQueueIndex(index, state.queue.shuffled);
+    }
+
+    return queueItems[queueIndex]?._uniqueId ?? '';
 };
 
 export function computePlayerData(state: PlayerSnapshotSlice): PlayerData {
@@ -109,6 +126,7 @@ export function getCurrentSongFromState(state: {
 
 export function getPlaybackInputs(state: PlayerSnapshotSlice): PlaybackInputs {
     return {
+        currentUniqueId: resolveCurrentQueueUniqueId(state),
         defaultLen: state.queue.default.length,
         index: state.player.index,
         playerNum: state.player.playerNum,
@@ -180,6 +198,7 @@ export function isLastTrackInQueueFromState(state: PlayerSnapshotSlice): boolean
 
 export function playbackInputsEqual(a: PlaybackInputs, b: PlaybackInputs): boolean {
     return (
+        a.currentUniqueId === b.currentUniqueId &&
         a.index === b.index &&
         a.playerNum === b.playerNum &&
         a.repeat === b.repeat &&

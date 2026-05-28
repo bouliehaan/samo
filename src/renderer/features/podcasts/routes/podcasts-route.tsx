@@ -4,16 +4,25 @@ import { useMemo, useState } from 'react';
 import { generatePath, useNavigate } from 'react-router';
 
 import { audiobookshelfController } from '/@/renderer/api/audiobookshelf/audiobookshelf-controller';
+import {
+    isSamoLongFormServer,
+    listSamoPodcastLibraryItems,
+    useLongFormMediaServer,
+} from '/@/renderer/api/samo/samo-long-form';
 import { ContextMenuController } from '/@/renderer/features/context-menu/context-menu-controller';
 import { AnimatedPage } from '/@/renderer/features/shared/components/animated-page';
 import { PageErrorBoundary } from '/@/renderer/features/shared/components/page-error-boundary';
 import { AppRoute } from '/@/renderer/router/routes';
-import { recordRecentPodcast, useAudiobookshelfServer } from '/@/renderer/store';
+import { recordRecentPodcast } from '/@/renderer/store';
 import {
     useIsLibraryFavorite,
     useLibraryFavoritesActions,
 } from '/@/renderer/store/library-favorites.store';
 import { AudiobookshelfLibraryItem } from '/@/shared/api/audiobookshelf/audiobookshelf-types';
+import {
+    buildSamoAuthenticatedImageRequest,
+    ServerType,
+} from '@samo/core/server';
 import { ActionIcon } from '/@/shared/components/action-icon/action-icon';
 import { Image } from '/@/shared/components/image/image';
 import { Text } from '/@/shared/components/text/text';
@@ -38,15 +47,36 @@ const getPodcastSearchText = (item: AudiobookshelfLibraryItem) =>
         .toLowerCase();
 
 const PodcastCover = ({ item }: { item: AudiobookshelfLibraryItem }) => {
-    const server = useAudiobookshelfServer();
+    const server = useLongFormMediaServer();
 
     const coverQuery = useQuery({
-        enabled: Boolean(server?.id && item.id),
+        enabled: Boolean(server?.id && item.id && !isSamoLongFormServer(server)),
         queryFn: async () =>
             (await audiobookshelfController.getItemCoverDataUrl(server!, item.id)) ?? null,
         queryKey: ['audiobookshelf', 'cover', server?.id, item.id],
         staleTime: 1000 * 60 * 60,
     });
+
+    const coverSrc = isSamoLongFormServer(server)
+        ? (item.media?.metadata?.imageUrl ?? undefined)
+        : (coverQuery.data ?? undefined);
+
+    const imageRequest = useMemo(() => {
+        if (!isSamoLongFormServer(server) || !coverSrc) {
+            return undefined;
+        }
+
+        return buildSamoAuthenticatedImageRequest(
+            {
+                credential: server!.credential,
+                ndCredential: server!.ndCredential,
+                type: ServerType.SAMO,
+                url: server!.url,
+            },
+            coverSrc,
+            ['samo', server!.id, 'podcast-cover', item.id].join(':'),
+        );
+    }, [coverSrc, item.id, server]);
 
     return (
         <Image
@@ -55,13 +85,13 @@ const PodcastCover = ({ item }: { item: AudiobookshelfLibraryItem }) => {
             enableViewport
             imageContainerProps={{
                 style: {
-                    // Podcast art is square, unlike audiobook covers (2:3).
                     aspectRatio: '1 / 1',
                     borderRadius: '0.75rem',
                     overflow: 'hidden',
                 },
             }}
-            src={coverQuery.data ?? undefined}
+            imageRequest={imageRequest}
+            src={coverSrc ?? undefined}
             unloaderIcon="album"
         />
     );
@@ -75,7 +105,7 @@ const PodcastCard = ({
 }: {
     item: AudiobookshelfLibraryItem;
     onOpen: (item: AudiobookshelfLibraryItem) => void;
-    server: ReturnType<typeof useAudiobookshelfServer>;
+    server: ReturnType<typeof useLongFormMediaServer>;
     serverId: string | undefined;
 }) => {
     const title = podcastTitle(item);
@@ -152,12 +182,13 @@ const PodcastCard = ({
 };
 
 const PodcastsRoute = () => {
-    const server = useAudiobookshelfServer();
+    const server = useLongFormMediaServer();
     const navigate = useNavigate();
     const [searchQuery, setSearchQuery] = useState('');
+    const isSamo = isSamoLongFormServer(server);
 
     const librariesQuery = useQuery({
-        enabled: Boolean(server),
+        enabled: Boolean(server) && !isSamo,
         queryFn: () => audiobookshelfController.getLibraries(server!),
         queryKey: ['audiobookshelf', 'libraries', server?.id],
     });
@@ -165,23 +196,33 @@ const PodcastsRoute = () => {
     const podcastLibraries =
         librariesQuery.data?.libraries.filter((library) => library.mediaType === 'podcast') ?? [];
 
-    const itemQueries = useQueries({
+    const absItemQueries = useQueries({
         queries: podcastLibraries.map((library) => ({
-            enabled: Boolean(server?.id),
+            enabled: Boolean(server?.id) && !isSamo,
             queryFn: () => audiobookshelfController.getLibraryItems(server!, library.id),
             queryKey: ['audiobookshelf', 'library-items', server?.id, library.id],
         })),
     });
 
-    const items = itemQueries.flatMap((query) => query.data?.results ?? []);
+    const samoItemsQuery = useQuery({
+        enabled: Boolean(server?.id) && isSamo,
+        queryFn: () => listSamoPodcastLibraryItems(server!),
+        queryKey: ['samo', 'podcasts', server?.id],
+        staleTime: 1000 * 60 * 5,
+    });
+
+    const items = isSamo
+        ? (samoItemsQuery.data ?? [])
+        : absItemQueries.flatMap((query) => query.data?.results ?? []);
     const filteredItems = useMemo(() => {
         const trimmedQuery = searchQuery.trim().toLowerCase();
         if (!trimmedQuery) return items;
 
         return items.filter((item) => getPodcastSearchText(item).includes(trimmedQuery));
     }, [items, searchQuery]);
-    const isLoading =
-        librariesQuery.isLoading || itemQueries.some((query) => query.isLoading || query.isPending);
+    const isLoading = isSamo
+        ? samoItemsQuery.isLoading
+        : librariesQuery.isLoading || absItemQueries.some((query) => query.isLoading || query.isPending);
 
     const handleOpen = (item: AudiobookshelfLibraryItem) => {
         if (server) {
@@ -198,11 +239,15 @@ const PodcastsRoute = () => {
                         <Text fw={700} size="xl">
                             Podcasts
                         </Text>
-                        <Text isMuted>Browse your Audiobookshelf podcasts.</Text>
+                        <Text isMuted>
+                            {isSamo
+                                ? 'Browse podcasts from your Samo server.'
+                                : 'Browse your Audiobookshelf podcasts.'}
+                        </Text>
                     </Stack>
 
                     {!server ? (
-                        <Text isMuted>Add an Audiobookshelf server to browse podcasts.</Text>
+                        <Text isMuted>Add a Samo or Audiobookshelf server to browse podcasts.</Text>
                     ) : isLoading ? (
                         <Text isMuted>Loading podcasts…</Text>
                     ) : !items.length ? (

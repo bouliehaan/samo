@@ -13,7 +13,12 @@ import { ServerList } from '/@/renderer/features/servers/components/server-list'
 import { AnimatedPage } from '/@/renderer/features/shared/components/animated-page';
 import { PageErrorBoundary } from '/@/renderer/features/shared/components/page-error-boundary';
 import { AppRoute } from '/@/renderer/router/routes';
-import { useAuthHydrated, useCurrentServerWithCredential, useServerList } from '/@/renderer/store';
+import {
+    useAuthHydrated,
+    useAuthStoreActions,
+    useCurrentServerWithCredential,
+    useServerList,
+} from '/@/renderer/store';
 import { Button } from '/@/shared/components/button/button';
 import { Center } from '/@/shared/components/center/center';
 import { Group } from '/@/shared/components/group/group';
@@ -27,6 +32,7 @@ const ActionRequiredRoute = () => {
     const authHydrated = useAuthHydrated();
     const currentServer = useCurrentServerWithCredential();
     const serverList = useServerList();
+    const { ensureActiveServers } = useAuthStoreActions();
     const isServerRequired = !currentServer;
     const isCredentialRequired = currentServer && !currentServer.credential;
 
@@ -43,11 +49,12 @@ const ActionRequiredRoute = () => {
         }
 
         handledHydrationRef.current = true;
+        ensureActiveServers();
 
         if (Object.keys(serverList).length > 0) {
             setWizardActive(false);
         }
-    }, [authHydrated, serverList]);
+    }, [authHydrated, ensureActiveServers, serverList]);
 
     const checks = [
         {

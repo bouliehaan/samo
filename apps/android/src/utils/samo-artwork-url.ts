@@ -171,6 +171,10 @@ export const resolvePlaybackArtworkSourceForDisplay = (
 /**
  * Native MediaSession / lock-screen artwork can't send Bearer headers — embed
  * a fresh stream token (or absolute URL) before handing art to ExoPlayer.
+ *
+ * Queue items keep the stream URL they were built with. Samo stream tokens
+ * expire after ~30 minutes, so each track start must rewrite `url` (and
+ * `castUrl` when present) with a current token or auto-advance dies mid-queue.
  */
 export const preparePlaybackItemForNative = async (
     item: MobilePlayableAudio,
@@ -181,21 +185,37 @@ export const preparePlaybackItemForNative = async (
         ? findServerAuthenticationForSource(serverConnections, contentSource)
         : undefined;
 
+    let streamToken: string | undefined;
     if (auth?.type === ServerType.SAMO) {
-        await ensureSamoStreamToken(auth).catch(() => undefined);
+        streamToken = await ensureSamoStreamToken(auth).catch(() => undefined);
     }
 
     const resolvedArtworkUrl =
         artworkSourceUri(resolvePlaybackArtworkSourceForDisplay(item, serverConnections)) ??
         item.artworkUrl;
 
-    if (resolvedArtworkUrl === item.artworkUrl) {
+    let nextUrl = item.url;
+    let nextCastUrl = item.castUrl;
+    if (auth?.type === ServerType.SAMO && streamToken) {
+        nextUrl = finalizeSamoMediaUrl(auth, item.url, streamToken) ?? item.url;
+        if (item.castUrl) {
+            nextCastUrl = finalizeSamoMediaUrl(auth, item.castUrl, streamToken) ?? item.castUrl;
+        }
+    }
+
+    if (
+        resolvedArtworkUrl === item.artworkUrl &&
+        nextUrl === item.url &&
+        nextCastUrl === item.castUrl
+    ) {
         return item;
     }
 
     return {
         ...item,
         artworkUrl: resolvedArtworkUrl,
+        ...(nextUrl !== item.url ? { url: nextUrl } : {}),
+        ...(nextCastUrl !== item.castUrl ? { castUrl: nextCastUrl } : {}),
     };
 };
 
