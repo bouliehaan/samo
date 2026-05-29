@@ -24,7 +24,7 @@ const getAudioDevices = async () => {
 
 export type AudioDeviceOption = { label: string; value: string };
 
-export const useAudioDevices = (playbackType = PlayerType.WEB) => {
+export const useAudioDevices = (playbackType = PlayerType.WEB, refreshKey?: unknown) => {
     const [audioDevices, setAudioDevices] = useState<AudioDeviceOption[]>([]);
 
     useEffect(() => {
@@ -60,7 +60,7 @@ export const useAudioDevices = (playbackType = PlayerType.WEB) => {
                     }),
                 }),
             );
-    }, [playbackType]);
+    }, [playbackType, refreshKey]);
 
     return audioDevices;
 };

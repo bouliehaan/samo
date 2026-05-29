@@ -4,6 +4,7 @@ import {
     getDetailQualityProfile,
     getItemQualityProfile,
     getMobileContentSource,
+    loadAudiobookshelfDownloadFiles,
     loadMobileMediaDetail,
     loadSongRadioQueue,
     type MobileContentSource,
@@ -22,6 +23,8 @@ import {
     ServerType,
 } from '@samo/core/server';
 import { startTransition, useCallback, useRef, type MutableRefObject } from 'react';
+
+import type { AndroidPlayItemOptions, AndroidPlaybackQueue } from './use-android-native-playback';
 import { Alert } from 'react-native';
 
 import type { AbsProgressContext } from '../services/abs-progress';
@@ -39,12 +42,14 @@ import {
     loadAndroidMediaDetail,
     loadAndroidMediaTrackPlayback,
     isValidTrackPlayback,
+    playSamoPodcastEpisodeFromHome,
 } from '../services/media-detail';
 import {
     loadCachedMediaDetail,
     saveCachedMediaDetail,
 } from '../services/media-detail-cache';
 import {
+    setSamoMusicFavorite,
     starSubsonicAlbum,
     starSubsonicArtist,
     starSubsonicTrack,
@@ -64,6 +69,8 @@ import {
 import {
     type AndroidRecentContentSourceItem,
     getRecentContentItemKey,
+    recentContentItemFromMediaDetail,
+    type RecentContentRecordOptions,
     savePersistedRecentContentItems,
     upsertRecentContentItem,
 } from '../services/recent-content';
@@ -85,6 +92,7 @@ import {
     useMediaOverlaysState,
     type UseMediaOverlaysOptions,
 } from '../state/media-overlays';
+import { syncAndroidNativePlaybackQueue } from '../services/audio-playback';
 import {
     getAndroidPlaybackState,
     setAndroidPlaybackState,
@@ -93,9 +101,10 @@ import { type HomeDisplaySection } from '../types/home';
 import { buildDownloadedMusicDetail } from '../utils/offline-music-detail';
 import { rememberMediaDetail } from '../utils/media-detail-cache';
 import {
+    buildAbsStreamFilePlayable,
+    buildAudiobookFilePlaybackQueue,
     buildOfflineAudiobookPlayable,
     buildOfflinePodcastEpisodePlayable,
-    pickAudiobookFileIndexForTime,
 } from '../utils/offline-playback';
 import { detailHasHiRes } from '../utils/media-quality';
 import {
@@ -107,6 +116,7 @@ import {
     prefetchDetailArtworkUrls,
 } from '../utils/prefetch-detail-artwork';
 import { getViewAllVariant } from '../utils/home-display';
+import { preparePlaybackItemForNative } from '../utils/samo-artwork-url';
 
 export type AndroidMediaHandlerDeps = {
     auth: ReturnType<typeof useAuthSessionState>;
@@ -138,17 +148,26 @@ export interface UseAndroidMediaHandlersOptions {
         item: MobilePlayableAudio,
         queueItems?: MobilePlayableAudio[],
         queueIndex?: number,
-        options?: { shuffled?: boolean },
+        options?: AndroidPlayItemOptions,
     ) => Promise<void>;
     loadHomeForConnections: (authentications: ServerAuthenticationResult[]) => Promise<void>;
-    playbackQueueRef: MutableRefObject<null | { index: number; items: MobilePlayableAudio[] }>;
+    playbackQueueRef: MutableRefObject<AndroidPlaybackQueue | null>;
     playQueuedItem: (
         item: MobilePlayableAudio,
         queueItems?: MobilePlayableAudio[],
         queueIndex?: number,
-        options?: { shuffled?: boolean },
+        options?: AndroidPlayItemOptions,
     ) => Promise<void>;
 }
+
+const playlistPlaybackOptions = (
+    detail: MobileMediaDetail,
+    shuffled: boolean,
+): AndroidPlayItemOptions => ({
+    omitTrackRecentlyPlayed: detail.type === MobileMediaDetailType.PLAYLIST,
+    shuffled,
+    ...(detail.type === MobileMediaDetailType.PLAYLIST ? { samoPlaylistId: detail.id } : {}),
+});
 
 export interface AndroidMediaHandlers {
     appendPlayableItemsToQueue: (items: MobilePlayableAudio[]) => number;
@@ -230,6 +249,7 @@ export interface AndroidMediaHandlers {
     invalidateMediaDetailRequests: () => void;
     loadDetailWithCache: (item: AndroidRecentContentSourceItem) => Promise<{ cached: boolean }>;
     prefetchMediaDetailCache: (item: AndroidRecentContentSourceItem) => void;
+    reloadCurrentMediaDetail: () => Promise<void>;
 }
 
 export function useAndroidMediaHandlers(
@@ -296,17 +316,20 @@ export function useAndroidMediaHandlers(
         bookInfoRequestId.current += 1;
     }, []);
 
-    const recordRecentContentItem = useCallback((item: AndroidRecentContentSourceItem) => {
-        setRecentContentItems((current) => {
-            const nextItems = dedupeRecentContentItemsByAlbumIdentity(
-                upsertRecentContentItem(current, item),
-            );
+    const recordRecentContentItem = useCallback(
+        (item: AndroidRecentContentSourceItem, options?: RecentContentRecordOptions) => {
+            setRecentContentItems((current) => {
+                const nextItems = dedupeRecentContentItemsByAlbumIdentity(
+                    upsertRecentContentItem(current, item, Date.now(), options),
+                );
 
-            void savePersistedRecentContentItems(nextItems);
+                void savePersistedRecentContentItems(nextItems);
 
-            return nextItems;
-        });
-    }, [setRecentContentItems]);
+                return nextItems;
+            });
+        },
+        [setRecentContentItems],
+    );
 
     const enrichRecentAlbumFromDetail = useCallback(
         (item: AndroidRecentContentSourceItem, detail: MobileMediaDetail) => {
@@ -645,10 +668,41 @@ export function useAndroidMediaHandlers(
     );
 
     const handleSelectMediaItem = async (item: MobileHomeItem | MobileSearchItem) => {
-        // #region agent log
-        const selectStartedAt = Date.now();
-        fetch('http://127.0.0.1:7498/ingest/65ba3320-fcf4-4bf2-82b0-f3ffc8d708c2',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'c0ca1a'},body:JSON.stringify({sessionId:'c0ca1a',runId:'nav-perf',hypothesisId:'H5',location:'use-android-media-handlers.ts:handleSelectMediaItem',message:'select media item',data:{itemId:item.id,hasPlayback:Boolean(item.playback),itemType:item.type},timestamp:selectStartedAt})}).catch(()=>{});
-        // #endregion
+        if (
+            item.type === MobileHomeItemType.PODCAST_EPISODE &&
+            item.containerId &&
+            item.source
+        ) {
+            const auth = findServerAuthenticationForSource(serverConnections, item.source);
+            if (auth?.type === ServerType.SAMO) {
+                try {
+                    const playable = await playSamoPodcastEpisodeFromHome(auth, {
+                        artworkUrl: item.artworkUrl,
+                        containerId: item.containerId,
+                        durationSeconds: item.durationSeconds,
+                        id: item.id,
+                        subtitle: item.subtitle,
+                        title: item.title,
+                    });
+                    absContextRef.current = {
+                        authentication: auth,
+                        durationSeconds: playable.durationSeconds ?? item.durationSeconds ?? 0,
+                        episodeId: item.id,
+                        itemId: item.containerId,
+                    };
+                    recordRecentContentItem(item);
+                    await handlePlayItem(playable, [playable], 0, { shuffled: false });
+                    return;
+                } catch (error) {
+                    setMediaDetailState({
+                        message:
+                            error instanceof Error ? error.message : 'Could not play this episode.',
+                        status: 'error',
+                    });
+                    return;
+                }
+            }
+        }
 
         if (item.playback) {
             mediaDetailRequestId.current += 1;
@@ -657,6 +711,10 @@ export function useAndroidMediaHandlers(
                 item.type === MobileHomeItemType.RADIO ||
                 item.type === MobileSearchItemType.RADIO
             ) {
+                recordRecentContentItem(item);
+            } else if (item.type === MobileSearchItemType.SONG) {
+                recordRecentContentItem(item, { directSong: true });
+            } else if (item.type === MobileHomeItemType.PODCAST_EPISODE) {
                 recordRecentContentItem(item);
             }
             await handlePlayItem(item.playback, [item.playback], 0, { shuffled: false });
@@ -748,7 +806,12 @@ export function useAndroidMediaHandlers(
             (candidate) => getPersistedServerAuthKey(candidate) === detail.source.id,
         );
 
-        if (!auth || auth.type !== ServerType.AUDIOBOOKSHELF || detail.tracks.length === 0) {
+        if (
+            !auth ||
+            (auth.type !== ServerType.AUDIOBOOKSHELF && auth.type !== ServerType.SAMO) ||
+            detail.tracks.length === 0 ||
+            detail.type !== MobileMediaDetailType.AUDIOBOOK
+        ) {
             setMediaDetailState({ detail, status: 'loaded' });
             return;
         }
@@ -798,19 +861,150 @@ export function useAndroidMediaHandlers(
         options?: { isCurrentRequest?: () => boolean },
     ) => {
         const isCurrentRequest = () => options?.isCurrentRequest?.() !== false;
-        if (isValidTrackPlayback(track.playback)) {
-            const queueItems = (queueTracks ?? detail.tracks).flatMap((candidate) =>
+        const containerRecentItem = recentContentItemFromMediaDetail(detail);
+        if (containerRecentItem) {
+            recordRecentContentItem(containerRecentItem);
+        }
+        if (
+            isValidTrackPlayback(track.playback) &&
+            !(
+                detail.type === MobileMediaDetailType.PODCAST &&
+                serverConnections.some(
+                    (auth) =>
+                        getPersistedServerAuthKey(auth) === detail.source.id &&
+                        auth.type === ServerType.SAMO,
+                )
+            )
+        ) {
+            const currentTrackPlayback = track.playback;
+            const preparedTrack = await preparePlaybackItemForNative(
+                await loadAndroidMediaTrackPlayback(serverConnections, detail, track),
+                serverConnections,
+            ).catch(() => currentTrackPlayback);
+            if (!isCurrentRequest()) return;
+
+            const playOptions = playlistPlaybackOptions(detail, false);
+
+            if (detail.type === MobileMediaDetailType.AUDIOBOOK) {
+                const absAuth = serverConnections.find(
+                    (auth) => getPersistedServerAuthKey(auth) === detail.source.id,
+                );
+                const targetBookSeconds = track.startSeconds ?? 0;
+
+                if (absAuth?.type === ServerType.AUDIOBOOKSHELF) {
+                    const offlineFiles = await getOfflineAudiobookFiles(
+                        detail.id,
+                        detail.source.id,
+                    );
+                    if (!isCurrentRequest()) return;
+
+                    if (offlineFiles.length > 1) {
+                        const { index, items } = buildAudiobookFilePlaybackQueue(
+                            detail,
+                            offlineFiles,
+                            targetBookSeconds,
+                            (file, initialPositionSeconds) =>
+                                buildOfflineAudiobookPlayable(
+                                    detail,
+                                    file,
+                                    initialPositionSeconds,
+                                    absAuth,
+                                ),
+                        );
+                        if (track.itemId) {
+                            const totalDurationSeconds = offlineFiles.reduce(
+                                (sum, file) => sum + (file.durationSeconds ?? 0),
+                                0,
+                            );
+                            absContextRef.current = {
+                                authentication: absAuth,
+                                durationSeconds: totalDurationSeconds,
+                                episodeId: undefined,
+                                itemId: track.itemId,
+                            };
+                        } else {
+                            absContextRef.current = null;
+                        }
+                        if (!isCurrentRequest()) return;
+                        await handlePlayItem(items[index]!, items, index, playOptions);
+                        return;
+                    }
+
+                    const streamFiles = await loadAudiobookshelfDownloadFiles({
+                        authentication: absAuth,
+                        itemId: detail.id,
+                    }).catch(() => []);
+                    if (!isCurrentRequest()) return;
+
+                    if (streamFiles.length > 1) {
+                        const { index, items } = buildAudiobookFilePlaybackQueue(
+                            detail,
+                            streamFiles.map((file) => ({
+                                durationSeconds: file.durationSeconds,
+                                ino: file.ino,
+                                startOffsetSeconds: file.startOffsetSeconds ?? 0,
+                            })),
+                            targetBookSeconds,
+                            (file, initialPositionSeconds) => {
+                                const streamFile = streamFiles.find(
+                                    (candidate) => candidate.ino === file.ino,
+                                );
+                                if (!streamFile) {
+                                    return preparedTrack;
+                                }
+                                return buildAbsStreamFilePlayable(
+                                    detail,
+                                    streamFile,
+                                    initialPositionSeconds,
+                                    absAuth,
+                                );
+                            },
+                        );
+                        if (track.itemId) {
+                            const totalDurationSeconds = streamFiles.reduce(
+                                (sum, file) => sum + (file.durationSeconds ?? 0),
+                                0,
+                            );
+                            absContextRef.current = {
+                                authentication: absAuth,
+                                durationSeconds: totalDurationSeconds,
+                                episodeId: undefined,
+                                itemId: track.itemId,
+                            };
+                        } else {
+                            absContextRef.current = null;
+                        }
+                        if (!isCurrentRequest()) return;
+                        await handlePlayItem(items[index]!, items, index, playOptions);
+                        return;
+                    }
+                }
+
+                await handlePlayItem(preparedTrack, [preparedTrack], 0, playOptions);
+                return;
+            }
+
+            const rawQueueItems = (queueTracks ?? detail.tracks).flatMap((candidate) =>
                 isValidTrackPlayback(candidate.playback) ? [candidate.playback] : [],
             );
+            const queueItems = await Promise.all(
+                rawQueueItems.map((candidate) =>
+                    preparePlaybackItemForNative(candidate, serverConnections).catch(
+                        () => candidate,
+                    ),
+                ),
+            );
+            if (!isCurrentRequest()) return;
+
             const queueIndex = queueItems.findIndex(
-                (candidate) => candidate.id === track.playback?.id,
+                (candidate) => candidate.id === preparedTrack.id,
             );
 
             if (!isCurrentRequest()) return;
             if (queueIndex >= 0) {
-                await handlePlayItem(track.playback, queueItems, queueIndex, { shuffled: false });
+                await handlePlayItem(preparedTrack, queueItems, queueIndex, playOptions);
             } else {
-                await handlePlayItem(track.playback, [track.playback], 0, { shuffled: false });
+                await handlePlayItem(preparedTrack, [preparedTrack], 0, playOptions);
             }
             return;
         }
@@ -822,7 +1016,8 @@ export function useAndroidMediaHandlers(
 
         if (
             detail.type === MobileMediaDetailType.PODCAST &&
-            absAuth?.type === ServerType.AUDIOBOOKSHELF &&
+            absAuth &&
+            (absAuth.type === ServerType.AUDIOBOOKSHELF || absAuth.type === ServerType.SAMO) &&
             track.itemId
         ) {
             const progress = await loadAbsCurrentProgress(
@@ -883,21 +1078,17 @@ export function useAndroidMediaHandlers(
             if (!isCurrentRequest()) return;
             if (offlineFiles.length > 1) {
                 const targetBookSeconds = trackToPlay.startSeconds ?? 0;
-                const startIndex = pickAudiobookFileIndexForTime(
+                const { index, items } = buildAudiobookFilePlaybackQueue(
+                    detail,
                     offlineFiles,
                     targetBookSeconds,
-                );
-                const initialOffsetSeconds = Math.max(
-                    0,
-                    targetBookSeconds - offlineFiles[startIndex].startOffsetSeconds,
-                );
-                const queue = offlineFiles.map((file, idx) =>
-                    buildOfflineAudiobookPlayable(
-                        detail,
-                        file,
-                        idx === startIndex ? initialOffsetSeconds : 0,
-                        absAuth,
-                    ),
+                    (file, initialPositionSeconds) =>
+                        buildOfflineAudiobookPlayable(
+                            detail,
+                            file,
+                            initialPositionSeconds,
+                            absAuth,
+                        ),
                 );
                 if (absAuth && trackToPlay.itemId) {
                     const totalDurationSeconds = offlineFiles.reduce(
@@ -914,7 +1105,7 @@ export function useAndroidMediaHandlers(
                     absContextRef.current = null;
                 }
                 if (!isCurrentRequest()) return;
-                await handlePlayItem(queue[startIndex], queue, startIndex, { shuffled: false });
+                await handlePlayItem(items[index]!, items, index, { shuffled: false });
                 return;
             }
         }
@@ -971,7 +1162,7 @@ export function useAndroidMediaHandlers(
                 [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
             }
 
-            await handlePlayItem(shuffled[0], shuffled, 0, { shuffled: true });
+            await handlePlayItem(shuffled[0], shuffled, 0, playlistPlaybackOptions(detail, true));
         },
         [handlePlayItem],
     );
@@ -1086,6 +1277,20 @@ export function useAndroidMediaHandlers(
         const isFavoritedNow = favoritedKeys.has(key);
 
         try {
+            if (auth.type === ServerType.SAMO) {
+                await setSamoMusicFavorite(
+                    auth,
+                    'music-track',
+                    track.id,
+                    !isFavoritedNow,
+                );
+                upsertFavoriteKey(key, !isFavoritedNow);
+                setContextMenuFeedback(
+                    !isFavoritedNow ? 'Added to Favorites' : 'Removed from Favorites',
+                );
+                return;
+            }
+
             if (isFavoritedNow) {
                 await unstarSubsonicTrack(auth, track.id);
                 upsertFavoriteKey(key, false);
@@ -1111,8 +1316,23 @@ export function useAndroidMediaHandlers(
             auth &&
             (item.type === MobileHomeItemType.ALBUM ||
                 item.type === MobileHomeItemType.ARTIST);
+        const useSamoFavorite =
+            auth?.type === ServerType.SAMO &&
+            (item.type === MobileHomeItemType.ALBUM ||
+                item.type === MobileHomeItemType.ARTIST);
 
         try {
+            if (useSamoFavorite && auth) {
+                const kind =
+                    item.type === MobileHomeItemType.ALBUM ? 'music-album' : 'music-artist';
+                await setSamoMusicFavorite(auth, kind, item.id, !isFavoritedNow);
+                upsertFavoriteKey(key, !isFavoritedNow);
+                setContextMenuFeedback(
+                    !isFavoritedNow ? 'Added to Favorites' : 'Removed from Favorites',
+                );
+                return;
+            }
+
             if (useServerStar && auth) {
                 if (item.type === MobileHomeItemType.ALBUM) {
                     if (isFavoritedNow) {
@@ -1258,7 +1478,7 @@ export function useAndroidMediaHandlers(
             const queue = playbackQueueRef.current;
             if (queue) {
                 playbackQueueRef.current = {
-                    index: queue.index,
+                    ...queue,
                     items: [...queue.items, ...queueableItems],
                 };
             } else {
@@ -1268,10 +1488,11 @@ export function useAndroidMediaHandlers(
                 };
             }
             forcePlaybackQueueRender();
+            syncAndroidNativePlaybackQueue(playbackQueueRef.current, auth.serverConnections);
 
             return queueableItems.length;
         },
-        [],
+        [auth.serverConnections, playbackQueueRef],
     );
 
     const loadDetailForContextAction = useCallback(
@@ -1747,6 +1968,46 @@ export function useAndroidMediaHandlers(
         }
     };
 
+    const reloadCurrentMediaDetail = useCallback(async () => {
+        if (mediaDetailState.status !== 'loaded') {
+            return;
+        }
+
+        const detail = mediaDetailState.detail;
+        const itemType =
+            detail.type === MobileMediaDetailType.ALBUM
+                ? MobileHomeItemType.ALBUM
+                : detail.type === MobileMediaDetailType.PLAYLIST
+                  ? MobileHomeItemType.PLAYLIST
+                  : detail.type === MobileMediaDetailType.ARTIST
+                    ? MobileHomeItemType.ARTIST
+                    : detail.type === MobileMediaDetailType.PODCAST
+                      ? MobileHomeItemType.PODCAST
+                      : detail.type === MobileMediaDetailType.AUDIOBOOK
+                        ? MobileHomeItemType.AUDIOBOOK
+                        : null;
+
+        if (!itemType) {
+            return;
+        }
+
+        const item: AndroidRecentContentSourceItem = {
+            artworkImageId: detail.artworkImageId,
+            artworkUrl: detail.artworkUrl,
+            id: detail.id,
+            source: detail.source,
+            title: detail.title,
+            type: itemType,
+        };
+        const cacheKey = getRecentContentItemKey(item);
+        mediaDetailCacheRef.current.delete(cacheKey);
+        const next = await loadAndroidMediaDetail(serverConnections, item);
+        if (next.status === 'loaded') {
+            rememberMediaDetail(mediaDetailCacheRef.current, cacheKey, next.detail);
+            setMediaDetailState(next);
+        }
+    }, [mediaDetailState, serverConnections, setMediaDetailState]);
+
     return {
         appendPlayableItemsToQueue,
         bumpBookInfoRequestId,
@@ -1786,5 +2047,6 @@ export function useAndroidMediaHandlers(
         invalidateMediaDetailRequests,
         loadDetailWithCache,
         prefetchMediaDetailCache,
+        reloadCurrentMediaDetail,
     };
 }

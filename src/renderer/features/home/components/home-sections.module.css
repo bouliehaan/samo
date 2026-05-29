@@ -164,15 +164,13 @@
     transform: translateY(-1px);
 }
 
-.track-list,
-.ranked-list {
+.track-list {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 0.45rem var(--theme-spacing-md);
 }
 
 .track-row,
-.ranked-row,
 .discovery-card {
     display: grid;
     grid-template-columns: 3.25rem minmax(0, 1fr) auto;
@@ -194,7 +192,6 @@
 }
 
 .track-row:hover,
-.ranked-row:hover,
 .discovery-card:hover {
     background: color-mix(in srgb, var(--theme-colors-surface) 94%, white 3%);
     border-color: color-mix(in srgb, var(--theme-colors-primary-filled) 34%, transparent);
@@ -217,18 +214,6 @@
     justify-self: end;
     color: var(--theme-colors-dimmed);
     white-space: nowrap;
-}
-
-.rank {
-    width: 2rem;
-    font-weight: 800;
-    font-variant-numeric: tabular-nums;
-    color: color-mix(in srgb, var(--theme-colors-text) 44%, transparent);
-    text-align: center;
-}
-
-.ranked-row {
-    grid-template-columns: 2rem 3.25rem minmax(0, 1fr) auto;
 }
 
 .editorial {
@@ -276,7 +261,6 @@
 
 @media (width <= 780px) {
     .track-list,
-    .ranked-list,
     .editorial,
     .discovery-grid {
         grid-template-columns: 1fr;

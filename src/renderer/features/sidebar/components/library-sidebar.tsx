@@ -541,33 +541,55 @@ export const LibrarySidebar = () => {
         [absItemQueries, absTypeLibraries],
     );
 
+    const samoAudiobookEntries = useMemo(
+        () =>
+            (samoAudiobooksQuery.data ?? []).map((item) => ({
+                item,
+                mediaType: 'book',
+            })),
+        [samoAudiobooksQuery.data],
+    );
+
+    const samoPodcastEntries = useMemo(
+        () =>
+            (samoPodcastsQuery.data ?? []).map((item) => ({
+                item,
+                mediaType: 'podcast',
+            })),
+        [samoPodcastsQuery.data],
+    );
+
     const audiobookEntries = useMemo(
         () =>
             isSamoLongForm
-                ? (samoAudiobooksQuery.data ?? []).map((item) => ({
-                      item,
-                      mediaType: 'book',
-                  }))
+                ? samoAudiobookEntries
                 : absEntries.filter(
                       (entry) => entry.mediaType === 'book' || entry.item.mediaType === 'book',
                   ),
-        [absEntries, isSamoLongForm, samoAudiobooksQuery.data],
+        [absEntries, isSamoLongForm, samoAudiobookEntries],
     );
 
     const podcastEntries = useMemo(
         () =>
             isSamoLongForm
-                ? (samoPodcastsQuery.data ?? []).map((item) => ({
-                      item,
-                      mediaType: 'podcast',
-                  }))
+                ? samoPodcastEntries
                 : absEntries.filter(
                       (entry) =>
                           entry.mediaType === 'podcast' ||
                           entry.item.mediaType === 'podcast' ||
                           Boolean(entry.item.media?.episodes),
                   ),
-        [absEntries, isSamoLongForm, samoPodcastsQuery.data],
+        [absEntries, isSamoLongForm, samoPodcastEntries],
+    );
+
+    const audiobookEntryIdsKey = useMemo(
+        () => audiobookEntries.map((entry) => entry.item.id).sort().join('\0'),
+        [audiobookEntries],
+    );
+
+    const podcastEntryIdsKey = useMemo(
+        () => podcastEntries.map((entry) => entry.item.id).sort().join('\0'),
+        [podcastEntries],
     );
 
     const pruneStaleRecents = usePlayHistoryStore((state) => state.actions.pruneStale);
@@ -623,13 +645,15 @@ export const LibrarySidebar = () => {
     useEffect(() => {
         if (!longFormServerId || activeFilter !== 'audiobooks' || !longFormItemsReady) return;
         pruneStaleRecents({
-            knownItemIds: new Set(audiobookEntries.map((entry) => entry.item.id)),
+            knownItemIds: new Set(
+                audiobookEntryIdsKey ? audiobookEntryIdsKey.split('\0') : [],
+            ),
             mediaType: 'audiobook',
             serverId: longFormServerId,
         });
     }, [
         activeFilter,
-        audiobookEntries,
+        audiobookEntryIdsKey,
         longFormItemsReady,
         longFormServerId,
         pruneStaleRecents,
@@ -638,11 +662,11 @@ export const LibrarySidebar = () => {
     useEffect(() => {
         if (!longFormServerId || activeFilter !== 'podcasts' || !longFormItemsReady) return;
         pruneStaleRecents({
-            knownItemIds: new Set(podcastEntries.map((entry) => entry.item.id)),
+            knownItemIds: new Set(podcastEntryIdsKey ? podcastEntryIdsKey.split('\0') : []),
             mediaType: 'podcast',
             serverId: longFormServerId,
         });
-    }, [activeFilter, longFormItemsReady, longFormServerId, podcastEntries, pruneStaleRecents]);
+    }, [activeFilter, longFormItemsReady, longFormServerId, podcastEntryIdsKey, pruneStaleRecents]);
 
     const currentMusicArtistIds = useMemo(
         () =>

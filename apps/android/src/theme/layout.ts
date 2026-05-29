@@ -49,14 +49,14 @@ export const MINI_PLAYER_PLAY_CENTER_Y =
 /** Full primary play button — final size, centered horizontally. Vertical is
  * measured at runtime in PlayerSurface (bottom-block layout varies with track
  * type), with this estimate as the initial value before measurement settles. */
-export const FULL_PLAYER_PLAY_SIZE = 68;
-export const FULL_PLAYER_PLAY_GLYPH_SIZE = 44;
+export const FULL_PLAYER_PLAY_SIZE = 88;
+export const FULL_PLAYER_PLAY_GLYPH_SIZE = 54;
 export const FULL_PLAYER_PLAY_CENTER_X = SCREEN_WIDTH / 2;
 export const FULL_PLAYER_PLAY_CENTER_Y_ESTIMATE = SCREEN_HEIGHT - 150;
 
 export const FULL_PLAYER_HEADER_HEIGHT = 44;
 /** Music layout: metadata + seek + controls + cast row below the flex artwork well. */
-export const FULL_PLAYER_BELOW_ARTWORK_CHROME = 310;
+export const FULL_PLAYER_BELOW_ARTWORK_CHROME = 350;
 export const FULL_PLAYER_HERO_SHADOW_OFFSET = 8;
 
 const FULL_PLAYER_ARTWORK_WELL =
@@ -104,8 +104,25 @@ export const HOME_PRIMARY_TILE = Math.floor(
 );
 export const HOME_COMPACT_OFFSET = 30;
 export const HOME_ROUNDED_OFFSET = 22;
+/** Tight gap between artwork and title (styles.mediaArtwork marginBottom). */
+const HOME_MEDIA_ARTWORK_TEXT_GAP = 4;
+const HOME_MEDIA_TITLE_LINE_HEIGHT = 18;
+const HOME_MEDIA_TITLE_MAX_LINES = 2;
+const HOME_MEDIA_TITLE_MARGIN_BOTTOM = 1;
+const HOME_MEDIA_SUBTITLE_LINE_HEIGHT = 16;
+/** Minimal descender room; tiles use includeFontPadding={false} on Android. */
+const HOME_MEDIA_TEXT_DESCENDER_SLACK = 2;
+
 /** Title + subtitle block under a home carousel tile (`mediaTileCompact`). */
-export const HOME_MEDIA_TILE_CHROME = 58;
+export const HOME_MEDIA_TILE_CHROME =
+    HOME_MEDIA_ARTWORK_TEXT_GAP +
+    HOME_MEDIA_TITLE_LINE_HEIGHT * HOME_MEDIA_TITLE_MAX_LINES +
+    HOME_MEDIA_TITLE_MARGIN_BOTTOM +
+    HOME_MEDIA_SUBTITLE_LINE_HEIGHT +
+    HOME_MEDIA_TEXT_DESCENDER_SLACK;
+
+/** `continueProgressTrack` + margin when a tile shows playback progress. */
+export const HOME_MEDIA_PROGRESS_CHROME = 4 + 4;
 export const HOME_MEDIA_ROW_HEIGHT = HOME_PRIMARY_TILE + HOME_MEDIA_TILE_CHROME;
 export const HOME_MEDIA_ROW_HEIGHT_ARTIST =
     HOME_PRIMARY_TILE - HOME_COMPACT_OFFSET + HOME_MEDIA_TILE_CHROME;

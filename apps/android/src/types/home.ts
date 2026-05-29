@@ -21,6 +21,7 @@ export interface HomeDisplaySection {
         | 'continue'
         | 'playlist'
         | 'podcast'
+        | 'podcast-feed'
         | 'radio'
         | 'recents'
         | 'wide';

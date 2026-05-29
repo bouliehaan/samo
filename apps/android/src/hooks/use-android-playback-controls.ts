@@ -1,13 +1,24 @@
 import type { MobilePlayableAudio } from '@samo/core/mobile';
-import { useCallback, type MutableRefObject } from 'react';
+
+import type {
+    AndroidPlaybackQueue,
+    AndroidPlayItemOptions,
+} from './use-android-native-playback';
+import type { ServerAuthenticationResult } from '@samo/core/server';
+import { useCallback, useRef, type MutableRefObject } from 'react';
 
 import type { AbsProgressContext } from '../services/abs-progress';
 import { syncAbsProgressImmediate } from '../services/abs-progress';
+import {
+    resolveSamoMusicPlaybackContext,
+    syncSamoMusicPlaybackImmediate,
+} from '../services/samo-playback-sync';
 import {
     getAndroidPlaybackStatus,
     pauseAndroidAudio,
     resumeAndroidAudio,
     seekAndroidAudio,
+    syncAndroidNativePlaybackQueue,
 } from '../services/audio-playback';
 import { useAppSessionState } from '../state/app-session';
 import {
@@ -17,12 +28,26 @@ import {
 import { getAbsProgressSeconds } from '../utils/abs-progress-math';
 import { clamp } from '../utils/math';
 import { resolvePlaybackResumeItem } from '../utils/playback-recovery';
-import { getResumePositionSeconds, withResumePosition } from '../utils/playback-resume';
+import {
+    getResumePositionSeconds,
+    refreshPlayableResumeFromServer,
+    withResumePosition,
+} from '../utils/playback-resume';
+import {
+    getSamoBookPositionSeconds,
+    getSamoMaxFilePositionMs,
+    isSamoAudiobookPlayback,
+    prepareSamoAudiobookPlaybackAtBookPosition,
+    samoAudiobookSeekNeedsStreamRestart,
+} from '../utils/samo-audiobook-playback';
+import { pickAudiobookQueueIndexForBookTime } from '../utils/offline-playback';
 import {
     getActivePlaybackStatus,
     getAdjacentSegmentTargetMs,
+    getCurrentTimelineSegmentIndex,
     getPlaybackDurationMs,
     getPlaybackEventDurationMs,
+    getTimelinePositionSeconds,
     isLivePlayback,
 } from '../utils/playback-time';
 
@@ -37,7 +62,8 @@ export interface AndroidPlaybackControls {
 export function useAndroidPlaybackControls(options: {
     absContextRef: MutableRefObject<AbsProgressContext | null>;
     lastPlayedItem: MobilePlayableAudio | null;
-    playbackQueueRef: MutableRefObject<null | { index: number; items: MobilePlayableAudio[] }>;
+    playbackQueueRef: MutableRefObject<AndroidPlaybackQueue | null>;
+    serverConnections: ServerAuthenticationResult[];
     playbackSnapshotRef: MutableRefObject<null | {
         item: MobilePlayableAudio;
         sessionId: string;
@@ -46,12 +72,19 @@ export function useAndroidPlaybackControls(options: {
         item: MobilePlayableAudio,
         queueItems?: MobilePlayableAudio[],
         queueIndex?: number,
-        playOptions?: { shuffled?: boolean },
+        playOptions?: AndroidPlayItemOptions,
     ) => Promise<void>;
 }): AndroidPlaybackControls {
-    const { absContextRef, lastPlayedItem, playbackQueueRef, playbackSnapshotRef, playQueuedItem } =
-        options;
+    const {
+        absContextRef,
+        lastPlayedItem,
+        playbackQueueRef,
+        playbackSnapshotRef,
+        playQueuedItem,
+        serverConnections,
+    } = options;
     const { forcePlaybackQueueRender, setIsShuffled } = useAppSessionState();
+    const seekGenerationRef = useRef(0);
 
     const handleSeekPlayback = useCallback(async (positionMs: number) => {
         const playbackState = getAndroidPlaybackState();
@@ -60,8 +93,33 @@ export function useAndroidPlaybackControls(options: {
             return;
         }
 
+        const item = playbackState.item;
         const durationMs = getPlaybackDurationMs(playbackState);
-        const nextPositionMs = clamp(positionMs, 0, durationMs ?? Math.max(0, positionMs));
+        const maxFilePositionMs = isSamoAudiobookPlayback(item)
+            ? getSamoMaxFilePositionMs(item, playbackState.durationMs)
+            : durationMs;
+        const nextPositionMs = clamp(
+            positionMs,
+            0,
+            maxFilePositionMs ?? durationMs ?? Math.max(0, positionMs),
+        );
+        const seekGeneration = (seekGenerationRef.current += 1);
+
+        if (
+            isSamoAudiobookPlayback(item) &&
+            samoAudiobookSeekNeedsStreamRestart(item, nextPositionMs, maxFilePositionMs)
+        ) {
+            const targetBookSeconds = getSamoBookPositionSeconds(item, nextPositionMs);
+            const refreshed = await prepareSamoAudiobookPlaybackAtBookPosition(
+                item,
+                targetBookSeconds,
+                serverConnections,
+            );
+            await playQueuedItem(refreshed, [refreshed], 0, {
+                bookStartSeconds: targetBookSeconds,
+            });
+            return;
+        }
 
         setAndroidPlaybackState((current) =>
             current.status === 'idle' ? current : { ...current, positionMs: nextPositionMs },
@@ -69,13 +127,49 @@ export function useAndroidPlaybackControls(options: {
 
         try {
             const event = await seekAndroidAudio(nextPositionMs);
+            if (seekGeneration !== seekGenerationRef.current) {
+                return;
+            }
+
             const absCtx = absContextRef.current;
+            const item =
+                getAndroidPlaybackState().status === 'idle'
+                    ? playbackState.item
+                    : getAndroidPlaybackState().item;
 
             if (absCtx) {
                 void syncAbsProgressImmediate(
                     absCtx,
-                    getAbsProgressSeconds(absCtx, nextPositionMs, playbackState.item),
+                    getAbsProgressSeconds(absCtx, nextPositionMs, item),
                 );
+            }
+
+            const samoCtx = resolveSamoMusicPlaybackContext(item, serverConnections);
+            if (samoCtx) {
+                void syncSamoMusicPlaybackImmediate(samoCtx, Math.floor(nextPositionMs / 1000), {
+                    touchLastPlayedAt: !playbackQueueRef.current?.omitTrackRecentlyPlayed,
+                });
+            }
+
+            setAndroidPlaybackState((current) => {
+                if (current.status === 'idle' || seekGeneration !== seekGenerationRef.current) {
+                    return current;
+                }
+
+                const resolvedStatus = getActivePlaybackStatus(event.status, current.status);
+
+                return {
+                    ...current,
+                    bitPerfect: event.bitPerfect ?? current.bitPerfect,
+                    durationMs: getPlaybackEventDurationMs(event, current.item),
+                    message: event.message ?? current.message,
+                    positionMs: nextPositionMs,
+                    status: resolvedStatus === 'ended' ? 'playing' : resolvedStatus,
+                };
+            });
+        } catch (error) {
+            if (seekGeneration !== seekGenerationRef.current) {
+                return;
             }
 
             setAndroidPlaybackState((current) => {
@@ -85,28 +179,23 @@ export function useAndroidPlaybackControls(options: {
 
                 return {
                     ...current,
-                    bitPerfect: event.bitPerfect ?? current.bitPerfect,
-                    durationMs: getPlaybackEventDurationMs(event, current.item),
-                    message: event.message ?? current.message,
-                    positionMs: nextPositionMs,
-                    status: getActivePlaybackStatus(event.status, current.status),
+                    message: error instanceof Error ? error.message : 'Seek failed',
+                    status: 'error',
                 };
             });
-        } catch (error) {
-            setAndroidPlaybackState({
-                ...playbackState,
-                message: error instanceof Error ? error.message : 'Seek failed',
-                status: 'error',
-            });
         }
-    }, [absContextRef]);
+    }, [absContextRef, playQueuedItem, serverConnections]);
 
     const restartPlaybackItem = useCallback(
         async (item: MobilePlayableAudio) => {
             const playbackState = getAndroidPlaybackState();
-            const itemToPlay = withResumePosition(
+            const itemWithServerProgress = await refreshPlayableResumeFromServer(
                 item,
-                getResumePositionSeconds(item, playbackState),
+                serverConnections,
+            );
+            const itemToPlay = withResumePosition(
+                itemWithServerProgress,
+                getResumePositionSeconds(itemWithServerProgress, playbackState),
             );
             const queue = playbackQueueRef.current;
             const queueIndex =
@@ -119,7 +208,7 @@ export function useAndroidPlaybackControls(options: {
 
             await playQueuedItem(itemToPlay, [item], 0);
         },
-        [playbackQueueRef, playQueuedItem],
+        [playbackQueueRef, playQueuedItem, serverConnections],
     );
 
     const handleTogglePlayback = useCallback(async () => {
@@ -155,12 +244,38 @@ export function useAndroidPlaybackControls(options: {
                     );
                 }
 
+                const samoCtx = resolveSamoMusicPlaybackContext(
+                    playbackState.item,
+                    serverConnections,
+                );
+                if (samoCtx && playbackState.positionMs) {
+                    void syncSamoMusicPlaybackImmediate(
+                        samoCtx,
+                        Math.floor(playbackState.positionMs / 1000),
+                        {
+                            touchLastPlayedAt:
+                                !playbackQueueRef.current?.omitTrackRecentlyPlayed,
+                        },
+                    );
+                }
+
                 return;
             }
 
             if (playbackState.status === 'loading') {
                 await restartPlaybackItem(playbackState.item);
                 return;
+            }
+
+            if (playbackState.status === 'paused') {
+                const isLongForm =
+                    playbackState.item.source === 'podcast' ||
+                    playbackState.item.source === 'audiobook';
+                const playheadMs = playbackState.positionMs ?? 0;
+                if (isLongForm || playheadMs < 3000) {
+                    await restartPlaybackItem(playbackState.item);
+                    return;
+                }
             }
 
             if (isLivePlayback(playbackState)) {
@@ -205,7 +320,7 @@ export function useAndroidPlaybackControls(options: {
                 status: 'error',
             });
         }
-    }, [absContextRef, lastPlayedItem, playbackSnapshotRef, restartPlaybackItem]);
+    }, [absContextRef, lastPlayedItem, playbackSnapshotRef, restartPlaybackItem, serverConnections]);
 
     const handleSkipPlayback = useCallback(
         async (offsetSeconds: number) => {
@@ -215,9 +330,45 @@ export function useAndroidPlaybackControls(options: {
                 return;
             }
 
+            const item = playbackState.item;
+
+            if (isSamoAudiobookPlayback(item)) {
+                const bookPosition = getTimelinePositionSeconds(
+                    item,
+                    playbackState.positionMs,
+                );
+                const targetBook = Math.max(0, bookPosition + offsetSeconds);
+                const targetFileMs = Math.max(
+                    0,
+                    (targetBook - (item.progressOffsetSeconds ?? 0)) * 1000,
+                );
+                const maxFilePositionMs = getSamoMaxFilePositionMs(
+                    item,
+                    playbackState.durationMs,
+                );
+
+                if (
+                    samoAudiobookSeekNeedsStreamRestart(
+                        item,
+                        targetFileMs,
+                        maxFilePositionMs,
+                    )
+                ) {
+                    const refreshed = await prepareSamoAudiobookPlaybackAtBookPosition(
+                        item,
+                        targetBook,
+                        serverConnections,
+                    );
+                    await playQueuedItem(refreshed, [refreshed], 0, {
+                        bookStartSeconds: targetBook,
+                    });
+                    return;
+                }
+            }
+
             await handleSeekPlayback((playbackState.positionMs ?? 0) + offsetSeconds * 1000);
         },
-        [handleSeekPlayback],
+        [handleSeekPlayback, playQueuedItem, serverConnections],
     );
 
     const handleToggleShuffle = useCallback(() => {
@@ -232,36 +383,152 @@ export function useAndroidPlaybackControls(options: {
                     const j = Math.floor(Math.random() * (i + 1));
                     [after[i], after[j]] = [after[j], after[i]];
                 }
-                playbackQueueRef.current = { index: queue.index, items: [...before, ...after] };
+                playbackQueueRef.current = {
+                    ...queue,
+                    items: [...before, ...after],
+                };
                 forcePlaybackQueueRender();
+                syncAndroidNativePlaybackQueue(playbackQueueRef.current, serverConnections);
             }
 
             return next;
         });
-    }, [forcePlaybackQueueRender, playbackQueueRef, setIsShuffled]);
+    }, [forcePlaybackQueueRender, playbackQueueRef, serverConnections, setIsShuffled]);
 
     const handleNavigatePlayback = useCallback(
         async (direction: -1 | 1) => {
             const playbackState = getAndroidPlaybackState();
+            if (playbackState.status !== 'idle') {
+                const segmentTargetMs = getAdjacentSegmentTargetMs(
+                    playbackState.item.timelineSegments,
+                    playbackState.positionMs ?? 0,
+                    direction,
+                    playbackState.item,
+                );
 
-            if (playbackState.status === 'idle') {
-                return;
-            }
+                if (segmentTargetMs !== undefined) {
+                    const queue = playbackQueueRef.current;
+                    if (
+                        queue &&
+                        queue.items.length > 1 &&
+                        playbackState.item.source === 'audiobook'
+                    ) {
+                        const segments = playbackState.item.timelineSegments ?? [];
+                        const ordered = [...segments].sort(
+                            (left, right) => left.startSeconds - right.startSeconds,
+                        );
+                        const bookPosition = getTimelinePositionSeconds(
+                            playbackState.item,
+                            playbackState.positionMs,
+                        );
+                        const currentIndex = getCurrentTimelineSegmentIndex(
+                            ordered,
+                            bookPosition,
+                        );
+                        let bookStart = 0;
 
-            const segmentTargetMs = getAdjacentSegmentTargetMs(
-                playbackState.item.timelineSegments,
-                playbackState.positionMs ?? 0,
-                direction,
-            );
+                        if (direction === 1) {
+                            const next = ordered[currentIndex + 1];
+                            if (!next) {
+                                return;
+                            }
+                            bookStart = next.startSeconds;
+                        } else if (
+                            ordered[currentIndex] &&
+                            bookPosition - ordered[currentIndex]!.startSeconds > 5
+                        ) {
+                            bookStart = ordered[currentIndex]!.startSeconds;
+                        } else if (currentIndex > 0) {
+                            bookStart = ordered[currentIndex - 1]!.startSeconds;
+                        }
 
-            if (segmentTargetMs !== undefined) {
-                await handleSeekPlayback(segmentTargetMs);
-                return;
-            }
+                        const fileIndex = pickAudiobookQueueIndexForBookTime(
+                            queue.items,
+                            bookStart,
+                        );
+                        const fileItem = queue.items[fileIndex];
+                        if (!fileItem) {
+                            return;
+                        }
+                        const fileStartSeconds = Math.max(
+                            0,
+                            bookStart - (fileItem.progressOffsetSeconds ?? 0),
+                        );
+                        await playQueuedItem(
+                            withResumePosition(fileItem, fileStartSeconds),
+                            queue.items,
+                            fileIndex,
+                            { skipResumeRefresh: true },
+                        );
+                        return;
+                    }
 
-            if (direction === -1 && (playbackState.positionMs ?? 0) > 3000) {
-                await handleSeekPlayback(0);
-                return;
+                    if (isSamoAudiobookPlayback(playbackState.item)) {
+                        const segments = playbackState.item.timelineSegments ?? [];
+                        const ordered = [...segments].sort(
+                            (left, right) => left.startSeconds - right.startSeconds,
+                        );
+                        const bookPosition = getTimelinePositionSeconds(
+                            playbackState.item,
+                            playbackState.positionMs,
+                        );
+                        const currentIndex = getCurrentTimelineSegmentIndex(
+                            ordered,
+                            bookPosition,
+                        );
+                        const currentSegment =
+                            currentIndex >= 0 ? ordered[currentIndex] : undefined;
+                        let bookStart = 0;
+
+                        if (direction === 1) {
+                            const next = ordered[currentIndex + 1];
+                            if (!next) {
+                                return;
+                            }
+                            bookStart = next.startSeconds;
+                        } else if (
+                            currentSegment &&
+                            bookPosition - currentSegment.startSeconds > 5
+                        ) {
+                            bookStart = currentSegment.startSeconds;
+                        } else if (currentIndex > 0) {
+                            bookStart = ordered[currentIndex - 1]!.startSeconds;
+                        }
+
+                        const refreshed = await prepareSamoAudiobookPlaybackAtBookPosition(
+                            playbackState.item,
+                            bookStart,
+                            serverConnections,
+                        );
+                        await playQueuedItem(refreshed, [refreshed], 0, {
+                            bookStartSeconds: bookStart,
+                        });
+                    } else {
+                        await handleSeekPlayback(segmentTargetMs);
+                    }
+                    return;
+                }
+
+                if (direction === -1 && (playbackState.positionMs ?? 0) > 3000) {
+                    if (isSamoAudiobookPlayback(playbackState.item)) {
+                        const bookPosition = getTimelinePositionSeconds(
+                            playbackState.item,
+                            playbackState.positionMs,
+                        );
+                        const targetBook = Math.max(0, bookPosition - 30);
+                        const refreshed = await prepareSamoAudiobookPlaybackAtBookPosition(
+                            playbackState.item,
+                            targetBook,
+                            serverConnections,
+                        );
+                        await playQueuedItem(refreshed, [refreshed], 0, {
+                            bookStartSeconds: targetBook,
+                        });
+                    } else {
+                        await handleSeekPlayback(0);
+                    }
+                    return;
+                }
             }
 
             const queue = playbackQueueRef.current;
@@ -272,7 +539,7 @@ export function useAndroidPlaybackControls(options: {
                 await playQueuedItem(nextItem, queue.items, nextIndex);
             }
         },
-        [handleSeekPlayback, playbackQueueRef, playQueuedItem],
+        [handleSeekPlayback, playbackQueueRef, playQueuedItem, serverConnections],
     );
 
     return {

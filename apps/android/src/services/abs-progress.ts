@@ -1,4 +1,10 @@
-import { type ServerAuthenticationResult } from '@samo/core/server';
+import {
+    getSamoPlayback,
+    patchSamoPlayback,
+    type SamoPlaybackTargetKind,
+    type ServerAuthenticationResult,
+    ServerType,
+} from '@samo/core/server';
 // expo-file-system 19 split the API; the legacy export still exposes
 // documentDirectory + the simple read/write helpers we need here.
 import * as FileSystem from 'expo-file-system/legacy';
@@ -47,6 +53,15 @@ const serverKeyOf = (auth: ServerAuthenticationResult): string =>
 
 const contextKeyOf = (ctx: { episodeId?: string; itemId: string }): string =>
     `${ctx.itemId}:${ctx.episodeId ?? ''}`;
+
+const samoFetch: typeof fetch = (url, init) => fetch(url, init);
+
+const samoTargetForContext = (
+    ctx: Pick<AbsProgressContext, 'episodeId' | 'itemId'>,
+): { id: string; kind: SamoPlaybackTargetKind } =>
+    ctx.episodeId
+        ? { id: ctx.episodeId, kind: 'podcast-episode' }
+        : { id: ctx.itemId, kind: 'audiobook' };
 
 const findEntry = (
     itemId: string,
@@ -151,6 +166,51 @@ export const loadAbsCurrentProgress = async (
         await initAbsProgressStore();
     }
 
+    if (authentication.type === ServerType.SAMO) {
+        const { id, kind } = samoTargetForContext({ episodeId, itemId });
+
+        try {
+            const state = await getSamoPlayback(samoFetch, authentication, kind, id);
+            const currentTimeSeconds = Math.max(0, Math.round(state.progressSeconds ?? 0));
+
+            if (currentTimeSeconds === 0 && !state.completed) {
+                const pending = findEntry(itemId, episodeId);
+                if (pending && pending.currentTimeSeconds > 0) {
+                    return {
+                        currentTimeSeconds: pending.currentTimeSeconds,
+                        durationSeconds: pending.durationSeconds,
+                        isFinished: false,
+                    };
+                }
+                return null;
+            }
+
+            const loaded: AbsLoadedProgress = {
+                currentTimeSeconds: state.completed ? 0 : currentTimeSeconds,
+                durationSeconds: undefined,
+                isFinished: Boolean(state.completed),
+            };
+
+            const pending = findEntry(itemId, episodeId);
+            if (pending && pending.currentTimeSeconds > loaded.currentTimeSeconds) {
+                loaded.currentTimeSeconds = pending.currentTimeSeconds;
+                loaded.isFinished = false;
+            }
+
+            return loaded;
+        } catch {
+            const pending = findEntry(itemId, episodeId);
+            if (pending) {
+                return {
+                    currentTimeSeconds: pending.currentTimeSeconds,
+                    durationSeconds: pending.durationSeconds,
+                    isFinished: false,
+                };
+            }
+            return null;
+        }
+    }
+
     const path = episodeId
         ? `/api/me/progress/${itemId}/${episodeId}`
         : `/api/me/progress/${itemId}`;
@@ -192,10 +252,8 @@ export const loadAbsCurrentProgress = async (
         // overwrite the user's actual furthest-listened position with the older
         // server value.
         const pending = findEntry(itemId, episodeId);
-        if (pending && pending.updatedAt > pending.syncedAt) {
-            if (pending.currentTimeSeconds > loaded.currentTimeSeconds) {
-                loaded.currentTimeSeconds = pending.currentTimeSeconds;
-            }
+        if (pending && pending.currentTimeSeconds > loaded.currentTimeSeconds) {
+            loaded.currentTimeSeconds = pending.currentTimeSeconds;
         }
 
         return isFinishedProgress(loaded)
@@ -240,20 +298,39 @@ const recordLocalProgress = (
 const writeProgressToServer = async (
     context: AbsProgressContext,
     currentTimeSeconds: number,
+    options?: { touchLastPlayedAt?: boolean },
 ): Promise<boolean> => {
     const { authentication, durationSeconds, episodeId, itemId } = context;
+    const progress =
+        durationSeconds > 0 ? Math.min(1, currentTimeSeconds / durationSeconds) : 0;
+    const isFinished = progress >= 0.96;
+
+    if (authentication.type === ServerType.SAMO) {
+        const { id, kind } = samoTargetForContext({ episodeId, itemId });
+
+        try {
+            await patchSamoPlayback(samoFetch, authentication, kind, id, {
+                completed: isFinished,
+                progressSeconds: Math.max(0, Math.round(currentTimeSeconds)),
+                touchLastPlayedAt: options?.touchLastPlayedAt ?? false,
+                touchLastPositionAt: true,
+            });
+            return true;
+        } catch {
+            return false;
+        }
+    }
+
     const path = episodeId
         ? `/api/me/progress/${itemId}/${episodeId}`
         : `/api/me/progress/${itemId}`;
-    const progress =
-        durationSeconds > 0 ? Math.min(1, currentTimeSeconds / durationSeconds) : 0;
 
     try {
         const response = await fetch(`${authentication.url}${path}`, {
             body: JSON.stringify({
                 currentTime: currentTimeSeconds,
                 duration: durationSeconds,
-                isFinished: progress >= 0.96,
+                isFinished,
                 lastUpdate: Date.now(),
                 progress,
             }),
@@ -294,7 +371,9 @@ export const syncAbsProgressImmediate = async (
 ): Promise<void> => {
     const key = contextKeyOf(context);
     lastAttemptByKey.set(key, Date.now());
-    const synced = await writeProgressToServer(context, currentTimeSeconds);
+    const synced = await writeProgressToServer(context, currentTimeSeconds, {
+        touchLastPlayedAt: true,
+    });
     recordLocalProgress(context, currentTimeSeconds, synced);
 };
 
@@ -324,6 +403,7 @@ export const flushPendingAbsProgress = async (
                 itemId: entry.itemId,
             },
             entry.currentTimeSeconds,
+            { touchLastPlayedAt: true },
         );
         if (ok) {
             entry.syncedAt = Date.now();

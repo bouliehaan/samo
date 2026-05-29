@@ -6,6 +6,7 @@ import {
     FULL_PLAYER_PADDING_TOP,
     HOME_COMPACT_OFFSET,
     HOME_EDGE_PADDING,
+    HOME_MEDIA_TILE_CHROME,
     HOME_PRIMARY_TILE,
     HOME_ROUNDED_OFFSET,
     HOME_TILE_GAP,
@@ -675,6 +676,145 @@ export const styles = StyleSheet.create({
         shadowRadius: 30,
         width: '100%',
     },
+    editPlaylistSheet: {
+        backgroundColor: 'rgba(20, 20, 22, 0.985)',
+        borderColor: 'rgba(255, 255, 255, 0.07)',
+        borderRadius: 22,
+        borderWidth: 0.5,
+        elevation: 22,
+        marginTop: 'auto',
+        maxHeight: '78%',
+        padding: spacing.lg,
+        width: '100%',
+    },
+    editPlaylistTitle: {
+        color: colors.text,
+        fontSize: 20,
+        fontWeight: '800',
+        marginBottom: spacing.md,
+    },
+    editPlaylistLabel: {
+        color: colors.muted,
+        fontSize: 12,
+        fontWeight: '700',
+        letterSpacing: 0.8,
+        marginBottom: spacing.xs,
+        textTransform: 'uppercase',
+    },
+    editPlaylistInput: {
+        backgroundColor: 'rgba(255,255,255,0.06)',
+        borderColor: 'rgba(255,255,255,0.1)',
+        borderRadius: 12,
+        borderWidth: 1,
+        color: colors.text,
+        fontSize: 16,
+        marginBottom: spacing.md,
+        paddingHorizontal: spacing.md,
+        paddingVertical: spacing.sm,
+    },
+    editPlaylistTextArea: {
+        minHeight: 88,
+        textAlignVertical: 'top',
+    },
+    editPlaylistSwitchRow: {
+        alignItems: 'center',
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        marginBottom: spacing.md,
+    },
+    editPlaylistSecondaryAction: {
+        alignItems: 'center',
+        borderColor: 'rgba(255,255,255,0.12)',
+        borderRadius: 12,
+        borderWidth: 1,
+        marginBottom: spacing.md,
+        paddingVertical: spacing.sm,
+    },
+    editPlaylistSecondaryActionText: {
+        color: colors.text,
+        fontSize: 15,
+        fontWeight: '700',
+    },
+    editPlaylistActions: {
+        gap: spacing.sm,
+    },
+    editPlaylistFooterRow: {
+        alignItems: 'center',
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+    },
+    editPlaylistGhostButton: {
+        borderRadius: 12,
+        paddingHorizontal: spacing.lg,
+        paddingVertical: spacing.sm,
+    },
+    editPlaylistGhostButtonText: {
+        color: colors.muted,
+        fontSize: 15,
+        fontWeight: '700',
+    },
+    editPlaylistSaveButton: {
+        alignItems: 'center',
+        backgroundColor: colors.accent,
+        borderRadius: 12,
+        minWidth: 88,
+        paddingHorizontal: spacing.lg,
+        paddingVertical: spacing.sm,
+    },
+    editPlaylistSaveButtonText: {
+        color: colors.background,
+        fontSize: 15,
+        fontWeight: '800',
+    },
+    editPlaylistDangerButton: {
+        alignItems: 'center',
+        marginBottom: spacing.xs,
+        paddingVertical: spacing.xs,
+    },
+    editPlaylistDangerButtonText: {
+        color: '#ff6b6b',
+        fontSize: 15,
+        fontWeight: '700',
+    },
+    editPlaylistHint: {
+        color: colors.muted,
+        fontSize: 12,
+        lineHeight: 17,
+        marginTop: spacing.md,
+        textAlign: 'center',
+    },
+    playlistManageBar: {
+        alignItems: 'center',
+        backgroundColor: 'rgba(255,255,255,0.05)',
+        borderColor: 'rgba(255,255,255,0.08)',
+        borderRadius: 14,
+        borderWidth: 1,
+        flexDirection: 'row',
+        gap: spacing.sm,
+        justifyContent: 'space-between',
+        marginBottom: spacing.sm,
+        paddingHorizontal: spacing.md,
+        paddingVertical: spacing.sm,
+    },
+    playlistManageBarText: {
+        color: colors.text,
+        fontSize: 14,
+        fontWeight: '700',
+    },
+    playlistTrackSelect: {
+        alignItems: 'center',
+        borderColor: 'rgba(255,255,255,0.25)',
+        borderRadius: 6,
+        borderWidth: 1.5,
+        height: 20,
+        justifyContent: 'center',
+        marginRight: spacing.sm,
+        width: 20,
+    },
+    playlistTrackSelectChecked: {
+        backgroundColor: colors.accent,
+        borderColor: colors.accent,
+    },
     bookInfoTitle: {
         color: colors.text,
         fontSize: 22,
@@ -835,7 +975,7 @@ export const styles = StyleSheet.create({
         backgroundColor: 'rgba(255, 255, 255, 0.16)',
         borderRadius: 999,
         height: 4,
-        marginTop: spacing.sm,
+        marginTop: 4,
         overflow: 'hidden',
         width: '100%',
     },
@@ -1336,13 +1476,16 @@ export const styles = StyleSheet.create({
         top: 0,
         width: 40,
     },
+    fullPlayerBottomBarSpacer: {
+        flex: 1,
+    },
     fullPlayerCastStatus: {
         color: colors.accent,
         flex: 1,
         fontSize: 12,
         fontWeight: '700',
-        marginLeft: spacing.sm,
-        textAlign: 'right',
+        marginHorizontal: spacing.sm,
+        textAlign: 'center',
     },
     fullPlayerCollapsedSurface: {
         backgroundColor: '#1c1c1e',
@@ -1370,18 +1513,30 @@ export const styles = StyleSheet.create({
     },
     fullPlayerControlSide: {
         alignItems: 'center',
+        flex: 1,
         flexDirection: 'row',
-        gap: 12,
-        minWidth: 100,
+        gap: 16,
+        minWidth: 0,
+    },
+    fullPlayerControlSideLeft: {
+        justifyContent: 'flex-end',
     },
     fullPlayerControlSideRight: {
-        justifyContent: 'flex-end',
+        justifyContent: 'flex-start',
+    },
+    fullPlayerControlSideLongForm: {
+        gap: 14,
+    },
+    longFormSkipLabel: {
+        color: colors.text,
+        fontSize: 16,
+        fontWeight: '600',
+        fontVariant: ['tabular-nums'],
     },
     fullPlayerControls: {
         alignItems: 'center',
         flexDirection: 'row',
-        justifyContent: 'space-between',
-        marginTop: 22,
+        marginTop: 28,
     },
     fullPlayerDragHandle: {
         alignItems: 'center',
@@ -1491,7 +1646,7 @@ export const styles = StyleSheet.create({
         aspectRatio: 1,
         backgroundColor: colors.surface,
         borderRadius: 2,
-        marginBottom: spacing.xs,
+        marginBottom: 4,
         width: HOME_PRIMARY_TILE,
     },
     homeFilterGridArtworkFallback: {
@@ -1543,7 +1698,7 @@ export const styles = StyleSheet.create({
         overflow: 'hidden',
     },
     homeMultiRowColumn: {
-        gap: spacing.lg,
+        gap: spacing.md,
     },
     inlineSearchBar: {
         alignItems: 'center',
@@ -1798,7 +1953,7 @@ export const styles = StyleSheet.create({
         backgroundColor: colors.surface,
         borderRadius: 2,
         height: HOME_PRIMARY_TILE,
-        marginBottom: spacing.xs,
+        marginBottom: 4,
         width: HOME_PRIMARY_TILE,
     },
     mediaArtworkAlbum: {
@@ -1826,7 +1981,7 @@ export const styles = StyleSheet.create({
         borderRadius: 2,
         height: HOME_PRIMARY_TILE,
         justifyContent: 'center',
-        marginBottom: spacing.xs,
+        marginBottom: 4,
         width: HOME_PRIMARY_TILE,
     },
     mediaArtworkGrid: {
@@ -2035,7 +2190,7 @@ export const styles = StyleSheet.create({
         width: HOME_PRIMARY_TILE,
     },
     mediaTileCompact: {
-        height: HOME_PRIMARY_TILE + 58,
+        height: HOME_PRIMARY_TILE + HOME_MEDIA_TILE_CHROME,
         width: HOME_PRIMARY_TILE,
     },
     mediaTileContinue: {
@@ -2067,7 +2222,7 @@ export const styles = StyleSheet.create({
         fontSize: 14,
         fontWeight: '800',
         lineHeight: 18,
-        marginBottom: 2,
+        marginBottom: 1,
     },
     mediaTitleCentered: {
         textAlign: 'center',
@@ -2196,25 +2351,29 @@ export const styles = StyleSheet.create({
     playerControlButton: {
         alignItems: 'center',
         borderRadius: 999,
-        height: 44,
+        height: 56,
         justifyContent: 'center',
-        width: 44,
+        width: 56,
+    },
+    playerControlButtonCompact: {
+        height: 52,
+        width: 52,
     },
     playerControlButtonPrimary: {
-        height: 68,
-        width: 68,
+        height: 88,
+        width: 88,
     },
     playerControlButtonSpacer: {
-        height: 44,
-        width: 44,
+        height: 56,
+        width: 56,
     },
-    /** Invisible 68×68 layout slot in the transport row. The morphing play
-     *  button is rendered outside the row in screen coords and lands here at
-     *  progress=1 — the slot reserves space for space-between layout but the
-     *  morph element is the only visible/tappable play affordance. */
+    /** Fixed center slot for the morphing play button at progress=1. */
     playerControlPrimarySlot: {
-        height: 68,
-        width: 68,
+        alignItems: 'center',
+        height: 88,
+        justifyContent: 'center',
+        marginHorizontal: 12,
+        width: 88,
     },
     /** Thin dimming layer over the home content while the player rises —
      *  the desk going dim under the card lifting off it. Sits below the
@@ -2596,6 +2755,14 @@ export const styles = StyleSheet.create({
         justifyContent: 'center',
         marginBottom: spacing.sm,
         width: '100%',
+    },
+    radioCardMeta: {
+        color: colors.muted,
+        fontSize: 11,
+        fontWeight: '600',
+        lineHeight: 14,
+        marginTop: 2,
+        textAlign: 'center',
     },
     radioCardNowPlaying: {
         color: colors.accent,

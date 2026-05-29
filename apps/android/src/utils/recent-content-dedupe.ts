@@ -8,6 +8,7 @@ import {
     type AndroidRecentContentItem,
     type AndroidRecentContentSourceItem,
     getRecentContentItemKey,
+    isEligibleRecentlyPlayedSurfaceItem,
     MAX_RECENT_CONTENT_ITEMS,
 } from '../services/recent-content';
 import { mergeContentItemSignals } from './content-item';
@@ -66,6 +67,12 @@ export const dedupeRecentContentItemsByAlbumIdentity = (
     const albumsByCanonical = new Map<string, AndroidRecentContentItem>();
 
     for (const entry of items) {
+        if (
+            !isEligibleRecentlyPlayedSurfaceItem(entry.item, { directSong: entry.directSong })
+        ) {
+            continue;
+        }
+
         const canonical = getCanonicalAlbumIdentityKey(entry.item);
         if (!canonical) {
             nonAlbums.push(entry);

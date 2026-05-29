@@ -63,7 +63,10 @@ const restoreAudiobookSession = async (
         server,
         sessionId: null,
     }));
-    usePlaybackOwnerStore.getState().claim('audiobook', { engine: 'web' });
+    usePlaybackOwnerStore.getState().claim('audiobook', {
+        engine: 'web',
+        mediaKey: session.itemId,
+    });
     return true;
 };
 
@@ -100,7 +103,10 @@ const restorePodcastSession = async (
         server,
         sessionId: null,
     }));
-    usePlaybackOwnerStore.getState().claim('podcast', { engine: 'web' });
+    usePlaybackOwnerStore.getState().claim('podcast', {
+        engine: 'web',
+        mediaKey: `${session.itemId}:${session.episodeId}`,
+    });
     return true;
 };
 

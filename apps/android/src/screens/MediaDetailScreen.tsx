@@ -4,6 +4,7 @@ import {
     getItemQualityProfile,
     getPlaybackQualityProfile,
     createMobilePlaylist,
+    isMobilePlaylistDetailEditable,
     type MobileHomeItem,
     MobileHomeItemType,
     type MobileMediaDetail,
@@ -49,6 +50,10 @@ import {
 } from 'react-native';
 
 import { ArtworkImage } from '../components/ArtworkImage';
+import {
+    EditPlaylistSheet,
+    removeSelectedPlaylistTracks,
+} from '../components/EditPlaylistSheet';
 import { PlaylistTrackControls } from '../components/PlaylistTrackControls';
 import { QualityBadge } from '../components/QualityBadge';
 import {
@@ -58,6 +63,7 @@ import {
     DiscGlyph,
     DownloadGlyph,
     EllipsisVerticalGlyph,
+    GearGlyph,
     HeartGlyph,
     MoreGlyph,
     PlayPauseGlyph,
@@ -210,6 +216,7 @@ export const MediaDetailContent = memo(({
     onAddTrackToPlaylist,
     onBack,
     onPlayTrack,
+    onReloadDetail,
     onSelectItem,
     onShufflePlay,
     serverConnections,
@@ -228,6 +235,7 @@ export const MediaDetailContent = memo(({
         index: number,
         queueTracks?: MobileMediaTrack[],
     ) => void;
+    onReloadDetail?: () => Promise<void>;
     onSelectItem: (item: AndroidRecentContentSourceItem) => void;
     onShufflePlay: (detail: MobileMediaDetail, tracks?: MobileMediaTrack[]) => void;
     serverConnections: ServerAuthenticationResult[];
@@ -267,6 +275,7 @@ export const MediaDetailContent = memo(({
                     onAddTrackToPlaylist={onAddTrackToPlaylist}
                     onBack={onBack}
                     onPlayTrack={onPlayTrack}
+                    onReloadDetail={onReloadDetail}
                     onSelectItem={onSelectItem}
                     onShufflePlay={onShufflePlay}
                     playlistTargets={getPlaylistTargetsForDetail(
@@ -324,6 +333,7 @@ export const MediaDetailLoaded = ({
     onAddTrackToPlaylist,
     onBack,
     onPlayTrack,
+    onReloadDetail,
     onSelectItem,
     onShufflePlay,
     playlistTargets,
@@ -343,11 +353,18 @@ export const MediaDetailLoaded = ({
         index: number,
         queueTracks?: MobileMediaTrack[],
     ) => void;
+    onReloadDetail?: () => Promise<void>;
     onSelectItem: (item: AndroidRecentContentSourceItem) => void;
     onShufflePlay: (detail: MobileMediaDetail, tracks?: MobileMediaTrack[]) => void;
     playlistTargets: MobileHomeItem[];
     serverConnections: ServerAuthenticationResult[];
 }) => {
+    const [playlistEditVisible, setPlaylistEditVisible] = useState(false);
+    const [playlistManageMode, setPlaylistManageMode] = useState(false);
+    const [playlistSelectedTrackIds, setPlaylistSelectedTrackIds] = useState<Set<string>>(
+        () => new Set(),
+    );
+    const [playlistManageSaving, setPlaylistManageSaving] = useState(false);
     const [playlistMenuTrack, setPlaylistMenuTrack] = useState<MobileMediaTrack | null>(null);
     const [playlistActionState, setPlaylistActionState] = useState<
         | { status: 'error'; message: string }
@@ -412,6 +429,17 @@ export const MediaDetailLoaded = ({
     const downloadedTrackKeys = useDownloadedTrackKeys();
     const isMusic = detail.type === MobileMediaDetailType.ALBUM || detail.type === MobileMediaDetailType.PLAYLIST;
     const isPlaylistDetail = detail.type === MobileMediaDetailType.PLAYLIST;
+    const canEditPlaylist = isPlaylistDetail && isMobilePlaylistDetailEditable(detail);
+    const playlistAuth = useMemo(
+        () => findServerAuthenticationForSource(serverConnections, detail.source),
+        [detail.source, serverConnections],
+    );
+
+    useEffect(() => {
+        setPlaylistManageMode(false);
+        setPlaylistSelectedTrackIds(new Set());
+        setPlaylistEditVisible(false);
+    }, [detail.id, detail.type]);
     const hasHiFiTracks = isPlaylistDetail && detail.tracks.some(isHiFiTrack);
 
     useEffect(() => {
@@ -674,6 +702,63 @@ export const MediaDetailLoaded = ({
         setPlaylistMenuTrack(track);
     };
 
+    const togglePlaylistTrackSelection = (trackId: string) => {
+        setPlaylistSelectedTrackIds((current) => {
+            const next = new Set(current);
+            if (next.has(trackId)) {
+                next.delete(trackId);
+            } else {
+                next.add(trackId);
+            }
+            return next;
+        });
+        triggerSelection();
+    };
+
+    const handleRemoveSelectedPlaylistTracks = () => {
+        if (!playlistAuth || playlistSelectedTrackIds.size === 0) {
+            return;
+        }
+
+        Alert.alert(
+            'Remove tracks',
+            `Remove ${playlistSelectedTrackIds.size} track${
+                playlistSelectedTrackIds.size === 1 ? '' : 's'
+            } from this playlist?`,
+            [
+                { style: 'cancel', text: 'Cancel' },
+                {
+                    style: 'destructive',
+                    text: 'Remove',
+                    onPress: () => {
+                        void (async () => {
+                            setPlaylistManageSaving(true);
+                            try {
+                                await removeSelectedPlaylistTracks({
+                                    authentication: playlistAuth,
+                                    detail,
+                                    selectedTrackIds: playlistSelectedTrackIds,
+                                });
+                                setPlaylistManageMode(false);
+                                setPlaylistSelectedTrackIds(new Set());
+                                await onReloadDetail?.();
+                            } catch (error) {
+                                Alert.alert(
+                                    'Remove tracks',
+                                    error instanceof Error
+                                        ? error.message
+                                        : 'Failed to update playlist',
+                                );
+                            } finally {
+                                setPlaylistManageSaving(false);
+                            }
+                        })();
+                    },
+                },
+            ],
+        );
+    };
+
     const isArtistDetail = detail.type === MobileMediaDetailType.ARTIST;
     const showDetailHiRes = detailHasHiRes(detail);
     // Playlists never get a collection-level format badge — they're mixed by
@@ -896,13 +981,32 @@ export const MediaDetailLoaded = ({
                 getDownloadedTrackKey(detail.source.id, track.id),
             );
 
+            const isManageMode = isPlaylistDetail && playlistManageMode;
+            const isTrackSelected = playlistSelectedTrackIds.has(track.id);
+
             return (
                 <Pressable
                     accessibilityRole="button"
                     onLongPress={() => contextMenu.openForTrack(track, detail)}
-                    onPress={() => onPlayTrack(detail, track, index, displayTracks)}
+                    onPress={() => {
+                        if (isManageMode) {
+                            togglePlaylistTrackSelection(track.id);
+                            return;
+                        }
+                        onPlayTrack(detail, track, index, displayTracks);
+                    }}
                     style={styles.trackRow}
                 >
+                    {isManageMode ? (
+                        <View
+                            style={[
+                                styles.playlistTrackSelect,
+                                isTrackSelected && styles.playlistTrackSelectChecked,
+                            ]}
+                        >
+                            {isTrackSelected ? <CheckGlyph color={colors.background} size={12} /> : null}
+                        </View>
+                    ) : null}
                     {isAlbumDetail ? (
                         <View style={styles.albumTrackNumber}>
                             <Text style={styles.albumTrackNumberText}>
@@ -977,7 +1081,10 @@ export const MediaDetailLoaded = ({
             downloadedTrackKeys,
             fallbackArtworkUrl,
             isMusic,
+            isPlaylistDetail,
             onPlayTrack,
+            playlistManageMode,
+            playlistSelectedTrackIds,
             playlistTargets.length,
         ],
     );
@@ -1095,6 +1202,16 @@ export const MediaDetailLoaded = ({
                                                 />
                                             </Pressable>
                                         ) : null}
+                                        {canEditPlaylist ? (
+                                            <Pressable
+                                                accessibilityLabel="Edit playlist"
+                                                accessibilityRole="button"
+                                                onPress={() => setPlaylistEditVisible(true)}
+                                                style={styles.albumHeroGlyphButton}
+                                            >
+                                                <GearGlyph color={colors.text} />
+                                            </Pressable>
+                                        ) : null}
                                         <Pressable
                                             accessibilityLabel="More options"
                                             accessibilityRole="button"
@@ -1164,6 +1281,43 @@ export const MediaDetailLoaded = ({
                                 </View>
                             </View>
                             <View style={styles.homeSection}>
+                                {playlistManageMode ? (
+                                    <View style={styles.playlistManageBar}>
+                                        <Text style={styles.playlistManageBarText}>
+                                            {playlistSelectedTrackIds.size} selected
+                                        </Text>
+                                        <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+                                            <Pressable
+                                                accessibilityRole="button"
+                                                disabled={playlistManageSaving}
+                                                onPress={() => {
+                                                    setPlaylistManageMode(false);
+                                                    setPlaylistSelectedTrackIds(new Set());
+                                                }}
+                                            >
+                                                <Text style={styles.editPlaylistGhostButtonText}>
+                                                    Cancel
+                                                </Text>
+                                            </Pressable>
+                                            <Pressable
+                                                accessibilityRole="button"
+                                                disabled={
+                                                    playlistManageSaving ||
+                                                    playlistSelectedTrackIds.size === 0
+                                                }
+                                                onPress={handleRemoveSelectedPlaylistTracks}
+                                            >
+                                                {playlistManageSaving ? (
+                                                    <ActivityIndicator color={colors.accent} />
+                                                ) : (
+                                                    <Text style={styles.editPlaylistDangerButtonText}>
+                                                        Remove
+                                                    </Text>
+                                                )}
+                                            </Pressable>
+                                        </View>
+                                    </View>
+                                ) : null}
                                 {detail.tracks.length > 0 ? (
                                     <PlaylistTrackControls
                                         filter={playlistFilter}
@@ -1302,6 +1456,18 @@ export const MediaDetailLoaded = ({
                     open={Boolean(playlistMenuTrack)}
                     playlists={playlistTargets}
                     track={playlistMenuTrack}
+                />
+                <EditPlaylistSheet
+                    detail={detail}
+                    onClose={() => setPlaylistEditVisible(false)}
+                    onDeleted={onBack}
+                    onManageTracks={() => {
+                        setPlaylistManageMode(true);
+                        setPlaylistSelectedTrackIds(new Set());
+                    }}
+                    onSaved={() => void onReloadDetail?.()}
+                    serverConnections={serverConnections}
+                    visible={playlistEditVisible}
                 />
             </View>
         );

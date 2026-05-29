@@ -146,6 +146,7 @@ import {
     useAndroidMediaHandlers,
 } from './src/hooks/use-android-media-handlers';
 import { useAndroidNativePlayback } from './src/hooks/use-android-native-playback';
+import { useAndroidRadioMetadataSync } from './src/hooks/use-android-radio-metadata-sync';
 import { useAndroidPlaybackControls } from './src/hooks/use-android-playback-controls';
 import { useAndroidServerAuth } from './src/hooks/use-android-server-auth';
 import { useReducedMotionPreference } from './src/hooks/use-reduced-motion-preference';
@@ -153,7 +154,6 @@ import { useStableCallback } from './src/hooks/use-stable-callback';
 import {
     PLAYER_CLOSE_SPRING,
     PLAYER_OPEN_SPRING,
-    tabBarSinkScale,
     tabBarSinkTranslateY,
     worldDimOpacity,
 } from './src/player/player-motion';
@@ -182,6 +182,7 @@ import {
     syncAbsProgressImmediate,
     syncAbsProgressThrottled,
 } from './src/services/abs-progress';
+import { flushPendingSamoPlayback } from './src/services/samo-playback-sync';
 import {
     type AndroidCastState,
     type AndroidMediaOutputRoute,
@@ -209,7 +210,11 @@ import {
     loadAndroidFullCollection,
 } from './src/services/full-collection';
 import { triggerSelection } from './src/services/haptics';
-import { type AndroidHomeContentState, loadAndroidHomeContent } from './src/services/home-content';
+import {
+    type AndroidHomeContentState,
+    loadAndroidHomeContent,
+    refreshAndroidHomeLiveSections,
+} from './src/services/home-content';
 import { loadCachedHomeContent, saveCachedHomeContent } from './src/services/home-content-cache';
 import { buildHomeLoadKey, dedupeInFlight } from './src/services/in-flight-requests';
 import {
@@ -258,10 +263,12 @@ import {
     type AndroidRecentContentItem,
     type AndroidRecentContentSourceItem,
     getRecentContentItemKey,
+    isEligibleRecentlyPlayedSurfaceItem,
     loadPersistedRecentContentItems,
     savePersistedRecentContentItems,
     upsertRecentContentItem,
 } from './src/services/recent-content';
+import { mergeServerRecentlyPlayedIntoRecents } from './src/services/recent-content-sync';
 import {
     collectFreshAlbumItems,
     reconcileRecentContentItemsIfChanged,
@@ -345,6 +352,7 @@ import {
     sortHomeItemsByRecents,
 } from './src/utils/home-display';
 import { getLastPlayedPersistenceKey } from './src/utils/last-played';
+import { refreshPlayableResumeFromServer } from './src/utils/playback-resume';
 import { getLibraryMediaType, toLibraryDisplayItem } from './src/utils/library-display';
 import {
     artworkSourceUri,
@@ -480,12 +488,9 @@ export default function App() {
     const playerProgress = useSharedValue(0);
     const [outputPickerVisible, setOutputPickerVisible] = useState(false);
     const reducedMotion = useReducedMotionPreference();
-    const tabBarAnimatedStyle = useAnimatedStyle(() => {
-        const p = playerProgress.value;
-        return {
-            transform: [{ translateY: tabBarSinkTranslateY(p) }, { scale: tabBarSinkScale(p) }],
-        };
-    });
+    const tabBarAnimatedStyle = useAnimatedStyle(() => ({
+        transform: [{ translateY: tabBarSinkTranslateY(playerProgress.value) }],
+    }));
     // World dim — the desk going darker under the card lifting off it. Lives
     // above the page content + tab bar, below the player shell.
     const worldDimStyle = useAnimatedStyle(() => ({
@@ -514,9 +519,11 @@ export default function App() {
         playQueuedItem,
         registerNavigatePlayback,
     } = useAndroidNativePlayback({ isFullPlayerOpen, lastPlayedItem, serverConnections });
+    useAndroidRadioMetadataSync(serverConnections);
     useAndroidCastSync();
     useAndroidAbsProgressSync();
     const lastPlayedPersistenceKeyRef = useRef<null | string>(null);
+    const homeDiscoveryRefreshId = useRef(0);
     const isHomeSurface =
         activeTab === 'home' && activeUtilityScreen === null && mediaDetailState.status === 'idle';
     const frozenDetailStateRef = useRef(mediaDetailState);
@@ -602,13 +609,16 @@ export default function App() {
     ]);
 
     const visibleRecentItems = useMemo(() => {
+        const withoutArtists = recentContentItems.filter((entry) =>
+            isEligibleRecentlyPlayedSurfaceItem(entry.item, { directSong: entry.directSong }),
+        );
         const filtered = isOfflineMode
-            ? recentContentItems.filter((entry) =>
+            ? withoutArtists.filter((entry) =>
                   downloadedCollectionKeys.has(
                       getDownloadedCollectionKey(entry.item.source?.id, entry.item.id),
                   ),
               )
-            : recentContentItems;
+            : withoutArtists;
         // Build a key→item index from the freshly-loaded home content so we
         // can swap recents up to date at render time. The home loader runs
         // annotateSubsonicAlbumsQuality on every album section, which means
@@ -694,9 +704,14 @@ export default function App() {
                 setHomeContentState(nextHomeContentState);
                 if (nextHomeContentState.status === 'loaded') {
                     void saveCachedHomeContent(nextHomeContentState.content);
+                    const mergedRecents = await mergeServerRecentlyPlayedIntoRecents(
+                        await loadPersistedRecentContentItems(),
+                        authentications,
+                        nextHomeContentState.content,
+                    );
                     setRecentContentItems((current) => {
                         const next = reconcileRecentContentItemsIfChanged(
-                            current,
+                            mergedRecents,
                             collectFreshAlbumItems(nextHomeContentState.content.sections),
                         );
                         if (next !== current) {
@@ -709,6 +724,26 @@ export default function App() {
         },
         [],
     );
+
+    useEffect(() => {
+        if (
+            !isHomeSurface ||
+            homeContentState.status !== 'loaded' ||
+            serverConnections.length === 0
+        ) {
+            return;
+        }
+
+        const content = homeContentState.content;
+        const requestId = (homeDiscoveryRefreshId.current += 1);
+
+        void refreshAndroidHomeLiveSections(serverConnections, content).then((nextContent) => {
+            if (requestId !== homeDiscoveryRefreshId.current) {
+                return;
+            }
+            setHomeContentState({ status: 'loaded', content: nextContent });
+        });
+    }, [homeContentState.status, isHomeSurface, serverConnections]);
 
     const { canConnect, handleConnect, handleDisconnect } = useAndroidServerAuth({
         auth,
@@ -884,6 +919,41 @@ export default function App() {
     }, [lastPlayedItem?.id, lastPlayedItem?.artworkImageId, serverConnections, setLastPlayedItem]);
 
     useEffect(() => {
+        if (serverConnections.length === 0 || !lastPlayedItem) {
+            return;
+        }
+        if (lastPlayedItem.source !== 'podcast' && lastPlayedItem.source !== 'audiobook') {
+            return;
+        }
+        if ((lastPlayedItem.initialPositionSeconds ?? 0) > 0) {
+            return;
+        }
+
+        let cancelled = false;
+        void refreshPlayableResumeFromServer(lastPlayedItem, serverConnections).then((refreshed) => {
+            if (cancelled) {
+                return;
+            }
+            const positionSeconds = refreshed.initialPositionSeconds ?? 0;
+            if (positionSeconds <= 0) {
+                return;
+            }
+            setLastPlayedItem(refreshed);
+            void savePersistedLastPlayedItem(refreshed);
+        });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [
+        lastPlayedItem?.id,
+        lastPlayedItem?.initialPositionSeconds,
+        lastPlayedItem?.source,
+        serverConnections,
+        setLastPlayedItem,
+    ]);
+
+    useEffect(() => {
         let isMounted = true;
 
         void loadPersistedRecentContentItems().then((items) => {
@@ -892,10 +962,21 @@ export default function App() {
             }
         });
 
-        void loadPersistedLastPlayedItem().then((item) => {
-            if (isMounted && item) {
-                lastPlayedPersistenceKeyRef.current = getLastPlayedPersistenceKey(item);
-                setLastPlayedItem(item);
+        void loadPersistedLastPlayedItem().then(async (item) => {
+            if (!isMounted || !item) {
+                return;
+            }
+            const refreshed =
+                item.source === 'podcast' || item.source === 'audiobook'
+                    ? await refreshPlayableResumeFromServer(item, serverConnections)
+                    : item;
+            lastPlayedPersistenceKeyRef.current = getLastPlayedPersistenceKey(refreshed);
+            setLastPlayedItem(refreshed);
+            if (
+                refreshed.initialPositionSeconds &&
+                refreshed.initialPositionSeconds > 0
+            ) {
+                void savePersistedLastPlayedItem(refreshed);
             }
         });
 
@@ -1065,6 +1146,7 @@ export default function App() {
         playbackQueueRef,
         playbackSnapshotRef,
         playQueuedItem,
+        serverConnections,
     });
 
     useEffect(() => {
@@ -1092,7 +1174,10 @@ export default function App() {
             // invalidate; everything else trusts the cache.
             await ExpoImage.clearMemoryCache();
             await loadHomeForConnections(serverConnections);
-            await flushPendingAbsProgress(serverConnections);
+            await Promise.all([
+                flushPendingAbsProgress(serverConnections),
+                flushPendingSamoPlayback(serverConnections),
+            ]);
             // If there's a currently-active audiobook context, re-read its
             // progress from the server in case another client moved ahead.
             const absCtx = absContextRef.current;
@@ -1220,6 +1305,9 @@ export default function App() {
     const handleAddMediaTrackToPlaylistStable = useStableCallback(
         (detail: MobileMediaDetail, track: MobileMediaTrack, playlist: MobileHomeItem) =>
             handleAddMediaTrackToPlaylist(detail, track, playlist),
+    );
+    const handleReloadMediaDetailStable = useStableCallback(() =>
+        mediaHandlers.reloadCurrentMediaDetail(),
     );
     const handleToggleOfflineMode = useCallback((next: boolean) => {
         setIsOfflineMode(next);
@@ -1617,6 +1705,7 @@ export default function App() {
                                                             pointerEvents={
                                                                 isSceneActive ? 'auto' : 'none'
                                                             }
+                                                            showsVerticalScrollIndicator={false}
                                                             style={sceneStyle}
                                                         >
                                                             {renderTabSceneContent(tab.id)}
@@ -1663,6 +1752,7 @@ export default function App() {
                                                         }
                                                         onBack={closeMediaDetail}
                                                         onPlayTrack={handlePlayMediaTrackStable}
+                                                        onReloadDetail={handleReloadMediaDetailStable}
                                                         onSelectItem={handleSelectMediaItemStable}
                                                         onShufflePlay={handleShuffleDetailTracks}
                                                         serverConnections={serverConnections}
@@ -1801,6 +1891,9 @@ export default function App() {
                                                     );
                                                 }}
                                                 onPrevious={() => void handleNavigatePlayback(-1)}
+                                                onSkipBySeconds={(offsetSeconds) =>
+                                                    void handleSkipPlayback(offsetSeconds)
+                                                }
                                                 onSeek={(positionMs) =>
                                                     void handleSeekPlayback(positionMs)
                                                 }

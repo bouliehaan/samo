@@ -168,6 +168,13 @@
     padding-bottom: 1.5rem;
 }
 
+.long-form-skip-label {
+    font-size: 0.85rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.02em;
+}
+
 .bottom-controls-bar {
     display: flex;
     flex-shrink: 0;

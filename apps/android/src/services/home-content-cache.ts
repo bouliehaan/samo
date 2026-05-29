@@ -1,4 +1,4 @@
-import { type MobileHomeContent } from '@samo/core/mobile';
+import { type MobileHomeContent, MobileHomeSectionId } from '@samo/core/mobile';
 
 import { fsDeleteItem, fsGetItem, fsSetItem } from './fs-storage';
 
@@ -6,7 +6,7 @@ import { fsDeleteItem, fsGetItem, fsSetItem } from './fs-storage';
 // instead of staring at a spinner for several seconds while every server
 // re-fetches. We persist the most recent successful payload and hydrate it on
 // next launch, then kick off the live fetch in the background and replace.
-const HOME_CACHE_KEY = 'samo.android.home-cache.v3';
+const HOME_CACHE_KEY = 'samo.android.home-cache.v4';
 
 // Hard-cap stored items per section so the cache write stays fast and the
 // app's launch read doesn't have to JSON-parse a 200KB blob. The user will
@@ -54,10 +54,16 @@ export const saveCachedHomeContent = async (content: MobileHomeContent): Promise
     try {
         const trimmed: MobileHomeContent = {
             ...content,
-            sections: content.sections.map((section) => ({
-                ...section,
-                items: section.items.slice(0, MAX_ITEMS_PER_SECTION),
-            })),
+            sections: content.sections
+                .filter(
+                    (section) =>
+                        section.id !== MobileHomeSectionId.DISCOVER &&
+                        section.id !== MobileHomeSectionId.PODCAST_FEED,
+                )
+                .map((section) => ({
+                    ...section,
+                    items: section.items.slice(0, MAX_ITEMS_PER_SECTION),
+                })),
         };
         const payload: AndroidCachedHomeContent = {
             cachedAt: Date.now(),

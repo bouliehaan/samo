@@ -1,5 +1,6 @@
 import {
     addMobileTracksToPlaylist,
+    applySamoAudiobookBookPosition,
     buildSamoPodcastEpisodePlayback,
     getMobileMediaDetailErrorMessage,
     loadAudiobookshelfPlayback,
@@ -17,9 +18,12 @@ import {
 import {
     ensureSamoStreamToken,
     findServerAuthenticationForSource,
+    getSamoPodcastEpisode,
     ServerType,
     type ServerAuthenticationResult,
 } from '@samo/core/server';
+
+import { loadAbsCurrentProgress } from './abs-progress';
 
 export type AndroidMediaDetailState =
     | { detail: MobileMediaDetail; status: 'loaded' }
@@ -87,6 +91,7 @@ const toDetailType = (type: AndroidSelectableMediaItem['type']) => {
     if (
         normalizedType === MobileMediaDetailType.PODCAST ||
         normalizedType === MobileHomeItemType.PODCAST ||
+        normalizedType === MobileHomeItemType.PODCAST_EPISODE ||
         normalizedType === MobileSearchItemType.PODCAST
     ) {
         return MobileMediaDetailType.PODCAST;
@@ -143,11 +148,15 @@ const withPlaybackTimeline = (
     playback: MobilePlayableAudio,
 ): MobilePlayableAudio => {
     const timelineSegments = getTrackTimelineSegments(detail, track);
+    const podcastSubtitle =
+        playback.source === 'podcast' ? (detail.title || playback.subtitle) : undefined;
 
     return {
         ...playback,
         durationSeconds:
             playback.durationSeconds ?? getTrackDurationSeconds(track, timelineSegments),
+        ...(podcastSubtitle ? { subtitle: podcastSubtitle } : {}),
+        publishedAt: playback.publishedAt ?? track.publishedAt,
         timelineSegments: playback.timelineSegments ?? timelineSegments,
     };
 };
@@ -178,17 +187,36 @@ const rebuildSamoPodcastTrackPlayback = async (
             ? await ensureSamoStreamToken(authentication).catch(() => undefined)
             : undefined;
 
+    const showId = track.itemId ?? detail.id;
+    const episode =
+        authentication.type === ServerType.SAMO
+            ? await getSamoPodcastEpisode(fetch, authentication, episodeId)
+            : {
+                  duration: track.durationSeconds,
+                  id: episodeId,
+                  name: track.title,
+                  podcastId: showId,
+                  podcastTitle: track.subtitle ?? detail.subtitle,
+                  title: track.title,
+              };
+
+    const progress = await loadAbsCurrentProgress(authentication, showId, episodeId);
+    const resumeSeconds =
+        progress?.currentTimeSeconds && progress.currentTimeSeconds > 0 && !progress.isFinished
+            ? progress.currentTimeSeconds
+            : Math.max(
+                  0,
+                  Math.round(
+                      episode.progress?.progressSeconds ??
+                          episode.playback?.progressSeconds ??
+                          0,
+                  ),
+              );
+
     const playback = buildSamoPodcastEpisodePlayback(
         authentication,
-        {
-            duration: track.durationSeconds,
-            id: episodeId,
-            name: track.title,
-            podcastId: track.itemId ?? detail.id,
-            podcastTitle: track.subtitle ?? detail.subtitle,
-            title: track.title,
-        },
-        track.itemId ?? detail.id,
+        episode,
+        showId,
         track.artworkUrl ?? detail.artworkUrl,
         streamToken,
     );
@@ -197,7 +225,76 @@ const rebuildSamoPodcastTrackPlayback = async (
         throw new Error('This episode cannot be played.');
     }
 
-    return withPlaybackTimeline(detail, track, playback);
+    const withResume =
+        resumeSeconds > 0
+            ? {
+                  ...playback,
+                  initialPositionSeconds: resumeSeconds,
+              }
+            : playback;
+
+    return withPlaybackTimeline(detail, track, withResume);
+};
+
+/** Fresh Samo podcast stream URL + resume — home feed tiles must not reuse stale playback blobs. */
+export const playSamoPodcastEpisodeFromHome = async (
+    authentication: ServerAuthenticationResult,
+    item: {
+        artworkUrl?: string;
+        containerId: string;
+        durationSeconds?: number;
+        id: string;
+        subtitle?: string;
+        title: string;
+    },
+): Promise<MobilePlayableAudio> => {
+    const episodeId = item.id;
+    const showId = item.containerId;
+
+    const streamToken =
+        authentication.type === ServerType.SAMO
+            ? await ensureSamoStreamToken(authentication).catch(() => undefined)
+            : undefined;
+
+    const episode = await getSamoPodcastEpisode(fetch, authentication, episodeId);
+
+    const progress = await loadAbsCurrentProgress(authentication, showId, episodeId);
+    const resumeSeconds =
+        progress?.currentTimeSeconds && progress.currentTimeSeconds > 0 && !progress.isFinished
+            ? progress.currentTimeSeconds
+            : Math.max(
+                  0,
+                  Math.round(
+                      episode.progress?.progressSeconds ?? episode.playback?.progressSeconds ?? 0,
+                  ),
+              );
+
+    const playback = buildSamoPodcastEpisodePlayback(
+        authentication,
+        episode,
+        showId,
+        item.artworkUrl,
+        streamToken,
+    );
+
+    if (!playback) {
+        throw new Error('This episode cannot be played.');
+    }
+
+    const withResume =
+        resumeSeconds > 0
+            ? {
+                  ...playback,
+                  initialPositionSeconds: resumeSeconds,
+              }
+            : playback;
+
+    return {
+        ...withResume,
+        durationSeconds: withResume.durationSeconds ?? item.durationSeconds,
+        subtitle: withResume.subtitle ?? item.subtitle,
+        title: withResume.title ?? item.title,
+    };
 };
 
 export const loadAndroidMediaDetail = async (
@@ -233,10 +330,15 @@ export const loadAndroidMediaDetail = async (
             await ensureSamoStreamToken(authentication).catch(() => undefined);
         }
 
+        const detailId =
+            item.type === MobileHomeItemType.PODCAST_EPISODE && item.containerId
+                ? item.containerId
+                : item.id;
+
         return {
             detail: await loadMobileMediaDetail({
                 authentication,
-                id: item.id,
+                id: detailId,
                 type: detailType,
             }),
             status: 'loaded',
@@ -255,11 +357,28 @@ export const loadAndroidMediaTrackPlayback = async (
     detail: MobileMediaDetail,
     track: MobileMediaTrack,
 ): Promise<MobilePlayableAudio> => {
-    if (isValidTrackPlayback(track.playback)) {
-        return withPlaybackTimeline(detail, track, track.playback);
-    }
-
     const authentication = findAuthenticationForSource(authentications, detail.source.id);
+
+    if (isValidTrackPlayback(track.playback)) {
+        let playable = withPlaybackTimeline(detail, track, track.playback);
+
+        if (
+            authentication?.type === ServerType.SAMO &&
+            detail.type === MobileMediaDetailType.AUDIOBOOK
+        ) {
+            const streamToken = await ensureSamoStreamToken(authentication).catch(() => undefined);
+            const bookStart =
+                track.startSeconds ?? playable.progressOffsetSeconds ?? 0;
+            playable = applySamoAudiobookBookPosition(
+                playable,
+                bookStart,
+                authentication,
+                streamToken,
+            );
+        }
+
+        return playable;
+    }
 
     if (!authentication) {
         throw new Error('The server for this item is no longer connected.');

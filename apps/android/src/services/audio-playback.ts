@@ -1,4 +1,7 @@
 import { type MobilePlayableAudio } from '@samo/core/mobile';
+import { type ServerAuthenticationResult } from '@samo/core/server';
+
+import { attachNativeStreamCredentials } from '../utils/native-stream-auth';
 import { NativeEventEmitter, NativeModules } from 'react-native';
 
 export interface AndroidAudioDeviceInfo {
@@ -27,6 +30,8 @@ export interface AndroidNativePlaybackEvent {
     isPlaying?: boolean;
     message?: string;
     positionMs?: number;
+    queueIndex?: number;
+    queueLength?: number;
     sessionId?: string;
     source?: {
         artworkUrl?: string;
@@ -111,6 +116,11 @@ interface SamoAudioNativeModule {
     ) => Promise<AndroidMediaOutputState>;
     setSleepTimer: (seconds: number) => Promise<AndroidNativePlaybackEvent>;
     cancelSleepTimer: () => Promise<AndroidNativePlaybackEvent>;
+    setPlaybackQueue: (queue: {
+        queueIndex: number;
+        queueItems: MobilePlayableAudio[];
+        source?: string;
+    }) => Promise<void>;
     stop: () => Promise<AndroidNativePlaybackEvent>;
     updateNowPlayingMetadata: (metadata: {
         artworkUrl?: string;
@@ -126,6 +136,53 @@ const samoAudio = NativeModules.SamoAudio as SamoAudioNativeModule | undefined;
 const eventEmitter = samoAudio ? new NativeEventEmitter(samoAudio) : null;
 
 export const isAndroidNativePlaybackAvailable = () => Boolean(samoAudio);
+
+export const shouldMirrorPlaybackQueueToNative = (queue: {
+    items: MobilePlayableAudio[];
+}): boolean => {
+    if (queue.items.length <= 1) {
+        return false;
+    }
+
+    if (queue.items.some((item) => item.source === 'radio')) {
+        return false;
+    }
+
+    // ABS/Samo chapter rows share one stream URL — mirroring them makes ExoPlayer
+    // treat each chapter as a queue item, so a seek-time STATE_ENDED blip can
+    // auto-advance into the next chapter and kill playback.
+    if (queue.items.every((item) => item.source === 'audiobook')) {
+        const streamUrls = new Set(queue.items.map((item) => item.url));
+        if (streamUrls.size === 1) {
+            return false;
+        }
+    }
+
+    return true;
+};
+
+/** Keep the native service queue in sync with JS Up Next mutations. */
+export const syncAndroidNativePlaybackQueue = (
+    queue: { index: number; items: MobilePlayableAudio[] } | null | undefined,
+    serverConnections: ServerAuthenticationResult[] = [],
+): void => {
+    if (!samoAudio) {
+        return;
+    }
+
+    if (!queue || !shouldMirrorPlaybackQueueToNative(queue)) {
+        void samoAudio.setPlaybackQueue({ queueIndex: 0, queueItems: [] });
+        return;
+    }
+
+    void samoAudio.setPlaybackQueue({
+        queueIndex: queue.index,
+        queueItems: queue.items.map((item) =>
+            attachNativeStreamCredentials(item, serverConnections),
+        ),
+        source: queue.items[queue.index]?.source,
+    });
+};
 
 const isNetworkPlaybackUrl = (url?: string) => Boolean(url && /^https?:\/\//i.test(url));
 
@@ -148,6 +205,8 @@ export const playAndroidAudio = async (
     source: MobilePlayableAudio,
     sessionId: string,
     castSource: MobilePlayableAudio = source,
+    queue?: { index: number; items: MobilePlayableAudio[] },
+    serverConnections: ServerAuthenticationResult[] = [],
 ) => {
     if (!samoAudio) {
         throw new Error('Native Android audio engine is not available');
@@ -158,21 +217,25 @@ export const playAndroidAudio = async (
     // recents persisted before buildRadioPlayback stopped storing the
     // homepage URL in subtitle still carry one. Strip anything that looks
     // like a URL so stale persisted data can't leak into the system UI.
+    const bridgedSource = attachNativeStreamCredentials(source, serverConnections);
+    const bridgedCastSource = attachNativeStreamCredentials(castSource, serverConnections);
+
     const sanitizedSubtitle =
-        source.subtitle && /^(https?:\/\/|www\.|[a-z]+:\/\/)/i.test(source.subtitle.trim())
+        bridgedSource.subtitle &&
+        /^(https?:\/\/|www\.|[a-z]+:\/\/)/i.test(bridgedSource.subtitle.trim())
             ? undefined
-            : source.subtitle;
+            : bridgedSource.subtitle;
 
     // When a self-authenticating castUrl is provided (Subsonic auth in URL
     // params, or ABS `?token=…`), the cast leg doesn't need the headers the
     // local ExoPlayer uses. Forwarding them would trip the native guard
     // since the default Chromecast receiver can't send custom headers.
-    const castUrl = getCastNetworkUrl(source, castSource);
+    const castUrl = getCastNetworkUrl(bridgedSource, bridgedCastSource);
     const hasSelfAuthCastUrl = Boolean(
         castUrl &&
-            (castUrl === castSource.castUrl ||
-                castUrl === source.castUrl ||
-                ((castUrl === castSource.url || castUrl === source.url) &&
+            (castUrl === bridgedCastSource.castUrl ||
+                castUrl === bridgedSource.castUrl ||
+                ((castUrl === bridgedCastSource.url || castUrl === bridgedSource.url) &&
                     hasSelfAuthenticatingStreamUrl(castUrl))),
     );
 
@@ -181,19 +244,33 @@ export const playAndroidAudio = async (
     // `mimeType` and the direct-file mime on `castMimeType` — the cast leg
     // needs the latter because it's routing to a single file URL, not the
     // HLS playlist.
-    const castMimeType = castSource.castMimeType ?? source.castMimeType ?? castSource.mimeType;
+    const castMimeType =
+        bridgedCastSource.castMimeType ??
+        bridgedSource.castMimeType ??
+        bridgedCastSource.mimeType;
+
+    const queuePayload =
+        queue && shouldMirrorPlaybackQueueToNative(queue) && source.source !== 'radio'
+            ? {
+                  queueIndex: queue.index,
+                  queueItems: queue.items.map((item) =>
+                      attachNativeStreamCredentials(item, serverConnections),
+                  ),
+              }
+            : {};
 
     return samoAudio.play({
-        ...source,
-        castArtworkUrl: castSource.artworkUrl,
-        castHttpHeaders: hasSelfAuthCastUrl ? undefined : castSource.httpHeaders,
-        castIsLive: castSource.isLive,
+        ...bridgedSource,
+        castArtworkUrl: bridgedCastSource.artworkUrl,
+        castHttpHeaders: hasSelfAuthCastUrl ? undefined : bridgedCastSource.httpHeaders,
+        castIsLive: bridgedCastSource.isLive,
         castMimeType,
-        castSubtitle: castSource.subtitle,
-        castTitle: castSource.title,
+        castSubtitle: bridgedCastSource.subtitle,
+        castTitle: bridgedCastSource.title,
         castUrl,
         sessionId,
         subtitle: sanitizedSubtitle,
+        ...queuePayload,
     });
 };
 

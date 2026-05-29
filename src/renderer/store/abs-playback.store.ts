@@ -309,8 +309,14 @@ export function createAbsPlaybackStore<
                         const episode = config.requiresEpisode
                             ? (playArgs[2] as AudiobookshelfPodcastEpisode)
                             : null;
+                        const playbackMediaKey = episode
+                            ? `${item.id}:${episode.id}`
+                            : item.id;
 
-                        usePlaybackOwnerStore.getState().claim(config.source, { engine: 'web' });
+                        usePlaybackOwnerStore.getState().claim(config.source, {
+                            engine: 'web',
+                            mediaKey: playbackMediaKey,
+                        });
                         config.rememberSession({
                             episode,
                             item,

@@ -1,11 +1,16 @@
 import { Image as ExpoImage } from 'expo-image';
 
-import { type MobileContentSource, type MobilePlayableAudio } from '@samo/core/mobile';
+import {
+    parseSamoAudiobookIdFromPlaybackId,
+    type MobileContentSource,
+    type MobilePlayableAudio,
+} from '@samo/core/mobile';
 import {
     finalizeSamoMediaUrl,
     findServerAuthenticationForSource,
     getCachedSamoStreamToken,
     getSamoBearerToken,
+    getSamoAudiobookStreamUrl,
     getSamoMetadataImageUrl,
     ensureSamoStreamToken,
     ServerType,
@@ -27,6 +32,49 @@ const isSamoApiMediaUrl = (url: string): boolean => {
         return new URL(url).pathname.includes('/api/v1/');
     } catch {
         return false;
+    }
+};
+
+const sameHost = (left: string, right: string): boolean => {
+    try {
+        return new URL(left).host === new URL(right).host;
+    } catch {
+        return false;
+    }
+};
+
+const findAuthenticationForPlaybackUrl = (
+    url: string | undefined,
+    serverConnections: ServerAuthenticationResult[],
+): ServerAuthenticationResult | undefined => {
+    if (!url) {
+        return undefined;
+    }
+    return serverConnections.find((candidate) => sameHost(candidate.url, url));
+};
+
+const finalizeAudiobookshelfPlaybackUrl = (
+    authentication: ServerAuthenticationResult,
+    url: string | undefined,
+): string | undefined => {
+    if (!url || authentication.type !== ServerType.AUDIOBOOKSHELF) {
+        return url;
+    }
+
+    try {
+        const parsed = new URL(url);
+        const hasToken = parsed.searchParams.has('token');
+        const likelyAbsStream = parsed.pathname.includes('/api/') || hasToken;
+        if (!likelyAbsStream) {
+            return url;
+        }
+        if (!sameHost(authentication.url, url)) {
+            return url;
+        }
+        parsed.searchParams.set('token', authentication.credential);
+        return parsed.toString();
+    } catch {
+        return url;
     }
 };
 
@@ -181,9 +229,13 @@ export const preparePlaybackItemForNative = async (
     serverConnections: ServerAuthenticationResult[],
 ): Promise<MobilePlayableAudio> => {
     const contentSource = getContentSourceFromPlaybackItem(item, serverConnections);
-    const auth = contentSource
+    const sourceAuth = contentSource
         ? findServerAuthenticationForSource(serverConnections, contentSource)
         : undefined;
+    const urlAuth =
+        findAuthenticationForPlaybackUrl(item.url, serverConnections) ??
+        findAuthenticationForPlaybackUrl(item.castUrl, serverConnections);
+    const auth = sourceAuth ?? urlAuth;
 
     let streamToken: string | undefined;
     if (auth?.type === ServerType.SAMO) {
@@ -196,17 +248,40 @@ export const preparePlaybackItemForNative = async (
 
     let nextUrl = item.url;
     let nextCastUrl = item.castUrl;
+    let httpHeaders = item.httpHeaders;
     if (auth?.type === ServerType.SAMO && streamToken) {
-        nextUrl = finalizeSamoMediaUrl(auth, item.url, streamToken) ?? item.url;
+        const audiobookId =
+            item.source === 'audiobook' ? parseSamoAudiobookIdFromPlaybackId(item.id) : undefined;
+        if (audiobookId) {
+            const bookStart = Math.max(0, Math.floor(item.progressOffsetSeconds ?? 0));
+            nextUrl = getSamoAudiobookStreamUrl(auth, audiobookId, {
+                progressSeconds: bookStart,
+                streamToken,
+            });
+        } else {
+            nextUrl = finalizeSamoMediaUrl(auth, item.url, streamToken) ?? item.url;
+        }
         if (item.castUrl) {
             nextCastUrl = finalizeSamoMediaUrl(auth, item.castUrl, streamToken) ?? item.castUrl;
+        }
+    } else if (auth?.type === ServerType.SAMO) {
+        const bearer = getSamoBearerToken(auth);
+        if (bearer && (isSamoApiMediaUrl(item.url) || (item.castUrl && isSamoApiMediaUrl(item.castUrl)))) {
+            httpHeaders = { ...httpHeaders, Authorization: `Bearer ${bearer}` };
+        }
+    } else if (auth?.type === ServerType.AUDIOBOOKSHELF) {
+        nextUrl = finalizeAudiobookshelfPlaybackUrl(auth, item.url) ?? item.url;
+        if (item.castUrl) {
+            nextCastUrl =
+                finalizeAudiobookshelfPlaybackUrl(auth, item.castUrl) ?? item.castUrl;
         }
     }
 
     if (
         resolvedArtworkUrl === item.artworkUrl &&
         nextUrl === item.url &&
-        nextCastUrl === item.castUrl
+        nextCastUrl === item.castUrl &&
+        httpHeaders === item.httpHeaders
     ) {
         return item;
     }
@@ -214,6 +289,7 @@ export const preparePlaybackItemForNative = async (
     return {
         ...item,
         artworkUrl: resolvedArtworkUrl,
+        ...(httpHeaders !== item.httpHeaders ? { httpHeaders } : {}),
         ...(nextUrl !== item.url ? { url: nextUrl } : {}),
         ...(nextCastUrl !== item.castUrl ? { castUrl: nextCastUrl } : {}),
     };

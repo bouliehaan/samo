@@ -467,6 +467,12 @@ export interface SamoPodcast {
      * remote feed; locally-scanned shows leave it undefined.
      */
     feed?: SamoPodcastFeed;
+    /** Active podcast_feeds row when RSS is linked (including hybrid library shows). */
+    rssFeed?: {
+        feedUrl?: string;
+        id: string;
+        title?: string;
+    };
     folderId?: string;
     genres?: string[];
     id: string;
@@ -506,6 +512,7 @@ export interface SamoPodcast {
 }
 
 export interface SamoPodcastEpisode {
+    addedAt?: string;
     audioFiles?: SamoAudioFile[];
     chapters?: SamoAudioChapter[];
     description?: string;
@@ -520,6 +527,9 @@ export interface SamoPodcastEpisode {
     isCached?: boolean;
     isLocal?: boolean;
     name?: string;
+    /** Per-user playback (wire field name on podcast episode payloads). */
+    progress?: SamoPlaybackState;
+    /** Legacy alias; prefer `progress` from the Samo API. */
     playback?: SamoPlaybackState;
     podcastId?: string;
     podcastTitle?: string;
@@ -812,6 +822,37 @@ export const getSamoCatalogOverview = async (
     });
 };
 
+export interface SamoRecentlyAddedEntry {
+    addedAt?: string;
+    id: string;
+    kind: 'audiobook' | 'music-album' | 'podcast';
+    subtitle?: string;
+    title: string;
+}
+
+export interface SamoRecentlyAddedResults {
+    items: SamoRecentlyAddedEntry[];
+    limit: number;
+    offset: number;
+    total: number;
+}
+
+export const listSamoCatalogRecentlyAdded = async (
+    fetcher: SamoFetch,
+    authentication: Pick<ServerAuthenticationResult, 'credential' | 'ndCredential' | 'url'>,
+    input?: SamoListQuery,
+): Promise<SamoRecentlyAddedResults> => {
+    return samoGet<SamoRecentlyAddedResults>(
+        fetcher,
+        authentication,
+        '/catalog/recently-added',
+        {
+            query: listQuery(input),
+            signal: input?.signal,
+        },
+    );
+};
+
 // ---------------------------------------------------------------------------
 // Music
 // ---------------------------------------------------------------------------
@@ -821,7 +862,7 @@ export interface SamoListQuery {
     limit?: number;
     offset?: number;
     signal?: AbortSignal;
-    sort?: 'az' | 'playCount' | 'recent';
+    sort?: 'az' | 'lastPlayed' | 'playCount' | 'recent' | 'release';
 }
 
 const listQuery = (input?: SamoListQuery) => {
@@ -1044,6 +1085,38 @@ export const deleteSamoMusicPlaylist = async (
     await samoSend<unknown>(fetcher, authentication, 'DELETE', `/music/playlists/${id}`);
 };
 
+export const uploadSamoMusicPlaylistCover = async (
+    fetcher: SamoFetch,
+    authentication: Pick<ServerAuthenticationResult, 'credential' | 'ndCredential' | 'url'>,
+    playlistId: string,
+    file: Blob,
+    filename = 'cover.jpg',
+): Promise<SamoMusicPlaylist> => {
+    const form = new FormData();
+    form.append('cover', file, filename);
+    const url = getSamoApiUrl(
+        authentication,
+        `/music/playlists/${encodeURIComponent(playlistId)}/cover`,
+    );
+    const response = await fetcher(url, {
+        body: form as unknown as string,
+        headers: authHeaders(getSamoBearerToken(authentication)),
+        method: 'POST',
+    });
+
+    if (!response.ok) {
+        const message =
+            typeof response.text === 'function'
+                ? await response.text().catch(() => '')
+                : '';
+        throw new Error(
+            message.trim() || `Playlist cover upload failed (${response.status})`,
+        );
+    }
+
+    return response.json() as Promise<SamoMusicPlaylist>;
+};
+
 export const searchSamoMusic = async (
     fetcher: SamoFetch,
     authentication: Pick<ServerAuthenticationResult, 'credential' | 'ndCredential' | 'url'>,
@@ -1060,23 +1133,25 @@ export const searchSamoMusic = async (
 };
 
 export type SamoMusicBrowseKind =
+    | 'discovery'
     | 'favorites'
     | 'recently-added'
     | 'recently-played'
-    | 'starred';
+    | 'starred'
+    | 'unplayed';
 
 export const getSamoMusicBrowse = async (
     fetcher: SamoFetch,
     authentication: Pick<ServerAuthenticationResult, 'credential' | 'ndCredential' | 'url'>,
     kind: SamoMusicBrowseKind,
-    options?: { limit?: number; signal?: AbortSignal },
+    options?: { limit?: number; offset?: number; signal?: AbortSignal },
 ): Promise<SamoMusicBrowseResponse> => {
     return samoGet<SamoMusicBrowseResponse>(
         fetcher,
         authentication,
         `/music/browse/${kind}`,
         {
-            query: { limit: options?.limit },
+            query: { limit: options?.limit, offset: options?.offset },
             signal: options?.signal,
         },
     );
@@ -1404,6 +1479,39 @@ export const listSamoPodcastFeeds = async (
     );
 };
 
+export const createSamoPodcastFeed = async (
+    fetcher: SamoFetch,
+    authentication: Pick<ServerAuthenticationResult, 'credential' | 'ndCredential' | 'url'>,
+    body: {
+        autoDownloadEnabled?: boolean;
+        podcastId?: string;
+        title?: string;
+        url: string;
+    },
+): Promise<SamoPodcastFeed> => {
+    return samoSend<SamoPodcastFeed>(fetcher, authentication, 'POST', '/podcasts/feeds', body);
+};
+
+/** Attach an RSS feed to an existing file-backed podcast show (hybrid library). */
+export const attachSamoPodcastShowFeed = async (
+    fetcher: SamoFetch,
+    authentication: Pick<ServerAuthenticationResult, 'credential' | 'ndCredential' | 'url'>,
+    podcastId: string,
+    body: {
+        autoDownloadEnabled?: boolean;
+        title?: string;
+        url: string;
+    },
+): Promise<SamoPodcastFeed> => {
+    return samoSend<SamoPodcastFeed>(
+        fetcher,
+        authentication,
+        'POST',
+        `/podcasts/shows/${encodeURIComponent(podcastId)}/feeds`,
+        body,
+    );
+};
+
 // ---------------------------------------------------------------------------
 // Internet + programmed radio
 // ---------------------------------------------------------------------------
@@ -1433,9 +1541,65 @@ export const getSamoInternetRadioStation = async (
     return samoGet<SamoInternetRadioStation>(
         fetcher,
         authentication,
-        `/internet-radio/stations/${id}`,
+        `/internet-radio/stations/${encodeURIComponent(id)}`,
         { signal },
     );
+};
+
+export const createSamoInternetRadioStation = async (
+    fetcher: SamoFetch,
+    authentication: Pick<ServerAuthenticationResult, 'credential' | 'ndCredential' | 'url'>,
+    body: {
+        homepageUrl?: string;
+        imageUrl?: string;
+        name: string;
+        streamUrl: string;
+    },
+): Promise<SamoInternetRadioStation> => {
+    return samoSend<SamoInternetRadioStation>(
+        fetcher,
+        authentication,
+        'POST',
+        '/internet-radio/stations',
+        {
+            homepageUrl: body.homepageUrl,
+            imageUrl: body.imageUrl,
+            name: body.name,
+            streamUrl: body.streamUrl,
+        },
+    );
+};
+
+export const uploadSamoInternetRadioCover = async (
+    fetcher: SamoFetch,
+    authentication: Pick<ServerAuthenticationResult, 'credential' | 'ndCredential' | 'url'>,
+    stationId: string,
+    file: Blob,
+    filename = 'cover.jpg',
+): Promise<SamoInternetRadioStation> => {
+    const form = new FormData();
+    form.append('cover', file, filename);
+    const url = getSamoApiUrl(
+        authentication,
+        `/internet-radio/stations/${encodeURIComponent(stationId)}/cover`,
+    );
+    const response = await fetcher(url, {
+        body: form as unknown as string,
+        headers: authHeaders(getSamoBearerToken(authentication)),
+        method: 'POST',
+    });
+
+    if (!response.ok) {
+        const message =
+            typeof response.text === 'function'
+                ? await response.text().catch(() => '')
+                : '';
+        throw new Error(
+            message.trim() || `Thumbnail upload failed (${response.status})`,
+        );
+    }
+
+    return response.json() as Promise<SamoInternetRadioStation>;
 };
 
 export const listSamoProgrammedRadioStations = async (
@@ -1478,6 +1642,23 @@ export interface SamoPlaybackPatch {
     touchLastPlayedAt?: boolean;
     touchLastPositionAt?: boolean;
 }
+
+/** Samo podcast/audiobook rows use `progress`; music entities use `playback`. */
+export const samoUserPlaybackState = (
+    entity: { playback?: SamoPlaybackState; progress?: SamoPlaybackState } | undefined,
+): SamoPlaybackState | undefined => entity?.progress ?? entity?.playback;
+
+export const getSamoPlayback = async (
+    fetcher: SamoFetch,
+    authentication: Pick<ServerAuthenticationResult, 'credential' | 'ndCredential' | 'url'>,
+    kind: SamoPlaybackTargetKind,
+    id: string,
+    signal?: AbortSignal,
+): Promise<SamoPlaybackState> => {
+    return samoGet<SamoPlaybackState>(fetcher, authentication, `/playback/${kind}/${id}`, {
+        signal,
+    });
+};
 
 export const patchSamoPlayback = async (
     fetcher: SamoFetch,

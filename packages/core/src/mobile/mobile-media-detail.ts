@@ -45,6 +45,7 @@ import {
     samoAlbumQualityProfile,
 } from './mobile-home';
 import {
+    buildAudiobookTimelineSegments,
     buildSamoAudiobookPlayback,
     buildSamoMusicPlayback,
     buildSamoPodcastEpisodePlayback,
@@ -161,6 +162,15 @@ export interface MobileMediaDetail {
      * Audiobook-only — series sequence summary (e.g. "Lyrik Saga, Book 3").
      */
     seriesSummary?: string;
+    /**
+     * Playlist-only — ownership and editability for rename, cover, and track edits.
+     */
+    playlistMeta?: {
+        description?: string;
+        editable: boolean;
+        ownerId?: string;
+        public?: boolean;
+    };
     source: MobileContentSource;
     subtitle?: string;
     title: string;
@@ -375,6 +385,7 @@ interface SubsonicAlbumSummary extends SubsonicCollectionMetadata {
 
 interface SubsonicPlaylistDetail extends SubsonicCollectionMetadata {
     comment?: string;
+    public?: boolean;
     entry?: SubsonicSong[];
     owner?: string;
     songCount?: number;
@@ -474,6 +485,27 @@ const assertSubsonicOk = (
     }
 
     throw new Error(response?.error?.message ?? fallback);
+};
+
+const isPlaylistOwnedByUser = (
+    authentication: ServerAuthenticationResult,
+    ownerId?: string,
+    ownerName?: string,
+): boolean => {
+    const userId = authentication.userId?.trim();
+    if (authentication.type === ServerType.SAMO) {
+        if (!ownerId) return true;
+        return Boolean(userId && ownerId === userId);
+    }
+    if (
+        authentication.type === ServerType.NAVIDROME ||
+        authentication.type === ServerType.SUBSONIC
+    ) {
+        const owner = ownerName?.trim();
+        if (!owner) return true;
+        return Boolean(userId && owner === userId);
+    }
+    return false;
 };
 
 const toSubsonicAlbumItem = (
@@ -880,12 +912,19 @@ const loadSubsonicPlaylistDetail = async (
 
     const tracks = toTrackItems(authentication, playlist.entry ?? [], artworkUrl);
 
+    const ownerName = playlist.owner;
+
     return {
         artworkUrl,
         id: playlist.id.toString(),
         isHiRes: tracksHaveHiRes(tracks),
+        playlistMeta: {
+            description: playlist.comment?.trim() || undefined,
+            editable: isPlaylistOwnedByUser(authentication, undefined, ownerName),
+            public: playlist.public,
+        },
         source: getMobileContentSource(authentication),
-        subtitle: playlist.songCount ? `${playlist.songCount} songs` : playlist.owner,
+        subtitle: playlist.songCount ? `${playlist.songCount} songs` : ownerName,
         title: playlist.name,
         tracks,
         type: MobileMediaDetailType.PLAYLIST,
@@ -1487,6 +1526,12 @@ const loadSamoPlaylistDetail = async (
         artworkImageId: pickSamoImageId(playlist.images),
         id: playlist.id,
         metadataLines: playlist.description ? [playlist.description] : undefined,
+        playlistMeta: {
+            description: playlist.description?.trim() || undefined,
+            editable: isPlaylistOwnedByUser(authentication, playlist.ownerId),
+            ownerId: playlist.ownerId,
+            public: playlist.public,
+        },
         source: getMobileContentSource(authentication),
         subtitle:
             playlist.ownerName ??
@@ -1513,40 +1558,35 @@ const loadSamoAudiobookDetail = async (
     const artworkUrl = resolveSamoAudiobookArtworkUrl(authentication, audiobook, streamToken);
     const artworkImageId = pickSamoImageId(audiobook.cover ? [audiobook.cover] : undefined);
     const title = audiobook.book?.title ?? 'Untitled audiobook';
-    const playback = buildSamoAudiobookPlayback(authentication, audiobook, artworkUrl, streamToken);
+    const timelineSegments = buildAudiobookTimelineSegments(
+        audiobook.chapters,
+        audiobook.durationSeconds,
+        audiobook.id,
+    );
+    const playback = buildSamoAudiobookPlayback(
+        authentication,
+        audiobook,
+        artworkUrl,
+        streamToken,
+        { timelineSegments },
+    );
 
     const chapters = samoChaptersToBookmarks(audiobook.chapters);
-    const timelineSegments: MobilePlaybackSegment[] = chapters.flatMap((chapter, index, list) => {
-        const startSeconds = chapter.positionSeconds;
-        if (startSeconds === undefined) return [];
-        const next = list[index + 1]?.positionSeconds;
-        const durationSeconds =
-            next !== undefined ? Math.max(0, next - startSeconds) : undefined;
-        return [
-            {
-                durationSeconds,
-                id: chapter.id,
-                startSeconds,
-                title: chapter.title,
-            },
-        ];
-    });
 
     const tracks: MobileMediaTrack[] = chapters.length > 0
-        ? chapters.map((chapter, index, list) => {
+        ? chapters.map((chapter, index) => {
               const startSeconds = chapter.positionSeconds ?? 0;
-              const next = list[index + 1]?.positionSeconds;
-              const durationSeconds =
-                  next !== undefined ? Math.max(0, next - startSeconds) : undefined;
+              const segment = timelineSegments[index];
               return {
                   artworkUrl,
-                  durationSeconds,
+                  durationSeconds: segment?.durationSeconds,
                   id: chapter.id,
                   itemId: audiobook.id,
-                  playback: playback ? { ...playback, timelineSegments } : undefined,
+                  playback: playback ?? undefined,
                   startSeconds,
                   subtitle: title,
-                  timelineSegments,
+                  timelineSegments:
+                      timelineSegments.length > 1 ? timelineSegments : undefined,
                   title: chapter.title ?? `Chapter ${index + 1}`,
                   trackNumber: index + 1,
               };

@@ -313,9 +313,11 @@ export type Playlist = {
     id: string;
     imageId: null | string;
     imageUrl: null | string;
+    lastPlayedAt?: null | string;
     name: string;
     owner: null | string;
     ownerId: null | string;
+    playCount?: null | number;
     public: boolean | null;
     rules?: null | PlaylistRules;
     size: null | number;
@@ -958,8 +960,10 @@ export const artistListSortMap: ArtistListSortMap = {
 
 export enum PlaylistListSort {
     DURATION = 'duration',
+    LAST_PLAYED_AT = 'lastPlayedAt',
     NAME = 'name',
     OWNER = 'owner',
+    PLAY_COUNT = 'playCount',
     PUBLIC = 'public',
     SONG_COUNT = 'songCount',
     UPDATED_AT = 'updatedAt',
@@ -1253,32 +1257,40 @@ type PlaylistListSortMap = {
 export const playlistListSortMap: PlaylistListSortMap = {
     jellyfin: {
         duration: JFPlaylistListSort.DURATION,
+        lastPlayedAt: undefined,
         name: JFPlaylistListSort.NAME,
         owner: undefined,
+        playCount: undefined,
         public: undefined,
         songCount: JFPlaylistListSort.SONG_COUNT,
         updatedAt: undefined,
     },
     navidrome: {
         duration: NDPlaylistListSort.DURATION,
+        lastPlayedAt: undefined,
         name: NDPlaylistListSort.NAME,
         owner: NDPlaylistListSort.OWNER,
+        playCount: undefined,
         public: NDPlaylistListSort.PUBLIC,
         songCount: NDPlaylistListSort.SONG_COUNT,
         updatedAt: NDPlaylistListSort.UPDATED_AT,
     },
     samo: {
         duration: undefined,
+        lastPlayedAt: undefined,
         name: undefined,
         owner: undefined,
+        playCount: undefined,
         public: undefined,
         songCount: undefined,
         updatedAt: undefined,
     },
     subsonic: {
         duration: undefined,
+        lastPlayedAt: undefined,
         name: undefined,
         owner: undefined,
+        playCount: undefined,
         public: undefined,
         songCount: undefined,
         updatedAt: undefined,

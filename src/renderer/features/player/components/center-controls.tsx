@@ -1,3 +1,4 @@
+import { LONG_FORM_RELATIVE_SKIP_SECONDS } from '@samo/core/mobile';
 import { useTranslation } from 'react-i18next';
 
 import styles from './center-controls.module.css';
@@ -233,7 +234,10 @@ const SkipBackwardButton = ({ disabled }: { disabled?: boolean }) => {
     const { mediaSeekToTimestamp, mediaSkipBackward } = usePlayer();
 
     const handleClick = () => {
-        const seconds = skip?.skipBackwardSeconds ?? 5;
+        const seconds =
+            source === 'audiobook' || source === 'podcast'
+                ? LONG_FORM_RELATIVE_SKIP_SECONDS
+                : (skip?.skipBackwardSeconds ?? 5);
 
         if (source === 'audiobook') {
             const target = Math.max(0, audiobookPosition - seconds);
@@ -258,10 +262,13 @@ const SkipBackwardButton = ({ disabled }: { disabled?: boolean }) => {
             icon={<Icon fill="default" icon="mediaStepBackward" size={buttonSize} />}
             onClick={handleClick}
             tooltip={{
-                label: t('player.skip', {
-                    context: 'back',
-                    postProcess: 'sentenceCase',
-                }),
+                label:
+                    source === 'audiobook' || source === 'podcast'
+                        ? `Back ${LONG_FORM_RELATIVE_SKIP_SECONDS} seconds`
+                        : t('player.skip', {
+                              context: 'back',
+                              postProcess: 'sentenceCase',
+                          }),
                 openDelay: 0,
             }}
             variant="secondary"
@@ -353,7 +360,10 @@ const SkipForwardButton = ({ disabled }: { disabled?: boolean }) => {
         duration: number,
         seekTo: (seconds: number) => void,
     ) => {
-        const seconds = skip?.skipForwardSeconds ?? 10;
+        const seconds =
+            source === 'audiobook' || source === 'podcast'
+                ? LONG_FORM_RELATIVE_SKIP_SECONDS
+                : (skip?.skipForwardSeconds ?? 10);
         const unclampedTarget = position + seconds;
         const target = duration > 0 ? Math.min(duration, unclampedTarget) : unclampedTarget;
 
@@ -381,10 +391,13 @@ const SkipForwardButton = ({ disabled }: { disabled?: boolean }) => {
             icon={<Icon fill="default" icon="mediaStepForward" size={buttonSize} />}
             onClick={handleClick}
             tooltip={{
-                label: t('player.skip', {
-                    context: 'forward',
-                    postProcess: 'sentenceCase',
-                }),
+                label:
+                    source === 'audiobook' || source === 'podcast'
+                        ? `Forward ${LONG_FORM_RELATIVE_SKIP_SECONDS} seconds`
+                        : t('player.skip', {
+                              context: 'forward',
+                              postProcess: 'sentenceCase',
+                          }),
                 openDelay: 0,
             }}
             variant="secondary"

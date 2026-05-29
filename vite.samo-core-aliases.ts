@@ -1,5 +1,5 @@
 import { resolve } from 'path';
-import type { AliasOptions } from 'vite';
+import type { Alias } from 'vite';
 
 const coreSrc = resolve(__dirname, 'packages/core/src');
 
@@ -8,7 +8,7 @@ const coreSrc = resolve(__dirname, 'packages/core/src');
  * the bare alias points at a directory. List subpaths explicitly; keep the
  * package root alias last.
  */
-export const samoCoreAliases: AliasOptions = [
+export const samoCoreAliases: Alias[] = [
     {
         find: '@samo/core/server/auth',
         replacement: resolve(coreSrc, 'server/server-auth.ts'),

@@ -1,4 +1,7 @@
+import { formatRadioStreamFormat } from '@samo/core/mobile';
+
 import { type AndroidRecentContentSourceItem } from '../services/recent-content';
+import { getDisplaySubtitle } from '../utils/playback-time';
 import {
     ActivityIndicator,
     Animated,
@@ -28,6 +31,8 @@ export const StreamInfoModal = ({
 
     const streamUrl = item.playback?.url;
     const homepage = item.playback?.homepageUrl;
+    const formatLine = item.playback ? formatRadioStreamFormat(item.playback) : undefined;
+    const detailSubtitle = getDisplaySubtitle(item.subtitle);
 
     return (
         <Modal animationType="fade" onRequestClose={onClose} transparent visible>
@@ -40,10 +45,16 @@ export const StreamInfoModal = ({
                     <Text numberOfLines={2} style={styles.contextMenuTitle}>
                         {item.title}
                     </Text>
-                    {item.subtitle && item.subtitle !== homepage ? (
-                        <Text style={styles.mediaContextSubtitle}>{item.subtitle}</Text>
+                    {detailSubtitle && detailSubtitle !== homepage ? (
+                        <Text style={styles.mediaContextSubtitle}>{detailSubtitle}</Text>
                     ) : null}
                     <View style={styles.mediaContextActions}>
+                        {formatLine ? (
+                            <View style={styles.streamInfoRow}>
+                                <Text style={styles.streamInfoLabel}>Stream</Text>
+                                <Text style={styles.streamInfoValue}>{formatLine}</Text>
+                            </View>
+                        ) : null}
                         {homepage ? (
                             <View style={styles.streamInfoRow}>
                                 <Text style={styles.streamInfoLabel}>Homepage</Text>

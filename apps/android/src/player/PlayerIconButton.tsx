@@ -5,12 +5,14 @@ import { styles } from '../theme/styles';
 export const PlayerIconButton = ({
     accessibilityLabel,
     children,
+    compact,
     onPress,
     primary,
     tint,
 }: {
     accessibilityLabel: string;
     children: ReactNode;
+    compact?: boolean;
     onPress: () => void;
     primary?: boolean;
     tint?: string;
@@ -22,6 +24,7 @@ export const PlayerIconButton = ({
             onPress={onPress}
             style={[
                 styles.playerControlButton,
+                compact && styles.playerControlButtonCompact,
                 primary && styles.playerControlButtonPrimary,
                 primary && tint ? { backgroundColor: tint } : null,
             ]}

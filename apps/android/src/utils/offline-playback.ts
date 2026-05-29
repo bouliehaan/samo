@@ -2,6 +2,7 @@ import {
     appendAudiobookshelfAuthToken,
     mimeFromAudiobookshelfExt,
     parsePodcastPlaybackEpisodeId,
+    type AudiobookshelfDownloadFile,
     type MobileMediaDetail,
     type MobileMediaTrack,
     type MobilePlayableAudio,
@@ -13,8 +14,14 @@ import {
     type OfflineAudiobookFile,
 } from '../services/download-manager';
 
+export type AudiobookFileTimeSegment = {
+    durationSeconds?: number;
+    ino: string;
+    startOffsetSeconds: number;
+};
+
 export const pickAudiobookFileIndexForTime = (
-    files: OfflineAudiobookFile[],
+    files: readonly AudiobookFileTimeSegment[],
     bookTimeSeconds: number,
 ): number => {
     if (files.length === 0) {
@@ -32,33 +39,105 @@ export const pickAudiobookFileIndexForTime = (
     return chosen;
 };
 
+export const pickAudiobookQueueIndexForBookTime = (
+    items: MobilePlayableAudio[],
+    bookTimeSeconds: number,
+): number => {
+    if (items.length === 0) {
+        return 0;
+    }
+    let chosen = 0;
+    for (let i = 0; i < items.length; i += 1) {
+        const offset = items[i]?.progressOffsetSeconds ?? 0;
+        if (offset <= bookTimeSeconds) {
+            chosen = i;
+        } else {
+            break;
+        }
+    }
+    return chosen;
+};
+
+const buildAudiobookFilePlayable = (
+    detail: MobileMediaDetail,
+    file: AudiobookFileTimeSegment & { castUrl?: string; ino: string },
+    initialPositionSeconds: number,
+    streamUrl: string,
+    idSuffix: string,
+): MobilePlayableAudio => ({
+    artworkUrl: detail.artworkUrl,
+    castMimeType: mimeFromCastUri(streamUrl),
+    castUrl: file.castUrl,
+    contentSourceId: detail.source.id,
+    durationSeconds: file.durationSeconds,
+    id: `${detail.source.type}:${detail.source.url}:audiobook:${detail.id}:${idSuffix}:${file.ino}`,
+    initialPositionSeconds,
+    progressOffsetSeconds: file.startOffsetSeconds,
+    quality: {
+        container: null,
+        deliveryKind: 'unknown',
+        losslessRequired: false,
+        serverTranscodeRequested: false,
+    },
+    source: 'audiobook',
+    subtitle: detail.subtitle,
+    title: detail.title,
+    url: streamUrl,
+});
+
 export const buildOfflineAudiobookPlayable = (
     detail: MobileMediaDetail,
     file: OfflineAudiobookFile,
     initialPositionSeconds: number,
     authentication?: ServerAuthenticationResult,
 ): MobilePlayableAudio => {
-    return {
-        artworkUrl: detail.artworkUrl,
-        castMimeType: mimeFromCastUri(file.localUri),
-        castUrl: authentication
-            ? appendAudiobookshelfAuthToken(file.sourceUrl, authentication.credential)
-            : undefined,
-        contentSourceId: detail.source.id,
-        durationSeconds: file.durationSeconds,
-        id: `${detail.source.type}:${detail.source.url}:audiobook:${detail.id}:offline:${file.ino}`,
+    return buildAudiobookFilePlayable(
+        detail,
+        file,
         initialPositionSeconds,
-        progressOffsetSeconds: file.startOffsetSeconds,
-        quality: {
-            container: null,
-            deliveryKind: 'unknown',
-            losslessRequired: false,
-            serverTranscodeRequested: false,
+        file.localUri,
+        'offline',
+    );
+};
+
+export const buildAbsStreamFilePlayable = (
+    detail: MobileMediaDetail,
+    file: AudiobookshelfDownloadFile,
+    initialPositionSeconds: number,
+    authentication: ServerAuthenticationResult,
+): MobilePlayableAudio => {
+    const streamUrl = appendAudiobookshelfAuthToken(
+        file.downloadUrl,
+        authentication.credential,
+    );
+    return buildAudiobookFilePlayable(
+        detail,
+        {
+            castUrl: streamUrl,
+            durationSeconds: file.durationSeconds,
+            ino: file.ino,
+            startOffsetSeconds: file.startOffsetSeconds ?? 0,
         },
-        source: 'audiobook',
-        subtitle: detail.subtitle,
-        title: detail.title,
-        url: file.localUri,
+        initialPositionSeconds,
+        streamUrl,
+        'file',
+    );
+};
+
+export const buildAudiobookFilePlaybackQueue = (
+    detail: MobileMediaDetail,
+    files: readonly AudiobookFileTimeSegment[],
+    bookTimeSeconds: number,
+    buildItem: (file: AudiobookFileTimeSegment, initialPositionSeconds: number) => MobilePlayableAudio,
+): { index: number; items: MobilePlayableAudio[] } => {
+    const index = pickAudiobookFileIndexForTime(files, bookTimeSeconds);
+    const fileStart = files[index]?.startOffsetSeconds ?? 0;
+    const initialOffsetSeconds = Math.max(0, bookTimeSeconds - fileStart);
+    return {
+        index,
+        items: files.map((file, fileIndex) =>
+            buildItem(file, fileIndex === index ? initialOffsetSeconds : 0),
+        ),
     };
 };
 
@@ -82,6 +161,7 @@ export const buildOfflinePodcastEpisodePlayable = (
         durationSeconds: track.durationSeconds,
         id: `${detail.source.type}:${detail.source.url}:podcast:${itemId}:${episodeId}`,
         initialPositionSeconds: track.startSeconds,
+        publishedAt: track.publishedAt,
         quality: {
             container: null,
             deliveryKind: 'unknown',

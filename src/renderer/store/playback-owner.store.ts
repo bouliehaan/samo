@@ -33,17 +33,17 @@ export const usePlaybackOwnerStore = create<PlaybackOwnerState>()(
             const currentSession = get().session;
             const nextMediaKey = options.mediaKey ?? null;
             const isSourceChange = get().source !== source;
+            const isRadioClaim = source === 'radio';
             const isExplicitReplacement = Boolean(options.replace);
             const isMediaKeyReplacement =
                 options.mediaKey !== undefined &&
                 currentSession.source === source &&
-                currentSession.mediaKey !== null &&
                 currentSession.mediaKey !== nextMediaKey;
 
             // Stop any Web audio that belongs to the outgoing owner/session.
             // Mounted elements stay registered so reused DOM nodes remain
             // inspectable and controllable after a URL or session switch.
-            if (isSourceChange || isExplicitReplacement || isMediaKeyReplacement) {
+            if (isSourceChange || isRadioClaim || isExplicitReplacement || isMediaKeyReplacement) {
                 stopAllAudioElements();
             }
             const session = createPlaybackSession({

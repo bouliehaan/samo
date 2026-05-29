@@ -71,20 +71,30 @@ export const PlayPauseGlyph = ({
     );
 };
 
-export const TrackSkipGlyph = ({ color, direction }: { color: string; direction: -1 | 1 }) => {
+export const TrackSkipGlyph = ({
+    color,
+    direction,
+    size = 17,
+}: {
+    color: string;
+    direction: -1 | 1;
+    size?: number;
+}) => {
+    const triH = Math.max(5, Math.round(size * 0.41));
+    const triW = Math.max(7, Math.round(size * 0.59));
     const triangleStyle =
         direction === 1
             ? {
-                  borderBottomWidth: 7,
+                  borderBottomWidth: triH,
                   borderLeftColor: color,
-                  borderLeftWidth: 10,
-                  borderTopWidth: 7,
+                  borderLeftWidth: triW,
+                  borderTopWidth: triH,
               }
             : {
-                  borderBottomWidth: 7,
+                  borderBottomWidth: triH,
                   borderRightColor: color,
-                  borderRightWidth: 10,
-                  borderTopWidth: 7,
+                  borderRightWidth: triW,
+                  borderTopWidth: triH,
               };
     const triangles = (
         <View style={styles.skipGlyphTriangles}>
@@ -92,7 +102,14 @@ export const TrackSkipGlyph = ({ color, direction }: { color: string; direction:
             <View style={[styles.skipGlyphTriangle, triangleStyle]} />
         </View>
     );
-    const bar = <View style={[styles.skipGlyphBar, { backgroundColor: color }]} />;
+    const bar = (
+        <View
+            style={[
+                styles.skipGlyphBar,
+                { backgroundColor: color, height: size, width: Math.max(3, Math.round(size * 0.18)) },
+            ]}
+        />
+    );
 
     return (
         <View style={styles.skipGlyph}>

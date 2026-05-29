@@ -4,6 +4,7 @@ import {
     MobileHomeItemType,
     MobileHomeSectionId,
     MobileSearchItemType,
+    sortMobileHomeItemsByPlayCount,
 } from '@samo/core/mobile';
 import { buildAudiobookshelfArtworkUrl } from '@samo/core/mobile';
 import {
@@ -17,6 +18,7 @@ import {
     type AndroidRecentContentItem,
     type AndroidRecentContentSourceItem,
     getRecentContentItemKey,
+    isEligibleRecentlyPlayedSurfaceItem,
 } from '../services/recent-content';
 import { type HomeDisplaySection, type HomeFilter } from '../types/home';
 import { type ViewAllVariant } from '../types/view-all';
@@ -31,6 +33,16 @@ import {
     getCanonicalAlbumIdentityKey,
 } from './recent-content-dedupe';
 import { resolveSamoItemArtworkSourceForDisplay } from './samo-artwork-url';
+
+const sortHomeItemsByLastPlayed = (items: MobileHomeItem[]): MobileHomeItem[] =>
+    [...items].sort((left, right) => {
+        const leftPlayed = left.lastPlayedAt ?? 0;
+        const rightPlayed = right.lastPlayedAt ?? 0;
+        if (rightPlayed !== leftPlayed) {
+            return rightPlayed - leftPlayed;
+        }
+        return left.title.localeCompare(right.title);
+    });
 
 const HOME_FILTER_DEFINITIONS: Array<{ id: HomeFilter; label: string }> = [
     { id: 'all', label: 'All' },
@@ -49,7 +61,7 @@ export const filterHomeDisplaySections = (
     }
 
     const musicVariants: HomeDisplaySection['variant'][] = ['album', 'artist', 'playlist', 'wide'];
-    const podcastVariants: HomeDisplaySection['variant'][] = ['podcast'];
+    const podcastVariants: HomeDisplaySection['variant'][] = ['podcast', 'podcast-feed'];
     const audiobookVariants: HomeDisplaySection['variant'][] = ['book'];
     const radioVariants: HomeDisplaySection['variant'][] = ['radio'];
     const continuableVariants: HomeDisplaySection['variant'][] = ['continue'];
@@ -68,16 +80,15 @@ export const filterHomeDisplaySections = (
             case 'music':
                 return (
                     type === MobileHomeItemType.ALBUM ||
-                    type === MobileHomeItemType.ARTIST ||
                     type === MobileHomeItemType.PLAYLIST ||
                     type === MobileSearchItemType.ALBUM ||
-                    type === MobileSearchItemType.ARTIST ||
                     type === MobileSearchItemType.PLAYLIST ||
                     type === MobileSearchItemType.SONG
                 );
             case 'podcasts':
                 return (
                     type === MobileHomeItemType.PODCAST ||
+                    type === MobileHomeItemType.PODCAST_EPISODE ||
                     type === MobileSearchItemType.PODCAST
                 );
             case 'audiobooks':
@@ -272,6 +283,36 @@ export const getUniqueHomeItems = (items: AndroidRecentContentSourceItem[]) => {
     return [...itemsByKey.values()];
 };
 
+/** Dedupe while keeping the first occurrence's position (server sort order). */
+export const dedupeHomeItemsPreservingOrder = <T extends AndroidRecentContentSourceItem>(
+    items: T[],
+): T[] => {
+    const mergedByKey = new Map<string, T>();
+
+    for (const item of items) {
+        const key = getRecentContentItemKey(item);
+        const existing = mergedByKey.get(key);
+        mergedByKey.set(
+            key,
+            existing ? (mergeContentItemSignals(existing, item) as T) : item,
+        );
+    }
+
+    const emitted = new Set<string>();
+    const output: T[] = [];
+
+    for (const item of items) {
+        const key = getRecentContentItemKey(item);
+        if (emitted.has(key)) {
+            continue;
+        }
+        emitted.add(key);
+        output.push(mergedByKey.get(key)!);
+    }
+
+    return output;
+};
+
 const dedupeRecentDisplayItems = <T extends AndroidRecentContentSourceItem>(items: T[]): T[] => {
     const seenKeys = new Set<string>();
     const seenAlbumCanonical = new Set<string>();
@@ -325,6 +366,7 @@ export const getViewAllVariant = (
         // Recents, the "Recently Added" hero, the radio grid, and the wide
         // "continue" row are deliberately ephemeral or live — no View All.
         case 'continue':
+        case 'podcast-feed':
         case 'radio':
         case 'recents':
         case 'wide':
@@ -337,8 +379,6 @@ export const buildRecentlyAddedHeroRow = (
 ): MobileHomeItem[] => {
     const candidates: MobileHomeItem[] = [
         ...(sectionsById.get(MobileHomeSectionId.RECENTLY_ADDED)?.items ?? []),
-        ...(sectionsById.get(MobileHomeSectionId.AUDIOBOOKS)?.items ?? []),
-        ...(sectionsById.get(MobileHomeSectionId.PODCASTS)?.items ?? []),
     ];
     const seenKeys = new Set<string>();
     const seenAlbumCanonical = new Set(excludedAlbumCanonicalKeys);
@@ -366,13 +406,19 @@ export const buildRecentlyAddedHeroRow = (
 };
 
 export const getContentItemProgress = (item: AndroidRecentContentSourceItem) => {
-    const playback = item.playback;
+    if (item.completionState === 'completed') {
+        return 1;
+    }
 
-    if (!playback?.durationSeconds || !playback.initialPositionSeconds) {
+    const durationSeconds = item.playback?.durationSeconds ?? item.durationSeconds;
+    const positionSeconds =
+        item.playback?.initialPositionSeconds ?? item.progressSeconds ?? 0;
+
+    if (!durationSeconds || positionSeconds <= 0) {
         return undefined;
     }
 
-    const progress = playback.initialPositionSeconds / playback.durationSeconds;
+    const progress = positionSeconds / durationSeconds;
 
     if (progress <= 0.02 || progress >= 0.96) {
         return undefined;
@@ -409,7 +455,12 @@ export const getHomeDisplaySections = (
     const recentDisplayItems = withResolvedArtwork(
         dedupeRecentDisplayItems(
             recentItems.flatMap((recentItem) => {
-                if (!getLibraryMediaType(recentItem.item)) {
+                if (
+                    !isEligibleRecentlyPlayedSurfaceItem(recentItem.item, {
+                        directSong: recentItem.directSong,
+                    }) ||
+                    !getLibraryMediaType(recentItem.item)
+                ) {
                     return [];
                 }
                 const fresh = freshItemsByKey.get(recentItem.key);
@@ -439,38 +490,28 @@ export const getHomeDisplaySections = (
             seenAlbumCanonicalKeys.add(canonical);
         }
     }
-    const favoriteAlbumItems = getHomeItemsForSection(
-        sectionsById,
-        MobileHomeSectionId.FAVORITE_ALBUMS,
-        recentItems,
-    );
-    const recentlyAddedAlbumItems = getHomeItemsForSection(
-        sectionsById,
-        MobileHomeSectionId.RECENTLY_ADDED,
-        recentItems,
-    );
-    const albumItems = filterItemsExcludingAlbumCanonicalKeys(
-        dedupeItemsByAlbumCanonicalIdentity(
-            getUniqueHomeItems([...favoriteAlbumItems, ...recentlyAddedAlbumItems]).filter(
-                (item) => item.type === MobileHomeItemType.ALBUM,
+    const albumItems = sortMobileHomeItemsByPlayCount(
+        filterItemsExcludingAlbumCanonicalKeys(
+            dedupeItemsByAlbumCanonicalIdentity(
+                dedupeHomeItemsPreservingOrder(
+                    (sectionsById.get(MobileHomeSectionId.FAVORITE_ALBUMS)?.items ?? []).filter(
+                        (item) => item.type === MobileHomeItemType.ALBUM,
+                    ),
+                ),
             ),
+            seenAlbumCanonicalKeys,
         ),
-        seenAlbumCanonicalKeys,
     );
-    const favoriteArtistItems = getHomeItemsForSection(
-        sectionsById,
-        MobileHomeSectionId.FAVORITE_ARTISTS,
-        recentItems,
+    const podcastFeedItems = dedupeHomeItemsPreservingOrder(
+        (sectionsById.get(MobileHomeSectionId.PODCAST_FEED)?.items ?? [])
+            .filter((item) => item.type === MobileHomeItemType.PODCAST_EPISODE)
+            .sort((left, right) => (right.addedAt ?? 0) - (left.addedAt ?? 0)),
     );
-    const recentlyAddedArtistItems = getHomeItemsForSection(
-        sectionsById,
-        MobileHomeSectionId.RECENTLY_ADDED,
-        recentItems,
-    ).filter((item) => item.type === MobileHomeItemType.ARTIST);
-    const artistItems = getUniqueHomeItems([
-        ...favoriteArtistItems,
-        ...recentlyAddedArtistItems,
-    ]).filter((item) => item.type === MobileHomeItemType.ARTIST);
+    const artistItems = dedupeHomeItemsPreservingOrder(
+        (sectionsById.get(MobileHomeSectionId.FAVORITE_ARTISTS)?.items ?? []).filter(
+            (item) => item.type === MobileHomeItemType.ARTIST,
+        ),
+    );
     const podcastItems = getHomeItemsForSection(
         sectionsById,
         MobileHomeSectionId.PODCASTS,
@@ -481,23 +522,11 @@ export const getHomeDisplaySections = (
         MobileHomeSectionId.AUDIOBOOKS,
         recentItems,
     );
-    const playlistItems = getHomeItemsForSection(
-        sectionsById,
-        MobileHomeSectionId.PLAYLISTS,
-        recentItems,
+    const playlistItems = sortHomeItemsByLastPlayed(
+        getHomeItemsForSection(sectionsById, MobileHomeSectionId.PLAYLISTS, recentItems),
     );
-    const sortedAllItems = sortHomeItemsByRecents(
-        getUniqueHomeItems(resolvedSections.flatMap((section) => section.items)),
-        recentItems,
-    );
-    const recentKeys = new Set(recentItems.map((item) => item.key));
     const discoverItems = filterItemsExcludingAlbumCanonicalKeys(
-        sortedAllItems.filter(
-            (item) =>
-                !recentKeys.has(getRecentContentItemKey(item)) &&
-                (item.type === MobileHomeItemType.ALBUM ||
-                    item.type === MobileHomeItemType.PLAYLIST),
-        ),
+        sectionsById.get(MobileHomeSectionId.DISCOVER)?.items ?? [],
         seenAlbumCanonicalKeys,
     );
 
@@ -508,6 +537,15 @@ export const getHomeDisplaySections = (
             rowCount: 2,
             title: 'Recently Played',
             variant: 'recents',
+        });
+    }
+
+    if (podcastFeedItems.length > 0) {
+        displaySections.push({
+            items: podcastFeedItems.slice(0, 24),
+            key: 'podcast-feed',
+            title: 'Podcast Feed',
+            variant: 'podcast-feed',
         });
     }
 

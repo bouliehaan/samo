@@ -209,6 +209,7 @@ class SamoPlaybackService : MediaSessionService() {
         createdPlayer.setAudioAttributes(audioAttributes, true)
         createdPlayer.setPreferredAudioDevice(preferredOutputDevice)
         createdPlayer.setHandleAudioBecomingNoisy(true)
+        createdPlayer.repeatMode = Player.REPEAT_MODE_OFF
         // Hold a partial wake lock while audio is loading or playing so streaming
         // radio doesn't die when the device idles into Doze with the screen off.
         createdPlayer.setWakeMode(C.WAKE_MODE_NETWORK)

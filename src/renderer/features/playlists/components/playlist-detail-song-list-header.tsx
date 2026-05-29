@@ -9,6 +9,7 @@ import { useListContext } from '/@/renderer/context/list-context';
 import { usePlayer } from '/@/renderer/features/player/context/player-context';
 import { playlistsQueries } from '/@/renderer/features/playlists/api/playlists-api';
 import { PlaylistDetailSongListHeaderFilters } from '/@/renderer/features/playlists/components/playlist-detail-song-list-header-filters';
+import { openUpdatePlaylistModal } from '/@/renderer/features/playlists/components/update-playlist-modal';
 import { useDeletePlaylistImage } from '/@/renderer/features/playlists/mutations/delete-playlist-image-mutation';
 import { useUploadPlaylistImage } from '/@/renderer/features/playlists/mutations/upload-playlist-image-mutation';
 import { FilterBar } from '/@/renderer/features/shared/components/filter-bar';
@@ -19,11 +20,13 @@ import {
 import { LibraryHeaderBar } from '/@/renderer/features/shared/components/library-header-bar';
 import { ListSearchInput } from '/@/renderer/features/shared/components/list-search-input';
 import { AppRoute } from '/@/renderer/router/routes';
-import { recordRecentPlaylist, useCurrentServer } from '/@/renderer/store';
+import { recordRecentPlaylist, useCurrentServer, usePermissions } from '/@/renderer/store';
 import { formatDurationString } from '/@/renderer/utils';
 import { replaceURLWithHTMLLinks } from '/@/renderer/utils/linkify';
 import { hasFeature } from '/@/shared/api/utils';
 import { ActionIcon } from '/@/shared/components/action-icon/action-icon';
+import { Button } from '/@/shared/components/button/button';
+import { Icon } from '/@/shared/components/icon/icon';
 import { FileButton } from '/@/shared/components/file-button/file-button';
 import { Group } from '/@/shared/components/group/group';
 import { Spoiler } from '/@/shared/components/spoiler/spoiler';
@@ -112,6 +115,11 @@ export const PlaylistDetailSongListHeader = ({
 
     const playlistDuration = detailQuery?.data?.duration;
     const playlistDescription = detailQuery?.data?.description?.trim();
+    const { userId, ...permissions } = usePermissions();
+    const canEditPublic = permissions.playlists.editPublic;
+    const includesNonOwnedPublic =
+        Boolean(detailQuery?.data?.public) && detailQuery?.data?.ownerId !== userId;
+    const canEditPlaylist = canEditPublic || !includesNonOwnedPublic;
 
     const [collapsed] = useLocalStorage<boolean>({
         defaultValue: false,
@@ -248,10 +256,23 @@ export const PlaylistDetailSongListHeader = ({
                                 </Text>
                             </Spoiler>
                         ) : null}
-                        <LibraryHeaderMenu
-                            onPlay={(type) => handlePlay(type)}
-                            onShuffle={() => handlePlay(Play.SHUFFLE)}
-                        />
+                        <Group gap="sm">
+                            {canEditPlaylist && !isSmartPlaylist && detailQuery?.data ? (
+                                <Button
+                                    leftSection={<Icon icon="edit" />}
+                                    onClick={() =>
+                                        openUpdatePlaylistModal({ playlist: detailQuery.data })
+                                    }
+                                    variant="default"
+                                >
+                                    {t('action.editPlaylist', { postProcess: 'titleCase' })}
+                                </Button>
+                            ) : null}
+                            <LibraryHeaderMenu
+                                onPlay={(type) => handlePlay(type)}
+                                onShuffle={() => handlePlay(Play.SHUFFLE)}
+                            />
+                        </Group>
                     </Stack>
                 </LibraryHeader>
             )}

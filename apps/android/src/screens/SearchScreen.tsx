@@ -386,7 +386,11 @@ export const SearchOverlay = ({
                     onScopeChange={setActiveScope}
                     scopes={availableScopes}
                 />
-                <ScrollView keyboardShouldPersistTaps="handled" style={styles.searchOverlayResults}>
+                <ScrollView
+                    keyboardShouldPersistTaps="handled"
+                    showsVerticalScrollIndicator={false}
+                    style={styles.searchOverlayResults}
+                >
                     {query.trim() ? (
                         <SearchResults
                             activeScope={activeScope}

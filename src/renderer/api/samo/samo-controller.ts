@@ -1,6 +1,7 @@
 import {
     authenticateSamo,
     createSamoAudiobookBookmark,
+    createSamoInternetRadioStation,
     createSamoMusicPlaylist,
     deleteSamoBookmark,
     deleteSamoMusicPlaylist,
@@ -56,9 +57,12 @@ import {
 import isElectron from 'is-electron';
 
 import { samoFetch } from '/@/renderer/api/samo/samo-fetch';
+import { usePlayerStoreBase } from '/@/renderer/store/player.store';
 import { samoNormalize } from '/@/shared/api/samo/samo-normalize';
 import {
+    type Album,
     type AlbumArtist,
+    AlbumArtistListSort,
     type AlbumDetailResponse,
     type AlbumListResponse,
     type AlbumListSort,
@@ -67,6 +71,7 @@ import {
     LibraryItem,
     type Playlist,
     type PlaylistDetailResponse,
+    PlaylistListSort,
     ServerType,
     type Song,
     type SongListResponse,
@@ -81,6 +86,11 @@ const browserFetch = samoFetch;
 // at once. Mirrors the Android `mobile-home` collection loaders.
 const SAMO_PAGE_SIZE = 500;
 const SAMO_MAX_PAGES = 40;
+
+/** One playlist play-count bump per playlist queue context (first scrobbled track). */
+let activePlaylistScrobbleId: null | string = null;
+let activePlaylistStartedId: null | string = null;
+let lastPlaylistContextId: null | string = null;
 
 const samoAuthentication = (server: {
     credential: string;
@@ -240,12 +250,61 @@ const sortAlbums = (
 
 const sortArtists = (
     items: SamoMusicArtist[],
+    sortBy: AlbumArtistListSort | undefined,
     sortOrder: SortOrder | undefined,
 ): SamoMusicArtist[] => {
     const order = sortOrder === SortOrder.DESC ? -1 : 1;
-    return [...items].sort(
-        (a, b) => (a.sortName ?? a.name ?? '').localeCompare(b.sortName ?? b.name ?? '') * order,
-    );
+    const list = [...items];
+    switch (sortBy) {
+        case AlbumArtistListSort.PLAY_COUNT:
+            list.sort(
+                (a, b) =>
+                    ((a.playback?.playCount ?? 0) - (b.playback?.playCount ?? 0)) * order,
+            );
+            break;
+        case AlbumArtistListSort.FAVORITED:
+            list.sort((a, b) => {
+                const aFav = a.playback?.favorite ? 1 : 0;
+                const bFav = b.playback?.favorite ? 1 : 0;
+                if (aFav !== bFav) {
+                    return (aFav - bFav) * order * -1;
+                }
+                return (
+                    (a.sortName ?? a.name ?? '').localeCompare(b.sortName ?? b.name ?? '') * order
+                );
+            });
+            break;
+        case AlbumArtistListSort.RECENTLY_ADDED:
+            list.sort((a, b) => {
+                const aTime = Date.parse(a.addedAt ?? '') || 0;
+                const bTime = Date.parse(b.addedAt ?? '') || 0;
+                return sortOrder === SortOrder.DESC ? bTime - aTime : aTime - bTime;
+            });
+            break;
+        case AlbumArtistListSort.NAME:
+        default:
+            list.sort(
+                (a, b) =>
+                    (a.sortName ?? a.name ?? '').localeCompare(b.sortName ?? b.name ?? '') * order,
+            );
+            break;
+    }
+    return list;
+};
+
+const samoArtistListSort = (
+    sortBy: AlbumArtistListSort | undefined,
+): 'az' | 'playCount' | 'recent' | undefined => {
+    switch (sortBy) {
+        case AlbumArtistListSort.PLAY_COUNT:
+            return 'playCount';
+        case AlbumArtistListSort.RECENTLY_ADDED:
+            return 'recent';
+        case AlbumArtistListSort.NAME:
+            return 'az';
+        default:
+            return undefined;
+    }
 };
 
 const sortSongs = (items: SamoMusicTrack[]): SamoMusicTrack[] => {
@@ -267,6 +326,64 @@ const sortSongs = (items: SamoMusicTrack[]): SamoMusicTrack[] => {
             return a.index - b.index;
         })
         .map(({ track }) => track);
+};
+
+const sortPlaylists = (
+    items: Playlist[],
+    sortBy: PlaylistListSort | undefined,
+    sortOrder: SortOrder | undefined,
+): Playlist[] => {
+    const list = [...items];
+    const order = sortOrder === SortOrder.DESC ? -1 : 1;
+
+    switch (sortBy) {
+        case PlaylistListSort.LAST_PLAYED_AT:
+            list.sort((left, right) => {
+                const leftTime = Date.parse(left.lastPlayedAt ?? '') || 0;
+                const rightTime = Date.parse(right.lastPlayedAt ?? '') || 0;
+                if (leftTime !== rightTime) {
+                    return (leftTime - rightTime) * order;
+                }
+
+                const leftUpdated = Date.parse(left.updatedAt ?? left.createdAt ?? '') || 0;
+                const rightUpdated = Date.parse(right.updatedAt ?? right.createdAt ?? '') || 0;
+                if (leftUpdated !== rightUpdated) {
+                    return (leftUpdated - rightUpdated) * order;
+                }
+
+                return (
+                    left.name.localeCompare(right.name, undefined, { sensitivity: 'base' }) * order
+                );
+            });
+            break;
+        case PlaylistListSort.PLAY_COUNT:
+            list.sort(
+                (left, right) =>
+                    ((left.playCount ?? 0) - (right.playCount ?? 0)) * order ||
+                    left.name.localeCompare(right.name, undefined, { sensitivity: 'base' }),
+            );
+            break;
+        case PlaylistListSort.UPDATED_AT:
+            list.sort((left, right) => {
+                const leftTime = Date.parse(left.updatedAt ?? left.createdAt ?? '') || 0;
+                const rightTime = Date.parse(right.updatedAt ?? right.createdAt ?? '') || 0;
+                return (leftTime - rightTime) * order;
+            });
+            break;
+        case PlaylistListSort.SONG_COUNT:
+            list.sort((left, right) => ((left.songCount ?? 0) - (right.songCount ?? 0)) * order);
+            break;
+        case PlaylistListSort.NAME:
+            list.sort(
+                (left, right) =>
+                    left.name.localeCompare(right.name, undefined, { sensitivity: 'base' }) * order,
+            );
+            break;
+        default:
+            break;
+    }
+
+    return list;
 };
 
 const sortTracksForList = (
@@ -313,10 +430,34 @@ const sortTracksForList = (
     return list;
 };
 
-const samoTrackListSort = (sortBy: SongListSort | undefined): 'az' | 'playCount' | 'recent' | undefined => {
+const samoAlbumListSort = (
+    sortBy: AlbumListSort | undefined,
+): 'az' | 'lastPlayed' | 'playCount' | 'recent' | 'release' | undefined => {
+    switch (sortBy) {
+        case 'playCount' as AlbumListSort:
+            return 'playCount';
+        case 'recentlyPlayed' as AlbumListSort:
+            return 'lastPlayed';
+        case 'recentlyAdded' as AlbumListSort:
+            return 'recent';
+        case 'releaseDate' as AlbumListSort:
+        case 'year' as AlbumListSort:
+            return 'release';
+        case 'name' as AlbumListSort:
+            return 'az';
+        default:
+            return undefined;
+    }
+};
+
+const samoTrackListSort = (
+    sortBy: SongListSort | undefined,
+): 'az' | 'lastPlayed' | 'playCount' | 'recent' | undefined => {
     switch (sortBy) {
         case SongListSort.PLAY_COUNT:
             return 'playCount';
+        case SongListSort.RECENTLY_PLAYED:
+            return 'lastPlayed';
         case SongListSort.RECENTLY_ADDED:
             return 'recent';
         case SongListSort.NAME:
@@ -373,6 +514,49 @@ const fetchSamoArtistTracks = async (
     );
     const albumIds = [...new Set(albumLists.flat().map((album) => album.id))];
     return fetchSamoAlbumTracks(auth, albumIds);
+};
+
+export const fetchSamoUnplayedHomeTracks = async (
+    server: { credential: string; ndCredential?: string; url: string },
+    options: { limit: number; signal?: AbortSignal },
+): Promise<Song[]> => {
+    const auth = samoAuthentication(server);
+    const browse = await getSamoMusicBrowse(browserFetch, auth, 'unplayed', {
+        limit: options.limit,
+        signal: options.signal,
+    });
+    return samoItemsOf(
+        browse.tracks as SamoPaginatedResponse<SamoMusicTrack> | undefined,
+    ).map((track) => samoNormalize.song(track, server));
+};
+
+/** Home discovery queue: unplayed tracks with a recent/older mix (server-side). */
+export const fetchSamoDiscoveryHomeTracks = async (
+    server: { credential: string; ndCredential?: string; url: string },
+    options: { limit: number; signal?: AbortSignal },
+): Promise<Song[]> => {
+    const auth = samoAuthentication(server);
+    const browse = await getSamoMusicBrowse(browserFetch, auth, 'discovery', {
+        limit: options.limit,
+        signal: options.signal,
+    });
+    return samoItemsOf(
+        browse.tracks as SamoPaginatedResponse<SamoMusicTrack> | undefined,
+    ).map((track) => samoNormalize.song(track, server));
+};
+
+export const fetchSamoUnplayedHomeAlbums = async (
+    server: { credential: string; ndCredential?: string; url: string },
+    options: { limit: number; signal?: AbortSignal },
+): Promise<Album[]> => {
+    const auth = samoAuthentication(server);
+    const browse = await getSamoMusicBrowse(browserFetch, auth, 'unplayed', {
+        limit: options.limit,
+        signal: options.signal,
+    });
+    return samoItemsOf(browse.albums as SamoPaginatedResponse<SamoMusicAlbum> | undefined).map(
+        (album) => samoNormalize.album(album, server),
+    );
 };
 
 const fetchAllPages = async <T>(
@@ -456,12 +640,16 @@ export const SamoController: Partial<InternalControllerEndpoint> = {
         return null;
     },
 
-    createInternetRadioStation: async () => {
-        // Internet radio station creation is admin-only on samo and uses a
-        // different request shape than the Subsonic equivalent. Surfaced via
-        // a dedicated samo route later — for now the renderer's
-        // music-focused dialog only invokes this on Subsonic/Navidrome.
-        throw new Error('Internet radio station creation is not wired for Samo yet.');
+    createInternetRadioStation: async ({ apiClientProps, body }) => {
+        const server = apiClientProps.server;
+        if (!server) throw new Error('No server');
+        const auth = samoAuthentication(server);
+        await createSamoInternetRadioStation(browserFetch, auth, {
+            homepageUrl: body.homepageUrl,
+            name: body.name,
+            streamUrl: body.streamUrl,
+        });
+        return null;
     },
 
     createPlaylist: async ({ apiClientProps, body }): Promise<CreatePlaylistResponse> => {
@@ -548,6 +736,30 @@ export const SamoController: Partial<InternalControllerEndpoint> = {
         const server = apiClientProps.server;
         if (!server) throw new Error('No server');
         const auth = samoAuthentication(server);
+
+        const apiSort = samoArtistListSort(query.sortBy);
+        if (!query.searchTerm && !query.favorite && apiSort) {
+            const response = await listSamoMusicArtists(browserFetch, auth, {
+                direction: samoListDirection(query.sortOrder),
+                limit: query.limit ?? 8,
+                offset: query.startIndex ?? 0,
+                sort: apiSort,
+            });
+
+            return {
+                items: samoItemsOf(response).map(
+                    (artist) =>
+                        samoNormalize.albumArtist(
+                            artist,
+                            server,
+                            LibraryItem.ALBUM_ARTIST,
+                        ) as AlbumArtist,
+                ),
+                startIndex: query.startIndex ?? 0,
+                totalRecordCount: response.total ?? null,
+            };
+        }
+
         const all = await fetchAllPages<SamoMusicArtist>((input) =>
             listSamoMusicArtists(browserFetch, auth, input),
         );
@@ -561,7 +773,7 @@ export const SamoController: Partial<InternalControllerEndpoint> = {
             filtered = filtered.filter((artist) => artist.playback?.favorite);
         }
 
-        const sorted = sortArtists(filtered, query.sortOrder);
+        const sorted = sortArtists(filtered, query.sortBy, query.sortOrder);
         const page = paginate(sorted, query.startIndex, query.limit);
 
         return {
@@ -665,9 +877,21 @@ export const SamoController: Partial<InternalControllerEndpoint> = {
             );
             albums = results.flat();
         } else {
-            albums = await fetchAllPages<SamoMusicAlbum>((input) =>
-                listSamoMusicAlbums(browserFetch, auth, input),
-            );
+            const apiSort = samoAlbumListSort(query.sortBy);
+            if (!query.searchTerm && apiSort) {
+                const response = await listSamoMusicAlbums(browserFetch, auth, {
+                    direction: samoListDirection(query.sortOrder),
+                    limit: query.limit ?? 500,
+                    offset: query.startIndex ?? 0,
+                    sort: apiSort,
+                });
+                albums = samoItemsOf(response);
+                preserveSortOrder = true;
+            } else {
+                albums = await fetchAllPages<SamoMusicAlbum>((input) =>
+                    listSamoMusicAlbums(browserFetch, auth, input),
+                );
+            }
         }
 
         let filtered = albums;
@@ -898,17 +1122,35 @@ export const SamoController: Partial<InternalControllerEndpoint> = {
         const server = apiClientProps.server;
         if (!server) throw new Error('No server');
         const auth = samoAuthentication(server);
+        const sortBy = query.sortBy ?? PlaylistListSort.PLAY_COUNT;
+        const sortOrder = query.sortOrder ?? SortOrder.DESC;
+        const pageLimit = query.limit ?? 200;
+        const pageStart = query.startIndex ?? 0;
+
+        let listLimit = pageLimit;
+        let listOffset = pageStart;
+        if (sortBy === PlaylistListSort.LAST_PLAYED_AT) {
+            const probe = await listSamoMusicPlaylists(browserFetch, auth, { limit: 1, offset: 0 });
+            const total = probe.total ?? samoItemsOf(probe).length;
+            listLimit = Math.max(total, 1);
+            listOffset = 0;
+        }
+
         const response = await listSamoMusicPlaylists(browserFetch, auth, {
-            limit: query.limit ?? 200,
-            offset: query.startIndex ?? 0,
+            limit: listLimit,
+            offset: listOffset,
         });
-        const items: Playlist[] = samoItemsOf(response).map((playlist) =>
-            samoNormalize.playlist(playlist, server),
+        const items: Playlist[] = sortPlaylists(
+            samoItemsOf(response).map((playlist) => samoNormalize.playlist(playlist, server)),
+            sortBy,
+            sortOrder,
         );
 
+        const page = paginate(items, pageStart, pageLimit);
+
         return {
-            items,
-            startIndex: query.startIndex ?? 0,
+            items: page.items,
+            startIndex: page.startIndex,
             totalRecordCount: response.total ?? items.length,
         };
     },
@@ -1062,7 +1304,25 @@ export const SamoController: Partial<InternalControllerEndpoint> = {
         });
     },
 
-    getTopSongs: async () => ({ items: [], startIndex: 0, totalRecordCount: 0 }),
+    getTopSongs: async ({ apiClientProps, query }) => {
+        const server = apiClientProps.server;
+        if (!server) {
+            return { items: [], startIndex: 0, totalRecordCount: 0 };
+        }
+        const auth = samoAuthentication(server);
+        const response = await listSamoMusicTracks(browserFetch, auth, {
+            direction: 'desc',
+            limit: query.limit ?? 10,
+            offset: 0,
+            sort: 'playCount',
+        });
+
+        return {
+            items: samoItemsOf(response).map((track) => samoNormalize.song(track, server)),
+            startIndex: 0,
+            totalRecordCount: response.total ?? null,
+        };
+    },
 
     getUserInfo: async ({ apiClientProps }) => {
         const server = apiClientProps.server;
@@ -1153,6 +1413,46 @@ export const SamoController: Partial<InternalControllerEndpoint> = {
             touchLastPlayedAt: query.submission || query.event === 'start',
             touchLastPositionAt: true,
         });
+
+        const playerContext = usePlayerStoreBase.getState().player.context;
+        if (playerContext.kind === 'playlist' && playerContext.serverId === server.id) {
+            if (lastPlaylistContextId !== playerContext.playlistId) {
+                lastPlaylistContextId = playerContext.playlistId;
+                activePlaylistScrobbleId = null;
+                activePlaylistStartedId = null;
+            }
+            if (
+                query.event === 'start' &&
+                activePlaylistStartedId !== playerContext.playlistId
+            ) {
+                activePlaylistStartedId = playerContext.playlistId;
+                await patchSamoPlayback(
+                    browserFetch,
+                    auth,
+                    'music-playlist',
+                    playerContext.playlistId,
+                    { touchLastPlayedAt: true },
+                );
+            }
+            if (query.submission && activePlaylistScrobbleId !== playerContext.playlistId) {
+                activePlaylistScrobbleId = playerContext.playlistId;
+                await patchSamoPlayback(
+                    browserFetch,
+                    auth,
+                    'music-playlist',
+                    playerContext.playlistId,
+                    {
+                        incrementPlayCount: true,
+                        touchLastPlayedAt: true,
+                    },
+                );
+            }
+        } else {
+            lastPlaylistContextId = null;
+            activePlaylistScrobbleId = null;
+            activePlaylistStartedId = null;
+        }
+
         return null;
     },
 

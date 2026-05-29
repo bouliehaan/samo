@@ -349,9 +349,11 @@ export const normalizeSamoMusicPlaylist = (
         id: playlist.id,
         imageId: pickSamoCatalogImageId(pickSamoImageId(playlist.images)) ?? null,
         imageUrl,
+        lastPlayedAt: playlist.playback?.lastPlayedAt ?? null,
         name: playlist.name,
         owner: playlist.ownerName ?? null,
         ownerId: playlist.ownerId ?? null,
+        playCount: playlist.playback?.playCount ?? null,
         public: playlist.public ?? null,
         size: null,
         songCount: playlist.trackCount ?? null,
@@ -511,7 +513,8 @@ export const normalizeSamoPodcastEpisodeAsSong = (
         id: episode.id,
         imageId: podcast?.id ?? episode.podcastId ?? null,
         imageUrl: null,
-        lastPlayedAt: episode.playback?.lastPlayedAt ?? null,
+        lastPlayedAt:
+            episode.progress?.lastPlayedAt ?? episode.playback?.lastPlayedAt ?? null,
         lyrics: null,
         mbzRecordingId: null,
         mbzTrackId: null,
@@ -519,7 +522,7 @@ export const normalizeSamoPodcastEpisodeAsSong = (
         participants: null,
         path: audioFile?.path ?? null,
         peak: null,
-        playCount: episode.playback?.playCount ?? 0,
+        playCount: episode.progress?.playCount ?? episode.playback?.playCount ?? 0,
         releaseDate: releaseDate(episode.publishedAt),
         releaseYear: publishedYear && Number.isFinite(publishedYear) ? publishedYear : null,
         sampleRate: audioFile?.sampleRate ?? null,
@@ -529,8 +532,9 @@ export const normalizeSamoPodcastEpisodeAsSong = (
         trackNumber: episode.episodeNumber ?? 1,
         trackSubtitle: episode.subtitle ?? null,
         updatedAt: episode.publishedAt ?? new Date(0).toISOString(),
-        userFavorite: episode.playback?.favorite ?? false,
-        userRating: episode.playback?.rating ?? null,
+        userFavorite:
+            episode.progress?.favorite ?? episode.playback?.favorite ?? false,
+        userRating: episode.progress?.rating ?? episode.playback?.rating ?? null,
     };
 };
 

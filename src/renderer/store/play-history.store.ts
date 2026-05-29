@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
+import { touchSamoPlaylistLastPlayed } from '/@/renderer/services/samo-playlist-playback';
 import { identityPersistMigrate, PERSIST_VERSION_INITIAL } from '/@/renderer/store/persist-migrate';
 import { AudiobookshelfLibraryItem } from '/@/shared/api/audiobookshelf/audiobookshelf-types';
 import {
@@ -108,13 +109,19 @@ export const usePlayHistoryStore = create<PlayHistoryState>()(
             actions: {
                 clear: () => set({ items: [] }),
                 pruneStale: ({ knownItemIds, mediaType, serverId }) =>
-                    set((state) => ({
-                        items: state.items.filter((item) => {
+                    set((state) => {
+                        const nextItems = state.items.filter((item) => {
                             if (item.mediaType !== mediaType) return true;
                             if (item.serverId !== serverId) return true;
                             return knownItemIds.has(item.itemId);
-                        }),
-                    })),
+                        });
+
+                        if (nextItems.length === state.items.length) {
+                            return state;
+                        }
+
+                        return { items: nextItems };
+                    }),
                 record: (entry) => {
                     if (!entry.itemId || !entry.serverId) return;
 
@@ -226,6 +233,8 @@ export const recordRecentPlaylist = (playlist: Playlist) => {
         subtitle: withDetail('Playlist', countText(playlist.songCount, 'song')),
         title: playlist.name,
     });
+
+    touchSamoPlaylistLastPlayed(playlist);
 };
 
 export const recordRecentSong = (song: Song) => {

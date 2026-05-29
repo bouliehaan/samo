@@ -1244,6 +1244,13 @@ export const SubsonicController: InternalControllerEndpoint = {
             case PlaylistListSort.UPDATED_AT:
                 results = orderBy(results, ['changed'], [sortOrder]);
                 break;
+            case PlaylistListSort.LAST_PLAYED_AT:
+                results = orderBy(
+                    results,
+                    [(playlist) => Date.parse(playlist.lastPlayedAt ?? '') || 0],
+                    [sortOrder],
+                );
+                break;
             default:
                 break;
         }

@@ -1,7 +1,11 @@
 import {
     getMobileHomeContentErrorMessage,
+    loadMobileDiscoveryForServers,
+    loadMobilePodcastFeedForServers,
     loadMobileHomeContentForServers,
     type MobileHomeContent,
+    MobileHomeSectionId,
+    type MobileHomeItem,
 } from '@samo/core/mobile';
 import {
     ensureSamoStreamToken,
@@ -20,6 +24,84 @@ export type AndroidHomeContentState =
     | { message: string; status: 'error' }
     | { status: 'idle' }
     | { status: 'loading' };
+
+export const patchHomeContentDiscovery = (
+    content: MobileHomeContent,
+    discoveryItems: MobileHomeItem[],
+): MobileHomeContent => {
+    const hasDiscoverSection = content.sections.some(
+        (section) => section.id === MobileHomeSectionId.DISCOVER,
+    );
+    const sections = hasDiscoverSection
+        ? content.sections.map((section) =>
+              section.id === MobileHomeSectionId.DISCOVER
+                  ? { ...section, items: discoveryItems }
+                  : section,
+          )
+        : [
+              ...content.sections,
+              {
+                  id: MobileHomeSectionId.DISCOVER,
+                  items: discoveryItems,
+                  title: 'Discover',
+              },
+          ];
+
+    return {
+        ...content,
+        loadedAt: Date.now(),
+        sections,
+    };
+};
+
+export const patchHomeContentPodcastFeed = (
+    content: MobileHomeContent,
+    podcastFeedItems: MobileHomeItem[],
+): MobileHomeContent => {
+    const hasSection = content.sections.some(
+        (section) => section.id === MobileHomeSectionId.PODCAST_FEED,
+    );
+    const sections = hasSection
+        ? content.sections.map((section) =>
+              section.id === MobileHomeSectionId.PODCAST_FEED
+                  ? { ...section, items: podcastFeedItems }
+                  : section,
+          )
+        : podcastFeedItems.length > 0
+          ? [
+                ...content.sections,
+                {
+                    id: MobileHomeSectionId.PODCAST_FEED,
+                    items: podcastFeedItems,
+                    title: 'Podcast Feed',
+                },
+            ]
+          : content.sections;
+
+    return {
+        ...content,
+        loadedAt: Date.now(),
+        sections,
+    };
+};
+
+export const refreshAndroidHomeLiveSections = async (
+    authentications: ServerAuthenticationResult[],
+    content: MobileHomeContent,
+): Promise<MobileHomeContent> => {
+    const [discoveryItems, podcastFeedItems] = await Promise.all([
+        loadMobileDiscoveryForServers({ authentications }),
+        loadMobilePodcastFeedForServers({ authentications }),
+    ]);
+
+    return patchHomeContentPodcastFeed(
+        patchHomeContentDiscovery(content, discoveryItems),
+        podcastFeedItems,
+    );
+};
+
+/** @deprecated Use {@link refreshAndroidHomeLiveSections}. */
+export const refreshAndroidHomeDiscovery = refreshAndroidHomeLiveSections;
 
 export const loadAndroidHomeContent = async (
     authentications: ServerAuthenticationResult[],

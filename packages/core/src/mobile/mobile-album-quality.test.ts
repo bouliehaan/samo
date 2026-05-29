@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { samoAlbumQualityProfile } from './mobile-home';
+import { type MobilePlayableAudio } from './mobile-playback';
 import {
     getItemQualityProfile,
     propagateSearchAlbumQualityFromSongs,
@@ -38,23 +39,33 @@ describe('samoAlbumQualityProfile', () => {
 
 describe('propagateSearchAlbumQualityFromSongs', () => {
     it('stamps album rows from matching song playback when the album scan missed', () => {
-        const albums = [{ id: 'album-1', title: 'Hi-Fi Album' }];
+        const albums: Array<{
+            id: string;
+            isHiRes?: boolean;
+            qualityProfile?: { bitDepth: number; sampleRate: number };
+            title: string;
+        }> = [{ id: 'album-1', title: 'Hi-Fi Album' }];
+        const playback: MobilePlayableAudio = {
+            id: 'song-1',
+            quality: {
+                bitDepth: 24,
+                bitRate: null,
+                channelCount: 2,
+                container: 'flac',
+                deliveryKind: 'android-direct',
+                losslessRequired: true,
+                sampleRate: 96_000,
+                serverTranscodeRequested: false,
+            },
+            source: 'music',
+            title: 'Song 1',
+            url: 'https://example.com/song-1.flac',
+        };
         const songs = [
             {
                 albumId: 'album-1',
                 id: 'song-1',
-                playback: {
-                    quality: {
-                        bitDepth: 24,
-                        bitRate: null,
-                        channelCount: 2,
-                        container: 'flac',
-                        deliveryKind: 'android-direct' as const,
-                        losslessRequired: true,
-                        sampleRate: 96_000,
-                        serverTranscodeRequested: false,
-                    },
-                },
+                playback,
             },
         ];
 

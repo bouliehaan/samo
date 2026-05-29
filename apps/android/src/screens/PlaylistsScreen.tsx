@@ -4,12 +4,12 @@ import { ActivityIndicator, Pressable, Text, View } from 'react-native';
 
 import { LibraryListRow } from '../components/LibraryListRow';
 import { LibrarySortMenu } from '../components/LibrarySortMenu';
-import { ShuffleGlyph, SortGlyph } from '../components/Glyphs';
+import { PlusGlyph, ShuffleGlyph, SortGlyph } from '../components/Glyphs';
+import { colors } from '../theme/tokens';
 import { type AndroidHomeContentState } from '../services/home-content';
 import { type AndroidRecentContentItem } from '../services/recent-content';
 import { triggerImpact } from '../services/haptics';
 import { styles } from '../theme/styles';
-import { colors } from '../theme/tokens';
 import { LIBRARY_SORTS, type LibrarySort } from '../types/library-tab';
 import { type PlaylistsScreenProps } from '../types/playlists';
 import { getSectionsById, sortHomeItemsByRecents } from '../utils/home-display';
@@ -74,11 +74,15 @@ export const PlaylistsScreen = memo(({
                 <Text style={styles.mutedText}>No server-backed playlists returned.</Text>
                 {showCreatePlaylist && onCreatePlaylist ? (
                     <Pressable
+                        accessibilityLabel="Create playlist"
                         accessibilityRole="button"
-                        onPress={onCreatePlaylist}
-                        style={styles.primaryButton}
+                        onPress={() => {
+                            triggerImpact('light');
+                            onCreatePlaylist();
+                        }}
+                        style={styles.radioAddIconButton}
                     >
-                        <Text style={styles.primaryButtonText}>Create Playlist</Text>
+                        <PlusGlyph color={colors.muted} size={18} />
                     </Pressable>
                 ) : null}
             </View>
@@ -97,11 +101,15 @@ export const PlaylistsScreen = memo(({
                 <View style={styles.playlistHeaderActions}>
                     {showCreatePlaylist && onCreatePlaylist ? (
                         <Pressable
+                            accessibilityLabel="Create playlist"
                             accessibilityRole="button"
-                            onPress={onCreatePlaylist}
-                            style={styles.playlistPillButton}
+                            onPress={() => {
+                                triggerImpact('light');
+                                onCreatePlaylist();
+                            }}
+                            style={styles.radioAddIconButton}
                         >
-                            <Text style={styles.playlistPillButtonText}>Create</Text>
+                            <PlusGlyph color={colors.muted} size={18} />
                         </Pressable>
                     ) : null}
                     <Pressable

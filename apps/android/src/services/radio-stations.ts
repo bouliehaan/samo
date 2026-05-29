@@ -1,4 +1,9 @@
-import { type ServerAuthenticationResult, ServerType } from '@samo/core/server';
+import {
+    createSamoInternetRadioStation,
+    uploadSamoInternetRadioCover,
+    type ServerAuthenticationResult,
+    ServerType,
+} from '@samo/core/server';
 
 interface SubsonicError {
     message?: string;
@@ -149,7 +154,7 @@ const uploadNavidromeRadioThumbnail = async (
     }
 };
 
-export const addAndroidRadioStation = async ({
+const addSamoRadioStation = async ({
     authentication,
     homepageUrl,
     name,
@@ -157,10 +162,53 @@ export const addAndroidRadioStation = async ({
     thumbnailFile,
     thumbnailUrl,
 }: AddAndroidRadioStationInput): Promise<AddAndroidRadioStationResult> => {
-    if (authentication.type !== ServerType.NAVIDROME) {
-        throw new Error('Adding radio stations from Android is currently wired for Navidrome.');
+    const station = await createSamoInternetRadioStation(fetch, authentication, {
+        homepageUrl,
+        imageUrl: thumbnailUrl?.trim() || undefined,
+        name: name.trim(),
+        streamUrl: streamUrl.trim(),
+    });
+
+    if (!thumbnailFile) {
+        return { imageUploaded: Boolean(thumbnailUrl?.trim()), stationId: station.id };
     }
 
+    if (!station.id) {
+        return {
+            imageUploaded: false,
+            warning: 'Station was added, but Samo did not return an id for thumbnail upload.',
+        };
+    }
+
+    try {
+        await uploadSamoInternetRadioCover(
+            fetch,
+            authentication,
+            station.id,
+            thumbnailFile.blob,
+            thumbnailFile.name,
+        );
+        return { imageUploaded: true, stationId: station.id };
+    } catch (error) {
+        return {
+            imageUploaded: false,
+            stationId: station.id,
+            warning:
+                error instanceof Error
+                    ? `Station was added, but thumbnail sync failed: ${error.message}`
+                    : 'Station was added, but thumbnail sync failed.',
+        };
+    }
+};
+
+const addSubsonicRadioStation = async ({
+    authentication,
+    homepageUrl,
+    name,
+    streamUrl,
+    thumbnailFile,
+    thumbnailUrl,
+}: AddAndroidRadioStationInput): Promise<AddAndroidRadioStationResult> => {
     const response = await fetch(
         subsonicUrl(authentication, 'createInternetRadioStation.view', {
             homepageUrl,
@@ -211,3 +259,25 @@ export const addAndroidRadioStation = async ({
         };
     }
 };
+
+export const addAndroidRadioStation = async (
+    input: AddAndroidRadioStationInput,
+): Promise<AddAndroidRadioStationResult> => {
+    if (input.authentication.type === ServerType.SAMO) {
+        return addSamoRadioStation(input);
+    }
+
+    if (
+        input.authentication.type === ServerType.NAVIDROME ||
+        input.authentication.type === ServerType.SUBSONIC
+    ) {
+        return addSubsonicRadioStation(input);
+    }
+
+    throw new Error('Adding radio stations is not supported for this server type.');
+};
+
+export const canAddAndroidRadioStation = (authentication: ServerAuthenticationResult) =>
+    authentication.type === ServerType.SAMO ||
+    authentication.type === ServerType.NAVIDROME ||
+    authentication.type === ServerType.SUBSONIC;

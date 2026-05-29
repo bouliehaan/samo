@@ -13,6 +13,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.SystemClock
 import android.util.Log
 import androidx.core.content.ContextCompat
 import android.media.AudioAttributes as PlatformAudioAttributes
@@ -65,6 +66,9 @@ internal class SamoAudioEngine(
       }
       override fun getPreferredOutputDevice() = getSelectedLocalOutputDevice()
       override fun onNavigationRequest(direction: Int) {
+        if (tryNavigateNativeQueue(direction)) {
+          return
+        }
         val event = Arguments.createMap()
         event.putInt("direction", direction)
         emit("SamoAudioNavigationRequest", event)
@@ -144,6 +148,11 @@ internal class SamoAudioEngine(
   override var currentSessionId: String? = null
   override var lastCastPositionMs = 0L
   override var lastKnownPlaybackPositionMs = 0L
+  private var lastAutoAdvanceSessionId: String? = null
+  /** Blocks stale STATE_ENDED callbacks while ExoPlayer is torn down for the next track. */
+  private var suppressQueueAdvanceUntilMs = 0L
+  /** Queue mirror for advancing on the main thread while JS is suspended in background. */
+  private var nativePlaybackQueue: SamoNativePlaybackQueue? = null
   private var playerListenersInstalledOn: ExoPlayer? = null
   override var resumeLocalPlaybackAfterCastDisconnect = false
   private var selectedLocalOutputDeviceId: Int? = null
@@ -167,11 +176,35 @@ internal class SamoAudioEngine(
         return@post
       }
 
+      val url = source.getOptionalString("url")
+      if (url != null && SamoNativeStreamUrl.shouldRefresh(url)) {
+        val map = SamoBridgeMapCopier.toHashMap(source)
+        SamoNativeStreamUrl.refreshQueueItemAsync(map) { refreshedItem ->
+          mainHandler.post {
+            playLocally(SamoBridgeMapCopier.toWritableMap(refreshedItem), promise)
+          }
+        }
+        return@post
+      }
+
       playLocally(source, promise)
     }
   }
 
+  /**
+   * Mirrors the JS Up Next queue into the service process so background auto-
+   * advance sees items appended (or reordered) without waiting for the next play().
+   */
+  fun setPlaybackQueue(queue: ReadableMap, promise: Promise) {
+    mainHandler.post {
+      nativePlaybackQueue = queue.syncNativePlaybackQueue(null)
+      promise.resolve(Arguments.createMap())
+    }
+  }
+
   private fun playLocally(source: ReadableMap, promise: Promise) {
+    source.syncNativePlaybackQueue(null)?.let { nativePlaybackQueue = it }
+
     val url = source.getOptionalString("url")
     if (url == null) {
       promise.reject("SAMO_AUDIO_ERROR", "Missing audio URL")
@@ -217,6 +250,7 @@ internal class SamoAudioEngine(
         restoreNoisyHandlingNow(resolvedPlayer)
       }
 
+      suppressQueueAdvanceUntilMs = SystemClock.uptimeMillis() + 2500L
       resolvedPlayer.stop()
       resolvedPlayer.clearMediaItems()
       SamoBitPerfect.clearPreferredMixerAttributes(reactContext, service)
@@ -240,6 +274,8 @@ internal class SamoAudioEngine(
         title = title
       )
       currentSessionId = sessionId
+      lastAutoAdvanceSessionId = null
+      resolvedPlayer.repeatMode = Player.REPEAT_MODE_OFF
       resolvedPlayer.setMediaItem(mediaItem)
       resolvedPlayer.prepare()
       resolvedPlayer.playWhenReady = true
@@ -328,6 +364,9 @@ internal class SamoAudioEngine(
           return@withService
         }
         installListenersIfNeeded(resolvedPlayer)
+        // Seeks can briefly surface STATE_ENDED on HLS/long-form audio; suppress
+        // queue auto-advance while the player settles on the new position.
+        suppressQueueAdvanceUntilMs = SystemClock.uptimeMillis() + 3000L
         resolvedPlayer.seekTo(positionMs.toLong())
         promise.resolve(getStatusMap(resolvedPlayer))
       }
@@ -403,6 +442,7 @@ internal class SamoAudioEngine(
         currentBitPerfectTruth = SamoBitPerfectTruth.unknown()
         currentSource = null
         currentSessionId = null
+        nativePlaybackQueue = null
         emitState("idle")
         promise.resolve(getIdleStatusMap())
         val intent = Intent(reactContext, SamoPlaybackService::class.java)
@@ -621,11 +661,55 @@ internal class SamoAudioEngine(
           scheduleNoisyHandlingRestore(player, currentSessionId, 750L)
         }
         if (isCastActive()) return
+        if (!isPlaying && player.playbackState == Player.STATE_ENDED) {
+          val durationMs = player.duration
+          val positionMs = player.currentPosition
+          val nearNaturalEnd =
+            durationMs > 0 &&
+              positionMs + 1500 >= durationMs
+          if (!nearNaturalEnd) {
+            Log.d(
+              "SamoAudio",
+              "ignoring transient isPlaying ended sessionId=$currentSessionId position=$positionMs duration=$durationMs",
+            )
+            emitState(getCurrentStatus(player))
+            return
+          }
+          Log.d(
+            "SamoAudio",
+            "playback stopped at end sessionId=$currentSessionId position=$positionMs",
+          )
+          emitState("ended")
+          requestQueueAdvanceFromEnded("isPlayingChanged")
+          return
+        }
         emitState(if (isPlaying) "playing" else getCurrentStatus(player))
       }
 
       override fun onPlaybackStateChanged(playbackState: Int) {
         if (isCastActive()) return
+        if (playbackState == Player.STATE_ENDED) {
+          val durationMs = player.duration
+          val positionMs = player.currentPosition
+          val nearNaturalEnd =
+            durationMs > 0 &&
+              positionMs + 1500 >= durationMs
+          if (!nearNaturalEnd) {
+            Log.d(
+              "SamoAudio",
+              "ignoring transient ended sessionId=$currentSessionId position=$positionMs duration=$durationMs",
+            )
+            emitState(getCurrentStatus(player))
+            return
+          }
+          Log.d(
+            "SamoAudio",
+            "playback state ended sessionId=$currentSessionId position=$positionMs",
+          )
+          emitState("ended")
+          requestQueueAdvanceFromEnded("playbackStateChanged")
+          return
+        }
         emitState(getCurrentStatus(player))
       }
 
@@ -748,6 +832,94 @@ internal class SamoAudioEngine(
     }
 
     emit("SamoAudioPlaybackState", getIdleStatusMap())
+  }
+
+  private fun requestQueueAdvanceFromEnded(reason: String) {
+    if (SystemClock.uptimeMillis() < suppressQueueAdvanceUntilMs) {
+      return
+    }
+    val sessionId = currentSessionId ?: return
+    if (lastAutoAdvanceSessionId == sessionId) {
+      return
+    }
+
+    lastAutoAdvanceSessionId = sessionId
+    if (tryNavigateNativeQueue(1)) {
+      Log.i(
+        "SamoAudio",
+        "native queue advance sessionId=$sessionId reason=$reason index=${nativePlaybackQueue?.index}",
+      )
+      return
+    }
+
+    Log.i(
+      "SamoAudio",
+      "requesting JS queue advance sessionId=$sessionId reason=$reason",
+    )
+    val event = Arguments.createMap()
+    event.putInt("direction", 1)
+    emit("SamoAudioNavigationRequest", event)
+  }
+
+  private fun tryNavigateNativeQueue(direction: Int): Boolean {
+    if (isCastActive()) {
+      return false
+    }
+
+    val queue = nativePlaybackQueue ?: return false
+
+    if (direction > 0) {
+      if (!queue.hasNext()) {
+        return false
+      }
+      return playQueueItemAt(queue.index + 1)
+    }
+
+    if (direction < 0) {
+      // Audiobooks/podcasts use book-global chapter navigation in JS; native
+      // seek-to-zero only applies to music tracks in a multi-item queue.
+      val sourceKind = currentSource?.source
+      if (sourceKind == "audiobook" || sourceKind == "podcast") {
+        return false
+      }
+
+      val resolvedPlayer = binder.boundService?.getCurrentPlayer()
+      val positionMs = resolvedPlayer?.currentPosition ?: 0L
+      if (positionMs > 3000L) {
+        mainHandler.post {
+          resolvedPlayer?.seekTo(0)
+          emitState("playing")
+        }
+        return true
+      }
+      if (!queue.hasPrevious()) {
+        return false
+      }
+      return playQueueItemAt(queue.index - 1)
+    }
+
+    return false
+  }
+
+  private fun playQueueItemAt(index: Int): Boolean {
+    val queue = nativePlaybackQueue ?: return false
+    val item = queue.items.getOrNull(index) ?: return false
+    queue.index = index
+
+    SamoNativeStreamUrl.refreshQueueItemAsync(item) { refreshedItem ->
+      mainHandler.post {
+        val activeQueue = nativePlaybackQueue ?: return@post
+        if (activeQueue.index != index) {
+          return@post
+        }
+
+        activeQueue.items[index] = HashMap(refreshedItem)
+        val playSource = SamoBridgeMapCopier.toWritableMap(HashMap(refreshedItem))
+        playSource.putString("sessionId", currentSessionId ?: UUID.randomUUID().toString())
+        playLocally(playSource, SamoNoOpPromise)
+      }
+    }
+    return true
   }
 
   private fun getDetachedStatusMap(status: String): WritableMap {
@@ -882,6 +1054,11 @@ internal class SamoAudioEngine(
       sourceMap.putString("subtitle", source.subtitle)
       sourceMap.putString("artworkUrl", source.artworkUrl)
       map.putMap("source", sourceMap)
+    }
+
+    nativePlaybackQueue?.let { queue ->
+      map.putInt("queueIndex", queue.index)
+      map.putInt("queueLength", queue.items.size)
     }
 
     return map

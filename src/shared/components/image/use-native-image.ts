@@ -26,9 +26,22 @@ const hasCustomFetchOptions = (request: ImageRequest): boolean => {
 
 const canLoadImageDirectly = (request: ImageRequest): boolean => !hasCustomFetchOptions(request);
 
+type WindowWithApi = Window & {
+    api?: {
+        utils?: {
+            fetchMedia?: (input: {
+                headers?: Record<string, string>;
+                url: string;
+            }) => Promise<{ contentType: string; data: string }>;
+        };
+    };
+};
+
+const getFetchMediaFromMain = () => (window as WindowWithApi).api?.utils?.fetchMedia;
+
 const canFetchMediaViaMain = (): boolean =>
     typeof window !== 'undefined' &&
-    Boolean(window.api?.utils?.fetchMedia);
+    Boolean(getFetchMediaFromMain());
 
 const base64ToBlob = (data: string, contentType: string): Blob => {
     const binary = atob(data);
@@ -45,7 +58,11 @@ const fetchImageViaMain = async (
     request: ImageRequest,
     signal: AbortSignal,
 ): Promise<Blob> => {
-    const result = await window.api.utils.fetchMedia({
+    const fetchMedia = getFetchMediaFromMain();
+    if (!fetchMedia) {
+        throw new Error('Main-process media fetch is unavailable.');
+    }
+    const result = await fetchMedia({
         headers: request.headers,
         url: request.url,
     });

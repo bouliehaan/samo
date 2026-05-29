@@ -14,6 +14,7 @@ import { useListContext } from '/@/renderer/context/list-context';
 import { ContextMenuController } from '/@/renderer/features/context-menu/context-menu-controller';
 import { playlistsQueries } from '/@/renderer/features/playlists/api/playlists-api';
 import { ClientSideSongFilters } from '/@/renderer/features/playlists/components/client-side-song-filters';
+import { openUpdatePlaylistModal } from '/@/renderer/features/playlists/components/update-playlist-modal';
 import { usePlaylistSongListFilters } from '/@/renderer/features/playlists/hooks/use-playlist-song-list-filters';
 import { FilterButton } from '/@/renderer/features/shared/components/filter-button';
 import {
@@ -31,6 +32,7 @@ import { useContainerQuery } from '/@/renderer/hooks';
 import {
     PlaylistTarget,
     useCurrentServerId,
+    usePermissions,
     usePlaylistTarget,
     useSettingsStoreActions,
 } from '/@/renderer/store';
@@ -125,6 +127,11 @@ export const PlaylistDetailSongListHeaderFilters = ({
     const serverId = useCurrentServerId();
 
     const detailQuery = useQuery(playlistsQueries.detail({ query: { id: playlistId }, serverId }));
+    const { userId, ...permissions } = usePermissions();
+    const canEditPublic = permissions.playlists.editPublic;
+    const includesNonOwnedPublic =
+        Boolean(detailQuery.data?.public) && detailQuery.data?.ownerId !== userId;
+    const canEditPlaylist = canEditPublic || !includesNonOwnedPublic;
 
     const handleMore = (event: React.MouseEvent<HTMLButtonElement>) => {
         if (!detailQuery.data) return;
@@ -156,7 +163,7 @@ export const PlaylistDetailSongListHeaderFilters = ({
 
     const { ref: containerRef, ...breakpoints } = useContainerQuery();
 
-    const isViewEditMode = !isSmartPlaylist && (breakpoints.isSm || isAlbumMode);
+    const isViewEditMode = !isSmartPlaylist;
     const isEditMode = mode === 'edit';
 
     const [collapsed, setCollapsed] = useLocalStorage<boolean>({
@@ -199,6 +206,16 @@ export const PlaylistDetailSongListHeaderFilters = ({
                 <Divider orientation="vertical" />
                 <PlaylistSongListFiltersModal />
                 <ListRefreshButton disabled={isEditMode} listKey={listKey} />
+                {canEditPlaylist && !isSmartPlaylist && detailQuery.data ? (
+                    <Button
+                        leftSection={<Icon icon="edit" />}
+                        onClick={() => openUpdatePlaylistModal({ playlist: detailQuery.data })}
+                        size="compact-sm"
+                        variant="subtle"
+                    >
+                        {t('action.editPlaylist', { postProcess: 'titleCase' })}
+                    </Button>
+                ) : null}
                 <MoreButton onClick={handleMore} />
             </Group>
             <Group gap="sm" wrap="nowrap">

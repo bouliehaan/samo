@@ -20,6 +20,12 @@ export const useSendScrobble = (options?: MutationOptions) => {
             });
         },
         onSuccess: (_data, variables) => {
+            if (variables.query.event === 'start') {
+                queryClient.invalidateQueries({
+                    queryKey: ['home', 'playlists'],
+                });
+            }
+
             // Manually increment the play count for the song in the queue if scrobble was submitted
             if (variables.query.submission) {
                 const serverId = variables.apiClientProps.serverId;
@@ -76,6 +82,15 @@ export const useSendScrobble = (options?: MutationOptions) => {
                 });
                 queryClient.invalidateQueries({
                     queryKey: ['home', 'unplayed'],
+                });
+                queryClient.invalidateQueries({
+                    queryKey: ['home', 'discover'],
+                });
+                queryClient.invalidateQueries({
+                    queryKey: ['home', 'discover', 'songs'],
+                });
+                queryClient.invalidateQueries({
+                    queryKey: ['home', 'playlists'],
                 });
 
                 // Invalidate album artist top songs

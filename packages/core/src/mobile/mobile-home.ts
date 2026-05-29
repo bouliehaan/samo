@@ -9,14 +9,18 @@ import {
     type SamoMusicTrack,
     type SamoPaginatedResponse,
     type SamoPodcast,
+    type SamoPodcastEpisode,
     type SamoProgrammedRadioStation,
     getSamoMusicBrowse,
+    listSamoCatalogRecentlyAdded,
+    type SamoRecentlyAddedEntry,
     listSamoAudiobooks,
     listSamoInternetRadioStations,
     listSamoMusicAlbums,
     listSamoMusicArtists,
     listSamoMusicPlaylists,
     listSamoMusicTracks,
+    listSamoAllPodcastEpisodes,
     listSamoPodcasts,
     listSamoProgrammedRadioStations,
     pickSamoImageId,
@@ -26,6 +30,7 @@ import {
     resolveSamoAudiobookArtworkUrl,
     resolveSamoPlaylistArtworkUrl,
     resolveSamoPodcastArtworkUrl,
+    resolveSamoPodcastEpisodeArtworkUrl,
     resolveSamoStationArtworkUrl,
     samoItemsOf,
 } from '../server/server-samo';
@@ -40,8 +45,14 @@ import {
 import {
     buildRadioPlayback,
     buildSamoInternetRadioPlayback,
+    buildSamoPodcastEpisodePlayback,
     type MobilePlayableAudio,
 } from './mobile-playback';
+import {
+    formatRadioNowPlayingLine,
+    formatRadioStreamFormat,
+    formatRadioTagsLine,
+} from './mobile-radio-metadata';
 import {
     annotateSubsonicAlbumsQuality,
     annotateSubsonicHiResCollections,
@@ -53,6 +64,7 @@ export enum MobileHomeItemType {
     AUDIOBOOK = 'audiobook',
     PLAYLIST = 'playlist',
     PODCAST = 'podcast',
+    PODCAST_EPISODE = 'podcast-episode',
     RADIO = 'radio',
 }
 
@@ -63,6 +75,8 @@ export enum MobileHomeSectionId {
     PLAYLISTS = 'playlists',
     PODCASTS = 'podcasts',
     RADIO = 'radio',
+    DISCOVER = 'discover',
+    PODCAST_FEED = 'podcast-feed',
     RECENTLY_ADDED = 'recently-added',
 }
 
@@ -97,6 +111,9 @@ export interface MobileHomeItem {
      * surface in the Recently Added row anyway).
      */
     addedAt?: number;
+    /** Epoch ms from server playback overlay (Samo). */
+    lastPlayedAt?: number;
+    playCount?: number;
     artworkUrl?: string;
     /**
      * Samo-only — `images[].id` from catalog metadata (`cover_*` / `image_*`).
@@ -124,6 +141,10 @@ export interface MobileHomeItem {
      * row compute a progress bar without re-fetching detail.
      */
     durationSeconds?: number;
+  /**
+   * Parent container id for leaf items (e.g. podcast show id on episode tiles).
+   */
+    containerId?: string;
     id: string;
     isHiRes?: boolean;
     /**
@@ -875,6 +896,8 @@ const samoAlbumToHomeItem = (
         artworkImageId: pickSamoImageId(album.images),
         artworkUrl: resolveSamoAlbumArtworkUrl(authentication, album, streamToken),
         id: album.id,
+        lastPlayedAt: toEpochMs(album.playback?.lastPlayedAt),
+        playCount: album.playback?.playCount,
         qualityProfile: samoAlbumQualityProfile(album),
         source,
         subtitle,
@@ -896,6 +919,8 @@ const samoArtistToHomeItem = (
         artworkImageId: pickSamoImageId(artist.images),
         artworkUrl: resolveSamoArtistArtworkUrl(authentication, artist, streamToken),
         id: artist.id,
+        lastPlayedAt: toEpochMs(artist.playback?.lastPlayedAt),
+        playCount: artist.playback?.playCount,
         source,
         subtitle: artist.albumCount ? `${artist.albumCount} albums` : undefined,
         title: artist.name,
@@ -915,6 +940,8 @@ const samoPlaylistToHomeItem = (
         artworkImageId: pickSamoImageId(playlist.images),
         artworkUrl: resolveSamoPlaylistArtworkUrl(authentication, playlist, streamToken),
         id: playlist.id,
+        lastPlayedAt: toEpochMs(playlist.playback?.lastPlayedAt),
+        playCount: playlist.playback?.playCount,
         source,
         subtitle: playlist.trackCount
             ? `${playlist.trackCount} tracks`
@@ -943,6 +970,7 @@ const samoTrackToHomeItem = (
         artworkUrl: resolveSamoTrackArtworkUrl(authentication, track, streamToken),
         durationSeconds: track.durationSeconds,
         id: track.albumId,
+        playCount: track.playback?.playCount,
         qualityProfile: samoQualityProfile(track.primaryAudioFile ?? track.audioFiles?.[0]),
         source,
         subtitle,
@@ -1001,6 +1029,199 @@ const samoAudiobookToHomeItem = (
     };
 };
 
+const SAMO_PODCAST_FEED_DISPLAY_LIMIT = 24;
+const SAMO_PODCAST_FEED_POOL_LIMIT = 300;
+const SAMO_PODCAST_FEED_RECENT_RELEASE_MS = 90 * 24 * 60 * 60 * 1000;
+const SAMO_PODCAST_FEED_RELAXED_RELEASE_MS = 365 * 24 * 60 * 60 * 1000;
+const SAMO_PODCAST_FEED_IMPORT_BURST_MS = 21 * 24 * 60 * 60 * 1000;
+const SAMO_PODCAST_FEED_MIN_PUBLISH_BEFORE_ADD_MS = 14 * 24 * 60 * 60 * 1000;
+const SAMO_PODCAST_FEED_MAX_PER_SHOW = 2;
+const SAMO_PODCAST_FEED_MIN_ITEMS = 6;
+
+const episodePublishedMs = (episode: SamoPodcastEpisode): number | undefined => {
+    const publishedMs = toEpochMs(episode.publishedAt);
+    return publishedMs !== undefined && publishedMs > 0 ? publishedMs : undefined;
+};
+
+const episodeAddedMs = (episode: SamoPodcastEpisode): number | undefined => {
+    const addedMs = toEpochMs(episode.addedAt);
+    return addedMs !== undefined && addedMs > 0 ? addedMs : undefined;
+};
+
+/** Bulk library imports: recently added but published long ago. */
+export const isSamoPodcastEpisodeCatalogBackfill = (
+    episode: SamoPodcastEpisode,
+    nowMs = Date.now(),
+): boolean => {
+    const publishedMs = episodePublishedMs(episode);
+    if (!publishedMs) {
+        return true;
+    }
+
+    const addedMs = episodeAddedMs(episode);
+    if (
+        addedMs &&
+        nowMs - addedMs < SAMO_PODCAST_FEED_IMPORT_BURST_MS &&
+        publishedMs < addedMs - SAMO_PODCAST_FEED_MIN_PUBLISH_BEFORE_ADD_MS
+    ) {
+        return true;
+    }
+
+    return false;
+};
+
+const isSamoPodcastEpisodeWithinReleaseWindow = (
+    episode: SamoPodcastEpisode,
+    maxAgeMs: number,
+    nowMs: number,
+) => {
+    const publishedMs = episodePublishedMs(episode);
+    if (!publishedMs) {
+        return false;
+    }
+    return nowMs - publishedMs <= maxAgeMs;
+};
+
+const capPodcastEpisodesPerShow = (
+    episodes: SamoPodcastEpisode[],
+    limit: number,
+    maxPerShow: number,
+): SamoPodcastEpisode[] => {
+    const showCounts = new Map<string, number>();
+    const picked: SamoPodcastEpisode[] = [];
+
+    for (const episode of episodes) {
+        const showId = episode.podcastId;
+        if (!showId) {
+            continue;
+        }
+        const count = showCounts.get(showId) ?? 0;
+        if (count >= maxPerShow) {
+            continue;
+        }
+        showCounts.set(showId, count + 1);
+        picked.push(episode);
+        if (picked.length >= limit) {
+            break;
+        }
+    }
+
+    return picked;
+};
+
+/**
+ * Curate a cross-show release feed: recent publish dates, not bulk-import
+ * backfill, and at most a couple of episodes per show so one library dump
+ * cannot dominate the row.
+ */
+export const buildMobilePodcastFeedEpisodes = (
+    episodes: SamoPodcastEpisode[],
+    limit = SAMO_PODCAST_FEED_DISPLAY_LIMIT,
+    nowMs = Date.now(),
+): SamoPodcastEpisode[] => {
+    const sorted = [...episodes].sort(
+        (left, right) => (episodePublishedMs(right) ?? 0) - (episodePublishedMs(left) ?? 0),
+    );
+
+    const build = (maxReleaseAgeMs: number, filterBackfill: boolean) => {
+        const candidates = sorted.filter((episode) => {
+            if (filterBackfill && isSamoPodcastEpisodeCatalogBackfill(episode, nowMs)) {
+                return false;
+            }
+            return isSamoPodcastEpisodeWithinReleaseWindow(episode, maxReleaseAgeMs, nowMs);
+        });
+        return capPodcastEpisodesPerShow(candidates, limit, SAMO_PODCAST_FEED_MAX_PER_SHOW);
+    };
+
+    let picked = build(SAMO_PODCAST_FEED_RECENT_RELEASE_MS, true);
+    if (picked.length < SAMO_PODCAST_FEED_MIN_ITEMS) {
+        picked = build(SAMO_PODCAST_FEED_RELAXED_RELEASE_MS, true);
+    }
+    if (picked.length < SAMO_PODCAST_FEED_MIN_ITEMS) {
+        picked = capPodcastEpisodesPerShow(
+            sorted.filter((episode) => !isSamoPodcastEpisodeCatalogBackfill(episode, nowMs)),
+            limit,
+            SAMO_PODCAST_FEED_MAX_PER_SHOW,
+        );
+    }
+
+    return picked;
+};
+
+const samoPodcastEpisodeToHomeItem = (
+    authentication: ServerAuthenticationResult,
+    episode: SamoPodcastEpisode,
+    streamToken: string | undefined,
+    source: MobileContentSource,
+): MobileHomeItem | null => {
+    if (!episode.id || !episode.podcastId) {
+        return null;
+    }
+
+    const title = episode.title ?? episode.name;
+    if (!title) {
+        return null;
+    }
+
+    const publishedMs = toEpochMs(episode.publishedAt);
+    const artworkUrl = resolveSamoPodcastEpisodeArtworkUrl(
+        authentication,
+        episode,
+        streamToken,
+    );
+    const playback = buildSamoPodcastEpisodePlayback(
+        authentication,
+        episode,
+        episode.podcastId,
+        artworkUrl,
+        streamToken,
+    );
+    const showTitle = episode.podcastTitle?.trim();
+    const releaseLabel = publishedMs
+        ? new Intl.DateTimeFormat(undefined, {
+              day: 'numeric',
+              month: 'short',
+              year: 'numeric',
+          }).format(publishedMs)
+        : undefined;
+    const subtitle = [showTitle, releaseLabel].filter(Boolean).join(' · ');
+
+    const episodeProgress = episode.progress ?? episode.playback;
+
+    return {
+        addedAt: publishedMs,
+        artworkImageId: pickSamoImageId(episode.images),
+        artworkUrl,
+        completionState: samoCompletionState(episodeProgress),
+        containerId: episode.podcastId,
+        durationSeconds: episode.duration,
+        id: episode.id,
+        playback: playback ?? undefined,
+        progressSeconds: episodeProgress?.progressSeconds,
+        source,
+        subtitle: subtitle || showTitle,
+        title,
+        type: MobileHomeItemType.PODCAST_EPISODE,
+    };
+};
+
+const loadSamoPodcastFeedHomeItems = async (
+    authentication: ServerAuthenticationResult,
+    fetcher: SamoFetch,
+    streamToken: string | undefined,
+    source: MobileContentSource,
+): Promise<MobileHomeItem[]> => {
+    const body = await listSamoAllPodcastEpisodes(fetcher, authentication, {
+        limit: SAMO_PODCAST_FEED_POOL_LIMIT,
+    });
+    const episodes = buildMobilePodcastFeedEpisodes(samoItemsOf(body));
+
+    return episodes.flatMap((episode) => {
+        const item = samoPodcastEpisodeToHomeItem(authentication, episode, streamToken, source);
+        return item ? [item] : [];
+    });
+};
+
 const samoPodcastToHomeItem = (
     authentication: ServerAuthenticationResult,
     podcast: SamoPodcast,
@@ -1035,12 +1256,15 @@ const samoInternetRadioToHomeItem = (
     if (!station.id || !station.name || !streamUrl) return null;
     const artworkUrl = resolveSamoStationArtworkUrl(authentication, station, streamToken);
     const playback = buildSamoInternetRadioPlayback(authentication, station, artworkUrl);
-    const nowPlayingText =
-        station.nowPlaying?.title ||
-        [station.nowPlaying?.artist, station.nowPlaying?.raw]
-            .filter(Boolean)
-            .join(' — ') ||
-        undefined;
+    const nowPlayingText = formatRadioNowPlayingLine(station.nowPlaying);
+    const formatLine = formatRadioStreamFormat(station);
+    const tagsLine = formatRadioTagsLine(station.tags);
+    const tileSubtitle =
+        nowPlayingText ??
+        formatLine ??
+        tagsLine ??
+        (station.description?.trim() ? station.description.trim() : undefined) ??
+        'Internet radio';
 
     return {
         artworkImageId: pickSamoCatalogImageId(station.coverId),
@@ -1049,7 +1273,7 @@ const samoInternetRadioToHomeItem = (
         nowPlayingText,
         playback: playback ?? undefined,
         source,
-        subtitle: nowPlayingText ?? station.homepageUrl ?? streamUrl,
+        subtitle: tileSubtitle,
         title: station.name,
         type: MobileHomeItemType.RADIO,
     };
@@ -1068,7 +1292,9 @@ const samoProgrammedRadioToHomeItem = (
         streamToken,
     );
     const artworkImageId = pickSamoImageId(station.images);
-    const nowPlayingText = station.nowPlaying?.title;
+    const nowPlayingText = formatRadioNowPlayingLine(station.nowPlaying);
+    const tileSubtitle =
+        nowPlayingText ?? station.description?.trim() ?? 'Programmed radio';
     return {
         artworkImageId,
         artworkUrl,
@@ -1100,15 +1326,27 @@ const samoProgrammedRadioToHomeItem = (
 const settledOrEmpty = <T>(result: PromiseSettledResult<T[]>): T[] =>
     result.status === 'fulfilled' ? result.value : [];
 
+const mergeSamoHomeItemSignals = (
+    current: MobileHomeItem,
+    incoming: MobileHomeItem,
+): MobileHomeItem => ({
+    ...current,
+    lastPlayedAt: Math.max(current.lastPlayedAt ?? 0, incoming.lastPlayedAt ?? 0) || undefined,
+    playCount: Math.max(current.playCount ?? 0, incoming.playCount ?? 0) || undefined,
+});
+
 const mergeSamoHomeItems = (...lists: MobileHomeItem[][]): MobileHomeItem[] => {
     const seen = new Set<string>();
     const seenAlbumTitles = new Set<string>();
     const merged: MobileHomeItem[] = [];
+    const indexByKey = new Map<string, number>();
 
     for (const list of lists) {
         for (const item of list) {
             const key = `${item.source?.id ?? ''}:${item.id}:${item.type}`;
-            if (seen.has(key)) {
+            const existingIndex = indexByKey.get(key);
+            if (existingIndex !== undefined) {
+                merged[existingIndex] = mergeSamoHomeItemSignals(merged[existingIndex], item);
                 continue;
             }
             if (item.type === MobileHomeItemType.ALBUM) {
@@ -1119,6 +1357,7 @@ const mergeSamoHomeItems = (...lists: MobileHomeItem[][]): MobileHomeItem[] => {
                 seenAlbumTitles.add(albumKey);
             }
             seen.add(key);
+            indexByKey.set(key, merged.length);
             merged.push(item);
         }
     }
@@ -1137,6 +1376,303 @@ const sortHomeItemsByAddedAt = (items: MobileHomeItem[]): MobileHomeItem[] => {
     });
 };
 
+export const sortMobileHomeItemsByPlayCount = (items: MobileHomeItem[]): MobileHomeItem[] =>
+    items
+        .map((item, index) => ({ index, item }))
+        .sort((left, right) => {
+            const leftCount = left.item.playCount ?? 0;
+            const rightCount = right.item.playCount ?? 0;
+            if (rightCount !== leftCount) {
+                return rightCount - leftCount;
+            }
+            const leftPlayed = left.item.lastPlayedAt ?? 0;
+            const rightPlayed = right.item.lastPlayedAt ?? 0;
+            if (rightPlayed !== leftPlayed) {
+                return rightPlayed - leftPlayed;
+            }
+            const leftAdded = left.item.addedAt ?? 0;
+            const rightAdded = right.item.addedAt ?? 0;
+            if (rightAdded !== leftAdded) {
+                return rightAdded - leftAdded;
+            }
+            return left.index - right.index;
+        })
+        .map(({ item }) => item);
+
+const sortHomeItemsByLastPlayed = (items: MobileHomeItem[]): MobileHomeItem[] =>
+    [...items].sort((left, right) => {
+        const leftPlayed = left.lastPlayedAt ?? 0;
+        const rightPlayed = right.lastPlayedAt ?? 0;
+        if (rightPlayed !== leftPlayed) {
+            return rightPlayed - leftPlayed;
+        }
+        return left.title.localeCompare(right.title);
+    });
+
+const SAMO_DISCOVERY_POOL_LIMIT = 120;
+const SAMO_DISCOVERY_DISPLAY_LIMIT = 18;
+
+const shuffleMobileHomeItems = <T>(items: T[]): T[] => {
+    const copy = [...items];
+    for (let index = copy.length - 1; index > 0; index -= 1) {
+        const swapIndex = Math.floor(Math.random() * (index + 1));
+        [copy[index], copy[swapIndex]] = [copy[swapIndex], copy[index]];
+    }
+    return copy;
+};
+
+const isUnplayedDiscoveryItem = (item: MobileHomeItem) => (item.playCount ?? 0) === 0;
+
+const sampleDiscoverySpread = (pool: MobileHomeItem[], want: number): MobileHomeItem[] => {
+    if (want <= 0 || pool.length === 0) {
+        return [];
+    }
+    if (pool.length <= want) {
+        return [...pool];
+    }
+
+    const out: MobileHomeItem[] = [];
+    for (let index = 0; index < want; index += 1) {
+        const at = want > 1 ? Math.round((index * (pool.length - 1)) / (want - 1)) : 0;
+        out.push(pool[at]!);
+    }
+    return out;
+};
+
+export const buildMobileDiscoveryQueue = (
+    items: MobileHomeItem[],
+    limit: number,
+): MobileHomeItem[] => {
+    const unplayed = items.filter(isUnplayedDiscoveryItem);
+    if (unplayed.length === 0) {
+        return [];
+    }
+
+    const sorted = [...unplayed].sort(
+        (left, right) => (right.addedAt ?? 0) - (left.addedAt ?? 0),
+    );
+
+    const recentWant = Math.min(limit, Math.ceil(limit * 0.7));
+    const olderWant = Math.max(0, limit - recentWant);
+    const split = Math.max(1, Math.floor(sorted.length * 0.7));
+    const recentPool = sorted.slice(0, split);
+    const olderPool = sorted.slice(split);
+
+    const seen = new Set<string>();
+    const picked = [
+        ...sampleDiscoverySpread(recentPool, recentWant),
+        ...sampleDiscoverySpread(olderPool, olderWant),
+    ].filter((item) => {
+        const key = `${item.source?.id ?? ''}:${item.type}:${item.id}`;
+        if (seen.has(key)) {
+            return false;
+        }
+        seen.add(key);
+        return true;
+    });
+
+    return shuffleMobileHomeItems(picked).slice(0, limit);
+};
+
+const loadSamoDiscoveryHomeItems = async (
+    authentication: ServerAuthenticationResult,
+    fetcher: SamoFetch,
+    streamToken: string | undefined,
+    source: MobileContentSource,
+): Promise<MobileHomeItem[]> => {
+    const body = await getSamoMusicBrowse(fetcher, authentication, 'discovery', {
+        limit: SAMO_DISCOVERY_POOL_LIMIT,
+    });
+    const pool = samoItemsOf(body.tracks as SamoPaginatedResponse<SamoMusicTrack>).flatMap(
+        (track) => {
+            const item = samoTrackToHomeItem(authentication, track, streamToken, source);
+            return item ? [item] : [];
+        },
+    );
+    return buildMobileDiscoveryQueue(pool, SAMO_DISCOVERY_DISPLAY_LIMIT);
+};
+
+export const loadMobilePodcastFeedForServers = async ({
+    authentications,
+    fetch: fetcher,
+}: {
+    authentications: ServerAuthenticationResult[];
+    fetch?: SamoFetch;
+}): Promise<MobileHomeItem[]> => {
+    const request = getFetch(fetcher);
+    const items: MobileHomeItem[] = [];
+
+    for (const authentication of authentications) {
+        if (authentication.type !== ServerType.SAMO) {
+            continue;
+        }
+
+        try {
+            const source = getMobileContentSource(authentication);
+            const streamToken = await resolveSamoStreamToken(authentication, request);
+            const feedItems = await loadSamoPodcastFeedHomeItems(
+                authentication,
+                request,
+                streamToken,
+                source,
+            );
+            items.push(...feedItems);
+        } catch {
+            // Podcast feed is best-effort.
+        }
+    }
+
+    return items
+        .sort((left, right) => (right.addedAt ?? 0) - (left.addedAt ?? 0))
+        .slice(0, SAMO_PODCAST_FEED_DISPLAY_LIMIT);
+};
+
+export const loadMobileDiscoveryForServers = async ({
+    authentications,
+    fetch: fetcher,
+}: {
+    authentications: ServerAuthenticationResult[];
+    fetch?: SamoFetch;
+}): Promise<MobileHomeItem[]> => {
+    const request = getFetch(fetcher);
+    const items: MobileHomeItem[] = [];
+
+    for (const authentication of authentications) {
+        if (authentication.type !== ServerType.SAMO) {
+            continue;
+        }
+
+        try {
+            const source = getMobileContentSource(authentication);
+            const streamToken = await resolveSamoStreamToken(authentication, request);
+            const discoveryItems = await loadSamoDiscoveryHomeItems(
+                authentication,
+                request,
+                streamToken,
+                source,
+            );
+            items.push(...discoveryItems);
+        } catch {
+            // Discovery is best-effort; other home sections should still load.
+        }
+    }
+
+    return items;
+};
+
+const loadSamoRecentlyAddedHomeItems = async (
+    authentication: ServerAuthenticationResult,
+    fetcher: SamoFetch,
+    streamToken: string | undefined,
+    source: MobileContentSource,
+    limit: number,
+): Promise<MobileHomeItem[]> => {
+    const [catalogResult, browseAlbumsResult, audiobooksResult, podcastsResult] =
+        await Promise.allSettled([
+            listSamoCatalogRecentlyAdded(fetcher, authentication, { limit: limit * 2 }),
+            getSamoMusicBrowse(fetcher, authentication, 'recently-added', { limit: limit * 2 }),
+            listSamoAudiobooks(fetcher, authentication, { limit: 300 }),
+            listSamoPodcasts(fetcher, authentication, { limit: 300 }),
+        ]);
+
+    const albumById = new Map<string, MobileHomeItem>();
+    if (browseAlbumsResult.status === 'fulfilled') {
+        for (const album of samoItemsOf(
+            browseAlbumsResult.value.albums as SamoPaginatedResponse<SamoMusicAlbum>,
+        )) {
+            const item = samoAlbumToHomeItem(authentication, album, streamToken, source);
+            if (item) {
+                albumById.set(album.id, item);
+            }
+        }
+    }
+
+    const audiobookById = new Map<string, MobileHomeItem>();
+    if (audiobooksResult.status === 'fulfilled') {
+        for (const audiobook of samoItemsOf(audiobooksResult.value)) {
+            const item = samoAudiobookToHomeItem(authentication, audiobook, streamToken, source);
+            if (item) {
+                audiobookById.set(audiobook.id, item);
+            }
+        }
+    }
+
+    const podcastById = new Map<string, MobileHomeItem>();
+    if (podcastsResult.status === 'fulfilled') {
+        for (const podcast of samoItemsOf(podcastsResult.value)) {
+            const item = samoPodcastToHomeItem(authentication, podcast, streamToken, source);
+            if (item) {
+                podcastById.set(podcast.id, item);
+            }
+        }
+    }
+
+    if (catalogResult.status !== 'fulfilled') {
+        return sortHomeItemsByAddedAt([
+            ...albumById.values(),
+            ...audiobookById.values(),
+            ...podcastById.values(),
+        ]).slice(0, limit);
+    }
+
+    const resolveCatalogEntry = (entry: SamoRecentlyAddedEntry): MobileHomeItem | null => {
+        switch (entry.kind) {
+            case 'music-album':
+                return albumById.get(entry.id) ?? null;
+            case 'audiobook':
+                return audiobookById.get(entry.id) ?? null;
+            case 'podcast':
+                return podcastById.get(entry.id) ?? null;
+            default:
+                return null;
+        }
+    };
+
+    const ordered: MobileHomeItem[] = [];
+    const seen = new Set<string>();
+
+    for (const entry of catalogResult.value.items) {
+        const item = resolveCatalogEntry(entry);
+        if (!item) {
+            continue;
+        }
+        const key = `${item.type}:${item.id}`;
+        if (seen.has(key)) {
+            continue;
+        }
+        seen.add(key);
+        ordered.push({
+            ...item,
+            addedAt: toEpochMs(entry.addedAt) ?? item.addedAt,
+        });
+        if (ordered.length >= limit) {
+            break;
+        }
+    }
+
+    if (ordered.length >= limit) {
+        return ordered;
+    }
+
+    for (const item of sortHomeItemsByAddedAt([
+        ...albumById.values(),
+        ...audiobookById.values(),
+        ...podcastById.values(),
+    ])) {
+        const key = `${item.type}:${item.id}`;
+        if (seen.has(key)) {
+            continue;
+        }
+        seen.add(key);
+        ordered.push(item);
+        if (ordered.length >= limit) {
+            break;
+        }
+    }
+
+    return ordered;
+};
+
 const loadSamoHomeContent = async (
     authentication: ServerAuthenticationResult,
     fetcher: SamoFetch,
@@ -1144,57 +1680,46 @@ const loadSamoHomeContent = async (
 ): Promise<MobileHomeContent> => {
     const source = getMobileContentSource(authentication);
     const streamToken = await resolveSamoStreamToken(authentication, fetcher);
-    const recentListQuery = { direction: 'desc' as const, limit, sort: 'recent' as const };
+    const playCountListQuery = {
+        direction: 'desc' as const,
+        limit,
+        sort: 'playCount' as const,
+    };
 
     const [
-        recentAlbumsResult,
-        recentArtistsResult,
-        recentTracksResult,
-        favoritesAlbumsResult,
-        favoritesArtistsResult,
+        recentlyAddedResult,
+        topArtistsResult,
+        topAlbumsResult,
+        discoveryResult,
+        podcastFeedResult,
         playlistsResult,
         audiobooksResult,
         podcastsResult,
         internetRadioResult,
         programmedRadioResult,
     ] = await Promise.allSettled([
-        listSamoMusicAlbums(fetcher, authentication, recentListQuery).then((body) =>
-            samoItemsOf(body).flatMap((album) => {
-                const item = samoAlbumToHomeItem(authentication, album, streamToken, source);
-                return item ? [item] : [];
-            }),
-        ),
-        listSamoMusicArtists(fetcher, authentication, recentListQuery).then((body) =>
+        loadSamoRecentlyAddedHomeItems(authentication, fetcher, streamToken, source, limit),
+        listSamoMusicArtists(fetcher, authentication, playCountListQuery).then((body) =>
             samoItemsOf(body).flatMap((artist) => {
                 const item = samoArtistToHomeItem(authentication, artist, streamToken, source);
                 return item ? [item] : [];
             }),
         ),
-        listSamoMusicTracks(fetcher, authentication, recentListQuery).then((body) =>
-            samoItemsOf(body).flatMap((track) => {
-                const item = samoTrackToHomeItem(authentication, track, streamToken, source);
+        listSamoMusicAlbums(fetcher, authentication, playCountListQuery).then((body) =>
+            samoItemsOf(body).flatMap((album) => {
+                const item = samoAlbumToHomeItem(authentication, album, streamToken, source);
                 return item ? [item] : [];
             }),
         ),
-        getSamoMusicBrowse(fetcher, authentication, 'favorites', { limit }).then((body) => {
-            const albums = samoItemsOf(body.albums as SamoPaginatedResponse<SamoMusicAlbum>);
-            return albums.flatMap((album) => {
-                const item = samoAlbumToHomeItem(authentication, album, streamToken, source);
-                return item ? [item] : [];
-            });
-        }),
-        getSamoMusicBrowse(fetcher, authentication, 'favorites', { limit }).then((body) => {
-            const artists = samoItemsOf(body.artists as SamoPaginatedResponse<SamoMusicArtist>);
-            return artists.flatMap((artist) => {
-                const item = samoArtistToHomeItem(authentication, artist, streamToken, source);
-                return item ? [item] : [];
-            });
-        }),
-        listSamoMusicPlaylists(fetcher, authentication, { limit }).then((body) =>
-            samoItemsOf(body).flatMap((playlist) => {
-                const item = samoPlaylistToHomeItem(authentication, playlist, streamToken, source);
-                return item ? [item] : [];
-            }),
+        loadSamoDiscoveryHomeItems(authentication, fetcher, streamToken, source),
+        loadSamoPodcastFeedHomeItems(authentication, fetcher, streamToken, source),
+        listSamoMusicPlaylists(fetcher, authentication, { limit: 200 }).then((body) =>
+            sortHomeItemsByLastPlayed(
+                samoItemsOf(body).flatMap((playlist) => {
+                    const item = samoPlaylistToHomeItem(authentication, playlist, streamToken, source);
+                    return item ? [item] : [];
+                }),
+            ).slice(0, limit),
         ),
         listSamoAudiobooks(fetcher, authentication, { limit }).then((body) =>
             samoItemsOf(body).flatMap((audiobook) => {
@@ -1232,11 +1757,6 @@ const loadSamoHomeContent = async (
         ),
     ]);
 
-    const recentlyAdded = {
-        albums: settledOrEmpty(recentAlbumsResult),
-        artists: settledOrEmpty(recentArtistsResult),
-        tracks: settledOrEmpty(recentTracksResult),
-    };
     const errors: MobileHomeSectionError[] = [];
     const pushError = (
         result: PromiseSettledResult<unknown>,
@@ -1249,11 +1769,11 @@ const loadSamoHomeContent = async (
             });
         }
     };
-    pushError(recentAlbumsResult, MobileHomeSectionId.RECENTLY_ADDED);
-    pushError(recentArtistsResult, MobileHomeSectionId.RECENTLY_ADDED);
-    pushError(recentTracksResult, MobileHomeSectionId.RECENTLY_ADDED);
-    pushError(favoritesAlbumsResult, MobileHomeSectionId.FAVORITE_ALBUMS);
-    pushError(favoritesArtistsResult, MobileHomeSectionId.FAVORITE_ARTISTS);
+    pushError(recentlyAddedResult, MobileHomeSectionId.RECENTLY_ADDED);
+    pushError(topArtistsResult, MobileHomeSectionId.FAVORITE_ARTISTS);
+    pushError(topAlbumsResult, MobileHomeSectionId.FAVORITE_ALBUMS);
+    pushError(discoveryResult, MobileHomeSectionId.DISCOVER);
+    pushError(podcastFeedResult, MobileHomeSectionId.PODCAST_FEED);
     pushError(playlistsResult, MobileHomeSectionId.PLAYLISTS);
     pushError(audiobooksResult, MobileHomeSectionId.AUDIOBOOKS);
     pushError(podcastsResult, MobileHomeSectionId.PODCASTS);
@@ -1268,27 +1788,28 @@ const loadSamoHomeContent = async (
     const sections: MobileHomeSection[] = [
         {
             id: MobileHomeSectionId.RECENTLY_ADDED,
-            items: sortHomeItemsByAddedAt(
-                mergeSamoHomeItems(
-                    recentlyAdded.albums,
-                    recentlyAdded.tracks,
-                    recentlyAdded.artists,
-                ),
-            ).slice(0, limit),
+            items: settledOrEmpty(recentlyAddedResult),
             title: 'Recently Added',
         },
         {
             id: MobileHomeSectionId.FAVORITE_ALBUMS,
-            items: settledOrEmpty(favoritesAlbumsResult),
+            items: sortMobileHomeItemsByPlayCount(settledOrEmpty(topAlbumsResult)).slice(0, limit),
             title: 'Favorite Albums',
         },
         {
             id: MobileHomeSectionId.FAVORITE_ARTISTS,
-            items: mergeSamoHomeItems(
-                settledOrEmpty(favoritesArtistsResult),
-                settledOrEmpty(recentArtistsResult),
-            ).slice(0, limit),
+            items: sortMobileHomeItemsByPlayCount(settledOrEmpty(topArtistsResult)).slice(0, limit),
             title: 'Favorite Artists',
+        },
+        {
+            id: MobileHomeSectionId.DISCOVER,
+            items: settledOrEmpty(discoveryResult),
+            title: 'Discover',
+        },
+        {
+            id: MobileHomeSectionId.PODCAST_FEED,
+            items: settledOrEmpty(podcastFeedResult),
+            title: 'Podcast Feed',
         },
         {
             id: MobileHomeSectionId.AUDIOBOOKS,
@@ -1342,6 +1863,11 @@ const loadSamoFullCollectionPaged = async <T>(
     return all;
 };
 
+const SAMO_FULL_COLLECTION_PLAY_COUNT_QUERY = {
+    direction: 'desc' as const,
+    sort: 'playCount' as const,
+};
+
 const loadSamoFullCollection = async (
     authentication: ServerAuthenticationResult,
     fetcher: SamoFetch,
@@ -1349,11 +1875,18 @@ const loadSamoFullCollection = async (
 ): Promise<MobileHomeItem[]> => {
     const source = getMobileContentSource(authentication);
     const streamToken = await resolveSamoStreamToken(authentication, fetcher);
+    const playCountQuery =
+        variant === 'album' || variant === 'artist'
+            ? SAMO_FULL_COLLECTION_PLAY_COUNT_QUERY
+            : undefined;
 
     switch (variant) {
         case 'album': {
             const albums = await loadSamoFullCollectionPaged<SamoMusicAlbum>((input) =>
-                listSamoMusicAlbums(fetcher, authentication, input),
+                listSamoMusicAlbums(fetcher, authentication, {
+                    ...playCountQuery,
+                    ...input,
+                }),
             );
             return albums.flatMap((album) => {
                 const item = samoAlbumToHomeItem(authentication, album, streamToken, source);
@@ -1362,7 +1895,10 @@ const loadSamoFullCollection = async (
         }
         case 'artist': {
             const artists = await loadSamoFullCollectionPaged<SamoMusicArtist>((input) =>
-                listSamoMusicArtists(fetcher, authentication, input),
+                listSamoMusicArtists(fetcher, authentication, {
+                    ...playCountQuery,
+                    ...input,
+                }),
             );
             return artists.flatMap((artist) => {
                 const item = samoArtistToHomeItem(authentication, artist, streamToken, source);
@@ -1866,6 +2402,43 @@ export const loadMobileHomeContentForServers = async ({
         sections: [...sectionsById.values()].filter(hasItems),
         serverTitle: authentications.map((authentication) => authentication.title).join(' + '),
     };
+};
+
+/** Server-backed recently played rows for cross-client recents merge (Android home). */
+export const loadSamoRecentlyPlayedHomeItems = async (
+    authentication: ServerAuthenticationResult,
+    fetcher: SamoFetch,
+    limit = 40,
+): Promise<MobileHomeItem[]> => {
+    if (authentication.type !== ServerType.SAMO) {
+        return [];
+    }
+
+    const source = getMobileContentSource(authentication);
+    const streamToken = await resolveSamoStreamToken(authentication, fetcher);
+    const body = await getSamoMusicBrowse(fetcher, authentication, 'recently-played', { limit });
+
+    const items: MobileHomeItem[] = [];
+
+    for (const album of samoItemsOf(body.albums as SamoPaginatedResponse<SamoMusicAlbum>)) {
+        const item = samoAlbumToHomeItem(authentication, album, streamToken, source);
+        if (item) {
+            items.push({
+                ...item,
+                lastPlayedAt: toEpochMs(album.playback?.lastPlayedAt) ?? item.lastPlayedAt,
+                playCount: album.playback?.playCount ?? item.playCount,
+            });
+        }
+    }
+
+    for (const playlist of samoItemsOf(body.playlists as SamoPaginatedResponse<SamoMusicPlaylist>)) {
+        const item = samoPlaylistToHomeItem(authentication, playlist, streamToken, source);
+        if (item) {
+            items.push(item);
+        }
+    }
+
+    return sortHomeItemsByLastPlayed(items).slice(0, limit);
 };
 
 /** Target size for the Library "Relevant" catalog — fast to load, feels personal. */

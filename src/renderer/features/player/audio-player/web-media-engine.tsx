@@ -35,6 +35,13 @@ export interface WebMediaEngineProps {
     releaseOnError: () => void;
     resetResumeOnEnd?: () => void;
     resumePosition?: number;
+    /**
+     * When the stream URL starts at a book-global offset (Samo `progressSeconds`),
+     * player time 0 is that offset — add this to progress and subtract on seek.
+     */
+    streamOffsetSeconds?: number;
+    /** Re-open the stream at `bookPosition` when seek is before the current origin. */
+    onRestartStreamAt?: (bookPosition: number) => void | Promise<void>;
     /** Radio drives status from `isPlaying` instead of universal transport. */
     statusFromRadio?: boolean;
     syncVolumeToEngineRef?: boolean;
@@ -54,6 +61,8 @@ export function WebMediaEngine({
     releaseOnError,
     resetResumeOnEnd,
     resumePosition = 0,
+    streamOffsetSeconds = 0,
+    onRestartStreamAt,
     statusFromRadio = false,
     syncVolumeToEngineRef = false,
 }: WebMediaEngineProps) {
@@ -136,11 +145,25 @@ export function WebMediaEngine({
 
         const unsub = subscribePlayerSeek(({ timestamp }) => {
             if (!ownsPlayback()) return;
-            playerRef.current?.seekTo(timestamp);
-            onSeekTransport?.(timestamp);
+
+            const bookPosition = Math.max(0, timestamp);
+
+            if (
+                streamOffsetSeconds > 0 &&
+                bookPosition < streamOffsetSeconds - 0.25 &&
+                onRestartStreamAt
+            ) {
+                void onRestartStreamAt(bookPosition);
+                onSeekTransport?.(bookPosition);
+                return;
+            }
+
+            const filePosition = Math.max(0, bookPosition - streamOffsetSeconds);
+            playerRef.current?.seekTo(filePosition);
+            onSeekTransport?.(bookPosition);
         });
         return unsub;
-    }, [mode, onSeekTransport, ownsPlayback]);
+    }, [mode, onRestartStreamAt, onSeekTransport, ownsPlayback, streamOffsetSeconds]);
 
     const wireWebAudio = useCallback(
         async (player: ReactPlayer, options?: { allowReuseSource?: boolean }) => {
@@ -193,18 +216,19 @@ export function WebMediaEngine({
             await wireWebAudio(player, { allowReuseSource: mode === 'radio' });
 
             if (mode === 'abs-resume' && !hasSeededRef.current && resumePosition > 0) {
-                playerRef.current?.seekTo(resumePosition);
+                const filePosition = Math.max(0, resumePosition - streamOffsetSeconds);
+                playerRef.current?.seekTo(filePosition);
                 hasSeededRef.current = true;
             }
         },
-        [mode, resumePosition, wireWebAudio],
+        [mode, resumePosition, streamOffsetSeconds, wireWebAudio],
     );
 
     const handleProgress = useCallback(
         (e: PlayerOnProgressProps) => {
-            onProgress?.(e.playedSeconds);
+            onProgress?.(e.playedSeconds + streamOffsetSeconds);
         },
-        [onProgress],
+        [onProgress, streamOffsetSeconds],
     );
 
     const handleEnded = useCallback(() => {

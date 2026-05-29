@@ -6,7 +6,7 @@ import { useTranslation } from 'react-i18next';
 import { QualityBadge } from '/@/renderer/components/quality-badge/quality-badge';
 import { PopoverPlayQueue } from '/@/renderer/features/now-playing/components/popover-play-queue';
 import { AudiobookChapterListButton } from '/@/renderer/features/player/components/audiobook-chapter-list-button';
-import { OutputPickerModal } from '/@/renderer/features/player/components/output-picker-modal';
+import { OutputPickerPopover } from '/@/renderer/features/player/components/output-picker-popover';
 import { PlayerConfig } from '/@/renderer/features/player/components/player-config';
 import { CustomPlayerbarSlider } from '/@/renderer/features/player/components/playerbar-slider';
 import { SleepTimerButton } from '/@/renderer/features/player/components/sleep-timer-button';
@@ -29,7 +29,6 @@ import {
     useVolumeWheelStep,
     useVolumeWidth,
 } from '/@/renderer/store';
-import { useDesktopCastState } from '/@/renderer/store/cast.store';
 import { useFullScreenPlayerStoreActions } from '/@/renderer/store/full-screen-player.store';
 import { usePlaybackSource } from '/@/renderer/store/playback-owner.store';
 import { getQueueSongQualityProfile } from '/@/renderer/utils/quality-profile';
@@ -37,7 +36,6 @@ import { ActionIcon } from '/@/shared/components/action-icon/action-icon';
 import { Button } from '/@/shared/components/button/button';
 import { Flex } from '/@/shared/components/flex/flex';
 import { Group } from '/@/shared/components/group/group';
-import { useDisclosure } from '/@/shared/hooks/use-disclosure';
 import { useHotkeys } from '/@/shared/hooks/use-hotkeys';
 import { useMediaQuery } from '/@/shared/hooks/use-media-query';
 import { useThrottledCallback } from '/@/shared/hooks/use-throttled-callback';
@@ -77,7 +75,6 @@ export const RightControls = () => {
         playbackType,
         transcodeEnabled: transcode.enabled,
     });
-    const [outputPickerOpened, outputPickerHandlers] = useDisclosure(false);
     return (
         <Flex align="flex-end" direction="column" h="100%" px="1rem" py="0.5rem">
             <Group h="calc(100% / 3)">
@@ -88,7 +85,7 @@ export const RightControls = () => {
                     <QualityBadge player profile={formatProfile} />
                 )}
                 {isElectron() && (source === 'music' || source == null) ? (
-                    <CastOutputButton onOpen={outputPickerHandlers.open} />
+                    <OutputPickerPopover />
                 ) : null}
                 <AudiobookChapterListButton />
                 <SleepTimerButton />
@@ -99,35 +96,7 @@ export const RightControls = () => {
                 <VolumeButton />
             </Group>
             <Group h="calc(100% / 3)" />
-            <OutputPickerModal handlers={outputPickerHandlers} opened={outputPickerOpened} />
         </Flex>
-    );
-};
-
-const CastOutputButton = ({ onOpen }: { onOpen: () => void }) => {
-    const castState = useDesktopCastState();
-    const isActive = castState.isConnected;
-
-    return (
-        <ActionIcon
-            icon="outputPicker"
-            iconProps={{
-                color: isActive ? 'primary' : undefined,
-                size: 'lg',
-            }}
-            onClick={(e) => {
-                e.stopPropagation();
-                onOpen();
-            }}
-            size="sm"
-            tooltip={{
-                label: isActive
-                    ? `Casting to ${castState.deviceName ?? 'Chromecast'}`
-                    : 'Choose audio output',
-                openDelay: 0,
-            }}
-            variant="subtle"
-        />
     );
 };
 

@@ -6,6 +6,10 @@ import {
     flushPendingAbsProgress,
     initAbsProgressStore,
 } from '../services/abs-progress';
+import {
+    flushPendingSamoPlayback,
+    initSamoPlaybackSyncStore,
+} from '../services/samo-playback-sync';
 import { useAuthSessionState } from '../state/auth-session';
 
 /** Replays pending Audiobookshelf progress on boot and flushes on background. */
@@ -17,15 +21,21 @@ export function useAndroidAbsProgressSync(): void {
             return;
         }
         void (async () => {
-            await initAbsProgressStore();
-            await flushPendingAbsProgress(serverConnections);
+            await Promise.all([initAbsProgressStore(), initSamoPlaybackSyncStore()]);
+            await Promise.all([
+                flushPendingAbsProgress(serverConnections),
+                flushPendingSamoPlayback(serverConnections),
+            ]);
         })();
     }, [serverConnections]);
 
     useEffect(() => {
         const subscription = AppState.addEventListener('change', (next) => {
             if (next === 'background' || next === 'inactive') {
-                void flushPendingAbsProgress(serverConnections);
+                void Promise.all([
+                    flushPendingAbsProgress(serverConnections),
+                    flushPendingSamoPlayback(serverConnections),
+                ]);
             }
         });
         return () => subscription.remove();

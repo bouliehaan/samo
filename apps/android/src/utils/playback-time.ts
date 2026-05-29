@@ -1,4 +1,9 @@
-import { type MobilePlayableAudio, type MobilePlaybackSegment } from '@samo/core/mobile';
+import {
+    formatRadioStreamFormat,
+    getRadioPlaybackMetadataLines,
+    type MobilePlayableAudio,
+    type MobilePlaybackSegment,
+} from '@samo/core/mobile';
 
 import { type AndroidNativePlaybackEvent } from '../services/audio-playback';
 import {
@@ -17,6 +22,34 @@ export const getActivePlaybackStatus = (
 const PLAYBACK_POSITION_BACKWARD_TOLERANCE_MS = 2500;
 const PLAYBACK_POSITION_RESET_GUARD_MS = 5000;
 
+/** How close to duration (ms) counts as end-of-track for queue auto-advance. */
+export const PLAYBACK_NEAR_END_TOLERANCE_MS = 2500;
+
+/** Native stop/clear often reports position at or below this after a natural end. */
+export const PLAYBACK_POSITION_RESET_THRESHOLD_MS = 100;
+
+export const isPositionNearPlaybackEnd = (
+    durationMs: number | undefined,
+    positionMs: number | undefined,
+) => {
+    if (!durationMs || durationMs <= 0 || !positionMs || positionMs <= 0) {
+        return false;
+    }
+
+    return durationMs - positionMs <= PLAYBACK_NEAR_END_TOLERANCE_MS;
+};
+
+export const hasPlaybackSourceChanged = (
+    event: Pick<AndroidNativePlaybackEvent, 'source'>,
+    currentItemId: string,
+) => {
+    const eventSourceId = event.source?.id;
+    if (!eventSourceId) {
+        return false;
+    }
+    return eventSourceId !== currentItemId;
+};
+
 export const getStablePlaybackPositionMs = (
     event: AndroidNativePlaybackEvent,
     current: ActiveAndroidPlaybackState,
@@ -32,7 +65,27 @@ export const getStablePlaybackPositionMs = (
         return currentPositionMs;
     }
 
+    if (hasPlaybackSourceChanged(event, current.item.id)) {
+        return eventPositionMs;
+    }
+
     if (currentPositionMs === undefined || event.status === 'ended') {
+        return eventPositionMs;
+    }
+
+    const currentDurationMs =
+        current.durationMs && current.durationMs > 0
+            ? current.durationMs
+            : getPlaybackItemDurationMs(current.item);
+
+    if (
+        eventPositionMs + PLAYBACK_POSITION_BACKWARD_TOLERANCE_MS < currentPositionMs &&
+        (isPositionNearPlaybackEnd(currentDurationMs, currentPositionMs) ||
+            (event.durationMs &&
+                event.durationMs > 0 &&
+                currentDurationMs &&
+                Math.abs(event.durationMs - currentDurationMs) > 2000))
+    ) {
         return eventPositionMs;
     }
 
@@ -47,6 +100,30 @@ export const getStablePlaybackPositionMs = (
     return eventPositionMs;
 };
 
+/** Progress fields when applying a native status/event onto React playback state. */
+export const resolvePlaybackProgressFromEvent = (
+    event: AndroidNativePlaybackEvent,
+    current: ActiveAndroidPlaybackState,
+    activeItem: MobilePlayableAudio,
+): Pick<ActiveAndroidPlaybackState, 'durationMs' | 'positionMs'> => {
+    const trackChanged =
+        current.item.id !== activeItem.id ||
+        hasPlaybackSourceChanged(event, activeItem.id);
+
+    if (trackChanged) {
+        const positionMs = Math.max(0, event.positionMs ?? 0);
+        const durationMs =
+            getPlaybackItemDurationMs(activeItem) ?? getPlaybackEventDurationMs(event, activeItem);
+
+        return { durationMs, positionMs };
+    }
+
+    return {
+        durationMs: getPlaybackEventDurationMs(event, activeItem),
+        positionMs: getStablePlaybackPositionMs(event, current),
+    };
+};
+
 export const getPlaybackItemDurationMs = (item: MobilePlayableAudio) => {
     return item.durationSeconds && item.durationSeconds > 0
         ? item.durationSeconds * 1000
@@ -57,9 +134,25 @@ export const getPlaybackEventDurationMs = (
     event: AndroidNativePlaybackEvent,
     item: MobilePlayableAudio,
 ) => {
-    return event.durationMs && event.durationMs > 0
-        ? event.durationMs
-        : getPlaybackItemDurationMs(item);
+    const itemDurationMs = getPlaybackItemDurationMs(item);
+    const eventDurationMs =
+        event.durationMs && event.durationMs > 0 ? event.durationMs : undefined;
+
+    if (hasPlaybackSourceChanged(event, item.id)) {
+        return itemDurationMs ?? eventDurationMs;
+    }
+
+    const eventPositionMs = event.positionMs ?? 0;
+    if (
+        itemDurationMs &&
+        eventDurationMs &&
+        eventPositionMs < 5000 &&
+        Math.abs(eventDurationMs - itemDurationMs) > 2000
+    ) {
+        return itemDurationMs;
+    }
+
+    return eventDurationMs ?? itemDurationMs;
 };
 
 export const getPlaybackDurationMs = (playbackState: AndroidPlaybackState) => {
@@ -72,6 +165,37 @@ export const getPlaybackDurationMs = (playbackState: AndroidPlaybackState) => {
         : getPlaybackItemDurationMs(playbackState.item);
 };
 
+export const getTimelinePositionSeconds = (
+    item: MobilePlayableAudio,
+    positionMs: number | undefined,
+): number => {
+    const fallbackPositionMs =
+        item.initialPositionSeconds && item.initialPositionSeconds > 0
+            ? item.initialPositionSeconds * 1000
+            : 0;
+    const filePositionSeconds = (positionMs ?? fallbackPositionMs) / 1000;
+
+    return filePositionSeconds + (item.progressOffsetSeconds ?? 0);
+};
+
+export const getCurrentTimelineSegmentIndex = (
+    segments: MobilePlaybackSegment[],
+    positionSeconds: number,
+): number => {
+    if (segments.length === 0) {
+        return -1;
+    }
+
+    for (let index = segments.length - 1; index >= 0; index -= 1) {
+        const segment = segments[index];
+        if (segment && segment.startSeconds <= positionSeconds) {
+            return index;
+        }
+    }
+
+    return 0;
+};
+
 export const getActiveTimelineSegment = (
     item: MobilePlayableAudio,
     positionMs: number | undefined,
@@ -80,43 +204,116 @@ export const getActiveTimelineSegment = (
         return undefined;
     }
 
-    const fallbackPositionMs =
-        item.initialPositionSeconds && item.initialPositionSeconds > 0
-            ? item.initialPositionSeconds * 1000
-            : 0;
-    const positionSeconds = (positionMs ?? fallbackPositionMs) / 1000;
+    const bookPositionSeconds = getTimelinePositionSeconds(item, positionMs);
     const orderedSegments = [...item.timelineSegments].sort(
         (left, right) => left.startSeconds - right.startSeconds,
     );
-    let activeSegment: MobilePlaybackSegment | undefined;
+    const activeIndex = getCurrentTimelineSegmentIndex(orderedSegments, bookPositionSeconds);
 
-    for (const segment of orderedSegments) {
-        if (segment.startSeconds <= positionSeconds + 0.5) {
-            activeSegment = segment;
-        }
-    }
-
-    return activeSegment;
+    return orderedSegments[activeIndex];
 };
 
-export const getPlaybackDisplayMetadata = (playbackState: AndroidPlaybackState) => {
-    if (playbackState.status === 'idle') {
-        return { subtitle: undefined, title: '' };
+export type PlaybackDisplayMetadata = {
+    /** One to three lines for mini / full player (music: up to two). */
+    lines: string[];
+    /** Lock-screen / system UI secondary line. */
+    subtitle?: string;
+    /** Primary line for notifications and artwork fallback letter. */
+    title: string;
+};
+
+export const formatPlaybackReleaseDate = (publishedAtMs: number | undefined) => {
+    if (!publishedAtMs || !Number.isFinite(publishedAtMs) || publishedAtMs <= 0) {
+        return undefined;
     }
 
-    const item = playbackState.item;
-    const activeSegment = getActiveTimelineSegment(item, playbackState.positionMs);
-    const useSegmentTitle = item.source === 'audiobook' && activeSegment?.title;
-    const chapterSubtitle =
-        item.source === 'podcast' && activeSegment?.title ? activeSegment.title : undefined;
-    const fallbackSubtitle = item.source === 'radio' ? 'Radio' : getSourceLabel(item.source);
+    return new Date(publishedAtMs).toLocaleDateString(undefined, {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+    });
+};
+
+const compactLines = (lines: Array<string | undefined>) =>
+    lines.map((line) => line?.trim()).filter((line): line is string => Boolean(line));
+
+const notificationSubtitle = (lines: string[]) => {
+    const tail = lines.slice(1);
+    return tail.length > 0 ? tail.join(' · ') : undefined;
+};
+
+export const getPlayableDisplayMetadata = (
+    item: MobilePlayableAudio,
+    positionMs?: number,
+): PlaybackDisplayMetadata => {
+    if (item.source === 'music') {
+        const title = item.title?.trim() || 'Unknown title';
+        const subtitle = getDisplaySubtitle(item.subtitle);
+        const lines = compactLines([title, subtitle]);
+
+        return {
+            lines,
+            subtitle,
+            title,
+        };
+    }
+
+    if (item.source === 'audiobook') {
+        const activeSegment = getActiveTimelineSegment(item, positionMs);
+        const chapter = activeSegment?.title?.trim();
+        const book = item.title?.trim();
+        const author = getDisplaySubtitle(item.subtitle);
+        const lines = compactLines([chapter, book, author]);
+
+        return {
+            lines,
+            subtitle: notificationSubtitle(lines) ?? author,
+            title: lines[0] ?? book ?? 'Unknown title',
+        };
+    }
+
+    if (item.source === 'podcast') {
+        const episode = item.title?.trim();
+        const show = getDisplaySubtitle(item.subtitle);
+        const released = formatPlaybackReleaseDate(item.publishedAt);
+        const lines = compactLines([episode, show, released]);
+
+        return {
+            lines,
+            subtitle: notificationSubtitle(lines) ?? show,
+            title: episode ?? 'Unknown title',
+        };
+    }
+
+    if (item.source === 'radio') {
+        const lines = getRadioPlaybackMetadataLines(item);
+
+        return {
+            lines,
+            subtitle: notificationSubtitle(lines),
+            title: lines[0] ?? item.title ?? 'Radio',
+        };
+    }
+
+    const title = item.title?.trim() || 'Unknown title';
+    const subtitle = getDisplaySubtitle(item.subtitle);
+    const lines = compactLines([title, subtitle]);
 
     return {
-        subtitle: chapterSubtitle ?? getDisplaySubtitle(item.subtitle) ?? fallbackSubtitle,
-        title: useSegmentTitle
-            ? (activeSegment.title ?? item.title ?? 'Unknown title')
-            : (item.title ?? 'Unknown title'),
+        lines,
+        subtitle,
+        title,
     };
+};
+
+export const getPlaybackDisplayMetadata = (
+    playbackState: AndroidPlaybackState,
+): PlaybackDisplayMetadata => {
+    if (playbackState.status === 'idle') {
+        return { lines: [], subtitle: undefined, title: '' };
+    }
+
+    return getPlayableDisplayMetadata(playbackState.item, playbackState.positionMs);
 };
 
 export const isLivePlayback = (playbackState: AndroidPlaybackState) => {
@@ -174,16 +371,22 @@ export const getDurationLabel = (playbackState: AndroidPlaybackState) => {
     }
 
     if (playbackState.item.source === 'radio') {
-        return 'RADIO';
+        return formatRadioStreamFormat(playbackState.item)?.toUpperCase() ?? 'LIVE';
     }
 
     return formatPlaybackTime(getPlaybackDurationMs(playbackState));
 };
 
+const segmentStartToFilePositionMs = (
+    startSeconds: number,
+    item: MobilePlayableAudio | undefined,
+) => Math.max(0, (startSeconds - (item?.progressOffsetSeconds ?? 0)) * 1000);
+
 export const getAdjacentSegmentTargetMs = (
     segments: MobilePlaybackSegment[] | undefined,
     positionMs: number,
     direction: -1 | 1,
+    item?: MobilePlayableAudio,
 ) => {
     if (!segments || segments.length === 0) {
         return undefined;
@@ -192,33 +395,37 @@ export const getAdjacentSegmentTargetMs = (
     const orderedSegments = [...segments].sort(
         (left, right) => left.startSeconds - right.startSeconds,
     );
-    const positionSeconds = positionMs / 1000;
+    const positionSeconds = item
+        ? getTimelinePositionSeconds(item, positionMs)
+        : positionMs / 1000;
+
+    const currentIndex = getCurrentTimelineSegmentIndex(orderedSegments, positionSeconds);
 
     if (direction === 1) {
-        const nextSegment = orderedSegments.find(
-            (segment) => segment.startSeconds > positionSeconds + 1,
-        );
+        const nextIndex = currentIndex + 1;
 
-        return nextSegment ? nextSegment.startSeconds * 1000 : undefined;
-    }
-
-    let currentIndex = -1;
-
-    for (let index = orderedSegments.length - 1; index >= 0; index -= 1) {
-        const segment = orderedSegments[index];
-
-        if (segment && segment.startSeconds <= positionSeconds) {
-            currentIndex = index;
-            break;
+        if (nextIndex >= orderedSegments.length) {
+            return undefined;
         }
-    }
-    const currentSegment = orderedSegments[currentIndex];
 
-    if (currentSegment && positionSeconds - currentSegment.startSeconds > 3) {
-        return currentSegment.startSeconds * 1000;
+        const nextSegment = orderedSegments[nextIndex];
+
+        return nextSegment
+            ? segmentStartToFilePositionMs(nextSegment.startSeconds, item)
+            : undefined;
     }
 
-    return currentIndex > 0 ? orderedSegments[currentIndex - 1].startSeconds * 1000 : undefined;
+    const currentSegment = currentIndex >= 0 ? orderedSegments[currentIndex] : undefined;
+
+    if (currentSegment && positionSeconds - currentSegment.startSeconds > 5) {
+        return segmentStartToFilePositionMs(currentSegment.startSeconds, item);
+    }
+
+    const previousSegment = currentIndex > 0 ? orderedSegments[currentIndex - 1] : undefined;
+
+    return previousSegment
+        ? segmentStartToFilePositionMs(previousSegment.startSeconds, item)
+        : undefined;
 };
 
 export const getSeekSegments = (
@@ -323,17 +530,7 @@ export const getSeekSegmentGapWidth = (segmentCount: number, trackWidth: number)
 export const findActiveChapterIndex = (
     chapters: MobilePlaybackSegment[],
     positionSeconds: number,
-): number => {
-    let index = -1;
-    for (let i = 0; i < chapters.length; i += 1) {
-        if (chapters[i].startSeconds <= positionSeconds) {
-            index = i;
-        } else {
-            break;
-        }
-    }
-    return index;
-};
+): number => getCurrentTimelineSegmentIndex(chapters, positionSeconds);
 
 export const formatChapterRange = (chapter: MobilePlaybackSegment): string => {
     const start = formatPlaybackTime(chapter.startSeconds * 1000);

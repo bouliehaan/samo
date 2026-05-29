@@ -6,6 +6,7 @@ import { FlashList } from '@shopify/flash-list';
 import { memo, useCallback, useMemo, useState } from 'react';
 import {
     ActivityIndicator,
+    Platform,
     Pressable,
     ScrollView,
     Text,
@@ -24,6 +25,7 @@ import { useMediaContextMenu } from '../contexts/media-context-menu';
 import { useStableCallback } from '../hooks/use-stable-callback';
 import {
     HOME_COMPACT_OFFSET,
+    HOME_MEDIA_PROGRESS_CHROME,
     HOME_MEDIA_ROW_HEIGHT,
     HOME_MEDIA_ROW_HEIGHT_ARTIST,
     HOME_MEDIA_ROW_HEIGHT_ROUNDED,
@@ -331,7 +333,12 @@ const getHomeItemSubtitle = (
     variant: HomeDisplaySection['variant'],
 ) => {
     if (variant === 'radio') {
-        return undefined;
+        return item.nowPlayingText ?? getDisplaySubtitle(item.subtitle);
+    }
+
+    if (variant === 'podcast-feed' && item.type === MobileHomeItemType.PODCAST_EPISODE) {
+        const parts = getDisplaySubtitle(item.subtitle)?.split(' · ') ?? [];
+        return parts.length > 0 ? parts[parts.length - 1] : undefined;
     }
 
     return getDisplaySubtitle(item.subtitle);
@@ -376,11 +383,15 @@ const HomeFilterGridTile = memo(({
                 ]}
                 uri={item.artworkUrl}
             />
-            <Text numberOfLines={2} style={styles.mediaTitle}>
+            <Text numberOfLines={2} style={styles.mediaTitle} {...androidTrimCaptionFont}>
                 {item.title}
             </Text>
             {subtitle ? (
-                <Text numberOfLines={1} style={styles.mediaSubtitle}>
+                <Text
+                    numberOfLines={1}
+                    style={styles.mediaSubtitle}
+                    {...androidTrimCaptionFont}
+                >
                     {subtitle}
                 </Text>
             ) : null}
@@ -423,11 +434,15 @@ const HomeFilterGrid = memo(({
 
 HomeFilterGrid.displayName = 'HomeFilterGrid';
 
+const androidTrimCaptionFont =
+    Platform.OS === 'android' ? ({ includeFontPadding: false } as const) : {};
+
 const getHomeRowItemLength = (variant: HomeDisplaySection['variant']): number => {
     switch (variant) {
         case 'artist':
             return HOME_PRIMARY_TILE - HOME_COMPACT_OFFSET + HOME_TILE_GAP;
         case 'podcast':
+        case 'podcast-feed':
         case 'radio':
             return HOME_PRIMARY_TILE - HOME_ROUNDED_OFFSET + HOME_TILE_GAP;
         case 'continue':
@@ -453,6 +468,9 @@ const getHomeSectionRowHeight = (
         case 'podcast':
         case 'radio':
             singleHeight = HOME_MEDIA_ROW_HEIGHT_ROUNDED;
+            break;
+        case 'podcast-feed':
+            singleHeight = HOME_MEDIA_ROW_HEIGHT_ROUNDED + HOME_MEDIA_PROGRESS_CHROME;
             break;
         case 'continue':
         case 'wide':
@@ -495,7 +513,7 @@ const HomeMediaTile = memo(({
     const isBook = sectionVariant === 'book';
     const isContinue = sectionVariant === 'continue';
     const isPlaylist = sectionVariant === 'playlist';
-    const isPodcast = sectionVariant === 'podcast';
+    const isPodcast = sectionVariant === 'podcast' || sectionVariant === 'podcast-feed';
     const isRadioSection = sectionVariant === 'radio';
     const isRecent = sectionVariant === 'recents';
     const isWide = sectionVariant === 'wide' || isContinue;
@@ -588,6 +606,7 @@ const HomeMediaTile = memo(({
                         (isArtist || isRadioSection) && styles.mediaTitleCentered,
                         isWide && styles.mediaTitleWide,
                     ]}
+                    {...androidTrimCaptionFont}
                 >
                     {item.title}
                 </Text>
@@ -611,13 +630,15 @@ const HomeMediaTile = memo(({
                                     styles.mediaSubtitleInline,
                                     isArtist && styles.mediaSubtitleCentered,
                                 ]}
+                                {...androidTrimCaptionFont}
                             >
                                 {subtitle}
                             </Text>
                         ) : null}
                     </View>
                 ) : null}
-                {isContinue && progress !== undefined ? (
+                {(isContinue || (isPodcast && sectionVariant === 'podcast-feed')) &&
+                progress !== undefined ? (
                     <View style={styles.continueProgressTrack}>
                         <View
                             style={[
@@ -657,7 +678,7 @@ const chunkHomeSectionItems = (
     for (let column = 0; column < columnCount; column += 1) {
         const columnItems: AndroidRecentContentSourceItem[] = [];
         for (let row = 0; row < rowCount; row += 1) {
-            const index = row * rowCount + column;
+            const index = column * rowCount + row;
             if (index < items.length) {
                 columnItems.push(items[index]);
             }

@@ -23,6 +23,9 @@ class SamoAudioModule(
   fun play(source: ReadableMap, promise: Promise) = engine.play(source, promise)
 
   @ReactMethod
+  fun setPlaybackQueue(queue: ReadableMap, promise: Promise) = engine.setPlaybackQueue(queue, promise)
+
+  @ReactMethod
   fun pause(promise: Promise) = engine.pause(promise)
 
   @ReactMethod

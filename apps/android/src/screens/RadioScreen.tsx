@@ -1,5 +1,5 @@
 import { MobileHomeItemType, MobileHomeSectionId } from '@samo/core/mobile';
-import { ServerType, type ServerAuthenticationResult } from '@samo/core/server';
+import { type ServerAuthenticationResult } from '@samo/core/server';
 import { File } from 'expo-file-system';
 import { Image as ExpoImage } from 'expo-image';
 import { memo, useEffect, useMemo, useState } from 'react';
@@ -23,13 +23,19 @@ import { getRecentContentItemKey } from '../services/recent-content';
 import {
     type AddAndroidRadioStationInput,
     type AddAndroidRadioStationResult,
+    canAddAndroidRadioStation,
 } from '../services/radio-stations';
 import { styles } from '../theme/styles';
 import { colors } from '../theme/tokens';
 import { LIBRARY_SORTS, type LibrarySort } from '../types/library-tab';
 import { type RadioScreenProps } from '../types/radio';
 import { getContentItemKey } from '../utils/content-item';
+import { getDisplaySubtitle } from '../utils/playback-time';
 import { getSectionsById, sortHomeItemsByRecents } from '../utils/home-display';
+import {
+    selectActiveAndroidPlaybackItem,
+    useAndroidPlaybackState,
+} from '../state/playback-store';
 import { EmptyServerBackedScreen } from './EmptyServerBackedScreen';
 
 export const RadioScreen = memo(({
@@ -41,11 +47,12 @@ export const RadioScreen = memo(({
     serverConnections,
 }: RadioScreenProps) => {
     const contextMenu = useMediaContextMenu();
+    const activePlaybackItem = useAndroidPlaybackState(selectActiveAndroidPlaybackItem);
     const [activeSort, setActiveSort] = useState<LibrarySort>('recents');
     const [isSortMenuOpen, setIsSortMenuOpen] = useState(false);
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-    const navidromeConnections = useMemo(
-        () => serverConnections.filter((connection) => connection.type === ServerType.NAVIDROME),
+    const radioManageConnections = useMemo(
+        () => serverConnections.filter(canAddAndroidRadioStation),
         [serverConnections],
     );
     const section =
@@ -116,14 +123,14 @@ export const RadioScreen = memo(({
             <Pressable
                 accessibilityLabel="Add radio station"
                 accessibilityRole="button"
-                disabled={navidromeConnections.length === 0}
+                disabled={radioManageConnections.length === 0}
                 onPress={() => {
                     triggerImpact('light');
                     setIsAddModalOpen(true);
                 }}
                 style={[
                     styles.radioAddIconButton,
-                    navidromeConnections.length === 0 && styles.disabledButton,
+                    radioManageConnections.length === 0 && styles.disabledButton,
                 ]}
             >
                 <PlusGlyph color={colors.muted} size={18} />
@@ -159,8 +166,8 @@ export const RadioScreen = memo(({
                     {radioHeaderActions}
                 </View>
                 <Text style={[styles.mutedText, styles.radioEmptyText]}>
-                    {navidromeConnections.length === 0
-                        ? 'Connect a Navidrome server to add radio stations from Android.'
+                    {radioManageConnections.length === 0
+                        ? 'Connect a Samo or Navidrome server to add radio stations from Android.'
                         : 'No server-backed radio stations returned.'}
                 </Text>
                 <LibrarySortMenu
@@ -175,7 +182,7 @@ export const RadioScreen = memo(({
                 <AddRadioStationModal
                     onClose={() => setIsAddModalOpen(false)}
                     onSubmit={onAddStation}
-                    serverConnections={navidromeConnections}
+                    serverConnections={radioManageConnections}
                     visible={isAddModalOpen}
                 />
             </View>
@@ -193,6 +200,14 @@ export const RadioScreen = memo(({
     );
     const featuredIsPlaying =
         nowPlayingRadioId !== null && featuredStation.playback?.id === nowPlayingRadioId;
+    const featuredLiveSubtitle =
+        featuredIsPlaying && activePlaybackItem?.source === 'radio'
+            ? getDisplaySubtitle(activePlaybackItem.subtitle)
+            : undefined;
+    const featuredTileSubtitle =
+        featuredLiveSubtitle ??
+        featuredStation.nowPlayingText ??
+        getDisplaySubtitle(featuredStation.subtitle);
 
     return (
         <View style={styles.radioScreen}>
@@ -219,8 +234,10 @@ export const RadioScreen = memo(({
                     <Text numberOfLines={2} style={styles.radioHeroTitle}>
                         {featuredStation.title}
                     </Text>
-                    <Text numberOfLines={1} style={styles.radioHeroSubtitle}>
-                        {featuredIsPlaying ? 'Now playing' : 'Radio'}
+                    <Text numberOfLines={2} style={styles.radioHeroSubtitle}>
+                        {featuredIsPlaying
+                            ? (featuredLiveSubtitle ?? 'Now playing')
+                            : (featuredTileSubtitle ?? 'Internet radio')}
                     </Text>
                 </View>
                 {featuredStation.playback ? (
@@ -264,7 +281,22 @@ export const RadioScreen = memo(({
                                     <Text numberOfLines={2} style={styles.radioCardTitle}>
                                         {station.title}
                                     </Text>
-                                    {isPlaying ? (
+                                    {isPlaying &&
+                                    activePlaybackItem?.source === 'radio' &&
+                                    getDisplaySubtitle(activePlaybackItem.subtitle) ? (
+                                        <Text numberOfLines={2} style={styles.radioCardMeta}>
+                                            {getDisplaySubtitle(activePlaybackItem.subtitle)}
+                                        </Text>
+                                    ) : station.nowPlayingText ||
+                                      getDisplaySubtitle(station.subtitle) ? (
+                                        <Text
+                                            numberOfLines={2}
+                                            style={styles.radioCardMeta}
+                                        >
+                                            {station.nowPlayingText ??
+                                                getDisplaySubtitle(station.subtitle)}
+                                        </Text>
+                                    ) : isPlaying ? (
                                         <Text style={styles.radioCardNowPlaying}>Now playing</Text>
                                     ) : null}
                                 </Pressable>
@@ -285,7 +317,7 @@ export const RadioScreen = memo(({
             <AddRadioStationModal
                 onClose={() => setIsAddModalOpen(false)}
                 onSubmit={onAddStation}
-                serverConnections={navidromeConnections}
+                serverConnections={radioManageConnections}
                 visible={isAddModalOpen}
             />
         </View>
@@ -410,7 +442,7 @@ const AddRadioStationModal = ({
                     <Text style={styles.actionSheetTitle}>Add Radio Station</Text>
                     {serverConnections.length === 0 ? (
                         <Text style={styles.mutedText}>
-                            Connect a Navidrome server to add radio stations from Android.
+                            Connect a Samo or Navidrome server to add radio stations from Android.
                         </Text>
                     ) : (
                         <ScrollView

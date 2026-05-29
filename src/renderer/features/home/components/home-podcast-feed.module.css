@@ -1,0 +1,59 @@
+.card-button {
+    width: 100%;
+    padding: 0;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+    background: transparent;
+    border: 0;
+}
+
+.card-button:focus-visible {
+    outline: 2px solid var(--theme-colors-primary-filled);
+    outline-offset: 4px;
+}
+
+.art-wrap {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 1;
+    margin-bottom: var(--theme-spacing-xs);
+    overflow: hidden;
+    background: var(--theme-colors-surface);
+    border-radius: 1.25rem;
+
+    &::before {
+        position: absolute;
+        inset: 0;
+        z-index: 1;
+        pointer-events: none;
+        content: '';
+        background: rgb(0 0 0);
+        opacity: 0;
+        transition: opacity 150ms ease;
+    }
+}
+
+.card-button:hover .art-wrap::before,
+.card-button:focus-visible .art-wrap::before {
+    opacity: 0.55;
+}
+
+.overlay-controls {
+    opacity: 0;
+    transition: opacity 150ms ease;
+}
+
+.card-button:hover .overlay-controls,
+.card-button:focus-visible .overlay-controls,
+.overlay-controls:focus-within {
+    opacity: 1;
+}
+
+.title {
+    margin-bottom: 0.15rem;
+}
+
+.subtitle {
+    min-width: 0;
+}

@@ -11,7 +11,9 @@ import { fsDeleteItem, fsGetItem, fsSetItem } from './fs-storage';
 // fs-storage instead of SecureStore avoids the 2KB warning and keeps writes
 // cheap.
 
-const KEY_PREFIX = 'samo.android.detail-cache.';
+// v2 invalidates old cached playback payloads that may contain expired
+// server-signed stream URLs (especially ABS `?token=...` links).
+const KEY_PREFIX = 'samo.android.detail-cache.v2.';
 const CACHE_WRITE_DELAY_MS = 250;
 const MAX_CACHED_TRACKS = 250;
 const MAX_CACHED_RELATED_ITEMS = 40;

@@ -2,7 +2,8 @@ import { type MobilePlayableAudio } from '@samo/core/mobile';
 
 import { fsGetItem, fsSetItem } from './fs-storage';
 
-const LAST_PLAYED_KEY = 'samo.android.last-played-item.v1';
+// v2 drops stale persisted playback URLs from older app versions.
+const LAST_PLAYED_KEY = 'samo.android.last-played-item.v2';
 
 const isRecord = (value: unknown): value is Record<string, unknown> => {
     return typeof value === 'object' && value !== null;

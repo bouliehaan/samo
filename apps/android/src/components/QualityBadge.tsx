@@ -24,8 +24,6 @@ export const QualityBadgeRow = memo(({ items }: { items: AudioQualityBadgeItem[]
                     ]}
                 >
                     <Text
-                        adjustsFontSizeToFit
-                        minimumFontScale={0.72}
                         numberOfLines={1}
                         style={[
                             styles.qualityBadgeText,

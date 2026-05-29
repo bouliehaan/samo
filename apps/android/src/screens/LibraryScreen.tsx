@@ -246,6 +246,13 @@ export const LibraryScreen = memo(({
                     }
                     fullItems={browseFullItems}
                     isLoading={isEnrichingFullCollection && browseSeedItems.length === 0}
+                    itemSortMode={
+                        activeFilter === 'albums' || activeFilter === 'artists'
+                            ? activeSort === 'name'
+                                ? 'alphabetical'
+                                : 'playCount'
+                            : 'alphabetical'
+                    }
                     onSelectItem={onSelectItem}
                     seedItems={browseSeedItems}
                 />

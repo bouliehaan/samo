@@ -1,4 +1,7 @@
+import { patchSamoPlayback, type SamoPlaybackTargetKind } from '@samo/core/server';
+
 import { audiobookshelfController } from '/@/renderer/api/audiobookshelf/audiobookshelf-controller';
+import { samoFetch } from '/@/renderer/api/samo/samo-fetch';
 import { clampPosition } from '/@/renderer/store/audiobook-resume-math';
 import { type PlaybackSource, usePlaybackOwnerStore } from '/@/renderer/store/playback-owner.store';
 import { subscribePlayerStatus } from '/@/renderer/store/player.store';
@@ -6,7 +9,7 @@ import {
     AudiobookshelfLibraryItem,
     AudiobookshelfPodcastEpisode,
 } from '/@/shared/api/audiobookshelf/audiobookshelf-types';
-import { ServerListItemWithCredential } from '/@/shared/types/domain-types';
+import { ServerListItemWithCredential, ServerType } from '/@/shared/types/domain-types';
 import { PlayerStatus } from '/@/shared/types/types';
 import { LogCategory, logFn } from '/@/shared/utils/logger';
 
@@ -68,6 +71,53 @@ export function createAbsPlaybackSyncHandle(
             return;
         }
 
+        const currentTime = clampPosition(position, duration);
+        const drift = Math.abs(currentTime - lastServerSyncedPosition);
+        if (!options.force && !options.closeSession && drift < SERVER_PROGRESS_SYNC_INTERVAL_S) {
+            return;
+        }
+
+        resetProgressSync(currentTime);
+
+        if (server.type === ServerType.SAMO) {
+            const kind: SamoPlaybackTargetKind = requiresEpisode ? 'podcast-episode' : 'audiobook';
+            const targetId = requiresEpisode ? episode!.id : item.id;
+            const completed =
+                duration > 0 && currentTime > 0 && currentTime / Math.max(duration, 1) >= 0.96;
+
+            void patchSamoPlayback(
+                samoFetch,
+                {
+                    credential: server.credential,
+                    ndCredential: server.ndCredential,
+                    url: server.url,
+                },
+                kind,
+                targetId,
+                {
+                    completed,
+                    progressSeconds: Math.max(0, Math.round(currentTime)),
+                    touchLastPlayedAt: Boolean(
+                        options.closeSession || options.force || options.reason === 'pause',
+                    ),
+                    touchLastPositionAt: true,
+                },
+            ).catch((error) => {
+                logFn.warn(`[${logLabel}] Samo long-form progress sync failed`, {
+                    category: LogCategory.PLAYER,
+                    meta: {
+                        episodeId: episode?.id,
+                        error,
+                        itemId: item.id,
+                        kind,
+                        reason: options.reason,
+                        targetId,
+                    },
+                });
+            });
+            return;
+        }
+
         if (!sessionId) {
             if (!hasLoggedMissingSessionId) {
                 logFn.warn(`[${logLabel}] Audiobookshelf progress sync unavailable`, {
@@ -84,19 +134,11 @@ export function createAbsPlaybackSyncHandle(
             return;
         }
 
-        const currentTime = clampPosition(position, duration);
-        const drift = Math.abs(currentTime - lastServerSyncedPosition);
-        if (!options.force && !options.closeSession && drift < SERVER_PROGRESS_SYNC_INTERVAL_S) {
-            return;
-        }
-
         const now = Date.now();
         const timeListened =
             options.countListeningTime && lastServerSyncAtMs > 0
                 ? Math.max(0, (now - lastServerSyncAtMs) / 1000)
                 : 0;
-
-        resetProgressSync(currentTime);
 
         const payload = {
             currentTime,

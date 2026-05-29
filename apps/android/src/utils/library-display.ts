@@ -15,7 +15,7 @@ export const getLibraryMediaType = (
     if (item.type === 'artist') return 'artists';
     if (item.type === 'audiobook') return 'audiobooks';
     if (item.type === 'playlist') return 'playlists';
-    if (item.type === 'podcast') return 'podcasts';
+    if (item.type === 'podcast' || item.type === 'podcast-episode') return 'podcasts';
     if (item.type === 'radio') return 'radio';
     if (item.type === 'song') return 'songs';
 

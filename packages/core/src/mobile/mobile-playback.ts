@@ -22,6 +22,14 @@ import { ensureSamoStreamToken } from '../server/server-samo-stream-token';
 import { getServerConnectionKey } from '../server/server-session';
 import { ServerType } from '../server/server-types';
 
+import {
+    resolveRadioPlaybackDisplay,
+    resolveSamoInternetRadioPlaybackDisplay,
+} from './mobile-radio-metadata';
+
+/** Relative skip interval for audiobook and podcast scrubbing in mobile/desktop UIs. */
+export const LONG_FORM_RELATIVE_SKIP_SECONDS = 15;
+
 // Re-exports for Android back-compat — these symbols used to live here.
 export {
     getSubsonicMusicQuality,
@@ -89,6 +97,10 @@ export interface MobilePlayableAudio {
     httpHeaders?: Record<string, string>;
     id: string;
     isLive?: boolean;
+    /** Samo internet-radio station id for metadata refresh while playing. */
+    radioStationId?: string;
+    /** Station display name when [title] is ICY track metadata. */
+    radioStationName?: string;
     initialPositionSeconds?: number;
     mimeType?: string;
     /**
@@ -97,8 +109,17 @@ export interface MobilePlayableAudio {
      * player position before syncing progress back to the server.
      */
     progressOffsetSeconds?: number;
+    /** Podcast episode release time (epoch ms) for player metadata. */
+    publishedAt?: number;
     quality: MobilePlaybackQuality;
+    /**
+     * Android native queue auto-advance: bearer token for minting a fresh
+     * `stream_token` without waking JS (Samo servers only).
+     */
+    serverBearerToken?: string;
     source: PlaybackSource;
+    /** Samo server base URL paired with [serverBearerToken]. */
+    serverUrl?: string;
     subtitle?: string;
     timelineSegments?: MobilePlaybackSegment[];
     title: string;
@@ -405,8 +426,11 @@ export const buildRadioPlayback = (
         return null;
     }
 
+    const display = resolveRadioPlaybackDisplay(station.name);
+
     return {
         artworkUrl,
+        artist: display.playerArtist,
         contentSourceId: getServerConnectionKey(authentication),
         homepageUrl: station.homepageUrl,
         id: `${authentication.type}:${authentication.url}:radio:${station.id}`,
@@ -417,8 +441,10 @@ export const buildRadioPlayback = (
             losslessRequired: false,
             serverTranscodeRequested: false,
         },
+        radioStationName: station.name,
         source: 'radio',
-        title: station.name,
+        subtitle: display.playerSubtitle,
+        title: display.playerTitle,
         url: station.streamUrl,
     };
 };
@@ -503,18 +529,102 @@ export const buildSamoMusicPlayback = (
     };
 };
 
+export const parseSamoAudiobookIdFromPlaybackId = (playbackId: string): string | undefined => {
+    const match = playbackId.match(/:audiobook:([^:]+)$/);
+    return match?.[1];
+};
+
+export const buildAudiobookTimelineSegments = (
+    chapters: Array<{ id?: string; startSeconds?: number; title?: string }> | undefined,
+    durationSeconds: number | undefined,
+    ownerId: string,
+): MobilePlaybackSegment[] => {
+    const orderedChapters = (chapters ?? [])
+        .map((chapter, index) => ({ chapter, index }))
+        .filter(
+            ({ chapter }) =>
+                chapter.startSeconds !== undefined &&
+                Number.isFinite(chapter.startSeconds) &&
+                chapter.startSeconds >= 0 &&
+                (!durationSeconds || chapter.startSeconds < durationSeconds),
+        )
+        .sort((left, right) => (left.chapter.startSeconds ?? 0) - (right.chapter.startSeconds ?? 0))
+        .filter(
+            ({ chapter }, index, ordered) =>
+                index === 0 ||
+                chapter.startSeconds !== ordered[index - 1].chapter.startSeconds,
+        );
+
+    return orderedChapters.map(({ chapter, index }, orderedIndex) => {
+        const startSeconds = chapter.startSeconds ?? 0;
+        const nextStart = orderedChapters[orderedIndex + 1]?.chapter.startSeconds;
+        const segmentDuration =
+            nextStart !== undefined
+                ? Math.max(0, nextStart - startSeconds)
+                : durationSeconds
+                  ? Math.max(0, durationSeconds - startSeconds)
+                  : undefined;
+
+        return {
+            durationSeconds: segmentDuration,
+            id: chapter.id ?? `${ownerId}:chapter:${index}`,
+            startSeconds,
+            title: chapter.title?.trim() || `Chapter ${orderedIndex + 1}`,
+        };
+    });
+};
+
+/**
+ * Samo audiobook streams are opened at a book-global byte offset on the server
+ * (`progressSeconds` query). The native player reports position 0 at that
+ * offset — store it in [progressOffsetSeconds] and rebuild the stream URL when
+ * jumping chapters.
+ */
+export const applySamoAudiobookBookPosition = (
+    playback: MobilePlayableAudio,
+    bookStartSeconds: number,
+    authentication: ServerAuthenticationResult,
+    streamToken?: string,
+): MobilePlayableAudio => {
+    const audiobookId = parseSamoAudiobookIdFromPlaybackId(playback.id);
+    if (!audiobookId) {
+        return playback;
+    }
+
+    const bookStart = Math.max(0, Math.floor(bookStartSeconds));
+
+    return {
+        ...playback,
+        initialPositionSeconds: 0,
+        progressOffsetSeconds: bookStart,
+        url: getSamoAudiobookStreamUrl(authentication, audiobookId, {
+            progressSeconds: bookStart,
+            streamToken,
+        }),
+    };
+};
+
 export const buildSamoAudiobookPlayback = (
     authentication: ServerAuthenticationResult,
     audiobook: SamoAudiobook,
     artworkUrl?: string,
     streamToken?: string,
+    options?: {
+        startSeconds?: number;
+        timelineSegments?: MobilePlaybackSegment[];
+    },
 ): MobilePlayableAudio | null => {
     if (!audiobook.id) return null;
     const title = audiobook.book?.title;
     if (!title) return null;
 
     const audioFile = audiobook.primaryAudioFile ?? audiobook.audioFiles?.[0];
-    const progressSeconds = audiobook.progress?.progressSeconds;
+    const bookStart = Math.max(
+        0,
+        Math.floor(
+            options?.startSeconds ?? audiobook.progress?.progressSeconds ?? 0,
+        ),
+    );
     const quality = samoQualityForFile(audioFile, 'android-direct', false);
 
     const authors = audiobook.book?.authors
@@ -522,22 +632,32 @@ export const buildSamoAudiobookPlayback = (
         .filter(Boolean)
         .join(', ');
 
-    return {
-        artworkUrl,
-        contentSourceId: getServerConnectionKey(authentication),
-        durationSeconds: audiobook.durationSeconds,
-        id: `${authentication.type}:${authentication.url}:audiobook:${audiobook.id}`,
-        initialPositionSeconds: progressSeconds,
-        mimeType: audioFile?.mimeType,
-        quality,
-        source: 'audiobook',
-        subtitle: authors,
-        title,
-        url: getSamoAudiobookStreamUrl(authentication, audiobook.id, {
-            progressSeconds,
-            streamToken,
-        }),
-    };
+    const timelineSegments =
+        options?.timelineSegments ??
+        buildAudiobookTimelineSegments(audiobook.chapters, audiobook.durationSeconds, audiobook.id);
+
+    return applySamoAudiobookBookPosition(
+        {
+            artworkUrl,
+            contentSourceId: getServerConnectionKey(authentication),
+            durationSeconds: audiobook.durationSeconds,
+            id: `${authentication.type}:${authentication.url}:audiobook:${audiobook.id}`,
+            mimeType: audioFile?.mimeType,
+            quality,
+            source: 'audiobook',
+            subtitle: authors,
+            timelineSegments:
+                timelineSegments.length > 1 ? timelineSegments : undefined,
+            title,
+            url: getSamoAudiobookStreamUrl(authentication, audiobook.id, {
+                progressSeconds: bookStart,
+                streamToken,
+            }),
+        },
+        bookStart,
+        authentication,
+        streamToken,
+    );
 };
 
 export const buildSamoPodcastEpisodePlayback = (
@@ -555,22 +675,33 @@ export const buildSamoPodcastEpisodePlayback = (
     if (!resolvedShowId) return null;
 
     const audioFile = episode.audioFiles?.[0];
-    const progressSeconds = episode.playback?.progressSeconds;
+    const progressSeconds =
+        episode.progress?.progressSeconds ?? episode.playback?.progressSeconds;
+    const resumeSeconds =
+        progressSeconds && progressSeconds > 0 ? Math.round(progressSeconds) : undefined;
     const quality = samoQualityForFile(audioFile, 'android-direct', false);
+
+    const publishedAtMs = episode.publishedAt
+        ? Date.parse(episode.publishedAt)
+        : undefined;
 
     return {
         artworkUrl,
         contentSourceId: getServerConnectionKey(authentication),
         durationSeconds: episode.duration,
         id: buildSamoPodcastPlaybackId(authentication, resolvedShowId, episode.id),
-        initialPositionSeconds: progressSeconds,
+        initialPositionSeconds: resumeSeconds,
         mimeType: audioFile?.mimeType ?? episode.enclosureType,
+        publishedAt:
+            publishedAtMs !== undefined && Number.isFinite(publishedAtMs)
+                ? publishedAtMs
+                : undefined,
         quality,
         source: 'podcast',
         subtitle: episode.podcastTitle,
         title,
         url: getSamoPodcastEpisodeStreamUrl(authentication, episode.id, {
-            offsetSeconds: progressSeconds,
+            offsetSeconds: resumeSeconds,
             streamToken,
         }),
     };
@@ -587,9 +718,12 @@ export const buildSamoInternetRadioPlayback = (
         return null;
     }
 
+    const display = resolveSamoInternetRadioPlaybackDisplay(station);
+
     return {
         artworkImageId: pickSamoCatalogImageId(station.coverId),
         artworkUrl,
+        artist: display.playerArtist,
         contentSourceId: getServerConnectionKey(authentication),
         homepageUrl: station.homepageUrl,
         id: `${getServerConnectionKey(authentication)}:internet-radio:${station.id}`,
@@ -602,8 +736,11 @@ export const buildSamoInternetRadioPlayback = (
             losslessRequired: false,
             serverTranscodeRequested: false,
         },
+        radioStationId: station.id,
+        radioStationName: display.stationName,
         source: 'radio',
-        title: station.name,
+        subtitle: display.playerSubtitle,
+        title: display.playerTitle,
         url: streamUrl,
     };
 };

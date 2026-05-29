@@ -1,13 +1,17 @@
+import { buildMobilePodcastFeedEpisodes } from '@samo/core/mobile';
 import {
     ensureSamoStreamToken,
     getCachedSamoStreamToken,
     getSamoAudiobookStreamUrl,
     getSamoPodcastEpisodeStreamUrl,
+    listSamoAllPodcastEpisodes,
     listSamoAudiobooks,
     listSamoPodcastEpisodes,
     listSamoPodcasts,
     resolveSamoAudiobookArtworkUrl,
     resolveSamoPodcastArtworkUrl,
+    resolveSamoPodcastEpisodeArtworkUrl,
+    samoItemsOf,
     type SamoAudiobook,
     type SamoPodcast,
     type SamoPodcastEpisode,
@@ -29,6 +33,8 @@ const browserFetch = samoFetch;
 export const SAMO_LONG_FORM_SOURCE = 'samo-long-form' as const;
 
 export type SamoBackedLibraryItem = AudiobookshelfLibraryItem & {
+    samoPath?: string;
+    samoRssFeed?: { feedUrl?: string; id: string };
     samoSource?: typeof SAMO_LONG_FORM_SOURCE;
 };
 
@@ -46,12 +52,6 @@ const ensureStreamToken = async (server: ServerListItemWithCredential) => {
     } catch {
         return getCachedSamoStreamToken(auth);
     }
-};
-
-const samoItemsOf = <T>(response: { items?: T[] } | T[] | undefined): T[] => {
-    if (!response) return [];
-    if (Array.isArray(response)) return response;
-    return response.items ?? [];
 };
 
 const publishedYear = (value?: number | string) => {
@@ -118,18 +118,25 @@ export const samoAudiobookToLibraryItem = (
 
 export const samoPodcastEpisodeToAbsEpisode = (
     episode: SamoPodcastEpisode,
-): AudiobookshelfPodcastEpisode => ({
-    audioFile: {
+): AudiobookshelfPodcastEpisode => {
+    const progress = episode.progress ?? episode.playback;
+    const progressSeconds = progress?.progressSeconds;
+
+    return {
+        audioFile: {
+            duration: episode.duration,
+            mimeType: episode.enclosureType ?? episode.audioFiles?.[0]?.mimeType,
+        },
+        completed: progress?.completed,
+        description: episode.description,
         duration: episode.duration,
-        mimeType: episode.enclosureType ?? episode.audioFiles?.[0]?.mimeType,
-    },
-    description: episode.description,
-    duration: episode.duration,
-    id: episode.id,
-    publishedAt: episode.publishedAt ? Date.parse(episode.publishedAt) : undefined,
-    subtitle: episode.subtitle,
-    title: episode.title ?? episode.name ?? 'Untitled episode',
-});
+        id: episode.id,
+        progressSeconds,
+        publishedAt: episode.publishedAt ? Date.parse(episode.publishedAt) : undefined,
+        subtitle: episode.subtitle,
+        title: episode.title ?? episode.name ?? 'Untitled episode',
+    };
+};
 
 export const samoPodcastToLibraryItem = (
     podcast: SamoPodcast,
@@ -142,6 +149,10 @@ export const samoPodcastToLibraryItem = (
     return {
         id: podcast.id,
         libraryId: podcast.libraryId ?? 'samo-podcasts',
+        samoPath: podcast.path,
+        samoRssFeed: podcast.rssFeed?.id
+            ? { feedUrl: podcast.rssFeed.feedUrl, id: podcast.rssFeed.id }
+            : undefined,
         media: {
             episodes: episodes.map(samoPodcastEpisodeToAbsEpisode),
             metadata: {
@@ -194,6 +205,29 @@ export const listSamoPodcastLibraryItems = async (
             );
         }),
     );
+};
+
+export type SamoPodcastFeedEntry = {
+    artworkUrl?: string;
+    episode: SamoPodcastEpisode;
+};
+
+export const fetchSamoHomePodcastFeed = async (
+    server: ServerListItemWithCredential,
+    signal?: AbortSignal,
+): Promise<SamoPodcastFeedEntry[]> => {
+    const auth = samoAuth(server);
+    const streamToken = await ensureStreamToken(server);
+    const response = await listSamoAllPodcastEpisodes(browserFetch, auth, {
+        limit: 300,
+        signal,
+    });
+    const episodes = buildMobilePodcastFeedEpisodes(samoItemsOf(response));
+
+    return episodes.map((episode) => ({
+        artworkUrl: resolveSamoPodcastEpisodeArtworkUrl(auth, episode, streamToken),
+        episode,
+    }));
 };
 
 export const loadSamoPodcastLibraryItem = async (
@@ -251,7 +285,8 @@ export const resolveSamoPodcastPlaySession = async (
     const loaded = await loadSamoPodcastLibraryItem(server, item.id);
     const episodesResponse = await samoExtras.getPodcastEpisodes(server, item.id);
     const samoEpisode = samoItemsOf(episodesResponse).find((entry) => entry.id === episode.id);
-    const progressSeconds = samoEpisode?.playback?.progressSeconds;
+    const progressSeconds =
+        samoEpisode?.progress?.progressSeconds ?? samoEpisode?.playback?.progressSeconds;
     const contentUrl = getSamoPodcastEpisodeStreamUrl(auth, episode.id, {
         offsetSeconds: progressSeconds,
         streamToken,

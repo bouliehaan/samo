@@ -9,6 +9,7 @@ import {
     type MobilePlayableAudio,
     type MobilePlaybackSegment,
     type MobileSearchItem,
+    LONG_FORM_RELATIVE_SKIP_SECONDS,
 } from '@samo/core/mobile';
 import { type ServerAuthenticationResult } from '@samo/core/server';
 import { FlashList } from '@shopify/flash-list';
@@ -43,11 +44,9 @@ import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import LinearGradient from 'react-native-linear-gradient';
 import Reanimated, {
     interpolate,
-    interpolateColor,
     runOnJS,
     type SharedValue,
     useAnimatedReaction,
-    useAnimatedScrollHandler,
     useAnimatedStyle,
     useSharedValue,
     withSpring,
@@ -87,6 +86,7 @@ import {
 import { getContentSourceFromPlaybackItem } from '../utils/content-source';
 import { getPersistedServerAuthKey } from '../services/persisted-server';
 import { useServerConnections } from '../contexts/server-connections';
+import { getPlayerPositionMsForAbsProgress } from '../utils/abs-progress-math';
 import { artworkSourceUri, resolvePlaybackArtworkSourceForDisplay } from '../utils/samo-artwork-url';
 import {
     getAndroidPlaybackState,
@@ -101,9 +101,11 @@ import {
     formatPlaybackTime,
     getActivePlaybackStatus,
     getDurationLabel,
+    getPlayableDisplayMetadata,
     getPlaybackDisplayMetadata,
     getPlaybackDurationMs,
     getStablePlaybackPositionMs,
+    getTimelinePositionSeconds,
     isLivePlayback,
 } from '../utils/playback-time';
 import { buildBackdropStops, darkenColor, pickAlbumEssenceColor } from '../utils/color';
@@ -170,7 +172,7 @@ export const MiniPlayer = memo(({
 }) => {
     const [isMiniInteractive, setIsMiniInteractive] = useState(true);
     useAnimatedReaction(
-        () => playerProgress.value < 0.12,
+        () => playerProgress.value < 0.08,
         (interactive, previous) => {
             if (interactive !== previous) {
                 runOnJS(setIsMiniInteractive)(interactive);
@@ -179,20 +181,7 @@ export const MiniPlayer = memo(({
     );
 
     const miniAnimatedStyle = useAnimatedStyle(() => ({
-        opacity: interpolate(playerProgress.value, [0, 0.26, 0.55], [1, 1, 0], 'clamp'),
-        transform: [
-            {
-                translateY: interpolate(
-                    playerProgress.value,
-                    [0, 0.55],
-                    [0, -32],
-                    'clamp',
-                ),
-            },
-            {
-                scale: interpolate(playerProgress.value, [0, 0.55], [1, 0.985], 'clamp'),
-            },
-        ],
+        opacity: interpolate(playerProgress.value, [0, 0.2], [1, 0], 'clamp'),
     }));
 
     const settleSpring = reducedMotion ? REDUCED_MOTION_SPRING : OPEN_SPRING;
@@ -234,11 +223,19 @@ export const MiniPlayer = memo(({
         ? playbackState.item
         : lastPlayedItem;
     const isPlaying = playbackState.status === 'playing' || playbackState.status === 'buffering';
-    const activeDisplay = isActive ? getPlaybackDisplayMetadata(playbackState) : null;
-    const title = activeDisplay?.title ?? displayItem?.title ?? '';
-    const subtitle = isActive
-        ? (playbackState.message ?? activeDisplay?.subtitle)
-        : (displayItem?.subtitle ?? undefined);
+    if (!displayItem) {
+        return null;
+    }
+    const displayMetadata = isActive
+        ? getPlaybackDisplayMetadata(playbackState)
+        : getPlayableDisplayMetadata(
+              displayItem,
+              (displayItem.initialPositionSeconds ?? 0) * 1000,
+          );
+    const title = displayMetadata.title || displayItem?.title || '';
+    const metadataLines = isActive && playbackState.message
+        ? [title, playbackState.message]
+        : displayMetadata.lines;
     const miniBadgeProfile =
         displayItem?.source === 'music' ? getPlaybackQualityProfile(displayItem) : undefined;
 
@@ -246,10 +243,6 @@ export const MiniPlayer = memo(({
         event.stopPropagation();
         onTogglePlayback();
     };
-
-    if (!displayItem) {
-        return null;
-    }
 
     return (
         <GestureDetector gesture={miniDragGesture}>
@@ -285,13 +278,17 @@ export const MiniPlayer = memo(({
                     </View>
                     <View style={styles.miniPlayerText}>
                         <Text numberOfLines={1} style={styles.miniPlayerTitle}>
-                            {title || 'Nothing playing'}
+                            {metadataLines[0] || title || 'Nothing playing'}
                         </Text>
-                        {subtitle ? (
-                            <Text numberOfLines={1} style={styles.miniPlayerSubtitle}>
-                                {subtitle}
+                        {metadataLines.slice(1).map((line) => (
+                            <Text
+                                key={line}
+                                numberOfLines={1}
+                                style={styles.miniPlayerSubtitle}
+                            >
+                                {line}
                             </Text>
-                        ) : null}
+                        ))}
                     </View>
                     <QualityBadge player profile={miniBadgeProfile} />
                     <Pressable
@@ -406,6 +403,7 @@ export const FullScreenPlayer = memo(({
     onPlayQueueIndex,
     onPrevious,
     onSeek,
+    onSkipBySeconds,
     onToggleShuffle,
     onTogglePlayback,
     playbackQueueRevision: _playbackQueueRevision,
@@ -431,6 +429,7 @@ export const FullScreenPlayer = memo(({
     onPlayQueueIndex?: (index: number) => void;
     onPrevious: () => void;
     onSeek: (positionMs: number) => void;
+    onSkipBySeconds?: (offsetSeconds: number) => void;
     onTogglePlayback: () => void;
     onToggleShuffle: () => void;
     /** Bumps when the JS queue ref mutates so memoized player re-reads `queue`. */
@@ -805,11 +804,7 @@ export const FullScreenPlayer = memo(({
     const playerAnimatedStyle = useAnimatedStyle(() => {
         const p = playerProgress.value;
         return {
-            backgroundColor: interpolateColor(
-                p,
-                [0, 0.2, 1],
-                ['#1c1c1e', '#0a0a0a', '#000000'],
-            ),
+            backgroundColor: '#000000',
             borderTopLeftRadius: shellTopRadius(p),
             borderTopRightRadius: shellTopRadius(p),
             elevation: shellElevation(p),
@@ -843,7 +838,7 @@ export const FullScreenPlayer = memo(({
     );
 
     useAnimatedReaction(
-        () => playerProgress.value > 0.035,
+        () => playerProgress.value > 0.02,
         (interactive, previous) => {
             if (interactive !== previous) {
                 runOnJS(setIsShellInteractive)(interactive);
@@ -865,8 +860,11 @@ export const FullScreenPlayer = memo(({
     const isPlaying = playbackState.status === 'playing' || playbackState.status === 'buffering';
     const display = activeItem
         ? getPlaybackDisplayMetadata(playbackState)
-        : { subtitle: displayItem.subtitle, title: displayItem.title ?? 'Unknown title' };
-    const displayTitle = display.title || displayItem.title || 'Unknown title';
+        : getPlayableDisplayMetadata(
+              displayItem,
+              (displayItem.initialPositionSeconds ?? 0) * 1000,
+          );
+    const displayTitle = display.lines[0] || display.title || displayItem.title || 'Unknown title';
     const isMusicSource = displayItem.source === 'music';
     const qualityItems = isMusicSource
         ? buildAudioQualityBadgeItems({
@@ -875,9 +873,13 @@ export const FullScreenPlayer = memo(({
               mode: 'detail',
           })
         : [];
-    const showShuffleControl =
-        displayItem.source !== 'audiobook' && displayItem.source !== 'radio';
+    const isLongFormSource =
+        displayItem.source === 'audiobook' || displayItem.source === 'podcast';
+    const showShuffleControl = !isLongFormSource && displayItem.source !== 'radio';
     const showSkipControls = displayItem.source !== 'radio';
+    const showLongFormSkip = Boolean(onSkipBySeconds) && isLongFormSource;
+    const showSleepInBottomBar = isLongFormSource;
+    const showCastInMainControls = displayItem.source === 'radio';
     const castButton = (
         <Pressable
             accessibilityLabel={
@@ -899,8 +901,35 @@ export const FullScreenPlayer = memo(({
             />
         </Pressable>
     );
-    const positionMs =
+    const sleepTimerButton = (
+        <Pressable
+            accessibilityLabel="Sleep Timer"
+            accessibilityRole="button"
+            onPress={() =>
+                sleepSecondsLeft !== null ? cancelSleepTimer() : setSleepMenuVisible(true)
+            }
+            style={styles.fullPlayerBottomBarButton}
+        >
+            <SleepTimerGlyph
+                active={sleepSecondsLeft !== null}
+                color={sleepSecondsLeft !== null ? colors.accent : colors.text}
+            />
+        </Pressable>
+    );
+    const filePositionMs =
         playbackState.status !== 'idle' ? (playbackState.positionMs ?? 0) : 0;
+    const positionMs =
+        activeItem && activeItem.source === 'audiobook'
+            ? getTimelinePositionSeconds(activeItem, filePositionMs) * 1000
+            : filePositionMs;
+    const handleTimelineSeek = (bookOrFilePositionMs: number) => {
+        if (!activeItem || activeItem.source !== 'audiobook') {
+            onSeek(bookOrFilePositionMs);
+            return;
+        }
+
+        onSeek(getPlayerPositionMsForAbsProgress(bookOrFilePositionMs / 1000, activeItem));
+    };
     const timelineSegments = displayItem.timelineSegments;
     return (
         <>
@@ -1038,17 +1067,20 @@ export const FullScreenPlayer = memo(({
                 ]}
             >
                 <View style={styles.fullPlayerMetadata}>
-                    <Text
-                        numberOfLines={2}
-                        style={styles.fullPlayerTitle}
-                    >
-                        {displayTitle}
-                    </Text>
-                    {display.subtitle ? (
-                        <Text numberOfLines={1} style={styles.fullPlayerSubtitle}>
-                            {display.subtitle}
+                    {display.lines.length > 0 ? (
+                        <Text numberOfLines={2} style={styles.fullPlayerTitle}>
+                            {display.lines[0]}
                         </Text>
-                    ) : null}
+                    ) : (
+                        <Text numberOfLines={2} style={styles.fullPlayerTitle}>
+                            {displayTitle}
+                        </Text>
+                    )}
+                    {display.lines.slice(1).map((line) => (
+                        <Text key={line} numberOfLines={1} style={styles.fullPlayerSubtitle}>
+                            {line}
+                        </Text>
+                    ))}
                     {qualityItems.length > 0 ? (
                         <View style={styles.fullPlayerQualityRow}>
                             <QualityBadgeRow items={qualityItems} />
@@ -1060,7 +1092,7 @@ export const FullScreenPlayer = memo(({
                     <SegmentedSeekBar
                         durationMs={durationMs}
                         isLive={isLive}
-                        onSeek={onSeek}
+                        onSeek={handleTimelineSeek}
                         positionMs={positionMs}
                         segments={timelineSegments}
                         tint={colors.accent}
@@ -1080,50 +1112,101 @@ export const FullScreenPlayer = memo(({
                 </View>
 
                 <View style={styles.fullPlayerControls}>
-                    <View style={styles.fullPlayerControlSide}>
+                    <View
+                        style={[
+                            styles.fullPlayerControlSide,
+                            styles.fullPlayerControlSideLeft,
+                            showLongFormSkip && styles.fullPlayerControlSideLongForm,
+                        ]}
+                    >
                         {showShuffleControl ? (
-                            <PlayerIconButton accessibilityLabel="Shuffle" onPress={onToggleShuffle}>
+                            <PlayerIconButton
+                                accessibilityLabel="Shuffle"
+                                onPress={onToggleShuffle}
+                            >
                                 <ShuffleGlyph active={isShuffled} color={colors.text} />
                             </PlayerIconButton>
-                        ) : (
+                        ) : showCastInMainControls ? (
                             castButton
-                        )}
+                        ) : null}
                         {showSkipControls ? (
                             <PlayerIconButton accessibilityLabel="Previous" onPress={onPrevious}>
-                                <TrackSkipGlyph color={colors.text} direction={-1} />
+                                <TrackSkipGlyph color={colors.text} direction={-1} size={24} />
                             </PlayerIconButton>
                         ) : (
                             <View style={styles.playerControlButtonSpacer} />
                         )}
+                        {showLongFormSkip ? (
+                            <PlayerIconButton
+                                accessibilityLabel={`Back ${LONG_FORM_RELATIVE_SKIP_SECONDS} seconds`}
+                                onPress={() =>
+                                    onSkipBySeconds?.(-LONG_FORM_RELATIVE_SKIP_SECONDS)
+                                }
+                            >
+                                <Text style={styles.longFormSkipLabel}>
+                                    −{LONG_FORM_RELATIVE_SKIP_SECONDS}
+                                </Text>
+                            </PlayerIconButton>
+                        ) : null}
                     </View>
-                    <PlayerIconButton
-                        accessibilityLabel={isPlaying ? 'Pause' : 'Play'}
-                        onPress={onTogglePlayback}
-                        primary
-                    >
-                        <PlayPauseGlyph
-                            color={colors.text}
-                            isPlaying={isPlaying}
-                            size={FULL_PLAYER_PLAY_GLYPH_SIZE}
-                        />
-                    </PlayerIconButton>
-                    <View style={[styles.fullPlayerControlSide, styles.fullPlayerControlSideRight]}>
-                        {showSkipControls ? (
-                            <PlayerIconButton accessibilityLabel="Next" onPress={onNext}>
-                                <TrackSkipGlyph color={colors.text} direction={1} />
-                            </PlayerIconButton>
-                        ) : (
-                            <View style={styles.playerControlButtonSpacer} />
-                        )}
+                    <View style={styles.playerControlPrimarySlot}>
                         <PlayerIconButton
-                            accessibilityLabel="Sleep Timer"
-                            onPress={() => sleepSecondsLeft !== null ? cancelSleepTimer() : setSleepMenuVisible(true)}
+                            accessibilityLabel={isPlaying ? 'Pause' : 'Play'}
+                            onPress={onTogglePlayback}
+                            primary
                         >
-                            <SleepTimerGlyph
-                                active={sleepSecondsLeft !== null}
-                                color={sleepSecondsLeft !== null ? colors.accent : colors.text}
+                            <PlayPauseGlyph
+                                color={colors.text}
+                                isPlaying={isPlaying}
+                                size={FULL_PLAYER_PLAY_GLYPH_SIZE}
                             />
                         </PlayerIconButton>
+                    </View>
+                    <View
+                        style={[
+                            styles.fullPlayerControlSide,
+                            styles.fullPlayerControlSideRight,
+                            showLongFormSkip && styles.fullPlayerControlSideLongForm,
+                        ]}
+                    >
+                        {showLongFormSkip ? (
+                            <PlayerIconButton
+                                accessibilityLabel={`Forward ${LONG_FORM_RELATIVE_SKIP_SECONDS} seconds`}
+                                onPress={() =>
+                                    onSkipBySeconds?.(LONG_FORM_RELATIVE_SKIP_SECONDS)
+                                }
+                            >
+                                <Text style={styles.longFormSkipLabel}>
+                                    +{LONG_FORM_RELATIVE_SKIP_SECONDS}
+                                </Text>
+                            </PlayerIconButton>
+                        ) : null}
+                        {showSkipControls ? (
+                            <PlayerIconButton accessibilityLabel="Next" onPress={onNext}>
+                                <TrackSkipGlyph color={colors.text} direction={1} size={24} />
+                            </PlayerIconButton>
+                        ) : (
+                            <View style={styles.playerControlButtonSpacer} />
+                        )}
+                        {!showSleepInBottomBar ? (
+                            <PlayerIconButton
+                                accessibilityLabel="Sleep Timer"
+                                onPress={() =>
+                                    sleepSecondsLeft !== null
+                                        ? cancelSleepTimer()
+                                        : setSleepMenuVisible(true)
+                                }
+                            >
+                                <SleepTimerGlyph
+                                    active={sleepSecondsLeft !== null}
+                                    color={
+                                        sleepSecondsLeft !== null
+                                            ? colors.accent
+                                            : colors.text
+                                    }
+                                />
+                            </PlayerIconButton>
+                        ) : null}
                     </View>
                 </View>
 
@@ -1133,18 +1216,17 @@ export const FullScreenPlayer = memo(({
                     </Text>
                 )}
 
-                {/* Bottom row — cast on left when shuffle is visible. For radio
-                    and audiobooks the cast button moves up into the (now empty)
-                    shuffle slot, so the bar only carries the casting-status
-                    label when connected. */}
-                {(showShuffleControl || castState.isConnected) ? (
+                {(!showCastInMainControls || castState.isConnected || showSleepInBottomBar) ? (
                     <View style={styles.fullPlayerBottomBar}>
-                        {showShuffleControl ? castButton : null}
+                        {!showCastInMainControls ? castButton : null}
                         {castState.isConnected ? (
                             <Text numberOfLines={1} style={styles.fullPlayerCastStatus}>
                                 Casting to {castState.deviceName ?? 'Chromecast'}
                             </Text>
-                        ) : null}
+                        ) : (
+                            <View style={styles.fullPlayerBottomBarSpacer} />
+                        )}
+                        {showSleepInBottomBar ? sleepTimerButton : null}
                     </View>
                 ) : null}
 
@@ -1166,6 +1248,7 @@ export const FullScreenPlayer = memo(({
                 displayItem.source === 'audiobook' ? timelineSegments : undefined
             }
             currentPositionMs={positionMs}
+            progressOffsetSeconds={displayItem.progressOffsetSeconds}
             interactive={isQueueInteractive}
             onChapterSeek={onSeek}
             onClose={closeQueue}
@@ -1536,6 +1619,7 @@ export const QueueSheetOverlay = memo(({
     backdropStyle,
     chapters,
     currentPositionMs,
+    progressOffsetSeconds,
     interactive,
     onChapterSeek,
     onClose,
@@ -1547,6 +1631,7 @@ export const QueueSheetOverlay = memo(({
     backdropStyle: ReturnType<typeof useAnimatedStyle>;
     chapters?: MobilePlaybackSegment[];
     currentPositionMs?: number;
+    progressOffsetSeconds?: number;
     interactive: boolean;
     onChapterSeek?: (positionMs: number) => void;
     onClose: () => void;
@@ -1557,7 +1642,8 @@ export const QueueSheetOverlay = memo(({
 }) => {
     const items = queue?.items ?? [];
     const showingChapters = (chapters?.length ?? 0) > 0;
-    const positionSeconds = (currentPositionMs ?? 0) / 1000;
+    const positionSeconds =
+        (currentPositionMs ?? 0) / 1000 + (progressOffsetSeconds ?? 0);
     const activeChapterIndex = showingChapters
         ? findActiveChapterIndex(chapters!, positionSeconds)
         : -1;
@@ -1577,16 +1663,12 @@ export const QueueSheetOverlay = memo(({
         },
         [chapters, interactive, items, showingChapters],
     );
-    const listScrollY = useSharedValue(0);
-    const listTopPullStartX = useSharedValue(0);
-    const listTopPullStartY = useSharedValue(0);
-    const listTopPullStartedAtTop = useSharedValue(false);
-    const listTopPullActive = useSharedValue(false);
-    const handleListScroll = useAnimatedScrollHandler({
-        onScroll: (event) => {
-            listScrollY.value = Math.max(0, event.contentOffset.y);
-        },
-    });
+    const listScrollYRef = useRef(0);
+    const listDragStartYRef = useRef<number | null>(null);
+    const listDragStartedAtTopRef = useRef(false);
+    const handleListScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
+        listScrollYRef.current = Math.max(0, event.nativeEvent.contentOffset.y);
+    }, []);
     const dismissGesture = useMemo(
         () =>
             Gesture.Pan()
@@ -1603,82 +1685,21 @@ export const QueueSheetOverlay = memo(({
                 }),
         [onClose],
     );
-    const listTopPullGesture = useMemo(
-        () =>
-            Gesture.Pan()
-                .enabled(interactive)
-                .manualActivation(true)
-                .onTouchesDown((event) => {
-                    'worklet';
-                    const touch = event.allTouches[0];
-                    if (!touch) {
-                        return;
-                    }
-                    listTopPullStartX.value = touch.absoluteX;
-                    listTopPullStartY.value = touch.absoluteY;
-                    listTopPullStartedAtTop.value = listScrollY.value <= 2;
-                    listTopPullActive.value = false;
-                })
-                .onTouchesMove((event, state) => {
-                    'worklet';
-                    if (listTopPullActive.value) {
-                        return;
-                    }
-
-                    const touch = event.allTouches[0];
-                    if (!touch) {
-                        state.fail();
-                        return;
-                    }
-
-                    const deltaX = touch.absoluteX - listTopPullStartX.value;
-                    const deltaY = touch.absoluteY - listTopPullStartY.value;
-                    if (
-                        !listTopPullStartedAtTop.value ||
-                        listScrollY.value > 2 ||
-                        deltaY < -4 ||
-                        (Math.abs(deltaX) > 28 && Math.abs(deltaX) > deltaY)
-                    ) {
-                        state.fail();
-                        return;
-                    }
-
-                    if (deltaY > 8) {
-                        state.activate();
-                    }
-                })
-                .onStart(() => {
-                    'worklet';
-                    listTopPullActive.value = true;
-                })
-                .onEnd((event) => {
-                    'worklet';
-                    if (
-                        event.translationY > QUEUE_CLOSE_DISTANCE ||
-                        event.velocityY > QUEUE_CLOSE_VELOCITY
-                    ) {
-                        runOnJS(onClose)();
-                    }
-                })
-                .onFinalize(() => {
-                    'worklet';
-                    listTopPullActive.value = false;
-                    listTopPullStartedAtTop.value = false;
-                }),
-        [
-            interactive,
-            listScrollY,
-            listTopPullActive,
-            listTopPullStartX,
-            listTopPullStartY,
-            listTopPullStartedAtTop,
-            onClose,
-        ],
-    );
-    const listScrollGesture = useMemo(
-        () => Gesture.Simultaneous(Gesture.Native(), listTopPullGesture),
-        [listTopPullGesture],
-    );
+    const handleListTouchStart = useCallback((event: GestureResponderEvent) => {
+        listDragStartYRef.current = event.nativeEvent.pageY;
+        listDragStartedAtTopRef.current = listScrollYRef.current <= 2;
+    }, []);
+    const handleListTouchEnd = useCallback((event: GestureResponderEvent) => {
+        const startY = listDragStartYRef.current;
+        listDragStartYRef.current = null;
+        if (
+            startY !== null &&
+            listDragStartedAtTopRef.current &&
+            event.nativeEvent.pageY - startY > QUEUE_CLOSE_DISTANCE
+        ) {
+            onClose();
+        }
+    }, [onClose]);
     const keyExtractor = useCallback((row: QueueSheetListItem) => {
         if (row.kind === 'chapter') {
             return `${row.chapter.id}-${row.index}`;
@@ -1695,7 +1716,14 @@ export const QueueSheetOverlay = memo(({
                 return (
                     <Pressable
                         accessibilityRole="button"
-                        onPress={() => onChapterSeek?.(chapter.startSeconds * 1000)}
+                        onPress={() =>
+                            onChapterSeek?.(
+                                getPlayerPositionMsForAbsProgress(
+                                    chapter.startSeconds,
+                                    { progressOffsetSeconds },
+                                ),
+                            )
+                        }
                         style={styles.queueRow}
                     >
                         <View style={styles.queueChapterNumber}>
@@ -1839,31 +1867,31 @@ export const QueueSheetOverlay = memo(({
                         </View>
                     </View>
                 </GestureDetector>
-                <GestureDetector gesture={listScrollGesture}>
-                    <Reanimated.View style={styles.queueSheetScroll}>
-                        <ReanimatedFlashList
-                            contentContainerStyle={styles.queueSheetContent}
-                            data={queueSheetRows}
-                            drawDistance={QUEUE_SHEET_DRAW_DISTANCE}
-                            extraData={`${activeChapterIndex}:${queue?.index ?? -1}`}
-                            getItemType={getItemType}
-                            keyboardShouldPersistTaps="handled"
-                            keyExtractor={keyExtractor}
-                            ListEmptyComponent={
-                                interactive && !showingChapters ? (
-                                    <Text style={styles.queueSheetEmpty}>The queue is empty.</Text>
-                                ) : null
-                            }
-                            maintainVisibleContentPosition={FLASH_LIST_MAINTAIN_POSITION_DISABLED}
-                            nestedScrollEnabled
-                            onScroll={handleListScroll}
-                            renderItem={renderItem}
-                            scrollEventThrottle={16}
-                            showsVerticalScrollIndicator={false}
-                            style={styles.queueSheetScroll}
-                        />
-                    </Reanimated.View>
-                </GestureDetector>
+                <Reanimated.View style={styles.queueSheetScroll}>
+                    <ReanimatedFlashList
+                        contentContainerStyle={styles.queueSheetContent}
+                        data={queueSheetRows}
+                        drawDistance={QUEUE_SHEET_DRAW_DISTANCE}
+                        extraData={`${activeChapterIndex}:${queue?.index ?? -1}`}
+                        getItemType={getItemType}
+                        keyboardShouldPersistTaps="handled"
+                        keyExtractor={keyExtractor}
+                        ListEmptyComponent={
+                            interactive && !showingChapters ? (
+                                <Text style={styles.queueSheetEmpty}>The queue is empty.</Text>
+                            ) : null
+                        }
+                        maintainVisibleContentPosition={FLASH_LIST_MAINTAIN_POSITION_DISABLED}
+                        nestedScrollEnabled
+                        onScroll={handleListScroll}
+                        onTouchEnd={handleListTouchEnd}
+                        onTouchStart={handleListTouchStart}
+                        renderItem={renderItem}
+                        scrollEventThrottle={16}
+                        showsVerticalScrollIndicator={false}
+                        style={styles.queueSheetScroll}
+                    />
+                </Reanimated.View>
             </Reanimated.View>
         </>
     );

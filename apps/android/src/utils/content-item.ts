@@ -36,7 +36,10 @@ export const mergeContentItemSignals = (
         artworkImageId: current.artworkImageId ?? incoming.artworkImageId,
         artworkUrl: current.artworkUrl ?? incoming.artworkUrl,
         isHiRes: current.isHiRes || incoming.isHiRes ? true : current.isHiRes,
+        lastPlayedAt:
+            Math.max(current.lastPlayedAt ?? 0, incoming.lastPlayedAt ?? 0) || undefined,
         playback: current.playback ?? incoming.playback,
+        playCount: Math.max(current.playCount ?? 0, incoming.playCount ?? 0) || undefined,
         qualityProfile,
         source: current.source ?? incoming.source,
         subtitle: current.subtitle ?? incoming.subtitle,

@@ -109,10 +109,13 @@ export interface AudiobookshelfPodcastEpisode {
         duration?: number;
         mimeType?: string;
     };
+    /** Samo per-user completion (wire field from server progress overlay). */
+    completed?: boolean;
     description?: string;
     duration?: number;
     id: string;
     index?: number;
+    progressSeconds?: number;
     publishedAt?: number;
     season?: string;
     subtitle?: string;

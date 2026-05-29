@@ -3,6 +3,8 @@ import {
     type MobileHomeItem,
     MobileHomeItemType,
 } from '@samo/core/mobile';
+
+import { sortCollectionHomeItems } from '../utils/collection-sort';
 import {
     FlashList,
     type FlashListRef,
@@ -88,14 +90,6 @@ const chunkIntoViewAllRows = (items: MobileHomeItem[]): ViewAllRow[] => {
     }
     return rows;
 };
-
-const getViewAllSortKey = (item: MobileHomeItem): string =>
-    item.title.trim().toLocaleLowerCase();
-
-const VIEW_ALL_SORT_COLLATOR = new Intl.Collator(undefined, {
-    numeric: true,
-    sensitivity: 'base',
-});
 
 type ViewAllTileProps = {
     item: MobileHomeItem;
@@ -186,11 +180,10 @@ export const ViewAllScreen = memo(({
             seen.add(key);
             merged.push(item);
         }
-        return merged
-            .map((item) => ({ item, sortKey: getViewAllSortKey(item) }))
-            .sort((left, right) => VIEW_ALL_SORT_COLLATOR.compare(left.sortKey, right.sortKey))
-            .map(({ item }) => item);
-    }, [fullState, route.items]);
+        const sortMode =
+            route.variant === 'album' || route.variant === 'artist' ? 'playCount' : 'alphabetical';
+        return sortCollectionHomeItems(merged, sortMode);
+    }, [fullState, route.items, route.variant]);
     const rows = useMemo(() => chunkIntoViewAllRows(sortedItems), [sortedItems]);
     const letterIndex = useMemo(
         () => buildAlphabetLetterIndex(sortedItems),

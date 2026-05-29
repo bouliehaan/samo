@@ -1,10 +1,8 @@
 import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { useAudioDevices } from '/@/renderer/features/settings/components/playback/audio-settings';
 import { ListConfigTable } from '/@/renderer/features/shared/components/list-config-menu';
 import {
-    usePlaybackType,
     usePlayerActions,
     usePlayerProperties,
     usePlayerSongProperties,
@@ -19,7 +17,6 @@ import {
 import { ActionIcon } from '/@/shared/components/action-icon/action-icon';
 import { Popover } from '/@/shared/components/popover/popover';
 import { SegmentedControl } from '/@/shared/components/segmented-control/segmented-control';
-import { Select } from '/@/shared/components/select/select';
 import { Slider } from '/@/shared/components/slider/slider';
 import { Switch } from '/@/shared/components/switch/switch';
 import { Tooltip } from '/@/shared/components/tooltip/tooltip';
@@ -28,9 +25,8 @@ import { PlayerStatus, PlayerStyle, PlayerType } from '/@/shared/types/types';
 export const PlayerConfig = () => {
     const { t } = useTranslation();
     const preservePitch = useSettingsStore((state) => state.playback.preservePitch);
-    const playbackType = usePlaybackType();
-
     const playbackSettings = usePlaybackSettings();
+    const playbackType = playbackSettings.type;
     const { setSettings } = useSettingsStoreActions();
 
     const setPreservePitch = useCallback(
@@ -46,17 +42,6 @@ export const PlayerConfig = () => {
         const isWebPlayback = playbackType === PlayerType.WEB;
 
         const allOptions = [
-            {
-                component: <AudioDeviceConfig />,
-                id: 'audioDevice',
-                label: t('setting.audioDevice', { postProcess: 'titleCase' }),
-            },
-            {
-                component: null,
-                id: 'divider-1',
-                isDivider: true,
-                label: '',
-            },
             ...(isWebPlayback
                 ? [
                       {
@@ -123,53 +108,6 @@ export const PlayerConfig = () => {
             </Popover.Dropdown>
         </Popover>
     );
-};
-
-const AudioDeviceConfig = () => {
-    const { t } = useTranslation();
-    const status = usePlayerStatus();
-    const playbackType = usePlaybackType();
-    const playbackSettings = usePlaybackSettings();
-    const { setSettings } = useSettingsStoreActions();
-
-    const audioDevices = useAudioDevices(playbackType);
-    const audioDeviceId =
-        playbackType === PlayerType.LOCAL
-            ? playbackSettings.mpvAudioDeviceId
-            : playbackSettings.audioDeviceId;
-
-    const isDisabledDueToPlayback = status === PlayerStatus.PLAYING;
-
-    const select = (
-        <Select
-            clearable
-            comboboxProps={{ withinPortal: false }}
-            data={audioDevices}
-            defaultValue={audioDeviceId}
-            disabled={isDisabledDueToPlayback}
-            onChange={(e) => {
-                setSettings({
-                    playback: {
-                        ...playbackSettings,
-                        ...(playbackType === PlayerType.LOCAL
-                            ? { mpvAudioDeviceId: e }
-                            : { audioDeviceId: e }),
-                    },
-                });
-            }}
-            width="100%"
-        />
-    );
-
-    if (isDisabledDueToPlayback) {
-        return (
-            <Tooltip label={t('player.pausePlaybackToChangeSetting', { postProcess: 'titleCase' })}>
-                <div>{select}</div>
-            </Tooltip>
-        );
-    }
-
-    return select;
 };
 
 const TransitionTypeConfig = () => {

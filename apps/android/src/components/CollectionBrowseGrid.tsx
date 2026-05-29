@@ -23,6 +23,10 @@ import {
 import { ArtworkImage } from './ArtworkImage';
 import { QualityBadge } from './QualityBadge';
 import { useMediaContextMenu } from '../contexts/media-context-menu';
+import {
+    type CollectionItemSortMode,
+    sortCollectionHomeItems,
+} from '../utils/collection-sort';
 import { triggerSelection } from '../services/haptics';
 import {
     type AndroidRecentContentSourceItem,
@@ -39,14 +43,6 @@ const ALPHABET_SIDEBAR_LETTERS = [
     'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W',
     'X', 'Y', 'Z',
 ] as const;
-
-const getViewAllSortKey = (item: MobileHomeItem): string =>
-    item.title.trim().toLocaleLowerCase();
-
-const VIEW_ALL_SORT_COLLATOR = new Intl.Collator(undefined, {
-    numeric: true,
-    sensitivity: 'base',
-});
 
 const buildAlphabetLetterIndex = (items: MobileHomeItem[]): Map<string, number> => {
     const map = new Map<string, number>();
@@ -290,12 +286,14 @@ export const CollectionBrowseGrid = memo(({
     emptyMessage = 'Nothing to show here yet.',
     fullItems,
     isLoading = false,
+    itemSortMode = 'alphabetical',
     onSelectItem,
     seedItems = [],
 }: {
     emptyMessage?: string;
     fullItems?: MobileHomeItem[];
     isLoading?: boolean;
+    itemSortMode?: CollectionItemSortMode;
     onSelectItem: (item: AndroidRecentContentSourceItem) => void;
     seedItems: MobileHomeItem[];
 }) => {
@@ -316,11 +314,8 @@ export const CollectionBrowseGrid = memo(({
             seen.add(key);
             merged.push(item);
         }
-        return merged
-            .map((item) => ({ item, sortKey: getViewAllSortKey(item) }))
-            .sort((left, right) => VIEW_ALL_SORT_COLLATOR.compare(left.sortKey, right.sortKey))
-            .map(({ item }) => item);
-    }, [fullItems, seedItems]);
+        return sortCollectionHomeItems(merged, itemSortMode);
+    }, [fullItems, itemSortMode, seedItems]);
 
     const rows = useMemo(() => chunkIntoBrowseRows(sortedItems), [sortedItems]);
     const letterIndex = useMemo(() => buildAlphabetLetterIndex(sortedItems), [sortedItems]);
