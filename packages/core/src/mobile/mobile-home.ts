@@ -19,7 +19,6 @@ import {
     listSamoMusicAlbums,
     listSamoMusicArtists,
     listSamoMusicPlaylists,
-    listSamoMusicTracks,
     listSamoAllPodcastEpisodes,
     listSamoPodcasts,
     listSamoProgrammedRadioStations,
@@ -1169,6 +1168,7 @@ const samoPodcastEpisodeToHomeItem = (
         episode,
         streamToken,
     );
+    const showTitle = episode.podcastTitle?.trim();
     const playback = buildSamoPodcastEpisodePlayback(
         authentication,
         episode,
@@ -1176,7 +1176,6 @@ const samoPodcastEpisodeToHomeItem = (
         artworkUrl,
         streamToken,
     );
-    const showTitle = episode.podcastTitle?.trim();
     const releaseLabel = publishedMs
         ? new Intl.DateTimeFormat(undefined, {
               day: 'numeric',
@@ -1194,7 +1193,7 @@ const samoPodcastEpisodeToHomeItem = (
         artworkUrl,
         completionState: samoCompletionState(episodeProgress),
         containerId: episode.podcastId,
-        durationSeconds: episode.duration,
+        durationSeconds: episode.durationSeconds ?? episode.duration,
         id: episode.id,
         playback: playback ?? undefined,
         progressSeconds: episodeProgress?.progressSeconds,
@@ -1211,10 +1210,27 @@ const loadSamoPodcastFeedHomeItems = async (
     streamToken: string | undefined,
     source: MobileContentSource,
 ): Promise<MobileHomeItem[]> => {
-    const body = await listSamoAllPodcastEpisodes(fetcher, authentication, {
-        limit: SAMO_PODCAST_FEED_POOL_LIMIT,
+    const [body, podcastsBody] = await Promise.all([
+        listSamoAllPodcastEpisodes(fetcher, authentication, {
+            limit: SAMO_PODCAST_FEED_POOL_LIMIT,
+        }),
+        listSamoPodcasts(fetcher, authentication, { limit: 500 }).catch(() => undefined),
+    ]);
+    const showTitlesById = new Map<string, string>();
+    if (podcastsBody) {
+        for (const podcast of samoItemsOf(podcastsBody)) {
+            const name = podcast.podcast?.title?.trim();
+            if (podcast.id && name) {
+                showTitlesById.set(podcast.id, name);
+            }
+        }
+    }
+    const episodes = buildMobilePodcastFeedEpisodes(samoItemsOf(body)).map((episode) => {
+        const podcastTitle =
+            episode.podcastTitle?.trim() ||
+            (episode.podcastId ? showTitlesById.get(episode.podcastId) : undefined);
+        return podcastTitle ? { ...episode, podcastTitle } : episode;
     });
-    const episodes = buildMobilePodcastFeedEpisodes(samoItemsOf(body));
 
     return episodes.flatMap((episode) => {
         const item = samoPodcastEpisodeToHomeItem(authentication, episode, streamToken, source);
@@ -1317,7 +1333,7 @@ const samoProgrammedRadioToHomeItem = (
             url: station.streamUrl,
         },
         source,
-        subtitle: nowPlayingText ?? station.description,
+        subtitle: tileSubtitle,
         title: station.name,
         type: MobileHomeItemType.RADIO,
     };
@@ -1325,45 +1341,6 @@ const samoProgrammedRadioToHomeItem = (
 
 const settledOrEmpty = <T>(result: PromiseSettledResult<T[]>): T[] =>
     result.status === 'fulfilled' ? result.value : [];
-
-const mergeSamoHomeItemSignals = (
-    current: MobileHomeItem,
-    incoming: MobileHomeItem,
-): MobileHomeItem => ({
-    ...current,
-    lastPlayedAt: Math.max(current.lastPlayedAt ?? 0, incoming.lastPlayedAt ?? 0) || undefined,
-    playCount: Math.max(current.playCount ?? 0, incoming.playCount ?? 0) || undefined,
-});
-
-const mergeSamoHomeItems = (...lists: MobileHomeItem[][]): MobileHomeItem[] => {
-    const seen = new Set<string>();
-    const seenAlbumTitles = new Set<string>();
-    const merged: MobileHomeItem[] = [];
-    const indexByKey = new Map<string, number>();
-
-    for (const list of lists) {
-        for (const item of list) {
-            const key = `${item.source?.id ?? ''}:${item.id}:${item.type}`;
-            const existingIndex = indexByKey.get(key);
-            if (existingIndex !== undefined) {
-                merged[existingIndex] = mergeSamoHomeItemSignals(merged[existingIndex], item);
-                continue;
-            }
-            if (item.type === MobileHomeItemType.ALBUM) {
-                const albumKey = `${item.source?.id ?? ''}:album:${item.title.trim().toLowerCase()}`;
-                if (seenAlbumTitles.has(albumKey)) {
-                    continue;
-                }
-                seenAlbumTitles.add(albumKey);
-            }
-            seen.add(key);
-            indexByKey.set(key, merged.length);
-            merged.push(item);
-        }
-    }
-
-    return merged;
-};
 
 const sortHomeItemsByAddedAt = (items: MobileHomeItem[]): MobileHomeItem[] => {
     return [...items].sort((left, right) => {

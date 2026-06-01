@@ -86,6 +86,8 @@ import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-g
 import { getColors as getImageColors } from 'react-native-image-colors';
 import LinearGradient from 'react-native-linear-gradient';
 import Reanimated, {
+    Easing,
+    FadeIn,
     useAnimatedStyle,
     useSharedValue,
     withSpring,
@@ -193,6 +195,9 @@ import {
     setAndroidSleepTimer,
     updateAndroidNowPlayingMetadata,
 } from './src/services/audio-playback';
+import { prefetchCatalogArtwork } from './src/services/artwork-prefetch';
+import { loadCatalogHomeContentSync } from './src/services/catalog/catalog-reads';
+import { syncSamoCatalog } from './src/services/catalog/catalog-sync';
 import {
     type DownloadEntry,
     enqueueCollectionDownload,
@@ -203,11 +208,14 @@ import {
     getOfflineAudiobookFiles,
     listDownloads,
     type OfflineAudiobookFile,
+    resumeDownloadsOnForeground,
     subscribeDownloads,
 } from './src/services/download-manager';
 import {
     type AndroidFullCollectionState,
     loadAndroidFullCollection,
+    loadAndroidFullCollectionLocal,
+    loadAndroidFullCollectionLocalSync,
 } from './src/services/full-collection';
 import { triggerSelection } from './src/services/haptics';
 import {
@@ -451,10 +459,12 @@ export default function App() {
         username,
     } = auth;
     const {
+        artworkCacheLimitBytes,
         downloadedCollectionKeys,
         downloadedCollections,
         downloadedTrackKeys,
         isOfflineMode,
+        setArtworkCacheLimit,
         setIsOfflineMode,
     } = downloads;
     const {
@@ -532,39 +542,24 @@ export default function App() {
     }
     const detailOverlayOpen = activeUtilityScreen === null && mediaDetailState.status !== 'idle';
     const hasCachedDetailShell = frozenDetailStateRef.current.status === 'loaded';
-    const prevDetailOverlayOpenRef = useRef(false);
+
+    // Detail overlay entrance: a quick fade + small rise so opening a playlist /
+    // album / artist reads as a card lifting in rather than a hard cut. Honors
+    // the OS reduced-motion setting.
+    const detailOverlayProgress = useSharedValue(0);
     useEffect(() => {
-        const wasOpen = prevDetailOverlayOpenRef.current;
-        if (detailOverlayOpen && !wasOpen) {
-            const openedAt = Date.now();
-            requestAnimationFrame(() => {
-                // #region agent log
-                const framePayload = {
-                    data: {
-                        detailStatus: mediaDetailState.status,
-                        sinceOpenMs: Date.now() - openedAt,
-                    },
-                    hypothesisId: 'H10',
-                    location: 'App.tsx:detailOverlayOpen',
-                    message: 'detail overlay first frame',
-                    runId: 'nav-perf',
-                    sessionId: 'c0ca1a',
-                    timestamp: Date.now(),
-                };
-                console.log('[nav-perf]', JSON.stringify(framePayload));
-                fetch('http://127.0.0.1:7498/ingest/65ba3320-fcf4-4bf2-82b0-f3ffc8d708c2', {
-                    body: JSON.stringify(framePayload),
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-Debug-Session-Id': 'c0ca1a',
-                    },
-                    method: 'POST',
-                }).catch(() => {});
-                // #endregion
-            });
-        }
-        prevDetailOverlayOpenRef.current = detailOverlayOpen;
-    }, [detailOverlayOpen, mediaDetailState.status]);
+        // Ease-OUT (fast start) so the content is visibly there within a frame or
+        // two — the tap is confirmed immediately instead of fading up from black.
+        // Short durations keep open AND back-to-home feeling instant.
+        detailOverlayProgress.value = withTiming(detailOverlayOpen ? 1 : 0, {
+            duration: reducedMotion ? 0 : detailOverlayOpen ? 150 : 110,
+            easing: Easing.out(Easing.cubic),
+        });
+    }, [detailOverlayOpen, detailOverlayProgress, reducedMotion]);
+    const detailOverlayStyle = useAnimatedStyle(() => ({
+        opacity: detailOverlayProgress.value,
+        transform: [{ translateY: (1 - detailOverlayProgress.value) * 10 }],
+    }));
 
     // When offline mode is on, filter home/library content to items that
     // have at least one completed download. Items without a server source
@@ -695,6 +690,20 @@ export default function App() {
                 }
                 return { status: 'loading' };
             });
+
+            // Seed Home SYNCHRONOUSLY from the on-device catalog so a cold launch
+            // renders on the first frame instead of a spinner. Never clobbers an
+            // already-loaded state — the persisted cache and the network refresh
+            // below both take precedence.
+            const homeSeed = loadCatalogHomeContentSync(authentications);
+            if (homeSeed) {
+                setHomeContentState((current) =>
+                    current.status === 'loaded'
+                        ? current
+                        : { content: homeSeed, status: 'loaded' },
+                );
+            }
+
             const nextHomeContentState = await dedupeInFlight(
                 buildHomeLoadKey(authentications),
                 () => loadAndroidHomeContent(authentications),
@@ -725,6 +734,7 @@ export default function App() {
         [],
     );
 
+    const homeLiveRefreshAtRef = useRef(0);
     useEffect(() => {
         if (
             !isHomeSurface ||
@@ -734,16 +744,63 @@ export default function App() {
             return;
         }
 
+        // Discovery + the podcast feed change slowly. Refreshing them on EVERY
+        // return to Home — and every detail open/close, since `isHomeSurface`
+        // toggles with it — re-rendered the whole home tree (resolving artwork
+        // for every tile) and showed up as tap latency. Gate to once per minute.
+        const now = Date.now();
+        if (now - homeLiveRefreshAtRef.current < 60_000) {
+            return;
+        }
+        homeLiveRefreshAtRef.current = now;
+
         const content = homeContentState.content;
         const requestId = (homeDiscoveryRefreshId.current += 1);
 
-        void refreshAndroidHomeLiveSections(serverConnections, content).then((nextContent) => {
-            if (requestId !== homeDiscoveryRefreshId.current) {
-                return;
-            }
-            setHomeContentState({ status: 'loaded', content: nextContent });
-        });
+        void refreshAndroidHomeLiveSections(serverConnections, content)
+            .then((nextContent) => {
+                if (requestId !== homeDiscoveryRefreshId.current) {
+                    return;
+                }
+                setHomeContentState({ status: 'loaded', content: nextContent });
+            })
+            .catch(() => {
+                // A transient failure must NOT hide the podcast feed for a whole
+                // minute — clear the gate so the next Home visit retries instead.
+                homeLiveRefreshAtRef.current = 0;
+            });
     }, [homeContentState.status, isHomeSurface, serverConnections]);
+
+    // Warm the whole library's cover art from the existing catalog once on
+    // launch (already-cached covers are skipped cheaply), so simply reopening the
+    // app — not only a fresh sync — gets the all-local, no-per-tile-fetch feel.
+    // Deferred so a cold-cache bulk download doesn't contend with the initial
+    // home load + live refresh for the network (which was failing those requests
+    // and hiding the podcast feed).
+    const artworkWarmedRef = useRef(false);
+    useEffect(() => {
+        if (artworkWarmedRef.current || serverConnections.length === 0) {
+            return;
+        }
+        artworkWarmedRef.current = true;
+        const connections = serverConnections;
+        const timer = setTimeout(() => {
+            void prefetchCatalogArtwork(connections);
+        }, 8000);
+        return () => clearTimeout(timer);
+    }, [serverConnections]);
+
+    // Resume any stranded downloads when the app returns to the foreground —
+    // re-queues transfers the OS suspended in the background and pumps the queue
+    // so it doesn't sit on "queued" forever after a backgrounding.
+    useEffect(() => {
+        const subscription = AppState.addEventListener('change', (next) => {
+            if (next === 'active') {
+                void resumeDownloadsOnForeground(serverConnections);
+            }
+        });
+        return () => subscription.remove();
+    }, [serverConnections]);
 
     const { canConnect, handleConnect, handleDisconnect } = useAndroidServerAuth({
         auth,
@@ -774,6 +831,26 @@ export default function App() {
 
             const requestId = (libraryFullCollectionFetchTokenRef.current += 1);
             void (async () => {
+                // Local-first: paint the catalog instantly, then refresh from
+                // the network so additions/edits self-heal.
+                const [localAlbums, localArtists] = await Promise.all([
+                    loadAndroidFullCollectionLocal(serverConnections, 'album'),
+                    loadAndroidFullCollectionLocal(serverConnections, 'artist'),
+                ]);
+                if (libraryFullCollectionFetchTokenRef.current !== requestId) {
+                    return;
+                }
+                if (localAlbums || localArtists) {
+                    setLibraryFullCollections({
+                        albums: localAlbums
+                            ? { items: localAlbums, status: 'loaded' }
+                            : { status: 'loading' },
+                        artists: localArtists
+                            ? { items: localArtists, status: 'loaded' }
+                            : { status: 'loading' },
+                    });
+                }
+
                 const [albums, artists] = await Promise.all([
                     loadAndroidFullCollection(serverConnections, 'album'),
                     loadAndroidFullCollection(serverConnections, 'artist'),
@@ -786,9 +863,20 @@ export default function App() {
                 setLibraryFullCollections({ albums, artists });
             })();
 
+            // Synchronous first paint from the catalog so the Library grids mount
+            // with content immediately — no loading state. The async block above
+            // then fills the complete lists and refreshes from the network.
+            const syncAlbums = loadAndroidFullCollectionLocalSync(serverConnections, 'album');
+            const syncArtists = loadAndroidFullCollectionLocalSync(serverConnections, 'artist');
             return {
-                albums: { status: 'loading' },
-                artists: { status: 'loading' },
+                albums:
+                    syncAlbums.length > 0
+                        ? { items: syncAlbums, status: 'loaded' }
+                        : { status: 'loading' },
+                artists:
+                    syncArtists.length > 0
+                        ? { items: syncArtists, status: 'loaded' }
+                        : { status: 'loading' },
             };
         });
     });
@@ -925,7 +1013,9 @@ export default function App() {
         if (lastPlayedItem.source !== 'podcast' && lastPlayedItem.source !== 'audiobook') {
             return;
         }
-        if ((lastPlayedItem.initialPositionSeconds ?? 0) > 0) {
+        const streamResume =
+            lastPlayedItem.progressOffsetSeconds ?? lastPlayedItem.initialPositionSeconds ?? 0;
+        if (streamResume > 0) {
             return;
         }
 
@@ -934,7 +1024,10 @@ export default function App() {
             if (cancelled) {
                 return;
             }
-            const positionSeconds = refreshed.initialPositionSeconds ?? 0;
+            const positionSeconds = Math.max(
+                refreshed.progressOffsetSeconds ?? 0,
+                refreshed.initialPositionSeconds ?? 0,
+            );
             if (positionSeconds <= 0) {
                 return;
             }
@@ -948,6 +1041,7 @@ export default function App() {
     }, [
         lastPlayedItem?.id,
         lastPlayedItem?.initialPositionSeconds,
+        lastPlayedItem?.progressOffsetSeconds,
         lastPlayedItem?.source,
         serverConnections,
         setLastPlayedItem,
@@ -972,10 +1066,11 @@ export default function App() {
                     : item;
             lastPlayedPersistenceKeyRef.current = getLastPlayedPersistenceKey(refreshed);
             setLastPlayedItem(refreshed);
-            if (
-                refreshed.initialPositionSeconds &&
-                refreshed.initialPositionSeconds > 0
-            ) {
+            const resumeSeconds = Math.max(
+                refreshed.progressOffsetSeconds ?? 0,
+                refreshed.initialPositionSeconds ?? 0,
+            );
+            if (resumeSeconds > 0) {
                 void savePersistedLastPlayedItem(refreshed);
             }
         });
@@ -1174,6 +1269,15 @@ export default function App() {
             // invalidate; everything else trusts the cache.
             await ExpoImage.clearMemoryCache();
             await loadHomeForConnections(serverConnections);
+            // Rebuild the on-device Samo library mirror in the background. This
+            // is the user's explicit "re-mirror everything" trigger, but a full
+            // crawl is heavy, so it's fire-and-forget: live progress shows in the
+            // Settings "Local library" panel while the button returns as soon as
+            // home content and pending playback are reconciled. No-ops for
+            // non-Samo servers, and concurrent taps join the in-flight sync.
+            void syncSamoCatalog(serverConnections).then(() =>
+                prefetchCatalogArtwork(serverConnections),
+            );
             await Promise.all([
                 flushPendingAbsProgress(serverConnections),
                 flushPendingSamoPlayback(serverConnections),
@@ -1218,24 +1322,9 @@ export default function App() {
     }, [loadHomeForConnections, serverConnections]);
 
     const handleOpenSettings = useCallback(() => {
-        // #region agent log
-        fetch('http://127.0.0.1:7498/ingest/65ba3320-fcf4-4bf2-82b0-f3ffc8d708c2', {
-            body: JSON.stringify({
-                data: { detailStatus: mediaDetailState.status },
-                hypothesisId: 'H1',
-                location: 'App.tsx:handleOpenSettings',
-                message: 'open settings utility',
-                runId: 'nav-perf',
-                sessionId: 'c0ca1a',
-                timestamp: Date.now(),
-            }),
-            headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'c0ca1a' },
-            method: 'POST',
-        }).catch(() => {});
-        // #endregion
         setActiveUtilityScreen('settings');
         closeMediaDetail();
-    }, [closeMediaDetail, mediaDetailState.status, setActiveUtilityScreen]);
+    }, [closeMediaDetail, setActiveUtilityScreen]);
     const handleOpenManageServers = useCallback(() => {
         setActiveUtilityScreen('manage-servers');
     }, []);
@@ -1371,50 +1460,14 @@ export default function App() {
             title: playlistMenuRoot.collectionItem.title,
         } as MobileMediaTrack;
     }, [playlistMenuRoot]);
-    const nowPlayingRadioId = activePlaybackItem?.source === 'radio' ? activePlaybackItem.id : null;
 
     const handleTabPress = useCallback(
         (tabId: SamoMobileTabId) => {
-            // #region agent log
-            const tabPressStartedAt = Date.now();
-            fetch('http://127.0.0.1:7498/ingest/65ba3320-fcf4-4bf2-82b0-f3ffc8d708c2', {
-                body: JSON.stringify({
-                    data: {
-                        detailStatus: mediaDetailState.status,
-                        tabId,
-                        utilityScreen: activeUtilityScreen,
-                    },
-                    hypothesisId: 'H4',
-                    location: 'App.tsx:handleTabPress',
-                    message: 'tab press',
-                    runId: 'nav-perf',
-                    sessionId: 'c0ca1a',
-                    timestamp: tabPressStartedAt,
-                }),
-                headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'c0ca1a' },
-                method: 'POST',
-            }).catch(() => {});
-            // #endregion
             setActiveUtilityScreen((current) => (current === null ? current : null));
             if (mediaDetailState.status !== 'idle') {
                 closeMediaDetail();
             }
             setActiveTab((current) => (current === tabId ? current : tabId));
-            // #region agent log
-            fetch('http://127.0.0.1:7498/ingest/65ba3320-fcf4-4bf2-82b0-f3ffc8d708c2', {
-                body: JSON.stringify({
-                    data: { elapsedMs: Date.now() - tabPressStartedAt, tabId },
-                    hypothesisId: 'H4',
-                    location: 'App.tsx:handleTabPress',
-                    message: 'tab press handlers scheduled',
-                    runId: 'nav-perf',
-                    sessionId: 'c0ca1a',
-                    timestamp: Date.now(),
-                }),
-                headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'c0ca1a' },
-                method: 'POST',
-            }).catch(() => {});
-            // #endregion
         },
         [
             activeUtilityScreen,
@@ -1425,90 +1478,20 @@ export default function App() {
         ],
     );
 
-    const navSurface =
-        activeUtilityScreen === 'view-all'
-            ? 'view-all'
-            : activeUtilityScreen
-              ? `utility:${activeUtilityScreen}`
-              : mediaDetailState.status !== 'idle'
-                ? `detail:${mediaDetailState.status}`
-                : 'tabs';
-    const prevNavSurfaceRef = useRef(navSurface);
-    const navSurfaceChangedAtRef = useRef(Date.now());
-    useEffect(() => {
-        const previous = prevNavSurfaceRef.current;
-        if (previous === navSurface) {
-            return;
-        }
-        const changedAt = Date.now();
-        const sinceLastMs = changedAt - navSurfaceChangedAtRef.current;
-        navSurfaceChangedAtRef.current = changedAt;
-        const unmountsTabHost =
-            previous === 'tabs' &&
-            (navSurface.startsWith('detail:') || navSurface.startsWith('utility:'));
-        const remountsTabHost =
-            navSurface === 'tabs' &&
-            (previous.startsWith('detail:') || previous.startsWith('utility:'));
-        const closedDetail = navSurface === 'tabs' && previous.startsWith('detail:');
-        // #region agent log
-        const navPayload = {
-            data: {
-                detailShellKeptMounted: hasCachedDetailShell,
-                from: previous,
-                remountsTabHost,
-                sinceLastMs,
-                tabHostKeptMounted: true,
-                to: navSurface,
-                unmountsTabHost,
-            },
-            hypothesisId: closedDetail ? 'H6' : 'H1',
-            location: 'App.tsx:navSurface',
-            message: 'navigation surface changed',
-            runId: 'nav-perf',
-            sessionId: 'c0ca1a',
-            timestamp: changedAt,
-        };
-        console.log('[nav-perf]', JSON.stringify(navPayload));
-        fetch('http://127.0.0.1:7498/ingest/65ba3320-fcf4-4bf2-82b0-f3ffc8d708c2', {
-            body: JSON.stringify(navPayload),
-            headers: {
-                'Content-Type': 'application/json',
-                'X-Debug-Session-Id': 'c0ca1a',
-            },
-            method: 'POST',
-        }).catch(() => {});
-        if (closedDetail) {
-            requestAnimationFrame(() => {
-                const framePayload = {
-                    data: { sinceNavSurfaceMs: Date.now() - changedAt },
-                    hypothesisId: 'H8',
-                    location: 'App.tsx:navSurface',
-                    message: 'detail close first frame',
-                    runId: 'nav-perf',
-                    sessionId: 'c0ca1a',
-                    timestamp: Date.now(),
-                };
-                console.log('[nav-perf]', JSON.stringify(framePayload));
-                fetch('http://127.0.0.1:7498/ingest/65ba3320-fcf4-4bf2-82b0-f3ffc8d708c2', {
-                    body: JSON.stringify(framePayload),
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-Debug-Session-Id': 'c0ca1a',
-                    },
-                    method: 'POST',
-                }).catch(() => {});
-            });
-        }
-        // #endregion
-        prevNavSurfaceRef.current = navSurface;
-    }, [hasCachedDetailShell, navSurface]);
-
     const utilityScreenContent =
         activeUtilityScreen === 'settings' ? (
             <SettingsScreen
+                artworkCacheLimitBytes={artworkCacheLimitBytes}
+                catalogSources={serverConnections
+                    .filter((connection) => connection.type === ServerType.SAMO)
+                    .map((connection) => ({
+                        id: getMobileContentSource(connection).id,
+                        title: connection.title,
+                    }))}
                 isOfflineMode={isOfflineMode}
                 onOpenDownloads={handleOpenDownloads}
                 onOpenManageServers={handleOpenManageServers}
+                onSetArtworkCacheLimit={setArtworkCacheLimit}
                 onSyncWithServer={handleSyncWithServer}
                 onToggleOfflineMode={handleToggleOfflineMode}
                 serverCount={serverConnections.length}
@@ -1600,7 +1583,6 @@ export default function App() {
             ) : tabId === 'radio' ? (
                 <RadioScreen
                     homeContentState={visibleHomeContentState}
-                    nowPlayingRadioId={nowPlayingRadioId}
                     onAddStation={handleAddRadioStation}
                     onSelectItem={handleSelectMediaItemStable}
                     recentItems={visibleRecentItems}
@@ -1625,44 +1607,7 @@ export default function App() {
                                     behavior={Platform.OS === 'ios' ? 'padding' : undefined}
                                     style={styles.keyboardView}
                                 >
-                                    <View
-                                        onLayout={(event) => {
-                                            const { height, width, y } = event.nativeEvent.layout;
-                                            // #region agent log
-                                            const rootPayload = {
-                                                data: {
-                                                    height,
-                                                    isFullPlayerOpen,
-                                                    screenHeight: SCREEN_HEIGHT,
-                                                    width,
-                                                    y,
-                                                },
-                                                hypothesisId: 'H2',
-                                                location: 'App.tsx:root.onLayout',
-                                                message: 'root layout',
-                                                runId: 'player-layout-fix',
-                                                sessionId: 'c0ca1a',
-                                                timestamp: Date.now(),
-                                            };
-                                            console.log(
-                                                '[player-layout]',
-                                                JSON.stringify(rootPayload),
-                                            );
-                                            fetch(
-                                                'http://127.0.0.1:7498/ingest/65ba3320-fcf4-4bf2-82b0-f3ffc8d708c2',
-                                                {
-                                                    body: JSON.stringify(rootPayload),
-                                                    headers: {
-                                                        'Content-Type': 'application/json',
-                                                        'X-Debug-Session-Id': 'c0ca1a',
-                                                    },
-                                                    method: 'POST',
-                                                },
-                                            ).catch(() => {});
-                                            // #endregion
-                                        }}
-                                        style={styles.root}
-                                    >
+                                    <View style={styles.root}>
                                         <View style={styles.appContent}>
                                             <View
                                                 pointerEvents={
@@ -1730,15 +1675,11 @@ export default function App() {
                                             ) : null}
                                             {activeUtilityScreen === null &&
                                             (detailOverlayOpen || hasCachedDetailShell) ? (
-                                                <View
+                                                <Reanimated.View
                                                     pointerEvents={
                                                         detailOverlayOpen ? 'auto' : 'none'
                                                     }
-                                                    style={[
-                                                        styles.navOverlay,
-                                                        !detailOverlayOpen &&
-                                                            styles.navOverlayHidden,
-                                                    ]}
+                                                    style={[styles.navOverlay, detailOverlayStyle]}
                                                 >
                                                     <MediaDetailContent
                                                         homeContentState={homeContentState}
@@ -1757,10 +1698,15 @@ export default function App() {
                                                         onShufflePlay={handleShuffleDetailTracks}
                                                         serverConnections={serverConnections}
                                                     />
-                                                </View>
+                                                </Reanimated.View>
                                             ) : null}
                                             {activeUtilityScreen === 'view-all' && viewAllRoute ? (
-                                                <View
+                                                <Reanimated.View
+                                                    entering={
+                                                        reducedMotion
+                                                            ? undefined
+                                                            : FadeIn.duration(180)
+                                                    }
                                                     style={[
                                                         styles.navOverlay,
                                                         styles.navOverlayTop,
@@ -1774,7 +1720,7 @@ export default function App() {
                                                             route={viewAllRoute}
                                                         />
                                                     </ErrorBoundary>
-                                                </View>
+                                                </Reanimated.View>
                                             ) : null}
                                             {isSearchOverlayOpen ? (
                                                 <SearchOverlay

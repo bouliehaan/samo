@@ -1,5 +1,6 @@
 import {
     addMobileTracksToPlaylist,
+    buildSamoAudiobookQueueFromFiles,
     createMobilePlaylist,
     getDetailQualityProfile,
     getItemQualityProfile,
@@ -19,6 +20,7 @@ import {
 } from '@samo/core/mobile';
 import {
     type ServerAuthenticationResult,
+    ensureSamoStreamToken,
     findServerAuthenticationForSource,
     ServerType,
 } from '@samo/core/server';
@@ -36,13 +38,21 @@ import {
     getLocalDownloadForTrack,
     getOfflineAudiobookFiles,
 } from '../services/download-manager';
-import { loadAndroidFullCollection } from '../services/full-collection';
+import {
+    loadCatalogMediaDetail,
+    loadCatalogMediaDetailSync,
+} from '../services/catalog/catalog-reads';
+import {
+    loadAndroidFullCollection,
+    loadAndroidFullCollectionLocal,
+    loadAndroidFullCollectionLocalSync,
+} from '../services/full-collection';
 import {
     addAndroidMediaTrackToPlaylist,
+    getTrackTimelineSegments,
     loadAndroidMediaDetail,
     loadAndroidMediaTrackPlayback,
     isValidTrackPlayback,
-    playSamoPodcastEpisodeFromHome,
 } from '../services/media-detail';
 import {
     loadCachedMediaDetail,
@@ -75,7 +85,7 @@ import {
     upsertRecentContentItem,
 } from '../services/recent-content';
 import { dedupeRecentContentItemsByAlbumIdentity } from '../utils/recent-content-dedupe';
-import { loadAndroidSearchResults } from '../services/search-content';
+import { runAndroidSearch } from '../services/search-content';
 import {
     addAndroidRadioStation,
     type AddAndroidRadioStationInput,
@@ -421,15 +431,11 @@ export function useAndroidMediaHandlers(
             const userRecents = new Map(
                 recentContentItems.map((entry) => [entry.key, entry.selectedAt]),
             );
-            const nextSearchState = await loadAndroidSearchResults(
-                serverConnections,
-                trimmedQuery,
-                userRecents,
-            );
-
-            if (requestId === searchRequestId.current) {
-                setSearchState(nextSearchState);
-            }
+            await runAndroidSearch(serverConnections, trimmedQuery, userRecents, (state) => {
+                if (requestId === searchRequestId.current) {
+                    setSearchState(state);
+                }
+            });
         },
         [recentContentItems, serverConnections],
     );
@@ -477,7 +483,6 @@ export function useAndroidMediaHandlers(
         (item: AndroidRecentContentSourceItem) => {
             const cacheKey = getRecentContentItemKey(item);
             const memoryCached = mediaDetailCacheRef.current.get(cacheKey);
-            const openStartedAt = Date.now();
             prefetchArtworkUrl(
                 {
                     artworkImageId: item.artworkImageId,
@@ -486,15 +491,22 @@ export function useAndroidMediaHandlers(
                 },
                 serverConnections,
             );
-            if (memoryCached) {
-                prefetchDetailArtworkUrls(memoryCached, serverConnections, [
+            const synchronousDetail = memoryCached ?? loadCatalogMediaDetailSync(item);
+            if (synchronousDetail) {
+                // Render the FULL detail on the very first frame — tapping a Samo
+                // album/artist/playlist/podcast/audiobook never shows a loading
+                // view. (memoryCached already hit, or the WAL reader served it.)
+                if (synchronousDetail !== memoryCached) {
+                    rememberMediaDetail(mediaDetailCacheRef.current, cacheKey, synchronousDetail);
+                }
+                prefetchDetailArtworkUrls(synchronousDetail, serverConnections, [
                     {
                         artworkImageId: item.artworkImageId,
                         artworkUrl: item.artworkUrl,
                         source: item.source,
                     },
                 ]);
-                setMediaDetailState({ detail: memoryCached, status: 'loaded' });
+                setMediaDetailState({ detail: synchronousDetail, status: 'loaded' });
             } else {
                 setMediaDetailState({
                     itemArtworkImageId: item.artworkImageId,
@@ -505,33 +517,6 @@ export function useAndroidMediaHandlers(
                     status: 'loading',
                 });
             }
-            // #region agent log
-            const openPayload = {
-                sessionId: 'c0ca1a',
-                runId: 'nav-perf',
-                hypothesisId: 'H9',
-                location: 'use-android-media-handlers.ts:beginOpenMediaDetail',
-                message: 'detail overlay opened synchronously',
-                data: {
-                    itemId: item.id,
-                    itemType: item.type,
-                    memoryCacheHit: Boolean(memoryCached),
-                },
-                timestamp: openStartedAt,
-            };
-            console.log('[nav-perf]', JSON.stringify(openPayload));
-            fetch(
-                'http://127.0.0.1:7498/ingest/65ba3320-fcf4-4bf2-82b0-f3ffc8d708c2',
-                {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-Debug-Session-Id': 'c0ca1a',
-                    },
-                    body: JSON.stringify(openPayload),
-                },
-            ).catch(() => {});
-            // #endregion
         },
         [setMediaDetailState, serverConnections],
     );
@@ -539,10 +524,6 @@ export function useAndroidMediaHandlers(
     const loadDetailWithCache = async (
         item: AndroidRecentContentSourceItem,
     ): Promise<{ cached: boolean }> => {
-        // #region agent log
-        const detailLoadStartedAt = Date.now();
-        fetch('http://127.0.0.1:7498/ingest/65ba3320-fcf4-4bf2-82b0-f3ffc8d708c2',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'c0ca1a'},body:JSON.stringify({sessionId:'c0ca1a',runId:'nav-perf',hypothesisId:'H2',location:'use-android-media-handlers.ts:loadDetailWithCache',message:'load detail start',data:{itemId:item.id,itemType:item.type},timestamp:detailLoadStartedAt})}).catch(()=>{});
-        // #endregion
         audiobookStartRequestId.current += 1;
         const requestId = (mediaDetailRequestId.current += 1);
         const isCurrentRequest = () => mediaDetailRequestId.current === requestId;
@@ -550,16 +531,25 @@ export function useAndroidMediaHandlers(
 
         // Layer 1: in-memory cache — instant.
         let cached = mediaDetailCacheRef.current.get(cacheKey);
-        const memoryCacheHit = Boolean(cached);
+
+        // Layer 1.5: local SQLite catalog — instant, authoritative for Samo, and
+        // works offline. The entire library is mirrored on-device, so this makes
+        // *every* Samo detail open instant, not just recently-viewed ones.
+        if (!cached) {
+            const fromCatalog = await loadCatalogMediaDetail(item);
+            if (!isCurrentRequest()) {
+                return { cached: false };
+            }
+            if (fromCatalog) {
+                cached = fromCatalog;
+                rememberMediaDetail(mediaDetailCacheRef.current, cacheKey, fromCatalog);
+            }
+        }
 
         // Layer 2: persistent fs cache — async, but still much faster than
         // the network and works in airplane mode.
         if (!cached) {
-            const diskStartedAt = Date.now();
             const fromDisk = await loadCachedMediaDetail(cacheKey);
-            // #region agent log
-            fetch('http://127.0.0.1:7498/ingest/65ba3320-fcf4-4bf2-82b0-f3ffc8d708c2',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'c0ca1a'},body:JSON.stringify({sessionId:'c0ca1a',runId:'nav-perf',hypothesisId:'H11',location:'use-android-media-handlers.ts:loadDetailWithCache',message:'disk cache read finished',data:{itemId:item.id,hit:Boolean(fromDisk),diskMs:Date.now()-diskStartedAt,elapsedMs:Date.now()-detailLoadStartedAt},timestamp:Date.now()})}).catch(()=>{});
-            // #endregion
             if (!isCurrentRequest()) {
                 return { cached: false };
             }
@@ -598,9 +588,6 @@ export function useAndroidMediaHandlers(
                 }
             });
         }
-        // #region agent log
-        fetch('http://127.0.0.1:7498/ingest/65ba3320-fcf4-4bf2-82b0-f3ffc8d708c2',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'c0ca1a'},body:JSON.stringify({sessionId:'c0ca1a',runId:'nav-perf',hypothesisId:'H2',location:'use-android-media-handlers.ts:loadDetailWithCache',message:'detail first paint scheduled',data:{memoryCacheHit,hasCached:Boolean(cached),elapsedMs:Date.now()-detailLoadStartedAt},timestamp:Date.now()})}).catch(()=>{});
-        // #endregion
 
         if (isOfflineMode && cached) {
             return { cached: true };
@@ -608,7 +595,6 @@ export function useAndroidMediaHandlers(
 
         // Refresh from network without blocking navigation transitions.
         void (async () => {
-            const networkStartedAt = Date.now();
             const next = await dedupeInFlight(buildMediaDetailLoadKey(cacheKey), () =>
                 loadAndroidMediaDetail(serverConnections, item),
             );
@@ -632,9 +618,6 @@ export function useAndroidMediaHandlers(
             } else if (!cached) {
                 setMediaDetailState(next);
             }
-            // #region agent log
-            fetch('http://127.0.0.1:7498/ingest/65ba3320-fcf4-4bf2-82b0-f3ffc8d708c2',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'c0ca1a'},body:JSON.stringify({sessionId:'c0ca1a',runId:'nav-perf',hypothesisId:'H2',location:'use-android-media-handlers.ts:loadDetailWithCache',message:'load detail complete',data:{networkMs:Date.now()-networkStartedAt,totalMs:Date.now()-detailLoadStartedAt,networkStatus:next.status,memoryCacheHit},timestamp:Date.now()})}).catch(()=>{});
-            // #endregion
         })();
 
         return { cached: Boolean(cached) };
@@ -657,10 +640,26 @@ export function useAndroidMediaHandlers(
             // (or closed the screen entirely).
             viewAllFetchTokenRef.current += 1;
             const myToken = viewAllFetchTokenRef.current;
-            setViewAllFullState({ status: 'loading' });
+            // Synchronous first paint from the catalog — the grid mounts with
+            // content on the very first frame, so no loading state ever appears.
+            const syncItems = loadAndroidFullCollectionLocalSync(serverConnections, variant);
+            const hasSync = syncItems.length > 0;
+            setViewAllFullState(
+                hasSync ? { items: syncItems, status: 'loaded' } : { status: 'loading' },
+            );
             void (async () => {
+                // Fill the complete list off the UI thread, then refresh from the
+                // network so additions/edits self-heal.
+                const local = await loadAndroidFullCollectionLocal(serverConnections, variant);
+                if (viewAllFetchTokenRef.current !== myToken) return;
+                const hasLocal = Boolean(local && local.length > 0);
+                if (local && hasLocal) {
+                    setViewAllFullState({ items: local, status: 'loaded' });
+                }
                 const result = await loadAndroidFullCollection(serverConnections, variant);
                 if (viewAllFetchTokenRef.current !== myToken) return;
+                // Never clobber a good local render with a transient network error.
+                if (result.status === 'error' && (hasLocal || hasSync)) return;
                 setViewAllFullState(result);
             })();
         },
@@ -668,42 +667,6 @@ export function useAndroidMediaHandlers(
     );
 
     const handleSelectMediaItem = async (item: MobileHomeItem | MobileSearchItem) => {
-        if (
-            item.type === MobileHomeItemType.PODCAST_EPISODE &&
-            item.containerId &&
-            item.source
-        ) {
-            const auth = findServerAuthenticationForSource(serverConnections, item.source);
-            if (auth?.type === ServerType.SAMO) {
-                try {
-                    const playable = await playSamoPodcastEpisodeFromHome(auth, {
-                        artworkUrl: item.artworkUrl,
-                        containerId: item.containerId,
-                        durationSeconds: item.durationSeconds,
-                        id: item.id,
-                        subtitle: item.subtitle,
-                        title: item.title,
-                    });
-                    absContextRef.current = {
-                        authentication: auth,
-                        durationSeconds: playable.durationSeconds ?? item.durationSeconds ?? 0,
-                        episodeId: item.id,
-                        itemId: item.containerId,
-                    };
-                    recordRecentContentItem(item);
-                    await handlePlayItem(playable, [playable], 0, { shuffled: false });
-                    return;
-                } catch (error) {
-                    setMediaDetailState({
-                        message:
-                            error instanceof Error ? error.message : 'Could not play this episode.',
-                        status: 'error',
-                    });
-                    return;
-                }
-            }
-        }
-
         if (item.playback) {
             mediaDetailRequestId.current += 1;
             audiobookStartRequestId.current += 1;
@@ -976,6 +939,45 @@ export function useAndroidMediaHandlers(
                         }
                         if (!isCurrentRequest()) return;
                         await handlePlayItem(items[index]!, items, index, playOptions);
+                        return;
+                    }
+                }
+
+                // Samo audiobooks: build a real multi-file ExoPlayer queue from
+                // the per-file manifest. Each file streams WHOLE (the player
+                // seeks locally), so -15s / Previous / chapter jumps are instant
+                // local seeks and there is no stream-restart-to-go-back anymore.
+                if (absAuth?.type === ServerType.SAMO && detail.audiobookFiles?.length) {
+                    const streamToken = await ensureSamoStreamToken(absAuth).catch(
+                        () => undefined,
+                    );
+                    if (!isCurrentRequest()) return;
+                    const queue = buildSamoAudiobookQueueFromFiles(absAuth, {
+                        artworkUrl: detail.artworkUrl,
+                        audiobookId: detail.id,
+                        bookStartSeconds: targetBookSeconds,
+                        files: detail.audiobookFiles,
+                        streamToken,
+                        subtitle: detail.authorsSummary ?? detail.subtitle,
+                        timelineSegments: getTrackTimelineSegments(detail, track),
+                        title: detail.title,
+                    });
+                    if (queue && queue.items.length > 0) {
+                        const preparedItems = await Promise.all(
+                            queue.items.map((candidate) =>
+                                preparePlaybackItemForNative(
+                                    candidate,
+                                    serverConnections,
+                                ).catch(() => candidate),
+                            ),
+                        );
+                        if (!isCurrentRequest()) return;
+                        await handlePlayItem(
+                            preparedItems[queue.index]!,
+                            preparedItems,
+                            queue.index,
+                            playOptions,
+                        );
                         return;
                     }
                 }

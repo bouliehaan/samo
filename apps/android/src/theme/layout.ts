@@ -112,14 +112,16 @@ const HOME_MEDIA_TITLE_MARGIN_BOTTOM = 1;
 const HOME_MEDIA_SUBTITLE_LINE_HEIGHT = 16;
 /** Minimal descender room; tiles use includeFontPadding={false} on Android. */
 const HOME_MEDIA_TEXT_DESCENDER_SLACK = 2;
+/** Subtitle row height including descender slack (matches `mediaInfoRow`). */
+export const HOME_MEDIA_SUBTITLE_ROW_HEIGHT =
+    HOME_MEDIA_SUBTITLE_LINE_HEIGHT + HOME_MEDIA_TEXT_DESCENDER_SLACK;
 
 /** Title + subtitle block under a home carousel tile (`mediaTileCompact`). */
 export const HOME_MEDIA_TILE_CHROME =
     HOME_MEDIA_ARTWORK_TEXT_GAP +
     HOME_MEDIA_TITLE_LINE_HEIGHT * HOME_MEDIA_TITLE_MAX_LINES +
     HOME_MEDIA_TITLE_MARGIN_BOTTOM +
-    HOME_MEDIA_SUBTITLE_LINE_HEIGHT +
-    HOME_MEDIA_TEXT_DESCENDER_SLACK;
+    HOME_MEDIA_SUBTITLE_ROW_HEIGHT;
 
 /** `continueProgressTrack` + margin when a tile shows playback progress. */
 export const HOME_MEDIA_PROGRESS_CHROME = 4 + 4;

@@ -1,7 +1,6 @@
 import { audiobookshelfController } from '/@/renderer/api/audiobookshelf/audiobookshelf-controller';
-import {
-    resolveSamoAudiobookPlaySession,
-} from '/@/renderer/api/samo/samo-long-form';
+import { type SamoAudiobookFileSegment } from '/@/renderer/api/samo/samo-audiobook-stream';
+import { resolveSamoAudiobookPlaySession } from '/@/renderer/api/samo/samo-long-form';
 import {
     type AbsPlaybackBaseActions,
     type AbsPlaybackCoreState,
@@ -37,7 +36,13 @@ export type AudiobookState = AbsPlaybackCoreState &
         actions: AudiobookActions;
     };
 
-type AudiobookExtra = { chapters: AudiobookshelfChapter[] };
+type AudiobookExtra = {
+    /** Per-file manifest for whole-file streaming + cross-file seek switching. */
+    audiobookFiles: SamoAudiobookFileSegment[];
+    chapters: AudiobookshelfChapter[];
+    /** Book-global start offset of the file currently loaded in the player. */
+    streamOffsetSeconds: number;
+};
 
 type AudiobookResume = { resumeByItemId: Record<string, number> };
 
@@ -60,7 +65,7 @@ const { selectors, store: useAudiobookStore } = createAbsPlaybackStore<
     AudiobookActions,
     'resumeByItemId'
 >({
-    clearTransientExtra: () => ({ chapters: [] }),
+    clearTransientExtra: () => ({ audiobookFiles: [], chapters: [], streamOffsetSeconds: 0 }),
     extendActions: ({ base, get, play, set }) => ({
         ...base,
         play: play as AudiobookActions['play'],
@@ -95,11 +100,13 @@ const { selectors, store: useAudiobookStore } = createAbsPlaybackStore<
     failureToastLabel: 'Audiobook playback failed',
     getEpisodeForSync: () => null,
     getLoadingSeed: (_server, item) => ({
+        audiobookFiles: [],
         chapters: (item as AudiobookshelfLibraryItem).media?.chapters ?? [],
         duration: (item as AudiobookshelfLibraryItem).media?.duration ?? 0,
+        streamOffsetSeconds: 0,
     }),
     getResumeKey: (state) => (state.item ? state.item.id : null),
-    initialExtra: { chapters: [] },
+    initialExtra: { audiobookFiles: [], chapters: [], streamOffsetSeconds: 0 },
     logLabel: 'audiobook.store',
     persistName: 'audiobook-store',
     playArgsLabel: 'audiobook',
@@ -151,6 +158,9 @@ export const useAudiobookIsLoading = selectors.useIsLoading;
 export const useAudiobookPosition = selectors.usePosition;
 export const useAudiobookDuration = selectors.useDuration;
 export const useAudiobookChapters = () => useAudiobookStore((state) => state.chapters);
+export const useAudiobookFiles = () => useAudiobookStore((state) => state.audiobookFiles);
+export const useAudiobookStreamOffset = () =>
+    useAudiobookStore((state) => state.streamOffsetSeconds);
 export const useAudiobookError = selectors.useError;
 export const useAudiobookServer = selectors.useServer;
 export const useAudiobookActions = selectors.useActions;

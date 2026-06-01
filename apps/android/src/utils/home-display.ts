@@ -406,13 +406,14 @@ export const buildRecentlyAddedHeroRow = (
 };
 
 export const getContentItemProgress = (item: AndroidRecentContentSourceItem) => {
-    if (item.completionState === 'completed') {
+    const homeItem = 'progressSeconds' in item ? item : undefined;
+    if (homeItem?.completionState === 'completed') {
         return 1;
     }
 
-    const durationSeconds = item.playback?.durationSeconds ?? item.durationSeconds;
+    const durationSeconds = item.playback?.durationSeconds ?? homeItem?.durationSeconds;
     const positionSeconds =
-        item.playback?.initialPositionSeconds ?? item.progressSeconds ?? 0;
+        item.playback?.initialPositionSeconds ?? homeItem?.progressSeconds ?? 0;
 
     if (!durationSeconds || positionSeconds <= 0) {
         return undefined;
@@ -426,6 +427,23 @@ export const getContentItemProgress = (item: AndroidRecentContentSourceItem) => 
 
     return clamp(progress, 0, 1);
 };
+// A per-launch seed so Home surfaces a different slice of the library on each
+// cold open — alive, not static — while staying stable within a session so
+// nothing reshuffles under your thumb. Chronological rows (Recently Played /
+// Added, Podcast Feed) are left untouched; only the "your library" shelves
+// rotate, so the leading covers vary without changing what a section means.
+let homeFreshnessSeed: null | number = null;
+const rotateForFreshness = <T>(items: T[], salt: number): T[] => {
+    if (items.length < 5) {
+        return items;
+    }
+    if (homeFreshnessSeed === null) {
+        homeFreshnessSeed = Math.floor(Math.random() * 9973);
+    }
+    const offset = (homeFreshnessSeed + salt) % items.length;
+    return offset === 0 ? items : [...items.slice(offset), ...items.slice(0, offset)];
+};
+
 export const getHomeDisplaySections = (
     sections: MobileHomeSection[],
     recentItems: AndroidRecentContentItem[],
@@ -563,7 +581,7 @@ export const getHomeDisplaySections = (
 
     if (albumItems.length > 0) {
         displaySections.push({
-            items: albumItems,
+            items: rotateForFreshness(albumItems, 1),
             key: 'albums',
             title: 'Albums',
             variant: 'album',
@@ -572,7 +590,7 @@ export const getHomeDisplaySections = (
 
     if (audiobookItems.length > 0) {
         displaySections.push({
-            items: audiobookItems,
+            items: rotateForFreshness(audiobookItems, 2),
             key: MobileHomeSectionId.AUDIOBOOKS,
             title: 'Audiobooks',
             variant: 'book',
@@ -581,7 +599,7 @@ export const getHomeDisplaySections = (
 
     if (podcastItems.length > 0) {
         displaySections.push({
-            items: podcastItems,
+            items: rotateForFreshness(podcastItems, 3),
             key: MobileHomeSectionId.PODCASTS,
             title: 'Podcasts',
             variant: 'podcast',
@@ -590,7 +608,7 @@ export const getHomeDisplaySections = (
 
     if (artistItems.length > 0) {
         displaySections.push({
-            items: artistItems.slice(0, 16),
+            items: rotateForFreshness(artistItems, 4).slice(0, 16),
             key: MobileHomeSectionId.FAVORITE_ARTISTS,
             title: 'Artists',
             variant: 'artist',
@@ -599,7 +617,7 @@ export const getHomeDisplaySections = (
 
     if (playlistItems.length > 0) {
         displaySections.push({
-            items: playlistItems.slice(0, 16),
+            items: rotateForFreshness(playlistItems, 5).slice(0, 16),
             key: MobileHomeSectionId.PLAYLISTS,
             title: 'Playlists',
             variant: 'playlist',
@@ -608,7 +626,7 @@ export const getHomeDisplaySections = (
 
     if (discoverItems.length >= 4) {
         displaySections.push({
-            items: discoverItems.slice(0, 18),
+            items: rotateForFreshness(discoverItems, 6).slice(0, 18),
             key: 'rediscover',
             title: 'Rediscover',
             variant: 'wide',

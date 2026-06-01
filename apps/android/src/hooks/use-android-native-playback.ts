@@ -33,7 +33,10 @@ import {
     syncSamoPlaylistPlaybackSubmission,
     type SamoPlaylistPlaybackContext,
 } from '../services/samo-playback-sync';
-import { getAbsProgressSeconds } from '../utils/abs-progress-math';
+import {
+    buildAbsProgressContextFromPlayable,
+    getAbsProgressSeconds,
+} from '../utils/abs-progress-math';
 import { useAppSessionState } from '../state/app-session';
 import {
     getAndroidPlaybackState,
@@ -50,6 +53,7 @@ import {
     withResumePosition,
 } from '../utils/playback-resume';
 import { preparePlaybackItemForNative } from '../utils/samo-artwork-url';
+import { streamUrlHasEmbeddedResume } from '../utils/stream-resume-url';
 import { resolveLocalPlayback } from '../utils/offline-playback';
 import {
     getActivePlaybackStatus,
@@ -141,6 +145,11 @@ export function useAndroidNativePlayback(options: {
     const playbackSnapshotRef = useRef<null | { item: MobilePlayableAudio; sessionId: string }>(
         null,
     );
+    // Sessions JS deliberately skipped away from. After we start the next track
+    // (a new session), native can still emit a trailing status echo for the
+    // just-left track on its OLD session; rejecting those stale echoes keeps the
+    // queue index from flickering backward on Next/Prev.
+    const retiredSessionsRef = useRef<Set<string>>(new Set());
     const samoPlaybackStartedSessionRef = useRef<string | undefined>(undefined);
     const samoScrobbledSessionRef = useRef<string | undefined>(undefined);
     const samoPlaylistPlaybackStartedRef = useRef<string | undefined>(undefined);
@@ -152,6 +161,11 @@ export function useAndroidNativePlayback(options: {
             snapshot: { sessionId: string } | null,
         ) => {
             if (!snapshot) {
+                return false;
+            }
+            // Reject trailing echoes from a session we deliberately skipped away
+            // from — otherwise the just-left track can snap the queue backward.
+            if (event.sessionId && retiredSessionsRef.current.has(event.sessionId)) {
                 return false;
             }
             if (event.status === 'ended') {
@@ -181,7 +195,16 @@ export function useAndroidNativePlayback(options: {
                 return;
             }
 
-            if (event.queueIndex != null && event.queueIndex >= 0 && event.queueIndex !== queue.index) {
+            // Trust the native numeric index only when it actually points at the
+            // track the event reports — a bare index from a stale echo must never
+            // move the queue on its own. (Disambiguates duplicate queue items.)
+            const eventSourceId = event.source?.id;
+            if (
+                event.queueIndex != null &&
+                event.queueIndex >= 0 &&
+                event.queueIndex !== queue.index &&
+                (eventSourceId == null || queue.items[event.queueIndex]?.id === eventSourceId)
+            ) {
                 playbackQueueRef.current = {
                     ...queue,
                     index: event.queueIndex,
@@ -375,6 +398,12 @@ export function useAndroidNativePlayback(options: {
             const itemToPlay = withResumePosition(baseItem, resumeSeconds);
             const initialPositionMs =
                 resumeSeconds && resumeSeconds > 0 ? resumeSeconds * 1000 : 0;
+
+            absContextRef.current = buildAbsProgressContextFromPlayable(
+                itemToPlay,
+                serverConnections,
+            );
+
             const session = createPlaybackSession({
                 engine: 'android-native',
                 mediaKey: item.id,
@@ -405,6 +434,16 @@ export function useAndroidNativePlayback(options: {
             };
             forcePlaybackQueueRender();
             syncAndroidNativePlaybackQueue(playbackQueueRef.current, serverConnections);
+            const supersededSessionId = playbackSnapshotRef.current?.sessionId;
+            if (supersededSessionId && supersededSessionId !== session.id) {
+                const retired = retiredSessionsRef.current;
+                retired.add(supersededSessionId);
+                while (retired.size > 8) {
+                    const oldest = retired.values().next().value;
+                    if (oldest === undefined) break;
+                    retired.delete(oldest);
+                }
+            }
             playbackSnapshotRef.current = { item: nativeItem, sessionId: session.id };
             playbackRecoveryAttemptRef.current = 0;
             playbackStartedAtRef.current = Date.now();
@@ -439,7 +478,13 @@ export function useAndroidNativePlayback(options: {
                 );
                 if (!isCurrentPlaybackSession()) return;
 
-                if (initialPositionMs > 0) {
+                const embeddedStreamResume =
+                    streamUrlHasEmbeddedResume(nativeItem.url) &&
+                    (nativeItem.progressOffsetSeconds ?? 0) > 0;
+                const shouldSeekAfterPlay =
+                    initialPositionMs > 0 &&
+                    !(embeddedStreamResume && !itemToPlay.initialPositionSeconds);
+                if (shouldSeekAfterPlay) {
                     event = await seekAndroidAudio(initialPositionMs);
                     if (!isCurrentPlaybackSession()) return;
                 }

@@ -478,8 +478,19 @@ export const parsePodcastPlaybackEpisodeId = (playbackId: string): string | unde
 };
 
 export const parsePodcastPlaybackShowId = (playbackId: string): string | undefined => {
-    const match = playbackId.match(/:podcast:([^:]+):[^:]+$/);
-    return match?.[1];
+    const marker = ':podcast:';
+    const markerIndex = playbackId.lastIndexOf(marker);
+    if (markerIndex < 0) {
+        return undefined;
+    }
+
+    const rest = playbackId.slice(markerIndex + marker.length);
+    const episodeSeparator = rest.lastIndexOf(':');
+    if (episodeSeparator <= 0) {
+        return rest || undefined;
+    }
+
+    return rest.slice(0, episodeSeparator) || undefined;
 };
 
 const samoQualityForFile = (
@@ -530,7 +541,11 @@ export const buildSamoMusicPlayback = (
 };
 
 export const parseSamoAudiobookIdFromPlaybackId = (playbackId: string): string | undefined => {
-    const match = playbackId.match(/:audiobook:([^:]+)$/);
+    // Matches both the single-id form `…:audiobook:<bookId>` and the per-file
+    // queue form `…:audiobook:<bookId>:file:<mediaFileId>`. Progress sync and
+    // artwork resolution both key on the BOOK id, so the trailing file segment
+    // must be ignored.
+    const match = playbackId.match(/:audiobook:([^:]+)(?::file:[^:]+)?$/);
     return match?.[1];
 };
 
@@ -575,34 +590,202 @@ export const buildAudiobookTimelineSegments = (
 };
 
 /**
- * Samo audiobook streams are opened at a book-global byte offset on the server
- * (`progressSeconds` query). The native player reports position 0 at that
- * offset — store it in [progressOffsetSeconds] and rebuild the stream URL when
- * jumping chapters.
+ * A Samo audiobook's underlying files as the client needs them for playback:
+ * the per-file id (used as `mediaFileId` when streaming the file whole) and the
+ * file's start position on the book-global timeline.
  */
-export const applySamoAudiobookBookPosition = (
-    playback: MobilePlayableAudio,
-    bookStartSeconds: number,
-    authentication: ServerAuthenticationResult,
-    streamToken?: string,
-): MobilePlayableAudio => {
-    const audiobookId = parseSamoAudiobookIdFromPlaybackId(playback.id);
-    if (!audiobookId) {
-        return playback;
+export interface SamoAudiobookFilePlayback {
+    durationSeconds: number;
+    mediaFileId: string;
+    startOffsetSeconds: number;
+}
+
+/**
+ * Normalize a Samo audiobook's `audioFiles[]` into the ordered, offset-stamped
+ * list the multi-file queue is built from. Files arrive already sorted and
+ * offset-stamped by the server; this just defends against missing fields and
+ * back-fills offsets by accumulating durations if the server omitted them.
+ */
+export const samoAudiobookFilePlaybacks = (
+    audiobook: Pick<SamoAudiobook, 'audioFiles' | 'primaryAudioFile'>,
+): SamoAudiobookFilePlayback[] => {
+    const files = (audiobook.audioFiles ?? []).filter((file) => file.id);
+    if (files.length === 0) {
+        const primary = audiobook.primaryAudioFile;
+        if (!primary?.id) return [];
+        return [
+            {
+                durationSeconds: fileDurationSeconds(primary),
+                mediaFileId: primary.id,
+                startOffsetSeconds: primary.startOffsetSeconds ?? 0,
+            },
+        ];
     }
 
-    const bookStart = Math.max(0, Math.floor(bookStartSeconds));
-
-    return {
-        ...playback,
-        initialPositionSeconds: 0,
-        progressOffsetSeconds: bookStart,
-        url: getSamoAudiobookStreamUrl(authentication, audiobookId, {
-            progressSeconds: bookStart,
-            streamToken,
-        }),
-    };
+    let runningOffset = 0;
+    return files.map((file) => {
+        const startOffsetSeconds = file.startOffsetSeconds ?? runningOffset;
+        runningOffset = startOffsetSeconds + fileDurationSeconds(file);
+        return {
+            durationSeconds: fileDurationSeconds(file),
+            mediaFileId: file.id!,
+            startOffsetSeconds,
+        };
+    });
 };
+
+const fileDurationSeconds = (file: SamoAudioFile): number => {
+    if (file.durationMs && file.durationMs > 0) {
+        return file.durationMs / 1000;
+    }
+    return file.durationSeconds ?? 0;
+};
+
+/** Pick the file whose [startOffset, startOffset+duration) span contains the book second. */
+export const pickSamoAudiobookFileIndexForBookTime = (
+    files: readonly SamoAudiobookFilePlayback[],
+    bookSeconds: number,
+): number => {
+    if (files.length === 0) return 0;
+    let chosen = 0;
+    for (let i = 0; i < files.length; i += 1) {
+        if (files[i]!.startOffsetSeconds <= bookSeconds) {
+            chosen = i;
+        } else {
+            break;
+        }
+    }
+    return chosen;
+};
+
+/**
+ * Build a Samo audiobook as a multi-file ExoPlayer queue — one playable per
+ * underlying file.
+ *
+ * This is the heart of the audiobook rework. The server now serves each file
+ * WHOLE (with HTTP range support) at `…/stream?mediaFileId=<id>`, so the player
+ * owns seeking: -15s, Previous, and chapter jumps are local `seekTo` calls
+ * inside the current file (or a queue step across a file boundary), never a
+ * stream restart. Each file carries:
+ *
+ *   - `progressOffsetSeconds` = the file's book-global start, so the existing
+ *     book-time<->file-time mapping (getTimelinePositionSeconds, the seek bar,
+ *     chapter markers) keeps working unchanged;
+ *   - `durationSeconds` = the file's own length (the native duration);
+ *   - book-global `timelineSegments` (chapters) shared across every file.
+ *
+ * The file containing `bookStartSeconds` gets `initialPositionSeconds` set to
+ * the in-file remainder; the rest start at 0.
+ */
+export const buildSamoAudiobookFileQueue = (
+    authentication: ServerAuthenticationResult,
+    audiobook: SamoAudiobook,
+    options: {
+        artworkUrl?: string;
+        bookStartSeconds: number;
+        streamToken?: string;
+        timelineSegments?: MobilePlaybackSegment[];
+    },
+): { index: number; items: MobilePlayableAudio[] } | null => {
+    if (!audiobook.id) return null;
+    const title = audiobook.book?.title;
+    if (!title) return null;
+
+    const files = samoAudiobookFilePlaybacks(audiobook);
+    if (files.length === 0) return null;
+
+    const authors = audiobook.book?.authors
+        ?.map((author) => author.name)
+        .filter(Boolean)
+        .join(', ');
+    const timelineSegments =
+        options.timelineSegments ??
+        buildAudiobookTimelineSegments(audiobook.chapters, audiobook.durationSeconds, audiobook.id);
+    const mimeById = new Map(
+        (audiobook.audioFiles ?? []).map((file) => [file.id, file.mimeType] as const),
+    );
+
+    return buildSamoAudiobookQueueFromFiles(authentication, {
+        artworkUrl: options.artworkUrl,
+        audiobookId: audiobook.id,
+        bookStartSeconds: options.bookStartSeconds,
+        files,
+        mimeTypeFor: (mediaFileId) => mimeById.get(mediaFileId),
+        streamToken: options.streamToken,
+        subtitle: authors,
+        timelineSegments,
+        title,
+    });
+};
+
+/**
+ * Core multi-file queue builder, working purely from the per-file manifest.
+ * Both buildSamoAudiobookFileQueue (raw SamoAudiobook) and the Android play
+ * handler (which only has the manifest threaded through MobileMediaDetail) call
+ * this, so there is exactly one place that maps the manifest to a queue.
+ */
+export const buildSamoAudiobookQueueFromFiles = (
+    authentication: ServerAuthenticationResult,
+    params: {
+        artworkUrl?: string;
+        audiobookId: string;
+        bookStartSeconds: number;
+        files: readonly SamoAudiobookFilePlayback[];
+        mimeTypeFor?: (mediaFileId: string) => string | undefined;
+        streamToken?: string;
+        subtitle?: string;
+        timelineSegments?: MobilePlaybackSegment[];
+        title: string;
+    },
+): { index: number; items: MobilePlayableAudio[] } | null => {
+    if (params.files.length === 0) return null;
+
+    const bookStart = Math.max(0, Math.floor(params.bookStartSeconds));
+    const sharedTimeline =
+        params.timelineSegments && params.timelineSegments.length > 1
+            ? params.timelineSegments
+            : undefined;
+    const index = pickSamoAudiobookFileIndexForBookTime(params.files, bookStart);
+
+    const items = params.files.map((file, fileIndex) => {
+        const initialPositionSeconds =
+            fileIndex === index ? Math.max(0, bookStart - file.startOffsetSeconds) : 0;
+        return {
+            artworkUrl: params.artworkUrl,
+            contentSourceId: getServerConnectionKey(authentication),
+            // Per-file native duration; book-global duration lives on the detail.
+            durationSeconds: file.durationSeconds,
+            id: samoAudiobookFilePlaybackId(authentication, params.audiobookId, file.mediaFileId),
+            initialPositionSeconds,
+            mimeType: params.mimeTypeFor?.(file.mediaFileId),
+            // The file's book-global start keeps the timeline math unchanged.
+            progressOffsetSeconds: file.startOffsetSeconds,
+            quality: samoQualityForFile(undefined, 'android-direct', false),
+            source: 'audiobook' as const,
+            subtitle: params.subtitle,
+            timelineSegments: sharedTimeline,
+            title: params.title,
+            // Whole file; the player seeks locally. No progressSeconds/offset.
+            url: getSamoAudiobookStreamUrl(authentication, params.audiobookId, {
+                mediaFileId: file.mediaFileId,
+                streamToken: params.streamToken,
+            }),
+        } satisfies MobilePlayableAudio;
+    });
+
+    return { index, items };
+};
+
+/**
+ * Per-file playback id for a Samo audiobook. The audiobook id stays parseable
+ * (parseSamoAudiobookIdFromPlaybackId) so progress sync still keys on the book;
+ * the trailing file id disambiguates queue items.
+ */
+export const samoAudiobookFilePlaybackId = (
+    authentication: Pick<ServerAuthenticationResult, 'type' | 'url'>,
+    audiobookId: string,
+    mediaFileId: string,
+) => `${authentication.type}:${authentication.url}:audiobook:${audiobookId}:file:${mediaFileId}`;
 
 export const buildSamoAudiobookPlayback = (
     authentication: ServerAuthenticationResult,
@@ -614,51 +797,53 @@ export const buildSamoAudiobookPlayback = (
         timelineSegments?: MobilePlaybackSegment[];
     },
 ): MobilePlayableAudio | null => {
-    if (!audiobook.id) return null;
-    const title = audiobook.book?.title;
-    if (!title) return null;
-
-    const audioFile = audiobook.primaryAudioFile ?? audiobook.audioFiles?.[0];
     const bookStart = Math.max(
         0,
-        Math.floor(
-            options?.startSeconds ?? audiobook.progress?.progressSeconds ?? 0,
-        ),
+        Math.floor(options?.startSeconds ?? audiobook.progress?.progressSeconds ?? 0),
     );
-    const quality = samoQualityForFile(audioFile, 'android-direct', false);
-
-    const authors = audiobook.book?.authors
-        ?.map((author) => author.name)
-        .filter(Boolean)
-        .join(', ');
-
-    const timelineSegments =
-        options?.timelineSegments ??
-        buildAudiobookTimelineSegments(audiobook.chapters, audiobook.durationSeconds, audiobook.id);
-
-    return applySamoAudiobookBookPosition(
-        {
-            artworkUrl,
-            contentSourceId: getServerConnectionKey(authentication),
-            durationSeconds: audiobook.durationSeconds,
-            id: `${authentication.type}:${authentication.url}:audiobook:${audiobook.id}`,
-            mimeType: audioFile?.mimeType,
-            quality,
-            source: 'audiobook',
-            subtitle: authors,
-            timelineSegments:
-                timelineSegments.length > 1 ? timelineSegments : undefined,
-            title,
-            url: getSamoAudiobookStreamUrl(authentication, audiobook.id, {
-                progressSeconds: bookStart,
-                streamToken,
-            }),
-        },
-        bookStart,
-        authentication,
+    // Single source of truth: build the multi-file queue and return the file
+    // that contains the resume point. The whole-file/local-seek model means even
+    // a one-file book plays through this path (it just yields a one-item queue).
+    const queue = buildSamoAudiobookFileQueue(authentication, audiobook, {
+        artworkUrl,
+        bookStartSeconds: bookStart,
         streamToken,
-    );
+        timelineSegments: options?.timelineSegments,
+    });
+    if (!queue) return null;
+    return queue.items[queue.index] ?? queue.items[0] ?? null;
 };
+
+/**
+ * Samo podcast streams resume via `offsetSeconds` on the URL (server truncates the
+ * body). Native position 0 is that offset — store it in [progressOffsetSeconds].
+ */
+export const applySamoPodcastStreamResume = (
+    playback: MobilePlayableAudio,
+    resumeSeconds: number,
+    authentication: ServerAuthenticationResult,
+    streamToken?: string,
+): MobilePlayableAudio => {
+    const episodeId = parsePodcastPlaybackEpisodeId(playback.id);
+    if (!episodeId) {
+        return playback;
+    }
+
+    const resume = Math.max(0, Math.floor(resumeSeconds));
+
+    return {
+        ...playback,
+        initialPositionSeconds: 0,
+        progressOffsetSeconds: resume,
+        url: getSamoPodcastEpisodeStreamUrl(authentication, episodeId, {
+            ...(resume > 0 ? { offsetSeconds: resume } : {}),
+            streamToken,
+        }),
+    };
+};
+
+export const isSamoPodcastPlayback = (item: MobilePlayableAudio) =>
+    item.source === 'podcast' && item.id.startsWith(`${ServerType.SAMO}:`);
 
 export const buildSamoPodcastEpisodePlayback = (
     authentication: ServerAuthenticationResult,
@@ -675,36 +860,41 @@ export const buildSamoPodcastEpisodePlayback = (
     if (!resolvedShowId) return null;
 
     const audioFile = episode.audioFiles?.[0];
-    const progressSeconds =
-        episode.progress?.progressSeconds ?? episode.playback?.progressSeconds;
-    const resumeSeconds =
-        progressSeconds && progressSeconds > 0 ? Math.round(progressSeconds) : undefined;
+    const resumeSeconds = Math.max(
+        0,
+        Math.floor(
+            episode.progress?.progressSeconds ?? episode.playback?.progressSeconds ?? 0,
+        ),
+    );
     const quality = samoQualityForFile(audioFile, 'android-direct', false);
 
     const publishedAtMs = episode.publishedAt
         ? Date.parse(episode.publishedAt)
         : undefined;
 
-    return {
-        artworkUrl,
-        contentSourceId: getServerConnectionKey(authentication),
-        durationSeconds: episode.duration,
-        id: buildSamoPodcastPlaybackId(authentication, resolvedShowId, episode.id),
-        initialPositionSeconds: resumeSeconds,
-        mimeType: audioFile?.mimeType ?? episode.enclosureType,
-        publishedAt:
-            publishedAtMs !== undefined && Number.isFinite(publishedAtMs)
-                ? publishedAtMs
-                : undefined,
-        quality,
-        source: 'podcast',
-        subtitle: episode.podcastTitle,
-        title,
-        url: getSamoPodcastEpisodeStreamUrl(authentication, episode.id, {
-            offsetSeconds: resumeSeconds,
-            streamToken,
-        }),
-    };
+    return applySamoPodcastStreamResume(
+        {
+            artworkUrl,
+            contentSourceId: getServerConnectionKey(authentication),
+            durationSeconds: episode.durationSeconds ?? episode.duration,
+            id: buildSamoPodcastPlaybackId(authentication, resolvedShowId, episode.id),
+            mimeType: audioFile?.mimeType ?? episode.enclosureType,
+            publishedAt:
+                publishedAtMs !== undefined && Number.isFinite(publishedAtMs)
+                    ? publishedAtMs
+                    : undefined,
+            quality,
+            source: 'podcast',
+            title,
+            url: getSamoPodcastEpisodeStreamUrl(authentication, episode.id, {
+                ...(resumeSeconds > 0 ? { offsetSeconds: resumeSeconds } : {}),
+                streamToken,
+            }),
+        },
+        resumeSeconds,
+        authentication,
+        streamToken,
+    );
 };
 
 export const buildSamoInternetRadioPlayback = (

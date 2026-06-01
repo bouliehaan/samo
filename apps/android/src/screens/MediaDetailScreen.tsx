@@ -133,7 +133,6 @@ const MediaDetailLoadingView = ({
     title: string;
 }) => {
     const isArtist = itemType === MobileHomeItemType.ARTIST;
-    const artLoadedAtRef = useRef<number | null>(null);
 
     return (
         <View style={styles.mediaDetailScreen}>
@@ -146,35 +145,6 @@ const MediaDetailLoadingView = ({
                                 contentSource={contentSource}
                                 fallbackStyle={styles.detailArtworkFallback}
                                 letter={title.slice(0, 1)}
-                                onLoad={() => {
-                                    if (artLoadedAtRef.current !== null) {
-                                        return;
-                                    }
-                                    artLoadedAtRef.current = Date.now();
-                                    // #region agent log
-                                    const payload = {
-                                        sessionId: 'c0ca1a',
-                                        runId: 'nav-perf',
-                                        hypothesisId: 'H13',
-                                        location: 'MediaDetailScreen.tsx:MediaDetailLoadingView',
-                                        message: 'loading hero artwork decoded',
-                                        data: { itemType, isArtist: true },
-                                        timestamp: artLoadedAtRef.current,
-                                    };
-                                    console.log('[nav-perf]', JSON.stringify(payload));
-                                    fetch(
-                                        'http://127.0.0.1:7498/ingest/65ba3320-fcf4-4bf2-82b0-f3ffc8d708c2',
-                                        {
-                                            method: 'POST',
-                                            headers: {
-                                                'Content-Type': 'application/json',
-                                                'X-Debug-Session-Id': 'c0ca1a',
-                                            },
-                                            body: JSON.stringify(payload),
-                                        },
-                                    ).catch(() => {});
-                                    // #endregion
-                                }}
                                 style={[styles.detailArtwork, styles.detailArtworkRound]}
                                 serverConnections={serverConnections}
                                 uri={artworkUrl}

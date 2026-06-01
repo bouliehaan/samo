@@ -114,12 +114,20 @@ export interface SamoAudioFile {
     discNumber?: number;
     /** Duration in seconds. */
     durationSeconds?: number;
+    /** Exact duration in milliseconds (preferred over durationSeconds). */
+    durationMs?: number;
     embeddedTags?: Record<string, string[]>;
     fileName?: string;
     id?: string;
     inode?: string;
     libraryId?: string;
     mediaFileId?: string;
+    /**
+     * This file's start position on the book-global timeline (sum of every
+     * earlier file's exact duration). 0 for the first file. The client uses it
+     * to map book-time <-> (file, file-time) without re-accumulating durations.
+     */
+    startOffsetSeconds?: number;
     metadataFormats?: string[];
     mimeType?: string;
     modifiedAt?: string;
@@ -517,6 +525,7 @@ export interface SamoPodcastEpisode {
     chapters?: SamoAudioChapter[];
     description?: string;
     duration?: number;
+    durationSeconds?: number;
     enclosureSize?: number;
     enclosureType?: string;
     enclosureUrl?: string;

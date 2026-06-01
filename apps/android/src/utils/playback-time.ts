@@ -160,9 +160,31 @@ export const getPlaybackDurationMs = (playbackState: AndroidPlaybackState) => {
         return undefined;
     }
 
+    const item = playbackState.item;
+    // Audiobook / Samo-podcast streams open at a book-global offset on the server
+    // (it truncates the body), so the native engine reports only the PARTIAL stream
+    // duration (full − offset). The DISPLAY position, however, is converted to
+    // book-absolute by getDisplayPositionMs (it folds progressOffsetSeconds in). If
+    // the bar's duration stays partial while the playhead is book-absolute, the
+    // playhead and every chapter marker land in the wrong place the moment you resume
+    // past the start — which is almost always. Use the book-absolute duration so the
+    // two agree: the catalog's full duration, or (partial stream + offset) as a
+    // fallback. Stored playbackState.durationMs is left untouched (it stays stream-
+    // relative to match the stored file position, so end-detection keeps working).
+    if (usesTimelinePlaybackPosition(item)) {
+        const fullBookMs = getPlaybackItemDurationMs(item);
+        if (fullBookMs) {
+            return fullBookMs;
+        }
+        const offsetMs = Math.max(0, item.progressOffsetSeconds ?? 0) * 1000;
+        return playbackState.durationMs && playbackState.durationMs > 0
+            ? playbackState.durationMs + offsetMs
+            : undefined;
+    }
+
     return playbackState.durationMs && playbackState.durationMs > 0
         ? playbackState.durationMs
-        : getPlaybackItemDurationMs(playbackState.item);
+        : getPlaybackItemDurationMs(item);
 };
 
 export const getTimelinePositionSeconds = (
@@ -177,6 +199,18 @@ export const getTimelinePositionSeconds = (
 
     return filePositionSeconds + (item.progressOffsetSeconds ?? 0);
 };
+
+/** Wall-clock playhead for audiobooks and Samo podcast streams (file position + stream offset). */
+export const usesTimelinePlaybackPosition = (item: MobilePlayableAudio) =>
+    item.source === 'audiobook' || item.source === 'podcast';
+
+export const getDisplayPositionMs = (
+    item: MobilePlayableAudio,
+    filePositionMs: number | undefined,
+): number =>
+    usesTimelinePlaybackPosition(item)
+        ? getTimelinePositionSeconds(item, filePositionMs) * 1000
+        : filePositionMs ?? 0;
 
 export const getCurrentTimelineSegmentIndex = (
     segments: MobilePlaybackSegment[],
@@ -274,13 +308,12 @@ export const getPlayableDisplayMetadata = (
 
     if (item.source === 'podcast') {
         const episode = item.title?.trim();
-        const show = getDisplaySubtitle(item.subtitle);
         const released = formatPlaybackReleaseDate(item.publishedAt);
-        const lines = compactLines([episode, show, released]);
+        const lines = compactLines([episode, released]);
 
         return {
             lines,
-            subtitle: notificationSubtitle(lines) ?? show,
+            subtitle: released,
             title: episode ?? 'Unknown title',
         };
     }

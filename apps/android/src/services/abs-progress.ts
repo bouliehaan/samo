@@ -173,14 +173,19 @@ export const loadAbsCurrentProgress = async (
             const state = await getSamoPlayback(samoFetch, authentication, kind, id);
             const currentTimeSeconds = Math.max(0, Math.round(state.progressSeconds ?? 0));
 
+            // Samo podcast progress is authoritative on the server. Stale local
+            // pending must not re-inject offsetSeconds into the stream URL for
+            // enclosure-backed episodes the user has not actually resumed.
             if (currentTimeSeconds === 0 && !state.completed) {
-                const pending = findEntry(itemId, episodeId);
-                if (pending && pending.currentTimeSeconds > 0) {
-                    return {
-                        currentTimeSeconds: pending.currentTimeSeconds,
-                        durationSeconds: pending.durationSeconds,
-                        isFinished: false,
-                    };
+                if (kind !== 'podcast-episode') {
+                    const pending = findEntry(itemId, episodeId);
+                    if (pending && pending.currentTimeSeconds > 0) {
+                        return {
+                            currentTimeSeconds: pending.currentTimeSeconds,
+                            durationSeconds: pending.durationSeconds,
+                            isFinished: false,
+                        };
+                    }
                 }
                 return null;
             }

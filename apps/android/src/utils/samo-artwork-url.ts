@@ -1,6 +1,5 @@
-import { Image as ExpoImage } from 'expo-image';
-
 import {
+    parsePodcastPlaybackEpisodeId,
     parseSamoAudiobookIdFromPlaybackId,
     type MobileContentSource,
     type MobilePlayableAudio,
@@ -12,11 +11,13 @@ import {
     getSamoBearerToken,
     getSamoAudiobookStreamUrl,
     getSamoMetadataImageUrl,
+    getSamoPodcastEpisodeStreamUrl,
     ensureSamoStreamToken,
     ServerType,
     type ServerAuthenticationResult,
 } from '@samo/core/server';
 
+import { getArtworkLocalUri, peekArtworkLocalUri } from '../services/artwork-cache';
 import { getHighResolutionArtworkUrl } from './artwork-url';
 import { getContentSourceFromPlaybackItem } from './content-source';
 
@@ -94,13 +95,14 @@ export const prefetchArtworkSource = (source: SamoArtworkImageSource | undefined
     if (!source) {
         return;
     }
-    if (typeof source === 'string') {
-        void ExpoImage.prefetch(source, 'memory-disk');
+    const uri = typeof source === 'string' ? source : source.uri;
+    // Already cached? A synchronous peek (a Map lookup) short-circuits with no
+    // native call — keeps press-time prefetch from touching the bridge when the
+    // bulk warm has already cached the cover. Only a miss kicks a download.
+    if (!uri || peekArtworkLocalUri(uri)) {
         return;
     }
-    if (source.uri) {
-        void ExpoImage.prefetch(source.uri, 'memory-disk');
-    }
+    void getArtworkLocalUri(uri, typeof source === 'string' ? undefined : source.headers);
 };
 
 export const resolveSamoArtworkUrlForDisplay = (
@@ -258,6 +260,17 @@ export const preparePlaybackItemForNative = async (
                 progressSeconds: bookStart,
                 streamToken,
             });
+        } else if (item.source === 'podcast') {
+            const episodeId = parsePodcastPlaybackEpisodeId(item.id);
+            if (episodeId) {
+                const resume = Math.max(0, Math.floor(item.progressOffsetSeconds ?? 0));
+                nextUrl = getSamoPodcastEpisodeStreamUrl(auth, episodeId, {
+                    ...(resume > 0 ? { offsetSeconds: resume } : {}),
+                    streamToken,
+                });
+            } else {
+                nextUrl = finalizeSamoMediaUrl(auth, item.url, streamToken) ?? item.url;
+            }
         } else {
             nextUrl = finalizeSamoMediaUrl(auth, item.url, streamToken) ?? item.url;
         }

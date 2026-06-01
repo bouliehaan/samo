@@ -5,7 +5,12 @@ import {
     type MobileMediaDetail,
     MobileMediaDetailType,
 } from '@samo/core/mobile';
-import { type ServerAuthenticationResult, ServerType } from '@samo/core/server';
+import {
+    ensureSamoStreamToken,
+    getSamoPodcastEpisodeStreamUrl,
+    type ServerAuthenticationResult,
+    ServerType,
+} from '@samo/core/server';
 // expo-file-system 19+ split into a new "file API" and a legacy API. The
 // legacy API still exposes documentDirectory, createDownloadResumable, etc.,
 // which is what we need for the download manager. The new API is async-iterator
@@ -856,6 +861,24 @@ const pumpQueue = async (
     }
 };
 
+/**
+ * Resume the queue when the app returns to the foreground. Anything stuck in
+ * 'downloading' with no live handle (the process was suspended/killed while
+ * backgrounded) is re-queued so it retries from scratch; genuinely-active
+ * transfers are left alone. Fixes downloads that "show queued and never resume."
+ */
+export const resumeDownloadsOnForeground = async (
+    authentications: ServerAuthenticationResult[],
+): Promise<void> => {
+    const registry = await getRegistry();
+    for (const entry of registry) {
+        if (entry.status === 'downloading' && !activeDownloads.has(entry.id)) {
+            await updateEntry(entry.id, { progress: undefined, status: 'queued' });
+        }
+    }
+    void pumpQueue(authentications);
+};
+
 const buildEntryId = (): string =>
     `dl-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
@@ -977,6 +1000,100 @@ const findAudiobookshelfAuth = (
     );
 };
 
+const findSamoAuth = (
+    authentications: ServerAuthenticationResult[],
+    sourceId: string,
+): ServerAuthenticationResult | undefined => {
+    return authentications.find(
+        (candidate) =>
+            `${candidate.type}:${candidate.url}` === sourceId &&
+            candidate.type === ServerType.SAMO,
+    );
+};
+
+const buildPodcastCollection = (detail: MobileMediaDetail): DownloadCollectionInfo => ({
+    artworkImageId: detail.artworkImageId,
+    artworkUrl: detail.artworkUrl,
+    id: detail.id,
+    sourceId: detail.source.id,
+    subtitle: detail.subtitle,
+    title: detail.title,
+    type: 'podcast',
+});
+
+/**
+ * Download every episode of a Samo podcast. Each episode is fetched from a
+ * FRESH from-zero stream URL — the playback URL embeds the listener's resume
+ * offset (server-samo `offsetSeconds`), so reusing it would download a partial
+ * file. The stream token self-authenticates the URL (no Authorization header).
+ */
+const enqueueSamoPodcastDownload = async (
+    detail: MobileMediaDetail,
+    samoAuth: ServerAuthenticationResult,
+    authentications: ServerAuthenticationResult[],
+): Promise<{ enqueued: number; reason?: string; skipped: number }> => {
+    const streamToken = await ensureSamoStreamToken(samoAuth).catch(() => undefined);
+    const collection = buildPodcastCollection(detail);
+    let enqueued = 0;
+    let skipped = 0;
+    for (const episode of detail.tracks) {
+        const episodeId = episode.episodeId ?? episode.id;
+        if (!episodeId) {
+            continue;
+        }
+        const entry = await enqueueDownload(
+            {
+                collection,
+                sourceUrl: getSamoPodcastEpisodeStreamUrl(
+                    samoAuth,
+                    episodeId,
+                    streamToken ? { streamToken } : undefined,
+                ),
+                title: episode.title,
+                trackId: episodeId,
+                trackSubtitle: episode.subtitle,
+            },
+            authentications,
+        );
+        if (entry.status === 'completed') {
+            skipped += 1;
+        } else {
+            enqueued += 1;
+        }
+    }
+    if (enqueued === 0 && skipped === 0) {
+        return { enqueued: 0, reason: 'No episodes were found for this podcast.', skipped: 0 };
+    }
+    return { enqueued, skipped };
+};
+
+/** Single Samo podcast episode — same from-zero stream URL as the bulk path. */
+const enqueueSamoSinglePodcastEpisode = async (
+    detail: MobileMediaDetail,
+    episodeId: string,
+    title: string,
+    subtitle: string | undefined,
+    samoAuth: ServerAuthenticationResult,
+    authentications: ServerAuthenticationResult[],
+): Promise<{ enqueued: boolean; reason?: string }> => {
+    const streamToken = await ensureSamoStreamToken(samoAuth).catch(() => undefined);
+    const entry = await enqueueDownload(
+        {
+            collection: buildPodcastCollection(detail),
+            sourceUrl: getSamoPodcastEpisodeStreamUrl(
+                samoAuth,
+                episodeId,
+                streamToken ? { streamToken } : undefined,
+            ),
+            title,
+            trackId: episodeId,
+            trackSubtitle: subtitle,
+        },
+        authentications,
+    );
+    return { enqueued: entry.status !== 'completed' };
+};
+
 const enqueueAudiobookDownload = async (
     detail: MobileMediaDetail,
     authentications: ServerAuthenticationResult[],
@@ -1075,9 +1192,13 @@ const enqueuePodcastDownload = async (
 ): Promise<{ enqueued: number; reason?: string; skipped: number }> => {
     const auth = findAudiobookshelfAuth(authentications, detail.source.id);
     if (!auth) {
+        const samoAuth = findSamoAuth(authentications, detail.source.id);
+        if (samoAuth) {
+            return enqueueSamoPodcastDownload(detail, samoAuth, authentications);
+        }
         return {
             enqueued: 0,
-            reason: 'The Audiobookshelf server for this podcast is no longer connected.',
+            reason: 'The server for this podcast is no longer connected.',
             skipped: 0,
         };
     }
@@ -1213,9 +1334,21 @@ export const enqueueSinglePodcastEpisodeDownload = async (
 ): Promise<{ enqueued: boolean; reason?: string }> => {
     const auth = findAudiobookshelfAuth(authentications, detail.source.id);
     if (!auth || !episodeTrack.episodeId || !episodeTrack.itemId) {
+        const samoAuth = findSamoAuth(authentications, detail.source.id);
+        const samoEpisodeId = episodeTrack.episodeId ?? episodeTrack.id;
+        if (samoAuth && samoEpisodeId) {
+            return enqueueSamoSinglePodcastEpisode(
+                detail,
+                samoEpisodeId,
+                episodeTrack.title,
+                episodeTrack.subtitle,
+                samoAuth,
+                authentications,
+            );
+        }
         return {
             enqueued: false,
-            reason: 'The Audiobookshelf server for this podcast is no longer connected.',
+            reason: 'The server for this podcast is no longer connected.',
         };
     }
 

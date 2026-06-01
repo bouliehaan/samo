@@ -104,8 +104,8 @@ import {
     getPlayableDisplayMetadata,
     getPlaybackDisplayMetadata,
     getPlaybackDurationMs,
+    getDisplayPositionMs,
     getStablePlaybackPositionMs,
-    getTimelinePositionSeconds,
     isLivePlayback,
 } from '../utils/playback-time';
 import { buildBackdropStops, darkenColor, pickAlbumEssenceColor } from '../utils/color';
@@ -115,11 +115,8 @@ import { triggerImpact } from '../services/haptics';
 import {
     DISMISS_DISTANCE,
     DISMISS_VELOCITY,
-    FULL_PLAYER_EXPANDED_TOP,
     FULL_PLAYER_PADDING_TOP,
     FULL_PLAYER_PLAY_GLYPH_SIZE,
-    MINI_PLAYER_COLLAPSED_TOP,
-    MINI_PLAYER_HEIGHT,
     OPEN_SPRING,
     PLAYER_EXPANSION_DISTANCE,
     QUEUE_CLOSE_DISTANCE,
@@ -133,13 +130,9 @@ import { styles } from '../theme/styles';
 import { colors } from '../theme/tokens';
 import { PlayerIconButton } from './PlayerIconButton';
 import {
-    expandedPanelFlex,
     PLAYER_CLOSE_SPRING,
     PLAYER_OPEN_SPRING,
-    shellElevation,
-    shellRevealOpacity,
     shellTopRadius,
-    washLayerOpacity,
 } from './player-motion';
 
 const ReanimatedFlashList = Reanimated.createAnimatedComponent(FlashList) as typeof FlashList;
@@ -797,33 +790,21 @@ export const FullScreenPlayer = memo(({
         [dragGesture, skipGesture],
     );
 
-    // The outer shell expands from the mini's dock position to fullscreen.
-    // Expensive content is laid out at the fully-open size and clipped by
-    // this shell (overflow: hidden), so the gesture reads as one slab sliding
-    // open without forcing the whole player body through layout.
+    // One solid card sliding up over the app. The shell is laid out once at full
+    // size (styles.fullPlayer: top 0, height SCREEN_HEIGHT, opaque) and parked
+    // below the screen when closed — so the ONLY thing that animates per frame is
+    // translateY, a cheap GPU transform with no height/top/flex layout work. The
+    // top corners round off as it docks for a tactile "card" read.
     const playerAnimatedStyle = useAnimatedStyle(() => {
         const p = playerProgress.value;
         return {
-            backgroundColor: '#000000',
             borderTopLeftRadius: shellTopRadius(p),
             borderTopRightRadius: shellTopRadius(p),
-            elevation: shellElevation(p),
-            height: interpolate(p, [0, 1], [MINI_PLAYER_HEIGHT, SCREEN_HEIGHT], 'clamp'),
-            opacity: shellRevealOpacity(p),
-            top: interpolate(
-                p,
-                [0, 1],
-                [MINI_PLAYER_COLLAPSED_TOP, FULL_PLAYER_EXPANDED_TOP],
-                'clamp',
-            ),
+            transform: [
+                { translateY: interpolate(p, [0, 1], [SCREEN_HEIGHT, 0], 'clamp') },
+            ],
         };
     });
-    const expandedPanelStyle = useAnimatedStyle(() => ({
-        flex: expandedPanelFlex(playerProgress.value),
-    }));
-    const backdropWashStyle = useAnimatedStyle(() => ({
-        opacity: washLayerOpacity(playerProgress.value),
-    }));
 
     // Settle haptic — fires exactly once whenever the spring lands at fully
     // open, whatever path got us there (tap, drag, programmatic). Does not
@@ -918,17 +899,26 @@ export const FullScreenPlayer = memo(({
     );
     const filePositionMs =
         playbackState.status !== 'idle' ? (playbackState.positionMs ?? 0) : 0;
-    const positionMs =
-        activeItem && activeItem.source === 'audiobook'
-            ? getTimelinePositionSeconds(activeItem, filePositionMs) * 1000
-            : filePositionMs;
-    const handleTimelineSeek = (bookOrFilePositionMs: number) => {
-        if (!activeItem || activeItem.source !== 'audiobook') {
-            onSeek(bookOrFilePositionMs);
+    const positionMs = activeItem
+        ? getDisplayPositionMs(activeItem, filePositionMs)
+        : filePositionMs;
+    const handleTimelineSeek = (timelinePositionMs: number) => {
+        if (!activeItem) {
+            onSeek(timelinePositionMs);
             return;
         }
 
-        onSeek(getPlayerPositionMsForAbsProgress(bookOrFilePositionMs / 1000, activeItem));
+        if (activeItem.source === 'audiobook' || activeItem.source === 'podcast') {
+            onSeek(
+                getPlayerPositionMsForAbsProgress(
+                    timelinePositionMs / 1000,
+                    activeItem,
+                ),
+            );
+            return;
+        }
+
+        onSeek(timelinePositionMs);
     };
     const timelineSegments = displayItem.timelineSegments;
     return (
@@ -949,7 +939,7 @@ export const FullScreenPlayer = memo(({
                 stays in the album's color family instead of muddying. */}
             <Reanimated.View
                 pointerEvents="none"
-                style={[StyleSheet.absoluteFillObject, backdropWashStyle]}
+                style={StyleSheet.absoluteFillObject}
             >
                 {bgPrev ? (
                     <Animated.View
@@ -1005,7 +995,7 @@ export const FullScreenPlayer = memo(({
                 </View>
             </Reanimated.View>
 
-            <Reanimated.View style={[styles.fullPlayerExpandedPanel, expandedPanelStyle]}>
+            <Reanimated.View style={styles.fullPlayerExpandedPanel}>
             <View style={styles.fullPlayerContent}>
             <View style={styles.fullPlayerHeader}>
                 <Pressable
@@ -1642,8 +1632,13 @@ export const QueueSheetOverlay = memo(({
 }) => {
     const items = queue?.items ?? [];
     const showingChapters = (chapters?.length ?? 0) > 0;
-    const positionSeconds =
-        (currentPositionMs ?? 0) / 1000 + (progressOffsetSeconds ?? 0);
+    // `currentPositionMs` is already the book-absolute playhead — getDisplayPositionMs
+    // folds progressOffsetSeconds in upstream — and chapter.startSeconds are likewise
+    // book-absolute (the chapter-tap seek below subtracts the offset to convert back to
+    // a file position). Comparing them directly is correct; adding the offset again
+    // double-counts it and highlights a chapter ahead of the real one on every file
+    // past the first, which is what made chapters feel untrustworthy.
+    const positionSeconds = (currentPositionMs ?? 0) / 1000;
     const activeChapterIndex = showingChapters
         ? findActiveChapterIndex(chapters!, positionSeconds)
         : -1;

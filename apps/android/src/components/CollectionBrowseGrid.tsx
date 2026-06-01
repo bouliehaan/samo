@@ -92,7 +92,8 @@ const BrowseTile = memo(({ item, onOpenContextMenu, onSelectItem }: BrowseTilePr
             accessibilityRole="button"
             onLongPress={() => onOpenContextMenu(item)}
             onPress={() => onSelectItem(item)}
-            style={styles.viewAllTile}
+            style={({ pressed }) => [styles.viewAllTile, pressed && styles.tilePressed]}
+            unstable_pressDelay={110}
         >
             <ArtworkImage
                 artworkImageId={item.artworkImageId}

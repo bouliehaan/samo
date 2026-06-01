@@ -8,6 +8,8 @@ import {
 import { useCallback, useEffect } from 'react';
 import { Alert } from 'react-native';
 
+import { prefetchCatalogArtwork } from '../services/artwork-prefetch';
+import { syncSamoCatalog } from '../services/catalog/catalog-sync';
 import { type AndroidHomeContentState } from '../services/home-content';
 import { authenticateServer } from '../services/server-auth';
 import {
@@ -202,6 +204,16 @@ export function useAndroidServerAuth(options: UseAndroidServerAuthOptions) {
             setActiveUtilityScreen('manage-servers');
             await savePersistedServerAuths(nextConnections);
             await loadHomeForConnections(nextConnections);
+
+            // Kick off the on-device library mirror for the just-added source.
+            // Fire-and-forget: a full catalog crawl is heavy and its progress is
+            // surfaced separately via the sync-state store in Settings, so the
+            // connect flow must not block on it. No-ops for non-Samo servers.
+            // Once the mirror lands, proactively cache the whole library's cover
+            // art so browsing reads local files instead of fetching per tile.
+            void syncSamoCatalog([nextAuthState.result]).then(() =>
+                prefetchCatalogArtwork([nextAuthState.result]),
+            );
 
             if (shouldOfferAudiobookshelfNext) {
                 Alert.alert(

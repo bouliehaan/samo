@@ -6,6 +6,7 @@ import {
     FULL_PLAYER_PADDING_TOP,
     HOME_COMPACT_OFFSET,
     HOME_EDGE_PADDING,
+    HOME_MEDIA_SUBTITLE_ROW_HEIGHT,
     HOME_MEDIA_TILE_CHROME,
     HOME_PRIMARY_TILE,
     HOME_ROUNDED_OFFSET,
@@ -26,7 +27,7 @@ import {
     VIEW_ALL_TILE_HEIGHT,
     VIEW_ALL_TILE_SIZE,
 } from './layout';
-import { colors, spacing } from './tokens';
+import { colors, elevation, radii, spacing } from './tokens';
 
 export const styles = StyleSheet.create({
     addRadioActions: {
@@ -110,8 +111,8 @@ export const styles = StyleSheet.create({
         paddingVertical: 9,
     },
     addRadioServerPillActive: {
-        backgroundColor: 'rgba(202,160,79,0.16)',
-        borderColor: 'rgba(202,160,79,0.45)',
+        backgroundColor: 'rgba(212,192,138,0.16)',
+        borderColor: 'rgba(212,192,138,0.45)',
     },
     addRadioServerPillText: {
         color: colors.muted,
@@ -285,8 +286,8 @@ export const styles = StyleSheet.create({
         color: colors.accent,
     },
     outputPickerIconSelected: {
-        backgroundColor: 'rgba(202,160,79,0.16)',
-        borderColor: 'rgba(202,160,79,0.34)',
+        backgroundColor: 'rgba(212,192,138,0.16)',
+        borderColor: 'rgba(212,192,138,0.34)',
     },
     outputPickerList: {
         paddingBottom: spacing.sm,
@@ -318,7 +319,7 @@ export const styles = StyleSheet.create({
         backgroundColor: 'rgba(255,255,255,0.05)',
     },
     outputPickerRowSelected: {
-        backgroundColor: 'rgba(202,160,79,0.08)',
+        backgroundColor: 'rgba(212,192,138,0.08)',
     },
     outputPickerSectionLabel: {
         color: 'rgba(255,255,255,0.42)',
@@ -366,8 +367,9 @@ export const styles = StyleSheet.create({
     albumHeroArtwork: {
         aspectRatio: 1,
         backgroundColor: colors.surface,
-        borderRadius: 4,
+        borderRadius: radii.sm,
         width: Math.min(SCREEN_WIDTH - HOME_EDGE_PADDING * 2 - 40, 360),
+        ...elevation.raised,
     },
     albumHeroArtworkFallback: {
         alignItems: 'center',
@@ -982,14 +984,15 @@ export const styles = StyleSheet.create({
     detailArtwork: {
         aspectRatio: 1,
         backgroundColor: colors.surface,
-        borderRadius: 8,
+        borderRadius: radii.md,
         width: 132,
+        ...elevation.card,
     },
     detailArtworkFallback: {
         alignItems: 'center',
         aspectRatio: 1,
         backgroundColor: colors.surface,
-        borderRadius: 8,
+        borderRadius: radii.md,
         justifyContent: 'center',
         width: 132,
     },
@@ -1385,15 +1388,19 @@ export const styles = StyleSheet.create({
         width: 18,
     },
     fullPlayer: {
+        backgroundColor: '#000000',
         elevation: 999,
         flexDirection: 'column',
+        height: SCREEN_HEIGHT,
         left: 0,
         overflow: 'hidden',
         position: 'absolute',
         right: 0,
+        top: 0,
         zIndex: 10000,
     },
     fullPlayerExpandedPanel: {
+        flex: 1,
         minHeight: 0,
         overflow: 'hidden',
     },
@@ -1488,7 +1495,7 @@ export const styles = StyleSheet.create({
         textAlign: 'center',
     },
     fullPlayerCollapsedSurface: {
-        backgroundColor: '#1c1c1e',
+        backgroundColor: colors.surface,
         bottom: 0,
         left: 0,
         position: 'absolute',
@@ -1656,7 +1663,12 @@ export const styles = StyleSheet.create({
     homeFilterGridArtworkPodcast: {
         borderRadius: 26,
     },
+    homeFilterGridSubtitleRow: {
+        minHeight: HOME_MEDIA_SUBTITLE_ROW_HEIGHT,
+        minWidth: 0,
+    },
     homeFilterGridTile: {
+        minHeight: HOME_PRIMARY_TILE + HOME_MEDIA_TILE_CHROME,
         width: HOME_PRIMARY_TILE,
     },
     homeFilterPill: {
@@ -1685,9 +1697,9 @@ export const styles = StyleSheet.create({
     },
     homeHeaderTitle: {
         color: colors.text,
-        fontSize: 30,
+        fontSize: 32,
         fontWeight: '900',
-        letterSpacing: 0,
+        letterSpacing: -0.7,
         lineHeight: 36,
     },
     homeSection: {
@@ -1859,12 +1871,19 @@ export const styles = StyleSheet.create({
     },
     libraryRow: {
         alignItems: 'center',
-        borderRadius: 8,
+        borderRadius: radii.sm,
         flexDirection: 'row',
         gap: spacing.sm,
         minHeight: 62,
         padding: 6,
         position: 'relative',
+    },
+    libraryRowPressed: {
+        backgroundColor: colors.panel,
+    },
+    tilePressed: {
+        opacity: 0.82,
+        transform: [{ scale: 0.96 }],
     },
     libraryRowAccessory: {
         alignItems: 'center',
@@ -2156,7 +2175,7 @@ export const styles = StyleSheet.create({
         alignItems: 'center',
         flexDirection: 'row',
         gap: 4,
-        minHeight: 16,
+        minHeight: HOME_MEDIA_SUBTITLE_ROW_HEIGHT,
         minWidth: 0,
     },
     mediaInfoRowCentered: {
@@ -2187,6 +2206,7 @@ export const styles = StyleSheet.create({
         width: HOME_PRIMARY_TILE - HOME_COMPACT_OFFSET,
     },
     mediaTileBook: {
+        minHeight: HOME_PRIMARY_TILE + HOME_MEDIA_TILE_CHROME,
         width: HOME_PRIMARY_TILE,
     },
     mediaTileCompact: {
@@ -2206,6 +2226,8 @@ export const styles = StyleSheet.create({
         width: HOME_PRIMARY_TILE,
     },
     mediaTilePodcast: {
+        minHeight:
+            HOME_PRIMARY_TILE - HOME_ROUNDED_OFFSET + HOME_MEDIA_TILE_CHROME,
         width: HOME_PRIMARY_TILE - HOME_ROUNDED_OFFSET,
     },
     mediaTileWide: {
@@ -2236,7 +2258,7 @@ export const styles = StyleSheet.create({
         lineHeight: 19,
     },
     miniPlayer: {
-        backgroundColor: '#1c1c1e',
+        backgroundColor: colors.surface,
         borderTopLeftRadius: MINI_PLAYER_RADIUS,
         borderTopRightRadius: MINI_PLAYER_RADIUS,
         bottom: MINI_PLAYER_BOTTOM,
@@ -2554,19 +2576,19 @@ export const styles = StyleSheet.create({
         fontWeight: '800',
     },
     qualityBadge: {
-        backgroundColor: 'rgba(255, 255, 255, 0.1)',
-        borderColor: 'rgba(255, 255, 255, 0.16)',
-        borderRadius: 6,
+        backgroundColor: 'rgba(255, 255, 255, 0.05)',
+        borderColor: colors.border,
+        borderRadius: radii.xs,
         borderWidth: 1,
         flexShrink: 1,
-        maxWidth: 150,
+        maxWidth: 160,
         minWidth: 0,
-        paddingHorizontal: 8,
+        paddingHorizontal: 9,
         paddingVertical: 4,
     },
     qualityBadgeDirect: {
-        backgroundColor: 'rgba(202, 160, 79, 0.24)',
-        borderColor: 'rgba(202, 160, 79, 0.58)',
+        backgroundColor: 'rgba(212, 192, 138, 0.15)',
+        borderColor: colors.accentLine,
     },
     qualityBadgeRow: {
         flexDirection: 'row',
@@ -2580,11 +2602,12 @@ export const styles = StyleSheet.create({
         color: colors.text,
         flexShrink: 1,
         fontSize: 11,
-        fontWeight: '900',
+        fontWeight: '800',
+        letterSpacing: 0.6,
         lineHeight: 14,
     },
     qualityBadgeTextDirect: {
-        color: colors.accent,
+        color: colors.accentBright,
     },
     qualityBadgeTextTranscoded: {
         color: '#e0a06d',
@@ -3159,7 +3182,7 @@ export const styles = StyleSheet.create({
         color: colors.text,
         fontSize: 22,
         fontWeight: '900',
-        letterSpacing: 0,
+        letterSpacing: -0.45,
         marginBottom: 4,
         marginTop: 4,
     },
@@ -3272,6 +3295,14 @@ export const styles = StyleSheet.create({
         fontSize: 15,
         fontWeight: '800',
         marginBottom: 2,
+    },
+    settingsSectionLabel: {
+        color: colors.muted,
+        fontSize: 12,
+        fontWeight: '800',
+        letterSpacing: 0.4,
+        marginTop: spacing.lg,
+        textTransform: 'uppercase',
     },
     shuffleGlyph: {
         height: 18,
@@ -3404,7 +3435,7 @@ export const styles = StyleSheet.create({
         lineHeight: 18,
     },
     tabBar: {
-        backgroundColor: '#1c1c1e',
+        backgroundColor: colors.surface,
         flexDirection: 'row',
         paddingBottom: TAB_BAR_PADDING_BOTTOM,
         paddingHorizontal: spacing.xs,

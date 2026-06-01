@@ -10,7 +10,6 @@ import {
 
 export interface RadioScreenProps {
     homeContentState: AndroidHomeContentState;
-    nowPlayingRadioId: null | string;
     onAddStation: (input: AddAndroidRadioStationInput) => Promise<AddAndroidRadioStationResult>;
     onSelectItem: (item: MobileHomeItem) => void;
     recentItems: AndroidRecentContentItem[];

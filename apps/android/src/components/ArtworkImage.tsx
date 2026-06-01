@@ -1,5 +1,5 @@
 import { Image as ExpoImage, type ImageSource } from 'expo-image';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
     type ImageStyle,
     type StyleProp,
@@ -18,6 +18,7 @@ import {
 } from '@samo/core/server';
 
 import { useServerConnections } from '../contexts/server-connections';
+import { peekArtworkLocalUri } from '../services/artwork-cache';
 import { styles } from '../theme/styles';
 import { colors } from '../theme/tokens';
 import { resolveSamoItemArtworkSourceForDisplay } from '../utils/samo-artwork-url';
@@ -83,9 +84,35 @@ export const ArtworkImage = ({
               ? resolvedSource.uri
               : undefined;
 
+    // Cover art is cached proactively in bulk after a sync (see
+    // services/artwork-prefetch). On the render path we only do a SYNCHRONOUS
+    // peek — a hit shows the local file instantly (offline, even); a miss shows
+    // the remote source via expo-image's native memory-disk pipeline. We never
+    // kick a per-tile download here, so a tile-dense screen (Home) can't flood
+    // the bridge. Pin the choice once per cover so the image never swaps mid-view.
+    const remoteUri =
+        typeof resolvedSource === 'string' ? resolvedSource : resolvedSource?.uri;
+    const pinnedRef = useRef<{ key: string | undefined; uri: string | null }>({
+        key: undefined,
+        uri: null,
+    });
+    if (pinnedRef.current.key !== recyclingKey) {
+        pinnedRef.current = {
+            key: recyclingKey,
+            uri: remoteUri ? peekArtworkLocalUri(remoteUri) : null,
+        };
+    }
+    const pinnedLocalUri = pinnedRef.current.uri;
+    const [localFailed, setLocalFailed] = useState(false);
+
     useEffect(() => {
         setErrored(false);
+        setLocalFailed(false);
     }, [recyclingKey]);
+
+    const useLocal = Boolean(pinnedLocalUri) && !localFailed;
+    const displaySource: ImageSource | string | undefined =
+        useLocal && pinnedLocalUri ? pinnedLocalUri : resolvedSource;
 
     useEffect(() => {
         if (!contentSource || resolvedConnections.length === 0) {
@@ -129,12 +156,20 @@ export const ArtworkImage = ({
 
     return (
         <ExpoImage
-            cachePolicy="memory-disk"
+            cachePolicy={useLocal ? 'memory' : 'memory-disk'}
             contentFit="cover"
-            onError={() => setErrored(true)}
+            onError={() => {
+                // A managed-cache file that went missing/corrupt falls back to
+                // the remote source; a genuine remote failure shows the letter.
+                if (useLocal) {
+                    setLocalFailed(true);
+                } else {
+                    setErrored(true);
+                }
+            }}
             onLoad={onLoad}
             recyclingKey={recyclingKey}
-            source={resolvedSource}
+            source={displaySource}
             style={style}
             transition={0}
         />

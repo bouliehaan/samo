@@ -124,11 +124,11 @@ export const buildAbsStreamFilePlayable = (
     );
 };
 
-export const buildAudiobookFilePlaybackQueue = (
+export const buildAudiobookFilePlaybackQueue = <T extends AudiobookFileTimeSegment>(
     detail: MobileMediaDetail,
-    files: readonly AudiobookFileTimeSegment[],
+    files: readonly T[],
     bookTimeSeconds: number,
-    buildItem: (file: AudiobookFileTimeSegment, initialPositionSeconds: number) => MobilePlayableAudio,
+    buildItem: (file: T, initialPositionSeconds: number) => MobilePlayableAudio,
 ): { index: number; items: MobilePlayableAudio[] } => {
     const index = pickAudiobookFileIndexForTime(files, bookTimeSeconds);
     const fileStart = files[index]?.startOffsetSeconds ?? 0;

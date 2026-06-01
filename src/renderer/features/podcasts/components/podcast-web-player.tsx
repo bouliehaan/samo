@@ -1,15 +1,21 @@
+import { parseSamoAudiobookStreamOffset } from '/@/renderer/api/samo/samo-audiobook-stream';
 import { WebMediaEngine } from '/@/renderer/features/player/audio-player/web-media-engine';
 import {
     usePodcastActions,
     usePodcastContentUrl,
     usePodcastPosition,
+    usePodcastServer,
     usePodcastStore,
 } from '/@/renderer/store/podcast.store';
+import { ServerType } from '/@/shared/types/domain-types';
 
 export function PodcastWebPlayer() {
     const contentUrl = usePodcastContentUrl();
     const resumePosition = usePodcastPosition();
+    const server = usePodcastServer();
     const { release, seekTo, setPosition } = usePodcastActions();
+    const streamOffsetSeconds =
+        server?.type === ServerType.SAMO ? parseSamoAudiobookStreamOffset(contentUrl) : 0;
 
     return (
         <WebMediaEngine
@@ -41,6 +47,7 @@ export function PodcastWebPlayer() {
                 }
             }}
             resumePosition={resumePosition}
+            streamOffsetSeconds={streamOffsetSeconds}
         />
     );
 }

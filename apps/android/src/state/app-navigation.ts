@@ -266,18 +266,11 @@ export const useAppNavigationState = (options: UseAppNavigationOptions = {}) => 
     );
 
     const closeMediaDetail = useCallback(() => {
-        // #region agent log
-        const closedAt = Date.now();
-        fetch('http://127.0.0.1:7498/ingest/65ba3320-fcf4-4bf2-82b0-f3ffc8d708c2',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'c0ca1a'},body:JSON.stringify({sessionId:'c0ca1a',runId:'nav-perf',hypothesisId:'H1',location:'app-navigation.ts:closeMediaDetail',message:'close media detail',data:{},timestamp:closedAt})}).catch(()=>{});
-        // #endregion
         options.onCloseMediaDetailSideEffects?.();
         startTransition(() => {
             setMediaDetailState((current) =>
                 current.status === 'idle' ? current : { status: 'idle' },
             );
-            // #region agent log
-            fetch('http://127.0.0.1:7498/ingest/65ba3320-fcf4-4bf2-82b0-f3ffc8d708c2',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'c0ca1a'},body:JSON.stringify({sessionId:'c0ca1a',runId:'nav-perf',hypothesisId:'H6',location:'app-navigation.ts:closeMediaDetail',message:'close detail transition scheduled',data:{elapsedMs:Date.now()-closedAt},timestamp:Date.now()})}).catch(()=>{});
-            // #endregion
         });
     }, [options.onCloseMediaDetailSideEffects, setMediaDetailState]);
 

@@ -333,7 +333,8 @@ const getHomeItemSubtitle = (
     variant: HomeDisplaySection['variant'],
 ) => {
     if (variant === 'radio') {
-        return item.nowPlayingText ?? getDisplaySubtitle(item.subtitle);
+        const nowPlayingText = 'nowPlayingText' in item ? item.nowPlayingText : undefined;
+        return nowPlayingText ?? getDisplaySubtitle(item.subtitle);
     }
 
     if (variant === 'podcast-feed' && item.type === MobileHomeItemType.PODCAST_EPISODE) {
@@ -387,13 +388,15 @@ const HomeFilterGridTile = memo(({
                 {item.title}
             </Text>
             {subtitle ? (
-                <Text
-                    numberOfLines={1}
-                    style={styles.mediaSubtitle}
-                    {...androidTrimCaptionFont}
-                >
-                    {subtitle}
-                </Text>
+                <View style={styles.homeFilterGridSubtitleRow}>
+                    <Text
+                        numberOfLines={1}
+                        style={styles.mediaSubtitle}
+                        {...androidTrimCaptionFont}
+                    >
+                        {subtitle}
+                    </Text>
+                </View>
             ) : null}
         </Pressable>
     );
@@ -577,10 +580,12 @@ const HomeMediaTile = memo(({
 
     return (
         <Pressable
+            accessibilityRole="button"
             onLongPress={() => contextMenu.openForItem(item)}
             onPress={() => onSelectItem(item)}
             onPressIn={() => onPrefetchItem?.(item)}
-            style={tileStyle}
+            style={({ pressed }) => [tileStyle, pressed && styles.tilePressed]}
+            unstable_pressDelay={110}
         >
             <ArtworkImage
                 artworkImageId={item.artworkImageId}

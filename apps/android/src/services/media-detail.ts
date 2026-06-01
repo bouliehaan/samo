@@ -1,6 +1,6 @@
 import {
     addMobileTracksToPlaylist,
-    applySamoAudiobookBookPosition,
+    buildSamoAudiobookQueueFromFiles,
     buildSamoPodcastEpisodePlayback,
     getMobileMediaDetailErrorMessage,
     loadAudiobookshelfPlayback,
@@ -18,12 +18,9 @@ import {
 import {
     ensureSamoStreamToken,
     findServerAuthenticationForSource,
-    getSamoPodcastEpisode,
     ServerType,
     type ServerAuthenticationResult,
 } from '@samo/core/server';
-
-import { loadAbsCurrentProgress } from './abs-progress';
 
 export type AndroidMediaDetailState =
     | { detail: MobileMediaDetail; status: 'loaded' }
@@ -111,7 +108,7 @@ const getTimelineEndSeconds = (segments: MobilePlaybackSegment[] | undefined) =>
     }, 0);
 };
 
-const getTrackTimelineSegments = (
+export const getTrackTimelineSegments = (
     detail: MobileMediaDetail,
     track: MobileMediaTrack,
 ): MobilePlaybackSegment[] | undefined => {
@@ -187,36 +184,16 @@ const rebuildSamoPodcastTrackPlayback = async (
             ? await ensureSamoStreamToken(authentication).catch(() => undefined)
             : undefined;
 
-    const showId = track.itemId ?? detail.id;
-    const episode =
-        authentication.type === ServerType.SAMO
-            ? await getSamoPodcastEpisode(fetch, authentication, episodeId)
-            : {
-                  duration: track.durationSeconds,
-                  id: episodeId,
-                  name: track.title,
-                  podcastId: showId,
-                  podcastTitle: track.subtitle ?? detail.subtitle,
-                  title: track.title,
-              };
-
-    const progress = await loadAbsCurrentProgress(authentication, showId, episodeId);
-    const resumeSeconds =
-        progress?.currentTimeSeconds && progress.currentTimeSeconds > 0 && !progress.isFinished
-            ? progress.currentTimeSeconds
-            : Math.max(
-                  0,
-                  Math.round(
-                      episode.progress?.progressSeconds ??
-                          episode.playback?.progressSeconds ??
-                          0,
-                  ),
-              );
-
     const playback = buildSamoPodcastEpisodePlayback(
         authentication,
-        episode,
-        showId,
+        {
+            duration: track.durationSeconds,
+            id: episodeId,
+            name: track.title,
+            podcastId: track.itemId ?? detail.id,
+            title: track.title,
+        },
+        track.itemId ?? detail.id,
         track.artworkUrl ?? detail.artworkUrl,
         streamToken,
     );
@@ -225,76 +202,7 @@ const rebuildSamoPodcastTrackPlayback = async (
         throw new Error('This episode cannot be played.');
     }
 
-    const withResume =
-        resumeSeconds > 0
-            ? {
-                  ...playback,
-                  initialPositionSeconds: resumeSeconds,
-              }
-            : playback;
-
-    return withPlaybackTimeline(detail, track, withResume);
-};
-
-/** Fresh Samo podcast stream URL + resume — home feed tiles must not reuse stale playback blobs. */
-export const playSamoPodcastEpisodeFromHome = async (
-    authentication: ServerAuthenticationResult,
-    item: {
-        artworkUrl?: string;
-        containerId: string;
-        durationSeconds?: number;
-        id: string;
-        subtitle?: string;
-        title: string;
-    },
-): Promise<MobilePlayableAudio> => {
-    const episodeId = item.id;
-    const showId = item.containerId;
-
-    const streamToken =
-        authentication.type === ServerType.SAMO
-            ? await ensureSamoStreamToken(authentication).catch(() => undefined)
-            : undefined;
-
-    const episode = await getSamoPodcastEpisode(fetch, authentication, episodeId);
-
-    const progress = await loadAbsCurrentProgress(authentication, showId, episodeId);
-    const resumeSeconds =
-        progress?.currentTimeSeconds && progress.currentTimeSeconds > 0 && !progress.isFinished
-            ? progress.currentTimeSeconds
-            : Math.max(
-                  0,
-                  Math.round(
-                      episode.progress?.progressSeconds ?? episode.playback?.progressSeconds ?? 0,
-                  ),
-              );
-
-    const playback = buildSamoPodcastEpisodePlayback(
-        authentication,
-        episode,
-        showId,
-        item.artworkUrl,
-        streamToken,
-    );
-
-    if (!playback) {
-        throw new Error('This episode cannot be played.');
-    }
-
-    const withResume =
-        resumeSeconds > 0
-            ? {
-                  ...playback,
-                  initialPositionSeconds: resumeSeconds,
-              }
-            : playback;
-
-    return {
-        ...withResume,
-        durationSeconds: withResume.durationSeconds ?? item.durationSeconds,
-        subtitle: withResume.subtitle ?? item.subtitle,
-        title: withResume.title ?? item.title,
-    };
+    return withPlaybackTimeline(detail, track, playback);
 };
 
 export const loadAndroidMediaDetail = async (
@@ -364,17 +272,29 @@ export const loadAndroidMediaTrackPlayback = async (
 
         if (
             authentication?.type === ServerType.SAMO &&
-            detail.type === MobileMediaDetailType.AUDIOBOOK
+            detail.type === MobileMediaDetailType.AUDIOBOOK &&
+            detail.audiobookFiles?.length
         ) {
             const streamToken = await ensureSamoStreamToken(authentication).catch(() => undefined);
-            const bookStart =
-                track.startSeconds ?? playable.progressOffsetSeconds ?? 0;
-            playable = applySamoAudiobookBookPosition(
-                playable,
-                bookStart,
-                authentication,
+            const bookStart = track.startSeconds ?? playable.progressOffsetSeconds ?? 0;
+            // Whole-file/local-seek model: pick the file that contains this book
+            // position and play it from the in-file remainder. The caller
+            // (use-android-media-handlers) builds the full multi-file queue; this
+            // single-item path covers callers that only need one playable.
+            const queue = buildSamoAudiobookQueueFromFiles(authentication, {
+                artworkUrl: detail.artworkUrl,
+                audiobookId: detail.id,
+                bookStartSeconds: bookStart,
+                files: detail.audiobookFiles,
                 streamToken,
-            );
+                subtitle: detail.authorsSummary ?? detail.subtitle,
+                timelineSegments: getTrackTimelineSegments(detail, track),
+                title: detail.title,
+            });
+            const active = queue?.items[queue.index];
+            if (active) {
+                playable = active;
+            }
         }
 
         return playable;

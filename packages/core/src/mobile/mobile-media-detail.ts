@@ -50,8 +50,10 @@ import {
     buildSamoMusicPlayback,
     buildSamoPodcastEpisodePlayback,
     buildSubsonicMusicPlayback,
+    samoAudiobookFilePlaybacks,
     type MobilePlayableAudio,
     type MobilePlaybackSegment,
+    type SamoAudiobookFilePlayback,
     type SubsonicPlayableSong,
 } from './mobile-playback';
 
@@ -107,6 +109,14 @@ export interface MobileMediaDetail {
     artworkUrl?: string;
     /** Samo metadata `images[].id` for display-time URL rebuild. */
     artworkImageId?: string;
+    /**
+     * Audiobook-only (Samo) — the book's underlying files as the per-file
+     * manifest the multi-file playback queue is built from. Each entry knows its
+     * book-global start offset so the player can map book-time to (file,
+     * file-time) and seek locally. Undefined for non-Samo or non-audiobook
+     * details.
+     */
+    audiobookFiles?: SamoAudiobookFilePlayback[];
     /**
      * Audiobook-only — joined "Author Name" string for the hero subtitle.
      */
@@ -1406,6 +1416,49 @@ const loadSamoAlbumTracks = async (
     return collected;
 };
 
+/**
+ * Enumerate every music track on a Samo server as normalized
+ * {@link MobileMediaTrack}s. Used by the Android local-cache sync to mirror the
+ * whole track table in one pass; album track lists are then derived on-device by
+ * grouping on `albumId` rather than fetching each album individually.
+ *
+ * Paginates the global `listSamoMusicTracks` endpoint 500 at a time and stops on
+ * the first short/empty page. The stream token is resolved once up front so the
+ * emitted playback URLs are immediately usable; a token failure is non-fatal and
+ * simply yields tracks without a pre-signed token.
+ */
+export const loadSamoLibraryTracks = async (
+    authentication: ServerAuthenticationResult,
+    fetch?: SamoFetch,
+): Promise<MobileMediaTrack[]> => {
+    const fetcher = getFetch(fetch);
+    const streamToken = await ensureSamoStreamToken(authentication, fetcher).catch(
+        () => undefined,
+    );
+
+    const tracks: MobileMediaTrack[] = [];
+    for (let offset = 0; offset < 500_000; offset += 500) {
+        const response = await listSamoMusicTracks(fetcher, authentication, {
+            limit: 500,
+            offset,
+        });
+        const batch = samoItemsOf(response);
+        if (batch.length === 0) {
+            break;
+        }
+
+        for (const track of batch) {
+            tracks.push(samoTrackToMediaTrack(authentication, track, undefined, streamToken));
+        }
+
+        if (batch.length < 500) {
+            break;
+        }
+    }
+
+    return tracks;
+};
+
 const loadSamoAlbumDetail = async (
     authentication: ServerAuthenticationResult,
     fetcher: SamoFetch,
@@ -1634,6 +1687,7 @@ const loadSamoAudiobookDetail = async (
     return {
         artworkImageId,
         artworkUrl,
+        audiobookFiles: samoAudiobookFilePlaybacks(audiobook),
         authorsSummary,
         bookmarks: samoBookmarksToDetail(samoItemsOf(bookmarksResponse)),
         chapters,
@@ -1685,7 +1739,7 @@ const loadSamoPodcastDetail = async (
             {
                 artworkUrl: resolveSamoPodcastEpisodeArtworkUrl(authentication, episode, streamToken)
                     ?? showArtwork,
-                durationSeconds: episode.duration,
+                durationSeconds: episode.durationSeconds ?? episode.duration,
                 episodeId: episode.id,
                 id: episode.id,
                 itemId: podcast.id,

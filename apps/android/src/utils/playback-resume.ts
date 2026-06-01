@@ -1,9 +1,12 @@
 import {
+    applySamoPodcastStreamResume,
+    isSamoPodcastPlayback,
     type MobilePlayableAudio,
     parsePodcastPlaybackEpisodeId,
     parsePodcastPlaybackShowId,
 } from '@samo/core/mobile';
 import {
+    ensureSamoStreamToken,
     findServerAuthenticationForSource,
     ServerType,
     type ServerAuthenticationResult,
@@ -13,6 +16,8 @@ import { loadAbsCurrentProgress } from '../services/abs-progress';
 import { type AndroidPlaybackState } from '../types/playback';
 
 import { isSamoAudiobookPlayback } from './samo-audiobook-playback';
+
+const samoFetch: typeof fetch = (url, init) => fetch(url, init);
 
 /** Resume from the live playhead when restarting the same item after a blip. */
 export const getResumePositionSeconds = (
@@ -24,7 +29,7 @@ export const getResumePositionSeconds = (
         playbackState.status === 'error' ||
         playbackState.status === 'buffering';
 
-    if (isSamoAudiobookPlayback(item)) {
+    if (isSamoAudiobookPlayback(item) || isSamoPodcastPlayback(item)) {
         const streamOrigin = item.progressOffsetSeconds ?? 0;
         const currentOrigin =
             playbackState.status !== 'idle'
@@ -101,6 +106,17 @@ export const refreshPlayableResumeFromServer = async (
 
         const progress = await loadAbsCurrentProgress(authentication, showId, episodeId);
         if (progress?.currentTimeSeconds && progress.currentTimeSeconds > 0 && !progress.isFinished) {
+            if (authentication.type === ServerType.SAMO) {
+                const streamToken = await ensureSamoStreamToken(authentication, samoFetch).catch(
+                    () => undefined,
+                );
+                return applySamoPodcastStreamResume(
+                    item,
+                    progress.currentTimeSeconds,
+                    authentication,
+                    streamToken,
+                );
+            }
             return withResumePosition(item, progress.currentTimeSeconds);
         }
         return item;

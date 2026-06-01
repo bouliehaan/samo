@@ -1,30 +1,33 @@
 {
-    "expo": {
-        "name": "Samo",
-        "slug": "samo-android",
-        "version": "1.0.0",
-        "icon": "../../assets/icons/final2-android-icon.png",
-        "newArchEnabled": true,
-        "splash": {
-            "image": "./assets/splash-icon.png",
-            "resizeMode": "contain",
-            "backgroundColor": "#ffffff"
-        },
-        "ios": {
-            "supportsTablet": true
-        },
-        "android": {
-            "icon": "../../assets/icons/final2-android-icon.png",
-            "adaptiveIcon": {
-                "foregroundImage": "../../assets/icons/final2-android-adaptive.png",
-                "backgroundColor": "#000000"
-            },
-            "package": "app.samo.android",
-            "edgeToEdgeEnabled": true,
-            "predictiveBackGestureEnabled": false
-        },
-        "web": {
-            "favicon": "./assets/favicon.png"
-        }
-    }
+  "expo": {
+    "name": "Samo",
+    "slug": "samo-android",
+    "version": "1.0.0",
+    "icon": "../../assets/icons/final2-android-icon.png",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "icon": "../../assets/icons/final2-android-icon.png",
+      "adaptiveIcon": {
+        "foregroundImage": "../../assets/icons/final2-android-adaptive.png",
+        "backgroundColor": "#000000"
+      },
+      "package": "app.samo.android",
+      "edgeToEdgeEnabled": true,
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-sqlite"
+    ]
+  }
 }

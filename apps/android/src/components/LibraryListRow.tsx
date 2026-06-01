@@ -34,7 +34,7 @@ export const LibraryListRow = ({
             accessibilityRole="button"
             onLongPress={() => contextMenu.openForItem(item)}
             onPress={onPress}
-            style={styles.libraryRow}
+            style={({ pressed }) => [styles.libraryRow, pressed && styles.libraryRowPressed]}
         >
             <View>
                 <MediaArtwork

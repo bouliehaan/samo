@@ -40,14 +40,17 @@ import { EmptyServerBackedScreen } from './EmptyServerBackedScreen';
 
 export const RadioScreen = memo(({
     homeContentState,
-    nowPlayingRadioId,
     onAddStation,
     onSelectItem,
     recentItems,
     serverConnections,
 }: RadioScreenProps) => {
     const contextMenu = useMediaContextMenu();
+    // Own the playback subscription rather than receiving the now-playing id from
+    // App — keeps the (5s) radio-metadata re-render local to this screen.
     const activePlaybackItem = useAndroidPlaybackState(selectActiveAndroidPlaybackItem);
+    const nowPlayingRadioId =
+        activePlaybackItem?.source === 'radio' ? activePlaybackItem.id : null;
     const [activeSort, setActiveSort] = useState<LibrarySort>('recents');
     const [isSortMenuOpen, setIsSortMenuOpen] = useState(false);
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);

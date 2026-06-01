@@ -11,22 +11,27 @@ import {
     resolveSamoAudiobookArtworkUrl,
     resolveSamoPodcastArtworkUrl,
     resolveSamoPodcastEpisodeArtworkUrl,
-    samoItemsOf,
     type SamoAudiobook,
+    samoItemsOf,
     type SamoPodcast,
     type SamoPodcastEpisode,
     ServerType,
 } from '@samo/core/server';
 
+import {
+    buildSamoAudiobookFileUrl,
+    pickSamoAudiobookFileIndex,
+    samoAudiobookFileSegments,
+} from '/@/renderer/api/samo/samo-audiobook-stream';
 import { samoExtras } from '/@/renderer/api/samo/samo-controller';
 import { samoFetch } from '/@/renderer/api/samo/samo-fetch';
 import { useLongFormMediaServer } from '/@/renderer/store';
-import { ServerListItemWithCredential } from '/@/shared/types/domain-types';
 import {
     AudiobookshelfChapter,
     AudiobookshelfLibraryItem,
     AudiobookshelfPodcastEpisode,
 } from '/@/shared/api/audiobookshelf/audiobookshelf-types';
+import { ServerListItemWithCredential } from '/@/shared/types/domain-types';
 
 const browserFetch = samoFetch;
 
@@ -66,7 +71,7 @@ const toAbsChapters = (chapters: SamoAudiobook['chapters']): AudiobookshelfChapt
         title: chapter.title,
     }));
 
-export const isSamoLongFormServer = (server: ServerListItemWithCredential | null | undefined) =>
+export const isSamoLongFormServer = (server: null | ServerListItemWithCredential | undefined) =>
     server?.type === ServerType.SAMO;
 
 export { useLongFormMediaServer };
@@ -81,9 +86,15 @@ export const samoAudiobookToLibraryItem = (
     artworkUrl?: string,
 ): SamoBackedLibraryItem => {
     const authors =
-        audiobook.book?.authors?.map((author) => author.name).filter(Boolean).join(', ') ?? '';
+        audiobook.book?.authors
+            ?.map((author) => author.name)
+            .filter(Boolean)
+            .join(', ') ?? '';
     const narrators =
-        audiobook.book?.narrators?.map((person) => person.name).filter(Boolean).join(', ') ?? '';
+        audiobook.book?.narrators
+            ?.map((person) => person.name)
+            .filter(Boolean)
+            .join(', ') ?? '';
 
     return {
         id: audiobook.id,
@@ -149,10 +160,6 @@ export const samoPodcastToLibraryItem = (
     return {
         id: podcast.id,
         libraryId: podcast.libraryId ?? 'samo-podcasts',
-        samoPath: podcast.path,
-        samoRssFeed: podcast.rssFeed?.id
-            ? { feedUrl: podcast.rssFeed.feedUrl, id: podcast.rssFeed.id }
-            : undefined,
         media: {
             episodes: episodes.map(samoPodcastEpisodeToAbsEpisode),
             metadata: {
@@ -167,6 +174,10 @@ export const samoPodcastToLibraryItem = (
         mediaType: 'podcast',
         name: show?.title ?? 'Untitled podcast',
         numEpisodes: show?.episodeCount ?? episodes.length,
+        samoPath: podcast.path,
+        samoRssFeed: podcast.rssFeed?.id
+            ? { feedUrl: podcast.rssFeed.feedUrl, id: podcast.rssFeed.id }
+            : undefined,
         samoSource: SAMO_LONG_FORM_SOURCE,
     };
 };
@@ -254,13 +265,20 @@ export const resolveSamoAudiobookPlaySession = async (
     const auth = samoAuth(server);
     const streamToken = await ensureStreamToken(server);
     const audiobook = await samoExtras.getAudiobook(server, item.id);
-    const progressSeconds = audiobook.progress?.progressSeconds;
-    const contentUrl = getSamoAudiobookStreamUrl(auth, audiobook.id, {
-        progressSeconds,
-        streamToken,
-    });
+    const progressSeconds = audiobook.progress?.progressSeconds ?? 0;
     const duration = audiobook.durationSeconds ?? item.media?.duration ?? 0;
     const chapters = toAbsChapters(audiobook.chapters);
+
+    // File-aware playback: the server now serves each file WHOLE, so start at the
+    // file that contains the resume point and stream that file via mediaFileId.
+    // The web player switches files (and seeks locally) for any cross-file seek —
+    // no byte-offset stream restarts, so backward seeks always work.
+    const files = samoAudiobookFileSegments(audiobook);
+    const startIndex = pickSamoAudiobookFileIndex(files, progressSeconds);
+    const startFile = files[startIndex];
+    const contentUrl = startFile
+        ? buildSamoAudiobookFileUrl(server, audiobook.id, startFile.mediaFileId, streamToken)
+        : getSamoAudiobookStreamUrl(auth, audiobook.id, { streamToken });
 
     return {
         contentUrl,
@@ -269,8 +287,12 @@ export const resolveSamoAudiobookPlaySession = async (
             audiobook,
             resolveSamoAudiobookArtworkUrl(auth, audiobook, streamToken),
         ),
-        patch: { chapters },
-        position: progressSeconds ?? 0,
+        patch: {
+            audiobookFiles: files,
+            chapters,
+            streamOffsetSeconds: startFile?.startOffsetSeconds ?? 0,
+        },
+        position: progressSeconds,
         sessionId: null,
     };
 };
@@ -287,15 +309,19 @@ export const resolveSamoPodcastPlaySession = async (
     const samoEpisode = samoItemsOf(episodesResponse).find((entry) => entry.id === episode.id);
     const progressSeconds =
         samoEpisode?.progress?.progressSeconds ?? samoEpisode?.playback?.progressSeconds;
+    const resume = Math.max(0, Math.floor(progressSeconds ?? 0));
     const contentUrl = getSamoPodcastEpisodeStreamUrl(auth, episode.id, {
-        offsetSeconds: progressSeconds,
+        ...(resume > 0 ? { offsetSeconds: resume } : {}),
         streamToken,
     });
 
     const resolvedEpisode =
         loaded.media?.episodes?.find((entry) => entry.id === episode.id) ?? episode;
     const duration =
-        resolvedEpisode.duration ?? resolvedEpisode.audioFile?.duration ?? item.media?.duration ?? 0;
+        resolvedEpisode.duration ??
+        resolvedEpisode.audioFile?.duration ??
+        item.media?.duration ??
+        0;
 
     return {
         contentUrl,

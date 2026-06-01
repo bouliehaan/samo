@@ -148,9 +148,12 @@ export const shouldMirrorPlaybackQueueToNative = (queue: {
         return false;
     }
 
-    // ABS/Samo chapter rows share one stream URL — mirroring them makes ExoPlayer
-    // treat each chapter as a queue item, so a seek-time STATE_ENDED blip can
-    // auto-advance into the next chapter and kill playback.
+    // A multi-file audiobook is a real per-file queue (each file is a distinct
+    // stream URL), so mirroring it to native gives gapless cross-file advance.
+    // But if every item collapses to ONE stream URL it's a single physical file
+    // split into chapter rows — mirroring that makes ExoPlayer treat each chapter
+    // as its own item, and a seek-time STATE_ENDED blip can auto-advance into the
+    // next chapter and kill playback. Only that degenerate case opts out.
     if (queue.items.every((item) => item.source === 'audiobook')) {
         const streamUrls = new Set(queue.items.map((item) => item.url));
         if (streamUrls.size === 1) {

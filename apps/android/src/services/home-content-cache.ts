@@ -54,6 +54,9 @@ export const saveCachedHomeContent = async (content: MobileHomeContent): Promise
     try {
         const trimmed: MobileHomeContent = {
             ...content,
+            // Don't persist transient network warnings — otherwise a one-off
+            // "Network request failed" survives relaunches as a stale banner.
+            errors: [],
             sections: content.sections
                 .filter(
                     (section) =>
