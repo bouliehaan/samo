@@ -39,6 +39,11 @@ import {
 } from '../utils/abs-progress-math';
 import { useAppSessionState } from '../state/app-session';
 import {
+    type AndroidPlaybackQueue,
+    getPlaybackQueue,
+    setPlaybackQueue,
+} from '../state/playback-queue-store';
+import {
     getAndroidPlaybackState,
     selectActiveAndroidPlaybackItem,
     selectAndroidPlaybackStatus,
@@ -46,6 +51,7 @@ import {
     useAndroidPlaybackState,
 } from '../state/playback-store';
 import { buildRecoveredPlaybackItem } from '../utils/playback-recovery';
+import { reducePlaybackStateFromEvent } from '../utils/playback-reduce';
 import {
     getResumePositionSeconds,
     refreshPlayableResumeFromServer,
@@ -64,13 +70,7 @@ import {
 import { androidLog } from '../utils/log';
 import { setDownloadsPlaybackActive } from '../services/download-manager';
 
-export type AndroidPlaybackQueue = {
-    index: number;
-    items: MobilePlayableAudio[];
-    /** Playlist queue: do not mark individual tracks as recently played on the server. */
-    omitTrackRecentlyPlayed?: boolean;
-    samoPlaylistId?: string;
-};
+export type { AndroidPlaybackQueue };
 
 export type AndroidPlayItemOptions = {
     /** Samo audiobook: open stream at this book-global second (skips server resume overlay). */
@@ -110,7 +110,6 @@ export interface AndroidNativePlaybackController {
         options?: AndroidPlayItemOptions,
     ) => Promise<void>;
     hydrateNativePlaybackState: () => Promise<void>;
-    playbackQueueRef: MutableRefObject<AndroidPlaybackQueue | null>;
     playbackSnapshotRef: MutableRefObject<null | {
         item: MobilePlayableAudio;
         sessionId: string;
@@ -130,15 +129,10 @@ export function useAndroidNativePlayback(options: {
     serverConnections: ServerAuthenticationResult[];
 }): AndroidNativePlaybackController {
     const { isFullPlayerOpen, lastPlayedItem, serverConnections } = options;
-    const {
-        castState,
-        forcePlaybackQueueRender,
-        setIsShuffled,
-    } = useAppSessionState();
+    const { castState, setIsShuffled } = useAppSessionState();
 
     const playbackStatus = useAndroidPlaybackState(selectAndroidPlaybackStatus);
     const absContextRef = useRef<AbsProgressContext | null>(null);
-    const playbackQueueRef = useRef<AndroidPlaybackQueue | null>(null);
     const playbackSequenceRef = useRef(0);
     const playbackRecoveryAttemptRef = useRef(0);
     const playbackStartedAtRef = useRef(0);
@@ -150,6 +144,12 @@ export function useAndroidNativePlayback(options: {
     // just-left track on its OLD session; rejecting those stale echoes keeps the
     // queue index from flickering backward on Next/Prev.
     const retiredSessionsRef = useRef<Set<string>>(new Set());
+    // The session whose freshly-committed active item native has NOT yet
+    // confirmed. While set, native's in-flight transition events (which still
+    // name the OUTGOING track during a Next/Prev or queue tap) must not move the
+    // active item — otherwise the player flickers between the two songs before
+    // the new one's events arrive. Cleared the instant native reports our item.
+    const pendingItemSessionRef = useRef<string | null>(null);
     const samoPlaybackStartedSessionRef = useRef<string | undefined>(undefined);
     const samoScrobbledSessionRef = useRef<string | undefined>(undefined);
     const samoPlaylistPlaybackStartedRef = useRef<string | undefined>(undefined);
@@ -158,7 +158,7 @@ export function useAndroidNativePlayback(options: {
     const shouldAcceptPlaybackEvent = useCallback(
         (
             event: Pick<AndroidNativePlaybackEvent, 'sessionId' | 'source' | 'status'>,
-            snapshot: { sessionId: string } | null,
+            snapshot: { item: MobilePlayableAudio; sessionId: string } | null,
         ) => {
             if (!snapshot) {
                 return false;
@@ -172,13 +172,21 @@ export function useAndroidNativePlayback(options: {
                 return !event.sessionId || event.sessionId === snapshot.sessionId;
             }
             if (!event.sessionId) {
-                return true;
+                // A sessionless echo must never move us off the CURRENT item.
+                // Older native builds emit position/status ticks with no session
+                // id; during a Next/Prev (or a queue tap) a trailing tick for the
+                // just-left track would otherwise flip the player back to it for a
+                // frame or two before the new session's events take over — the
+                // visible "song flips back and forth before playing" bug. Only
+                // accept a sessionless echo when it is about the item we're on.
+                const echoItemId = event.source?.id;
+                return !echoItemId || echoItemId === snapshot.item.id;
             }
             if (event.sessionId === snapshot.sessionId) {
                 return true;
             }
             // Native auto-advanced while JS was suspended (screen off / background).
-            const queue = playbackQueueRef.current;
+            const queue = getPlaybackQueue();
             const eventSourceId = event.source?.id;
             if (queue && eventSourceId) {
                 return queue.items.some((item) => item.id === eventSourceId);
@@ -190,9 +198,32 @@ export function useAndroidNativePlayback(options: {
 
     const syncPlaybackFromNativeEvent = useCallback(
         (event: AndroidNativePlaybackEvent) => {
-            const queue = playbackQueueRef.current;
+            const queue = getPlaybackQueue();
             if (!queue) {
                 return;
+            }
+
+            // Single-owner lock for the active item. When JS commits a new track
+            // (playQueuedItem), native's in-flight transition events still name
+            // the OUTGOING track for a beat. Reconciling the queue/item from those
+            // drags the snapshot — and therefore the player — back to the old song
+            // before the new track's events land (the "switches between the two
+            // songs really fast" bug). So while a committed item is unconfirmed,
+            // ignore events that name a different track; the first event that names
+            // our track confirms it and hands authority back to native (needed for
+            // background gapless auto-advance).
+            const lockSnapshot = playbackSnapshotRef.current;
+            const eventItemId = event.source?.id;
+            if (
+                lockSnapshot &&
+                pendingItemSessionRef.current === lockSnapshot.sessionId &&
+                eventItemId
+            ) {
+                if (eventItemId === lockSnapshot.item.id) {
+                    pendingItemSessionRef.current = null;
+                } else {
+                    return;
+                }
             }
 
             // Trust the native numeric index only when it actually points at the
@@ -205,11 +236,10 @@ export function useAndroidNativePlayback(options: {
                 event.queueIndex !== queue.index &&
                 (eventSourceId == null || queue.items[event.queueIndex]?.id === eventSourceId)
             ) {
-                playbackQueueRef.current = {
+                setPlaybackQueue({
                     ...queue,
                     index: event.queueIndex,
-                };
-                forcePlaybackQueueRender();
+                });
             }
 
             const sourceId = event.source?.id;
@@ -222,12 +252,11 @@ export function useAndroidNativePlayback(options: {
                 return;
             }
 
-            if (nextIndex !== playbackQueueRef.current?.index) {
-                playbackQueueRef.current = {
+            if (nextIndex !== getPlaybackQueue()?.index) {
+                setPlaybackQueue({
                     ...queue,
                     index: nextIndex,
-                };
-                forcePlaybackQueueRender();
+                });
             }
 
             const item = queue.items[nextIndex]!;
@@ -260,7 +289,7 @@ export function useAndroidNativePlayback(options: {
                 };
             });
         },
-        [forcePlaybackQueueRender],
+        [],
     );
     const navigateRef = useRef<((direction: -1 | 1) => Promise<void>) | null>(null);
     const queueAdvanceInFlightRef = useRef(false);
@@ -285,7 +314,7 @@ export function useAndroidNativePlayback(options: {
                     !event.sessionId || event.sessionId === currentPlaybackState.sessionId;
                 const queueSourceMatches = Boolean(
                     event.source?.id &&
-                        playbackQueueRef.current?.items.some(
+                        getPlaybackQueue()?.items.some(
                             (item) => item.id === event.source?.id,
                         ),
                 );
@@ -426,14 +455,13 @@ export function useAndroidNativePlayback(options: {
                       )
                     : playableQueueItems;
 
-            playbackQueueRef.current = {
+            setPlaybackQueue({
                 index: nextQueueIndex,
                 items: queueItemsForSession,
                 omitTrackRecentlyPlayed: playOptions?.omitTrackRecentlyPlayed,
                 samoPlaylistId: playOptions?.samoPlaylistId,
-            };
-            forcePlaybackQueueRender();
-            syncAndroidNativePlaybackQueue(playbackQueueRef.current, serverConnections);
+            });
+            syncAndroidNativePlaybackQueue(getPlaybackQueue(), serverConnections);
             const supersededSessionId = playbackSnapshotRef.current?.sessionId;
             if (supersededSessionId && supersededSessionId !== session.id) {
                 const retired = retiredSessionsRef.current;
@@ -445,6 +473,7 @@ export function useAndroidNativePlayback(options: {
                 }
             }
             playbackSnapshotRef.current = { item: nativeItem, sessionId: session.id };
+            pendingItemSessionRef.current = session.id;
             playbackRecoveryAttemptRef.current = 0;
             playbackStartedAtRef.current = Date.now();
             setAndroidPlaybackState({
@@ -510,7 +539,7 @@ export function useAndroidNativePlayback(options: {
                 if (upcomingItem) {
                     void preparePlaybackItemForNative(upcomingItem, serverConnections)
                         .then((preparedUpcoming) => {
-                            const queue = playbackQueueRef.current;
+                            const queue = getPlaybackQueue();
                             if (
                                 !queue ||
                                 queue.index !== nextQueueIndex ||
@@ -526,14 +555,13 @@ export function useAndroidNativePlayback(options: {
                             ) {
                                 return;
                             }
-                            playbackQueueRef.current = {
+                            setPlaybackQueue({
                                 ...queue,
                                 items: queue.items.map((queueItem, index) =>
                                     index === upcomingIndex ? preparedUpcoming : queueItem,
                                 ),
-                            };
-                            forcePlaybackQueueRender();
-                            syncAndroidNativePlaybackQueue(playbackQueueRef.current, serverConnections);
+                            });
+                            syncAndroidNativePlaybackQueue(getPlaybackQueue(), serverConnections);
                         })
                         .catch(() => undefined);
                 }
@@ -549,12 +577,7 @@ export function useAndroidNativePlayback(options: {
                 });
             }
         },
-        [
-            castState.isConnected,
-            forcePlaybackQueueRender,
-            serverConnections,
-            setIsShuffled,
-        ],
+        [castState.isConnected, serverConnections, setIsShuffled],
     );
 
     const handlePlayItem = useCallback(
@@ -570,7 +593,7 @@ export function useAndroidNativePlayback(options: {
     );
 
     const advanceQueue = useCallback(async () => {
-        const queue = playbackQueueRef.current;
+        const queue = getPlaybackQueue();
         const nextIndex = queue ? queue.index + 1 : -1;
         const nextItem = queue?.items[nextIndex];
         if (!queue || !nextItem) {
@@ -628,7 +651,7 @@ export function useAndroidNativePlayback(options: {
     }, [playQueuedItem]);
 
     const catchUpQueueAfterForeground = useCallback(async () => {
-        if (!playbackQueueRef.current) {
+        if (!getPlaybackQueue()) {
             return;
         }
 
@@ -640,7 +663,7 @@ export function useAndroidNativePlayback(options: {
                 return;
             }
 
-            const queue = playbackQueueRef.current;
+            const queue = getPlaybackQueue();
             if (
                 queue &&
                 queue.index + 1 < queue.items.length &&
@@ -670,7 +693,7 @@ export function useAndroidNativePlayback(options: {
             const samoCtx = resolveSamoMusicPlaybackContext(snapshot.item, serverConnections);
             const samoProgressSeconds = Math.max(0, Math.floor((event.positionMs ?? 0) / 1000));
             const samoMusicWriteOptions = {
-                touchLastPlayedAt: !playbackQueueRef.current?.omitTrackRecentlyPlayed,
+                touchLastPlayedAt: !getPlaybackQueue()?.omitTrackRecentlyPlayed,
             };
 
             if (samoCtx && event.status === 'playing') {
@@ -685,7 +708,7 @@ export function useAndroidNativePlayback(options: {
             }
 
             const samoPlaylistCtx = resolveSamoPlaylistPlaybackContext(
-                playbackQueueRef.current,
+                getPlaybackQueue(),
                 snapshot.item,
                 serverConnections,
             );
@@ -717,7 +740,7 @@ export function useAndroidNativePlayback(options: {
             }
 
             if (event.status === 'ended') {
-                const queue = playbackQueueRef.current;
+                const queue = getPlaybackQueue();
                 const nativeOwnsFileAdvance =
                     queue != null && shouldMirrorPlaybackQueueToNative(queue);
                 const hasQueuedNext = queue != null && queue.index + 1 < queue.items.length;
@@ -782,40 +805,19 @@ export function useAndroidNativePlayback(options: {
                                     ? Math.floor(positionMs / 1000)
                                     : getResumePositionSeconds(snapshot.item, playbackState),
                             ),
-                            playbackQueueRef.current?.items,
-                            playbackQueueRef.current?.index,
+                            getPlaybackQueue()?.items,
+                            getPlaybackQueue()?.index,
                         );
                     }, 1500);
                     return;
                 }
             }
 
-            setAndroidPlaybackState((current) => {
-                if (current.status === 'idle') {
-                    return current;
-                }
-
-                const activeItem =
-                    playbackSnapshotRef.current?.item ??
-                    current.item;
-                const activeSessionId =
-                    event.sessionId ??
-                    playbackSnapshotRef.current?.sessionId ??
-                    current.sessionId;
-
-                const progress = resolvePlaybackProgressFromEvent(event, current, activeItem);
-
-                return {
-                    ...current,
-                    bitPerfect: event.bitPerfect ?? current.bitPerfect,
-                    durationMs: progress.durationMs,
-                    item: activeItem,
-                    message: event.message,
-                    positionMs: progress.positionMs,
-                    sessionId: activeSessionId,
-                    status: getActivePlaybackStatus(event.status, current.status),
-                };
-            });
+            setAndroidPlaybackState((current) =>
+                reducePlaybackStateFromEvent(current, event, playbackSnapshotRef.current, {
+                    updateSessionId: true,
+                }),
+            );
         });
 
         return () => subscription.remove();
@@ -830,7 +832,7 @@ export function useAndroidNativePlayback(options: {
         const subscription = subscribeToAndroidNavigationRequests((event) => {
             const direction = event.direction === -1 ? -1 : 1;
             if (direction === 1) {
-                const queue = playbackQueueRef.current;
+                const queue = getPlaybackQueue();
                 if (queue && queue.index + 1 < queue.items.length) {
                     void advanceQueue();
                     return;
@@ -883,46 +885,17 @@ export function useAndroidNativePlayback(options: {
                             Math.floor(positionMs / 1000),
                             {
                                 touchLastPlayedAt:
-                                    !playbackQueueRef.current?.omitTrackRecentlyPlayed,
+                                    !getPlaybackQueue()?.omitTrackRecentlyPlayed,
                             },
                         );
                     }
 
-                    setAndroidPlaybackState((current) => {
-                        if (current.status === 'idle') {
-                            return current;
-                        }
-
-                        const activeItem =
-                            playbackSnapshotRef.current?.item ?? current.item;
-                        const progress = resolvePlaybackProgressFromEvent(event, current, activeItem);
-                        const nextPositionMs = progress.positionMs;
-                        const nextStatus = getActivePlaybackStatus(event.status, current.status);
-                        const nextDurationMs = progress.durationMs;
-                        const nextMessage = event.message ?? current.message;
-                        const nextBitPerfect = event.bitPerfect ?? current.bitPerfect;
-
-                        if (
-                            nextStatus === current.status &&
-                            activeItem.id === current.item.id &&
-                            nextDurationMs === current.durationMs &&
-                            nextMessage === current.message &&
-                            nextBitPerfect === current.bitPerfect &&
-                            Math.abs((nextPositionMs ?? 0) - (current.positionMs ?? 0)) < 250
-                        ) {
-                            return current;
-                        }
-
-                        return {
-                            ...current,
-                            bitPerfect: nextBitPerfect,
-                            durationMs: nextDurationMs,
-                            item: activeItem,
-                            message: nextMessage,
-                            positionMs: nextPositionMs,
-                            status: nextStatus,
-                        };
-                    });
+                    setAndroidPlaybackState((current) =>
+                        reducePlaybackStateFromEvent(current, event, playbackSnapshotRef.current, {
+                            minPositionDeltaMs: 250,
+                            preserveMessage: true,
+                        }),
+                    );
                 })
                 .catch(() => undefined);
         }, intervalMs);
@@ -959,7 +932,6 @@ export function useAndroidNativePlayback(options: {
         absContextRef,
         handlePlayItem,
         hydrateNativePlaybackState,
-        playbackQueueRef,
         playbackSnapshotRef,
         playQueuedItem,
         registerNavigatePlayback,

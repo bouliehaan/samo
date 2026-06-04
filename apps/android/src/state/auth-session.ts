@@ -1,4 +1,4 @@
-import { useCallback, useReducer } from 'react';
+import { useSyncExternalStore } from 'react';
 import { ServerType, type ServerAuthenticationResult } from '@samo/core/server';
 
 import { type AndroidAuthState } from '../services/server-auth';
@@ -20,7 +20,7 @@ const initialAuthSessionState: AuthSessionState = {
     password: '',
     serverConnections: [],
     serverHealthByKey: {},
-    serverType: ServerType.NAVIDROME,
+    serverType: ServerType.SAMO,
     serverUrl: DEFAULT_SERVER_URL,
     username: '',
 };
@@ -104,57 +104,69 @@ const authSessionReducer = (
     }
 };
 
+// Single app-wide auth/server store. Previously a per-call `useReducer`, which
+// silently gave each consumer its own copy: `use-android-abs-progress-sync`
+// read `serverConnections` from a second instance that login never populated,
+// so its pending-progress flush ran with an empty server list and never synced.
+// A module-level store (mirroring `playback-store.ts`) keeps every consumer on
+// the same state with no change to the hook's API.
+let authSessionState: AuthSessionState = initialAuthSessionState;
+const authSessionListeners = new Set<() => void>();
+
+const dispatchAuthSession = (action: AuthSessionAction): void => {
+    const next = authSessionReducer(authSessionState, action);
+    if (Object.is(next, authSessionState)) {
+        return;
+    }
+    authSessionState = next;
+    authSessionListeners.forEach((listener) => listener());
+};
+
+const subscribeAuthSession = (listener: () => void): (() => void) => {
+    authSessionListeners.add(listener);
+    return () => {
+        authSessionListeners.delete(listener);
+    };
+};
+
+const getAuthSessionState = () => authSessionState;
+
+// Module-level singleton setters: stable identity, shared by every consumer.
+const setAuthState = (
+    value: AndroidAuthState | ((current: AndroidAuthState) => AndroidAuthState),
+) => dispatchAuthSession({ type: 'set-auth-state', value });
+
+const setUsername = (value: string | ((current: string) => string)) =>
+    dispatchAuthSession({ type: 'set-username', value });
+
+const setPassword = (value: string | ((current: string) => string)) =>
+    dispatchAuthSession({ type: 'set-password', value });
+
+const setServerUrl = (value: string | ((current: string) => string)) =>
+    dispatchAuthSession({ type: 'set-server-url', value });
+
+const setServerType = (serverType: ServerType) =>
+    dispatchAuthSession({ type: 'set-server-type', serverType });
+
+const setServerConnections = (
+    value:
+        | ServerAuthenticationResult[]
+        | ((current: ServerAuthenticationResult[]) => ServerAuthenticationResult[]),
+) => dispatchAuthSession({ type: 'set-server-connections', value });
+
+const setServerHealthByKey = (
+    value: AndroidServerHealthMap | ((current: AndroidServerHealthMap) => AndroidServerHealthMap),
+) => dispatchAuthSession({ type: 'set-server-health', value });
+
+const patchAuthSession = (patch: Partial<AuthSessionState>) =>
+    dispatchAuthSession({ type: 'patch', patch });
+
 export const useAuthSessionState = () => {
-    const [state, dispatch] = useReducer(authSessionReducer, initialAuthSessionState);
-
-    const setAuthState = useCallback(
-        (value: AndroidAuthState | ((current: AndroidAuthState) => AndroidAuthState)) => {
-            dispatch({ type: 'set-auth-state', value });
-        },
-        [],
+    const state = useSyncExternalStore(
+        subscribeAuthSession,
+        getAuthSessionState,
+        getAuthSessionState,
     );
-
-    const setUsername = useCallback((value: string | ((current: string) => string)) => {
-        dispatch({ type: 'set-username', value });
-    }, []);
-
-    const setPassword = useCallback((value: string | ((current: string) => string)) => {
-        dispatch({ type: 'set-password', value });
-    }, []);
-
-    const setServerUrl = useCallback((value: string | ((current: string) => string)) => {
-        dispatch({ type: 'set-server-url', value });
-    }, []);
-
-    const setServerType = useCallback((serverType: ServerType) => {
-        dispatch({ type: 'set-server-type', serverType });
-    }, []);
-
-    const setServerConnections = useCallback(
-        (
-            value:
-                | ServerAuthenticationResult[]
-                | ((current: ServerAuthenticationResult[]) => ServerAuthenticationResult[]),
-        ) => {
-            dispatch({ type: 'set-server-connections', value });
-        },
-        [],
-    );
-
-    const setServerHealthByKey = useCallback(
-        (
-            value:
-                | AndroidServerHealthMap
-                | ((current: AndroidServerHealthMap) => AndroidServerHealthMap),
-        ) => {
-            dispatch({ type: 'set-server-health', value });
-        },
-        [],
-    );
-
-    const patchAuthSession = useCallback((patch: Partial<AuthSessionState>) => {
-        dispatch({ type: 'patch', patch });
-    }, []);
 
     return {
         ...state,

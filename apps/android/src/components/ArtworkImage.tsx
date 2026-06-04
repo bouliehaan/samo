@@ -37,6 +37,7 @@ export const ArtworkImage = ({
     serverConnections,
     source,
     style,
+    transition = 0,
     uri,
 }: {
     artworkImageId?: string;
@@ -47,6 +48,12 @@ export const ArtworkImage = ({
     serverConnections?: ServerAuthenticationResult[];
     source?: ImageSource | string;
     style: StyleProp<ImageStyle>;
+    /**
+     * Crossfade duration (ms) when the cover changes in place — e.g. the
+     * now-playing artwork dissolving track→track. Defaults to 0 (hard swap) so
+     * dense, recycled list/grid tiles pay no transition cost during scroll.
+     */
+    transition?: number;
     uri?: string;
 }) => {
     const [errored, setErrored] = useState(false);
@@ -168,10 +175,14 @@ export const ArtworkImage = ({
                 }
             }}
             onLoad={onLoad}
-            recyclingKey={recyclingKey}
+            // A crossfade needs the SAME native view to persist across source
+            // changes. recyclingKey forces a fresh view (list tiles use it so a
+            // recycled row never flashes the previous cover), which would cancel
+            // the fade — so drop it whenever we're transitioning in place.
+            recyclingKey={transition > 0 ? undefined : recyclingKey}
             source={displaySource}
             style={style}
-            transition={0}
+            transition={transition}
         />
     );
 };

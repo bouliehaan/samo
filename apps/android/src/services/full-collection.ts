@@ -46,6 +46,13 @@ export const loadAndroidFullCollectionLocal = async (
 // Bounded so the synchronous first-paint read stays a sub-frame operation even
 // for huge libraries; the async `loadAndroidFullCollectionLocal` then fills the
 // complete list (off the UI thread) and the network refresh follows.
+//
+// NOTE: tried reducing this to 100 to cut on-nav sync work — it made first
+// Library open WORSE (showed a loading state / cold-start delay) because the
+// large seed was actually masking a one-time cold cost by painting most of the
+// library instantly. Reverted. The real first-open lag is a cold-start cost
+// (lazy SQLite reader open + first query + mount), not the seed size — needs
+// on-device profiling, not blind tuning.
 const SYNC_FIRST_PAINT_LIMIT = 800;
 
 /**

@@ -267,17 +267,8 @@ export const addAndroidRadioStation = async (
         return addSamoRadioStation(input);
     }
 
-    if (
-        input.authentication.type === ServerType.NAVIDROME ||
-        input.authentication.type === ServerType.SUBSONIC
-    ) {
-        return addSubsonicRadioStation(input);
-    }
-
     throw new Error('Adding radio stations is not supported for this server type.');
 };
 
 export const canAddAndroidRadioStation = (authentication: ServerAuthenticationResult) =>
-    authentication.type === ServerType.SAMO ||
-    authentication.type === ServerType.NAVIDROME ||
-    authentication.type === ServerType.SUBSONIC;
+    authentication.type === ServerType.SAMO;

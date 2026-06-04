@@ -139,6 +139,10 @@ const ReanimatedFlashList = Reanimated.createAnimatedComponent(FlashList) as typ
 const FLASH_LIST_MAINTAIN_POSITION_DISABLED = { disabled: true };
 const CAST_ICON_ACTIVE_TINT = 'rgba(202, 160, 79, 0.78)';
 const CAST_ICON_INACTIVE_TINT = 'rgba(245, 245, 245, 0.72)';
+// How long the artwork must hold steady before we extract its background color.
+// Collapses the brief active-item churn during a track change into a single
+// background crossfade instead of a visible color flip.
+const ARTWORK_COLOR_SETTLE_MS = 260;
 
 export const MiniPlayer = memo(({
     artworkImageId,
@@ -198,6 +202,15 @@ export const MiniPlayer = memo(({
                         event.translationY < -PLAYER_EXPANSION_DISTANCE * 0.24 ||
                         event.velocityY < -760;
                     if (shouldCommit) {
+                        // Drive the expand spring on the UI thread right away so
+                        // the card keeps climbing the instant the finger lifts.
+                        // onOpenFullPlayer only reconciles React state; the open
+                        // effect then re-targets this same spring (a no-op), so
+                        // there is no stall waiting on the App re-render.
+                        playerProgress.value = withSpring(
+                            1,
+                            reducedMotion ? REDUCED_MOTION_SPRING : PLAYER_OPEN_SPRING,
+                        );
                         runOnJS(onOpenFullPlayer)();
                     } else {
                         playerProgress.value = reducedMotion
@@ -257,6 +270,7 @@ export const MiniPlayer = memo(({
                                 letter={title.slice(0, 1)}
                                 serverConnections={serverConnections}
                                 style={styles.miniPlayerArtwork}
+                                transition={200}
                                 uri={artworkUrl}
                             />
                         ) : (
@@ -399,7 +413,6 @@ export const FullScreenPlayer = memo(({
     onSkipBySeconds,
     onToggleShuffle,
     onTogglePlayback,
-    playbackQueueRevision: _playbackQueueRevision,
     playbackState,
     playerProgress,
     queue,
@@ -425,8 +438,6 @@ export const FullScreenPlayer = memo(({
     onSkipBySeconds?: (offsetSeconds: number) => void;
     onTogglePlayback: () => void;
     onToggleShuffle: () => void;
-    /** Bumps when the JS queue ref mutates so memoized player re-reads `queue`. */
-    playbackQueueRevision: number;
     playbackState: AndroidPlaybackState;
     playerProgress: SharedValue<number>;
     queue: { index: number; items: MobilePlayableAudio[] } | null;
@@ -470,34 +481,44 @@ export const FullScreenPlayer = memo(({
     useEffect(() => {
         if (!artworkColorUrl) return;
         let cancelled = false;
-        getImageColors(artworkColorUrl, {
-            cache: true,
-            fallback: '#101010',
-            key: artworkColorUrl,
-            // High-quality extraction picks more swatches and clusters them
-            // more carefully, which dramatically improves the OKLab scorer's
-            // chance of finding a characteristic muted swatch.
-            quality: 'high',
-        })
-            .then((result) => {
-                if (cancelled) return;
-                const next = pickAlbumEssenceColor(result);
-                if (!next) return;
-                setBgCurr((current) => {
-                    if (current === next) return current;
-                    setBgPrev(current);
-                    bgFade.setValue(0);
-                    Animated.timing(bgFade, {
-                        duration: 520,
-                        toValue: 1,
-                        useNativeDriver: false,
-                    }).start();
-                    return next;
-                });
+        // Debounce color extraction. During a track change the active item can
+        // still churn for a frame or two before it settles; each change would
+        // kick a 520ms background crossfade, producing the disorienting "fades
+        // to the next color, back to the previous, then forward again" flip —
+        // imperceptible in the (instant) metadata text but glaring in a slow
+        // color fade. Waiting for the artwork to hold steady briefly collapses
+        // that churn into ONE smooth transition to the final color.
+        const timer = setTimeout(() => {
+            getImageColors(artworkColorUrl, {
+                cache: true,
+                fallback: '#101010',
+                key: artworkColorUrl,
+                // High-quality extraction picks more swatches and clusters them
+                // more carefully, which dramatically improves the OKLab scorer's
+                // chance of finding a characteristic muted swatch.
+                quality: 'high',
             })
-            .catch(() => undefined);
+                .then((result) => {
+                    if (cancelled) return;
+                    const next = pickAlbumEssenceColor(result);
+                    if (!next) return;
+                    setBgCurr((current) => {
+                        if (current === next) return current;
+                        setBgPrev(current);
+                        bgFade.setValue(0);
+                        Animated.timing(bgFade, {
+                            duration: 520,
+                            toValue: 1,
+                            useNativeDriver: false,
+                        }).start();
+                        return next;
+                    });
+                })
+                .catch(() => undefined);
+        }, ARTWORK_COLOR_SETTLE_MS);
         return () => {
             cancelled = true;
+            clearTimeout(timer);
         };
     }, [artworkColorUrl, bgFade]);
 
@@ -646,9 +667,16 @@ export const FullScreenPlayer = memo(({
                 })
                 .onChange((event) => {
                     'worklet';
+                    // Only promote a player drag into a queue-raise while the
+                    // player is still fully docked. Once it has been pulled down
+                    // even slightly we're dismissing, so an upward wobble must
+                    // NOT hijack the gesture into queue mode — that path left
+                    // playerProgress stranded mid-screen (the "stuck halfway"
+                    // glitch) because the queue branch of onEnd never settled it.
                     if (
                         dragMode.value === 'player' &&
-                        event.translationY < -10
+                        event.translationY < -10 &&
+                        playerProgress.value > 0.98
                     ) {
                         dragMode.value = 'queue';
                     }
@@ -668,6 +696,12 @@ export const FullScreenPlayer = memo(({
                 .onEnd((event) => {
                     'worklet';
                     if (dragMode.value === 'queue') {
+                        // Safety net: the player sits fully docked behind the
+                        // queue sheet, so guarantee it lands at 1 no matter how
+                        // the mode flipped during the drag.
+                        if (playerProgress.value < 1) {
+                            playerProgress.value = withSpring(1, settleSpring);
+                        }
                         if (
                             dragStartQueue.value > 0.8 &&
                             (event.translationY > QUEUE_CLOSE_DISTANCE ||
@@ -1033,6 +1067,7 @@ export const FullScreenPlayer = memo(({
                             letter={displayTitle.slice(0, 1)}
                             serverConnections={serverConnections}
                             style={styles.fullPlayerArtwork}
+                            transition={280}
                             uri={artworkUrl}
                         />
                     ) : (

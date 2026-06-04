@@ -1,19 +1,9 @@
-import {
-    ServerType,
-    supportsServerTypeOnAndroid,
-} from '@samo/core/server';
+import { ServerType } from '@samo/core/server';
 
-export const ANDROID_SERVER_TYPES = [
-    ServerType.SAMO,
-    ServerType.NAVIDROME,
-    ServerType.SUBSONIC,
-    ServerType.AUDIOBOOKSHELF,
-].filter(supportsServerTypeOnAndroid);
+// Samo is the only backend Android supports. Audiobookshelf / Navidrome /
+// Subsonic / Jellyfin compatibility was stripped — Samo is the ecosystem now.
+export const ANDROID_SERVER_TYPES = [ServerType.SAMO];
 
-export const ANDROID_SERVER_TYPE_LABELS: Record<ServerType, string> = {
-    [ServerType.AUDIOBOOKSHELF]: 'Audiobookshelf',
-    [ServerType.JELLYFIN]: 'Jellyfin',
-    [ServerType.NAVIDROME]: 'Navidrome',
+export const ANDROID_SERVER_TYPE_LABELS: Partial<Record<ServerType, string>> = {
     [ServerType.SAMO]: 'Samo',
-    [ServerType.SUBSONIC]: 'Subsonic',
 };

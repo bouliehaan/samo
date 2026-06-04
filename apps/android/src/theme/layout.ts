@@ -115,13 +115,23 @@ const HOME_MEDIA_TEXT_DESCENDER_SLACK = 2;
 /** Subtitle row height including descender slack (matches `mediaInfoRow`). */
 export const HOME_MEDIA_SUBTITLE_ROW_HEIGHT =
     HOME_MEDIA_SUBTITLE_LINE_HEIGHT + HOME_MEDIA_TEXT_DESCENDER_SLACK;
+/**
+ * Real, explicit clearance for the title+subtitle block. The previous design
+ * budgeted exactly 2 title lines and clawed back 1px by rendering the title
+ * tighter than its budget — a near-zero-slack pixel fight that still clipped the
+ * subtitle on real devices whenever a title wrapped to 2 lines (the reported
+ * Home bug). Reserving a few honest pixels here makes the cell taller than its
+ * contents instead of fighting them, so the subtitle always clears.
+ */
+const HOME_MEDIA_TILE_BLOCK_SLACK = 6;
 
 /** Title + subtitle block under a home carousel tile (`mediaTileCompact`). */
 export const HOME_MEDIA_TILE_CHROME =
     HOME_MEDIA_ARTWORK_TEXT_GAP +
     HOME_MEDIA_TITLE_LINE_HEIGHT * HOME_MEDIA_TITLE_MAX_LINES +
     HOME_MEDIA_TITLE_MARGIN_BOTTOM +
-    HOME_MEDIA_SUBTITLE_ROW_HEIGHT;
+    HOME_MEDIA_SUBTITLE_ROW_HEIGHT +
+    HOME_MEDIA_TILE_BLOCK_SLACK;
 
 /** `continueProgressTrack` + margin when a tile shows playback progress. */
 export const HOME_MEDIA_PROGRESS_CHROME = 4 + 4;

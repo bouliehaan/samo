@@ -2,11 +2,9 @@ import {
     removeServerAuthentication,
     type ServerAuthenticationResult,
     ServerConnectionHealthStatus,
-    ServerType,
     upsertServerAuthentication,
 } from '@samo/core/server';
 import { useCallback, useEffect } from 'react';
-import { Alert } from 'react-native';
 
 import { prefetchCatalogArtwork } from '../services/artwork-prefetch';
 import { syncSamoCatalog } from '../services/catalog/catalog-sync';
@@ -25,7 +23,6 @@ import {
 import { type AndroidSearchState } from '../services/search-content';
 import { type useAuthSessionState } from '../state/auth-session';
 import { type AndroidUtilityScreen } from '../types/app-navigation';
-import { ANDROID_SERVER_TYPES } from '../utils/server-types';
 import {
     addDefaultHttpScheme,
     DEFAULT_SERVER_URL,
@@ -181,10 +178,6 @@ export function useAndroidServerAuth(options: UseAndroidServerAuthOptions) {
         setAuthState(nextAuthState);
 
         if (nextAuthState.status === 'connected') {
-            const connectedType = nextAuthState.result.type;
-            const shouldOfferAudiobookshelfNext =
-                connectedType === ServerType.NAVIDROME &&
-                ANDROID_SERVER_TYPES.includes(ServerType.AUDIOBOOKSHELF);
             const nextConnections = upsertServerAuthentication(
                 serverConnections,
                 nextAuthState.result,
@@ -214,27 +207,6 @@ export function useAndroidServerAuth(options: UseAndroidServerAuthOptions) {
             void syncSamoCatalog([nextAuthState.result]).then(() =>
                 prefetchCatalogArtwork([nextAuthState.result]),
             );
-
-            if (shouldOfferAudiobookshelfNext) {
-                Alert.alert(
-                    'Add Audiobookshelf?',
-                    'Want to add an Audiobookshelf server too?',
-                    [
-                        { text: 'Not now', style: 'cancel' },
-                        {
-                            text: 'Add Audiobookshelf',
-                            onPress: () => {
-                                setAuthState({ status: 'idle' });
-                                setPassword('');
-                                setServerType(ServerType.AUDIOBOOKSHELF);
-                                setServerUrl(DEFAULT_SERVER_URL);
-                                setUsername('');
-                                setActiveUtilityScreen('add-server');
-                            },
-                        },
-                    ],
-                );
-            }
         }
     }, [
         authState.status,

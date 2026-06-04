@@ -1849,6 +1849,7 @@ const loadSamoFullCollection = async (
     authentication: ServerAuthenticationResult,
     fetcher: SamoFetch,
     variant: MobileFullCollectionVariant,
+    updatedSince?: number | string,
 ): Promise<MobileHomeItem[]> => {
     const source = getMobileContentSource(authentication);
     const streamToken = await resolveSamoStreamToken(authentication, fetcher);
@@ -1863,6 +1864,7 @@ const loadSamoFullCollection = async (
                 listSamoMusicAlbums(fetcher, authentication, {
                     ...playCountQuery,
                     ...input,
+                    updatedSince,
                 }),
             );
             return albums.flatMap((album) => {
@@ -1875,6 +1877,7 @@ const loadSamoFullCollection = async (
                 listSamoMusicArtists(fetcher, authentication, {
                     ...playCountQuery,
                     ...input,
+                    updatedSince,
                 }),
             );
             return artists.flatMap((artist) => {
@@ -1884,7 +1887,7 @@ const loadSamoFullCollection = async (
         }
         case 'audiobook': {
             const audiobooks = await loadSamoFullCollectionPaged<SamoAudiobook>((input) =>
-                listSamoAudiobooks(fetcher, authentication, input),
+                listSamoAudiobooks(fetcher, authentication, { ...input, updatedSince }),
             );
             return audiobooks.flatMap((audiobook) => {
                 const item = samoAudiobookToHomeItem(authentication, audiobook, streamToken, source);
@@ -1893,7 +1896,7 @@ const loadSamoFullCollection = async (
         }
         case 'playlist': {
             const playlists = await loadSamoFullCollectionPaged<SamoMusicPlaylist>((input) =>
-                listSamoMusicPlaylists(fetcher, authentication, input),
+                listSamoMusicPlaylists(fetcher, authentication, { ...input, updatedSince }),
             );
             return playlists.flatMap((playlist) => {
                 const item = samoPlaylistToHomeItem(authentication, playlist, streamToken, source);
@@ -1902,7 +1905,7 @@ const loadSamoFullCollection = async (
         }
         case 'podcast': {
             const podcasts = await loadSamoFullCollectionPaged<SamoPodcast>((input) =>
-                listSamoPodcasts(fetcher, authentication, input),
+                listSamoPodcasts(fetcher, authentication, { ...input, updatedSince }),
             );
             return podcasts.flatMap((podcast) => {
                 const item = samoPodcastToHomeItem(authentication, podcast, streamToken, source);
@@ -2074,6 +2077,10 @@ export interface MobileFullCollectionInput {
     authentications: ServerAuthenticationResult[];
     fetch?: SamoFetch;
     qualityScanLimit?: number;
+    // Incremental ("delta") sync watermark for Samo sources: only items
+    // changed at/after this point are returned. Pass SamoSyncManifest.serverTime
+    // (RFC3339) or unix milliseconds. Non-Samo sources ignore it.
+    updatedSince?: number | string;
     variant: MobileFullCollectionVariant;
 }
 
@@ -2234,6 +2241,7 @@ const loadFullCollectionForServer = async (
     fetcher: SamoFetch,
     variant: MobileFullCollectionVariant,
     qualityScanLimit: number,
+    updatedSince?: number | string,
 ): Promise<MobileHomeItem[]> => {
     const subsonic =
         authentication.type === ServerType.NAVIDROME ||
@@ -2242,7 +2250,7 @@ const loadFullCollectionForServer = async (
     const samo = authentication.type === ServerType.SAMO;
 
     if (samo) {
-        return loadSamoFullCollection(authentication, fetcher, variant);
+        return loadSamoFullCollection(authentication, fetcher, variant, updatedSince);
     }
 
     switch (variant) {
@@ -2288,6 +2296,7 @@ export const loadMobileFullCollection = async ({
     authentications,
     fetch: fetcher,
     qualityScanLimit = FULL_COLLECTION_QUALITY_SCAN_LIMIT,
+    updatedSince,
     variant,
 }: MobileFullCollectionInput): Promise<MobileFullCollectionResult> => {
     if (authentications.length === 0) {
@@ -2296,7 +2305,7 @@ export const loadMobileFullCollection = async ({
     const request = getFetch(fetcher);
     const results = await Promise.allSettled(
         authentications.map((authentication) =>
-            loadFullCollectionForServer(authentication, request, variant, qualityScanLimit),
+            loadFullCollectionForServer(authentication, request, variant, qualityScanLimit, updatedSince),
         ),
     );
     const items: MobileHomeItem[] = [];

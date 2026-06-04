@@ -45,27 +45,29 @@ export const getAvailableSearchScopes = (
     recentItems: AndroidRecentContentItem[],
 ) => {
     const scopes = new Set<SearchScope>(['all']);
-    const hasMusicServer = serverConnections.some(
-        (connection) =>
-            connection.type === ServerType.NAVIDROME || connection.type === ServerType.SUBSONIC,
-    );
-    const hasAudiobookshelf = serverConnections.some(
-        (connection) => connection.type === ServerType.AUDIOBOOKSHELF,
-    );
     const hasLoadedHome = homeContentState.status === 'loaded';
+    const hasSamoServer = serverConnections.some(
+        (connection) => connection.type === ServerType.SAMO,
+    );
 
-    if (hasMusicServer) {
+    // Samo is the all-in-one backend (it replaced the per-type music/audiobook
+    // servers), and its search endpoints always cover songs, albums, artists,
+    // audiobooks, podcasts, and playlists regardless of what Home happens to
+    // surface. So offer those scopes whenever a Samo server is connected —
+    // NOT only before Home loads. Gating them on `!hasLoadedHome` was a
+    // regression: once Home loaded, the post-load pass below (which only adds
+    // audiobooks/playlists/podcasts/radio) silently dropped the Artists and
+    // Music/Albums scopes, so you could no longer scope a search to artists.
+    // Artists are also deliberately excluded from recents, so the recents pass
+    // could never re-add them either. The radio scope stays conditional below
+    // because radio is the one category that genuinely may not exist.
+    if (hasSamoServer) {
         scopes.add('music');
         scopes.add('albums');
         scopes.add('artists');
-        if (!hasLoadedHome) {
-            scopes.add('playlists');
-        }
-    }
-
-    if (hasAudiobookshelf && !hasLoadedHome) {
         scopes.add('audiobooks');
         scopes.add('podcasts');
+        scopes.add('playlists');
     }
 
     if (hasLoadedHome) {

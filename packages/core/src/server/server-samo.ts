@@ -863,6 +863,37 @@ export const listSamoCatalogRecentlyAdded = async (
 };
 
 // ---------------------------------------------------------------------------
+// Delta sync
+// ---------------------------------------------------------------------------
+
+// SamoSyncManifest is the server's deletion-reconciliation payload for
+// incremental syncs: the full set of current entity IDs per type (playlists
+// scoped to the caller) plus the server clock. A client stores serverTime and
+// replays it as updatedSince on the next sync; any locally-mirrored row whose
+// ID is absent from these sets was deleted server-side.
+export interface SamoSyncManifest {
+    serverTime: string;
+    counts: Record<string, number>;
+    ids: {
+        artists: string[];
+        albums: string[];
+        tracks: string[];
+        playlists: string[];
+        audiobooks: string[];
+        podcasts: string[];
+        episodes: string[];
+    };
+}
+
+export const fetchSamoSyncManifest = async (
+    fetcher: SamoFetch,
+    authentication: Pick<ServerAuthenticationResult, 'credential' | 'ndCredential' | 'url'>,
+    signal?: AbortSignal,
+): Promise<SamoSyncManifest> => {
+    return samoGet<SamoSyncManifest>(fetcher, authentication, '/catalog/sync/manifest', { signal });
+};
+
+// ---------------------------------------------------------------------------
 // Music
 // ---------------------------------------------------------------------------
 
@@ -872,6 +903,10 @@ export interface SamoListQuery {
     offset?: number;
     signal?: AbortSignal;
     sort?: 'az' | 'lastPlayed' | 'playCount' | 'recent' | 'release';
+    // When set, the server returns only entities whose updatedAt is at or after
+    // this point — the incremental ("delta") sync watermark. Pass the RFC3339
+    // string from SamoSyncManifest.serverTime, or unix milliseconds.
+    updatedSince?: number | string;
 }
 
 const listQuery = (input?: SamoListQuery) => {
@@ -881,6 +916,7 @@ const listQuery = (input?: SamoListQuery) => {
     if (input?.offset !== undefined) query.offset = input.offset;
     if (input?.sort !== undefined) query.sort = input.sort;
     if (input?.direction !== undefined) query.direction = input.direction;
+    if (input?.updatedSince !== undefined) query.updatedSince = input.updatedSince;
 
     return query;
 };

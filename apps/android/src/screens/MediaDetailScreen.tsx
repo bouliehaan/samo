@@ -627,11 +627,7 @@ export const MediaDetailLoaded = ({
     const canCreatePlaylist = useMemo(() => {
         const auth = findServerAuthenticationForSource(serverConnections, detail.source);
 
-        return (
-            auth?.type === ServerType.SAMO ||
-            auth?.type === ServerType.NAVIDROME ||
-            auth?.type === ServerType.SUBSONIC
-        );
+        return auth?.type === ServerType.SAMO;
     }, [detail.source, serverConnections]);
     const handleCreatePlaylist = async (name: string) => {
         if (!playlistMenuTrack) {

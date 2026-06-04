@@ -1,9 +1,6 @@
 import type { MobilePlayableAudio } from '@samo/core/mobile';
 
-import type {
-    AndroidPlaybackQueue,
-    AndroidPlayItemOptions,
-} from './use-android-native-playback';
+import type { AndroidPlayItemOptions } from './use-android-native-playback';
 import type { ServerAuthenticationResult } from '@samo/core/server';
 import { useCallback, useRef, type MutableRefObject } from 'react';
 
@@ -21,6 +18,10 @@ import {
     syncAndroidNativePlaybackQueue,
 } from '../services/audio-playback';
 import { useAppSessionState } from '../state/app-session';
+import {
+    getPlaybackQueue,
+    setPlaybackQueue,
+} from '../state/playback-queue-store';
 import {
     getAndroidPlaybackState,
     setAndroidPlaybackState,
@@ -58,7 +59,6 @@ export interface AndroidPlaybackControls {
 export function useAndroidPlaybackControls(options: {
     absContextRef: MutableRefObject<AbsProgressContext | null>;
     lastPlayedItem: MobilePlayableAudio | null;
-    playbackQueueRef: MutableRefObject<AndroidPlaybackQueue | null>;
     serverConnections: ServerAuthenticationResult[];
     playbackSnapshotRef: MutableRefObject<null | {
         item: MobilePlayableAudio;
@@ -74,12 +74,11 @@ export function useAndroidPlaybackControls(options: {
     const {
         absContextRef,
         lastPlayedItem,
-        playbackQueueRef,
         playbackSnapshotRef,
         playQueuedItem,
         serverConnections,
     } = options;
-    const { forcePlaybackQueueRender, setIsShuffled } = useAppSessionState();
+    const { setIsShuffled } = useAppSessionState();
     const seekGenerationRef = useRef(0);
 
     /**
@@ -91,7 +90,7 @@ export function useAndroidPlaybackControls(options: {
      */
     const seekSamoAudiobookToBookSeconds = useCallback(
         async (targetBookSeconds: number): Promise<boolean> => {
-            const queue = playbackQueueRef.current;
+            const queue = getPlaybackQueue();
             if (!queue || queue.items.length === 0) {
                 return false;
             }
@@ -115,7 +114,7 @@ export function useAndroidPlaybackControls(options: {
             );
             return true;
         },
-        [playbackQueueRef, playQueuedItem],
+        [playQueuedItem],
     );
 
     const handleSeekPlayback = useCallback(async (
@@ -137,7 +136,7 @@ export function useAndroidPlaybackControls(options: {
         if (
             isSamoAudiobookPlayback(item) &&
             !options?.fileLocal &&
-            (playbackQueueRef.current?.items.length ?? 0) > 0
+            (getPlaybackQueue()?.items.length ?? 0) > 0
         ) {
             if (await seekSamoAudiobookToBookSeconds(positionMs / 1000)) {
                 return;
@@ -182,7 +181,7 @@ export function useAndroidPlaybackControls(options: {
             const samoCtx = resolveSamoMusicPlaybackContext(item, serverConnections);
             if (samoCtx) {
                 void syncSamoMusicPlaybackImmediate(samoCtx, Math.floor(nextPositionMs / 1000), {
-                    touchLastPlayedAt: !playbackQueueRef.current?.omitTrackRecentlyPlayed,
+                    touchLastPlayedAt: !getPlaybackQueue()?.omitTrackRecentlyPlayed,
                 });
             }
 
@@ -219,12 +218,7 @@ export function useAndroidPlaybackControls(options: {
                 };
             });
         }
-    }, [
-        absContextRef,
-        playbackQueueRef,
-        seekSamoAudiobookToBookSeconds,
-        serverConnections,
-    ]);
+    }, [absContextRef, seekSamoAudiobookToBookSeconds, serverConnections]);
 
     // Lets seekSamoAudiobookToBookSeconds call the latest handleSeekPlayback for
     // the file-local leg without a declaration-order or dependency cycle.
@@ -242,7 +236,7 @@ export function useAndroidPlaybackControls(options: {
                 itemWithServerProgress,
                 getResumePositionSeconds(itemWithServerProgress, playbackState),
             );
-            const queue = playbackQueueRef.current;
+            const queue = getPlaybackQueue();
             const queueIndex =
                 queue?.items.findIndex((candidate) => candidate.id === item.id) ?? -1;
 
@@ -253,7 +247,7 @@ export function useAndroidPlaybackControls(options: {
 
             await playQueuedItem(itemToPlay, [item], 0);
         },
-        [playbackQueueRef, playQueuedItem, serverConnections],
+        [playQueuedItem, serverConnections],
     );
 
     const handleTogglePlayback = useCallback(async () => {
@@ -299,7 +293,7 @@ export function useAndroidPlaybackControls(options: {
                         Math.floor(playbackState.positionMs / 1000),
                         {
                             touchLastPlayedAt:
-                                !playbackQueueRef.current?.omitTrackRecentlyPlayed,
+                                !getPlaybackQueue()?.omitTrackRecentlyPlayed,
                         },
                     );
                 }
@@ -313,11 +307,16 @@ export function useAndroidPlaybackControls(options: {
             }
 
             if (playbackState.status === 'paused') {
-                const isLongForm =
-                    playbackState.item.source === 'podcast' ||
-                    playbackState.item.source === 'audiobook';
                 const playheadMs = playbackState.positionMs ?? 0;
-                if (isLongForm || playheadMs < 3000) {
+                // Only the "barely started" case benefits from a clean restart.
+                // Long-form (podcast/audiobook) used to ALWAYS restart here, which
+                // re-seeded the playhead from stale server progress and threw you
+                // back to where the session began (resume a 30-min podcast → jump
+                // to ~1:30). A live paused session resumes from the EXACT position
+                // via the native resume() path below; if the session was actually
+                // lost, that path still detects native idle and falls back to a
+                // server-progress restart.
+                if (playheadMs < 3000) {
                     await restartPlaybackItem(playbackState.item);
                     return;
                 }
@@ -398,7 +397,7 @@ export function useAndroidPlaybackControls(options: {
     const handleToggleShuffle = useCallback(() => {
         setIsShuffled((current) => {
             const next = !current;
-            const queue = playbackQueueRef.current;
+            const queue = getPlaybackQueue();
 
             if (next && queue) {
                 const before = queue.items.slice(0, queue.index + 1);
@@ -407,17 +406,16 @@ export function useAndroidPlaybackControls(options: {
                     const j = Math.floor(Math.random() * (i + 1));
                     [after[i], after[j]] = [after[j], after[i]];
                 }
-                playbackQueueRef.current = {
+                setPlaybackQueue({
                     ...queue,
                     items: [...before, ...after],
-                };
-                forcePlaybackQueueRender();
-                syncAndroidNativePlaybackQueue(playbackQueueRef.current, serverConnections);
+                });
+                syncAndroidNativePlaybackQueue(getPlaybackQueue(), serverConnections);
             }
 
             return next;
         });
-    }, [forcePlaybackQueueRender, playbackQueueRef, serverConnections, setIsShuffled]);
+    }, [serverConnections, setIsShuffled]);
 
     const handleNavigatePlayback = useCallback(
         async (direction: -1 | 1) => {
@@ -438,7 +436,7 @@ export function useAndroidPlaybackControls(options: {
                 if (segmentTargetMs !== undefined) {
                     if (
                         item.source === 'audiobook' &&
-                        (playbackQueueRef.current?.items.length ?? 0) > 0
+                        (getPlaybackQueue()?.items.length ?? 0) > 0
                     ) {
                         const ordered = [...(item.timelineSegments ?? [])].sort(
                             (left, right) => left.startSeconds - right.startSeconds,
@@ -482,7 +480,7 @@ export function useAndroidPlaybackControls(options: {
                 if (direction === -1 && (playbackState.positionMs ?? 0) > 3000) {
                     if (
                         item.source === 'audiobook' &&
-                        (playbackQueueRef.current?.items.length ?? 0) > 0
+                        (getPlaybackQueue()?.items.length ?? 0) > 0
                     ) {
                         const bookPosition = getTimelinePositionSeconds(
                             item,
@@ -497,7 +495,7 @@ export function useAndroidPlaybackControls(options: {
                 }
             }
 
-            const queue = playbackQueueRef.current;
+            const queue = getPlaybackQueue();
             const nextIndex = queue ? queue.index + direction : -1;
             const nextItem = queue?.items[nextIndex];
 
@@ -505,12 +503,7 @@ export function useAndroidPlaybackControls(options: {
                 await playQueuedItem(nextItem, queue.items, nextIndex);
             }
         },
-        [
-            handleSeekPlayback,
-            playbackQueueRef,
-            playQueuedItem,
-            seekSamoAudiobookToBookSeconds,
-        ],
+        [handleSeekPlayback, playQueuedItem, seekSamoAudiobookToBookSeconds],
     );
 
     return {

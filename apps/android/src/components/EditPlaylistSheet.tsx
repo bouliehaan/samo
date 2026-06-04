@@ -50,10 +50,7 @@ export const EditPlaylistSheet = ({
 }) => {
     const authentication = findServerAuthenticationForSource(serverConnections, detail.source);
     const canEdit = isMobilePlaylistDetailEditable(detail);
-    const supportsPublic =
-        authentication?.type === ServerType.SAMO ||
-        authentication?.type === ServerType.NAVIDROME ||
-        authentication?.type === ServerType.SUBSONIC;
+    const supportsPublic = authentication?.type === ServerType.SAMO;
 
     const [name, setName] = useState(detail.title);
     const [description, setDescription] = useState(detail.playlistMeta?.description ?? '');

@@ -191,19 +191,25 @@ export const markSyncStarted = (sourceId: string): Promise<CatalogSyncState> =>
 export const setSyncProgress = (
     sourceId: string,
     counts: CatalogSyncCounts,
-    cursor?: Record<string, unknown>,
 ): Promise<CatalogSyncState> =>
+    // Note: deliberately does NOT touch `cursor` — it holds the delta-sync
+    // watermark, which must survive in-progress updates and mid-sync failures
+    // so a retry can resume incrementally rather than falling back to a full
+    // re-enumerate.
     updateCatalogSyncState(sourceId, {
         status: 'syncing',
         itemCount: counts.items,
         trackCount: counts.tracks,
         detailCount: counts.details,
-        cursor,
     });
 
 export const markSyncSucceeded = (
     sourceId: string,
     counts: CatalogSyncCounts,
+    // The delta-sync cursor to persist (server clock + sync-logic version).
+    // Replayed by the next sync; only advanced on success, so a failed sync
+    // keeps retrying from the prior cursor.
+    cursor?: Record<string, unknown>,
 ): Promise<CatalogSyncState> =>
     updateCatalogSyncState(sourceId, {
         status: 'synced',
@@ -212,7 +218,7 @@ export const markSyncSucceeded = (
         itemCount: counts.items,
         trackCount: counts.tracks,
         detailCount: counts.details,
-        cursor: undefined,
+        cursor,
     });
 
 export const markSyncFailed = (

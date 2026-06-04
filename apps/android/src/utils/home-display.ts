@@ -6,7 +6,6 @@ import {
     MobileSearchItemType,
     sortMobileHomeItemsByPlayCount,
 } from '@samo/core/mobile';
-import { buildAudiobookshelfArtworkUrl } from '@samo/core/mobile';
 import {
     findServerAuthenticationForSource,
     ServerType,
@@ -192,22 +191,6 @@ export const resolveItemArtworkUrl = (
     if (!sourceId) return undefined;
     const auth = findServerAuthenticationForSource(serverConnections, { id: sourceId });
     if (!auth) return undefined;
-    if (
-        auth.type === ServerType.NAVIDROME ||
-        auth.type === ServerType.SUBSONIC
-    ) {
-        const params = new URLSearchParams({
-            c: 'Samo',
-            f: 'json',
-            id: item.id,
-            size: '320',
-            v: '1.13.0',
-        });
-        return `${auth.url}/rest/getCoverArt.view?${params.toString()}&${auth.credential}`;
-    }
-    if (auth.type === ServerType.AUDIOBOOKSHELF) {
-        return buildAudiobookshelfArtworkUrl(auth, item.id, undefined);
-    }
     if (auth.type === ServerType.SAMO) {
         const resolved = resolveSamoItemArtworkSourceForDisplay(item, serverConnections);
         return typeof resolved === 'string' ? resolved : resolved?.uri;

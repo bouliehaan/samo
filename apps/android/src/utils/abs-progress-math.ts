@@ -51,11 +51,7 @@ export const buildAbsProgressContextFromPlayable = (
     const authentication = findServerAuthenticationForSource(authentications, {
         id: item.contentSourceId,
     });
-    if (
-        !authentication ||
-        (authentication.type !== ServerType.SAMO &&
-            authentication.type !== ServerType.AUDIOBOOKSHELF)
-    ) {
+    if (!authentication || authentication.type !== ServerType.SAMO) {
         return null;
     }
 

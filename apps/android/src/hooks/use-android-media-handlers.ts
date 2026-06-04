@@ -5,7 +5,6 @@ import {
     getDetailQualityProfile,
     getItemQualityProfile,
     getMobileContentSource,
-    loadAudiobookshelfDownloadFiles,
     loadMobileMediaDetail,
     loadSongRadioQueue,
     type MobileContentSource,
@@ -26,7 +25,7 @@ import {
 } from '@samo/core/server';
 import { startTransition, useCallback, useRef, type MutableRefObject } from 'react';
 
-import type { AndroidPlayItemOptions, AndroidPlaybackQueue } from './use-android-native-playback';
+import type { AndroidPlayItemOptions } from './use-android-native-playback';
 import { Alert } from 'react-native';
 
 import type { AbsProgressContext } from '../services/abs-progress';
@@ -58,15 +57,7 @@ import {
     loadCachedMediaDetail,
     saveCachedMediaDetail,
 } from '../services/media-detail-cache';
-import {
-    setSamoMusicFavorite,
-    starSubsonicAlbum,
-    starSubsonicArtist,
-    starSubsonicTrack,
-    unstarSubsonicAlbum,
-    unstarSubsonicArtist,
-    unstarSubsonicTrack,
-} from '../services/media-favorites';
+import { setSamoMusicFavorite } from '../services/media-favorites';
 import {
     getPersistedServerAuthKey,
 } from '../services/persisted-server';
@@ -107,11 +98,11 @@ import {
     getAndroidPlaybackState,
     setAndroidPlaybackState,
 } from '../state/playback-store';
+import { getPlaybackQueue, setPlaybackQueue } from '../state/playback-queue-store';
 import { type HomeDisplaySection } from '../types/home';
 import { buildDownloadedMusicDetail } from '../utils/offline-music-detail';
 import { rememberMediaDetail } from '../utils/media-detail-cache';
 import {
-    buildAbsStreamFilePlayable,
     buildAudiobookFilePlaybackQueue,
     buildOfflineAudiobookPlayable,
     buildOfflinePodcastEpisodePlayable,
@@ -161,7 +152,6 @@ export interface UseAndroidMediaHandlersOptions {
         options?: AndroidPlayItemOptions,
     ) => Promise<void>;
     loadHomeForConnections: (authentications: ServerAuthenticationResult[]) => Promise<void>;
-    playbackQueueRef: MutableRefObject<AndroidPlaybackQueue | null>;
     playQueuedItem: (
         item: MobilePlayableAudio,
         queueItems?: MobilePlayableAudio[],
@@ -272,7 +262,6 @@ export function useAndroidMediaHandlers(
         deps,
         handlePlayItem,
         loadHomeForConnections,
-        playbackQueueRef,
     } = options;
 
     const { auth, downloads, navigation, overlays, session } = deps;
@@ -298,7 +287,6 @@ export function useAndroidMediaHandlers(
     } = overlays;
     const {
         favoritedKeys,
-        forcePlaybackQueueRender,
         localFavorites,
         recentContentItems,
         setFavoritedKeys,
@@ -771,7 +759,7 @@ export function useAndroidMediaHandlers(
 
         if (
             !auth ||
-            (auth.type !== ServerType.AUDIOBOOKSHELF && auth.type !== ServerType.SAMO) ||
+            auth.type !== ServerType.SAMO ||
             detail.tracks.length === 0 ||
             detail.type !== MobileMediaDetailType.AUDIOBOOK
         ) {
@@ -854,95 +842,6 @@ export function useAndroidMediaHandlers(
                 );
                 const targetBookSeconds = track.startSeconds ?? 0;
 
-                if (absAuth?.type === ServerType.AUDIOBOOKSHELF) {
-                    const offlineFiles = await getOfflineAudiobookFiles(
-                        detail.id,
-                        detail.source.id,
-                    );
-                    if (!isCurrentRequest()) return;
-
-                    if (offlineFiles.length > 1) {
-                        const { index, items } = buildAudiobookFilePlaybackQueue(
-                            detail,
-                            offlineFiles,
-                            targetBookSeconds,
-                            (file, initialPositionSeconds) =>
-                                buildOfflineAudiobookPlayable(
-                                    detail,
-                                    file,
-                                    initialPositionSeconds,
-                                    absAuth,
-                                ),
-                        );
-                        if (track.itemId) {
-                            const totalDurationSeconds = offlineFiles.reduce(
-                                (sum, file) => sum + (file.durationSeconds ?? 0),
-                                0,
-                            );
-                            absContextRef.current = {
-                                authentication: absAuth,
-                                durationSeconds: totalDurationSeconds,
-                                episodeId: undefined,
-                                itemId: track.itemId,
-                            };
-                        } else {
-                            absContextRef.current = null;
-                        }
-                        if (!isCurrentRequest()) return;
-                        await handlePlayItem(items[index]!, items, index, playOptions);
-                        return;
-                    }
-
-                    const streamFiles = await loadAudiobookshelfDownloadFiles({
-                        authentication: absAuth,
-                        itemId: detail.id,
-                    }).catch(() => []);
-                    if (!isCurrentRequest()) return;
-
-                    if (streamFiles.length > 1) {
-                        const { index, items } = buildAudiobookFilePlaybackQueue(
-                            detail,
-                            streamFiles.map((file) => ({
-                                durationSeconds: file.durationSeconds,
-                                ino: file.ino,
-                                startOffsetSeconds: file.startOffsetSeconds ?? 0,
-                            })),
-                            targetBookSeconds,
-                            (file, initialPositionSeconds) => {
-                                const streamFile = streamFiles.find(
-                                    (candidate) => candidate.ino === file.ino,
-                                );
-                                if (!streamFile) {
-                                    return preparedTrack;
-                                }
-                                return buildAbsStreamFilePlayable(
-                                    detail,
-                                    streamFile,
-                                    initialPositionSeconds,
-                                    absAuth,
-                                );
-                            },
-                        );
-                        if (track.itemId) {
-                            const totalDurationSeconds = streamFiles.reduce(
-                                (sum, file) => sum + (file.durationSeconds ?? 0),
-                                0,
-                            );
-                            absContextRef.current = {
-                                authentication: absAuth,
-                                durationSeconds: totalDurationSeconds,
-                                episodeId: undefined,
-                                itemId: track.itemId,
-                            };
-                        } else {
-                            absContextRef.current = null;
-                        }
-                        if (!isCurrentRequest()) return;
-                        await handlePlayItem(items[index]!, items, index, playOptions);
-                        return;
-                    }
-                }
-
                 // Samo audiobooks: build a real multi-file ExoPlayer queue from
                 // the per-file manifest. Each file streams WHOLE (the player
                 // seeks locally), so -15s / Previous / chapter jumps are instant
@@ -1019,7 +918,7 @@ export function useAndroidMediaHandlers(
         if (
             detail.type === MobileMediaDetailType.PODCAST &&
             absAuth &&
-            (absAuth.type === ServerType.AUDIOBOOKSHELF || absAuth.type === ServerType.SAMO) &&
+            absAuth.type === ServerType.SAMO &&
             track.itemId
         ) {
             const progress = await loadAbsCurrentProgress(
@@ -1292,16 +1191,6 @@ export function useAndroidMediaHandlers(
                 );
                 return;
             }
-
-            if (isFavoritedNow) {
-                await unstarSubsonicTrack(auth, track.id);
-                upsertFavoriteKey(key, false);
-                setContextMenuFeedback('Removed from Favorites');
-            } else {
-                await starSubsonicTrack(auth, track.id);
-                upsertFavoriteKey(key, true);
-                setContextMenuFeedback('Added to Favorites');
-            }
         } catch (error) {
             setContextMenuFeedback(error instanceof Error ? error.message : 'Favorite failed');
         }
@@ -1311,13 +1200,6 @@ export function useAndroidMediaHandlers(
         const key = getFavoriteKeyForItem(item);
         const isFavoritedNow = favoritedKeys.has(key);
         const auth = findAuthForSource(item.source?.id);
-        const isMusicServer =
-            auth?.type === ServerType.NAVIDROME || auth?.type === ServerType.SUBSONIC;
-        const useServerStar =
-            isMusicServer &&
-            auth &&
-            (item.type === MobileHomeItemType.ALBUM ||
-                item.type === MobileHomeItemType.ARTIST);
         const useSamoFavorite =
             auth?.type === ServerType.SAMO &&
             (item.type === MobileHomeItemType.ALBUM ||
@@ -1328,27 +1210,6 @@ export function useAndroidMediaHandlers(
                 const kind =
                     item.type === MobileHomeItemType.ALBUM ? 'music-album' : 'music-artist';
                 await setSamoMusicFavorite(auth, kind, item.id, !isFavoritedNow);
-                upsertFavoriteKey(key, !isFavoritedNow);
-                setContextMenuFeedback(
-                    !isFavoritedNow ? 'Added to Favorites' : 'Removed from Favorites',
-                );
-                return;
-            }
-
-            if (useServerStar && auth) {
-                if (item.type === MobileHomeItemType.ALBUM) {
-                    if (isFavoritedNow) {
-                        await unstarSubsonicAlbum(auth, item.id);
-                    } else {
-                        await starSubsonicAlbum(auth, item.id);
-                    }
-                } else {
-                    if (isFavoritedNow) {
-                        await unstarSubsonicArtist(auth, item.id);
-                    } else {
-                        await starSubsonicArtist(auth, item.id);
-                    }
-                }
                 upsertFavoriteKey(key, !isFavoritedNow);
                 setContextMenuFeedback(
                     !isFavoritedNow ? 'Added to Favorites' : 'Removed from Favorites',
@@ -1477,24 +1338,23 @@ export function useAndroidMediaHandlers(
                 return 0;
             }
 
-            const queue = playbackQueueRef.current;
+            const queue = getPlaybackQueue();
             if (queue) {
-                playbackQueueRef.current = {
+                setPlaybackQueue({
                     ...queue,
                     items: [...queue.items, ...queueableItems],
-                };
+                });
             } else {
-                playbackQueueRef.current = {
+                setPlaybackQueue({
                     index: 0,
                     items: [playbackState.item, ...queueableItems],
-                };
+                });
             }
-            forcePlaybackQueueRender();
-            syncAndroidNativePlaybackQueue(playbackQueueRef.current, auth.serverConnections);
+            syncAndroidNativePlaybackQueue(getPlaybackQueue(), auth.serverConnections);
 
             return queueableItems.length;
         },
-        [auth.serverConnections, playbackQueueRef],
+        [auth.serverConnections],
     );
 
     const loadDetailForContextAction = useCallback(
@@ -1758,9 +1618,7 @@ export function useAndroidMediaHandlers(
         const auth = findAuthForSource(sourceId);
         if (
             !auth ||
-            (auth.type !== ServerType.NAVIDROME &&
-                auth.type !== ServerType.SUBSONIC &&
-                auth.type !== ServerType.SAMO)
+            auth.type !== ServerType.SAMO
         ) {
             setContextMenuFeedback(
                 'Adding to playlists is only available for music server items.',
@@ -1783,9 +1641,7 @@ export function useAndroidMediaHandlers(
         const auth = findAuthForSource(sourceId);
         if (
             !auth ||
-            (auth.type !== ServerType.NAVIDROME &&
-                auth.type !== ServerType.SUBSONIC &&
-                auth.type !== ServerType.SAMO)
+            auth.type !== ServerType.SAMO
         ) {
             setContextMenuFeedback(
                 'Creating playlists is only available for music server items.',
@@ -1799,10 +1655,7 @@ export function useAndroidMediaHandlers(
 
     const handleOpenCreatePlaylistStandalone = () => {
         const auth = serverConnections.find(
-            (connection) =>
-                connection.type === ServerType.SAMO ||
-                connection.type === ServerType.NAVIDROME ||
-                connection.type === ServerType.SUBSONIC,
+            (connection) => connection.type === ServerType.SAMO,
         );
 
         if (!auth) {
@@ -1837,8 +1690,6 @@ export function useAndroidMediaHandlers(
         }
 
         if (
-            auth.type !== ServerType.NAVIDROME &&
-            auth.type !== ServerType.SUBSONIC &&
             auth.type !== ServerType.SAMO
         ) {
             setPlaylistMenuRootState({

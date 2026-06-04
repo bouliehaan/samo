@@ -323,12 +323,7 @@ export function useAndroidContextMenu(options: {
                     onPress: () => void handleAddCollectionToQueue(item),
                 });
             }
-            if (
-                auth &&
-                (auth.type === ServerType.NAVIDROME ||
-                    auth.type === ServerType.SUBSONIC ||
-                    auth.type === ServerType.SAMO)
-            ) {
+            if (auth && auth.type === ServerType.SAMO) {
                 menuActions.push({
                     icon: <PlaylistAddGlyph color={colors.text} />,
                     id: 'add-collection-to-playlist',

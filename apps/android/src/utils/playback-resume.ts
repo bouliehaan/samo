@@ -89,11 +89,7 @@ export const refreshPlayableResumeFromServer = async (
     const authentication = findServerAuthenticationForSource(serverConnections, {
         id: item.contentSourceId,
     });
-    if (
-        !authentication ||
-        (authentication.type !== ServerType.SAMO &&
-            authentication.type !== ServerType.AUDIOBOOKSHELF)
-    ) {
+    if (!authentication || authentication.type !== ServerType.SAMO) {
         return item;
     }
 

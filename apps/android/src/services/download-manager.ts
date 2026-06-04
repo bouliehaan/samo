@@ -722,9 +722,6 @@ const startSingleDownload = async (
     );
 
     const headers: Record<string, string> = {};
-    if (auth && auth.type === ServerType.AUDIOBOOKSHELF) {
-        headers.Authorization = `Bearer ${auth.credential}`;
-    }
 
     try {
         const localUri = await buildLocalUri(entry);
@@ -1465,6 +1462,46 @@ export const removeDownload = async (id: string): Promise<void> => {
     }
     await withRegistryMutation((current) => ({
         entries: current.filter((entry) => entry.id !== id),
+        result: undefined,
+    }));
+};
+
+/**
+ * Cancel every in-flight download, delete every downloaded file, and empty the
+ * registry in one pass — the previous only options were cancel/remove one row
+ * at a time. File deletes are best-effort; the registry is always cleared so the
+ * UI can never be left showing orphaned rows.
+ */
+export const clearAllDownloads = async (): Promise<void> => {
+    const registry = await getRegistry();
+
+    // Stop anything in flight first so a download that completes mid-clear can't
+    // re-add a row after we empty the registry.
+    for (const [, active] of activeDownloads) {
+        try {
+            active.cancel();
+        } catch {
+            // best-effort
+        }
+    }
+    activeDownloads.clear();
+    lastProgressReport.clear();
+
+    await Promise.all(
+        registry.map(async (entry) => {
+            if (!entry.localUri) {
+                return;
+            }
+            try {
+                await FileSystem.deleteAsync(entry.localUri, { idempotent: true });
+            } catch {
+                // best-effort
+            }
+        }),
+    );
+
+    await withRegistryMutation(() => ({
+        entries: [],
         result: undefined,
     }));
 };

@@ -54,31 +54,6 @@ const findAuthenticationForPlaybackUrl = (
     return serverConnections.find((candidate) => sameHost(candidate.url, url));
 };
 
-const finalizeAudiobookshelfPlaybackUrl = (
-    authentication: ServerAuthenticationResult,
-    url: string | undefined,
-): string | undefined => {
-    if (!url || authentication.type !== ServerType.AUDIOBOOKSHELF) {
-        return url;
-    }
-
-    try {
-        const parsed = new URL(url);
-        const hasToken = parsed.searchParams.has('token');
-        const likelyAbsStream = parsed.pathname.includes('/api/') || hasToken;
-        if (!likelyAbsStream) {
-            return url;
-        }
-        if (!sameHost(authentication.url, url)) {
-            return url;
-        }
-        parsed.searchParams.set('token', authentication.credential);
-        return parsed.toString();
-    } catch {
-        return url;
-    }
-};
-
 export const artworkSourceUri = (
     source: SamoArtworkImageSource | undefined,
 ): string | undefined => {
@@ -281,12 +256,6 @@ export const preparePlaybackItemForNative = async (
         const bearer = getSamoBearerToken(auth);
         if (bearer && (isSamoApiMediaUrl(item.url) || (item.castUrl && isSamoApiMediaUrl(item.castUrl)))) {
             httpHeaders = { ...httpHeaders, Authorization: `Bearer ${bearer}` };
-        }
-    } else if (auth?.type === ServerType.AUDIOBOOKSHELF) {
-        nextUrl = finalizeAudiobookshelfPlaybackUrl(auth, item.url) ?? item.url;
-        if (item.castUrl) {
-            nextCastUrl =
-                finalizeAudiobookshelfPlaybackUrl(auth, item.castUrl) ?? item.castUrl;
         }
     }
 

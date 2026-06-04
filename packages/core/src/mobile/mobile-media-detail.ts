@@ -8,6 +8,8 @@ import {
     type SamoListeningSession,
     type SamoMusicAlbum,
     type SamoMusicTrack,
+    type SamoSyncManifest,
+    fetchSamoSyncManifest,
     getSamoAudiobook,
     getSamoMusicAlbum,
     getSamoMusicArtist,
@@ -1430,6 +1432,7 @@ const loadSamoAlbumTracks = async (
 export const loadSamoLibraryTracks = async (
     authentication: ServerAuthenticationResult,
     fetch?: SamoFetch,
+    updatedSince?: number | string,
 ): Promise<MobileMediaTrack[]> => {
     const fetcher = getFetch(fetch);
     const streamToken = await ensureSamoStreamToken(authentication, fetcher).catch(
@@ -1441,6 +1444,7 @@ export const loadSamoLibraryTracks = async (
         const response = await listSamoMusicTracks(fetcher, authentication, {
             limit: 500,
             offset,
+            updatedSince,
         });
         const batch = samoItemsOf(response);
         if (batch.length === 0) {
@@ -1457,6 +1461,18 @@ export const loadSamoLibraryTracks = async (
     }
 
     return tracks;
+};
+
+// loadSamoSyncManifest fetches the deletion-reconciliation manifest (current
+// entity IDs + server clock) for an incremental catalog sync. Mobile wrapper
+// over fetchSamoSyncManifest that resolves the platform fetch like the other
+// loaders here.
+export const loadSamoSyncManifest = async (
+    authentication: ServerAuthenticationResult,
+    fetch?: SamoFetch,
+): Promise<SamoSyncManifest> => {
+    const fetcher = getFetch(fetch);
+    return fetchSamoSyncManifest(fetcher, authentication);
 };
 
 const loadSamoAlbumDetail = async (

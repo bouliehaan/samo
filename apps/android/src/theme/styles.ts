@@ -2,6 +2,7 @@ import { Platform, StyleSheet } from 'react-native';
 
 import {
     FULL_PLAYER_ARTWORK_SIZE,
+    FULL_PLAYER_EXPANDED_TOP,
     FULL_PLAYER_PADDING_BOTTOM,
     FULL_PLAYER_PADDING_TOP,
     HOME_COMPACT_OFFSET,
@@ -1295,6 +1296,16 @@ export const styles = StyleSheet.create({
         fontWeight: '700',
         marginTop: 4,
     },
+    downloadsClearAllButton: {
+        alignSelf: 'flex-start',
+        backgroundColor: 'rgba(255, 69, 58, 0.10)',
+        borderColor: 'rgba(255, 69, 58, 0.28)',
+        borderRadius: 8,
+        borderWidth: 1,
+        marginBottom: spacing.md,
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+    },
     downloadsSummary: {
         color: colors.muted,
         fontSize: 13,
@@ -1391,12 +1402,18 @@ export const styles = StyleSheet.create({
         backgroundColor: '#000000',
         elevation: 999,
         flexDirection: 'column',
+        // Spans the full physical screen. The shell lives inside `safeArea`
+        // (paddingTop = PLAYER_SAFE_TOP), so a `top: 0` would dock the open
+        // player one status-bar-height BELOW the screen top — leaving a gap and
+        // pushing all content down. Pulling up by the safe-top offset lands the
+        // shell flush at physical y=0; the `translateY: SCREEN_HEIGHT` parking
+        // still moves it fully off-screen when closed.
         height: SCREEN_HEIGHT,
         left: 0,
         overflow: 'hidden',
         position: 'absolute',
         right: 0,
-        top: 0,
+        top: FULL_PLAYER_EXPANDED_TOP,
         zIndex: 10000,
     },
     fullPlayerExpandedPanel: {
@@ -2243,7 +2260,12 @@ export const styles = StyleSheet.create({
         color: colors.text,
         fontSize: 14,
         fontWeight: '800',
-        lineHeight: 18,
+        // Renders 1px tighter than the line height the row budget reserves
+        // (HOME_MEDIA_TITLE_LINE_HEIGHT = 18). A 2-line title therefore comes in
+        // ~2px under budget, leaving the subtitle below it room to clear the
+        // fixed-height carousel cell instead of being clipped — without making
+        // the row any taller.
+        lineHeight: 17,
         marginBottom: 1,
     },
     mediaTitleCentered: {
@@ -3451,8 +3473,15 @@ export const styles = StyleSheet.create({
         zIndex: 1,
     },
     tabSceneHidden: {
-        opacity: 0,
-        zIndex: 0,
+        // display:'none' (NOT opacity:0) so an inactive scene is fully removed
+        // from layout AND from the touch hierarchy. The scenes are absolute-fill
+        // and stacked on top of each other; an opacity:0 scene stayed touchable,
+        // and because `pointerEvents="none"` on a ScrollView does not block its
+        // children on Android, taps fell THROUGH the invisible scene sitting over
+        // Home to whatever tile was under the finger — which is why every Home
+        // tap (landing on the Radio scene stacked above it) played the radio
+        // station in that spot. A display:'none' view cannot be tapped.
+        display: 'none',
     },
     tabSceneHost: {
         flex: 1,

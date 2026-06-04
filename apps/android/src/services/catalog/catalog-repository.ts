@@ -232,12 +232,24 @@ export const upsertItems = async (
     });
 };
 
+/**
+ * Stable album track ordering: derived from (disc, track) rather than array
+ * index, so an incremental sync can upsert just the changed tracks of an album
+ * without renumbering — and therefore reordering — the rest. The full and delta
+ * paths must agree, so both pass this for `container_type = 'album'`. Containers
+ * with an authored order (playlists, artist top-tracks, podcast episodes) keep
+ * array-index positions, which only the full-list crawl ever writes.
+ */
+export const albumTrackPosition = (track: MobileMediaTrack): number =>
+    (track.discNumber ?? 1) * 100_000 + (track.trackNumber ?? 0);
+
 export const upsertTracks = async (
     sourceId: string,
     containerType: CatalogContainerType,
     containerId: string,
     tracks: MobileMediaTrack[],
     syncedAt: number,
+    positionOf?: (track: MobileMediaTrack, index: number) => number,
 ): Promise<void> => {
     if (tracks.length === 0) {
         return;
@@ -247,8 +259,9 @@ export const upsertTracks = async (
         const statement = await db.prepareAsync(UPSERT_TRACK_SQL);
         try {
             for (let index = 0; index < tracks.length; index += 1) {
+                const position = positionOf ? positionOf(tracks[index], index) : index;
                 await statement.executeAsync(
-                    bindTrack(sourceId, containerType, containerId, tracks[index], index, syncedAt),
+                    bindTrack(sourceId, containerType, containerId, tracks[index], position, syncedAt),
                 );
             }
         } finally {
@@ -605,6 +618,185 @@ export const pruneSource = async (sourceId: string, syncedAt: number): Promise<v
             sourceId,
             syncedAt,
         );
+    });
+};
+
+// ---------------------------------------------------------------------------
+// Incremental ("delta") sync reconciliation.
+//
+// A delta sync upserts only changed rows, so it can't lean on the
+// synced_at-watermark prune to drop deletions. Instead the caller diffs the
+// server's full id manifest against these local id reads and deletes the
+// (typically small) difference by id. Deletes are chunked to stay under
+// SQLite's bound-parameter limit.
+// ---------------------------------------------------------------------------
+
+const DELETE_CHUNK = 400;
+
+const chunk = <T>(values: T[], size: number): T[][] => {
+    const chunks: T[][] = [];
+    for (let i = 0; i < values.length; i += size) {
+        chunks.push(values.slice(i, i + size));
+    }
+    return chunks;
+};
+
+const placeholders = (count: number): string => new Array(count).fill('?').join(', ');
+
+export const getItemIdsByType = async (
+    sourceId: string,
+    type: MobileHomeItemType,
+): Promise<string[]> => {
+    const db = await getCatalogDatabase();
+    const rows = await db.getAllAsync<{ id: string }>(
+        'SELECT id FROM catalog_item WHERE source_id = ? AND type = ?',
+        sourceId,
+        type,
+    );
+    return rows.map((row) => row.id);
+};
+
+/** Distinct track ids stored under the given container types (e.g. the music
+ * containers, whose ids share the music-track namespace). */
+export const getDistinctTrackIds = async (
+    sourceId: string,
+    containerTypes: CatalogContainerType[],
+): Promise<string[]> => {
+    if (containerTypes.length === 0) {
+        return [];
+    }
+    const db = await getCatalogDatabase();
+    const rows = await db.getAllAsync<{ track_id: string }>(
+        `SELECT DISTINCT track_id FROM catalog_track
+         WHERE source_id = ? AND container_type IN (${placeholders(containerTypes.length)})`,
+        sourceId,
+        ...containerTypes,
+    );
+    return rows.map((row) => row.track_id);
+};
+
+export const getDetailEntityIds = async (
+    sourceId: string,
+    type: string,
+): Promise<string[]> => {
+    const db = await getCatalogDatabase();
+    const rows = await db.getAllAsync<{ entity_id: string }>(
+        'SELECT entity_id FROM catalog_detail WHERE source_id = ? AND type = ?',
+        sourceId,
+        type,
+    );
+    return rows.map((row) => row.entity_id);
+};
+
+export const getSearchEntityIds = async (sourceId: string): Promise<string[]> => {
+    const db = await getCatalogDatabase();
+    const rows = await db.getAllAsync<{ entity_id: string }>(
+        'SELECT DISTINCT entity_id FROM catalog_search WHERE source_id = ?',
+        sourceId,
+    );
+    return rows.map((row) => row.entity_id);
+};
+
+export const deleteItemsByIds = async (
+    sourceId: string,
+    type: MobileHomeItemType,
+    ids: string[],
+): Promise<void> => {
+    if (ids.length === 0) {
+        return;
+    }
+    const db = await getCatalogDatabase();
+    await db.withTransactionAsync(async () => {
+        for (const batch of chunk(ids, DELETE_CHUNK)) {
+            await db.runAsync(
+                `DELETE FROM catalog_item WHERE source_id = ? AND type = ? AND id IN (${placeholders(batch.length)})`,
+                sourceId,
+                type,
+                ...batch,
+            );
+        }
+    });
+};
+
+/** Removes the given track ids from the named container types (used to purge
+ * deleted music tracks from every music container at once). */
+export const deleteTracksByTrackIds = async (
+    sourceId: string,
+    trackIds: string[],
+    containerTypes: CatalogContainerType[],
+): Promise<void> => {
+    if (trackIds.length === 0 || containerTypes.length === 0) {
+        return;
+    }
+    const db = await getCatalogDatabase();
+    const containerClause = placeholders(containerTypes.length);
+    await db.withTransactionAsync(async () => {
+        for (const batch of chunk(trackIds, DELETE_CHUNK)) {
+            await db.runAsync(
+                `DELETE FROM catalog_track
+                 WHERE source_id = ? AND container_type IN (${containerClause})
+                   AND track_id IN (${placeholders(batch.length)})`,
+                sourceId,
+                ...containerTypes,
+                ...batch,
+            );
+        }
+    });
+};
+
+/** Drops every track row for one container — used before re-inserting a
+ * re-crawled container's authored track list so removed entries don't linger. */
+export const deleteContainerTracks = async (
+    sourceId: string,
+    containerType: CatalogContainerType,
+    containerId: string,
+): Promise<void> => {
+    const db = await getCatalogDatabase();
+    await db.runAsync(
+        'DELETE FROM catalog_track WHERE source_id = ? AND container_type = ? AND container_id = ?',
+        sourceId,
+        containerType,
+        containerId,
+    );
+};
+
+export const deleteDetailsByEntityIds = async (
+    sourceId: string,
+    type: string,
+    entityIds: string[],
+): Promise<void> => {
+    if (entityIds.length === 0) {
+        return;
+    }
+    const db = await getCatalogDatabase();
+    await db.withTransactionAsync(async () => {
+        for (const batch of chunk(entityIds, DELETE_CHUNK)) {
+            await db.runAsync(
+                `DELETE FROM catalog_detail WHERE source_id = ? AND type = ? AND entity_id IN (${placeholders(batch.length)})`,
+                sourceId,
+                type,
+                ...batch,
+            );
+        }
+    });
+};
+
+export const deleteSearchByEntityIds = async (
+    sourceId: string,
+    entityIds: string[],
+): Promise<void> => {
+    if (entityIds.length === 0) {
+        return;
+    }
+    const db = await getCatalogDatabase();
+    await db.withTransactionAsync(async () => {
+        for (const batch of chunk(entityIds, DELETE_CHUNK)) {
+            await db.runAsync(
+                `DELETE FROM catalog_search WHERE source_id = ? AND entity_id IN (${placeholders(batch.length)})`,
+                sourceId,
+                ...batch,
+            );
+        }
     });
 };
 

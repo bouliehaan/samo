@@ -16,6 +16,7 @@ import { getContentSourceFromDownloadCollection } from '../utils/content-source'
 
 import {
     cancelDownload,
+    clearAllDownloads,
     discoverDownloadsOnDisk,
     type DownloadEntry,
     type DownloadStatus,
@@ -74,6 +75,7 @@ export const DownloadsScreen = ({
     });
     const [isPickingStorage, setIsPickingStorage] = useState(false);
     const [isMigratingStorage, setIsMigratingStorage] = useState(false);
+    const [isClearingAll, setIsClearingAll] = useState(false);
 
     useEffect(() => {
         const unsubscribe = subscribeDownloads(setEntries);
@@ -109,6 +111,25 @@ export const DownloadsScreen = ({
 
     const handleResetStorage = async () => {
         await resetStorageLocation();
+    };
+
+    const handleClearAll = () => {
+        if (isClearingAll || entries.length === 0) return;
+        Alert.alert(
+            'Delete all downloads?',
+            'This cancels any in-progress downloads and deletes every downloaded file from this device. Your library on the server is not affected.',
+            [
+                { style: 'cancel', text: 'Cancel' },
+                {
+                    style: 'destructive',
+                    text: 'Delete all',
+                    onPress: () => {
+                        setIsClearingAll(true);
+                        void clearAllDownloads().finally(() => setIsClearingAll(false));
+                    },
+                },
+            ],
+        );
     };
 
     const handleMigrateStorage = async () => {
@@ -180,6 +201,26 @@ export const DownloadsScreen = ({
                     ? 'No downloads yet. Tap the download icon on an album, playlist, audiobook, or podcast to save it for offline listening.'
                     : `${sortedEntries.length} ${sortedEntries.length === 1 ? 'item' : 'items'} · ${formatBytes(totalBytes) || '0 MB on disk'}`}
             </Text>
+            {sortedEntries.length > 0 ? (
+                <Pressable
+                    accessibilityRole="button"
+                    disabled={isClearingAll}
+                    onPress={handleClearAll}
+                    style={[
+                        styles.downloadsClearAllButton,
+                        isClearingAll && styles.disabledButton,
+                    ]}
+                >
+                    <Text
+                        style={[
+                            styles.downloadsStorageButtonLabel,
+                            styles.downloadActionDestructive,
+                        ]}
+                    >
+                        {isClearingAll ? 'Deleting…' : 'Delete all downloads'}
+                    </Text>
+                </Pressable>
+            ) : null}
             <View style={styles.downloadsStorageRow}>
                 <Text style={styles.downloadsStorageLabel}>Storage location</Text>
                 <Text numberOfLines={2} style={styles.downloadsStorageValue}>

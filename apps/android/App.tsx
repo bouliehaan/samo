@@ -76,6 +76,7 @@ import {
     PermissionsAndroid,
     Platform,
     Pressable,
+    RefreshControl,
     ScrollView,
     StyleSheet,
     Text,
@@ -221,7 +222,7 @@ import { triggerSelection } from './src/services/haptics';
 import {
     type AndroidHomeContentState,
     loadAndroidHomeContent,
-    refreshAndroidHomeLiveSections,
+    reconcileHomeContent,
 } from './src/services/home-content';
 import { loadCachedHomeContent, saveCachedHomeContent } from './src/services/home-content-cache';
 import { buildHomeLoadKey, dedupeInFlight } from './src/services/in-flight-requests';
@@ -247,14 +248,6 @@ import {
     loadAndroidMediaTrackPlayback,
 } from './src/services/media-detail';
 import { loadCachedMediaDetail, saveCachedMediaDetail } from './src/services/media-detail-cache';
-import {
-    starSubsonicAlbum,
-    starSubsonicArtist,
-    starSubsonicTrack,
-    unstarSubsonicAlbum,
-    unstarSubsonicArtist,
-    unstarSubsonicTrack,
-} from './src/services/media-favorites';
 import { loadOfflineModePreference, saveOfflineModePreference } from './src/services/offline-mode';
 import {
     getPersistedServerAuthKey,
@@ -295,6 +288,7 @@ import {
     setAndroidPlaybackState,
     useAndroidPlaybackState,
 } from './src/state/playback-store';
+import { getPlaybackQueue, usePlaybackQueue } from './src/state/playback-queue-store';
 import {
     DISMISS_DISTANCE,
     DISMISS_VELOCITY,
@@ -483,7 +477,6 @@ export default function App() {
         isShuffled,
         lastPlayedItem,
         localFavorites,
-        playbackQueueRevision,
         recentContentItems,
         setFavoritedKeys,
         setIsShuffled,
@@ -524,16 +517,15 @@ export default function App() {
     const {
         absContextRef,
         handlePlayItem,
-        playbackQueueRef,
         playbackSnapshotRef,
         playQueuedItem,
         registerNavigatePlayback,
     } = useAndroidNativePlayback({ isFullPlayerOpen, lastPlayedItem, serverConnections });
+    const queue = usePlaybackQueue();
     useAndroidRadioMetadataSync(serverConnections);
     useAndroidCastSync();
     useAndroidAbsProgressSync();
     const lastPlayedPersistenceKeyRef = useRef<null | string>(null);
-    const homeDiscoveryRefreshId = useRef(0);
     const isHomeSurface =
         activeTab === 'home' && activeUtilityScreen === null && mediaDetailState.status === 'idle';
     const frozenDetailStateRef = useRef(mediaDetailState);
@@ -672,7 +664,10 @@ export default function App() {
     ]);
 
     const loadHomeForConnections = useCallback(
-        async (authentications: ServerAuthenticationResult[]) => {
+        async (
+            authentications: ServerAuthenticationResult[],
+            options?: { force?: boolean },
+        ) => {
             const requestId = (homeLoadRequestId.current += 1);
 
             if (authentications.length === 0) {
@@ -710,8 +705,45 @@ export default function App() {
             );
 
             if (requestId === homeLoadRequestId.current) {
-                setHomeContentState(nextHomeContentState);
-                if (nextHomeContentState.status === 'loaded') {
+                // A network result may only REPLACE what's on screen when it
+                // actually carries content. A transient failure (error) or an
+                // empty payload must NEVER clobber the cache/seed already
+                // showing — that was the "reopen → network request failed → no
+                // server-backed Home content" regression, where a failed refetch
+                // wiped perfectly good content off the screen and left the user
+                // staring at an empty state.
+                setHomeContentState((current) => {
+                    if (
+                        nextHomeContentState.status === 'loaded' &&
+                        nextHomeContentState.content.sections.length > 0
+                    ) {
+                        // Only re-render Home with fresh network data when the
+                        // user explicitly asked for it (pull-to-refresh / manual
+                        // sync) or there's nothing on screen yet. Otherwise Home
+                        // renders from the local cache/seed and STAYS PUT —
+                        // nothing pops in late, no flash. The fresh result is
+                        // still cached below, so the next open shows it instantly.
+                        if (options?.force || current.status !== 'loaded') {
+                            return current.status === 'loaded'
+                                ? {
+                                      content: reconcileHomeContent(
+                                          current.content,
+                                          nextHomeContentState.content,
+                                      ),
+                                      status: 'loaded',
+                                  }
+                                : nextHomeContentState;
+                        }
+                        return current;
+                    }
+                    // Keep good content visible; only surface an error/empty
+                    // state when there is nothing else to show.
+                    return current.status === 'loaded' ? current : nextHomeContentState;
+                });
+                if (
+                    nextHomeContentState.status === 'loaded' &&
+                    nextHomeContentState.content.sections.length > 0
+                ) {
                     void saveCachedHomeContent(nextHomeContentState.content);
                     const mergedRecents = await mergeServerRecentlyPlayedIntoRecents(
                         await loadPersistedRecentContentItems(),
@@ -734,42 +766,12 @@ export default function App() {
         [],
     );
 
-    const homeLiveRefreshAtRef = useRef(0);
-    useEffect(() => {
-        if (
-            !isHomeSurface ||
-            homeContentState.status !== 'loaded' ||
-            serverConnections.length === 0
-        ) {
-            return;
-        }
-
-        // Discovery + the podcast feed change slowly. Refreshing them on EVERY
-        // return to Home — and every detail open/close, since `isHomeSurface`
-        // toggles with it — re-rendered the whole home tree (resolving artwork
-        // for every tile) and showed up as tap latency. Gate to once per minute.
-        const now = Date.now();
-        if (now - homeLiveRefreshAtRef.current < 60_000) {
-            return;
-        }
-        homeLiveRefreshAtRef.current = now;
-
-        const content = homeContentState.content;
-        const requestId = (homeDiscoveryRefreshId.current += 1);
-
-        void refreshAndroidHomeLiveSections(serverConnections, content)
-            .then((nextContent) => {
-                if (requestId !== homeDiscoveryRefreshId.current) {
-                    return;
-                }
-                setHomeContentState({ status: 'loaded', content: nextContent });
-            })
-            .catch(() => {
-                // A transient failure must NOT hide the podcast feed for a whole
-                // minute — clear the gate so the next Home visit retries instead.
-                homeLiveRefreshAtRef.current = 0;
-            });
-    }, [homeContentState.status, isHomeSurface, serverConnections]);
+    // (Removed) The Discover / Podcast-feed live refresh used to re-fetch those
+    // sections on every return to Home and patch them in AFTER the page was up —
+    // that was the "podcast feed loads in late / flashes" complaint. Those
+    // sections already come from the base Home load + cache, so Home now renders
+    // everything at once and stays put; pull-to-refresh is the only thing that
+    // pulls fresh content.
 
     // Warm the whole library's cover art from the existing catalog once on
     // launch (already-cached covers are skipped cheaply), so simply reopening the
@@ -1139,7 +1141,6 @@ export default function App() {
         deps: { auth, downloads, navigation, overlays, session },
         handlePlayItem,
         loadHomeForConnections,
-        playbackQueueRef,
         playQueuedItem,
     });
     mediaHandlersRef.current = mediaHandlers;
@@ -1158,6 +1159,31 @@ export default function App() {
         handleShuffleHomeItems,
         prefetchMediaDetailCache,
     } = mediaHandlers;
+
+    // The quick-search OVERLAY fires onChangeText per keystroke; without a
+    // debounce that was a full music+audiobook+podcast search fan-out on EVERY
+    // character, which saturated the JS thread and stuttered playback. The main
+    // Search tab already debounces 280ms; mirror it here so a burst of typing
+    // runs ONE search. The input itself stays instant (setSearchOverlayQuery
+    // updates the value synchronously at the call site); only the heavy network
+    // search is deferred.
+    const overlaySearchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const runOverlaySearchDebounced = useStableCallback((rawQuery: string) => {
+        if (overlaySearchTimerRef.current) {
+            clearTimeout(overlaySearchTimerRef.current);
+            overlaySearchTimerRef.current = null;
+        }
+        const trimmed = rawQuery.trim();
+        if (!trimmed) {
+            // Clearing must feel instant — no point deferring an empty query.
+            void handleSearch('');
+            return;
+        }
+        overlaySearchTimerRef.current = setTimeout(() => {
+            overlaySearchTimerRef.current = null;
+            void handleSearch(trimmed);
+        }, 280);
+    });
 
     const contextMenu = useAndroidContextMenu({
         deps: { overlays, session },
@@ -1238,7 +1264,6 @@ export default function App() {
     } = useAndroidPlaybackControls({
         absContextRef,
         lastPlayedItem,
-        playbackQueueRef,
         playbackSnapshotRef,
         playQueuedItem,
         serverConnections,
@@ -1268,7 +1293,8 @@ export default function App() {
             // This is the only point in the app where we deliberately
             // invalidate; everything else trusts the cache.
             await ExpoImage.clearMemoryCache();
-            await loadHomeForConnections(serverConnections);
+            // Explicit user sync — force Home to re-render with the fresh result.
+            await loadHomeForConnections(serverConnections, { force: true });
             // Rebuild the on-device Samo library mirror in the background. This
             // is the user's explicit "re-mirror everything" trigger, but a full
             // crawl is heavy, so it's fire-and-forget: live progress shows in the
@@ -1321,6 +1347,37 @@ export default function App() {
         }
     }, [loadHomeForConnections, serverConnections]);
 
+    const [isRefreshingHome, setIsRefreshingHome] = useState(false);
+
+    const handleRefreshHome = useCallback(async (): Promise<void> => {
+        if (serverConnections.length === 0) {
+            return;
+        }
+        setIsRefreshingHome(true);
+        // Keep the on-device library mirror fresh, but OFF the spinner's critical
+        // path. The full-catalog delta sync is what made pull-to-refresh feel
+        // slow — it has no business blocking the spinner. Fire it in the
+        // background (it powers the Library screen and the cold-start seed); the
+        // pull itself only needs the Home re-fetch below.
+        void syncSamoCatalog(serverConnections).catch(() => undefined);
+        try {
+            // The spinner waits ONLY on the Home re-fetch — recently-added, the
+            // podcast feed, and discover all come back here in one shot. force:true
+            // so the fresh result actually replaces what's on screen (pull-to-
+            // refresh is the one place the user asked for new content). Capped so
+            // a slow network releases the spinner instead of hanging it.
+            await Promise.race([
+                loadHomeForConnections(serverConnections, { force: true }),
+                new Promise<void>((resolve) => setTimeout(resolve, 10000)),
+            ]);
+        } catch {
+            // swallow — pull-to-refresh never throws into the UI
+        } finally {
+            setIsRefreshingHome(false);
+        }
+        void prefetchCatalogArtwork(serverConnections);
+    }, [loadHomeForConnections, serverConnections]);
+
     const handleOpenSettings = useCallback(() => {
         setActiveUtilityScreen('settings');
         closeMediaDetail();
@@ -1347,11 +1404,26 @@ export default function App() {
         });
     }, [setServerUrl]);
     const handleOpenFullPlayer = useCallback(() => {
+        // Kick the expand spring on the UI thread NOW so the card starts moving
+        // on the next frame instead of waiting on this (very large) component's
+        // re-render. That wait is what made tapping/flicking the mini player
+        // "stall" before the player slid up. The open effect re-targets the
+        // same spring once `isFullPlayerOpen` commits, which is a no-op.
+        playerProgress.value = withSpring(
+            1,
+            reducedMotion ? REDUCED_MOTION_SPRING : PLAYER_OPEN_SPRING,
+        );
         setIsFullPlayerOpen(true);
-    }, [setIsFullPlayerOpen]);
+    }, [playerProgress, reducedMotion, setIsFullPlayerOpen]);
     const handleCloseFullPlayer = useCallback(() => {
+        // Mirror of open: begin collapsing immediately rather than after the
+        // re-render the state flip schedules.
+        playerProgress.value = withSpring(
+            0,
+            reducedMotion ? REDUCED_MOTION_SPRING : PLAYER_CLOSE_SPRING,
+        );
         setIsFullPlayerOpen(false);
-    }, [setIsFullPlayerOpen]);
+    }, [playerProgress, reducedMotion, setIsFullPlayerOpen]);
     const handleOpenOutputPicker = useCallback(() => {
         setOutputPickerVisible(true);
     }, []);
@@ -1415,11 +1487,7 @@ export default function App() {
             id: playlistMenuRoot.sourceId,
         });
 
-        return (
-            auth?.type === ServerType.SAMO ||
-            auth?.type === ServerType.NAVIDROME ||
-            auth?.type === ServerType.SUBSONIC
-        );
+        return auth?.type === ServerType.SAMO;
     }, [playlistMenuRoot?.sourceId, serverConnections]);
     const rootPlaylistMenuMode = useMemo(() => {
         if (!playlistMenuRoot) {
@@ -1435,10 +1503,7 @@ export default function App() {
     const canCreatePlaylistsOnDevice = useMemo(
         () =>
             serverConnections.some(
-                (connection) =>
-                    connection.type === ServerType.SAMO ||
-                    connection.type === ServerType.NAVIDROME ||
-                    connection.type === ServerType.SUBSONIC,
+                (connection) => connection.type === ServerType.SAMO,
             ),
         [serverConnections],
     );
@@ -1638,7 +1703,9 @@ export default function App() {
                                                                 }
                                                                 style={sceneStyle}
                                                             >
-                                                                {renderTabSceneContent(tab.id)}
+                                                                <ErrorBoundary label={`tab-${tab.id}`}>
+                                                                    {renderTabSceneContent(tab.id)}
+                                                                </ErrorBoundary>
                                                             </View>
                                                         );
                                                     }
@@ -1650,10 +1717,26 @@ export default function App() {
                                                             pointerEvents={
                                                                 isSceneActive ? 'auto' : 'none'
                                                             }
+                                                            refreshControl={
+                                                                tab.id === 'home' &&
+                                                                serverConnections.length > 0 ? (
+                                                                    <RefreshControl
+                                                                        colors={[colors.accent]}
+                                                                        onRefresh={handleRefreshHome}
+                                                                        progressBackgroundColor={
+                                                                            colors.surface
+                                                                        }
+                                                                        refreshing={isRefreshingHome}
+                                                                        tintColor={colors.accent}
+                                                                    />
+                                                                ) : undefined
+                                                            }
                                                             showsVerticalScrollIndicator={false}
                                                             style={sceneStyle}
                                                         >
-                                                            {renderTabSceneContent(tab.id)}
+                                                            <ErrorBoundary label={`tab-${tab.id}`}>
+                                                                {renderTabSceneContent(tab.id)}
+                                                            </ErrorBoundary>
                                                         </ScrollView>
                                                     );
                                                 })}
@@ -1731,7 +1814,7 @@ export default function App() {
                                                     }}
                                                     onSearch={(q) => {
                                                         setSearchOverlayQuery(q);
-                                                        void handleSearch(q);
+                                                        runOverlaySearchDebounced(q);
                                                     }}
                                                     onSelectItem={(item) => {
                                                         setIsSearchOverlayOpen(false);
@@ -1822,7 +1905,7 @@ export default function App() {
                                                 onNext={() => void handleNavigatePlayback(1)}
                                                 onOpenOutputPicker={handleOpenOutputPicker}
                                                 onPlayQueueIndex={(index) => {
-                                                    const currentQueue = playbackQueueRef.current;
+                                                    const currentQueue = getPlaybackQueue();
                                                     if (!currentQueue) {
                                                         return;
                                                     }
@@ -1845,9 +1928,8 @@ export default function App() {
                                                 }
                                                 onTogglePlayback={handleTogglePlayback}
                                                 onToggleShuffle={handleToggleShuffle}
-                                                playbackQueueRevision={playbackQueueRevision}
                                                 playerProgress={playerProgress}
-                                                queue={playbackQueueRef.current}
+                                                queue={queue}
                                                 reducedMotion={reducedMotion}
                                                 serverConnections={serverConnections}
                                                 visible={isFullPlayerOpen}
