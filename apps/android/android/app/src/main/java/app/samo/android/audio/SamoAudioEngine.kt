@@ -51,7 +51,7 @@ import java.util.concurrent.Executors
 
 internal class SamoAudioEngine(
   private val reactContext: ReactApplicationContext,
-) : SamoLiveReconnect.Host, SamoAudioCastHost {
+) : SamoPlaybackRecovery.Host, SamoAudioCastHost {
   private val mainHandler = Handler(Looper.getMainLooper())
   private val castExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
   private val binder = SamoServiceBinder(
@@ -129,7 +129,8 @@ internal class SamoAudioEngine(
     }
   }
   private val outputRoutes = SamoOutputRoutes(reactContext, mainHandler)
-  private val liveReconnect = SamoLiveReconnect(mainHandler, this)
+  private val networkMonitor = SamoNetworkMonitor(reactContext, mainHandler)
+  private val recovery = SamoPlaybackRecovery(mainHandler, networkMonitor, this)
   private lateinit var castManager: SamoCastSessionManager
 
   override val boundService: SamoPlaybackService?
@@ -137,6 +138,21 @@ internal class SamoAudioEngine(
 
   init {
     castManager = SamoCastSessionManager(reactContext, mainHandler, castExecutor, this)
+    networkMonitor.start()
+    // Bind position + duration suppliers ONCE at engine construction; the
+    // closures resolve the current player every tick through the binder so
+    // they keep working across service re-binds. SamoProgressSync drives its
+    // own polling loop from these inside the foreground service process,
+    // which is what makes "I closed the app and it forgot my spot" stop
+    // happening — the JS 20s poll is irrelevant when JS is Doze-frozen.
+    SamoProgressSync.bindPlayerSuppliers(
+      position = { binder.boundService?.getCurrentPlayer()?.currentPosition ?: 0L },
+      duration = { binder.boundService?.getCurrentPlayer()?.duration ?: -1L },
+    )
+    // Eagerly open the second reader on samo-catalog.db so the first Phase 2
+    // PROPER / Phase 5 query doesn't pay the open cost. No-op when the JS-side
+    // catalog hasn't created the file yet (fresh install with no Samo source).
+    SamoCatalogDb.warm(reactContext)
   }
   override var currentAudioTrackConfig: AudioSink.AudioTrackConfig? = null
   override var currentBitPerfectTruth = SamoBitPerfectTruth.unknown()
@@ -148,6 +164,13 @@ internal class SamoAudioEngine(
   override var currentSessionId: String? = null
   override var lastCastPositionMs = 0L
   override var lastKnownPlaybackPositionMs = 0L
+  override var currentServerUrl: String? = null
+  override var currentBearerToken: String? = null
+  /** Engine-level recovery state. Overrides the player's ExoPlayer-derived
+   *  status when set to anything other than Normal — that's how new states
+   *  like "waiting_for_network" / "stale_auth" reach JS without polluting the
+   *  player's own state machine. */
+  private var engineMode: SamoPlaybackRecovery.Mode = SamoPlaybackRecovery.Mode.Normal
   private var lastAutoAdvanceSessionId: String? = null
   /** Blocks stale STATE_ENDED callbacks while ExoPlayer is torn down for the next track. */
   private var suppressQueueAdvanceUntilMs = 0L
@@ -177,11 +200,31 @@ internal class SamoAudioEngine(
       }
 
       val url = source.getOptionalString("url")
-      if (url != null && SamoNativeStreamUrl.shouldRefresh(url)) {
+      val kind = source.getOptionalString("samoProgressKind")
+      // Phase 2 PROPER: refresh through the kind/target path when the item
+      // carries kind+targetId, even if the URL field is missing or stale.
+      // Pre-Phase-2-PROPER queues (and radio) still take the URL-only path.
+      if ((url != null && SamoNativeStreamUrl.isSamoStreamUrl(url)) || kind != null) {
         val map = SamoBridgeMapCopier.toHashMap(source)
-        SamoNativeStreamUrl.refreshQueueItemAsync(map) { refreshedItem ->
+        SamoNativeStreamUrl.refreshQueueItemAsync(reactContext, map) { result ->
           mainHandler.post {
-            playLocally(SamoBridgeMapCopier.toWritableMap(refreshedItem), promise)
+            // For initial play we optimistically fall through to the original
+            // URL on a mint failure — the existing JS-minted token may still
+            // be valid. If it isn't, the player will surface a 401 and the
+            // recovery layer takes over with a fresh mint + retry, or parks
+            // the playback as WAITING_FOR_NETWORK if connectivity is gone.
+            val itemToPlay = when (result) {
+              is SamoNativeStreamUrl.RefreshResult.Ready -> result.item
+              is SamoNativeStreamUrl.RefreshResult.MintFailed -> {
+                Log.w(
+                  "SamoAudio",
+                  "play() mint failed (${result.reason}); using original URL",
+                )
+                result.originalItem
+              }
+              is SamoNativeStreamUrl.RefreshResult.NotApplicable -> result.item
+            }
+            playLocally(SamoBridgeMapCopier.toWritableMap(itemToPlay), promise)
           }
         }
         return@post
@@ -197,9 +240,85 @@ internal class SamoAudioEngine(
    */
   fun setPlaybackQueue(queue: ReadableMap, promise: Promise) {
     mainHandler.post {
-      nativePlaybackQueue = queue.syncNativePlaybackQueue(null)
+      val updated = queue.syncNativePlaybackQueue(null)
+      nativePlaybackQueue = updated
+      reconcileExoPlaylistToQueue(updated)
       promise.resolve(Arguments.createMap())
     }
+  }
+
+  /**
+   * Bring ExoPlayer's loaded playlist in line with an edited Up Next queue
+   * (reorder / add-to-queue / play-next / remove) WITHOUT interrupting the
+   * track that's currently playing. Only acts while a multi-item music/podcast
+   * playlist is live — on a new play the player still holds the previous
+   * content so the current id won't match the new queue, and we no-op.
+   */
+  private fun reconcileExoPlaylistToQueue(newQueue: SamoNativePlaybackQueue?) {
+    if (isCastActive()) return
+    val player = binder.boundService?.getCurrentPlayer() ?: return
+    if (player.mediaItemCount <= 1) return
+    if (newQueue == null || newQueue.items.size < 2) return
+    if (!newQueue.items.all { val s = it["source"] as? String; s == "music" || s == "podcast" }) {
+      return
+    }
+
+    val currentId = player.currentMediaItem?.mediaId ?: return
+    val newCurrentIndex = newQueue.items.indexOfFirst { (it["id"] as? String) == currentId }
+    if (newCurrentIndex < 0) {
+      // The playing track is no longer in the queue (it was removed). Leave it
+      // playing rather than hard-cutting; the next natural advance lands on
+      // whatever follows in the player's existing list.
+      return
+    }
+
+    val playerIndex = player.currentMediaItemIndex
+    // Replace the "up next" tail first so items at/below the current index are
+    // untouched while we do it; the currently-playing item is never replaced.
+    val afterItems = newQueue.items.drop(newCurrentIndex + 1).map { buildMusicMediaItem(it) }
+    player.replaceMediaItems(playerIndex + 1, player.mediaItemCount, afterItems)
+    // Then reconcile the "history" head before the current item.
+    val beforeItems = newQueue.items.take(newCurrentIndex).map { buildMusicMediaItem(it) }
+    if (playerIndex > 0) {
+      player.replaceMediaItems(0, playerIndex, beforeItems)
+    } else if (beforeItems.isNotEmpty()) {
+      player.addMediaItems(0, beforeItems)
+    }
+
+    newQueue.index = player.currentMediaItemIndex
+    Log.i(
+      "SamoAudio",
+      "playlist reconciled size=${newQueue.items.size} current=${newQueue.index}",
+    )
+  }
+
+  /**
+   * Build a Media3 [MediaItem] from a mirrored native queue item (a HashMap
+   * copied from the JS payload). Used to load the ENTIRE music queue at once so
+   * ExoPlayer advances through it natively. The stream token baked into the
+   * item's URL may be stale — [SamoResolvingDataSource] re-mints it when
+   * ExoPlayer opens the source — so what matters here is the path/id, the
+   * notification metadata, and the mime type.
+   */
+  private fun buildMusicMediaItem(item: HashMap<String, Any?>): MediaItem {
+    val url = (item["url"] as? String).orEmpty()
+    val mediaId = (item["id"] as? String) ?: url
+    val title = (item["title"] as? String) ?: "Samo"
+    val subtitle = item["subtitle"] as? String
+    val artworkUrl = item["artworkUrl"] as? String
+    val mimeType = getMediaItemMimeType(url, item["mimeType"] as? String)
+    val metadataBuilder = MediaMetadata.Builder()
+      .setTitle(title)
+      .setArtist(subtitle)
+    if (!artworkUrl.isNullOrBlank()) {
+      metadataBuilder.setArtworkUri(Uri.parse(artworkUrl))
+    }
+    return MediaItem.Builder()
+      .setMediaId(mediaId)
+      .setMediaMetadata(metadataBuilder.build())
+      .setMimeType(mimeType)
+      .setUri(Uri.parse(url))
+      .build()
   }
 
   private fun playLocally(source: ReadableMap, promise: Promise) {
@@ -254,7 +373,10 @@ internal class SamoAudioEngine(
       resolvedPlayer.stop()
       resolvedPlayer.clearMediaItems()
       SamoBitPerfect.clearPreferredMixerAttributes(reactContext, service)
-      liveReconnect.cancelPendingLiveReconnect()
+      recovery.cancelPendingRetry()
+      engineMode = SamoPlaybackRecovery.Mode.Normal
+      currentServerUrl = source.getOptionalString("serverUrl")
+      currentBearerToken = source.getOptionalString("serverBearerToken")
       currentAudioTrackConfig = null
       currentHlsFallbackAttempted = mimeType == MimeTypes.APPLICATION_M3U8
       currentMediaItem = mediaItem
@@ -276,9 +398,40 @@ internal class SamoAudioEngine(
       currentSessionId = sessionId
       lastAutoAdvanceSessionId = null
       resolvedPlayer.repeatMode = Player.REPEAT_MODE_OFF
-      resolvedPlayer.setMediaItem(mediaItem)
+      // Music plays as a FULL native playlist: load every queue item so
+      // ExoPlayer walks the whole queue itself — advancing track-to-track via
+      // onMediaItemTransition with zero JS in the loop, so a locked phone keeps
+      // playing for hours. SamoResolvingDataSource re-mints each track's token
+      // at load. Audiobook / podcast / radio keep the single-item path.
+      val trackPlaylist = nativePlaybackQueue?.takeIf { queue ->
+        !isLiveStream &&
+          (sourceLabel == "music" || sourceLabel == "podcast") &&
+          queue.items.size > 1 &&
+          queue.index in queue.items.indices &&
+          // Discrete-file sources only (music + podcast episodes). Audiobook
+          // (HLS / chapter seek) and radio keep the single-item path; their
+          // tokens aren't re-minted by the music/podcast-scoped resolver.
+          queue.items.all { val s = it["source"] as? String; s == "music" || s == "podcast" }
+      }
+      if (trackPlaylist != null) {
+        val mediaItems = trackPlaylist.items.map { buildMusicMediaItem(it) }
+        resolvedPlayer.setMediaItems(mediaItems, trackPlaylist.index, lastKnownPlaybackPositionMs)
+        Log.i(
+          "SamoAudio",
+          "native playlist loaded count=${mediaItems.size} startIndex=${trackPlaylist.index}",
+        )
+      } else {
+        resolvedPlayer.setMediaItem(mediaItem)
+      }
       resolvedPlayer.prepare()
       resolvedPlayer.playWhenReady = true
+      // Hand the new item to the native progress writer. Detach for the
+      // outgoing item (if any) happens inside attach() — fires a "switch"
+      // write for it before adopting the new context, so position is saved
+      // before the auto-advance even starts loading the next URL.
+      if (!isLiveStream) {
+        SamoProgressSync.attach(source, sessionId, lastKnownPlaybackPositionMs)
+      }
       emitState("buffering")
       promise.resolve(getStatusMap(resolvedPlayer, "buffering"))
     }
@@ -333,10 +486,16 @@ internal class SamoAudioEngine(
         restoreNoisyHandlingNow(resolvedPlayer)
         val playerError = resolvedPlayer.playerError
         if (playerError != null) {
-          if (liveReconnect.scheduleAutoReconnect(resolvedPlayer, playerError)) {
+          if (recovery.handlePlayerError(resolvedPlayer, playerError)) {
             promise.resolve(getStatusMap(resolvedPlayer, "buffering"))
             return@withService
           }
+        }
+        // The user is asking to resume — if we were parked in waiting/stale
+        // states, this is the cue to drop the override and follow the player.
+        if (engineMode != SamoPlaybackRecovery.Mode.Normal) {
+          recovery.cancelPendingRetry()
+          engineMode = SamoPlaybackRecovery.Mode.Normal
         }
         resolvedPlayer.play()
         emitState("playing")
@@ -368,6 +527,11 @@ internal class SamoAudioEngine(
         // queue auto-advance while the player settles on the new position.
         suppressQueueAdvanceUntilMs = SystemClock.uptimeMillis() + 3000L
         resolvedPlayer.seekTo(positionMs.toLong())
+        // Capture the seek point in the server-side progress immediately. Without
+        // this, an audiobook listener who scrubs back 30s then immediately backgrounds
+        // the app would have their seek reverted on next launch (the next poll write
+        // wouldn't fire for up to 20s).
+        SamoProgressSync.flushNow("seek")
         promise.resolve(getStatusMap(resolvedPlayer))
       }
     }
@@ -430,10 +594,16 @@ internal class SamoAudioEngine(
         return@post
       }
       try {
+        // Save the playhead before tearing down. completed=false because a
+        // user-initiated stop is not the same as a track ending naturally.
+        SamoProgressSync.detach(completed = false, reason = "stop")
         service.resetPlayerState()
         restoreNoisyHandlingNow(service.getCurrentPlayer())
         SamoBitPerfect.clearPreferredMixerAttributes(reactContext, service)
-        liveReconnect.cancelPendingLiveReconnect()
+        recovery.cancelPendingRetry()
+        engineMode = SamoPlaybackRecovery.Mode.Normal
+        currentServerUrl = null
+        currentBearerToken = null
         currentAudioTrackConfig = null
         currentCastSource = null
         currentHlsFallbackAttempted = false
@@ -630,7 +800,9 @@ internal class SamoAudioEngine(
       }
       castManager.invalidate()
       outputRoutes.stopOutputRouteDiscovery()
-      liveReconnect.cancelPendingLiveReconnect()
+      recovery.release()
+      networkMonitor.stop()
+      engineMode = SamoPlaybackRecovery.Mode.Normal
       restoreNoisyHandlingNow(binder.boundService?.getCurrentPlayer())
       binder.clearOnInvalidate()
       playerListenersInstalledOn = null
@@ -655,9 +827,19 @@ internal class SamoAudioEngine(
 
     player.addListener(object : Player.Listener {
       override fun onIsPlayingChanged(isPlaying: Boolean) {
+        // Propagate to the progress writer before any local state churn — the
+        // false transition flushes the latest position so a hardware-button
+        // pause + immediate kill never loses the playhead.
+        if (!isCastActive()) {
+          SamoProgressSync.setPlaying(isPlaying)
+        }
         if (isPlaying) {
-          // Stream is alive — give the next failure a fresh retry budget.
-          liveReconnect.resetAttempts()
+          // Stream is alive — give the next failure a fresh retry budget,
+          // and drop any sticky recovery override (waiting_for_network etc.).
+          recovery.onPlaybackHealthy()
+          if (engineMode != SamoPlaybackRecovery.Mode.Normal) {
+            engineMode = SamoPlaybackRecovery.Mode.Normal
+          }
           scheduleNoisyHandlingRestore(player, currentSessionId, 750L)
         }
         if (isCastActive()) return
@@ -679,6 +861,10 @@ internal class SamoAudioEngine(
             "SamoAudio",
             "playback stopped at end sessionId=$currentSessionId position=$positionMs",
           )
+          // Fires the "submitted" write for the outgoing track BEFORE
+          // requestQueueAdvanceFromEnded triggers attach() for the next one.
+          // Music: increments play count. Audiobook/podcast: marks completed.
+          SamoProgressSync.detach(completed = true, reason = "ended")
           emitState("ended")
           requestQueueAdvanceFromEnded("isPlayingChanged")
           return
@@ -706,10 +892,88 @@ internal class SamoAudioEngine(
             "SamoAudio",
             "playback state ended sessionId=$currentSessionId position=$positionMs",
           )
+          SamoProgressSync.detach(completed = true, reason = "ended")
           emitState("ended")
           requestQueueAdvanceFromEnded("playbackStateChanged")
           return
         }
+        emitState(getCurrentStatus(player))
+      }
+
+      override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+        if (isCastActive()) return
+        // setMediaItems() at play() time fires PLAYLIST_CHANGED — playLocally
+        // already adopted the start track, so there's nothing to advance here.
+        if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED) return
+
+        val queue = nativePlaybackQueue ?: return
+        val newIndex = player.currentMediaItemIndex
+        if (newIndex !in queue.items.indices) return
+
+        // The OUTGOING track just finished. AUTO = natural end → submit the play
+        // (music play-count / long-form completed). SEEK = user skip → no submit.
+        val completed = reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO
+        SamoProgressSync.detach(completed = completed, reason = if (completed) "ended" else "skip")
+
+        // Adopt the new current track natively — no JS needed. getStatusMap
+        // carries source.id + queueIndex, which JS reconciles when it next wakes
+        // (shouldAcceptPlaybackEvent / syncPlaybackFromNativeEvent).
+        queue.index = newIndex
+        val newItem = queue.items[newIndex]
+        currentServerUrl = newItem["serverUrl"] as? String
+        currentBearerToken = newItem["serverBearerToken"] as? String
+        currentMediaItem = mediaItem
+        currentSource = SamoAudioSourceSnapshot(
+          artworkUrl = newItem["artworkUrl"] as? String,
+          id = (newItem["id"] as? String) ?: (currentSessionId ?: ""),
+          source = newItem["source"] as? String,
+          subtitle = newItem["subtitle"] as? String,
+          title = (newItem["title"] as? String) ?: "Samo",
+        )
+        lastKnownPlaybackPositionMs = 0L
+        lastAutoAdvanceSessionId = null
+
+        // Re-negotiate bit-perfect for the new track's format. The
+        // onAudioTrackInitialized listener recomputes the truth, but the actual
+        // USB bit-perfect mixer REQUEST only happens here — so a mixed-sample-
+        // rate queue stays lossless track-to-track instead of locking to the
+        // first track's format. (No-op for same-format tracks / non-USB output.)
+        val mixerService = binder.boundService
+        currentQuality = SamoBridgeMapCopier.toWritableMap(HashMap(newItem)).getSourceQuality()
+        if (mixerService != null) {
+          SamoBitPerfect.clearPreferredMixerAttributes(reactContext, mixerService)
+          currentBitPerfectTruth = buildBitPerfectTruth(
+            audioTrackConfig = null,
+            quality = currentQuality,
+            requestPreferredMixer = true,
+            service = mixerService,
+          )
+        }
+
+        val sessionId = currentSessionId ?: UUID.randomUUID().toString().also {
+          currentSessionId = it
+        }
+        // Started write for the new track. SamoProgressSync's position/duration
+        // suppliers read the live player, so scrobbles land whether JS is awake
+        // or Doze-frozen.
+        // Podcast episodes resume where the listener left off; music tracks
+        // start at 0. The resume offset rides in the queue payload, so seek the
+        // new item to it (no-op for music — offset 0).
+        val resumeMs = ((newItem["initialPositionSeconds"] as? Number)?.toLong()
+          ?: (newItem["progressOffsetSeconds"] as? Number)?.toLong()
+          ?: 0L).coerceAtLeast(0L) * 1000L
+        if (resumeMs > 0L) {
+          player.seekTo(resumeMs)
+        }
+        SamoProgressSync.attach(
+          SamoBridgeMapCopier.toWritableMap(HashMap(newItem)),
+          sessionId,
+          resumeMs,
+        )
+        Log.i(
+          "SamoAudio",
+          "media transition index=$newIndex reason=$reason completed=$completed id=${newItem["id"]}",
+        )
         emitState(getCurrentStatus(player))
       }
 
@@ -728,14 +992,18 @@ internal class SamoAudioEngine(
           lastKnownPlaybackPositionMs = maxOf(lastKnownPlaybackPositionMs, positionMs)
         }
 
-        if (liveReconnect.retryCurrentSourceAsHls(player, error)) {
+        // The recovery layer decides between auth-refresh, fast retry, HLS
+        // relabel, parking for network, or surfacing as stale auth. It also
+        // owns moving the engine into [Mode.WaitingForNetwork] etc., which
+        // [applyRecoveryMode] sets as the sticky engineMode.
+        if (recovery.handlePlayerError(player, error)) {
           return
         }
 
-        if (liveReconnect.scheduleAutoReconnect(player, error)) {
-          return
-        }
-
+        // Recovery declined — this is an unrecoverable error. Pin the engine
+        // mode so the next emitState() (e.g. a JS poll) keeps reporting error
+        // until the user takes action (play again, reconnect, etc.).
+        engineMode = SamoPlaybackRecovery.Mode.Error
         val event = getStatusMap(player, "error")
         val cause = error.cause
         val details = listOfNotNull(
@@ -805,6 +1073,9 @@ internal class SamoAudioEngine(
   }
 
   override fun emitState(status: String?) {
+    // status defaults via the SamoAudioCastHost interface; the override
+    // restates the parameter explicitly so callers from outside the engine
+    // (e.g. SamoCastSessionManager) keep working unchanged.
     if (castManager.getActiveRemoteMediaClient() != null && currentCastSource != null) {
       emit("SamoAudioPlaybackState", castManager.getCastStatusMap(status))
       return
@@ -906,11 +1177,28 @@ internal class SamoAudioEngine(
     val item = queue.items.getOrNull(index) ?: return false
     queue.index = index
 
-    SamoNativeStreamUrl.refreshQueueItemAsync(item) { refreshedItem ->
+    SamoNativeStreamUrl.refreshQueueItemAsync(reactContext, item) { result ->
       mainHandler.post {
         val activeQueue = nativePlaybackQueue ?: return@post
         if (activeQueue.index != index) {
           return@post
+        }
+
+        // Native auto-advance: pick the freshest URL we have. A Network/Server
+        // mint failure falls through to the original URL — the existing token
+        // may still be valid. If it isn't, the player error path will route
+        // through SamoPlaybackRecovery, which knows how to park for network
+        // rather than burn retries on a stale URL.
+        val refreshedItem = when (result) {
+          is SamoNativeStreamUrl.RefreshResult.Ready -> result.item
+          is SamoNativeStreamUrl.RefreshResult.MintFailed -> {
+            Log.w(
+              "SamoAudio",
+              "auto-advance mint failed (${result.reason}); using original URL",
+            )
+            result.originalItem
+          }
+          is SamoNativeStreamUrl.RefreshResult.NotApplicable -> result.item
         }
 
         activeQueue.items[index] = HashMap(refreshedItem)
@@ -954,6 +1242,17 @@ internal class SamoAudioEngine(
   }
 
   private fun getCurrentStatus(resolvedPlayer: ExoPlayer): String {
+    // Sticky recovery-driven states override the ExoPlayer-derived one. While
+    // the engine is parked WAITING_FOR_NETWORK / STALE_AUTH, that's what JS
+    // needs to see — the player itself might be in STATE_IDLE or STATE_READY,
+    // but neither of those tells the user *why* nothing is playing.
+    when (engineMode) {
+      SamoPlaybackRecovery.Mode.WaitingForNetwork -> return "waiting_for_network"
+      SamoPlaybackRecovery.Mode.StaleAuth -> return "stale_auth"
+      SamoPlaybackRecovery.Mode.Recovering -> return "buffering"
+      SamoPlaybackRecovery.Mode.Error -> return "error"
+      SamoPlaybackRecovery.Mode.Normal -> {} // fall through to player state
+    }
     return when (resolvedPlayer.playbackState) {
       Player.STATE_BUFFERING -> "buffering"
       Player.STATE_ENDED -> "ended"
@@ -961,6 +1260,13 @@ internal class SamoAudioEngine(
       Player.STATE_READY -> if (resolvedPlayer.isPlaying) "playing" else "paused"
       else -> "idle"
     }
+  }
+
+  override fun applyRecoveryMode(mode: SamoPlaybackRecovery.Mode) {
+    engineMode = mode
+    // Push the new sticky status to JS right away — emitState picks up the
+    // override via getCurrentStatus() when no explicit status is supplied.
+    emitState(null)
   }
 
   /**
@@ -1122,7 +1428,7 @@ internal class SamoAudioEngine(
   }
 
   override fun cancelPendingLiveReconnect() {
-    liveReconnect.cancelPendingLiveReconnect()
+    recovery.cancelPendingRetry()
   }
 
   override fun handOffLocalPlaybackToCast() {

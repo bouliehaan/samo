@@ -221,6 +221,8 @@ export interface AndroidMediaHandlers {
     ) => Promise<void>;
     handleOpenStreamInfo: (item: AndroidRecentContentSourceItem) => void;
     handleOpenViewAll: (section: HomeDisplaySection) => void;
+    handlePlayCollectionNext: (item: AndroidRecentContentSourceItem) => Promise<void>;
+    handlePlayTrackNext: (track: MobileMediaTrack) => void;
     handlePlayMediaTrack: (
         detail: MobileMediaDetail,
         track: MobileMediaTrack,
@@ -897,13 +899,38 @@ export function useAndroidMediaHandlers(
             );
             if (!isCurrentRequest()) return;
 
-            const queueIndex = queueItems.findIndex(
+            // Locate the tapped track in the prepared queue. Match the freshly
+            // resolved playable first, then fall back to the track's original
+            // playback id — a re-resolve can shift the id (quality / stream-token
+            // drift), and when it does we must NOT collapse the whole queue to a
+            // single song. That collapse is the "filter a playlist to Hi-Fi →
+            // only one track plays" bug: a 1-item queue never mirrors to the
+            // native player, so there's nothing to auto-advance into. A missing
+            // match instead splices the playable in at its intended position so
+            // the rest of the queue — and native gapless advance — survives.
+            let queueIndex = queueItems.findIndex(
                 (candidate) => candidate.id === preparedTrack.id,
             );
+            if (queueIndex < 0 && track.playback?.id) {
+                queueIndex = queueItems.findIndex(
+                    (candidate) => candidate.id === track.playback?.id,
+                );
+            }
 
             if (!isCurrentRequest()) return;
             if (queueIndex >= 0) {
-                await handlePlayItem(preparedTrack, queueItems, queueIndex, playOptions);
+                const sessionQueue = queueItems.map((candidate, candidateIndex) =>
+                    candidateIndex === queueIndex ? preparedTrack : candidate,
+                );
+                await handlePlayItem(preparedTrack, sessionQueue, queueIndex, playOptions);
+            } else if (queueItems.length > 0) {
+                const insertAt = Math.min(Math.max(0, index), queueItems.length);
+                const sessionQueue = [
+                    ...queueItems.slice(0, insertAt),
+                    preparedTrack,
+                    ...queueItems.slice(insertAt),
+                ];
+                await handlePlayItem(preparedTrack, sessionQueue, insertAt, playOptions);
             } else {
                 await handlePlayItem(preparedTrack, [preparedTrack], 0, playOptions);
             }
@@ -1318,8 +1345,14 @@ export function useAndroidMediaHandlers(
     const canAppendToPlaybackQueue =
         activePlaybackItem !== null && activePlaybackItem.source !== 'radio';
 
-    const appendPlayableItemsToQueue = useCallback(
-        (items: MobilePlayableAudio[]): number => {
+    // Shared enqueue for the cross-media Up Next queue. `placement` chooses the
+    // end (Add to Queue) or right after the current item (Play Next). Radio is
+    // filtered out — it's a live stream with no place in a sequential queue.
+    // Anything else (music, podcast episodes, audiobooks) can be intermixed; the
+    // playback engine advances across types in JS so each gets its own resume +
+    // progress context.
+    const enqueuePlayableItems = useCallback(
+        (items: MobilePlayableAudio[], placement: 'end' | 'next'): number => {
             const queueableItems = items.filter((item) => item.source !== 'radio');
             const playbackState = getAndroidPlaybackState();
 
@@ -1340,9 +1373,17 @@ export function useAndroidMediaHandlers(
 
             const queue = getPlaybackQueue();
             if (queue) {
+                const insertAt =
+                    placement === 'next'
+                        ? Math.min(queue.index + 1, queue.items.length)
+                        : queue.items.length;
                 setPlaybackQueue({
                     ...queue,
-                    items: [...queue.items, ...queueableItems],
+                    items: [
+                        ...queue.items.slice(0, insertAt),
+                        ...queueableItems,
+                        ...queue.items.slice(insertAt),
+                    ],
                 });
             } else {
                 setPlaybackQueue({
@@ -1355,6 +1396,16 @@ export function useAndroidMediaHandlers(
             return queueableItems.length;
         },
         [auth.serverConnections],
+    );
+
+    const appendPlayableItemsToQueue = useCallback(
+        (items: MobilePlayableAudio[]): number => enqueuePlayableItems(items, 'end'),
+        [enqueuePlayableItems],
+    );
+
+    const insertPlayableItemsNext = useCallback(
+        (items: MobilePlayableAudio[]): number => enqueuePlayableItems(items, 'next'),
+        [enqueuePlayableItems],
     );
 
     const loadDetailForContextAction = useCallback(
@@ -1397,8 +1448,8 @@ export function useAndroidMediaHandlers(
     const handleAddTrackToQueue = useCallback(
         (track: MobileMediaTrack) => {
             const playback = track.playback;
-            if (playback?.source !== 'music') {
-                setContextMenuFeedback('Only music tracks can be added to the queue.');
+            if (!playback || playback.source === 'radio') {
+                setContextMenuFeedback('This can’t be added to the queue.');
                 return;
             }
 
@@ -1410,8 +1461,27 @@ export function useAndroidMediaHandlers(
         [appendPlayableItemsToQueue],
     );
 
-    const handleAddCollectionToQueue = useCallback(
-        async (item: AndroidRecentContentSourceItem) => {
+    const handlePlayTrackNext = useCallback(
+        (track: MobileMediaTrack) => {
+            const playback = track.playback;
+            if (!playback || playback.source === 'radio') {
+                setContextMenuFeedback('This can’t play next.');
+                return;
+            }
+
+            const added = insertPlayableItemsNext([playback]);
+            if (added > 0) {
+                setContextMenuFeedback('Playing next');
+            }
+        },
+        [insertPlayableItemsNext],
+    );
+
+    const enqueueCollection = useCallback(
+        async (
+            item: AndroidRecentContentSourceItem,
+            placement: 'end' | 'next',
+        ): Promise<void> => {
             if (
                 item.type !== MobileHomeItemType.ALBUM &&
                 item.type !== MobileHomeItemType.PLAYLIST
@@ -1420,7 +1490,7 @@ export function useAndroidMediaHandlers(
                 return;
             }
 
-            setContextMenuFeedback('Adding to queue...');
+            setContextMenuFeedback(placement === 'next' ? 'Adding to Up Next…' : 'Adding to queue…');
             const detail = await loadDetailForContextAction(item);
             if (!detail) {
                 setContextMenuFeedback('Could not load tracks for this item.');
@@ -1430,14 +1500,33 @@ export function useAndroidMediaHandlers(
             const playables = detail.tracks.flatMap((track) =>
                 track.playback?.source === 'music' ? [track.playback] : [],
             );
-            const added = appendPlayableItemsToQueue(playables);
+            const added =
+                placement === 'next'
+                    ? insertPlayableItemsNext(playables)
+                    : appendPlayableItemsToQueue(playables);
             if (added > 0) {
-                setContextMenuFeedback(
-                    added === 1 ? 'Added 1 track to queue' : `Added ${added} tracks to queue`,
-                );
+                if (placement === 'next') {
+                    setContextMenuFeedback(
+                        added === 1 ? 'Playing next' : `Playing ${added} tracks next`,
+                    );
+                } else {
+                    setContextMenuFeedback(
+                        added === 1 ? 'Added 1 track to queue' : `Added ${added} tracks to queue`,
+                    );
+                }
             }
         },
-        [appendPlayableItemsToQueue, loadDetailForContextAction],
+        [appendPlayableItemsToQueue, insertPlayableItemsNext, loadDetailForContextAction],
+    );
+
+    const handleAddCollectionToQueue = useCallback(
+        (item: AndroidRecentContentSourceItem) => enqueueCollection(item, 'end'),
+        [enqueueCollection],
+    );
+
+    const handlePlayCollectionNext = useCallback(
+        (item: AndroidRecentContentSourceItem) => enqueueCollection(item, 'next'),
+        [enqueueCollection],
     );
 
     const reportDownloadResult = useCallback(
@@ -1887,6 +1976,8 @@ export function useAndroidMediaHandlers(
         handleOpenBookInfo,
         handleOpenStreamInfo,
         handleOpenViewAll,
+        handlePlayCollectionNext,
+        handlePlayTrackNext,
         handlePlayMediaTrack,
         handleSearch,
         handleSelectMediaItem,

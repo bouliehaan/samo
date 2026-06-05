@@ -4,12 +4,6 @@ import type { AndroidPlayItemOptions } from './use-android-native-playback';
 import type { ServerAuthenticationResult } from '@samo/core/server';
 import { useCallback, useRef, type MutableRefObject } from 'react';
 
-import type { AbsProgressContext } from '../services/abs-progress';
-import { syncAbsProgressImmediate } from '../services/abs-progress';
-import {
-    resolveSamoMusicPlaybackContext,
-    syncSamoMusicPlaybackImmediate,
-} from '../services/samo-playback-sync';
 import {
     getAndroidPlaybackStatus,
     pauseAndroidAudio,
@@ -26,7 +20,6 @@ import {
     getAndroidPlaybackState,
     setAndroidPlaybackState,
 } from '../state/playback-store';
-import { getAbsProgressSeconds } from '../utils/abs-progress-math';
 import { clamp } from '../utils/math';
 import { resolvePlaybackResumeItem } from '../utils/playback-recovery';
 import {
@@ -57,7 +50,6 @@ export interface AndroidPlaybackControls {
 }
 
 export function useAndroidPlaybackControls(options: {
-    absContextRef: MutableRefObject<AbsProgressContext | null>;
     lastPlayedItem: MobilePlayableAudio | null;
     serverConnections: ServerAuthenticationResult[];
     playbackSnapshotRef: MutableRefObject<null | {
@@ -72,7 +64,6 @@ export function useAndroidPlaybackControls(options: {
     ) => Promise<void>;
 }): AndroidPlaybackControls {
     const {
-        absContextRef,
         lastPlayedItem,
         playbackSnapshotRef,
         playQueuedItem,
@@ -156,8 +147,21 @@ export function useAndroidPlaybackControls(options: {
         );
         const seekGeneration = (seekGenerationRef.current += 1);
 
+        // Stamp the pending-seek window so the event reducer (live + poll) holds
+        // this target against stale pre-seek echoes from native. Without this,
+        // an in-flight echo carrying the OLD position would be adopted as truth,
+        // trip the backward-guard against every real post-seek sample, and the
+        // bar would get permanently stuck at the pre-seek position.
+        const pendingSeekAtMs = Date.now();
         setAndroidPlaybackState((current) =>
-            current.status === 'idle' ? current : { ...current, positionMs: nextPositionMs },
+            current.status === 'idle'
+                ? current
+                : {
+                      ...current,
+                      pendingSeekAtMs,
+                      pendingSeekTargetMs: nextPositionMs,
+                      positionMs: nextPositionMs,
+                  },
         );
 
         try {
@@ -166,24 +170,9 @@ export function useAndroidPlaybackControls(options: {
                 return;
             }
 
-            const absCtx = absContextRef.current;
-            const liveState = getAndroidPlaybackState();
-            const item =
-                liveState.status === 'idle' ? playbackState.item : liveState.item;
-
-            if (absCtx) {
-                void syncAbsProgressImmediate(
-                    absCtx,
-                    getAbsProgressSeconds(absCtx, nextPositionMs, item),
-                );
-            }
-
-            const samoCtx = resolveSamoMusicPlaybackContext(item, serverConnections);
-            if (samoCtx) {
-                void syncSamoMusicPlaybackImmediate(samoCtx, Math.floor(nextPositionMs / 1000), {
-                    touchLastPlayedAt: !getPlaybackQueue()?.omitTrackRecentlyPlayed,
-                });
-            }
+            // Kotlin's SamoProgressSync.seekTo → flushNow("seek") captures the
+            // post-seek position immediately on the foreground-service side,
+            // so we no longer mirror that write from JS.
 
             setAndroidPlaybackState((current) => {
                 if (current.status === 'idle' || seekGeneration !== seekGenerationRef.current) {
@@ -197,6 +186,11 @@ export function useAndroidPlaybackControls(options: {
                     bitPerfect: event.bitPerfect ?? current.bitPerfect,
                     durationMs: getPlaybackEventDurationMs(event, current.item),
                     message: event.message ?? current.message,
+                    // The reducer clears these once a near-target event lands or
+                    // the grace expires. Leave them in place here — the seek RPC
+                    // resolving does NOT guarantee the event stream has caught up.
+                    pendingSeekAtMs: current.pendingSeekAtMs,
+                    pendingSeekTargetMs: current.pendingSeekTargetMs,
                     positionMs: nextPositionMs,
                     status: resolvedStatus === 'ended' ? 'playing' : resolvedStatus,
                 };
@@ -214,11 +208,16 @@ export function useAndroidPlaybackControls(options: {
                 return {
                     ...current,
                     message: error instanceof Error ? error.message : 'Seek failed',
+                    // Seek failed: release the optimistic hold so the bar can
+                    // follow whatever position the engine reports next instead
+                    // of being pinned to a target we never reached.
+                    pendingSeekAtMs: undefined,
+                    pendingSeekTargetMs: undefined,
                     status: 'error',
                 };
             });
         }
-    }, [absContextRef, seekSamoAudiobookToBookSeconds, serverConnections]);
+    }, [seekSamoAudiobookToBookSeconds]);
 
     // Lets seekSamoAudiobookToBookSeconds call the latest handleSeekPlayback for
     // the file-local leg without a declaration-order or dependency cycle.
@@ -270,33 +269,9 @@ export function useAndroidPlaybackControls(options: {
                 await pauseAndroidAudio();
                 setAndroidPlaybackState({ ...playbackState, status: 'paused' });
 
-                const absCtx = absContextRef.current;
-
-                if (absCtx) {
-                    void syncAbsProgressImmediate(
-                        absCtx,
-                        getAbsProgressSeconds(
-                            absCtx,
-                            playbackState.positionMs,
-                            playbackState.item,
-                        ),
-                    );
-                }
-
-                const samoCtx = resolveSamoMusicPlaybackContext(
-                    playbackState.item,
-                    serverConnections,
-                );
-                if (samoCtx && playbackState.positionMs) {
-                    void syncSamoMusicPlaybackImmediate(
-                        samoCtx,
-                        Math.floor(playbackState.positionMs / 1000),
-                        {
-                            touchLastPlayedAt:
-                                !getPlaybackQueue()?.omitTrackRecentlyPlayed,
-                        },
-                    );
-                }
+                // Kotlin's Player.Listener.onIsPlayingChanged catches the
+                // true→false edge and tells SamoProgressSync to flush the final
+                // position, so JS no longer mirrors that write here.
 
                 return;
             }
@@ -364,7 +339,7 @@ export function useAndroidPlaybackControls(options: {
                 status: 'error',
             });
         }
-    }, [absContextRef, lastPlayedItem, playbackSnapshotRef, restartPlaybackItem, serverConnections]);
+    }, [lastPlayedItem, playbackSnapshotRef, restartPlaybackItem]);
 
     const handleSkipPlayback = useCallback(
         async (offsetSeconds: number) => {

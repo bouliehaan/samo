@@ -185,7 +185,14 @@ class SamoPlaybackService : MediaSessionService() {
             httpDataSourceFactory,
             enableDiskCache = false,
         )
-        val mediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory)
+        // Re-mint each music track's stream token at the moment ExoPlayer opens
+        // its DataSource. With the full queue loaded as a Media3 playlist,
+        // ExoPlayer pre-buffers upcoming items and opens this just before each
+        // track plays — so a long queue survives hours with the screen off,
+        // entirely natively, with no token minted at queue-build time able to
+        // expire mid-session. Non-music / non-Samo URIs pass through untouched.
+        val resolvingDataSourceFactory = SamoResolvingDataSource.wrap(this, dataSourceFactory)
+        val mediaSourceFactory = DefaultMediaSourceFactory(resolvingDataSourceFactory)
             .setLoadErrorHandlingPolicy(SamoLoadErrorHandlingPolicy())
         val loadControl = if (prefetchOnDemand) {
             // Extra buffer for Wi-Fi handoffs without blocking start on a full

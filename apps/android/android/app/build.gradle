@@ -192,6 +192,10 @@ dependencies {
     // notification gets a colored background that matches the artwork
     // without looking like a screenshot — classy, not gaudy.
     implementation("androidx.palette:palette-ktx:1.0.0")
+    // WorkManager carries the native download queue across process death so
+    // a backgrounded download that gets killed for memory pressure resumes on
+    // its own instead of stranding the entry as "downloading" forever.
+    implementation("androidx.work:work-runtime-ktx:2.9.1")
 
     def isGifEnabled = (findProperty('expo.gif.enabled') ?: "") == "true";
     def isWebpEnabled = (findProperty('expo.webp.enabled') ?: "") == "true";
@@ -216,4 +220,9 @@ dependencies {
     } else {
         implementation jscFlavor
     }
+
+    // Local unit tests for the Kotlin in audio/. Lives in src/test/java/...
+    // and runs on the JVM — no emulator. We use it to lock the URL builder's
+    // byte-equivalence against JS encodeURIComponent.
+    testImplementation("junit:junit:4.13.2")
 }

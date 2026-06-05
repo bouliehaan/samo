@@ -141,7 +141,6 @@ import {
 } from './src/contexts/downloaded-keys';
 import { MediaContextMenuContext } from './src/contexts/media-context-menu';
 import { ServerConnectionsContext } from './src/contexts/server-connections';
-import { useAndroidAbsProgressSync } from './src/hooks/use-android-abs-progress-sync';
 import { useAndroidCastSync } from './src/hooks/use-android-cast-sync';
 import { useAndroidContextMenu } from './src/hooks/use-android-context-menu';
 import {
@@ -178,14 +177,7 @@ import { RadioScreen } from './src/screens/RadioScreen';
 import { SearchOverlay, SearchScreen } from './src/screens/SearchScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
 import { ViewAllScreen } from './src/screens/ViewAllScreen';
-import {
-    type AbsProgressContext,
-    flushPendingAbsProgress,
-    loadAbsCurrentProgress,
-    syncAbsProgressImmediate,
-    syncAbsProgressThrottled,
-} from './src/services/abs-progress';
-import { flushPendingSamoPlayback } from './src/services/samo-playback-sync';
+import { loadAbsCurrentProgress } from './src/services/abs-progress';
 import {
     type AndroidCastState,
     type AndroidMediaOutputRoute,
@@ -338,7 +330,6 @@ import {
 } from './src/utils/app-constants';
 import { getContentSourceFromPlaybackItem } from './src/utils/content-source';
 import { addDefaultHttpScheme, DEFAULT_SERVER_URL, hasServerUrlTarget } from './src/utils/auth-url';
-import { buildBackdropStops, darkenColor, pickAlbumEssenceColor } from './src/utils/color';
 import { getContentItemKey } from './src/utils/content-item';
 import { getDownloadedCollectionKey, getDownloadedTrackKey } from './src/utils/download-keys';
 import {
@@ -524,7 +515,6 @@ export default function App() {
     const queue = usePlaybackQueue();
     useAndroidRadioMetadataSync(serverConnections);
     useAndroidCastSync();
-    useAndroidAbsProgressSync();
     const lastPlayedPersistenceKeyRef = useRef<null | string>(null);
     const isHomeSurface =
         activeTab === 'home' && activeUtilityScreen === null && mediaDetailState.status === 'idle';
@@ -1262,7 +1252,6 @@ export default function App() {
         handleTogglePlayback,
         handleToggleShuffle,
     } = useAndroidPlaybackControls({
-        absContextRef,
         lastPlayedItem,
         playbackSnapshotRef,
         playQueuedItem,
@@ -1283,8 +1272,9 @@ export default function App() {
         try {
             // Three coordinated calls per sync. Loading home content first so
             // the rest of the app's view of the libraries is fresh, then
-            // pushing any locally-pending audiobookshelf progress so the
-            // server gets caught up on whatever happened offline.
+            // re-mirroring the Samo catalog. Audiobook/podcast progress writes
+            // are owned by the native Kotlin sync (SamoProgressSync), so JS no
+            // longer pushes them here.
             //
             // Memory cache for artwork gets flushed too — disk cache stays
             // since covers don't change unless the user re-uploads them, but
@@ -1304,10 +1294,6 @@ export default function App() {
             void syncSamoCatalog(serverConnections).then(() =>
                 prefetchCatalogArtwork(serverConnections),
             );
-            await Promise.all([
-                flushPendingAbsProgress(serverConnections),
-                flushPendingSamoPlayback(serverConnections),
-            ]);
             // If there's a currently-active audiobook context, re-read its
             // progress from the server in case another client moved ahead.
             const absCtx = absContextRef.current;

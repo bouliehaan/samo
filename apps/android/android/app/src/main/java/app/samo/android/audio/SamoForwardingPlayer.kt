@@ -132,19 +132,40 @@ internal class SamoForwardingPlayer(
 
     override fun hasPreviousMediaItem(): Boolean = true
 
+    // When ExoPlayer holds a real multi-item playlist (music — the full queue is
+    // loaded so it can advance natively for hours with the screen off), route
+    // next/prev to the real player for instant, JS-free navigation. Single-item
+    // content (audiobook / podcast chapter rows) still routes through the JS
+    // callback for book-global chapter nav, and cast always does (the local
+    // player is a paused mirror; JS drives the cast queue).
+    private fun canUseRealPlaylistNav(): Boolean =
+        activeCastBridge() == null && mediaItemCount > 1
+
     override fun seekToNext() {
-        onNavigate(1)
+        if (canUseRealPlaylistNav() && currentMediaItemIndex < mediaItemCount - 1) {
+            super.seekToNext()
+        } else {
+            onNavigate(1)
+        }
     }
 
     override fun seekToNextMediaItem() {
-        onNavigate(1)
+        if (canUseRealPlaylistNav() && currentMediaItemIndex < mediaItemCount - 1) {
+            super.seekToNextMediaItem()
+        } else {
+            onNavigate(1)
+        }
     }
 
     override fun seekToPrevious() {
-        onNavigate(-1)
+        if (canUseRealPlaylistNav()) super.seekToPrevious() else onNavigate(-1)
     }
 
     override fun seekToPreviousMediaItem() {
-        onNavigate(-1)
+        if (canUseRealPlaylistNav() && currentMediaItemIndex > 0) {
+            super.seekToPreviousMediaItem()
+        } else {
+            onNavigate(-1)
+        }
     }
 }

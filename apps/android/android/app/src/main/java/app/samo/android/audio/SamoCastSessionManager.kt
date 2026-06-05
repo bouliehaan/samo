@@ -41,7 +41,7 @@ internal interface SamoAudioCastHost {
   var currentBitPerfectTruth: SamoBitPerfectTruth
   val boundService: SamoPlaybackService?
   fun emit(eventName: String, event: WritableMap)
-  fun emitState(status: String?)
+  fun emitState(status: String? = null)
   fun ensureServiceBound(onReady: (SamoPlaybackService) -> Unit, onError: ((Throwable) -> Unit)? = null, startService: Boolean = true)
   fun getSelectedLocalOutputDevice(): android.media.AudioDeviceInfo?
   fun clearPreferredMixerAttributes(service: SamoPlaybackService)

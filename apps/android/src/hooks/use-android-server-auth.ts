@@ -8,6 +8,7 @@ import { useCallback, useEffect } from 'react';
 
 import { prefetchCatalogArtwork } from '../services/artwork-prefetch';
 import { syncSamoCatalog } from '../services/catalog/catalog-sync';
+import { syncCatalogAuthMirror } from '../services/headless-catalog-sync';
 import { type AndroidHomeContentState } from '../services/home-content';
 import { authenticateServer } from '../services/server-auth';
 import {
@@ -109,6 +110,15 @@ export function useAndroidServerAuth(options: UseAndroidServerAuthOptions) {
             if (persistedAuths.length === 0) {
                 return;
             }
+
+            // Hydrate the Kotlin auth mirror on every cold start so the
+            // periodic background catalog-sync Worker has credentials
+            // available even when the user hasn't re-saved connections this
+            // session. savePersistedServerAuths already mirrors on every
+            // explicit save; this covers the SecureStore-still-populated /
+            // mirror-file-missing case (e.g. first launch after upgrading
+            // to the build that introduced the mirror).
+            void syncCatalogAuthMirror(persistedAuths);
 
             setServerConnections(persistedAuths);
             setServerHealthByKey(createCheckingServerHealthMap(persistedAuths));

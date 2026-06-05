@@ -17,6 +17,10 @@ export type AndroidPlaybackState =
           durationMs?: number;
           item: MobilePlayableAudio;
           message?: string;
+          /** Wall-clock ms the pending seek was dispatched. */
+          pendingSeekAtMs?: number;
+          /** Optimistic seek target while the engine confirms the new position. */
+          pendingSeekTargetMs?: number;
           positionMs?: number;
           sessionId: string;
           status: AndroidPlaybackStatus;

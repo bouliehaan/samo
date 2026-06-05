@@ -15,7 +15,6 @@ import { type ServerAuthenticationResult } from '@samo/core/server';
 import { FlashList } from '@shopify/flash-list';
 import { Image as ExpoImage } from 'expo-image';
 import { StatusBar } from 'expo-status-bar';
-import { getColors as getImageColors } from 'react-native-image-colors';
 import ditherTexture from '../../assets/dither.png';
 import {
     type ComponentProps,
@@ -28,7 +27,6 @@ import {
 } from 'react';
 import {
     ActivityIndicator,
-    Animated,
     type GestureResponderEvent,
     Image,
     Modal,
@@ -108,7 +106,13 @@ import {
     getStablePlaybackPositionMs,
     isLivePlayback,
 } from '../utils/playback-time';
-import { buildBackdropStops, darkenColor, pickAlbumEssenceColor } from '../utils/color';
+import {
+    FROSTED_BACKDROP_STOPS,
+    FROSTED_GLASS_DEPTH,
+    FROSTED_GLASS_DEPTH_LOCATIONS,
+    FROSTED_GLASS_SHEEN,
+    FROSTED_GLASS_SHEEN_LOCATIONS,
+} from '../utils/color';
 import { clamp } from '../utils/math';
 import { formatQualityProfile } from '../services/quality-badge-assets';
 import { triggerImpact } from '../services/haptics';
@@ -139,10 +143,6 @@ const ReanimatedFlashList = Reanimated.createAnimatedComponent(FlashList) as typ
 const FLASH_LIST_MAINTAIN_POSITION_DISABLED = { disabled: true };
 const CAST_ICON_ACTIVE_TINT = 'rgba(202, 160, 79, 0.78)';
 const CAST_ICON_INACTIVE_TINT = 'rgba(245, 245, 245, 0.72)';
-// How long the artwork must hold steady before we extract its background color.
-// Collapses the brief active-item churn during a track change into a single
-// background crossfade instead of a visible color flip.
-const ARTWORK_COLOR_SETTLE_MS = 260;
 
 export const MiniPlayer = memo(({
     artworkImageId,
@@ -458,69 +458,12 @@ export const FullScreenPlayer = memo(({
     const dragMode = useSharedValue<'player' | 'queue'>('player');
     const dragStartQueue = useSharedValue(0);
     const contextMenu = useMediaContextMenu();
-    const [bgPrev, setBgPrev] = useState<null | string>(null);
-    const [bgCurr, setBgCurr] = useState<null | string>(null);
-    const bgFade = useRef(new Animated.Value(1)).current;
     const sleepTimerRef = useRef<NodeJS.Timeout | null>(null);
     const sleepTickRef = useRef<NodeJS.Timeout | null>(null);
     const activeItem = playbackState.status !== 'idle' ? playbackState.item : null;
     const displayItem: MobilePlayableAudio | null = activeItem ?? lastPlayedItem;
     const isResting = !activeItem && Boolean(displayItem);
     const canSkipPlayback = Boolean(displayItem && displayItem.source !== 'radio');
-    const artworkColorUrl = useMemo(() => {
-        if (!displayItem) {
-            return artworkUrl;
-        }
-        return (
-            artworkSourceUri(
-                resolvePlaybackArtworkSourceForDisplay(displayItem, serverConnections),
-            ) ?? artworkUrl
-        );
-    }, [artworkUrl, displayItem, serverConnections]);
-
-    useEffect(() => {
-        if (!artworkColorUrl) return;
-        let cancelled = false;
-        // Debounce color extraction. During a track change the active item can
-        // still churn for a frame or two before it settles; each change would
-        // kick a 520ms background crossfade, producing the disorienting "fades
-        // to the next color, back to the previous, then forward again" flip —
-        // imperceptible in the (instant) metadata text but glaring in a slow
-        // color fade. Waiting for the artwork to hold steady briefly collapses
-        // that churn into ONE smooth transition to the final color.
-        const timer = setTimeout(() => {
-            getImageColors(artworkColorUrl, {
-                cache: true,
-                fallback: '#101010',
-                key: artworkColorUrl,
-                // High-quality extraction picks more swatches and clusters them
-                // more carefully, which dramatically improves the OKLab scorer's
-                // chance of finding a characteristic muted swatch.
-                quality: 'high',
-            })
-                .then((result) => {
-                    if (cancelled) return;
-                    const next = pickAlbumEssenceColor(result);
-                    if (!next) return;
-                    setBgCurr((current) => {
-                        if (current === next) return current;
-                        setBgPrev(current);
-                        bgFade.setValue(0);
-                        Animated.timing(bgFade, {
-                            duration: 520,
-                            toValue: 1,
-                            useNativeDriver: false,
-                        }).start();
-                        return next;
-                    });
-                })
-                .catch(() => undefined);
-        }, ARTWORK_COLOR_SETTLE_MS);
-        return () => {
-            cancelled = true;
-            clearTimeout(timer);
-        };
-    }, [artworkColorUrl, bgFade]);
 
     const startSleepTimer = useCallback((seconds: number) => {
         if (sleepTimerRef.current) clearTimeout(sleepTimerRef.current);
@@ -965,58 +908,39 @@ export const FullScreenPlayer = memo(({
                 playerAnimatedStyle,
             ]}
         >
-            {/* Tidal-style backdrop: a single album-derived color holds the whole screen
-                in one family, with a gentle vertical darkening that adds depth without
-                breaking into a separate tone. Two stacked native linear gradients
-                cross-fade on track change so the new album color rolls in smoothly,
-                and stops are perceptually generated in OKLab so the mid-gradient
-                stays in the album's color family instead of muddying. */}
-            <Reanimated.View
+            {/* Frosted-glass backdrop. Deliberately album-independent — one
+                consistent premium surface instead of a color that repaints per
+                track. A warm charcoal base wash is lifted by a soft diagonal
+                glass sheen (light catching the surface), grounded by a gentle
+                bottom vignette, and textured with fine frost grain (the dither
+                overlay) so the whole panel reads as gilded frosted glass. */}
+            <View
                 pointerEvents="none"
                 style={StyleSheet.absoluteFillObject}
             >
-                {bgPrev ? (
-                    <Animated.View
-                        pointerEvents="none"
-                        style={[
-                            StyleSheet.absoluteFillObject,
-                            {
-                                opacity: bgFade.interpolate({
-                                    inputRange: [0, 1],
-                                    outputRange: [1, 0],
-                                }),
-                            },
-                        ]}
-                    >
-                        <LinearGradient
-                            colors={buildBackdropStops(bgPrev) as unknown as string[]}
-                            end={{ x: 0.82, y: 1 }}
-                            start={{ x: 0.18, y: 0 }}
-                            style={StyleSheet.absoluteFillObject}
-                        />
-                    </Animated.View>
-                ) : null}
-                <Animated.View
+                <LinearGradient
+                    colors={FROSTED_BACKDROP_STOPS as unknown as string[]}
+                    end={{ x: 0.82, y: 1 }}
                     pointerEvents="none"
-                    style={[
-                        StyleSheet.absoluteFillObject,
-                        {
-                            opacity: bgCurr
-                                ? bgFade.interpolate({
-                                      inputRange: [0, 1],
-                                      outputRange: [0, 1],
-                                  })
-                                : 1,
-                        },
-                    ]}
-                >
-                    <LinearGradient
-                        colors={buildBackdropStops(bgCurr) as unknown as string[]}
-                        end={{ x: 0.82, y: 1 }}
-                        start={{ x: 0.18, y: 0 }}
-                        style={StyleSheet.absoluteFillObject}
-                    />
-                </Animated.View>
+                    start={{ x: 0.18, y: 0 }}
+                    style={StyleSheet.absoluteFillObject}
+                />
+                <LinearGradient
+                    colors={FROSTED_GLASS_SHEEN as unknown as string[]}
+                    end={{ x: 0.85, y: 0.9 }}
+                    locations={FROSTED_GLASS_SHEEN_LOCATIONS as unknown as number[]}
+                    pointerEvents="none"
+                    start={{ x: 0.05, y: 0 }}
+                    style={StyleSheet.absoluteFillObject}
+                />
+                <LinearGradient
+                    colors={FROSTED_GLASS_DEPTH as unknown as string[]}
+                    end={{ x: 0.5, y: 1 }}
+                    locations={FROSTED_GLASS_DEPTH_LOCATIONS as unknown as number[]}
+                    pointerEvents="none"
+                    start={{ x: 0.5, y: 0.5 }}
+                    style={StyleSheet.absoluteFillObject}
+                />
                 <View
                     pointerEvents="none"
                     style={[StyleSheet.absoluteFillObject, styles.fullPlayerDither]}
@@ -1027,7 +951,7 @@ export const FullScreenPlayer = memo(({
                         style={StyleSheet.absoluteFillObject}
                     />
                 </View>
-            </Reanimated.View>
+            </View>
 
             <Reanimated.View style={styles.fullPlayerExpandedPanel}>
             <View style={styles.fullPlayerContent}>
@@ -1117,9 +1041,15 @@ export const FullScreenPlayer = memo(({
                     <SegmentedSeekBar
                         durationMs={durationMs}
                         isLive={isLive}
+                        isPlaying={playbackState.status === 'playing'}
                         onSeek={handleTimelineSeek}
                         positionMs={positionMs}
                         segments={timelineSegments}
+                        sessionKey={
+                            activeItem && playbackState.status !== 'idle'
+                                ? `${playbackState.sessionId}:${activeItem.id}`
+                                : undefined
+                        }
                         tint={colors.accent}
                     />
                     <View style={styles.fullPlayerTimeRow}>

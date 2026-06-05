@@ -141,7 +141,15 @@ class SamoMediaNotificationProvider(
             .setSmallIcon(app.samo.android.R.drawable.ic_notification_samo)
             .setContentTitle(title.ifEmpty { "Samo" })
             .setContentText(artist)
-            .setOngoing(isPlaying)
+            // Stay ongoing while a session is alive — NOT just while actively
+            // playing. Tying this to isPlaying made the notification flip to
+            // dismissible on every pause AND on the brief playWhenReady dips
+            // during a track change / seek; the always-on-display culls
+            // non-ongoing notification icons, so the Samo mark kept vanishing
+            // from the AOD. Keeping it ongoing pins the icon. Swipe-away while
+            // paused still tears the whole service down via onTaskRemoved, so
+            // this never leaves a stuck, undismissable card.
+            .setOngoing(true)
             .setShowWhen(false)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setContentIntent(buildLaunchPendingIntent(context))

@@ -1,6 +1,5 @@
 import {
     applySamoPodcastStreamResume,
-    isSamoPodcastPlayback,
     type MobilePlayableAudio,
     parsePodcastPlaybackEpisodeId,
     parsePodcastPlaybackShowId,
@@ -29,7 +28,12 @@ export const getResumePositionSeconds = (
         playbackState.status === 'error' ||
         playbackState.status === 'buffering';
 
-    if (isSamoAudiobookPlayback(item) || isSamoPodcastPlayback(item)) {
+    // Audiobooks keep the per-file origin guard: a multi-file book carries a
+    // book-global progressOffsetSeconds per file, so a playhead may only be
+    // reused when the origin matches (same file). Podcasts no longer do this —
+    // they stream whole now (progressOffsetSeconds 0) and fall through to the
+    // generic playhead reuse below, exactly like music.
+    if (isSamoAudiobookPlayback(item)) {
         const streamOrigin = item.progressOffsetSeconds ?? 0;
         const currentOrigin =
             playbackState.status !== 'idle'

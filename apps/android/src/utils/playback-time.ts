@@ -22,6 +22,22 @@ export const getActivePlaybackStatus = (
 const PLAYBACK_POSITION_BACKWARD_TOLERANCE_MS = 2500;
 const PLAYBACK_POSITION_RESET_GUARD_MS = 5000;
 
+/**
+ * How long after a user seek to hold the optimistic target against stale
+ * engine echoes. Native events emitted before the seek reached the engine
+ * still carry the old position; without this grace they would be adopted
+ * as truth, after which the backward-guard would reject every real post-
+ * seek sample — the bar gets permanently stuck at the pre-seek position.
+ */
+export const PLAYBACK_PENDING_SEEK_GRACE_MS = 1500;
+
+/**
+ * Window around the seek target that counts as "engine confirmed the
+ * seek." A sample within this distance clears the grace and resumes
+ * normal position handling.
+ */
+export const PLAYBACK_PENDING_SEEK_TARGET_TOLERANCE_MS = 2500;
+
 /** How close to duration (ms) counts as end-of-track for queue auto-advance. */
 export const PLAYBACK_NEAR_END_TOLERANCE_MS = 2500;
 
@@ -200,9 +216,15 @@ export const getTimelinePositionSeconds = (
     return filePositionSeconds + (item.progressOffsetSeconds ?? 0);
 };
 
-/** Wall-clock playhead for audiobooks and Samo podcast streams (file position + stream offset). */
+/**
+ * Wall-clock book-global playhead = file position + per-file stream offset. Only
+ * multi-file audiobooks need this now. Podcasts stream WHOLE (no offset), so the
+ * native position is already the real episode position — folding an offset would
+ * double-count, which is what put the podcast seek bar everywhere but the
+ * playhead.
+ */
 export const usesTimelinePlaybackPosition = (item: MobilePlayableAudio) =>
-    item.source === 'audiobook' || item.source === 'podcast';
+    item.source === 'audiobook';
 
 export const getDisplayPositionMs = (
     item: MobilePlayableAudio,

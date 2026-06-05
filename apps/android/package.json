@@ -13,6 +13,7 @@
         "start": "expo start --dev-client",
         "lint": "eslint --max-warnings=0 src",
         "typecheck": "tsc --noEmit -p tsconfig.json",
+        "test": "pnpm -C ../.. exec vitest run --config vitest.android.config.ts",
         "verify": "pnpm run typecheck && pnpm run lint",
         "web": "expo start --web"
     },

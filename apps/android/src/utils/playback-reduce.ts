@@ -3,7 +3,12 @@ import { type MobilePlayableAudio } from '@samo/core/mobile';
 import { type AndroidNativePlaybackEvent } from '../services/audio-playback';
 import { type AndroidPlaybackState } from '../types/playback';
 
-import { getActivePlaybackStatus, resolvePlaybackProgressFromEvent } from './playback-time';
+import {
+    getActivePlaybackStatus,
+    PLAYBACK_PENDING_SEEK_GRACE_MS,
+    PLAYBACK_PENDING_SEEK_TARGET_TOLERANCE_MS,
+    resolvePlaybackProgressFromEvent,
+} from './playback-time';
 
 export interface PlaybackEventSnapshot {
     item: MobilePlayableAudio;
@@ -25,6 +30,11 @@ export interface ReducePlaybackOptions {
      * 0 (the default) disables the no-op entirely (the live subscription).
      */
     minPositionDeltaMs?: number;
+    /**
+     * Injection point for tests: the wall clock used to evaluate the pending-
+     * seek grace. Defaults to Date.now().
+     */
+    now?: () => number;
 }
 
 /**
@@ -50,11 +60,89 @@ export const reducePlaybackStateFromEvent = (
     }
 
     const activeItem = snapshot?.item ?? current.item;
+
+    // Foreign-event guard (single-owner discipline for the reducer).
+    //
+    // During a Next/Prev (or queue tap) native keeps emitting trailing ticks
+    // for the OUTGOING track for a beat after JS has already committed the new
+    // one. The single-owner lock in `syncPlaybackFromNativeEvent` rejects those
+    // echoes and protects the snapshot/item — but it does NOT gate this reducer,
+    // which the event subscription + poll call unconditionally. So a trailing
+    // tick for the previous song (source.id = old track, positionMs = where you
+    // left it, e.g. 52s) used to reach `resolvePlaybackProgressFromEvent`, hit
+    // its `hasPlaybackSourceChanged` "track changed → adopt the event position"
+    // branch, and overwrite the NEW track's playhead with the OLD track's time.
+    // The backward-guard then pinned it there forever (every real lower tick for
+    // the new song is rejected as "backward"). Visible bug: hit Next at 0:52,
+    // the bar flips to 0, the next song starts, then the bar snaps back to 0:52
+    // and sticks. An event that names a DIFFERENT track than the snapshot we're
+    // displaying must never mutate that item's state — drop it whole.
+    //
+    // This is safe for legitimate native auto-advance: in the live event path,
+    // `syncPlaybackFromNativeEvent` reconciles the snapshot to the incoming
+    // track BEFORE this reducer runs, so `event.source.id === activeItem.id`
+    // there and the guard does not fire. The position poll never reconciles the
+    // snapshot, so it correctly ignores a foreign tick rather than jumping the
+    // playhead onto a track it isn't displaying — the live subscription owns
+    // transitions.
+    const eventSourceId = event.source?.id;
+    if (eventSourceId != null && eventSourceId !== activeItem.id) {
+        return current;
+    }
+
     const progress = resolvePlaybackProgressFromEvent(event, current, activeItem);
     const nextStatus = getActivePlaybackStatus(event.status, current.status);
     const nextDurationMs = progress.durationMs;
-    const nextPositionMs = progress.positionMs;
     const nextBitPerfect = event.bitPerfect ?? current.bitPerfect;
+
+    // Pending-seek grace: while the user's seek is still being confirmed by
+    // the engine, stale pre-seek echoes carrying the OLD position must not
+    // overwrite the optimistic target — that's what causes the bar to get
+    // permanently stuck at the pre-seek position after a backward seek (the
+    // adopted stale forward sample then trips the backward-guard against
+    // every real post-seek sample). Hold the target until either a near-
+    // target sample lands or the grace expires.
+    const now = (options.now ?? Date.now)();
+    const trackChanged = activeItem.id !== current.item.id;
+    let nextPositionMs = progress.positionMs;
+    let nextPendingSeekTargetMs = current.pendingSeekTargetMs;
+    let nextPendingSeekAtMs = current.pendingSeekAtMs;
+    if (
+        current.pendingSeekTargetMs !== undefined &&
+        current.pendingSeekAtMs !== undefined &&
+        !trackChanged &&
+        event.status !== 'ended'
+    ) {
+        const elapsed = now - current.pendingSeekAtMs;
+        if (elapsed >= PLAYBACK_PENDING_SEEK_GRACE_MS) {
+            // Grace expired; drop the flag and accept whatever's incoming.
+            nextPendingSeekTargetMs = undefined;
+            nextPendingSeekAtMs = undefined;
+        } else {
+            const eventPositionMs = event.positionMs;
+            const nearTarget =
+                eventPositionMs !== undefined &&
+                Math.abs(eventPositionMs - current.pendingSeekTargetMs) <=
+                    PLAYBACK_PENDING_SEEK_TARGET_TOLERANCE_MS;
+            if (nearTarget) {
+                // Engine confirmed the seek — accept and release the grace.
+                nextPositionMs = eventPositionMs;
+                nextPendingSeekTargetMs = undefined;
+                nextPendingSeekAtMs = undefined;
+            } else {
+                // Stale echo or intermediate buffering sample — hold target.
+                nextPositionMs = current.pendingSeekTargetMs;
+            }
+        }
+    } else if (
+        current.pendingSeekTargetMs !== undefined ||
+        current.pendingSeekAtMs !== undefined
+    ) {
+        // Track change or end — the seek context is no longer relevant.
+        nextPendingSeekTargetMs = undefined;
+        nextPendingSeekAtMs = undefined;
+    }
+
     const nextMessage = options.preserveMessage
         ? (event.message ?? current.message)
         : event.message;
@@ -71,6 +159,8 @@ export const reducePlaybackStateFromEvent = (
         nextMessage === current.message &&
         nextBitPerfect === current.bitPerfect &&
         nextSessionId === current.sessionId &&
+        nextPendingSeekTargetMs === current.pendingSeekTargetMs &&
+        nextPendingSeekAtMs === current.pendingSeekAtMs &&
         Math.abs((nextPositionMs ?? 0) - (current.positionMs ?? 0)) < threshold
     ) {
         return current;
@@ -82,6 +172,8 @@ export const reducePlaybackStateFromEvent = (
         durationMs: nextDurationMs,
         item: activeItem,
         message: nextMessage,
+        pendingSeekAtMs: nextPendingSeekAtMs,
+        pendingSeekTargetMs: nextPendingSeekTargetMs,
         positionMs: nextPositionMs,
         sessionId: nextSessionId,
         status: nextStatus,

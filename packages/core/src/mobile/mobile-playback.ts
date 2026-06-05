@@ -117,6 +117,28 @@ export interface MobilePlayableAudio {
      * `stream_token` without waking JS (Samo servers only).
      */
     serverBearerToken?: string;
+    /**
+     * Android native progress sync: the Samo playback API target kind for
+     * this item. The native progress writer (SamoProgressSync.kt) PATCHes
+     * `/api/v1/playback/{kind}/{samoProgressTargetId}` every ~20s while
+     * playing, on track change, and on pause/stop. JS doesn't need to keep
+     * a foreground poll alive — the foreground service runs the timer.
+     * Samo servers only; unset for radio + non-Samo sources.
+     */
+    samoProgressKind?: 'music-track' | 'audiobook' | 'podcast-episode';
+    /**
+     * Native progress target id paired with [samoProgressKind]. Either the
+     * music track id, the audiobook id, or the podcast episode id. JS parses
+     * it out of the playback id format so Kotlin doesn't have to learn the
+     * id grammar.
+     */
+    samoProgressTargetId?: string;
+    /**
+     * When this item is being played as part of a Samo music playlist, the
+     * playlist id for the per-playlist scrobble/lastPlayedAt writes the
+     * native progress sync fires alongside the per-track writes.
+     */
+    samoPlaylistId?: string;
     source: PlaybackSource;
     /** Samo server base URL paired with [serverBearerToken]. */
     serverUrl?: string;
@@ -549,6 +571,11 @@ export const parseSamoAudiobookIdFromPlaybackId = (playbackId: string): string |
     return match?.[1];
 };
 
+export const parseSamoMusicTrackIdFromPlaybackId = (playbackId: string): string | undefined => {
+    const match = playbackId.match(/:music:([^:]+)$/);
+    return match?.[1];
+};
+
 export const buildAudiobookTimelineSegments = (
     chapters: Array<{ id?: string; startSeconds?: number; title?: string }> | undefined,
     durationSeconds: number | undefined,
@@ -815,8 +842,14 @@ export const buildSamoAudiobookPlayback = (
 };
 
 /**
- * Samo podcast streams resume via `offsetSeconds` on the URL (server truncates the
- * body). Native position 0 is that offset — store it in [progressOffsetSeconds].
+ * Samo podcast episodes stream WHOLE and the player owns seeking (mirrors the
+ * audiobook model). Resume is the in-file [initialPositionSeconds] the client
+ * seeks to after play — NOT a server byte offset. The old model embedded
+ * `offsetSeconds` in the URL so the server truncated the body and native pos 0
+ * meant book-second N; that linear byte cut (size*offset/duration) landed on the
+ * wrong byte for VBR/AAC, which is what made podcasts randomly snap back to
+ * where you started and broke the seek bar. progressOffsetSeconds is 0 now —
+ * there is no truncated-stream origin to fold into the displayed position.
  */
 export const applySamoPodcastStreamResume = (
     playback: MobilePlayableAudio,
@@ -833,12 +866,9 @@ export const applySamoPodcastStreamResume = (
 
     return {
         ...playback,
-        initialPositionSeconds: 0,
-        progressOffsetSeconds: resume,
-        url: getSamoPodcastEpisodeStreamUrl(authentication, episodeId, {
-            ...(resume > 0 ? { offsetSeconds: resume } : {}),
-            streamToken,
-        }),
+        initialPositionSeconds: resume,
+        progressOffsetSeconds: 0,
+        url: getSamoPodcastEpisodeStreamUrl(authentication, episodeId, { streamToken }),
     };
 };
 
@@ -886,10 +916,7 @@ export const buildSamoPodcastEpisodePlayback = (
             quality,
             source: 'podcast',
             title,
-            url: getSamoPodcastEpisodeStreamUrl(authentication, episode.id, {
-                ...(resumeSeconds > 0 ? { offsetSeconds: resumeSeconds } : {}),
-                streamToken,
-            }),
+            url: getSamoPodcastEpisodeStreamUrl(authentication, episode.id, { streamToken }),
         },
         resumeSeconds,
         authentication,
