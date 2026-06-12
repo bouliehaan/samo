@@ -29,7 +29,7 @@ import type { AndroidPlayItemOptions } from './use-android-native-playback';
 import { Alert } from 'react-native';
 
 import type { AbsProgressContext } from '../services/abs-progress';
-import { loadAbsCurrentProgress } from '../services/abs-progress';
+import { loadAbsCurrentProgressBounded } from '../services/abs-progress';
 import {
     enqueueCollectionDownload,
     enqueueSingleMusicTrackDownload,
@@ -53,10 +53,6 @@ import {
     loadAndroidMediaTrackPlayback,
     isValidTrackPlayback,
 } from '../services/media-detail';
-import {
-    loadCachedMediaDetail,
-    saveCachedMediaDetail,
-} from '../services/media-detail-cache';
 import { setSamoMusicFavorite } from '../services/media-favorites';
 import {
     getPersistedServerAuthKey,
@@ -454,12 +450,12 @@ export function useAndroidMediaHandlers(
             ]);
             return;
         }
-        void loadCachedMediaDetail(cacheKey).then((fromDisk) => {
-            if (!fromDisk) {
+        void loadCatalogMediaDetail(item, serverConnections).then((fromMirror) => {
+            if (!fromMirror) {
                 return;
             }
-            rememberMediaDetail(mediaDetailCacheRef.current, cacheKey, fromDisk);
-            prefetchDetailArtworkUrls(fromDisk, serverConnections, [
+            rememberMediaDetail(mediaDetailCacheRef.current, cacheKey, fromMirror);
+            prefetchDetailArtworkUrls(fromMirror, serverConnections, [
                 {
                     artworkImageId: item.artworkImageId,
                     artworkUrl: item.artworkUrl,
@@ -481,7 +477,8 @@ export function useAndroidMediaHandlers(
                 },
                 serverConnections,
             );
-            const synchronousDetail = memoryCached ?? loadCatalogMediaDetailSync(item);
+            const synchronousDetail =
+                memoryCached ?? loadCatalogMediaDetailSync(item, serverConnections);
             if (synchronousDetail) {
                 // Render the FULL detail on the very first frame — tapping a Samo
                 // album/artist/playlist/podcast/audiobook never shows a loading
@@ -526,26 +523,13 @@ export function useAndroidMediaHandlers(
         // works offline. The entire library is mirrored on-device, so this makes
         // *every* Samo detail open instant, not just recently-viewed ones.
         if (!cached) {
-            const fromCatalog = await loadCatalogMediaDetail(item);
+            const fromCatalog = await loadCatalogMediaDetail(item, serverConnections);
             if (!isCurrentRequest()) {
                 return { cached: false };
             }
             if (fromCatalog) {
                 cached = fromCatalog;
                 rememberMediaDetail(mediaDetailCacheRef.current, cacheKey, fromCatalog);
-            }
-        }
-
-        // Layer 2: persistent fs cache — async, but still much faster than
-        // the network and works in airplane mode.
-        if (!cached) {
-            const fromDisk = await loadCachedMediaDetail(cacheKey);
-            if (!isCurrentRequest()) {
-                return { cached: false };
-            }
-            if (fromDisk) {
-                cached = fromDisk;
-                rememberMediaDetail(mediaDetailCacheRef.current, cacheKey, fromDisk);
             }
         }
 
@@ -579,11 +563,17 @@ export function useAndroidMediaHandlers(
             });
         }
 
-        if (isOfflineMode && cached) {
+        if (cached) {
+            // Mirror (or memory) hit — DONE. The mirror is the source of truth
+            // for Samo details; freshness is the sync engine's job, not a
+            // per-open network refresh. The old steady-state refetch here cost
+            // a server round-trip on EVERY detail open just to re-confirm what
+            // the mirror already knew.
             return { cached: true };
         }
 
-        // Refresh from network without blocking navigation transitions.
+        // Nothing local (fresh install mid-first-sync, or a non-mirrored
+        // source): the network is the only option.
         void (async () => {
             const next = await dedupeInFlight(buildMediaDetailLoadKey(cacheKey), () =>
                 loadAndroidMediaDetail(serverConnections, item),
@@ -593,7 +583,6 @@ export function useAndroidMediaHandlers(
             }
             if (next.status === 'loaded') {
                 rememberMediaDetail(mediaDetailCacheRef.current, cacheKey, next.detail);
-                void saveCachedMediaDetail(cacheKey, next.detail);
                 prefetchDetailArtworkUrls(next.detail, serverConnections, [
                     {
                         artworkImageId: item.artworkImageId,
@@ -604,13 +593,11 @@ export function useAndroidMediaHandlers(
                 startTransition(() => {
                     enrichRecentAlbumFromDetail(item, next.detail);
                 });
-                setMediaDetailState(next);
-            } else if (!cached) {
-                setMediaDetailState(next);
             }
+            setMediaDetailState(next);
         })();
 
-        return { cached: Boolean(cached) };
+        return { cached: false };
     };
 
     const handleOpenViewAll = useCallback(
@@ -638,19 +625,16 @@ export function useAndroidMediaHandlers(
                 hasSync ? { items: syncItems, status: 'loaded' } : { status: 'loading' },
             );
             void (async () => {
-                // Fill the complete list off the UI thread, then refresh from the
-                // network so additions/edits self-heal.
+                // Fill the complete list off the UI thread. The mirror is the
+                // source of truth — additions/edits arrive via the sync engine,
+                // not a per-open re-enumeration of the whole library.
                 const local = await loadAndroidFullCollectionLocal(serverConnections, variant);
                 if (viewAllFetchTokenRef.current !== myToken) return;
-                const hasLocal = Boolean(local && local.length > 0);
-                if (local && hasLocal) {
+                if (local && local.length > 0) {
                     setViewAllFullState({ items: local, status: 'loaded' });
+                } else if (!hasSync) {
+                    setViewAllFullState({ status: 'loading' });
                 }
-                const result = await loadAndroidFullCollection(serverConnections, variant);
-                if (viewAllFetchTokenRef.current !== myToken) return;
-                // Never clobber a good local render with a transient network error.
-                if (result.status === 'error' && (hasLocal || hasSync)) return;
-                setViewAllFullState(result);
             })();
         },
         [closeMediaDetail, serverConnections],
@@ -698,22 +682,17 @@ export function useAndroidMediaHandlers(
                 : { ...current, message: 'Loading audiobook…' },
         );
 
-        // Try the network first, then fall back to caches (in-memory or fs),
-        // and finally synthesize a detail from downloaded files if we have
-        // them. This is what makes tap-to-play work offline.
+        // LOCAL FIRST. The mirror holds every Samo audiobook's chapters + file
+        // manifest, so a book tap should never wait on the network before
+        // sound. Order: in-memory cache → synchronous SQLite mirror read → fs
+        // cache → downloaded-files synthesis → network as the LAST resort
+        // (fresh install mid-sync). The old order awaited a network detail
+        // fetch FIRST — on a slow server that was up to 30s of dead tap.
         const cacheKey = getRecentContentItemKey(item);
-        const networkResult = await loadAndroidMediaDetail(serverConnections, item);
-        if (!isCurrentRequest()) return;
         let detail: MobileMediaDetail | undefined =
-            networkResult.status === 'loaded' ? networkResult.detail : undefined;
-
-        if (!detail) {
-            detail =
-                mediaDetailCacheRef.current.get(cacheKey) ??
-                (await loadCachedMediaDetail(cacheKey)) ??
-                undefined;
-            if (!isCurrentRequest()) return;
-        }
+            mediaDetailCacheRef.current.get(cacheKey) ??
+            loadCatalogMediaDetailSync(item, serverConnections) ??
+            undefined;
 
         if (!detail) {
             // Last resort: build a synthetic detail from the downloaded files.
@@ -744,17 +723,19 @@ export function useAndroidMediaHandlers(
         }
 
         if (!detail) {
-            // Genuinely no way to play — surface the network error so the
-            // user can recover (e.g. by reconnecting).
-            setMediaDetailState(networkResult);
-            return;
+            // Nothing local at all (fresh install before the first sync
+            // finished). The network is the only option left — fetch, cache,
+            // and surface its error state if it fails.
+            const networkResult = await loadAndroidMediaDetail(serverConnections, item);
+            if (!isCurrentRequest()) return;
+            if (networkResult.status !== 'loaded') {
+                setMediaDetailState(networkResult);
+                return;
+            }
+            detail = networkResult.detail;
         }
 
-        // Always refresh the cache when the network succeeded.
-        if (networkResult.status === 'loaded') {
-            rememberMediaDetail(mediaDetailCacheRef.current, cacheKey, networkResult.detail);
-            void saveCachedMediaDetail(cacheKey, networkResult.detail);
-        }
+        rememberMediaDetail(mediaDetailCacheRef.current, cacheKey, detail);
         const auth = serverConnections.find(
             (candidate) => getPersistedServerAuthKey(candidate) === detail.source.id,
         );
@@ -769,7 +750,10 @@ export function useAndroidMediaHandlers(
             return;
         }
 
-        const progress = await loadAbsCurrentProgress(auth, detail.id);
+        // Bounded: a user is mid-tap. The unbounded read gave a sick server
+        // 30s to answer before the book would start; 4s then falling back to
+        // the item's own resume data matches playQueuedItem's budget.
+        const progress = await loadAbsCurrentProgressBounded(auth, detail.id);
         if (!isCurrentRequest()) return;
         const resumeSeconds = progress?.currentTimeSeconds ?? 0;
         const chapterIndex =
@@ -864,18 +848,20 @@ export function useAndroidMediaHandlers(
                         title: detail.title,
                     });
                     if (queue && queue.items.length > 0) {
-                        const preparedItems = await Promise.all(
-                            queue.items.map((candidate) =>
-                                preparePlaybackItemForNative(
-                                    candidate,
-                                    serverConnections,
-                                ).catch(() => candidate),
-                            ),
-                        );
+                        // Prepare only the STARTING file; the others were just
+                        // built with a fresh stream token and native refreshes
+                        // each file's token again at advance time.
+                        const startItem = await preparePlaybackItemForNative(
+                            queue.items[queue.index]!,
+                            serverConnections,
+                        ).catch(() => queue.items[queue.index]!);
                         if (!isCurrentRequest()) return;
+                        const sessionItems = queue.items.map((candidate, candidateIndex) =>
+                            candidateIndex === queue.index ? startItem : candidate,
+                        );
                         await handlePlayItem(
-                            preparedItems[queue.index]!,
-                            preparedItems,
+                            startItem,
+                            sessionItems,
                             queue.index,
                             playOptions,
                         );
@@ -887,17 +873,17 @@ export function useAndroidMediaHandlers(
                 return;
             }
 
-            const rawQueueItems = (queueTracks ?? detail.tracks).flatMap((candidate) =>
+            // Only the TAPPED item is prepared (token + artwork resolution) —
+            // done above. The rest of the queue rides RAW: native re-mints each
+            // track's stream token as ExoPlayer opens it (SamoResolvingDataSource
+            // for music/podcast playlists, refreshQueueItemAsync for mirror
+            // advance), so JS-rewriting every URL up front was O(queue) work per
+            // tap that native immediately redid anyway. Cast advance also
+            // prepares per-item at its own play time (advanceQueue →
+            // playQueuedItem → preparePlaybackItemForNative).
+            const queueItems = (queueTracks ?? detail.tracks).flatMap((candidate) =>
                 isValidTrackPlayback(candidate.playback) ? [candidate.playback] : [],
             );
-            const queueItems = await Promise.all(
-                rawQueueItems.map((candidate) =>
-                    preparePlaybackItemForNative(candidate, serverConnections).catch(
-                        () => candidate,
-                    ),
-                ),
-            );
-            if (!isCurrentRequest()) return;
 
             // Locate the tapped track in the prepared queue. Match the freshly
             // resolved playable first, then fall back to the track's original
@@ -937,27 +923,16 @@ export function useAndroidMediaHandlers(
             return;
         }
 
-        let trackToPlay = track;
+        // NOTE: no pre-play progress GET here anymore. Podcast/audiobook resume
+        // is owned by ONE place — playQueuedItem's bounded
+        // refreshPlayableResumeFromServerBounded — which runs AFTER the tap has
+        // painted. The serial server read this used to do in front of every
+        // Samo podcast tap was the remaining "tap looks dead on a slow server"
+        // path in this handler.
+        const trackToPlay = track;
         const absAuth = serverConnections.find(
             (auth) => getPersistedServerAuthKey(auth) === detail.source.id,
         );
-
-        if (
-            detail.type === MobileMediaDetailType.PODCAST &&
-            absAuth &&
-            absAuth.type === ServerType.SAMO &&
-            track.itemId
-        ) {
-            const progress = await loadAbsCurrentProgress(
-                absAuth,
-                track.itemId,
-                track.episodeId ?? track.id,
-            );
-            if (!isCurrentRequest()) return;
-            if (progress?.currentTimeSeconds && progress.currentTimeSeconds > 0) {
-                trackToPlay = { ...track, startSeconds: progress.currentTimeSeconds };
-            }
-        }
 
         // Podcast offline path: the ABS /play endpoint that normally builds the
         // streaming URL fails offline, so synthesize a MobilePlayableAudio
@@ -1414,10 +1389,10 @@ export function useAndroidMediaHandlers(
             let detail = mediaDetailCacheRef.current.get(cacheKey);
 
             if (!detail) {
-                const fromDisk = await loadCachedMediaDetail(cacheKey);
-                if (fromDisk) {
-                    detail = fromDisk;
-                    rememberMediaDetail(mediaDetailCacheRef.current, cacheKey, fromDisk);
+                const fromMirror = await loadCatalogMediaDetail(item, serverConnections);
+                if (fromMirror) {
+                    detail = fromMirror;
+                    rememberMediaDetail(mediaDetailCacheRef.current, cacheKey, fromMirror);
                 }
             }
 
@@ -1429,18 +1404,17 @@ export function useAndroidMediaHandlers(
                 }
             }
 
-            if (detail && isOfflineMode) {
+            if (detail) {
                 return detail;
             }
 
             const next = await loadAndroidMediaDetail(serverConnections, item);
             if (next.status === 'loaded') {
                 rememberMediaDetail(mediaDetailCacheRef.current, cacheKey, next.detail);
-                void saveCachedMediaDetail(cacheKey, next.detail);
                 return next.detail;
             }
 
-            return detail ?? null;
+            return null;
         },
         [isOfflineMode, serverConnections],
     );
@@ -1547,22 +1521,21 @@ export function useAndroidMediaHandlers(
         item: AndroidRecentContentSourceItem,
     ) => {
         setContextMenuTarget(null);
-        // Three-layer detail lookup: in-memory → fs cache → network.
+        // Detail lookup: in-memory → mirror → network (fresh-install fallback).
         const cacheKey = getRecentContentItemKey(item);
         let detail: MobileMediaDetail | undefined =
             mediaDetailCacheRef.current.get(cacheKey);
         if (!detail) {
-            const fromDisk = await loadCachedMediaDetail(cacheKey);
-            if (fromDisk) {
-                detail = fromDisk;
-                rememberMediaDetail(mediaDetailCacheRef.current, cacheKey, fromDisk);
+            const fromMirror = await loadCatalogMediaDetail(item, serverConnections);
+            if (fromMirror) {
+                detail = fromMirror;
+                rememberMediaDetail(mediaDetailCacheRef.current, cacheKey, fromMirror);
             }
         }
         if (!detail) {
             const next = await loadAndroidMediaDetail(serverConnections, item);
             if (next.status === 'loaded') {
                 rememberMediaDetail(mediaDetailCacheRef.current, cacheKey, next.detail);
-                void saveCachedMediaDetail(cacheKey, next.detail);
                 detail = next.detail;
             } else {
                 Alert.alert('Download', 'Could not load detail to start the download.');

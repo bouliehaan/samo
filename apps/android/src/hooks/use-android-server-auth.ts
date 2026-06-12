@@ -2,13 +2,15 @@ import {
     removeServerAuthentication,
     type ServerAuthenticationResult,
     ServerConnectionHealthStatus,
+    ServerType,
     upsertServerAuthentication,
 } from '@samo/core/server';
 import { useCallback, useEffect } from 'react';
 
-import { prefetchCatalogArtwork } from '../services/artwork-prefetch';
-import { syncSamoCatalog } from '../services/catalog/catalog-sync';
-import { syncCatalogAuthMirror } from '../services/headless-catalog-sync';
+import {
+    syncCatalogAuthMirror,
+    triggerCatalogSyncNow,
+} from '../services/headless-catalog-sync';
 import { type AndroidHomeContentState } from '../services/home-content';
 import { authenticateServer } from '../services/server-auth';
 import {
@@ -67,13 +69,11 @@ export function useAndroidServerAuth(options: UseAndroidServerAuthOptions) {
         password,
         serverConnections,
         serverHealthByKey,
-        serverType,
         serverUrl,
         setAuthState,
         setPassword,
         setServerConnections,
         setServerHealthByKey,
-        setServerType,
         setServerUrl,
         setUsername,
         username,
@@ -178,12 +178,15 @@ export function useAndroidServerAuth(options: UseAndroidServerAuthOptions) {
         setAuthState({ message: 'Connecting to server', status: 'loading' });
         setHomeContentState({ status: 'idle' });
 
-        const nextAuthState = await authenticateServer({
-            password,
-            type: serverType,
-            url: normalizedServerUrl,
-            username: username.trim(),
-        });
+        const nextAuthState = await authenticateServer(
+            {
+                password,
+                type: ServerType.SAMO,
+                url: normalizedServerUrl,
+                username: username.trim(),
+            },
+            (message) => setAuthState({ message, status: 'loading' }),
+        );
 
         setAuthState(nextAuthState);
 
@@ -209,14 +212,11 @@ export function useAndroidServerAuth(options: UseAndroidServerAuthOptions) {
             await loadHomeForConnections(nextConnections);
 
             // Kick off the on-device library mirror for the just-added source.
-            // Fire-and-forget: a full catalog crawl is heavy and its progress is
-            // surfaced separately via the sync-state store in Settings, so the
-            // connect flow must not block on it. No-ops for non-Samo servers.
-            // Once the mirror lands, proactively cache the whole library's cover
-            // art so browsing reads local files instead of fetching per tile.
-            void syncSamoCatalog([nextAuthState.result]).then(() =>
-                prefetchCatalogArtwork([nextAuthState.result]),
-            );
+            // The Kotlin engine runs it (savePersistedServerAuths above already
+            // pushed the auth mirror it reads); progress streams into the
+            // Settings "Local library" panel and the post-sync bridge warms
+            // the cover-art cache when it finishes.
+            void triggerCatalogSyncNow();
         }
     }, [
         authState.status,
@@ -225,7 +225,6 @@ export function useAndroidServerAuth(options: UseAndroidServerAuthOptions) {
         loadHomeForConnections,
         password,
         serverConnections,
-        serverType,
         serverUrl,
         setActiveUtilityScreen,
         setAuthState,
@@ -234,7 +233,6 @@ export function useAndroidServerAuth(options: UseAndroidServerAuthOptions) {
         setSearchState,
         setServerConnections,
         setServerHealthByKey,
-        setServerType,
         setServerUrl,
         setUsername,
         username,

@@ -7,7 +7,7 @@ import { useMediaContextMenu } from '../contexts/media-context-menu';
 import { getDownloadedTrackKey } from '../utils/download-keys';
 import { type LibraryDisplayItem } from '../types/library-display';
 import { getLibraryItemSubtitle } from '../utils/library-display';
-import { QualityBadge } from './QualityBadge';
+import { QualitySpec } from './QualityBadge';
 import { TrackDownloadedGlyph } from './Glyphs';
 import { MediaArtwork } from './MediaArtwork';
 import { styles } from '../theme/styles';
@@ -45,15 +45,20 @@ export const LibraryListRow = ({
                     size="row"
                     title={item.title}
                 />
-                <QualityBadge thumb profile={itemBadgeProfile} />
             </View>
             <View style={styles.libraryRowText}>
                 <Text numberOfLines={1} style={styles.libraryRowTitle}>
                     {item.title}
                 </Text>
-                <Text numberOfLines={1} style={styles.libraryRowSubtitle}>
-                    {getLibraryItemSubtitle(item, mediaType)}
-                </Text>
+                <View style={styles.qualityMetaRow}>
+                    <Text
+                        numberOfLines={1}
+                        style={[styles.libraryRowSubtitle, styles.qualityMetaSubtitle]}
+                    >
+                        {getLibraryItemSubtitle(item, mediaType)}
+                    </Text>
+                    <QualitySpec profile={itemBadgeProfile} />
+                </View>
             </View>
             {isDownloadedTrack ? (
                 <View

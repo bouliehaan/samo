@@ -16,19 +16,47 @@ import com.facebook.react.bridge.ReactMethod
 import java.util.concurrent.TimeUnit
 
 /**
- * RN bridge for the Phase 5 catalog-sync scheduler. JS calls `schedule()`
- * once on app boot to install (or join) the periodic WorkManager job, and
- * `triggerNow()` from the sync-now button to fire an extra one-shot run on
- * top of the schedule. `cancel()` exists for tests + sign-out flows.
+ * RN bridge for the catalog-sync engine. JS calls `schedule()` once on app
+ * boot to install (or join) the periodic WorkManager job, and `triggerNow()`
+ * from connect / sync-now / pull-to-refresh to fire a one-shot run on top of
+ * the schedule. `cancel()` exists for tests + sign-out flows.
  *
- * The actual sync logic is JS (`syncSamoCatalog` in services/catalog/catalog-sync.ts);
- * Kotlin owns ONLY the scheduling + the HeadlessJsTaskService bridge that
- * brings up a React context out-of-process for the sync window.
+ * The sync itself is pure Kotlin (`SamoCatalogSync`) — fetch, cursor,
+ * reconcile, FTS, detail crawls. While a React context is alive this module
+ * forwards the engine's progress as `SamoCatalogSyncState` device events so
+ * the Settings panel and the post-sync hooks (artwork prefetch, home
+ * re-derive) can react live; background runs just write the sync-state table
+ * and JS re-hydrates on the next foreground.
  */
 class SamoCatalogSyncModule(
     private val reactContext: ReactApplicationContext,
 ) : ReactContextBaseJavaModule(reactContext) {
     override fun getName(): String = "SamoCatalogSync"
+
+    init {
+        SamoCatalogSyncEvents.emitter = { sourceId, status, items, tracks, details, error ->
+            if (reactContext.hasActiveReactInstance()) {
+                val map = com.facebook.react.bridge.Arguments.createMap()
+                map.putString("sourceId", sourceId)
+                map.putString("status", status)
+                map.putDouble("items", items.toDouble())
+                map.putDouble("tracks", tracks.toDouble())
+                map.putDouble("details", details.toDouble())
+                if (error != null) map.putString("error", error)
+                reactContext
+                    .getJSModule(
+                        com.facebook.react.modules.core.DeviceEventManagerModule.RCTDeviceEventEmitter::class.java,
+                    )
+                    .emit("SamoCatalogSyncState", map)
+            }
+        }
+    }
+
+    @ReactMethod
+    fun addListener(eventName: String) = Unit
+
+    @ReactMethod
+    fun removeListeners(count: Int) = Unit
 
     @ReactMethod
     fun schedule(promise: Promise) {
@@ -76,13 +104,16 @@ class SamoCatalogSyncModule(
                 OneTimeWorkRequestBuilder<SamoCatalogSyncWorker>()
                     .setInputData(Data.Builder().putString(SamoCatalogSyncWorker.KEY_TRIGGER_SOURCE, "trigger-now").build())
                     .build()
-            // APPEND_OR_REPLACE so a manual sync while another manual sync is
-            // queued just refreshes the queued one — never piles up multiple
-            // runs that would step on each other through the JS in-flight
-            // dedupe map in catalog-sync.ts.
+            // KEEP: a tap while a sync is already queued/running JOINS it.
+            // REPLACE actively CANCELLED the in-flight worker — and since the
+            // engine's HTTP + SQLite calls are blocking (they don't observe
+            // coroutine cancellation), the cancelled run's thread kept going
+            // as a zombie alongside the replacement, interleaving two writers
+            // on the sync-state row. Observed live on 2026-06-12 (WorkManager
+            // "was cancelled" followed by two overlapping run summaries).
             WorkManager.getInstance(reactContext).enqueueUniqueWork(
                 ONE_SHOT_WORK_NAME,
-                ExistingWorkPolicy.REPLACE,
+                ExistingWorkPolicy.KEEP,
                 request,
             )
             promise.resolve(null)

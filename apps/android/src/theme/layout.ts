@@ -149,7 +149,22 @@ export const VIEW_ALL_SIDEBAR_GUTTER = 30;
 export const VIEW_ALL_TILE_SIZE = Math.floor(
     (SCREEN_WIDTH - HOME_EDGE_PADDING * 2 - HOME_TILE_GAP - VIEW_ALL_SIDEBAR_GUTTER) / 2,
 );
-export const VIEW_ALL_TILE_HEIGHT = VIEW_ALL_TILE_SIZE + 6 + 18 + 16;
+// Artwork + text-gap + one title line + one subtitle line + explicit slack.
+// The previous `+ 6 + 18 + 16` budget was exact-to-the-pixel: the metadata
+// row's centering + line metrics on real devices clipped the bottom half of
+// every subtitle (same disease the Home tiles had — see
+// HOME_MEDIA_TILE_BLOCK_SLACK above). Reserve honest clearance instead of
+// fighting for pixels.
+const VIEW_ALL_TILE_TEXT_GAP = 6;
+const VIEW_ALL_TILE_TITLE_LINE = 18;
+const VIEW_ALL_TILE_SUBTITLE_LINE = 16;
+const VIEW_ALL_TILE_BLOCK_SLACK = 6;
+export const VIEW_ALL_TILE_HEIGHT =
+    VIEW_ALL_TILE_SIZE +
+    VIEW_ALL_TILE_TEXT_GAP +
+    VIEW_ALL_TILE_TITLE_LINE +
+    VIEW_ALL_TILE_SUBTITLE_LINE +
+    VIEW_ALL_TILE_BLOCK_SLACK;
 export const VIEW_ALL_ROW_HEIGHT = VIEW_ALL_TILE_HEIGHT + HOME_TILE_GAP;
 export const VIEW_ALL_INITIAL_ITEMS = 8;
 export const VIEW_ALL_RENDER_BATCH = 8;

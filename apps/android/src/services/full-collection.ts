@@ -1,11 +1,9 @@
 import {
-    getMobileHomeContentErrorMessage,
-    loadMobileFullCollection,
     MobileHomeItemType,
     type MobileFullCollectionVariant,
     type MobileHomeItem,
 } from '@samo/core/mobile';
-import { ensureSamoStreamToken, ServerType, type ServerAuthenticationResult } from '@samo/core/server';
+import { type ServerAuthenticationResult } from '@samo/core/server';
 
 import { loadCatalogCollection, loadCatalogCollectionSync } from './catalog/catalog-reads';
 
@@ -14,8 +12,6 @@ export type AndroidFullCollectionState =
     | { message: string; status: 'error' }
     | { status: 'idle' }
     | { status: 'loading' };
-
-const ANDROID_FULL_COLLECTION_QUALITY_SCAN_LIMIT = 0;
 
 const HOME_TYPE_BY_VARIANT: Record<MobileFullCollectionVariant, MobileHomeItemType> = {
     album: MobileHomeItemType.ALBUM,
@@ -26,10 +22,12 @@ const HOME_TYPE_BY_VARIANT: Record<MobileFullCollectionVariant, MobileHomeItemTy
 };
 
 /**
- * Instant View-All items from the on-device catalog for Samo sources. Returns
- * null when no connected Samo source has local rows yet (cold cache / non-Samo
- * only), so the caller falls back to the network path. Non-Samo servers are
- * skipped here and picked up by the network refresh.
+ * Complete View-All / Library items straight from the on-device mirror — the
+ * source of truth for browse surfaces. There is deliberately NO network path
+ * here anymore: the old loader re-enumerated the entire library from the
+ * server on every Library open (duplicating the sync engine's job on the
+ * interactive path); freshness is now the Kotlin sync's responsibility, and
+ * screens re-derive when it reports completion.
  */
 export const loadAndroidFullCollectionLocal = async (
     authentications: ServerAuthenticationResult[],
@@ -45,7 +43,7 @@ export const loadAndroidFullCollectionLocal = async (
 
 // Bounded so the synchronous first-paint read stays a sub-frame operation even
 // for huge libraries; the async `loadAndroidFullCollectionLocal` then fills the
-// complete list (off the UI thread) and the network refresh follows.
+// complete list off the UI thread.
 //
 // NOTE: tried reducing this to 100 to cut on-nav sync work — it made first
 // Library open WORSE (showed a loading state / cold-start delay) because the
@@ -57,9 +55,7 @@ const SYNC_FIRST_PAINT_LIMIT = 800;
 
 /**
  * Synchronous first-paint slice of a View-All / Library grid from the catalog,
- * so the screen mounts with content on the first frame (no loading state). Capped
- * to keep the on-thread read fast; the full list arrives right after via the
- * async path. Empty array for non-Samo / cold reader.
+ * so the screen mounts with content on the first frame (no loading state).
  */
 export const loadAndroidFullCollectionLocalSync = (
     authentications: ServerAuthenticationResult[],
@@ -71,13 +67,9 @@ export const loadAndroidFullCollectionLocalSync = (
     );
 };
 
-/**
- * Pull the COMPLETE list of items for a View All grid across every connected
- * server. Wraps the core loader with the same error-to-message normalization
- * the home-content loader uses, so all UI surfaces handle failures the same
- * way. Individual-server failures from the core layer are collapsed into a
- * single status: the caller still gets every server's items that DID load.
- */
+/** Full collection state from the mirror. `loading` means the mirror has no
+ *  rows for the type yet (fresh install mid-first-sync) — the sync-completed
+ *  event re-derives and fills it in. */
 export const loadAndroidFullCollection = async (
     authentications: ServerAuthenticationResult[],
     variant: MobileFullCollectionVariant,
@@ -85,29 +77,6 @@ export const loadAndroidFullCollection = async (
     if (authentications.length === 0) {
         return { status: 'idle' };
     }
-
-    try {
-        await Promise.all(
-            authentications
-                .filter((authentication) => authentication.type === ServerType.SAMO)
-                .map((authentication) =>
-                    ensureSamoStreamToken(authentication).catch(() => undefined),
-                ),
-        );
-
-        const { errors, items } = await loadMobileFullCollection({
-            authentications,
-            qualityScanLimit: ANDROID_FULL_COLLECTION_QUALITY_SCAN_LIMIT,
-            variant,
-        });
-        if (items.length === 0 && errors.length > 0) {
-            return { message: errors[0], status: 'error' };
-        }
-        return { items, status: 'loaded' };
-    } catch (error) {
-        return {
-            message: getMobileHomeContentErrorMessage(error),
-            status: 'error',
-        };
-    }
+    const items = await loadAndroidFullCollectionLocal(authentications, variant);
+    return items ? { items, status: 'loaded' } : { status: 'loading' };
 };

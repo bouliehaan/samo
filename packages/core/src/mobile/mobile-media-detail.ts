@@ -3,11 +3,17 @@ import { annotateSubsonicAlbumsQuality } from './mobile-subsonic-quality';
 import { type ServerAuthenticationResult } from '../server/server-auth';
 import { getFetch, requestJson, type SamoFetch } from '../server/server-http';
 import {
+    type SamoAudiobook,
     type SamoAudioChapter,
     type SamoBookmark,
     type SamoListeningSession,
     type SamoMusicAlbum,
+    type SamoMusicArtist,
+    type SamoMusicPlaylist,
     type SamoMusicTrack,
+    type SamoPaginatedResponse,
+    type SamoPodcast,
+    type SamoPodcastEpisode,
     type SamoSyncManifest,
     fetchSamoSyncManifest,
     getSamoAudiobook,
@@ -1313,7 +1319,7 @@ const samoSessionsToDetail = (
     }));
 };
 
-const samoTrackToMediaTrack = (
+export const samoTrackToMediaTrack = (
     authentication: ServerAuthenticationResult,
     track: SamoMusicTrack,
     albumArtworkUrl: string | undefined,
@@ -1537,6 +1543,21 @@ const loadSamoArtistDetail = async (
         getSamoMusicArtist(fetcher, authentication, id),
         listSamoMusicArtistAlbums(fetcher, authentication, id, { limit: 200 }),
     ]);
+    return mapSamoArtistDetail(authentication, streamToken, artist, albumsResponse);
+};
+
+/**
+ * Pure server-JSON → view-model mapping for an artist detail. Shared by the
+ * network loader above and the catalog read path, which hydrates the raw
+ * responses the Kotlin sync stored (`$samoRawDetail` envelope) at read time —
+ * ONE mapping implementation for both transports.
+ */
+export const mapSamoArtistDetail = (
+    authentication: ServerAuthenticationResult,
+    streamToken: string | undefined,
+    artist: SamoMusicArtist,
+    albumsResponse: SamoMusicAlbum[] | SamoPaginatedResponse<SamoMusicAlbum>,
+): MobileMediaDetail => {
     const source = getMobileContentSource(authentication);
     const items: MobileHomeItem[] = samoItemsOf(albumsResponse).flatMap((album) => {
         if (!album.id || !album.title) return [];
@@ -1585,6 +1606,16 @@ const loadSamoPlaylistDetail = async (
         getSamoMusicPlaylist(fetcher, authentication, id),
         listSamoMusicPlaylistTracks(fetcher, authentication, id, { limit: 500 }),
     ]);
+    return mapSamoPlaylistDetail(authentication, streamToken, playlist, tracksResponse);
+};
+
+/** Pure mapping twin of {@link loadSamoPlaylistDetail} — see mapSamoArtistDetail. */
+export const mapSamoPlaylistDetail = (
+    authentication: ServerAuthenticationResult,
+    streamToken: string | undefined,
+    playlist: SamoMusicPlaylist,
+    tracksResponse: SamoMusicTrack[] | SamoPaginatedResponse<SamoMusicTrack>,
+): MobileMediaDetail => {
     const items = samoItemsOf(tracksResponse);
     const tracks = items.map((track) =>
         samoTrackToMediaTrack(authentication, track, undefined, streamToken),
@@ -1624,6 +1655,23 @@ const loadSamoAudiobookDetail = async (
             () => undefined,
         ),
     ]);
+    return mapSamoAudiobookDetail(
+        authentication,
+        streamToken,
+        audiobook,
+        bookmarksResponse,
+        sessionsResponse,
+    );
+};
+
+/** Pure mapping twin of {@link loadSamoAudiobookDetail} — see mapSamoArtistDetail. */
+export const mapSamoAudiobookDetail = (
+    authentication: ServerAuthenticationResult,
+    streamToken: string | undefined,
+    audiobook: SamoAudiobook,
+    bookmarksResponse?: SamoBookmark[] | SamoPaginatedResponse<SamoBookmark>,
+    sessionsResponse?: SamoListeningSession[] | SamoPaginatedResponse<SamoListeningSession>,
+): MobileMediaDetail => {
     const artworkUrl = resolveSamoAudiobookArtworkUrl(authentication, audiobook, streamToken);
     const artworkImageId = pickSamoImageId(audiobook.cover ? [audiobook.cover] : undefined);
     const title = audiobook.book?.title ?? 'Untitled audiobook';
@@ -1735,6 +1783,16 @@ const loadSamoPodcastDetail = async (
         getSamoPodcastShow(fetcher, authentication, id),
         listSamoPodcastEpisodes(fetcher, authentication, id, { limit: 500 }),
     ]);
+    return mapSamoPodcastDetail(authentication, streamToken, podcast, episodesResponse);
+};
+
+/** Pure mapping twin of {@link loadSamoPodcastDetail} — see mapSamoArtistDetail. */
+export const mapSamoPodcastDetail = (
+    authentication: ServerAuthenticationResult,
+    streamToken: string | undefined,
+    podcast: SamoPodcast,
+    episodesResponse: SamoPodcastEpisode[] | SamoPaginatedResponse<SamoPodcastEpisode>,
+): MobileMediaDetail => {
     const showArtwork = resolveSamoPodcastArtworkUrl(authentication, podcast, streamToken);
     const artworkImageId = pickSamoImageId(podcast.cover ? [podcast.cover] : undefined);
     const showMeta = podcast.podcast;
@@ -1825,6 +1883,122 @@ const loadSamoMediaDetail = async (
             return loadSamoPlaylistDetail(authentication, fetcher, id);
         case MobileMediaDetailType.PODCAST:
             return loadSamoPodcastDetail(authentication, fetcher, id);
+    }
+};
+
+// ---------------------------------------------------------------------------
+// Raw detail bundles (Kotlin-synced catalog rows)
+// ---------------------------------------------------------------------------
+
+/**
+ * The envelope the Android Kotlin catalog sync stores in `catalog_detail`:
+ * the RAW server responses for an entity + its children, exactly as the
+ * network loaders above would have fetched them. Keeping rows raw means the
+ * server-JSON → view-model mapping has ONE implementation (the map* functions
+ * here) shared by the network path, the mirror read path, and desktop —
+ * instead of a Kotlin re-implementation that would drift.
+ */
+/**
+ * The envelope the Android Kotlin catalog sync stores in `catalog_track`
+ * payloads: the RAW server track JSON. Hydrated at read time through
+ * {@link samoTrackToMediaTrack} so the track view model — including its
+ * `playback` (stream URL, quality, mime) — comes from the ONE canonical
+ * mapper. The coexistence-era Kotlin payload omitted `playback` entirely,
+ * which sent every mirror-served album tap down the legacy ABS fallback
+ * (a POST the Samo server answers with 405).
+ */
+export interface SamoRawTrackEnvelope {
+    $samoRawTrack: 1;
+    track: unknown;
+}
+
+export const isSamoRawTrackEnvelope = (value: unknown): value is SamoRawTrackEnvelope =>
+    typeof value === 'object' &&
+    value !== null &&
+    (value as { $samoRawTrack?: unknown }).$samoRawTrack === 1;
+
+export const mapSamoMediaTrackFromRaw = (
+    authentication: ServerAuthenticationResult,
+    streamToken: string | undefined,
+    envelope: SamoRawTrackEnvelope,
+): MobileMediaTrack | null => {
+    try {
+        return samoTrackToMediaTrack(
+            authentication,
+            envelope.track as SamoMusicTrack,
+            undefined,
+            streamToken,
+        );
+    } catch {
+        return null;
+    }
+};
+
+export interface SamoRawDetailBundle {
+    $samoRawDetail: 1;
+    kind: 'artist' | 'audiobook' | 'playlist' | 'podcast';
+    entity: unknown;
+    children: Record<string, unknown>;
+}
+
+export const isSamoRawDetailBundle = (value: unknown): value is SamoRawDetailBundle =>
+    typeof value === 'object' &&
+    value !== null &&
+    (value as { $samoRawDetail?: unknown }).$samoRawDetail === 1 &&
+    typeof (value as { kind?: unknown }).kind === 'string';
+
+/**
+ * Hydrate a stored raw bundle into a MobileMediaDetail. `streamToken` should
+ * be the caller's cached token (sync read path can't await a mint); URLs
+ * built with a stale/absent token are tolerated downstream — the play path
+ * re-finalizes tokens before handing anything to the player.
+ */
+export const mapSamoMediaDetailFromRawBundle = (
+    authentication: ServerAuthenticationResult,
+    streamToken: string | undefined,
+    bundle: SamoRawDetailBundle,
+): MobileMediaDetail | null => {
+    try {
+        switch (bundle.kind) {
+            case 'artist':
+                return mapSamoArtistDetail(
+                    authentication,
+                    streamToken,
+                    bundle.entity as SamoMusicArtist,
+                    (bundle.children.albums ?? []) as SamoPaginatedResponse<SamoMusicAlbum>,
+                );
+            case 'playlist':
+                return mapSamoPlaylistDetail(
+                    authentication,
+                    streamToken,
+                    bundle.entity as SamoMusicPlaylist,
+                    (bundle.children.tracks ?? []) as SamoPaginatedResponse<SamoMusicTrack>,
+                );
+            case 'audiobook':
+                return mapSamoAudiobookDetail(
+                    authentication,
+                    streamToken,
+                    bundle.entity as SamoAudiobook,
+                    bundle.children.bookmarks as
+                        | SamoPaginatedResponse<SamoBookmark>
+                        | undefined,
+                    bundle.children.sessions as
+                        | SamoPaginatedResponse<SamoListeningSession>
+                        | undefined,
+                );
+            case 'podcast':
+                return mapSamoPodcastDetail(
+                    authentication,
+                    streamToken,
+                    bundle.entity as SamoPodcast,
+                    (bundle.children.episodes ?? []) as SamoPaginatedResponse<SamoPodcastEpisode>,
+                );
+            default:
+                return null;
+        }
+    } catch {
+        // A malformed stored bundle must read as a cache miss, never a crash.
+        return null;
     }
 };
 

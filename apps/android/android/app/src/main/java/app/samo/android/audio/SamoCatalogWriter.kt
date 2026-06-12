@@ -1,8 +1,7 @@
 package app.samo.android.audio
 
 import android.content.Context
-import android.database.sqlite.SQLiteDatabase
-import android.database.sqlite.SQLiteException
+import io.requery.android.database.sqlite.SQLiteDatabase
 import android.util.Log
 import java.io.File
 
@@ -12,6 +11,15 @@ import java.io.File
  * `busy_timeout`, so SQLite serializes them at the page level — one writer's
  * `BEGIN IMMEDIATE` blocks the other on `SQLITE_BUSY` until the busy_timeout
  * elapses or the lock is released.
+ *
+ * BUNDLED SQLITE ONLY (io.requery sqlite-android, an AOSP-API fork shipping
+ * its own modern libsqlite3x.so): the PLATFORM SQLite must never open this
+ * file. Sharing it between the OS library and expo-sqlite's bundled build
+ * made hot-WAL handoffs fragile across process kills, and the platform
+ * DefaultDatabaseErrorHandler deleted the whole database on a misjudged
+ * corruption verdict (the 2026-06-12 vanishing-mirror incident). The AOSP
+ * API quirks documented below (rawQuery for row-returning PRAGMAs etc.)
+ * apply identically to the fork.
  *
  * This file owns the schema bootstrap (idempotent CREATE TABLE IF NOT EXISTS
  * mirroring the JS-side MIGRATION_V1 in `schema.ts`) so a fresh install where
@@ -45,7 +53,16 @@ internal object SamoCatalogWriter {
             val dir = File(context.filesDir, "SQLite")
             if (!dir.exists()) dir.mkdirs()
             val dbFile = File(dir, DB_NAME)
-            val db = SQLiteDatabase.openOrCreateDatabase(dbFile, null)
+            // openDatabase + our NO-DELETE error handler: the convenience
+            // openOrCreateDatabase installs DefaultDatabaseErrorHandler, which
+            // DELETES the file on a corruption verdict (see
+            // SamoNoDeleteDatabaseErrorHandler for the incident this caused).
+            val db = SQLiteDatabase.openDatabase(
+                dbFile.absolutePath,
+                null,
+                SQLiteDatabase.OPEN_READWRITE or SQLiteDatabase.CREATE_IF_NECESSARY,
+                SamoNoDeleteDatabaseErrorHandler,
+            )
             try {
                 // WAL + busy_timeout: both writers (JS expo-sqlite + this one)
                 // queue on BEGIN IMMEDIATE rather than racing. journal_mode
@@ -59,10 +76,21 @@ internal object SamoCatalogWriter {
                         }
                     }
                 }
-                db.execSQL("PRAGMA busy_timeout = $BUSY_TIMEOUT_MS")
+                // busy_timeout RETURNS A ROW even in its set form (the new
+                // timeout value), and android.database's execSQL throws
+                // "Queries can be performed using SQLiteDatabase query or
+                // rawQuery methods only" the moment a statement yields data —
+                // same trap as journal_mode above, so same rawQuery treatment.
+                // THIS single line is why the Kotlin background sync never
+                // completed a run on-device before 2026-06-12: every ensureOpen
+                // threw here, before the first write.
+                db.rawQuery("PRAGMA busy_timeout = $BUSY_TIMEOUT_MS", null).use { c ->
+                    c.moveToFirst() // consume the returned timeout row
+                }
                 // Mirror the JS writer's safety profile: NORMAL is the WAL-
                 // recommended sync level — durable across power loss for
-                // committed transactions, faster than FULL.
+                // committed transactions, faster than FULL. (Both set-forms
+                // below return no rows, so execSQL is safe for them.)
                 db.execSQL("PRAGMA synchronous = NORMAL")
                 db.execSQL("PRAGMA foreign_keys = ON")
                 bootstrapSchema(db)
@@ -207,22 +235,12 @@ internal object SamoCatalogWriter {
             "CREATE INDEX IF NOT EXISTS idx_catalog_detail_synced " +
                 "ON catalog_detail (source_id, synced_at)",
         )
-        db.execSQL(
-            """
-            CREATE VIRTUAL TABLE IF NOT EXISTS catalog_search USING fts5 (
-                title,
-                subtitle,
-                artist,
-                album,
-                source_id UNINDEXED,
-                type UNINDEXED,
-                entity_id UNINDEXED,
-                payload UNINDEXED,
-                synced_at UNINDEXED,
-                tokenize = 'unicode61 remove_diacritics 2'
-            )
-            """.trimIndent(),
-        )
+        // catalog_search (FTS5) is deliberately ABSENT here: Android's platform
+        // SQLite is built WITHOUT the fts5 module ("no such module: fts5"), so
+        // this connection can neither create nor touch it. The expo-sqlite side
+        // (bundled sqlite3 WITH fts5) owns that table exclusively — the JS
+        // search indexer derives it from catalog_item/catalog_track after each
+        // sync. Never reference catalog_search from Kotlin.
         db.execSQL(
             """
             CREATE TABLE IF NOT EXISTS catalog_sync_state (
@@ -306,12 +324,6 @@ internal object SamoCatalogWriter {
             entity_id = excluded.entity_id,
             payload = excluded.payload,
             synced_at = excluded.synced_at
-    """
-
-    const val INSERT_SEARCH_SQL = """
-        INSERT INTO catalog_search (
-            title, subtitle, artist, album, source_id, type, entity_id, payload, synced_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     """
 
     const val UPSERT_SYNC_STATE_SQL = """
@@ -479,6 +491,60 @@ internal object SamoCatalogWriter {
         val args = arrayOf<Any>(sourceId, syncedAt)
         db.execSQL("DELETE FROM catalog_item WHERE source_id = ? AND synced_at < ?", args)
         db.execSQL("DELETE FROM catalog_track WHERE source_id = ? AND synced_at < ?", args)
+        db.execSQL("DELETE FROM catalog_detail WHERE source_id = ? AND synced_at < ?", args)
+        // catalog_search: JS-owned (fts5 lives only in expo-sqlite's build);
+        // its indexer sweeps rows whose entity vanished from the mirror.
+    }
+
+    // -----------------------------------------------------------------------
+    // Detail payloads (artist / playlist / podcast / audiobook crawls).
+    // cache_key MUST stay `${type}:${entityId}` — the JS readers
+    // (catalog-repository getDetail/getDetailSync) look rows up by exactly
+    // that key.
+    // -----------------------------------------------------------------------
+
+    data class DetailBinding(
+        val sourceId: String,
+        val type: String,
+        val entityId: String,
+        val payload: String,
+        val syncedAt: Long,
+    )
+
+    fun upsertDetails(db: SQLiteDatabase, rows: List<DetailBinding>) {
+        if (rows.isEmpty()) return
+        val statement = db.compileStatement(UPSERT_DETAIL_SQL)
+        try {
+            for (row in rows) {
+                statement.clearBindings()
+                statement.bindString(1, row.sourceId)
+                statement.bindString(2, "${row.type}:${row.entityId}")
+                statement.bindString(3, row.type)
+                statement.bindString(4, row.entityId)
+                statement.bindString(5, row.payload)
+                statement.bindLong(6, row.syncedAt)
+                statement.executeInsert()
+            }
+        } finally {
+            statement.close()
+        }
+    }
+
+    fun deleteDetailsByEntityIds(
+        db: SQLiteDatabase,
+        sourceId: String,
+        type: String,
+        ids: List<String>,
+    ) {
+        if (ids.isEmpty()) return
+        for (batch in ids.chunked(DELETE_CHUNK)) {
+            val placeholders = batch.joinToString(",") { "?" }
+            db.execSQL(
+                "DELETE FROM catalog_detail " +
+                    "WHERE source_id = ? AND type = ? AND entity_id IN ($placeholders)",
+                arrayOf(sourceId, type, *batch.toTypedArray()),
+            )
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -491,11 +557,13 @@ internal object SamoCatalogWriter {
         val cursor: String?,
         val status: String,
         val lastSyncedAt: Long?,
+        val counts: Triple<Long, Long, Long> = Triple(0L, 0L, 0L),
     )
 
     fun getSyncState(db: SQLiteDatabase, sourceId: String): SyncState? {
         db.rawQuery(
-            "SELECT cursor, status, last_synced_at FROM catalog_sync_state WHERE source_id = ?",
+            "SELECT cursor, status, last_synced_at, item_count, track_count, detail_count " +
+                "FROM catalog_sync_state WHERE source_id = ?",
             arrayOf(sourceId),
         ).use { c ->
             if (!c.moveToFirst()) return null
@@ -504,29 +572,73 @@ internal object SamoCatalogWriter {
                 cursor = if (c.isNull(0)) null else c.getString(0),
                 status = if (c.isNull(1)) "idle" else c.getString(1),
                 lastSyncedAt = if (c.isNull(2)) null else c.getLong(2),
+                counts = Triple(c.getLong(3), c.getLong(4), c.getLong(5)),
             )
         }
     }
 
-    fun markSyncStarted(db: SQLiteDatabase, sourceId: String) {
-        val now = System.currentTimeMillis()
+    /**
+     * Status transitions are READ-MODIFY-WRITE: every field not being changed
+     * is re-bound from the current row. The original implementation bound
+     * NULL/0 for the untouched fields and the upsert's `excluded.*` clauses
+     * then CLOBBERED them — most damagingly the delta CURSOR, which
+     * markSyncStarted nulled before the orchestrator read it, silently turning
+     * every background run into a full re-enumerate.
+     */
+    private fun writeSyncState(
+        db: SQLiteDatabase,
+        sourceId: String,
+        status: String,
+        lastSyncedAt: Long?,
+        lastAttemptAt: Long,
+        error: String?,
+        counts: Triple<Long, Long, Long>,
+        cursor: String?,
+    ) {
         val statement = db.compileStatement(UPSERT_SYNC_STATE_SQL)
         try {
             statement.bindString(1, sourceId)
-            statement.bindString(2, "syncing")
-            // last_synced_at preserved (NULL on first run)
-            statement.bindNull(3)
-            statement.bindLong(4, now)
-            statement.bindNull(5) // error cleared
-            statement.bindLong(6, 0)
-            statement.bindLong(7, 0)
-            statement.bindLong(8, 0)
-            statement.bindNull(9)
-            statement.bindLong(10, now)
+            statement.bindString(2, status)
+            if (lastSyncedAt != null) statement.bindLong(3, lastSyncedAt) else statement.bindNull(3)
+            statement.bindLong(4, lastAttemptAt)
+            if (error != null) statement.bindString(5, error.take(500)) else statement.bindNull(5)
+            statement.bindLong(6, counts.first)
+            statement.bindLong(7, counts.second)
+            statement.bindLong(8, counts.third)
+            if (cursor != null) statement.bindString(9, cursor) else statement.bindNull(9)
+            statement.bindLong(10, System.currentTimeMillis())
             statement.executeInsert()
         } finally {
             statement.close()
         }
+    }
+
+    fun markSyncStarted(db: SQLiteDatabase, sourceId: String) {
+        val prior = getSyncState(db, sourceId)
+        writeSyncState(
+            db,
+            sourceId,
+            status = "syncing",
+            lastSyncedAt = prior?.lastSyncedAt,
+            lastAttemptAt = System.currentTimeMillis(),
+            error = null,
+            counts = prior?.counts ?: Triple(0L, 0L, 0L),
+            cursor = prior?.cursor,
+        )
+    }
+
+    fun setSyncProgress(db: SQLiteDatabase, sourceId: String, counts: Triple<Long, Long, Long>) {
+        val prior = getSyncState(db, sourceId)
+        writeSyncState(
+            db,
+            sourceId,
+            status = "syncing",
+            lastSyncedAt = prior?.lastSyncedAt,
+            lastAttemptAt = System.currentTimeMillis(),
+            error = null,
+            counts = counts,
+            cursor = prior?.cursor,
+        )
     }
 
     fun markSyncSucceeded(
@@ -536,42 +648,32 @@ internal object SamoCatalogWriter {
         cursor: String?,
     ) {
         val now = System.currentTimeMillis()
-        val statement = db.compileStatement(UPSERT_SYNC_STATE_SQL)
-        try {
-            statement.bindString(1, sourceId)
-            statement.bindString(2, "synced")
-            statement.bindLong(3, now)
-            statement.bindLong(4, now)
-            statement.bindNull(5)
-            statement.bindLong(6, counts.first)
-            statement.bindLong(7, counts.second)
-            statement.bindLong(8, counts.third)
-            if (cursor != null) statement.bindString(9, cursor) else statement.bindNull(9)
-            statement.bindLong(10, now)
-            statement.executeInsert()
-        } finally {
-            statement.close()
-        }
+        writeSyncState(
+            db,
+            sourceId,
+            status = "synced",
+            lastSyncedAt = now,
+            lastAttemptAt = now,
+            error = null,
+            counts = counts,
+            cursor = cursor,
+        )
     }
 
     fun markSyncFailed(db: SQLiteDatabase, sourceId: String, message: String) {
-        val now = System.currentTimeMillis()
-        val statement = db.compileStatement(UPSERT_SYNC_STATE_SQL)
-        try {
-            statement.bindString(1, sourceId)
-            statement.bindString(2, "error")
-            statement.bindNull(3)
-            statement.bindLong(4, now)
-            statement.bindString(5, message.take(500))
-            statement.bindLong(6, 0)
-            statement.bindLong(7, 0)
-            statement.bindLong(8, 0)
-            statement.bindNull(9)
-            statement.bindLong(10, now)
-            statement.executeInsert()
-        } finally {
-            statement.close()
-        }
+        val prior = getSyncState(db, sourceId)
+        writeSyncState(
+            db,
+            sourceId,
+            status = "error",
+            lastSyncedAt = prior?.lastSyncedAt,
+            lastAttemptAt = System.currentTimeMillis(),
+            error = message,
+            // Counts AND cursor survive a failure — the next run retries the
+            // delta from the prior watermark instead of a punitive full sync.
+            counts = prior?.counts ?: Triple(0L, 0L, 0L),
+            cursor = prior?.cursor,
+        )
     }
 
     fun getSourceCounts(db: SQLiteDatabase, sourceId: String): Triple<Long, Long, Long> {
@@ -594,11 +696,11 @@ internal object SamoCatalogWriter {
         return Triple(items, tracks, details)
     }
 
-    private fun bindOptionalString(stmt: android.database.sqlite.SQLiteStatement, index: Int, value: String?) {
+    private fun bindOptionalString(stmt: io.requery.android.database.sqlite.SQLiteStatement, index: Int, value: String?) {
         if (value == null) stmt.bindNull(index) else stmt.bindString(index, value)
     }
 
-    private fun bindOptionalLong(stmt: android.database.sqlite.SQLiteStatement, index: Int, value: Long?) {
+    private fun bindOptionalLong(stmt: io.requery.android.database.sqlite.SQLiteStatement, index: Int, value: Long?) {
         if (value == null) stmt.bindNull(index) else stmt.bindLong(index, value)
     }
 }

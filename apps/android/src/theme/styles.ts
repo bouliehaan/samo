@@ -1398,6 +1398,13 @@ export const styles = StyleSheet.create({
         right: 2,
         width: 18,
     },
+    formatBadgeTile: {
+        // The hi-fi mark in a tile's metadata row (beneath the cover, sat to
+        // the right of the title/subtitle, Qobuz-style). Smaller than the base
+        // 44px so it never out-grows a fixed-height grid tile's text band.
+        height: 32,
+        width: 32,
+    },
     fullPlayer: {
         backgroundColor: '#000000',
         elevation: 999,
@@ -1897,6 +1904,23 @@ export const styles = StyleSheet.create({
     },
     libraryRowPressed: {
         backgroundColor: colors.panel,
+    },
+    tileMetaRow: {
+        // Below-cover metadata band: title/subtitle column on the left, the
+        // hi-fi mark sat to the right (Qobuz card layout). Vertically centered
+        // so the mark sits within the metadata, never on the artwork.
+        alignItems: 'center',
+        flexDirection: 'row',
+        gap: 8,
+    },
+    tileMetaRowFill: {
+        // For the wide "continue" cards whose Pressable is already a row —
+        // the band must grow to fill the space beside the artwork.
+        flex: 1,
+    },
+    tileMetaTextCol: {
+        flex: 1,
+        minWidth: 0,
     },
     tilePressed: {
         opacity: 0.82,
@@ -2644,6 +2668,27 @@ export const styles = StyleSheet.create({
     qualityBadgeUnknown: {
         backgroundColor: 'rgba(255, 255, 255, 0.07)',
         borderColor: 'rgba(255, 255, 255, 0.14)',
+    },
+    qualityMetaRow: {
+        // Shared layout for the inline quality marker on tiles/rows: keeps the
+        // subtitle and the chip/spec on one line so nothing on top of the
+        // artwork — and no extra height that would clip a fixed-size tile.
+        alignItems: 'center',
+        flexDirection: 'row',
+        gap: 6,
+        minWidth: 0,
+    },
+    qualityMetaSubtitle: {
+        flexShrink: 1,
+        minWidth: 0,
+    },
+    qualitySpec: {
+        color: colors.accent,
+        flexShrink: 0,
+        fontSize: 11,
+        fontWeight: '700',
+        letterSpacing: 0.3,
+        textTransform: 'uppercase',
     },
     queueChapterNumber: {
         alignItems: 'center',

@@ -2,6 +2,7 @@ import { type SQLiteBindParams, type SQLiteBindValue } from 'expo-sqlite';
 
 import { getQualityBadgeKey } from '@samo/core/audio-quality';
 import {
+    MobileSearchItemType,
     type MobileHomeItem,
     type MobileHomeItemType,
     type MobileMediaDetail,
@@ -344,6 +345,24 @@ export const getItemsByType = async (
         .filter((item): item is MobileHomeItem => item !== null);
 };
 
+/**
+ * Every catalog item for a source, regardless of type. Used to rebuild the
+ * non-song search index from the authoritative `catalog_item` table: the native
+ * (Kotlin) background sync populates items but not the FTS index, so the
+ * JS-owned `catalog_search` must be re-derived from items to stay in parity —
+ * otherwise unchanged artists/albums silently fall out of search.
+ */
+export const getAllItems = async (sourceId: string): Promise<MobileHomeItem[]> => {
+    const db = await getCatalogDatabase();
+    const rows = await db.getAllAsync<CatalogPayloadRow>(
+        'SELECT payload FROM catalog_item WHERE source_id = ?',
+        sourceId,
+    );
+    return rows
+        .map((row) => parsePayload<MobileHomeItem>(row))
+        .filter((item): item is MobileHomeItem => item !== null);
+};
+
 export const getItemById = async (
     sourceId: string,
     type: MobileHomeItemType,
@@ -359,11 +378,15 @@ export const getItemById = async (
     return row ? parsePayload<MobileHomeItem>(row) : null;
 };
 
+/** Raw parsed track payloads, position-ordered. Rows span eras (raw-track
+ *  envelopes vs legacy MobileMediaTrack JSON) — callers hydrate through
+ *  catalog-reads' hydrateCatalogTrack, which needs the auth context this
+ *  layer doesn't have. */
 export const getTracks = async (
     sourceId: string,
     containerType: CatalogContainerType,
     containerId: string,
-): Promise<MobileMediaTrack[]> => {
+): Promise<unknown[]> => {
     const db = await getCatalogDatabase();
     const rows = await db.getAllAsync<CatalogPayloadRow>(
         `SELECT payload FROM catalog_track
@@ -374,22 +397,29 @@ export const getTracks = async (
         containerId,
     );
     return rows
-        .map((row) => parsePayload<MobileMediaTrack>(row))
-        .filter((track): track is MobileMediaTrack => track !== null);
+        .map((row) => parsePayload<unknown>(row))
+        .filter((payload): payload is object => payload !== null);
 };
 
+/**
+ * Stored detail payloads come in two shapes: legacy rows hold a pre-mapped
+ * MobileMediaDetail; Kotlin-synced rows hold a `$samoRawDetail` envelope of
+ * raw server responses. The repository returns the parsed JSON verbatim —
+ * catalog-reads decides which shape it has and maps raw bundles through the
+ * shared core mapper.
+ */
 export const getDetail = async (
     sourceId: string,
     type: string,
     entityId: string,
-): Promise<MobileMediaDetail | null> => {
+): Promise<unknown> => {
     const db = await getCatalogDatabase();
     const row = await db.getFirstAsync<CatalogPayloadRow>(
         'SELECT payload FROM catalog_detail WHERE source_id = ? AND cache_key = ?',
         sourceId,
         `${type}:${entityId}`,
     );
-    return row ? parsePayload<MobileMediaDetail>(row) : null;
+    return row ? parsePayload<unknown>(row) : null;
 };
 
 export const searchLocal = async (
@@ -437,7 +467,7 @@ export const getDetailSync = (
     sourceId: string,
     type: string,
     entityId: string,
-): MobileMediaDetail | null => {
+): unknown => {
     const db = getCatalogReaderSync();
     if (!db) {
         return null;
@@ -448,7 +478,7 @@ export const getDetailSync = (
             sourceId,
             `${type}:${entityId}`,
         );
-        return row ? parsePayload<MobileMediaDetail>(row) : null;
+        return row ? parsePayload<unknown>(row) : null;
     } catch {
         return null;
     }
@@ -458,7 +488,7 @@ export const getTracksSync = (
     sourceId: string,
     containerType: CatalogContainerType,
     containerId: string,
-): MobileMediaTrack[] => {
+): unknown[] => {
     const db = getCatalogReaderSync();
     if (!db) {
         return [];
@@ -473,8 +503,8 @@ export const getTracksSync = (
             containerId,
         );
         return rows
-            .map((row) => parsePayload<MobileMediaTrack>(row))
-            .filter((track): track is MobileMediaTrack => track !== null);
+            .map((row) => parsePayload<unknown>(row))
+            .filter((payload): payload is object => payload !== null);
     } catch {
         return [];
     }
@@ -798,6 +828,66 @@ export const deleteSearchByEntityIds = async (
             );
         }
     });
+};
+
+/**
+ * Drops every non-song search row for a source. Songs are FTS-indexed from the
+ * authoritative `catalog_track` table on every sync, but item rows (artists,
+ * albums, playlists, podcasts, audiobooks) are rebuilt wholesale from
+ * `catalog_item` — so the old set is cleared first to avoid duplicates and to
+ * evict rows whose underlying item no longer exists.
+ */
+/**
+ * Album-container track rows whose mirror row changed since [sinceMs] — the
+ * JS search indexer's incremental feed. Returns the hydrated tracks plus the
+ * max synced_at seen so the caller can advance its cursor.
+ */
+export const getAlbumTracksSyncedSince = async (
+    sourceId: string,
+    sinceMs: number,
+): Promise<{ maxSyncedAt: number; tracks: unknown[] }> => {
+    const db = await getCatalogDatabase();
+    const rows = await db.getAllAsync<{ payload: string; synced_at: number }>(
+        `SELECT payload, synced_at FROM catalog_track
+         WHERE source_id = ? AND container_type = 'album' AND synced_at > ?`,
+        sourceId,
+        sinceMs,
+    );
+    let maxSyncedAt = sinceMs;
+    const tracks: unknown[] = [];
+    for (const row of rows) {
+        if (row.synced_at > maxSyncedAt) {
+            maxSyncedAt = row.synced_at;
+        }
+        const track = parsePayload<unknown>(row);
+        if (track) {
+            tracks.push(track);
+        }
+    }
+    return { maxSyncedAt, tracks };
+};
+
+/** Drop song search rows whose track no longer exists in the mirror — the
+ *  indexer's deletion reconcile (the sync engine never touches this table). */
+export const deleteOrphanSongSearch = async (sourceId: string): Promise<void> => {
+    const db = await getCatalogDatabase();
+    await db.runAsync(
+        `DELETE FROM catalog_search
+         WHERE source_id = ? AND type = 'song' AND entity_id NOT IN (
+             SELECT DISTINCT track_id FROM catalog_track WHERE source_id = ?
+         )`,
+        sourceId,
+        sourceId,
+    );
+};
+
+export const deleteNonSongSearch = async (sourceId: string): Promise<void> => {
+    const db = await getCatalogDatabase();
+    await db.runAsync(
+        'DELETE FROM catalog_search WHERE source_id = ? AND type != ?',
+        sourceId,
+        MobileSearchItemType.SONG,
+    );
 };
 
 /** Drops the entire mirror for a source (e.g. when its server is removed). */

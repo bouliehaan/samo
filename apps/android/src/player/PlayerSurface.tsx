@@ -11,7 +11,11 @@ import {
     type MobileSearchItem,
     LONG_FORM_RELATIVE_SKIP_SECONDS,
 } from '@samo/core/mobile';
-import { type ServerAuthenticationResult } from '@samo/core/server';
+import {
+    ensureSamoStreamToken,
+    findServerAuthenticationForSource,
+    type ServerAuthenticationResult,
+} from '@samo/core/server';
 import { FlashList } from '@shopify/flash-list';
 import { Image as ExpoImage } from 'expo-image';
 import { StatusBar } from 'expo-status-bar';
@@ -85,7 +89,11 @@ import { getContentSourceFromPlaybackItem } from '../utils/content-source';
 import { getPersistedServerAuthKey } from '../services/persisted-server';
 import { useServerConnections } from '../contexts/server-connections';
 import { getPlayerPositionMsForAbsProgress } from '../utils/abs-progress-math';
-import { artworkSourceUri, resolvePlaybackArtworkSourceForDisplay } from '../utils/samo-artwork-url';
+import {
+    artworkSourceUri,
+    isSamoMediaUrlMissingStreamToken,
+    resolvePlaybackArtworkSourceForDisplay,
+} from '../utils/samo-artwork-url';
 import {
     getAndroidPlaybackState,
     subscribeAndroidPlaybackState,
@@ -344,14 +352,54 @@ export const NowPlayingMetadataSync = memo(() => {
                 return;
             }
 
+            // Radio-only channel. For every other source the NATIVE side owns
+            // now-playing metadata: playLocally seeds it and onMediaItemTransition
+            // re-derives it (with a token-fresh artwork URL) per track — pushes
+            // from here either echo what native already has or describe a stale
+            // item and get dropped by the native id-gate. Radio is the one source
+            // whose metadata changes mid-item (ICY titles polled in JS), so it is
+            // the one source that still needs this JS→native push. Skipping the
+            // rest also stops this subscriber from doing URL/JSON work on every
+            // 1-2s position tick of ordinary playback.
+            if (state.item.source !== 'radio') {
+                return;
+            }
+
             const display = getPlaybackDisplayMetadata(state);
-            const artworkUrl =
+            const resolvedArtworkUrl =
                 artworkSourceUri(
                     resolvePlaybackArtworkSourceForDisplay(
                         state.item,
                         serverConnectionsRef.current,
                     ),
                 ) ?? state.item.artworkUrl;
+            // Never push a TOKEN-LESS Samo artwork URL into the native
+            // notification: the JS token cache goes stale during long native-
+            // driven sessions (nothing on the JS side mints anymore), and the
+            // resolver then yields a URL the notification's header-less fetch
+            // can only 401 on — overwriting native's fresh artwork with a grey
+            // tile. Omit the field instead (native keeps its own, freshened at
+            // each transition) and mint in the background so the NEXT push
+            // carries a live token again.
+            let artworkUrl = resolvedArtworkUrl;
+            if (isSamoMediaUrlMissingStreamToken(resolvedArtworkUrl)) {
+                artworkUrl = undefined;
+                const contentSource = getContentSourceFromPlaybackItem(
+                    state.item,
+                    serverConnectionsRef.current,
+                );
+                const auth = contentSource
+                    ? findServerAuthenticationForSource(
+                          serverConnectionsRef.current,
+                          contentSource,
+                      )
+                    : undefined;
+                if (auth) {
+                    void ensureSamoStreamToken(auth)
+                        .then(() => syncMetadata())
+                        .catch(() => undefined);
+                }
+            }
             const metadataKey = JSON.stringify({
                 artworkUrl,
                 id: state.item.id,
@@ -1001,10 +1049,6 @@ export const FullScreenPlayer = memo(({
                             </Text>
                         </View>
                     )}
-                    <QualityBadge
-                        overlay
-                        profile={getPlaybackQualityProfile(displayItem)}
-                    />
                 </Pressable>
             </View>
 

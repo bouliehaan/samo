@@ -1,12 +1,11 @@
 import {
-    loadAudiobookshelfDownloadFiles,
-    loadAudiobookshelfPodcastEpisodeFiles,
     type MobileHomeItem,
     type MobileMediaDetail,
     MobileMediaDetailType,
 } from '@samo/core/mobile';
 import {
     ensureSamoStreamToken,
+    getSamoAudiobookStreamUrl,
     getSamoPodcastEpisodeStreamUrl,
     type ServerAuthenticationResult,
     ServerType,
@@ -262,17 +261,6 @@ const enqueueMusicCollectionDownload = async (
     return { enqueued, skipped };
 };
 
-const findAudiobookshelfAuth = (
-    authentications: ServerAuthenticationResult[],
-    sourceId: string,
-): ServerAuthenticationResult | undefined => {
-    return authentications.find(
-        (candidate) =>
-            `${candidate.type}:${candidate.url}` === sourceId &&
-            candidate.type === ServerType.AUDIOBOOKSHELF,
-    );
-};
-
 const findSamoAuth = (
     authentications: ServerAuthenticationResult[],
     sourceId: string,
@@ -364,32 +352,23 @@ const enqueueAudiobookDownload = async (
     detail: MobileMediaDetail,
     authentications: ServerAuthenticationResult[],
 ): Promise<{ enqueued: number; reason?: string; skipped: number }> => {
-    const auth = findAudiobookshelfAuth(authentications, detail.source.id);
+    // Samo audiobooks download per media file straight off the whole-file
+    // stream route — the same per-file manifest playback uses, so offline
+    // queue building (getOfflineAudiobookFiles → buildOfflineAudiobookPlayable)
+    // and resolveLocalPlayback agree on identity by construction. trackId is
+    // `<bookId>:file:<mediaFileId>`: resolveLocalPlayback looks an online
+    // playable up by exactly that inner id, and getOfflineAudiobookFiles
+    // recovers the mediaFileId via its split-pop.
+    const auth = findSamoAuth(authentications, detail.source.id);
     if (!auth) {
         return {
             enqueued: 0,
-            reason: 'The Audiobookshelf server for this book is no longer connected.',
+            reason: 'The server for this book is no longer connected.',
             skipped: 0,
         };
     }
 
-    let files;
-    try {
-        files = await loadAudiobookshelfDownloadFiles({
-            authentication: auth,
-            itemId: detail.id,
-        });
-    } catch (error) {
-        return {
-            enqueued: 0,
-            reason:
-                error instanceof Error
-                    ? `Could not list audio files: ${error.message}`
-                    : 'Could not list audio files for this book.',
-            skipped: 0,
-        };
-    }
-
+    const files = detail.audiobookFiles ?? [];
     if (files.length === 0) {
         return {
             enqueued: 0,
@@ -398,6 +377,7 @@ const enqueueAudiobookDownload = async (
         };
     }
 
+    const streamToken = await ensureSamoStreamToken(auth).catch(() => undefined);
     const collection: DownloadCollectionInfo = {
         artworkImageId: detail.artworkImageId,
         artworkUrl: detail.artworkUrl,
@@ -411,26 +391,28 @@ const enqueueAudiobookDownload = async (
     let enqueued = 0;
     let skipped = 0;
     for (let i = 0; i < files.length; i += 1) {
-        const file = files[i];
-        const trackId = files.length === 1 ? detail.id : `${detail.id}:${file.ino}`;
+        const file = files[i]!;
         const entry = await enqueueDownload(
             {
                 audiobookSegment:
                     files.length > 1
                         ? {
                               durationSeconds: file.durationSeconds,
-                              index: file.index ?? i,
+                              index: i,
                               startOffsetSeconds: file.startOffsetSeconds ?? 0,
                           }
                         : undefined,
                 collection,
-                sourceUrl: file.downloadUrl,
-                title: files.length === 1 ? detail.title : (file.title ?? file.filename),
-                trackId,
-                trackSubtitle:
+                sourceUrl: getSamoAudiobookStreamUrl(auth, detail.id, {
+                    mediaFileId: file.mediaFileId,
+                    ...(streamToken ? { streamToken } : {}),
+                }),
+                title:
                     files.length === 1
-                        ? detail.subtitle
-                        : `${detail.title} · ${file.filename}`,
+                        ? detail.title
+                        : `${detail.title} · Part ${i + 1}`,
+                trackId: `${detail.id}:file:${file.mediaFileId}`,
+                trackSubtitle: detail.subtitle,
             },
             authentications,
         );
@@ -447,74 +429,15 @@ const enqueuePodcastDownload = async (
     detail: MobileMediaDetail,
     authentications: ServerAuthenticationResult[],
 ): Promise<{ enqueued: number; reason?: string; skipped: number }> => {
-    const auth = findAudiobookshelfAuth(authentications, detail.source.id);
-    if (!auth) {
-        const samoAuth = findSamoAuth(authentications, detail.source.id);
-        if (samoAuth) {
-            return enqueueSamoPodcastDownload(detail, samoAuth, authentications);
-        }
+    const samoAuth = findSamoAuth(authentications, detail.source.id);
+    if (!samoAuth) {
         return {
             enqueued: 0,
             reason: 'The server for this podcast is no longer connected.',
             skipped: 0,
         };
     }
-
-    let episodeFiles;
-    try {
-        episodeFiles = await loadAudiobookshelfPodcastEpisodeFiles({
-            authentication: auth,
-            itemId: detail.id,
-        });
-    } catch (error) {
-        return {
-            enqueued: 0,
-            reason:
-                error instanceof Error
-                    ? `Could not list episode files: ${error.message}`
-                    : 'Could not list episode files for this podcast.',
-            skipped: 0,
-        };
-    }
-
-    if (episodeFiles.length === 0) {
-        return {
-            enqueued: 0,
-            reason: 'No episode files were reported for this podcast by the server.',
-            skipped: 0,
-        };
-    }
-
-    const collection: DownloadCollectionInfo = {
-        artworkImageId: detail.artworkImageId,
-        artworkUrl: detail.artworkUrl,
-        id: detail.id,
-        sourceId: detail.source.id,
-        subtitle: detail.subtitle,
-        title: detail.title,
-        type: 'podcast',
-    };
-
-    let enqueued = 0;
-    let skipped = 0;
-    for (const file of episodeFiles) {
-        const entry = await enqueueDownload(
-            {
-                collection,
-                sourceUrl: file.fileDownloadUrl,
-                title: file.title,
-                trackId: file.episodeId,
-                trackSubtitle: detail.title,
-            },
-            authentications,
-        );
-        if (entry.status === 'completed') {
-            skipped += 1;
-        } else {
-            enqueued += 1;
-        }
-    }
-    return { enqueued, skipped };
+    return enqueueSamoPodcastDownload(detail, samoAuth, authentications);
 };
 
 export const enqueueSingleMusicTrackDownload = async (
@@ -571,70 +494,22 @@ export const enqueueSinglePodcastEpisodeDownload = async (
     },
     authentications: ServerAuthenticationResult[],
 ): Promise<{ enqueued: boolean; reason?: string }> => {
-    const auth = findAudiobookshelfAuth(authentications, detail.source.id);
-    if (!auth || !episodeTrack.episodeId || !episodeTrack.itemId) {
-        const samoAuth = findSamoAuth(authentications, detail.source.id);
-        const samoEpisodeId = episodeTrack.episodeId ?? episodeTrack.id;
-        if (samoAuth && samoEpisodeId) {
-            return enqueueSamoSinglePodcastEpisode(
-                detail,
-                samoEpisodeId,
-                episodeTrack.title,
-                episodeTrack.subtitle,
-                samoAuth,
-                authentications,
-            );
-        }
+    const samoAuth = findSamoAuth(authentications, detail.source.id);
+    const samoEpisodeId = episodeTrack.episodeId ?? episodeTrack.id;
+    if (!samoAuth || !samoEpisodeId) {
         return {
             enqueued: false,
             reason: 'The server for this podcast is no longer connected.',
         };
     }
-
-    try {
-        const episodeFiles = await loadAudiobookshelfPodcastEpisodeFiles({
-            authentication: auth,
-            itemId: episodeTrack.itemId,
-        });
-        const file = episodeFiles.find(
-            (candidate) => candidate.episodeId === episodeTrack.episodeId,
-        );
-        if (!file) {
-            return {
-                enqueued: false,
-                reason:
-                    'The server didn’t report a downloadable audio file for this episode.',
-            };
-        }
-        const collection: DownloadCollectionInfo = {
-            artworkImageId: detail.artworkImageId,
-            artworkUrl: detail.artworkUrl,
-            id: detail.id,
-            sourceId: detail.source.id,
-            subtitle: detail.subtitle,
-            title: detail.title,
-            type: 'podcast',
-        };
-        const entry = await enqueueDownload(
-            {
-                collection,
-                sourceUrl: file.fileDownloadUrl,
-                title: episodeTrack.title,
-                trackId: episodeTrack.id,
-                trackSubtitle: episodeTrack.subtitle,
-            },
-            authentications,
-        );
-        return { enqueued: entry.status !== 'completed' };
-    } catch (error) {
-        return {
-            enqueued: false,
-            reason:
-                error instanceof Error
-                    ? `Could not resolve audio URL: ${error.message}`
-                    : 'Could not resolve the audio URL for this episode.',
-        };
-    }
+    return enqueueSamoSinglePodcastEpisode(
+        detail,
+        samoEpisodeId,
+        episodeTrack.title,
+        episodeTrack.subtitle,
+        samoAuth,
+        authentications,
+    );
 };
 
 export const enqueueHomeItemDownload = async (

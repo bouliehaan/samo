@@ -81,6 +81,35 @@ export const withResumePosition = (
     };
 };
 
+/**
+ * Merge a session-prepared playable back into its durable queue slot WITHOUT
+ * the session's transient start position.
+ *
+ * playQueuedItem prepares the played item (fresh stream/artwork URLs — those
+ * SHOULD flow back into the queue so native auto-advance gets current tokens)
+ * but it also stamps `initialPositionSeconds` via withResumePosition when the
+ * session resumes mid-track (error recovery, foreground catch-up, toggle
+ * restart). Writing that transient value into the queue turned a one-off
+ * resume into the slot's permanent start position: every later entry into the
+ * slot — native auto-advance, lock-screen skip, Prev — started the track at
+ * the stale timestamp. The queue keeps the resume semantics it was BUILT with
+ * (podcast/audiobook build-time resume points stay); the session start
+ * position travels only in the play() payload.
+ */
+export const mergePreparedQueueItem = (
+    original: MobilePlayableAudio,
+    prepared: MobilePlayableAudio,
+): MobilePlayableAudio => {
+    if (prepared.initialPositionSeconds === original.initialPositionSeconds) {
+        return prepared;
+    }
+
+    const { initialPositionSeconds: _transient, ...rest } = prepared;
+    return original.initialPositionSeconds !== undefined
+        ? { ...rest, initialPositionSeconds: original.initialPositionSeconds }
+        : rest;
+};
+
 /** Reload Samo/ABS long-form progress before starting a stream URL (URLs do not carry position). */
 export const refreshPlayableResumeFromServer = async (
     item: MobilePlayableAudio,
@@ -138,3 +167,36 @@ export const refreshPlayableResumeFromServer = async (
 
 export const shouldAutoRecoverPlayback = (source: MobilePlayableAudio['source'] | undefined) =>
     source === 'podcast' || source === 'audiobook' || source === 'music';
+
+/**
+ * How long a tap may wait on the server-progress overlay before playing
+ * without it. The overlay is a nicety (cross-device resume); the tap is the
+ * job. An unbounded wait here is what made episode taps look completely dead
+ * while the server was slow — and the queued-up dead taps then replayed in a
+ * burst once it recovered.
+ */
+export const RESUME_REFRESH_TIMEOUT_MS = 4000;
+
+/** [refreshPlayableResumeFromServer] with a hard time budget — resolves the
+ *  item unchanged when the server can't answer in time. */
+export const refreshPlayableResumeFromServerBounded = async (
+    item: MobilePlayableAudio,
+    serverConnections: ServerAuthenticationResult[],
+    timeoutMs: number = RESUME_REFRESH_TIMEOUT_MS,
+): Promise<MobilePlayableAudio> => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+        return await Promise.race([
+            refreshPlayableResumeFromServer(item, serverConnections),
+            new Promise<MobilePlayableAudio>((resolve) => {
+                timer = setTimeout(() => resolve(item), timeoutMs);
+            }),
+        ]);
+    } catch {
+        return item;
+    } finally {
+        if (timer !== undefined) {
+            clearTimeout(timer);
+        }
+    }
+};

@@ -63,16 +63,29 @@ fun ReadableMap.getHttpHeaders(key: String = "httpHeaders"): Map<String, String>
 
 fun getMediaItemMimeType(url: String, declaredMimeType: String?): String? {
   val normalizedUrl = url.lowercase()
+  val normalizedMime = declaredMimeType?.lowercase()?.trim()
 
   if (
-    declaredMimeType?.lowercase()?.contains("mpegurl") == true ||
+    normalizedMime?.contains("mpegurl") == true ||
       normalizedUrl.contains("/hls/") ||
       normalizedUrl.contains(".m3u8")
   ) {
     return MimeTypes.APPLICATION_M3U8
   }
 
-  return declaredMimeType
+  // Only force a container ExoPlayer can reliably map to an extractor. A
+  // declared podcast enclosure type is frequently wrong, empty, or non-audio
+  // (video/*, application/octet-stream, or even an HTML error page's
+  // text/html); forcing it makes DefaultMediaSourceFactory select the wrong
+  // extractor and fail with "no supported source was found". Returning null
+  // lets ExoPlayer sniff the actual container from the response bytes, which is
+  // reliable for real audio. Genuine audio/* types are still honored so music
+  // and audiobook playback is unchanged.
+  if (normalizedMime != null && normalizedMime.startsWith("audio/")) {
+    return declaredMimeType
+  }
+
+  return null
 }
 
 

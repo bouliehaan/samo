@@ -68,6 +68,12 @@ internal class SamoPlaybackRecovery(
         val currentSource: SamoAudioSourceSnapshot?
         var lastKnownPlaybackPositionMs: Long
 
+        /** Which media item [lastKnownPlaybackPositionMs] belongs to. A saved
+         *  position is only meaningful for the item it was observed on —
+         *  honoring it across items is how one track's playhead leaked into
+         *  another's recovery resume. */
+        var lastKnownPlaybackMediaId: String?
+
         /** Credentials needed to mint a fresh stream token for the current item. */
         val currentServerUrl: String?
         val currentBearerToken: String?
@@ -300,8 +306,22 @@ internal class SamoPlaybackRecovery(
     ): Boolean {
         val item = host.currentMediaItem ?: return false
         if (fastReconnectAttempts >= maxFastReconnectAttempts) {
-            // Fast budget exhausted with the network "online" — could be a
-            // server outage or a captive-portal-style false positive. Park as
+            if (networkMonitor.isOnline() && isProbablyNetworkClass(error)) {
+                // The device's network is UP and the server keeps answering
+                // with an HTTP error (5xx from the Samo proxy — e.g. it can't
+                // reach the podcast CDN). Waiting for a network event would
+                // never resolve that; parking as "waiting for network" showed
+                // the user an infinite silent spinner while their connection
+                // was fine. Surface a real error instead.
+                Log.w(
+                    "SamoAudio",
+                    "server error persisted after retries (${error.errorCodeName}); surfacing",
+                )
+                parkRecovery(Mode.Error)
+                return true
+            }
+            // Connection-class failure with the network nominally "online" —
+            // could be a captive-portal-style false positive. Park as
             // waiting-for-network; we'll retry the moment any new network
             // event arrives, instead of looping noisily.
             Log.i(
@@ -361,16 +381,37 @@ internal class SamoPlaybackRecovery(
         item: MediaItem,
         savedPositionMs: Long,
     ) {
-        resolvedPlayer.stop()
-        resolvedPlayer.clearMediaItems()
-        resolvedPlayer.setMediaItem(item)
-        resolvedPlayer.prepare()
-        if (savedPositionMs > 0) {
-            resolvedPlayer.seekTo(savedPositionMs)
+        val currentIndex = resolvedPlayer.currentMediaItemIndex
+        if (
+            resolvedPlayer.mediaItemCount > 1 &&
+            currentIndex >= 0 &&
+            currentIndex < resolvedPlayer.mediaItemCount
+        ) {
+            // The player holds the real multi-item playlist (music/podcast
+            // queue). stop()+clearMediaItems() here would silently collapse it
+            // to single-item mode for the rest of the session — every later
+            // Next degrades from an atomic playlist step to a full
+            // mint+teardown+rebuild, and gapless prebuffering is lost. That
+            // collapse compounding over hours was a big part of "playback gets
+            // worse the longer the app is open." Swap the (possibly URL-
+            // refreshed) item in place and re-prepare with the playlist intact.
+            resolvedPlayer.replaceMediaItem(currentIndex, item)
+            resolvedPlayer.seekTo(currentIndex, savedPositionMs.coerceAtLeast(0L))
+            resolvedPlayer.prepare()
+            resolvedPlayer.playWhenReady = true
+        } else {
+            resolvedPlayer.stop()
+            resolvedPlayer.clearMediaItems()
+            resolvedPlayer.setMediaItem(item)
+            resolvedPlayer.prepare()
+            if (savedPositionMs > 0) {
+                resolvedPlayer.seekTo(savedPositionMs)
+            }
+            resolvedPlayer.playWhenReady = true
         }
-        resolvedPlayer.playWhenReady = true
         if (savedPositionMs > 0) {
             host.lastKnownPlaybackPositionMs = savedPositionMs
+            host.lastKnownPlaybackMediaId = item.mediaId
         }
     }
 
@@ -378,7 +419,15 @@ internal class SamoPlaybackRecovery(
         val isLive = host.currentSource?.source == "radio"
         if (isLive) return 0L
         val fromPlayer = player.currentPosition.coerceAtLeast(0L)
-        return maxOf(fromPlayer, host.lastKnownPlaybackPositionMs)
+        // Only honor the remembered position when it was observed on THIS item;
+        // a cross-item max would resume the new track at the old track's time.
+        val remembered =
+            if (host.lastKnownPlaybackMediaId == item.mediaId) {
+                host.lastKnownPlaybackPositionMs
+            } else {
+                0L
+            }
+        return maxOf(fromPlayer, remembered)
     }
 
     private fun isAuthFailure(error: PlaybackException): Boolean {

@@ -19,6 +19,7 @@ import {
 
 import { useServerConnections } from '../contexts/server-connections';
 import { peekArtworkLocalUri } from '../services/artwork-cache';
+import { canonicalArtworkKey } from '../utils/artwork-canonical';
 import { styles } from '../theme/styles';
 import { colors } from '../theme/tokens';
 import { resolveSamoItemArtworkSourceForDisplay } from '../utils/samo-artwork-url';
@@ -84,12 +85,16 @@ export const ArtworkImage = ({
         streamTokenRevision,
         uri,
     ]);
-    const recyclingKey =
-        typeof resolvedSource === 'string'
-            ? resolvedSource
-            : resolvedSource && 'uri' in resolvedSource
-              ? resolvedSource.uri
-              : undefined;
+    const remoteUri =
+        typeof resolvedSource === 'string' ? resolvedSource : resolvedSource?.uri;
+
+    // Stable image identity (stream token stripped). Drives the recycling key,
+    // the cache-peek pin, and the expo-image cacheKey so a rotated token never
+    // resets the native view, re-decodes, or re-downloads the same cover.
+    const canonicalKey = useMemo(
+        () => (remoteUri ? canonicalArtworkKey(remoteUri) : undefined),
+        [remoteUri],
+    );
 
     // Cover art is cached proactively in bulk after a sync (see
     // services/artwork-prefetch). On the render path we only do a SYNCHRONOUS
@@ -97,29 +102,52 @@ export const ArtworkImage = ({
     // the remote source via expo-image's native memory-disk pipeline. We never
     // kick a per-tile download here, so a tile-dense screen (Home) can't flood
     // the bridge. Pin the choice once per cover so the image never swaps mid-view.
-    const remoteUri =
-        typeof resolvedSource === 'string' ? resolvedSource : resolvedSource?.uri;
     const pinnedRef = useRef<{ key: string | undefined; uri: string | null }>({
         key: undefined,
         uri: null,
     });
-    if (pinnedRef.current.key !== recyclingKey) {
+    if (pinnedRef.current.key !== canonicalKey) {
         pinnedRef.current = {
-            key: recyclingKey,
+            key: canonicalKey,
             uri: remoteUri ? peekArtworkLocalUri(remoteUri) : null,
         };
     }
     const pinnedLocalUri = pinnedRef.current.uri;
     const [localFailed, setLocalFailed] = useState(false);
 
+    // A genuinely new cover (canonical identity changed) clears BOTH latches so
+    // the fresh image gets a clean attempt.
     useEffect(() => {
         setErrored(false);
         setLocalFailed(false);
-    }, [recyclingKey]);
+    }, [canonicalKey]);
+
+    // A stream-token refresh changes the remote URL but NOT the canonical key.
+    // Clear only the REMOTE latch so a load that failed on a stale token retries
+    // with the fresh one — without touching localFailed, which would flip-flop a
+    // genuinely-missing local file on every rotation.
+    useEffect(() => {
+        setErrored(false);
+    }, [remoteUri]);
 
     const useLocal = Boolean(pinnedLocalUri) && !localFailed;
-    const displaySource: ImageSource | string | undefined =
-        useLocal && pinnedLocalUri ? pinnedLocalUri : resolvedSource;
+
+    // Hand expo-image a source carrying the canonical cacheKey so the local
+    // file:// and the remote URL resolve to ONE cache entry — swapping between
+    // them (or rotating the token) is seamless instead of a fresh decode.
+    const displaySource = useMemo((): ImageSource | undefined => {
+        if (useLocal && pinnedLocalUri) {
+            return canonicalKey
+                ? { cacheKey: canonicalKey, uri: pinnedLocalUri }
+                : { uri: pinnedLocalUri };
+        }
+        if (!resolvedSource) {
+            return undefined;
+        }
+        const base: ImageSource =
+            typeof resolvedSource === 'string' ? { uri: resolvedSource } : resolvedSource;
+        return canonicalKey ? { ...base, cacheKey: canonicalKey } : base;
+    }, [canonicalKey, pinnedLocalUri, resolvedSource, useLocal]);
 
     useEffect(() => {
         if (!contentSource || resolvedConnections.length === 0) {
@@ -143,9 +171,14 @@ export const ArtworkImage = ({
         return () => {
             cancelled = true;
         };
-    }, [contentSource, recyclingKey, resolvedConnections]);
+    }, [contentSource, canonicalKey, resolvedConnections]);
 
-    if (!resolvedSource || errored) {
+    // The letter fallback is reserved for art that has genuinely FAILED or that
+    // does not exist. While a cover that DOES exist is still resolving (the
+    // server connection / stream token is mid-flight), show a neutral tile so we
+    // never flash a letter and then swap in the cover a frame later.
+    const hasArtworkIdentity = Boolean(source || artworkImageId || uri);
+    if (errored || (!displaySource && !hasArtworkIdentity)) {
         return (
             <View
                 style={[
@@ -158,6 +191,17 @@ export const ArtworkImage = ({
                     {letter}
                 </Text>
             </View>
+        );
+    }
+    if (!displaySource) {
+        return (
+            <View
+                style={[
+                    style as StyleProp<ViewStyle>,
+                    styles.artworkImageFallback,
+                    fallbackStyle,
+                ]}
+            />
         );
     }
 
@@ -179,7 +223,7 @@ export const ArtworkImage = ({
             // changes. recyclingKey forces a fresh view (list tiles use it so a
             // recycled row never flashes the previous cover), which would cancel
             // the fade — so drop it whenever we're transitioning in place.
-            recyclingKey={transition > 0 ? undefined : recyclingKey}
+            recyclingKey={transition > 0 ? undefined : canonicalKey}
             source={displaySource}
             style={style}
             transition={transition}

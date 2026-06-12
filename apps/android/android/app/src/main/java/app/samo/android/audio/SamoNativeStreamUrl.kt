@@ -82,6 +82,21 @@ internal object SamoNativeStreamUrl {
         }
     }
 
+    /**
+     * Make sure the token cache holds a live token for (serverUrl, bearer),
+     * minting on the executor when it's stale/absent. [onDone] runs on the
+     * executor thread with whether a usable token exists afterwards. Powers
+     * the long-session artwork freshener: a 3-hour episode never crosses a
+     * track transition, so the transition-time freshen never runs — this is
+     * the periodic equivalent for the CURRENT item.
+     */
+    fun ensureFreshTokenAsync(serverUrl: String, bearer: String, onDone: (Boolean) -> Unit) {
+        refreshExecutor.execute {
+            val result = mintStreamToken(serverUrl, bearer)
+            onDone(result is MintResult.Success)
+        }
+    }
+
     fun refreshQueueItem(context: Context, item: HashMap<String, Any?>): RefreshResult {
         val serverUrl = item.optionalString("serverUrl")
         val bearer = item.optionalString("serverBearerToken")
@@ -158,7 +173,8 @@ internal object SamoNativeStreamUrl {
                 )
                 return@execute
             }
-            when (val mint = mintStreamToken(serverUrl, bearer)) {
+            // 401-recovery: the cached token is the one that just failed.
+            when (val mint = mintStreamToken(serverUrl, bearer, forceFresh = true)) {
                 is MintResult.Success -> {
                     val item = HashMap<String, Any?>().apply {
                         put("url", replaceStreamToken(url, mint.token))
@@ -180,6 +196,31 @@ internal object SamoNativeStreamUrl {
         } catch (_: Exception) {
             false
         }
+
+    /**
+     * Cache-only token refresh for a Samo media URL — safe on the main thread
+     * (never touches the network). Returns the URL with the cached token
+     * substituted, or null when there's nothing to do (non-Samo URL, missing
+     * credentials, cache miss, or the token is already current). Used at
+     * playlist transitions to keep the NOTIFICATION artwork URL alive past the
+     * ~30-minute token TTL: the track's own stream open just minted through
+     * [SamoResolvingDataSource], so the cache is warm exactly when this runs.
+     */
+    fun freshenUrlTokenFromCache(url: String?, serverUrl: String?, bearer: String?): String? {
+        if (url.isNullOrBlank() || serverUrl.isNullOrBlank() || bearer.isNullOrBlank()) {
+            return null
+        }
+        if (!isSamoStreamUrl(url)) {
+            return null
+        }
+        val token = SamoStreamTokenCache.get(serverUrl, bearer) ?: return null
+        val refreshed = try {
+            replaceStreamToken(url, token)
+        } catch (_: Exception) {
+            return null
+        }
+        return if (refreshed == url) null else refreshed
+    }
 
     // -----------------------------------------------------------------------
     // Phase 2 PROPER: native URL builders.
@@ -502,7 +543,27 @@ internal object SamoNativeStreamUrl {
         data class Failed(val reason: MintFailureReason) : MintResult()
     }
 
-    private fun mintStreamToken(serverUrl: String, bearer: String): MintResult {
+    /**
+     * Token resolution for the playback hot path. Serves from
+     * [SamoStreamTokenCache] (tokens live ~30 min; cache refuses entries within
+     * 5 min of expiry) so track starts and auto-advances don't pay an HTTP
+     * roundtrip each. [forceFresh] is for the 401-recovery path — the cached
+     * token is presumed to be the one the server just rejected, so it's
+     * invalidated and a new one is minted unconditionally.
+     */
+    private fun mintStreamToken(
+        serverUrl: String,
+        bearer: String,
+        forceFresh: Boolean = false,
+    ): MintResult {
+        if (forceFresh) {
+            SamoStreamTokenCache.invalidate(serverUrl, bearer)
+        } else {
+            SamoStreamTokenCache.get(serverUrl, bearer)?.let { cached ->
+                return MintResult.Success(cached)
+            }
+        }
+
         var connection: HttpURLConnection? = null
         try {
             val endpoint = "${serverUrl.trimEnd('/')}/api/v1/auth/stream-token"
@@ -523,6 +584,7 @@ internal object SamoNativeStreamUrl {
 
             if (status == 401 || status == 403) {
                 Log.w(TAG, "stream-token rejected: HTTP $status: $body")
+                SamoStreamTokenCache.invalidate(serverUrl, bearer)
                 return MintResult.Failed(MintFailureReason.Auth)
             }
             if (status !in 200..299) {
@@ -530,11 +592,18 @@ internal object SamoNativeStreamUrl {
                 return MintResult.Failed(MintFailureReason.Server)
             }
 
-            val token = JSONObject(body).optString("token")
+            val parsed = JSONObject(body)
+            val token = parsed.optString("token")
             if (token.isNullOrBlank()) {
                 Log.w(TAG, "stream-token response missing token")
                 return MintResult.Failed(MintFailureReason.Server)
             }
+            SamoStreamTokenCache.put(
+                serverUrl,
+                bearer,
+                token,
+                SamoStreamTokenCache.parseExpiresAtMs(parsed.optString("expiresAt")),
+            )
             return MintResult.Success(token)
         } catch (error: UnknownHostException) {
             return MintResult.Failed(MintFailureReason.Network)

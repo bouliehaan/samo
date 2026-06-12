@@ -2,48 +2,56 @@ package app.samo.android.audio
 
 import android.content.Context
 import android.util.Log
+import org.json.JSONArray
 import org.json.JSONObject
+import java.util.concurrent.Callable
+import java.util.concurrent.Executors
 
 /**
- * Phase 5 PROPER orchestrator: drives the full + delta sync paths for every
- * Samo connection in the auth mirror. Mirrors `services/catalog/catalog-sync.ts`
- * structurally — full sync on a fresh install or version bump, delta sync
- * elsewhere, manifest-based deletion reconcile on delta runs — but stays
- * entirely native so it survives Doze + screen sleep.
+ * THE catalog sync engine. Kotlin is the single owner of the on-device mirror:
+ * items, tracks, detail payloads, the FTS index, deletion reconcile, the delta
+ * cursor, and mirror-completeness healing all live here, driven by WorkManager
+ * (periodic + sync-now) so the library stays fresh through Doze and screen
+ * sleep with zero JS involvement.
  *
- * v0 SCOPE:
- *   - catalog_item upserts for ALBUM / ARTIST / AUDIOBOOK / PLAYLIST / PODCAST
- *   - catalog_track upserts (album container only, from `/music/tracks`)
- *   - manifest reconcile (delete items + tracks absent from the manifest)
- *   - synced_at watermark + pruneSource on full runs
- *   - cursor advancement (server clock as the next updatedSince)
+ * The JS side READS the mirror (catalog-repository / catalog-reads) and maps
+ * raw detail payloads to view models at read time — the canonical
+ * server-JSON→view-model mapping stays in TypeScript (shared with the network
+ * path and desktop), which is why detail rows store the RAW server responses
+ * in a `$samoRawDetail` envelope instead of pre-mapped view models. One sync
+ * owner, one mapping implementation.
  *
- * OUT OF SCOPE (still owned by the JS foreground `syncSamoCatalog`):
- *   - catalog_detail (per-entity crawls: artist top-tracks, audiobook
- *     chapters, playlist tracks, podcast episodes)
- *   - catalog_search FTS5 indexing (rows still searchable via foreground sync)
- *   - tracks under non-album containers (artist/playlist/podcast)
- *
- * Bumped whenever the on-device sync writes data in a way an older delta
- * can't safely extend. Mirrors SYNC_LOGIC_VERSION in catalog-sync.ts so a
- * persisted cursor from the JS-only era stays valid here.
+ * History note: this replaces the v0 coexistence design where a JS engine and
+ * this one shared the cursor and split the tables — the split-brain that
+ * needed an FTS healer and a completeness backfill to limp along. Both
+ * healers' jobs are now structural: a single writer can't diverge from
+ * itself, and the completeness check (ported below) only guards against
+ * transient partial enumerations.
  */
 internal object SamoCatalogSync {
     private const val TAG = "SamoCatalogSync"
-    private const val SYNC_LOGIC_VERSION = 2
+
+    // v4: track payloads are raw `$samoRawTrack` envelopes (hydrated through
+    // the canonical JS mapper, so they carry full playback). v3 wrote slim
+    // track payloads without playback; the version bump forces one full
+    // re-enumerate that rewrites every row under the new scheme.
+    private const val SYNC_LOGIC_VERSION = 4
+
+    /** Concurrent detail fetches per batch (network-bound; writes stay serial). */
+    private const val DETAIL_FETCH_CONCURRENCY = 4
 
     private val COLLECTION_VARIANTS = listOf(
-        Variant("album", "album", "/music/albums"),
-        Variant("artist", "artist", "/music/artists"),
-        Variant("audiobook", "audiobook", "/audiobooks"),
-        Variant("playlist", "playlist", "/music/playlists"),
-        Variant("podcast", "podcast", "/podcasts"),
+        Variant("album", "albums", "/music/albums"),
+        Variant("artist", "artists", "/music/artists"),
+        Variant("audiobook", "audiobooks", "/audiobooks"),
+        Variant("playlist", "playlists", "/music/playlists"),
+        Variant("podcast", "podcasts", "/podcasts"),
     )
 
     private data class Variant(
         /** Catalog `type` column value. */
         val catalogType: String,
-        /** Manifest field name (singular form), e.g. "album" → manifest.ids.albums. */
+        /** Manifest ids field name (plural). */
         val manifestKey: String,
         /** List endpoint path. */
         val path: String,
@@ -53,6 +61,7 @@ internal object SamoCatalogSync {
         val sourceId: String,
         val items: Long,
         val tracks: Long,
+        val details: Long,
         val errors: List<String>,
     )
 
@@ -70,14 +79,11 @@ internal object SamoCatalogSync {
                 results.add(runOne(context, conn))
             } catch (error: Throwable) {
                 Log.w(TAG, "source ${connectionKey(conn)} failed", error)
+                val sourceId = connectionKey(conn)
                 results.add(
-                    SourceResult(
-                        sourceId = connectionKey(conn),
-                        items = 0L,
-                        tracks = 0L,
-                        errors = listOf(error.message ?: error::class.java.simpleName),
-                    ),
+                    SourceResult(sourceId, 0L, 0L, 0L, listOf(error.message ?: error::class.java.simpleName)),
                 )
+                SamoCatalogSyncEvents.emit(sourceId, "error", 0, 0, 0, error.message)
             }
         }
         return Summary(results)
@@ -85,96 +91,171 @@ internal object SamoCatalogSync {
 
     private fun runOne(context: Context, conn: SamoAuthMirror.Connection): SourceResult {
         val sourceId = connectionKey(conn)
+        try {
+            return runOneInner(context, conn, sourceId)
+        } catch (error: Throwable) {
+            // ANY uncaught throw must still land in the sync-state row —
+            // otherwise the panel shows "syncing" forever and the error only
+            // exists in logcat. Best-effort: the failure may itself be a DB
+            // problem, in which case the emit below still reaches the UI.
+            runCatching {
+                SamoCatalogWriter.withTransactionImmediate(context) { db ->
+                    SamoCatalogWriter.markSyncFailed(
+                        db,
+                        sourceId,
+                        error.message ?: error::class.java.simpleName,
+                    )
+                }
+            }
+            throw error
+        }
+    }
+
+    private fun runOneInner(
+        context: Context,
+        conn: SamoAuthMirror.Connection,
+        sourceId: String,
+    ): SourceResult {
         val syncedAt = System.currentTimeMillis()
         val errors = mutableListOf<String>()
 
-        SamoCatalogWriter.withTransactionImmediate(context) { db ->
-            SamoCatalogWriter.markSyncStarted(db, sourceId)
-        }
-
-        val streamToken = SamoCatalogServerClient.mintStreamToken(conn)
-        if (streamToken == null) {
-            // We can still sync — artwork URLs degrade to un-tokenized form
-            // (still serve until tokens come back). Note in errors so the
-            // Settings panel reflects the partial outcome.
-            errors.add("stream-token mint failed; artwork URLs will be un-tokenized")
-        }
-
-        val source = buildSourceJson(conn)
-
-        // Read existing state to decide full vs delta. The cursor is the
-        // server's serverTime from the prior manifest fetch — playing it back
-        // as updatedSince produces only rows that changed since that moment.
+        // Read state BEFORE marking started. (markSyncStarted now preserves
+        // the cursor, but reading first keeps the order obviously correct —
+        // the original code read after a cursor-clobbering write and silently
+        // ran a FULL re-enumerate every 30 minutes.)
         val priorState = SamoCatalogWriter.withTransactionImmediate(context) { db ->
             SamoCatalogWriter.getSyncState(db, sourceId)
         }
         val parsedCursor = parseCursor(priorState?.cursor)
         val priorWatermark = parsedCursor?.optString("deltaServerTime").nullIfBlankLocal()
         val versionOk = parsedCursor?.optInt("syncVersion") == SYNC_LOGIC_VERSION
+        val priorReconciled = parsedCursor?.optLong("reconciledItemCount") ?: 0L
+        val priorEpisodeCount = parsedCursor?.optLong("episodeCount") ?: -1L
 
-        // Manifest is needed both ways: as the watermark seed for the NEXT
-        // sync (its serverTime) and for delta-run deletion reconcile.
+        SamoCatalogWriter.withTransactionImmediate(context) { db ->
+            SamoCatalogWriter.markSyncStarted(db, sourceId)
+        }
+        SamoCatalogSyncEvents.emit(sourceId, "syncing", 0, 0, 0, null)
+
+        val streamToken = SamoCatalogServerClient.mintStreamToken(conn)
+        if (streamToken == null) {
+            // We can still sync — artwork URLs degrade to un-tokenized form.
+            errors.add("stream-token mint failed; artwork URLs will be un-tokenized")
+        }
+
+        val source = buildSourceJson(conn)
+
         val manifest = try {
             SamoCatalogServerClient.fetchManifest(conn)
         } catch (error: SamoCatalogServerClient.FetchException) {
-            // Without the manifest, a delta run can't reconcile deletions —
-            // fall back to a full sync so the synced_at prune handles them.
             errors.add("manifest fetch failed: ${error.message}")
             null
         }
+        val manifestItems = manifest?.let { manifestItemCount(it) } ?: 0L
+        val manifestEpisodeCount =
+            manifest?.optJSONObject("ids")?.optJSONArray("episodes")?.length()?.toLong() ?: -1L
 
         val isDelta = manifest != null && priorWatermark != null && versionOk
 
-        val newItemsCount: Long
-        val newTracksCount: Long
+        var counts: Counts
+        var ranFull = false
         if (isDelta) {
-            val delta = runDelta(context, conn, source, streamToken, syncedAt, priorWatermark!!, manifest!!)
-            newItemsCount = delta.items
-            newTracksCount = delta.tracks
-            errors.addAll(delta.errors)
+            counts = runDelta(
+                context, conn, source, streamToken, syncedAt, priorWatermark!!, manifest!!,
+                crawlAllPodcasts = manifestEpisodeCount != priorEpisodeCount,
+            )
+            errors.addAll(counts.errors)
+
+            // Completeness backfill (ported decision logic, JUnit-locked): a
+            // delta can never resurrect unchanged rows lost to an interrupted
+            // enumerate, so when the mirror is short of the manifest's
+            // authoritative item count — and the server has grown past the
+            // size we last reconciled at — run one full pass to converge.
+            val localItems = SamoCatalogWriter.withTransactionImmediate(context) { db ->
+                SamoCatalogWriter.getSourceCounts(db, sourceId).first
+            }
+            if (shouldBackfillMirror(localItems, manifestItems, priorReconciled)) {
+                Log.i(TAG, "mirror short ($localItems < $manifestItems); running backfill full sync")
+                val full = runFull(context, conn, source, streamToken, syncedAt)
+                errors.addAll(full.errors)
+                counts = full
+                ranFull = true
+            }
         } else {
-            val full = runFull(context, conn, source, streamToken, syncedAt, manifest)
-            newItemsCount = full.items
-            newTracksCount = full.tracks
-            errors.addAll(full.errors)
+            counts = runFull(context, conn, source, streamToken, syncedAt)
+            errors.addAll(counts.errors)
+            ranFull = true
         }
 
-        // Persist the new cursor + counts on success. The cursor advances
-        // only on success so a failed sync keeps replaying from the prior
-        // watermark.
-        val nextCursor = manifest?.let { mf ->
-            JSONObject()
-                .put("deltaServerTime", mf.optString("serverTime"))
-                .put("syncVersion", SYNC_LOGIC_VERSION)
-                .toString()
-        } ?: priorState?.cursor
-
-        SamoCatalogWriter.withTransactionImmediate(context) { db ->
-            val counts = SamoCatalogWriter.getSourceCounts(db, sourceId)
-            if (errors.isEmpty() || newItemsCount > 0 || newTracksCount > 0) {
-                SamoCatalogWriter.markSyncSucceeded(db, sourceId, counts, nextCursor)
+        // Prune is only safe after a CLEAN full walk: a variant whose fetch
+        // failed never re-touched its rows, and pruning would silently delete
+        // a whole slice of the library (the old engine did exactly that).
+        // Extra guard: a clean walk that found ZERO items against a mirror
+        // that HAS rows is treated as a contract failure, not a deletion of
+        // everything — exactly the failure mode the data/items pagination-key
+        // mismatch produced.
+        if (ranFull && errors.none { !it.startsWith("stream-token") }) {
+            val priorItems = SamoCatalogWriter.withTransactionImmediate(context) { db ->
+                SamoCatalogWriter.getSourceCounts(db, sourceId).first
+            }
+            if (counts.items == 0L && priorItems > 0L) {
+                errors.add("full walk returned 0 items against a populated mirror; prune skipped")
             } else {
-                SamoCatalogWriter.markSyncFailed(
-                    db,
-                    sourceId,
-                    errors.joinToString("; ").take(500),
-                )
+                SamoCatalogWriter.withTransactionImmediate(context) { db ->
+                    SamoCatalogWriter.pruneSource(db, sourceId, syncedAt)
+                }
             }
         }
 
-        return SourceResult(
-            sourceId = sourceId,
-            items = newItemsCount,
-            tracks = newTracksCount,
-            errors = errors,
+        // The cursor advances ONLY on a clean run. A run with errors keeps the
+        // prior watermark so the next delta re-pulls the same window — upserts
+        // are idempotent, so replays are safe and nothing is silently skipped.
+        val hadRealErrors = errors.any { !it.startsWith("stream-token") }
+        val nextCursor = if (manifest != null && !hadRealErrors) {
+            JSONObject()
+                .put("deltaServerTime", manifest.optString("serverTime"))
+                .put("syncVersion", SYNC_LOGIC_VERSION)
+                .put(
+                    "reconciledItemCount",
+                    nextReconciledItemCount(hadRealErrors, manifestItems, priorReconciled),
+                )
+                .put("episodeCount", manifestEpisodeCount)
+                .toString()
+        } else {
+            priorState?.cursor
+        }
+
+        val finalCounts = SamoCatalogWriter.withTransactionImmediate(context) { db ->
+            val sourceCounts = SamoCatalogWriter.getSourceCounts(db, sourceId)
+            if (!hadRealErrors || counts.items > 0 || counts.tracks > 0) {
+                SamoCatalogWriter.markSyncSucceeded(db, sourceId, sourceCounts, nextCursor)
+            } else {
+                SamoCatalogWriter.markSyncFailed(db, sourceId, errors.joinToString("; ").take(500))
+            }
+            sourceCounts
+        }
+        SamoCatalogSyncEvents.emit(
+            sourceId,
+            if (!hadRealErrors || counts.items > 0 || counts.tracks > 0) "synced" else "error",
+            finalCounts.first,
+            finalCounts.second,
+            finalCounts.third,
+            if (hadRealErrors) errors.joinToString("; ").take(500) else null,
         )
+
+        return SourceResult(sourceId, counts.items, counts.tracks, counts.details, errors)
     }
 
-    private data class Counts(val items: Long, val tracks: Long, val errors: List<String>)
+    private data class Counts(
+        val items: Long,
+        val tracks: Long,
+        val details: Long,
+        val errors: List<String>,
+    )
 
     /**
-     * Full re-enumerate: every variant + the whole track table. Combined with
-     * `pruneSource` at the end this rebuilds a source from scratch.
+     * Full re-enumerate: every variant, the whole track table, every detail
+     * crawl, and a from-scratch FTS rebuild.
      */
     private fun runFull(
         context: Context,
@@ -182,72 +263,81 @@ internal object SamoCatalogSync {
         source: JSONObject,
         streamToken: String?,
         syncedAt: Long,
-        manifest: JSONObject?,
     ): Counts {
         val sourceId = source.optString("id")
         val errors = mutableListOf<String>()
         var totalItems = 0L
         var totalTracks = 0L
 
-        // 1. Items per variant.
+        // 1. Items per variant — streamed page-by-page (memory O(page)).
+        val itemIdsByType = HashMap<String, MutableList<String>>()
         for (variant in COLLECTION_VARIANTS) {
             try {
-                val records = SamoCatalogServerClient.fetchAllPages(conn, variant.path)
-                val rows = records.mapNotNull { record ->
-                    convertToItem(variant.catalogType, sourceId, conn.url, streamToken, source, record, syncedAt)
+                SamoCatalogServerClient.fetchPagesStreaming(conn, variant.path) { records ->
+                    val rows = records.mapNotNull { record ->
+                        convertToItem(variant.catalogType, sourceId, conn.url, streamToken, source, record, syncedAt)
+                    }
+                    SamoCatalogWriter.withTransactionImmediate(context) { db ->
+                        SamoCatalogWriter.upsertItems(db, rows)
+                    }
+                    itemIdsByType.getOrPut(variant.catalogType) { mutableListOf() }
+                        .addAll(rows.map { it.id })
+                    totalItems += rows.size.toLong()
                 }
-                SamoCatalogWriter.withTransactionImmediate(context) { db ->
-                    SamoCatalogWriter.upsertItems(db, rows)
-                }
-                totalItems += rows.size.toLong()
             } catch (error: Throwable) {
                 errors.add("${variant.catalogType}: ${error.message ?: error::class.java.simpleName}")
             }
         }
+        progress(context, sourceId, totalItems, 0, 0)
 
-        // 2. Track table → grouped under album container.
+        // 2. Track table — STREAMED page-by-page. Accumulating all 14k+ raw
+        //    track JSONs (now full envelopes) alongside the live app blew the
+        //    256MB heap on-device. No grouping needed: each row's `position`
+        //    is the (disc, track) formula, independent of its siblings.
         try {
-            val records = SamoCatalogServerClient.fetchAllPages(conn, "/music/tracks")
-            val grouped = HashMap<String, MutableList<SamoCatalogConverters.TrackBinding>>()
-            for (record in records) {
-                val binding = SamoCatalogConverters.musicTrackToAlbumTrack(
-                    sourceId = sourceId,
-                    serverUrl = conn.url,
-                    streamToken = streamToken,
-                    source = source,
-                    track = record,
-                    syncedAt = syncedAt,
-                ) ?: continue
-                grouped.getOrPut(binding.containerId) { mutableListOf() }.add(binding)
-            }
-            var count = 0L
-            for ((_, tracks) in grouped) {
-                val sorted = tracks.sortedWith(
-                    compareBy({ it.discNo ?: 1L }, { it.trackNo ?: 0L }),
-                )
-                SamoCatalogWriter.withTransactionImmediate(context) { db ->
-                    SamoCatalogWriter.upsertTracks(db, sorted)
+            SamoCatalogServerClient.fetchPagesStreaming(conn, "/music/tracks") { records ->
+                val rows = records.mapNotNull { record ->
+                    SamoCatalogConverters.musicTrackToAlbumTrack(
+                        sourceId = sourceId,
+                        serverUrl = conn.url,
+                        streamToken = streamToken,
+                        source = source,
+                        track = record,
+                        syncedAt = syncedAt,
+                    )
                 }
-                count += sorted.size.toLong()
+                SamoCatalogWriter.withTransactionImmediate(context) { db ->
+                    SamoCatalogWriter.upsertTracks(db, rows)
+                }
+                totalTracks += rows.size.toLong()
             }
-            totalTracks = count
         } catch (error: Throwable) {
             errors.add("tracks: ${error.message ?: error::class.java.simpleName}")
         }
+        progress(context, sourceId, totalItems, totalTracks, 0)
 
-        // 3. Prune anything that wasn't touched this pass. SAFE in the full
-        // path because every server-side row was just walked above.
-        SamoCatalogWriter.withTransactionImmediate(context) { db ->
-            SamoCatalogWriter.pruneSource(db, sourceId, syncedAt)
+        // (No FTS writes here: catalog_search is JS-owned — the platform
+        // SQLite this connection runs on has no fts5 module. The JS indexer
+        // derives search rows from the item/track tables after each sync.)
+
+        // 3. Detail crawls for every container entity.
+        val crawlTargets = mutableListOf<DetailTarget>()
+        for (kind in listOf("artist", "playlist", "audiobook", "podcast")) {
+            for (id in itemIdsByType[kind] ?: emptyList()) {
+                crawlTargets.add(DetailTarget(kind, id))
+            }
+        }
+        val details = crawlDetails(context, conn, sourceId, syncedAt, crawlTargets, errors) {
+            progress(context, sourceId, totalItems, totalTracks, it)
         }
 
-        return Counts(totalItems, totalTracks, errors)
+        return Counts(totalItems, totalTracks, details, errors)
     }
 
     /**
-     * Incremental delta: per-variant filtered by `updatedSince`, then
-     * manifest-based deletion reconcile. Same shape as the JS runDeltaSamoSync
-     * but with no detail-crawl side-trip.
+     * Incremental delta: per-variant filtered by `updatedSince`, targeted
+     * detail re-crawls, FTS refresh for changed rows, then manifest-based
+     * deletion reconcile across items, tracks, details, and search.
      */
     private fun runDelta(
         context: Context,
@@ -257,91 +347,112 @@ internal object SamoCatalogSync {
         syncedAt: Long,
         watermark: String,
         manifest: JSONObject,
+        crawlAllPodcasts: Boolean,
     ): Counts {
         val sourceId = source.optString("id")
         val errors = mutableListOf<String>()
         var totalItems = 0L
         var totalTracks = 0L
 
-        // Track which IDs we upserted this pass so we don't reconcile them
-        // away (the manifest is a snapshot taken AT MOST as recently as our
-        // delta call, so a mid-sync upsert could be absent from it).
         val justUpsertedByVariant = HashMap<String, HashSet<String>>()
 
         for (variant in COLLECTION_VARIANTS) {
             try {
-                val records = SamoCatalogServerClient.fetchAllPages(
+                SamoCatalogServerClient.fetchPagesStreaming(
                     conn,
                     variant.path,
                     updatedSince = watermark,
-                )
-                val rows = records.mapNotNull { record ->
-                    convertToItem(variant.catalogType, sourceId, conn.url, streamToken, source, record, syncedAt)
+                ) { records ->
+                    val rows = records.mapNotNull { record ->
+                        convertToItem(variant.catalogType, sourceId, conn.url, streamToken, source, record, syncedAt)
+                    }
+                    SamoCatalogWriter.withTransactionImmediate(context) { db ->
+                        SamoCatalogWriter.upsertItems(db, rows)
+                    }
+                    justUpsertedByVariant.getOrPut(variant.catalogType) { HashSet() }
+                        .addAll(rows.map { it.id })
+                    totalItems += rows.size.toLong()
                 }
-                SamoCatalogWriter.withTransactionImmediate(context) { db ->
-                    SamoCatalogWriter.upsertItems(db, rows)
-                }
-                justUpsertedByVariant.getOrPut(variant.catalogType) { HashSet() }
-                    .addAll(rows.map { it.id })
-                totalItems += rows.size.toLong()
             } catch (error: Throwable) {
                 errors.add("delta ${variant.catalogType}: ${error.message ?: error::class.java.simpleName}")
             }
         }
 
-        // Changed tracks (updatedSince).
+        // Changed tracks (updatedSince), streamed.
         val justUpsertedTrackIds = HashSet<String>()
+        val changedTrackArtistIds = HashSet<String>()
         try {
-            val records = SamoCatalogServerClient.fetchAllPages(
+            SamoCatalogServerClient.fetchPagesStreaming(
                 conn,
                 "/music/tracks",
                 updatedSince = watermark,
-            )
-            val grouped = HashMap<String, MutableList<SamoCatalogConverters.TrackBinding>>()
-            for (record in records) {
-                val binding = SamoCatalogConverters.musicTrackToAlbumTrack(
-                    sourceId, conn.url, streamToken, source, record, syncedAt,
-                ) ?: continue
-                grouped.getOrPut(binding.containerId) { mutableListOf() }.add(binding)
-                justUpsertedTrackIds.add(binding.trackId)
-            }
-            var count = 0L
-            for ((_, tracks) in grouped) {
-                val sorted = tracks.sortedWith(
-                    compareBy({ it.discNo ?: 1L }, { it.trackNo ?: 0L }),
-                )
-                SamoCatalogWriter.withTransactionImmediate(context) { db ->
-                    SamoCatalogWriter.upsertTracks(db, sorted)
+            ) { records ->
+                val rows = records.mapNotNull { record ->
+                    SamoCatalogConverters.musicTrackToAlbumTrack(
+                        sourceId, conn.url, streamToken, source, record, syncedAt,
+                    )
                 }
-                count += sorted.size.toLong()
+                SamoCatalogWriter.withTransactionImmediate(context) { db ->
+                    SamoCatalogWriter.upsertTracks(db, rows)
+                }
+                for (row in rows) {
+                    justUpsertedTrackIds.add(row.trackId)
+                    row.artistId?.let { changedTrackArtistIds.add(it) }
+                }
+                totalTracks += rows.size.toLong()
             }
-            totalTracks = count
         } catch (error: Throwable) {
             errors.add("delta tracks: ${error.message ?: error::class.java.simpleName}")
         }
+        progress(context, sourceId, totalItems, totalTracks, 0)
 
-        // Manifest-based deletion reconcile.
+        // Targeted detail re-crawls:
+        //  - artists whose row changed OR that own a changed track (top-tracks
+        //    style children are artist-detail data);
+        //  - playlists / audiobooks whose row changed (edits bump the row);
+        //  - podcasts whose row changed, plus ALL podcasts when the manifest's
+        //    episode count moved (a new episode does not necessarily bump the
+        //    show row — the old engine re-crawled every show on every delta).
+        val crawlTargets = mutableListOf<DetailTarget>()
+        val artistTargets = HashSet(justUpsertedByVariant["artist"] ?: emptySet())
+        artistTargets.addAll(changedTrackArtistIds)
+        artistTargets.forEach { crawlTargets.add(DetailTarget("artist", it)) }
+        (justUpsertedByVariant["playlist"] ?: emptySet()).forEach {
+            crawlTargets.add(DetailTarget("playlist", it))
+        }
+        (justUpsertedByVariant["audiobook"] ?: emptySet()).forEach {
+            crawlTargets.add(DetailTarget("audiobook", it))
+        }
+        val podcastTargets = HashSet(justUpsertedByVariant["podcast"] ?: emptySet())
+        if (crawlAllPodcasts) {
+            SamoCatalogWriter.withTransactionImmediate(context) { db ->
+                podcastTargets.addAll(SamoCatalogWriter.getItemIdsByType(db, sourceId, "podcast"))
+            }
+        }
+        podcastTargets.forEach { crawlTargets.add(DetailTarget("podcast", it)) }
+
+        val details = crawlDetails(context, conn, sourceId, syncedAt, crawlTargets, errors) {
+            progress(context, sourceId, totalItems, totalTracks, it)
+        }
+
+        // Manifest-based deletion reconcile across every table.
         val manifestIds = manifest.optJSONObject("ids") ?: JSONObject()
         SamoCatalogWriter.withTransactionImmediate(context) { db ->
             for (variant in COLLECTION_VARIANTS) {
-                val serverSet = jsonStringArrayToSet(manifestIds.optJSONArray(pluralOf(variant.manifestKey)))
+                val serverSet = jsonStringArrayToSet(manifestIds.optJSONArray(variant.manifestKey))
                 val justUpserted = justUpsertedByVariant[variant.catalogType] ?: emptySet()
                 val localIds = SamoCatalogWriter.getItemIdsByType(db, sourceId, variant.catalogType)
                 val removed = localIds.filter { it !in serverSet && it !in justUpserted }
                 if (removed.isNotEmpty()) {
                     SamoCatalogWriter.deleteItemsByIds(db, sourceId, variant.catalogType, removed)
                     if (variant.catalogType == "album") {
-                        // Album owns its tracks — drop them along with the
-                        // album rows so a re-add of the same ID later gets a
-                        // clean track list.
-                        SamoCatalogWriter.deleteTracksByTrackIds(
-                            db, sourceId, removed, listOf("album"),
-                        )
+                        SamoCatalogWriter.deleteTracksByTrackIds(db, sourceId, removed, listOf("album"))
+                    } else {
+                        SamoCatalogWriter.deleteDetailsByEntityIds(db, sourceId, variant.catalogType, removed)
                     }
                 }
             }
 
-            // Deleted music tracks (in catalog but not in manifest).
             val musicContainers = listOf("album")
             val serverTracks = jsonStringArrayToSet(manifestIds.optJSONArray("tracks"))
             val localTrackIds = SamoCatalogWriter.getDistinctTrackIds(db, sourceId, musicContainers)
@@ -351,7 +462,148 @@ internal object SamoCatalogSync {
             }
         }
 
-        return Counts(totalItems, totalTracks, errors)
+        return Counts(totalItems, totalTracks, details, errors)
+    }
+
+    // -----------------------------------------------------------------------
+    // Detail crawls
+    // -----------------------------------------------------------------------
+
+    private data class DetailTarget(val kind: String, val id: String)
+
+    /**
+     * Fetch raw detail bundles with bounded concurrency and store them under
+     * the `$samoRawDetail` envelope the JS read-time mapper understands.
+     * Writes are serialized per batch so transactions never overlap.
+     */
+    private fun crawlDetails(
+        context: Context,
+        conn: SamoAuthMirror.Connection,
+        sourceId: String,
+        syncedAt: Long,
+        targets: List<DetailTarget>,
+        errors: MutableList<String>,
+        onProgress: (Long) -> Unit,
+    ): Long {
+        if (targets.isEmpty()) return 0L
+        val pool = Executors.newFixedThreadPool(DETAIL_FETCH_CONCURRENCY)
+        var stored = 0L
+        try {
+            for (batch in targets.chunked(DETAIL_FETCH_CONCURRENCY * 4)) {
+                val tasks = batch.map { target ->
+                    Callable<Pair<DetailTarget, JSONObject?>> {
+                        try {
+                            target to fetchDetailBundle(conn, target)
+                        } catch (error: Throwable) {
+                            synchronized(errors) {
+                                errors.add("detail ${target.kind} ${target.id}: ${error.message ?: error::class.java.simpleName}")
+                            }
+                            target to null
+                        }
+                    }
+                }
+                val fetched = pool.invokeAll(tasks).mapNotNull { future ->
+                    val (target, bundle) = future.get()
+                    bundle?.let {
+                        SamoCatalogWriter.DetailBinding(
+                            sourceId = sourceId,
+                            type = target.kind,
+                            entityId = target.id,
+                            payload = it.toString(),
+                            syncedAt = syncedAt,
+                        )
+                    }
+                }
+                if (fetched.isNotEmpty()) {
+                    SamoCatalogWriter.withTransactionImmediate(context) { db ->
+                        SamoCatalogWriter.upsertDetails(db, fetched)
+                    }
+                    stored += fetched.size.toLong()
+                    onProgress(stored)
+                }
+            }
+        } finally {
+            pool.shutdown()
+        }
+        return stored
+    }
+
+    /** Endpoint shapes mirror the TS network loaders (loadSamo*Detail). */
+    private fun fetchDetailBundle(conn: SamoAuthMirror.Connection, target: DetailTarget): JSONObject {
+        val children = JSONObject()
+        val entity: JSONObject
+        when (target.kind) {
+            "artist" -> {
+                val encoded = SamoNativeStreamUrl.encodeSamoId(target.id)
+                entity = SamoCatalogServerClient.fetchObject(conn, "/music/artists/$encoded")
+                children.put(
+                    "albums",
+                    SamoCatalogServerClient.fetchRaw(conn, "/music/artists/$encoded/albums", mapOf("limit" to "200")),
+                )
+            }
+            "playlist" -> {
+                entity = SamoCatalogServerClient.fetchObject(conn, "/music/playlists/${target.id}")
+                children.put(
+                    "tracks",
+                    SamoCatalogServerClient.fetchRaw(conn, "/music/playlists/${target.id}/tracks", mapOf("limit" to "500")),
+                )
+            }
+            "audiobook" -> {
+                entity = SamoCatalogServerClient.fetchObject(conn, "/audiobooks/${target.id}")
+                // Bookmarks + sessions are user niceties — fetch best-effort,
+                // exactly like the TS loader's .catch(() => undefined).
+                runCatching {
+                    children.put("bookmarks", SamoCatalogServerClient.fetchRaw(conn, "/audiobooks/${target.id}/bookmarks", emptyMap()))
+                }
+                runCatching {
+                    children.put("sessions", SamoCatalogServerClient.fetchRaw(conn, "/audiobooks/${target.id}/sessions", mapOf("limit" to "25")))
+                }
+            }
+            "podcast" -> {
+                entity = SamoCatalogServerClient.fetchObject(conn, "/podcasts/shows/${target.id}")
+                children.put(
+                    "episodes",
+                    SamoCatalogServerClient.fetchRaw(conn, "/podcasts/shows/${target.id}/episodes", mapOf("limit" to "500")),
+                )
+            }
+            else -> throw IllegalArgumentException("unknown detail kind ${target.kind}")
+        }
+        return JSONObject()
+            .put("\$samoRawDetail", 1)
+            .put("kind", target.kind)
+            .put("entity", entity)
+            .put("children", children)
+    }
+
+    // -----------------------------------------------------------------------
+    // Completeness decision logic (ported from catalog-sync-completeness.ts;
+    // JUnit-locked in SamoCatalogSyncDecisionTest).
+    // -----------------------------------------------------------------------
+
+    fun manifestItemCount(manifest: JSONObject): Long {
+        val ids = manifest.optJSONObject("ids") ?: return 0L
+        var total = 0L
+        for (key in listOf("albums", "artists", "audiobooks", "playlists", "podcasts")) {
+            total += ids.optJSONArray(key)?.length()?.toLong() ?: 0L
+        }
+        return total
+    }
+
+    fun shouldBackfillMirror(localItems: Long, manifestItems: Long, reconciledItems: Long): Boolean =
+        localItems < manifestItems && manifestItems > reconciledItems
+
+    fun nextReconciledItemCount(hadErrors: Boolean, manifestItems: Long, priorReconciled: Long): Long =
+        if (hadErrors) priorReconciled else manifestItems
+
+    // -----------------------------------------------------------------------
+    // Internals
+    // -----------------------------------------------------------------------
+
+    private fun progress(context: Context, sourceId: String, items: Long, tracks: Long, details: Long) {
+        SamoCatalogWriter.withTransactionImmediate(context) { db ->
+            SamoCatalogWriter.setSyncProgress(db, sourceId, Triple(items, tracks, details))
+        }
+        SamoCatalogSyncEvents.emit(sourceId, "syncing", items, tracks, details, null)
     }
 
     private fun convertToItem(
@@ -391,13 +643,7 @@ internal object SamoCatalogSync {
         }
     }
 
-    /** album → albums, podcast → podcasts, etc. Matches the manifest's plural keys. */
-    private fun pluralOf(singular: String): String = when (singular) {
-        "audiobook" -> "audiobooks"
-        else -> "${singular}s"
-    }
-
-    private fun jsonStringArrayToSet(array: org.json.JSONArray?): Set<String> {
+    private fun jsonStringArrayToSet(array: JSONArray?): Set<String> {
         if (array == null) return emptySet()
         val out = HashSet<String>(array.length())
         for (i in 0 until array.length()) {
@@ -405,6 +651,23 @@ internal object SamoCatalogSync {
             if (s.isNotBlank()) out.add(s)
         }
         return out
+    }
+}
+
+/**
+ * Best-effort progress fan-out to JS. The module registers an emitter while a
+ * React context is alive; the background worker runs without one and simply
+ * logs — JS re-hydrates sync state from the table on the next foreground.
+ */
+internal object SamoCatalogSyncEvents {
+    @Volatile var emitter: ((sourceId: String, status: String, items: Long, tracks: Long, details: Long, error: String?) -> Unit)? = null
+
+    fun emit(sourceId: String, status: String, items: Long, tracks: Long, details: Long, error: String?) {
+        try {
+            emitter?.invoke(sourceId, status, items, tracks, details, error)
+        } catch (e: Throwable) {
+            Log.d("SamoCatalogSync", "progress emit dropped: ${e.message}")
+        }
     }
 }
 

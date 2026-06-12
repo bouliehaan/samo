@@ -34,8 +34,8 @@ class SamoCatalogSyncWorker(
             Log.i(
                 TAG,
                 "catalog sync (source=$source) ${summary.results.joinToString(" | ") {
-                    "${it.sourceId} items=${it.items} tracks=${it.tracks}" +
-                        (if (it.errors.isNotEmpty()) " errors=${it.errors.size}" else "")
+                    "${it.sourceId} items=${it.items} tracks=${it.tracks} details=${it.details}" +
+                        (if (it.errors.isNotEmpty()) " errors=${it.errors.joinToString("; ").take(300)}" else "")
                 }}",
             )
             Result.success()

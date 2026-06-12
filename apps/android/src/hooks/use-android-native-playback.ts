@@ -10,6 +10,7 @@ import {
     getAndroidPlaybackStatus,
     isAndroidNativePlaybackAvailable,
     playAndroidAudio,
+    playAndroidQueueIndex,
     seekAndroidAudio,
     shouldMirrorPlaybackQueueToNative,
     subscribeToAndroidAudioEvents,
@@ -18,7 +19,7 @@ import {
 } from '../services/audio-playback';
 import type { AbsProgressContext } from '../services/abs-progress';
 import { buildAbsProgressContextFromPlayable } from '../utils/abs-progress-math';
-import { useAppSessionState } from '../state/app-session';
+import { setAppSessionIsShuffled, useAppSessionSelector } from '../state/app-session';
 import {
     type AndroidPlaybackQueue,
     getPlaybackQueue,
@@ -34,7 +35,8 @@ import { buildRecoveredPlaybackItem } from '../utils/playback-recovery';
 import { reducePlaybackStateFromEvent } from '../utils/playback-reduce';
 import {
     getResumePositionSeconds,
-    refreshPlayableResumeFromServer,
+    mergePreparedQueueItem,
+    refreshPlayableResumeFromServerBounded,
     shouldAutoRecoverPlayback,
     withResumePosition,
 } from '../utils/playback-resume';
@@ -75,6 +77,12 @@ export interface AndroidNativePlaybackController {
         item: MobilePlayableAudio;
         sessionId: string;
     }>;
+    /**
+     * Step playback to another queue entry through the native queue primitive
+     * (the same one the lock screen uses). Returns false when native can't
+     * take it — the caller then falls back to a full playQueuedItem restart.
+     */
+    playQueueIndexNatively: (targetIndex: number) => Promise<boolean>;
     playQueuedItem: (
         item: MobilePlayableAudio,
         queueItems?: MobilePlayableAudio[],
@@ -85,12 +93,14 @@ export interface AndroidNativePlaybackController {
 }
 
 export function useAndroidNativePlayback(options: {
-    isFullPlayerOpen: boolean;
     lastPlayedItem: MobilePlayableAudio | null;
     serverConnections: ServerAuthenticationResult[];
 }): AndroidNativePlaybackController {
-    const { isFullPlayerOpen, lastPlayedItem, serverConnections } = options;
-    const { castState, setIsShuffled } = useAppSessionState();
+    const { lastPlayedItem, serverConnections } = options;
+    // Slice subscription: this hook only cares whether cast owns playback. The
+    // full session store changes on every recents/favorites write, which used
+    // to re-render this hook (and recreate its callbacks) constantly.
+    const castConnected = useAppSessionSelector((state) => state.castState.isConnected);
 
     const playbackStatus = useAndroidPlaybackState(selectAndroidPlaybackStatus);
     const absContextRef = useRef<AbsProgressContext | null>(null);
@@ -100,14 +110,20 @@ export function useAndroidNativePlayback(options: {
     const playbackSnapshotRef = useRef<null | { item: MobilePlayableAudio; sessionId: string }>(
         null,
     );
-    // Native auto-advance fires syncPlaybackFromNativeEvent from a [] useCallback
-    // closure, so we need a stable handle to the latest serverConnections list to
-    // rebuild ABS progress context for the new track without forcing every event
-    // subscription to recreate on auth-list changes.
+    // Live handles for values the playback callbacks need without being
+    // recreated on every auth/cast change. A recreated playQueuedItem used to
+    // cascade: advanceQueue → the audio-event subscription → a teardown +
+    // resubscribe on every server-health tick, with a window where native
+    // events were dropped. Reading through refs keeps every playback callback
+    // referentially stable for the life of the hook.
     const serverConnectionsRef = useRef<ServerAuthenticationResult[]>(serverConnections);
     useEffect(() => {
         serverConnectionsRef.current = serverConnections;
     }, [serverConnections]);
+    const castConnectedRef = useRef(castConnected);
+    useEffect(() => {
+        castConnectedRef.current = castConnected;
+    }, [castConnected]);
     // Sessions JS deliberately skipped away from. After we start the next track
     // (a new session), native can still emit a trailing status echo for the
     // just-left track on its OLD session; rejecting those stale echoes keeps the
@@ -384,28 +400,34 @@ export function useAndroidNativePlayback(options: {
             const playbackState = getAndroidPlaybackState();
             const explicitBookStart = playOptions?.bookStartSeconds;
             const skipResumeRefresh = playOptions?.skipResumeRefresh === true;
-            const baseItem =
-                explicitBookStart !== undefined && item.source === 'audiobook'
-                    ? item
-                    : skipResumeRefresh
-                      ? item
-                      : item.source === 'podcast' || item.source === 'audiobook'
-                        ? await refreshPlayableResumeFromServer(item, serverConnections)
-                        : item;
-            const resumeSeconds =
+
+            // ── Synchronous commit phase — NO awaits above the loading write. ──
+            //
+            // The tap must paint NOW. This block (session, snapshot, lock,
+            // queue, loading state) runs before any network wait, which buys
+            // two structural guarantees:
+            //  1. A tap always responds instantly, even when the server is
+            //     slow — the old order awaited a server progress read FIRST,
+            //     so a sick server made taps look completely dead.
+            //  2. The snapshot commit IS the request-generation guard: a newer
+            //     tap overwrites it synchronously, and every await below is
+            //     followed by an isCurrentPlaybackSession() check — a stale
+            //     tap's continuation aborts instead of stomping the user's
+            //     latest choice. Without this, every tap made during a slow
+            //     spell queued up and then REPLAYED in completion order (the
+            //     "everything I tried flashes through the screen" pile-up).
+            //
+            // The provisional start position is the item's own resume; the
+            // server overlay below may move it (same session) before play().
+            const provisionalResumeSeconds =
                 explicitBookStart !== undefined
                     ? 0
-                    : skipResumeRefresh
-                      ? (item.initialPositionSeconds ?? 0)
-                      : getResumePositionSeconds(baseItem, playbackState);
-            const itemToPlay = withResumePosition(baseItem, resumeSeconds);
-            const initialPositionMs =
-                resumeSeconds && resumeSeconds > 0 ? resumeSeconds * 1000 : 0;
-
-            absContextRef.current = buildAbsProgressContextFromPlayable(
-                itemToPlay,
-                serverConnections,
-            );
+                    : (item.initialPositionSeconds ??
+                      (skipResumeRefresh
+                          ? 0
+                          : (getResumePositionSeconds(item, playbackState) ?? 0)));
+            const provisionalPositionMs =
+                provisionalResumeSeconds > 0 ? provisionalResumeSeconds * 1000 : 0;
 
             const session = createPlaybackSession({
                 engine: 'android-native',
@@ -414,28 +436,23 @@ export function useAndroidNativePlayback(options: {
                 source: item.source,
             });
             if (playOptions?.shuffled !== undefined) {
-                setIsShuffled(playOptions.shuffled);
+                setAppSessionIsShuffled(playOptions.shuffled);
             }
-
-            const nativeItem = await preparePlaybackItemForNative(itemToPlay, serverConnections);
-            const currentQueueItem = playableQueueItems[nextQueueIndex];
-            const queueItemsForSession =
-                currentQueueItem &&
-                (currentQueueItem.url !== nativeItem.url ||
-                    currentQueueItem.castUrl !== nativeItem.castUrl ||
-                    currentQueueItem.artworkUrl !== nativeItem.artworkUrl)
-                    ? playableQueueItems.map((queueItem, index) =>
-                          index === nextQueueIndex ? nativeItem : queueItem,
-                      )
-                    : playableQueueItems;
 
             setPlaybackQueue({
                 index: nextQueueIndex,
-                items: queueItemsForSession,
+                items: playableQueueItems,
                 omitTrackRecentlyPlayed: playOptions?.omitTrackRecentlyPlayed,
                 samoPlaylistId: playOptions?.samoPlaylistId,
             });
-            syncAndroidNativePlaybackQueue(getPlaybackQueue(), serverConnections);
+            // Deliberately NO syncAndroidNativePlaybackQueue here: the play()
+            // payload below carries the full queue atomically. A pre-play sync
+            // made the native side reconcile the NEW queue against the OLD
+            // still-playing playlist (rewriting the live player and mutating
+            // the mirror's index) milliseconds before play() rebuilt
+            // everything anyway — a second writer racing the play command for
+            // zero benefit. Up-Next EDITS (enqueue/reorder/shuffle-toggle)
+            // still sync explicitly from their own handlers.
             const supersededSessionId = playbackSnapshotRef.current?.sessionId;
             if (supersededSessionId && supersededSessionId !== session.id) {
                 const retired = retiredSessionsRef.current;
@@ -446,13 +463,13 @@ export function useAndroidNativePlayback(options: {
                     retired.delete(oldest);
                 }
             }
-            playbackSnapshotRef.current = { item: nativeItem, sessionId: session.id };
+            playbackSnapshotRef.current = { item, sessionId: session.id };
             pendingItemSessionRef.current = session.id;
             playbackRecoveryAttemptRef.current = 0;
             playbackStartedAtRef.current = Date.now();
             setAndroidPlaybackState({
-                durationMs: getPlaybackItemDurationMs(nativeItem),
-                item: nativeItem,
+                durationMs: getPlaybackItemDurationMs(item),
+                item,
                 // Anchor the new session to its intended start. The reducer's
                 // pending-seek grace then HOLDS the playhead here and rejects
                 // any sample that lands far from it until native confirms the
@@ -464,11 +481,96 @@ export function useAndroidNativePlayback(options: {
                 // sticks" bug. Identity-agnostic: catches the poison whether the
                 // stale tick carries the old source id, the new one, or none.
                 pendingSeekAtMs: Date.now(),
-                pendingSeekTargetMs: initialPositionMs,
-                positionMs: initialPositionMs,
+                pendingSeekTargetMs: provisionalPositionMs,
+                positionMs: provisionalPositionMs,
                 sessionId: session.id,
                 status: 'loading',
             });
+            absContextRef.current = buildAbsProgressContextFromPlayable(
+                item,
+                serverConnectionsRef.current,
+            );
+            const isCommittedPlaybackSession = () =>
+                playbackSnapshotRef.current?.sessionId === session.id;
+
+            // ── Async phase — every await is followed by a session check. ──
+            const baseItem =
+                explicitBookStart !== undefined && item.source === 'audiobook'
+                    ? item
+                    : skipResumeRefresh
+                      ? item
+                      : item.source === 'podcast' || item.source === 'audiobook'
+                        ? await refreshPlayableResumeFromServerBounded(
+                              item,
+                              serverConnectionsRef.current,
+                          )
+                        : item;
+            if (!isCommittedPlaybackSession()) return;
+            const resumeSeconds =
+                explicitBookStart !== undefined
+                    ? 0
+                    : skipResumeRefresh
+                      ? (item.initialPositionSeconds ?? 0)
+                      : getResumePositionSeconds(baseItem, playbackState);
+            const itemToPlay = withResumePosition(baseItem, resumeSeconds);
+            const initialPositionMs =
+                resumeSeconds && resumeSeconds > 0 ? resumeSeconds * 1000 : 0;
+            absContextRef.current = buildAbsProgressContextFromPlayable(
+                itemToPlay,
+                serverConnectionsRef.current,
+            );
+
+            const nativeItem = await preparePlaybackItemForNative(
+                itemToPlay,
+                serverConnectionsRef.current,
+            );
+            if (!isCommittedPlaybackSession()) return;
+            const currentQueueItem = playableQueueItems[nextQueueIndex];
+            // The refreshed slot keeps its ORIGINAL resume semantics — the
+            // session's transient start position must not become the slot's
+            // permanent one (see mergePreparedQueueItem).
+            const queueItemsForSession =
+                currentQueueItem &&
+                (currentQueueItem.url !== nativeItem.url ||
+                    currentQueueItem.castUrl !== nativeItem.castUrl ||
+                    currentQueueItem.artworkUrl !== nativeItem.artworkUrl)
+                    ? playableQueueItems.map((queueItem, index) =>
+                          index === nextQueueIndex
+                              ? mergePreparedQueueItem(currentQueueItem, nativeItem)
+                              : queueItem,
+                      )
+                    : playableQueueItems;
+            if (queueItemsForSession !== playableQueueItems) {
+                setPlaybackQueue({
+                    index: nextQueueIndex,
+                    items: queueItemsForSession,
+                    omitTrackRecentlyPlayed: playOptions?.omitTrackRecentlyPlayed,
+                    samoPlaylistId: playOptions?.samoPlaylistId,
+                });
+            }
+
+            // Re-commit with the prepared item + the final (possibly server-
+            // refreshed) start position. Same session — the loading write
+            // above already owns the surface; this just settles the details.
+            playbackSnapshotRef.current = { item: nativeItem, sessionId: session.id };
+            setAndroidPlaybackState((current) =>
+                current.status === 'idle' || current.sessionId !== session.id
+                    ? current
+                    : {
+                          ...current,
+                          durationMs:
+                              getPlaybackItemDurationMs(nativeItem) ?? current.durationMs,
+                          item: nativeItem,
+                          ...(initialPositionMs !== provisionalPositionMs
+                              ? {
+                                    pendingSeekAtMs: Date.now(),
+                                    pendingSeekTargetMs: initialPositionMs,
+                                    positionMs: initialPositionMs,
+                                }
+                              : {}),
+                          status: 'loading',
+                      },
+            );
 
             const nativeQueue =
                 itemToPlay.source !== 'radio' &&
@@ -484,7 +586,7 @@ export function useAndroidNativePlayback(options: {
                 const isCurrentPlaybackSession = () =>
                     playbackSnapshotRef.current?.sessionId === session.id;
                 const deviceInfoPromise = getAndroidAudioDeviceInfo().catch(() => undefined);
-                const playable = castState.isConnected
+                const playable = castConnectedRef.current
                     ? nativeItem
                     : await resolveLocalPlayback(nativeItem);
                 if (!isCurrentPlaybackSession()) return;
@@ -493,7 +595,7 @@ export function useAndroidNativePlayback(options: {
                     session.id,
                     nativeItem,
                     nativeQueue,
-                    serverConnections,
+                    serverConnectionsRef.current,
                 );
                 if (!isCurrentPlaybackSession()) return;
 
@@ -564,39 +666,13 @@ export function useAndroidNativePlayback(options: {
                     };
                 });
 
-                // Pre-refresh the upcoming queue entry right after playback starts so
-                // auto-advance doesn't rely on an item that was prepared long ago.
-                const upcomingIndex = nextQueueIndex + 1;
-                const upcomingItem = queueItemsForSession[upcomingIndex];
-                if (upcomingItem) {
-                    void preparePlaybackItemForNative(upcomingItem, serverConnections)
-                        .then((preparedUpcoming) => {
-                            const queue = getPlaybackQueue();
-                            if (
-                                !queue ||
-                                queue.index !== nextQueueIndex ||
-                                queue.items[upcomingIndex]?.id !== upcomingItem.id
-                            ) {
-                                return;
-                            }
-                            if (
-                                preparedUpcoming.url === queue.items[upcomingIndex]?.url &&
-                                preparedUpcoming.castUrl === queue.items[upcomingIndex]?.castUrl &&
-                                preparedUpcoming.artworkUrl ===
-                                    queue.items[upcomingIndex]?.artworkUrl
-                            ) {
-                                return;
-                            }
-                            setPlaybackQueue({
-                                ...queue,
-                                items: queue.items.map((queueItem, index) =>
-                                    index === upcomingIndex ? preparedUpcoming : queueItem,
-                                ),
-                            });
-                            syncAndroidNativePlaybackQueue(getPlaybackQueue(), serverConnections);
-                        })
-                        .catch(() => undefined);
-                }
+                // (Removed) The post-play "pre-refresh the upcoming queue item"
+                // pass is gone. Advance-time freshness is native's job now —
+                // SamoResolvingDataSource re-mints music/podcast tokens as
+                // ExoPlayer opens each source, and the mirror-queue advance path
+                // refreshes per item via SamoNativeStreamUrl.refreshQueueItemAsync.
+                // The JS pass duplicated that work and re-serialized the ENTIRE
+                // queue over the bridge after every single play.
             } catch (error) {
                 if (playbackSnapshotRef.current?.sessionId !== session.id) return;
                 setAndroidPlaybackState({
@@ -609,7 +685,7 @@ export function useAndroidNativePlayback(options: {
                 });
             }
         },
-        [castState.isConnected, serverConnections, setIsShuffled],
+        [],
     );
 
     const handlePlayItem = useCallback(
@@ -622,6 +698,97 @@ export function useAndroidNativePlayback(options: {
             await playQueuedItem(item, queueItems, queueIndex, playOptions);
         },
         [playQueuedItem],
+    );
+
+    /**
+     * In-app Next/Prev/queue-tap through the SAME native primitive as the lock
+     * screen: an atomic step on the already-loaded Media3 playlist. No new
+     * session, no token prep, no stop()+clearMediaItems() teardown — which is
+     * why the lock-screen buttons never glitched while the in-app ones did.
+     *
+     * JS commits the target optimistically (item, queue index, playhead at the
+     * track start) under the SAME session, and arms the pending-item lock so a
+     * trailing tick from the outgoing track can't drag the UI back during the
+     * handoff. Native's transition event then confirms the same item — the
+     * exact path a lock-screen skip already takes.
+     *
+     * Returns false (with no state committed, or with the lock released) when
+     * the native queue can't take the command; the caller falls back to the
+     * full playQueuedItem restart.
+     */
+    const playQueueIndexNatively = useCallback(
+        async (targetIndex: number): Promise<boolean> => {
+            if (!isAndroidNativePlaybackAvailable()) {
+                return false;
+            }
+            // Cast playback is driven entirely from JS; the native queue
+            // primitive only steps the local player.
+            if (castConnectedRef.current) {
+                return false;
+            }
+
+            const queue = getPlaybackQueue();
+            const target = queue?.items[targetIndex];
+            const snapshot = playbackSnapshotRef.current;
+            const playbackState = getAndroidPlaybackState();
+            if (!queue || !target || !snapshot || playbackState.status === 'idle') {
+                return false;
+            }
+            // Re-tapping the playing row keeps its historical "restart with a
+            // fresh resume lookup" semantics via the playQueuedItem path.
+            if (targetIndex === queue.index || target.id === snapshot.item.id) {
+                return false;
+            }
+            if (target.source === 'radio' || !shouldMirrorPlaybackQueueToNative(queue)) {
+                return false;
+            }
+
+            // Optimistic commit — same session, new item. Music starts at 0;
+            // long-form starts at the resume the queue item was built with
+            // (identical to what the native transition handler applies).
+            const sessionId = snapshot.sessionId;
+            const startPositionMs =
+                target.source === 'music'
+                    ? 0
+                    : Math.max(0, target.initialPositionSeconds ?? 0) * 1000;
+            playbackSnapshotRef.current = { item: target, sessionId };
+            pendingItemSessionRef.current = sessionId;
+            absContextRef.current = buildAbsProgressContextFromPlayable(
+                target,
+                serverConnectionsRef.current,
+            );
+            setPlaybackQueue({ ...queue, index: targetIndex });
+            setAndroidPlaybackState((current) =>
+                current.status === 'idle'
+                    ? current
+                    : {
+                          ...current,
+                          durationMs: getPlaybackItemDurationMs(target),
+                          item: target,
+                          message: undefined,
+                          pendingSeekAtMs: Date.now(),
+                          pendingSeekTargetMs: startPositionMs,
+                          positionMs: startPositionMs,
+                          sessionId,
+                          status: 'buffering',
+                      },
+            );
+
+            try {
+                const event = await playAndroidQueueIndex(targetIndex, target.id);
+                if (event.handled) {
+                    return true;
+                }
+            } catch {
+                // Bridge failure — fall back below.
+            }
+
+            // Native declined: release the lock so events flow again and let
+            // the caller run the full restart path for the same target.
+            pendingItemSessionRef.current = null;
+            return false;
+        },
+        [],
     );
 
     const advanceQueue = useCallback(async () => {
@@ -751,6 +918,27 @@ export function useAndroidNativePlayback(options: {
                 return;
             }
 
+            // FAST PATH for the native 1Hz position ticker: a steady-state
+            // tick (same item, still playing, no pending commit) carries no
+            // transition information — skip the reconcile machinery and apply
+            // the position straight through the reducer. Keeps the per-second
+            // JS cost of playback near zero so navigation stays responsive
+            // while a song plays.
+            if (
+                event.status === 'playing' &&
+                event.source?.id === snapshot.item.id &&
+                pendingItemSessionRef.current === null &&
+                getAndroidPlaybackState().status === 'playing'
+            ) {
+                setAndroidPlaybackState((current) =>
+                    reducePlaybackStateFromEvent(current, event, snapshot, {
+                        minPositionDeltaMs: 250,
+                        preserveMessage: true,
+                    }),
+                );
+                return;
+            }
+
             syncPlaybackFromNativeEvent(event);
 
             if (event.status === 'playing') {
@@ -767,30 +955,22 @@ export function useAndroidNativePlayback(options: {
 
             if (event.status === 'ended') {
                 const queue = getPlaybackQueue();
-                const nativeOwnsFileAdvance =
-                    queue != null && shouldMirrorPlaybackQueueToNative(queue);
                 const hasQueuedNext = queue != null && queue.index + 1 < queue.items.length;
 
-                // Music opts out of the native mirror (see
-                // `shouldMirrorPlaybackQueueToNative`); when JS owns the
-                // within-queue advance and we have a next track, drive it
-                // here. Native still fires SamoAudioNavigationRequest as a
-                // backup but the 'ended' event arrives sooner, so handling
-                // here cuts the song-to-song gap noticeably.
-                if (
-                    !nativeOwnsFileAdvance &&
-                    hasQueuedNext &&
-                    snapshot.item.source === 'music'
-                ) {
-                    void advanceQueue();
-                } else if (!hasQueuedNext &&
+                // Within-queue advancement is owned natively for every
+                // mirrored queue (music plays as a full Media3 playlist;
+                // podcast / multi-file audiobook / mixed advance via
+                // SamoAudioEngine.requestQueueAdvanceFromEnded). The JS-side
+                // backstop for a failed native advance is the
+                // SamoAudioNavigationRequest subscription below — not this
+                // handler.
+                if (!hasQueuedNext &&
                     (snapshot.item.source === 'audiobook' ||
                         snapshot.item.source === 'podcast')
                 ) {
                     // End of the queue on a long-form item: step to the next
                     // episode/chapter beyond the queue via the registered
-                    // handler. Within-queue advancement for the long-form
-                    // sources is owned natively (SamoAudioEngine.requestQueueAdvanceFromEnded).
+                    // handler.
                     void navigateRef.current?.(1);
                 }
             }
@@ -853,24 +1033,29 @@ export function useAndroidNativePlayback(options: {
         });
 
         return () => subscription.remove();
-    }, [
-        advanceQueue,
-        playQueuedItem,
-        serverConnections,
-        shouldAcceptPlaybackEvent,
-        syncPlaybackFromNativeEvent,
-    ]);
+    }, [advanceQueue, playQueuedItem, shouldAcceptPlaybackEvent, syncPlaybackFromNativeEvent]);
 
     useEffect(() => {
         const subscription = subscribeToAndroidNavigationRequests((event) => {
+            // A navigation request is a statement about the session it was
+            // born under ("this session's queue can't advance natively"). If
+            // the user has since committed a NEW session, the request is
+            // stale — consuming it against the fresh queue advanced it off
+            // its first track (the shuffle-skips-song-1 race).
+            if (
+                event.sessionId &&
+                playbackSnapshotRef.current?.sessionId !== event.sessionId
+            ) {
+                return;
+            }
             const direction = event.direction === -1 ? -1 : 1;
             // Native (SamoAudioEngine.tryNavigateNativeQueue) already tried to
-            // step within the mirrored queue before emitting this event. But
-            // music currently opts out of the mirror (see
-            // `shouldMirrorPlaybackQueueToNative`), so for music the within-queue
-            // advance is JS's job — handle it here before falling through to
-            // `navigateRef.current?.(direction)`, which is the "jump out of the
-            // current queue" path (next episode, next chapter, etc.).
+            // step within the mirrored queue before emitting this event — by
+            // the time JS hears it, native genuinely couldn't advance (queue
+            // mirror exhausted or out of sync). If the JS queue still has a
+            // next item, retry the advance from here with fresh auth before
+            // falling through to `navigateRef.current?.(direction)`, the
+            // "jump out of the current queue" path (next episode, chapter).
             if (direction === 1) {
                 const queue = getPlaybackQueue();
                 if (queue && queue.index + 1 < queue.items.length) {
@@ -883,38 +1068,13 @@ export function useAndroidNativePlayback(options: {
         return () => subscription.remove();
     }, [advanceQueue]);
 
-    useEffect(() => {
-        if (playbackStatus === 'idle' || !isAndroidNativePlaybackAvailable()) {
-            return;
-        }
-
-        // Position-ticker only — keeps the seek bar advancing in the UI when
-        // the engine isn't emitting a state event. Progress sync writes are
-        // now owned by the foreground service (SamoProgressSync.kt), so this
-        // poll no longer needs to be alive in the background or at high
-        // frequency just to land the next server PATCH.
-        const intervalMs = isFullPlayerOpen ? 1000 : 2000;
-        const interval = setInterval(() => {
-            void getAndroidPlaybackStatus()
-                .then((event) => {
-                    const snapshot = playbackSnapshotRef.current;
-
-                    if (!shouldAcceptPlaybackEvent(event, snapshot) || !snapshot) {
-                        return;
-                    }
-
-                    setAndroidPlaybackState((current) =>
-                        reducePlaybackStateFromEvent(current, event, playbackSnapshotRef.current, {
-                            minPositionDeltaMs: 250,
-                            preserveMessage: true,
-                        }),
-                    );
-                })
-                .catch(() => undefined);
-        }, intervalMs);
-
-        return () => clearInterval(interval);
-    }, [isFullPlayerOpen, playbackStatus, shouldAcceptPlaybackEvent]);
+    // (Removed) The 1-2s JS getStatusMap position POLL is gone. The native
+    // engine pushes a SamoAudioPlaybackState event every second while the
+    // local player is playing and the app is foregrounded (SamoAudioEngine's
+    // position ticker), and the Cast SDK's ProgressListener does the same for
+    // cast sessions — so the seek bar advances off the SAME event stream as
+    // every other state change. Native is the source of truth; it pushes, JS
+    // never asks.
 
     useEffect(() => {
         setDownloadsPlaybackActive(playbackStatus !== 'idle');
@@ -952,6 +1112,7 @@ export function useAndroidNativePlayback(options: {
         handlePlayItem,
         hydrateNativePlaybackState,
         playbackSnapshotRef,
+        playQueueIndexNatively,
         playQueuedItem,
         registerNavigatePlayback,
     };

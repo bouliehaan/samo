@@ -61,7 +61,10 @@ export const withRequestTimeout = (
     };
 };
 
-export const getFetch = (fetcher?: SamoFetch): SamoFetch => {
+export const getFetch = (
+    fetcher?: SamoFetch,
+    timeoutMs = DEFAULT_SAMO_REQUEST_TIMEOUT_MS,
+): SamoFetch => {
     const globalFetch = (globalThis as { fetch?: SamoFetch }).fetch;
     const resolvedFetch = fetcher ?? globalFetch?.bind(globalThis);
 
@@ -69,7 +72,7 @@ export const getFetch = (fetcher?: SamoFetch): SamoFetch => {
         throw new Error('Fetch is not available');
     }
 
-    return withRequestTimeout(resolvedFetch);
+    return withRequestTimeout(resolvedFetch, timeoutMs);
 };
 
 export const normalizeBaseUrl = (url: string | null | undefined) =>

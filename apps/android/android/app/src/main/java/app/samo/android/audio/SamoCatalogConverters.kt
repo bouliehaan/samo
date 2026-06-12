@@ -12,10 +12,11 @@ import org.json.JSONObject
  * exactly so JS-written and Kotlin-written rows are indistinguishable to
  * downstream readers.
  *
- * Phase 5 v0 covers ALBUM / ARTIST / AUDIOBOOK / PLAYLIST / PODCAST items
- * plus music-track rows grouped under the `album` container. Per-entity
- * detail crawls (catalog_detail) + FTS indexing stay JS-side for now; the
- * foreground `syncSamoCatalog` continues to handle those.
+ * Covers ALBUM / ARTIST / AUDIOBOOK / PLAYLIST / PODCAST items plus
+ * music-track rows grouped under the `album` container. Detail payloads are
+ * stored as raw `$samoRawDetail` envelopes by the orchestrator (no conversion
+ * needed). catalog_search is JS-owned (platform SQLite has no fts5) — no
+ * search projections live here.
  */
 internal object SamoCatalogConverters {
 
@@ -391,24 +392,15 @@ internal object SamoCatalogConverters {
         // catalog-repository.ts.
         val position = discNo * 100_000L + trackNo
 
-        // Payload shape mirrors MobileMediaTrack — the on-device track
-        // payload the JS reader hydrates. We deliberately omit fields we
-        // don't have at list time (e.g. playback metadata that detail crawls
-        // would fill in).
+        // Payload = the RAW server track JSON in a `$samoRawTrack` envelope.
+        // The JS reader hydrates it through the ONE canonical core mapper
+        // (samoTrackToMediaTrack), which builds the full view model including
+        // `playback` (stream URL, quality, mime). The previous slim payload
+        // omitted playback — a coexistence-era assumption that sent every
+        // mirror-served album tap down the legacy ABS fallback (405).
         val payload = JSONObject()
-            .putNotNull("album", albumTitle)
-            .put("albumId", albumId)
-            .putNotNull("artist", artists)
-            .putNotNull("artistId", primaryArtistId)
-            .putNotNull("artworkImageId", artworkImageId)
-            .putNotNull("durationSeconds", durationSeconds)
-            .put("id", id)
-            .putNotNull("subtitle", artists)
-            .put("title", title)
-            .also {
-                if (discNo > 0L) it.put("discNumber", discNo)
-                if (trackNo > 0L) it.put("trackNumber", trackNo)
-            }
+            .put("\u0024samoRawTrack", 1)
+            .put("track", track)
 
         return TrackBinding(
             sourceId = sourceId,

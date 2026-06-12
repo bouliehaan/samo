@@ -117,6 +117,10 @@ interface SamoAudioNativeModule {
             sessionId: string;
         },
     ) => Promise<AndroidNativePlaybackEvent>;
+    playQueueIndex: (
+        index: number,
+        expectedMediaId: string | null,
+    ) => Promise<AndroidNativePlaybackEvent & { handled?: boolean }>;
     removeListeners: (count: number) => void;
     resume: () => Promise<AndroidNativePlaybackEvent>;
     seekTo: (positionMs: number) => Promise<AndroidNativePlaybackEvent>;
@@ -347,6 +351,30 @@ export const seekAndroidAudio = async (positionMs: number) => {
     return samoAudio.seekTo(positionMs);
 };
 
+/**
+ * Step the native queue to [index] — the SAME primitive the lock screen and
+ * Bluetooth buttons use. On a loaded Media3 playlist this is an atomic
+ * `seekTo(index, 0)`: gapless, instant, no player teardown, no new session.
+ * Resolves `handled: false` when native can't take it (casting, no queue,
+ * unknown index) so the caller falls back to a full JS-driven play.
+ *
+ * `expectedMediaId` makes the item id the authority and the index a hint —
+ * native re-locates the target by id if the JS index is momentarily stale.
+ *
+ * Feature-detected: an older native binary without the method reports
+ * unhandled instead of crashing the JS caller.
+ */
+export const playAndroidQueueIndex = async (
+    index: number,
+    expectedMediaId: string | null,
+): Promise<AndroidNativePlaybackEvent & { handled?: boolean }> => {
+    if (!samoAudio || typeof samoAudio.playQueueIndex !== 'function') {
+        return { handled: false, status: 'idle' };
+    }
+
+    return samoAudio.playQueueIndex(index, expectedMediaId);
+};
+
 export const setAndroidSleepTimer = async (seconds: number) => {
     if (!samoAudio) {
         throw new Error('Native Android audio engine is not available');
@@ -441,6 +469,9 @@ export const subscribeToAndroidOutputRouteEvents = (
 export interface AndroidNavigationRequestEvent {
     /** -1 for previous, +1 for next. */
     direction: number;
+    /** The native session this request was born under; stale requests
+     *  (user already started a new context) must be dropped by consumers. */
+    sessionId?: string;
 }
 
 /**

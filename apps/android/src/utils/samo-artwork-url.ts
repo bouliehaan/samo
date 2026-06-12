@@ -36,6 +36,26 @@ const isSamoApiMediaUrl = (url: string): boolean => {
     }
 };
 
+/**
+ * True for a Samo `/api/v1/…` media URL that carries NO stream token. Such a
+ * URL 401s for any fetcher that can't attach the Bearer header — notably the
+ * native notification artwork loader. Callers should withhold the URL (or
+ * mint first) rather than hand it to a header-less consumer.
+ */
+export const isSamoMediaUrlMissingStreamToken = (url: string | undefined): boolean => {
+    if (!url) {
+        return false;
+    }
+    try {
+        const parsed = new URL(url);
+        return (
+            parsed.pathname.includes('/api/v1/') && !parsed.searchParams.has('stream_token')
+        );
+    } catch {
+        return false;
+    }
+};
+
 const sameHost = (left: string, right: string): boolean => {
     try {
         return new URL(left).host === new URL(right).host;

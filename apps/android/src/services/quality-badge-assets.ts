@@ -71,3 +71,17 @@ export const formatQualityProfile = (
     const khz = parseFloat((profile.sampleRate / 1000).toFixed(1));
     return `${profile.bitDepth}-bit / ${khz} kHz Lossless`;
 };
+
+/**
+ * Tighter variant of {@link formatQualityProfile} for the inline metadata
+ * marker on tiles and list rows — drops the trailing "Lossless" word so it
+ * reads "24-bit · 96 kHz" and survives next to a truncating subtitle. Qobuz
+ * shows the same bit-depth/sample-rate spec in its card and row metadata.
+ */
+export const formatQualityProfileCompact = (
+    profile: MobileQualityProfile | undefined,
+): null | string => {
+    if (!profile) return null;
+    const khz = parseFloat((profile.sampleRate / 1000).toFixed(1));
+    return `${profile.bitDepth}-bit · ${khz} kHz`;
+};

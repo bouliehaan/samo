@@ -1,5 +1,6 @@
 package app.samo.android.audio
 
+import com.facebook.react.bridge.LifecycleEventListener
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
@@ -8,8 +9,21 @@ import com.facebook.react.bridge.ReadableMap
 
 class SamoAudioModule(
   reactContext: ReactApplicationContext
-) : ReactContextBaseJavaModule(reactContext) {
+) : ReactContextBaseJavaModule(reactContext), LifecycleEventListener {
   private val engine = SamoAudioEngine(reactContext)
+
+  init {
+    // The engine's UI position ticker only runs while the host activity is in
+    // front — nothing reads the seek bar from the background, and the bridge
+    // shouldn't carry 1Hz events into a frozen JS world.
+    reactContext.addLifecycleEventListener(this)
+  }
+
+  override fun onHostResume() = engine.onHostForegroundChanged(true)
+
+  override fun onHostPause() = engine.onHostForegroundChanged(false)
+
+  override fun onHostDestroy() = engine.onHostForegroundChanged(false)
 
   override fun getName(): String = "SamoAudio"
 
@@ -24,6 +38,10 @@ class SamoAudioModule(
 
   @ReactMethod
   fun setPlaybackQueue(queue: ReadableMap, promise: Promise) = engine.setPlaybackQueue(queue, promise)
+
+  @ReactMethod
+  fun playQueueIndex(index: Double, expectedMediaId: String?, promise: Promise) =
+    engine.playQueueIndex(index.toInt(), expectedMediaId, promise)
 
   @ReactMethod
   fun pause(promise: Promise) = engine.pause(promise)

@@ -51,6 +51,11 @@ const HOME_FILTER_DEFINITIONS: Array<{ id: HomeFilter; label: string }> = [
     { id: 'radio', label: 'Radio' },
 ];
 
+// Recently Played is hidden entirely until there are at least this many
+// (deduped) items — no partial shelf and no header. Enforced on the main Home
+// shelf and mirrored in every filtered tab.
+const RECENTLY_PLAYED_MIN_ITEMS = 4;
+
 export const filterHomeDisplaySections = (
     sections: HomeDisplaySection[],
     filter: HomeFilter,
@@ -105,6 +110,12 @@ export const filterHomeDisplaySections = (
     const filterRecentsItems = (section: HomeDisplaySection) => {
         if (section.variant !== 'recents') return section;
         const filtered = section.items.filter((item) => itemBelongsTo(item, filter));
+        // The "Recently Played" shelf (key 'recents') is hidden entirely below
+        // the minimum — never a partial shelf. Other 'recents'-variant shelves
+        // (e.g. "Recently Added") keep their own behavior.
+        if (section.key === 'recents' && filtered.length < RECENTLY_PLAYED_MIN_ITEMS) {
+            return { ...section, items: [] };
+        }
         return { ...section, items: filtered };
     };
     const dropEmpty = (section: HomeDisplaySection) => section.items.length > 0;
@@ -531,7 +542,7 @@ export const getHomeDisplaySections = (
         seenAlbumCanonicalKeys,
     );
 
-    if (recentDisplayItems.length > 0) {
+    if (recentDisplayItems.length >= RECENTLY_PLAYED_MIN_ITEMS) {
         displaySections.push({
             items: recentDisplayItems.slice(0, RECENTLY_PLAYED_ROW_LIMIT),
             key: 'recents',

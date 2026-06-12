@@ -18,10 +18,11 @@ import java.net.UnknownHostException
  * the React bridge — these calls run from a CoroutineWorker against the
  * Kotlin-mirrored auth credentials.
  *
- * Pagination matches the server contract: each list endpoint returns
- * `{ data: [...], total, hasMore }`; we walk pages until `data` is empty or
- * `hasMore` is false. Failures classify into Network / Auth / Server so the
- * orchestrator can decide whether to retry, skip, or mark the source errored.
+ * Pagination matches the server contract (internal/catalog/types.go Page):
+ * each list endpoint returns `{ items: [...], total, limit, offset }`; we walk
+ * pages until a short page arrives or `offset + collected >= total`. Failures
+ * classify into Network / Auth / Server so the orchestrator can decide
+ * whether to retry, skip, or mark the source errored.
  */
 internal object SamoCatalogServerClient {
     private const val TAG = "SamoCatalogClient"
@@ -91,6 +92,25 @@ internal object SamoCatalogServerClient {
         extraQuery: Map<String, String> = emptyMap(),
     ): List<JSONObject> {
         val accumulator = mutableListOf<JSONObject>()
+        fetchPagesStreaming(auth, path, updatedSince, extraQuery) { page ->
+            accumulator.addAll(page)
+        }
+        return accumulator
+    }
+
+    /**
+     * Page-streaming fetch: [onPage] receives each page (≤200 rows) and the
+     * page is released before the next request. Large tables MUST use this —
+     * accumulating /music/tracks (14k+ rows of raw JSON) alongside the live
+     * app blew the 256MB heap on-device the first time the v4 full sync ran.
+     */
+    fun fetchPagesStreaming(
+        auth: SamoAuthMirror.Connection,
+        path: String,
+        updatedSince: String? = null,
+        extraQuery: Map<String, String> = emptyMap(),
+        onPage: (List<JSONObject>) -> Unit,
+    ) {
         var offset = 0
         var pageIndex = 0
         while (pageIndex < MAX_PAGES) {
@@ -100,24 +120,54 @@ internal object SamoCatalogServerClient {
                 if (!updatedSince.isNullOrBlank()) put("updatedSince", updatedSince)
             }
             val body = getJson(auth, path, query)
-            val data: JSONArray = when (body) {
-                is JSONObject -> body.optJSONArray("data") ?: JSONArray()
+            // `items` is the real key (Go Page struct). `data` kept as a
+            // fallback for any endpoint that predates the unified Page shape —
+            // the original client read ONLY `data`, which exists nowhere, so
+            // every page came back "empty" with no error and the mirror
+            // silently stayed blank. samoItemsOf on the JS side reads `items`;
+            // this now matches it.
+            val page: JSONArray = when (body) {
+                is JSONObject ->
+                    body.optJSONArray("items") ?: body.optJSONArray("data") ?: JSONArray()
                 is JSONArray -> body // a few endpoints return a bare array
                 else -> throw FetchException(FailureKind.Server, "$path: unexpected body shape")
             }
-            if (data.length() == 0) break
-            for (i in 0 until data.length()) {
-                val record = data.optJSONObject(i) ?: continue
-                accumulator.add(record)
+            if (page.length() == 0) break
+            val records = ArrayList<JSONObject>(page.length())
+            for (i in 0 until page.length()) {
+                val record = page.optJSONObject(i) ?: continue
+                records.add(record)
             }
-            val hasMore = (body as? JSONObject)?.optBoolean("hasMore", data.length() == PAGE_LIMIT)
-                ?: (data.length() == PAGE_LIMIT)
-            if (!hasMore) break
-            offset += data.length()
+            onPage(records)
+            offset += page.length()
+            // Termination: trust `total` when the body carries it; otherwise a
+            // short page means we're done. (No `hasMore` field exists.)
+            val total = (body as? JSONObject)?.optInt("total", -1) ?: -1
+            if (total in 0..offset) break
+            if (page.length() < PAGE_LIMIT) break
             pageIndex += 1
         }
-        return accumulator
     }
+
+    /** Single-entity GET that must return a JSON object (detail crawls). */
+    fun fetchObject(
+        auth: SamoAuthMirror.Connection,
+        path: String,
+        query: Map<String, String> = emptyMap(),
+    ): JSONObject =
+        getJson(auth, path, query) as? JSONObject
+            ?: throw FetchException(FailureKind.Server, "$path: expected object body")
+
+    /**
+     * Raw GET whose body is stored verbatim inside a detail bundle — object
+     * or array, whatever the endpoint returns. The JS read-time mapper
+     * unwraps it with the same `samoItemsOf` helper the network path uses.
+     */
+    fun fetchRaw(
+        auth: SamoAuthMirror.Connection,
+        path: String,
+        query: Map<String, String>,
+    ): Any = getJson(auth, path, query)
 
     // -----------------------------------------------------------------------
     // Internals

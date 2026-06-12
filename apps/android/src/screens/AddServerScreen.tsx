@@ -1,4 +1,3 @@
-import { ServerType } from '@samo/core/server';
 import { useState } from 'react';
 import {
     ActivityIndicator,
@@ -12,10 +11,6 @@ import { EyeGlyph } from '../components/Glyphs';
 import { type AndroidAuthState } from '../services/server-auth';
 import { styles } from '../theme/styles';
 import { colors } from '../theme/tokens';
-import {
-    ANDROID_SERVER_TYPE_LABELS,
-    ANDROID_SERVER_TYPES,
-} from '../utils/server-types';
 
 interface AddServerScreenProps {
     authState: AndroidAuthState;
@@ -23,12 +18,10 @@ interface AddServerScreenProps {
     onBack: () => void;
     onConnect: () => void;
     onPasswordChange: (value: string) => void;
-    onServerTypeChange: (value: ServerType) => void;
     onServerUrlBlur: () => void;
     onServerUrlChange: (value: string) => void;
     onUsernameChange: (value: string) => void;
     password: string;
-    serverType: ServerType;
     serverUrl: string;
     username: string;
 }
@@ -39,12 +32,10 @@ export const AddServerScreen = ({
     onBack,
     onConnect,
     onPasswordChange,
-    onServerTypeChange,
     onServerUrlBlur,
     onServerUrlChange,
     onUsernameChange,
     password,
-    serverType,
     serverUrl,
     username,
 }: AddServerScreenProps) => {
@@ -55,36 +46,7 @@ export const AddServerScreen = ({
             <Pressable accessibilityRole="button" onPress={onBack} style={styles.secondaryButton}>
                 <Text style={styles.secondaryButtonText}>Back to Servers</Text>
             </Pressable>
-            <Text style={styles.sectionTitle}>Add Server</Text>
-            <View style={styles.segmentedControl}>
-                {ANDROID_SERVER_TYPES.map((type) => {
-                    const isSelected = type === serverType;
-                    return (
-                        <Pressable
-                            accessibilityRole="button"
-                            key={type}
-                            onPress={() => onServerTypeChange(type)}
-                            style={[
-                                styles.segment,
-                                styles.segmentFlexible,
-                                isSelected && styles.segmentActive,
-                            ]}
-                        >
-                            <Text
-                                adjustsFontSizeToFit
-                                minimumFontScale={0.85}
-                                numberOfLines={1}
-                                style={[
-                                    styles.segmentLabel,
-                                    isSelected && styles.segmentLabelActive,
-                                ]}
-                            >
-                                {ANDROID_SERVER_TYPE_LABELS[type]}
-                            </Text>
-                        </Pressable>
-                    );
-                })}
-            </View>
+            <Text style={styles.sectionTitle}>Add Samo Server</Text>
             <TextInput
                 autoCapitalize="none"
                 autoCorrect={false}

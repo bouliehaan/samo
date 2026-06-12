@@ -5,15 +5,15 @@ import {
 } from '@samo/core/audio-quality';
 import {
     addMobileTracksToPlaylist,
-    appendAudiobookshelfAuthToken,
-    buildAudiobookshelfArtworkUrl,
     getDetailQualityProfile,
     getItemQualityProfile,
     getMobileContentSource,
     getPlaybackQualityProfile,
+    loadMobileDiscoveryForServers,
     loadMobileMediaDetail,
+    loadMobilePodcastFeedForServers,
+    loadMobileRadioForServers,
     loadSongRadioQueue,
-    mimeFromAudiobookshelfExt,
     type MobileContentSource,
     type MobileHomeItem,
     MobileHomeItemType,
@@ -189,8 +189,16 @@ import {
     updateAndroidNowPlayingMetadata,
 } from './src/services/audio-playback';
 import { prefetchCatalogArtwork } from './src/services/artwork-prefetch';
-import { loadCatalogHomeContentSync } from './src/services/catalog/catalog-reads';
-import { syncSamoCatalog } from './src/services/catalog/catalog-sync';
+import {
+    buildCatalogHomeContent,
+    type HomeLiveSections,
+} from './src/services/catalog/catalog-reads';
+import { reindexCatalogSearch } from './src/services/catalog/catalog-search-index';
+import {
+    installCatalogSyncEventBridge,
+    subscribeCatalogSyncCompleted,
+} from './src/services/catalog/catalog-sync-events';
+import { triggerCatalogSyncNow } from './src/services/headless-catalog-sync';
 import {
     type DownloadEntry,
     enqueueCollectionDownload,
@@ -207,16 +215,13 @@ import {
 import {
     type AndroidFullCollectionState,
     loadAndroidFullCollection,
-    loadAndroidFullCollectionLocal,
     loadAndroidFullCollectionLocalSync,
 } from './src/services/full-collection';
 import { triggerSelection } from './src/services/haptics';
 import {
     type AndroidHomeContentState,
-    loadAndroidHomeContent,
     reconcileHomeContent,
 } from './src/services/home-content';
-import { loadCachedHomeContent, saveCachedHomeContent } from './src/services/home-content-cache';
 import { buildHomeLoadKey, dedupeInFlight } from './src/services/in-flight-requests';
 import {
     loadPersistedLastPlayedItem,
@@ -239,7 +244,6 @@ import {
     loadAndroidMediaDetail,
     loadAndroidMediaTrackPlayback,
 } from './src/services/media-detail';
-import { loadCachedMediaDetail, saveCachedMediaDetail } from './src/services/media-detail-cache';
 import { loadOfflineModePreference, saveOfflineModePreference } from './src/services/offline-mode';
 import {
     getPersistedServerAuthKey,
@@ -375,7 +379,6 @@ import {
     looksLikeUrl,
 } from './src/utils/playback-time';
 import { getPlaylistTargetsForRoot } from './src/utils/playlist-targets';
-import { ANDROID_SERVER_TYPES } from './src/utils/server-types';
 import { getTabTitle } from './src/utils/tab-title';
 
 export default function App() {
@@ -432,13 +435,11 @@ export default function App() {
         password,
         serverConnections,
         serverHealthByKey,
-        serverType,
         serverUrl,
         setAuthState,
         setPassword,
         setServerConnections,
         setServerHealthByKey,
-        setServerType,
         setServerUrl,
         setUsername,
         username,
@@ -509,9 +510,10 @@ export default function App() {
         absContextRef,
         handlePlayItem,
         playbackSnapshotRef,
+        playQueueIndexNatively,
         playQueuedItem,
         registerNavigatePlayback,
-    } = useAndroidNativePlayback({ isFullPlayerOpen, lastPlayedItem, serverConnections });
+    } = useAndroidNativePlayback({ lastPlayedItem, serverConnections });
     const queue = usePlaybackQueue();
     useAndroidRadioMetadataSync(serverConnections);
     useAndroidCastSync();
@@ -653,11 +655,44 @@ export default function App() {
         homeContentState,
     ]);
 
+    // Server-curated Home sections (Discover / Podcast Feed / Radio) are the
+    // ONLY network-fetched Home data; every library section derives from the
+    // on-device mirror. The last live fetch is kept so mirror re-derives
+    // (sync completion, app foreground) don't drop those sections.
+    const lastHomeLiveSectionsRef = useRef<HomeLiveSections | null>(null);
+
+    /** Re-derive Home from the mirror + last-known live sections. Synchronous
+     *  and cheap (bounded SQLite reads), so it runs on connect, after every
+     *  sync, and whenever connections change. */
+    const refreshHomeFromMirror = useStableCallback(() => {
+        if (serverConnections.length === 0) {
+            return;
+        }
+        const content = buildCatalogHomeContent(
+            serverConnections,
+            lastHomeLiveSectionsRef.current,
+        );
+        // eslint-disable-next-line no-console -- mirror-derive health probe
+        console.log(
+            '[home] derive',
+            content
+                ? content.sections.map((s) => `${s.id}:${s.items.length}`).join(' ')
+                : 'EMPTY (no mirror rows visible)',
+        );
+        if (!content) {
+            return;
+        }
+        setHomeContentState((current) => ({
+            content:
+                current.status === 'loaded'
+                    ? reconcileHomeContent(current.content, content)
+                    : content,
+            status: 'loaded',
+        }));
+    });
+
     const loadHomeForConnections = useCallback(
-        async (
-            authentications: ServerAuthenticationResult[],
-            options?: { force?: boolean },
-        ) => {
+        async (authentications: ServerAuthenticationResult[]) => {
             const requestId = (homeLoadRequestId.current += 1);
 
             if (authentications.length === 0) {
@@ -665,93 +700,87 @@ export default function App() {
                 return;
             }
 
-            // Only show the spinner if we don't already have something on
-            // screen. If we hydrated from the persisted cache or already have a
-            // loaded state, keep that visible while we refetch — the user
-            // never sees a blank loading screen when we have stale data.
+            // Mirror paint FIRST — instant and authoritative for the library
+            // sections. A cold mirror (fresh install mid-first-sync) shows the
+            // loading state until the sync-completed event re-derives.
+            const mirrorContent = buildCatalogHomeContent(
+                authentications,
+                lastHomeLiveSectionsRef.current,
+            );
             setHomeContentState((current) => {
-                if (current.status === 'loaded') {
-                    return current;
+                if (mirrorContent) {
+                    return {
+                        content:
+                            current.status === 'loaded'
+                                ? reconcileHomeContent(current.content, mirrorContent)
+                                : mirrorContent,
+                        status: 'loaded',
+                    };
                 }
-                return { status: 'loading' };
+                return current.status === 'loaded' ? current : { status: 'loading' };
             });
 
-            // Seed Home SYNCHRONOUSLY from the on-device catalog so a cold launch
-            // renders on the first frame instead of a spinner. Never clobbers an
-            // already-loaded state — the persisted cache and the network refresh
-            // below both take precedence.
-            const homeSeed = loadCatalogHomeContentSync(authentications);
-            if (homeSeed) {
-                setHomeContentState((current) =>
-                    current.status === 'loaded'
-                        ? current
-                        : { content: homeSeed, status: 'loaded' },
-                );
-            }
-
-            const nextHomeContentState = await dedupeInFlight(
+            // Live sections — the one network trip on the Home path. Failures
+            // degrade to the last-known live sections (or none) instead of
+            // touching the library sections at all.
+            const live = await dedupeInFlight(
                 buildHomeLoadKey(authentications),
-                () => loadAndroidHomeContent(authentications),
+                async (): Promise<HomeLiveSections> => {
+                    const [discover, podcastFeed, radio] = await Promise.all([
+                        loadMobileDiscoveryForServers({ authentications }).catch(
+                            () => [],
+                        ),
+                        loadMobilePodcastFeedForServers({ authentications }).catch(
+                            () => [],
+                        ),
+                        loadMobileRadioForServers({ authentications }).catch(() => []),
+                    ]);
+                    return { discover, podcastFeed, radio };
+                },
             );
-
-            if (requestId === homeLoadRequestId.current) {
-                // A network result may only REPLACE what's on screen when it
-                // actually carries content. A transient failure (error) or an
-                // empty payload must NEVER clobber the cache/seed already
-                // showing — that was the "reopen → network request failed → no
-                // server-backed Home content" regression, where a failed refetch
-                // wiped perfectly good content off the screen and left the user
-                // staring at an empty state.
-                setHomeContentState((current) => {
-                    if (
-                        nextHomeContentState.status === 'loaded' &&
-                        nextHomeContentState.content.sections.length > 0
-                    ) {
-                        // Only re-render Home with fresh network data when the
-                        // user explicitly asked for it (pull-to-refresh / manual
-                        // sync) or there's nothing on screen yet. Otherwise Home
-                        // renders from the local cache/seed and STAYS PUT —
-                        // nothing pops in late, no flash. The fresh result is
-                        // still cached below, so the next open shows it instantly.
-                        if (options?.force || current.status !== 'loaded') {
-                            return current.status === 'loaded'
-                                ? {
-                                      content: reconcileHomeContent(
-                                          current.content,
-                                          nextHomeContentState.content,
-                                      ),
-                                      status: 'loaded',
-                                  }
-                                : nextHomeContentState;
-                        }
-                        return current;
-                    }
-                    // Keep good content visible; only surface an error/empty
-                    // state when there is nothing else to show.
-                    return current.status === 'loaded' ? current : nextHomeContentState;
-                });
-                if (
-                    nextHomeContentState.status === 'loaded' &&
-                    nextHomeContentState.content.sections.length > 0
-                ) {
-                    void saveCachedHomeContent(nextHomeContentState.content);
-                    const mergedRecents = await mergeServerRecentlyPlayedIntoRecents(
-                        await loadPersistedRecentContentItems(),
-                        authentications,
-                        nextHomeContentState.content,
-                    );
-                    setRecentContentItems((current) => {
-                        const next = reconcileRecentContentItemsIfChanged(
-                            mergedRecents,
-                            collectFreshAlbumItems(nextHomeContentState.content.sections),
-                        );
-                        if (next !== current) {
-                            void savePersistedRecentContentItems(next);
-                        }
-                        return next;
-                    });
-                }
+            if (requestId !== homeLoadRequestId.current) {
+                return;
             }
+            if (
+                live.discover.length > 0 ||
+                live.podcastFeed.length > 0 ||
+                live.radio.length > 0
+            ) {
+                lastHomeLiveSectionsRef.current = live;
+            }
+            const assembled = buildCatalogHomeContent(
+                authentications,
+                lastHomeLiveSectionsRef.current,
+            );
+            if (!assembled) {
+                return;
+            }
+            setHomeContentState((current) => ({
+                content:
+                    current.status === 'loaded'
+                        ? reconcileHomeContent(current.content, assembled)
+                        : assembled,
+                status: 'loaded',
+            }));
+
+            const mergedRecents = await mergeServerRecentlyPlayedIntoRecents(
+                await loadPersistedRecentContentItems(),
+                authentications,
+                assembled,
+            );
+            if (requestId !== homeLoadRequestId.current) {
+                return;
+            }
+            setRecentContentItems((current) => {
+                const next = reconcileRecentContentItemsIfChanged(
+                    mergedRecents,
+                    collectFreshAlbumItems(assembled.sections),
+                );
+                if (next !== current) {
+                    void savePersistedRecentContentItems(next);
+                }
+                return next;
+            });
         },
         [],
     );
@@ -763,24 +792,69 @@ export default function App() {
     // everything at once and stays put; pull-to-refresh is the only thing that
     // pulls fresh content.
 
-    // Warm the whole library's cover art from the existing catalog once on
-    // launch (already-cached covers are skipped cheaply), so simply reopening the
-    // app — not only a fresh sync — gets the all-local, no-per-tile-fetch feel.
-    // Deferred so a cold-cache bulk download doesn't contend with the initial
-    // home load + live refresh for the network (which was failing those requests
-    // and hiding the podcast feed).
-    const artworkWarmedRef = useRef(false);
+    // (Removed) The launch-time whole-library artwork walk is gone: a cold
+    // cache only happens right after a connect or an explicit cache clear, and
+    // the post-sync prefetch covers the former while per-tile remote loads
+    // cover the latter lazily. Walking the entire catalog 8s into EVERY launch
+    // contended with the boot network + JS thread for no steady-state benefit.
+
+    // JS event-loop health probe: a 2s heartbeat that logs whenever it fires
+    // late. "Tabs do nothing for 30 seconds while a song plays" is invisible
+    // in logcat without this; with it, the freeze window and its duration are
+    // named precisely, and the adjacent log lines name the culprit.
     useEffect(() => {
-        if (artworkWarmedRef.current || serverConnections.length === 0) {
-            return;
+        let expected = Date.now() + 2000;
+        const interval = setInterval(() => {
+            const now = Date.now();
+            const lagMs = now - expected;
+            if (lagMs > 1500) {
+                // eslint-disable-next-line no-console
+                console.warn(`[jank] JS thread blocked ~${Math.round(lagMs / 100) / 10}s`);
+            }
+            expected = now + 2000;
+        }, 2000);
+        return () => clearInterval(interval);
+    }, []);
+
+    // Kotlin → JS sync plumbing: progress events feed the Settings panel;
+    // every completed sync re-derives the mirror-backed surfaces (Home,
+    // Library) and warms the cover-art cache for whatever it pulled.
+    const serverConnectionsForSyncRef = useRef(serverConnections);
+    serverConnectionsForSyncRef.current = serverConnections;
+    useEffect(() => {
+        const uninstall = installCatalogSyncEventBridge();
+        const unsubscribe = subscribeCatalogSyncCompleted(() => {
+            refreshHomeFromMirror();
+            refreshLibraryFromMirror();
+            // catalog_search is JS-owned (fts5 only exists in expo-sqlite's
+            // bundled build) — derive it from the freshly-synced mirror.
+            void reindexCatalogSearch(serverConnectionsForSyncRef.current).then(() => {
+                refreshHomeFromMirror();
+            });
+            void prefetchCatalogArtwork(serverConnectionsForSyncRef.current);
+        });
+        return () => {
+            unsubscribe();
+            uninstall();
+        };
+    }, []);
+
+    // Cover syncs that ran while the app was closed (background WorkManager
+    // rounds emit no events into a dead JS world): one index top-up per boot.
+    useEffect(() => {
+        if (serverConnections.length > 0) {
+            void reindexCatalogSearch(serverConnections);
         }
-        artworkWarmedRef.current = true;
-        const connections = serverConnections;
-        const timer = setTimeout(() => {
-            void prefetchCatalogArtwork(connections);
-        }, 8000);
-        return () => clearTimeout(timer);
-    }, [serverConnections]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [serverConnections.length > 0]);
+
+    // Paint Home from the mirror the moment connections exist (cold launch,
+    // restore, connect) — no network on this path.
+    useEffect(() => {
+        if (serverConnections.length > 0) {
+            refreshHomeFromMirror();
+        }
+    }, [serverConnections, refreshHomeFromMirror]);
 
     // Resume any stranded downloads when the app returns to the foreground —
     // re-queues transfers the OS suspended in the background and pumps the queue
@@ -823,26 +897,9 @@ export default function App() {
 
             const requestId = (libraryFullCollectionFetchTokenRef.current += 1);
             void (async () => {
-                // Local-first: paint the catalog instantly, then refresh from
-                // the network so additions/edits self-heal.
-                const [localAlbums, localArtists] = await Promise.all([
-                    loadAndroidFullCollectionLocal(serverConnections, 'album'),
-                    loadAndroidFullCollectionLocal(serverConnections, 'artist'),
-                ]);
-                if (libraryFullCollectionFetchTokenRef.current !== requestId) {
-                    return;
-                }
-                if (localAlbums || localArtists) {
-                    setLibraryFullCollections({
-                        albums: localAlbums
-                            ? { items: localAlbums, status: 'loaded' }
-                            : { status: 'loading' },
-                        artists: localArtists
-                            ? { items: localArtists, status: 'loaded' }
-                            : { status: 'loading' },
-                    });
-                }
-
+                // The mirror IS the source of truth — one async read fills the
+                // complete lists; freshness arrives via refreshLibraryFromMirror
+                // when the sync engine reports completion.
                 const [albums, artists] = await Promise.all([
                     loadAndroidFullCollection(serverConnections, 'album'),
                     loadAndroidFullCollection(serverConnections, 'artist'),
@@ -857,7 +914,7 @@ export default function App() {
 
             // Synchronous first paint from the catalog so the Library grids mount
             // with content immediately — no loading state. The async block above
-            // then fills the complete lists and refreshes from the network.
+            // then fills the complete lists.
             const syncAlbums = loadAndroidFullCollectionLocalSync(serverConnections, 'album');
             const syncArtists = loadAndroidFullCollectionLocalSync(serverConnections, 'artist');
             return {
@@ -871,6 +928,33 @@ export default function App() {
                         : { status: 'loading' },
             };
         });
+    });
+
+    /** Re-derive the Library surfaces from the mirror after a sync — only the
+     *  ones the user has already opened (state present), never a cold mount. */
+    const refreshLibraryFromMirror = useStableCallback(() => {
+        if (serverConnections.length === 0) {
+            return;
+        }
+        setLibraryRelevantState((current) =>
+            current.status === 'loaded' || current.status === 'loading' ? current : current,
+        );
+        startLibraryRelevantLoad();
+        void (async () => {
+            const [albums, artists] = await Promise.all([
+                loadAndroidFullCollection(serverConnections, 'album'),
+                loadAndroidFullCollection(serverConnections, 'artist'),
+            ]);
+            setLibraryFullCollections((current) => {
+                if (
+                    current.albums.status !== 'loaded' &&
+                    current.artists.status !== 'loaded'
+                ) {
+                    return current;
+                }
+                return { albums, artists };
+            });
+        })();
     });
 
     const ensureLibraryFullCollections = startLibraryFullCollectionLoad;
@@ -1078,30 +1162,9 @@ export default function App() {
             }
         });
 
-        // Hydrate the Home tab from the persisted cache before the network
-        // call finishes so cold launch isn't a 3-second spinner. Only apply
-        // if nothing fresher has arrived in the meantime.
-        void loadCachedHomeContent().then((cached) => {
-            if (!isMounted || !cached) {
-                return;
-            }
-            setHomeContentState((current) => {
-                if (current.status === 'loaded') {
-                    return current;
-                }
-                return { content: cached.content, status: 'loaded' };
-            });
-            setRecentContentItems((current) => {
-                const next = reconcileRecentContentItemsIfChanged(
-                    current,
-                    collectFreshAlbumItems(cached.content.sections),
-                );
-                if (next !== current) {
-                    void savePersistedRecentContentItems(next);
-                }
-                return next;
-            });
-        });
+        // (Removed) The fs home-content JSON cache is gone — the SQLite mirror
+        // IS the persistent home cache, painted synchronously by
+        // refreshHomeFromMirror the moment connections restore.
 
         // In dev mode, Metro serves the brand logo over HTTP. Prefetch it
         // immediately on launch so it lands in Fresco's disk cache — that
@@ -1254,13 +1317,14 @@ export default function App() {
     } = useAndroidPlaybackControls({
         lastPlayedItem,
         playbackSnapshotRef,
+        playQueueIndexNatively,
         playQueuedItem,
         serverConnections,
     });
 
     useEffect(() => {
         registerNavigatePlayback(handleNavigatePlayback);
-    });
+    }, [handleNavigatePlayback, registerNavigatePlayback]);
 
     const handleSyncWithServer = useCallback(async (): Promise<{
         message?: string;
@@ -1284,16 +1348,13 @@ export default function App() {
             // invalidate; everything else trusts the cache.
             await ExpoImage.clearMemoryCache();
             // Explicit user sync — force Home to re-render with the fresh result.
-            await loadHomeForConnections(serverConnections, { force: true });
-            // Rebuild the on-device Samo library mirror in the background. This
-            // is the user's explicit "re-mirror everything" trigger, but a full
-            // crawl is heavy, so it's fire-and-forget: live progress shows in the
-            // Settings "Local library" panel while the button returns as soon as
-            // home content and pending playback are reconciled. No-ops for
-            // non-Samo servers, and concurrent taps join the in-flight sync.
-            void syncSamoCatalog(serverConnections).then(() =>
-                prefetchCatalogArtwork(serverConnections),
-            );
+            await loadHomeForConnections(serverConnections);
+            // Refresh the on-device mirror. The sync engine is Kotlin
+            // (SamoCatalogSync via WorkManager) — this just enqueues a one-shot
+            // run; live progress streams into the Settings "Local library"
+            // panel via SamoCatalogSyncState events, and the post-sync artwork
+            // prefetch fires from the sync-completed bridge.
+            void triggerCatalogSyncNow();
             // If there's a currently-active audiobook context, re-read its
             // progress from the server in case another client moved ahead.
             const absCtx = absContextRef.current;
@@ -1341,19 +1402,16 @@ export default function App() {
         }
         setIsRefreshingHome(true);
         // Keep the on-device library mirror fresh, but OFF the spinner's critical
-        // path. The full-catalog delta sync is what made pull-to-refresh feel
-        // slow — it has no business blocking the spinner. Fire it in the
-        // background (it powers the Library screen and the cold-start seed); the
-        // pull itself only needs the Home re-fetch below.
-        void syncSamoCatalog(serverConnections).catch(() => undefined);
+        // path — the Kotlin engine runs the delta in the background and the
+        // sync-completed bridge handles the artwork prefetch afterwards.
+        void triggerCatalogSyncNow();
         try {
-            // The spinner waits ONLY on the Home re-fetch — recently-added, the
-            // podcast feed, and discover all come back here in one shot. force:true
-            // so the fresh result actually replaces what's on screen (pull-to-
-            // refresh is the one place the user asked for new content). Capped so
-            // a slow network releases the spinner instead of hanging it.
+            // The spinner waits ONLY on the live-section re-fetch (discover /
+            // podcast feed / radio) — the library sections re-derive from the
+            // mirror when the sync above completes. Capped so a slow network
+            // releases the spinner instead of hanging it.
             await Promise.race([
-                loadHomeForConnections(serverConnections, { force: true }),
+                loadHomeForConnections(serverConnections),
                 new Promise<void>((resolve) => setTimeout(resolve, 10000)),
             ]);
         } catch {
@@ -1361,7 +1419,6 @@ export default function App() {
         } finally {
             setIsRefreshingHome(false);
         }
-        void prefetchCatalogArtwork(serverConnections);
     }, [loadHomeForConnections, serverConnections]);
 
     const handleOpenSettings = useCallback(() => {
@@ -1514,6 +1571,14 @@ export default function App() {
 
     const handleTabPress = useCallback(
         (tabId: SamoMobileTabId) => {
+            setVisitedTabs((current) => {
+                if (current.has(tabId)) {
+                    return current;
+                }
+                const next = new Set(current);
+                next.add(tabId);
+                return next;
+            });
             setActiveUtilityScreen((current) => (current === null ? current : null));
             if (mediaDetailState.status !== 'idle') {
                 closeMediaDetail();
@@ -1527,6 +1592,14 @@ export default function App() {
             setActiveTab,
             setActiveUtilityScreen,
         ],
+    );
+
+    // Lazy tab mounting: every tab used to render its full scene tree at boot
+    // (5 screens of tiles + lists mounted before the first frame). A scene now
+    // mounts on its first visit and STAYS mounted (the cheap opacity-toggle
+    // switching is unchanged) — boot renders Home alone.
+    const [visitedTabs, setVisitedTabs] = useState<Set<SamoMobileTabId>>(
+        () => new Set<SamoMobileTabId>(['home']),
     );
 
     const utilityScreenContent =
@@ -1564,12 +1637,10 @@ export default function App() {
                 onBack={() => setActiveUtilityScreen('manage-servers')}
                 onConnect={handleConnect}
                 onPasswordChange={setPassword}
-                onServerTypeChange={setServerType}
                 onServerUrlBlur={handleServerUrlBlur}
                 onServerUrlChange={setServerUrl}
                 onUsernameChange={setUsername}
                 password={password}
-                serverType={serverType}
                 serverUrl={serverUrl}
                 username={username}
             />
@@ -1673,6 +1744,7 @@ export default function App() {
                                             >
                                                 {SAMO_MOBILE_TABS.map((tab) => {
                                                     const isSceneActive = tab.id === activeTab;
+                                                    const isSceneMounted = visitedTabs.has(tab.id);
                                                     const sceneStyle = [
                                                         styles.tabScene,
                                                         isSceneActive
@@ -1690,7 +1762,9 @@ export default function App() {
                                                                 style={sceneStyle}
                                                             >
                                                                 <ErrorBoundary label={`tab-${tab.id}`}>
-                                                                    {renderTabSceneContent(tab.id)}
+                                                                    {isSceneMounted
+                                                                        ? renderTabSceneContent(tab.id)
+                                                                        : null}
                                                                 </ErrorBoundary>
                                                             </View>
                                                         );
@@ -1721,7 +1795,9 @@ export default function App() {
                                                             style={sceneStyle}
                                                         >
                                                             <ErrorBoundary label={`tab-${tab.id}`}>
-                                                                {renderTabSceneContent(tab.id)}
+                                                                {isSceneMounted
+                                                                    ? renderTabSceneContent(tab.id)
+                                                                    : null}
                                                             </ErrorBoundary>
                                                         </ScrollView>
                                                     );
@@ -1899,11 +1975,23 @@ export default function App() {
                                                     if (!item) {
                                                         return;
                                                     }
-                                                    void playQueuedItem(
-                                                        item,
-                                                        currentQueue.items,
-                                                        index,
-                                                    );
+                                                    void (async () => {
+                                                        // Same native queue step the
+                                                        // lock screen uses; full JS
+                                                        // restart only as fallback.
+                                                        if (
+                                                            await playQueueIndexNatively(
+                                                                index,
+                                                            )
+                                                        ) {
+                                                            return;
+                                                        }
+                                                        await playQueuedItem(
+                                                            item,
+                                                            currentQueue.items,
+                                                            index,
+                                                        );
+                                                    })();
                                                 }}
                                                 onPrevious={() => void handleNavigatePlayback(-1)}
                                                 onSkipBySeconds={(offsetSeconds) =>
@@ -1936,7 +2024,9 @@ export default function App() {
                                                     <Pressable
                                                         accessibilityRole="button"
                                                         key={tab.id}
-                                                        onPress={() => handleTabPress(tab.id)}
+                                                        // onPressIn (touch-down) for the snappiest
+                                                        // possible switch; onPress would dispatch the
+                                                        // same navigation a second time on release.
                                                         onPressIn={() => handleTabPress(tab.id)}
                                                         style={[
                                                             styles.tabButton,

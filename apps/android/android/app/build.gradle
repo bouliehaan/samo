@@ -221,8 +221,22 @@ dependencies {
         implementation jscFlavor
     }
 
+    // Bundled SQLite for the catalog mirror (requery fork of the AOSP sqlite
+    // bindings — API-compatible with android.database.sqlite, ships its own
+    // modern libsqlite3x.so). The PLATFORM SQLite must never open
+    // samo-catalog.db again: sharing one database file between two different
+    // SQLite builds (expo-sqlite's bundled lib + the OS lib) made hot-WAL
+    // handoffs fragile, and the platform DefaultDatabaseErrorHandler DELETED
+    // the file on a (mis)judged corruption — the 2026-06-12 vanishing-mirror
+    // incident. With this, both writers sit on modern bundled builds.
+    implementation("com.github.requery:sqlite-android:3.49.0")
+
     // Local unit tests for the Kotlin in audio/. Lives in src/test/java/...
     // and runs on the JVM — no emulator. We use it to lock the URL builder's
-    // byte-equivalence against JS encodeURIComponent.
+    // byte-equivalence against JS encodeURIComponent and the catalog-sync
+    // decision logic.
     testImplementation("junit:junit:4.13.2")
+    // android.jar stubs org.json on the JVM; the real implementation lets the
+    // sync decision tests build manifests without an emulator.
+    testImplementation("org.json:json:20240303")
 }

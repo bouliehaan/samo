@@ -1,5 +1,9 @@
 import {
     getMobileContentSource,
+    isSamoRawDetailBundle,
+    isSamoRawTrackEnvelope,
+    mapSamoMediaDetailFromRawBundle,
+    mapSamoMediaTrackFromRaw,
     MobileHomeItemType,
     MobileHomeSectionId,
     MobileMediaDetailType,
@@ -8,8 +12,16 @@ import {
     type MobileHomeSection,
     type MobileMediaDetail,
     type MobileMediaTrack,
+    type MobilePlayableAudio,
 } from '@samo/core/mobile';
-import { ServerType, type ServerAuthenticationResult } from '@samo/core/server';
+import {
+    findServerAuthenticationForSource,
+    getCachedSamoStreamToken,
+    getSamoMusicTrackStreamUrl,
+    getServerConnectionKey,
+    ServerType,
+    type ServerAuthenticationResult,
+} from '@samo/core/server';
 
 import { type AndroidRecentContentSourceItem } from '../recent-content';
 import {
@@ -50,6 +62,104 @@ const isSamoSource = (source: { type: ServerType } | undefined): boolean =>
     source?.type === ServerType.SAMO;
 
 /**
+ * Stored detail payload → view model. Kotlin-synced rows hold the RAW server
+ * responses (`$samoRawDetail` envelope) and hydrate through the same core
+ * mapper the network path uses; legacy rows (pre-Kotlin-ownership) are
+ * already-mapped MobileMediaDetail and pass through untouched. The cached
+ * stream token is best-effort — URLs built with a stale token are
+ * re-finalized by the play path before they reach the player.
+ */
+const hydrateDetailPayload = (
+    payload: unknown,
+    source: { id: string; type: ServerType; url?: string },
+    serverConnections: ServerAuthenticationResult[],
+): MobileMediaDetail | null => {
+    if (!payload || typeof payload !== 'object') {
+        return null;
+    }
+    if (isSamoRawDetailBundle(payload)) {
+        const auth = findServerAuthenticationForSource(serverConnections, source);
+        if (!auth || auth.type !== ServerType.SAMO) {
+            return null;
+        }
+        return mapSamoMediaDetailFromRawBundle(auth, getCachedSamoStreamToken(auth), payload);
+    }
+    return payload as MobileMediaDetail;
+};
+
+/**
+ * Best-effort playback synthesis for LEGACY mirror track rows (written before
+ * the raw-track envelope, without a `playback` object). Without one, a music
+ * tap used to fall through to the legacy ABS fallback — a POST the Samo
+ * server answers with 405. Quality is honest-unknown here; rows regain full
+ * fidelity (real container/mime from the file metadata) when the v4 sync
+ * rewrites them as raw envelopes.
+ */
+const synthesizeMusicPlayback = (
+    authentication: ServerAuthenticationResult,
+    track: MobileMediaTrack,
+): MobilePlayableAudio => ({
+    album: track.album,
+    albumId: track.albumId,
+    artist: track.artist,
+    artworkImageId: track.artworkImageId,
+    artworkUrl: track.artworkUrl,
+    contentSourceId: getServerConnectionKey(authentication),
+    durationSeconds: track.durationSeconds,
+    id: `${authentication.type}:${authentication.url}:music:${track.id}`,
+    quality: {
+        container: null,
+        deliveryKind: 'unknown',
+        losslessRequired: false,
+        serverTranscodeRequested: false,
+    },
+    source: 'music',
+    subtitle: track.subtitle,
+    title: track.title,
+    url: getSamoMusicTrackStreamUrl(authentication, track.id, {
+        streamToken: getCachedSamoStreamToken(authentication),
+    }),
+});
+
+/**
+ * Stored catalog_track payload → MobileMediaTrack with a usable `playback`.
+ * Three eras of rows coexist: `$samoRawTrack` envelopes (Kotlin v4+) hydrate
+ * through the canonical core mapper; legacy rows that already carry playback
+ * pass through; legacy rows without playback get a synthesized one.
+ */
+export const hydrateCatalogTrack = (
+    payload: unknown,
+    authentication: ServerAuthenticationResult,
+): MobileMediaTrack | null => {
+    if (!payload || typeof payload !== 'object') {
+        return null;
+    }
+    if (isSamoRawTrackEnvelope(payload)) {
+        return mapSamoMediaTrackFromRaw(
+            authentication,
+            getCachedSamoStreamToken(authentication),
+            payload,
+        );
+    }
+    const track = payload as MobileMediaTrack;
+    if (!track.id || !track.title) {
+        return null;
+    }
+    if (track.playback?.url && track.playback.quality) {
+        return track;
+    }
+    return { ...track, playback: synthesizeMusicPlayback(authentication, track) };
+};
+
+const hydrateCatalogTracks = (
+    payloads: unknown[],
+    authentication: ServerAuthenticationResult,
+): MobileMediaTrack[] =>
+    payloads
+        .map((payload) => hydrateCatalogTrack(payload, authentication))
+        .filter((track): track is MobileMediaTrack => track !== null);
+
+/**
  * Instant detail for a Samo item straight from the catalog. Albums are
  * reconstructed from the tapped item's metadata + the stored album track rows
  * (sync stores album *tracks* under getTracks but no album *detail* row); every
@@ -59,6 +169,7 @@ const isSamoSource = (source: { type: ServerType } | undefined): boolean =>
  */
 export const loadCatalogMediaDetail = async (
     item: AndroidRecentContentSourceItem,
+    serverConnections: ServerAuthenticationResult[],
 ): Promise<MobileMediaDetail | null> => {
     const source = item.source;
     if (!isSamoSource(source) || !source) {
@@ -71,7 +182,14 @@ export const loadCatalogMediaDetail = async (
 
     try {
         if (detailType === MobileMediaDetailType.ALBUM) {
-            const tracks = await getTracks(source.id, 'album', item.id);
+            const auth = findServerAuthenticationForSource(serverConnections, source);
+            if (!auth) {
+                return null;
+            }
+            const tracks = hydrateCatalogTracks(
+                await getTracks(source.id, 'album', item.id),
+                auth,
+            );
             if (tracks.length === 0) {
                 return null;
             }
@@ -88,7 +206,11 @@ export const loadCatalogMediaDetail = async (
             };
         }
 
-        return await getDetail(source.id, detailType, item.id);
+        return hydrateDetailPayload(
+            await getDetail(source.id, detailType, item.id),
+            source,
+            serverConnections,
+        );
     } catch {
         return null;
     }
@@ -101,6 +223,23 @@ export const loadCatalogMediaDetail = async (
  */
 export const loadCatalogMediaDetailSync = (
     item: AndroidRecentContentSourceItem,
+    serverConnections: ServerAuthenticationResult[],
+): MobileMediaDetail | null => {
+    const startedAt = Date.now();
+    try {
+        return loadCatalogMediaDetailSyncInner(item, serverConnections);
+    } finally {
+        const elapsed = Date.now() - startedAt;
+        if (elapsed > 200) {
+            // eslint-disable-next-line no-console
+            console.warn(`[perf] sync detail read took ${elapsed}ms (${item.title})`);
+        }
+    }
+};
+
+const loadCatalogMediaDetailSyncInner = (
+    item: AndroidRecentContentSourceItem,
+    serverConnections: ServerAuthenticationResult[],
 ): MobileMediaDetail | null => {
     const source = item.source;
     if (!isSamoSource(source) || !source) {
@@ -112,7 +251,11 @@ export const loadCatalogMediaDetailSync = (
     }
 
     if (detailType === MobileMediaDetailType.ALBUM) {
-        const tracks = getTracksSync(source.id, 'album', item.id);
+        const auth = findServerAuthenticationForSource(serverConnections, source);
+        if (!auth) {
+            return null;
+        }
+        const tracks = hydrateCatalogTracks(getTracksSync(source.id, 'album', item.id), auth);
         if (tracks.length === 0) {
             return null;
         }
@@ -129,7 +272,11 @@ export const loadCatalogMediaDetailSync = (
         };
     }
 
-    return getDetailSync(source.id, detailType, item.id);
+    return hydrateDetailPayload(
+        getDetailSync(source.id, detailType, item.id),
+        source,
+        serverConnections,
+    );
 };
 
 /** Synchronous twin of {@link loadCatalogCollection} for instant grid render. */
@@ -169,18 +316,6 @@ export const loadCatalogCollection = async (
     }
 };
 
-/** Convenience: a single album's track rows from the catalog (empty on miss). */
-export const loadCatalogAlbumTracks = async (
-    sourceId: string,
-    albumId: string,
-): Promise<MobileMediaTrack[]> => {
-    try {
-        return await getTracks(sourceId, 'album', albumId);
-    } catch {
-        return [];
-    }
-};
-
 /** Re-exported so callers can enrich an album header from the stored item. */
 export const loadCatalogAlbumItem = async (
     sourceId: string,
@@ -201,29 +336,22 @@ interface CatalogHomeSectionSpec {
     type: MobileHomeItemType;
 }
 
-/** Catalog-backed Home sections, in the order the Home screen reads them. Radio,
- *  Discover and the Podcast Feed are server-curated / not mirrored, so they're
- *  omitted here and filled in by the network refresh. */
+/** Mirror-backed Home sections. Radio, Discover and the Podcast Feed are
+ *  server-curated / not mirrored — callers fetch those live and pass them to
+ *  the assembler, which interleaves everything in the canonical order. */
 const CATALOG_HOME_SECTIONS: CatalogHomeSectionSpec[] = [
-    {
-        direction: 'desc',
-        id: MobileHomeSectionId.RECENTLY_ADDED,
-        sort: 'added',
-        title: 'Recently Added',
-        type: MobileHomeItemType.ALBUM,
-    },
     {
         direction: 'desc',
         id: MobileHomeSectionId.FAVORITE_ALBUMS,
         sort: 'playCount',
-        title: 'Albums',
+        title: 'Favorite Albums',
         type: MobileHomeItemType.ALBUM,
     },
     {
         direction: 'desc',
         id: MobileHomeSectionId.FAVORITE_ARTISTS,
         sort: 'playCount',
-        title: 'Artists',
+        title: 'Favorite Artists',
         type: MobileHomeItemType.ARTIST,
     },
     {
@@ -249,16 +377,51 @@ const CATALOG_HOME_SECTIONS: CatalogHomeSectionSpec[] = [
     },
 ];
 
+/** Server-curated sections fetched live and interleaved by the assembler. */
+export interface HomeLiveSections {
+    discover: MobileHomeItem[];
+    podcastFeed: MobileHomeItem[];
+    radio: MobileHomeItem[];
+}
+
+/** Cross-type Recently Added (albums + audiobooks + podcasts by addedAt),
+ *  matching what the old network fan-out's recently-added endpoint served. */
+const recentlyAddedFromMirror = (
+    samoAuthentications: ServerAuthenticationResult[],
+): MobileHomeItem[] => {
+    const pool = samoAuthentications.flatMap((authentication) => [
+        ...loadCatalogCollectionSync(authentication, MobileHomeItemType.ALBUM, {
+            direction: 'desc',
+            limit: HOME_SECTION_ITEM_LIMIT,
+            sort: 'added',
+        }),
+        ...loadCatalogCollectionSync(authentication, MobileHomeItemType.AUDIOBOOK, {
+            direction: 'desc',
+            limit: HOME_SECTION_ITEM_LIMIT,
+            sort: 'added',
+        }),
+        ...loadCatalogCollectionSync(authentication, MobileHomeItemType.PODCAST, {
+            direction: 'desc',
+            limit: HOME_SECTION_ITEM_LIMIT,
+            sort: 'added',
+        }),
+    ]);
+    return pool
+        .sort((left, right) => (right.addedAt ?? 0) - (left.addedAt ?? 0))
+        .slice(0, HOME_SECTION_ITEM_LIMIT);
+};
+
 /**
- * Instant Home content assembled from the on-device catalog so a cold launch
- * renders immediately instead of waiting on the network. Returns null when no
- * connected Samo source has any local rows yet. The caller shows this as a seed
- * and lets the authoritative network load (favorites, discover, podcast feed)
- * replace it moments later.
+ * THE Home builder: every library-backed section reads the on-device mirror
+ * synchronously (the mirror IS the source of truth — freshness is the sync
+ * engine's job), and the server-curated live sections the caller fetched are
+ * interleaved in the canonical order. Returns null when no Samo source has
+ * local rows yet (fresh install before the first sync lands).
  */
-export const loadCatalogHomeContent = async (
+export const buildCatalogHomeContent = (
     authentications: ServerAuthenticationResult[],
-): Promise<MobileHomeContent | null> => {
+    live?: HomeLiveSections | null,
+): MobileHomeContent | null => {
     const samoAuthentications = authentications.filter(
         (authentication) => authentication.type === ServerType.SAMO,
     );
@@ -266,26 +429,43 @@ export const loadCatalogHomeContent = async (
         return null;
     }
 
-    const sectionItems = await Promise.all(
-        CATALOG_HOME_SECTIONS.map(async (spec) => {
-            const lists = await Promise.all(
-                samoAuthentications.map((authentication) =>
-                    loadCatalogCollection(authentication, spec.type, {
-                        direction: spec.direction,
-                        limit: HOME_SECTION_ITEM_LIMIT,
-                        sort: spec.sort,
-                    }),
-                ),
-            );
-            return lists.flatMap((list) => list ?? []);
-        }),
-    );
+    const mirrorSections = new Map<MobileHomeSectionId, MobileHomeSection>();
+    for (const spec of CATALOG_HOME_SECTIONS) {
+        const items = samoAuthentications.flatMap((authentication) =>
+            loadCatalogCollectionSync(authentication, spec.type, {
+                direction: spec.direction,
+                limit: HOME_SECTION_ITEM_LIMIT,
+                sort: spec.sort,
+            }),
+        );
+        if (items.length > 0) {
+            mirrorSections.set(spec.id, { id: spec.id, items, title: spec.title });
+        }
+    }
+    const recentlyAdded = recentlyAddedFromMirror(samoAuthentications);
 
-    const sections: MobileHomeSection[] = CATALOG_HOME_SECTIONS.map((spec, index) => ({
-        id: spec.id,
-        items: sectionItems[index] ?? [],
-        title: spec.title,
-    })).filter((section) => section.items.length > 0);
+    const sections: MobileHomeSection[] = [];
+    const pushLive = (id: MobileHomeSectionId, title: string, items?: MobileHomeItem[]) => {
+        if (items && items.length > 0) {
+            sections.push({ id, items, title });
+        }
+    };
+    const pushMirror = (id: MobileHomeSectionId) => {
+        const section = mirrorSections.get(id);
+        if (section) {
+            sections.push(section);
+        }
+    };
+
+    pushLive(MobileHomeSectionId.RECENTLY_ADDED, 'Recently Added', recentlyAdded);
+    pushMirror(MobileHomeSectionId.FAVORITE_ALBUMS);
+    pushMirror(MobileHomeSectionId.FAVORITE_ARTISTS);
+    pushLive(MobileHomeSectionId.DISCOVER, 'Discover', live?.discover);
+    pushLive(MobileHomeSectionId.PODCAST_FEED, 'Podcast Feed', live?.podcastFeed);
+    pushMirror(MobileHomeSectionId.AUDIOBOOKS);
+    pushMirror(MobileHomeSectionId.PODCASTS);
+    pushMirror(MobileHomeSectionId.PLAYLISTS);
+    pushLive(MobileHomeSectionId.RADIO, 'Radio', live?.radio);
 
     if (sections.length === 0) {
         return null;
@@ -300,40 +480,51 @@ export const loadCatalogHomeContent = async (
 };
 
 /**
- * Synchronous twin of {@link loadCatalogHomeContent} so a cold launch can paint
- * Home on the first frame. Each section is a small bounded read, so the on-thread
- * cost is negligible. Returns null when no Samo source has local rows yet.
+ * Mirror-derived Library "relevant" pool: the union the old network path
+ * assembled from eleven requests (recently added / recently played / most
+ * played albums+artists, playlists, audiobooks, podcasts), deduped by
+ * type:id. Radio is intentionally absent — it isn't mirrored and the Library
+ * surfaces don't depend on it.
  */
-export const loadCatalogHomeContentSync = (
+export const loadCatalogLibraryRelevantItems = (
     authentications: ServerAuthenticationResult[],
-): MobileHomeContent | null => {
+): MobileHomeItem[] => {
     const samoAuthentications = authentications.filter(
         (authentication) => authentication.type === ServerType.SAMO,
     );
-    if (samoAuthentications.length === 0) {
-        return null;
-    }
-
-    const sections: MobileHomeSection[] = CATALOG_HOME_SECTIONS.map((spec) => ({
-        id: spec.id,
-        items: samoAuthentications.flatMap((authentication) =>
-            loadCatalogCollectionSync(authentication, spec.type, {
-                direction: spec.direction,
-                limit: HOME_SECTION_ITEM_LIMIT,
-                sort: spec.sort,
-            }),
-        ),
-        title: spec.title,
-    })).filter((section) => section.items.length > 0);
-
-    if (sections.length === 0) {
-        return null;
-    }
-
-    return {
-        errors: [],
-        loadedAt: Date.now(),
-        sections,
-        serverTitle: getMobileContentSource(samoAuthentications[0]!).title,
+    const seen = new Set<string>();
+    const items: MobileHomeItem[] = [];
+    const push = (item: MobileHomeItem) => {
+        const key = `${item.type}:${item.id}`;
+        if (seen.has(key)) {
+            return;
+        }
+        seen.add(key);
+        items.push(item);
     };
+
+    const RELEVANT_LIMIT = 80;
+    for (const authentication of samoAuthentications) {
+        const buckets: Array<[MobileHomeItemType, CatalogItemSort, 'asc' | 'desc']> = [
+            [MobileHomeItemType.ALBUM, 'added', 'desc'],
+            [MobileHomeItemType.ARTIST, 'added', 'desc'],
+            [MobileHomeItemType.ALBUM, 'lastPlayed', 'desc'],
+            [MobileHomeItemType.ARTIST, 'lastPlayed', 'desc'],
+            [MobileHomeItemType.ALBUM, 'playCount', 'desc'],
+            [MobileHomeItemType.ARTIST, 'playCount', 'desc'],
+            [MobileHomeItemType.PLAYLIST, 'title', 'asc'],
+            [MobileHomeItemType.AUDIOBOOK, 'added', 'desc'],
+            [MobileHomeItemType.PODCAST, 'title', 'asc'],
+        ];
+        for (const [type, sort, direction] of buckets) {
+            for (const item of loadCatalogCollectionSync(authentication, type, {
+                direction,
+                limit: RELEVANT_LIMIT,
+                sort,
+            })) {
+                push(item);
+            }
+        }
+    }
+    return items;
 };

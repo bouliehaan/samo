@@ -43,7 +43,6 @@ class SamoPlaybackService : MediaSessionService() {
     private var mediaSession: MediaSession? = null
     private var player: ExoPlayer? = null
     private var playerRequestHeaders: Map<String, String> = emptyMap()
-    private var playerPrefetchOnDemand: Boolean = false
     var preferredMixerDevice: AudioDeviceInfo? = null
     var preferredOutputDevice: AudioDeviceInfo? = null
     /**
@@ -137,16 +136,17 @@ class SamoPlaybackService : MediaSessionService() {
      */
     fun ensurePlayer(
         requestHeaders: Map<String, String>,
-        prefetchOnDemand: Boolean = false,
     ): ExoPlayer {
         val existing = player
 
-        // Reuse the existing player only if headers match, prefetch mode
-        // matches, and it's not in a stuck error state. A lingering playerError
-        // means the player will silently swallow play commands until rebuilt.
+        // Reuse the existing player unless the request headers changed or it's
+        // in a stuck error state (a lingering playerError silently swallows
+        // play commands until rebuilt). One player config serves every source
+        // type — rebuilding on a config switch released the player AND the
+        // MediaSession mid-handoff (e.g. radio → music), which blew away the
+        // notification and any buffered audio.
         if (existing != null &&
             playerRequestHeaders == requestHeaders &&
-            playerPrefetchOnDemand == prefetchOnDemand &&
             existing.playerError == null
         ) {
             return existing
@@ -194,20 +194,19 @@ class SamoPlaybackService : MediaSessionService() {
         val resolvingDataSourceFactory = SamoResolvingDataSource.wrap(this, dataSourceFactory)
         val mediaSourceFactory = DefaultMediaSourceFactory(resolvingDataSourceFactory)
             .setLoadErrorHandlingPolicy(SamoLoadErrorHandlingPolicy())
-        val loadControl = if (prefetchOnDemand) {
-            // Extra buffer for Wi-Fi handoffs without blocking start on a full
-            // minute of media (which left podcasts stuck at 0:00).
-            DefaultLoadControl.Builder()
-                .setBufferDurationsMs(
-                    /* minBufferMs = */ 15_000,
-                    /* maxBufferMs = */ 60_000,
-                    /* bufferForPlaybackMs = */ 2_500,
-                    /* bufferForPlaybackAfterRebufferMs = */ 5_000,
-                )
-                .build()
-        } else {
-            DefaultLoadControl.Builder().build()
-        }
+        // One tuned LoadControl for every source type (music, podcast,
+        // audiobook, radio): enough buffer to ride out Wi-Fi handoffs without
+        // blocking start on a full minute of media (which left podcasts stuck
+        // at 0:00). Radio used the stock config before purely as a side effect
+        // of the player-rebuild logic; these values are equally right for live.
+        val loadControl = DefaultLoadControl.Builder()
+            .setBufferDurationsMs(
+                /* minBufferMs = */ 15_000,
+                /* maxBufferMs = */ 60_000,
+                /* bufferForPlaybackMs = */ 2_500,
+                /* bufferForPlaybackAfterRebufferMs = */ 5_000,
+            )
+            .build()
         val createdPlayer = ExoPlayer.Builder(this, renderersFactory)
             .setMediaSourceFactory(mediaSourceFactory)
             .setLoadControl(loadControl)
@@ -268,7 +267,6 @@ class SamoPlaybackService : MediaSessionService() {
         mediaSession = builtSession
         player = createdPlayer
         playerRequestHeaders = requestHeaders
-        playerPrefetchOnDemand = prefetchOnDemand
 
         return createdPlayer
     }

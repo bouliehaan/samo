@@ -106,15 +106,19 @@ const BrowseTile = memo(({ item, onOpenContextMenu, onSelectItem }: BrowseTilePr
                 style={[styles.viewAllTileArtwork, isArtist && styles.libraryArtworkRound]}
                 uri={item.artworkUrl}
             />
-            <QualityBadge overlay profile={tileBadgeProfile} />
-            <Text numberOfLines={1} style={styles.viewAllTileTitle}>
-                {item.title}
-            </Text>
-            {item.subtitle ? (
-                <Text numberOfLines={1} style={styles.viewAllTileSubtitle}>
-                    {item.subtitle}
-                </Text>
-            ) : null}
+            <View style={styles.tileMetaRow}>
+                <View style={styles.tileMetaTextCol}>
+                    <Text numberOfLines={1} style={styles.viewAllTileTitle}>
+                        {item.title}
+                    </Text>
+                    {item.subtitle ? (
+                        <Text numberOfLines={1} style={styles.viewAllTileSubtitle}>
+                            {item.subtitle}
+                        </Text>
+                    ) : null}
+                </View>
+                <QualityBadge tile profile={tileBadgeProfile} />
+            </View>
         </Pressable>
     );
 });

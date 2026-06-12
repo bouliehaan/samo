@@ -1,8 +1,6 @@
 import {
-    appendAudiobookshelfAuthToken,
     mimeFromAudiobookshelfExt,
     parsePodcastPlaybackEpisodeId,
-    type AudiobookshelfDownloadFile,
     type MobileMediaDetail,
     type MobileMediaTrack,
     type MobilePlayableAudio,
@@ -100,30 +98,6 @@ export const buildOfflineAudiobookPlayable = (
     );
 };
 
-export const buildAbsStreamFilePlayable = (
-    detail: MobileMediaDetail,
-    file: AudiobookshelfDownloadFile,
-    initialPositionSeconds: number,
-    authentication: ServerAuthenticationResult,
-): MobilePlayableAudio => {
-    const streamUrl = appendAudiobookshelfAuthToken(
-        file.downloadUrl,
-        authentication.credential,
-    );
-    return buildAudiobookFilePlayable(
-        detail,
-        {
-            castUrl: streamUrl,
-            durationSeconds: file.durationSeconds,
-            ino: file.ino,
-            startOffsetSeconds: file.startOffsetSeconds ?? 0,
-        },
-        initialPositionSeconds,
-        streamUrl,
-        'file',
-    );
-};
-
 export const buildAudiobookFilePlaybackQueue = <T extends AudiobookFileTimeSegment>(
     detail: MobileMediaDetail,
     files: readonly T[],
@@ -153,10 +127,9 @@ export const buildOfflinePodcastEpisodePlayable = (
     return {
         artworkUrl: track.artworkUrl ?? detail.artworkUrl,
         castMimeType: mimeFromCastUri(localUri),
-        castUrl:
-            sourceUrl && authentication
-                ? appendAudiobookshelfAuthToken(sourceUrl, authentication.credential)
-                : undefined,
+        // Samo episode source URLs are self-authenticating (stream_token in the
+        // query), so the cast leg can use the original URL as-is.
+        castUrl: sourceUrl,
         contentSourceId: detail.source.id,
         durationSeconds: track.durationSeconds,
         id: `${detail.source.type}:${detail.source.url}:podcast:${itemId}:${episodeId}`,

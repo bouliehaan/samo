@@ -1,8 +1,9 @@
 package app.samo.android.audio
 
 import android.content.Context
-import android.database.sqlite.SQLiteDatabase
-import android.database.sqlite.SQLiteException
+// BUNDLED SQLITE ONLY — see SamoCatalogWriter's header: the platform SQLite
+// must never open samo-catalog.db.
+import io.requery.android.database.sqlite.SQLiteDatabase
 import android.util.Log
 import java.io.File
 import org.json.JSONException
@@ -54,7 +55,7 @@ internal object SamoCatalogDb {
                 trackCount = queryCount(db, "SELECT COUNT(*) FROM catalog_track"),
                 detailCount = queryCount(db, "SELECT COUNT(*) FROM catalog_detail"),
             )
-        } catch (error: SQLiteException) {
+        } catch (error: Exception) {
             Log.w(TAG, "stats query failed", error)
             null
         }
@@ -227,7 +228,8 @@ internal object SamoCatalogDb {
                 Log.i(
                     TAG,
                     "catalog reader online — items=${stats.itemCount} " +
-                        "tracks=${stats.trackCount} details=${stats.detailCount}",
+                        "tracks=${stats.trackCount} details=${stats.detailCount} " +
+                        "path=${java.io.File(java.io.File(context.filesDir, "SQLite"), DB_NAME).canonicalPath}",
                 )
             }
         }
@@ -264,13 +266,13 @@ internal object SamoCatalogDb {
                 val db = SQLiteDatabase.openDatabase(
                     dbFile.absolutePath,
                     null,
-                    SQLiteDatabase.OPEN_READWRITE or
-                        SQLiteDatabase.NO_LOCALIZED_COLLATORS,
+                    SQLiteDatabase.OPEN_READWRITE,
+                    SamoNoDeleteDatabaseErrorHandler,
                 )
                 reader = db
                 lastOpenAttemptFailed = false
                 db
-            } catch (error: SQLiteException) {
+            } catch (error: Exception) {
                 if (!lastOpenAttemptFailed) {
                     Log.w(TAG, "failed to open catalog reader at $dbFile", error)
                     lastOpenAttemptFailed = true
@@ -290,7 +292,7 @@ internal object SamoCatalogDb {
             db.rawQuery(sql, args).use { cursor ->
                 if (cursor.moveToFirst() && !cursor.isNull(0)) cursor.getString(0) else null
             }
-        } catch (error: SQLiteException) {
+        } catch (error: Exception) {
             Log.w(TAG, "query failed: ${sql.take(80)}…", error)
             null
         }
@@ -300,4 +302,28 @@ internal object SamoCatalogDb {
         db.rawQuery(sql, null).use { cursor ->
             if (cursor.moveToFirst()) cursor.getInt(0) else 0
         }
+}
+
+/**
+ * Android's DefaultDatabaseErrorHandler responds to a corruption verdict by
+ * DELETING the database file. Two different SQLite builds share this file
+ * (expo-sqlite's bundled library + the platform library); a process kill
+ * mid-WAL can leave a hot -shm that the OTHER build's next open misjudges as
+ * corruption — and the default handler then erased the user's entire mirror
+ * (observed live 2026-06-12: samo-catalog.db vanished across an app restart,
+ * after which the JS side kept reading its orphaned deleted inode — every
+ * surface blind until the next restart). NEVER delete: log, close, retry
+ * later; SQLite's own WAL recovery handles genuinely torn states.
+ */
+internal object SamoNoDeleteDatabaseErrorHandler : io.requery.android.database.DatabaseErrorHandler {
+    override fun onCorruption(dbObj: SQLiteDatabase) {
+        android.util.Log.e(
+            "SamoCatalogDb",
+            "SQLite reported corruption on ${dbObj.path} — NOT deleting; closing for retry",
+        )
+        try {
+            if (dbObj.isOpen) dbObj.close()
+        } catch (_: Throwable) {
+        }
+    }
 }

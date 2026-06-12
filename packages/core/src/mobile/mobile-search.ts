@@ -52,6 +52,8 @@ export enum MobileSearchSectionId {
     PODCASTS = 'podcasts',
     RADIO = 'radio',
     SONGS = 'songs',
+    /** Cross-type "Best matches" highlight reel, rendered above the per-type sections. */
+    TOP = 'top',
 }
 
 export interface MobileSearchAcrossServersInput {
@@ -362,6 +364,7 @@ const SCORE_TITLE_PREFIX = 80;
 const SCORE_TITLE_WORD_PREFIX = 60;
 const SCORE_TITLE_SUBSTRING = 40;
 const SCORE_SUBTITLE_PREFIX = 30;
+const SCORE_SUBTITLE_WORD_PREFIX = 20;
 const SCORE_SUBTITLE_SUBSTRING = 15;
 
 // Popularity and personal-recency weights cap the influence either signal can
@@ -403,10 +406,22 @@ const scoreUserRecency = (
     return Math.round(USER_RECENCY_MAX_BOOST * (1 - age / USER_RECENCY_HORIZON_MS));
 };
 
+// Secondary fields (subtitle / artist / album) only ever earn the lower tier,
+// so a song that matches solely through the artist it credits can never outrank
+// the artist entity whose *title* is that name.
+const scoreSecondaryField = (value: string, normalizedQuery: string) => {
+    if (!value) return 0;
+    if (value.startsWith(normalizedQuery)) return SCORE_SUBTITLE_PREFIX;
+    if (value.split(/\s+/).some((word) => word.startsWith(normalizedQuery))) {
+        return SCORE_SUBTITLE_WORD_PREFIX;
+    }
+    if (value.includes(normalizedQuery)) return SCORE_SUBTITLE_SUBSTRING;
+    return 0;
+};
+
 const scoreMatch = (item: MobileSearchItem, normalizedQuery: string) => {
     if (!normalizedQuery) return 0;
     const title = item.title.toLowerCase();
-    const subtitle = item.subtitle?.toLowerCase() ?? '';
 
     if (title === normalizedQuery) return SCORE_TITLE_EXACT;
     if (title.startsWith(normalizedQuery)) return SCORE_TITLE_PREFIX;
@@ -414,9 +429,12 @@ const scoreMatch = (item: MobileSearchItem, normalizedQuery: string) => {
         return SCORE_TITLE_WORD_PREFIX;
     }
     if (title.includes(normalizedQuery)) return SCORE_TITLE_SUBSTRING;
-    if (subtitle.startsWith(normalizedQuery)) return SCORE_SUBTITLE_PREFIX;
-    if (subtitle.includes(normalizedQuery)) return SCORE_SUBTITLE_SUBSTRING;
-    return 0;
+
+    return Math.max(
+        scoreSecondaryField(item.subtitle?.toLowerCase() ?? '', normalizedQuery),
+        scoreSecondaryField(item.artist?.toLowerCase() ?? '', normalizedQuery),
+        scoreSecondaryField(item.album?.toLowerCase() ?? '', normalizedQuery),
+    );
 };
 
 const scoreSearchItem = (
@@ -452,17 +470,127 @@ const rankSearchSections = (
     return scored.map(({ section }) => section);
 };
 
+// Number of cross-type hits surfaced in the "Best matches" section.
+const BEST_MATCHES_LIMIT = 5;
+
+/**
+ * Builds the cross-type "Best matches" section from already-ranked sections:
+ * the globally top-scoring items regardless of media type, deduplicated. Only
+ * worth showing when the real matches span more than one media type — otherwise
+ * it would just duplicate the single section already rendered below it.
+ */
+const buildBestMatchesSection = (
+    rankedSections: MobileSearchSection[],
+    query: string,
+    context: MobileSearchRankingContext | undefined,
+): MobileSearchSection | null => {
+    const normalizedQuery = query.trim().toLowerCase();
+    if (!normalizedQuery) return null;
+
+    const now = Date.now();
+    const userRecents = context?.userRecents;
+    const scored = rankedSections
+        .filter((section) => section.id !== MobileSearchSectionId.TOP)
+        .flatMap((section) =>
+            section.items.map((item) => ({
+                item,
+                score: scoreSearchItem(item, normalizedQuery, userRecents, now),
+            })),
+        )
+        .filter((entry) => entry.score > 0)
+        .sort((left, right) => right.score - left.score);
+
+    // Only a worthwhile highlight reel when the real matches span more than one
+    // media type; a single-type result would just duplicate the lone section
+    // rendered below it. (Scoring is the gate here, not FTS recall — items the
+    // scorer can't explain are still kept in their own section above.)
+    const matchedTypes = new Set(scored.map((entry) => entry.item.type));
+    if (matchedTypes.size < 2) return null;
+
+    const seen = new Set<string>();
+    const items: MobileSearchItem[] = [];
+    for (const { item } of scored) {
+        const key = getMobileSearchItemKey(item);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        items.push(item);
+        if (items.length >= BEST_MATCHES_LIMIT) break;
+    }
+
+    return { id: MobileSearchSectionId.TOP, items, title: 'Best matches' };
+};
+
 const toSearchResults = (
     query: string,
     sections: MobileSearchSection[],
     errors: MobileSearchSectionError[] = [],
     context?: MobileSearchRankingContext,
-): MobileSearchResults => ({
-    errors,
-    query,
-    searchedAt: Date.now(),
-    sections: rankSearchSections(query, sections.filter(hasItems), context),
-});
+): MobileSearchResults => {
+    const ranked = rankSearchSections(query, sections.filter(hasItems), context);
+    const bestMatches = buildBestMatchesSection(ranked, query, context);
+    return {
+        errors,
+        query,
+        searchedAt: Date.now(),
+        sections: bestMatches ? [bestMatches, ...ranked] : ranked,
+    };
+};
+
+const SEARCH_SECTION_DEF_BY_TYPE: Record<
+    MobileSearchItemType,
+    { id: MobileSearchSectionId; title: string }
+> = {
+    [MobileSearchItemType.SONG]: { id: MobileSearchSectionId.SONGS, title: 'Songs' },
+    [MobileSearchItemType.ALBUM]: { id: MobileSearchSectionId.ALBUMS, title: 'Albums' },
+    [MobileSearchItemType.ARTIST]: { id: MobileSearchSectionId.ARTISTS, title: 'Artists' },
+    [MobileSearchItemType.AUDIOBOOK]: {
+        id: MobileSearchSectionId.AUDIOBOOKS,
+        title: 'Audiobooks',
+    },
+    [MobileSearchItemType.PODCAST]: { id: MobileSearchSectionId.PODCASTS, title: 'Podcasts' },
+    [MobileSearchItemType.PLAYLIST]: { id: MobileSearchSectionId.PLAYLISTS, title: 'Playlists' },
+    [MobileSearchItemType.RADIO]: { id: MobileSearchSectionId.RADIO, title: 'Radio' },
+};
+
+/** Groups a flat list of search hits into per-type sections (order set by ranking). */
+const groupMobileSearchItems = (items: MobileSearchItem[]): MobileSearchSection[] => {
+    const bySection = new Map<MobileSearchSectionId, MobileSearchSection>();
+    for (const item of items) {
+        const def = SEARCH_SECTION_DEF_BY_TYPE[item.type];
+        if (!def) continue;
+        const existing = bySection.get(def.id);
+        if (existing) {
+            existing.items.push(item);
+        } else {
+            bySection.set(def.id, { id: def.id, items: [item], title: def.title });
+        }
+    }
+    return [...bySection.values()];
+};
+
+/**
+ * Builds fully ranked {@link MobileSearchResults} from a flat list of hits —
+ * the entry point for callers that already have items in hand (e.g. the
+ * on-device catalog/FTS search), bypassing the per-server network loaders.
+ * Items are deduplicated by key, grouped by type, then handed to the same
+ * relevance ranker the network path uses, so sections are ordered by match
+ * strength and a cross-type "Best matches" section is surfaced on top.
+ */
+export const buildMobileSearchResultsFromItems = (
+    query: string,
+    items: MobileSearchItem[],
+    context?: MobileSearchRankingContext,
+): MobileSearchResults => {
+    const seen = new Set<string>();
+    const unique: MobileSearchItem[] = [];
+    for (const item of items) {
+        const key = getMobileSearchItemKey(item);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        unique.push(item);
+    }
+    return toSearchResults(query, groupMobileSearchItems(unique), [], context);
+};
 
 const loadAudiobookshelfSearch = async (
     authentication: ServerAuthenticationResult,

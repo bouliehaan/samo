@@ -101,11 +101,18 @@ const ensureHydrated = (): Promise<void> => {
             const rows = await db.getAllAsync<CatalogSyncStateRow>(
                 'SELECT * FROM catalog_sync_state',
             );
+            // eslint-disable-next-line no-console -- hydration health probe
+            console.log(
+                '[sync-state] hydrated',
+                rows.map((row) => `${row.source_id}=${row.status}`).join(' ') || 'NO ROWS',
+            );
             for (const row of rows) {
                 cache.set(row.source_id, rowToState(row));
             }
         })().catch((error) => {
             hydration = null;
+            // eslint-disable-next-line no-console
+            console.error('[sync-state] hydration FAILED', error);
             throw error;
         });
     }
@@ -233,4 +240,56 @@ export const clearCatalogSyncState = async (sourceId: string): Promise<void> => 
     await db.runAsync('DELETE FROM catalog_sync_state WHERE source_id = ?', sourceId);
     cache.delete(sourceId);
     notifyListeners();
+};
+
+// ---------------------------------------------------------------------------
+// Kotlin-owned sync. The engine (SamoCatalogSync.kt) writes the table itself;
+// JS only mirrors its progress into the in-memory cache for the UI. Events
+// arrive live while the app is in front; background runs (no React context)
+// just write the table, so a foreground refresh re-reads it.
+// ---------------------------------------------------------------------------
+
+export interface NativeCatalogSyncEvent {
+    sourceId: string;
+    status: string;
+    items: number;
+    tracks: number;
+    details: number;
+    error?: string;
+}
+
+/** Apply a native progress event to the in-memory cache (no persistence —
+ *  Kotlin already wrote the row). */
+export const applyNativeCatalogSyncEvent = (event: NativeCatalogSyncEvent): void => {
+    const current = cache.get(event.sourceId) ?? defaultState(event.sourceId);
+    const status: CatalogSyncStatus = isCatalogSyncStatus(event.status)
+        ? event.status
+        : 'syncing';
+    cache.set(event.sourceId, {
+        ...current,
+        status,
+        error: event.error,
+        itemCount: event.items,
+        trackCount: event.tracks,
+        detailCount: event.details,
+        ...(status === 'synced' ? { lastSyncedAt: Date.now() } : {}),
+        updatedAt: Date.now(),
+    });
+    notifyListeners();
+};
+
+/** Re-read the table (e.g. on foreground, after a background worker ran). */
+export const refreshCatalogSyncStateFromDb = async (): Promise<void> => {
+    try {
+        const db = await getCatalogDatabase();
+        const rows = await db.getAllAsync<CatalogSyncStateRow>(
+            'SELECT * FROM catalog_sync_state',
+        );
+        for (const row of rows) {
+            cache.set(row.source_id, rowToState(row));
+        }
+        notifyListeners();
+    } catch {
+        // Best-effort refresh; live events still keep the cache moving.
+    }
 };

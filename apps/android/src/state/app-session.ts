@@ -186,3 +186,22 @@ export const useAppSessionState = () => {
         setRecentContentItems,
     };
 };
+
+/**
+ * Subscribe to a single slice of the session state. Consumers that only need
+ * one field (e.g. cast connectivity) re-render when THAT field changes instead
+ * of on every recents/favorites/last-played write. The selector must return a
+ * stable primitive or a referentially-stable value.
+ */
+export const useAppSessionSelector = <Selected>(
+    selector: (state: AppSessionState) => Selected,
+): Selected =>
+    useSyncExternalStore(
+        subscribeAppSession,
+        () => selector(appSessionState),
+        () => selector(appSessionState),
+    );
+
+// The singleton setters are also exported directly so hooks that only WRITE a
+// field can dispatch without subscribing to the whole store.
+export { setIsShuffled as setAppSessionIsShuffled };

@@ -16,6 +16,15 @@ import { ServerType } from './server-types';
 const REFRESH_LEAD_TIME_MS = 5 * 60 * 1000;
 const DEFAULT_FALLBACK_TTL_MS = 25 * 60 * 1000;
 
+// Minting sits in front of every interactive play: a user is waiting. The
+// default 30s request timeout turned one dead pooled connection (typical
+// after a long Doze-frozen session) into a 30-second dead tap; a tight
+// timeout + one retry on a FRESH request self-heals it in single-digit
+// seconds worst-case. The mint POST is idempotent (an extra token row is
+// harmless), so the blind retry is safe.
+const MINT_TIMEOUT_MS = 8_000;
+const MINT_RETRY_DELAY_MS = 250;
+
 interface SamoStreamTokenEntry {
     bearer: string;
     expiresAt: number;
@@ -68,9 +77,16 @@ export const ensureSamoStreamToken = async (
         return entry.token;
     }
 
-    const request = getFetch(fetcher);
+    const request = getFetch(fetcher, MINT_TIMEOUT_MS);
     const mintPromise = (async (): Promise<SamoStreamTokenEntry> => {
-        const response = await mintSamoStreamToken(request, authentication);
+        const response = await mintSamoStreamToken(request, authentication).catch(
+            async () => {
+                await new Promise<void>((resolve) => {
+                    setTimeout(resolve, MINT_RETRY_DELAY_MS);
+                });
+                return mintSamoStreamToken(request, authentication);
+            },
+        );
 
         if (!response.token) {
             throw new Error('Samo Server did not return a stream token');

@@ -769,21 +769,32 @@ export const authenticateSamo = async ({
 }): Promise<ServerAuthenticationResult> => {
     const request = getFetch(fetcher);
     const baseUrl = normalizeBaseUrl(url);
-    const setup = await getSamoSetupStatus(request, baseUrl);
 
-    if (setup.needsSetup) {
-        throw new Error(`Samo Server setup is not finished yet. Open ${baseUrl}/setup first.`);
+    // Login FIRST. The setup-status probe used to be a mandatory serial
+    // round-trip in front of every login; on a slow or warming connection that
+    // doubled the time-to-fail for zero happy-path value. It is now consulted
+    // only when login fails, purely to upgrade the error message for the one
+    // genuine "server not set up yet" case.
+    let login: SamoLoginResponse;
+    try {
+        login = await requestJson<SamoLoginResponse>(
+            request,
+            `${baseUrl}/api/v1/auth/login`,
+            {
+                body: JSON.stringify({ password, username }),
+                headers: { 'Content-Type': 'application/json' },
+                method: 'POST',
+            },
+        );
+    } catch (error) {
+        const setup = await getSamoSetupStatus(request, baseUrl).catch(() => undefined);
+        if (setup?.needsSetup) {
+            throw new Error(
+                `Samo Server setup is not finished yet. Open ${baseUrl}/setup first.`,
+            );
+        }
+        throw error;
     }
-
-    const login = await requestJson<SamoLoginResponse>(
-        request,
-        `${baseUrl}/api/v1/auth/login`,
-        {
-            body: JSON.stringify({ password, username }),
-            headers: { 'Content-Type': 'application/json' },
-            method: 'POST',
-        },
-    );
     const loginToken = login.token;
 
     if (!loginToken) {

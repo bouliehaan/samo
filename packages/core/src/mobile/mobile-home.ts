@@ -1504,6 +1504,64 @@ export const loadMobilePodcastFeedForServers = async ({
         .slice(0, SAMO_PODCAST_FEED_DISPLAY_LIMIT);
 };
 
+/**
+ * Radio stations (internet + programmed) for the Home Radio section. Radio is
+ * the one browse type the on-device mirror does not hold (the sync manifest
+ * carries no radio ids to reconcile against), so clients fetch it live along
+ * with the other server-curated sections (discover, podcast feed).
+ */
+export const loadMobileRadioForServers = async ({
+    authentications,
+    fetch: fetcher,
+}: {
+    authentications: ServerAuthenticationResult[];
+    fetch?: SamoFetch;
+}): Promise<MobileHomeItem[]> => {
+    const request = getFetch(fetcher);
+    const items: MobileHomeItem[] = [];
+
+    for (const authentication of authentications) {
+        if (authentication.type !== ServerType.SAMO) {
+            continue;
+        }
+
+        try {
+            const source = getMobileContentSource(authentication);
+            const streamToken = await resolveSamoStreamToken(authentication, request);
+            const [internetResult, programmedResult] = await Promise.allSettled([
+                listSamoInternetRadioStations(request, authentication, { limit: 100 }),
+                listSamoProgrammedRadioStations(request, authentication, { limit: 100 }),
+            ]);
+            if (programmedResult.status === 'fulfilled') {
+                for (const station of samoItemsOf(programmedResult.value)) {
+                    const item = samoProgrammedRadioToHomeItem(
+                        authentication,
+                        station,
+                        streamToken,
+                        source,
+                    );
+                    if (item) items.push(item);
+                }
+            }
+            if (internetResult.status === 'fulfilled') {
+                for (const station of samoItemsOf(internetResult.value)) {
+                    const item = samoInternetRadioToHomeItem(
+                        authentication,
+                        station,
+                        streamToken,
+                        source,
+                    );
+                    if (item) items.push(item);
+                }
+            }
+        } catch {
+            // Radio is best-effort; the rest of Home should still render.
+        }
+    }
+
+    return items;
+};
+
 export const loadMobileDiscoveryForServers = async ({
     authentications,
     fetch: fetcher,

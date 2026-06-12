@@ -596,63 +596,66 @@ const HomeMediaTile = memo(({
                 style={artworkStyle}
                 uri={item.artworkUrl}
             />
-            <QualityBadge overlay profile={tileBadgeProfile} />
-            <View
-                style={[
-                    styles.mediaText,
-                    isWide && styles.mediaTextWide,
-                    isArtist && styles.mediaTextCentered,
-                ]}
-            >
-                <Text
-                    numberOfLines={2}
+            <View style={[styles.tileMetaRow, isWide && styles.tileMetaRowFill]}>
+                <View
                     style={[
-                        styles.mediaTitle,
-                        (isArtist || isRadioSection) && styles.mediaTitleCentered,
-                        isWide && styles.mediaTitleWide,
+                        styles.mediaText,
+                        styles.tileMetaTextCol,
+                        isWide && styles.mediaTextWide,
+                        isArtist && styles.mediaTextCentered,
                     ]}
-                    {...androidTrimCaptionFont}
                 >
-                    {item.title}
-                </Text>
-                {subtitle || isDownloaded ? (
-                    <View
+                    <Text
+                        numberOfLines={2}
                         style={[
-                            styles.mediaInfoRow,
-                            isArtist && styles.mediaInfoRowCentered,
+                            styles.mediaTitle,
+                            (isArtist || isRadioSection) && styles.mediaTitleCentered,
+                            isWide && styles.mediaTitleWide,
                         ]}
+                        {...androidTrimCaptionFont}
                     >
-                        {isDownloaded ? (
-                            <View style={styles.mediaDownloadIndicator}>
-                                <TrackDownloadedGlyph size={11} />
-                            </View>
-                        ) : null}
-                        {subtitle ? (
-                            <Text
-                                numberOfLines={isWide ? 2 : 1}
-                                style={[
-                                    styles.mediaSubtitle,
-                                    styles.mediaSubtitleInline,
-                                    isArtist && styles.mediaSubtitleCentered,
-                                ]}
-                                {...androidTrimCaptionFont}
-                            >
-                                {subtitle}
-                            </Text>
-                        ) : null}
-                    </View>
-                ) : null}
-                {(isContinue || (isPodcast && sectionVariant === 'podcast-feed')) &&
-                progress !== undefined ? (
-                    <View style={styles.continueProgressTrack}>
+                        {item.title}
+                    </Text>
+                    {subtitle || isDownloaded ? (
                         <View
                             style={[
-                                styles.continueProgressFill,
-                                { width: `${progress * 100}%` },
+                                styles.mediaInfoRow,
+                                isArtist && styles.mediaInfoRowCentered,
                             ]}
-                        />
-                    </View>
-                ) : null}
+                        >
+                            {isDownloaded ? (
+                                <View style={styles.mediaDownloadIndicator}>
+                                    <TrackDownloadedGlyph size={11} />
+                                </View>
+                            ) : null}
+                            {subtitle ? (
+                                <Text
+                                    numberOfLines={isWide ? 2 : 1}
+                                    style={[
+                                        styles.mediaSubtitle,
+                                        styles.mediaSubtitleInline,
+                                        isArtist && styles.mediaSubtitleCentered,
+                                    ]}
+                                    {...androidTrimCaptionFont}
+                                >
+                                    {subtitle}
+                                </Text>
+                            ) : null}
+                        </View>
+                    ) : null}
+                    {(isContinue || (isPodcast && sectionVariant === 'podcast-feed')) &&
+                    progress !== undefined ? (
+                        <View style={styles.continueProgressTrack}>
+                            <View
+                                style={[
+                                    styles.continueProgressFill,
+                                    { width: `${progress * 100}%` },
+                                ]}
+                            />
+                        </View>
+                    ) : null}
+                </View>
+                <QualityBadge tile profile={tileBadgeProfile} />
             </View>
         </Pressable>
     );

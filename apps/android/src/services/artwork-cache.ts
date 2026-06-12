@@ -1,11 +1,14 @@
 import * as FileSystem from 'expo-file-system/legacy';
 
+import { canonicalArtworkKey } from '../utils/artwork-canonical';
+
 /**
  * Managed on-disk cover-art cache that WE own, so the user's size limit is real
  * and enforceable (expo-image's built-in disk cache exposes neither a size nor a
  * cap). Artwork is downloaded once into a dedicated directory keyed by a hash of
- * the remote URL; a small persisted index tracks per-file bytes + last access so
- * we can report the total size and LRU-evict down to the configured cap.
+ * the CANONICAL (token-stripped) remote URL — so a cover stays a cache hit even
+ * after its stream token rotates; a small persisted index tracks per-file bytes
+ * + last access so we can report the total size and LRU-evict down to the cap.
  *
  * ArtworkImage feeds expo-image the returned `file://` uri with cachePolicy
  * "memory" — this directory is the single source of truth for on-disk art.
@@ -15,6 +18,11 @@ const ARTWORK_DIR = `${FileSystem.documentDirectory ?? ''}samo-artwork/`;
 const INDEX_FILE = `${ARTWORK_DIR}index.json`;
 const PERSIST_DEBOUNCE_MS = 12_000;
 const PRUNE_DEBOUNCE_MS = 6_000;
+// Bump when the on-disk filename scheme changes. v2 hashes the CANONICAL
+// (token-stripped) URL; v1 filenames were hashed from token-bearing URLs and so
+// can never match a v2 lookup — they're dropped once on first load (see
+// loadIndex) and the bulk prefetch re-warms under stable keys.
+const INDEX_VERSION = 2;
 
 export const DEFAULT_ARTWORK_CACHE_LIMIT_BYTES = 5 * 1024 * 1024 * 1024; // 5 GB
 
@@ -22,6 +30,11 @@ interface ArtworkEntry {
     bytes: number;
     lastAccess: number;
     url?: string;
+}
+
+interface PersistedIndex {
+    entries: Record<string, ArtworkEntry>;
+    version: number;
 }
 
 type ArtworkIndex = Map<string, ArtworkEntry>;
@@ -54,20 +67,47 @@ const ensureDir = async (): Promise<void> => {
     }
 };
 
+const isCurrentPersistedIndex = (value: unknown): value is PersistedIndex => {
+    if (typeof value !== 'object' || value === null) {
+        return false;
+    }
+    const candidate = value as Partial<PersistedIndex>;
+    return (
+        candidate.version === INDEX_VERSION &&
+        typeof candidate.entries === 'object' &&
+        candidate.entries !== null
+    );
+};
+
 const loadIndex = async (): Promise<ArtworkIndex> => {
     await ensureDir();
     const index: ArtworkIndex = new Map();
     try {
         const raw = await FileSystem.readAsStringAsync(INDEX_FILE);
-        const parsed = JSON.parse(raw) as Record<string, ArtworkEntry>;
-        for (const [name, entry] of Object.entries(parsed)) {
-            if (entry && typeof entry.bytes === 'number') {
-                index.set(name, {
-                    bytes: entry.bytes,
-                    lastAccess: typeof entry.lastAccess === 'number' ? entry.lastAccess : 0,
-                    url: entry.url,
-                });
+        const parsed = JSON.parse(raw) as unknown;
+        if (isCurrentPersistedIndex(parsed)) {
+            for (const [name, entry] of Object.entries(parsed.entries)) {
+                if (entry && typeof entry.bytes === 'number') {
+                    index.set(name, {
+                        bytes: entry.bytes,
+                        lastAccess: typeof entry.lastAccess === 'number' ? entry.lastAccess : 0,
+                        url: entry.url,
+                    });
+                }
             }
+        } else {
+            // Legacy (or future) cache scheme: the on-disk filenames can't match
+            // our canonical lookups, so they'd peek-miss forever and waste disk.
+            // Drop the directory once and write a fresh version marker; the bulk
+            // prefetch re-warms everything under stable keys on the next sync.
+            await FileSystem.deleteAsync(ARTWORK_DIR, { idempotent: true }).catch(
+                () => undefined,
+            );
+            await ensureDir();
+            await FileSystem.writeAsStringAsync(
+                INDEX_FILE,
+                JSON.stringify({ entries: {}, version: INDEX_VERSION }),
+            ).catch(() => undefined);
         }
     } catch {
         // No persisted index yet (or unreadable) — start empty.
@@ -101,18 +141,21 @@ export const peekArtworkLocalUri = (remoteUrl: string): string | null => {
     if (!loadedIndex) {
         return null;
     }
-    const name = hashUrl(remoteUrl);
+    const name = hashUrl(canonicalArtworkKey(remoteUrl));
     return loadedIndex.has(name) ? `${ARTWORK_DIR}${name}` : null;
 };
 
 const persistIndex = async (): Promise<void> => {
     try {
         const index = await getIndex();
-        const out: Record<string, ArtworkEntry> = {};
+        const entries: Record<string, ArtworkEntry> = {};
         for (const [name, entry] of index) {
-            out[name] = entry;
+            entries[name] = entry;
         }
-        await FileSystem.writeAsStringAsync(INDEX_FILE, JSON.stringify(out));
+        await FileSystem.writeAsStringAsync(
+            INDEX_FILE,
+            JSON.stringify({ entries, version: INDEX_VERSION }),
+        );
     } catch {
         // Best-effort; the index rebuilds from disk if lost.
     }
@@ -196,7 +239,11 @@ const downloadArtwork = async (
             return null;
         }
         const index = await getIndex();
-        index.set(name, { bytes: info.size, lastAccess: Date.now(), url: remoteUrl });
+        index.set(name, {
+            bytes: info.size,
+            lastAccess: Date.now(),
+            url: canonicalArtworkKey(remoteUrl),
+        });
         schedulePersist();
         schedulePrune();
         return fileUri;
@@ -217,7 +264,9 @@ export const getArtworkLocalUri = async (
     if (!remoteUrl || remoteUrl.startsWith('file://')) {
         return remoteUrl || null;
     }
-    const name = hashUrl(remoteUrl);
+    // Filename is keyed by the CANONICAL (token-stripped) URL so the file is a
+    // hit across token rotations; the fetch below still uses the full URL.
+    const name = hashUrl(canonicalArtworkKey(remoteUrl));
     const fileUri = `${ARTWORK_DIR}${name}`;
 
     const index = await getIndex();
@@ -269,10 +318,14 @@ export const prefetchArtworkUrls = async (
 ): Promise<void> => {
     const seen = new Set<string>();
     const queue = entries.filter((entry) => {
+        if (!entry.uri || entry.uri.startsWith('file://')) {
+            return false;
+        }
+        // De-dup by canonical key so the same cover requested with different
+        // stream tokens collapses to one download.
+        const key = canonicalArtworkKey(entry.uri);
         if (
-            !entry.uri ||
-            entry.uri.startsWith('file://') ||
-            seen.has(entry.uri) ||
+            seen.has(key) ||
             // Already cached — skip via the sync peek so a warm-cache launch does
             // NOT do a native `getInfoAsync` stat for every one of thousands of
             // covers. Only genuine misses fall through to a download.
@@ -280,7 +333,7 @@ export const prefetchArtworkUrls = async (
         ) {
             return false;
         }
-        seen.add(entry.uri);
+        seen.add(key);
         return true;
     });
 

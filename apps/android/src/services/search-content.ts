@@ -1,11 +1,9 @@
 import {
+    buildMobileSearchResultsFromItems,
     getMobileContentSource,
     getMobileSearchErrorMessage,
-    MobileSearchItemType,
-    MobileSearchSectionId,
     type MobileSearchItem,
     type MobileSearchResults,
-    type MobileSearchSection,
     searchMobileContentAcrossServers,
 } from '@samo/core/mobile';
 import { ServerType, type ServerAuthenticationResult } from '@samo/core/server';
@@ -52,57 +50,14 @@ export const loadAndroidSearchResults = async (
     }
 };
 
-const SECTION_BY_ITEM_TYPE: Record<
-    string,
-    { id: MobileSearchSectionId; title: string } | undefined
-> = {
-    [MobileSearchItemType.SONG]: { id: MobileSearchSectionId.SONGS, title: 'Songs' },
-    [MobileSearchItemType.ALBUM]: { id: MobileSearchSectionId.ALBUMS, title: 'Albums' },
-    [MobileSearchItemType.ARTIST]: { id: MobileSearchSectionId.ARTISTS, title: 'Artists' },
-    [MobileSearchItemType.AUDIOBOOK]: { id: MobileSearchSectionId.AUDIOBOOKS, title: 'Audiobooks' },
-    [MobileSearchItemType.PODCAST]: { id: MobileSearchSectionId.PODCASTS, title: 'Podcasts' },
-    [MobileSearchItemType.PLAYLIST]: { id: MobileSearchSectionId.PLAYLISTS, title: 'Playlists' },
-    [MobileSearchItemType.RADIO]: { id: MobileSearchSectionId.RADIO, title: 'Radio' },
-};
-
-/** Display order matching the network search layout. */
-const SECTION_ORDER: MobileSearchSectionId[] = [
-    MobileSearchSectionId.SONGS,
-    MobileSearchSectionId.ALBUMS,
-    MobileSearchSectionId.ARTISTS,
-    MobileSearchSectionId.AUDIOBOOKS,
-    MobileSearchSectionId.PODCASTS,
-    MobileSearchSectionId.PLAYLISTS,
-    MobileSearchSectionId.RADIO,
-];
-
-/** Groups a flat list of catalog search hits into ordered display sections. */
-export const buildSearchResultsFromItems = (
-    items: MobileSearchItem[],
-    query: string,
-): MobileSearchResults => {
-    const bySection = new Map<MobileSearchSectionId, MobileSearchSection>();
-    for (const item of items) {
-        const section = SECTION_BY_ITEM_TYPE[item.type];
-        if (!section) {
-            continue;
-        }
-        const existing = bySection.get(section.id);
-        if (existing) {
-            existing.items.push(item);
-        } else {
-            bySection.set(section.id, { id: section.id, items: [item], title: section.title });
-        }
-    }
-    const sections = SECTION_ORDER.map((id) => bySection.get(id)).filter(
-        (section): section is MobileSearchSection => section !== undefined,
-    );
-    return { errors: [], query, searchedAt: Date.now(), sections };
-};
+/** Every hit across every section, used to re-rank a merged result set as a whole. */
+const allSearchItems = (results: MobileSearchResults): MobileSearchItem[] =>
+    results.sections.flatMap((section) => section.items);
 
 const searchCatalogResults = async (
     samoAuthentications: ServerAuthenticationResult[],
     query: string,
+    userRecents: Map<string, number> | undefined,
 ): Promise<MobileSearchResults | null> => {
     try {
         const lists = await Promise.all(
@@ -114,16 +69,27 @@ const searchCatalogResults = async (
             ),
         );
         const items = lists.flat();
-        return items.length > 0 ? buildSearchResultsFromItems(items, query) : null;
+        return items.length > 0
+            ? buildMobileSearchResultsFromItems(query, items, { userRecents })
+            : null;
     } catch {
         return null;
     }
 };
 
+/**
+ * Combines instant on-device hits with the authoritative server results, then
+ * re-ranks the union as one set so section order and the "Best matches"
+ * highlight reflect the full picture (the catalog ranker can't see network
+ * hits, and vice versa). Deduplication, grouping, and ordering all happen in
+ * the shared core builder. Server items are listed FIRST so that on a duplicate
+ * id the fresher server copy wins the dedupe over a possibly-stale local row.
+ */
 const mergeSearchResults = (
     local: MobileSearchResults | null,
     network: MobileSearchResults | null,
     query: string,
+    userRecents: Map<string, number> | undefined,
 ): MobileSearchResults => {
     if (!local) {
         return network ?? { errors: [], query, searchedAt: Date.now(), sections: [] };
@@ -131,29 +97,29 @@ const mergeSearchResults = (
     if (!network) {
         return local;
     }
-    const byId = new Map<MobileSearchSectionId, MobileSearchSection>();
-    for (const section of local.sections) {
-        byId.set(section.id, { ...section, items: [...section.items] });
-    }
-    for (const section of network.sections) {
-        const existing = byId.get(section.id);
-        if (existing) {
-            const seen = new Set(existing.items.map((item) => item.id));
-            existing.items.push(...section.items.filter((item) => !seen.has(item.id)));
-        } else {
-            byId.set(section.id, { ...section, items: [...section.items] });
-        }
-    }
-    const sections = SECTION_ORDER.map((id) => byId.get(id)).filter(
-        (section): section is MobileSearchSection => section !== undefined,
+    const merged = buildMobileSearchResultsFromItems(
+        query,
+        [...allSearchItems(network), ...allSearchItems(local)],
+        { userRecents },
     );
-    return { errors: network.errors ?? [], query, searchedAt: Date.now(), sections };
+    return { ...merged, errors: network.errors ?? [] };
 };
 
 /**
- * Local-first search. Samo sources resolve instantly from the on-device catalog
- * (FTS5); non-Samo sources stay on the network. `onResult` may fire twice in the
- * mixed-server case: once with instant local hits, then once with the merged set.
+ * Local-first, server-authoritative search.
+ *
+ * The on-device catalog (FTS5) paints INSTANT results, but it is only a cache:
+ * the background sync can lag or under-mirror the library (delta-only runs skew
+ * it toward recently-touched items), so it must NOT be treated as the complete
+ * picture. We therefore always follow the instant local paint with the server
+ * search — which queries the full catalog, exactly like the desktop app — and
+ * merge the two. That guarantees the entire library is searchable (you can't
+ * have a Beatles collection the search can't find just because those rows
+ * weren't recently synced) while still feeling instant and degrading to
+ * local-only when the server is unreachable (offline).
+ *
+ * `onResult` may fire twice: once with instant local hits, then once with the
+ * complete merged set.
  */
 export const runAndroidSearch = async (
     authentications: ServerAuthenticationResult[],
@@ -170,42 +136,38 @@ export const runAndroidSearch = async (
     const samoAuthentications = authentications.filter(
         (authentication) => authentication.type === ServerType.SAMO,
     );
-    const networkAuthentications = authentications.filter(
-        (authentication) => authentication.type !== ServerType.SAMO,
-    );
 
+    // 1. Instant on-device results from the local catalog (Samo sources only).
     let local: MobileSearchResults | null = null;
     if (samoAuthentications.length > 0) {
-        local = await searchCatalogResults(samoAuthentications, trimmedQuery);
-        // Paint instant local hits while the network fills in non-Samo results.
-        if (local && networkAuthentications.length > 0) {
-            onResult({ query: trimmedQuery, results: local, status: 'loaded' });
-        }
-    }
-
-    if (networkAuthentications.length === 0) {
+        local = await searchCatalogResults(samoAuthentications, trimmedQuery, userRecents);
         if (local) {
             onResult({ query: trimmedQuery, results: local, status: 'loaded' });
-            return;
         }
-        // Samo-only but the catalog had no hit (cold cache) — fall back to network.
-        onResult(await loadAndroidSearchResults(samoAuthentications, trimmedQuery, userRecents));
-        return;
     }
 
-    const networkState = await loadAndroidSearchResults(
-        networkAuthentications,
+    // 2. Authoritative search across EVERY server (Samo + any others). Samo's
+    //    /music/search covers the whole library, so this fills in everything the
+    //    local mirror is missing. Merging dedupes by id and re-ranks the union.
+    const serverState = await loadAndroidSearchResults(
+        authentications,
         trimmedQuery,
         userRecents,
     );
-    if (!local && networkState.status === 'error') {
-        onResult(networkState);
+
+    if (serverState.status === 'error') {
+        // Server unreachable. Keep the instant local results if we have them;
+        // only surface the error when there's nothing to show.
+        if (!local) {
+            onResult(serverState);
+        }
         return;
     }
-    const networkResults = networkState.status === 'loaded' ? networkState.results : null;
+
+    const serverResults = serverState.status === 'loaded' ? serverState.results : null;
     onResult({
         query: trimmedQuery,
-        results: mergeSearchResults(local, networkResults, trimmedQuery),
+        results: mergeSearchResults(local, serverResults, trimmedQuery, userRecents),
         status: 'loaded',
     });
 };

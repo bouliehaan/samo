@@ -24,7 +24,7 @@ import { clamp } from '../utils/math';
 import { resolvePlaybackResumeItem } from '../utils/playback-recovery';
 import {
     getResumePositionSeconds,
-    refreshPlayableResumeFromServer,
+    refreshPlayableResumeFromServerBounded,
     withResumePosition,
 } from '../utils/playback-resume';
 import {
@@ -56,6 +56,8 @@ export function useAndroidPlaybackControls(options: {
         item: MobilePlayableAudio;
         sessionId: string;
     }>;
+    /** Native queue step (lock-screen-equivalent); falls back to playQueuedItem when it returns false. */
+    playQueueIndexNatively: (targetIndex: number) => Promise<boolean>;
     playQueuedItem: (
         item: MobilePlayableAudio,
         queueItems?: MobilePlayableAudio[],
@@ -66,6 +68,7 @@ export function useAndroidPlaybackControls(options: {
     const {
         lastPlayedItem,
         playbackSnapshotRef,
+        playQueueIndexNatively,
         playQueuedItem,
         serverConnections,
     } = options;
@@ -227,7 +230,9 @@ export function useAndroidPlaybackControls(options: {
     const restartPlaybackItem = useCallback(
         async (item: MobilePlayableAudio) => {
             const playbackState = getAndroidPlaybackState();
-            const itemWithServerProgress = await refreshPlayableResumeFromServer(
+            // Bounded: a slow server may cost us the cross-device resume
+            // overlay, but it must never make the play button look dead.
+            const itemWithServerProgress = await refreshPlayableResumeFromServerBounded(
                 item,
                 serverConnections,
             );
@@ -475,10 +480,23 @@ export function useAndroidPlaybackControls(options: {
             const nextItem = queue?.items[nextIndex];
 
             if (queue && nextItem) {
+                // One Next implementation for every entry point: the native
+                // queue step the lock screen already uses — atomic on the
+                // loaded playlist, no restart, no new session. The JS restart
+                // below is only the fallback for queues native can't drive
+                // (cast, radio, un-mirrored).
+                if (await playQueueIndexNatively(nextIndex)) {
+                    return;
+                }
                 await playQueuedItem(nextItem, queue.items, nextIndex);
             }
         },
-        [handleSeekPlayback, playQueuedItem, seekSamoAudiobookToBookSeconds],
+        [
+            handleSeekPlayback,
+            playQueueIndexNatively,
+            playQueuedItem,
+            seekSamoAudiobookToBookSeconds,
+        ],
     );
 
     return {

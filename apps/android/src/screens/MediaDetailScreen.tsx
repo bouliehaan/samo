@@ -55,7 +55,7 @@ import {
     removeSelectedPlaylistTracks,
 } from '../components/EditPlaylistSheet';
 import { PlaylistTrackControls } from '../components/PlaylistTrackControls';
-import { QualityBadge } from '../components/QualityBadge';
+import { QualityBadge, QualitySpec } from '../components/QualityBadge';
 import {
     CheckGlyph,
     CircularDownloadGlyph,
@@ -1000,7 +1000,6 @@ export const MediaDetailLoaded = ({
                                     </Text>
                                 </View>
                             )}
-                            <QualityBadge thumb profile={trackBadgeProfile} />
                         </View>
                     ) : null}
                     <View style={styles.trackText}>
@@ -1117,7 +1116,6 @@ export const MediaDetailLoaded = ({
                                         serverConnections={serverConnections}
                                         style={styles.albumHeroArtwork}
                                     />
-                                    <QualityBadge overlay profile={heroBadgeProfile} />
                                 </View>
                                 <View style={styles.albumHeroBadgeRow}>
                                     <Text style={styles.albumHeroEyebrow}>
@@ -1452,7 +1450,6 @@ export const MediaDetailLoaded = ({
                             serverConnections={serverConnections}
                             style={styles.albumHeroArtwork}
                         />
-                        <QualityBadge overlay profile={heroBadgeProfile} />
                     </View>
                     <View style={styles.albumHeroBadgeRow}>
                         {detail.type === MobileMediaDetailType.AUDIOBOOK ? null : (
@@ -1788,16 +1785,26 @@ export const ArtistDetailSections = ({
                                             </Text>
                                         </View>
                                     )}
-                                    <QualityBadge thumb profile={trackBadgeProfile} />
                                 </View>
                                 <View style={styles.searchRowText}>
                                     <Text numberOfLines={1} style={styles.searchTitle}>
                                         {track.title}
                                     </Text>
-                                    {track.subtitle ? (
-                                        <Text numberOfLines={1} style={styles.mediaSubtitle}>
-                                            {track.subtitle}
-                                        </Text>
+                                    {track.subtitle || trackBadgeProfile ? (
+                                        <View style={styles.qualityMetaRow}>
+                                            {track.subtitle ? (
+                                                <Text
+                                                    numberOfLines={1}
+                                                    style={[
+                                                        styles.mediaSubtitle,
+                                                        styles.qualityMetaSubtitle,
+                                                    ]}
+                                                >
+                                                    {track.subtitle}
+                                                </Text>
+                                            ) : null}
+                                            <QualitySpec profile={trackBadgeProfile} />
+                                        </View>
                                     ) : null}
                                 </View>
                             </Pressable>
@@ -1900,15 +1907,19 @@ export const ArtistAlbumTile = ({
                 style={styles.artistAlbumGridArtwork}
                 uri={item.artworkUrl}
             />
-            <QualityBadge overlay profile={tileBadgeProfile} />
-            <Text numberOfLines={2} style={styles.artistAlbumGridTitle}>
-                {item.title}
-            </Text>
-            {item.subtitle ? (
-                <Text numberOfLines={1} style={styles.mediaSubtitle}>
-                    {item.subtitle}
-                </Text>
-            ) : null}
+            <View style={styles.tileMetaRow}>
+                <View style={styles.tileMetaTextCol}>
+                    <Text numberOfLines={2} style={styles.artistAlbumGridTitle}>
+                        {item.title}
+                    </Text>
+                    {item.subtitle ? (
+                        <Text numberOfLines={1} style={styles.mediaSubtitle}>
+                            {item.subtitle}
+                        </Text>
+                    ) : null}
+                </View>
+                <QualityBadge tile profile={tileBadgeProfile} />
+            </View>
         </Pressable>
     );
 };
