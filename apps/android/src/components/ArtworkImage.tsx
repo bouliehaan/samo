@@ -155,7 +155,7 @@ export const ArtworkImage = ({
         }
 
         const auth = findServerAuthenticationForSource(resolvedConnections, contentSource);
-        if (!auth || auth.type !== ServerType.SAMO || getCachedSamoStreamToken(auth)) {
+        if (!auth || getCachedSamoStreamToken(auth)) {
             return;
         }
 

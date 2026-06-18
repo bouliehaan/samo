@@ -6,7 +6,7 @@ import {
     type MobileSearchResults,
     searchMobileContentAcrossServers,
 } from '@samo/core/mobile';
-import { ServerType, type ServerAuthenticationResult } from '@samo/core/server';
+import { type ServerAuthenticationResult } from '@samo/core/server';
 
 import { searchLocal } from './catalog/catalog-repository';
 
@@ -130,7 +130,7 @@ export const runAndroidSearch = async (
 
     // 1. Instant on-device results from the local catalog (Samo sources only).
     let local: MobileSearchResults | null = null;
-    if (authentication.type === ServerType.SAMO) {
+    if (authentication) {
         local = await searchCatalogResults(authentication, trimmedQuery, userRecents);
         if (local) {
             onResult({ query: trimmedQuery, results: local, status: 'loaded' });

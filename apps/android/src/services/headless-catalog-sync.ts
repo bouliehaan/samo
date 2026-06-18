@@ -2,7 +2,6 @@ import { NativeModules } from 'react-native';
 
 import {
     type ServerAuthenticationResult,
-    ServerType,
 } from '@samo/core/server';
 
 /**
@@ -99,7 +98,7 @@ export const syncCatalogAuthMirror = async (
     const bridge = getAuthMirrorBridge();
     if (!bridge) return;
     const samo = connections
-        .filter((auth) => auth.type === ServerType.SAMO)
+        .filter((auth) => auth)
         .map((auth) => ({
             type: auth.type as string,
             url: auth.url,

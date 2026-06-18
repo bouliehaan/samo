@@ -3,7 +3,7 @@ import {
     MobileHomeItemType,
 } from '@samo/core/mobile';
 import { FlashList } from '@shopify/flash-list';
-import { memo, useCallback, useMemo, useState } from 'react';
+import { memo, useState, useMemo, useCallback } from 'react';
 import {
     ActivityIndicator,
     Platform,
@@ -12,6 +12,9 @@ import {
     Text,
     View,
 } from 'react-native';
+
+import { useVisibleHomeContentState } from '../hooks/use-visible-home-content';
+import { useVisibleRecentItems } from '../hooks/use-visible-recent-items';
 
 import { ArtworkImage } from '../components/ArtworkImage';
 import { QualityBadge } from '../components/QualityBadge';
@@ -41,6 +44,7 @@ import {
     type AndroidRecentContentItem,
     type AndroidRecentContentSourceItem,
 } from '../services/recent-content';
+import { useAppNavigationSelector } from '../state/app-navigation';
 import { type ServerAuthenticationResult } from '@samo/core/server';
 import {
     type ContentBackedScreenProps,
@@ -71,14 +75,15 @@ import { EmptyServerBackedScreen } from './EmptyServerBackedScreen';
 const FLASH_LIST_MAINTAIN_POSITION_DISABLED = { disabled: true };
 
 export const HomeScreen = memo(({
-    homeContentState,
     onManageServers,
     onPrefetchItem,
     onSelectItem,
     onViewAll,
-    recentItems,
     serverConnection,
 }: HomeScreenProps) => {
+    const visibleHomeContentState = useVisibleHomeContentState();
+    const visibleRecentItems = useVisibleRecentItems();
+
     const [homeFilter, setHomeFilter] = useState<HomeFilter>('all');
 
     if (!serverConnection) {
@@ -102,12 +107,12 @@ export const HomeScreen = memo(({
     return (
         <HomeContentStatus
             activeFilter={homeFilter}
-            homeContentState={homeContentState}
+            homeContentState={visibleHomeContentState}
             onFilterChange={setHomeFilter}
             onPrefetchItem={onPrefetchItem}
             onSelectItem={onSelectItem}
             onViewAll={onViewAll}
-            recentItems={recentItems}
+            recentItems={visibleRecentItems}
             serverConnection={serverConnection}
         />
     );
@@ -278,10 +283,10 @@ export const HomeContentStatus = ({
 
 export const ContentBackedScreen = memo(({
     emptyTitle,
-    homeContentState,
     onSelectItem,
     sectionIds,
 }: ContentBackedScreenProps) => {
+    const homeContentState = useAppNavigationSelector((state) => state.homeContentState);
     if (homeContentState.status === 'idle') {
         return <EmptyServerBackedScreen tabTitle={emptyTitle} />;
     }

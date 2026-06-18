@@ -8,7 +8,6 @@ import {
 } from '@samo/core/mobile';
 import {
     findServerAuthenticationForSource,
-    ServerType,
     type ServerAuthenticationResult,
 } from '@samo/core/server';
 
@@ -202,7 +201,7 @@ export const resolveItemArtworkUrl = (
     if (!sourceId) return undefined;
     const auth = findServerAuthenticationForSource(serverConnection, { id: sourceId });
     if (!auth) return undefined;
-    if (auth.type === ServerType.SAMO) {
+    if (auth) {
         const resolved = resolveSamoItemArtworkSourceForDisplay(item, serverConnection);
         return typeof resolved === 'string' ? resolved : resolved?.uri;
     }

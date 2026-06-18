@@ -7,7 +7,7 @@ import {
     type MobileMediaTrack,
     type MobileSearchItem,
 } from '@samo/core/mobile';
-import { ServerType, type ServerAuthenticationResult } from '@samo/core/server';
+import { type ServerAuthenticationResult } from '@samo/core/server';
 
 import { fsGetItem, fsSetItem } from '../fs-storage';
 import {
@@ -201,7 +201,7 @@ let rerunRequested = false;
 export const reindexCatalogSearch = (
     authentication: ServerAuthenticationResult | null,
 ): Promise<void> => {
-    if (!authentication || authentication.type !== ServerType.SAMO) {
+    if (!authentication) {
         return Promise.resolve();
     }
     if (inFlight) {

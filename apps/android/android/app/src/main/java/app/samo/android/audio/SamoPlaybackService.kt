@@ -337,6 +337,9 @@ class SamoPlaybackService : MediaSessionService() {
     }
 
     private fun ensureNotificationChannel() {
+        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.O) {
+            return
+        }
         val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         if (manager.getNotificationChannel(NOTIFICATION_CHANNEL_ID) != null) {
             return

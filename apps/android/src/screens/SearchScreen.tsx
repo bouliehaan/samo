@@ -21,6 +21,8 @@ import {
     type AndroidRecentContentItem,
     type AndroidRecentContentSourceItem,
 } from '../services/recent-content';
+import { useVisibleHomeContentState } from '../hooks/use-visible-home-content';
+import { useVisibleRecentItems } from '../hooks/use-visible-recent-items';
 import { type AndroidSearchState } from '../services/search-content';
 import { styles } from '../theme/styles';
 import { colors } from '../theme/tokens';
@@ -244,14 +246,14 @@ const SearchResults = ({
 
 export const SearchScreen = memo(({
     hasServerConnections,
-    homeContentState,
     onSearch,
     onSelectItem,
     onSelectRecentItem,
-    recentItems,
     searchState,
     serverConnection,
 }: SearchScreenProps) => {
+    const homeContentState = useVisibleHomeContentState();
+    const recentItems = useVisibleRecentItems();
     const [query, setQuery] = useState(searchState.status === 'loaded' ? searchState.query : '');
     const availableScopes = useMemo(
         () => getAvailableSearchScopes(homeContentState, serverConnection, recentItems),
@@ -321,16 +323,16 @@ export const SearchScreen = memo(({
 });
 SearchScreen.displayName = 'SearchScreen';
 
-export const SearchOverlay = ({
-    homeContentState,
+export const SearchOverlay = memo(({
     onClose,
     onSearch,
     onSelectItem,
     query,
-    recentItems,
     searchState,
     serverConnection,
 }: SearchOverlayProps) => {
+    const homeContentState = useVisibleHomeContentState();
+    const recentItems = useVisibleRecentItems();
     const inputRef = useRef<TextInput>(null);
     const availableScopes = useMemo(
         () => getAvailableSearchScopes(homeContentState, serverConnection, recentItems),
@@ -410,4 +412,5 @@ export const SearchOverlay = ({
             </View>
         </View>
     );
-};
+});
+SearchOverlay.displayName = 'SearchOverlay';

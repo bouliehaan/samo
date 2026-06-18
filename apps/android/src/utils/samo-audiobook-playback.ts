@@ -1,8 +1,7 @@
 import { type MobilePlayableAudio } from '@samo/core/mobile';
-import { ServerType } from '@samo/core/server';
 
 export const isSamoAudiobookPlayback = (item: MobilePlayableAudio) =>
-    item.source === 'audiobook' && item.id.startsWith(`${ServerType.SAMO}:`);
+    item.source === 'audiobook';
 
 /** True when the playable is an MP3 (by reported MIME type). */
 export const isMp3PlayableAudio = (item: MobilePlayableAudio): boolean => {

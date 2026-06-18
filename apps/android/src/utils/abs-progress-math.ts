@@ -6,7 +6,6 @@ import {
 } from '@samo/core/mobile';
 import {
     findServerAuthenticationForSource,
-    ServerType,
     type ServerAuthenticationResult,
 } from '@samo/core/server';
 
@@ -51,11 +50,11 @@ export const buildAbsProgressContextFromPlayable = (
     const authentication = findServerAuthenticationForSource(serverConnection, {
         id: item.contentSourceId,
     });
-    if (!authentication || authentication.type !== ServerType.SAMO) {
+    if (!authentication) {
         return null;
     }
 
-    if (item.source === 'audiobook' && authentication.type === ServerType.SAMO) {
+    if (item.source === 'audiobook' && authentication) {
         const itemId = parseSamoAudiobookIdFromPlaybackId(item.id);
         if (!itemId) {
             return null;
@@ -68,7 +67,7 @@ export const buildAbsProgressContextFromPlayable = (
         };
     }
 
-    if (item.source === 'podcast' && authentication.type === ServerType.SAMO) {
+    if (item.source === 'podcast' && authentication) {
         const episodeId = parsePodcastPlaybackEpisodeId(item.id);
         const showId = parsePodcastPlaybackShowId(item.id);
         if (!episodeId || !showId) {

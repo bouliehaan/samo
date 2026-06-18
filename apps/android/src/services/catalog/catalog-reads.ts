@@ -19,7 +19,6 @@ import {
     getCachedSamoStreamToken,
     getSamoMusicTrackStreamUrl,
     getServerConnectionKey,
-    ServerType,
     type ServerAuthenticationResult,
 } from '@samo/core/server';
 
@@ -58,8 +57,8 @@ const DETAIL_TYPE_BY_ITEM_TYPE: Record<string, MobileMediaDetailType | undefined
     [MobileHomeItemType.PODCAST]: MobileMediaDetailType.PODCAST,
 };
 
-const isSamoSource = (source: { type: ServerType } | undefined): boolean =>
-    source?.type === ServerType.SAMO;
+const isSamoSource = (source: { type?: any } | undefined): boolean =>
+    Boolean(source);
 
 /**
  * Stored detail payload → view model. Kotlin-synced rows hold the RAW server
@@ -71,7 +70,7 @@ const isSamoSource = (source: { type: ServerType } | undefined): boolean =>
  */
 const hydrateDetailPayload = (
     payload: unknown,
-    source: { id: string; type: ServerType; url?: string },
+    source: { id: string; type?: any; url?: string },
     serverConnection: ServerAuthenticationResult | null,
 ): MobileMediaDetail | null => {
     if (!payload || typeof payload !== 'object') {
@@ -79,7 +78,7 @@ const hydrateDetailPayload = (
     }
     if (isSamoRawDetailBundle(payload)) {
         const auth = findServerAuthenticationForSource(serverConnection, source);
-        if (!auth || auth.type !== ServerType.SAMO) {
+        if (!auth) {
             return null;
         }
         return mapSamoMediaDetailFromRawBundle(auth, getCachedSamoStreamToken(auth), payload);
@@ -285,7 +284,7 @@ export const loadCatalogCollectionSync = (
     type: MobileHomeItemType,
     query: CatalogItemQuery = {},
 ): MobileHomeItem[] => {
-    if (authentication.type !== ServerType.SAMO) {
+    if (!authentication) {
         return [];
     }
     try {
@@ -304,7 +303,7 @@ export const loadCatalogCollection = async (
     type: MobileHomeItemType,
     query: CatalogItemQuery = {},
 ): Promise<MobileHomeItem[] | null> => {
-    if (authentication.type !== ServerType.SAMO) {
+    if (!authentication) {
         return null;
     }
     try {
@@ -422,7 +421,7 @@ export const buildCatalogHomeContent = (
     authentication: ServerAuthenticationResult | null,
     live?: HomeLiveSections | null,
 ): MobileHomeContent | null => {
-    if (!authentication || authentication.type !== ServerType.SAMO) {
+    if (!authentication) {
         return null;
     }
 
@@ -485,7 +484,7 @@ export const buildCatalogHomeContent = (
 export const loadCatalogLibraryRelevantItems = (
     authentication: ServerAuthenticationResult | null,
 ): MobileHomeItem[] => {
-    if (!authentication || authentication.type !== ServerType.SAMO) {
+    if (!authentication) {
         return [];
     }
 

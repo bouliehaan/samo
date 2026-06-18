@@ -3,7 +3,7 @@ import {
     MobileHomeSectionId,
     MobileSearchSectionId,
 } from '@samo/core/mobile';
-import { ServerType, type ServerAuthenticationResult } from '@samo/core/server';
+import { type ServerAuthenticationResult } from '@samo/core/server';
 
 import { type AndroidHomeContentState } from '../services/home-content';
 import {
@@ -46,7 +46,7 @@ export const getAvailableSearchScopes = (
 ) => {
     const scopes = new Set<SearchScope>(['all']);
     const hasLoadedHome = homeContentState.status === 'loaded';
-    const hasSamoServer = serverConnection?.type === ServerType.SAMO;
+    const hasSamoServer = Boolean(serverConnection);
 
     // Samo is the all-in-one backend (it replaced the per-type music/audiobook
     // servers), and its search endpoints always cover songs, albums, artists,

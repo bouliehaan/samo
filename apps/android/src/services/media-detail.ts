@@ -18,7 +18,6 @@ import {
 import {
     ensureSamoStreamToken,
     findServerAuthenticationForSource,
-    ServerType,
     type ServerAuthenticationResult,
 } from '@samo/core/server';
 
@@ -179,10 +178,7 @@ const rebuildSamoPodcastTrackPlayback = async (
         throw new Error('This episode is missing an id.');
     }
 
-    const streamToken =
-        authentication.type === ServerType.SAMO
-            ? await ensureSamoStreamToken(authentication).catch(() => undefined)
-            : undefined;
+    const streamToken = await ensureSamoStreamToken(authentication).catch(() => undefined);
 
     const playback = buildSamoPodcastEpisodePlayback(
         authentication,
@@ -234,9 +230,7 @@ export const loadAndroidMediaDetail = async (
     }
 
     try {
-        if (authentication.type === ServerType.SAMO) {
-            await ensureSamoStreamToken(authentication);
-        }
+        await ensureSamoStreamToken(authentication);
 
         const detailId =
             item.type === MobileHomeItemType.PODCAST_EPISODE && item.containerId
@@ -271,7 +265,7 @@ export const loadAndroidMediaTrackPlayback = async (
         let playable = withPlaybackTimeline(detail, track, track.playback);
 
         if (
-            authentication?.type === ServerType.SAMO &&
+            authentication &&
             detail.type === MobileMediaDetailType.AUDIOBOOK &&
             detail.audiobookFiles?.length
         ) {
@@ -304,10 +298,7 @@ export const loadAndroidMediaTrackPlayback = async (
         throw new Error('The server for this item is no longer connected.');
     }
 
-    if (
-        authentication.type === ServerType.SAMO &&
-        detail.type === MobileMediaDetailType.PODCAST
-    ) {
+    if (detail.type === MobileMediaDetailType.PODCAST) {
         return rebuildSamoPodcastTrackPlayback(authentication, detail, track);
     }
 

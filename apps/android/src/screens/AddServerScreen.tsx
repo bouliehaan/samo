@@ -67,7 +67,7 @@ export const AddServerScreen = ({
                     fontSize: 16,
                     lineHeight: 24,
                 }}>
-                    Discover local Samo servers or manually enter your server's credentials below.
+                    Discover local Samo servers or manually enter your server&apos;s credentials below.
                 </Text>
             </View>
 

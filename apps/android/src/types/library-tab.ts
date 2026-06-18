@@ -30,11 +30,9 @@ export interface LibraryScreenProps {
     fullCollections: LibraryFullCollectionsState;
     fullCollectionsEnabled: boolean;
     hasServerConnections: boolean;
-    homeContentState: AndroidHomeContentState;
     libraryRelevantState: AndroidLibraryRelevantState;
     onEnsureFullCollections?: () => void;
     onSelectItem: (item: AndroidRecentContentSourceItem) => void;
-    recentItems: AndroidRecentContentItem[];
 }
 
 export const LIBRARY_ROW_DRAW_DISTANCE = 62 * 12;

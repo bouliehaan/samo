@@ -9,7 +9,6 @@ import {
     getSamoBearerToken,
     getSamoPodcastEpisodeStreamUrl,
     type ServerAuthenticationResult,
-    ServerType,
 } from '@samo/core/server';
 import * as FileSystem from 'expo-file-system/legacy';
 import { safeParseJson } from '../utils/json';
@@ -288,8 +287,7 @@ const findSamoAuth = (
     sourceId: string,
 ): ServerAuthenticationResult | undefined => {
     return authentication &&
-        `${authentication.type}:${authentication.url}` === sourceId &&
-        authentication.type === ServerType.SAMO
+        `${authentication.type}:${authentication.url}` === sourceId
         ? authentication
         : undefined;
 };

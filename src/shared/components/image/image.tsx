@@ -6,6 +6,7 @@ import {
     type ImgHTMLAttributes,
     memo,
     ReactNode,
+    useCallback,
     useEffect,
     useMemo,
     useState,
@@ -150,6 +151,41 @@ export function BaseImage({
         setHasLoadedInInstance(true);
     }, [effectiveImageRequest?.cacheKey, nativeImage.isLoaded]);
 
+    // Track whether the image has visually appeared (for fade-in)
+    const [imageRevealed, setImageRevealed] = useState(isInSessionCache);
+
+    // Reset revealed state when the image source changes
+    useEffect(() => {
+        setImageRevealed(isInSessionCache);
+    }, [effectiveImageRequest?.cacheKey, isInSessionCache]);
+
+    const handleImageLoad = useCallback(
+        (event: React.SyntheticEvent<HTMLImageElement>) => {
+            // Use requestAnimationFrame to ensure the browser has painted the
+            // hidden image before we trigger the opacity transition
+            requestAnimationFrame(() => {
+                setImageRevealed(true);
+            });
+            onLoad?.(event);
+        },
+        [onLoad],
+    );
+
+    // Determine image fade classes
+    const imageLoadClasses = isInSessionCache
+        ? {} // Already cached — show instantly, no transition
+        : {
+              [styles.imageFadeIn]: imageRevealed,
+              [styles.imageHidden]: !imageRevealed,
+          };
+
+    // Should we show the skeleton underlay behind a loading/fading image?
+    const showSkeletonUnderlay =
+        includeLoader &&
+        !imageRevealed &&
+        !isInSessionCache &&
+        (samoDirectSrc || nativeImage.displaySrc);
+
     return (
         <ImageContainer
             className={clsx(containerClassName, containerPropsClassName)}
@@ -157,10 +193,17 @@ export function BaseImage({
             ref={ref}
             {...restContainerProps}
         >
+            {showSkeletonUnderlay && (
+                <Skeleton
+                    className={clsx(styles.skeleton, styles.skeletonUnderlay, className)}
+                    containerClassName={styles.skeletonContainer}
+                />
+            )}
             {samoDirectSrc && !directImageFailed ? (
                 <img
                     className={clsx(styles.image, className, {
                         [styles.animated]: enableAnimation,
+                        ...imageLoadClasses,
                     })}
                     decoding="async"
                     fetchPriority={fetchPriority}
@@ -168,7 +211,7 @@ export function BaseImage({
                         setDirectImageFailed(true);
                         onError?.(event);
                     }}
-                    onLoad={onLoad}
+                    onLoad={handleImageLoad}
                     src={samoDirectSrc}
                     {...props}
                 />
@@ -176,11 +219,12 @@ export function BaseImage({
                 <img
                     className={clsx(styles.image, className, {
                         [styles.animated]: enableAnimation,
+                        ...imageLoadClasses,
                     })}
                     decoding="async"
                     fetchPriority={fetchPriority}
                     onError={onError}
-                    onLoad={onLoad}
+                    onLoad={handleImageLoad}
                     src={nativeImage.displaySrc}
                     {...props}
                 />

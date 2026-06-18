@@ -13,7 +13,6 @@ import {
     getSamoMetadataImageUrl,
     getSamoPodcastEpisodeStreamUrl,
     ensureSamoStreamToken,
-    ServerType,
     type ServerAuthenticationResult,
 } from '@samo/core/server';
 
@@ -110,7 +109,7 @@ export const resolveSamoArtworkUrlForDisplay = (
     }
 
     const auth = findServerAuthenticationForSource(serverConnection, source);
-    if (!auth || auth.type !== ServerType.SAMO) {
+    if (!auth) {
         return artworkUrl;
     }
 
@@ -131,7 +130,7 @@ export const resolveSamoArtworkFromImageId = (
     }
 
     const auth = findServerAuthenticationForSource(serverConnection, source);
-    if (!auth || auth.type !== ServerType.SAMO) {
+    if (!auth) {
         return undefined;
     }
 
@@ -160,7 +159,7 @@ export const resolveSamoArtworkImageSourceForDisplay = (
     }
 
     const auth = findServerAuthenticationForSource(serverConnection, source);
-    if (!auth || auth.type !== ServerType.SAMO || !isSamoApiMediaUrl(resolvedUrl)) {
+    if (!auth || !isSamoApiMediaUrl(resolvedUrl)) {
         return resolvedUrl;
     }
 
@@ -235,7 +234,7 @@ export const preparePlaybackItemForNative = async (
     const auth = sourceAuth ?? urlAuth;
 
     let streamToken: string | undefined;
-    if (auth?.type === ServerType.SAMO) {
+    if (auth) {
         streamToken = await ensureSamoStreamToken(auth).catch(() => undefined);
     }
 
@@ -246,7 +245,7 @@ export const preparePlaybackItemForNative = async (
     let nextUrl = item.url;
     let nextCastUrl = item.castUrl;
     let httpHeaders = item.httpHeaders;
-    if (auth?.type === ServerType.SAMO && streamToken) {
+    if (auth && streamToken) {
         const audiobookId =
             item.source === 'audiobook' ? parseSamoAudiobookIdFromPlaybackId(item.id) : undefined;
         if (audiobookId) {
@@ -274,7 +273,7 @@ export const preparePlaybackItemForNative = async (
         if (item.castUrl) {
             nextCastUrl = finalizeSamoMediaUrl(auth, item.castUrl, streamToken) ?? item.castUrl;
         }
-    } else if (auth?.type === ServerType.SAMO) {
+    } else if (auth) {
         const bearer = getSamoBearerToken(auth);
         if (bearer && (isSamoApiMediaUrl(item.url) || (item.castUrl && isSamoApiMediaUrl(item.castUrl)))) {
             httpHeaders = { ...httpHeaders, Authorization: `Bearer ${bearer}` };

@@ -9,6 +9,8 @@ import { LibraryListRow } from '../components/LibraryListRow';
 import { LibraryScopeMenu } from '../components/LibraryScopeMenu';
 import { LibrarySortMenu } from '../components/LibrarySortMenu';
 import { SortGlyph } from '../components/Glyphs';
+import { useVisibleHomeContentState } from '../hooks/use-visible-home-content';
+import { useVisibleRecentItems } from '../hooks/use-visible-recent-items';
 import { triggerImpact } from '../services/haptics';
 import { styles } from '../theme/styles';
 import { colors } from '../theme/tokens';
@@ -39,12 +41,12 @@ export const LibraryScreen = memo(({
     fullCollections,
     fullCollectionsEnabled,
     hasServerConnections,
-    homeContentState,
     libraryRelevantState,
     onEnsureFullCollections,
     onSelectItem,
-    recentItems,
 }: LibraryScreenProps) => {
+    const homeContentState = useVisibleHomeContentState();
+    const recentItems = useVisibleRecentItems();
     const [activeFilter, setActiveFilter] = useState<LibraryFilter>('all');
     const [activeScope, setActiveScope] = useState<LibraryScope>('relevant');
     const [activeSort, setActiveSort] = useState<LibrarySort>('recents');

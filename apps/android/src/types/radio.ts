@@ -9,9 +9,7 @@ import {
 } from '../services/radio-stations';
 
 export interface RadioScreenProps {
-    homeContentState: AndroidHomeContentState;
-    onAddStation: (input: AddAndroidRadioStationInput) => Promise<AddAndroidRadioStationResult>;
+    onAddStation: (station: AddAndroidRadioStationInput) => Promise<AddAndroidRadioStationResult>;
     onSelectItem: (item: MobileHomeItem) => void;
-    recentItems: AndroidRecentContentItem[];
     serverConnection: ServerAuthenticationResult | null;
 }

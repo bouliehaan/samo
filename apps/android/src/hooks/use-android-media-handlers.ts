@@ -21,7 +21,6 @@ import {
     type ServerAuthenticationResult,
     ensureSamoStreamToken,
     findServerAuthenticationForSource,
-    ServerType,
 } from '@samo/core/server';
 import { startTransition, useCallback, useRef, type MutableRefObject } from 'react';
 
@@ -731,14 +730,10 @@ export function useAndroidMediaHandlers(
         }
 
         rememberMediaDetail(mediaDetailCacheRef.current, cacheKey, detail);
-        const auth =
-            serverConnection?.type === ServerType.SAMO
-                ? serverConnection
-                : undefined;
+        const auth = serverConnection;
 
         if (
             !auth ||
-            auth.type !== ServerType.SAMO ||
             detail.tracks.length === 0 ||
             detail.type !== MobileMediaDetailType.AUDIOBOOK
         ) {
@@ -802,7 +797,7 @@ export function useAndroidMediaHandlers(
             isValidTrackPlayback(track.playback) &&
             !(
                 detail.type === MobileMediaDetailType.PODCAST &&
-                serverConnection?.type === ServerType.SAMO &&
+                serverConnection &&
                 getPersistedServerAuthKey(serverConnection) === detail.source.id
             )
         ) {
@@ -816,22 +811,18 @@ export function useAndroidMediaHandlers(
             const playOptions = playlistPlaybackOptions(detail, false);
 
             if (detail.type === MobileMediaDetailType.AUDIOBOOK) {
-                const absAuth =
-                    serverConnection?.type === ServerType.AUDIOBOOKSHELF
-                        ? serverConnection
-                        : undefined;
                 const targetBookSeconds = track.startSeconds ?? 0;
 
                 // Samo audiobooks: build a real multi-file ExoPlayer queue from
                 // the per-file manifest. Each file streams WHOLE (the player
                 // seeks locally), so -15s / Previous / chapter jumps are instant
                 // local seeks and there is no stream-restart-to-go-back anymore.
-                if (absAuth?.type === ServerType.AUDIOBOOKSHELF && detail.audiobookFiles?.length) {
-                    const streamToken = await ensureSamoStreamToken(absAuth).catch(
+                if (serverConnection && detail.audiobookFiles?.length) {
+                    const streamToken = await ensureSamoStreamToken(serverConnection).catch(
                         () => undefined,
                     );
                     if (!isCurrentRequest()) return;
-                    const queue = buildSamoAudiobookQueueFromFiles(absAuth, {
+                    const queue = buildSamoAudiobookQueueFromFiles(serverConnection, {
                         artworkUrl: detail.artworkUrl,
                         audiobookId: detail.id,
                         bookStartSeconds: targetBookSeconds,
@@ -924,10 +915,7 @@ export function useAndroidMediaHandlers(
         // Samo podcast tap was the remaining "tap looks dead on a slow server"
         // path in this handler.
         const trackToPlay = track;
-        const absAuth =
-            serverConnection?.type === ServerType.AUDIOBOOKSHELF
-                ? serverConnection
-                : undefined;
+        const absAuth = serverConnection ?? undefined;
         if (absAuth && getPersistedServerAuthKey(absAuth) === detail.source.id) {
             // ...
         }
@@ -1178,7 +1166,7 @@ export function useAndroidMediaHandlers(
         const isFavoritedNow = favoritedKeys.has(key);
 
         try {
-            if (auth.type === ServerType.SAMO) {
+            if (auth) {
                 await setSamoMusicFavorite(
                     auth,
                     'music-track',
@@ -1201,7 +1189,7 @@ export function useAndroidMediaHandlers(
         const isFavoritedNow = favoritedKeys.has(key);
         const auth = findAuthForSource(item.source?.id);
         const useSamoFavorite =
-            auth?.type === ServerType.SAMO &&
+            auth &&
             (item.type === MobileHomeItemType.ALBUM ||
                 item.type === MobileHomeItemType.ARTIST);
 
@@ -1677,8 +1665,7 @@ export function useAndroidMediaHandlers(
         }
         const auth = findAuthForSource(sourceId);
         if (
-            !auth ||
-            auth.type !== ServerType.SAMO
+            !auth
         ) {
             setContextMenuFeedback(
                 'Adding to playlists is only available for music server items.',
@@ -1700,8 +1687,7 @@ export function useAndroidMediaHandlers(
         }
         const auth = findAuthForSource(sourceId);
         if (
-            !auth ||
-            auth.type !== ServerType.SAMO
+            !auth
         ) {
             setContextMenuFeedback(
                 'Creating playlists is only available for music server items.',
@@ -1714,10 +1700,7 @@ export function useAndroidMediaHandlers(
     };
 
     const handleOpenCreatePlaylistStandalone = () => {
-        const auth =
-            serverConnection?.type === ServerType.SAMO
-                ? serverConnection
-                : undefined;
+        const auth = serverConnection;
 
         if (!auth) {
             Alert.alert(
@@ -1751,7 +1734,7 @@ export function useAndroidMediaHandlers(
         }
 
         if (
-            auth.type !== ServerType.SAMO
+            !auth
         ) {
             setPlaylistMenuRootState({
                 message: 'Creating playlists is only available for music servers.',

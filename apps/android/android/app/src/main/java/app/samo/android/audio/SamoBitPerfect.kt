@@ -161,12 +161,14 @@ internal object SamoBitPerfect {
     return try {
       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
         AudioManager.getDirectPlaybackSupport(format, attributes)
-      } else {
+      } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
         if (AudioTrack.isDirectPlaybackSupported(format, attributes)) {
           AudioManager.DIRECT_PLAYBACK_BITSTREAM_SUPPORTED
         } else {
           AudioManager.DIRECT_PLAYBACK_NOT_SUPPORTED
         }
+      } else {
+        AudioManager.DIRECT_PLAYBACK_NOT_SUPPORTED
       }
     } catch (_: Exception) {
       AudioManager.DIRECT_PLAYBACK_NOT_SUPPORTED
@@ -180,8 +182,10 @@ internal object SamoBitPerfect {
   ): Boolean {
     return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
       getDirectPlaybackSupport(format, attributes) != AudioManager.DIRECT_PLAYBACK_NOT_SUPPORTED
-    } else {
+    } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
       AudioTrack.isDirectPlaybackSupported(format, attributes)
+    } else {
+      false
     }
   }
 

@@ -1,5 +1,5 @@
 import { MobileMediaDetailType, type MobileContentSource } from '@samo/core/mobile';
-import { ServerType, type ServerAuthenticationResult } from '@samo/core/server';
+import { type ServerAuthenticationResult } from '@samo/core/server';
 import { useMemo } from 'react';
 
 import {
@@ -346,7 +346,7 @@ export function useAndroidContextMenu(options: {
                     onPress: () => void handleAddCollectionToQueue(item),
                 });
             }
-            if (auth && auth.type === ServerType.SAMO) {
+            if (auth) {
                 menuActions.push({
                     icon: <PlaylistAddGlyph color={colors.text} />,
                     id: 'add-collection-to-playlist',

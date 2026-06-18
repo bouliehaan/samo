@@ -37,14 +37,16 @@ import {
     useAndroidPlaybackState,
 } from '../state/playback-store';
 import { EmptyServerBackedScreen } from './EmptyServerBackedScreen';
+import { useVisibleHomeContentState } from '../hooks/use-visible-home-content';
+import { useVisibleRecentItems } from '../hooks/use-visible-recent-items';
 
 export const RadioScreen = memo(({
-    homeContentState,
     onAddStation,
     onSelectItem,
-    recentItems,
     serverConnection,
 }: RadioScreenProps) => {
+    const homeContentState = useVisibleHomeContentState();
+    const recentItems = useVisibleRecentItems();
     const contextMenu = useMediaContextMenu();
     // Own the playback subscription rather than receiving the now-playing id from
     // App — keeps the (5s) radio-metadata re-render local to this screen.
@@ -449,44 +451,7 @@ const AddRadioStationModal = ({
                             contentContainerStyle={styles.addRadioForm}
                             keyboardShouldPersistTaps="handled"
                         >
-                            {false ? (
-                                <View style={styles.addRadioServerBlock}>
-                                    <Text style={styles.addRadioLabel}>Server</Text>
-                                    <ScrollView
-                                        horizontal
-                                        showsHorizontalScrollIndicator={false}
-                                    >
-                                        {(serverConnection ? [serverConnection as ServerAuthenticationResult] : []).map((server) => {
-                                            const key = getPersistedServerAuthKey(server);
-                                            const isSelected = selectedServerId === key;
 
-                                            return (
-                                                <Pressable
-                                                    accessibilityRole="button"
-                                                    key={key}
-                                                    onPress={() => setSelectedServerId(key)}
-                                                    style={[
-                                                        styles.addRadioServerPill,
-                                                        isSelected &&
-                                                            styles.addRadioServerPillActive,
-                                                    ]}
-                                                >
-                                                    <Text
-                                                        numberOfLines={1}
-                                                        style={[
-                                                            styles.addRadioServerPillText,
-                                                            isSelected &&
-                                                                styles.addRadioServerPillTextActive,
-                                                        ]}
-                                                    >
-                                                        {server.title}
-                                                    </Text>
-                                                </Pressable>
-                                            );
-                                        })}
-                                    </ScrollView>
-                                </View>
-                            ) : null}
                             <Text style={styles.addRadioLabel}>Name</Text>
                             <TextInput
                                 autoCapitalize="words"

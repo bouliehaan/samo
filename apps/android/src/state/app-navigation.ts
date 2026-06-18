@@ -1,4 +1,4 @@
-import { startTransition, useCallback, useEffect, useReducer, useRef } from 'react';
+import { startTransition, useSyncExternalStore, useEffect, useRef } from 'react';
 import { BackHandler } from 'react-native';
 import { SAMO_MOBILE_TABS, type SamoMobileTabId } from '@samo/core/navigation';
 
@@ -173,111 +173,110 @@ export type UseAppNavigationOptions = {
     onCloseViewAllSideEffects?: () => void;
 };
 
-export const useAppNavigationState = (options: UseAppNavigationOptions = {}) => {
-    const [state, dispatch] = useReducer(appNavigationReducer, initialAppNavigationState);
+let appNavigationState: AppNavigationState = initialAppNavigationState;
+const appNavigationListeners = new Set<() => void>();
+
+const dispatchAppNavigation = (action: AppNavigationAction): void => {
+    const next = appNavigationReducer(appNavigationState, action);
+    if (Object.is(next, appNavigationState)) {
+        return;
+    }
+    appNavigationState = next;
+    appNavigationListeners.forEach((listener) => listener());
+};
+
+const subscribeAppNavigation = (listener: () => void): (() => void) => {
+    appNavigationListeners.add(listener);
+    return () => {
+        appNavigationListeners.delete(listener);
+    };
+};
+
+const getAppNavigationState = () => appNavigationState;
+
+let appNavigationOptions: UseAppNavigationOptions = {};
+
+export const setAppNavigationOptions = (options: UseAppNavigationOptions) => {
+    appNavigationOptions = options;
+};
+
+const setActiveTab = (value: SamoMobileTabId | ((current: SamoMobileTabId) => SamoMobileTabId)) =>
+    dispatchAppNavigation({ type: 'set-active-tab', value });
+
+const setActiveUtilityScreen = (
+    value:
+        | AndroidUtilityScreen
+        | null
+        | ((current: AndroidUtilityScreen | null) => AndroidUtilityScreen | null),
+) => dispatchAppNavigation({ type: 'set-active-utility', value });
+
+const setHomeContentState = (
+    homeContentState:
+        | AndroidHomeContentState
+        | ((current: AndroidHomeContentState) => AndroidHomeContentState),
+) => dispatchAppNavigation({ type: 'set-home-content', homeContentState });
+
+const setIsFullPlayerOpen = (isFullPlayerOpen: boolean) =>
+    dispatchAppNavigation({ type: 'set-full-player-open', isFullPlayerOpen });
+
+const setIsSearchOverlayOpen = (isSearchOverlayOpen: boolean) =>
+    dispatchAppNavigation({ type: 'set-search-overlay-open', isSearchOverlayOpen });
+
+const setSearchOverlayQuery = (searchOverlayQuery: string) =>
+    dispatchAppNavigation({ type: 'set-search-overlay-query', searchOverlayQuery });
+
+const setMediaDetailState = (
+    mediaDetailState:
+        | AndroidMediaDetailState
+        | ((current: AndroidMediaDetailState) => AndroidMediaDetailState),
+) => dispatchAppNavigation({ type: 'set-media-detail', mediaDetailState });
+
+const setViewAllRoute = (viewAllRoute: null | ViewAllRoute) =>
+    dispatchAppNavigation({ type: 'set-view-all-route', viewAllRoute });
+
+const setViewAllFullState = (
+    viewAllFullState:
+        | AndroidFullCollectionState
+        | ((current: AndroidFullCollectionState) => AndroidFullCollectionState),
+) => dispatchAppNavigation({ type: 'set-view-all-full', viewAllFullState });
+
+const setLibraryFullCollections = (
+    libraryFullCollections:
+        | LibraryFullCollectionsState
+        | ((current: LibraryFullCollectionsState) => LibraryFullCollectionsState),
+) => dispatchAppNavigation({ type: 'set-library-full-collections', libraryFullCollections });
+
+const setSearchState = (
+    searchState: AndroidSearchState | ((current: AndroidSearchState) => AndroidSearchState),
+) => dispatchAppNavigation({ type: 'set-search-state', searchState });
+
+const closeMediaDetail = () => {
+    appNavigationOptions.onCloseMediaDetailSideEffects?.();
+    startTransition(() => {
+        setMediaDetailState((current) =>
+            current.status === 'idle' ? current : { status: 'idle' },
+        );
+    });
+};
+
+const closeViewAll = () => {
+    appNavigationOptions.onCloseViewAllSideEffects?.();
+    dispatchAppNavigation({ type: 'close-view-all' });
+};
+
+export const useAppNavigationState = (options?: UseAppNavigationOptions) => {
+    if (options) {
+        setAppNavigationOptions(options);
+    }
+
+    const state = useSyncExternalStore(
+        subscribeAppNavigation,
+        getAppNavigationState,
+        getAppNavigationState,
+    );
 
     const libraryFullCollectionFetchTokenRef = useRef(0);
     const homeLoadRequestId = useRef(0);
-
-    const setActiveTab = useCallback(
-        (value: SamoMobileTabId | ((current: SamoMobileTabId) => SamoMobileTabId)) => {
-            dispatch({ type: 'set-active-tab', value });
-        },
-        [],
-    );
-
-    const setActiveUtilityScreen = useCallback(
-        (
-            value:
-                | AndroidUtilityScreen
-                | null
-                | ((current: AndroidUtilityScreen | null) => AndroidUtilityScreen | null),
-        ) => {
-            dispatch({ type: 'set-active-utility', value });
-        },
-        [],
-    );
-
-    const setHomeContentState = useCallback(
-        (
-            homeContentState:
-                | AndroidHomeContentState
-                | ((current: AndroidHomeContentState) => AndroidHomeContentState),
-        ) => {
-            dispatch({ type: 'set-home-content', homeContentState });
-        },
-        [],
-    );
-
-    const setIsFullPlayerOpen = useCallback((isFullPlayerOpen: boolean) => {
-        dispatch({ type: 'set-full-player-open', isFullPlayerOpen });
-    }, []);
-
-    const setIsSearchOverlayOpen = useCallback((isSearchOverlayOpen: boolean) => {
-        dispatch({ type: 'set-search-overlay-open', isSearchOverlayOpen });
-    }, []);
-
-    const setSearchOverlayQuery = useCallback((searchOverlayQuery: string) => {
-        dispatch({ type: 'set-search-overlay-query', searchOverlayQuery });
-    }, []);
-
-    const setMediaDetailState = useCallback(
-        (
-            mediaDetailState:
-                | AndroidMediaDetailState
-                | ((current: AndroidMediaDetailState) => AndroidMediaDetailState),
-        ) => {
-            dispatch({ type: 'set-media-detail', mediaDetailState });
-        },
-        [],
-    );
-
-    const setViewAllRoute = useCallback((viewAllRoute: null | ViewAllRoute) => {
-        dispatch({ type: 'set-view-all-route', viewAllRoute });
-    }, []);
-
-    const setViewAllFullState = useCallback(
-        (
-            viewAllFullState:
-                | AndroidFullCollectionState
-                | ((current: AndroidFullCollectionState) => AndroidFullCollectionState),
-        ) => {
-            dispatch({ type: 'set-view-all-full', viewAllFullState });
-        },
-        [],
-    );
-
-    const setLibraryFullCollections = useCallback(
-        (
-            libraryFullCollections:
-                | LibraryFullCollectionsState
-                | ((current: LibraryFullCollectionsState) => LibraryFullCollectionsState),
-        ) => {
-            dispatch({ type: 'set-library-full-collections', libraryFullCollections });
-        },
-        [],
-    );
-
-    const setSearchState = useCallback(
-        (searchState: AndroidSearchState | ((current: AndroidSearchState) => AndroidSearchState)) => {
-            dispatch({ type: 'set-search-state', searchState });
-        },
-        [],
-    );
-
-    const closeMediaDetail = useCallback(() => {
-        options.onCloseMediaDetailSideEffects?.();
-        startTransition(() => {
-            setMediaDetailState((current) =>
-                current.status === 'idle' ? current : { status: 'idle' },
-            );
-        });
-    }, [options.onCloseMediaDetailSideEffects, setMediaDetailState]);
-
-    const closeViewAll = useCallback(() => {
-        options.onCloseViewAllSideEffects?.();
-        dispatch({ type: 'close-view-all' });
-    }, [options.onCloseViewAllSideEffects]);
 
     useEffect(() => {
         const handler = BackHandler.addEventListener('hardwareBackPress', () => {
@@ -321,12 +320,6 @@ export const useAppNavigationState = (options: UseAppNavigationOptions = {}) => 
 
         return () => handler.remove();
     }, [
-        closeMediaDetail,
-        closeViewAll,
-        setActiveUtilityScreen,
-        setIsFullPlayerOpen,
-        setIsSearchOverlayOpen,
-        setSearchOverlayQuery,
         state.activeUtilityScreen,
         state.isFullPlayerOpen,
         state.isSearchOverlayOpen,
@@ -352,5 +345,14 @@ export const useAppNavigationState = (options: UseAppNavigationOptions = {}) => 
         setViewAllRoute,
     };
 };
+
+export const useAppNavigationSelector = <Selected>(
+    selector: (state: AppNavigationState) => Selected,
+): Selected =>
+    useSyncExternalStore(
+        subscribeAppNavigation,
+        () => selector(appNavigationState),
+        () => selector(appNavigationState),
+    );
 
 export { SAMO_MOBILE_TABS };

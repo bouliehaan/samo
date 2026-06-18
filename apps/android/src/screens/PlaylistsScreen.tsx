@@ -8,6 +8,8 @@ import { PlusGlyph, ShuffleGlyph, SortGlyph } from '../components/Glyphs';
 import { colors } from '../theme/tokens';
 import { type AndroidHomeContentState } from '../services/home-content';
 import { type AndroidRecentContentItem } from '../services/recent-content';
+import { useVisibleHomeContentState } from '../hooks/use-visible-home-content';
+import { useVisibleRecentItems } from '../hooks/use-visible-recent-items';
 import { triggerImpact } from '../services/haptics';
 import { styles } from '../theme/styles';
 import { LIBRARY_SORTS, type LibrarySort } from '../types/library-tab';
@@ -17,13 +19,13 @@ import { toLibraryDisplayItem } from '../utils/library-display';
 import { EmptyServerBackedScreen } from './EmptyServerBackedScreen';
 
 export const PlaylistsScreen = memo(({
-    homeContentState,
     onCreatePlaylist,
     onSelectItem,
     onShufflePlay,
-    recentItems,
     showCreatePlaylist = false,
 }: PlaylistsScreenProps) => {
+    const homeContentState = useVisibleHomeContentState();
+    const recentItems = useVisibleRecentItems();
     const [activeSort, setActiveSort] = useState<LibrarySort>('recents');
     const [isSortMenuOpen, setIsSortMenuOpen] = useState(false);
     const basePlaylists = useMemo(() => {

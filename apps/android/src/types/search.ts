@@ -20,22 +20,18 @@ export type SearchScope =
 
 export interface SearchScreenProps {
     hasServerConnections: boolean;
-    homeContentState: AndroidHomeContentState;
     onSearch: (query: string) => void;
     onSelectItem: (item: MobileSearchItem) => void;
     onSelectRecentItem: (item: AndroidRecentContentSourceItem) => void;
-    recentItems: AndroidRecentContentItem[];
     searchState: AndroidSearchState;
     serverConnection: ServerAuthenticationResult | null;
 }
 
 export interface SearchOverlayProps {
-    homeContentState: AndroidHomeContentState;
     onClose: () => void;
     onSearch: (query: string) => void;
     onSelectItem: (item: AndroidRecentContentSourceItem) => void;
     query: string;
-    recentItems: AndroidRecentContentItem[];
     searchState: AndroidSearchState;
     serverConnection: ServerAuthenticationResult | null;
 }

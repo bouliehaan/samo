@@ -7,7 +7,6 @@ import {
 import {
     ensureSamoStreamToken,
     findServerAuthenticationForSource,
-    ServerType,
     type ServerAuthenticationResult,
 } from '@samo/core/server';
 
@@ -122,7 +121,7 @@ export const refreshPlayableResumeFromServer = async (
     const authentication = findServerAuthenticationForSource(serverConnection, {
         id: item.contentSourceId,
     });
-    if (!authentication || authentication.type !== ServerType.SAMO) {
+    if (!authentication) {
         return item;
     }
 
@@ -135,18 +134,15 @@ export const refreshPlayableResumeFromServer = async (
 
         const progress = await loadAbsCurrentProgress(authentication, showId, episodeId);
         if (progress?.currentTimeSeconds && progress.currentTimeSeconds > 0 && !progress.isFinished) {
-            if (authentication.type === ServerType.SAMO) {
-                const streamToken = await ensureSamoStreamToken(authentication, samoFetch).catch(
-                    () => undefined,
-                );
-                return applySamoPodcastStreamResume(
-                    item,
-                    progress.currentTimeSeconds,
-                    authentication,
-                    streamToken,
-                );
-            }
-            return withResumePosition(item, progress.currentTimeSeconds);
+            const streamToken = await ensureSamoStreamToken(authentication, samoFetch).catch(
+                () => undefined,
+            );
+            return applySamoPodcastStreamResume(
+                item,
+                progress.currentTimeSeconds,
+                authentication,
+                streamToken,
+            );
         }
         return item;
     }

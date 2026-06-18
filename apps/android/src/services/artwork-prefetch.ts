@@ -1,7 +1,6 @@
 import { getMobileContentSource, MobileHomeItemType } from '@samo/core/mobile';
 import {
     ensureSamoStreamToken,
-    ServerType,
     type ServerAuthenticationResult,
 } from '@samo/core/server';
 
@@ -40,7 +39,7 @@ const yieldToEventLoop = (): Promise<void> =>
 const collectArtwork = async (
     connection: ServerAuthenticationResult | null,
 ): Promise<ArtworkPrefetchEntry[]> => {
-    if (!connection || connection.type !== ServerType.SAMO) {
+    if (!connection) {
         return [];
     }
 

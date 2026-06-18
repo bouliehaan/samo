@@ -7,7 +7,6 @@ import {
 import {
     findServerAuthenticationForSource,
     getSamoBearerToken,
-    ServerType,
     type ServerAuthenticationResult,
 } from '@samo/core/server';
 
@@ -63,7 +62,7 @@ export const attachNativeStreamCredentials = (
     const auth = contentSource
         ? findServerAuthenticationForSource(serverConnection, contentSource)
         : undefined;
-    if (!auth || auth.type !== ServerType.SAMO) {
+    if (!auth) {
         return item;
     }
 

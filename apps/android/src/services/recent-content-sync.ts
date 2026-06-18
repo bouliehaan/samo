@@ -3,7 +3,7 @@ import {
     type MobileHomeContent,
     type MobileHomeItem,
 } from '@samo/core/mobile';
-import { ServerType, type ServerAuthenticationResult } from '@samo/core/server';
+import { type ServerAuthenticationResult } from '@samo/core/server';
 
 import {
     type AndroidRecentContentItem,
@@ -50,7 +50,7 @@ export const mergeServerRecentlyPlayedIntoRecents = async (
         isEligibleRecentlyPlayedSurfaceItem(entry.item, { directSong: entry.directSong }),
     );
 
-    if (authentication && authentication.type === ServerType.SAMO) {
+    if (authentication) {
         let serverItems: MobileHomeItem[] = [];
         try {
             serverItems = await loadSamoRecentlyPlayedHomeItems(authentication, samoFetch, 48);

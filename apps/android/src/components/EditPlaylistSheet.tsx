@@ -8,7 +8,6 @@ import {
 } from '@samo/core/mobile';
 import {
     findServerAuthenticationForSource,
-    ServerType,
     type ServerAuthenticationResult,
 } from '@samo/core/server';
 import { File } from 'expo-file-system';
@@ -50,14 +49,14 @@ export const EditPlaylistSheet = ({
 }) => {
     const authentication = findServerAuthenticationForSource(serverConnection, detail.source);
     const canEdit = isMobilePlaylistDetailEditable(detail);
-    const supportsPublic = authentication?.type === ServerType.SAMO;
+    const supportsPublic = Boolean(authentication);
 
     const [name, setName] = useState(detail.title);
     const [description, setDescription] = useState(detail.playlistMeta?.description ?? '');
     const [isPublic, setIsPublic] = useState(detail.playlistMeta?.public ?? false);
     const [coverFile, setCoverFile] = useState<File | null>(null);
     const [isSaving, setIsSaving] = useState(false);
-    const supportsCoverUpload = authentication?.type === ServerType.SAMO;
+    const supportsCoverUpload = Boolean(authentication);
 
     useEffect(() => {
         if (!visible) return;

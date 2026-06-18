@@ -6,7 +6,6 @@ import {
     findServerAuthenticationForSource,
     getFetch,
     getSamoInternetRadioStation,
-    ServerType,
     type ServerAuthenticationResult,
 } from '@samo/core/server';
 import { useEffect, useRef } from 'react';
@@ -42,7 +41,7 @@ export function useAndroidRadioMetadataSync(
                 serverConnectionsRef.current,
                 { id: state.item.contentSourceId },
             );
-            if (!authentication || authentication.type !== ServerType.SAMO) {
+            if (!authentication) {
                 return;
             }
 

@@ -12,7 +12,7 @@ import {
     type MobileMediaTrack,
     type MobileSearchItem,
 } from '@samo/core/mobile';
-import { type ServerAuthenticationResult, findServerAuthenticationForSource, ServerType } from '@samo/core/server';
+import { type ServerAuthenticationResult, findServerAuthenticationForSource } from '@samo/core/server';
 import { FlashList } from '@shopify/flash-list';
 import Reanimated, {
     interpolate,
@@ -645,7 +645,7 @@ export const MediaDetailLoaded = ({
     const canCreatePlaylist = useMemo(() => {
         const auth = findServerAuthenticationForSource(serverConnection, detail.source);
 
-        return auth?.type === ServerType.SAMO;
+        return Boolean(auth);
     }, [detail.source, serverConnection]);
     const handleCreatePlaylist = async (name: string) => {
         if (!playlistMenuTrack) {

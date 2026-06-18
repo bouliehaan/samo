@@ -41,6 +41,7 @@ import {
 import { File } from 'expo-file-system';
 import { Image as ExpoImage } from 'expo-image';
 import { StatusBar } from 'expo-status-bar';
+import { useFonts } from 'expo-font';
 import {
     Component,
     type ComponentProps,
@@ -379,7 +380,21 @@ import {
 import { getPlaylistTargetsForRoot } from './src/utils/playlist-targets';
 import { getTabTitle } from './src/utils/tab-title';
 
+// @ts-ignore
+Text.defaultProps = Text.defaultProps || {};
+// @ts-ignore
+Text.defaultProps.style = { fontFamily: 'Archivo' };
+// @ts-ignore
+TextInput.defaultProps = TextInput.defaultProps || {};
+// @ts-ignore
+TextInput.defaultProps.style = { fontFamily: 'Archivo' };
+
+
+
 export default function App() {
+    const [fontsLoaded] = useFonts({
+        Archivo: require('./assets/fonts/Archivo.ttf'),
+    });
     const mediaHandlersRef = useRef<null | ReturnType<typeof useAndroidMediaHandlers>>(null);
     const libraryRelevantFetchTokenRef = useRef(0);
     const [libraryRelevantState, setLibraryRelevantState] = useState<AndroidLibraryRelevantState>(
@@ -442,6 +457,9 @@ export default function App() {
         setUsername,
         username,
     } = auth;
+
+
+
     const {
         artworkCacheLimitBytes,
         downloadedCollectionKeys,
@@ -542,116 +560,6 @@ export default function App() {
         opacity: detailOverlayProgress.value,
         transform: [{ translateY: (1 - detailOverlayProgress.value) * 10 }],
     }));
-
-    // When offline mode is on, filter home/library content to items that
-    // have at least one completed download. Items without a server source
-    // are dropped entirely (defensive: shouldn't happen for downloadables).
-    const visibleHomeContentState = useMemo(() => {
-        if (!isOfflineMode) {
-            return homeContentState;
-        }
-        const offlineContentState = buildOfflineHomeContentState(
-            downloadedCollections,
-            serverConnection,
-        );
-        if (homeContentState.status !== 'loaded') {
-            return offlineContentState;
-        }
-        const filteredSections = homeContentState.content.sections
-            .map((section) => ({
-                ...section,
-                items: section.items.filter((item) =>
-                    downloadedCollectionKeys.has(
-                        getDownloadedCollectionKey(item.source?.id, item.id),
-                    ),
-                ),
-            }))
-            .filter((section) => section.items.length > 0);
-        if (filteredSections.length === 0) {
-            return offlineContentState;
-        }
-        return {
-            ...homeContentState,
-            content: {
-                ...homeContentState.content,
-                sections: filteredSections,
-            },
-        };
-    }, [
-        downloadedCollectionKeys,
-        downloadedCollections,
-        homeContentState,
-        isOfflineMode,
-        serverConnection,
-    ]);
-
-    const visibleRecentItems = useMemo(() => {
-        const withoutArtists = recentContentItems.filter((entry) =>
-            isEligibleRecentlyPlayedSurfaceItem(entry.item, { directSong: entry.directSong }),
-        );
-        const filtered = isOfflineMode
-            ? withoutArtists.filter((entry) =>
-                  downloadedCollectionKeys.has(
-                      getDownloadedCollectionKey(entry.item.source?.id, entry.item.id),
-                  ),
-              )
-            : withoutArtists;
-        // Build a key→item index from the freshly-loaded home content so we
-        // can swap recents up to date at render time. The home loader runs
-        // annotateSubsonicAlbumsQuality on every album section, which means
-        // the fresh copies carry qualityProfile — so backfilling here lets
-        // recents inherit the badge without us having to rewrite the
-        // persisted store. Same trick applies for artworkUrl, which used to
-        // be the only field we patched here.
-        const freshByKey = new Map<string, MobileHomeItem>();
-        if (homeContentState.status === 'loaded') {
-            for (const section of homeContentState.content.sections) {
-                for (const item of section.items) {
-                    const key = getRecentContentItemKey(item);
-                    if (!freshByKey.has(key)) {
-                        freshByKey.set(key, item);
-                    }
-                }
-            }
-        }
-        return filtered.map((entry) => {
-            const fresh = freshByKey.get(entry.key);
-            // Merge keeps stored fields as the base — title/subtitle/source
-            // — and layers any fresh signal (qualityProfile, artworkUrl,
-            // isHiRes) on top. We don't fully replace because a recent item
-            // can outlive its home-content reflection (eg you clicked
-            // through to an album that isn't in your home-page slice).
-            const merged: AndroidRecentContentSourceItem = fresh
-                ? {
-                      ...entry.item,
-                      artworkImageId: entry.item.artworkImageId ?? fresh.artworkImageId,
-                      artworkUrl: entry.item.artworkUrl ?? fresh.artworkUrl,
-                      isHiRes: entry.item.isHiRes ?? fresh.isHiRes,
-                      qualityProfile:
-                          'qualityProfile' in entry.item
-                              ? (entry.item.qualityProfile ?? fresh.qualityProfile)
-                              : fresh.qualityProfile,
-                  }
-                : entry.item;
-            // Recents persisted before subsonicCoverArtUrl learned the
-            // entity-id fallback were stored without artworkUrl. Backfill
-            // at render time so they pick up real covers as soon as the
-            // matching server is connected, without rewriting storage.
-            if (!merged.artworkUrl && !merged.artworkImageId) {
-                const resolved = resolveItemArtworkUrl(merged, serverConnection);
-                if (resolved) {
-                    return { ...entry, item: { ...merged, artworkUrl: resolved } };
-                }
-            }
-            return merged === entry.item ? entry : { ...entry, item: merged };
-        });
-    }, [
-        recentContentItems,
-        isOfflineMode,
-        downloadedCollectionKeys,
-        serverConnection,
-        homeContentState,
-    ]);
 
     // Server-curated Home sections (Discover / Podcast Feed / Radio) are the
     // ONLY network-fetched Home data; every library section derives from the
@@ -1694,21 +1602,17 @@ export default function App() {
             ) : null}
             {tabId === 'home' ? (
                 <HomeScreen
-                    homeContentState={visibleHomeContentState}
                     onManageServers={handleOpenManageServers}
                     onPrefetchItem={handlePrefetchMediaItemStable}
                     onSelectItem={handleSelectMediaItemStable}
                     onViewAll={handleOpenViewAll}
-                    recentItems={visibleRecentItems}
                     serverConnection={serverConnection}
                 />
             ) : tabId === 'playlists' ? (
                 <PlaylistsScreen
-                    homeContentState={visibleHomeContentState}
                     onCreatePlaylist={handleOpenCreatePlaylistStandalone}
                     onSelectItem={handleSelectMediaItemStable}
                     onShufflePlay={handleShuffleHomeItems}
-                    recentItems={visibleRecentItems}
                     showCreatePlaylist={canCreatePlaylistsOnDevice}
                 />
             ) : tabId === 'library' ? (
@@ -1716,29 +1620,23 @@ export default function App() {
                     fullCollections={libraryFullCollections}
                     fullCollectionsEnabled={!isOfflineMode}
                     hasServerConnections={Boolean(serverConnection)}
-                    homeContentState={visibleHomeContentState}
                     libraryRelevantState={libraryRelevantState}
                     onEnsureFullCollections={ensureLibraryFullCollections}
                     onSelectItem={handleSelectMediaItemStable}
-                    recentItems={visibleRecentItems}
                 />
             ) : tabId === 'search' ? (
                 <SearchScreen
                     hasServerConnections={Boolean(serverConnection)}
-                    homeContentState={visibleHomeContentState}
                     onSearch={handleSearch}
                     onSelectItem={handleSelectMediaItemStable}
                     onSelectRecentItem={handleSelectMediaItemStable}
-                    recentItems={visibleRecentItems}
                     searchState={searchState}
                     serverConnection={serverConnection}
                 />
             ) : tabId === 'radio' ? (
                 <RadioScreen
-                    homeContentState={visibleHomeContentState}
                     onAddStation={handleAddRadioStation}
                     onSelectItem={handleSelectMediaItemStable}
-                    recentItems={visibleRecentItems}
                     serverConnection={serverConnection}
                 />
             ) : (
@@ -1746,6 +1644,10 @@ export default function App() {
             )}
         </Fragment>
     );
+
+    if (!fontsLoaded) {
+        return null;
+    }
 
     return (
         <GestureHandlerRootView style={styles.gestureRoot}>
@@ -1900,7 +1802,6 @@ export default function App() {
                                             ) : null}
                                             {isSearchOverlayOpen ? (
                                                 <SearchOverlay
-                                                    homeContentState={homeContentState}
                                                     onClose={() => {
                                                         setIsSearchOverlayOpen(false);
                                                         setSearchOverlayQuery('');
@@ -1915,7 +1816,6 @@ export default function App() {
                                                         handleSelectMediaItemStable(item);
                                                     }}
                                                     query={searchOverlayQuery}
-                                                    recentItems={recentContentItems}
                                                     searchState={searchState}
                                                     serverConnection={serverConnection}
                                                 />

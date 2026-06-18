@@ -657,15 +657,17 @@ const CompactItemCard = ({
                                 row !== null && row !== undefined,
                         )
                         .map((row, index) => (
-                            <Text
+                            <div
                                 className={clsx(styles.row, {
                                     [styles.muted]: index > 0,
                                 })}
                                 key={row.id}
-                                size={index > 0 ? 'sm' : 'md'}
                             >
-                                &nbsp;
-                            </Text>
+                                <Skeleton
+                                    height={index > 0 ? '0.75rem' : '0.875rem'}
+                                    width={index === 0 ? '70%' : '50%'}
+                                />
+                            </div>
                         ))}
                 </div>
             </div>
@@ -819,15 +821,17 @@ const DefaultItemCard = ({
                         (row): row is NonNullable<typeof row> => row !== null && row !== undefined,
                     )
                     .map((row, index) => (
-                        <Text
+                        <div
                             className={clsx(styles.row, {
                                 [styles.muted]: index > 0,
                             })}
                             key={row.id}
-                            size={index > 0 ? 'sm' : 'md'}
                         >
-                            &nbsp;
-                        </Text>
+                            <Skeleton
+                                height={index > 0 ? '0.75rem' : '0.875rem'}
+                                width={index === 0 ? '75%' : '55%'}
+                            />
+                        </div>
                     ))}
             </div>
         </div>
@@ -1051,15 +1055,17 @@ const PosterItemCard = ({
                         (row): row is NonNullable<typeof row> => row !== null && row !== undefined,
                     )
                     .map((row, index) => (
-                        <Text
+                        <div
                             className={clsx(styles.row, {
                                 [styles.muted]: index > 0,
                             })}
                             key={row.id}
-                            size={index > 0 ? 'sm' : 'md'}
                         >
-                            &nbsp;
-                        </Text>
+                            <Skeleton
+                                height={index > 0 ? '0.75rem' : '0.875rem'}
+                                width={index === 0 ? '75%' : '55%'}
+                            />
+                        </div>
                     ))}
             </div>
         </div>
@@ -1429,7 +1435,10 @@ const ItemCardRow = memo(
                         [styles.poster]: type === 'poster',
                     })}
                 >
-                    &nbsp;
+                    <Skeleton
+                        height={index > 0 ? '0.75rem' : '0.875rem'}
+                        width={index === 0 ? '75%' : '55%'}
+                    />
                 </div>
             );
         }
