@@ -17,12 +17,12 @@ export type AndroidLibraryRelevantState =
  * the server's delta includes playback-overlay changes.
  */
 export const loadAndroidLibraryRelevantContent = async (
-    authentications: ServerAuthenticationResult[],
+    authentication: ServerAuthenticationResult | null,
 ): Promise<AndroidLibraryRelevantState> => {
-    if (authentications.length === 0) {
+    if (!authentication) {
         return { status: 'idle' };
     }
-    const items = loadCatalogLibraryRelevantItems(authentications);
+    const items = loadCatalogLibraryRelevantItems(authentication);
     return items.length > 0
         ? { items, loadedAt: Date.now(), status: 'loaded' }
         : { status: 'loading' };

@@ -8,7 +8,7 @@ import { DEFAULT_SERVER_URL } from '../utils/auth-url';
 export type AuthSessionState = {
     authState: AndroidAuthState;
     password: string;
-    serverConnections: ServerAuthenticationResult[];
+    serverConnection: ServerAuthenticationResult | null;
     serverHealthByKey: AndroidServerHealthMap;
     serverType: ServerType;
     serverUrl: string;
@@ -18,7 +18,7 @@ export type AuthSessionState = {
 const initialAuthSessionState: AuthSessionState = {
     authState: { status: 'idle' },
     password: '',
-    serverConnections: [],
+    serverConnection: null,
     serverHealthByKey: {},
     serverType: ServerType.SAMO,
     serverUrl: DEFAULT_SERVER_URL,
@@ -34,10 +34,11 @@ type AuthSessionAction =
       }
     | { type: 'set-password'; value: string | ((current: string) => string) }
     | {
-          type: 'set-server-connections';
+          type: 'set-server-connection';
           value:
-              | ServerAuthenticationResult[]
-              | ((current: ServerAuthenticationResult[]) => ServerAuthenticationResult[]);
+              | ServerAuthenticationResult
+              | null
+              | ((current: ServerAuthenticationResult | null) => ServerAuthenticationResult | null);
       }
     | {
           type: 'set-server-health';
@@ -73,12 +74,12 @@ const authSessionReducer = (
                 typeof action.value === 'function' ? action.value(state.password) : action.value;
             return { ...state, password };
         }
-        case 'set-server-connections': {
-            const serverConnections =
+        case 'set-server-connection': {
+            const serverConnection =
                 typeof action.value === 'function'
-                    ? action.value(state.serverConnections)
+                    ? action.value(state.serverConnection)
                     : action.value;
-            return { ...state, serverConnections };
+            return { ...state, serverConnection };
         }
         case 'set-server-health': {
             const serverHealthByKey =
@@ -106,7 +107,7 @@ const authSessionReducer = (
 
 // Single app-wide auth/server store. Previously a per-call `useReducer`, which
 // silently gave each consumer its own copy: `use-android-abs-progress-sync`
-// read `serverConnections` from a second instance that login never populated,
+// read `serverConnection` from a second instance that login never populated,
 // so its pending-progress flush ran with an empty server list and never synced.
 // A module-level store (mirroring `playback-store.ts`) keeps every consumer on
 // the same state with no change to the hook's API.
@@ -148,11 +149,12 @@ const setServerUrl = (value: string | ((current: string) => string)) =>
 const setServerType = (serverType: ServerType) =>
     dispatchAuthSession({ type: 'set-server-type', serverType });
 
-const setServerConnections = (
+const setServerConnection = (
     value:
-        | ServerAuthenticationResult[]
-        | ((current: ServerAuthenticationResult[]) => ServerAuthenticationResult[]),
-) => dispatchAuthSession({ type: 'set-server-connections', value });
+        | ServerAuthenticationResult
+        | null
+        | ((current: ServerAuthenticationResult | null) => ServerAuthenticationResult | null),
+) => dispatchAuthSession({ type: 'set-server-connection', value });
 
 const setServerHealthByKey = (
     value: AndroidServerHealthMap | ((current: AndroidServerHealthMap) => AndroidServerHealthMap),
@@ -173,7 +175,7 @@ export const useAuthSessionState = () => {
         patchAuthSession,
         setAuthState,
         setPassword,
-        setServerConnections,
+        setServerConnection,
         setServerHealthByKey,
         setServerType,
         setServerUrl,

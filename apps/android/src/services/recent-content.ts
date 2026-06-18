@@ -8,6 +8,7 @@ import {
 } from '@samo/core/mobile';
 
 import { fsDeleteItem, fsGetItem, fsSetItem } from './fs-storage';
+import { safeParseJson } from '../utils/json';
 
 // v2 invalidates stale persisted playback payloads from older builds.
 const RECENT_CONTENT_KEY = 'samo.android.recent-content.v2';
@@ -126,20 +127,16 @@ export const loadPersistedRecentContentItems = async (): Promise<AndroidRecentCo
         return [];
     }
 
-    try {
-        const parsed = JSON.parse(raw) as unknown;
+    const parsed = safeParseJson<unknown>(raw);
 
-        if (!Array.isArray(parsed)) {
-            return [];
-        }
-
-        return parsed
-            .filter(isPersistedRecentContentItem)
-            .filter(isPersistedRecentEntryVisible)
-            .slice(0, MAX_RECENT_CONTENT_ITEMS);
-    } catch {
+    if (!Array.isArray(parsed)) {
         return [];
     }
+
+    return parsed
+        .filter(isPersistedRecentContentItem)
+        .filter(isPersistedRecentEntryVisible)
+        .slice(0, MAX_RECENT_CONTENT_ITEMS);
 };
 
 export const savePersistedRecentContentItems = async (items: AndroidRecentContentItem[]) => {

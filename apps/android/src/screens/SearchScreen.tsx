@@ -250,12 +250,12 @@ export const SearchScreen = memo(({
     onSelectRecentItem,
     recentItems,
     searchState,
-    serverConnections,
+    serverConnection,
 }: SearchScreenProps) => {
     const [query, setQuery] = useState(searchState.status === 'loaded' ? searchState.query : '');
     const availableScopes = useMemo(
-        () => getAvailableSearchScopes(homeContentState, serverConnections, recentItems),
-        [homeContentState, recentItems, serverConnections],
+        () => getAvailableSearchScopes(homeContentState, serverConnection, recentItems),
+        [homeContentState, recentItems, serverConnection],
     );
     const [activeScope, setActiveScope] = useState<SearchScope>('all');
 
@@ -329,12 +329,12 @@ export const SearchOverlay = ({
     query,
     recentItems,
     searchState,
-    serverConnections,
+    serverConnection,
 }: SearchOverlayProps) => {
     const inputRef = useRef<TextInput>(null);
     const availableScopes = useMemo(
-        () => getAvailableSearchScopes(homeContentState, serverConnections, recentItems),
-        [homeContentState, recentItems, serverConnections],
+        () => getAvailableSearchScopes(homeContentState, serverConnection, recentItems),
+        [homeContentState, recentItems, serverConnection],
     );
     const [activeScope, setActiveScope] = useState<SearchScope>('all');
 

@@ -6,6 +6,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.Callable
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * THE catalog sync engine. Kotlin is the single owner of the on-device mirror:
@@ -67,26 +68,30 @@ internal object SamoCatalogSync {
 
     data class Summary(val results: List<SourceResult>)
 
+    private val isRunning = AtomicBoolean(false)
+
     /**
-     * Run the sync for every Samo connection in the mirror. Sources are
-     * processed sequentially because they share the catalog DB writer
-     * connection.
+     * Run the sync for the active Samo connection.
      */
-    fun runAll(context: Context, connections: List<SamoAuthMirror.Connection>): Summary {
-        val results = mutableListOf<SourceResult>()
-        for (conn in connections) {
-            try {
-                results.add(runOne(context, conn))
-            } catch (error: Throwable) {
-                Log.w(TAG, "source ${connectionKey(conn)} failed", error)
-                val sourceId = connectionKey(conn)
-                results.add(
-                    SourceResult(sourceId, 0L, 0L, 0L, listOf(error.message ?: error::class.java.simpleName)),
-                )
-                SamoCatalogSyncEvents.emit(sourceId, "error", 0, 0, 0, error.message)
-            }
+    fun runAll(context: Context, connection: SamoAuthMirror.Connection): Summary {
+        if (!isRunning.compareAndSet(false, true)) {
+            Log.w(TAG, "catalog sync aborted: another sync is already in progress")
+            return Summary(emptyList())
         }
-        return Summary(results)
+
+        try {
+            val result = runOne(context, connection)
+            return Summary(listOf(result))
+        } catch (error: Throwable) {
+            Log.w(TAG, "source ${connectionKey(connection)} failed", error)
+            val sourceId = connectionKey(connection)
+            SamoCatalogSyncEvents.emit(sourceId, "error", 0, 0, 0, error.message)
+            return Summary(
+                listOf(SourceResult(sourceId, 0L, 0L, 0L, listOf(error.message ?: error::class.java.simpleName)))
+            )
+        } finally {
+            isRunning.set(false)
+        }
     }
 
     private fun runOne(context: Context, conn: SamoAuthMirror.Connection): SourceResult {
@@ -148,7 +153,13 @@ internal object SamoCatalogSync {
         val manifest = try {
             SamoCatalogServerClient.fetchManifest(conn)
         } catch (error: SamoCatalogServerClient.FetchException) {
-            errors.add("manifest fetch failed: ${error.message}")
+            if (error.kind == SamoCatalogServerClient.FailureKind.Network || error.kind == SamoCatalogServerClient.FailureKind.Auth) {
+                throw error
+            }
+            errors.add("manifest fetch failed: ${error.message ?: error::class.java.simpleName}")
+            null
+        } catch (error: Throwable) {
+            errors.add("manifest fetch failed: ${error.message ?: error::class.java.simpleName}")
             null
         }
         val manifestItems = manifest?.let { manifestItemCount(it) } ?: 0L
@@ -283,7 +294,13 @@ internal object SamoCatalogSync {
                     itemIdsByType.getOrPut(variant.catalogType) { mutableListOf() }
                         .addAll(rows.map { it.id })
                     totalItems += rows.size.toLong()
+                    progress(context, sourceId, totalItems, totalTracks, 0)
                 }
+            } catch (error: SamoCatalogServerClient.FetchException) {
+                if (error.kind == SamoCatalogServerClient.FailureKind.Network || error.kind == SamoCatalogServerClient.FailureKind.Auth) {
+                    throw error
+                }
+                errors.add("${variant.catalogType}: ${error.message ?: error::class.java.simpleName}")
             } catch (error: Throwable) {
                 errors.add("${variant.catalogType}: ${error.message ?: error::class.java.simpleName}")
             }
@@ -310,7 +327,13 @@ internal object SamoCatalogSync {
                     SamoCatalogWriter.upsertTracks(db, rows)
                 }
                 totalTracks += rows.size.toLong()
+                progress(context, sourceId, totalItems, totalTracks, 0)
             }
+        } catch (error: SamoCatalogServerClient.FetchException) {
+            if (error.kind == SamoCatalogServerClient.FailureKind.Network || error.kind == SamoCatalogServerClient.FailureKind.Auth) {
+                throw error
+            }
+            errors.add("tracks: ${error.message ?: error::class.java.simpleName}")
         } catch (error: Throwable) {
             errors.add("tracks: ${error.message ?: error::class.java.simpleName}")
         }
@@ -372,7 +395,13 @@ internal object SamoCatalogSync {
                     justUpsertedByVariant.getOrPut(variant.catalogType) { HashSet() }
                         .addAll(rows.map { it.id })
                     totalItems += rows.size.toLong()
+                    progress(context, sourceId, totalItems, totalTracks, 0)
                 }
+            } catch (error: SamoCatalogServerClient.FetchException) {
+                if (error.kind == SamoCatalogServerClient.FailureKind.Network || error.kind == SamoCatalogServerClient.FailureKind.Auth) {
+                    throw error
+                }
+                errors.add("delta ${variant.catalogType}: ${error.message ?: error::class.java.simpleName}")
             } catch (error: Throwable) {
                 errors.add("delta ${variant.catalogType}: ${error.message ?: error::class.java.simpleName}")
             }
@@ -400,7 +429,13 @@ internal object SamoCatalogSync {
                     row.artistId?.let { changedTrackArtistIds.add(it) }
                 }
                 totalTracks += rows.size.toLong()
+                progress(context, sourceId, totalItems, totalTracks, 0)
             }
+        } catch (error: SamoCatalogServerClient.FetchException) {
+            if (error.kind == SamoCatalogServerClient.FailureKind.Network || error.kind == SamoCatalogServerClient.FailureKind.Auth) {
+                throw error
+            }
+            errors.add("delta tracks: ${error.message ?: error::class.java.simpleName}")
         } catch (error: Throwable) {
             errors.add("delta tracks: ${error.message ?: error::class.java.simpleName}")
         }
@@ -442,6 +477,19 @@ internal object SamoCatalogSync {
                 val serverSet = jsonStringArrayToSet(manifestIds.optJSONArray(variant.manifestKey))
                 val justUpserted = justUpsertedByVariant[variant.catalogType] ?: emptySet()
                 val localIds = SamoCatalogWriter.getItemIdsByType(db, sourceId, variant.catalogType)
+                // Type-wipe guard (sibling of the prune guard): a manifest that
+                // lists ZERO ids for a type the mirror has plenty of is far more
+                // likely a server-side hiccup (partial reload, broken sub-table)
+                // than a real mass deletion — and on 2026-06-12 exactly that
+                // silently erased every podcast from the device. Skip the type,
+                // record an error (parks the cursor for retry); when the server
+                // recovers, the completeness backfill restores the mirror.
+                if (serverSet.isEmpty() && localIds.isNotEmpty()) {
+                    errors.add(
+                        "manifest lists 0 ${variant.catalogType} but mirror has ${localIds.size}; reconcile skipped",
+                    )
+                    continue
+                }
                 val removed = localIds.filter { it !in serverSet && it !in justUpserted }
                 if (removed.isNotEmpty()) {
                     SamoCatalogWriter.deleteItemsByIds(db, sourceId, variant.catalogType, removed)
@@ -456,9 +504,13 @@ internal object SamoCatalogSync {
             val musicContainers = listOf("album")
             val serverTracks = jsonStringArrayToSet(manifestIds.optJSONArray("tracks"))
             val localTrackIds = SamoCatalogWriter.getDistinctTrackIds(db, sourceId, musicContainers)
-            val removedTracks = localTrackIds.filter { it !in serverTracks && it !in justUpsertedTrackIds }
-            if (removedTracks.isNotEmpty()) {
-                SamoCatalogWriter.deleteTracksByTrackIds(db, sourceId, removedTracks, musicContainers)
+            if (serverTracks.isEmpty() && localTrackIds.isNotEmpty()) {
+                errors.add("manifest lists 0 tracks but mirror has ${localTrackIds.size}; reconcile skipped")
+            } else {
+                val removedTracks = localTrackIds.filter { it !in serverTracks && it !in justUpsertedTrackIds }
+                if (removedTracks.isNotEmpty()) {
+                    SamoCatalogWriter.deleteTracksByTrackIds(db, sourceId, removedTracks, musicContainers)
+                }
             }
         }
 

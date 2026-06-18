@@ -72,13 +72,13 @@ const isSamoSource = (source: { type: ServerType } | undefined): boolean =>
 const hydrateDetailPayload = (
     payload: unknown,
     source: { id: string; type: ServerType; url?: string },
-    serverConnections: ServerAuthenticationResult[],
+    serverConnection: ServerAuthenticationResult | null,
 ): MobileMediaDetail | null => {
     if (!payload || typeof payload !== 'object') {
         return null;
     }
     if (isSamoRawDetailBundle(payload)) {
-        const auth = findServerAuthenticationForSource(serverConnections, source);
+        const auth = findServerAuthenticationForSource(serverConnection, source);
         if (!auth || auth.type !== ServerType.SAMO) {
             return null;
         }
@@ -169,7 +169,7 @@ const hydrateCatalogTracks = (
  */
 export const loadCatalogMediaDetail = async (
     item: AndroidRecentContentSourceItem,
-    serverConnections: ServerAuthenticationResult[],
+    serverConnection: ServerAuthenticationResult | null,
 ): Promise<MobileMediaDetail | null> => {
     const source = item.source;
     if (!isSamoSource(source) || !source) {
@@ -182,7 +182,7 @@ export const loadCatalogMediaDetail = async (
 
     try {
         if (detailType === MobileMediaDetailType.ALBUM) {
-            const auth = findServerAuthenticationForSource(serverConnections, source);
+            const auth = findServerAuthenticationForSource(serverConnection, source);
             if (!auth) {
                 return null;
             }
@@ -209,7 +209,7 @@ export const loadCatalogMediaDetail = async (
         return hydrateDetailPayload(
             await getDetail(source.id, detailType, item.id),
             source,
-            serverConnections,
+            serverConnection,
         );
     } catch {
         return null;
@@ -223,11 +223,11 @@ export const loadCatalogMediaDetail = async (
  */
 export const loadCatalogMediaDetailSync = (
     item: AndroidRecentContentSourceItem,
-    serverConnections: ServerAuthenticationResult[],
+    serverConnection: ServerAuthenticationResult | null,
 ): MobileMediaDetail | null => {
     const startedAt = Date.now();
     try {
-        return loadCatalogMediaDetailSyncInner(item, serverConnections);
+        return loadCatalogMediaDetailSyncInner(item, serverConnection);
     } finally {
         const elapsed = Date.now() - startedAt;
         if (elapsed > 200) {
@@ -239,7 +239,7 @@ export const loadCatalogMediaDetailSync = (
 
 const loadCatalogMediaDetailSyncInner = (
     item: AndroidRecentContentSourceItem,
-    serverConnections: ServerAuthenticationResult[],
+    serverConnection: ServerAuthenticationResult | null,
 ): MobileMediaDetail | null => {
     const source = item.source;
     if (!isSamoSource(source) || !source) {
@@ -251,7 +251,7 @@ const loadCatalogMediaDetailSyncInner = (
     }
 
     if (detailType === MobileMediaDetailType.ALBUM) {
-        const auth = findServerAuthenticationForSource(serverConnections, source);
+        const auth = findServerAuthenticationForSource(serverConnection, source);
         if (!auth) {
             return null;
         }
@@ -275,7 +275,7 @@ const loadCatalogMediaDetailSyncInner = (
     return hydrateDetailPayload(
         getDetailSync(source.id, detailType, item.id),
         source,
-        serverConnections,
+        serverConnection,
     );
 };
 
@@ -387,9 +387,9 @@ export interface HomeLiveSections {
 /** Cross-type Recently Added (albums + audiobooks + podcasts by addedAt),
  *  matching what the old network fan-out's recently-added endpoint served. */
 const recentlyAddedFromMirror = (
-    samoAuthentications: ServerAuthenticationResult[],
+    authentication: ServerAuthenticationResult,
 ): MobileHomeItem[] => {
-    const pool = samoAuthentications.flatMap((authentication) => [
+    const pool = [
         ...loadCatalogCollectionSync(authentication, MobileHomeItemType.ALBUM, {
             direction: 'desc',
             limit: HOME_SECTION_ITEM_LIMIT,
@@ -405,7 +405,7 @@ const recentlyAddedFromMirror = (
             limit: HOME_SECTION_ITEM_LIMIT,
             sort: 'added',
         }),
-    ]);
+    ];
     return pool
         .sort((left, right) => (right.addedAt ?? 0) - (left.addedAt ?? 0))
         .slice(0, HOME_SECTION_ITEM_LIMIT);
@@ -419,30 +419,26 @@ const recentlyAddedFromMirror = (
  * local rows yet (fresh install before the first sync lands).
  */
 export const buildCatalogHomeContent = (
-    authentications: ServerAuthenticationResult[],
+    authentication: ServerAuthenticationResult | null,
     live?: HomeLiveSections | null,
 ): MobileHomeContent | null => {
-    const samoAuthentications = authentications.filter(
-        (authentication) => authentication.type === ServerType.SAMO,
-    );
-    if (samoAuthentications.length === 0) {
+    if (!authentication || authentication.type !== ServerType.SAMO) {
         return null;
     }
 
     const mirrorSections = new Map<MobileHomeSectionId, MobileHomeSection>();
     for (const spec of CATALOG_HOME_SECTIONS) {
-        const items = samoAuthentications.flatMap((authentication) =>
-            loadCatalogCollectionSync(authentication, spec.type, {
-                direction: spec.direction,
-                limit: HOME_SECTION_ITEM_LIMIT,
-                sort: spec.sort,
-            }),
-        );
+        const items = loadCatalogCollectionSync(authentication, spec.type, {
+            direction: spec.direction,
+            limit: HOME_SECTION_ITEM_LIMIT,
+            sort: spec.sort,
+        });
+
         if (items.length > 0) {
             mirrorSections.set(spec.id, { id: spec.id, items, title: spec.title });
         }
     }
-    const recentlyAdded = recentlyAddedFromMirror(samoAuthentications);
+    const recentlyAdded = recentlyAddedFromMirror(authentication);
 
     const sections: MobileHomeSection[] = [];
     const pushLive = (id: MobileHomeSectionId, title: string, items?: MobileHomeItem[]) => {
@@ -475,7 +471,7 @@ export const buildCatalogHomeContent = (
         errors: [],
         loadedAt: Date.now(),
         sections,
-        serverTitle: getMobileContentSource(samoAuthentications[0]!).title,
+        serverTitle: getMobileContentSource(authentication).title,
     };
 };
 
@@ -487,11 +483,12 @@ export const buildCatalogHomeContent = (
  * surfaces don't depend on it.
  */
 export const loadCatalogLibraryRelevantItems = (
-    authentications: ServerAuthenticationResult[],
+    authentication: ServerAuthenticationResult | null,
 ): MobileHomeItem[] => {
-    const samoAuthentications = authentications.filter(
-        (authentication) => authentication.type === ServerType.SAMO,
-    );
+    if (!authentication || authentication.type !== ServerType.SAMO) {
+        return [];
+    }
+
     const seen = new Set<string>();
     const items: MobileHomeItem[] = [];
     const push = (item: MobileHomeItem) => {
@@ -504,26 +501,24 @@ export const loadCatalogLibraryRelevantItems = (
     };
 
     const RELEVANT_LIMIT = 80;
-    for (const authentication of samoAuthentications) {
-        const buckets: Array<[MobileHomeItemType, CatalogItemSort, 'asc' | 'desc']> = [
-            [MobileHomeItemType.ALBUM, 'added', 'desc'],
-            [MobileHomeItemType.ARTIST, 'added', 'desc'],
-            [MobileHomeItemType.ALBUM, 'lastPlayed', 'desc'],
-            [MobileHomeItemType.ARTIST, 'lastPlayed', 'desc'],
-            [MobileHomeItemType.ALBUM, 'playCount', 'desc'],
-            [MobileHomeItemType.ARTIST, 'playCount', 'desc'],
-            [MobileHomeItemType.PLAYLIST, 'title', 'asc'],
-            [MobileHomeItemType.AUDIOBOOK, 'added', 'desc'],
-            [MobileHomeItemType.PODCAST, 'title', 'asc'],
-        ];
-        for (const [type, sort, direction] of buckets) {
-            for (const item of loadCatalogCollectionSync(authentication, type, {
-                direction,
-                limit: RELEVANT_LIMIT,
-                sort,
-            })) {
-                push(item);
-            }
+    const buckets: Array<[MobileHomeItemType, CatalogItemSort, 'asc' | 'desc']> = [
+        [MobileHomeItemType.ALBUM, 'added', 'desc'],
+        [MobileHomeItemType.ARTIST, 'added', 'desc'],
+        [MobileHomeItemType.ALBUM, 'lastPlayed', 'desc'],
+        [MobileHomeItemType.ARTIST, 'lastPlayed', 'desc'],
+        [MobileHomeItemType.ALBUM, 'playCount', 'desc'],
+        [MobileHomeItemType.ARTIST, 'playCount', 'desc'],
+        [MobileHomeItemType.PLAYLIST, 'title', 'asc'],
+        [MobileHomeItemType.AUDIOBOOK, 'added', 'desc'],
+        [MobileHomeItemType.PODCAST, 'title', 'asc'],
+    ];
+    for (const [type, sort, direction] of buckets) {
+        for (const item of loadCatalogCollectionSync(authentication, type, {
+            direction,
+            limit: RELEVANT_LIMIT,
+            sort,
+        })) {
+            push(item);
         }
     }
     return items;

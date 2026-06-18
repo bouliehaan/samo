@@ -37,7 +37,7 @@ export const EditPlaylistSheet = ({
     onDeleted,
     onManageTracks,
     onSaved,
-    serverConnections,
+    serverConnection,
     visible,
 }: {
     detail: MobileMediaDetail;
@@ -45,10 +45,10 @@ export const EditPlaylistSheet = ({
     onDeleted: () => void;
     onManageTracks: () => void;
     onSaved: () => void;
-    serverConnections: ServerAuthenticationResult[];
+    serverConnection: ServerAuthenticationResult | null;
     visible: boolean;
 }) => {
-    const authentication = findServerAuthenticationForSource(serverConnections, detail.source);
+    const authentication = findServerAuthenticationForSource(serverConnection, detail.source);
     const canEdit = isMobilePlaylistDetailEditable(detail);
     const supportsPublic = authentication?.type === ServerType.SAMO;
 

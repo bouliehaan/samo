@@ -77,11 +77,11 @@ export const HomeScreen = memo(({
     onSelectItem,
     onViewAll,
     recentItems,
-    serverConnections,
+    serverConnection,
 }: HomeScreenProps) => {
     const [homeFilter, setHomeFilter] = useState<HomeFilter>('all');
 
-    if (serverConnections.length === 0) {
+    if (!serverConnection) {
         return (
             <View style={styles.section}>
                 <Text style={styles.sectionTitle}>Connect Your Library</Text>
@@ -108,7 +108,7 @@ export const HomeScreen = memo(({
             onSelectItem={onSelectItem}
             onViewAll={onViewAll}
             recentItems={recentItems}
-            serverConnections={serverConnections}
+            serverConnection={serverConnection}
         />
     );
 });
@@ -123,7 +123,7 @@ export const HomeContentStatus = ({
     onSelectItem,
     onViewAll,
     recentItems,
-    serverConnections,
+    serverConnection,
 }: {
     activeFilter: HomeFilter;
     homeContentState: AndroidHomeContentState;
@@ -132,7 +132,7 @@ export const HomeContentStatus = ({
     onSelectItem: (item: AndroidRecentContentSourceItem) => void;
     onViewAll?: (section: HomeDisplaySection) => void;
     recentItems: AndroidRecentContentItem[];
-    serverConnections: ServerAuthenticationResult[];
+    serverConnection: ServerAuthenticationResult | null;
 }) => {
     const stablePrefetchItem = useStableCallback(onPrefetchItem ?? (() => {}));
     const stableSelectItem = useStableCallback(onSelectItem);
@@ -146,10 +146,10 @@ export const HomeContentStatus = ({
                 ? getHomeDisplaySections(
                       loadedContent.sections,
                       recentItems,
-                      serverConnections,
+                      serverConnection,
                   )
                 : [],
-        [loadedContent, recentItems, serverConnections],
+        [loadedContent, recentItems, serverConnection],
     );
     const availableFilters = useMemo(
         () => getAvailableHomeFilters(allSections),
@@ -259,7 +259,7 @@ export const HomeContentStatus = ({
                     items={filteredGridItems}
                     onPrefetchItem={stablePrefetchItem}
                     onSelectItem={stableSelectItem}
-                    serverConnections={serverConnections}
+                    serverConnection={serverConnection}
                     variant={activeFilter === 'podcasts' ? 'podcast' : 'book'}
                 />
             ) : (
@@ -268,7 +268,7 @@ export const HomeContentStatus = ({
                     onSelectItem={stableSelectItem}
                     onViewAll={onViewAll ? stableViewAll : undefined}
                     sections={filteredSections}
-                    serverConnections={serverConnections}
+                    serverConnection={serverConnection}
                 />
             )}
             <WarningList errors={homeContentState.content.errors} title="Server warnings" />
@@ -350,14 +350,14 @@ const HomeFilterGridTile = memo(({
     item,
     onPrefetchItem,
     onSelectItem,
-    serverConnections,
+    serverConnection,
     variant,
 }: {
     isPodcast: boolean;
     item: AndroidRecentContentSourceItem;
     onPrefetchItem?: (item: AndroidRecentContentSourceItem) => void;
     onSelectItem: (item: AndroidRecentContentSourceItem) => void;
-    serverConnections: ServerAuthenticationResult[];
+    serverConnection: ServerAuthenticationResult | null;
     variant: 'book' | 'podcast';
 }) => {
     const subtitle = getHomeItemSubtitle(item, variant);
@@ -377,7 +377,7 @@ const HomeFilterGridTile = memo(({
                     isPodcast && styles.homeFilterGridArtworkPodcast,
                 ]}
                 letter={item.title.slice(0, 1)}
-                serverConnections={serverConnections}
+                serverConnection={serverConnection}
                 style={[
                     styles.homeFilterGridArtwork,
                     isPodcast && styles.homeFilterGridArtworkPodcast,
@@ -408,13 +408,13 @@ const HomeFilterGrid = memo(({
     items,
     onPrefetchItem,
     onSelectItem,
-    serverConnections,
+    serverConnection,
     variant,
 }: {
     items: AndroidRecentContentSourceItem[];
     onPrefetchItem?: (item: AndroidRecentContentSourceItem) => void;
     onSelectItem: (item: AndroidRecentContentSourceItem) => void;
-    serverConnections: ServerAuthenticationResult[];
+    serverConnection: ServerAuthenticationResult | null;
     variant: 'book' | 'podcast';
 }) => {
     const isPodcast = variant === 'podcast';
@@ -427,7 +427,7 @@ const HomeFilterGrid = memo(({
                     key={getContentItemKey(item)}
                     onPrefetchItem={onPrefetchItem}
                     onSelectItem={onSelectItem}
-                    serverConnections={serverConnections}
+                    serverConnection={serverConnection}
                     variant={variant}
                 />
             ))}
@@ -491,7 +491,7 @@ interface HomeMediaTileProps {
     onPrefetchItem?: (item: AndroidRecentContentSourceItem) => void;
     onSelectItem: (item: AndroidRecentContentSourceItem) => void;
     sectionVariant: HomeDisplaySection['variant'];
-    serverConnections: ServerAuthenticationResult[];
+    serverConnection: ServerAuthenticationResult | null;
 }
 
 const isDownloadableCollectionMediaType = (mediaType: LibraryMediaType | undefined): boolean =>
@@ -505,7 +505,7 @@ const HomeMediaTile = memo(({
     onPrefetchItem,
     onSelectItem,
     sectionVariant,
-    serverConnections,
+    serverConnection,
 }: HomeMediaTileProps) => {
     const contextMenu = useMediaContextMenu();
     const downloadedCollectionKeys = useDownloadedCollectionKeys();
@@ -592,7 +592,7 @@ const HomeMediaTile = memo(({
                 contentSource={item.source}
                 fallbackStyle={fallbackStyle}
                 letter={item.title.slice(0, 1)}
-                serverConnections={serverConnections}
+                serverConnection={serverConnection}
                 style={artworkStyle}
                 uri={item.artworkUrl}
             />
@@ -668,7 +668,7 @@ interface HomeDisplayRowProps {
     onSelectItem: (item: AndroidRecentContentSourceItem) => void;
     onViewAll?: (section: HomeDisplaySection) => void;
     section: HomeDisplaySection;
-    serverConnections: ServerAuthenticationResult[];
+    serverConnection: ServerAuthenticationResult | null;
 }
 
 /** TL → TR → BL → BR per 2-row band, then continue columns to the right. */
@@ -704,7 +704,7 @@ const HomeDisplayRow = memo(({
     onSelectItem,
     onViewAll,
     section,
-    serverConnections,
+    serverConnection,
 }: HomeDisplayRowProps) => {
     const viewAllVariant = getViewAllVariant(section.variant);
     const canViewAll = viewAllVariant !== null && Boolean(onViewAll);
@@ -723,10 +723,10 @@ const HomeDisplayRow = memo(({
                 onPrefetchItem={onPrefetchItem}
                 onSelectItem={onSelectItem}
                 sectionVariant={section.variant}
-                serverConnections={serverConnections}
+                serverConnection={serverConnection}
             />
         ),
-        [onPrefetchItem, onSelectItem, section.variant, serverConnections],
+        [onPrefetchItem, onSelectItem, section.variant, serverConnection],
     );
     const renderColumn = useCallback(
         ({ item: column }: { item: AndroidRecentContentSourceItem[] }) => (
@@ -738,12 +738,12 @@ const HomeDisplayRow = memo(({
                         onPrefetchItem={onPrefetchItem}
                         onSelectItem={onSelectItem}
                         sectionVariant={section.variant}
-                        serverConnections={serverConnections}
+                        serverConnection={serverConnection}
                     />
                 ))}
             </View>
         ),
-        [onPrefetchItem, onSelectItem, section.variant, serverConnections],
+        [onPrefetchItem, onSelectItem, section.variant, serverConnection],
     );
 
     return (
@@ -796,13 +796,13 @@ const ContentSections = memo(({
     onSelectItem,
     onViewAll,
     sections,
-    serverConnections,
+    serverConnection,
 }: {
     onPrefetchItem?: (item: AndroidRecentContentSourceItem) => void;
     onSelectItem: (item: AndroidRecentContentSourceItem) => void;
     onViewAll?: (section: HomeDisplaySection) => void;
     sections: HomeDisplaySection[];
-    serverConnections?: ServerAuthenticationResult[];
+    serverConnection?: ServerAuthenticationResult | null;
 }) => {
     return (
         <>
@@ -813,7 +813,7 @@ const ContentSections = memo(({
                     onSelectItem={onSelectItem}
                     onViewAll={onViewAll}
                     section={section}
-                    serverConnections={serverConnections ?? []}
+                    serverConnection={serverConnection ?? null}
                 />
             ))}
         </>

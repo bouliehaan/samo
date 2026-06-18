@@ -14,6 +14,7 @@ import androidx.work.WorkManager
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.WritableArray
 import com.facebook.react.bridge.WritableMap
+import kotlinx.coroutines.sync.Semaphore
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -59,6 +60,15 @@ internal object SamoDownloads {
     // Native worker unique name prefix; one WorkManager unique-work chain per
     // entry id keeps re-enqueues idempotent.
     private const val WORK_NAME_PREFIX = "samo-download-"
+
+    // At most this many transfers stream at once. CoroutineWorkers don't
+    // occupy WorkManager's executor threads, so WITHOUT this gate every
+    // enqueued entry transfers simultaneously — a 1k-track playlist meant
+    // 1k parallel HTTP streams hammering the server, the radio, and the
+    // disk. Excess workers suspend on the semaphore (zero threads held)
+    // with their entries still honestly Queued.
+    private const val MAX_CONCURRENT_TRANSFERS = 3
+    internal val transferSlots = Semaphore(MAX_CONCURRENT_TRANSFERS)
 
     // Throttle for the byte transfer. Set by JS at the playback-state edges
     // (active → throttled, inactive → unthrottled) so a download can't starve
@@ -173,6 +183,13 @@ internal object SamoDownloads {
         val progress: Double? = null,
         val completedAt: Long? = null,
         val errorMessage: String? = null,
+        // Auth context for token freshness: a queued entry can outlive its
+        // sourceUrl's stream token by hours, so the WORKER re-freshens the
+        // token at transfer time (and once more on a 401) — exactly like the
+        // player's data source does. Without these, every download enqueued
+        // from mirror-hydrated URLs after a long session 401'd forever.
+        val serverUrl: String? = null,
+        val serverBearer: String? = null,
     ) {
         fun toJson(): JSONObject = JSONObject()
             .put("id", id)
@@ -191,6 +208,8 @@ internal object SamoDownloads {
                 progress?.let { obj.put("progress", it) }
                 completedAt?.let { obj.put("completedAt", it) }
                 errorMessage?.let { obj.put("errorMessage", it) }
+                serverUrl?.let { obj.put("serverUrl", it) }
+                serverBearer?.let { obj.put("serverBearer", it) }
             }
 
         fun toMap(): WritableMap = Arguments.createMap().apply {
@@ -228,6 +247,8 @@ internal object SamoDownloads {
                 progress = json.optDoubleOrNull("progress"),
                 completedAt = json.optLongOrNull("completedAt"),
                 errorMessage = json.optStringOrNull("errorMessage"),
+                serverUrl = json.optStringOrNull("serverUrl"),
+                serverBearer = json.optStringOrNull("serverBearer"),
             )
         }
     }
@@ -380,6 +401,32 @@ internal object SamoDownloads {
         }
     }
 
+    /** Re-queue every Failed entry in one shot — the recovery path for a batch
+     *  that 401'd on stale tokens or died to a flaky network. */
+    fun retryAllFailed(context: Context) {
+        val appContext = context.applicationContext
+        runOnIo {
+            ensureLoaded(appContext)
+            var changed = false
+            for (i in registry.indices) {
+                val entry = registry[i]
+                if (entry.status == Status.Failed) {
+                    registry[i] = entry.copy(
+                        status = Status.Queued,
+                        progress = null,
+                        errorMessage = null,
+                    )
+                    changed = true
+                    scheduleWork(appContext, entry.id)
+                }
+            }
+            if (changed) {
+                schedulePersist(appContext)
+                scheduleNotify()
+            }
+        }
+    }
+
     fun setPlaybackThrottle(active: Boolean) {
         throttleBytesPerSecond = if (active) PLAYBACK_DOWNLOAD_THROTTLE_BYTES_PER_SECOND else 0L
     }
@@ -441,6 +488,8 @@ internal object SamoDownloads {
                 status = Status.Downloading,
                 errorMessage = null,
             )
+            val active = registry.count { it.status == Status.Downloading }
+            Log.i(TAG, "transfer start id=$id active=$active")
             schedulePersist(appContext)
             scheduleNotify()
         }

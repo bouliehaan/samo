@@ -41,14 +41,12 @@ const SEARCH_SCOPE_SECTION_IDS: Record<SearchScope, MobileSearchSectionId[]> = {
 
 export const getAvailableSearchScopes = (
     homeContentState: AndroidHomeContentState,
-    serverConnections: ServerAuthenticationResult[],
+    serverConnection: ServerAuthenticationResult | null,
     recentItems: AndroidRecentContentItem[],
 ) => {
     const scopes = new Set<SearchScope>(['all']);
     const hasLoadedHome = homeContentState.status === 'loaded';
-    const hasSamoServer = serverConnections.some(
-        (connection) => connection.type === ServerType.SAMO,
-    );
+    const hasSamoServer = serverConnection?.type === ServerType.SAMO;
 
     // Samo is the all-in-one backend (it replaced the per-type music/audiobook
     // servers), and its search endpoints always cover songs, albums, artists,

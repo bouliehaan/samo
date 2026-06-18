@@ -1,23 +1,16 @@
 package app.samo.android.audio
 
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.content.Context
+import android.os.Build
 import android.util.Log
+import androidx.core.app.NotificationCompat
 import androidx.work.CoroutineWorker
+import androidx.work.ForegroundInfo
 import androidx.work.WorkerParameters
 
-/**
- * Phase 5 PROPER: the periodic catalog sync runs entirely in Kotlin from this
- * worker. No JS context boot — the foreground service can't keep React alive
- * across Doze, so spinning up a React headless context every 30 min would
- * either fail outright or take seconds we don't have. Instead we read the
- * Kotlin-mirrored server connections + drive [SamoCatalogSync] directly
- * against the catalog DB.
- *
- * Per-source errors are caught and recorded in `catalog_sync_state` (so the
- * Settings panel can render them); the worker itself always returns success
- * because WorkManager's retry is the wrong primitive here — failures aren't
- * transient and we already have a 30-minute periodic re-fire.
- */
 class SamoCatalogSyncWorker(
     appContext: Context,
     workerParams: WorkerParameters,
@@ -26,11 +19,12 @@ class SamoCatalogSyncWorker(
         val source = inputData.getString(KEY_TRIGGER_SOURCE) ?: "periodic"
         return try {
             val connections = SamoAuthMirror.loadSamo(applicationContext)
-            if (connections.isEmpty()) {
+            val connection = connections.firstOrNull()
+            if (connection == null) {
                 Log.i(TAG, "catalog sync (source=$source) — no Samo connections, skipping")
                 return Result.success()
             }
-            val summary = SamoCatalogSync.runAll(applicationContext, connections)
+            val summary = SamoCatalogSync.runAll(applicationContext, connection)
             Log.i(
                 TAG,
                 "catalog sync (source=$source) ${summary.results.joinToString(" | ") {
@@ -47,8 +41,35 @@ class SamoCatalogSyncWorker(
         }
     }
 
+    override suspend fun getForegroundInfo(): ForegroundInfo {
+        return createForegroundInfo()
+    }
+
+    private fun createForegroundInfo(): ForegroundInfo {
+        val channelId = "samo_catalog_sync"
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(
+                channelId,
+                "Catalog Sync",
+                NotificationManager.IMPORTANCE_LOW
+            )
+            val notificationManager = applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            notificationManager.createNotificationChannel(channel)
+        }
+
+        val notification = NotificationCompat.Builder(applicationContext, channelId)
+            .setContentTitle("Samo Sync")
+            .setContentText("Syncing library catalog...")
+            .setSmallIcon(android.R.drawable.ic_popup_sync)
+            .setOngoing(true)
+            .build()
+
+        return ForegroundInfo(NOTIFICATION_ID, notification)
+    }
+
     companion object {
         const val TAG = "SamoCatalogSyncWorker"
         const val KEY_TRIGGER_SOURCE = "trigger_source"
+        const val NOTIFICATION_ID = 4001
     }
 }

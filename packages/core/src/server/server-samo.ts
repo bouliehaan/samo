@@ -383,6 +383,15 @@ export interface SamoAudiobook {
         title?: string;
     };
     chapters?: SamoAudioChapter[];
+    /**
+     * How the chapters were derived and how much to trust them, so the UI can flag
+     * uncertain ones for review instead of presenting every marker as authoritative.
+     * chapterSource: "embedded" | "cue" | "audnexus" | "audio-aligned" | "file" | "none".
+     * chapterConfidence: 0..1 from the audio registration (0 for embedded/file).
+     */
+    chapterSource?: string;
+    chapterConfidence?: number;
+    chapterAsin?: string;
     contributors?: SamoContributor[];
     /**
      * Single cover image object — server emits one cover per audiobook,
@@ -801,16 +810,26 @@ export const authenticateSamo = async ({
         throw new Error('Samo Server did not return an auth token');
     }
 
-    const deviceToken = await requestJson<SamoDeviceTokenResponse>(
-        request,
-        `${baseUrl}/api/v1/users/me/tokens`,
-        {
-            body: JSON.stringify({ label: deviceLabel }),
-            headers: jsonHeaders(loginToken),
-            method: 'POST',
-        },
-    );
-    const token = deviceToken.secret ?? loginToken;
+    let token = loginToken;
+    try {
+        const deviceToken = await requestJson<SamoDeviceTokenResponse>(
+            request,
+            `${baseUrl}/api/v1/users/me/tokens`,
+            {
+                body: JSON.stringify({ label: deviceLabel }),
+                headers: jsonHeaders(loginToken),
+                method: 'POST',
+            },
+        );
+        if (deviceToken.secret) {
+            token = deviceToken.secret;
+        }
+    } catch (error) {
+        // If the server's database is temporarily locked (e.g. during initial scan),
+        // writing a new device token will fail. We can safely fall back to the
+        // loginToken which is already valid, so the user isn't blocked.
+        console.warn('Failed to mint device token, falling back to login token', error);
+    }
     const resolvedUsername = login.user?.username ?? username;
     const capabilities = getSamoCapabilities();
 

@@ -1,9 +1,7 @@
 import {
-    removeServerAuthentication,
     type ServerAuthenticationResult,
     ServerConnectionHealthStatus,
     ServerType,
-    upsertServerAuthentication,
 } from '@samo/core/server';
 import { useCallback, useEffect } from 'react';
 
@@ -14,7 +12,7 @@ import {
 import { type AndroidHomeContentState } from '../services/home-content';
 import { authenticateServer } from '../services/server-auth';
 import {
-    checkAndroidServerConnections,
+    checkAndroidServerConnection,
     createCheckingServerHealthMap,
     createConnectedServerHealthStatus,
 } from '../services/server-health';
@@ -37,7 +35,7 @@ export type AndroidServerAuthSession = ReturnType<typeof useAuthSessionState>;
 export interface UseAndroidServerAuthOptions {
     auth: AndroidServerAuthSession;
     closeMediaDetail: () => void;
-    loadHomeForConnections: (authentications: ServerAuthenticationResult[]) => Promise<void>;
+    loadHomeForConnection: (authentication: ServerAuthenticationResult | null) => Promise<void>;
     setActiveUtilityScreen: (
         value:
             | AndroidUtilityScreen
@@ -58,7 +56,7 @@ export function useAndroidServerAuth(options: UseAndroidServerAuthOptions) {
     const {
         auth,
         closeMediaDetail,
-        loadHomeForConnections,
+        loadHomeForConnection,
         setActiveUtilityScreen,
         setHomeContentState,
         setSearchState,
@@ -67,12 +65,12 @@ export function useAndroidServerAuth(options: UseAndroidServerAuthOptions) {
     const {
         authState,
         password,
-        serverConnections,
+        serverConnection,
         serverHealthByKey,
         serverUrl,
         setAuthState,
         setPassword,
-        setServerConnections,
+        setServerConnection,
         setServerHealthByKey,
         setServerUrl,
         setUsername,
@@ -87,7 +85,7 @@ export function useAndroidServerAuth(options: UseAndroidServerAuthOptions) {
 
         const restoreServers = async () => {
             const persisted = await loadPersistedServerAuthsWithMeta();
-            const persistedAuths = persisted.authentications;
+            const persistedAuth = persisted.authentication ?? null;
 
             if (!isMounted) {
                 return;
@@ -96,7 +94,7 @@ export function useAndroidServerAuth(options: UseAndroidServerAuthOptions) {
             if (persisted.discardedCount > 0) {
                 setAuthState({
                     message:
-                        persistedAuths.length > 0
+                        persistedAuth !== null
                             ? `Ignored ${persisted.discardedCount} invalid saved server session.`
                             : 'Saved server session was invalid. Please reconnect.',
                     status: 'error',
@@ -104,62 +102,42 @@ export function useAndroidServerAuth(options: UseAndroidServerAuthOptions) {
             }
 
             if (persisted.discardedCount > 0 || persisted.migratedLegacySingle) {
-                await savePersistedServerAuths(persistedAuths);
+                await savePersistedServerAuths(persistedAuth ? [persistedAuth] : []);
             }
 
-            if (persistedAuths.length === 0) {
+            if (!persistedAuth) {
+                setActiveUtilityScreen('add-server');
                 return;
             }
 
-            // Hydrate the Kotlin auth mirror on every cold start so the
-            // periodic background catalog-sync Worker has credentials
-            // available even when the user hasn't re-saved connections this
-            // session. savePersistedServerAuths already mirrors on every
-            // explicit save; this covers the SecureStore-still-populated /
-            // mirror-file-missing case (e.g. first launch after upgrading
-            // to the build that introduced the mirror).
-            void syncCatalogAuthMirror(persistedAuths);
+            void syncCatalogAuthMirror([persistedAuth]);
 
-            setServerConnections(persistedAuths);
-            setServerHealthByKey(createCheckingServerHealthMap(persistedAuths));
+            setServerConnection(persistedAuth);
+            setServerHealthByKey(createCheckingServerHealthMap(persistedAuth));
 
-            const serverHealth = await checkAndroidServerConnections(persistedAuths);
+            const serverHealth = await checkAndroidServerConnection(persistedAuth);
 
             if (isMounted) {
-                const authorizedAuthentications = serverHealth.authentications.filter(
-                    (authentication) =>
-                        serverHealth.statuses[getPersistedServerAuthKey(authentication)]?.status !==
-                        ServerConnectionHealthStatus.UNAUTHORIZED,
-                );
-                const authorizedHealthStatuses = Object.fromEntries(
-                    Object.entries(serverHealth.statuses).filter(
-                        ([, status]) => status.status !== ServerConnectionHealthStatus.UNAUTHORIZED,
-                    ),
-                );
-                const unauthorizedCount =
-                    serverHealth.authentications.length - authorizedAuthentications.length;
+                const isAuthorized = serverHealth.authentication !== null;
+                const healthStatus = serverHealth.statuses[getPersistedServerAuthKey(persistedAuth)]?.status;
 
-                setServerConnections(authorizedAuthentications);
-                setServerHealthByKey(authorizedHealthStatuses);
+                setServerConnection(serverHealth.authentication);
+                setServerHealthByKey(serverHealth.statuses);
 
-                const unhealthySessions = Object.values(authorizedHealthStatuses).filter(
-                    (status) => status.status !== ServerConnectionHealthStatus.HEALTHY,
-                );
-
-                if (unauthorizedCount > 0) {
+                if (!isAuthorized) {
                     setAuthState({
-                        message: `${unauthorizedCount} saved server session expired. Please reconnect.`,
+                        message: `Saved server session expired. Please reconnect.`,
                         status: 'error',
                     });
-                } else if (unhealthySessions.length > 0) {
+                } else if (healthStatus !== ServerConnectionHealthStatus.HEALTHY) {
                     setAuthState({
-                        message: `${unhealthySessions.length} saved server session needs attention.`,
+                        message: `Saved server session needs attention.`,
                         status: 'error',
                     });
                 }
 
-                await savePersistedServerAuths(authorizedAuthentications);
-                void loadHomeForConnections(authorizedAuthentications);
+                await savePersistedServerAuths(serverHealth.authentication ? [serverHealth.authentication] : []);
+                void loadHomeForConnection(serverHealth.authentication);
             }
         };
 
@@ -168,7 +146,7 @@ export function useAndroidServerAuth(options: UseAndroidServerAuthOptions) {
         return () => {
             isMounted = false;
         };
-    }, [loadHomeForConnections, setAuthState, setServerConnections, setServerHealthByKey]);
+    }, [loadHomeForConnection, setAuthState, setServerConnection, setServerHealthByKey]);
 
     const handleConnect = useCallback(async () => {
         if (!canConnect || authState.status === 'loading') return;
@@ -191,25 +169,22 @@ export function useAndroidServerAuth(options: UseAndroidServerAuthOptions) {
         setAuthState(nextAuthState);
 
         if (nextAuthState.status === 'connected') {
-            const nextConnections = upsertServerAuthentication(
-                serverConnections,
-                nextAuthState.result,
-            );
-            const nextConnectionKey = getPersistedServerAuthKey(nextAuthState.result);
+            const nextConnection = nextAuthState.result;
+            const nextConnectionKey = getPersistedServerAuthKey(nextConnection);
 
-            setServerConnections(nextConnections);
+            setServerConnection(nextConnection);
             setServerHealthByKey((current) => ({
                 ...current,
-                [nextConnectionKey]: createConnectedServerHealthStatus(nextAuthState.result),
+                [nextConnectionKey]: createConnectedServerHealthStatus(nextConnection),
             }));
             closeMediaDetail();
             setPassword('');
             setServerUrl(DEFAULT_SERVER_URL);
             setUsername('');
             setSearchState({ status: 'idle' });
-            setActiveUtilityScreen('manage-servers');
-            await savePersistedServerAuths(nextConnections);
-            await loadHomeForConnections(nextConnections);
+            setActiveUtilityScreen('initial-sync');
+            await savePersistedServerAuths([nextConnection]);
+            await loadHomeForConnection(nextConnection);
 
             // Kick off the on-device library mirror for the just-added source.
             // The Kotlin engine runs it (savePersistedServerAuths above already
@@ -222,16 +197,16 @@ export function useAndroidServerAuth(options: UseAndroidServerAuthOptions) {
         authState.status,
         canConnect,
         closeMediaDetail,
-        loadHomeForConnections,
+        loadHomeForConnection,
         password,
-        serverConnections,
+        serverConnection,
         serverUrl,
         setActiveUtilityScreen,
         setAuthState,
         setHomeContentState,
         setPassword,
         setSearchState,
-        setServerConnections,
+        setServerConnection,
         setServerHealthByKey,
         setServerUrl,
         setUsername,
@@ -240,10 +215,9 @@ export function useAndroidServerAuth(options: UseAndroidServerAuthOptions) {
 
     const handleDisconnect = useCallback(
         async (authentication: ServerAuthenticationResult) => {
-            const nextConnections = removeServerAuthentication(serverConnections, authentication);
             const removedConnectionKey = getPersistedServerAuthKey(authentication);
 
-            setServerConnections(nextConnections);
+            setServerConnection(null);
             setServerHealthByKey((current) => {
                 const nextHealthByKey = { ...current };
                 delete nextHealthByKey[removedConnectionKey];
@@ -252,16 +226,15 @@ export function useAndroidServerAuth(options: UseAndroidServerAuthOptions) {
             closeMediaDetail();
             setSearchState({ status: 'idle' });
             setAuthState({ status: 'idle' });
-            await savePersistedServerAuths(nextConnections);
-            await loadHomeForConnections(nextConnections);
+            await savePersistedServerAuths([]);
+            await loadHomeForConnection(null);
         },
         [
             closeMediaDetail,
-            loadHomeForConnections,
-            serverConnections,
+            loadHomeForConnection,
             setAuthState,
             setSearchState,
-            setServerConnections,
+            setServerConnection,
             setServerHealthByKey,
         ],
     );

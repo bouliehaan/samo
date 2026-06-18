@@ -162,7 +162,7 @@ export const MiniPlayer = memo(({
     playbackState,
     playerProgress,
     reducedMotion,
-    serverConnections,
+    serverConnection,
 }: {
     artworkImageId?: string;
     artworkUrl: string | undefined;
@@ -173,7 +173,7 @@ export const MiniPlayer = memo(({
     playbackState: AndroidPlaybackState;
     playerProgress: SharedValue<number>;
     reducedMotion: boolean;
-    serverConnections: ServerAuthenticationResult[];
+    serverConnection: ServerAuthenticationResult | null;
 }) => {
     const [isMiniInteractive, setIsMiniInteractive] = useState(true);
     useAnimatedReaction(
@@ -276,7 +276,7 @@ export const MiniPlayer = memo(({
                                 contentSource={contentSource}
                                 fallbackStyle={styles.miniPlayerArtworkFallback}
                                 letter={title.slice(0, 1)}
-                                serverConnections={serverConnections}
+                                serverConnection={serverConnection}
                                 style={styles.miniPlayerArtwork}
                                 transition={200}
                                 uri={artworkUrl}
@@ -336,10 +336,10 @@ export const ConnectedMiniPlayer = memo((
 ConnectedMiniPlayer.displayName = 'ConnectedMiniPlayer';
 
 export const NowPlayingMetadataSync = memo(() => {
-    const serverConnections = useServerConnections();
+    const serverConnection = useServerConnections();
     const lastSentRef = useRef<string | null>(null);
-    const serverConnectionsRef = useRef(serverConnections);
-    serverConnectionsRef.current = serverConnections;
+    const serverConnectionRef = useRef(serverConnection);
+    serverConnectionRef.current = serverConnection;
 
     useEffect(() => {
         if (!isAndroidNativePlaybackAvailable()) {
@@ -370,7 +370,7 @@ export const NowPlayingMetadataSync = memo(() => {
                 artworkSourceUri(
                     resolvePlaybackArtworkSourceForDisplay(
                         state.item,
-                        serverConnectionsRef.current,
+                        serverConnectionRef.current,
                     ),
                 ) ?? state.item.artworkUrl;
             // Never push a TOKEN-LESS Samo artwork URL into the native
@@ -386,11 +386,11 @@ export const NowPlayingMetadataSync = memo(() => {
                 artworkUrl = undefined;
                 const contentSource = getContentSourceFromPlaybackItem(
                     state.item,
-                    serverConnectionsRef.current,
+                    serverConnectionRef.current,
                 );
                 const auth = contentSource
                     ? findServerAuthenticationForSource(
-                          serverConnectionsRef.current,
+                          serverConnectionRef.current,
                           contentSource,
                       )
                     : undefined;
@@ -465,7 +465,7 @@ export const FullScreenPlayer = memo(({
     playerProgress,
     queue,
     reducedMotion,
-    serverConnections,
+    serverConnection,
     visible,
 }: {
     // Canonical high-res artwork URL — same string the MiniPlayer renders.
@@ -490,7 +490,7 @@ export const FullScreenPlayer = memo(({
     playerProgress: SharedValue<number>;
     queue: { index: number; items: MobilePlayableAudio[] } | null;
     reducedMotion: boolean;
-    serverConnections: ServerAuthenticationResult[];
+    serverConnection: ServerAuthenticationResult | null;
     visible: boolean;
 }) => {
     const [sleepMenuVisible, setSleepMenuVisible] = useState(false);
@@ -581,11 +581,7 @@ export const FullScreenPlayer = memo(({
             /^([^:]+:[^:]+):(?:music|audiobook|podcast(?:-episode)?|radio):/,
         );
         const sourceId = item.contentSourceId ?? idPrefixMatch?.[1];
-        const auth = sourceId
-            ? serverConnections.find(
-                  (candidate) => getPersistedServerAuthKey(candidate) === sourceId,
-              )
-            : undefined;
+        const auth = sourceId && serverConnection && getPersistedServerAuthKey(serverConnection) === sourceId ? serverConnection : undefined;
         const contentSource = auth ? getMobileContentSource(auth) : undefined;
         // Playback ids look like `<authType>:<authUrl>:<source>:<innerId>[:<episodeId>]`.
         // Strip the prefix so menu actions like "Go to Album" hit real Subsonic ids.
@@ -642,7 +638,7 @@ export const FullScreenPlayer = memo(({
             };
             contextMenu.openForItem(homeItem, { suppressQueueAction: true });
         }
-    }, [contextMenu, lastPlayedItem, playbackState, serverConnections]);
+    }, [contextMenu, lastPlayedItem, playbackState, serverConnection]);
 
     // One vertical pan on the shell: drag up from the dock opens the panel;
     // drag down dismisses; upward while open can raise the queue sheet.
@@ -1037,7 +1033,7 @@ export const FullScreenPlayer = memo(({
                             contentSource={contentSource}
                             fallbackStyle={styles.fullPlayerArtworkFallback}
                             letter={displayTitle.slice(0, 1)}
-                            serverConnections={serverConnections}
+                            serverConnection={serverConnection}
                             style={styles.fullPlayerArtwork}
                             transition={280}
                             uri={artworkUrl}
@@ -1253,7 +1249,7 @@ export const FullScreenPlayer = memo(({
             onClose={closeQueue}
             onPlayQueueIndex={onPlayQueueIndex}
             queue={queue}
-            serverConnections={serverConnections}
+            serverConnection={serverConnection}
             sheetStyle={queueSheetStyle}
         />
 
@@ -1261,7 +1257,7 @@ export const FullScreenPlayer = memo(({
             artworkImageId={artworkImageId}
             contentSource={contentSource}
             onClose={() => setIsArtworkZoomOpen(false)}
-            serverConnections={serverConnections}
+            serverConnection={serverConnection}
             title={displayTitle}
             uri={artworkUrl}
             visible={isArtworkZoomOpen}
@@ -1624,7 +1620,7 @@ export const QueueSheetOverlay = memo(({
     onClose,
     onPlayQueueIndex,
     queue,
-    serverConnections,
+    serverConnection,
     sheetStyle,
 }: {
     backdropStyle: ReturnType<typeof useAnimatedStyle>;
@@ -1636,7 +1632,7 @@ export const QueueSheetOverlay = memo(({
     onClose: () => void;
     onPlayQueueIndex?: (index: number) => void;
     queue: { index: number; items: MobilePlayableAudio[] } | null;
-    serverConnections: ServerAuthenticationResult[];
+    serverConnection: ServerAuthenticationResult | null;
     sheetStyle: ReturnType<typeof useAnimatedStyle>;
 }) => {
     const items = queue?.items ?? [];
@@ -1788,11 +1784,11 @@ export const QueueSheetOverlay = memo(({
                             artworkImageId={row.item.artworkImageId}
                             contentSource={getContentSourceFromPlaybackItem(
                                 row.item,
-                                serverConnections,
+                                serverConnection,
                             )}
                             fallbackStyle={styles.queueRowThumbFallback}
                             letter={(row.item.title ?? '?').slice(0, 1).toUpperCase()}
-                            serverConnections={serverConnections}
+                            serverConnection={serverConnection}
                             style={styles.queueRowThumb}
                             uri={row.item.artworkUrl}
                         />

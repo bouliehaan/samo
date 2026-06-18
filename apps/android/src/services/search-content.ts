@@ -20,13 +20,13 @@ const ANDROID_SEARCH_QUALITY_SCAN_LIMIT = 8;
 const ANDROID_LOCAL_SEARCH_LIMIT = 40;
 
 export const loadAndroidSearchResults = async (
-    authentications: ServerAuthenticationResult[],
+    authentication: ServerAuthenticationResult | null,
     query: string,
     userRecents?: Map<string, number>,
 ): Promise<AndroidSearchState> => {
     const trimmedQuery = query.trim();
 
-    if (!trimmedQuery || authentications.length === 0) {
+    if (!trimmedQuery || !authentication) {
         return { status: 'idle' };
     }
 
@@ -34,7 +34,7 @@ export const loadAndroidSearchResults = async (
         return {
             query: trimmedQuery,
             results: await searchMobileContentAcrossServers({
-                authentications,
+                authentication,
                 qualityScanLimit: ANDROID_SEARCH_QUALITY_SCAN_LIMIT,
                 query: trimmedQuery,
                 userRecents,
@@ -55,20 +55,15 @@ const allSearchItems = (results: MobileSearchResults): MobileSearchItem[] =>
     results.sections.flatMap((section) => section.items);
 
 const searchCatalogResults = async (
-    samoAuthentications: ServerAuthenticationResult[],
+    authentication: ServerAuthenticationResult,
     query: string,
     userRecents: Map<string, number> | undefined,
 ): Promise<MobileSearchResults | null> => {
     try {
-        const lists = await Promise.all(
-            samoAuthentications.map((authentication) =>
-                searchLocal(query, {
-                    limit: ANDROID_LOCAL_SEARCH_LIMIT,
-                    sourceId: getMobileContentSource(authentication).id,
-                }),
-            ),
-        );
-        const items = lists.flat();
+        const items = await searchLocal(query, {
+            limit: ANDROID_LOCAL_SEARCH_LIMIT,
+            sourceId: getMobileContentSource(authentication).id,
+        });
         return items.length > 0
             ? buildMobileSearchResultsFromItems(query, items, { userRecents })
             : null;
@@ -122,25 +117,21 @@ const mergeSearchResults = (
  * complete merged set.
  */
 export const runAndroidSearch = async (
-    authentications: ServerAuthenticationResult[],
+    authentication: ServerAuthenticationResult | null,
     query: string,
     userRecents: Map<string, number> | undefined,
     onResult: (state: AndroidSearchState) => void,
 ): Promise<void> => {
     const trimmedQuery = query.trim();
-    if (!trimmedQuery || authentications.length === 0) {
+    if (!trimmedQuery || !authentication) {
         onResult({ status: 'idle' });
         return;
     }
 
-    const samoAuthentications = authentications.filter(
-        (authentication) => authentication.type === ServerType.SAMO,
-    );
-
     // 1. Instant on-device results from the local catalog (Samo sources only).
     let local: MobileSearchResults | null = null;
-    if (samoAuthentications.length > 0) {
-        local = await searchCatalogResults(samoAuthentications, trimmedQuery, userRecents);
+    if (authentication.type === ServerType.SAMO) {
+        local = await searchCatalogResults(authentication, trimmedQuery, userRecents);
         if (local) {
             onResult({ query: trimmedQuery, results: local, status: 'loaded' });
         }
@@ -150,7 +141,7 @@ export const runAndroidSearch = async (
     //    /music/search covers the whole library, so this fills in everything the
     //    local mirror is missing. Merging dedupes by id and re-ranks the union.
     const serverState = await loadAndroidSearchResults(
-        authentications,
+        authentication,
         trimmedQuery,
         userRecents,
     );

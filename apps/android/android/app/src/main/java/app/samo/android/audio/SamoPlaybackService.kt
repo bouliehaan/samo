@@ -6,6 +6,7 @@ import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
 import android.media.AudioDeviceInfo
+import android.net.wifi.WifiManager
 import android.os.Binder
 import android.os.Handler
 import android.os.IBinder
@@ -15,14 +16,17 @@ import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionParameters
+import androidx.media3.datasource.DataSourceBitmapLoader
 import androidx.media3.datasource.DefaultDataSource
-import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.extractor.DefaultExtractorsFactory
 import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
 import androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy
+import androidx.media3.session.CacheBitmapLoader
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 
@@ -43,6 +47,13 @@ class SamoPlaybackService : MediaSessionService() {
     private var mediaSession: MediaSession? = null
     private var player: ExoPlayer? = null
     private var playerRequestHeaders: Map<String, String> = emptyMap()
+    // Held only while audio is actively playing. ExoPlayer's
+    // C.WAKE_MODE_NETWORK keeps the CPU awake, but on Wi-Fi the radio can still
+    // drop into a power-save state that adds seconds of latency and lets idle
+    // keep-alive sockets go stale between tracks/stations. A HIGH_PERF Wi-Fi
+    // lock keeps the link hot for the streaming session. Released on pause/stop
+    // so it never drains battery while idle.
+    private var wifiLock: WifiManager.WifiLock? = null
     var preferredMixerDevice: AudioDeviceInfo? = null
     var preferredOutputDevice: AudioDeviceInfo? = null
     /**
@@ -113,6 +124,7 @@ class SamoPlaybackService : MediaSessionService() {
 
     override fun onDestroy() {
         mainHandler.removeCallbacksAndMessages(null)
+        releaseWifiLock()
         mediaSession?.let { session ->
             // Remove from the service's tracked-session set BEFORE releasing
             // so the notification manager has a chance to tear down its bound
@@ -127,6 +139,30 @@ class SamoPlaybackService : MediaSessionService() {
     }
 
     fun getCurrentPlayer(): ExoPlayer? = player
+
+    @Suppress("DEPRECATION") // WIFI_MODE_FULL_HIGH_PERF is the right mode for
+    // sustained media streaming; LOW_LATENCY targets real-time gaming.
+    private fun acquireWifiLock() {
+        val lock = wifiLock ?: run {
+            val wifiManager =
+                applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+                    ?: return
+            wifiManager.createWifiLock(
+                WifiManager.WIFI_MODE_FULL_HIGH_PERF,
+                "samo:playback",
+            ).also {
+                it.setReferenceCounted(false)
+                wifiLock = it
+            }
+        }
+        if (!lock.isHeld) {
+            lock.acquire()
+        }
+    }
+
+    private fun releaseWifiLock() {
+        wifiLock?.let { if (it.isHeld) it.release() }
+    }
 
     /**
      * Build the ExoPlayer used for everything from streaming radio to lossless
@@ -168,16 +204,17 @@ class SamoPlaybackService : MediaSessionService() {
             .build()
         val renderersFactory = DefaultRenderersFactory(this)
             .setEnableAudioFloatOutput(true)
-        val httpDataSourceFactory = DefaultHttpDataSource.Factory()
+        // OkHttp-backed source on the shared SamoHttp.stream client. The old
+        // DefaultHttpDataSource used java.net.HttpURLConnection, sharing the
+        // process-global keep-alive pool with the native control calls — a
+        // stale pooled socket there blocked the stream open for the full 15s
+        // read timeout before failing (measured on-device, while ICMP to the
+        // same box stayed flawless). OkHttp's retryOnConnectionFailure re-dials
+        // a fresh socket in under a second instead. Connect/read timeouts and
+        // connection reuse live on the client (SamoHttp); OkHttp follows the
+        // cross-protocol radio redirect (6969 -> 8050) per its client config.
+        val httpDataSourceFactory = OkHttpDataSource.Factory(SamoHttp.stream)
             .setDefaultRequestProperties(requestHeaders)
-            // The default 8-second connect timeout is too tight for live
-            // radio: a Wi-Fi handoff often eats 3-5 seconds, and stacking
-            // one with a TLS handshake exceeds the default before the
-            // network is even back. Give the connection enough slack to
-            // ride out the gap.
-            .setConnectTimeoutMs(15_000)
-            .setReadTimeoutMs(15_000)
-            .setAllowCrossProtocolRedirects(true)
         // Disk cache is opt-in: progressive podcast streams with auth query
         // params and Range seeks are unreliable through SimpleCache today.
         val dataSourceFactory = SamoStreamCache.buildDataSourceFactory(
@@ -192,7 +229,9 @@ class SamoPlaybackService : MediaSessionService() {
         // entirely natively, with no token minted at queue-build time able to
         // expire mid-session. Non-music / non-Samo URIs pass through untouched.
         val resolvingDataSourceFactory = SamoResolvingDataSource.wrap(this, dataSourceFactory)
-        val mediaSourceFactory = DefaultMediaSourceFactory(resolvingDataSourceFactory)
+        val extractorsFactory = DefaultExtractorsFactory()
+            .setConstantBitrateSeekingEnabled(true)
+        val mediaSourceFactory = DefaultMediaSourceFactory(resolvingDataSourceFactory, extractorsFactory)
             .setLoadErrorHandlingPolicy(SamoLoadErrorHandlingPolicy())
         // One tuned LoadControl for every source type (music, podcast,
         // audiobook, radio): enough buffer to ride out Wi-Fi handoffs without
@@ -219,26 +258,17 @@ class SamoPlaybackService : MediaSessionService() {
         // Hold a partial wake lock while audio is loading or playing so streaming
         // radio doesn't die when the device idles into Doze with the screen off.
         createdPlayer.setWakeMode(C.WAKE_MODE_NETWORK)
-        createdPlayer.trackSelectionParameters = createdPlayer.trackSelectionParameters
-            .buildUpon()
-            .setAudioOffloadPreferences(
-                TrackSelectionParameters.AudioOffloadPreferences.Builder()
-                    // DISABLED instead of ENABLED. Hardware audio offload is
-                    // great for battery on long audiobook sessions, but some
-                    // devices have firmware bugs where the offload path gets
-                    // wedged after hours of playback and audio silently stops
-                    // until the process is killed. Until we can detect+work
-                    // around that case dynamically, force ExoPlayer to use
-                    // standard software decode — slightly higher battery,
-                    // dramatically more reliable.
-                    .setAudioOffloadMode(
-                        TrackSelectionParameters.AudioOffloadPreferences.AUDIO_OFFLOAD_MODE_DISABLED
-                    )
-                    .setIsGaplessSupportRequired(false)
-                    .setIsSpeedChangeSupportRequired(false)
-                    .build()
-            )
-            .build()
+        // Keep the Wi-Fi link out of power-save while actually playing. Acquire
+        // on play / release on pause-stop so we never hold it idle.
+        createdPlayer.addListener(object : Player.Listener {
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                if (isPlaying) acquireWifiLock() else releaseWifiLock()
+            }
+        })
+        // ExoPlayer defaults to software decode; SamoAudioEngine dynamically
+        // requests AUDIO_OFFLOAD_MODE_ENABLED for music tracks to achieve
+        // bit-perfect playback, and falls back to software decode for everything
+        // else to avoid hardware wedge bugs on long-form content.
 
         // The MediaSession is what makes Android treat us as an active media
         // app — once a player attached to a MediaSession starts playing,
@@ -258,7 +288,24 @@ class SamoPlaybackService : MediaSessionService() {
         ) { direction ->
             mainHandler.post { navigationHandler?.invoke(direction) }
         }
-        val builtSession = MediaSession.Builder(this, sessionPlayer).build()
+        // Load notification / lock-screen cover art through the same OkHttp
+        // (no-reuse) stack as the stream. The default MediaSession bitmap loader
+        // uses DefaultHttpDataSource (HttpURLConnection) — the very pool whose
+        // stale sockets produced the "Failed to load bitmap: SocketTimeout"
+        // lines and a coverless lock screen after the app sat idle. Wrapped in
+        // CacheBitmapLoader so a given cover is only fetched + decoded once.
+        // DefaultDataSource keeps non-http schemes (file:// for downloaded art)
+        // working; http goes through OkHttp.
+        val bitmapLoader = CacheBitmapLoader(
+            DataSourceBitmapLoader.Builder(this)
+                .setDataSourceFactory(
+                    DefaultDataSource.Factory(this, OkHttpDataSource.Factory(SamoHttp.stream)),
+                )
+                .build(),
+        )
+        val builtSession = MediaSession.Builder(this, sessionPlayer)
+            .setBitmapLoader(bitmapLoader)
+            .build()
         // addSession() is the step that was missing before: without it the
         // service's notification manager doesn't know there's a session to
         // post a media notification for, so the placeholder in

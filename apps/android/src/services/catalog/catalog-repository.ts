@@ -11,6 +11,7 @@ import {
 } from '@samo/core/mobile';
 
 import { getCatalogDatabase, getCatalogReaderSync } from './database';
+import { safeParseJson } from '../../utils/json';
 import {
     type CatalogCountsRow,
     type CatalogPayloadRow,
@@ -205,11 +206,7 @@ const bindTrack = (
 });
 
 const parsePayload = <T>(row: CatalogPayloadRow): T | null => {
-    try {
-        return JSON.parse(row.payload) as T;
-    } catch {
-        return null;
-    }
+    return safeParseJson<T>(row.payload);
 };
 
 export const upsertItems = async (
@@ -845,13 +842,19 @@ export const deleteSearchByEntityIds = async (
 export const getAlbumTracksSyncedSince = async (
     sourceId: string,
     sinceMs: number,
+    limit: number,
+    offset: number,
 ): Promise<{ maxSyncedAt: number; tracks: unknown[] }> => {
     const db = await getCatalogDatabase();
     const rows = await db.getAllAsync<{ payload: string; synced_at: number }>(
         `SELECT payload, synced_at FROM catalog_track
-         WHERE source_id = ? AND container_type = 'album' AND synced_at > ?`,
+         WHERE source_id = ? AND container_type = 'album' AND synced_at > ?
+         ORDER BY synced_at ASC, id ASC
+         LIMIT ? OFFSET ?`,
         sourceId,
         sinceMs,
+        limit,
+        offset,
     );
     let maxSyncedAt = sinceMs;
     const tracks: unknown[] = [];

@@ -6,14 +6,25 @@ import {
 import {
     ensureSamoStreamToken,
     getSamoAudiobookStreamUrl,
+    getSamoBearerToken,
     getSamoPodcastEpisodeStreamUrl,
     type ServerAuthenticationResult,
     ServerType,
 } from '@samo/core/server';
 import * as FileSystem from 'expo-file-system/legacy';
+import { safeParseJson } from '../utils/json';
 import { DeviceEventEmitter, NativeModules } from 'react-native';
 
+import {
+    buildSafFileKeySet,
+    decideEntry,
+    isResurrectableSidecarEntry,
+    isSidecarRecoverable,
+    sameRegistryById,
+} from '../utils/download-reconcile';
+
 import { fsDeleteItem, fsGetItem, fsSetItem } from './fs-storage';
+import { androidLog } from '../utils/log';
 import {
     isNativeSafCopyAvailable,
     listSafDownloadAudioFiles,
@@ -67,6 +78,9 @@ export interface DownloadEntry {
     id: string;
     localUri?: string;
     progress?: number;
+    /** Auth context for worker-side token freshness (Samo entries only). */
+    serverBearer?: string;
+    serverUrl?: string;
     sourceUrl: string;
     status: DownloadStatus;
     title: string;
@@ -88,6 +102,7 @@ interface SamoDownloadsNative {
     remove(id: string): Promise<void>;
     replaceAll(entries: DownloadEntry[]): Promise<void>;
     retry(id: string): Promise<void>;
+    retryAllFailed(): Promise<void>;
     setPlaybackActive(active: boolean): Promise<void>;
 }
 
@@ -184,11 +199,18 @@ export interface EnqueueTrackInput {
 
 export const enqueueDownload = async (
     input: EnqueueTrackInput,
-    _authentications: ServerAuthenticationResult[],
+    authentication: ServerAuthenticationResult | null,
 ): Promise<DownloadEntry> => {
+    // Attach the auth context so the WORKER can re-freshen the stream token
+    // at transfer time (and on a 401). The sourceUrl's enqueue-time token is
+    // a snapshot that expires in ~30 minutes; queued entries routinely
+    // outlive it.
+    const auth = findSamoAuth(authentication, input.collection.sourceId);
     const entry = await assertNative().enqueue({
         audiobookSegment: input.audiobookSegment,
         collection: input.collection,
+        serverBearer: auth ? getSamoBearerToken(auth) : undefined,
+        serverUrl: auth?.url,
         sourceUrl: input.sourceUrl,
         title: input.title,
         trackId: input.trackId,
@@ -204,20 +226,20 @@ export const enqueueDownload = async (
 
 export const enqueueCollectionDownload = async (
     detail: MobileMediaDetail,
-    authentications: ServerAuthenticationResult[],
+    authentication: ServerAuthenticationResult | null,
 ): Promise<{ enqueued: number; reason?: string; skipped: number }> => {
     if (detail.type === MobileMediaDetailType.AUDIOBOOK) {
-        return enqueueAudiobookDownload(detail, authentications);
+        return enqueueAudiobookDownload(detail, authentication);
     }
     if (detail.type === MobileMediaDetailType.PODCAST) {
-        return enqueuePodcastDownload(detail, authentications);
+        return enqueuePodcastDownload(detail, authentication);
     }
-    return enqueueMusicCollectionDownload(detail, authentications);
+    return enqueueMusicCollectionDownload(detail, authentication);
 };
 
 const enqueueMusicCollectionDownload = async (
     detail: MobileMediaDetail,
-    authentications: ServerAuthenticationResult[],
+    authentication: ServerAuthenticationResult | null,
 ): Promise<{ enqueued: number; reason?: string; skipped: number }> => {
     const downloadable = detail.tracks.filter((track) => track.playback?.url);
     if (downloadable.length === 0) {
@@ -250,7 +272,7 @@ const enqueueMusicCollectionDownload = async (
                 trackId: track.id,
                 trackSubtitle: track.subtitle,
             },
-            authentications,
+            authentication,
         );
         if (entry.status === 'completed') {
             skipped += 1;
@@ -262,14 +284,14 @@ const enqueueMusicCollectionDownload = async (
 };
 
 const findSamoAuth = (
-    authentications: ServerAuthenticationResult[],
+    authentication: ServerAuthenticationResult | null,
     sourceId: string,
 ): ServerAuthenticationResult | undefined => {
-    return authentications.find(
-        (candidate) =>
-            `${candidate.type}:${candidate.url}` === sourceId &&
-            candidate.type === ServerType.SAMO,
-    );
+    return authentication &&
+        `${authentication.type}:${authentication.url}` === sourceId &&
+        authentication.type === ServerType.SAMO
+        ? authentication
+        : undefined;
 };
 
 const buildPodcastCollection = (detail: MobileMediaDetail): DownloadCollectionInfo => ({
@@ -285,9 +307,31 @@ const buildPodcastCollection = (detail: MobileMediaDetail): DownloadCollectionIn
 const enqueueSamoPodcastDownload = async (
     detail: MobileMediaDetail,
     samoAuth: ServerAuthenticationResult,
-    authentications: ServerAuthenticationResult[],
+    authentication: ServerAuthenticationResult | null,
 ): Promise<{ enqueued: number; reason?: string; skipped: number }> => {
-    const streamToken = await ensureSamoStreamToken(samoAuth).catch(() => undefined);
+    let streamToken: string | undefined;
+    try {
+        streamToken = await ensureSamoStreamToken(samoAuth);
+    } catch (error) {
+        androidLog.error('Failed to mint Samo stream token for podcast download', {
+            error,
+            sourceId: samoAuth.url,
+        });
+        return {
+            enqueued: 0,
+            reason: 'Unable to start the download because the server authentication token could not be obtained.',
+            skipped: 0,
+        };
+    }
+
+    if (!streamToken) {
+        return {
+            enqueued: 0,
+            reason: 'Unable to start the download because the server authentication token could not be obtained.',
+            skipped: 0,
+        };
+    }
+
     const collection = buildPodcastCollection(detail);
     let enqueued = 0;
     let skipped = 0;
@@ -308,7 +352,7 @@ const enqueueSamoPodcastDownload = async (
                 trackId: episodeId,
                 trackSubtitle: episode.subtitle,
             },
-            authentications,
+            authentication,
         );
         if (entry.status === 'completed') {
             skipped += 1;
@@ -328,9 +372,29 @@ const enqueueSamoSinglePodcastEpisode = async (
     title: string,
     subtitle: string | undefined,
     samoAuth: ServerAuthenticationResult,
-    authentications: ServerAuthenticationResult[],
+    authentication: ServerAuthenticationResult | null,
 ): Promise<{ enqueued: boolean; reason?: string }> => {
-    const streamToken = await ensureSamoStreamToken(samoAuth).catch(() => undefined);
+    let streamToken: string | undefined;
+    try {
+        streamToken = await ensureSamoStreamToken(samoAuth);
+    } catch (error) {
+        androidLog.error('Failed to mint Samo stream token for single podcast episode download', {
+            error,
+            sourceId: samoAuth.url,
+        });
+        return {
+            enqueued: false,
+            reason: 'Unable to start the download because the server authentication token could not be obtained.',
+        };
+    }
+
+    if (!streamToken) {
+        return {
+            enqueued: false,
+            reason: 'Unable to start the download because the server authentication token could not be obtained.',
+        };
+    }
+
     const entry = await enqueueDownload(
         {
             collection: buildPodcastCollection(detail),
@@ -343,14 +407,14 @@ const enqueueSamoSinglePodcastEpisode = async (
             trackId: episodeId,
             trackSubtitle: subtitle,
         },
-        authentications,
+        authentication,
     );
     return { enqueued: entry.status !== 'completed' };
 };
 
 const enqueueAudiobookDownload = async (
     detail: MobileMediaDetail,
-    authentications: ServerAuthenticationResult[],
+    authentication: ServerAuthenticationResult | null,
 ): Promise<{ enqueued: number; reason?: string; skipped: number }> => {
     // Samo audiobooks download per media file straight off the whole-file
     // stream route — the same per-file manifest playback uses, so offline
@@ -359,7 +423,7 @@ const enqueueAudiobookDownload = async (
     // `<bookId>:file:<mediaFileId>`: resolveLocalPlayback looks an online
     // playable up by exactly that inner id, and getOfflineAudiobookFiles
     // recovers the mediaFileId via its split-pop.
-    const auth = findSamoAuth(authentications, detail.source.id);
+    const auth = findSamoAuth(authentication, detail.source.id);
     if (!auth) {
         return {
             enqueued: 0,
@@ -377,7 +441,29 @@ const enqueueAudiobookDownload = async (
         };
     }
 
-    const streamToken = await ensureSamoStreamToken(auth).catch(() => undefined);
+    let streamToken: string | undefined;
+    try {
+        streamToken = await ensureSamoStreamToken(auth);
+    } catch (error) {
+        androidLog.error('Failed to mint Samo stream token for audiobook download', {
+            error,
+            sourceId: auth.url,
+        });
+        return {
+            enqueued: 0,
+            reason: 'Unable to start the download because the server authentication token could not be obtained.',
+            skipped: 0,
+        };
+    }
+
+    if (!streamToken) {
+        return {
+            enqueued: 0,
+            reason: 'Unable to start the download because the server authentication token could not be obtained.',
+            skipped: 0,
+        };
+    }
+
     const collection: DownloadCollectionInfo = {
         artworkImageId: detail.artworkImageId,
         artworkUrl: detail.artworkUrl,
@@ -414,7 +500,7 @@ const enqueueAudiobookDownload = async (
                 trackId: `${detail.id}:file:${file.mediaFileId}`,
                 trackSubtitle: detail.subtitle,
             },
-            authentications,
+            authentication,
         );
         if (entry.status === 'completed') {
             skipped += 1;
@@ -427,9 +513,9 @@ const enqueueAudiobookDownload = async (
 
 const enqueuePodcastDownload = async (
     detail: MobileMediaDetail,
-    authentications: ServerAuthenticationResult[],
+    authentication: ServerAuthenticationResult | null,
 ): Promise<{ enqueued: number; reason?: string; skipped: number }> => {
-    const samoAuth = findSamoAuth(authentications, detail.source.id);
+    const samoAuth = findSamoAuth(authentication, detail.source.id);
     if (!samoAuth) {
         return {
             enqueued: 0,
@@ -437,7 +523,7 @@ const enqueuePodcastDownload = async (
             skipped: 0,
         };
     }
-    return enqueueSamoPodcastDownload(detail, samoAuth, authentications);
+    return enqueueSamoPodcastDownload(detail, samoAuth, authentication);
 };
 
 export const enqueueSingleMusicTrackDownload = async (
@@ -452,7 +538,7 @@ export const enqueueSingleMusicTrackDownload = async (
     },
     source: { id: string; title?: string },
     artworkUrl: string | undefined,
-    authentications: ServerAuthenticationResult[],
+    authentication: ServerAuthenticationResult | null,
 ): Promise<{ enqueued: boolean; reason?: string }> => {
     const url = track.playback?.url;
     if (!url || track.playback?.source !== 'music') {
@@ -477,7 +563,7 @@ export const enqueueSingleMusicTrackDownload = async (
             trackId: track.id,
             trackSubtitle: track.subtitle ?? track.artist,
         },
-        authentications,
+        authentication,
     );
     return { enqueued: entry.status !== 'completed' };
 };
@@ -492,9 +578,9 @@ export const enqueueSinglePodcastEpisodeDownload = async (
         subtitle?: string;
         title: string;
     },
-    authentications: ServerAuthenticationResult[],
+    authentication: ServerAuthenticationResult | null,
 ): Promise<{ enqueued: boolean; reason?: string }> => {
-    const samoAuth = findSamoAuth(authentications, detail.source.id);
+    const samoAuth = findSamoAuth(authentication, detail.source.id);
     const samoEpisodeId = episodeTrack.episodeId ?? episodeTrack.id;
     if (!samoAuth || !samoEpisodeId) {
         return {
@@ -508,13 +594,13 @@ export const enqueueSinglePodcastEpisodeDownload = async (
         episodeTrack.title,
         episodeTrack.subtitle,
         samoAuth,
-        authentications,
+        authentication,
     );
 };
 
 export const enqueueHomeItemDownload = async (
     item: MobileHomeItem,
-    authentications: ServerAuthenticationResult[],
+    authentication: ServerAuthenticationResult | null,
 ): Promise<DownloadEntry | null> => {
     const url = item.playback?.url;
     const sourceId = item.source?.id;
@@ -537,7 +623,7 @@ export const enqueueHomeItemDownload = async (
             trackId: item.id,
             trackSubtitle: item.subtitle,
         },
-        authentications,
+        authentication,
     );
 };
 
@@ -548,22 +634,47 @@ export const cancelDownload = async (id: string): Promise<void> => {
 };
 
 export const removeDownload = async (id: string): Promise<void> => {
+    // Native deletes file:// payloads but NOT SAF (content://) ones, so removing
+    // a completed SD-card download would otherwise leave the file on disk — and
+    // discovery then recovers the row from the sidecar (its file still exists)
+    // on the next mount. Delete the SAF document here so the removal sticks.
+    // Best-effort: the file-existence prune is the backstop either way.
+    const localUri = (cachedRegistry ?? []).find((entry) => entry.id === id)?.localUri;
+    if (localUri?.startsWith('content://')) {
+        try {
+            await FileSystem.StorageAccessFramework.deleteAsync(localUri);
+        } catch {
+            // best-effort
+        }
+    }
     await assertNative().remove(id);
+};
+
+/** Re-queue every failed download in one tap. */
+export const retryAllFailedDownloads = async (): Promise<void> => {
+    await assertNative().retryAllFailed();
 };
 
 export const clearAllDownloads = async (): Promise<void> => {
     await assertNative().clearAll();
+    // A deliberate clear must leave nothing for discovery to reconcile against.
+    // The native registry is empty now, but the JS-exported sidecars (internal
+    // copy + the SAF copy on the user's tree) still hold the just-cleared rows;
+    // without wiping them, the next DownloadsScreen mount's
+    // discoverDownloadsOnDisk() reads them back and replaceAll()s every
+    // "deleted" entry straight into the registry — the phantom-resurrection bug.
+    await clearRegistrySidecars();
 };
 
 export const retryDownload = async (
     id: string,
-    _authentications: ServerAuthenticationResult[],
+    _authentication: ServerAuthenticationResult | null,
 ): Promise<void> => {
     await assertNative().retry(id);
 };
 
 export const resumeDownloadsOnForeground = async (
-    _authentications: ServerAuthenticationResult[],
+    _authentication: ServerAuthenticationResult | null,
 ): Promise<void> => {
     // Native + WorkManager keep the queue moving without JS involvement, so
     // foregrounding is now a no-op for the queue. Kept as an exported symbol
@@ -714,7 +825,7 @@ export const getStorageLocation = async (): Promise<StorageLocationPreference> =
             storageLocationCache = DEFAULT_STORAGE_LOCATION;
             return storageLocationCache;
         }
-        const parsed = JSON.parse(raw) as unknown;
+        const parsed = safeParseJson<unknown>(raw);
         if (isRecord(parsed) && typeof parsed.treeUri === 'string') {
             storageLocationCache = {
                 label:
@@ -941,11 +1052,17 @@ export const migrateCompletedDownloadsToStorage = async (): Promise<{
 // ---------- Sidecar + discovery (best-effort reconciliation) ----------
 
 const exportRegistrySidecar = async (entries: DownloadEntry[]): Promise<void> => {
+    // The sidecar is a recovery manifest for completed, on-disk downloads only.
+    // Persisting queued/failed/canceled rows would let discovery resurrect
+    // entries the user removed — those rows have no file for the existence check
+    // to prune — so the manifest carries just the completed+localUri set.
+    const recoverable = entries.filter(isSidecarRecoverable);
+    const payload = JSON.stringify(recoverable);
     try {
         const root = await ensureDownloadsDirectory();
         await FileSystem.writeAsStringAsync(
             `${root}${REGISTRY_SIDECAR_FILENAME}`,
-            JSON.stringify(entries),
+            payload,
         );
     } catch {
         // best-effort
@@ -956,7 +1073,7 @@ const exportRegistrySidecar = async (entries: DownloadEntry[]): Promise<void> =>
             await writeSafTextDocument(
                 storage.treeUri,
                 REGISTRY_SIDECAR_FILENAME,
-                JSON.stringify(entries),
+                payload,
             );
         }
     } catch {
@@ -974,23 +1091,92 @@ const ensureDownloadsDirectory = async () => {
 };
 
 const parseSidecarPayload = (raw: string): DownloadEntry[] => {
+    const parsed = safeParseJson<unknown>(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((entry): entry is DownloadEntry => {
+        if (!isRecord(entry)) return false;
+        return (
+            typeof entry.id === 'string' &&
+            typeof entry.title === 'string' &&
+            typeof entry.sourceUrl === 'string' &&
+            typeof entry.trackId === 'string' &&
+            typeof entry.enqueuedAt === 'number' &&
+            isRecord(entry.collection)
+        );
+    });
+};
+
+/**
+ * Best-effort wipe of the exported registry sidecars (internal copy + the SAF
+ * copy on the user's chosen tree). There's no SAF "delete document" primitive
+ * wired up, so the SAF copy is neutralized by overwriting it with an empty
+ * array — which parses to zero entries and proposes nothing on the next pass.
+ */
+const clearRegistrySidecars = async (
+    storage?: StorageLocationPreference,
+): Promise<void> => {
     try {
-        const parsed = JSON.parse(raw) as unknown;
-        if (!Array.isArray(parsed)) return [];
-        return parsed.filter((entry): entry is DownloadEntry => {
-            if (!isRecord(entry)) return false;
-            return (
-                typeof entry.id === 'string' &&
-                typeof entry.title === 'string' &&
-                typeof entry.sourceUrl === 'string' &&
-                typeof entry.trackId === 'string' &&
-                typeof entry.enqueuedAt === 'number' &&
-                isRecord(entry.collection)
-            );
+        const root = await ensureDownloadsDirectory();
+        await FileSystem.deleteAsync(`${root}${REGISTRY_SIDECAR_FILENAME}`, {
+            idempotent: true,
         });
     } catch {
-        return [];
+        // best-effort
     }
+    try {
+        const pref = storage ?? (await getStorageLocation());
+        if (pref.treeUri) {
+            await writeSafTextDocument(pref.treeUri, REGISTRY_SIDECAR_FILENAME, '[]');
+        }
+    } catch {
+        // best-effort
+    }
+};
+
+/**
+ * Drop `completed` entries whose downloaded file no longer exists — the keep/
+ * prune rule lives in `download-reconcile`; this only supplies the I/O (a single
+ * SAF tree listing + per-file stats for internal `file://` rows). SAF stats run
+ * in parallel since registry order isn't semantically meaningful (the screen
+ * re-sorts).
+ */
+const pruneCompletedEntriesMissingFiles = async (
+    entries: DownloadEntry[],
+    storage: StorageLocationPreference,
+): Promise<DownloadEntry[]> => {
+    let safFileKeys: Set<string> | null = null;
+    if (storage.treeUri) {
+        try {
+            const listed = await listSafDownloadAudioFiles(storage.treeUri);
+            safFileKeys = buildSafFileKeySet(listed.map((file) => file.uri));
+        } catch {
+            safFileKeys = null;
+        }
+    }
+
+    const kept: DownloadEntry[] = [];
+    const fileChecks: Promise<void>[] = [];
+    for (const entry of entries) {
+        const decision = decideEntry(entry, safFileKeys);
+        if (decision.kind === 'keep') {
+            kept.push(entry);
+        } else if (decision.kind === 'stat-file') {
+            fileChecks.push(
+                (async () => {
+                    let exists = false;
+                    try {
+                        exists = (await FileSystem.getInfoAsync(decision.uri)).exists;
+                    } catch {
+                        exists = false;
+                    }
+                    if (exists) kept.push(entry);
+                })(),
+            );
+        }
+        // decision.kind === 'prune' → drop it.
+    }
+    await Promise.all(fileChecks);
+    return kept;
 };
 
 let discoveryInFlight: Promise<void> | null = null;
@@ -1047,14 +1233,36 @@ export const discoverDownloadsOnDisk = async (): Promise<void> => {
 
         const byId = new Map(current.map((entry) => [entry.id, entry]));
         for (const candidate of sidecarEntries) {
+            // The sidecar is a recovery manifest for FINISHED downloads whose
+            // files outlived their registry row (e.g. after a reinstall). A
+            // queued/downloading/failed/canceled candidate has no file to
+            // recover, so resurrecting it just revives a row the user already
+            // removed — it would slip past the file-existence prune below
+            // (that only judges `completed` rows) and reappear on every mount.
+            // Only completed candidates are eligible to come back.
+            if (!isResurrectableSidecarEntry(candidate)) continue;
             if (!byId.has(candidate.id)) {
                 byId.set(candidate.id, candidate);
             }
         }
         const merged = [...byId.values()];
 
-        if (merged.length !== current.length) {
-            await native?.replaceAll(merged);
+        // Reconcile against bytes that actually exist on disk. This both stops
+        // the sidecar from resurrecting dead rows AND self-heals a registry
+        // that already accumulated phantoms (completed rows whose files were
+        // deleted out from under them).
+        const reconciled = await pruneCompletedEntriesMissingFiles(merged, storage);
+
+        if (!sameRegistryById(reconciled, current)) {
+            await native?.replaceAll(reconciled);
+            cachedRegistry = reconciled;
+            // Keep the sidecars consistent with the reconciled truth so they
+            // can't keep proposing dead rows on the next pass.
+            if (reconciled.length > 0) {
+                void exportRegistrySidecar(reconciled);
+            } else {
+                void clearRegistrySidecars(storage);
+            }
         }
     })().finally(() => {
         discoveryInFlight = null;

@@ -79,20 +79,94 @@ const formatRelativeTime = (timestamp: number): string => {
     return `${Math.floor(hours / 24)} d ago`;
 };
 
-const describeCatalogState = (state: CatalogSyncState | undefined): string => {
-    if (!state || state.status === 'idle') {
-        return 'Not synced yet';
+const SILLY_PHRASES = [
+    'Aligning chakras…',
+    'Reticulating splines…',
+    'Dusting off shelves…',
+    'Tuning the radio…',
+    'Organizing the archive…',
+    'Feeding the hamsters…',
+    'Warming up the tubes…',
+];
+
+const CatalogSyncIcon = ({ state }: { state: CatalogSyncState | undefined }) => {
+    const [elapsedMs, setElapsedMs] = useState(() =>
+        state?.status === 'syncing' ? Date.now() - (state.lastAttemptAt ?? Date.now()) : 0,
+    );
+
+    useEffect(() => {
+        if (!state || state.status !== 'syncing') {
+            return;
+        }
+        const interval = setInterval(() => {
+            setElapsedMs(Date.now() - (state.lastAttemptAt ?? Date.now()));
+        }, 100);
+        return () => clearInterval(interval);
+    }, [state?.status, state?.lastAttemptAt]);
+
+    if (state?.status === 'syncing') {
+        if (elapsedMs < 1000) {
+            return <View style={{ width: 20, height: 20 }} />;
+        }
+        return <ActivityIndicator color={colors.text} size="small" />;
     }
-    if (state.status === 'syncing') {
-        return `Mirroring… ${formatCount(state.itemCount, 'item')}, ${formatCount(state.trackCount, 'track')}`;
+
+    return (
+        <CheckGlyph
+            color={state?.status === 'synced' ? colors.accent : colors.muted}
+            size={16}
+        />
+    );
+};
+
+const CatalogSyncProgress = ({ state }: { state: CatalogSyncState | undefined }) => {
+    const [elapsedMs, setElapsedMs] = useState(() =>
+        state?.status === 'syncing' ? Date.now() - (state.lastAttemptAt ?? Date.now()) : 0,
+    );
+
+    useEffect(() => {
+        if (!state || state.status !== 'syncing') {
+            return;
+        }
+        const interval = setInterval(() => {
+            setElapsedMs(Date.now() - (state.lastAttemptAt ?? Date.now()));
+        }, 100);
+        return () => clearInterval(interval);
+    }, [state?.status, state?.lastAttemptAt]);
+
+    if (!state || state.status === 'idle') {
+        return <Text style={styles.settingsRowSubtitle}>Not synced yet</Text>;
     }
     if (state.status === 'error') {
-        return state.error ?? 'Sync failed';
+        return <Text style={styles.settingsRowSubtitle}>{state.error ?? 'Sync failed'}</Text>;
     }
+    if (state.status === 'synced') {
+        const finalCounts = `${formatCount(state.itemCount, 'item')} · ${formatCount(state.trackCount, 'track')}`;
+        return (
+            <Text style={styles.settingsRowSubtitle}>
+                {state.lastSyncedAt ? `${finalCounts} · ${formatRelativeTime(state.lastSyncedAt)}` : finalCounts}
+            </Text>
+        );
+    }
+
     const counts = `${formatCount(state.itemCount, 'item')} · ${formatCount(state.trackCount, 'track')}`;
-    return state.lastSyncedAt
-        ? `${counts} · ${formatRelativeTime(state.lastSyncedAt)}`
-        : counts;
+    const seconds = elapsedMs / 1000;
+
+    let text = `Mirroring… ${counts}`;
+    if (seconds >= 5 && seconds < 10) {
+        const phraseIndex = Math.floor(seconds / 2) % SILLY_PHRASES.length;
+        text = `${SILLY_PHRASES[phraseIndex]} ${counts}`;
+    } else if (seconds >= 10) {
+        let step = 'Step 1: Fetching metadata…';
+        if (state.detailCount > 0) {
+            step = 'Step 3: Extracting deep details…';
+        } else if (state.trackCount > 0) {
+            step = 'Step 2: Syncing audio tracks…';
+        }
+        text = `${step} ${counts}`;
+    }
+
+    return <Text style={styles.settingsRowSubtitle}>{text}</Text>;
 };
 
 export const SettingsScreen = ({
@@ -110,15 +184,26 @@ export const SettingsScreen = ({
     const [catalogStates, setCatalogStates] = useState<CatalogSyncState[]>([]);
     const [artworkCacheSize, setArtworkCacheSize] = useState<number | null>(null);
 
-    useEffect(() => subscribeCatalogSyncState(setCatalogStates), []);
+    useEffect(() => {
+        const unsubscribe = subscribeCatalogSyncState(setCatalogStates);
+        return unsubscribe;
+    }, []);
 
-    const refreshArtworkCacheSize = useCallback(() => {
-        void getArtworkCacheSizeBytes().then(setArtworkCacheSize);
+    const refreshArtworkCacheSize = useCallback(async () => {
+        setArtworkCacheSize(await getArtworkCacheSizeBytes());
     }, []);
 
     useEffect(() => {
-        refreshArtworkCacheSize();
-    }, [refreshArtworkCacheSize, artworkCacheLimitBytes]);
+        let active = true;
+        void getArtworkCacheSizeBytes().then((size) => {
+            if (active) {
+                setArtworkCacheSize(size);
+            }
+        });
+        return () => {
+            active = false;
+        };
+    }, [artworkCacheLimitBytes]);
 
     const handleCycleArtworkCacheLimit = () => {
         const currentIndex = ARTWORK_CACHE_PRESETS_BYTES.findIndex(
@@ -195,23 +280,10 @@ export const SettingsScreen = ({
                         const state = catalogStateById.get(source.id);
                         return (
                             <View key={source.id} style={styles.settingsRow}>
-                                {state?.status === 'syncing' ? (
-                                    <ActivityIndicator color={colors.text} size="small" />
-                                ) : (
-                                    <CheckGlyph
-                                        color={
-                                            state?.status === 'synced'
-                                                ? colors.accent
-                                                : colors.muted
-                                        }
-                                        size={16}
-                                    />
-                                )}
+                                <CatalogSyncIcon state={state} />
                                 <View style={styles.settingsRowText}>
                                     <Text style={styles.settingsRowTitle}>{source.title}</Text>
-                                    <Text style={styles.settingsRowSubtitle}>
-                                        {describeCatalogState(state)}
-                                    </Text>
+                                    <CatalogSyncProgress state={state} />
                                 </View>
                             </View>
                         );

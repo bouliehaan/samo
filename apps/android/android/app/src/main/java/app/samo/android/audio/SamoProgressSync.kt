@@ -32,7 +32,7 @@ import java.util.concurrent.Executors
  */
 internal object SamoProgressSync {
     private const val TAG = "SamoProgressSync"
-    private const val POLL_INTERVAL_MS = 5_000L
+    private const val POLL_INTERVAL_MS = 1_000L
     private const val THROTTLE_MS = 20_000L
     /** Mark audiobook/podcast as "completed" when this far through. */
     private const val COMPLETION_THRESHOLD = 0.96
@@ -60,9 +60,11 @@ internal object SamoProgressSync {
     )
 
     private var active: ActiveItem? = null
-    private var positionSupplier: (() -> Long)? = null
-    private var durationSupplier: (() -> Long)? = null
+    private var positionSupplier: (() -> Long?)? = null
+    private var durationSupplier: (() -> Long?)? = null
     private var isPlaying = false
+    private var stallCheckCount = 0
+    var onPlaybackStalled: (() -> Unit)? = null
 
     private val pollRunnable = object : Runnable {
         override fun run() {
@@ -70,8 +72,20 @@ internal object SamoProgressSync {
             val supplier = positionSupplier
             val durationFn = durationSupplier
             if (item != null && isPlaying && supplier != null) {
-                val positionMs = supplier()
-                val durationMs = durationFn?.invoke() ?: -1L
+                val positionMs = supplier() ?: item.lastPositionMs
+                val durationMs = durationFn?.invoke() ?: item.lastDurationMs
+
+                if (positionMs == item.lastPositionMs && positionMs != item.lastDurationMs) {
+                    stallCheckCount++
+                    if (stallCheckCount >= 3) {
+                        Log.w(TAG, "Hardware offload watchdog tripped: playhead stalled at ${positionMs}ms")
+                        onPlaybackStalled?.invoke()
+                        stallCheckCount = 0
+                    }
+                } else {
+                    stallCheckCount = 0
+                }
+
                 item.lastPositionMs = positionMs
                 if (durationMs > 0) {
                     item.lastDurationMs = durationMs
@@ -89,7 +103,7 @@ internal object SamoProgressSync {
      * PlaybackService comes up). Caller is responsible for null-guarding if
      * the service is later unbound.
      */
-    fun bindPlayerSuppliers(position: () -> Long, duration: () -> Long) {
+    fun bindPlayerSuppliers(position: () -> Long?, duration: () -> Long?) {
         positionSupplier = position
         durationSupplier = duration
     }
@@ -166,11 +180,12 @@ internal object SamoProgressSync {
 
     fun setPlaying(playing: Boolean) {
         mainHandler.post {
-            val wasPlaying = isPlaying
+            if (isPlaying == playing) return@post
             isPlaying = playing
-            if (playing && !wasPlaying) {
+            stallCheckCount = 0
+            if (playing) {
                 startPolling()
-            } else if (!playing && wasPlaying) {
+            } else {
                 stopPolling()
                 val item = active
                 if (item != null) {

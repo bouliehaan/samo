@@ -34,7 +34,7 @@ export interface HomeScreenProps {
     onSelectItem: (item: AndroidRecentContentSourceItem) => void;
     onViewAll: (section: HomeDisplaySection) => void;
     recentItems: AndroidRecentContentItem[];
-    serverConnections: ServerAuthenticationResult[];
+    serverConnection: ServerAuthenticationResult | null;
 }
 
 export interface ContentBackedScreenProps {

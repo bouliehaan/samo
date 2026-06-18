@@ -2397,6 +2397,17 @@ export const styles = StyleSheet.create({
         fontSize: 14,
         lineHeight: 20,
     },
+    chapterQualityHint: {
+        color: colors.muted,
+        fontSize: 12,
+        fontWeight: '600',
+        letterSpacing: 0.2,
+        marginBottom: 6,
+        marginTop: -2,
+    },
+    chapterQualityReview: {
+        color: colors.accent,
+    },
     pauseGlyph: {
         alignItems: 'center',
         flexDirection: 'row',

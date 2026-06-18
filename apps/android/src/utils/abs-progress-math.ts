@@ -42,13 +42,13 @@ export const getPlayableStreamResumeSeconds = (item: MobilePlayableAudio): numbe
  */
 export const buildAbsProgressContextFromPlayable = (
     item: MobilePlayableAudio,
-    authentications: ServerAuthenticationResult[],
+    serverConnection: ServerAuthenticationResult | null,
 ): AbsProgressContext | null => {
     if (item.source !== 'podcast' && item.source !== 'audiobook') {
         return null;
     }
 
-    const authentication = findServerAuthenticationForSource(authentications, {
+    const authentication = findServerAuthenticationForSource(serverConnection, {
         id: item.contentSourceId,
     });
     if (!authentication || authentication.type !== ServerType.SAMO) {

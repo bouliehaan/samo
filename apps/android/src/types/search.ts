@@ -26,7 +26,7 @@ export interface SearchScreenProps {
     onSelectRecentItem: (item: AndroidRecentContentSourceItem) => void;
     recentItems: AndroidRecentContentItem[];
     searchState: AndroidSearchState;
-    serverConnections: ServerAuthenticationResult[];
+    serverConnection: ServerAuthenticationResult | null;
 }
 
 export interface SearchOverlayProps {
@@ -37,5 +37,5 @@ export interface SearchOverlayProps {
     query: string;
     recentItems: AndroidRecentContentItem[];
     searchState: AndroidSearchState;
-    serverConnections: ServerAuthenticationResult[];
+    serverConnection: ServerAuthenticationResult | null;
 }

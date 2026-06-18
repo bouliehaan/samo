@@ -12,7 +12,7 @@ import { getSourceFromSourceId } from './content-source';
 
 export const buildOfflineHomeContentState = (
     downloadedCollections: DownloadedCollectionSummary[],
-    serverConnections: ServerAuthenticationResult[],
+    serverConnection: ServerAuthenticationResult | null,
 ): AndroidHomeContentState => {
     const sectionItems = new Map<MobileHomeSectionId, MobileHomeItem[]>();
     const sortedCollections = [...downloadedCollections].sort(
@@ -20,7 +20,7 @@ export const buildOfflineHomeContentState = (
     );
 
     for (const { collection } of sortedCollections) {
-        const source = getSourceFromSourceId(collection.sourceId, serverConnections);
+        const source = getSourceFromSourceId(collection.sourceId, serverConnection);
         if (!source) {
             continue;
         }

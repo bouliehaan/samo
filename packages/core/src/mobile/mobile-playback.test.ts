@@ -208,6 +208,14 @@ describe('samoAudiobookFilePlaybacks', () => {
         expect(files.map((f) => f.mediaFileId)).toEqual(['file-1', 'file-2', 'file-3']);
     });
 
+    it('carries each file mimeType so the MP3 frame-seek path can activate', () => {
+        // Without this the Android queue items had mimeType=undefined and
+        // shouldServerSeekAudiobookMp3 always returned false -> ExoPlayer's
+        // coarse Xing seek -> chapter taps landed mid-sentence.
+        const files = samoAudiobookFilePlaybacks(threeFileBook());
+        expect(files.map((f) => f.mimeType)).toEqual(['audio/mpeg', 'audio/mpeg', 'audio/mpeg']);
+    });
+
     it('back-fills offsets by accumulating durations when the server omits them', () => {
         const files = samoAudiobookFilePlaybacks({
             audioFiles: [
@@ -245,6 +253,8 @@ describe('buildSamoAudiobookFileQueue', () => {
             expect(item.url).not.toContain('progressSeconds=');
             expect(item.url).not.toContain('offsetSeconds=');
             expect(item.source).toBe('audiobook');
+            // The queue item must carry mimeType for the MP3 server-seek gate.
+            expect(item.mimeType).toBe('audio/mpeg');
         }
         expect(queue!.items.map((i) => i.progressOffsetSeconds)).toEqual([0, 600, 1140]);
         // Per-file native durations, not the whole-book duration.

@@ -1,5 +1,6 @@
 import { getCatalogDatabase } from './database';
 import { type CatalogSyncStateRow } from './schema';
+import { safeParseJson } from '../../utils/json';
 
 // Tracks the sync status of each Samo source's local mirror and exposes it
 // reactively so the Settings "Local library" panel can render live progress.
@@ -62,14 +63,10 @@ const parseCursor = (raw: string | null): Record<string, unknown> | undefined =>
     if (!raw) {
         return undefined;
     }
-    try {
-        const parsed = JSON.parse(raw) as unknown;
-        return typeof parsed === 'object' && parsed !== null
-            ? (parsed as Record<string, unknown>)
-            : undefined;
-    } catch {
-        return undefined;
-    }
+    const parsed = safeParseJson<unknown>(raw);
+    return typeof parsed === 'object' && parsed !== null
+        ? (parsed as Record<string, unknown>)
+        : undefined;
 };
 
 const rowToState = (row: CatalogSyncStateRow): CatalogSyncState => ({

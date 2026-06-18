@@ -13,12 +13,13 @@ export type AndroidFullCollectionState =
     | { status: 'idle' }
     | { status: 'loading' };
 
-const HOME_TYPE_BY_VARIANT: Record<MobileFullCollectionVariant, MobileHomeItemType> = {
+const HOME_TYPE_BY_VARIANT: Record<MobileFullCollectionVariant | 'podcast-feed', MobileHomeItemType> = {
     album: MobileHomeItemType.ALBUM,
     artist: MobileHomeItemType.ARTIST,
     audiobook: MobileHomeItemType.AUDIOBOOK,
     playlist: MobileHomeItemType.PLAYLIST,
     podcast: MobileHomeItemType.PODCAST,
+    'podcast-feed': MobileHomeItemType.PODCAST_EPISODE,
 };
 
 /**
@@ -30,15 +31,13 @@ const HOME_TYPE_BY_VARIANT: Record<MobileFullCollectionVariant, MobileHomeItemTy
  * screens re-derive when it reports completion.
  */
 export const loadAndroidFullCollectionLocal = async (
-    authentications: ServerAuthenticationResult[],
-    variant: MobileFullCollectionVariant,
+    authentication: ServerAuthenticationResult | null,
+    variant: MobileFullCollectionVariant | 'podcast-feed',
 ): Promise<MobileHomeItem[] | null> => {
+    if (!authentication) return null;
     const type = HOME_TYPE_BY_VARIANT[variant];
-    const lists = await Promise.all(
-        authentications.map((authentication) => loadCatalogCollection(authentication, type)),
-    );
-    const items = lists.flatMap((list) => list ?? []);
-    return items.length > 0 ? items : null;
+    const items = await loadCatalogCollection(authentication, type);
+    return items && items.length > 0 ? items : null;
 };
 
 // Bounded so the synchronous first-paint read stays a sub-frame operation even
@@ -58,25 +57,24 @@ const SYNC_FIRST_PAINT_LIMIT = 800;
  * so the screen mounts with content on the first frame (no loading state).
  */
 export const loadAndroidFullCollectionLocalSync = (
-    authentications: ServerAuthenticationResult[],
-    variant: MobileFullCollectionVariant,
+    authentication: ServerAuthenticationResult | null,
+    variant: MobileFullCollectionVariant | 'podcast-feed',
 ): MobileHomeItem[] => {
+    if (!authentication) return [];
     const type = HOME_TYPE_BY_VARIANT[variant];
-    return authentications.flatMap((authentication) =>
-        loadCatalogCollectionSync(authentication, type, { limit: SYNC_FIRST_PAINT_LIMIT }),
-    );
+    return loadCatalogCollectionSync(authentication, type, { limit: SYNC_FIRST_PAINT_LIMIT });
 };
 
 /** Full collection state from the mirror. `loading` means the mirror has no
  *  rows for the type yet (fresh install mid-first-sync) — the sync-completed
  *  event re-derives and fills it in. */
 export const loadAndroidFullCollection = async (
-    authentications: ServerAuthenticationResult[],
+    authentication: ServerAuthenticationResult | null,
     variant: MobileFullCollectionVariant,
 ): Promise<AndroidFullCollectionState> => {
-    if (authentications.length === 0) {
+    if (!authentication) {
         return { status: 'idle' };
     }
-    const items = await loadAndroidFullCollectionLocal(authentications, variant);
+    const items = await loadAndroidFullCollectionLocal(authentication, variant);
     return items ? { items, status: 'loaded' } : { status: 'loading' };
 };

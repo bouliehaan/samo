@@ -13,5 +13,5 @@ export interface RadioScreenProps {
     onAddStation: (input: AddAndroidRadioStationInput) => Promise<AddAndroidRadioStationResult>;
     onSelectItem: (item: MobileHomeItem) => void;
     recentItems: AndroidRecentContentItem[];
-    serverConnections: ServerAuthenticationResult[];
+    serverConnection: ServerAuthenticationResult | null;
 }

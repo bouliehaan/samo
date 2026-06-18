@@ -210,7 +210,11 @@ internal object SamoCatalogServerClient {
                 throw FetchException(FailureKind.Network, "read failed for $path", error)
             }
             val stream = if (status in 200..299) conn.inputStream else conn.errorStream
-            val raw = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+            val raw = try {
+                stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+            } catch (error: IOException) {
+                throw FetchException(FailureKind.Network, "read failed for $path", error)
+            }
             if (status == 401 || status == 403) {
                 throw FetchException(FailureKind.Auth, "$path: HTTP $status")
             }

@@ -624,6 +624,15 @@ export const buildAudiobookTimelineSegments = (
 export interface SamoAudiobookFilePlayback {
     durationSeconds: number;
     mediaFileId: string;
+    /**
+     * Reported MIME (e.g. `audio/mpeg`). Threaded onto the queue item so the
+     * player can choose the server's frame-accurate seek for VBR MP3 instead of
+     * ExoPlayer's coarse Xing seek (which lands chapter taps 20-70s off,
+     * mid-sentence). Dropping it here silently disabled that whole path on
+     * Android — `shouldServerSeekAudiobookMp3` saw an undefined mimeType and
+     * always fell back to the native seek.
+     */
+    mimeType?: string;
     startOffsetSeconds: number;
 }
 
@@ -644,6 +653,7 @@ export const samoAudiobookFilePlaybacks = (
             {
                 durationSeconds: fileDurationSeconds(primary),
                 mediaFileId: primary.id,
+                mimeType: primary.mimeType,
                 startOffsetSeconds: primary.startOffsetSeconds ?? 0,
             },
         ];
@@ -656,6 +666,7 @@ export const samoAudiobookFilePlaybacks = (
         return {
             durationSeconds: fileDurationSeconds(file),
             mediaFileId: file.id!,
+            mimeType: file.mimeType,
             startOffsetSeconds,
         };
     });
@@ -784,7 +795,11 @@ export const buildSamoAudiobookQueueFromFiles = (
             durationSeconds: file.durationSeconds,
             id: samoAudiobookFilePlaybackId(authentication, params.audiobookId, file.mediaFileId),
             initialPositionSeconds,
-            mimeType: params.mimeTypeFor?.(file.mediaFileId),
+            // Prefer the manifest's own mimeType (now threaded through
+            // samoAudiobookFilePlaybacks); fall back to the optional lookup the
+            // full-detail caller still passes. Either way the queue item must
+            // carry it or the MP3 frame-seek path stays dead.
+            mimeType: file.mimeType ?? params.mimeTypeFor?.(file.mediaFileId),
             // The file's book-global start keeps the timeline math unchanged.
             progressOffsetSeconds: file.startOffsetSeconds,
             quality: samoQualityForFile(undefined, 'android-direct', false),

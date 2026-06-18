@@ -34,12 +34,10 @@ import { SAMO_MOBILE_TABS, type SamoMobileTabId } from '@samo/core/navigation';
 import {
     ensureSamoStreamToken,
     findServerAuthenticationForSource,
-    removeServerAuthentication,
-    type ServerAuthenticationResult,
+        type ServerAuthenticationResult,
     ServerConnectionHealthStatus,
     ServerType,
-    upsertServerAuthentication,
-} from '@samo/core/server';
+    } from '@samo/core/server';
 import { File } from 'expo-file-system';
 import { Image as ExpoImage } from 'expo-image';
 import { StatusBar } from 'expo-status-bar';
@@ -169,6 +167,7 @@ import { AddServerScreen } from './src/screens/AddServerScreen';
 import { DownloadsScreen } from './src/screens/DownloadsScreen';
 import { EmptyServerBackedScreen } from './src/screens/EmptyServerBackedScreen';
 import { HomeScreen } from './src/screens/HomeScreen';
+import { InitialSyncScreen } from './src/screens/InitialSyncScreen';
 import { LibraryScreen } from './src/screens/LibraryScreen';
 import { ManageServersScreen } from './src/screens/ManageServersScreen';
 import { MediaDetailContent } from './src/screens/MediaDetailScreen';
@@ -274,8 +273,7 @@ import { type AndroidSearchState, loadAndroidSearchResults } from './src/service
 import { type AndroidAuthState, authenticateServer } from './src/services/server-auth';
 import {
     type AndroidServerHealthMap,
-    checkAndroidServerConnections,
-    createCheckingServerHealthMap,
+        createCheckingServerHealthMap,
     createConnectedServerHealthStatus,
 } from './src/services/server-health';
 import {
@@ -433,12 +431,12 @@ export default function App() {
     const {
         authState,
         password,
-        serverConnections,
+        serverConnection,
         serverHealthByKey,
         serverUrl,
         setAuthState,
         setPassword,
-        setServerConnections,
+        setServerConnection,
         setServerHealthByKey,
         setServerUrl,
         setUsername,
@@ -513,9 +511,9 @@ export default function App() {
         playQueueIndexNatively,
         playQueuedItem,
         registerNavigatePlayback,
-    } = useAndroidNativePlayback({ lastPlayedItem, serverConnections });
+    } = useAndroidNativePlayback({ lastPlayedItem, serverConnection });
     const queue = usePlaybackQueue();
-    useAndroidRadioMetadataSync(serverConnections);
+    useAndroidRadioMetadataSync(serverConnection);
     useAndroidCastSync();
     const lastPlayedPersistenceKeyRef = useRef<null | string>(null);
     const isHomeSurface =
@@ -554,7 +552,7 @@ export default function App() {
         }
         const offlineContentState = buildOfflineHomeContentState(
             downloadedCollections,
-            serverConnections,
+            serverConnection,
         );
         if (homeContentState.status !== 'loaded') {
             return offlineContentState;
@@ -584,7 +582,7 @@ export default function App() {
         downloadedCollections,
         homeContentState,
         isOfflineMode,
-        serverConnections,
+        serverConnection,
     ]);
 
     const visibleRecentItems = useMemo(() => {
@@ -640,7 +638,7 @@ export default function App() {
             // at render time so they pick up real covers as soon as the
             // matching server is connected, without rewriting storage.
             if (!merged.artworkUrl && !merged.artworkImageId) {
-                const resolved = resolveItemArtworkUrl(merged, serverConnections);
+                const resolved = resolveItemArtworkUrl(merged, serverConnection);
                 if (resolved) {
                     return { ...entry, item: { ...merged, artworkUrl: resolved } };
                 }
@@ -651,7 +649,7 @@ export default function App() {
         recentContentItems,
         isOfflineMode,
         downloadedCollectionKeys,
-        serverConnections,
+        serverConnection,
         homeContentState,
     ]);
 
@@ -665,11 +663,11 @@ export default function App() {
      *  and cheap (bounded SQLite reads), so it runs on connect, after every
      *  sync, and whenever connections change. */
     const refreshHomeFromMirror = useStableCallback(() => {
-        if (serverConnections.length === 0) {
+        if (!serverConnection) {
             return;
         }
         const content = buildCatalogHomeContent(
-            serverConnections,
+            serverConnection,
             lastHomeLiveSectionsRef.current,
         );
         // eslint-disable-next-line no-console -- mirror-derive health probe
@@ -691,11 +689,11 @@ export default function App() {
         }));
     });
 
-    const loadHomeForConnections = useCallback(
-        async (authentications: ServerAuthenticationResult[]) => {
+    const loadHomeForConnection = useCallback(
+        async (authentication: ServerAuthenticationResult | null) => {
             const requestId = (homeLoadRequestId.current += 1);
 
-            if (authentications.length === 0) {
+            if (!authentication) {
                 setHomeContentState({ status: 'idle' });
                 return;
             }
@@ -704,7 +702,7 @@ export default function App() {
             // sections. A cold mirror (fresh install mid-first-sync) shows the
             // loading state until the sync-completed event re-derives.
             const mirrorContent = buildCatalogHomeContent(
-                authentications,
+                authentication,
                 lastHomeLiveSectionsRef.current,
             );
             setHomeContentState((current) => {
@@ -724,19 +722,49 @@ export default function App() {
             // degrade to the last-known live sections (or none) instead of
             // touching the library sections at all.
             const live = await dedupeInFlight(
-                buildHomeLoadKey(authentications),
+                buildHomeLoadKey(authentication ? [authentication] : []),
                 async (): Promise<HomeLiveSections> => {
-                    const [discover, podcastFeed, radio] = await Promise.all([
-                        loadMobileDiscoveryForServers({ authentications }).catch(
+                    const [discover, podcastFeed] = await Promise.all([
+                        loadMobileDiscoveryForServers({ authentication: authentication ?? null }).catch(
                             () => [],
                         ),
-                        loadMobilePodcastFeedForServers({ authentications }).catch(
+                        loadMobilePodcastFeedForServers({ authentication: authentication ?? null }).catch(
                             () => [],
                         ),
-                        loadMobileRadioForServers({ authentications }).catch(() => []),
                     ]);
-                    return { discover, podcastFeed, radio };
+                    return {
+                        discover,
+                        podcastFeed,
+                        radio: lastHomeLiveSectionsRef.current?.radio ?? [],
+                    };
                 },
+            );
+
+            void dedupeInFlight(
+                buildHomeLoadKey(authentication ? [authentication] : []) + '-radio',
+                async () => {
+                    const radio = await loadMobileRadioForServers({ authentication: authentication ?? null }).catch(() => []);
+                    if (requestId !== homeLoadRequestId.current || radio.length === 0) {
+                        return;
+                    }
+                    lastHomeLiveSectionsRef.current = {
+                        ...(lastHomeLiveSectionsRef.current ?? { discover: [], podcastFeed: [], radio: [] }),
+                        radio,
+                    };
+                    const assembled = buildCatalogHomeContent(
+                        authentication,
+                        lastHomeLiveSectionsRef.current,
+                    );
+                    if (assembled) {
+                        setHomeContentState((current) => ({
+                            content:
+                                current.status === 'loaded'
+                                    ? reconcileHomeContent(current.content, assembled)
+                                    : assembled,
+                            status: 'loaded',
+                        }));
+                    }
+                }
             );
             if (requestId !== homeLoadRequestId.current) {
                 return;
@@ -749,7 +777,7 @@ export default function App() {
                 lastHomeLiveSectionsRef.current = live;
             }
             const assembled = buildCatalogHomeContent(
-                authentications,
+                authentication,
                 lastHomeLiveSectionsRef.current,
             );
             if (!assembled) {
@@ -765,7 +793,7 @@ export default function App() {
 
             const mergedRecents = await mergeServerRecentlyPlayedIntoRecents(
                 await loadPersistedRecentContentItems(),
-                authentications,
+                authentication,
                 assembled,
             );
             if (requestId !== homeLoadRequestId.current) {
@@ -819,8 +847,8 @@ export default function App() {
     // Kotlin → JS sync plumbing: progress events feed the Settings panel;
     // every completed sync re-derives the mirror-backed surfaces (Home,
     // Library) and warms the cover-art cache for whatever it pulled.
-    const serverConnectionsForSyncRef = useRef(serverConnections);
-    serverConnectionsForSyncRef.current = serverConnections;
+    const serverConnectionForSyncRef = useRef(serverConnection);
+    serverConnectionForSyncRef.current = serverConnection;
     useEffect(() => {
         const uninstall = installCatalogSyncEventBridge();
         const unsubscribe = subscribeCatalogSyncCompleted(() => {
@@ -828,10 +856,10 @@ export default function App() {
             refreshLibraryFromMirror();
             // catalog_search is JS-owned (fts5 only exists in expo-sqlite's
             // bundled build) — derive it from the freshly-synced mirror.
-            void reindexCatalogSearch(serverConnectionsForSyncRef.current).then(() => {
+            void reindexCatalogSearch(serverConnectionForSyncRef.current).then(() => {
                 refreshHomeFromMirror();
             });
-            void prefetchCatalogArtwork(serverConnectionsForSyncRef.current);
+            void prefetchCatalogArtwork(serverConnectionForSyncRef.current);
         });
         return () => {
             unsubscribe();
@@ -842,19 +870,19 @@ export default function App() {
     // Cover syncs that ran while the app was closed (background WorkManager
     // rounds emit no events into a dead JS world): one index top-up per boot.
     useEffect(() => {
-        if (serverConnections.length > 0) {
-            void reindexCatalogSearch(serverConnections);
+        if (!!serverConnection) {
+            void reindexCatalogSearch(serverConnection);
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [serverConnections.length > 0]);
+    }, [!!serverConnection]);
 
     // Paint Home from the mirror the moment connections exist (cold launch,
     // restore, connect) — no network on this path.
     useEffect(() => {
-        if (serverConnections.length > 0) {
+        if (!!serverConnection) {
             refreshHomeFromMirror();
         }
-    }, [serverConnections, refreshHomeFromMirror]);
+    }, [serverConnection, refreshHomeFromMirror]);
 
     // Resume any stranded downloads when the app returns to the foreground —
     // re-queues transfers the OS suspended in the background and pumps the queue
@@ -862,16 +890,16 @@ export default function App() {
     useEffect(() => {
         const subscription = AppState.addEventListener('change', (next) => {
             if (next === 'active') {
-                void resumeDownloadsOnForeground(serverConnections);
+                void resumeDownloadsOnForeground(serverConnection);
             }
         });
         return () => subscription.remove();
-    }, [serverConnections]);
+    }, [serverConnection]);
 
     const { canConnect, handleConnect, handleDisconnect } = useAndroidServerAuth({
         auth,
         closeMediaDetail,
-        loadHomeForConnections,
+        loadHomeForConnection,
         setActiveUtilityScreen,
         setHomeContentState,
         setSearchState,
@@ -880,7 +908,7 @@ export default function App() {
     const startLibraryFullCollectionLoad = useStableCallback(() => {
         if (
             isOfflineMode ||
-            serverConnections.length === 0 ||
+            !serverConnection ||
             homeContentState.status !== 'loaded'
         ) {
             return;
@@ -901,8 +929,8 @@ export default function App() {
                 // complete lists; freshness arrives via refreshLibraryFromMirror
                 // when the sync engine reports completion.
                 const [albums, artists] = await Promise.all([
-                    loadAndroidFullCollection(serverConnections, 'album'),
-                    loadAndroidFullCollection(serverConnections, 'artist'),
+                    loadAndroidFullCollection(serverConnection, 'album'),
+                    loadAndroidFullCollection(serverConnection, 'artist'),
                 ]);
 
                 if (libraryFullCollectionFetchTokenRef.current !== requestId) {
@@ -915,8 +943,8 @@ export default function App() {
             // Synchronous first paint from the catalog so the Library grids mount
             // with content immediately — no loading state. The async block above
             // then fills the complete lists.
-            const syncAlbums = loadAndroidFullCollectionLocalSync(serverConnections, 'album');
-            const syncArtists = loadAndroidFullCollectionLocalSync(serverConnections, 'artist');
+            const syncAlbums = loadAndroidFullCollectionLocalSync(serverConnection, 'album');
+            const syncArtists = loadAndroidFullCollectionLocalSync(serverConnection, 'artist');
             return {
                 albums:
                     syncAlbums.length > 0
@@ -933,7 +961,7 @@ export default function App() {
     /** Re-derive the Library surfaces from the mirror after a sync — only the
      *  ones the user has already opened (state present), never a cold mount. */
     const refreshLibraryFromMirror = useStableCallback(() => {
-        if (serverConnections.length === 0) {
+        if (!serverConnection) {
             return;
         }
         setLibraryRelevantState((current) =>
@@ -942,8 +970,8 @@ export default function App() {
         startLibraryRelevantLoad();
         void (async () => {
             const [albums, artists] = await Promise.all([
-                loadAndroidFullCollection(serverConnections, 'album'),
-                loadAndroidFullCollection(serverConnections, 'artist'),
+                loadAndroidFullCollection(serverConnection, 'album'),
+                loadAndroidFullCollection(serverConnection, 'artist'),
             ]);
             setLibraryFullCollections((current) => {
                 if (
@@ -960,7 +988,7 @@ export default function App() {
     const ensureLibraryFullCollections = startLibraryFullCollectionLoad;
 
     const startLibraryRelevantLoad = useStableCallback(() => {
-        if (isOfflineMode || serverConnections.length === 0) {
+        if (isOfflineMode || !serverConnection) {
             return;
         }
 
@@ -969,7 +997,7 @@ export default function App() {
         );
         const requestId = (libraryRelevantFetchTokenRef.current += 1);
         void (async () => {
-            const next = await loadAndroidLibraryRelevantContent(serverConnections);
+            const next = await loadAndroidLibraryRelevantContent(serverConnection);
             if (libraryRelevantFetchTokenRef.current !== requestId) {
                 return;
             }
@@ -978,7 +1006,7 @@ export default function App() {
     });
 
     useEffect(() => {
-        if (isOfflineMode || serverConnections.length === 0) {
+        if (isOfflineMode || !serverConnection) {
             libraryRelevantFetchTokenRef.current += 1;
             setLibraryRelevantState(EMPTY_LIBRARY_RELEVANT_STATE);
             libraryFullCollectionFetchTokenRef.current += 1;
@@ -998,21 +1026,17 @@ export default function App() {
         return () => {
             clearTimeout(timeout);
         };
-    }, [homeContentState.status, isOfflineMode, serverConnections, startLibraryRelevantLoad]);
+    }, [homeContentState.status, isOfflineMode, serverConnection, startLibraryRelevantLoad]);
 
     useEffect(() => {
-        if (serverConnections.length === 0) {
+        if (!serverConnection) {
             return;
         }
 
-        void Promise.all(
-            serverConnections
-                .filter((authentication) => authentication.type === ServerType.SAMO)
-                .map((authentication) =>
-                    ensureSamoStreamToken(authentication).catch(() => undefined),
-                ),
-        );
-    }, [serverConnections]);
+        if (serverConnection.type === ServerType.SAMO) {
+            void ensureSamoStreamToken(serverConnection).catch(() => undefined);
+        }
+    }, [serverConnection]);
 
     // Warm the first visible covers into memory + disk so round-tripping
     // through detail pages does not refetch art the home screen just showed.
@@ -1027,7 +1051,7 @@ export default function App() {
                         artworkUrl: item.artworkUrl,
                         source: item.source,
                     },
-                    serverConnections,
+                    serverConnection,
                 );
                 if (resolved) {
                     sources.push(resolved);
@@ -1039,17 +1063,17 @@ export default function App() {
                 prefetchArtworkSource(source);
             }
         }
-    }, [homeContentState, serverConnections]);
+    }, [homeContentState, serverConnection]);
 
     useEffect(() => {
-        if (serverConnections.length === 0) {
+        if (!serverConnection) {
             return;
         }
 
         setRecentContentItems((current) => {
             let changed = false;
             const next = current.map((entry) => {
-                const patched = backfillItemArtworkFields(entry.item, serverConnections);
+                const patched = backfillItemArtworkFields(entry.item, serverConnection);
                 if (patched === entry.item) {
                     return entry;
                 }
@@ -1058,15 +1082,15 @@ export default function App() {
             });
             return changed ? next : current;
         });
-    }, [serverConnections, setRecentContentItems]);
+    }, [serverConnection, setRecentContentItems]);
 
     useEffect(() => {
-        if (serverConnections.length === 0 || !lastPlayedItem) {
+        if (!serverConnection || !lastPlayedItem) {
             return;
         }
 
         let cancelled = false;
-        void preparePlaybackItemForNative(lastPlayedItem, serverConnections).then((patched) => {
+        void preparePlaybackItemForNative(lastPlayedItem, serverConnection).then((patched) => {
             if (
                 cancelled ||
                 (patched.artworkUrl === lastPlayedItem.artworkUrl &&
@@ -1080,10 +1104,10 @@ export default function App() {
         return () => {
             cancelled = true;
         };
-    }, [lastPlayedItem?.id, lastPlayedItem?.artworkImageId, serverConnections, setLastPlayedItem]);
+    }, [lastPlayedItem?.id, lastPlayedItem?.artworkImageId, serverConnection, setLastPlayedItem]);
 
     useEffect(() => {
-        if (serverConnections.length === 0 || !lastPlayedItem) {
+        if (!serverConnection || !lastPlayedItem) {
             return;
         }
         if (lastPlayedItem.source !== 'podcast' && lastPlayedItem.source !== 'audiobook') {
@@ -1096,7 +1120,7 @@ export default function App() {
         }
 
         let cancelled = false;
-        void refreshPlayableResumeFromServer(lastPlayedItem, serverConnections).then((refreshed) => {
+        void refreshPlayableResumeFromServer(lastPlayedItem, serverConnection).then((refreshed) => {
             if (cancelled) {
                 return;
             }
@@ -1119,7 +1143,7 @@ export default function App() {
         lastPlayedItem?.initialPositionSeconds,
         lastPlayedItem?.progressOffsetSeconds,
         lastPlayedItem?.source,
-        serverConnections,
+        serverConnection,
         setLastPlayedItem,
     ]);
 
@@ -1138,7 +1162,7 @@ export default function App() {
             }
             const refreshed =
                 item.source === 'podcast' || item.source === 'audiobook'
-                    ? await refreshPlayableResumeFromServer(item, serverConnections)
+                    ? await refreshPlayableResumeFromServer(item, serverConnection)
                     : item;
             lastPlayedPersistenceKeyRef.current = getLastPlayedPersistenceKey(refreshed);
             setLastPlayedItem(refreshed);
@@ -1193,7 +1217,7 @@ export default function App() {
         closeMediaDetail,
         deps: { auth, downloads, navigation, overlays, session },
         handlePlayItem,
-        loadHomeForConnections,
+        loadHomeForConnection,
         playQueuedItem,
     });
     mediaHandlersRef.current = mediaHandlers;
@@ -1241,7 +1265,7 @@ export default function App() {
     const contextMenu = useAndroidContextMenu({
         deps: { overlays, session },
         handlers: mediaHandlers,
-        serverConnections,
+        serverConnection,
     });
 
     useEffect(() => {
@@ -1270,8 +1294,8 @@ export default function App() {
     // a quality mismatch.
     const playbackItem = activePlaybackItem ?? lastPlayedItem;
     const playbackArtworkSource = useMemo(
-        () => resolvePlaybackArtworkSourceForDisplay(playbackItem, serverConnections),
-        [playbackItem, serverConnections],
+        () => resolvePlaybackArtworkSourceForDisplay(playbackItem, serverConnection),
+        [playbackItem, serverConnection],
     );
     const currentHighResArtworkUrl = useMemo(
         () => artworkSourceUri(playbackArtworkSource),
@@ -1319,7 +1343,7 @@ export default function App() {
         playbackSnapshotRef,
         playQueueIndexNatively,
         playQueuedItem,
-        serverConnections,
+        serverConnection,
     });
 
     useEffect(() => {
@@ -1330,7 +1354,7 @@ export default function App() {
         message?: string;
         ok: boolean;
     }> => {
-        if (serverConnections.length === 0) {
+        if (!serverConnection) {
             return { message: 'No servers connected', ok: false };
         }
         try {
@@ -1348,7 +1372,7 @@ export default function App() {
             // invalidate; everything else trusts the cache.
             await ExpoImage.clearMemoryCache();
             // Explicit user sync — force Home to re-render with the fresh result.
-            await loadHomeForConnections(serverConnections);
+            await loadHomeForConnection(serverConnection);
             // Refresh the on-device mirror. The sync engine is Kotlin
             // (SamoCatalogSync via WorkManager) — this just enqueues a one-shot
             // run; live progress streams into the Settings "Local library"
@@ -1392,12 +1416,12 @@ export default function App() {
                 ok: false,
             };
         }
-    }, [loadHomeForConnections, serverConnections]);
+    }, [loadHomeForConnection, serverConnection]);
 
     const [isRefreshingHome, setIsRefreshingHome] = useState(false);
 
     const handleRefreshHome = useCallback(async (): Promise<void> => {
-        if (serverConnections.length === 0) {
+        if (!serverConnection) {
             return;
         }
         setIsRefreshingHome(true);
@@ -1411,7 +1435,7 @@ export default function App() {
             // mirror when the sync above completes. Capped so a slow network
             // releases the spinner instead of hanging it.
             await Promise.race([
-                loadHomeForConnections(serverConnections),
+                loadHomeForConnection(serverConnection),
                 new Promise<void>((resolve) => setTimeout(resolve, 10000)),
             ]);
         } catch {
@@ -1419,7 +1443,7 @@ export default function App() {
         } finally {
             setIsRefreshingHome(false);
         }
-    }, [loadHomeForConnections, serverConnections]);
+    }, [loadHomeForConnection, serverConnection]);
 
     const handleOpenSettings = useCallback(() => {
         setActiveUtilityScreen('settings');
@@ -1526,12 +1550,12 @@ export default function App() {
             return false;
         }
 
-        const auth = findServerAuthenticationForSource(serverConnections, {
+        const auth = findServerAuthenticationForSource(serverConnection, {
             id: playlistMenuRoot.sourceId,
         });
 
         return auth?.type === ServerType.SAMO;
-    }, [playlistMenuRoot?.sourceId, serverConnections]);
+    }, [playlistMenuRoot?.sourceId, serverConnection]);
     const rootPlaylistMenuMode = useMemo(() => {
         if (!playlistMenuRoot) {
             return 'add' as const;
@@ -1544,11 +1568,8 @@ export default function App() {
         return playlistMenuRoot.mode ?? 'add';
     }, [playlistMenuRoot]);
     const canCreatePlaylistsOnDevice = useMemo(
-        () =>
-            serverConnections.some(
-                (connection) => connection.type === ServerType.SAMO,
-            ),
-        [serverConnections],
+        () => serverConnection?.type === ServerType.SAMO,
+        [serverConnection],
     );
     const rootPlaylistTrack = useMemo<MobileMediaTrack | null>(() => {
         if (!playlistMenuRoot) {
@@ -1606,34 +1627,39 @@ export default function App() {
         activeUtilityScreen === 'settings' ? (
             <SettingsScreen
                 artworkCacheLimitBytes={artworkCacheLimitBytes}
-                catalogSources={serverConnections
-                    .filter((connection) => connection.type === ServerType.SAMO)
-                    .map((connection) => ({
-                        id: getMobileContentSource(connection).id,
-                        title: connection.title,
-                    }))}
+                catalogSources={
+                    serverConnection?.type === ServerType.SAMO
+                        ? [
+                              {
+                                  id: getMobileContentSource(serverConnection).id,
+                                  title: serverConnection.title,
+                              },
+                          ]
+                        : []
+                }
                 isOfflineMode={isOfflineMode}
                 onOpenDownloads={handleOpenDownloads}
                 onOpenManageServers={handleOpenManageServers}
                 onSetArtworkCacheLimit={setArtworkCacheLimit}
                 onSyncWithServer={handleSyncWithServer}
                 onToggleOfflineMode={handleToggleOfflineMode}
-                serverCount={serverConnections.length}
+                serverCount={serverConnection ? 1 : 0}
             />
         ) : activeUtilityScreen === 'manage-servers' ? (
             <ManageServersScreen
                 authState={authState}
                 onAddServer={handleOpenAddServer}
                 onDisconnect={handleDisconnect}
-                serverConnections={serverConnections}
+                serverConnection={serverConnection}
                 serverHealthByKey={serverHealthByKey}
             />
         ) : activeUtilityScreen === 'downloads' ? (
-            <DownloadsScreen serverConnections={serverConnections} />
+            <DownloadsScreen serverConnection={serverConnection} />
         ) : activeUtilityScreen === 'add-server' ? (
             <AddServerScreen
                 authState={authState}
                 canConnect={canConnect}
+                hasServerConnection={!!serverConnection}
                 onBack={() => setActiveUtilityScreen('manage-servers')}
                 onConnect={handleConnect}
                 onPasswordChange={setPassword}
@@ -1643,6 +1669,11 @@ export default function App() {
                 password={password}
                 serverUrl={serverUrl}
                 username={username}
+            />
+        ) : activeUtilityScreen === 'initial-sync' ? (
+            <InitialSyncScreen
+                onComplete={() => setActiveUtilityScreen(null)}
+                serverConnection={serverConnection}
             />
         ) : null;
 
@@ -1669,7 +1700,7 @@ export default function App() {
                     onSelectItem={handleSelectMediaItemStable}
                     onViewAll={handleOpenViewAll}
                     recentItems={visibleRecentItems}
-                    serverConnections={serverConnections}
+                    serverConnection={serverConnection}
                 />
             ) : tabId === 'playlists' ? (
                 <PlaylistsScreen
@@ -1684,7 +1715,7 @@ export default function App() {
                 <LibraryScreen
                     fullCollections={libraryFullCollections}
                     fullCollectionsEnabled={!isOfflineMode}
-                    hasServerConnections={serverConnections.length > 0}
+                    hasServerConnections={Boolean(serverConnection)}
                     homeContentState={visibleHomeContentState}
                     libraryRelevantState={libraryRelevantState}
                     onEnsureFullCollections={ensureLibraryFullCollections}
@@ -1693,14 +1724,14 @@ export default function App() {
                 />
             ) : tabId === 'search' ? (
                 <SearchScreen
-                    hasServerConnections={serverConnections.length > 0}
+                    hasServerConnections={Boolean(serverConnection)}
                     homeContentState={visibleHomeContentState}
                     onSearch={handleSearch}
                     onSelectItem={handleSelectMediaItemStable}
                     onSelectRecentItem={handleSelectMediaItemStable}
                     recentItems={visibleRecentItems}
                     searchState={searchState}
-                    serverConnections={serverConnections}
+                    serverConnection={serverConnection}
                 />
             ) : tabId === 'radio' ? (
                 <RadioScreen
@@ -1708,7 +1739,7 @@ export default function App() {
                     onAddStation={handleAddRadioStation}
                     onSelectItem={handleSelectMediaItemStable}
                     recentItems={visibleRecentItems}
-                    serverConnections={serverConnections}
+                    serverConnection={serverConnection}
                 />
             ) : (
                 <EmptyServerBackedScreen tabTitle={getTabTitle(tabId)} />
@@ -1719,7 +1750,7 @@ export default function App() {
     return (
         <GestureHandlerRootView style={styles.gestureRoot}>
             <ErrorBoundary label="App">
-                <ServerConnectionsContext.Provider value={serverConnections}>
+                <ServerConnectionsContext.Provider value={serverConnection}>
                 <MediaContextMenuContext.Provider value={contextMenu.api}>
                     <DownloadedCollectionKeysContext.Provider value={downloadedCollectionKeys}>
                         <DownloadedTrackKeysContext.Provider value={downloadedTrackKeys}>
@@ -1779,7 +1810,7 @@ export default function App() {
                                                             }
                                                             refreshControl={
                                                                 tab.id === 'home' &&
-                                                                serverConnections.length > 0 ? (
+                                                                !!serverConnection ? (
                                                                     <RefreshControl
                                                                         colors={[colors.accent]}
                                                                         onRefresh={handleRefreshHome}
@@ -1841,7 +1872,7 @@ export default function App() {
                                                         onReloadDetail={handleReloadMediaDetailStable}
                                                         onSelectItem={handleSelectMediaItemStable}
                                                         onShufflePlay={handleShuffleDetailTracks}
-                                                        serverConnections={serverConnections}
+                                                        serverConnection={serverConnection}
                                                     />
                                                 </Reanimated.View>
                                             ) : null}
@@ -1886,7 +1917,7 @@ export default function App() {
                                                     query={searchOverlayQuery}
                                                     recentItems={recentContentItems}
                                                     searchState={searchState}
-                                                    serverConnections={serverConnections}
+                                                    serverConnection={serverConnection}
                                                 />
                                             ) : null}
                                         </View>
@@ -1907,7 +1938,7 @@ export default function App() {
                                                 playbackItem
                                                     ? getContentSourceFromPlaybackItem(
                                                           playbackItem,
-                                                          serverConnections,
+                                                          serverConnection,
                                                       )
                                                     : undefined
                                             }
@@ -1916,7 +1947,7 @@ export default function App() {
                                             onTogglePlayback={handleTogglePlayback}
                                             playerProgress={playerProgress}
                                             reducedMotion={reducedMotion}
-                                            serverConnections={serverConnections}
+                                            serverConnection={serverConnection}
                                         />
                                         </ErrorBoundary>
                                         <ErrorBoundary
@@ -1956,7 +1987,7 @@ export default function App() {
                                                     playbackItem
                                                         ? getContentSourceFromPlaybackItem(
                                                               playbackItem,
-                                                              serverConnections,
+                                                              serverConnection,
                                                           )
                                                         : undefined
                                                 }
@@ -2005,7 +2036,7 @@ export default function App() {
                                                 playerProgress={playerProgress}
                                                 queue={queue}
                                                 reducedMotion={reducedMotion}
-                                                serverConnections={serverConnections}
+                                                serverConnection={serverConnection}
                                                 visible={isFullPlayerOpen}
                                             />
                                         </ErrorBoundary>

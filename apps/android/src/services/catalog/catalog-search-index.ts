@@ -140,24 +140,46 @@ const reindexSource = async (authentication: ServerAuthenticationResult): Promis
     }
 
     // 2. Songs: incremental — only track rows the sync touched since our
-    //    cursor. delete-then-insert per batch (catalog_search has no upsert
-    //    key). The cursor only advances after a clean pass.
+    //    cursor. Paginate the reads to bound memory usage (a fresh install
+    //    can have 50k+ tracks; fetching them all crashes the JS VM).
     const cursor = await loadCursor(sourceId);
-    const { maxSyncedAt, tracks: rawTracks } = await getAlbumTracksSyncedSince(sourceId, cursor);
-    const tracks = rawTracks
-        .map((payload) => hydrateCatalogTrack(payload, authentication))
-        .filter((track): track is MobileMediaTrack => track !== null);
-    for (let start = 0; start < tracks.length; start += SONG_INDEX_BATCH) {
-        const batch = tracks.slice(start, start + SONG_INDEX_BATCH);
+    let maxSyncedAt = cursor;
+    let offset = 0;
+
+    while (true) {
+        const { maxSyncedAt: batchMax, tracks: rawTracks } = await getAlbumTracksSyncedSince(
+            sourceId,
+            cursor,
+            SONG_INDEX_BATCH,
+            offset,
+        );
+
+        if (rawTracks.length === 0) {
+            break;
+        }
+
+        if (batchMax > maxSyncedAt) {
+            maxSyncedAt = batchMax;
+        }
+
+        const tracks = rawTracks
+            .map((payload) => hydrateCatalogTrack(payload, authentication))
+            .filter((track): track is MobileMediaTrack => track !== null);
+
         await deleteSearchByEntityIds(
             sourceId,
-            batch.map((track) => track.id),
+            tracks.map((track) => track.id),
         );
         await indexSearchEntries(
             sourceId,
-            batch.map((track) => trackToSearchEntry(track, source)),
+            tracks.map((track) => trackToSearchEntry(track, source)),
             syncedAt,
         );
+
+        if (rawTracks.length < SONG_INDEX_BATCH) {
+            break;
+        }
+        offset += SONG_INDEX_BATCH;
     }
 
     // 3. Deletion reconcile: drop song rows whose track left the mirror.
@@ -177,12 +199,9 @@ let rerunRequested = false;
  * sync that triggered it may have written rows after our reads).
  */
 export const reindexCatalogSearch = (
-    authentications: ServerAuthenticationResult[],
+    authentication: ServerAuthenticationResult | null,
 ): Promise<void> => {
-    const samoAuthentications = authentications.filter(
-        (authentication) => authentication.type === ServerType.SAMO,
-    );
-    if (samoAuthentications.length === 0) {
+    if (!authentication || authentication.type !== ServerType.SAMO) {
         return Promise.resolve();
     }
     if (inFlight) {
@@ -193,13 +212,11 @@ export const reindexCatalogSearch = (
         try {
             do {
                 rerunRequested = false;
-                for (const authentication of samoAuthentications) {
-                    try {
-                        await reindexSource(authentication);
+                try {
+                    await reindexSource(authentication);
                     } catch {
                         // Search indexing must never break the app; the next
                         // sync-completed event retries from the same cursor.
-                    }
                 }
             } while (rerunRequested);
         } finally {

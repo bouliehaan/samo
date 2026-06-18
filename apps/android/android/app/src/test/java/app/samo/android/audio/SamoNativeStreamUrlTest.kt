@@ -149,6 +149,40 @@ class SamoNativeStreamUrlTest {
     }
 
     @Test
+    fun `buildAudiobookStreamUrl threads a sub-second progressSeconds for the frame-accurate seek`() {
+        // A chapter tap on a VBR MP3 needs the server's frame-accurate seek, so
+        // the book-global second must reach the URL with sub-second precision.
+        // Dropping it (the old hard-coded null) is what made chapter jumps land
+        // mid-sentence via ExoPlayer's coarse Xing seek.
+        assertEquals(
+            "https://music.samo.app/api/v1/audiobooks/book_1/stream" +
+                "?mediaFileId=file_42&progressSeconds=502.982&stream_token=t",
+            SamoNativeStreamUrl.buildAudiobookStreamUrl(
+                "https://music.samo.app",
+                "book_1",
+                "t",
+                mediaFileId = "file_42",
+                progressSeconds = 502.982,
+            ),
+        )
+    }
+
+    @Test
+    fun `buildAudiobookStreamUrl formats an integral progressSeconds like JS String()`() {
+        // 600.0 -> "600" (not "600.0") to byte-match the JS builder's output.
+        assertEquals(
+            "https://music.samo.app/api/v1/audiobooks/book_1/stream" +
+                "?progressSeconds=600&stream_token=t",
+            SamoNativeStreamUrl.buildAudiobookStreamUrl(
+                "https://music.samo.app",
+                "book_1",
+                "t",
+                progressSeconds = 600.0,
+            ),
+        )
+    }
+
+    @Test
     fun `buildAudiobookStreamUrl with no extras produces a token-only URL`() {
         assertEquals(
             "https://music.samo.app/api/v1/audiobooks/book_1/stream?stream_token=t",

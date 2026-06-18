@@ -147,7 +147,7 @@ export interface UseAndroidMediaHandlersOptions {
         queueIndex?: number,
         options?: AndroidPlayItemOptions,
     ) => Promise<void>;
-    loadHomeForConnections: (authentications: ServerAuthenticationResult[]) => Promise<void>;
+    loadHomeForConnection: (authentication: ServerAuthenticationResult | null) => Promise<void>;
     playQueuedItem: (
         item: MobilePlayableAudio,
         queueItems?: MobilePlayableAudio[],
@@ -259,7 +259,7 @@ export function useAndroidMediaHandlers(
         closeMediaDetail,
         deps,
         handlePlayItem,
-        loadHomeForConnections,
+        loadHomeForConnection,
     } = options;
 
     const { auth, downloads, navigation, overlays, session } = deps;
@@ -272,7 +272,7 @@ export function useAndroidMediaHandlers(
         setViewAllRoute,
         setIsFullPlayerOpen,
     } = navigation;
-    const { serverConnections } = auth;
+    const { serverConnection } = auth;
     const { isOfflineMode } = downloads;
     const {
         playlistMenuRoot,
@@ -401,7 +401,7 @@ export function useAndroidMediaHandlers(
 
     const handleSearch = useCallback(
         async (query: string) => {
-            if (serverConnections.length === 0) {
+            if (!serverConnection) {
                 return;
             }
 
@@ -417,13 +417,13 @@ export function useAndroidMediaHandlers(
             const userRecents = new Map(
                 recentContentItems.map((entry) => [entry.key, entry.selectedAt]),
             );
-            await runAndroidSearch(serverConnections, trimmedQuery, userRecents, (state) => {
+            await runAndroidSearch(serverConnection, trimmedQuery, userRecents, (state) => {
                 if (requestId === searchRequestId.current) {
                     setSearchState(state);
                 }
             });
         },
-        [recentContentItems, serverConnections],
+        [recentContentItems, serverConnection],
     );
 
     const prefetchMediaDetailCache = useCallback((item: AndroidRecentContentSourceItem) => {
@@ -436,12 +436,12 @@ export function useAndroidMediaHandlers(
                 artworkUrl: item.artworkUrl,
                 source: item.source,
             },
-            serverConnections,
+            serverConnection,
         );
         const cacheKey = getRecentContentItemKey(item);
         const memoryCached = mediaDetailCacheRef.current.get(cacheKey);
         if (memoryCached) {
-            prefetchDetailArtworkUrls(memoryCached, serverConnections, [
+            prefetchDetailArtworkUrls(memoryCached, serverConnection, [
                 {
                     artworkImageId: item.artworkImageId,
                     artworkUrl: item.artworkUrl,
@@ -450,12 +450,12 @@ export function useAndroidMediaHandlers(
             ]);
             return;
         }
-        void loadCatalogMediaDetail(item, serverConnections).then((fromMirror) => {
+        void loadCatalogMediaDetail(item, serverConnection).then((fromMirror) => {
             if (!fromMirror) {
                 return;
             }
             rememberMediaDetail(mediaDetailCacheRef.current, cacheKey, fromMirror);
-            prefetchDetailArtworkUrls(fromMirror, serverConnections, [
+            prefetchDetailArtworkUrls(fromMirror, serverConnection, [
                 {
                     artworkImageId: item.artworkImageId,
                     artworkUrl: item.artworkUrl,
@@ -463,7 +463,7 @@ export function useAndroidMediaHandlers(
                 },
             ]);
         });
-    }, [serverConnections]);
+    }, [serverConnection]);
 
     const beginOpenMediaDetail = useCallback(
         (item: AndroidRecentContentSourceItem) => {
@@ -475,18 +475,11 @@ export function useAndroidMediaHandlers(
                     artworkUrl: item.artworkUrl,
                     source: item.source,
                 },
-                serverConnections,
+                serverConnection,
             );
-            const synchronousDetail =
-                memoryCached ?? loadCatalogMediaDetailSync(item, serverConnections);
+            const synchronousDetail = memoryCached;
             if (synchronousDetail) {
-                // Render the FULL detail on the very first frame — tapping a Samo
-                // album/artist/playlist/podcast/audiobook never shows a loading
-                // view. (memoryCached already hit, or the WAL reader served it.)
-                if (synchronousDetail !== memoryCached) {
-                    rememberMediaDetail(mediaDetailCacheRef.current, cacheKey, synchronousDetail);
-                }
-                prefetchDetailArtworkUrls(synchronousDetail, serverConnections, [
+                prefetchDetailArtworkUrls(synchronousDetail, serverConnection, [
                     {
                         artworkImageId: item.artworkImageId,
                         artworkUrl: item.artworkUrl,
@@ -505,7 +498,7 @@ export function useAndroidMediaHandlers(
                 });
             }
         },
-        [setMediaDetailState, serverConnections],
+        [setMediaDetailState, serverConnection],
     );
 
     const loadDetailWithCache = async (
@@ -523,7 +516,7 @@ export function useAndroidMediaHandlers(
         // works offline. The entire library is mirrored on-device, so this makes
         // *every* Samo detail open instant, not just recently-viewed ones.
         if (!cached) {
-            const fromCatalog = await loadCatalogMediaDetail(item, serverConnections);
+            const fromCatalog = await loadCatalogMediaDetail(item, serverConnection);
             if (!isCurrentRequest()) {
                 return { cached: false };
             }
@@ -545,7 +538,7 @@ export function useAndroidMediaHandlers(
         }
 
         if (cached) {
-            prefetchDetailArtworkUrls(cached, serverConnections, [
+            prefetchDetailArtworkUrls(cached, serverConnection, [
                 {
                     artworkImageId: item.artworkImageId,
                     artworkUrl: item.artworkUrl,
@@ -576,14 +569,14 @@ export function useAndroidMediaHandlers(
         // source): the network is the only option.
         void (async () => {
             const next = await dedupeInFlight(buildMediaDetailLoadKey(cacheKey), () =>
-                loadAndroidMediaDetail(serverConnections, item),
+                loadAndroidMediaDetail(serverConnection, item),
             );
             if (!isCurrentRequest()) {
                 return;
             }
             if (next.status === 'loaded') {
                 rememberMediaDetail(mediaDetailCacheRef.current, cacheKey, next.detail);
-                prefetchDetailArtworkUrls(next.detail, serverConnections, [
+                prefetchDetailArtworkUrls(next.detail, serverConnection, [
                     {
                         artworkImageId: item.artworkImageId,
                         artworkUrl: item.artworkUrl,
@@ -617,27 +610,25 @@ export function useAndroidMediaHandlers(
             // (or closed the screen entirely).
             viewAllFetchTokenRef.current += 1;
             const myToken = viewAllFetchTokenRef.current;
-            // Synchronous first paint from the catalog — the grid mounts with
-            // content on the very first frame, so no loading state ever appears.
-            const syncItems = loadAndroidFullCollectionLocalSync(serverConnections, variant);
-            const hasSync = syncItems.length > 0;
+            const isFeed = variant === 'podcast-feed';
+            const hasSync = isFeed && section.items.length > 0;
             setViewAllFullState(
-                hasSync ? { items: syncItems, status: 'loaded' } : { status: 'loading' },
+                hasSync ? { items: section.items as MobileHomeItem[], status: 'loaded' } : { status: 'loading' },
             );
             void (async () => {
                 // Fill the complete list off the UI thread. The mirror is the
                 // source of truth — additions/edits arrive via the sync engine,
                 // not a per-open re-enumeration of the whole library.
-                const local = await loadAndroidFullCollectionLocal(serverConnections, variant);
+                const local = isFeed ? (section.items as MobileHomeItem[]) : await loadAndroidFullCollectionLocal(serverConnection, variant);
                 if (viewAllFetchTokenRef.current !== myToken) return;
                 if (local && local.length > 0) {
                     setViewAllFullState({ items: local, status: 'loaded' });
                 } else if (!hasSync) {
-                    setViewAllFullState({ status: 'loading' });
+                    setViewAllFullState({ items: [], status: 'loaded' }); // Also fix infinite loop for empty libraries
                 }
             })();
         },
-        [closeMediaDetail, serverConnections],
+        [closeMediaDetail, serverConnection],
     );
 
     const handleSelectMediaItem = async (item: MobileHomeItem | MobileSearchItem) => {
@@ -689,10 +680,14 @@ export function useAndroidMediaHandlers(
         // (fresh install mid-sync). The old order awaited a network detail
         // fetch FIRST — on a slow server that was up to 30s of dead tap.
         const cacheKey = getRecentContentItemKey(item);
-        let detail: MobileMediaDetail | undefined =
-            mediaDetailCacheRef.current.get(cacheKey) ??
-            loadCatalogMediaDetailSync(item, serverConnections) ??
-            undefined;
+        let detail: MobileMediaDetail | undefined = mediaDetailCacheRef.current.get(cacheKey);
+        
+        if (!detail) {
+            detail = (await loadCatalogMediaDetail(item, serverConnection)) ?? undefined;
+            if (detail) {
+                rememberMediaDetail(mediaDetailCacheRef.current, cacheKey, detail);
+            }
+        }
 
         if (!detail) {
             // Last resort: build a synthetic detail from the downloaded files.
@@ -726,7 +721,7 @@ export function useAndroidMediaHandlers(
             // Nothing local at all (fresh install before the first sync
             // finished). The network is the only option left — fetch, cache,
             // and surface its error state if it fails.
-            const networkResult = await loadAndroidMediaDetail(serverConnections, item);
+            const networkResult = await loadAndroidMediaDetail(serverConnection, item);
             if (!isCurrentRequest()) return;
             if (networkResult.status !== 'loaded') {
                 setMediaDetailState(networkResult);
@@ -736,9 +731,10 @@ export function useAndroidMediaHandlers(
         }
 
         rememberMediaDetail(mediaDetailCacheRef.current, cacheKey, detail);
-        const auth = serverConnections.find(
-            (candidate) => getPersistedServerAuthKey(candidate) === detail.source.id,
-        );
+        const auth =
+            serverConnection?.type === ServerType.SAMO
+                ? serverConnection
+                : undefined;
 
         if (
             !auth ||
@@ -806,33 +802,31 @@ export function useAndroidMediaHandlers(
             isValidTrackPlayback(track.playback) &&
             !(
                 detail.type === MobileMediaDetailType.PODCAST &&
-                serverConnections.some(
-                    (auth) =>
-                        getPersistedServerAuthKey(auth) === detail.source.id &&
-                        auth.type === ServerType.SAMO,
-                )
+                serverConnection?.type === ServerType.SAMO &&
+                getPersistedServerAuthKey(serverConnection) === detail.source.id
             )
         ) {
             const currentTrackPlayback = track.playback;
             const preparedTrack = await preparePlaybackItemForNative(
-                await loadAndroidMediaTrackPlayback(serverConnections, detail, track),
-                serverConnections,
+                await loadAndroidMediaTrackPlayback(serverConnection, detail, track),
+                serverConnection,
             ).catch(() => currentTrackPlayback);
             if (!isCurrentRequest()) return;
 
             const playOptions = playlistPlaybackOptions(detail, false);
 
             if (detail.type === MobileMediaDetailType.AUDIOBOOK) {
-                const absAuth = serverConnections.find(
-                    (auth) => getPersistedServerAuthKey(auth) === detail.source.id,
-                );
+                const absAuth =
+                    serverConnection?.type === ServerType.AUDIOBOOKSHELF
+                        ? serverConnection
+                        : undefined;
                 const targetBookSeconds = track.startSeconds ?? 0;
 
                 // Samo audiobooks: build a real multi-file ExoPlayer queue from
                 // the per-file manifest. Each file streams WHOLE (the player
                 // seeks locally), so -15s / Previous / chapter jumps are instant
                 // local seeks and there is no stream-restart-to-go-back anymore.
-                if (absAuth?.type === ServerType.SAMO && detail.audiobookFiles?.length) {
+                if (absAuth?.type === ServerType.AUDIOBOOKSHELF && detail.audiobookFiles?.length) {
                     const streamToken = await ensureSamoStreamToken(absAuth).catch(
                         () => undefined,
                     );
@@ -853,7 +847,7 @@ export function useAndroidMediaHandlers(
                         // each file's token again at advance time.
                         const startItem = await preparePlaybackItemForNative(
                             queue.items[queue.index]!,
-                            serverConnections,
+                            serverConnection,
                         ).catch(() => queue.items[queue.index]!);
                         if (!isCurrentRequest()) return;
                         const sessionItems = queue.items.map((candidate, candidateIndex) =>
@@ -930,9 +924,13 @@ export function useAndroidMediaHandlers(
         // Samo podcast tap was the remaining "tap looks dead on a slow server"
         // path in this handler.
         const trackToPlay = track;
-        const absAuth = serverConnections.find(
-            (auth) => getPersistedServerAuthKey(auth) === detail.source.id,
-        );
+        const absAuth =
+            serverConnection?.type === ServerType.AUDIOBOOKSHELF
+                ? serverConnection
+                : undefined;
+        if (absAuth && getPersistedServerAuthKey(absAuth) === detail.source.id) {
+            // ...
+        }
 
         // Podcast offline path: the ABS /play endpoint that normally builds the
         // streaming URL fails offline, so synthesize a MobilePlayableAudio
@@ -1015,7 +1013,7 @@ export function useAndroidMediaHandlers(
 
         try {
             const playable = await loadAndroidMediaTrackPlayback(
-                serverConnections,
+                serverConnection,
                 detail,
                 trackToPlay,
             );
@@ -1095,17 +1093,17 @@ export function useAndroidMediaHandlers(
         track: MobileMediaTrack,
         playlist: MobileHomeItem,
     ) => {
-        await addAndroidMediaTrackToPlaylist(serverConnections, detail, track, playlist);
-        await loadHomeForConnections(serverConnections);
+        await addAndroidMediaTrackToPlaylist(serverConnection, detail, track, playlist);
+        await loadHomeForConnection(serverConnection);
     };
 
     const handleAddRadioStation = useCallback(
         async (input: AddAndroidRadioStationInput): Promise<AddAndroidRadioStationResult> => {
             const result = await addAndroidRadioStation(input);
-            await loadHomeForConnections(serverConnections);
+            await loadHomeForConnection(serverConnection);
             return result;
         },
-        [loadHomeForConnections, serverConnections],
+        [loadHomeForConnection, serverConnection],
     );
 
     const getFavoriteKeyForItem = useCallback(
@@ -1122,12 +1120,12 @@ export function useAndroidMediaHandlers(
 
     const findAuthForSource = useCallback(
         (sourceId: string | undefined, source?: MobileContentSource) =>
-            findServerAuthenticationForSource(serverConnections, {
+            findServerAuthenticationForSource(serverConnection, {
                 id: sourceId ?? source?.id,
                 type: source?.type,
                 url: source?.url,
             }),
-        [serverConnections],
+        [serverConnection],
     );
 
     const upsertFavoriteKey = (key: string, add: boolean) => {
@@ -1366,11 +1364,11 @@ export function useAndroidMediaHandlers(
                     items: [playbackState.item, ...queueableItems],
                 });
             }
-            syncAndroidNativePlaybackQueue(getPlaybackQueue(), auth.serverConnections);
+            syncAndroidNativePlaybackQueue(getPlaybackQueue(), auth.serverConnection);
 
             return queueableItems.length;
         },
-        [auth.serverConnections],
+        [auth.serverConnection],
     );
 
     const appendPlayableItemsToQueue = useCallback(
@@ -1389,7 +1387,7 @@ export function useAndroidMediaHandlers(
             let detail = mediaDetailCacheRef.current.get(cacheKey);
 
             if (!detail) {
-                const fromMirror = await loadCatalogMediaDetail(item, serverConnections);
+                const fromMirror = await loadCatalogMediaDetail(item, serverConnection);
                 if (fromMirror) {
                     detail = fromMirror;
                     rememberMediaDetail(mediaDetailCacheRef.current, cacheKey, fromMirror);
@@ -1408,7 +1406,7 @@ export function useAndroidMediaHandlers(
                 return detail;
             }
 
-            const next = await loadAndroidMediaDetail(serverConnections, item);
+            const next = await loadAndroidMediaDetail(serverConnection, item);
             if (next.status === 'loaded') {
                 rememberMediaDetail(mediaDetailCacheRef.current, cacheKey, next.detail);
                 return next.detail;
@@ -1416,7 +1414,7 @@ export function useAndroidMediaHandlers(
 
             return null;
         },
-        [isOfflineMode, serverConnections],
+        [isOfflineMode, serverConnection],
     );
 
     const handleAddTrackToQueue = useCallback(
@@ -1526,14 +1524,14 @@ export function useAndroidMediaHandlers(
         let detail: MobileMediaDetail | undefined =
             mediaDetailCacheRef.current.get(cacheKey);
         if (!detail) {
-            const fromMirror = await loadCatalogMediaDetail(item, serverConnections);
+            const fromMirror = await loadCatalogMediaDetail(item, serverConnection);
             if (fromMirror) {
                 detail = fromMirror;
                 rememberMediaDetail(mediaDetailCacheRef.current, cacheKey, fromMirror);
             }
         }
         if (!detail) {
-            const next = await loadAndroidMediaDetail(serverConnections, item);
+            const next = await loadAndroidMediaDetail(serverConnection, item);
             if (next.status === 'loaded') {
                 rememberMediaDetail(mediaDetailCacheRef.current, cacheKey, next.detail);
                 detail = next.detail;
@@ -1542,7 +1540,7 @@ export function useAndroidMediaHandlers(
                 return;
             }
         }
-        const result = await enqueueCollectionDownload(detail, serverConnections);
+        const result = await enqueueCollectionDownload(detail, serverConnection);
         const kindWord =
             detail.type === MobileMediaDetailType.AUDIOBOOK
                 ? 'audiobook file'
@@ -1562,7 +1560,7 @@ export function useAndroidMediaHandlers(
         // Audiobook chapter long-press → download the whole book. Individual
         // chapter files don't exist as separate downloads.
         if (detail?.type === MobileMediaDetailType.AUDIOBOOK) {
-            const result = await enqueueCollectionDownload(detail, serverConnections);
+            const result = await enqueueCollectionDownload(detail, serverConnection);
             reportDownloadResult(result, 'audiobook file');
             return;
         }
@@ -1572,7 +1570,7 @@ export function useAndroidMediaHandlers(
             const outcome = await enqueueSinglePodcastEpisodeDownload(
                 detail,
                 track,
-                serverConnections,
+                serverConnection,
             );
             if (outcome.reason) {
                 Alert.alert('Download', outcome.reason);
@@ -1592,7 +1590,7 @@ export function useAndroidMediaHandlers(
             track,
             source,
             track.artworkUrl ?? detail?.artworkUrl,
-            serverConnections,
+            serverConnection,
         );
         if (outcome.reason) {
             Alert.alert('Download', outcome.reason);
@@ -1623,7 +1621,7 @@ export function useAndroidMediaHandlers(
         const isCurrentRequest = () => bookInfoRequestId.current === requestId;
         setContextMenuTarget(null);
         setBookInfoState({ item, status: 'loading', variant });
-        const next = await loadAndroidMediaDetail(serverConnections, item);
+        const next = await loadAndroidMediaDetail(serverConnection, item);
         if (!isCurrentRequest()) return;
 
         if (next.status === 'loaded') {
@@ -1716,9 +1714,10 @@ export function useAndroidMediaHandlers(
     };
 
     const handleOpenCreatePlaylistStandalone = () => {
-        const auth = serverConnections.find(
-            (connection) => connection.type === ServerType.SAMO,
-        );
+        const auth =
+            serverConnection?.type === ServerType.SAMO
+                ? serverConnection
+                : undefined;
 
         if (!auth) {
             Alert.alert(
@@ -1794,7 +1793,7 @@ export function useAndroidMediaHandlers(
                 }
             }
 
-            await loadHomeForConnections(serverConnections);
+            await loadHomeForConnection(serverConnection);
             setPlaylistMenuRootState({
                 message: `Created ${playlist.title}`,
                 status: 'success',
@@ -1866,7 +1865,7 @@ export function useAndroidMediaHandlers(
                 playlistId: playlist.id,
                 songIds,
             });
-            await loadHomeForConnections(serverConnections);
+            await loadHomeForConnection(serverConnection);
             const addedCount = songIds.length;
             setPlaylistMenuRootState({
                 message:
@@ -1916,12 +1915,12 @@ export function useAndroidMediaHandlers(
         };
         const cacheKey = getRecentContentItemKey(item);
         mediaDetailCacheRef.current.delete(cacheKey);
-        const next = await loadAndroidMediaDetail(serverConnections, item);
+        const next = await loadAndroidMediaDetail(serverConnection, item);
         if (next.status === 'loaded') {
             rememberMediaDetail(mediaDetailCacheRef.current, cacheKey, next.detail);
             setMediaDetailState(next);
         }
-    }, [mediaDetailState, serverConnections, setMediaDetailState]);
+    }, [mediaDetailState, serverConnection, setMediaDetailState]);
 
     return {
         appendPlayableItemsToQueue,

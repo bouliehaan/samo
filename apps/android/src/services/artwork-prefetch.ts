@@ -38,67 +38,58 @@ const yieldToEventLoop = (): Promise<void> =>
     new Promise((resolve) => setTimeout(resolve, 0));
 
 const collectArtwork = async (
-    connections: ServerAuthenticationResult[],
+    connection: ServerAuthenticationResult | null,
 ): Promise<ArtworkPrefetchEntry[]> => {
-    const samoConnections = connections.filter(
-        (connection) => connection.type === ServerType.SAMO,
-    );
-    if (samoConnections.length === 0) {
+    if (!connection || connection.type !== ServerType.SAMO) {
         return [];
     }
 
     // Make sure each source has a stream token so the resolved URLs carry the
     // auth header the download needs.
-    await Promise.all(
-        samoConnections.map((connection) =>
-            ensureSamoStreamToken(connection).catch(() => undefined),
-        ),
-    );
+    await ensureSamoStreamToken(connection).catch(() => undefined);
 
     const entries: ArtworkPrefetchEntry[] = [];
     const seen = new Set<string>();
     let resolved = 0;
-    for (const connection of samoConnections) {
-        const sourceId = getMobileContentSource(connection).id;
-        for (const type of ART_BEARING_TYPES) {
-            const items = await getItemsByType(sourceId, type);
-            for (const item of items) {
-                resolved += 1;
-                if (resolved % RESOLVE_YIELD_EVERY === 0) {
-                    await yieldToEventLoop();
-                }
-                const source = resolveSamoItemArtworkSourceForDisplay(
-                    {
-                        artworkImageId: item.artworkImageId,
-                        artworkUrl: item.artworkUrl,
-                        source: item.source,
-                    },
-                    [connection],
-                );
-                const uri = typeof source === 'string' ? source : source?.uri;
-                if (!uri || seen.has(uri)) {
-                    continue;
-                }
-                seen.add(uri);
-                entries.push({
-                    headers: typeof source === 'string' ? undefined : source?.headers,
-                    uri,
-                });
+    const sourceId = getMobileContentSource(connection).id;
+    for (const type of ART_BEARING_TYPES) {
+        const items = await getItemsByType(sourceId, type);
+        for (const item of items) {
+            resolved += 1;
+            if (resolved % RESOLVE_YIELD_EVERY === 0) {
+                await yieldToEventLoop();
             }
+            const source = resolveSamoItemArtworkSourceForDisplay(
+                {
+                    artworkImageId: item.artworkImageId,
+                    artworkUrl: item.artworkUrl,
+                    source: item.source,
+                },
+                connection,
+            );
+            const uri = typeof source === 'string' ? source : source?.uri;
+            if (!uri || seen.has(uri)) {
+                continue;
+            }
+            seen.add(uri);
+            entries.push({
+                headers: typeof source === 'string' ? undefined : source?.headers,
+                uri,
+            });
         }
     }
     return entries;
 };
 
 export const prefetchCatalogArtwork = (
-    connections: ServerAuthenticationResult[],
+    connection: ServerAuthenticationResult | null,
 ): Promise<void> => {
     if (inFlight) {
         return inFlight;
     }
     inFlight = (async () => {
         try {
-            const entries = await collectArtwork(connections);
+            const entries = await collectArtwork(connection);
             if (entries.length > 0) {
                 await prefetchArtworkUrls(entries);
             }

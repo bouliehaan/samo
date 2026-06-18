@@ -1,4 +1,10 @@
-import { MobileHomeItemType } from '@samo/core/mobile';
+import {
+    type MobileHomeItem,
+    MobileHomeItemType,
+    MobileMediaDetailType,
+    type MobileMediaDetail,
+    type MobileMediaTrack,
+} from '@samo/core/mobile';
 
 import { type MediaContextMenuKind } from '../contexts/media-context-menu';
 import { type AndroidRecentContentSourceItem } from '../services/recent-content';
@@ -22,4 +28,50 @@ export const inferContextMenuKindFromItem = (
         default:
             return null;
     }
+};
+
+export const isPodcastEpisodeHomeItem = (
+    item: AndroidRecentContentSourceItem,
+): item is MobileHomeItem & { type: MobileHomeItemType.PODCAST_EPISODE } =>
+    (item as MobileHomeItem).type === MobileHomeItemType.PODCAST_EPISODE;
+
+/** Podcast Feed tile → the same episode "song" target the show's detail rows
+ *  use, so one menu (Favorites + Download episode) serves both surfaces. */
+export const synthesizeTrackFromPodcastEpisodeItem = (
+    item: MobileHomeItem,
+): MobileMediaTrack => ({
+    artworkImageId: item.artworkImageId,
+    artworkUrl: item.artworkUrl,
+    durationSeconds: item.durationSeconds,
+    episodeId: item.id,
+    id: item.id,
+    itemId: item.containerId,
+    playback: item.playback,
+    subtitle: item.subtitle,
+    title: item.title,
+});
+
+/** Minimal show detail for an episode tile — enough for the download path to
+ *  group the entry under the show. The feed builds episode subtitles as
+ *  "Show · release date", so everything before the final separator is the
+ *  show title; the episode's artwork is the show's artwork for all practical
+ *  feeds. */
+export const synthesizePodcastDetailFromEpisodeItem = (
+    item: MobileHomeItem,
+): MobileMediaDetail | null => {
+    if (!item.source) {
+        return null;
+    }
+    const parts = item.subtitle?.split(' · ') ?? [];
+    const showTitle =
+        (parts.length > 1 ? parts.slice(0, -1).join(' · ') : parts[0]) || item.title;
+    return {
+        artworkImageId: item.artworkImageId,
+        artworkUrl: item.artworkUrl,
+        id: item.containerId ?? item.id,
+        source: item.source,
+        title: showTitle,
+        tracks: [],
+        type: MobileMediaDetailType.PODCAST,
+    };
 };

@@ -113,13 +113,13 @@ export const mergePreparedQueueItem = (
 /** Reload Samo/ABS long-form progress before starting a stream URL (URLs do not carry position). */
 export const refreshPlayableResumeFromServer = async (
     item: MobilePlayableAudio,
-    serverConnections: ServerAuthenticationResult[],
+    serverConnection: ServerAuthenticationResult | null,
 ): Promise<MobilePlayableAudio> => {
     if (item.source !== 'podcast' && item.source !== 'audiobook') {
         return item;
     }
 
-    const authentication = findServerAuthenticationForSource(serverConnections, {
+    const authentication = findServerAuthenticationForSource(serverConnection, {
         id: item.contentSourceId,
     });
     if (!authentication || authentication.type !== ServerType.SAMO) {
@@ -181,13 +181,13 @@ export const RESUME_REFRESH_TIMEOUT_MS = 4000;
  *  item unchanged when the server can't answer in time. */
 export const refreshPlayableResumeFromServerBounded = async (
     item: MobilePlayableAudio,
-    serverConnections: ServerAuthenticationResult[],
+    serverConnection: ServerAuthenticationResult | null,
     timeoutMs: number = RESUME_REFRESH_TIMEOUT_MS,
 ): Promise<MobilePlayableAudio> => {
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
         return await Promise.race([
-            refreshPlayableResumeFromServer(item, serverConnections),
+            refreshPlayableResumeFromServer(item, serverConnection),
             new Promise<MobilePlayableAudio>((resolve) => {
                 timer = setTimeout(() => resolve(item), timeoutMs);
             }),

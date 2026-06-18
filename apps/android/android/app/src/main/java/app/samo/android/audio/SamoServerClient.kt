@@ -1,23 +1,25 @@
 package app.samo.android.audio
 
 import android.util.Log
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import java.io.IOException
-import java.net.HttpURLConnection
 import java.net.SocketTimeoutException
-import java.net.URL
-import java.net.UnknownHostException
 
 /**
  * Minimal Samo HTTP client for the few endpoints the native audio engine needs
- * to hit while JS is suspended. Uses HttpURLConnection (matching [SamoNativeStreamUrl])
- * so we don't add an OkHttp dependency for ~50 lines of code.
+ * to hit while JS is suspended. Routes through the shared [SamoHttp.control]
+ * OkHttpClient so a stale pooled socket is re-dialed transparently instead of
+ * blocking on a dead connection until the read timeout fires.
  *
  * Only [patchPlayback] is implemented today. Add more endpoints here as the
  * Kotlin/JS boundary migration progresses (Phase 2 URL building, etc).
  */
 internal object SamoServerClient {
     private const val TAG = "SamoServerClient"
+    private val JSON = "application/json; charset=utf-8".toMediaType()
 
     enum class PatchFailure {
         Network,
@@ -60,60 +62,38 @@ internal object SamoServerClient {
         targetId: String,
         body: PlaybackPatch,
     ): PatchResult {
-        var connection: HttpURLConnection? = null
-        try {
-            val endpoint =
-                "${serverUrl.trimEnd('/')}/api/v1/playback/$kind/$targetId"
-            connection =
-                (URL(endpoint).openConnection() as HttpURLConnection).apply {
-                    requestMethod = "PATCH"
-                    connectTimeout = 15_000
-                    readTimeout = 15_000
-                    doInput = true
-                    doOutput = true
-                    setRequestProperty("Authorization", "Bearer $bearer")
-                    setRequestProperty("Accept", "application/json")
-                    setRequestProperty("Content-Type", "application/json")
-                }
+        val endpoint = "${serverUrl.trimEnd('/')}/api/v1/playback/$kind/$targetId"
+        val request =
+            Request.Builder()
+                .url(endpoint)
+                .patch(body.toJson().toString().toRequestBody(JSON))
+                .header("Authorization", "Bearer $bearer")
+                .header("Accept", "application/json")
+                .build()
 
-            connection.outputStream.use { stream ->
-                stream.write(body.toJson().toString().toByteArray(Charsets.UTF_8))
-            }
-
-            val status = connection.responseCode
-            if (status in 200..299) {
-                // Drain so the connection can be pooled cleanly.
-                connection.inputStream.use { it.readBytes() }
-                return PatchResult.Success
-            }
-
-            val errorBody =
-                connection.errorStream
-                    ?.bufferedReader()
-                    ?.use { it.readText() }
-                    .orEmpty()
-
-            return when (status) {
-                401, 403 -> {
-                    Log.w(TAG, "$endpoint rejected: HTTP $status: $errorBody")
-                    PatchResult.Failed(PatchFailure.Auth)
-                }
-                else -> {
-                    Log.w(TAG, "$endpoint HTTP $status: $errorBody")
-                    PatchResult.Failed(PatchFailure.Server)
+        return try {
+            // retryOnConnectionFailure on the shared client re-dials a stale
+            // pooled socket before this ever blocks on a dead connection.
+            SamoHttp.control.newCall(request).execute().use { response ->
+                when {
+                    response.isSuccessful -> PatchResult.Success
+                    response.code == 401 || response.code == 403 -> {
+                        Log.w(TAG, "$endpoint rejected: HTTP ${response.code}")
+                        PatchResult.Failed(PatchFailure.Auth)
+                    }
+                    else -> {
+                        Log.w(TAG, "$endpoint HTTP ${response.code}")
+                        PatchResult.Failed(PatchFailure.Server)
+                    }
                 }
             }
-        } catch (_: UnknownHostException) {
-            return PatchResult.Failed(PatchFailure.Network)
         } catch (_: SocketTimeoutException) {
-            return PatchResult.Failed(PatchFailure.Network)
+            PatchResult.Failed(PatchFailure.Network)
         } catch (_: IOException) {
-            return PatchResult.Failed(PatchFailure.Network)
+            PatchResult.Failed(PatchFailure.Network)
         } catch (error: Exception) {
             Log.w(TAG, "playback PATCH unexpected failure", error)
-            return PatchResult.Failed(PatchFailure.Server)
-        } finally {
-            connection?.disconnect()
+            PatchResult.Failed(PatchFailure.Server)
         }
     }
 }

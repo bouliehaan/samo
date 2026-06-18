@@ -5,7 +5,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.database.StandaloneDatabaseProvider
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DefaultDataSource
-import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.datasource.HttpDataSource
 import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor
 import androidx.media3.datasource.cache.SimpleCache
@@ -39,7 +39,7 @@ internal object SamoStreamCache {
 
   fun buildDataSourceFactory(
     context: Context,
-    httpDataSourceFactory: DefaultHttpDataSource.Factory,
+    httpDataSourceFactory: HttpDataSource.Factory,
     enableDiskCache: Boolean,
   ): DataSource.Factory {
     val upstream = DefaultDataSource.Factory(context, httpDataSourceFactory)

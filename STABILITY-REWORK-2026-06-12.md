@@ -191,3 +191,58 @@ upgrade runs one full catalog re-sync (cursor v3), then deltas forever.**
   pending-item lock) are UNTOUCHED per the boring-rework soak rule.
 - `loadAndroidMediaDetail` (network detail) survives as the fresh-install
   fallback + explicit retry path only.
+
+## Round 8 (evening): downloads overhaul + Home podcast long-press — device-verified
+- **Zombie retries**: SamoDownloadWorker returned `Result.retry()` for every
+  failure, so stale-token 401 batches became invisible exponential-backoff
+  worker storms (11 simultaneous retries observed alongside a 40s JS-thread
+  block). Now: HTTP 4xx is terminal (`Result.failure()`, the Retry button is
+  the path forward); transient failures cap at 3 attempts; 401/403 first gets
+  ONE reopen with a force-minted fresh token.
+- **401 root cause**: entries replayed the token minted at enqueue forever.
+  Entries now carry `serverUrl`/`serverBearer` (attached by JS at enqueue);
+  the worker re-mints before opening (`ensureFreshTokenBlocking` +
+  `freshenUrlTokenFromCache`). Legacy entries without auth context recover it
+  from the auth mirror by host match — the same fallback the player's
+  resolving data source uses.
+- **Mass retry**: native `retryAllFailed` + "Retry all failed" button on the
+  Downloads screen (visible only while a failed entry exists).
+- **Verified live on the phone**: boot re-queued the stuck-at-6% entry →
+  SUCCESS; Retry all failed → 26/26 worker SUCCESS, zero retry loops,
+  ~1.2 GB transferred; the one genuinely unreachable episode parks as
+  Failed-with-Retry after capped attempts instead of looping.
+- **Home podcast long-press (two holes)**: `openForItem` null-routed
+  `PODCAST_EPISODE` items (silent nothing) — episodes now route to the
+  song-kind menu (Favorites + Download episode, eyebrow "Episode") via
+  synthesized track + minimal show detail; and `HomeFilterGridTile`
+  (books/podcasts pill grids) had no `onLongPress` at all — wired. Verified:
+  feed tile long-press → Episode menu → Download episode → worker SUCCESS.
+- **Podcasts vanished from Home/Library = SERVER-side**: the live server's
+  podcasts list/manifest slice is empty (episodes still flow — the feed
+  works). Client now refuses to reconcile-away any type the manifest claims
+  has ZERO entries while the mirror has rows (items and tracks), so a server
+  hiccup can never wipe a type again; the mirror self-restores via the
+  completeness backfill once the server's podcasts return. Server needs a
+  podcast rescan/restart — and the deployed binary is still pre-rework.
+
+## Round 9: concurrent-download cap — device-verified
+- Root cause: CoroutineWorkers bypass WorkManager's executor pool (it only
+  gates blocking workers), so every enqueued entry's worker launched at once
+  and all transfers hit Dispatchers.IO together — a 1k-track playlist meant
+  1k parallel streams.
+- Fix: `Semaphore(3)` in SamoDownloads (`MAX_CONCURRENT_TRANSFERS`); the
+  worker acquires BEFORE `beginTransfer` (waiting entries stay honestly
+  Queued, suspended without threads), re-reads the entry after the wait,
+  releases in a finally. CancellationException is rethrown ahead of the
+  generic catch so canceling a queued entry never stamps it Failed.
+  `transfer start id=… active=N` log in beginTransfer.
+- Verified on-device with a 17-track album: active climbs 1→2→3 and pins at
+  3 for the whole drain (tally: active=1 ×4, =2 ×1, =3 ×15; never above).
+- Storage forensics (no code change): the configured SAF root ("SD card ·
+  SAMO") is a dead grant — the folder does not exist on the card. Completed
+  files land in internal filesDir and only copy out to the SAF tree when it
+  is alive (and ≤200MB), so ~19.6GB of past downloads sit invisibly in
+  internal app storage — the likely driver of the historical "storage full →
+  clear app data" ritual. Follow-ups worth building: a dead-tree detector
+  that surfaces "storage location unreachable", group-level Remove, and a
+  Migrate pass to drain internal files into the picked folder.

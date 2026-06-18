@@ -41,20 +41,24 @@ const isTransportError = (error: unknown): boolean => {
 const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 const buildAuthFetcher = (onRetry?: () => void): SamoFetch => {
-    const fetchWithTimeout = withRequestTimeout(
-        adaptNativeFetch(fetch),
-        AUTH_REQUEST_TIMEOUT_MS,
-    );
     return async (url, init) => {
-        try {
-            return await fetchWithTimeout(url, init);
-        } catch (error) {
-            if (!isTransportError(error)) {
-                throw error;
+        let attempt = 0;
+        while (true) {
+            const fetchWithTimeout = withRequestTimeout(
+                adaptNativeFetch(fetch),
+                AUTH_REQUEST_TIMEOUT_MS,
+            );
+            try {
+                return await fetchWithTimeout(url, init);
+            } catch (error) {
+                if (!isTransportError(error) || attempt >= 2) {
+                    throw error;
+                }
+                attempt++;
+                onRetry?.();
+                // Exponential backoff: 750ms, 1500ms
+                await delay(AUTH_RETRY_DELAY_MS * attempt);
             }
-            onRetry?.();
-            await delay(AUTH_RETRY_DELAY_MS);
-            return fetchWithTimeout(url, init);
         }
     };
 };

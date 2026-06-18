@@ -23,7 +23,12 @@ import {
 import { triggerImpact } from '../services/haptics';
 import { colors } from '../theme/tokens';
 import { getContentSourceFromPlaybackItem } from '../utils/content-source';
-import { inferContextMenuKindFromItem } from '../utils/context-menu-infer';
+import {
+    inferContextMenuKindFromItem,
+    isPodcastEpisodeHomeItem,
+    synthesizePodcastDetailFromEpisodeItem,
+    synthesizeTrackFromPodcastEpisodeItem,
+} from '../utils/context-menu-infer';
 import { isSongSearchItem, synthesizeTrackFromSongItem } from '../utils/search-tracks';
 import {
     type AndroidMediaHandlerDeps,
@@ -72,9 +77,9 @@ type ContextMenuHandlers = Pick<
 export function useAndroidContextMenu(options: {
     deps: Pick<AndroidMediaHandlerDeps, 'overlays' | 'session'>;
     handlers: ContextMenuHandlers;
-    serverConnections: ServerAuthenticationResult[];
+    serverConnection: ServerAuthenticationResult | null;
 }): AndroidContextMenuSurface {
-    const { deps, handlers, serverConnections } = options;
+    const { deps, handlers, serverConnection } = options;
     const {
         contextMenuFeedback,
         contextMenuTarget,
@@ -119,6 +124,24 @@ export function useAndroidContextMenu(options: {
                         suppressOpenAction: openOptions?.suppressOpenAction,
                         suppressQueueAction: openOptions?.suppressQueueAction,
                         track: synthesizeTrackFromSongItem(item),
+                    });
+                    return;
+                }
+                if (isPodcastEpisodeHomeItem(item)) {
+                    // Podcast Feed episode tile — route through the song-kind
+                    // target the show detail rows use, so the episode gets the
+                    // same Favorites + Download episode menu instead of the
+                    // silent nothing an unmapped kind used to produce.
+                    triggerImpact('medium');
+                    setContextMenuFeedback(null);
+                    setContextMenuTarget({
+                        detail: synthesizePodcastDetailFromEpisodeItem(item) ?? undefined,
+                        kind: 'song',
+                        source: item.source,
+                        suppressDownloadAction: openOptions?.suppressDownloadAction,
+                        suppressOpenAction: openOptions?.suppressOpenAction,
+                        suppressQueueAction: openOptions?.suppressQueueAction,
+                        track: synthesizeTrackFromPodcastEpisodeItem(item),
                     });
                     return;
                 }
@@ -398,7 +421,9 @@ export function useAndroidContextMenu(options: {
 
     const eyebrow = contextMenuTarget
         ? contextMenuTarget.kind === 'song'
-            ? 'Song'
+            ? contextMenuTarget.detail?.type === MobileMediaDetailType.PODCAST
+                ? 'Episode'
+                : 'Song'
             : contextMenuTarget.kind === 'audiobook'
               ? 'Audiobook'
               : contextMenuTarget.kind.charAt(0).toUpperCase() + contextMenuTarget.kind.slice(1)
@@ -423,7 +448,7 @@ export function useAndroidContextMenu(options: {
             ? contextMenuTarget.track.playback
                 ? getContentSourceFromPlaybackItem(
                       contextMenuTarget.track.playback,
-                      serverConnections,
+                      serverConnection,
                   ) ?? contextMenuTarget.detail?.source
                 : contextMenuTarget.detail?.source
             : contextMenuTarget.item.source

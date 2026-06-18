@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.isActive
@@ -34,39 +35,72 @@ internal class SamoDownloadWorker(
 ) : CoroutineWorker(appContext, params) {
     override suspend fun doWork(): Result {
         val entryId = inputData.getString(KEY_ENTRY_ID) ?: return Result.failure()
-        val entry = SamoDownloads.findById(entryId) ?: return Result.success()
+        val preflight = SamoDownloads.findById(entryId) ?: return Result.success()
 
         // Already terminal — nothing to do. Happens when WorkManager retries
         // after the previous attempt completed/canceled/failed in a state
         // change the system didn't yet see.
         if (
-            entry.status == SamoDownloads.Status.Completed ||
-            entry.status == SamoDownloads.Status.Canceled
+            preflight.status == SamoDownloads.Status.Completed ||
+            preflight.status == SamoDownloads.Status.Canceled
         ) {
             return Result.success()
         }
 
-        SamoDownloads.beginTransfer(applicationContext, entryId)
-        SamoDownloadService.begin(applicationContext)
-        return try {
-            withContext(Dispatchers.IO) {
-                runTransfer(entry)
+        // Concurrency gate. CoroutineWorkers don't occupy WorkManager's
+        // executor threads, so without this every enqueued entry transfers
+        // AT ONCE (a 1k-track playlist = 1k parallel streams). Waiters
+        // suspend holding no thread, their entries still Queued; a cancel
+        // while waiting propagates as a normal worker cancellation.
+        SamoDownloads.transferSlots.acquire()
+        try {
+            // Re-read after the wait: deep queues sit here for a long time,
+            // and the user may have canceled/removed/retried the entry since
+            // the pre-flight read.
+            val entry = SamoDownloads.findById(entryId) ?: return Result.success()
+            if (
+                entry.status == SamoDownloads.Status.Completed ||
+                entry.status == SamoDownloads.Status.Canceled
+            ) {
+                return Result.success()
             }
-        } catch (error: TransferCanceledException) {
-            SamoDownloads.markCanceled(applicationContext, entryId)
-            Result.success()
-        } catch (error: Exception) {
-            val message = error.message ?: "Download failed"
-            SamoDownloads.markFailed(applicationContext, entryId, message)
-            // Returning failure tells WorkManager to retry with the exponential
-            // backoff configured by [SamoDownloads.scheduleWork] until the user
-            // gives up and cancels. Genuinely unrecoverable failures (404s on
-            // a track that was deleted server-side) still surface a Failed
-            // entry to the user via [markFailed]; the retry-loop just isn't
-            // observable in the UI because the row is already red.
-            Result.retry()
+
+            SamoDownloads.beginTransfer(applicationContext, entryId)
+            SamoDownloadService.begin(applicationContext)
+            return try {
+                withContext(Dispatchers.IO) {
+                    runTransfer(entry)
+                }
+            } catch (error: TransferCanceledException) {
+                SamoDownloads.markCanceled(applicationContext, entryId)
+                Result.success()
+            } catch (error: TerminalDownloadException) {
+                // HTTP 4xx (after the one-shot 401 token recovery): retrying the
+                // same request can never succeed. Surface the failure and STOP —
+                // the user's Retry button is the path forward. The old blanket
+                // Result.retry() turned every stale-token batch into an invisible
+                // forever-loop of zombie workers (the "downloads I never asked
+                // for" + the 40s JS freezes their event storms caused).
+                SamoDownloads.markFailed(applicationContext, entryId, error.message ?: "Download failed")
+                Result.failure()
+            } catch (error: CancellationException) {
+                // WorkManager canceled the worker (entry cancel/remove/clear).
+                // The cancel path already set the entry's terminal state —
+                // rethrow so this records as canceled instead of the generic
+                // handler stamping a user-canceled entry Failed.
+                throw error
+            } catch (error: Exception) {
+                val message = error.message ?: "Download failed"
+                SamoDownloads.markFailed(applicationContext, entryId, message)
+                // Transient (connect/read/5xx) failures get exponential backoff,
+                // but CAPPED: three strikes and the entry stays Failed until the
+                // user retries. Unbounded backoff retries were zombie downloads.
+                if (runAttemptCount >= 2) Result.failure() else Result.retry()
+            } finally {
+                SamoDownloadService.finish(applicationContext)
+            }
         } finally {
-            SamoDownloadService.finish(applicationContext)
+            SamoDownloads.transferSlots.release()
         }
     }
 
@@ -78,17 +112,20 @@ internal class SamoDownloadWorker(
 
         var connection: HttpURLConnection? = null
         try {
-            connection = (URL(entry.sourceUrl).openConnection() as HttpURLConnection).apply {
-                connectTimeout = 15_000
-                readTimeout = 30_000
-                requestMethod = "GET"
+            connection = openWithFreshToken(entry, forceFresh = false)
+            var responseCode = connection.responseCode
+            if (responseCode == 401 || responseCode == 403) {
+                // The minted-at-enqueue token expired while the entry sat in
+                // the queue. Force a fresh mint and retry ONCE — the same
+                // recovery the player's data source performs.
+                connection.disconnect()
+                connection = openWithFreshToken(entry, forceFresh = true)
+                responseCode = connection.responseCode
             }
-            val responseCode = connection.responseCode
+            if (responseCode in 400..499) {
+                throw TerminalDownloadException("HTTP $responseCode")
+            }
             if (responseCode !in 200..299) {
-                // Treat 4xx as terminal — retrying a 404 is not going to help,
-                // and surfaces the error to the user. Any non-2xx surfaces as
-                // a failure for the same reason; the user can retry from the
-                // UI once they fix the upstream issue.
                 throw IllegalStateException("HTTP $responseCode")
             }
 
@@ -151,7 +188,40 @@ internal class SamoDownloadWorker(
         }
     }
 
+    /** Re-resolve the entry URL with a live stream token (when the entry
+     *  carries its auth context), then open the connection. */
+    private fun openWithFreshToken(entry: SamoDownloads.Entry, forceFresh: Boolean): HttpURLConnection {
+        var url = entry.sourceUrl
+        var serverUrl = entry.serverUrl
+        var bearer = entry.serverBearer
+        if (serverUrl.isNullOrBlank() || bearer.isNullOrBlank()) {
+            // Entries enqueued before auth context rode along (or whose JS
+            // caller had none): recover it from the auth mirror by host
+            // match — the same fallback the player's resolving data source
+            // uses. Without this, retrying a legacy entry replays its stale
+            // minted-at-enqueue token straight into another 401.
+            val connection = SamoAuthMirror.loadSamo(applicationContext)
+                .firstOrNull { entry.sourceUrl.startsWith(it.url) }
+            if (connection != null) {
+                serverUrl = connection.url
+                bearer = connection.credential
+            }
+        }
+        if (!serverUrl.isNullOrBlank() && !bearer.isNullOrBlank()) {
+            if (SamoNativeStreamUrl.ensureFreshTokenBlocking(serverUrl, bearer, forceFresh)) {
+                SamoNativeStreamUrl.freshenUrlTokenFromCache(url, serverUrl, bearer)?.let { url = it }
+            }
+        }
+        return (URL(url).openConnection() as HttpURLConnection).apply {
+            connectTimeout = 15_000
+            readTimeout = 30_000
+            requestMethod = "GET"
+        }
+    }
+
     private class TransferCanceledException : RuntimeException("canceled")
+
+    private class TerminalDownloadException(message: String) : RuntimeException(message)
 
     companion object {
         const val KEY_ENTRY_ID = "entryId"

@@ -20,9 +20,9 @@ export const dedupeInFlight = <T>(key: string, factory: () => Promise<T>): Promi
 const inFlightRequests = new Map<string, Promise<unknown>>();
 
 export const buildHomeLoadKey = (
-    authentications: Array<{ url: string; type: string }>,
+    authentication: Array<{ url: string; type: string }>,
 ): string => {
-    const signature = authentications
+    const signature = authentication
         .map((auth) => `${auth.type}:${auth.url}`)
         .sort()
         .join('|');

@@ -13,7 +13,7 @@ export type AndroidServerHealthStatus =
     | { message: string; status: 'checking' };
 
 export interface AndroidServerHealthSummary {
-    authentications: ServerAuthenticationResult[];
+    authentication: ServerAuthenticationResult | null;
     statuses: AndroidServerHealthMap;
 }
 
@@ -46,17 +46,15 @@ const checkAndroidServerConnectionWithTimeout = (
 };
 
 export const createCheckingServerHealthMap = (
-    authentications: ServerAuthenticationResult[],
+    authentication: ServerAuthenticationResult | null,
 ): AndroidServerHealthMap => {
-    return Object.fromEntries(
-        authentications.map((authentication) => [
-            getServerConnectionKey(authentication),
-            {
-                message: 'Checking saved session',
-                status: 'checking',
-            },
-        ]),
-    );
+    if (!authentication) return {};
+    return {
+        [getServerConnectionKey(authentication)]: {
+            message: 'Checking saved session',
+            status: 'checking',
+        },
+    };
 };
 
 export const createConnectedServerHealthStatus = (
@@ -71,17 +69,15 @@ export const createConnectedServerHealthStatus = (
     };
 };
 
-export const checkAndroidServerConnections = async (
-    authentications: ServerAuthenticationResult[],
+export const checkAndroidServerConnection = async (
+    authentication: ServerAuthenticationResult | null,
 ): Promise<AndroidServerHealthSummary> => {
-    const results = await Promise.all(
-        authentications.map(checkAndroidServerConnectionWithTimeout),
-    );
-
+    if (!authentication) {
+        return { authentication: null, statuses: {} };
+    }
+    const result = await checkAndroidServerConnectionWithTimeout(authentication);
     return {
-        authentications: results.map((result) => result.authentication),
-        statuses: Object.fromEntries(
-            results.map((result) => [getServerConnectionKey(result.authentication), result]),
-        ),
+        authentication: result.status === ServerConnectionHealthStatus.UNAUTHORIZED ? null : result.authentication,
+        statuses: { [getServerConnectionKey(result.authentication)]: result },
     };
 };

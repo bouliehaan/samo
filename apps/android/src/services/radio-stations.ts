@@ -83,8 +83,11 @@ const loadRadioStations = async (
         throw new Error(`Failed to reload radio stations (${response.status})`);
     }
 
-    const body = (await response.json()) as SubsonicRadioBody;
-    const subsonic = body['subsonic-response'];
+    const body = await response.json();
+    const subsonic =
+        typeof body === 'object' && body !== null && 'subsonic-response' in body
+            ? (body as SubsonicRadioBody)['subsonic-response']
+            : undefined;
     assertSubsonicOk(subsonic, 'Failed to reload radio stations');
     return subsonic?.internetRadioStations?.internetRadioStation ?? [];
 };

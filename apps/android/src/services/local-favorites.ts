@@ -1,4 +1,5 @@
 import { fsDeleteItem, fsGetItem, fsSetItem } from './fs-storage';
+import { safeParseJson } from '../utils/json';
 
 const FAVORITES_KEY = 'samo.android.local-favorites.v1';
 
@@ -41,17 +42,13 @@ export const loadLocalFavorites = async (): Promise<AndroidLocalFavoriteItem[]> 
         return [];
     }
 
-    try {
-        const parsed = JSON.parse(raw) as unknown;
+    const parsed = safeParseJson<unknown>(raw);
 
-        if (!Array.isArray(parsed)) {
-            return [];
-        }
-
-        return parsed.filter(isPersistedFavorite);
-    } catch {
+    if (!Array.isArray(parsed)) {
         return [];
     }
+
+    return parsed.filter(isPersistedFavorite);
 };
 
 export const saveLocalFavorites = async (favorites: AndroidLocalFavoriteItem[]) => {

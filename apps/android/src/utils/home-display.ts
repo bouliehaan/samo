@@ -165,7 +165,7 @@ export const getAvailableHomeFilters = (sections: HomeDisplaySection[]) => {
     const variants = new Set(sections.map((s) => s.variant));
     const hasMusicContent =
         variants.has('album') || variants.has('artist') || variants.has('playlist');
-    const hasPodcastContent = variants.has('podcast');
+    const hasPodcastContent = variants.has('podcast') || variants.has('podcast-feed');
     const hasAudiobookContent = variants.has('book');
     const hasRadioContent = variants.has('radio');
 
@@ -195,15 +195,15 @@ export const getSectionsById = (
 };
 export const resolveItemArtworkUrl = (
     item: AndroidRecentContentSourceItem,
-    serverConnections: ServerAuthenticationResult[],
+    serverConnection: ServerAuthenticationResult | null,
 ): string | undefined => {
     if (item.artworkUrl) return item.artworkUrl;
     const sourceId = item.source?.id;
     if (!sourceId) return undefined;
-    const auth = findServerAuthenticationForSource(serverConnections, { id: sourceId });
+    const auth = findServerAuthenticationForSource(serverConnection, { id: sourceId });
     if (!auth) return undefined;
     if (auth.type === ServerType.SAMO) {
-        const resolved = resolveSamoItemArtworkSourceForDisplay(item, serverConnections);
+        const resolved = resolveSamoItemArtworkSourceForDisplay(item, serverConnection);
         return typeof resolved === 'string' ? resolved : resolved?.uri;
     }
     return undefined;
@@ -217,10 +217,10 @@ export const resolveItemArtworkUrl = (
  */
 export const withResolvedArtwork = <T extends AndroidRecentContentSourceItem>(
     items: T[],
-    serverConnections: ServerAuthenticationResult[],
+    serverConnection: ServerAuthenticationResult | null,
 ): T[] => {
     return items.map((item) => {
-        const imageSource = resolveSamoItemArtworkSourceForDisplay(item, serverConnections);
+        const imageSource = resolveSamoItemArtworkSourceForDisplay(item, serverConnection);
         const artworkUrl =
             typeof imageSource === 'string' ? imageSource : imageSource?.uri;
 
@@ -238,9 +238,9 @@ export const withResolvedArtwork = <T extends AndroidRecentContentSourceItem>(
 
 export const getArtworkImageSourceForItem = (
     item: AndroidRecentContentSourceItem,
-    serverConnections: ServerAuthenticationResult[],
+    serverConnection: ServerAuthenticationResult | null,
 ) => {
-    return resolveSamoItemArtworkSourceForDisplay(item, serverConnections);
+    return resolveSamoItemArtworkSourceForDisplay(item, serverConnection);
 };
 export const sortHomeItemsByRecents = <T extends AndroidRecentContentSourceItem>(
     items: T[],
@@ -361,6 +361,7 @@ export const getViewAllVariant = (
         // "continue" row are deliberately ephemeral or live — no View All.
         case 'continue':
         case 'podcast-feed':
+            return 'podcast-feed';
         case 'radio':
         case 'recents':
         case 'wide':
@@ -441,12 +442,12 @@ const rotateForFreshness = <T>(items: T[], salt: number): T[] => {
 export const getHomeDisplaySections = (
     sections: MobileHomeSection[],
     recentItems: AndroidRecentContentItem[],
-    serverConnections: ServerAuthenticationResult[],
+    serverConnection: ServerAuthenticationResult | null,
 ): HomeDisplaySection[] => {
     const displaySections: HomeDisplaySection[] = [];
     const resolvedSections = sections.map((section) => ({
         ...section,
-        items: withResolvedArtwork(section.items, serverConnections),
+        items: withResolvedArtwork(section.items, serverConnection),
     }));
     const sectionsById = new Map(resolvedSections.map((section) => [section.id, section]));
     // Look up fresh home items by recent-key so we can swap in current artwork URLs
@@ -492,7 +493,7 @@ export const getHomeDisplaySections = (
                 ];
             }),
         ),
-        serverConnections,
+        serverConnection,
     );
     const seenAlbumCanonicalKeys = collectAlbumCanonicalKeys(recentDisplayItems);
     const recentlyAddedItems = buildRecentlyAddedHeroRow(sectionsById, seenAlbumCanonicalKeys);

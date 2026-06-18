@@ -38,11 +38,11 @@ export type AndroidMediaDetailState =
 type AndroidSelectableMediaItem = MobileHomeItem | MobileSearchItem;
 
 const findAuthenticationForSource = (
-    authentications: ServerAuthenticationResult[],
+    authentication: ServerAuthenticationResult | null,
     sourceId: string | undefined,
     source?: { id?: string; type?: ServerAuthenticationResult['type']; url?: string },
 ) => {
-    return findServerAuthenticationForSource(authentications, {
+    return findServerAuthenticationForSource(authentication, {
         id: sourceId ?? source?.id,
         type: source?.type,
         url: source?.url,
@@ -206,7 +206,7 @@ const rebuildSamoPodcastTrackPlayback = async (
 };
 
 export const loadAndroidMediaDetail = async (
-    authentications: ServerAuthenticationResult[],
+    serverConnection: ServerAuthenticationResult | null,
     item: AndroidSelectableMediaItem,
 ): Promise<AndroidMediaDetailState> => {
     const detailType = toDetailType(item.type);
@@ -220,7 +220,7 @@ export const loadAndroidMediaDetail = async (
     }
 
     const authentication = findAuthenticationForSource(
-        authentications,
+        serverConnection,
         item.source?.id,
         item.source,
     );
@@ -235,7 +235,7 @@ export const loadAndroidMediaDetail = async (
 
     try {
         if (authentication.type === ServerType.SAMO) {
-            await ensureSamoStreamToken(authentication).catch(() => undefined);
+            await ensureSamoStreamToken(authentication);
         }
 
         const detailId =
@@ -261,11 +261,11 @@ export const loadAndroidMediaDetail = async (
 };
 
 export const loadAndroidMediaTrackPlayback = async (
-    authentications: ServerAuthenticationResult[],
+    serverConnection: ServerAuthenticationResult | null,
     detail: MobileMediaDetail,
     track: MobileMediaTrack,
 ): Promise<MobilePlayableAudio> => {
-    const authentication = findAuthenticationForSource(authentications, detail.source.id);
+    const authentication = findAuthenticationForSource(serverConnection, detail.source.id);
 
     if (isValidTrackPlayback(track.playback)) {
         let playable = withPlaybackTimeline(detail, track, track.playback);
@@ -327,7 +327,7 @@ export const loadAndroidMediaTrackPlayback = async (
 };
 
 export const addAndroidMediaTrackToPlaylist = async (
-    authentications: ServerAuthenticationResult[],
+    serverConnection: ServerAuthenticationResult | null,
     detail: MobileMediaDetail,
     track: MobileMediaTrack,
     playlist: MobileHomeItem,
@@ -340,7 +340,7 @@ export const addAndroidMediaTrackToPlaylist = async (
         throw new Error('Choose a playlist from the same music server.');
     }
 
-    const authentication = findAuthenticationForSource(authentications, detail.source.id);
+    const authentication = findAuthenticationForSource(serverConnection, detail.source.id);
 
     if (!authentication) {
         throw new Error('The server for this track is no longer connected.');

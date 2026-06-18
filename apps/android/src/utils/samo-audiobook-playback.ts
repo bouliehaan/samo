@@ -4,6 +4,28 @@ import { ServerType } from '@samo/core/server';
 export const isSamoAudiobookPlayback = (item: MobilePlayableAudio) =>
     item.source === 'audiobook' && item.id.startsWith(`${ServerType.SAMO}:`);
 
+/** True when the playable is an MP3 (by reported MIME type). */
+export const isMp3PlayableAudio = (item: MobilePlayableAudio): boolean => {
+    const mime = item.mimeType?.toLowerCase() ?? '';
+    return mime.includes('mpeg') || mime.includes('mp3');
+};
+
+/**
+ * A Samo audiobook served as VBR MP3 cannot be seeked accurately by the player:
+ * its Xing seek table only resolves to ~1% of the file (minutes on a long book),
+ * so seeks land mid-sentence. Such a seek must instead reload the file
+ * pre-positioned at the exact second via the server's frame-accurate
+ * `progressSeconds` seek, which yields `book = progressOffsetSeconds + nativePos`
+ * — the identical position shape a correct native seek would, single- or
+ * multi-file. Exact containers (M4B/AAC) seek correctly in the player and are
+ * left untouched.
+ *
+ * The MP3 gate must match the server's: only files the server will actually
+ * frame-seek may skip the player's native seek, or position desyncs.
+ */
+export const shouldServerSeekAudiobookMp3 = (item: MobilePlayableAudio): boolean =>
+    isSamoAudiobookPlayback(item) && isMp3PlayableAudio(item);
+
 /**
  * Book-global second for a position inside the current file. The native player
  * reports a file-local position; the file's book-global start lives on

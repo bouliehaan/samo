@@ -2,13 +2,13 @@ package app.samo.android.audio
 
 import android.content.Context
 import android.util.Log
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import java.io.IOException
-import java.net.HttpURLConnection
 import java.net.SocketTimeoutException
 import java.net.URL
 import java.net.URLEncoder
-import java.net.UnknownHostException
 import java.util.concurrent.Executors
 
 /**
@@ -96,6 +96,14 @@ internal object SamoNativeStreamUrl {
             onDone(result is MintResult.Success)
         }
     }
+
+    /**
+     * Blocking variant for callers already on a worker thread (the download
+     * worker). Cache-first; [forceFresh] invalidates first — the 401-recovery
+     * path. Returns true when a live token is in the cache afterwards.
+     */
+    fun ensureFreshTokenBlocking(serverUrl: String, bearer: String, forceFresh: Boolean = false): Boolean =
+        mintStreamToken(serverUrl, bearer, forceFresh) is MintResult.Success
 
     fun refreshQueueItem(context: Context, item: HashMap<String, Any?>): RefreshResult {
         val serverUrl = item.optionalString("serverUrl")
@@ -251,7 +259,7 @@ internal object SamoNativeStreamUrl {
         token: String,
         mediaFileId: String? = null,
         offsetSeconds: Long? = null,
-        progressSeconds: Long? = null,
+        progressSeconds: Double? = null,
         disc: Int? = null,
     ): String =
         buildStreamUrl(
@@ -264,10 +272,21 @@ internal object SamoNativeStreamUrl {
             extraQuery = buildMap {
                 if (mediaFileId != null) put("mediaFileId", mediaFileId)
                 if (offsetSeconds != null) put("offsetSeconds", offsetSeconds.toString())
-                if (progressSeconds != null) put("progressSeconds", progressSeconds.toString())
+                // Keep sub-second precision (the server seeks frame-accurately, so
+                // flooring would cost up to a second). Format like JS String() —
+                // integral values drop the trailing `.0` to match the JS builder.
+                if (progressSeconds != null) put("progressSeconds", formatSeconds(progressSeconds))
                 if (disc != null) put("disc", disc.toString())
             },
         )
+
+    /** Format a fractional second like JS `String(n)`: `600.0` -> "600", `12.5` -> "12.5". */
+    private fun formatSeconds(value: Double): String =
+        if (value.isFinite() && value == Math.floor(value)) {
+            value.toLong().toString()
+        } else {
+            value.toString()
+        }
 
     /**
      * `${serverUrl}/api/v1/podcasts/episodes/{episodeId}/stream?stream_token=…`
@@ -430,23 +449,30 @@ internal object SamoNativeStreamUrl {
                 // whole-file-streaming path.
                 val playbackId = item.optionalString("id").orEmpty()
                 val mediaFileId = parseAudiobookMediaFileId(playbackId)
-                val initialPosition =
-                    (item["initialPositionSeconds"] as? Number)?.toLong()
+                // Forward the stream's book-global start as `progressSeconds`.
+                //
+                // `progressOffsetSeconds` is the book-time at which this stream
+                // should open: the file's natural start for a plain whole-file
+                // play, or the tapped/resumed book-second when JS overrides it
+                // for a chapter seek. The server maps it to a file-local second
+                // and, for VBR MP3, does a frame-accurate byte seek there
+                // (M4B/AAC are served whole-file regardless — see
+                // ServeMediaFileAtSeconds). A plain play resolves to file-local
+                // ~0 and still streams the whole file, so this is safe for every
+                // container and every queue position.
+                //
+                // This is the fix for the "chapter jumps land mid-sentence" bug:
+                // JS built the URL with `progressSeconds`, but this native
+                // re-mint USED TO drop it (hard-coded null), so the server never
+                // saw the seek and ExoPlayer's coarse Xing seek took over.
+                val bookSeconds = (item["progressOffsetSeconds"] as? Number)?.toDouble()
                 buildAudiobookStreamUrl(
                     serverUrl,
                     targetId,
                     token,
                     mediaFileId = mediaFileId,
-                    // Whole-file serving means the player owns seeking; only
-                    // the initialPositionSeconds on a fresh queue start has any
-                    // meaning, and that's a local-only concern (not a server
-                    // offset). The legacy offsetSeconds/progressSeconds query
-                    // params are NOT forwarded — pre-Phase-2-PROPER queue
-                    // payloads carried them in `url` and that was the bug we
-                    // fixed in the audiobook rework. The catalog payload
-                    // doesn't need them.
-                    offsetSeconds = null,
-                    progressSeconds = null,
+                    progressSeconds =
+                        if (bookSeconds != null && bookSeconds > 0.0) bookSeconds else null,
                 )
             }
             "podcast-episode" -> buildPodcastEpisodeStreamUrl(serverUrl, targetId, token)
@@ -564,49 +590,46 @@ internal object SamoNativeStreamUrl {
             }
         }
 
-        var connection: HttpURLConnection? = null
+        val endpoint = "${serverUrl.trimEnd('/')}/api/v1/auth/stream-token"
+        val request =
+            Request.Builder()
+                .url(endpoint)
+                .post(ByteArray(0).toRequestBody())
+                .header("Authorization", "Bearer $bearer")
+                .header("Accept", "application/json")
+                .build()
+
         try {
-            val endpoint = "${serverUrl.trimEnd('/')}/api/v1/auth/stream-token"
-            connection =
-                (URL(endpoint).openConnection() as HttpURLConnection).apply {
-                    requestMethod = "POST"
-                    connectTimeout = 15_000
-                    readTimeout = 15_000
-                    doInput = true
-                    setRequestProperty("Authorization", "Bearer $bearer")
-                    setRequestProperty("Accept", "application/json")
+            // retryOnConnectionFailure on the shared client re-dials a stale
+            // pooled socket before this blocks on a dead connection.
+            SamoHttp.control.newCall(request).execute().use { response ->
+                val status = response.code
+                val body = response.body?.string().orEmpty()
+
+                if (status == 401 || status == 403) {
+                    Log.w(TAG, "stream-token rejected: HTTP $status: $body")
+                    SamoStreamTokenCache.invalidate(serverUrl, bearer)
+                    return MintResult.Failed(MintFailureReason.Auth)
+                }
+                if (!response.isSuccessful) {
+                    Log.w(TAG, "stream-token HTTP $status: $body")
+                    return MintResult.Failed(MintFailureReason.Server)
                 }
 
-            val status = connection.responseCode
-            val bodyStream =
-                if (status in 200..299) connection.inputStream else connection.errorStream
-            val body = bodyStream?.bufferedReader()?.use { it.readText() }.orEmpty()
-
-            if (status == 401 || status == 403) {
-                Log.w(TAG, "stream-token rejected: HTTP $status: $body")
-                SamoStreamTokenCache.invalidate(serverUrl, bearer)
-                return MintResult.Failed(MintFailureReason.Auth)
+                val parsed = JSONObject(body)
+                val token = parsed.optString("token")
+                if (token.isNullOrBlank()) {
+                    Log.w(TAG, "stream-token response missing token")
+                    return MintResult.Failed(MintFailureReason.Server)
+                }
+                SamoStreamTokenCache.put(
+                    serverUrl,
+                    bearer,
+                    token,
+                    SamoStreamTokenCache.parseExpiresAtMs(parsed.optString("expiresAt")),
+                )
+                return MintResult.Success(token)
             }
-            if (status !in 200..299) {
-                Log.w(TAG, "stream-token HTTP $status: $body")
-                return MintResult.Failed(MintFailureReason.Server)
-            }
-
-            val parsed = JSONObject(body)
-            val token = parsed.optString("token")
-            if (token.isNullOrBlank()) {
-                Log.w(TAG, "stream-token response missing token")
-                return MintResult.Failed(MintFailureReason.Server)
-            }
-            SamoStreamTokenCache.put(
-                serverUrl,
-                bearer,
-                token,
-                SamoStreamTokenCache.parseExpiresAtMs(parsed.optString("expiresAt")),
-            )
-            return MintResult.Success(token)
-        } catch (error: UnknownHostException) {
-            return MintResult.Failed(MintFailureReason.Network)
         } catch (error: SocketTimeoutException) {
             return MintResult.Failed(MintFailureReason.Network)
         } catch (error: IOException) {
@@ -614,8 +637,6 @@ internal object SamoNativeStreamUrl {
         } catch (error: Exception) {
             Log.w(TAG, "stream-token unexpected failure", error)
             return MintResult.Failed(MintFailureReason.Server)
-        } finally {
-            connection?.disconnect()
         }
     }
 

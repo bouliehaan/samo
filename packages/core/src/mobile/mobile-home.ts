@@ -87,7 +87,7 @@ export interface MobileHomeContent {
 }
 
 export interface MobileHomeContentForServersInput {
-    authentications: ServerAuthenticationResult[];
+    authentication: ServerAuthenticationResult | null;
     fetch?: SamoFetch;
     limit?: number;
     qualityScanLimit?: number;
@@ -1245,17 +1245,17 @@ const samoPodcastToHomeItem = (
     source: MobileContentSource,
 ): MobileHomeItem | null => {
     if (!podcast.id) return null;
-    const inner = podcast.podcast;
-    const title = inner?.title;
+    const inner = podcast.podcast || (podcast as any).metadata;
+    const title = inner?.title || (podcast as any).title;
     if (!title) return null;
 
     return {
         addedAt: toEpochMs(podcast.addedAt),
         artworkUrl: resolveSamoPodcastArtworkUrl(authentication, podcast, streamToken),
-        contributorsSummary: inner?.author,
+        contributorsSummary: inner?.author || (podcast as any).author,
         id: podcast.id,
         source,
-        subtitle: inner?.episodeCount ? `${inner.episodeCount} episodes` : inner?.author,
+        subtitle: inner?.episodeCount ? `${inner.episodeCount} episodes` : (inner?.author || (podcast as any).author),
         title,
         type: MobileHomeItemType.PODCAST,
     };
@@ -1470,20 +1470,16 @@ const loadSamoDiscoveryHomeItems = async (
 };
 
 export const loadMobilePodcastFeedForServers = async ({
-    authentications,
+    authentication,
     fetch: fetcher,
 }: {
-    authentications: ServerAuthenticationResult[];
+    authentication: ServerAuthenticationResult | null;
     fetch?: SamoFetch;
 }): Promise<MobileHomeItem[]> => {
     const request = getFetch(fetcher);
     const items: MobileHomeItem[] = [];
 
-    for (const authentication of authentications) {
-        if (authentication.type !== ServerType.SAMO) {
-            continue;
-        }
-
+    if (authentication && authentication.type === ServerType.SAMO) {
         try {
             const source = getMobileContentSource(authentication);
             const streamToken = await resolveSamoStreamToken(authentication, request);
@@ -1511,72 +1507,66 @@ export const loadMobilePodcastFeedForServers = async ({
  * with the other server-curated sections (discover, podcast feed).
  */
 export const loadMobileRadioForServers = async ({
-    authentications,
+    authentication,
     fetch: fetcher,
 }: {
-    authentications: ServerAuthenticationResult[];
+    authentication: ServerAuthenticationResult | null;
     fetch?: SamoFetch;
 }): Promise<MobileHomeItem[]> => {
     const request = getFetch(fetcher);
+
+    if (!authentication || authentication.type !== ServerType.SAMO) {
+        return [];
+    }
+
     const items: MobileHomeItem[] = [];
-
-    for (const authentication of authentications) {
-        if (authentication.type !== ServerType.SAMO) {
-            continue;
-        }
-
-        try {
-            const source = getMobileContentSource(authentication);
-            const streamToken = await resolveSamoStreamToken(authentication, request);
-            const [internetResult, programmedResult] = await Promise.allSettled([
-                listSamoInternetRadioStations(request, authentication, { limit: 100 }),
-                listSamoProgrammedRadioStations(request, authentication, { limit: 100 }),
-            ]);
-            if (programmedResult.status === 'fulfilled') {
-                for (const station of samoItemsOf(programmedResult.value)) {
-                    const item = samoProgrammedRadioToHomeItem(
-                        authentication,
-                        station,
-                        streamToken,
-                        source,
-                    );
-                    if (item) items.push(item);
-                }
+    try {
+        const source = getMobileContentSource(authentication);
+        const streamToken = await resolveSamoStreamToken(authentication, request);
+        const [internetResult, programmedResult] = await Promise.allSettled([
+            listSamoInternetRadioStations(request, authentication, { limit: 100 }),
+            listSamoProgrammedRadioStations(request, authentication, { limit: 100 }),
+        ]);
+        if (programmedResult.status === 'fulfilled') {
+            for (const station of samoItemsOf(programmedResult.value)) {
+                const item = samoProgrammedRadioToHomeItem(
+                    authentication,
+                    station,
+                    streamToken,
+                    source,
+                );
+                if (item) items.push(item);
             }
-            if (internetResult.status === 'fulfilled') {
-                for (const station of samoItemsOf(internetResult.value)) {
-                    const item = samoInternetRadioToHomeItem(
-                        authentication,
-                        station,
-                        streamToken,
-                        source,
-                    );
-                    if (item) items.push(item);
-                }
-            }
-        } catch {
-            // Radio is best-effort; the rest of Home should still render.
         }
+        if (internetResult.status === 'fulfilled') {
+            for (const station of samoItemsOf(internetResult.value)) {
+                const item = samoInternetRadioToHomeItem(
+                    authentication,
+                    station,
+                    streamToken,
+                    source,
+                );
+                if (item) items.push(item);
+            }
+        }
+    } catch {
+        // Radio is best-effort; the rest of Home should still render.
     }
 
     return items;
 };
 
 export const loadMobileDiscoveryForServers = async ({
-    authentications,
+    authentication,
     fetch: fetcher,
 }: {
-    authentications: ServerAuthenticationResult[];
+    authentication: ServerAuthenticationResult | null;
     fetch?: SamoFetch;
 }): Promise<MobileHomeItem[]> => {
     const request = getFetch(fetcher);
     const items: MobileHomeItem[] = [];
 
-    for (const authentication of authentications) {
-        if (authentication.type !== ServerType.SAMO) {
-            continue;
-        }
-
+    if (authentication && authentication.type === ServerType.SAMO) {
         try {
             const source = getMobileContentSource(authentication);
             const streamToken = await resolveSamoStreamToken(authentication, request);
@@ -2132,7 +2122,7 @@ export type MobileFullCollectionVariant =
     | 'podcast';
 
 export interface MobileFullCollectionInput {
-    authentications: ServerAuthenticationResult[];
+    authentication: ServerAuthenticationResult | null;
     fetch?: SamoFetch;
     qualityScanLimit?: number;
     // Incremental ("delta") sync watermark for Samo sources: only items
@@ -2351,42 +2341,33 @@ const loadFullCollectionForServer = async (
  * show whatever it can.
  */
 export const loadMobileFullCollection = async ({
-    authentications,
+    authentication,
     fetch: fetcher,
     qualityScanLimit = FULL_COLLECTION_QUALITY_SCAN_LIMIT,
     updatedSince,
     variant,
 }: MobileFullCollectionInput): Promise<MobileFullCollectionResult> => {
-    if (authentications.length === 0) {
+    if (!authentication) {
         return { errors: [], items: [] };
     }
     const request = getFetch(fetcher);
-    const results = await Promise.allSettled(
-        authentications.map((authentication) =>
-            loadFullCollectionForServer(authentication, request, variant, qualityScanLimit, updatedSince),
-        ),
-    );
-    const items: MobileHomeItem[] = [];
-    const errors: string[] = [];
-    results.forEach((result, index) => {
-        if (result.status === 'fulfilled') {
-            items.push(...result.value);
-        } else {
-            errors.push(`${authentications[index].title}: ${getErrorMessage(result.reason)}`);
-        }
-    });
-    return { errors, items };
+    try {
+        const items = await loadFullCollectionForServer(authentication, request, variant, qualityScanLimit, updatedSince);
+        return { errors: [], items };
+    } catch (error) {
+        return { errors: [`${authentication.title}: ${getErrorMessage(error)}`], items: [] };
+    }
 };
 
 export const loadMobileHomeContentForServers = async ({
-    authentications,
+    authentication,
     fetch: fetcher,
     limit = DEFAULT_HOME_LIMIT,
     qualityScanLimit = limit,
 }: MobileHomeContentForServersInput): Promise<MobileHomeContent> => {
     const loadedAt = Date.now();
 
-    if (authentications.length === 0) {
+    if (!authentication) {
         return {
             errors: [],
             loadedAt,
@@ -2396,56 +2377,22 @@ export const loadMobileHomeContentForServers = async ({
     }
 
     const request = getFetch(fetcher);
-    const contentLoads = await Promise.allSettled(
-        authentications.map((authentication) =>
-            loadMobileHomeContent({
-                authentication,
-                fetch: request,
-                limit,
-                qualityScanLimit,
-            }),
-        ),
-    );
-    const sectionsById = new Map<MobileHomeSectionId, MobileHomeSection>();
-    const errors: MobileHomeSectionError[] = [];
-    let fulfilledCount = 0;
-
-    contentLoads.forEach((result, index) => {
-        const authentication = authentications[index];
-
-        if (result.status === 'rejected') {
-            errors.push({
-                message: `${authentication.title}: ${getErrorMessage(result.reason)}`,
-                sectionId: getHomeFailureSectionId(authentication),
-            });
-            return;
-        }
-
-        fulfilledCount += 1;
-        errors.push(...result.value.errors);
-
-        result.value.sections.forEach((section) => {
-            const existingSection = sectionsById.get(section.id);
-
-            if (existingSection) {
-                existingSection.items.push(...section.items);
-                return;
-            }
-
-            sectionsById.set(section.id, { ...section, items: [...section.items] });
+    try {
+        const content = await loadMobileHomeContent({
+            authentication,
+            fetch: request,
+            limit,
+            qualityScanLimit,
         });
-    });
-
-    if (fulfilledCount === 0) {
-        throw new Error(errors[0]?.message ?? 'Failed to load Home content');
+        return {
+            errors: content.errors,
+            loadedAt,
+            sections: content.sections.filter(hasItems),
+            serverTitle: authentication.title,
+        };
+    } catch (error) {
+        throw new Error(`${authentication.title}: ${getErrorMessage(error)}`);
     }
-
-    return {
-        errors,
-        loadedAt,
-        sections: [...sectionsById.values()].filter(hasItems),
-        serverTitle: authentications.map((authentication) => authentication.title).join(' + '),
-    };
 };
 
 /** Server-backed recently played rows for cross-client recents merge (Android home). */
@@ -2498,7 +2445,7 @@ export interface MobileLibraryRelevantContent {
 }
 
 export interface MobileLibraryRelevantContentForServersInput {
-    authentications: ServerAuthenticationResult[];
+    authentication: ServerAuthenticationResult | null;
     fetch?: SamoFetch;
     maxItems?: number;
 }
@@ -2699,35 +2646,28 @@ const loadMobileLibraryRelevantContent = async ({
  * across every connected server, capped for a fast first paint.
  */
 export const loadMobileLibraryRelevantContentForServers = async ({
-    authentications,
+    authentication,
     fetch: fetcher,
     maxItems = LIBRARY_RELEVANT_MAX_ITEMS,
 }: MobileLibraryRelevantContentForServersInput): Promise<MobileLibraryRelevantContent> => {
     const loadedAt = Date.now();
 
-    if (authentications.length === 0) {
+    if (!authentication) {
         return { errors: [], items: [], loadedAt };
     }
 
-    const results = await Promise.allSettled(
-        authentications.map((authentication) =>
-            loadMobileLibraryRelevantContent({ authentication, fetch: fetcher }),
-        ),
-    );
-    const batches: MobileHomeItem[][] = [];
-    const errors: string[] = [];
-
-    results.forEach((result, index) => {
-        if (result.status === 'fulfilled') {
-            batches.push(result.value);
-        } else {
-            errors.push(`${authentications[index].title}: ${getErrorMessage(result.reason)}`);
-        }
-    });
-
-    return {
-        errors,
-        items: mergeLibraryRelevantItems(batches, maxItems),
-        loadedAt,
-    };
+    try {
+        const items = await loadMobileLibraryRelevantContent({ authentication, fetch: fetcher });
+        return {
+            errors: [],
+            items: items.slice(0, maxItems),
+            loadedAt,
+        };
+    } catch (error) {
+        return {
+            errors: [`${authentication.title}: ${getErrorMessage(error)}`],
+            items: [],
+            loadedAt,
+        };
+    }
 };

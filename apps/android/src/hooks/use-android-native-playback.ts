@@ -43,6 +43,7 @@ import {
 import { preparePlaybackItemForNative } from '../utils/samo-artwork-url';
 import { streamUrlHasEmbeddedResume } from '../utils/stream-resume-url';
 import { resolveLocalPlayback } from '../utils/offline-playback';
+import { shouldServerSeekAudiobookMp3 } from '../utils/samo-audiobook-playback';
 import {
     getActivePlaybackStatus,
     getPlaybackEventDurationMs,
@@ -94,9 +95,9 @@ export interface AndroidNativePlaybackController {
 
 export function useAndroidNativePlayback(options: {
     lastPlayedItem: MobilePlayableAudio | null;
-    serverConnections: ServerAuthenticationResult[];
+    serverConnection: ServerAuthenticationResult | null;
 }): AndroidNativePlaybackController {
-    const { lastPlayedItem, serverConnections } = options;
+    const { lastPlayedItem, serverConnection } = options;
     // Slice subscription: this hook only cares whether cast owns playback. The
     // full session store changes on every recents/favorites write, which used
     // to re-render this hook (and recreate its callbacks) constantly.
@@ -116,10 +117,10 @@ export function useAndroidNativePlayback(options: {
     // resubscribe on every server-health tick, with a window where native
     // events were dropped. Reading through refs keeps every playback callback
     // referentially stable for the life of the hook.
-    const serverConnectionsRef = useRef<ServerAuthenticationResult[]>(serverConnections);
+    const serverConnectionsRef = useRef<ServerAuthenticationResult | null>(serverConnection);
     useEffect(() => {
-        serverConnectionsRef.current = serverConnections;
-    }, [serverConnections]);
+        serverConnectionsRef.current = serverConnection;
+    }, [serverConnection]);
     const castConnectedRef = useRef(castConnected);
     useEffect(() => {
         castConnectedRef.current = castConnected;
@@ -511,10 +512,24 @@ export function useAndroidNativePlayback(options: {
                     ? 0
                     : skipResumeRefresh
                       ? (item.initialPositionSeconds ?? 0)
-                      : getResumePositionSeconds(baseItem, playbackState);
-            const itemToPlay = withResumePosition(baseItem, resumeSeconds);
+                      : (getResumePositionSeconds(baseItem, playbackState) ?? 0);
+            // For an MP3 audiobook, open the stream PRE-POSITIONED at the resume second
+            // via the server's frame-accurate seek instead of a native seek. ExoPlayer's
+            // Xing seek lands tens of seconds off on a long VBR file, and a deep native
+            // seek can stall the load for minutes; opening the byte-positioned stream is
+            // instant and exact. progressOffsetSeconds becomes the book-time at the
+            // stream's start and there is no native seek (initialPositionMs = 0).
+            const prePositionResume =
+                resumeSeconds > 0 &&
+                explicitBookStart === undefined &&
+                shouldServerSeekAudiobookMp3(baseItem);
+            const itemToPlay = prePositionResume
+                ? { ...baseItem, initialPositionSeconds: undefined, progressOffsetSeconds: resumeSeconds }
+                : withResumePosition(baseItem, resumeSeconds);
             const initialPositionMs =
-                resumeSeconds && resumeSeconds > 0 ? resumeSeconds * 1000 : 0;
+                prePositionResume || !resumeSeconds || resumeSeconds <= 0
+                    ? 0
+                    : resumeSeconds * 1000;
             absContextRef.current = buildAbsProgressContextFromPlayable(
                 itemToPlay,
                 serverConnectionsRef.current,
@@ -911,6 +926,8 @@ export function useAndroidNativePlayback(options: {
     }, [advanceQueue, playQueuedItem, syncPlaybackFromNativeEvent]);
 
     useEffect(() => {
+        let recoveryTimer: ReturnType<typeof setTimeout> | undefined;
+
         const subscription = subscribeToAndroidAudioEvents((event) => {
             const snapshot = playbackSnapshotRef.current;
 
@@ -1006,7 +1023,7 @@ export function useAndroidNativePlayback(options: {
                                   status: 'buffering',
                               },
                     );
-                    setTimeout(() => {
+                    recoveryTimer = setTimeout(() => {
                         if (playbackSnapshotRef.current?.sessionId !== snapshot.sessionId) {
                             return;
                         }
@@ -1032,7 +1049,12 @@ export function useAndroidNativePlayback(options: {
             );
         });
 
-        return () => subscription.remove();
+        return () => {
+            subscription.remove();
+            if (recoveryTimer) {
+                clearTimeout(recoveryTimer);
+            }
+        };
     }, [advanceQueue, playQueuedItem, shouldAcceptPlaybackEvent, syncPlaybackFromNativeEvent]);
 
     useEffect(() => {

@@ -26,6 +26,7 @@ import {
 } from 'react-native';
 
 import { ArtworkImage } from '../components/ArtworkImage';
+import { SkeletonTile } from '../components/Skeleton';
 import { androidLog } from '../utils/log';
 import { QualityBadge } from '../components/QualityBadge';
 import { useMediaContextMenu } from '../contexts/media-context-menu';
@@ -285,7 +286,13 @@ export const ViewAllScreen = memo(({
             <View style={styles.viewAllBody}>
                 {rows.length === 0 ? (
                     isLoading ? (
-                        <ActivityIndicator color={colors.accent} />
+                        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 16, padding: 16, width: '100%' }}>
+                            {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((i) => (
+                                <View key={i} style={{ width: '45%' }}>
+                                    <SkeletonTile />
+                                </View>
+                            ))}
+                        </View>
                     ) : (
                         <Text style={styles.viewAllEmpty}>
                             {isError ? 'Couldn’t load every item.' : 'Nothing to show here yet.'}

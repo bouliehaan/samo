@@ -66,12 +66,12 @@ const sameHost = (left: string, right: string): boolean => {
 
 const findAuthenticationForPlaybackUrl = (
     url: string | undefined,
-    serverConnections: ServerAuthenticationResult[],
+    serverConnection: ServerAuthenticationResult | null,
 ): ServerAuthenticationResult | undefined => {
-    if (!url) {
+    if (!url || !serverConnection) {
         return undefined;
     }
-    return serverConnections.find((candidate) => sameHost(candidate.url, url));
+    return sameHost(serverConnection.url, url) ? serverConnection : undefined;
 };
 
 export const artworkSourceUri = (
@@ -103,13 +103,13 @@ export const prefetchArtworkSource = (source: SamoArtworkImageSource | undefined
 export const resolveSamoArtworkUrlForDisplay = (
     artworkUrl: string | undefined,
     source: { id?: string; type?: ServerAuthenticationResult['type']; url?: string } | undefined,
-    serverConnections: ServerAuthenticationResult[],
+    serverConnection: ServerAuthenticationResult | null,
 ): string | undefined => {
     if (!artworkUrl || !source) {
         return artworkUrl;
     }
 
-    const auth = findServerAuthenticationForSource(serverConnections, source);
+    const auth = findServerAuthenticationForSource(serverConnection, source);
     if (!auth || auth.type !== ServerType.SAMO) {
         return artworkUrl;
     }
@@ -124,13 +124,13 @@ export const resolveSamoArtworkUrlForDisplay = (
 export const resolveSamoArtworkFromImageId = (
     artworkImageId: string | undefined,
     source: Pick<MobileContentSource, 'id' | 'type' | 'url'> | undefined,
-    serverConnections: ServerAuthenticationResult[],
+    serverConnection: ServerAuthenticationResult | null,
 ): SamoArtworkImageSource | undefined => {
     if (!artworkImageId || !source) {
         return undefined;
     }
 
-    const auth = findServerAuthenticationForSource(serverConnections, source);
+    const auth = findServerAuthenticationForSource(serverConnection, source);
     if (!auth || auth.type !== ServerType.SAMO) {
         return undefined;
     }
@@ -146,20 +146,20 @@ export const resolveSamoArtworkFromImageId = (
         return undefined;
     }
 
-    return resolveSamoArtworkImageSourceForDisplay(url, source, serverConnections);
+    return resolveSamoArtworkImageSourceForDisplay(url, source, serverConnection);
 };
 
 export const resolveSamoArtworkImageSourceForDisplay = (
     artworkUrl: string | undefined,
     source: Pick<MobileContentSource, 'id' | 'type' | 'url'> | undefined,
-    serverConnections: ServerAuthenticationResult[],
+    serverConnection: ServerAuthenticationResult | null,
 ): SamoArtworkImageSource | undefined => {
-    const resolvedUrl = resolveSamoArtworkUrlForDisplay(artworkUrl, source, serverConnections);
+    const resolvedUrl = resolveSamoArtworkUrlForDisplay(artworkUrl, source, serverConnection);
     if (!resolvedUrl) {
         return undefined;
     }
 
-    const auth = findServerAuthenticationForSource(serverConnections, source);
+    const auth = findServerAuthenticationForSource(serverConnection, source);
     if (!auth || auth.type !== ServerType.SAMO || !isSamoApiMediaUrl(resolvedUrl)) {
         return resolvedUrl;
     }
@@ -183,11 +183,11 @@ export const resolveSamoItemArtworkSourceForDisplay = (
         artworkUrl?: string;
         source?: Pick<MobileContentSource, 'id' | 'type' | 'url'>;
     },
-    serverConnections: ServerAuthenticationResult[],
+    serverConnection: ServerAuthenticationResult | null,
 ): SamoArtworkImageSource | undefined => {
     return (
-        resolveSamoArtworkFromImageId(item.artworkImageId, item.source, serverConnections) ??
-        resolveSamoArtworkImageSourceForDisplay(item.artworkUrl, item.source, serverConnections)
+        resolveSamoArtworkFromImageId(item.artworkImageId, item.source, serverConnection) ??
+        resolveSamoArtworkImageSourceForDisplay(item.artworkUrl, item.source, serverConnection)
     );
 };
 
@@ -196,20 +196,20 @@ export const resolvePlaybackArtworkSourceForDisplay = (
         MobilePlayableAudio,
         'artworkImageId' | 'artworkUrl' | 'contentSourceId' | 'id'
     > | null | undefined,
-    serverConnections: ServerAuthenticationResult[],
+    serverConnection: ServerAuthenticationResult | null,
 ): SamoArtworkImageSource | undefined => {
     if (!item) {
         return undefined;
     }
 
-    const contentSource = getContentSourceFromPlaybackItem(item, serverConnections);
+    const contentSource = getContentSourceFromPlaybackItem(item, serverConnection);
     return resolveSamoItemArtworkSourceForDisplay(
         {
             artworkImageId: item.artworkImageId,
             artworkUrl: getHighResolutionArtworkUrl(item.artworkUrl),
             source: contentSource,
         },
-        serverConnections,
+        serverConnection,
     );
 };
 
@@ -223,15 +223,15 @@ export const resolvePlaybackArtworkSourceForDisplay = (
  */
 export const preparePlaybackItemForNative = async (
     item: MobilePlayableAudio,
-    serverConnections: ServerAuthenticationResult[],
+    serverConnection: ServerAuthenticationResult | null,
 ): Promise<MobilePlayableAudio> => {
-    const contentSource = getContentSourceFromPlaybackItem(item, serverConnections);
+    const contentSource = getContentSourceFromPlaybackItem(item, serverConnection);
     const sourceAuth = contentSource
-        ? findServerAuthenticationForSource(serverConnections, contentSource)
+        ? findServerAuthenticationForSource(serverConnection, contentSource)
         : undefined;
     const urlAuth =
-        findAuthenticationForPlaybackUrl(item.url, serverConnections) ??
-        findAuthenticationForPlaybackUrl(item.castUrl, serverConnections);
+        findAuthenticationForPlaybackUrl(item.url, serverConnection) ??
+        findAuthenticationForPlaybackUrl(item.castUrl, serverConnection);
     const auth = sourceAuth ?? urlAuth;
 
     let streamToken: string | undefined;
@@ -240,7 +240,7 @@ export const preparePlaybackItemForNative = async (
     }
 
     const resolvedArtworkUrl =
-        artworkSourceUri(resolvePlaybackArtworkSourceForDisplay(item, serverConnections)) ??
+        artworkSourceUri(resolvePlaybackArtworkSourceForDisplay(item, serverConnection)) ??
         item.artworkUrl;
 
     let nextUrl = item.url;
@@ -250,7 +250,9 @@ export const preparePlaybackItemForNative = async (
         const audiobookId =
             item.source === 'audiobook' ? parseSamoAudiobookIdFromPlaybackId(item.id) : undefined;
         if (audiobookId) {
-            const bookStart = Math.max(0, Math.floor(item.progressOffsetSeconds ?? 0));
+            // Keep sub-second precision: a chapter seek's progressSeconds drives the
+            // server's frame-accurate seek, so flooring it would cost up to a second.
+            const bookStart = Math.max(0, item.progressOffsetSeconds ?? 0);
             nextUrl = getSamoAudiobookStreamUrl(auth, audiobookId, {
                 progressSeconds: bookStart,
                 streamToken,
@@ -305,9 +307,9 @@ export const backfillItemArtworkFields = <
     },
 >(
     item: T,
-    serverConnections: ServerAuthenticationResult[],
+    serverConnection: ServerAuthenticationResult | null,
 ): T => {
-    const resolved = resolveSamoItemArtworkSourceForDisplay(item, serverConnections);
+    const resolved = resolveSamoItemArtworkSourceForDisplay(item, serverConnection);
     const artworkUrl =
         typeof resolved === 'string' ? resolved : resolved?.uri ?? item.artworkUrl;
 

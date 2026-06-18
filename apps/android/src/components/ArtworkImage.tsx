@@ -35,7 +35,7 @@ export const ArtworkImage = ({
     fallbackStyle,
     letter,
     onLoad,
-    serverConnections,
+    serverConnection,
     source,
     style,
     transition = 0,
@@ -46,7 +46,7 @@ export const ArtworkImage = ({
     fallbackStyle?: StyleProp<ViewStyle>;
     letter: string;
     onLoad?: () => void;
-    serverConnections?: ServerAuthenticationResult[];
+    serverConnection?: ServerAuthenticationResult | null;
     source?: ImageSource | string;
     style: StyleProp<ImageStyle>;
     /**
@@ -60,13 +60,13 @@ export const ArtworkImage = ({
     const [errored, setErrored] = useState(false);
     const [streamTokenRevision, setStreamTokenRevision] = useState(0);
     const contextConnections = useServerConnections();
-    const resolvedConnections = serverConnections ?? contextConnections;
+    const resolvedConnections = serverConnection ?? contextConnections;
     const resolvedSource = useMemo((): ImageSource | string | undefined => {
         if (source) {
             return source;
         }
 
-        if (contentSource && resolvedConnections.length > 0) {
+        if (contentSource && resolvedConnections) {
             const fromItem = resolveSamoItemArtworkSourceForDisplay(
                 { artworkImageId, artworkUrl: uri, source: contentSource },
                 resolvedConnections,
@@ -150,7 +150,7 @@ export const ArtworkImage = ({
     }, [canonicalKey, pinnedLocalUri, resolvedSource, useLocal]);
 
     useEffect(() => {
-        if (!contentSource || resolvedConnections.length === 0) {
+        if (!contentSource || !resolvedConnections) {
             return;
         }
 

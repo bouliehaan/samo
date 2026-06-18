@@ -21,10 +21,10 @@ export type ArtworkPrefetchItem = {
 
 export const prefetchArtworkForItem = (
     item: ArtworkPrefetchItem,
-    serverConnections: ServerAuthenticationResult[],
+    serverConnection: ServerAuthenticationResult | null,
 ): void => {
     prefetchArtworkSource(
-        resolveSamoItemArtworkSourceForDisplay(item, serverConnections),
+        resolveSamoItemArtworkSourceForDisplay(item, serverConnection),
     );
 };
 
@@ -33,14 +33,14 @@ export const prefetchPlaybackArtwork = (
         MobilePlayableAudio,
         'artworkImageId' | 'artworkUrl' | 'contentSourceId' | 'id'
     > | null | undefined,
-    serverConnections: ServerAuthenticationResult[],
+    serverConnection: ServerAuthenticationResult | null,
 ): void => {
-    prefetchArtworkSource(resolvePlaybackArtworkSourceForDisplay(item, serverConnections));
+    prefetchArtworkSource(resolvePlaybackArtworkSourceForDisplay(item, serverConnection));
 };
 
 export const prefetchDetailArtworkUrls = (
     detail: MobileMediaDetail,
-    serverConnections: ServerAuthenticationResult[],
+    serverConnection: ServerAuthenticationResult | null,
     extraItems: ArtworkPrefetchItem[] = [],
 ): void => {
     prefetchArtworkForItem(
@@ -49,7 +49,7 @@ export const prefetchDetailArtworkUrls = (
             artworkUrl: detail.artworkUrl,
             source: detail.source,
         },
-        serverConnections,
+        serverConnection,
     );
 
     const seen = new Set<string>();
@@ -71,13 +71,13 @@ export const prefetchDetailArtworkUrls = (
             continue;
         }
         seen.add(key);
-        prefetchArtworkForItem(item, serverConnections);
+        prefetchArtworkForItem(item, serverConnection);
     }
 };
 
 export const prefetchArtworkUrl = (
     item: ArtworkPrefetchItem,
-    serverConnections: ServerAuthenticationResult[],
+    serverConnection: ServerAuthenticationResult | null,
 ): void => {
-    prefetchArtworkForItem(item, serverConnections);
+    prefetchArtworkForItem(item, serverConnection);
 };

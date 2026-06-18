@@ -17,10 +17,10 @@ import { getAndroidPlaybackState, setAndroidPlaybackState } from '../state/playb
 const RADIO_METADATA_POLL_MS = 5000;
 
 export function useAndroidRadioMetadataSync(
-    serverConnections: ServerAuthenticationResult[],
+    serverConnection: ServerAuthenticationResult | null,
 ) {
-    const serverConnectionsRef = useRef(serverConnections);
-    serverConnectionsRef.current = serverConnections;
+    const serverConnectionsRef = useRef(serverConnection);
+    serverConnectionsRef.current = serverConnection;
 
     useEffect(() => {
         let cancelled = false;

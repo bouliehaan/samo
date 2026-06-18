@@ -30,6 +30,7 @@ import {
 import {
     isSamoAudiobookPlayback,
     resolveAudiobookSeekTarget,
+    shouldServerSeekAudiobookMp3,
 } from '../utils/samo-audiobook-playback';
 import {
     getActivePlaybackStatus,
@@ -51,7 +52,7 @@ export interface AndroidPlaybackControls {
 
 export function useAndroidPlaybackControls(options: {
     lastPlayedItem: MobilePlayableAudio | null;
-    serverConnections: ServerAuthenticationResult[];
+    serverConnection: ServerAuthenticationResult | null;
     playbackSnapshotRef: MutableRefObject<null | {
         item: MobilePlayableAudio;
         sessionId: string;
@@ -70,7 +71,7 @@ export function useAndroidPlaybackControls(options: {
         playbackSnapshotRef,
         playQueueIndexNatively,
         playQueuedItem,
-        serverConnections,
+        serverConnection,
     } = options;
     const { setIsShuffled } = useAppSessionState();
     const seekGenerationRef = useRef(0);
@@ -89,16 +90,40 @@ export function useAndroidPlaybackControls(options: {
                 return false;
             }
             const target = resolveAudiobookSeekTarget(queue.items, targetBookSeconds);
+            const fileItem = queue.items[target.queueIndex];
+            if (!fileItem) {
+                return false;
+            }
+
+            // A long single-file VBR MP3 can't be seeked accurately by the player —
+            // its Xing table lands chapter taps 20-70s off, mid-sentence. Reload the
+            // stream pre-positioned at the exact second via the server's frame-accurate
+            // seek instead of a native seekTo: progressOffsetSeconds becomes the
+            // book-time at the stream's start, which preparePlaybackItemForNative encodes
+            // into the URL (progressSeconds=) and which makes playQueuedItem skip the
+            // player's own broken seek. This also avoids the backward-seek freeze (a
+            // fresh range request, no scan). M4B/AAC and multi-file rips are left on the
+            // native path — their seeking is already accurate.
+            if (shouldServerSeekAudiobookMp3(fileItem)) {
+                await playQueuedItem(
+                    {
+                        ...fileItem,
+                        initialPositionSeconds: 0,
+                        progressOffsetSeconds: Math.max(0, target.bookPositionSeconds),
+                    },
+                    queue.items,
+                    target.queueIndex,
+                    { skipResumeRefresh: true },
+                );
+                return true;
+            }
+
             if (target.queueIndex === queue.index) {
                 // Same file → local seek to the in-file position.
                 await handleSeekPlaybackRef.current?.(target.filePositionMs, {
                     fileLocal: true,
                 });
                 return true;
-            }
-            const fileItem = queue.items[target.queueIndex];
-            if (!fileItem) {
-                return false;
             }
             await playQueuedItem(
                 withResumePosition(fileItem, Math.floor(target.filePositionMs / 1000)),
@@ -124,30 +149,20 @@ export function useAndroidPlaybackControls(options: {
         const item = playbackState.item;
         const durationMs = getPlaybackDurationMs(playbackState);
 
-        // For a Samo audiobook the seek bar is book-global. Route it through the
-        // queue resolver (unless the caller already mapped it to a file-local
-        // position) so it lands in the right file and seeks locally.
-        if (
+        const isGlobalAudiobookSeek =
             isSamoAudiobookPlayback(item) &&
             !options?.fileLocal &&
-            (getPlaybackQueue()?.items.length ?? 0) > 0
-        ) {
-            if (await seekSamoAudiobookToBookSeconds(positionMs / 1000)) {
-                return;
-            }
-        }
+            (getPlaybackQueue()?.items.length ?? 0) > 0;
 
-        // File-local seek (music, podcasts, single-file books, or the resolved
-        // in-file target above). Clamp to the native file duration.
         const fileDurationMs =
             isSamoAudiobookPlayback(item) && item.durationSeconds
                 ? item.durationSeconds * 1000
                 : durationMs;
-        const nextPositionMs = clamp(
-            positionMs,
-            0,
-            fileDurationMs ?? durationMs ?? Math.max(0, positionMs),
-        );
+
+        const uiPositionMs = isGlobalAudiobookSeek
+            ? clamp(positionMs, 0, durationMs ?? Math.max(0, positionMs))
+            : clamp(positionMs, 0, fileDurationMs ?? durationMs ?? Math.max(0, positionMs));
+
         const seekGeneration = (seekGenerationRef.current += 1);
 
         // Stamp the pending-seek window so the event reducer (live + poll) holds
@@ -162,13 +177,26 @@ export function useAndroidPlaybackControls(options: {
                 : {
                       ...current,
                       pendingSeekAtMs,
-                      pendingSeekTargetMs: nextPositionMs,
-                      positionMs: nextPositionMs,
+                      pendingSeekTargetMs: uiPositionMs,
+                      positionMs: uiPositionMs,
                   },
         );
 
         try {
-            const event = await seekAndroidAudio(nextPositionMs);
+            await new Promise((resolve) => setTimeout(resolve, 250));
+            if (seekGeneration !== seekGenerationRef.current) {
+                return;
+            }
+
+            // For a Samo audiobook the seek bar is book-global. Route it through the
+            // queue resolver so it lands in the right file and seeks locally.
+            if (isGlobalAudiobookSeek) {
+                if (await seekSamoAudiobookToBookSeconds(positionMs / 1000)) {
+                    return;
+                }
+            }
+
+            const event = await seekAndroidAudio(uiPositionMs);
             if (seekGeneration !== seekGenerationRef.current) {
                 return;
             }
@@ -194,7 +222,7 @@ export function useAndroidPlaybackControls(options: {
                     // resolving does NOT guarantee the event stream has caught up.
                     pendingSeekAtMs: current.pendingSeekAtMs,
                     pendingSeekTargetMs: current.pendingSeekTargetMs,
-                    positionMs: nextPositionMs,
+                    positionMs: uiPositionMs,
                     status: resolvedStatus === 'ended' ? 'playing' : resolvedStatus,
                 };
             });
@@ -234,7 +262,7 @@ export function useAndroidPlaybackControls(options: {
             // overlay, but it must never make the play button look dead.
             const itemWithServerProgress = await refreshPlayableResumeFromServerBounded(
                 item,
-                serverConnections,
+                serverConnection,
             );
             const itemToPlay = withResumePosition(
                 itemWithServerProgress,
@@ -251,7 +279,7 @@ export function useAndroidPlaybackControls(options: {
 
             await playQueuedItem(itemToPlay, [item], 0);
         },
-        [playQueuedItem, serverConnections],
+        [playQueuedItem, serverConnection],
     );
 
     const handleTogglePlayback = useCallback(async () => {
@@ -390,12 +418,12 @@ export function useAndroidPlaybackControls(options: {
                     ...queue,
                     items: [...before, ...after],
                 });
-                syncAndroidNativePlaybackQueue(getPlaybackQueue(), serverConnections);
+                syncAndroidNativePlaybackQueue(getPlaybackQueue(), serverConnection);
             }
 
             return next;
         });
-    }, [serverConnections, setIsShuffled]);
+    }, [serverConnection, setIsShuffled]);
 
     const handleNavigatePlayback = useCallback(
         async (direction: -1 | 1) => {

@@ -38,6 +38,7 @@ import {
     Alert,
     Animated,
     type ImageStyle,
+    InteractionManager,
     Keyboard,
     type LayoutChangeEvent,
     Pressable,
@@ -50,6 +51,7 @@ import {
 } from 'react-native';
 
 import { ArtworkImage } from '../components/ArtworkImage';
+import { SkeletonTrackRow } from '../components/Skeleton';
 import {
     EditPlaylistSheet,
     removeSelectedPlaylistTracks,
@@ -122,14 +124,14 @@ const MediaDetailLoadingView = ({
     artworkUrl,
     contentSource,
     itemType,
-    serverConnections,
+    serverConnection,
     title,
 }: {
     artworkImageId?: string;
     artworkUrl?: string;
     contentSource?: MobileHomeItem['source'];
     itemType?: MobileHomeItem['type'] | MobileSearchItem['type'];
-    serverConnections?: ServerAuthenticationResult[];
+    serverConnection?: ServerAuthenticationResult | null;
     title: string;
 }) => {
     const isArtist = itemType === MobileHomeItemType.ARTIST;
@@ -146,7 +148,7 @@ const MediaDetailLoadingView = ({
                                 fallbackStyle={styles.detailArtworkFallback}
                                 letter={title.slice(0, 1)}
                                 style={[styles.detailArtwork, styles.detailArtworkRound]}
-                                serverConnections={serverConnections}
+                                serverConnection={serverConnection}
                                 uri={artworkUrl}
                             />
                             <View style={styles.detailHeroText}>
@@ -161,7 +163,7 @@ const MediaDetailLoadingView = ({
                                     contentSource={contentSource}
                                     fallbackStyle={styles.albumHeroArtworkFallback}
                                     letter={title.slice(0, 1)}
-                                    serverConnections={serverConnections}
+                                    serverConnection={serverConnection}
                                     style={styles.albumHeroArtwork}
                                     uri={artworkUrl}
                                 />
@@ -174,7 +176,11 @@ const MediaDetailLoadingView = ({
                 ) : (
                     <Text style={styles.sectionTitle}>{title}</Text>
                 )}
-                <ActivityIndicator color={colors.accent} style={{ marginTop: spacing.lg }} />
+                <View style={{ marginTop: spacing.md, marginHorizontal: spacing.md, paddingBottom: 100 }}>
+                    {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
+                        <SkeletonTrackRow key={i} />
+                    ))}
+                </View>
             </View>
         </View>
     );
@@ -189,7 +195,7 @@ export const MediaDetailContent = memo(({
     onReloadDetail,
     onSelectItem,
     onShufflePlay,
-    serverConnections,
+    serverConnection,
 }: {
     homeContentState: AndroidHomeContentState;
     mediaDetailState: AndroidMediaDetailState;
@@ -208,7 +214,7 @@ export const MediaDetailContent = memo(({
     onReloadDetail?: () => Promise<void>;
     onSelectItem: (item: AndroidRecentContentSourceItem) => void;
     onShufflePlay: (detail: MobileMediaDetail, tracks?: MobileMediaTrack[]) => void;
-    serverConnections: ServerAuthenticationResult[];
+    serverConnection: ServerAuthenticationResult | null;
 }) => {
     const openingArtworkUrlRef = useRef<string | undefined>(undefined);
     const title =
@@ -230,7 +236,7 @@ export const MediaDetailContent = memo(({
                     artworkUrl={mediaDetailState.itemArtworkUrl}
                     contentSource={mediaDetailState.itemSource}
                     itemType={mediaDetailState.itemType}
-                    serverConnections={serverConnections}
+                    serverConnection={serverConnection}
                     title={title}
                 />
             ) : mediaDetailState.status === 'error' ? (
@@ -252,7 +258,7 @@ export const MediaDetailContent = memo(({
                         homeContentState,
                         mediaDetailState.detail,
                     )}
-                    serverConnections={serverConnections}
+                    serverConnection={serverConnection}
                 />
             ) : null}
         </>
@@ -268,7 +274,7 @@ const DetailHeroArtwork = ({
     letter,
     primaryUri,
     round,
-    serverConnections,
+    serverConnection,
     style,
     wrapStyle,
 }: {
@@ -278,7 +284,7 @@ const DetailHeroArtwork = ({
     letter: string;
     primaryUri?: string;
     round?: boolean;
-    serverConnections?: ServerAuthenticationResult[];
+    serverConnection?: ServerAuthenticationResult | null;
     style: StyleProp<ImageStyle>;
     wrapStyle?: StyleProp<ViewStyle>;
 }) => {
@@ -289,7 +295,7 @@ const DetailHeroArtwork = ({
             contentSource={contentSource}
             fallbackStyle={round ? styles.detailArtworkFallback : styles.albumHeroArtworkFallback}
             letter={letter}
-            serverConnections={serverConnections}
+            serverConnection={serverConnection}
             style={style}
             uri={uri}
         />
@@ -307,7 +313,7 @@ export const MediaDetailLoaded = ({
     onSelectItem,
     onShufflePlay,
     playlistTargets,
-    serverConnections,
+    serverConnection,
 }: {
     detail: MobileMediaDetail;
     fallbackArtworkUrl?: string;
@@ -327,10 +333,18 @@ export const MediaDetailLoaded = ({
     onSelectItem: (item: AndroidRecentContentSourceItem) => void;
     onShufflePlay: (detail: MobileMediaDetail, tracks?: MobileMediaTrack[]) => void;
     playlistTargets: MobileHomeItem[];
-    serverConnections: ServerAuthenticationResult[];
+    serverConnection: ServerAuthenticationResult | null;
 }) => {
     const [playlistEditVisible, setPlaylistEditVisible] = useState(false);
     const [playlistManageMode, setPlaylistManageMode] = useState(false);
+    const [isTransitioning, setIsTransitioning] = useState(true);
+
+    useEffect(() => {
+        const task = InteractionManager.runAfterInteractions(() => {
+            setIsTransitioning(false);
+        });
+        return () => task.cancel();
+    }, []);
     const [playlistSelectedTrackIds, setPlaylistSelectedTrackIds] = useState<Set<string>>(
         () => new Set(),
     );
@@ -401,8 +415,8 @@ export const MediaDetailLoaded = ({
     const isPlaylistDetail = detail.type === MobileMediaDetailType.PLAYLIST;
     const canEditPlaylist = isPlaylistDetail && isMobilePlaylistDetailEditable(detail);
     const playlistAuth = useMemo(
-        () => findServerAuthenticationForSource(serverConnections, detail.source),
-        [detail.source, serverConnections],
+        () => findServerAuthenticationForSource(serverConnection, detail.source),
+        [detail.source, serverConnection],
     );
 
     useEffect(() => {
@@ -476,7 +490,7 @@ export const MediaDetailLoaded = ({
      * already ship in their authored order and shouldn't be reshuffleable
      * from this surface.
      */
-    const displayTracks = useMemo(() => {
+    const fullDisplayTracks = useMemo(() => {
         if (!isPlaylistDetail) return detail.tracks;
         const playlistSearchNeedle = playlistSearchQuery.trim().toLocaleLowerCase();
         let filtered =
@@ -510,9 +524,13 @@ export const MediaDetailLoaded = ({
         playlistSort,
         playlistSortAsc,
     ]);
+    const displayTracks = useMemo(() => {
+        return isTransitioning ? fullDisplayTracks.slice(0, 20) : fullDisplayTracks;
+    }, [fullDisplayTracks, isTransitioning]);
+
     const playableDisplayTracks = useMemo(
-        () => displayTracks.filter((track) => track.playback),
-        [displayTracks],
+        () => fullDisplayTracks.filter((track) => track.playback),
+        [fullDisplayTracks],
     );
     const firstPlayableDisplayTrack = playableDisplayTracks[0];
     const firstPlayableDisplayIndex = firstPlayableDisplayTrack
@@ -625,16 +643,16 @@ export const MediaDetailLoaded = ({
         }
     };
     const canCreatePlaylist = useMemo(() => {
-        const auth = findServerAuthenticationForSource(serverConnections, detail.source);
+        const auth = findServerAuthenticationForSource(serverConnection, detail.source);
 
         return auth?.type === ServerType.SAMO;
-    }, [detail.source, serverConnections]);
+    }, [detail.source, serverConnection]);
     const handleCreatePlaylist = async (name: string) => {
         if (!playlistMenuTrack) {
             return;
         }
 
-        const auth = findServerAuthenticationForSource(serverConnections, detail.source);
+        const auth = findServerAuthenticationForSource(serverConnection, detail.source);
 
         if (!auth) {
             setPlaylistActionState({
@@ -909,7 +927,7 @@ export const MediaDetailLoaded = ({
         // Visual feedback comes from the circular download glyph and the
         // Downloads tab — no need for a popup on click.
         setIsDetailDownloadRequested(true);
-        const result = await enqueueCollectionDownload(detail, serverConnections);
+        const result = await enqueueCollectionDownload(detail, serverConnection);
         if (result.reason) {
             setIsDetailDownloadRequested(false);
             Alert.alert('Download', result.reason);
@@ -989,7 +1007,7 @@ export const MediaDetailLoaded = ({
                                     }
                                     contentSource={detail.source}
                                     letter={track.title.slice(0, 1).toUpperCase()}
-                                    serverConnections={serverConnections}
+                                    serverConnection={serverConnection}
                                     style={styles.trackArtwork}
                                     uri={track.artworkUrl ?? detail.artworkUrl ?? fallbackArtworkUrl}
                                 />
@@ -1113,7 +1131,7 @@ export const MediaDetailLoaded = ({
                                         fallbackUri={fallbackArtworkUrl}
                                         letter={detail.title.slice(0, 1)}
                                         primaryUri={detail.artworkUrl}
-                                        serverConnections={serverConnections}
+                                        serverConnection={serverConnection}
                                         style={styles.albumHeroArtwork}
                                     />
                                 </View>
@@ -1430,7 +1448,7 @@ export const MediaDetailLoaded = ({
                         setPlaylistSelectedTrackIds(new Set());
                     }}
                     onSaved={() => void onReloadDetail?.()}
-                    serverConnections={serverConnections}
+                    serverConnection={serverConnection}
                     visible={playlistEditVisible}
                 />
             </View>
@@ -1447,7 +1465,7 @@ export const MediaDetailLoaded = ({
                             fallbackUri={fallbackArtworkUrl}
                             letter={detail.title.slice(0, 1)}
                             primaryUri={detail.artworkUrl}
-                            serverConnections={serverConnections}
+                            serverConnection={serverConnection}
                             style={styles.albumHeroArtwork}
                         />
                     </View>
@@ -1659,7 +1677,7 @@ export const MediaDetailLoaded = ({
                         letter={detail.title.slice(0, 1)}
                         primaryUri={detail.artworkUrl}
                         round
-                        serverConnections={serverConnections}
+                        serverConnection={serverConnection}
                         style={[styles.detailArtwork, styles.detailArtworkRound]}
                     />
                     <View style={styles.detailHeroText}>
@@ -1679,7 +1697,7 @@ export const MediaDetailLoaded = ({
                     onPlayTrack={onPlayTrack}
                     onSelectItem={onSelectItem}
                     sectionTitle={sectionTitle}
-                    serverConnections={serverConnections}
+                    serverConnection={serverConnection}
                 />
             </Reanimated.ScrollView>
             {detailCollapsedTopbar}
@@ -1707,7 +1725,7 @@ export const ArtistDetailSections = ({
     onPlayTrack,
     onSelectItem,
     sectionTitle,
-    serverConnections,
+    serverConnection,
 }: {
     detail: MobileMediaDetail;
     emptyText: string;
@@ -1715,7 +1733,7 @@ export const ArtistDetailSections = ({
     onPlayTrack: (detail: MobileMediaDetail, track: MobileMediaTrack, index: number) => void;
     onSelectItem: (item: AndroidRecentContentSourceItem) => void;
     sectionTitle: string;
-    serverConnections: ServerAuthenticationResult[];
+    serverConnection: ServerAuthenticationResult | null;
 }) => {
     const [bioExpanded, setBioExpanded] = useState(false);
     const contextMenu = useMediaContextMenu();
@@ -1770,7 +1788,7 @@ export const ArtistDetailSections = ({
                                             }
                                             contentSource={detail.source}
                                             letter={track.title.slice(0, 1).toUpperCase()}
-                                            serverConnections={serverConnections}
+                                            serverConnection={serverConnection}
                                             style={styles.trackArtwork}
                                             uri={
                                                 track.artworkUrl ??
@@ -1824,7 +1842,7 @@ export const ArtistDetailSections = ({
                                 item={item}
                                 key={item.id}
                                 onSelectItem={onSelectItem}
-                                serverConnections={serverConnections}
+                                serverConnection={serverConnection}
                             />
                         ))}
                     </View>
@@ -1840,7 +1858,7 @@ export const ArtistDetailSections = ({
                                 item={item}
                                 key={item.id}
                                 onSelectItem={onSelectItem}
-                                serverConnections={serverConnections}
+                                serverConnection={serverConnection}
                             />
                         ))}
                     </View>
@@ -1864,7 +1882,7 @@ export const ArtistDetailSections = ({
                                     contentSource={item.source}
                                     fallbackStyle={styles.relatedArtistArtworkFallback}
                                     letter={item.title.slice(0, 1)}
-                                    serverConnections={serverConnections}
+                                    serverConnection={serverConnection}
                                     style={styles.relatedArtistArtwork}
                                     uri={item.artworkUrl}
                                 />
@@ -1883,11 +1901,11 @@ export const ArtistDetailSections = ({
 export const ArtistAlbumTile = ({
     item,
     onSelectItem,
-    serverConnections,
+    serverConnection,
 }: {
     item: MobileHomeItem;
     onSelectItem: (item: AndroidRecentContentSourceItem) => void;
-    serverConnections: ServerAuthenticationResult[];
+    serverConnection: ServerAuthenticationResult | null;
 }) => {
     const contextMenu = useMediaContextMenu();
     const tileBadgeProfile = getItemQualityProfile(item);
@@ -1903,7 +1921,7 @@ export const ArtistAlbumTile = ({
                 contentSource={item.source}
                 fallbackStyle={styles.artistAlbumGridFallback}
                 letter={item.title.slice(0, 1)}
-                serverConnections={serverConnections}
+                serverConnection={serverConnection}
                 style={styles.artistAlbumGridArtwork}
                 uri={item.artworkUrl}
             />

@@ -95,6 +95,53 @@ export interface MobileMediaDetailBookmark {
     title?: string;
 }
 
+/**
+ * How an audiobook's chapters were derived + whether to trust them. `label` is a
+ * short human string for the chapter section; `needsReview` is true when the
+ * chapters are weak (one-per-file, an unaligned Audible paste) or the audio
+ * registration was low-confidence, so the UI can surface a gentle hint.
+ */
+export interface MobileChapterQuality {
+    source?: string;
+    confidence?: number;
+    label: string;
+    needsReview: boolean;
+}
+
+/** Audio-aligned chapters below this confidence are flagged for review. */
+export const CHAPTER_REVIEW_CONFIDENCE = 0.6;
+
+/**
+ * Maps an audiobook's stored chapter provenance to a display label + review flag.
+ * Returns undefined when there are no chapters or the server reported no source
+ * (old data), so callers render nothing rather than a misleading badge.
+ */
+export const deriveChapterQuality = (
+    source: string | undefined,
+    confidence: number | undefined,
+    chapterCount: number,
+): MobileChapterQuality | undefined => {
+    if (chapterCount === 0 || !source) return undefined;
+    switch (source) {
+        case 'embedded':
+        case 'cue':
+            return { source, confidence, label: 'Embedded chapters', needsReview: false };
+        case 'audio-aligned':
+            return {
+                source,
+                confidence,
+                label: 'Audio-aligned',
+                needsReview: typeof confidence === 'number' && confidence < CHAPTER_REVIEW_CONFIDENCE,
+            };
+        case 'audnexus':
+            return { source, confidence, label: 'From Audible', needsReview: true };
+        case 'file':
+            return { source, confidence, label: 'File-based', needsReview: true };
+        default:
+            return { source, confidence, label: source, needsReview: false };
+    }
+};
+
 export interface MobileMediaDetailSession {
     durationSeconds?: number;
     endedAt?: number;
@@ -142,6 +189,13 @@ export interface MobileMediaDetail {
      * and podcast details.
      */
     chapters?: MobileMediaDetailBookmark[];
+    /**
+     * Audiobook-only — how the chapters were derived + whether they should be
+     * flagged for review (weak source or low audio-registration confidence), so
+     * the UI can mark uncertain chapters instead of presenting every marker as
+     * authoritative. Undefined when the server didn't report provenance.
+     */
+    chapterQuality?: MobileChapterQuality;
     /**
      * Audiobook-only — display string for the audiobook's contributors who
      * are not the author (typically narrators).
@@ -1755,6 +1809,11 @@ export const mapSamoAudiobookDetail = (
         authorsSummary,
         bookmarks: samoBookmarksToDetail(samoItemsOf(bookmarksResponse)),
         chapters,
+        chapterQuality: deriveChapterQuality(
+            audiobook.chapterSource,
+            audiobook.chapterConfidence,
+            chapters.length,
+        ),
         contributors: audiobook.book?.narrators?.map((person) => ({
             id: person.id,
             name: person.name,

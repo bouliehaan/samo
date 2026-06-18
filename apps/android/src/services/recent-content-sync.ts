@@ -33,7 +33,7 @@ const toRecentContentItem = (item: MobileHomeItem): AndroidRecentContentItem | n
 
 export const mergeServerRecentlyPlayedIntoRecents = async (
     localItems: AndroidRecentContentItem[],
-    authentications: ServerAuthenticationResult[],
+    authentication: ServerAuthenticationResult | null,
     homeContent?: MobileHomeContent,
 ): Promise<AndroidRecentContentItem[]> => {
     const freshByKey = new Map<string, MobileHomeItem>();
@@ -50,16 +50,12 @@ export const mergeServerRecentlyPlayedIntoRecents = async (
         isEligibleRecentlyPlayedSurfaceItem(entry.item, { directSong: entry.directSong }),
     );
 
-    const samoServers = authentications.filter(
-        (authentication) => authentication.type === ServerType.SAMO,
-    );
-
-    for (const authentication of samoServers) {
+    if (authentication && authentication.type === ServerType.SAMO) {
         let serverItems: MobileHomeItem[] = [];
         try {
             serverItems = await loadSamoRecentlyPlayedHomeItems(authentication, samoFetch, 48);
         } catch {
-            continue;
+            // best effort
         }
 
         for (const serverItem of serverItems) {

@@ -43,7 +43,7 @@ export const RadioScreen = memo(({
     onAddStation,
     onSelectItem,
     recentItems,
-    serverConnections,
+    serverConnection,
 }: RadioScreenProps) => {
     const contextMenu = useMediaContextMenu();
     // Own the playback subscription rather than receiving the now-playing id from
@@ -55,8 +55,8 @@ export const RadioScreen = memo(({
     const [isSortMenuOpen, setIsSortMenuOpen] = useState(false);
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
     const radioManageConnections = useMemo(
-        () => serverConnections.filter(canAddAndroidRadioStation),
-        [serverConnections],
+        () => (serverConnection && canAddAndroidRadioStation(serverConnection) ? serverConnection : null),
+        [serverConnection],
     );
     const section =
         homeContentState.status === 'loaded'
@@ -126,14 +126,14 @@ export const RadioScreen = memo(({
             <Pressable
                 accessibilityLabel="Add radio station"
                 accessibilityRole="button"
-                disabled={radioManageConnections.length === 0}
+                disabled={!radioManageConnections}
                 onPress={() => {
                     triggerImpact('light');
                     setIsAddModalOpen(true);
                 }}
                 style={[
                     styles.radioAddIconButton,
-                    radioManageConnections.length === 0 && styles.disabledButton,
+                    !radioManageConnections && styles.disabledButton,
                 ]}
             >
                 <PlusGlyph color={colors.muted} size={18} />
@@ -169,7 +169,7 @@ export const RadioScreen = memo(({
                     {radioHeaderActions}
                 </View>
                 <Text style={[styles.mutedText, styles.radioEmptyText]}>
-                    {radioManageConnections.length === 0
+                    {!radioManageConnections
                         ? 'Connect a Samo or Navidrome server to add radio stations from Android.'
                         : 'No server-backed radio stations returned.'}
                 </Text>
@@ -185,7 +185,7 @@ export const RadioScreen = memo(({
                 <AddRadioStationModal
                     onClose={() => setIsAddModalOpen(false)}
                     onSubmit={onAddStation}
-                    serverConnections={radioManageConnections}
+                    serverConnection={radioManageConnections}
                     visible={isAddModalOpen}
                 />
             </View>
@@ -320,7 +320,7 @@ export const RadioScreen = memo(({
             <AddRadioStationModal
                 onClose={() => setIsAddModalOpen(false)}
                 onSubmit={onAddStation}
-                serverConnections={radioManageConnections}
+                serverConnection={radioManageConnections}
                 visible={isAddModalOpen}
             />
         </View>
@@ -332,12 +332,12 @@ RadioScreen.displayName = 'RadioScreen';
 const AddRadioStationModal = ({
     onClose,
     onSubmit,
-    serverConnections,
+    serverConnection,
     visible,
 }: {
     onClose: () => void;
     onSubmit: (input: AddAndroidRadioStationInput) => Promise<AddAndroidRadioStationResult>;
-    serverConnections: ServerAuthenticationResult[];
+    serverConnection: ServerAuthenticationResult | null;
     visible: boolean;
 }) => {
     const [selectedServerId, setSelectedServerId] = useState<string | null>(null);
@@ -357,16 +357,13 @@ const AddRadioStationModal = ({
         if (!visible) {
             return;
         }
-        const firstServer = serverConnections[0];
-        if (firstServer) {
-            setSelectedServerId((current) => current ?? getPersistedServerAuthKey(firstServer));
+        if (serverConnection) {
+            setSelectedServerId((current) => current ?? getPersistedServerAuthKey(serverConnection));
         }
         setStatus({ kind: 'idle' });
-    }, [serverConnections, visible]);
+    }, [serverConnection, visible]);
 
-    const selectedServer =
-        serverConnections.find((server) => getPersistedServerAuthKey(server) === selectedServerId) ??
-        serverConnections[0];
+    const selectedServer = serverConnection;
     const canSubmit =
         Boolean(selectedServer) &&
         name.trim().length > 0 &&
@@ -443,7 +440,7 @@ const AddRadioStationModal = ({
                 >
                     <View style={styles.actionSheetHandle} />
                     <Text style={styles.actionSheetTitle}>Add Radio Station</Text>
-                    {serverConnections.length === 0 ? (
+                    {!serverConnection ? (
                         <Text style={styles.mutedText}>
                             Connect a Samo or Navidrome server to add radio stations from Android.
                         </Text>
@@ -452,14 +449,14 @@ const AddRadioStationModal = ({
                             contentContainerStyle={styles.addRadioForm}
                             keyboardShouldPersistTaps="handled"
                         >
-                            {serverConnections.length > 1 ? (
+                            {false ? (
                                 <View style={styles.addRadioServerBlock}>
                                     <Text style={styles.addRadioLabel}>Server</Text>
                                     <ScrollView
                                         horizontal
                                         showsHorizontalScrollIndicator={false}
                                     >
-                                        {serverConnections.map((server) => {
+                                        {(serverConnection ? [serverConnection as ServerAuthenticationResult] : []).map((server) => {
                                             const key = getPersistedServerAuthKey(server);
                                             const isSelected = selectedServerId === key;
 

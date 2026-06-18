@@ -592,5 +592,10 @@ export const formatChapterRange = (chapter: MobilePlaybackSegment): string => {
     if (chapter.durationSeconds === undefined) {
         return start;
     }
-    return `${start} · ${formatPlaybackTime(chapter.durationSeconds * 1000)}`;
+    // Show the chapter's real END time (start + length), not its raw length. The
+    // length was being clock-formatted, so a 46-minute chapter beginning at 1:08
+    // rendered as "1:08:19 · 46:12" — a range that appears to end before it starts.
+    // start–end reads correctly no matter how deep into the book the chapter is.
+    const endSeconds = chapter.startSeconds + chapter.durationSeconds;
+    return `${start} – ${formatPlaybackTime(endSeconds * 1000)}`;
 };

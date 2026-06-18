@@ -30,7 +30,7 @@ export const ArtworkZoomModal = memo(({
     artworkImageId,
     contentSource,
     onClose,
-    serverConnections,
+    serverConnection,
     title,
     uri,
     visible,
@@ -38,7 +38,7 @@ export const ArtworkZoomModal = memo(({
     artworkImageId?: string;
     contentSource?: MobileContentSource;
     onClose: () => void;
-    serverConnections?: ServerAuthenticationResult[];
+    serverConnection?: ServerAuthenticationResult | null;
     title: string;
     uri?: string;
     visible: boolean;
@@ -51,13 +51,13 @@ export const ArtworkZoomModal = memo(({
     const savedTranslateY = useSharedValue(0);
     const resolvedSource = useMemo(
         () =>
-            contentSource && serverConnections
+            contentSource && serverConnection
                 ? resolveSamoItemArtworkSourceForDisplay(
                       { artworkImageId, artworkUrl: uri, source: contentSource },
-                      serverConnections,
+                      serverConnection,
                   )
                 : uri,
-        [artworkImageId, contentSource, serverConnections, uri],
+        [artworkImageId, contentSource, serverConnection, uri],
     );
     const displayUri = artworkSourceUri(resolvedSource) ?? uri;
 
@@ -193,7 +193,7 @@ export const ArtworkZoomModal = memo(({
                             artworkImageId={artworkImageId}
                             contentSource={contentSource}
                             letter={title.slice(0, 1)}
-                            serverConnections={serverConnections}
+                            serverConnection={serverConnection}
                             source={resolvedSource}
                             style={styles.artworkZoomImage}
                             uri={uri}

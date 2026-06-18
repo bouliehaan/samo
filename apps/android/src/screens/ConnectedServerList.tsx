@@ -16,19 +16,19 @@ import { styles } from '../theme/styles';
 interface ConnectedServerListProps {
     authState: AndroidAuthState;
     onDisconnect: (authentication: ServerAuthenticationResult) => void;
-    serverConnections: ServerAuthenticationResult[];
+    serverConnection: ServerAuthenticationResult | null;
     serverHealthByKey: AndroidServerHealthMap;
 }
 
 export const ConnectedServerList = ({
     authState,
     onDisconnect,
-    serverConnections,
+    serverConnection,
     serverHealthByKey,
 }: ConnectedServerListProps) => {
     const hasMessage = authState.status === 'error' || authState.status === 'loading';
 
-    if (serverConnections.length === 0) {
+    if (!serverConnection) {
         return (
             <>
                 {hasMessage ? (
@@ -51,7 +51,7 @@ export const ConnectedServerList = ({
                 </Text>
             ) : null}
             <View style={styles.connectedServers}>
-                {serverConnections.map((connection) => {
+                {[serverConnection].map((connection) => {
                     const connectionKey = getPersistedServerAuthKey(connection);
                     const healthStatus = serverHealthByKey[connectionKey];
                     const isHealthy = healthStatus?.status === ServerConnectionHealthStatus.HEALTHY;

@@ -185,6 +185,18 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer:1.10.1")
     implementation("androidx.media3:media3-exoplayer-hls:1.10.1")
     implementation("androidx.media3:media3-datasource:1.10.1")
+    // OkHttp-backed ExoPlayer data source. The platform DefaultHttpDataSource
+    // uses java.net.HttpURLConnection, which shares one process-global keep-
+    // alive pool with no stale-socket detection: a pooled socket silently
+    // dropped in the Wi-Fi/NAT path is reused and blocks on read for the full
+    // 15s timeout before failing (measured on-device). Routing ExoPlayer +
+    // the native control calls through a shared OkHttpClient with
+    // retryOnConnectionFailure re-dials a fresh socket in <1s instead.
+    implementation("androidx.media3:media3-datasource-okhttp:1.10.1")
+    // Explicit so okhttp3 is on the compile classpath for SamoHttp /
+    // SamoServerClient / SamoNativeStreamUrl (also pulled transitively by RN
+    // and media3-datasource-okhttp; pinned here to avoid version skew).
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("androidx.media3:media3-session:1.10.1")
     implementation("androidx.mediarouter:mediarouter:1.8.1")
     implementation("com.google.android.gms:play-services-cast-framework:22.3.1")

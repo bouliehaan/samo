@@ -1,0 +1,16 @@
+--- android/app/src/main/java/app/samo/android/audio/SamoCatalogSync.kt
++++ android/app/src/main/java/app/samo/android/audio/SamoCatalogSync.kt
+@@ -151,10 +151,11 @@
+ 
+         val manifest = try {
+             SamoCatalogServerClient.fetchManifest(conn)
+-        } catch (error: Throwable) {
+-            errors.add("manifest fetch failed: ${error.message}")
+-            null
++        } catch (error: SamoCatalogServerClient.FetchException) {
++            if (error.kind == SamoCatalogServerClient.FailureKind.Network || error.kind == SamoCatalogServerClient.FailureKind.Auth) {
++                throw error
++            }
++            errors.add("manifest fetch failed: ${error.message ?: error::class.java.simpleName}")
++            null
+         }

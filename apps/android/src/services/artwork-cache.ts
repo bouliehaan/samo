@@ -1,6 +1,7 @@
 import * as FileSystem from 'expo-file-system/legacy';
 
 import { canonicalArtworkKey } from '../utils/artwork-canonical';
+import { safeParseJson } from '../utils/json';
 
 /**
  * Managed on-disk cover-art cache that WE own, so the user's size limit is real
@@ -84,7 +85,7 @@ const loadIndex = async (): Promise<ArtworkIndex> => {
     const index: ArtworkIndex = new Map();
     try {
         const raw = await FileSystem.readAsStringAsync(INDEX_FILE);
-        const parsed = JSON.parse(raw) as unknown;
+        const parsed = safeParseJson<unknown>(raw);
         if (isCurrentPersistedIndex(parsed)) {
             for (const [name, entry] of Object.entries(parsed.entries)) {
                 if (entry && typeof entry.bytes === 'number') {

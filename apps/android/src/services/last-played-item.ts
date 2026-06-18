@@ -2,6 +2,7 @@ import { type MobilePlayableAudio } from '@samo/core/mobile';
 import { NativeModules } from 'react-native';
 
 import { fsGetItem, fsSetItem } from './fs-storage';
+import { safeParseJson } from '../utils/json';
 
 // Persistence used to live in fs-storage (a JSON blob in
 // `samo.android.last-played-item.v2`). The JS write was best-effort and
@@ -86,10 +87,6 @@ export const savePersistedLastPlayedItem = async (item: MobilePlayableAudio) => 
 const loadLegacy = async (): Promise<MobilePlayableAudio | null> => {
     const raw = await fsGetItem(LEGACY_KEY);
     if (!raw) return null;
-    try {
-        const parsed = JSON.parse(raw) as unknown;
-        return isPersistedLastPlayedItem(parsed) ? parsed : null;
-    } catch {
-        return null;
-    }
+    const parsed = safeParseJson<unknown>(raw);
+    return isPersistedLastPlayedItem(parsed) ? parsed : null;
 };

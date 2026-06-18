@@ -57,7 +57,7 @@ export enum MobileSearchSectionId {
 }
 
 export interface MobileSearchAcrossServersInput {
-    authentications: ServerAuthenticationResult[];
+    authentication: ServerAuthenticationResult | null;
     fetch?: SamoFetch;
     limit?: number;
     qualityScanLimit?: number;
@@ -1197,7 +1197,7 @@ const getSearchFailureSectionId = (authentication: ServerAuthenticationResult) =
 };
 
 export const searchMobileContentAcrossServers = async ({
-    authentications,
+    authentication,
     fetch: fetcher,
     limit = DEFAULT_SEARCH_LIMIT,
     qualityScanLimit = limit,
@@ -1206,60 +1206,27 @@ export const searchMobileContentAcrossServers = async ({
 }: MobileSearchAcrossServersInput): Promise<MobileSearchResults> => {
     const trimmedQuery = query.trim();
 
-    if (!trimmedQuery || authentications.length === 0) {
+    if (!trimmedQuery || !authentication) {
         return toSearchResults(trimmedQuery, []);
     }
 
     const request = getFetch(fetcher);
-    const searchLoads = await Promise.allSettled(
-        authentications.map((authentication) =>
-            searchMobileContent({
-                authentication,
-                fetch: request,
-                limit,
-                qualityScanLimit,
-                query: trimmedQuery,
-            }),
-        ),
-    );
-    const sectionsById = new Map<MobileSearchSectionId, MobileSearchSection>();
-    const errors: MobileSearchSectionError[] = [];
-    let fulfilledCount = 0;
-
-    searchLoads.forEach((result, index) => {
-        const authentication = authentications[index];
-
-        if (result.status === 'rejected') {
-            errors.push({
-                message: `${authentication.title}: ${getErrorMessage(result.reason)}`,
-                sectionId: getSearchFailureSectionId(authentication),
-            });
-            return;
-        }
-
-        fulfilledCount += 1;
-        errors.push(...result.value.errors);
-
-        result.value.sections.forEach((section) => {
-            const existingSection = sectionsById.get(section.id);
-
-            if (existingSection) {
-                existingSection.items.push(...section.items);
-                return;
-            }
-
-            sectionsById.set(section.id, { ...section, items: [...section.items] });
+    try {
+        const searchResult = await searchMobileContent({
+            authentication,
+            fetch: request,
+            limit,
+            qualityScanLimit,
+            query: trimmedQuery,
         });
-    });
 
-    if (fulfilledCount === 0) {
-        throw new Error(errors[0]?.message ?? 'Search failed');
+        return toSearchResults(
+            trimmedQuery,
+            searchResult.sections,
+            searchResult.errors,
+            { userRecents },
+        );
+    } catch (error) {
+        throw new Error(`${authentication.title}: ${getErrorMessage(error)}`);
     }
-
-    return toSearchResults(
-        trimmedQuery,
-        [...sectionsById.values()],
-        errors,
-        { userRecents },
-    );
 };

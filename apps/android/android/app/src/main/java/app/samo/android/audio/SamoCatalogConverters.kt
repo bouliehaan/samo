@@ -317,8 +317,9 @@ internal object SamoCatalogConverters {
         syncedAt: Long,
     ): ItemBinding? {
         val id = podcast.optString("id").nullIfBlank() ?: return null
-        val title = podcast.optString("title").nullIfBlank() ?: return null
-        val author = podcast.optString("author").nullIfBlank()
+        val innerPodcast = podcast.optJSONObject("podcast") ?: podcast.optJSONObject("metadata")
+        val title = innerPodcast?.optString("title").nullIfBlank() ?: podcast.optString("title").nullIfBlank() ?: return null
+        val author = innerPodcast?.optString("author").nullIfBlank() ?: podcast.optString("author").nullIfBlank()
         val cover = podcast.optJSONObject("cover")
         val artworkUrl =
             resolveSamoImageUrl(serverUrl, cover, streamToken)

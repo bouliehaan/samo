@@ -18,6 +18,7 @@ import {
     cancelDownload,
     clearAllDownloads,
     discoverDownloadsOnDisk,
+    retryAllFailedDownloads,
     type DownloadEntry,
     type DownloadStatus,
     getDownloadsRootUri,
@@ -63,11 +64,11 @@ const DOWNLOAD_STATUS_ORDER: DownloadStatus[] = [
 ];
 
 interface DownloadsScreenProps {
-    serverConnections: ServerAuthenticationResult[];
+    serverConnection: ServerAuthenticationResult | null;
 }
 
 export const DownloadsScreen = ({
-    serverConnections,
+    serverConnection,
 }: DownloadsScreenProps) => {
     const [entries, setEntries] = useState<DownloadEntry[]>([]);
     const [storage, setStorage] = useState<StorageLocationPreference>({
@@ -201,6 +202,17 @@ export const DownloadsScreen = ({
                     ? 'No downloads yet. Tap the download icon on an album, playlist, audiobook, or podcast to save it for offline listening.'
                     : `${sortedEntries.length} ${sortedEntries.length === 1 ? 'item' : 'items'} · ${formatBytes(totalBytes) || '0 MB on disk'}`}
             </Text>
+            {sortedEntries.some((entry) => entry.status === 'failed') ? (
+                <Pressable
+                    accessibilityRole="button"
+                    onPress={() => void retryAllFailedDownloads()}
+                    style={styles.downloadsClearAllButton}
+                >
+                    <Text style={styles.downloadsStorageButtonLabel}>
+                        Retry all failed
+                    </Text>
+                </Pressable>
+            ) : null}
             {sortedEntries.length > 0 ? (
                 <Pressable
                     accessibilityRole="button"
@@ -286,14 +298,14 @@ export const DownloadsScreen = ({
                                 artworkImageId={group.collection.artworkImageId}
                                 contentSource={getContentSourceFromDownloadCollection(
                                     group.collection,
-                                    serverConnections,
+                                    serverConnection,
                                 )}
                                 fallbackStyle={[
                                     styles.downloadGroupArtwork,
                                     styles.downloadGroupArtworkFallback,
                                 ]}
                                 letter={group.collection.title.slice(0, 1)}
-                                serverConnections={serverConnections}
+                                serverConnection={serverConnection}
                                 style={styles.downloadGroupArtwork}
                                 uri={group.collection.artworkUrl}
                             />
@@ -346,7 +358,7 @@ export const DownloadsScreen = ({
                                     <Pressable
                                         accessibilityRole="button"
                                         onPress={() =>
-                                            void retryDownload(entry.id, serverConnections)
+                                            void retryDownload(entry.id, serverConnection)
                                         }
                                         style={styles.downloadActionButton}
                                     >

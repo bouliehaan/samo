@@ -14,7 +14,7 @@ interface ManageServersScreenProps {
     authState: AndroidAuthState;
     onAddServer: () => void;
     onDisconnect: (authentication: ServerAuthenticationResult) => void;
-    serverConnections: ServerAuthenticationResult[];
+    serverConnection: ServerAuthenticationResult | null;
     serverHealthByKey: AndroidServerHealthMap;
 }
 
@@ -22,18 +22,18 @@ export const ManageServersScreen = ({
     authState,
     onAddServer,
     onDisconnect,
-    serverConnections,
+    serverConnection,
     serverHealthByKey,
 }: ManageServersScreenProps) => {
     return (
         <View style={styles.section}>
             <Text style={styles.sectionTitle}>
-                {serverConnections.length === 1 ? 'Manage Server' : 'Manage Servers'}
+                {serverConnection ? 'Manage Server' : 'Manage Servers'}
             </Text>
             <ConnectedServerList
                 authState={authState}
                 onDisconnect={onDisconnect}
-                serverConnections={serverConnections}
+                serverConnection={serverConnection}
                 serverHealthByKey={serverHealthByKey}
             />
             <Pressable

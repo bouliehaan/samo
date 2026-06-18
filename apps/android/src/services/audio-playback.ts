@@ -202,7 +202,7 @@ export const syncAndroidNativePlaybackQueue = (
           }
         | null
         | undefined,
-    serverConnections: ServerAuthenticationResult[] = [],
+    serverConnection: ServerAuthenticationResult | null = null,
 ): void => {
     if (!samoAudio) {
         return;
@@ -213,7 +213,7 @@ export const syncAndroidNativePlaybackQueue = (
         return;
     }
 
-    const credentialedQueue = attachNativeStreamCredentialsToQueue(queue, serverConnections);
+    const credentialedQueue = attachNativeStreamCredentialsToQueue(queue, serverConnection);
     void samoAudio.setPlaybackQueue({
         queueIndex: credentialedQueue.index,
         queueItems: credentialedQueue.items,
@@ -247,7 +247,7 @@ export const playAndroidAudio = async (
         items: MobilePlayableAudio[];
         samoPlaylistId?: string;
     },
-    serverConnections: ServerAuthenticationResult[] = [],
+    serverConnection: ServerAuthenticationResult | null = null,
 ) => {
     if (!samoAudio) {
         throw new Error('Native Android audio engine is not available');
@@ -258,8 +258,8 @@ export const playAndroidAudio = async (
     // recents persisted before buildRadioPlayback stopped storing the
     // homepage URL in subtitle still carry one. Strip anything that looks
     // like a URL so stale persisted data can't leak into the system UI.
-    const bridgedSource = attachNativeStreamCredentials(source, serverConnections);
-    const bridgedCastSource = attachNativeStreamCredentials(castSource, serverConnections);
+    const bridgedSource = attachNativeStreamCredentials(source, serverConnection);
+    const bridgedCastSource = attachNativeStreamCredentials(castSource, serverConnection);
 
     const sanitizedSubtitle =
         bridgedSource.subtitle &&
@@ -295,7 +295,7 @@ export const playAndroidAudio = async (
             ? (() => {
                   const credentialed = attachNativeStreamCredentialsToQueue(
                       queue,
-                      serverConnections,
+                      serverConnection,
                   );
                   return {
                       queueIndex: credentialed.index,

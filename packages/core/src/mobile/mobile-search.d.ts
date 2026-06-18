@@ -22,7 +22,7 @@ export declare enum MobileSearchSectionId {
     SONGS = "songs"
 }
 export interface MobileSearchAcrossServersInput {
-    authentications: ServerAuthenticationResult[];
+    authentication: ServerAuthenticationResult | null;
     fetch?: SamoFetch;
     limit?: number;
     qualityScanLimit?: number;
@@ -85,4 +85,4 @@ export declare const getMobileSearchItemKey: (item: {
     type: string;
 }) => string;
 export declare const searchMobileContent: ({ authentication, fetch: fetcher, limit, qualityScanLimit, query, }: MobileSearchInput) => Promise<MobileSearchResults>;
-export declare const searchMobileContentAcrossServers: ({ authentications, fetch: fetcher, limit, qualityScanLimit, query, userRecents, }: MobileSearchAcrossServersInput) => Promise<MobileSearchResults>;
+export declare const searchMobileContentAcrossServers: ({ authentication, fetch: fetcher, limit, qualityScanLimit, query, userRecents, }: MobileSearchAcrossServersInput) => Promise<MobileSearchResults>;

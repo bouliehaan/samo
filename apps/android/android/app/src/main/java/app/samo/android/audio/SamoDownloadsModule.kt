@@ -74,6 +74,12 @@ class SamoDownloadsModule(
     }
 
     @ReactMethod
+    fun retryAllFailed(promise: Promise) {
+        SamoDownloads.retryAllFailed(reactContext)
+        promise.resolve(null)
+    }
+
+    @ReactMethod
     fun clearAll(promise: Promise) {
         SamoDownloads.clearAll(reactContext)
         promise.resolve(null)
@@ -197,6 +203,8 @@ class SamoDownloadsModule(
             collection = collection,
             status = SamoDownloads.Status.Queued,
             enqueuedAt = if (input.hasKey("enqueuedAt")) input.getDouble("enqueuedAt").toLong() else 0L,
+            serverUrl = input.optionalString("serverUrl"),
+            serverBearer = input.optionalString("serverBearer"),
         )
     }
 

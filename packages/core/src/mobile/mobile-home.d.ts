@@ -26,7 +26,7 @@ export interface MobileHomeContent {
     serverTitle: string;
 }
 export interface MobileHomeContentForServersInput {
-    authentications: ServerAuthenticationResult[];
+    authentication: ServerAuthenticationResult | null;
     fetch?: SamoFetch;
     limit?: number;
     qualityScanLimit?: number;
@@ -82,7 +82,7 @@ export declare const getMobileHomeContentErrorMessage: (error: unknown) => strin
 export declare const loadMobileHomeContent: ({ authentication, fetch: fetcher, limit, qualityScanLimit, }: MobileHomeContentInput) => Promise<MobileHomeContent>;
 export type MobileFullCollectionVariant = 'album' | 'artist' | 'audiobook' | 'playlist' | 'podcast';
 export interface MobileFullCollectionInput {
-    authentications: ServerAuthenticationResult[];
+    authentication: ServerAuthenticationResult | null;
     fetch?: SamoFetch;
     qualityScanLimit?: number;
     variant: MobileFullCollectionVariant;
@@ -100,5 +100,5 @@ export interface MobileFullCollectionResult {
  * the items returned by other servers — partial connectivity should still
  * show whatever it can.
  */
-export declare const loadMobileFullCollection: ({ authentications, fetch: fetcher, qualityScanLimit, variant, }: MobileFullCollectionInput) => Promise<MobileFullCollectionResult>;
-export declare const loadMobileHomeContentForServers: ({ authentications, fetch: fetcher, limit, qualityScanLimit, }: MobileHomeContentForServersInput) => Promise<MobileHomeContent>;
+export declare const loadMobileFullCollection: ({ authentication, fetch: fetcher, qualityScanLimit, variant, }: MobileFullCollectionInput) => Promise<MobileFullCollectionResult>;
+export declare const loadMobileHomeContentForServers: ({ authentication, fetch: fetcher, limit, qualityScanLimit, }: MobileHomeContentForServersInput) => Promise<MobileHomeContent>;

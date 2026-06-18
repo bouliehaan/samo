@@ -11,9 +11,9 @@ import { getPersistedServerAuthKey } from '../services/persisted-server';
 
 export const getSourceFromSourceId = (
     sourceId: string,
-    serverConnections: ServerAuthenticationResult[],
+    serverConnection: ServerAuthenticationResult | null,
 ): MobileContentSource | undefined => {
-    const connected = findServerAuthenticationForSource(serverConnections, { id: sourceId });
+    const connected = findServerAuthenticationForSource(serverConnection, { id: sourceId });
     if (connected) {
         return getMobileContentSource(connected);
     }
@@ -39,13 +39,13 @@ export const getSourceFromSourceId = (
 
 export const getContentSourceFromDownloadCollection = (
     collection: Pick<{ sourceId: string }, 'sourceId'>,
-    serverConnections: ServerAuthenticationResult[],
+    serverConnection: ServerAuthenticationResult | null,
 ): MobileContentSource | undefined =>
-    getSourceFromSourceId(collection.sourceId, serverConnections);
+    getSourceFromSourceId(collection.sourceId, serverConnection);
 
 export const getContentSourceFromPlaybackItem = (
     item: Pick<MobilePlayableAudio, 'contentSourceId' | 'id'>,
-    serverConnections: ServerAuthenticationResult[],
+    serverConnection: ServerAuthenticationResult | null,
 ): MobileContentSource | undefined => {
     const idPrefixMatch = item.id.match(
         /^([^:]+:[^:]+):(?:music|audiobook|podcast(?:-episode)?|radio):/,
@@ -55,12 +55,13 @@ export const getContentSourceFromPlaybackItem = (
         return undefined;
     }
 
-    const connected = serverConnections.find(
-        (candidate) => getPersistedServerAuthKey(candidate) === sourceId,
-    );
+    const connected =
+        serverConnection && getPersistedServerAuthKey(serverConnection) === sourceId
+            ? serverConnection
+            : undefined;
     if (connected) {
         return getMobileContentSource(connected);
     }
 
-    return getSourceFromSourceId(sourceId, serverConnections);
+    return getSourceFromSourceId(sourceId, serverConnection);
 };

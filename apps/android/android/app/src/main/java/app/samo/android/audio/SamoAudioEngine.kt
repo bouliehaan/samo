@@ -24,6 +24,7 @@ import androidx.media3.common.MediaMetadata
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.TrackSelectionParameters
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.audio.AudioSink
@@ -264,9 +265,28 @@ internal class SamoAudioEngine(
     // which is what makes "I closed the app and it forgot my spot" stop
     // happening — the JS 20s poll is irrelevant when JS is Doze-frozen.
     SamoProgressSync.bindPlayerSuppliers(
-      position = { binder.boundService?.getCurrentPlayer()?.currentPosition ?: 0L },
-      duration = { binder.boundService?.getCurrentPlayer()?.duration ?: -1L },
+      position = { binder.boundService?.getCurrentPlayer()?.currentPosition },
+      duration = { binder.boundService?.getCurrentPlayer()?.duration },
     )
+    SamoProgressSync.onPlaybackStalled = {
+      mainHandler.post {
+        val player = binder.boundService?.getCurrentPlayer()
+        if (player != null) {
+          val currentParams = player.trackSelectionParameters
+          if (currentParams.audioOffloadPreferences.audioOffloadMode == TrackSelectionParameters.AudioOffloadPreferences.AUDIO_OFFLOAD_MODE_ENABLED) {
+            Log.w("SamoAudio", "Watchdog tripped: Disabling audio offload to recover from stall.")
+            player.trackSelectionParameters = currentParams.buildUpon()
+              .setAudioOffloadPreferences(
+                currentParams.audioOffloadPreferences.buildUpon()
+                  .setAudioOffloadMode(TrackSelectionParameters.AudioOffloadPreferences.AUDIO_OFFLOAD_MODE_DISABLED)
+                  .build()
+              )
+              .build()
+            player.seekTo(player.currentPosition)
+          }
+        }
+      }
+    }
     // Eagerly open the second reader on samo-catalog.db so the first Phase 2
     // PROPER / Phase 5 query doesn't pay the open cost. No-op when the JS-side
     // catalog hasn't created the file yet (fresh install with no Samo source).
@@ -543,7 +563,28 @@ internal class SamoAudioEngine(
         restoreNoisyHandlingNow(resolvedPlayer)
       }
 
+      // Detach the old session BEFORE we clear the player, otherwise its final
+      // progress write will capture the cleared 0L position.
+      SamoProgressSync.detach(completed = false, reason = "switch")
+
       suppressQueueAdvanceUntilMs = SystemClock.uptimeMillis() + 2500L
+
+      val offloadMode = if (sourceLabel == "music") {
+        TrackSelectionParameters.AudioOffloadPreferences.AUDIO_OFFLOAD_MODE_ENABLED
+      } else {
+        TrackSelectionParameters.AudioOffloadPreferences.AUDIO_OFFLOAD_MODE_DISABLED
+      }
+      resolvedPlayer.trackSelectionParameters = resolvedPlayer.trackSelectionParameters
+        .buildUpon()
+        .setAudioOffloadPreferences(
+          TrackSelectionParameters.AudioOffloadPreferences.Builder()
+            .setAudioOffloadMode(offloadMode)
+            .setIsGaplessSupportRequired(sourceLabel == "music")
+            .setIsSpeedChangeSupportRequired(false)
+            .build()
+        )
+        .build()
+
       resolvedPlayer.stop()
       resolvedPlayer.clearMediaItems()
       SamoBitPerfect.clearPreferredMixerAttributes(reactContext, service)
@@ -1184,6 +1225,25 @@ internal class SamoAudioEngine(
         lastKnownPlaybackPositionMs = 0L
         lastKnownPlaybackMediaId = mediaItem?.mediaId
         lastAutoAdvanceSessionId = null
+
+        val incomingSource = newItem["source"] as? String
+        val offloadMode = if (incomingSource == "music") {
+          TrackSelectionParameters.AudioOffloadPreferences.AUDIO_OFFLOAD_MODE_ENABLED
+        } else {
+          TrackSelectionParameters.AudioOffloadPreferences.AUDIO_OFFLOAD_MODE_DISABLED
+        }
+        val currentParams = player.trackSelectionParameters
+        if (currentParams.audioOffloadPreferences.audioOffloadMode != offloadMode) {
+          player.trackSelectionParameters = currentParams.buildUpon()
+            .setAudioOffloadPreferences(
+              TrackSelectionParameters.AudioOffloadPreferences.Builder()
+                .setAudioOffloadMode(offloadMode)
+                .setIsGaplessSupportRequired(incomingSource == "music")
+                .setIsSpeedChangeSupportRequired(false)
+                .build()
+            )
+            .build()
+        }
 
         // Re-negotiate bit-perfect for the new track's format. The
         // onAudioTrackInitialized listener recomputes the truth, but the actual

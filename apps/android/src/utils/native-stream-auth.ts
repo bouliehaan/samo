@@ -53,15 +53,15 @@ const deriveSamoProgressTarget = (
  */
 export const attachNativeStreamCredentials = (
     item: MobilePlayableAudio,
-    serverConnections: ServerAuthenticationResult[],
+    serverConnection: ServerAuthenticationResult | null,
 ): MobilePlayableAudio => {
     if (!isSamoApiStreamUrl(item.url) && !isSamoApiStreamUrl(item.castUrl)) {
         return item;
     }
 
-    const contentSource = getContentSourceFromPlaybackItem(item, serverConnections);
+    const contentSource = getContentSourceFromPlaybackItem(item, serverConnection);
     const auth = contentSource
-        ? findServerAuthenticationForSource(serverConnections, contentSource)
+        ? findServerAuthenticationForSource(serverConnection, contentSource)
         : undefined;
     if (!auth || auth.type !== ServerType.SAMO) {
         return item;
@@ -97,11 +97,11 @@ export const attachNativeStreamCredentialsToQueue = (
         items: MobilePlayableAudio[];
         samoPlaylistId?: string;
     },
-    serverConnections: ServerAuthenticationResult[],
+    serverConnection: ServerAuthenticationResult | null,
 ): { index: number; items: MobilePlayableAudio[] } => ({
     index: queue.index,
     items: queue.items.map((item) => {
-        const credentialed = attachNativeStreamCredentials(item, serverConnections);
+        const credentialed = attachNativeStreamCredentials(item, serverConnection);
         // Per-item samoPlaylistId stamp so the native progress writer knows
         // when to fire the per-playlist scrobble alongside the per-track one,
         // without having to query the queue payload separately.
