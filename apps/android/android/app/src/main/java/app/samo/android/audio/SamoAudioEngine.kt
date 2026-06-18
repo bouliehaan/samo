@@ -1702,6 +1702,7 @@ internal class SamoAudioEngine(
 
   override fun applyRecoveryMode(mode: SamoPlaybackRecovery.Mode) {
     engineMode = mode
+    binder.boundService?.setRecoveryActive(mode == SamoPlaybackRecovery.Mode.Recovering)
     // Push the new sticky status to JS right away — emitState picks up the
     // override via getCurrentStatus() when no explicit status is supplied.
     emitState(null)

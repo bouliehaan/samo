@@ -9,6 +9,7 @@ import {
     HOME_EDGE_PADDING,
     HOME_MEDIA_SUBTITLE_ROW_HEIGHT,
     HOME_MEDIA_TILE_CHROME,
+    HOME_MEDIA_TILE_CHROME_COMPACT,
     HOME_PRIMARY_TILE,
     HOME_ROUNDED_OFFSET,
     HOME_TILE_GAP,
@@ -89,6 +90,7 @@ export const styles = StyleSheet.create({
     addRadioThumbnailSubtitle: {
         color: colors.muted,
         fontSize: 12,
+        fontFamily: 'OfficeCodePro-Regular',
         fontWeight: '600',
         lineHeight: 16,
         marginTop: 2,
@@ -199,6 +201,7 @@ export const styles = StyleSheet.create({
     actionSheetSongSubtitle: {
         color: colors.muted,
         fontSize: 13,
+        fontFamily: 'OfficeCodePro-Regular',
         paddingBottom: 16,
         paddingHorizontal: spacing.lg,
         textAlign: 'center',
@@ -340,6 +343,7 @@ export const styles = StyleSheet.create({
     outputPickerSubtitle: {
         color: colors.muted,
         fontSize: 13,
+        fontFamily: 'OfficeCodePro-Regular',
         marginTop: 2,
     },
     outputPickerTitle: {
@@ -416,6 +420,7 @@ export const styles = StyleSheet.create({
     albumHeroMetaLine: {
         color: colors.muted,
         fontSize: 13,
+        fontFamily: 'OfficeCodePro-Regular',
         fontWeight: '600',
         lineHeight: 18,
         textAlign: 'center',
@@ -439,7 +444,7 @@ export const styles = StyleSheet.create({
     albumHeroTitle: {
         color: colors.text,
         fontSize: 26,
-        fontWeight: '900',
+        fontFamily: 'YoungSerif-Bold',
         letterSpacing: 0,
         lineHeight: 30,
         marginBottom: spacing.sm,
@@ -501,17 +506,17 @@ export const styles = StyleSheet.create({
         width: 32,
     },
     appIcon: {
-        height: 34,
+        height: 54,
         resizeMode: 'contain',
-        width: 34,
+        width: 54,
     },
     appIconButton: {
         alignItems: 'center',
         backgroundColor: 'transparent',
         borderRadius: 8,
-        height: 44,
+        height: 54,
         justifyContent: 'center',
-        width: 44,
+        width: 54,
     },
     artistAlbumGrid: {
         flexDirection: 'row',
@@ -649,6 +654,7 @@ export const styles = StyleSheet.create({
     bookInfoMetadataLine: {
         color: colors.muted,
         fontSize: 12,
+        fontFamily: 'OfficeCodePro-Regular',
         fontWeight: '600',
         letterSpacing: 0.2,
         textAlign: 'center',
@@ -821,7 +827,7 @@ export const styles = StyleSheet.create({
     bookInfoTitle: {
         color: colors.text,
         fontSize: 22,
-        fontWeight: '900',
+        fontFamily: 'YoungSerif-Bold',
         letterSpacing: 0.1,
         lineHeight: 27,
         textAlign: 'center',
@@ -1137,7 +1143,7 @@ export const styles = StyleSheet.create({
     detailTitle: {
         color: colors.text,
         fontSize: 24,
-        fontWeight: '900',
+        fontFamily: 'YoungSerif-Bold',
         lineHeight: 28,
         marginBottom: spacing.xs,
     },
@@ -1208,6 +1214,7 @@ export const styles = StyleSheet.create({
     downloadGroupSubtitle: {
         color: colors.muted,
         fontSize: 11,
+        fontFamily: 'OfficeCodePro-Regular',
         fontWeight: '600',
         textTransform: 'capitalize',
     },
@@ -1335,6 +1342,7 @@ export const styles = StyleSheet.create({
     errorBoundarySubtitle: {
         color: colors.muted,
         fontSize: 14,
+        fontFamily: 'OfficeCodePro-Regular',
         lineHeight: 20,
         marginTop: spacing.xs,
         textAlign: 'center',
@@ -1624,6 +1632,7 @@ export const styles = StyleSheet.create({
     fullPlayerSubtitle: {
         color: 'rgba(245, 245, 245, 0.58)',
         fontSize: 18,
+        fontFamily: 'OfficeCodePro-Regular',
         fontWeight: '500',
         lineHeight: 23,
         marginTop: 4,
@@ -1645,7 +1654,8 @@ export const styles = StyleSheet.create({
     fullPlayerTitle: {
         color: '#ffffff',
         fontSize: 24,
-        fontWeight: '900',
+        fontFamily: 'OfficeCodePro-Regular',
+        fontWeight: '700',
         letterSpacing: 0,
         lineHeight: 30,
         textAlign: 'left',
@@ -1663,15 +1673,15 @@ export const styles = StyleSheet.create({
         alignItems: 'center',
         flexDirection: 'row',
         justifyContent: 'space-between',
-        marginBottom: spacing.xs,
-        minHeight: 44,
+        marginBottom: 0,
+        minHeight: 56,
     },
     homeFilterGrid: {
         columnGap: HOME_TILE_GAP,
         flexDirection: 'row',
         flexWrap: 'wrap',
         marginTop: spacing.sm,
-        rowGap: spacing.md,
+        rowGap: spacing.sm,
     },
     homeFilterGridArtwork: {
         aspectRatio: 1,
@@ -1692,7 +1702,6 @@ export const styles = StyleSheet.create({
         minWidth: 0,
     },
     homeFilterGridTile: {
-        minHeight: HOME_PRIMARY_TILE + HOME_MEDIA_TILE_CHROME,
         width: HOME_PRIMARY_TILE,
     },
     homeFilterPill: {
@@ -1709,7 +1718,7 @@ export const styles = StyleSheet.create({
     homeFilterPills: {
         gap: spacing.xs,
         paddingBottom: spacing.sm,
-        paddingTop: spacing.md,
+        paddingTop: spacing.sm,
     },
     homeFilterPillText: {
         color: colors.text,
@@ -1721,10 +1730,10 @@ export const styles = StyleSheet.create({
     },
     homeHeaderTitle: {
         color: colors.text,
-        fontSize: 32,
-        fontWeight: '900',
-        letterSpacing: -0.7,
-        lineHeight: 36,
+        fontSize: 54,
+        fontFamily: 'YoungSerif-Bold',
+        letterSpacing: -1,
+        lineHeight: 56,
     },
     homeSection: {
         marginBottom: spacing.md,
@@ -1734,7 +1743,7 @@ export const styles = StyleSheet.create({
         overflow: 'hidden',
     },
     homeMultiRowColumn: {
-        gap: spacing.md,
+        gap: spacing.xs,
     },
     inlineSearchBar: {
         alignItems: 'center',
@@ -1828,7 +1837,7 @@ export const styles = StyleSheet.create({
     libraryEyebrow: {
         color: colors.text,
         fontSize: 22,
-        fontWeight: '900',
+        fontFamily: 'YoungSerif-Bold',
         letterSpacing: 0,
         lineHeight: 27,
     },
@@ -1949,6 +1958,7 @@ export const styles = StyleSheet.create({
     libraryRowSubtitle: {
         color: colors.muted,
         fontSize: 12,
+        fontFamily: 'OfficeCodePro-Regular',
         fontWeight: '600',
         lineHeight: 16,
     },
@@ -2190,6 +2200,7 @@ export const styles = StyleSheet.create({
     mediaContextSubtitle: {
         color: colors.muted,
         fontSize: 13,
+        fontFamily: 'OfficeCodePro-Regular',
         fontWeight: '500',
         lineHeight: 16,
     },
@@ -2203,6 +2214,7 @@ export const styles = StyleSheet.create({
     mediaSubtitle: {
         color: colors.muted,
         fontSize: 12,
+        fontFamily: 'OfficeCodePro-Regular',
         lineHeight: 16,
     },
     mediaSubtitleCentered: {
@@ -2251,7 +2263,7 @@ export const styles = StyleSheet.create({
         width: HOME_PRIMARY_TILE,
     },
     mediaTileCompact: {
-        height: HOME_PRIMARY_TILE + HOME_MEDIA_TILE_CHROME,
+        height: HOME_PRIMARY_TILE + HOME_MEDIA_TILE_CHROME_COMPACT,
         width: HOME_PRIMARY_TILE,
     },
     mediaTileContinue: {
@@ -2351,6 +2363,7 @@ export const styles = StyleSheet.create({
     miniPlayerSubtitle: {
         color: colors.muted,
         fontSize: 14,
+        fontFamily: 'OfficeCodePro-Regular',
         lineHeight: 18,
     },
     miniPlayerText: {
@@ -2395,11 +2408,13 @@ export const styles = StyleSheet.create({
     mutedText: {
         color: colors.muted,
         fontSize: 14,
+        fontFamily: 'OfficeCodePro-Regular',
         lineHeight: 20,
     },
     chapterQualityHint: {
         color: colors.muted,
         fontSize: 12,
+        fontFamily: 'OfficeCodePro-Regular',
         fontWeight: '600',
         letterSpacing: 0.2,
         marginBottom: 6,
@@ -2742,6 +2757,7 @@ export const styles = StyleSheet.create({
     queueRowSubtitle: {
         color: colors.muted,
         fontSize: 13,
+        fontFamily: 'OfficeCodePro-Regular',
         marginTop: 2,
     },
     queueRowThumb: {
@@ -2860,6 +2876,7 @@ export const styles = StyleSheet.create({
     radioCardMeta: {
         color: colors.muted,
         fontSize: 11,
+        fontFamily: 'OfficeCodePro-Regular',
         fontWeight: '600',
         lineHeight: 14,
         marginTop: 2,
@@ -2956,6 +2973,7 @@ export const styles = StyleSheet.create({
     radioHeroSubtitle: {
         color: colors.muted,
         fontSize: 13,
+        fontFamily: 'OfficeCodePro-Regular',
         fontWeight: '700',
         lineHeight: 18,
         marginTop: 4,
@@ -2967,7 +2985,7 @@ export const styles = StyleSheet.create({
     radioHeroTitle: {
         color: colors.text,
         fontSize: 23,
-        fontWeight: '900',
+        fontFamily: 'YoungSerif-Bold',
         lineHeight: 28,
     },
     radioScreen: {
@@ -3065,7 +3083,7 @@ export const styles = StyleSheet.create({
     searchBrowseTitle: {
         color: colors.text,
         fontSize: 24,
-        fontWeight: '900',
+        fontFamily: 'YoungSerif-Bold',
         lineHeight: 30,
         marginBottom: spacing.md,
     },
@@ -3202,6 +3220,7 @@ export const styles = StyleSheet.create({
     searchSourceSubtitle: {
         color: colors.muted,
         fontSize: 12,
+        fontFamily: 'OfficeCodePro-Regular',
         fontWeight: '700',
         lineHeight: 16,
         marginTop: 3,
@@ -3215,6 +3234,7 @@ export const styles = StyleSheet.create({
     searchSurfaceSubtitle: {
         color: colors.muted,
         fontSize: 14,
+        fontFamily: 'OfficeCodePro-Regular',
         fontWeight: '600',
         lineHeight: 20,
         marginTop: 4,
@@ -3222,7 +3242,7 @@ export const styles = StyleSheet.create({
     searchSurfaceTitle: {
         color: colors.text,
         fontSize: 22,
-        fontWeight: '900',
+        fontFamily: 'YoungSerif-Bold',
         lineHeight: 28,
     },
     searchTitle: {
@@ -3259,7 +3279,7 @@ export const styles = StyleSheet.create({
     sectionTitle: {
         color: colors.text,
         fontSize: 22,
-        fontWeight: '900',
+        fontFamily: 'YoungSerif-Bold',
         letterSpacing: -0.45,
         marginBottom: 4,
         marginTop: 4,
@@ -3347,7 +3367,7 @@ export const styles = StyleSheet.create({
     settingsRootTitle: {
         color: colors.text,
         fontSize: 22,
-        fontWeight: '900',
+        fontFamily: 'YoungSerif-Bold',
         marginBottom: spacing.md,
     },
     settingsRow: {
@@ -3363,6 +3383,7 @@ export const styles = StyleSheet.create({
     settingsRowSubtitle: {
         color: colors.muted,
         fontSize: 12,
+        fontFamily: 'OfficeCodePro-Regular',
         fontWeight: '600',
     },
     settingsRowText: {
@@ -3692,7 +3713,7 @@ export const styles = StyleSheet.create({
     title: {
         color: colors.text,
         fontSize: 34,
-        fontWeight: '900',
+        fontFamily: 'YoungSerif-Bold',
         letterSpacing: 0,
     },
     trackArtwork: {
@@ -3835,6 +3856,7 @@ export const styles = StyleSheet.create({
     viewAllTileSubtitle: {
         color: colors.muted,
         fontSize: 12,
+        fontFamily: 'OfficeCodePro-Regular',
         lineHeight: 16,
         paddingHorizontal: 2,
     },

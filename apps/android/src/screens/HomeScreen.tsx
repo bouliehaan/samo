@@ -31,6 +31,7 @@ import {
     HOME_MEDIA_PROGRESS_CHROME,
     HOME_MEDIA_ROW_HEIGHT,
     HOME_MEDIA_ROW_HEIGHT_ARTIST,
+    HOME_MEDIA_ROW_HEIGHT_COMPACT,
     HOME_MEDIA_ROW_HEIGHT_ROUNDED,
     HOME_MEDIA_ROW_HEIGHT_WIDE,
     HOME_PRIMARY_TILE,
@@ -484,11 +485,14 @@ const getHomeSectionRowHeight = (
         case 'wide':
             singleHeight = HOME_MEDIA_ROW_HEIGHT_WIDE;
             break;
+        case 'recents':
+            singleHeight = HOME_MEDIA_ROW_HEIGHT_COMPACT;
+            break;
         default:
             singleHeight = HOME_MEDIA_ROW_HEIGHT;
     }
 
-    return rowCount > 1 ? singleHeight * 2 + spacing.lg : singleHeight;
+    return rowCount > 1 ? singleHeight * 2 + spacing.xs : singleHeight;
 };
 
 interface HomeMediaTileProps {
@@ -611,7 +615,7 @@ const HomeMediaTile = memo(({
                     ]}
                 >
                     <Text
-                        numberOfLines={2}
+                        numberOfLines={isRecent ? 1 : 2}
                         style={[
                             styles.mediaTitle,
                             (isArtist || isRadioSection) && styles.mediaTitleCentered,

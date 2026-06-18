@@ -394,6 +394,10 @@ TextInput.defaultProps.style = { fontFamily: 'Archivo' };
 export default function App() {
     const [fontsLoaded] = useFonts({
         Archivo: require('./assets/fonts/Archivo.ttf'),
+        'YoungSerif-Regular': require('./assets/fonts/YoungSerif-Regular.ttf'),
+        'YoungSerif-Bold': require('./assets/fonts/YoungSerif-Bold.ttf'),
+        'OfficeCodePro-Regular': require('./assets/fonts/officecodepro-regular.otf'),
+        'OfficeCodePro-Bold': require('./assets/fonts/officecodepro-bold.otf'),
     });
     const mediaHandlersRef = useRef<null | ReturnType<typeof useAndroidMediaHandlers>>(null);
     const libraryRelevantFetchTokenRef = useRef(0);

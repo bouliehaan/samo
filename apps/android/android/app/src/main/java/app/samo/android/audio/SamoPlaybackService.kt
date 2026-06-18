@@ -11,6 +11,7 @@ import android.os.Binder
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
@@ -54,6 +55,9 @@ class SamoPlaybackService : MediaSessionService() {
     // lock keeps the link hot for the streaming session. Released on pause/stop
     // so it never drains battery while idle.
     private var wifiLock: WifiManager.WifiLock? = null
+    private var recoveryWakeLock: PowerManager.WakeLock? = null
+    private var isPlayerPlaying = false
+    private var isRecoveryActive = false
     var preferredMixerDevice: AudioDeviceInfo? = null
     var preferredOutputDevice: AudioDeviceInfo? = null
     /**
@@ -125,6 +129,7 @@ class SamoPlaybackService : MediaSessionService() {
     override fun onDestroy() {
         mainHandler.removeCallbacksAndMessages(null)
         releaseWifiLock()
+        releaseWakeLock()
         mediaSession?.let { session ->
             // Remove from the service's tracked-session set BEFORE releasing
             // so the notification manager has a chance to tear down its bound
@@ -139,6 +144,44 @@ class SamoPlaybackService : MediaSessionService() {
     }
 
     fun getCurrentPlayer(): ExoPlayer? = player
+
+    fun setRecoveryActive(active: Boolean) {
+        if (isRecoveryActive == active) return
+        isRecoveryActive = active
+        updateLocks()
+    }
+
+    private fun updateLocks() {
+        if (isPlayerPlaying || isRecoveryActive) {
+            acquireWifiLock()
+            acquireWakeLock()
+        } else {
+            releaseWifiLock()
+            releaseWakeLock()
+        }
+    }
+
+    private fun acquireWakeLock() {
+        val lock = recoveryWakeLock ?: run {
+            val powerManager =
+                applicationContext.getSystemService(Context.POWER_SERVICE) as? PowerManager
+                    ?: return
+            powerManager.newWakeLock(
+                PowerManager.PARTIAL_WAKE_LOCK,
+                "samo:recovery"
+            ).also {
+                it.setReferenceCounted(false)
+                recoveryWakeLock = it
+            }
+        }
+        if (!lock.isHeld) {
+            lock.acquire(10 * 60 * 1000L) // 10 minutes max safeguard
+        }
+    }
+
+    private fun releaseWakeLock() {
+        recoveryWakeLock?.let { if (it.isHeld) it.release() }
+    }
 
     @Suppress("DEPRECATION") // WIFI_MODE_FULL_HIGH_PERF is the right mode for
     // sustained media streaming; LOW_LATENCY targets real-time gaming.
@@ -262,7 +305,8 @@ class SamoPlaybackService : MediaSessionService() {
         // on play / release on pause-stop so we never hold it idle.
         createdPlayer.addListener(object : Player.Listener {
             override fun onIsPlayingChanged(isPlaying: Boolean) {
-                if (isPlaying) acquireWifiLock() else releaseWifiLock()
+                isPlayerPlaying = isPlaying
+                updateLocks()
             }
         })
         // ExoPlayer defaults to software decode; SamoAudioEngine dynamically
