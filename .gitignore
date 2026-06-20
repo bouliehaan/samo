@@ -18,3 +18,15 @@ src/**/*.d.ts
 vite.react-plugin.js
 vite.react-plugin.d.ts
 .aider*
+
+# Python virtual environments
+ai/
+venv/
+.venv/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# macOS
+.DS_Store
