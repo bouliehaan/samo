@@ -184,6 +184,7 @@ export interface AndroidMediaHandlers {
     handleAddToPlaylistFromRoot: (playlist: MobileHomeItem) => Promise<void>;
     handleCreatePlaylistFromRoot: (name: string) => Promise<void>;
     handleAddTrackToQueue: (track: MobileMediaTrack) => void;
+    handleAddRadioToQueue: (item: AndroidRecentContentSourceItem) => void;
     handleDownloadCollectionItem: (item: AndroidRecentContentSourceItem) => Promise<void>;
     handleDownloadSongTrack: (
         track: MobileMediaTrack,
@@ -1286,8 +1287,17 @@ export function useAndroidMediaHandlers(
     // playback engine advances across types in JS so each gets its own resume +
     // progress context.
     const enqueuePlayableItems = useCallback(
-        (items: MobilePlayableAudio[], placement: 'end' | 'next'): number => {
-            const queueableItems = items.filter((item) => item.source !== 'radio');
+        (
+            items: MobilePlayableAudio[],
+            placement: 'end' | 'next',
+            options?: { allowRadio?: boolean },
+        ): number => {
+            // Radio is filtered out by default (an album/playlist enqueue must never
+            // smuggle a live stream into the middle of a queue). The explicit
+            // "add this station" path opts in — see handleAddRadioToQueue.
+            const queueableItems = options?.allowRadio
+                ? items
+                : items.filter((item) => item.source !== 'radio');
             const playbackState = getAndroidPlaybackState();
 
             if (queueableItems.length === 0) {
@@ -1394,6 +1404,27 @@ export function useAndroidMediaHandlers(
         [appendPlayableItemsToQueue],
     );
 
+    const handleAddRadioToQueue = useCallback(
+        (item: AndroidRecentContentSourceItem) => {
+            const playback = item.playback;
+            if (!playback || playback.source !== 'radio') {
+                setContextMenuFeedback('This station can’t be added to the queue.');
+                return;
+            }
+            // A live station has no end, so it belongs at the TAIL of the queue —
+            // it takes over once everything queued ahead of it finishes (the
+            // "fall asleep to a podcast, hand off to a radio station" case). Adding
+            // radio flips the queue to JS-driven advance — the native gapless
+            // mirror opts out of any queue containing a live stream — which is
+            // exactly the path playQueuedItem already uses to start a station.
+            const added = enqueuePlayableItems([playback], 'end', { allowRadio: true });
+            if (added > 0) {
+                setContextMenuFeedback('Plays when the queue ends');
+            }
+        },
+        [enqueuePlayableItems],
+    );
+
     const handlePlayTrackNext = useCallback(
         (track: MobileMediaTrack) => {
             const playback = track.playback;
@@ -1417,9 +1448,10 @@ export function useAndroidMediaHandlers(
         ): Promise<void> => {
             if (
                 item.type !== MobileHomeItemType.ALBUM &&
-                item.type !== MobileHomeItemType.PLAYLIST
+                item.type !== MobileHomeItemType.PLAYLIST &&
+                item.type !== MobileHomeItemType.AUDIOBOOK
             ) {
-                setContextMenuFeedback('Only music albums and playlists can be added to the queue.');
+                setContextMenuFeedback('This can’t be added to the queue.');
                 return;
             }
 
@@ -1430,18 +1462,25 @@ export function useAndroidMediaHandlers(
                 return;
             }
 
+            // Take every sequential playable (music tracks, audiobook files), not
+            // just music — an audiobook enqueues its files so the whole book plays
+            // through the Up Next queue. Radio is never collection-backed, but the
+            // guard keeps the engine's invariant (no live stream in the queue).
             const playables = detail.tracks.flatMap((track) =>
-                track.playback?.source === 'music' ? [track.playback] : [],
+                track.playback && track.playback.source !== 'radio' ? [track.playback] : [],
             );
             const added =
                 placement === 'next'
                     ? insertPlayableItemsNext(playables)
                     : appendPlayableItemsToQueue(playables);
             if (added > 0) {
+                const isBook = item.type === MobileHomeItemType.AUDIOBOOK;
                 if (placement === 'next') {
                     setContextMenuFeedback(
-                        added === 1 ? 'Playing next' : `Playing ${added} tracks next`,
+                        isBook || added === 1 ? 'Playing next' : `Playing ${added} tracks next`,
                     );
+                } else if (isBook) {
+                    setContextMenuFeedback('Added audiobook to queue');
                 } else {
                     setContextMenuFeedback(
                         added === 1 ? 'Added 1 track to queue' : `Added ${added} tracks to queue`,
@@ -1892,6 +1931,7 @@ export function useAndroidMediaHandlers(
         handleAddToPlaylistFromRoot,
         handleCreatePlaylistFromRoot,
         handleAddTrackToQueue,
+        handleAddRadioToQueue,
         handleDownloadCollectionItem,
         handleDownloadSongTrack,
         handleGoToAlbumForTrack,

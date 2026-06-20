@@ -64,15 +64,14 @@ internal object SamoCatalogWriter {
                 SamoNoDeleteDatabaseErrorHandler,
             )
             try {
-                // WAL + busy_timeout: both writers (JS expo-sqlite + this one)
-                // queue on BEGIN IMMEDIATE rather than racing. journal_mode
-                // must be set OUTSIDE a transaction, hence rawQuery + cursor
-                // close (execSQL("PRAGMA …") doesn't return the actual mode).
-                db.rawQuery("PRAGMA journal_mode = WAL", null).use { c ->
+                // DELETE mode (rollback journal) coordinates the two SQLite builds
+                // via POSIX file locks, avoiding the corrupt-shared-memory crashes
+                // of WAL. busy_timeout still queues writers on BEGIN IMMEDIATE.
+                db.rawQuery("PRAGMA journal_mode = DELETE", null).use { c ->
                     if (c.moveToFirst()) {
                         val mode = c.getString(0)
-                        if (!mode.equals("wal", ignoreCase = true)) {
-                            Log.w(TAG, "expected WAL, got $mode")
+                        if (!mode.equals("delete", ignoreCase = true)) {
+                            Log.w(TAG, "expected DELETE, got $mode")
                         }
                     }
                 }
@@ -124,9 +123,11 @@ internal object SamoCatalogWriter {
         }
     }
 
-    fun closeForTest() {
+    fun close() {
         synchronized(openLock) {
-            writer?.takeIf { it.isOpen }?.close()
+            writer?.takeIf { it.isOpen }?.let { db ->
+                db.close()
+            }
             writer = null
         }
     }

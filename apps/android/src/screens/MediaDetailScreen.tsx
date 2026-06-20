@@ -152,6 +152,11 @@ export const MediaDetailContent = memo(({
     serverConnection: ServerAuthenticationResult | null;
 }) => {
     const openingArtworkUrlRef = useRef<string | undefined>(undefined);
+    // The cover the skeleton showed (the tapped item's art). Carried into the
+    // loaded hero so it resolves to the SAME canonical artwork key and reuses the
+    // warm cache entry instead of re-fetching detail.artworkUrl — that re-fetch is
+    // the "cached art deloads then reloads" flash on the skeleton→content swap.
+    const openingArtworkImageIdRef = useRef<string | undefined>(undefined);
     const title =
         mediaDetailState.status === 'loaded'
             ? mediaDetailState.detail.title
@@ -161,6 +166,7 @@ export const MediaDetailContent = memo(({
 
     if (mediaDetailState.status === 'loading') {
         openingArtworkUrlRef.current = mediaDetailState.itemArtworkUrl;
+        openingArtworkImageIdRef.current = mediaDetailState.itemArtworkImageId;
     }
 
     return (
@@ -182,6 +188,7 @@ export const MediaDetailContent = memo(({
             ) : mediaDetailState.status === 'loaded' ? (
                 <MediaDetailLoaded
                     detail={mediaDetailState.detail}
+                    fallbackArtworkImageId={openingArtworkImageIdRef.current}
                     fallbackArtworkUrl={openingArtworkUrlRef.current}
                     onAddTrackToPlaylist={onAddTrackToPlaylist}
                     onBack={onBack}

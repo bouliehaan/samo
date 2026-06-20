@@ -9,7 +9,7 @@ import {
     prefetchArtworkUrls,
     type ArtworkPrefetchEntry,
 } from './artwork-cache';
-import { getItemsByType } from './catalog/catalog-repository';
+import { getItemsByTypeSync } from './catalog/catalog-repository';
 
 /**
  * Proactively caches the WHOLE library's cover art after a sync, so browsing
@@ -52,7 +52,7 @@ const collectArtwork = async (
     let resolved = 0;
     const sourceId = getMobileContentSource(connection).id;
     for (const type of ART_BEARING_TYPES) {
-        const items = await getItemsByType(sourceId, type);
+        const items = getItemsByTypeSync(sourceId, type);
         for (const item of items) {
             resolved += 1;
             if (resolved % RESOLVE_YIELD_EVERY === 0) {

@@ -219,6 +219,17 @@ export const ArtworkImage = ({
                 }
             }}
             onLoad={onLoad}
+            // The cached file as the placeholder: a FRESHLY MOUNTED expo-image
+            // paints nothing on its first frame while it (re)resolves the source,
+            // even when that source is already in cache. That one blank frame is
+            // the "artwork flashes after the skeleton swaps to the detail page" —
+            // the detail hero is a brand-new view, so it pays the mount cost. With
+            // the same cached file handed in as the placeholder, the new view shows
+            // the cover immediately instead of blank, then resolves the identical
+            // source underneath (no visible change). Only set when we actually have
+            // a local file, so an uncached tile still falls through to its letter.
+            placeholder={pinnedLocalUri ? { uri: pinnedLocalUri } : undefined}
+            placeholderContentFit="cover"
             // A crossfade needs the SAME native view to persist across source
             // changes. recyclingKey forces a fresh view (list tiles use it so a
             // recycled row never flashes the previous cover), which would cancel

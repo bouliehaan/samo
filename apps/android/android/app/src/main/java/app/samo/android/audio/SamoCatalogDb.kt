@@ -12,10 +12,9 @@ import org.json.JSONObject
 /**
  * Native reader for the on-device Samo catalog (`samo-catalog.db`). The DB is
  * owned by JS through `services/catalog/database.ts` (expo-sqlite); this file
- * opens the SAME file in WAL mode and only ever runs SELECTs. WAL lets a second
- * reader see a consistent snapshot concurrently with the JS writer's long sync
- * transactions, which is what makes Phase 2 PROPER and Phase 5 possible without
- * a JS↔native handshake on the playback hot path.
+ * opens the SAME file in DELETE mode and only ever runs SELECTs.
+ * We rely on POSIX file locks to safely interleave reads with the JS writer's
+ * sync transactions.
  *
  * The connection is lazily opened on first use because the DB file does not
  * exist until the JS catalog warms — a fresh install with no Samo servers
@@ -259,10 +258,9 @@ internal object SamoCatalogDb {
                 return null
             }
             return try {
-                // OPEN_READWRITE (not READONLY) so SQLite can take the shared
-                // lock on the WAL/SHM files. Readers never issue UPDATE/INSERT
-                // so the writer is unaffected; this is the standard recipe for
-                // "second reader on an expo-sqlite WAL DB."
+                // OPEN_READWRITE (not READONLY) so SQLite can take the required
+                // locks for rollback journal concurrency. Readers never issue
+                // UPDATE/INSERT so the writer is unaffected.
                 val db = SQLiteDatabase.openDatabase(
                     dbFile.absolutePath,
                     null,
@@ -307,13 +305,11 @@ internal object SamoCatalogDb {
 /**
  * Android's DefaultDatabaseErrorHandler responds to a corruption verdict by
  * DELETING the database file. Two different SQLite builds share this file
- * (expo-sqlite's bundled library + the platform library); a process kill
- * mid-WAL can leave a hot -shm that the OTHER build's next open misjudges as
- * corruption — and the default handler then erased the user's entire mirror
- * (observed live 2026-06-12: samo-catalog.db vanished across an app restart,
- * after which the JS side kept reading its orphaned deleted inode — every
- * surface blind until the next restart). NEVER delete: log, close, retry
- * later; SQLite's own WAL recovery handles genuinely torn states.
+ * (expo-sqlite's bundled library + io.requery); a process kill
+ * during a transaction can leave the file in a state that the OTHER build's
+ * next open misjudges as corruption — and the default handler then erased
+ * the user's entire mirror. NEVER delete: log, close, retry later;
+ * SQLite's own rollback journal handles genuinely torn states.
  */
 internal object SamoNoDeleteDatabaseErrorHandler : io.requery.android.database.DatabaseErrorHandler {
     override fun onCorruption(dbObj: SQLiteDatabase) {

@@ -158,6 +158,7 @@ const DetailHeroArtwork = ({
 
 export const MediaDetailLoaded = ({
     detail,
+    fallbackArtworkImageId,
     fallbackArtworkUrl,
     onAddTrackToPlaylist,
     onBack,
@@ -169,6 +170,7 @@ export const MediaDetailLoaded = ({
     serverConnection,
 }: {
     detail: MobileMediaDetail;
+    fallbackArtworkImageId?: string;
     fallbackArtworkUrl?: string;
     onAddTrackToPlaylist: (
         detail: MobileMediaDetail,
@@ -597,6 +599,16 @@ export const MediaDetailLoaded = ({
     };
 
     const isArtistDetail = detail.type === MobileMediaDetailType.ARTIST;
+    // Hero cover identity. Prefer the cover the skeleton already showed (and
+    // cached) so the loaded hero resolves to the SAME canonical key — its disk
+    // peek hits, so the placeholder paints the cover on the new view's first
+    // frame and the skeleton→detail swap shows no blank flash. Atomic on/off:
+    // mixing the opening imageId with the detail url (or vice-versa) can resolve
+    // to a THIRD key that's cached as neither. Falls back to detail art when the
+    // detail was opened without an opening cover (deep link, etc.).
+    const hasOpeningArt = fallbackArtworkUrl != null || fallbackArtworkImageId != null;
+    const heroArtworkImageId = hasOpeningArt ? fallbackArtworkImageId : detail.artworkImageId;
+    const heroArtworkUrl = hasOpeningArt ? fallbackArtworkUrl : detail.artworkUrl;
     const showDetailHiRes = detailHasHiRes(detail);
     // Playlists never get a collection-level format badge — they're mixed by
     // definition. Per-track badges on the track rows below still show.
@@ -979,11 +991,11 @@ export const MediaDetailLoaded = ({
                             <View style={styles.albumHero}>
                                 <View style={styles.albumHeroArtworkWrap}>
                                     <DetailHeroArtwork
-                                        artworkImageId={detail.artworkImageId}
+                                        artworkImageId={heroArtworkImageId}
                                         contentSource={detail.source}
                                         fallbackUri={fallbackArtworkUrl}
                                         letter={detail.title.slice(0, 1)}
-                                        primaryUri={detail.artworkUrl}
+                                        primaryUri={heroArtworkUrl}
                                         serverConnection={serverConnection}
                                         style={styles.albumHeroArtwork}
                                     />
@@ -1318,11 +1330,11 @@ export const MediaDetailLoaded = ({
             <View style={styles.albumHero}>
                     <View style={styles.albumHeroArtworkWrap}>
                         <DetailHeroArtwork
-                            artworkImageId={detail.artworkImageId}
+                            artworkImageId={heroArtworkImageId}
                             contentSource={detail.source}
                             fallbackUri={fallbackArtworkUrl}
                             letter={detail.title.slice(0, 1)}
-                            primaryUri={detail.artworkUrl}
+                            primaryUri={heroArtworkUrl}
                             serverConnection={serverConnection}
                             style={styles.albumHeroArtwork}
                         />
@@ -1534,11 +1546,11 @@ export const MediaDetailLoaded = ({
             >
                 <View style={styles.detailHero}>
                     <DetailHeroArtwork
-                        artworkImageId={detail.artworkImageId}
+                        artworkImageId={heroArtworkImageId}
                         contentSource={detail.source}
                         fallbackUri={fallbackArtworkUrl}
                         letter={detail.title.slice(0, 1)}
-                        primaryUri={detail.artworkUrl}
+                        primaryUri={heroArtworkUrl}
                         round
                         serverConnection={serverConnection}
                         style={[styles.detailArtwork, styles.detailArtworkRound]}

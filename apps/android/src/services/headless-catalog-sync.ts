@@ -40,11 +40,18 @@ const getCatalogSyncBridge = (): SamoCatalogSyncBridge | undefined =>
 const getAuthMirrorBridge = (): SamoAuthMirrorBridge | undefined =>
     NativeModules.SamoAuthMirror as SamoAuthMirrorBridge | undefined;
 
+import { getCatalogDatabase } from './catalog/database';
+
 /**
  * Install (or re-join) the periodic WorkManager schedule. KEEP policy on the
  * native side means subsequent app launches don't reset the interval timer.
  */
 export const schedulePeriodicCatalogSync = async (): Promise<void> => {
+    // 1. Wait for JS schema migrations to finish BEFORE starting Kotlin sync.
+    // This prevents a POSIX lock-merging race where both JS and Kotlin try
+    // to write to the database simultaneously, which corrupts the file.
+    await getCatalogDatabase().catch(() => {});
+
     const bridge = getCatalogSyncBridge();
     if (!bridge) return;
     try {
@@ -61,6 +68,9 @@ export const schedulePeriodicCatalogSync = async (): Promise<void> => {
  * and the periodic refresh exercise identical code.
  */
 export const triggerCatalogSyncNow = async (): Promise<void> => {
+    // Wait for JS schema migrations to prevent POSIX lock merging.
+    await getCatalogDatabase().catch(() => {});
+
     const bridge = getCatalogSyncBridge();
     if (!bridge) return;
     try {

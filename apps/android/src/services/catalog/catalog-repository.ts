@@ -328,9 +328,11 @@ export const getItemsByType = async (
     const limit = query.limit ?? -1;
     const offset = query.offset ?? 0;
     const rows = await db.getAllAsync<CatalogPayloadRow>(
+        // Plain ORDER BY (no `(col IS NULL)` guard) so the (source_id, type, col)
+        // index can drive it — see the sync reader above for the full rationale.
         `SELECT payload FROM catalog_item
          WHERE source_id = ? AND type = ?
-         ORDER BY (${sortColumn} IS NULL) ASC, ${sortColumn} ${direction}
+         ORDER BY ${sortColumn} ${direction}
          LIMIT ? OFFSET ?`,
         sourceId,
         type,
@@ -349,11 +351,17 @@ export const getItemsByType = async (
  * JS-owned `catalog_search` must be re-derived from items to stay in parity —
  * otherwise unchanged artists/albums silently fall out of search.
  */
-export const getAllItems = async (sourceId: string): Promise<MobileHomeItem[]> => {
+export const getItemsChunked = async (
+    sourceId: string,
+    limit: number,
+    offset: number,
+): Promise<MobileHomeItem[]> => {
     const db = await getCatalogDatabase();
     const rows = await db.getAllAsync<CatalogPayloadRow>(
-        'SELECT payload FROM catalog_item WHERE source_id = ?',
+        'SELECT payload FROM catalog_item WHERE source_id = ? LIMIT ? OFFSET ?',
         sourceId,
+        limit,
+        offset,
     );
     return rows
         .map((row) => parsePayload<MobileHomeItem>(row))
@@ -544,9 +552,16 @@ export const getItemsByTypeSync = (
         const limit = query.limit ?? -1;
         const offset = query.offset ?? 0;
         const rows = db.getAllSync<CatalogPayloadRow>(
+            // No `(col IS NULL)` ordering guard: it's a computed expression that
+            // makes the ORDER BY non-sargable, forcing a full scan + temp sort on
+            // every Home derive (the multi-second JS-thread blocks). It's also
+            // redundant — the sort columns are either NOT NULL (sort_name) or, for
+            // the DESC shelves (added_at / last_played_at / play_count), SQLite
+            // already orders NULLs last under plain DESC. So plain ORDER BY is
+            // behaviour-identical AND lets the (source_id, type, col) index drive it.
             `SELECT payload FROM catalog_item
              WHERE source_id = ? AND type = ?
-             ORDER BY (${sortColumn} IS NULL) ASC, ${sortColumn} ${direction}
+             ORDER BY ${sortColumn} ${direction}
              LIMIT ? OFFSET ?`,
             sourceId,
             type,
@@ -556,7 +571,13 @@ export const getItemsByTypeSync = (
         return rows
             .map((row) => parsePayload<MobileHomeItem>(row))
             .filter((item): item is MobileHomeItem => item !== null);
-    } catch {
+    } catch (e) {
+        // Deliberate health probe: a synchronous mirror read should never throw
+        // in steady state. If it does, it's almost always a stale reader handle
+        // (locks dropped by the Kotlin sync's writer close) — the failure mode
+        // recycleCatalogConnections() heals on the next sync-completed event.
+        // eslint-disable-next-line no-console
+        console.error('getItemsByTypeSync failed', type, e);
         return [];
     }
 };

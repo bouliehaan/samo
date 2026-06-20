@@ -1,41 +1,11 @@
 import { AppState, DeviceEventEmitter } from 'react-native';
 
-import { getCatalogDatabase, recycleCatalogConnections } from './database';
 import {
     applyNativeCatalogSyncEvent,
     refreshCatalogSyncStateFromDb,
     type NativeCatalogSyncEvent,
 } from './catalog-sync-state';
-
-/**
- * Orphaned-inode detection: the sync engine just reported [eventItems] rows,
- * so a JS read of zero means our connections are bound to a stale/deleted
- * file (see recycleCatalogConnections). Returns true when a heal happened.
- */
-const healStaleConnectionsIfNeeded = async (eventItems: number): Promise<boolean> => {
-    if (eventItems <= 0) {
-        return false;
-    }
-    let visible = 0;
-    try {
-        const db = await getCatalogDatabase();
-        const row = await db.getFirstAsync<{ count: number }>(
-            'SELECT COUNT(*) AS count FROM catalog_item',
-        );
-        visible = row?.count ?? 0;
-    } catch {
-        visible = 0;
-    }
-    if (visible > 0) {
-        return false;
-    }
-    // eslint-disable-next-line no-console
-    console.warn(
-        `[catalog] sync reported ${eventItems} items but JS sees 0 — recycling stale connections`,
-    );
-    await recycleCatalogConnections();
-    return true;
-};
+import { consolidateCatalogAfterSync, recycleCatalogConnections } from './database';
 
 // Glue between the Kotlin sync engine and the JS world. One install per app
 // lifetime (App.tsx effect): forwards SamoCatalogSyncState device events into
@@ -73,10 +43,28 @@ export const installCatalogSyncEventBridge = (): (() => void) => {
             // BOTH terminal states fan out: an errored run may still have
             // committed plenty (items land per-variant), and the mirror-backed
             // surfaces should render whatever exists rather than wait for a
-            // perfect pass. The stale-connection heal runs FIRST so the
-            // listeners' re-derives read the real file, not an orphaned inode.
+            // perfect pass.
             if (event.status === 'synced' || event.status === 'error') {
-                void healStaleConnectionsIfNeeded(event.items).finally(() => {
+                // Recycle FIRST, synchronously, before any listener runs. The
+                // Kotlin engine just closed its native writer, which released
+                // this process's POSIX locks on the catalog DB and (intended to)
+                // checkpoint the WAL into the main file. Our cached JS
+                // connections are now bound to dropped locks / a stale snapshot
+                // and would read 0 rows — dropping (and CLOSING the sync
+                // reader so its .shm lock actually goes away) means the fresh
+                // open below sees the freshly-synced catalog. Without this,
+                // the first sync leaves Library/Playlists blank until restart.
+                recycleCatalogConnections();
+                // Then consolidate: open the writer fresh, run a PASSIVE
+                // wal_checkpoint, and probe the row count. This guards the
+                // (known-real) case where Kotlin's TRUNCATE checkpoint hit
+                // SQLITE_BUSY against our old reader and silently left data
+                // stranded in the WAL — by the time we run here the reader is
+                // closed, so PASSIVE has a clean window. Listeners fan out only
+                // AFTER this completes, so refreshHomeFromMirror reads the
+                // post-consolidate state.
+                void (async () => {
+                    await consolidateCatalogAfterSync();
                     completedListeners.forEach((listener) => {
                         try {
                             listener(event.sourceId);
@@ -84,7 +72,7 @@ export const installCatalogSyncEventBridge = (): (() => void) => {
                             // a post-sync hook must never break the bridge
                         }
                     });
-                });
+                })();
             }
         },
     );

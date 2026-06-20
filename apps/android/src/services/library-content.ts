@@ -22,8 +22,14 @@ export const loadAndroidLibraryRelevantContent = async (
     if (!authentication) {
         return { status: 'idle' };
     }
+    // ALWAYS return 'loaded' on a successful sync read, even if the mirror is
+    // empty — empty is a real outcome, not a pending one. The old
+    // `items.length === 0 → 'loading'` branch wedged the Library tab on its
+    // skeleton-loading grid forever whenever the mirror had no rows: an empty
+    // first sync, an offline relaunch on a cold cache, or — the bug we hit
+    // here — a fresh install whose post-sync mirror read returned 0 (until
+    // the next recycle/sync). The token-based race guard in App.tsx then
+    // swallowed every subsequent retry, so the skeleton never lifted.
     const items = loadCatalogLibraryRelevantItems(authentication);
-    return items.length > 0
-        ? { items, loadedAt: Date.now(), status: 'loaded' }
-        : { status: 'loading' };
+    return { items, loadedAt: Date.now(), status: 'loaded' };
 };

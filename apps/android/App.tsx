@@ -66,6 +66,7 @@ import {
     type GestureResponderEvent,
     Image,
     type ImageSourcePropType,
+    InteractionManager,
     KeyboardAvoidingView,
     type LayoutChangeEvent,
     Modal,
@@ -392,7 +393,9 @@ TextInput.defaultProps = TextInput.defaultProps || {};
 // @ts-ignore
 TextInput.defaultProps.style = { fontFamily: 'Archivo' };
 
-
+// One Kotlin sync round emits a 'synced' event per source; this trailing window
+// coalesces that burst into a single mirror refresh instead of one per source.
+const POST_SYNC_COALESCE_MS = 450;
 
 export default function App() {
     const [fontsLoaded] = useFonts({
@@ -780,25 +783,86 @@ export default function App() {
     // Library) and warms the cover-art cache for whatever it pulled.
     const serverConnectionForSyncRef = useRef(serverConnection);
     serverConnectionForSyncRef.current = serverConnection;
+    // Debounce token + dirty latch for the post-sync mirror refresh. The Kotlin
+    // engine emits one SamoCatalogSyncState 'synced' event PER SOURCE, so a
+    // single sync round can fan out several events in a burst — we coalesce them
+    // into ONE refresh. The dirty latch defers the (expensive, JS-thread-bound)
+    // Home/Library derive whenever the app is backgrounded, so a long listening
+    // session with the screen off never burns seconds of JS thread re-deriving
+    // surfaces the user can't see. The AppState→active handler flushes it.
+    const postSyncDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const mirrorDirtyRef = useRef(false);
+
+    // The actual post-sync work, deferred past any in-flight gesture/animation so
+    // it never lands in the middle of a tap or the player-open spring. Derives
+    // Home + Library ONCE (the old code derived Home twice — redundantly, since a
+    // search-index rebuild doesn't touch the catalog_item rows Home reads), then
+    // rebuilds the FTS index and warms cover art. The reindex→prefetch ordering
+    // is load-bearing: mixing the synchronous reader with async writer
+    // transactions on the shared connection is what triggered the Scudo
+    // invalid-chunk crashes, so they stay strictly sequential.
+    const flushPostSyncRefresh = useStableCallback(() => {
+        const auth = serverConnectionForSyncRef.current;
+        if (!auth) {
+            return;
+        }
+        mirrorDirtyRef.current = false;
+        InteractionManager.runAfterInteractions(() => {
+            try {
+                refreshHomeFromMirror({ authoritative: true });
+                refreshLibraryFromMirror();
+            } catch (error) {
+                console.error('[catalog] post-sync derive failed', error);
+            }
+            void (async () => {
+                try {
+                    await reindexCatalogSearch(auth);
+                    await prefetchCatalogArtwork(auth);
+                } catch (error) {
+                    console.error('[catalog] post-sync index/prefetch failed', error);
+                }
+            })();
+        });
+    });
+
     useEffect(() => {
         const uninstall = installCatalogSyncEventBridge();
         const unsubscribe = subscribeCatalogSyncCompleted(() => {
-            // Post-sync is the one authoritative derive — it may prune shelves
-            // whose content was genuinely deleted on the server.
-            refreshHomeFromMirror({ authoritative: true });
-            refreshLibraryFromMirror();
-            // catalog_search is JS-owned (fts5 only exists in expo-sqlite's
-            // bundled build) — derive it from the freshly-synced mirror.
-            void reindexCatalogSearch(serverConnectionForSyncRef.current).then(() => {
-                refreshHomeFromMirror({ authoritative: true });
-            });
-            void prefetchCatalogArtwork(serverConnectionForSyncRef.current);
+            if (postSyncDebounceRef.current) {
+                clearTimeout(postSyncDebounceRef.current);
+            }
+            postSyncDebounceRef.current = setTimeout(() => {
+                postSyncDebounceRef.current = null;
+                // Foreground: refresh now. Background: mark dirty and let the
+                // next foreground flush it — the whole point of the gate.
+                if (AppState.currentState === 'active') {
+                    flushPostSyncRefresh();
+                } else {
+                    mirrorDirtyRef.current = true;
+                }
+            }, POST_SYNC_COALESCE_MS);
         });
         return () => {
+            if (postSyncDebounceRef.current) {
+                clearTimeout(postSyncDebounceRef.current);
+                postSyncDebounceRef.current = null;
+            }
             unsubscribe();
             uninstall();
         };
-    }, []);
+    }, [flushPostSyncRefresh]);
+
+    // Flush a mirror refresh that was deferred while backgrounded. This is the
+    // moment the user reopens the app after a long listening session — derive
+    // once here instead of having frozen the UI repeatedly in the background.
+    useEffect(() => {
+        const subscription = AppState.addEventListener('change', (next) => {
+            if (next === 'active' && mirrorDirtyRef.current) {
+                flushPostSyncRefresh();
+            }
+        });
+        return () => subscription.remove();
+    }, [flushPostSyncRefresh]);
 
     // Cover syncs that ran while the app was closed (background WorkManager
     // rounds emit no events into a dead JS world): one index top-up per boot.

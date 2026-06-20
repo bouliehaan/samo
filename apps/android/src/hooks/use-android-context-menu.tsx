@@ -57,6 +57,7 @@ type ContextMenuHandlers = Pick<
     | 'getFavoriteKeyForItem'
     | 'getFavoriteKeyForTrack'
     | 'handleAddCollectionToQueue'
+    | 'handleAddRadioToQueue'
     | 'handleAddTrackToQueue'
     | 'handleDownloadCollectionItem'
     | 'handleDownloadSongTrack'
@@ -94,6 +95,7 @@ export function useAndroidContextMenu(options: {
         getFavoriteKeyForItem,
         getFavoriteKeyForTrack,
         handleAddCollectionToQueue,
+        handleAddRadioToQueue,
         handleAddTrackToQueue,
         handleDownloadCollectionItem,
         handleDownloadSongTrack,
@@ -184,10 +186,17 @@ export function useAndroidContextMenu(options: {
             const { source, track } = contextMenuTarget;
             const favoriteKey = getFavoriteKeyForTrack(track, source?.id);
             const isFavorited = favoritedKeys.has(favoriteKey);
+            // Anything with a sequential playable can be queued — music, podcast
+            // episodes, and audiobook files all advance through the same JS queue
+            // (each keeps its own resume/progress context). Only radio is excluded
+            // because a live stream has no place in an Up Next list. Previously
+            // this was hard-gated to 'music', which is why long-pressing a podcast
+            // episode (source 'podcast') offered no Add to Queue at all.
             const canQueueTrack =
                 canAppendToPlaybackQueue &&
                 !contextMenuTarget.suppressQueueAction &&
-                track.playback?.source === 'music';
+                track.playback != null &&
+                track.playback.source !== 'radio';
             menuActions.push({
                 icon: (
                     <HeartGlyph
@@ -289,6 +298,14 @@ export function useAndroidContextMenu(options: {
         const suppressQueue = contextMenuTarget.suppressQueueAction === true;
 
         if (contextMenuTarget.kind === 'audiobook') {
+            if (canAppendToPlaybackQueue && !suppressQueue) {
+                menuActions.push({
+                    icon: <QueueAddGlyph color={colors.text} />,
+                    id: 'queue',
+                    label: 'Add to Queue',
+                    onPress: () => void handleAddCollectionToQueue(item),
+                });
+            }
             menuActions.push({
                 icon: <BookInfoGlyph color={colors.text} />,
                 id: 'book-info',
@@ -327,6 +344,19 @@ export function useAndroidContextMenu(options: {
                 });
             }
         } else if (contextMenuTarget.kind === 'radio') {
+            // A live station can't sit mid-queue, but it CAN be queued at the tail
+            // to take over when the current podcast/audiobook (and anything after
+            // it) finishes — the fall-asleep handoff. Only offered when something
+            // queueable is already playing (canAppendToPlaybackQueue is false while
+            // radio itself is the active item).
+            if (canAppendToPlaybackQueue && !suppressQueue) {
+                menuActions.push({
+                    icon: <QueueAddGlyph color={colors.text} />,
+                    id: 'queue',
+                    label: 'Add to Queue',
+                    onPress: () => handleAddRadioToQueue(item),
+                });
+            }
             menuActions.push({
                 icon: <BookInfoGlyph color={colors.text} />,
                 id: 'stream-info',
@@ -402,6 +432,7 @@ export function useAndroidContextMenu(options: {
         getFavoriteKeyForItem,
         getFavoriteKeyForTrack,
         handleAddCollectionToQueue,
+        handleAddRadioToQueue,
         handleAddTrackToQueue,
         handleDownloadCollectionItem,
         handleDownloadSongTrack,

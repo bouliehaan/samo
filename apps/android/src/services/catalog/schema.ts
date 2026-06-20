@@ -115,12 +115,27 @@ CREATE TABLE IF NOT EXISTS catalog_sync_state (
 );
 `;
 
+// V2: type-scoped composite indexes for the "Favorite" Home shelves. The V1
+// indexes for play_count / last_played_at were keyed on (source_id, <col>) and
+// omitted `type`, so a shelf query that filters by type AND sorts by play count
+// (Favorite Albums) couldn't be satisfied by an index — SQLite fell back to a
+// full scan + temp B-tree sort of every row for the source. With `type` in the
+// index, the same query is a bounded index range scan + LIMIT. Pairs with the
+// removal of the non-sargable `ORDER BY (col IS NULL)` guard in
+// catalog-repository, which previously defeated index use even where one existed.
+const MIGRATION_V2 = `
+CREATE INDEX IF NOT EXISTS idx_catalog_item_type_play_count
+    ON catalog_item (source_id, type, play_count);
+CREATE INDEX IF NOT EXISTS idx_catalog_item_type_last_played
+    ON catalog_item (source_id, type, last_played_at);
+`;
+
 /**
  * Append-only migration list. The index is the source `user_version`; running
  * `MIGRATIONS[i]` advances the database to version i+1. Never edit a released
  * migration — add a new one.
  */
-export const MIGRATIONS: readonly string[] = [MIGRATION_V1];
+export const MIGRATIONS: readonly string[] = [MIGRATION_V1, MIGRATION_V2];
 
 /** Row shape for the `payload`-only reads (item / track / detail / search). */
 export interface CatalogPayloadRow {

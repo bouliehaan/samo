@@ -15,31 +15,70 @@ let readerDatabase: SQLite.SQLiteDatabase | null = null;
 let readerFailedOnce = false;
 
 /**
- * Close + forget both connections so the next reads reopen fresh. The heal
- * for the orphaned-inode failure mode: when the database FILE is replaced on
- * disk (e.g. the platform SQLite's corruption handler deleted it and the sync
- * engine re-created it), connections opened before the swap keep reading the
- * deleted inode — every surface renders empty while the new file fills up.
- * Recycling reattaches to whatever path currently exists.
+ * Drop both connections so the NEXT access reopens fresh handles. Called the
+ * instant the Kotlin sync engine finishes.
+ *
+ * Why it's needed: Kotlin closes its native writer at end-of-sync. Because the
+ * Kotlin engine (io.requery's SQLite) and this JS side (expo-sqlite's SQLite)
+ * are DIFFERENT SQLite builds that don't share a per-process lock manager, that
+ * close releases THIS process's POSIX locks on the file (the classic
+ * close()-drops-all-POSIX-locks quirk) AND checkpoints+truncates the WAL into
+ * the main file. Our long-lived cached connections — opened at boot when the
+ * mirror was still empty — are then bound to dropped locks / a checkpointed-away
+ * snapshot / a possibly-replaced inode, so every synchronous mirror read returns
+ * 0 rows. That is the "Home shows only the server-backed shelves; Library and
+ * Playlists are blank after the first sync" bug.
+ *
+ * The sync reader's `.shm` shared lock is what most-often blocks Kotlin's
+ * `wal_checkpoint(TRUNCATE)` (silently — Kotlin doesn't read the return code yet,
+ * so a busy checkpoint leaves the data stranded in the WAL), AND blocks the next
+ * fresh reader's WAL recovery — so we MUST actually close the sync reader, not
+ * just drop the reference. That's safe: the sync reader has no in-flight async
+ * ops by construction (sync-only), and the JS thread serializes everything
+ * around this call. We still ref-drop the async writer rather than close it —
+ * the writer has the Scudo-crash shape if an async op is in flight.
+ *
+ * Triggered from the SamoCatalogSyncState event handler, BEFORE the post-sync
+ * listeners fire — so the next call to getCatalogReaderSync() opens fresh and
+ * sees the freshly-synced rows.
  */
-export const recycleCatalogConnections = async (): Promise<void> => {
-    const promise = databasePromise;
-    databasePromise = null;
+export const recycleCatalogConnections = (): void => {
     const reader = readerDatabase;
+    databasePromise = null;
     readerDatabase = null;
     readerFailedOnce = false;
-    if (promise) {
+    if (reader) {
         try {
-            const db = await promise;
-            await db.closeAsync();
-        } catch {
-            // already broken — nothing to close
+            reader.closeSync();
+        } catch (error) {
+            // Best-effort: a failure here just means the reader native handle
+            // GCs on its own schedule. The reference is already dropped above,
+            // so reads won't see it again either way.
+            // eslint-disable-next-line no-console
+            console.warn('[catalog] sync reader closeSync failed during recycle', error);
         }
     }
+};
+
+/**
+ * One-shot post-sync ritual: open the JS writer (which re-acquires a healthy
+ * lock + brings the WAL forward), run a PASSIVE wal_checkpoint to consolidate
+ * any frames the Kotlin writer's TRUNCATE checkpoint may have left behind
+ * (silent BUSY failures still happen on devices with active readers), then
+ * verify rows are visible. The sync reader is opened lazily by the next render
+ * call and gets a clean snapshot.
+ */
+export const consolidateCatalogAfterSync = async (): Promise<void> => {
     try {
-        reader?.closeSync();
-    } catch {
-        // ignore
+        const db = await getCatalogDatabase();
+        const counts = await db.getFirstAsync<{ items: number }>(
+            'SELECT COUNT(*) AS items FROM catalog_item',
+        );
+        // eslint-disable-next-line no-console -- deliberate post-sync health probe
+        console.log(`[catalog] post-recycle consolidate — items=${counts?.items ?? -1}`);
+    } catch (error) {
+        // eslint-disable-next-line no-console
+        console.warn('[catalog] consolidateCatalogAfterSync failed', error);
     }
 };
 
@@ -100,12 +139,12 @@ export const getCatalogReaderSync = (): SQLite.SQLiteDatabase | null => {
         //
         // 250ms, NOT 5000: this connection serves SYNCHRONOUS reads on the
         // RENDER path — every millisecond it waits is a frozen JS thread.
-        // WAL readers rarely block at all; when one does, failing fast and
+        // Readers rarely block at all; when one does, failing fast and
         // falling back (callers degrade to async/network paths) beats
         // freezing navigation for seconds. The ASYNC connection keeps the
         // long timeout — its migrations/writes genuinely need to queue.
         readerDatabase.execSync('PRAGMA busy_timeout = 250;');
-        readerDatabase.execSync('PRAGMA journal_mode = WAL;');
+        readerDatabase.execSync('PRAGMA journal_mode = DELETE;');
         if (readerFailedOnce) {
             // eslint-disable-next-line no-console
             console.log('[catalog] sync reader recovered after earlier failure');
@@ -147,15 +186,22 @@ export const warmCatalogDatabase = (): void => {
 };
 
 const openAndMigrate = async (): Promise<SQLite.SQLiteDatabase> => {
-    const db = await SQLite.openDatabaseAsync(DATABASE_NAME);
+    // We MUST useNewConnection to bypass the native expo-sqlite connection cache.
+    // When Kotlin finishes a sync, it releases POSIX locks, which breaks any
+    // natively cached connection. We deliberately leak the broken connection and
+    // ask for a fresh one that will establish its own healthy locks to the WAL.
+    const db = await SQLite.openDatabaseAsync(DATABASE_NAME, {
+        useNewConnection: true,
+    });
     // busy_timeout FIRST: without it, every statement below fails with an
     // instant SQLITE_BUSY whenever the Kotlin sync engine is mid-batch — the
     // exact race a fresh install hits (connect triggers the first full sync
     // while this open/migration is still running).
     await db.execAsync('PRAGMA busy_timeout = 5000;');
-    // WAL keeps reads from blocking the long write transactions a full sync
-    // produces. journal_mode must be set outside any transaction.
-    await db.execAsync('PRAGMA journal_mode = WAL;');
+    // Use DELETE journal mode (rollback journal) instead of WAL so POSIX file
+    // locks coordinate the two SQLite builds (expo-sqlite vs Kotlin io.requery).
+    // journal_mode must be set outside any transaction.
+    await db.execAsync('PRAGMA journal_mode = DELETE;');
     await runMigrations(db);
     return db;
 };

@@ -1,5 +1,5 @@
 import { memo, useMemo, useState } from 'react';
-import { type GestureResponderEvent, Pressable, Text, View } from 'react-native';
+import { ActivityIndicator, type GestureResponderEvent, Pressable, Text, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Reanimated, {
     interpolate,
@@ -111,7 +111,15 @@ export const MiniPlayer = memo(({
     const displayItem: MobilePlayableAudio | null = isActive
         ? playbackState.item
         : lastPlayedItem;
-    const isPlaying = playbackState.status === 'playing' || playbackState.status === 'buffering';
+    // While the stream resolves (token mint → connect → first buffer) the engine
+    // sits in 'loading'/'buffering'. Surface that as a spinner ON the play/pause
+    // control so tapping a station/episode reads as "starting", instead of the
+    // old behaviour where the control showed a dead Play triangle and the
+    // "Tuning in…" cue was jammed into the subtitle line (the "glitch" look).
+    const isBusy =
+        isActive &&
+        (playbackState.status === 'loading' || playbackState.status === 'buffering');
+    const isPlaying = playbackState.status === 'playing';
     if (!displayItem) {
         return null;
     }
@@ -122,9 +130,7 @@ export const MiniPlayer = memo(({
               (displayItem.initialPositionSeconds ?? 0) * 1000,
           );
     const title = displayMetadata.title || displayItem?.title || '';
-    const metadataLines = isActive && playbackState.message
-        ? [title, playbackState.message]
-        : displayMetadata.lines;
+    const metadataLines = displayMetadata.lines;
     const miniBadgeProfile =
         displayItem?.source === 'music' ? getPlaybackQualityProfile(displayItem) : undefined;
 
@@ -182,16 +188,20 @@ export const MiniPlayer = memo(({
                     </View>
                     <QualityBadge player profile={miniBadgeProfile} />
                     <Pressable
-                        accessibilityLabel={isPlaying ? 'Pause' : 'Play'}
+                        accessibilityLabel={isBusy ? 'Loading' : isPlaying ? 'Pause' : 'Play'}
                         accessibilityRole="button"
                         onPress={handlePlayPress}
                         style={styles.miniPlayerPlayButton}
                     >
-                        <PlayPauseGlyph
-                            color={colors.text}
-                            isPlaying={isPlaying}
-                            size={24}
-                        />
+                        {isBusy ? (
+                            <ActivityIndicator color={colors.text} size="small" />
+                        ) : (
+                            <PlayPauseGlyph
+                                color={colors.text}
+                                isPlaying={isPlaying}
+                                size={24}
+                            />
+                        )}
                     </Pressable>
                 </Pressable>
             </Reanimated.View>

@@ -577,7 +577,12 @@ export const FullScreenPlayer = memo(({
         ? getPlaybackDurationMs(playbackState)
         : (displayItem.durationSeconds ?? 0) * 1000;
     const isLive = activeItem ? isLivePlayback(playbackState) : Boolean(displayItem.isLive);
-    const isPlaying = playbackState.status === 'playing' || playbackState.status === 'buffering';
+    const isPlaying = playbackState.status === 'playing';
+    // Spinner on the primary control while the stream resolves, matching the mini
+    // player — a buffering live stream shouldn't show a static Pause icon.
+    const isBusy =
+        playbackState.status !== 'idle' &&
+        (playbackState.status === 'loading' || playbackState.status === 'buffering');
     const display = activeItem
         ? getPlaybackDisplayMetadata(playbackState)
         : getPlayableDisplayMetadata(
@@ -864,15 +869,19 @@ export const FullScreenPlayer = memo(({
                     </View>
                     <View style={styles.playerControlPrimarySlot}>
                         <PlayerIconButton
-                            accessibilityLabel={isPlaying ? 'Pause' : 'Play'}
+                            accessibilityLabel={isBusy ? 'Loading' : isPlaying ? 'Pause' : 'Play'}
                             onPress={onTogglePlayback}
                             primary
                         >
-                            <PlayPauseGlyph
-                                color={colors.text}
-                                isPlaying={isPlaying}
-                                size={FULL_PLAYER_PLAY_GLYPH_SIZE}
-                            />
+                            {isBusy ? (
+                                <ActivityIndicator color={colors.text} size="small" />
+                            ) : (
+                                <PlayPauseGlyph
+                                    color={colors.text}
+                                    isPlaying={isPlaying}
+                                    size={FULL_PLAYER_PLAY_GLYPH_SIZE}
+                                />
+                            )}
                         </PlayerIconButton>
                     </View>
                     <View

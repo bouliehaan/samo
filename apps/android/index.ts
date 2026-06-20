@@ -1,5 +1,5 @@
 import 'react-native-gesture-handler';
-import { registerRootComponent } from 'expo';
+import { AppRegistry } from 'react-native';
 
 import App from './App';
 import { schedulePeriodicCatalogSync } from './src/services/headless-catalog-sync';
@@ -13,7 +13,7 @@ import { schedulePeriodicCatalogSync } from './src/services/headless-catalog-syn
 // deferred by each cold start.
 void schedulePeriodicCatalogSync();
 
-// registerRootComponent calls AppRegistry.registerComponent('main', () => App);
-// It also ensures that whether you load the app in Expo Go or in a native build,
-// the environment is set up appropriately
-registerRootComponent(App);
+// Use AppRegistry directly instead of Expo's registerRootComponent to
+// guarantee that `withDevTools` (and its implicit global `useKeepAwake`)
+// is completely bypassed in production builds.
+AppRegistry.registerComponent('main', () => App);

@@ -15,7 +15,7 @@ import {
     deleteOrphanSongSearch,
     deleteSearchByEntityIds,
     getAlbumTracksSyncedSince,
-    getAllItems,
+    getItemsChunked,
     indexSearchEntries,
     type CatalogSearchEntry,
 } from './catalog-repository';
@@ -133,10 +133,19 @@ const reindexSource = async (authentication: ServerAuthenticationResult): Promis
     //    Bounded by item count (hundreds), so a rebuild every pass is cheap
     //    and unconditionally keeps "what you can browse" == "what you can
     //    search".
-    const items = await getAllItems(sourceId);
-    if (items.length > 0) {
-        await deleteNonSongSearch(sourceId);
-        await indexSearchEntries(sourceId, itemSearchEntries(items), syncedAt);
+    await deleteNonSongSearch(sourceId);
+
+    const ITEM_INDEX_BATCH = 1_000;
+    let itemOffset = 0;
+    while (true) {
+        const items = await getItemsChunked(sourceId, ITEM_INDEX_BATCH, itemOffset);
+        if (items.length > 0) {
+            await indexSearchEntries(sourceId, itemSearchEntries(items), syncedAt);
+        }
+        if (items.length < ITEM_INDEX_BATCH) {
+            break;
+        }
+        itemOffset += ITEM_INDEX_BATCH;
     }
 
     // 2. Songs: incremental — only track rows the sync touched since our
@@ -224,4 +233,15 @@ export const reindexCatalogSearch = (
         }
     })();
     return inFlight;
+};
+
+/**
+ * Await any currently executing search index derivations. Used to ensure safe
+ * native SQLite connection teardown (a forcibly closed connection Native crashes
+ * if an executing transaction uses it concurrently).
+ */
+export const waitForActiveReindex = async (): Promise<void> => {
+    if (inFlight) {
+        await inFlight.catch(() => undefined);
+    }
 };

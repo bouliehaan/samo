@@ -1,4 +1,4 @@
-import { MobileHomeItemType, MobileHomeSectionId } from '@samo/core/mobile';
+import { MobileHomeSectionId } from '@samo/core/mobile';
 import { type ServerAuthenticationResult } from '@samo/core/server';
 import { File } from 'expo-file-system';
 import { Image as ExpoImage } from 'expo-image';
@@ -16,11 +16,10 @@ import {
 import { LibrarySortMenu } from '../components/LibrarySortMenu';
 import { MediaArtwork } from '../components/MediaArtwork';
 import { SkeletonTileGrid } from '../components/Skeleton';
-import { PlayPauseGlyph, PlusGlyph } from '../components/Glyphs';
+import { PlusGlyph } from '../components/Glyphs';
 import { useMediaContextMenu } from '../contexts/media-context-menu';
 import { triggerImpact } from '../services/haptics';
 import { getPersistedServerAuthKey } from '../services/persisted-server';
-import { getRecentContentItemKey } from '../services/recent-content';
 import {
     type AddAndroidRadioStationInput,
     type AddAndroidRadioStationResult,
@@ -66,49 +65,11 @@ export const RadioScreen = memo(({
             ? getSectionsById(homeContentState, [MobileHomeSectionId.RADIO])[0]
             : undefined;
     const stations = section?.items ?? [];
-    const stationsByRecentKey = useMemo(
-        () => new Map(stations.map((station) => [getRecentContentItemKey(station), station])),
-        [stations],
-    );
-    const featuredStation = useMemo(() => {
-        if (stations.length === 0) {
-            return null;
-        }
-
-        for (const recent of recentItems) {
-            if (recent.item.type !== MobileHomeItemType.RADIO) {
-                continue;
-            }
-
-            const station = stationsByRecentKey.get(recent.key);
-            if (station) {
-                return station;
-            }
-        }
-
-        if (nowPlayingRadioId) {
-            const playing = stations.find(
-                (station) => station.playback?.id === nowPlayingRadioId,
-            );
-            if (playing) {
-                return playing;
-            }
-        }
-
-        return [...stations].sort((left, right) => left.title.localeCompare(right.title))[0]!;
-    }, [nowPlayingRadioId, recentItems, stations, stationsByRecentKey]);
-    const otherStations = useMemo(() => {
-        if (!featuredStation) {
-            return [];
-        }
-
-        const featuredKey = getContentItemKey(featuredStation);
-        const rest = stations.filter((station) => getContentItemKey(station) !== featuredKey);
-
+    const sortedStations = useMemo(() => {
         return activeSort === 'name'
-            ? [...rest].sort((left, right) => left.title.localeCompare(right.title))
-            : sortHomeItemsByRecents(rest, recentItems);
-    }, [activeSort, featuredStation, recentItems, stations]);
+            ? [...stations].sort((left, right) => left.title.localeCompare(right.title))
+            : sortHomeItemsByRecents(stations, recentItems);
+    }, [activeSort, recentItems, stations]);
     const activeSortLabel =
         LIBRARY_SORTS.find((sort) => sort.id === activeSort)?.label ?? 'Recents';
     const activeSortShortLabel = activeSort === 'name' ? 'Name' : 'Recent';
@@ -163,8 +124,8 @@ export const RadioScreen = memo(({
     if (stations.length === 0) {
         return (
             <View style={styles.radioScreen}>
-                <View style={[styles.radioGridHeader, styles.radioGridHeaderCompact]}>
-                    <Text style={styles.radioSectionTitle}>Stations</Text>
+                <View style={styles.playlistTopPanel}>
+                    <Text style={styles.homeHeaderTitle}>Radio</Text>
                     {radioHeaderActions}
                 </View>
                 <Text style={[styles.mutedText, styles.radioEmptyText]}>
@@ -191,75 +152,16 @@ export const RadioScreen = memo(({
         );
     }
 
-    if (!featuredStation) {
-        return null;
-    }
-
-    const recentRadioKeys = new Set(
-        recentItems
-            .filter((r) => r.item.type === MobileHomeItemType.RADIO)
-            .map((r) => getRecentContentItemKey(r.item)),
-    );
-    const featuredIsPlaying =
-        nowPlayingRadioId !== null && featuredStation.playback?.id === nowPlayingRadioId;
-    const featuredLiveSubtitle =
-        featuredIsPlaying && activePlaybackItem?.source === 'radio'
-            ? getDisplaySubtitle(activePlaybackItem.subtitle)
-            : undefined;
-    const featuredTileSubtitle =
-        featuredLiveSubtitle ??
-        featuredStation.nowPlayingText ??
-        getDisplaySubtitle(featuredStation.subtitle);
-
     return (
         <View style={styles.radioScreen}>
-            <Pressable
-                accessibilityRole="button"
-                onLongPress={() => contextMenu.openForItem(featuredStation)}
-                onPress={() => onSelectItem(featuredStation)}
-                style={styles.radioHero}
-            >
-                        <View style={styles.radioHeroArtworkWrap}>
-                            <MediaArtwork
-                                artworkImageId={featuredStation.artworkImageId}
-                                artworkUrl={featuredStation.artworkUrl}
-                                contentSource={featuredStation.source}
-                                mediaType="radio"
-                                size="hero"
-                                title={featuredStation.title}
-                            />
-                        </View>
-                <View style={styles.radioHeroText}>
-                    {recentRadioKeys.has(getRecentContentItemKey(featuredStation)) ? (
-                        <Text style={styles.radioHeroEyebrow}>Recently played</Text>
-                    ) : null}
-                    <Text numberOfLines={2} style={styles.radioHeroTitle}>
-                        {featuredStation.title}
-                    </Text>
-                    <Text numberOfLines={2} style={styles.radioHeroSubtitle}>
-                        {featuredIsPlaying
-                            ? (featuredLiveSubtitle ?? 'Now playing')
-                            : (featuredTileSubtitle ?? 'Internet radio')}
-                    </Text>
-                </View>
-                {featuredStation.playback ? (
-                    <View style={styles.radioHeroPlay}>
-                        <PlayPauseGlyph
-                            color={colors.background}
-                            isPlaying={featuredIsPlaying}
-                            size={22}
-                        />
-                    </View>
-                ) : null}
-            </Pressable>
-            <View style={styles.radioGridHeader}>
-                <Text style={styles.radioSectionTitle}>Stations</Text>
+            <View style={styles.playlistTopPanel}>
+                <Text style={styles.homeHeaderTitle}>Radio</Text>
                 {radioHeaderActions}
             </View>
-            {otherStations.length > 0 ? (
+            {sortedStations.length > 0 ? (
                 <>
                     <View style={styles.radioGrid}>
-                        {otherStations.map((station) => {
+                        {sortedStations.map((station) => {
                             const isPlaying =
                                 nowPlayingRadioId !== null &&
                                 station.playback?.id === nowPlayingRadioId;

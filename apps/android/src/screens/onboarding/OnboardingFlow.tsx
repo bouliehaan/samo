@@ -1,6 +1,6 @@
 import { getMobileContentSource } from '@samo/core/mobile';
 import { type ServerAuthenticationResult } from '@samo/core/server';
-import { useKeepAwake } from 'expo-keep-awake';
+import { useKeepAwake, deactivateKeepAwake } from 'expo-keep-awake';
 import { type ReactNode, useCallback, useEffect, useState } from 'react';
 import {
     ActivityIndicator,
@@ -24,7 +24,7 @@ import Reanimated, {
     withTiming,
 } from 'react-native-reanimated';
 
-import { CheckGlyph, EyeGlyph } from '../../components/Glyphs';
+import { EyeGlyph } from '../../components/Glyphs';
 import { useServerDiscovery, type DiscoveredServer } from '../../hooks/use-server-discovery';
 import {
     subscribeCatalogSyncState,
@@ -33,7 +33,14 @@ import {
 import { type AndroidAuthState } from '../../services/server-auth';
 import { colors, radii, spacing } from '../../theme/tokens';
 import { ScanPulse } from './ScanPulse';
+import { SuccessSeal } from './SuccessSeal';
 import { WaveDotsField } from './WaveDotsField';
+
+// If the catalog sync never emits a terminal event (a hard network hang during
+// the very first sync), don't trap the user behind a button-less screen — let the
+// seal play and carry them in anyway. Generous on purpose: a normal sync finishes
+// in seconds and trips the real completion long before this.
+const SYNC_STRAND_GUARD_MS = 90_000;
 
 type OnboardingStep = 'welcome' | 'discover' | 'connect' | 'syncing';
 
@@ -85,6 +92,11 @@ export const OnboardingFlow = (props: OnboardingFlowProps) => {
         },
         [setAuthState],
     );
+
+    const handleFinish = useCallback(() => {
+        deactivateKeepAwake('samo-onboarding');
+        onFinish();
+    }, [onFinish]);
 
     // Connect succeeded → glide into the sync celebration.
     useEffect(() => {
@@ -171,7 +183,7 @@ export const OnboardingFlow = (props: OnboardingFlowProps) => {
             ) : (
                 <SyncingStep
                     key="syncing"
-                    onFinish={onFinish}
+                    onFinish={handleFinish}
                     serverConnection={serverConnection}
                 />
             )}
@@ -644,6 +656,7 @@ const SyncingStep = ({
     serverConnection: ServerAuthenticationResult | null;
 }) => {
     const [syncState, setSyncState] = useState<CatalogSyncState | null>(null);
+    const [stranded, setStranded] = useState(false);
 
     useEffect(() => {
         if (!serverConnection) {
@@ -663,20 +676,19 @@ const SyncingStep = ({
     const hasProgress = Boolean(
         syncState && (syncState.itemCount > 0 || syncState.trackCount > 0),
     );
+    // No manual escape any more, so guarantee we're never trapped on a sync that
+    // never reports a terminal state.
+    const showSuccess = isDone || stranded;
 
-    const heading = isError
-        ? 'Connected'
-        : isDone
-          ? "You're all set"
-          : 'Setting up your library';
+    useEffect(() => {
+        if (showSuccess) {
+            return undefined;
+        }
+        const timer = setTimeout(() => setStranded(true), SYNC_STRAND_GUARD_MS);
+        return () => clearTimeout(timer);
+    }, [showSuccess]);
 
     const detail = (() => {
-        if (isError) {
-            return 'Your library is still syncing in the background — feel free to explore.';
-        }
-        if (isDone) {
-            return 'Everything is ready.';
-        }
         if (!syncState) {
             return 'Connecting to your server…';
         }
@@ -689,42 +701,33 @@ const SyncingStep = ({
         return 'Fetching your catalog…';
     })();
 
+    // On completion the seal takes over the whole stage: orb → check → "Done" →
+    // shimmer away → onFinish (which drops the onboarding overlay onto a Home that
+    // the post-sync re-derive has already filled in). No button — it carries the
+    // user in on its own.
+    if (showSuccess) {
+        return (
+            <StepShell>
+                <View style={{ alignItems: 'center', flex: 1, justifyContent: 'center' }}>
+                    <SuccessSeal onDone={onFinish} />
+                </View>
+            </StepShell>
+        );
+    }
+
     return (
         <StepShell>
             <View style={{ alignItems: 'center', flex: 1, justifyContent: 'center' }}>
-                {isDone ? (
-                    <Reanimated.View
-                        entering={FadeIn.duration(400)}
-                        style={{
-                            alignItems: 'center',
-                            backgroundColor: 'rgba(46,213,115,0.14)',
-                            borderRadius: 48,
-                            height: 96,
-                            justifyContent: 'center',
-                            marginBottom: 28,
-                            width: 96,
-                        }}
-                    >
-                        <CheckGlyph color="#2ed573" size={40} />
-                    </Reanimated.View>
-                ) : (
-                    <View style={{ marginBottom: 28 }}>
-                        <Breather />
-                    </View>
-                )}
+                <View style={{ marginBottom: 28 }}>
+                    <Breather />
+                </View>
 
-                <Text style={[headingStyle, { textAlign: 'center' }]}>{heading}</Text>
+                <Text style={[headingStyle, { textAlign: 'center' }]}>
+                    Setting up your library
+                </Text>
                 <Text style={[subheadingStyle, { textAlign: 'center' }]}>{detail}</Text>
 
-                {!isDone ? <ProgressBar active={hasProgress} /> : null}
-            </View>
-
-            <View style={{ paddingBottom: 8 }}>
-                <GoldButton
-                    disabled={!isDone && !hasProgress}
-                    label={isDone ? 'Enter Samo' : 'Skip for now'}
-                    onPress={onFinish}
-                />
+                <ProgressBar active={hasProgress} />
             </View>
         </StepShell>
     );

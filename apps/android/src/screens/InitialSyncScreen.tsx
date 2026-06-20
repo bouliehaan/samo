@@ -1,12 +1,7 @@
 import { type ServerAuthenticationResult } from '@samo/core/server';
-import { useKeepAwake } from 'expo-keep-awake';
+import { useKeepAwake, deactivateKeepAwake } from 'expo-keep-awake';
 import { useEffect, useState } from 'react';
-import {
-    ActivityIndicator,
-    Pressable,
-    Text,
-    View,
-} from 'react-native';
+import { ActivityIndicator, Text, View } from 'react-native';
 import Reanimated, {
     Easing,
     useAnimatedStyle,
@@ -18,25 +13,35 @@ import { subscribeCatalogSyncState, type CatalogSyncState } from '../services/ca
 import { getMobileContentSource } from '@samo/core/mobile';
 import { styles } from '../theme/styles';
 import { colors } from '../theme/tokens';
-import { CheckGlyph } from '../components/Glyphs';
+import { SuccessSeal } from './onboarding/SuccessSeal';
 
 interface InitialSyncScreenProps {
     onComplete: () => void;
     serverConnection: ServerAuthenticationResult | null;
 }
 
+// Mirror the onboarding flow: no manual escape, so never strand the user behind a
+// sync that never reports a terminal state.
+const SYNC_STRAND_GUARD_MS = 90_000;
+
 export const InitialSyncScreen = ({
     onComplete,
     serverConnection,
 }: InitialSyncScreenProps) => {
     const [syncState, setSyncState] = useState<CatalogSyncState | null>(null);
+    const [stranded, setStranded] = useState(false);
 
     // Keep the screen on while this sync screen is showing.
     useKeepAwake('samo-initial-sync');
 
+    const handleComplete = () => {
+        deactivateKeepAwake('samo-initial-sync');
+        onComplete();
+    };
+
     useEffect(() => {
         if (!serverConnection) return;
-        
+
         return subscribeCatalogSyncState((states) => {
             const sourceId = getMobileContentSource(serverConnection).id;
             const current = states.find((s) => s.sourceId === sourceId);
@@ -48,6 +53,15 @@ export const InitialSyncScreen = ({
 
     const isDone = syncState?.status === 'synced' || syncState?.status === 'error';
     const hasProgress = syncState && (syncState.itemCount > 0 || syncState.trackCount > 0);
+    const showSuccess = isDone || stranded;
+
+    useEffect(() => {
+        if (showSuccess) {
+            return undefined;
+        }
+        const timer = setTimeout(() => setStranded(true), SYNC_STRAND_GUARD_MS);
+        return () => clearTimeout(timer);
+    }, [showSuccess]);
 
     // Live, specific detail beats a static "Syncing…": name what's actually
     // streaming in and let the counts tick up so the wait reads as motion.
@@ -67,13 +81,11 @@ export const InitialSyncScreen = ({
     const progressValue = useSharedValue(0);
 
     useEffect(() => {
-        if (isDone) {
-            progressValue.value = withTiming(1, { duration: 600, easing: Easing.out(Easing.cubic) });
-        } else if (hasProgress) {
+        if (hasProgress) {
             // Fake progress animation that approaches 90% while syncing
             progressValue.value = withTiming(0.9, { duration: 8000, easing: Easing.out(Easing.cubic) });
         }
-    }, [isDone, hasProgress, progressValue]);
+    }, [hasProgress, progressValue]);
 
     const progressStyle = useAnimatedStyle(() => ({
         width: `${progressValue.value * 100}%`,
@@ -90,87 +102,71 @@ export const InitialSyncScreen = ({
                 borderWidth: 1,
                 borderColor: 'rgba(255,255,255,0.06)',
             }}>
-                <View style={{
-                    width: 64,
-                    height: 64,
-                    borderRadius: 32,
-                    backgroundColor: isDone ? 'rgba(46, 213, 115, 0.15)' : 'rgba(255,255,255,0.08)',
-                    justifyContent: 'center',
-                    alignItems: 'center',
-                    marginBottom: 24,
-                }}>
-                    {isDone ? (
-                        <CheckGlyph color="#2ed573" />
-                    ) : (
-                        <ActivityIndicator size="large" color={colors.accent} />
-                    )}
-                </View>
-
-                <Text style={{
-                    color: colors.text,
-                    fontSize: 22,
-                    fontWeight: '800',
-                    marginBottom: 8,
-                    textAlign: 'center',
-                }}>
-                    {isDone ? 'Ready to Go!' : 'Setting up home page'}
-                </Text>
-
-                <Text style={{
-                    color: colors.muted,
-                    fontSize: 15,
-                    lineHeight: 22,
-                    textAlign: 'center',
-                    marginBottom: 32,
-                }}>
-                    {isDone 
-                        ? 'Your catalog has been synced successfully.' 
-                        : 'We are downloading the initial catalog information to make the app fast and responsive.'}
-                </Text>
-
-                {!isDone && (
-                    <View style={{ width: '100%', marginBottom: 32 }}>
+                {showSuccess ? (
+                    // The seal morphs in, says "Done", shimmers away, and carries
+                    // the user into the app on its own — no button.
+                    <View style={{ alignItems: 'center', paddingVertical: 16 }}>
+                        <SuccessSeal onDone={handleComplete} />
+                    </View>
+                ) : (
+                    <>
                         <View style={{
-                            height: 6,
-                            backgroundColor: 'rgba(255,255,255,0.1)',
-                            borderRadius: 3,
-                            overflow: 'hidden',
-                            width: '100%',
+                            width: 64,
+                            height: 64,
+                            borderRadius: 32,
+                            backgroundColor: 'rgba(255,255,255,0.08)',
+                            justifyContent: 'center',
+                            alignItems: 'center',
+                            marginBottom: 24,
                         }}>
-                            <Reanimated.View style={[
-                                { height: '100%', backgroundColor: colors.accent, borderRadius: 3 },
-                                progressStyle
-                            ]} />
+                            <ActivityIndicator size="large" color={colors.accent} />
                         </View>
+
+                        <Text style={{
+                            color: colors.text,
+                            fontSize: 22,
+                            fontWeight: '800',
+                            marginBottom: 8,
+                            textAlign: 'center',
+                        }}>
+                            Setting up home page
+                        </Text>
+
                         <Text style={{
                             color: colors.muted,
-                            fontSize: 13,
-                            marginTop: 12,
+                            fontSize: 15,
+                            lineHeight: 22,
                             textAlign: 'center',
-                            fontWeight: '600',
+                            marginBottom: 32,
                         }}>
-                            {syncDetailText}
+                            We are downloading the initial catalog information to make the app fast and responsive.
                         </Text>
-                    </View>
-                )}
 
-                <Pressable
-                    accessibilityRole="button"
-                    disabled={!isDone && !hasProgress}
-                    onPress={onComplete}
-                    style={({ pressed }) => [
-                        styles.primaryButton,
-                        {
-                            width: '100%',
-                            opacity: (!isDone && !hasProgress) ? 0.5 : 1,
-                            transform: [{ scale: pressed ? 0.98 : 1 }]
-                        }
-                    ]}
-                >
-                    <Text style={styles.primaryButtonText}>
-                        {isDone ? 'Take me home' : 'Skip and explore'}
-                    </Text>
-                </Pressable>
+                        <View style={{ width: '100%' }}>
+                            <View style={{
+                                height: 6,
+                                backgroundColor: 'rgba(255,255,255,0.1)',
+                                borderRadius: 3,
+                                overflow: 'hidden',
+                                width: '100%',
+                            }}>
+                                <Reanimated.View style={[
+                                    { height: '100%', backgroundColor: colors.accent, borderRadius: 3 },
+                                    progressStyle
+                                ]} />
+                            </View>
+                            <Text style={{
+                                color: colors.muted,
+                                fontSize: 13,
+                                marginTop: 12,
+                                textAlign: 'center',
+                                fontWeight: '600',
+                            }}>
+                                {syncDetailText}
+                            </Text>
+                        </View>
+                    </>
+                )}
             </View>
         </View>
     );

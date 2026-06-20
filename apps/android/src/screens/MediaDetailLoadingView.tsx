@@ -139,7 +139,12 @@ export const MediaDetailLoadingView = ({
     return (
         <SkeletonPulseProvider>
             <View style={styles.mediaDetailScreen}>
-                <View style={[styles.mediaDetailContent, styles.content]}>
+                {/* Must be styles.mediaDetailContent ALONE — the loaded view's
+                    FlashList uses it as its contentContainerStyle (paddingTop 58).
+                    Adding styles.content here overrode paddingTop to spacing.lg
+                    (24), so the real content landed 34px lower than the skeleton
+                    on load — the visible "jump". */}
+                <View style={styles.mediaDetailContent}>
                     {artworkUrl || artworkImageId ? (
                         isArtist ? (
                             <View style={styles.detailHero}>
@@ -219,7 +224,11 @@ export const MediaDetailLoadingView = ({
                     ) : (
                         <Text style={styles.sectionTitle}>{title}</Text>
                     )}
-                    <View style={{ marginTop: spacing.md, marginHorizontal: spacing.md, paddingBottom: 100 }}>
+                    {/* No marginTop here: the hero's own marginBottom (spacing.lg)
+                        sets the gap to the first row, exactly as in the loaded
+                        FlashList — an extra marginTop made the rows sit lower than
+                        the real ones and jump up on load. */}
+                    <View style={{ marginHorizontal: spacing.md, paddingBottom: 100 }}>
                         {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
                             <SkeletonTrackRow key={i} />
                         ))}

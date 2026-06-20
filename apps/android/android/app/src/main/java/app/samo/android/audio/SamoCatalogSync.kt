@@ -245,6 +245,13 @@ internal object SamoCatalogSync {
             }
             sourceCounts
         }
+
+        // Close the native writer before emitting the sync event. This ensures the
+        // SQLite file locks and WAL index locks are fully released before the JS
+        // environment (expo-sqlite) begins its concurrent search-indexing pass,
+        // avoiding POSIX lock-merging memory corruption.
+        SamoCatalogWriter.close()
+
         SamoCatalogSyncEvents.emit(
             sourceId,
             if (!hadRealErrors || counts.items > 0 || counts.tracks > 0) "synced" else "error",

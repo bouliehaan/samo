@@ -24,7 +24,7 @@ import { type LibraryMediaType } from '../types/library-display';
 import { getHomeLayoutHint } from '../services/home-layout-hint';
 import { reconcileHomeDisplaySections } from './home-display-reconcile';
 import { clamp } from './math';
-import { mergeContentItemSignals } from './content-item';
+import { getContentItemKey, mergeContentItemSignals } from './content-item';
 import { getLibraryMediaType } from './library-display';
 import {
     collectAlbumCanonicalKeys,
@@ -43,6 +43,24 @@ const sortHomeItemsByLastPlayed = (items: MobileHomeItem[]): MobileHomeItem[] =>
         }
         return left.title.localeCompare(right.title);
     });
+
+/** Drop repeats within a single shelf, keeping first-seen order, keyed exactly
+ *  like the FlashList `key=` (source:type:id) so no two rendered tiles collide. */
+const dedupeByContentKey = <T extends { id: string; source?: { id: string }; type: string }>(
+    items: T[],
+): T[] => {
+    const seen = new Set<string>();
+    const unique: T[] = [];
+    for (const item of items) {
+        const key = getContentItemKey(item);
+        if (seen.has(key)) {
+            continue;
+        }
+        seen.add(key);
+        unique.push(item);
+    }
+    return unique;
+};
 
 const HOME_FILTER_DEFINITIONS: Array<{ id: HomeFilter; label: string }> = [
     { id: 'all', label: 'All' },
@@ -665,8 +683,16 @@ export const getHomeDisplaySections = (
     }
 
     // Keep pending placeholders (which carry no items) alongside populated shelves.
-    const result = displaySections.filter(
-        (section) => section.items.length > 0 || section.pending,
-    );
+    // Dedupe each shelf by the SAME key the list renderer uses for `key=` — the
+    // same album can legitimately fall into more than one pool (e.g. recently
+    // played AND recently added), and a repeat within one shelf is React's
+    // "two children with the same key" warning, which duplicates/drops tiles.
+    const result = displaySections
+        .map((section) =>
+            section.items.length > 0
+                ? { ...section, items: dedupeByContentKey(section.items) }
+                : section,
+        )
+        .filter((section) => section.items.length > 0 || section.pending);
     return reconcileHomeDisplaySections(previous, result);
 };
