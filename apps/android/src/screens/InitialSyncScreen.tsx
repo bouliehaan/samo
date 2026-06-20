@@ -1,4 +1,5 @@
 import { type ServerAuthenticationResult } from '@samo/core/server';
+import { useKeepAwake } from 'expo-keep-awake';
 import { useEffect, useState } from 'react';
 import {
     ActivityIndicator,
@@ -30,6 +31,9 @@ export const InitialSyncScreen = ({
 }: InitialSyncScreenProps) => {
     const [syncState, setSyncState] = useState<CatalogSyncState | null>(null);
 
+    // Keep the screen on while this sync screen is showing.
+    useKeepAwake('samo-initial-sync');
+
     useEffect(() => {
         if (!serverConnection) return;
         
@@ -44,6 +48,21 @@ export const InitialSyncScreen = ({
 
     const isDone = syncState?.status === 'synced' || syncState?.status === 'error';
     const hasProgress = syncState && (syncState.itemCount > 0 || syncState.trackCount > 0);
+
+    // Live, specific detail beats a static "Syncing…": name what's actually
+    // streaming in and let the counts tick up so the wait reads as motion.
+    const syncDetailText = (() => {
+        if (!syncState) {
+            return 'Connecting to your server…';
+        }
+        if (syncState.trackCount > 0) {
+            return `Syncing music — ${syncState.itemCount.toLocaleString()} albums · ${syncState.trackCount.toLocaleString()} tracks`;
+        }
+        if (syncState.itemCount > 0) {
+            return `Building your library — ${syncState.itemCount.toLocaleString()} items`;
+        }
+        return 'Fetching your catalog…';
+    })();
 
     const progressValue = useSharedValue(0);
 
@@ -123,17 +142,15 @@ export const InitialSyncScreen = ({
                                 progressStyle
                             ]} />
                         </View>
-                        {syncState && (
-                            <Text style={{
-                                color: colors.muted,
-                                fontSize: 13,
-                                marginTop: 12,
-                                textAlign: 'center',
-                                fontWeight: '600',
-                            }}>
-                                Syncing {syncState.itemCount} items...
-                            </Text>
-                        )}
+                        <Text style={{
+                            color: colors.muted,
+                            fontSize: 13,
+                            marginTop: 12,
+                            textAlign: 'center',
+                            fontWeight: '600',
+                        }}>
+                            {syncDetailText}
+                        </Text>
                     </View>
                 )}
 

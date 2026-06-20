@@ -6,9 +6,8 @@ export const getHighResolutionArtworkUrl = (
 
     try {
         const url = new URL(artworkUrl);
-        const isSubsonicCoverArt = url.pathname.toLowerCase().includes('getcoverart');
 
-        if (url.searchParams.has('size') || isSubsonicCoverArt) {
+        if (url.searchParams.has('size')) {
             url.searchParams.set('size', String(size));
         }
 

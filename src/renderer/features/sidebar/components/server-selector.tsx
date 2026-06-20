@@ -56,7 +56,7 @@ export const ServerSelector = () => {
     })();
 
     const logo =
-        currentServer.type === ServerType.NAVIDROME
+        false
             ? NavidromeLogo
             : currentServer.type === ServerType.JELLYFIN
               ? JellyfinLogo

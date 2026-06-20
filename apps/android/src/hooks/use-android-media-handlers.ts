@@ -6,7 +6,7 @@ import {
     getItemQualityProfile,
     getMobileContentSource,
     loadMobileMediaDetail,
-    loadSongRadioQueue,
+
     type MobileContentSource,
     type MobileHomeItem,
     MobileHomeItemType,
@@ -427,6 +427,18 @@ export function useAndroidMediaHandlers(
 
     const prefetchMediaDetailCache = useCallback((item: AndroidRecentContentSourceItem) => {
         if (item.playback || item.type === MobileHomeItemType.AUDIOBOOK) {
+            // Playable items (radio / podcast episode / audiobook) open the
+            // player, not a detail page — there's no detail to pre-cache. But
+            // still warm the now-playing artwork on press-in so the optimistic
+            // mini-player never flashes blank during the start-up buffer.
+            prefetchArtworkUrl(
+                {
+                    artworkImageId: item.artworkImageId,
+                    artworkUrl: item.artworkUrl,
+                    source: item.source,
+                },
+                serverConnection,
+            );
             return;
         }
         prefetchArtworkUrl(
@@ -763,8 +775,8 @@ export function useAndroidMediaHandlers(
         const baseTrack = detail.tracks[chapterIndex] ?? detail.tracks[0];
 
         // For resume, override the chapter's startSeconds with the user's actual
-        // position so loadAudiobookshelfPlayback seeds initialPositionSeconds
-        // correctly inside playQueuedItem.
+        // position so the Samo audiobook playback path seeds
+        // initialPositionSeconds correctly inside playQueuedItem.
         const trackToPlay: MobileMediaTrack =
             resumeSeconds > 0 && baseTrack
                 ? { ...baseTrack, startSeconds: resumeSeconds }
@@ -1260,47 +1272,8 @@ export function useAndroidMediaHandlers(
         track: MobileMediaTrack,
         source: MobileContentSource | undefined,
     ) => {
-        if (track.playback?.source !== 'music' || !source) {
-            setContextMenuFeedback('Song Radio is only available for music tracks.');
-            return;
-        }
-        const auth = findAuthForSource(source.id);
-        if (!auth) {
-            setContextMenuFeedback('The server for this song is no longer connected.');
-            return;
-        }
-
+        setContextMenuFeedback('Song Radio is no longer supported.');
         setContextMenuTarget(null);
-
-        try {
-            const radioQueue = await loadSongRadioQueue({
-                authentication: auth,
-                seed: {
-                    albumId: track.albumId,
-                    artist: track.artist,
-                    artistId: track.artistId,
-                    songId: track.id,
-                },
-            });
-
-            // Always lead with the seed song so the user hears it first.
-            const seedPlayback = track.playback;
-            const queue = seedPlayback
-                ? [seedPlayback, ...radioQueue.filter((item) => item.id !== seedPlayback.id)]
-                : radioQueue;
-
-            if (queue.length === 0) {
-                setContextMenuFeedback('No similar songs were returned by the server.');
-                return;
-            }
-
-            absContextRef.current = null;
-            await handlePlayItem(queue[0], queue, 0, { shuffled: false });
-        } catch (error) {
-            setContextMenuFeedback(
-                error instanceof Error ? error.message : 'Could not start Song Radio.',
-            );
-        }
     };
 
     const canAppendToPlaybackQueue =
@@ -1705,7 +1678,7 @@ export function useAndroidMediaHandlers(
         if (!auth) {
             Alert.alert(
                 'No music server',
-                'Connect a Samo, Navidrome, or Subsonic server to create playlists.',
+                'Connect a Samo server to create playlists.',
             );
             return;
         }

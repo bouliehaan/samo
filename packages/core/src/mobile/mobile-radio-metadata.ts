@@ -218,7 +218,6 @@ const trimDescription = (description: string | undefined, maxLength = 96): strin
 
     return `${trimmed.slice(0, maxLength - 1)}…`;
 };
-
 export const resolveRadioPlaybackDisplay = (
     stationName: string,
     options?: {

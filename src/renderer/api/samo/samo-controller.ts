@@ -94,11 +94,9 @@ let lastPlaylistContextId: null | string = null;
 
 const samoAuthentication = (server: {
     credential: string;
-    ndCredential?: string;
     url: string;
 }) => ({
     credential: server.credential,
-    ndCredential: server.ndCredential,
     type: ServerType.SAMO as const,
     url: server.url,
 });
@@ -109,7 +107,8 @@ const samoAuthentication = (server: {
  * (e.g. `album-1`) and resolve through cover routes using `itemType`.
  */
 const resolveSamoImageUrlFromQueryId = (
-    auth: { credential: string; ndCredential?: string; url: string },
+    auth: { credential: string;
+ url: string },
     id: string | undefined,
     streamToken: string | undefined,
     itemType: LibraryItem | undefined,
@@ -156,7 +155,6 @@ const resolveSamoImageUrlFromQueryId = (
 
 const ensureStreamTokenForServer = async (server: {
     credential: string;
-    ndCredential?: string;
     url: string;
 }): Promise<string | undefined> => {
     const auth = {
@@ -164,7 +162,6 @@ const ensureStreamTokenForServer = async (server: {
         credential: server.credential,
         details: '',
         kind: 'samo-token' as const,
-        ndCredential: server.ndCredential,
         title: '',
         type: ServerType.SAMO as const,
         url: server.url,
@@ -417,13 +414,6 @@ const sortTracksForList = (
         case SongListSort.RANDOM:
             list.sort(() => Math.random() - 0.5);
             break;
-        case SongListSort.NAME:
-            list.sort(
-                (a, b) =>
-                    (a.sortTitle ?? a.title ?? '').localeCompare(b.sortTitle ?? b.title ?? '') *
-                    order,
-            );
-            break;
         default:
             break;
     }
@@ -471,7 +461,8 @@ const samoListDirection = (sortOrder: SortOrder | undefined): 'asc' | 'desc' | u
     sortOrder === SortOrder.DESC ? 'desc' : sortOrder === SortOrder.ASC ? 'asc' : undefined;
 
 const fetchSamoAlbumTracks = async (
-    auth: { credential: string; ndCredential?: string; url: string },
+    auth: { credential: string;
+ url: string },
     albumIds: string[],
 ): Promise<SamoMusicTrack[]> => {
     const uniqueAlbumIds = [...new Set(albumIds.filter(Boolean))];
@@ -497,7 +488,8 @@ const fetchSamoAlbumTracks = async (
 };
 
 const fetchSamoArtistTracks = async (
-    auth: { credential: string; ndCredential?: string; url: string },
+    auth: { credential: string;
+ url: string },
     artistIds: string[],
 ): Promise<SamoMusicTrack[]> => {
     const uniqueArtistIds = [...new Set(artistIds.filter(Boolean))];
@@ -517,7 +509,8 @@ const fetchSamoArtistTracks = async (
 };
 
 export const fetchSamoUnplayedHomeTracks = async (
-    server: { credential: string; ndCredential?: string; url: string },
+    server: { credential: string;
+ url: string },
     options: { limit: number; signal?: AbortSignal },
 ): Promise<Song[]> => {
     const auth = samoAuthentication(server);
@@ -532,7 +525,8 @@ export const fetchSamoUnplayedHomeTracks = async (
 
 /** Home discovery queue: unplayed tracks with a recent/older mix (server-side). */
 export const fetchSamoDiscoveryHomeTracks = async (
-    server: { credential: string; ndCredential?: string; url: string },
+    server: { credential: string;
+ url: string },
     options: { limit: number; signal?: AbortSignal },
 ): Promise<Song[]> => {
     const auth = samoAuthentication(server);
@@ -546,7 +540,8 @@ export const fetchSamoDiscoveryHomeTracks = async (
 };
 
 export const fetchSamoUnplayedHomeAlbums = async (
-    server: { credential: string; ndCredential?: string; url: string },
+    server: { credential: string;
+ url: string },
     options: { limit: number; signal?: AbortSignal },
 ): Promise<Album[]> => {
     const auth = samoAuthentication(server);
@@ -616,7 +611,6 @@ export const SamoController: Partial<InternalControllerEndpoint> = {
         return {
             credential: result.credential,
             isAdmin: result.isAdmin,
-            ndCredential: result.ndCredential,
             userId: result.userId ?? null,
             username: result.username,
         };
@@ -1540,28 +1534,33 @@ export const SamoController: Partial<InternalControllerEndpoint> = {
  */
 export const samoExtras = {
     createBookmark: async (
-        server: { credential: string; ndCredential?: string; url: string },
+        server: { credential: string;
+ url: string },
         audiobookId: string,
         body: { chapterId?: string; note?: string; positionSeconds?: number; title?: string },
     ) => createSamoAudiobookBookmark(browserFetch, samoAuthentication(server), audiobookId, body),
 
     deleteBookmark: async (
-        server: { credential: string; ndCredential?: string; url: string },
+        server: { credential: string;
+ url: string },
         id: string,
     ) => deleteSamoBookmark(browserFetch, samoAuthentication(server), id),
 
     getAudiobook: async (
-        server: { credential: string; ndCredential?: string; url: string },
+        server: { credential: string;
+ url: string },
         id: string,
     ) => getSamoAudiobook(browserFetch, samoAuthentication(server), id),
 
     getAudiobookBookmarks: async (
-        server: { credential: string; ndCredential?: string; url: string },
+        server: { credential: string;
+ url: string },
         audiobookId: string,
     ) => listSamoAudiobookBookmarks(browserFetch, samoAuthentication(server), audiobookId),
 
     getAudiobookCoverUrl: async (
-        server: { credential: string; ndCredential?: string; url: string },
+        server: { credential: string;
+ url: string },
         audiobookId: string,
     ) => {
         const auth = samoAuthentication(server);
@@ -1570,38 +1569,43 @@ export const samoExtras = {
     },
 
     getBookmarks: async (
-        server: { credential: string; ndCredential?: string; url: string },
+        server: { credential: string;
+ url: string },
         limit?: number,
     ) => listSamoBookmarks(browserFetch, samoAuthentication(server), { limit }),
 
     getCatalogOverview: async (server: {
         credential: string;
-        ndCredential?: string;
         url: string;
     }) => getSamoCatalogOverview(browserFetch, samoAuthentication(server)),
 
     getPodcastEpisodes: async (
-        server: { credential: string; ndCredential?: string; url: string },
+        server: { credential: string;
+ url: string },
         showId: string,
     ) => listSamoPodcastEpisodes(browserFetch, samoAuthentication(server), showId, { limit: 500 }),
 
     getPodcastShow: async (
-        server: { credential: string; ndCredential?: string; url: string },
+        server: { credential: string;
+ url: string },
         id: string,
     ) => getSamoPodcastShow(browserFetch, samoAuthentication(server), id),
 
     listAudiobooks: async (
-        server: { credential: string; ndCredential?: string; url: string },
+        server: { credential: string;
+ url: string },
         input?: { limit?: number; offset?: number },
     ) => listSamoAudiobooks(browserFetch, samoAuthentication(server), input),
 
     listPodcasts: async (
-        server: { credential: string; ndCredential?: string; url: string },
+        server: { credential: string;
+ url: string },
         input?: { limit?: number; offset?: number },
     ) => listSamoPodcasts(browserFetch, samoAuthentication(server), input),
 
     resolveAlbumArtworkUrl: (
-        server: { credential: string; ndCredential?: string; url: string },
+        server: { credential: string;
+ url: string },
         album: SamoMusicAlbum,
     ) =>
         resolveSamoAlbumArtworkUrl(
@@ -1611,7 +1615,8 @@ export const samoExtras = {
         ),
 
     resolveArtistArtworkUrl: (
-        server: { credential: string; ndCredential?: string; url: string },
+        server: { credential: string;
+ url: string },
         artist: SamoMusicArtist,
     ) =>
         resolveSamoArtistArtworkUrl(
@@ -1621,7 +1626,8 @@ export const samoExtras = {
         ),
 
     resolveAudiobookArtworkUrl: (
-        server: { credential: string; ndCredential?: string; url: string },
+        server: { credential: string;
+ url: string },
         audiobook: {
             cover?: SamoMusicAlbum['images'] extends Array<infer T> ? T : never;
             id: string;
@@ -1634,7 +1640,8 @@ export const samoExtras = {
         ),
 
     resolvePodcastArtworkUrl: (
-        server: { credential: string; ndCredential?: string; url: string },
+        server: { credential: string;
+ url: string },
         podcast: {
             cover?: SamoMusicAlbum['images'] extends Array<infer T> ? T : never;
             id: string;

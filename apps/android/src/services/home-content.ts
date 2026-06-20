@@ -69,10 +69,20 @@ const deepEqual = (a: unknown, b: unknown): boolean => {
 export const reconcileHomeContent = (
     previous: MobileHomeContent | null | undefined,
     next: MobileHomeContent,
+    options?: { prune?: boolean },
 ): MobileHomeContent => {
     if (!previous) {
         return next;
     }
+
+    // Mid-sync the on-device mirror can briefly read THIN — a shelf that's
+    // really still there returns zero rows and drops out of `next`. Applying
+    // that verbatim blanks the shelf, then the next derive refills it: a visible
+    // deload→reload. So by default we DON'T prune — a populated shelf that
+    // vanished from `next` is merged back at its prior slot. Only an
+    // authoritative derive (post-sync refresh) passes `prune: true` to actually
+    // remove a deleted shelf.
+    const prune = options?.prune ?? false;
 
     const previousItemsByKey = new Map<string, MobileHomeItem>();
     for (const section of previous.sections) {
@@ -84,7 +94,7 @@ export const reconcileHomeContent = (
         previous.sections.map((section) => [section.id, section]),
     );
 
-    const sections = next.sections.map((section) => {
+    const reconciledNext = next.sections.map((section) => {
         const items = section.items.map((item) => {
             const previousItem = previousItemsByKey.get(getContentItemKey(item));
             return previousItem && deepEqual(previousItem, item) ? previousItem : item;
@@ -100,6 +110,20 @@ export const reconcileHomeContent = (
         }
         return { ...section, items };
     });
+
+    let sections = reconciledNext;
+    if (!prune) {
+        const nextSectionIds = new Set(next.sections.map((section) => section.id));
+        const merged = [...reconciledNext];
+        // Re-insert each populated previous shelf missing from `next` at the
+        // index it held before, so a transient thin read can't make it disappear.
+        previous.sections.forEach((previousSection, previousIndex) => {
+            if (previousSection.items.length > 0 && !nextSectionIds.has(previousSection.id)) {
+                merged.splice(Math.min(previousIndex, merged.length), 0, previousSection);
+            }
+        });
+        sections = merged;
+    }
 
     const sectionsUnchanged =
         sections.length === previous.sections.length &&

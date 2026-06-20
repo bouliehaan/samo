@@ -3,7 +3,7 @@ import {
     MobileHomeItemType,
 } from '@samo/core/mobile';
 import { FlashList } from '@shopify/flash-list';
-import { memo, useState, useMemo, useCallback } from 'react';
+import { memo, useState, useMemo, useCallback, useRef } from 'react';
 import {
     ActivityIndicator,
     Platform,
@@ -17,6 +17,7 @@ import { useVisibleHomeContentState } from '../hooks/use-visible-home-content';
 import { useVisibleRecentItems } from '../hooks/use-visible-recent-items';
 
 import { ArtworkImage } from '../components/ArtworkImage';
+import { HomeSkeletonPage, HomeSkeletonRow } from '../components/Skeleton';
 import { QualityBadge } from '../components/QualityBadge';
 import { TrackDownloadedGlyph } from '../components/Glyphs';
 import { WarningList } from '../components/WarningList';
@@ -27,16 +28,8 @@ import {
 import { useMediaContextMenu } from '../contexts/media-context-menu';
 import { useStableCallback } from '../hooks/use-stable-callback';
 import {
-    HOME_COMPACT_OFFSET,
-    HOME_MEDIA_PROGRESS_CHROME,
-    HOME_MEDIA_ROW_HEIGHT,
-    HOME_MEDIA_ROW_HEIGHT_ARTIST,
-    HOME_MEDIA_ROW_HEIGHT_COMPACT,
-    HOME_MEDIA_ROW_HEIGHT_ROUNDED,
-    HOME_MEDIA_ROW_HEIGHT_WIDE,
-    HOME_PRIMARY_TILE,
-    HOME_ROUNDED_OFFSET,
-    HOME_TILE_GAP,
+    getHomeRowItemLength,
+    getHomeSectionRowHeight,
 } from '../theme/layout';
 import { styles } from '../theme/styles';
 import { colors, spacing } from '../theme/tokens';
@@ -92,7 +85,7 @@ export const HomeScreen = memo(({
             <View style={styles.section}>
                 <Text style={styles.sectionTitle}>Connect Your Library</Text>
                 <Text style={styles.mutedText}>
-                    Connect Navidrome, Subsonic, or Audiobookshelf to load your real library.
+                    Connect your server to load your real library.
                 </Text>
                 <Pressable
                     accessibilityRole="button"
@@ -146,17 +139,24 @@ export const HomeContentStatus = ({
         onViewAll?.(section);
     });
     const loadedContent = homeContentState.status === 'loaded' ? homeContentState.content : null;
-    const allSections = useMemo(
-        () =>
-            loadedContent
-                ? getHomeDisplaySections(
-                      loadedContent.sections,
-                      recentItems,
-                      serverConnection,
-                  )
-                : [],
-        [loadedContent, recentItems, serverConnection],
-    );
+    // Feed the last computed sections back in so identity is preserved across
+    // recomputes (a serverConnection re-auth rotates every artwork token; the
+    // async recentItems fill on cold boot also retriggers this) — without it,
+    // every tile gets a fresh object and the whole page remounts (the cold-boot
+    // "deload everything then reload everything" flash).
+    const previousSectionsRef = useRef<HomeDisplaySection[] | undefined>(undefined);
+    const allSections = useMemo(() => {
+        const computed = loadedContent
+            ? getHomeDisplaySections(
+                  loadedContent.sections,
+                  recentItems,
+                  serverConnection,
+                  previousSectionsRef.current,
+              )
+            : [];
+        previousSectionsRef.current = computed;
+        return computed;
+    }, [loadedContent, recentItems, serverConnection]);
     const availableFilters = useMemo(
         () => getAvailableHomeFilters(allSections),
         [allSections],
@@ -186,11 +186,7 @@ export const HomeContentStatus = ({
     }
 
     if (homeContentState.status === 'loading') {
-        return (
-            <View style={styles.section}>
-                <ActivityIndicator color={colors.accent} />
-            </View>
-        );
+        return <HomeSkeletonPage />;
     }
 
     if (homeContentState.status === 'error') {
@@ -286,8 +282,24 @@ export const ContentBackedScreen = memo(({
     emptyTitle,
     onSelectItem,
     sectionIds,
+    serverConnection,
 }: ContentBackedScreenProps) => {
     const homeContentState = useAppNavigationSelector((state) => state.homeContentState);
+
+    // Hooks must run in the same order on every render, so this useMemo has to
+    // sit ABOVE the loading/error/idle early-returns below. getSectionsById
+    // returns [] for any non-loaded state, so running it eagerly is safe.
+    const displaySections = useMemo(
+        () =>
+            getSectionsById(homeContentState, sectionIds).map((section) => ({
+                items: section.items,
+                key: section.id,
+                title: section.title,
+                variant: ((section as any).variant as HomeDisplaySection['variant']) ?? 'album',
+            })),
+        [homeContentState, sectionIds],
+    );
+
     if (homeContentState.status === 'idle') {
         return <EmptyServerBackedScreen tabTitle={emptyTitle} />;
     }
@@ -308,9 +320,7 @@ export const ContentBackedScreen = memo(({
         );
     }
 
-    const sections = getSectionsById(homeContentState, sectionIds);
-
-    if (sections.length === 0) {
+    if (displaySections.length === 0) {
         return (
             <View style={styles.section}>
                 <Text style={styles.sectionTitle}>{emptyTitle}</Text>
@@ -322,12 +332,8 @@ export const ContentBackedScreen = memo(({
     return (
         <ContentSections
             onSelectItem={onSelectItem}
-            sections={sections.map((section) => ({
-                items: section.items,
-                key: section.id,
-                title: section.title,
-                variant: 'album',
-            }))}
+            sections={displaySections}
+            serverConnection={serverConnection}
         />
     );
 });
@@ -397,8 +403,7 @@ const HomeFilterGridTile = memo(({
                 <View style={styles.homeFilterGridSubtitleRow}>
                     <Text
                         numberOfLines={1}
-                        style={styles.mediaSubtitle}
-                        {...androidTrimCaptionFont}
+                        style={[styles.mediaSubtitle, androidTrimCaptionFont]}
                     >
                         {subtitle}
                     </Text>
@@ -445,55 +450,6 @@ HomeFilterGrid.displayName = 'HomeFilterGrid';
 
 const androidTrimCaptionFont =
     Platform.OS === 'android' ? ({ includeFontPadding: false } as const) : {};
-
-const getHomeRowItemLength = (variant: HomeDisplaySection['variant']): number => {
-    switch (variant) {
-        case 'artist':
-            return HOME_PRIMARY_TILE - HOME_COMPACT_OFFSET + HOME_TILE_GAP;
-        case 'podcast':
-        case 'podcast-feed':
-        case 'radio':
-            return HOME_PRIMARY_TILE - HOME_ROUNDED_OFFSET + HOME_TILE_GAP;
-        case 'continue':
-        case 'wide':
-            return 320 + HOME_TILE_GAP;
-        case 'album':
-        case 'book':
-        case 'playlist':
-        case 'recents':
-            return HOME_PRIMARY_TILE + HOME_TILE_GAP;
-    }
-};
-
-const getHomeSectionRowHeight = (
-    variant: HomeDisplaySection['variant'],
-    rowCount: number,
-): number => {
-    let singleHeight: number;
-    switch (variant) {
-        case 'artist':
-            singleHeight = HOME_MEDIA_ROW_HEIGHT_ARTIST;
-            break;
-        case 'podcast':
-        case 'radio':
-            singleHeight = HOME_MEDIA_ROW_HEIGHT_ROUNDED;
-            break;
-        case 'podcast-feed':
-            singleHeight = HOME_MEDIA_ROW_HEIGHT_ROUNDED + HOME_MEDIA_PROGRESS_CHROME;
-            break;
-        case 'continue':
-        case 'wide':
-            singleHeight = HOME_MEDIA_ROW_HEIGHT_WIDE;
-            break;
-        case 'recents':
-            singleHeight = HOME_MEDIA_ROW_HEIGHT_COMPACT;
-            break;
-        default:
-            singleHeight = HOME_MEDIA_ROW_HEIGHT;
-    }
-
-    return rowCount > 1 ? singleHeight * 2 + spacing.xs : singleHeight;
-};
 
 interface HomeMediaTileProps {
     item: AndroidRecentContentSourceItem;
@@ -644,8 +600,8 @@ const HomeMediaTile = memo(({
                                         styles.mediaSubtitle,
                                         styles.mediaSubtitleInline,
                                         isArtist && styles.mediaSubtitleCentered,
+                                        androidTrimCaptionFont,
                                     ]}
-                                    {...androidTrimCaptionFont}
                                 >
                                     {subtitle}
                                 </Text>
@@ -757,20 +713,22 @@ const HomeDisplayRow = memo(({
 
     return (
         <View style={styles.homeSection}>
-            <View style={styles.sectionHeaderRow}>
-                <Text style={styles.sectionTitle}>{section.title}</Text>
-                {canViewAll ? (
-                    <Pressable
-                        accessibilityLabel={`View all ${section.title}`}
-                        accessibilityRole="button"
-                        hitSlop={8}
-                        onPress={() => onViewAll?.(section)}
-                        style={styles.sectionViewAll}
-                    >
-                        <Text style={styles.sectionViewAllLabel}>View All</Text>
-                    </Pressable>
-                ) : null}
-            </View>
+            {section.title ? (
+                <View style={styles.sectionHeaderRow}>
+                    <Text style={styles.sectionTitle}>{section.title}</Text>
+                    {canViewAll ? (
+                        <Pressable
+                            accessibilityLabel={`View all ${section.title}`}
+                            accessibilityRole="button"
+                            hitSlop={8}
+                            onPress={() => onViewAll?.(section)}
+                            style={styles.sectionViewAll}
+                        >
+                            <Text style={styles.sectionViewAllLabel}>View All</Text>
+                        </Pressable>
+                    ) : null}
+                </View>
+            ) : null}
             {rowCount > 1 ? (
                 <FlashList
                     data={columns}
@@ -815,16 +773,25 @@ const ContentSections = memo(({
 }) => {
     return (
         <>
-            {sections.map((section) => (
-                <HomeDisplayRow
-                    key={section.key}
-                    onPrefetchItem={onPrefetchItem}
-                    onSelectItem={onSelectItem}
-                    onViewAll={onViewAll}
-                    section={section}
-                    serverConnection={serverConnection ?? null}
-                />
-            ))}
+            {sections.map((section) =>
+                section.pending ? (
+                    <HomeSkeletonRow
+                        count={section.skeletonCount ?? 4}
+                        key={section.key}
+                        title={section.title || undefined}
+                        variant={section.variant}
+                    />
+                ) : (
+                    <HomeDisplayRow
+                        key={section.key}
+                        onPrefetchItem={onPrefetchItem}
+                        onSelectItem={onSelectItem}
+                        onViewAll={onViewAll}
+                        section={section}
+                        serverConnection={serverConnection ?? null}
+                    />
+                ),
+            )}
         </>
     );
 });

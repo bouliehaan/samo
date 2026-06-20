@@ -124,7 +124,6 @@ const toAuthBundle = (server: null | ServerListItemWithCredential | undefined) =
     server
         ? {
               credential: server.credential,
-              ndCredential: server.ndCredential,
               url: server.url,
           }
         : null;

@@ -1,8 +1,5 @@
 import { QueryClient } from '@tanstack/react-query';
 
-import { getServerById } from '/@/renderer/store';
-import { ServerType } from '/@/shared/types/domain-types';
-
 interface OptimizedListCountOptions<TQuery, TListQuery, TResponse> {
     client: QueryClient;
     listQueryFn: (args: {
@@ -27,12 +24,6 @@ export const getOptimizedListCount = async <
     serverId,
     signal,
 }: OptimizedListCountOptions<TQuery, TListQuery, TResponse>): Promise<null | number> => {
-    const server = getServerById(serverId);
-
-    if (server?.type !== ServerType.NAVIDROME && server?.type !== ServerType.JELLYFIN) {
-        return null;
-    }
-
     const limit =
         typeof query === 'object' &&
         query !== null &&

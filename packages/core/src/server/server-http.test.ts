@@ -10,8 +10,8 @@ describe('normalizeBaseUrl', () => {
     });
 
     it('preserves a single path without trailing slash', () => {
-        expect(normalizeBaseUrl('http://localhost:4533/subsonic')).toBe(
-            'http://localhost:4533/subsonic',
+        expect(normalizeBaseUrl('http://localhost:4533/library')).toBe(
+            'http://localhost:4533/library',
         );
     });
 

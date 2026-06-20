@@ -11,7 +11,7 @@ export const authenticationFailure = (currentServer: null | ServerListItem) => {
         const serverId = currentServer.id;
         const { actions } = useAuthStore.getState();
 
-        actions.updateServer(serverId, { ndCredential: undefined });
+        actions.updateServer(serverId, { });
         actions.clearActiveServer(serverId);
     }
 };

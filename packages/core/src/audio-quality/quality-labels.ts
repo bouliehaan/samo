@@ -86,7 +86,7 @@ export const formatSampleRate = (sampleRate?: null | number, compact?: boolean) 
 export const formatBitRate = (bitRate?: null | number) => {
     if (!bitRate) return null;
 
-    // Subsonic/Navidrome reports bitrate as kbps. If a source ever reports raw
+    // Servers report bitrate as kbps. If a source ever reports raw
     // bits-per-second, normalize only clearly large values.
     const kbps = bitRate >= 100_000 ? Math.round(bitRate / 1000) : Math.round(bitRate);
 

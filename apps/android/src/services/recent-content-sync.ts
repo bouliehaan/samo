@@ -9,7 +9,6 @@ import {
     type AndroidRecentContentItem,
     getRecentContentItemKey,
     isEligibleRecentlyPlayedSurfaceItem,
-    upsertRecentContentItem,
 } from './recent-content';
 
 const samoFetch: typeof fetch = (url, init) => fetch(url, init);
@@ -45,10 +44,17 @@ export const mergeServerRecentlyPlayedIntoRecents = async (
         }
     }
 
-    const localByKey = new Map(localItems.map((entry) => [entry.key, entry]));
-    let merged = localItems.filter((entry) =>
+    const merged = localItems.filter((entry) =>
         isEligibleRecentlyPlayedSurfaceItem(entry.item, { directSong: entry.directSong }),
     );
+    // Preserve the order of items already on screen (first painted from disk) so
+    // this async server merge never reshuffles cards mid-session — the cold-boot
+    // "recently played shifts around and flashes" report. Existing items only
+    // get their payload/timestamp refreshed IN PLACE; genuinely-new server items
+    // are appended (they weren't visible, so adding them shifts nothing). New
+    // plays on THIS device still arrive at the top via recordRecentContentItem.
+    const mergedByKey = new Map(merged.map((entry) => [entry.key, entry]));
+    const orderedKeys = merged.map((entry) => entry.key);
 
     if (authentication) {
         let serverItems: MobileHomeItem[] = [];
@@ -67,17 +73,21 @@ export const mergeServerRecentlyPlayedIntoRecents = async (
                 continue;
             }
 
-            const localEntry = localByKey.get(key);
-            if (!localEntry || recentEntry.selectedAt >= localEntry.selectedAt) {
-                merged = upsertRecentContentItem(
-                    merged,
-                    recentEntry.item,
-                    recentEntry.selectedAt,
-                );
-                localByKey.set(key, recentEntry);
+            const existing = mergedByKey.get(key);
+            if (existing) {
+                if (recentEntry.selectedAt >= existing.selectedAt) {
+                    mergedByKey.set(key, {
+                        ...existing,
+                        item: recentEntry.item,
+                        selectedAt: recentEntry.selectedAt,
+                    });
+                }
+            } else {
+                mergedByKey.set(key, recentEntry);
+                orderedKeys.push(key);
             }
         }
     }
 
-    return merged.sort((left, right) => right.selectedAt - left.selectedAt);
+    return orderedKeys.map((key) => mergedByKey.get(key)!);
 };

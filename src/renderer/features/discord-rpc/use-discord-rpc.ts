@@ -2,8 +2,6 @@ import type { SetActivity } from '@xhayper/discord-rpc';
 
 import isElectron from 'is-electron';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-
-import { api } from '/@/renderer/api';
 import { useItemImageUrl } from '/@/renderer/components/item-image/item-image';
 import {
     useIsRadioActive,
@@ -279,22 +277,6 @@ export const useDiscordRpc = () => {
                     if (song._uniqueId === currentSong?._uniqueId && imageUrlRef.current) {
                         if (song._serverType === ServerType.JELLYFIN) {
                             activity.largeImageKey = imageUrlRef.current;
-                        } else if (
-                            song._serverType === ServerType.NAVIDROME ||
-                            song._serverType === ServerType.SUBSONIC
-                        ) {
-                            try {
-                                const info = await api.controller.getAlbumInfo({
-                                    apiClientProps: { serverId: song._serverId },
-                                    query: { id: song.albumId },
-                                });
-
-                                if (info.imageUrl) {
-                                    activity.largeImageKey = info.imageUrl;
-                                }
-                            } catch {
-                                /* empty */
-                            }
                         }
                     }
                 }

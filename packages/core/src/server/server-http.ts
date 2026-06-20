@@ -7,7 +7,7 @@ export type SamoFetchInit = {
     signal?: AbortSignal;
 };
 
-/** Default per-request timeout for Subsonic / Audiobookshelf REST calls. */
+/** Default per-request timeout for Samo REST calls. */
 export const DEFAULT_SAMO_REQUEST_TIMEOUT_MS = 30_000;
 
 export interface SamoFetchResponse {

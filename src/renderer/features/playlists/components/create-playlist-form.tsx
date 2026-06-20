@@ -120,7 +120,7 @@ export const CreatePlaylistForm = ({ onCancel }: CreatePlaylistFormProps) => {
                             required
                             {...form.getInputProps('name')}
                         />
-                        {server?.type === ServerType.NAVIDROME && (
+                        {false && (
                             <Textarea
                                 autosize
                                 label={t('form.createPlaylist.input', {
@@ -143,7 +143,7 @@ export const CreatePlaylistForm = ({ onCancel }: CreatePlaylistFormProps) => {
                                     })}
                                 />
                             )}
-                            {server?.type === ServerType.NAVIDROME &&
+                            {false &&
                                 hasFeature(server, ServerFeature.PLAYLISTS_SMART) && (
                                     <Switch
                                         checked={isSmartPlaylist}

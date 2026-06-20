@@ -16,7 +16,6 @@ export type AndroidSearchState =
     | { query: string; status: 'loading' }
     | { status: 'idle' };
 
-const ANDROID_SEARCH_QUALITY_SCAN_LIMIT = 8;
 const ANDROID_LOCAL_SEARCH_LIMIT = 40;
 
 export const loadAndroidSearchResults = async (
@@ -35,7 +34,6 @@ export const loadAndroidSearchResults = async (
             query: trimmedQuery,
             results: await searchMobileContentAcrossServers({
                 authentication,
-                qualityScanLimit: ANDROID_SEARCH_QUALITY_SCAN_LIMIT,
                 query: trimmedQuery,
                 userRecents,
             }),

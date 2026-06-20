@@ -103,7 +103,6 @@ export const syncCatalogAuthMirror = async (
             type: auth.type as string,
             url: auth.url,
             credential: auth.credential,
-            ndCredential: auth.ndCredential ?? undefined,
         }));
     try {
         await bridge.save(samo);

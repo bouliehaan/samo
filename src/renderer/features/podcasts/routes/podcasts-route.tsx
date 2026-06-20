@@ -69,7 +69,6 @@ const PodcastCover = ({ item }: { item: AudiobookshelfLibraryItem }) => {
         return buildSamoAuthenticatedImageRequest(
             {
                 credential: server!.credential,
-                ndCredential: server!.ndCredential,
                 type: ServerType.SAMO,
                 url: server!.url,
             },

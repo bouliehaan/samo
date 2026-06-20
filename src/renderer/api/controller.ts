@@ -4,9 +4,7 @@ import isElectron from 'is-electron';
 import i18n from '/@/i18n/i18n';
 import { audiobookshelfController } from '/@/renderer/api/audiobookshelf/audiobookshelf-controller';
 import { JellyfinController } from '/@/renderer/api/jellyfin/jellyfin-controller';
-import { NavidromeController } from '/@/renderer/api/navidrome/navidrome-controller';
 import { SamoController } from '/@/renderer/api/samo/samo-controller';
-import { SubsonicController } from '/@/renderer/api/subsonic/subsonic-controller';
 import { mergeMusicFolderId } from '/@/renderer/api/utils-music-folder';
 import {
     getActiveMusicServer,
@@ -27,9 +25,7 @@ type ApiController = Partial<Record<ServerType, Partial<InternalControllerEndpoi
 const endpoints: ApiController = {
     [ServerType.AUDIOBOOKSHELF]: audiobookshelfController,
     [ServerType.JELLYFIN]: JellyfinController,
-    [ServerType.NAVIDROME]: NavidromeController,
     [ServerType.SAMO]: SamoController as Partial<InternalControllerEndpoint>,
-    [ServerType.SUBSONIC]: SubsonicController,
 };
 
 const apiController = <K extends keyof ControllerEndpoint>(
@@ -164,7 +160,6 @@ export const controller = new Proxy({} as GeneralController, {
                     return {
                         credential: result.credential,
                         isAdmin: result.isAdmin,
-                        ndCredential: result.ndCredential,
                         userId: result.userId ?? null,
                         username: result.username,
                     };

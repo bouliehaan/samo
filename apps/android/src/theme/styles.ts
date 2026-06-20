@@ -447,7 +447,16 @@ export const styles = StyleSheet.create({
         fontFamily: 'YoungSerif-Bold',
         letterSpacing: 0,
         lineHeight: 30,
-        marginBottom: spacing.sm,
+        marginTop: spacing.sm,
+        textAlign: 'center',
+    },
+    albumHeroYear: {
+        color: colors.muted,
+        fontSize: 14,
+        fontFamily: 'OfficeCodePro-Regular',
+        fontWeight: '600',
+        lineHeight: 20,
+        marginTop: spacing.xs,
         textAlign: 'center',
     },
     albumDiscHeader: {
@@ -2618,21 +2627,11 @@ export const styles = StyleSheet.create({
         left: 8,
         top: 2,
     },
-    playlistSummary: {
-        color: colors.muted,
-        fontSize: 14,
-        fontWeight: '700',
-        lineHeight: 20,
-        marginTop: 2,
-    },
     playlistTopPanel: {
         alignItems: 'center',
-        backgroundColor: colors.panel,
-        borderRadius: 8,
         flexDirection: 'row',
         justifyContent: 'space-between',
-        minHeight: 86,
-        padding: spacing.md,
+        marginBottom: spacing.md,
     },
     primaryButton: {
         alignItems: 'center',
@@ -2877,7 +2876,6 @@ export const styles = StyleSheet.create({
         color: colors.muted,
         fontSize: 11,
         fontFamily: 'OfficeCodePro-Regular',
-        fontWeight: '600',
         lineHeight: 14,
         marginTop: 2,
         textAlign: 'center',
@@ -2885,7 +2883,7 @@ export const styles = StyleSheet.create({
     radioCardNowPlaying: {
         color: colors.accent,
         fontSize: 11,
-        fontWeight: '800',
+        fontFamily: 'OfficeCodePro-Regular',
         marginTop: 2,
         textAlign: 'center',
         textTransform: 'uppercase',
@@ -2893,7 +2891,7 @@ export const styles = StyleSheet.create({
     radioCardTitle: {
         color: colors.text,
         fontSize: 14,
-        fontWeight: '900',
+        fontFamily: 'OfficeCodePro-Regular',
         lineHeight: 18,
         marginBottom: 2,
         textAlign: 'center',
@@ -2956,10 +2954,11 @@ export const styles = StyleSheet.create({
     radioHeroEyebrow: {
         color: colors.accent,
         fontSize: 11,
-        fontWeight: '800',
+        fontFamily: 'OfficeCodePro-Regular',
         letterSpacing: 0.5,
         marginBottom: 4,
         textTransform: 'uppercase',
+        width: 250,
     },
     radioHeroPlay: {
         alignItems: 'center',
@@ -2974,7 +2973,6 @@ export const styles = StyleSheet.create({
         color: colors.muted,
         fontSize: 13,
         fontFamily: 'OfficeCodePro-Regular',
-        fontWeight: '700',
         lineHeight: 18,
         marginTop: 4,
     },
@@ -2984,9 +2982,16 @@ export const styles = StyleSheet.create({
     },
     radioHeroTitle: {
         color: colors.text,
-        fontSize: 23,
+        fontSize: 28,
         fontFamily: 'YoungSerif-Bold',
-        lineHeight: 28,
+        lineHeight: 32,
+    },
+    radioSectionTitle: {
+        color: colors.text,
+        fontSize: 20,
+        fontFamily: 'OfficeCodePro-Regular',
+        marginBottom: 4,
+        marginTop: 4,
     },
     radioScreen: {
         marginTop: spacing.sm,
@@ -3001,7 +3006,7 @@ export const styles = StyleSheet.create({
     radioSortText: {
         color: colors.muted,
         fontSize: 12,
-        fontWeight: '700',
+        fontFamily: 'OfficeCodePro-Regular',
         lineHeight: 17,
     },
     relatedArtistArtwork: {
@@ -3577,6 +3582,18 @@ export const styles = StyleSheet.create({
     navOverlayHidden: {
         opacity: 0,
         zIndex: 0,
+    },
+    // First-run / no-server onboarding gate. Full-bleed over every surface,
+    // including the status-bar pad the safe area reserves (negative top), so the
+    // welcome flow reads edge-to-edge and nothing behind it is reachable.
+    onboardingOverlay: {
+        backgroundColor: colors.background,
+        bottom: 0,
+        left: 0,
+        position: 'absolute',
+        right: 0,
+        top: Platform.OS === 'android' ? -24 : 0,
+        zIndex: 11000,
     },
     tabUtilityScene: {
         flex: 1,

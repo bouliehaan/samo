@@ -32,6 +32,40 @@ import {
 
 export type AndroidServerAuthSession = ReturnType<typeof useAuthSessionState>;
 
+/**
+ * Value-equality for two authentications, used to avoid pointlessly swapping
+ * `serverConnection` to a fresh object on restore. The streaming-relevant
+ * identity is `url`/`username`/`credential` (the token) plus `type`/`kind`; the
+ * rest is descriptive. A changed `credential` is NOT equal, so a genuinely
+ * refreshed token always swaps in (streaming never uses a stale one) — we only
+ * collapse identity when nothing that matters changed, which is the common
+ * "saved session still valid" restore. Keeping the same reference there stops a
+ * new object from rotating every resolved artwork URL and remounting Home.
+ */
+const isSameAuthentication = (
+    a: ServerAuthenticationResult | null,
+    b: ServerAuthenticationResult | null,
+): boolean => {
+    if (a === b) {
+        return true;
+    }
+    if (!a || !b) {
+        return false;
+    }
+    return (
+        a.url === b.url &&
+        a.username === b.username &&
+        a.credential === b.credential &&
+        a.type === b.type &&
+        a.kind === b.kind &&
+        a.title === b.title &&
+        a.details === b.details &&
+        a.userId === b.userId &&
+        a.isAdmin === b.isAdmin &&
+        a.serverVersion === b.serverVersion
+    );
+};
+
 export interface UseAndroidServerAuthOptions {
     auth: AndroidServerAuthSession;
     closeMediaDetail: () => void;
@@ -69,6 +103,8 @@ export function useAndroidServerAuth(options: UseAndroidServerAuthOptions) {
         serverHealthByKey,
         serverUrl,
         setAuthState,
+        setBootResolved,
+        setOnboardingActive,
         setPassword,
         setServerConnection,
         setServerHealthByKey,
@@ -105,48 +141,95 @@ export function useAndroidServerAuth(options: UseAndroidServerAuthOptions) {
                 await savePersistedServerAuths(persistedAuth ? [persistedAuth] : []);
             }
 
+            // No saved server → straight into the first-run onboarding flow.
+            // `bootResolved` lifts the splash; `onboardingActive` mounts the
+            // welcome → discover → connect → sync experience.
             if (!persistedAuth) {
-                setActiveUtilityScreen('add-server');
+                setOnboardingActive(true);
+                setBootResolved(true);
                 return;
             }
 
             void syncCatalogAuthMirror([persistedAuth]);
 
+            // Show the app immediately with the cached session (offline-first):
+            // lift the splash now and verify the session in the background.
             setServerConnection(persistedAuth);
             setServerHealthByKey(createCheckingServerHealthMap(persistedAuth));
+            setBootResolved(true);
 
             const serverHealth = await checkAndroidServerConnection(persistedAuth);
 
-            if (isMounted) {
-                const isAuthorized = serverHealth.authentication !== null;
-                const healthStatus = serverHealth.statuses[getPersistedServerAuthKey(persistedAuth)]?.status;
-
-                setServerConnection(serverHealth.authentication);
-                setServerHealthByKey(serverHealth.statuses);
-
-                if (!isAuthorized) {
-                    setAuthState({
-                        message: `Saved server session expired. Please reconnect.`,
-                        status: 'error',
-                    });
-                } else if (healthStatus !== ServerConnectionHealthStatus.HEALTHY) {
-                    setAuthState({
-                        message: `Saved server session needs attention.`,
-                        status: 'error',
-                    });
-                }
-
-                await savePersistedServerAuths(serverHealth.authentication ? [serverHealth.authentication] : []);
-                void loadHomeForConnection(serverHealth.authentication);
+            if (!isMounted) {
+                return;
             }
+
+            const isAuthorized = serverHealth.authentication !== null;
+            const healthStatus =
+                serverHealth.statuses[getPersistedServerAuthKey(persistedAuth)]?.status;
+
+            // A genuinely expired/revoked session (401) is the one case where we
+            // must NOT keep the user on a home page backed by dead credentials —
+            // drop the connection and route into onboarding to reconnect. A mere
+            // network blip (UNREACHABLE) keeps the cached session so offline use
+            // and flaky Wi-Fi don't force a needless re-login.
+            if (!isAuthorized) {
+                setServerConnection(null);
+                setServerHealthByKey(serverHealth.statuses);
+                setAuthState({
+                    message: 'Your saved session expired. Please reconnect.',
+                    status: 'error',
+                });
+                await savePersistedServerAuths([]);
+                setOnboardingActive(true);
+                return;
+            }
+
+            // Reuse the reference we set from disk (line above) when the health
+            // check came back value-equal — a brand-new object here rotates every
+            // resolved artwork token and remounts the whole Home page (the
+            // cold-boot "deload then reload" flash). Only a genuinely changed
+            // credential swaps in.
+            const nextConnection = isSameAuthentication(
+                persistedAuth,
+                serverHealth.authentication,
+            )
+                ? persistedAuth
+                : serverHealth.authentication;
+            setServerConnection(nextConnection);
+            setServerHealthByKey(serverHealth.statuses);
+
+            if (healthStatus !== ServerConnectionHealthStatus.HEALTHY) {
+                setAuthState({
+                    message: `Saved server session needs attention.`,
+                    status: 'error',
+                });
+            }
+
+            await savePersistedServerAuths(
+                serverHealth.authentication ? [serverHealth.authentication] : [],
+            );
+            void loadHomeForConnection(serverHealth.authentication);
         };
 
-        void restoreServers();
+        void restoreServers().finally(() => {
+            // Whatever happens, never leave the user stuck behind the splash.
+            if (isMounted) {
+                setBootResolved(true);
+            }
+        });
 
         return () => {
             isMounted = false;
         };
-    }, [loadHomeForConnection, setAuthState, setServerConnection, setServerHealthByKey]);
+    }, [
+        loadHomeForConnection,
+        setAuthState,
+        setBootResolved,
+        setOnboardingActive,
+        setServerConnection,
+        setServerHealthByKey,
+    ]);
 
     const handleConnect = useCallback(async () => {
         if (!canConnect || authState.status === 'loading') return;
@@ -228,11 +311,17 @@ export function useAndroidServerAuth(options: UseAndroidServerAuthOptions) {
             setAuthState({ status: 'idle' });
             await savePersistedServerAuths([]);
             await loadHomeForConnection(null);
+            // No server left → bring the user back into the onboarding flow to
+            // connect another rather than stranding them on an empty home.
+            setActiveUtilityScreen(null);
+            setOnboardingActive(true);
         },
         [
             closeMediaDetail,
             loadHomeForConnection,
+            setActiveUtilityScreen,
             setAuthState,
+            setOnboardingActive,
             setSearchState,
             setServerConnection,
             setServerHealthByKey,

@@ -121,7 +121,7 @@ const SearchBrowseContent = ({
             {rows.length > 0 ? (
                 <View style={styles.searchRecentSection}>
                     <Text style={styles.searchBrowseTitle}>Recent</Text>
-                    <View style={styles.libraryList}>
+                    <View style={[styles.libraryList, { marginTop: 0 }]}>
                         {rows.map((row) => (
                             <LibraryListRow
                                 displayItem={row}
@@ -260,6 +260,13 @@ export const SearchScreen = memo(({
         [homeContentState, recentItems, serverConnection],
     );
     const [activeScope, setActiveScope] = useState<SearchScope>('all');
+    const browseRecentItems = useMemo(() => recentItems.slice(0, 6), [recentItems]);
+
+    useEffect(() => {
+        if (searchState.status === 'idle') {
+            setQuery('');
+        }
+    }, [searchState.status]);
 
     useEffect(() => {
         const trimmedQuery = query.trim();
@@ -293,7 +300,6 @@ export const SearchScreen = memo(({
                     onChange={setQuery}
                     onClear={() => {
                         setQuery('');
-                        onSearch('');
                     }}
                     placeholder="Find anything in Samo"
                     value={query}
@@ -310,14 +316,16 @@ export const SearchScreen = memo(({
                     availableScopes={availableScopes}
                     onScopeChange={setActiveScope}
                     onSelectItem={onSelectRecentItem}
-                    recentItems={recentItems.slice(0, 6)}
+                    recentItems={browseRecentItems}
                 />
             )}
-            <SearchResults
-                activeScope={activeScope}
-                onSelectItem={onSelectItem}
-                searchState={searchState}
-            />
+            {query.trim() ? (
+                <SearchResults
+                    activeScope={activeScope}
+                    onSelectItem={onSelectItem}
+                    searchState={searchState}
+                />
+            ) : null}
         </>
     );
 });
@@ -339,6 +347,7 @@ export const SearchOverlay = memo(({
         [homeContentState, recentItems, serverConnection],
     );
     const [activeScope, setActiveScope] = useState<SearchScope>('all');
+    const overlayRecentItems = useMemo(() => recentItems.slice(0, 8), [recentItems]);
 
     useEffect(() => {
         const id = setTimeout(() => inputRef.current?.focus(), 80);
@@ -405,7 +414,7 @@ export const SearchOverlay = memo(({
                             availableScopes={availableScopes}
                             onScopeChange={setActiveScope}
                             onSelectItem={onSelectItem}
-                            recentItems={recentItems.slice(0, 8)}
+                            recentItems={overlayRecentItems}
                         />
                     )}
                 </ScrollView>

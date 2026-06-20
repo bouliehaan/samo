@@ -161,10 +161,6 @@ const AlbumMetadataTags = ({ album }: AlbumMetadataTagsProps) => {
 
         return (
             album.tags?.[GROUPING_TAG]?.map((tag) => {
-                if (album._serverType !== ServerType.NAVIDROME) {
-                    return { id: tag, label: tag, url: null };
-                }
-
                 const searchParams = new URLSearchParams();
                 const paramsWithCustom = setJsonSearchParam(
                     searchParams,
@@ -184,10 +180,6 @@ const AlbumMetadataTags = ({ album }: AlbumMetadataTagsProps) => {
         if (!album?.recordLabels || album.recordLabels.length === 0) return [];
 
         return album.recordLabels.map((label) => {
-            if (album._serverType === ServerType.SUBSONIC) {
-                return { id: label, label: label, url: null };
-            }
-
             const searchParams = new URLSearchParams();
             const customFilters =
                 album._serverType === ServerType.JELLYFIN

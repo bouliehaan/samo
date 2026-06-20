@@ -1,5 +1,5 @@
 import { type ServerAuthenticationResult } from '../server/server-auth';
-import { getFetch, requestJson, type SamoFetch } from '../server/server-http';
+import { getFetch, type SamoFetch } from '../server/server-http';
 import {
     type SamoAudiobook,
     type SamoInternetRadioStation,
@@ -36,13 +36,10 @@ import {
 import { ensureSamoStreamToken, getCachedSamoStreamToken } from '../server/server-samo-stream-token';
 import { ServerType } from '../server/server-types';
 import {
-    buildAudiobookshelfArtworkUrl,
-    firstNonEmptyString,
     getMobileContentSource,
     type MobileContentSource,
 } from './mobile-content-source';
 import {
-    buildRadioPlayback,
     buildSamoInternetRadioPlayback,
     buildSamoPodcastEpisodePlayback,
     type MobilePlayableAudio,
@@ -52,10 +49,6 @@ import {
     formatRadioStreamFormat,
     formatRadioTagsLine,
 } from './mobile-radio-metadata';
-import {
-    annotateSubsonicAlbumsQuality,
-    annotateSubsonicHiResCollections,
-} from './mobile-subsonic-quality';
 
 export enum MobileHomeItemType {
     ALBUM = 'album',
@@ -69,13 +62,13 @@ export enum MobileHomeItemType {
 
 export enum MobileHomeSectionId {
     AUDIOBOOKS = 'audiobooks',
+    DISCOVER = 'discover',
     FAVORITE_ALBUMS = 'favorite-albums',
     FAVORITE_ARTISTS = 'favorite-artists',
     PLAYLISTS = 'playlists',
+    PODCAST_FEED = 'podcast-feed',
     PODCASTS = 'podcasts',
     RADIO = 'radio',
-    DISCOVER = 'discover',
-    PODCAST_FEED = 'podcast-feed',
     RECENTLY_ADDED = 'recently-added',
 }
 
@@ -90,14 +83,12 @@ export interface MobileHomeContentForServersInput {
     authentication: ServerAuthenticationResult | null;
     fetch?: SamoFetch;
     limit?: number;
-    qualityScanLimit?: number;
 }
 
 export interface MobileHomeContentInput {
     authentication: ServerAuthenticationResult;
     fetch?: SamoFetch;
     limit?: number;
-    qualityScanLimit?: number;
 }
 
 export interface MobileHomeItem {
@@ -162,7 +153,7 @@ export interface MobileHomeItem {
     /**
      * The album / track's representative format — bit depth and sample rate
      * of the highest-quality song in the collection (or the song itself).
-     * Populated by annotateSubsonicAlbumsQuality for album items; remains
+     * Populated from the album's representative track quality; remains
      * undefined for playlists (always mixed format), artists, audiobooks,
      * podcasts. The UI uses this to pick the matching format-specific
      * badge asset; absent profile = no badge.
@@ -197,126 +188,6 @@ export interface MobileHomeSectionError {
     sectionId: MobileHomeSectionId;
 }
 
-interface AudiobookshelfLibrariesBody {
-    libraries?: AudiobookshelfLibrary[];
-}
-
-interface AudiobookshelfLibrary {
-    id?: string;
-    mediaType?: string;
-    name?: string;
-}
-
-interface AudiobookshelfLibraryItem {
-    addedAt?: number;
-    id?: string;
-    media?: {
-        authorName?: string;
-        authors?: Array<{ id?: string; name?: string }>;
-        metadata?: {
-            author?: string;
-            authorName?: string;
-            authorNameLF?: string;
-            authors?: Array<{ id?: string; name?: string }>;
-            imageUrl?: string;
-            title?: string;
-        };
-        narratorName?: string;
-        title?: string;
-    };
-    name?: string;
-    numEpisodes?: number;
-    updatedAt?: number;
-}
-
-interface AudiobookshelfLibraryItemsBody {
-    results?: AudiobookshelfLibraryItem[];
-}
-
-interface SubsonicAlbum {
-    artist?: string;
-    coverArt?: string;
-    /**
-     * ISO-8601 timestamp the album was added to the library. Navidrome and
-     * stock Subsonic both populate this on getAlbumList2.view; older servers
-     * may omit it, in which case the field stays undefined and the item just
-     * loses its place in the unified recency sort.
-     */
-    created?: string;
-    id?: number | string;
-    name?: string;
-    title?: string;
-    year?: number;
-}
-
-interface SubsonicArtist {
-    albumCount?: number;
-    coverArt?: string;
-    id?: number | string;
-    name?: string;
-}
-
-interface SubsonicAlbumListBody {
-    'subsonic-response'?: {
-        albumList2?: {
-            album?: SubsonicAlbum[];
-        };
-        error?: SubsonicError;
-        status?: string;
-    };
-}
-
-interface SubsonicError {
-    message?: string;
-}
-
-interface SubsonicPlaylist {
-    coverArt?: string;
-    id?: number | string;
-    name?: string;
-    owner?: string;
-    songCount?: number;
-}
-
-interface SubsonicPlaylistsBody {
-    'subsonic-response'?: {
-        error?: SubsonicError;
-        playlists?: {
-            playlist?: SubsonicPlaylist[];
-        };
-        status?: string;
-    };
-}
-
-interface SubsonicRadioBody {
-    'subsonic-response'?: {
-        error?: SubsonicError;
-        internetRadioStations?: {
-            internetRadioStation?: SubsonicRadioStation[];
-        };
-        status?: string;
-    };
-}
-
-interface SubsonicRadioStation {
-    coverArt?: string;
-    homepageUrl?: string;
-    id?: string;
-    name?: string;
-    streamUrl?: string;
-}
-
-interface SubsonicStarred2Body {
-    'subsonic-response'?: {
-        error?: SubsonicError;
-        starred2?: {
-            album?: SubsonicAlbum[];
-            artist?: SubsonicArtist[];
-        };
-        status?: string;
-    };
-}
-
 const DEFAULT_HOME_LIMIT = 12;
 
 const getErrorMessage = (error: unknown) => {
@@ -326,446 +197,6 @@ const getErrorMessage = (error: unknown) => {
 export const getMobileHomeContentErrorMessage = getErrorMessage;
 
 const hasItems = (section: MobileHomeSection) => section.items.length > 0;
-
-const getAudiobookshelfTitle = (item: AudiobookshelfLibraryItem, fallback: string) => {
-    return firstNonEmptyString(item.media?.metadata?.title, item.media?.title, item.name, fallback);
-};
-
-const getAudiobookshelfPodcastTitle = (item: AudiobookshelfLibraryItem) => {
-    return firstNonEmptyString(
-        item.name,
-        item.media?.metadata?.title,
-        item.media?.title,
-        'Podcast',
-    );
-};
-
-const getAudiobookshelfAuthor = (item: AudiobookshelfLibraryItem) => {
-    const metadata = item.media?.metadata;
-
-    return firstNonEmptyString(
-        metadata?.authorName,
-        metadata?.authorNameLF,
-        metadata?.author,
-        metadata?.authors
-            ?.map((author) => author.name)
-            .filter(Boolean)
-            .join(', '),
-        item.media?.authorName,
-        item.media?.authors
-            ?.map((author) => author.name)
-            .filter(Boolean)
-            .join(', '),
-        item.media?.narratorName,
-    );
-};
-
-const subsonicUrl = (
-    authentication: ServerAuthenticationResult,
-    path: string,
-    query: Record<string, number | string> = {},
-) => {
-    const params = new URLSearchParams({
-        c: 'Samo',
-        f: 'json',
-        v: '1.13.0',
-    });
-
-    for (const [key, value] of Object.entries(query)) {
-        params.set(key, String(value));
-    }
-
-    return `${authentication.url}/rest/${path}?${params.toString()}&${authentication.credential}`;
-};
-
-const subsonicCoverArtUrl = (
-    authentication: ServerAuthenticationResult,
-    coverArt: string | undefined,
-    entityId?: number | string,
-) => {
-    // Newer Navidrome populates coverArt; older Subsonic-compatible servers
-    // sometimes leave it blank even when artwork exists. getCoverArt.view
-    // accepts the entity id directly, so fall back to it whenever the
-    // explicit coverArt field is missing — produces covers for albums/artists
-    // that would otherwise render a fallback letter.
-    const target = coverArt ?? (entityId != null ? entityId.toString() : undefined);
-    if (!target) {
-        return undefined;
-    }
-
-    return subsonicUrl(authentication, 'getCoverArt.view', { id: target, size: 320 });
-};
-
-const assertSubsonicOk = (
-    response: undefined | { error?: SubsonicError; status?: string },
-    fallback: string,
-) => {
-    if (response?.status === 'ok') {
-        return;
-    }
-
-    throw new Error(response?.error?.message ?? fallback);
-};
-
-const toSectionErrors = (sectionLoads: PromiseSettledResult<MobileHomeSection>[]) => {
-    return sectionLoads.flatMap((result) =>
-        result.status === 'rejected'
-            ? [
-                  {
-                      message: getErrorMessage(result.reason),
-                      sectionId: MobileHomeSectionId.RECENTLY_ADDED,
-                  },
-              ]
-            : [],
-    );
-};
-
-const toHomeContent = (
-    authentication: ServerAuthenticationResult,
-    sectionLoads: PromiseSettledResult<MobileHomeSection>[],
-): MobileHomeContent => ({
-    errors: toSectionErrors(sectionLoads),
-    loadedAt: Date.now(),
-    sections: sectionLoads.flatMap((result) =>
-        result.status === 'fulfilled' && hasItems(result.value) ? [result.value] : [],
-    ),
-    serverTitle: authentication.title,
-});
-
-const loadAudiobookshelfItems = async (
-    authentication: ServerAuthenticationResult,
-    fetcher: SamoFetch,
-    library: AudiobookshelfLibrary,
-    itemType: MobileHomeItemType.AUDIOBOOK | MobileHomeItemType.PODCAST,
-    limit: number,
-): Promise<MobileHomeItem[]> => {
-    if (!library.id) {
-        return [];
-    }
-
-    const params = new URLSearchParams({ desc: '1', limit: String(limit), sort: 'addedAt' });
-    const body = await requestJson<AudiobookshelfLibraryItemsBody>(
-        fetcher,
-        `${authentication.url}/api/libraries/${library.id}/items?${params.toString()}`,
-        {
-            headers: { Authorization: `Bearer ${authentication.credential}` },
-            method: 'GET',
-        },
-    );
-
-    return (body.results ?? []).flatMap((item) => {
-        if (!item.id) {
-            return [];
-        }
-
-        const title =
-            itemType === MobileHomeItemType.PODCAST
-                ? getAudiobookshelfPodcastTitle(item)
-                : getAudiobookshelfTitle(item, 'Untitled audiobook');
-        if (!title) {
-            return [];
-        }
-
-        const source = getMobileContentSource(authentication);
-
-        return {
-            addedAt: item.addedAt,
-            artworkUrl: buildAudiobookshelfArtworkUrl(
-                authentication,
-                item.id,
-                item.media?.metadata?.imageUrl,
-            ),
-            id: item.id,
-            source,
-            subtitle:
-                itemType === MobileHomeItemType.AUDIOBOOK
-                    ? getAudiobookshelfAuthor(item)
-                    : item.numEpisodes
-                      ? `${item.numEpisodes} episodes`
-                      : library.name,
-            title,
-            type: itemType,
-        };
-    });
-};
-
-const loadAudiobookshelfHomeContent = async (
-    authentication: ServerAuthenticationResult,
-    fetcher: SamoFetch,
-    limit: number,
-): Promise<MobileHomeContent> => {
-    const librariesBody = await requestJson<AudiobookshelfLibrariesBody>(
-        fetcher,
-        `${authentication.url}/api/libraries`,
-        {
-            headers: { Authorization: `Bearer ${authentication.credential}` },
-            method: 'GET',
-        },
-    );
-    const libraries = librariesBody.libraries ?? [];
-    const bookLibraries = libraries.filter((library) => library.mediaType === 'book');
-    const podcastLibraries = libraries.filter((library) => library.mediaType === 'podcast');
-    const sectionLoads = await Promise.allSettled([
-        Promise.all(
-            bookLibraries.map((library) =>
-                loadAudiobookshelfItems(
-                    authentication,
-                    fetcher,
-                    library,
-                    MobileHomeItemType.AUDIOBOOK,
-                    limit,
-                ),
-            ),
-        ).then((items) => ({
-            id: MobileHomeSectionId.AUDIOBOOKS,
-            items: items.flat().slice(0, limit),
-            title: 'Audiobooks',
-        })),
-        Promise.all(
-            podcastLibraries.map((library) =>
-                loadAudiobookshelfItems(
-                    authentication,
-                    fetcher,
-                    library,
-                    MobileHomeItemType.PODCAST,
-                    limit,
-                ),
-            ),
-        ).then((items) => ({
-            id: MobileHomeSectionId.PODCASTS,
-            items: items.flat().slice(0, limit),
-            title: 'Podcasts',
-        })),
-    ]);
-
-    return toHomeContent(authentication, sectionLoads);
-};
-
-const loadSubsonicAlbums = async (
-    authentication: ServerAuthenticationResult,
-    fetcher: SamoFetch,
-    limit: number,
-    qualityScanLimit: number,
-): Promise<MobileHomeSection> => {
-    const body = await requestJson<SubsonicAlbumListBody>(
-        fetcher,
-        subsonicUrl(authentication, 'getAlbumList2.view', {
-            size: limit,
-            type: 'newest',
-        }),
-    );
-    const response = body['subsonic-response'];
-    assertSubsonicOk(response, 'Failed to load albums');
-
-    const items: MobileHomeItem[] = (response?.albumList2?.album ?? []).flatMap((album) => {
-        const id = album.id?.toString();
-        const title = album.name ?? album.title;
-
-        if (!id || !title) {
-            return [];
-        }
-
-        const createdMs = album.created ? Date.parse(album.created) : NaN;
-
-        return {
-            addedAt: Number.isFinite(createdMs) ? createdMs : undefined,
-            artworkUrl: subsonicCoverArtUrl(authentication, album.coverArt, album.id),
-            id,
-            source: getMobileContentSource(authentication),
-            subtitle: album.artist ?? (album.year ? String(album.year) : undefined),
-            title,
-            type: MobileHomeItemType.ALBUM,
-        };
-    });
-
-    return {
-        id: MobileHomeSectionId.RECENTLY_ADDED,
-        items: await annotateSubsonicHiResCollections(
-            authentication,
-            fetcher,
-            'album',
-            items,
-            qualityScanLimit,
-        ),
-        title: 'Recently Added',
-    };
-};
-
-const loadSubsonicFavoriteAlbumsAndArtists = async (
-    authentication: ServerAuthenticationResult,
-    fetcher: SamoFetch,
-    limit: number,
-    qualityScanLimit: number,
-): Promise<MobileHomeSection[]> => {
-    const body = await requestJson<SubsonicStarred2Body>(
-        fetcher,
-        subsonicUrl(authentication, 'getStarred2.view'),
-    );
-    const response = body['subsonic-response'];
-    assertSubsonicOk(response, 'Failed to load favorites');
-    const source = getMobileContentSource(authentication);
-    const favoriteAlbums: MobileHomeItem[] = await annotateSubsonicHiResCollections(
-        authentication,
-        fetcher,
-        'album',
-        (response?.starred2?.album ?? []).slice(0, limit).flatMap((album) => {
-            const id = album.id?.toString();
-            const title = album.name ?? album.title;
-
-            if (!id || !title) {
-                return [];
-            }
-
-            return {
-                artworkUrl: subsonicCoverArtUrl(authentication, album.coverArt, album.id),
-                id,
-                source,
-                subtitle: album.artist ?? (album.year ? String(album.year) : undefined),
-                title,
-                type: MobileHomeItemType.ALBUM,
-            };
-        }),
-        qualityScanLimit,
-    );
-    const favoriteArtists: MobileHomeItem[] = (response?.starred2?.artist ?? [])
-        .slice(0, limit)
-        .flatMap((artist) => {
-            const id = artist.id?.toString();
-
-            if (!id || !artist.name) {
-                return [];
-            }
-
-            return {
-                artworkUrl: subsonicCoverArtUrl(authentication, artist.coverArt, artist.id),
-                id,
-                source,
-                subtitle: artist.albumCount ? `${artist.albumCount} albums` : undefined,
-                title: artist.name,
-                type: MobileHomeItemType.ARTIST,
-            };
-        });
-
-    return [
-        { id: MobileHomeSectionId.FAVORITE_ALBUMS, items: favoriteAlbums, title: 'Favorite Albums' },
-        {
-            id: MobileHomeSectionId.FAVORITE_ARTISTS,
-            items: favoriteArtists,
-            title: 'Favorite Artists',
-        },
-    ].filter(hasItems);
-};
-
-const loadSubsonicPlaylists = async (
-    authentication: ServerAuthenticationResult,
-    fetcher: SamoFetch,
-): Promise<MobileHomeSection> => {
-    const body = await requestJson<SubsonicPlaylistsBody>(
-        fetcher,
-        subsonicUrl(authentication, 'getPlaylists.view'),
-    );
-    const response = body['subsonic-response'];
-    assertSubsonicOk(response, 'Failed to load playlists');
-
-    const items: MobileHomeItem[] = (response?.playlists?.playlist ?? []).flatMap((playlist) => {
-        const id = playlist.id?.toString();
-
-        if (!id || !playlist.name) {
-            return [];
-        }
-
-        return {
-            artworkUrl: subsonicCoverArtUrl(authentication, playlist.coverArt, playlist.id),
-            id,
-            source: getMobileContentSource(authentication),
-            subtitle: playlist.songCount ? `${playlist.songCount} songs` : playlist.owner,
-            title: playlist.name,
-            type: MobileHomeItemType.PLAYLIST,
-        };
-    });
-
-    // Playlists are mixed format by design — never run the hi-res scan or
-    // stamp a collection-level badge on them. Per-track quality still shows
-    // up on each row inside the playlist detail.
-    return {
-        id: MobileHomeSectionId.PLAYLISTS,
-        items,
-        title: 'Playlists',
-    };
-};
-
-const loadSubsonicRadio = async (
-    authentication: ServerAuthenticationResult,
-    fetcher: SamoFetch,
-): Promise<MobileHomeSection> => {
-    const body = await requestJson<SubsonicRadioBody>(
-        fetcher,
-        subsonicUrl(authentication, 'getInternetRadioStations.view'),
-    );
-    const response = body['subsonic-response'];
-    assertSubsonicOk(response, 'Failed to load radio stations');
-
-    return {
-        id: MobileHomeSectionId.RADIO,
-        items: (response?.internetRadioStations?.internetRadioStation ?? []).flatMap((station) => {
-            const artworkUrl = subsonicCoverArtUrl(authentication, station.coverArt);
-            const playback = buildRadioPlayback(authentication, station, artworkUrl);
-
-            if (!station.id || !station.name) {
-                return [];
-            }
-
-            return {
-                artworkUrl,
-                id: station.id,
-                playback: playback ?? undefined,
-                source: getMobileContentSource(authentication),
-                subtitle: station.homepageUrl ?? station.streamUrl,
-                title: station.name,
-                type: MobileHomeItemType.RADIO,
-            };
-        }),
-        title: 'Radio',
-    };
-};
-
-const loadSubsonicHomeContent = async (
-    authentication: ServerAuthenticationResult,
-    fetcher: SamoFetch,
-    limit: number,
-    qualityScanLimit: number,
-): Promise<MobileHomeContent> => {
-    const [favoritesResult, ...sectionLoads] = await Promise.allSettled([
-        loadSubsonicFavoriteAlbumsAndArtists(
-            authentication,
-            fetcher,
-            limit,
-            qualityScanLimit,
-        ),
-        loadSubsonicAlbums(authentication, fetcher, limit, qualityScanLimit),
-        loadSubsonicPlaylists(authentication, fetcher),
-        loadSubsonicRadio(authentication, fetcher),
-    ]);
-
-    const favoriteLoads: PromiseSettledResult<MobileHomeSection>[] =
-        favoritesResult.status === 'fulfilled'
-            ? favoritesResult.value.map((section) => ({
-                  status: 'fulfilled' as const,
-                  value: section,
-              }))
-            : [
-                  {
-                      reason: favoritesResult.reason,
-                      status: 'rejected' as const,
-                  },
-              ];
-
-    return toHomeContent(authentication, [...favoriteLoads, ...sectionLoads]);
-};
-
-// ---------------------------------------------------------------------------
-// Samo Server native
-// ---------------------------------------------------------------------------
 
 const formatSamoArtists = (
     artists: Array<{ name?: string }> | undefined,
@@ -1642,10 +1073,10 @@ const loadSamoRecentlyAddedHomeItems = async (
 
     const resolveCatalogEntry = (entry: SamoRecentlyAddedEntry): MobileHomeItem | null => {
         switch (entry.kind) {
-            case 'music-album':
-                return albumById.get(entry.id) ?? null;
             case 'audiobook':
                 return audiobookById.get(entry.id) ?? null;
+            case 'music-album':
+                return albumById.get(entry.id) ?? null;
             case 'podcast':
                 return podcastById.get(entry.id) ?? null;
             default:
@@ -2086,20 +1517,8 @@ export const loadMobileHomeContent = async ({
     authentication,
     fetch: fetcher,
     limit = DEFAULT_HOME_LIMIT,
-    qualityScanLimit = limit,
 }: MobileHomeContentInput): Promise<MobileHomeContent> => {
     const request = getFetch(fetcher);
-
-    if (authentication.type === ServerType.AUDIOBOOKSHELF) {
-        return loadAudiobookshelfHomeContent(authentication, request, limit);
-    }
-
-    if (
-        authentication.type === ServerType.NAVIDROME ||
-        authentication.type === ServerType.SUBSONIC
-    ) {
-        return loadSubsonicHomeContent(authentication, request, limit, qualityScanLimit);
-    }
 
     if (authentication.type === ServerType.SAMO) {
         return loadSamoHomeContent(authentication, request, limit);
@@ -2108,11 +1527,7 @@ export const loadMobileHomeContent = async ({
     throw new Error('Home content is not wired for this server type');
 };
 
-const getHomeFailureSectionId = (authentication: ServerAuthenticationResult) => {
-    return authentication.type === ServerType.AUDIOBOOKSHELF
-        ? MobileHomeSectionId.AUDIOBOOKS
-        : MobileHomeSectionId.RECENTLY_ADDED;
-};
+
 
 export type MobileFullCollectionVariant =
     | 'album'
@@ -2124,7 +1539,6 @@ export type MobileFullCollectionVariant =
 export interface MobileFullCollectionInput {
     authentication: ServerAuthenticationResult | null;
     fetch?: SamoFetch;
-    qualityScanLimit?: number;
     // Incremental ("delta") sync watermark for Samo sources: only items
     // changed at/after this point are returned. Pass SamoSyncManifest.serverTime
     // (RFC3339) or unix milliseconds. Non-Samo sources ignore it.
@@ -2137,198 +1551,17 @@ export interface MobileFullCollectionResult {
     items: MobileHomeItem[];
 }
 
-interface SubsonicArtistsBody {
-    'subsonic-response'?: {
-        artists?: {
-            index?: Array<{
-                artist?: SubsonicArtist[];
-                name?: string;
-            }>;
-        };
-        error?: SubsonicError;
-        status?: string;
-    };
-}
-
-// Subsonic pagination is offset-based; libraries beyond ~5k albums need
-// multiple round-trips. 500 hits the sweet spot where Navidrome still returns
-// fast (~100ms) but we don't waste a dozen requests for the typical user.
-const FULL_COLLECTION_PAGE_SIZE = 500;
-// Cap iterations as a safety so a misbehaving server can't loop forever.
-const FULL_COLLECTION_MAX_PAGES = 40;
-
-const loadAllSubsonicAlbums = async (
-    authentication: ServerAuthenticationResult,
-    fetcher: SamoFetch,
-): Promise<MobileHomeItem[]> => {
-    const source = getMobileContentSource(authentication);
-    const items: MobileHomeItem[] = [];
-
-    for (let page = 0; page < FULL_COLLECTION_MAX_PAGES; page += 1) {
-        const body = await requestJson<SubsonicAlbumListBody>(
-            fetcher,
-            subsonicUrl(authentication, 'getAlbumList2.view', {
-                offset: page * FULL_COLLECTION_PAGE_SIZE,
-                size: FULL_COLLECTION_PAGE_SIZE,
-                type: 'alphabeticalByName',
-            }),
-        );
-        const response = body['subsonic-response'];
-        assertSubsonicOk(response, 'Failed to load albums');
-        const albums = response?.albumList2?.album ?? [];
-        if (albums.length === 0) {
-            break;
-        }
-        for (const album of albums) {
-            const id = album.id?.toString();
-            const title = album.name ?? album.title;
-            if (!id || !title) continue;
-            const createdMs = album.created ? Date.parse(album.created) : NaN;
-            items.push({
-                addedAt: Number.isFinite(createdMs) ? createdMs : undefined,
-                artworkUrl: subsonicCoverArtUrl(authentication, album.coverArt, album.id),
-                id,
-                source,
-                subtitle: album.artist ?? (album.year ? String(album.year) : undefined),
-                title,
-                type: MobileHomeItemType.ALBUM,
-            });
-        }
-        if (albums.length < FULL_COLLECTION_PAGE_SIZE) {
-            break;
-        }
-    }
-
-    return items;
-};
-
-const loadAllSubsonicArtists = async (
-    authentication: ServerAuthenticationResult,
-    fetcher: SamoFetch,
-): Promise<MobileHomeItem[]> => {
-    // getArtists.view returns ALL artists in one shot, grouped by alphabet
-    // index — no pagination needed. This matches how Navidrome exposes the
-    // artist library to other clients and avoids the inconsistent paging
-    // semantics on getArtistList variants.
-    const body = await requestJson<SubsonicArtistsBody>(
-        fetcher,
-        subsonicUrl(authentication, 'getArtists.view'),
-    );
-    const response = body['subsonic-response'];
-    assertSubsonicOk(response, 'Failed to load artists');
-    const source = getMobileContentSource(authentication);
-    const items: MobileHomeItem[] = [];
-    for (const index of response?.artists?.index ?? []) {
-        for (const artist of index.artist ?? []) {
-            const id = artist.id?.toString();
-            if (!id || !artist.name) continue;
-            items.push({
-                artworkUrl: subsonicCoverArtUrl(authentication, artist.coverArt, artist.id),
-                id,
-                source,
-                subtitle: artist.albumCount ? `${artist.albumCount} albums` : undefined,
-                title: artist.name,
-                type: MobileHomeItemType.ARTIST,
-            });
-        }
-    }
-    return items;
-};
-
-const loadAllSubsonicPlaylists = async (
-    authentication: ServerAuthenticationResult,
-    fetcher: SamoFetch,
-): Promise<MobileHomeItem[]> => {
-    // getPlaylists.view already returns the complete list — we can reuse the
-    // home-page loader unchanged, just without the home-page item cap.
-    const section = await loadSubsonicPlaylists(authentication, fetcher);
-    return section.items;
-};
-
-const loadAllAudiobookshelfItems = async (
-    authentication: ServerAuthenticationResult,
-    fetcher: SamoFetch,
-    itemType: MobileHomeItemType.AUDIOBOOK | MobileHomeItemType.PODCAST,
-): Promise<MobileHomeItem[]> => {
-    const librariesBody = await requestJson<AudiobookshelfLibrariesBody>(
-        fetcher,
-        `${authentication.url}/api/libraries`,
-        {
-            headers: { Authorization: `Bearer ${authentication.credential}` },
-            method: 'GET',
-        },
-    );
-    const libraries = (librariesBody.libraries ?? []).filter(
-        (library) => library.mediaType === (itemType === MobileHomeItemType.PODCAST ? 'podcast' : 'book'),
-    );
-    const perLibrary = await Promise.all(
-        libraries.map((library) =>
-            loadAudiobookshelfItems(
-                authentication,
-                fetcher,
-                library,
-                itemType,
-                FULL_COLLECTION_PAGE_SIZE * FULL_COLLECTION_MAX_PAGES,
-            ),
-        ),
-    );
-    return perLibrary.flat();
-};
-
-/**
- * Cap on the per-album quality scan when exploding the full library —
- * scanning every album in a 10k-track collection would be a per-album HTTP
- * fan-out we don't want to pay for at View-All open time. 200 covers the
- * top of the alphabetical sweep that the user is most likely to scroll
- * through; the rest pass through unbadged until the user opens them.
- */
-const FULL_COLLECTION_QUALITY_SCAN_LIMIT = 200;
-
 const loadFullCollectionForServer = async (
     authentication: ServerAuthenticationResult,
     fetcher: SamoFetch,
     variant: MobileFullCollectionVariant,
-    qualityScanLimit: number,
     updatedSince?: number | string,
 ): Promise<MobileHomeItem[]> => {
-    const subsonic =
-        authentication.type === ServerType.NAVIDROME ||
-        authentication.type === ServerType.SUBSONIC;
-    const audiobookshelf = authentication.type === ServerType.AUDIOBOOKSHELF;
-    const samo = authentication.type === ServerType.SAMO;
-
-    if (samo) {
+    if (authentication.type === ServerType.SAMO) {
         return loadSamoFullCollection(authentication, fetcher, variant, updatedSince);
     }
 
-    switch (variant) {
-        case 'album': {
-            if (!subsonic) return [];
-            const albums = await loadAllSubsonicAlbums(authentication, fetcher);
-            // Annotate the first chunk so the View All grid renders badges
-            // alongside the badge-bearing tiles the user sees on Home. The
-            // tail of huge libraries stays unbadged at this surface — opening
-            // any individual album still shows the correct format.
-            return annotateSubsonicAlbumsQuality(
-                authentication,
-                fetcher,
-                albums,
-                qualityScanLimit,
-            );
-        }
-        case 'artist':
-            return subsonic ? loadAllSubsonicArtists(authentication, fetcher) : [];
-        case 'audiobook':
-            return audiobookshelf
-                ? loadAllAudiobookshelfItems(authentication, fetcher, MobileHomeItemType.AUDIOBOOK)
-                : [];
-        case 'playlist':
-            return subsonic ? loadAllSubsonicPlaylists(authentication, fetcher) : [];
-        case 'podcast':
-            return audiobookshelf
-                ? loadAllAudiobookshelfItems(authentication, fetcher, MobileHomeItemType.PODCAST)
-                : [];
-    }
+    return [];
 };
 
 /**
@@ -2343,7 +1576,6 @@ const loadFullCollectionForServer = async (
 export const loadMobileFullCollection = async ({
     authentication,
     fetch: fetcher,
-    qualityScanLimit = FULL_COLLECTION_QUALITY_SCAN_LIMIT,
     updatedSince,
     variant,
 }: MobileFullCollectionInput): Promise<MobileFullCollectionResult> => {
@@ -2352,7 +1584,7 @@ export const loadMobileFullCollection = async ({
     }
     const request = getFetch(fetcher);
     try {
-        const items = await loadFullCollectionForServer(authentication, request, variant, qualityScanLimit, updatedSince);
+        const items = await loadFullCollectionForServer(authentication, request, variant, updatedSince);
         return { errors: [], items };
     } catch (error) {
         return { errors: [`${authentication.title}: ${getErrorMessage(error)}`], items: [] };
@@ -2363,7 +1595,6 @@ export const loadMobileHomeContentForServers = async ({
     authentication,
     fetch: fetcher,
     limit = DEFAULT_HOME_LIMIT,
-    qualityScanLimit = limit,
 }: MobileHomeContentForServersInput): Promise<MobileHomeContent> => {
     const loadedAt = Date.now();
 
@@ -2382,7 +1613,6 @@ export const loadMobileHomeContentForServers = async ({
             authentication,
             fetch: request,
             limit,
-            qualityScanLimit,
         });
         return {
             errors: content.errors,
@@ -2434,9 +1664,6 @@ export const loadSamoRecentlyPlayedHomeItems = async (
 
 /** Target size for the Library "Relevant" catalog — fast to load, feels personal. */
 export const LIBRARY_RELEVANT_MAX_ITEMS = 300;
-const LIBRARY_RELEVANT_ALBUM_LIST_SIZE = 50;
-const LIBRARY_RELEVANT_ABS_LIMIT = 80;
-const LIBRARY_RELEVANT_QUALITY_SCAN_LIMIT = 0;
 
 export interface MobileLibraryRelevantContent {
     errors: string[];
@@ -2450,169 +1677,6 @@ export interface MobileLibraryRelevantContentForServersInput {
     maxItems?: number;
 }
 
-const mergeLibraryRelevantItems = (
-    batches: MobileHomeItem[][],
-    maxItems: number,
-): MobileHomeItem[] => {
-    const itemsByKey = new Map<string, MobileHomeItem>();
-
-    for (const batch of batches) {
-        for (const item of batch) {
-            const key = `${item.source?.id ?? 'server'}:${item.type}:${item.id}`;
-            if (!itemsByKey.has(key)) {
-                itemsByKey.set(key, item);
-            }
-        }
-        if (itemsByKey.size >= maxItems) {
-            break;
-        }
-    }
-
-    return [...itemsByKey.values()].slice(0, maxItems);
-};
-
-const loadSubsonicAlbumListItems = async (
-    authentication: ServerAuthenticationResult,
-    fetcher: SamoFetch,
-    type: string,
-    size: number,
-): Promise<MobileHomeItem[]> => {
-    const body = await requestJson<SubsonicAlbumListBody>(
-        fetcher,
-        subsonicUrl(authentication, 'getAlbumList2.view', {
-            size,
-            type,
-        }),
-    );
-    const response = body['subsonic-response'];
-    assertSubsonicOk(response, `Failed to load ${type} albums`);
-
-    const source = getMobileContentSource(authentication);
-
-    return (response?.albumList2?.album ?? []).flatMap((album) => {
-        const id = album.id?.toString();
-        const title = album.name ?? album.title;
-
-        if (!id || !title) {
-            return [];
-        }
-
-        const createdMs = album.created ? Date.parse(album.created) : NaN;
-
-        return {
-            addedAt: Number.isFinite(createdMs) ? createdMs : undefined,
-            artworkUrl: subsonicCoverArtUrl(authentication, album.coverArt, album.id),
-            id,
-            source,
-            subtitle: album.artist ?? (album.year ? String(album.year) : undefined),
-            title,
-            type: MobileHomeItemType.ALBUM,
-        };
-    });
-};
-
-const loadSubsonicLibraryRelevantItems = async (
-    authentication: ServerAuthenticationResult,
-    fetcher: SamoFetch,
-): Promise<MobileHomeItem[]> => {
-    const listSize = LIBRARY_RELEVANT_ALBUM_LIST_SIZE;
-    const [
-        recentAlbumsResult,
-        frequentAlbumsResult,
-        newestAlbumsResult,
-        favoritesResult,
-        playlistsResult,
-        radioResult,
-    ] = await Promise.allSettled([
-        loadSubsonicAlbumListItems(authentication, fetcher, 'recent', listSize),
-        loadSubsonicAlbumListItems(authentication, fetcher, 'frequent', listSize),
-        loadSubsonicAlbumListItems(authentication, fetcher, 'newest', listSize),
-        loadSubsonicFavoriteAlbumsAndArtists(
-            authentication,
-            fetcher,
-            listSize,
-            LIBRARY_RELEVANT_QUALITY_SCAN_LIMIT,
-        ),
-        loadSubsonicPlaylists(authentication, fetcher),
-        loadSubsonicRadio(authentication, fetcher),
-    ]);
-
-    const batches: MobileHomeItem[][] = [];
-
-    if (recentAlbumsResult.status === 'fulfilled') {
-        batches.push(recentAlbumsResult.value);
-    }
-    if (frequentAlbumsResult.status === 'fulfilled') {
-        batches.push(frequentAlbumsResult.value);
-    }
-    if (newestAlbumsResult.status === 'fulfilled') {
-        batches.push(newestAlbumsResult.value);
-    }
-    if (favoritesResult.status === 'fulfilled') {
-        batches.push(favoritesResult.value.flatMap((section) => section.items));
-    }
-    if (playlistsResult.status === 'fulfilled') {
-        batches.push(playlistsResult.value.items);
-    }
-    if (radioResult.status === 'fulfilled') {
-        batches.push(radioResult.value.items);
-    }
-
-    return mergeLibraryRelevantItems(batches, LIBRARY_RELEVANT_MAX_ITEMS);
-};
-
-const loadAudiobookshelfLibraryRelevantItems = async (
-    authentication: ServerAuthenticationResult,
-    fetcher: SamoFetch,
-): Promise<MobileHomeItem[]> => {
-    const librariesBody = await requestJson<AudiobookshelfLibrariesBody>(
-        fetcher,
-        `${authentication.url}/api/libraries`,
-        {
-            headers: { Authorization: `Bearer ${authentication.credential}` },
-            method: 'GET',
-        },
-    );
-    const libraries = librariesBody.libraries ?? [];
-    const bookLibraries = libraries.filter((library) => library.mediaType === 'book');
-    const podcastLibraries = libraries.filter((library) => library.mediaType === 'podcast');
-    const [audiobooksResult, podcastsResult] = await Promise.allSettled([
-        Promise.all(
-            bookLibraries.map((library) =>
-                loadAudiobookshelfItems(
-                    authentication,
-                    fetcher,
-                    library,
-                    MobileHomeItemType.AUDIOBOOK,
-                    LIBRARY_RELEVANT_ABS_LIMIT,
-                ),
-            ),
-        ),
-        Promise.all(
-            podcastLibraries.map((library) =>
-                loadAudiobookshelfItems(
-                    authentication,
-                    fetcher,
-                    library,
-                    MobileHomeItemType.PODCAST,
-                    LIBRARY_RELEVANT_ABS_LIMIT,
-                ),
-            ),
-        ),
-    ]);
-
-    const batches: MobileHomeItem[][] = [];
-
-    if (audiobooksResult.status === 'fulfilled') {
-        batches.push(audiobooksResult.value.flat());
-    }
-    if (podcastsResult.status === 'fulfilled') {
-        batches.push(podcastsResult.value.flat());
-    }
-
-    return mergeLibraryRelevantItems(batches, LIBRARY_RELEVANT_MAX_ITEMS);
-};
-
 const loadMobileLibraryRelevantContent = async ({
     authentication,
     fetch: fetcher,
@@ -2621,17 +1685,6 @@ const loadMobileLibraryRelevantContent = async ({
     fetch?: SamoFetch;
 }): Promise<MobileHomeItem[]> => {
     const request = getFetch(fetcher);
-
-    if (authentication.type === ServerType.AUDIOBOOKSHELF) {
-        return loadAudiobookshelfLibraryRelevantItems(authentication, request);
-    }
-
-    if (
-        authentication.type === ServerType.NAVIDROME ||
-        authentication.type === ServerType.SUBSONIC
-    ) {
-        return loadSubsonicLibraryRelevantItems(authentication, request);
-    }
 
     if (authentication.type === ServerType.SAMO) {
         return loadSamoLibraryRelevantItems(authentication, request);

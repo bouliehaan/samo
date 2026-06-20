@@ -12,8 +12,7 @@ import { toast } from '/@/shared/components/toast/toast';
 import { useForm } from '/@/shared/hooks/use-form';
 import {
     CreatePlaylistBody,
-    CreatePlaylistResponse,
-    ServerType,
+    CreatePlaylistResponse
 } from '/@/shared/types/domain-types';
 import { ServerFeature } from '/@/shared/types/features-types';
 
@@ -79,7 +78,7 @@ export const SaveAsPlaylistForm = ({
                     required
                     {...form.getInputProps('name')}
                 />
-                {server?.type === ServerType.NAVIDROME && (
+                {false && (
                     <TextInput
                         label={t('form.createPlaylist.input', {
                             context: 'description',

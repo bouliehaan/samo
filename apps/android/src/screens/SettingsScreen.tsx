@@ -244,7 +244,7 @@ export const SettingsScreen = ({
                     </Text>
                     <Text style={styles.settingsRowSubtitle}>
                         {serverCount === 0
-                            ? 'Connect a music server, Audiobookshelf, or radio source'
+                            ? 'Connect a Samo server or radio source'
                             : `${serverCount} connected`}
                     </Text>
                 </View>

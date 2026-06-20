@@ -28,7 +28,6 @@ import { ListSortByDropdown } from '/@/renderer/features/shared/components/list-
 import { ListSortOrderToggleButton } from '/@/renderer/features/shared/components/list-sort-order-toggle-button';
 import { MoreButton } from '/@/renderer/features/shared/components/more-button';
 import { FILTER_KEYS } from '/@/renderer/features/shared/utils';
-import { useContainerQuery } from '/@/renderer/hooks';
 import {
     PlaylistTarget,
     useCurrentServerId,
@@ -160,9 +159,6 @@ export const PlaylistDetailSongListHeaderFilters = ({
             playlistTarget === PlaylistTarget.ALBUM ? PlaylistTarget.TRACK : PlaylistTarget.ALBUM,
         );
     }, [playlistTarget, setPlaylistBehavior]);
-
-    const { ref: containerRef, ...breakpoints } = useContainerQuery();
-
     const isViewEditMode = !isSmartPlaylist;
     const isEditMode = mode === 'edit';
 

@@ -25,7 +25,7 @@ const localSettings = isElectron() ? window.api.localSettings : null;
 const prefetchSamoStreamToken = (
     server: Pick<
         NonNullable<ReturnType<typeof getServerById>>,
-        'credential' | 'ndCredential' | 'type' | 'url'
+        'credential' | 'type' | 'url'
     >,
 ) => {
     if (server.type !== ServerType.SAMO) {
@@ -35,7 +35,6 @@ const prefetchSamoStreamToken = (
     void ensureSamoStreamToken(
         {
             credential: server.credential,
-            ndCredential: server.ndCredential,
             type: ServerType.SAMO,
             url: server.url,
         },
@@ -224,9 +223,6 @@ export const useServerAuthenticated = () => {
                                 isAdmin: authData.isAdmin,
                                 userId: authData.userId,
                                 username: authData.username,
-                                ...(authData.ndCredential !== undefined && {
-                                    ndCredential: authData.ndCredential,
-                                }),
                             };
 
                             updateServer(serverWithAuth.id, updatedServer);
@@ -372,7 +368,6 @@ export const useServerAuthenticated = () => {
             ? [
                   serverWithAuth.id,
                   serverWithAuth.credential,
-                  serverWithAuth.ndCredential,
                   serverWithAuth.userId,
                   serverWithAuth.username,
                   serverWithAuth.url,

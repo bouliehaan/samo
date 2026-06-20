@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { testServerAuthentication } from '../test-fixtures';
+import { buildSamoInternetRadioPlayback } from './mobile-playback';
 import {
     enrichSamoRadioPlaybackItem,
     formatRadioNowPlayingLine,
@@ -10,16 +12,14 @@ import {
     parseSamoInternetRadioStationId,
     resolveSamoInternetRadioPlaybackDisplay,
 } from './mobile-radio-metadata';
-import { buildSamoInternetRadioPlayback } from './mobile-playback';
-import { testServerAuthentication } from '../test-fixtures';
 
 const authentication = testServerAuthentication();
 
 describe('formatRadioNowPlayingLine', () => {
     it('joins artist and title', () => {
-        expect(
-            formatRadioNowPlayingLine({ artist: 'Daft Punk', title: 'Around the World' }),
-        ).toBe('Daft Punk — Around the World');
+        expect(formatRadioNowPlayingLine({ artist: 'Daft Punk', title: 'Around the World' })).toBe(
+            'Daft Punk — Around the World',
+        );
     });
 
     it('falls back to raw ICY text', () => {
@@ -145,7 +145,8 @@ describe('enrichSamoRadioPlaybackItem', () => {
                     streamUrl: 'https://example.com/stream',
                 },
                 undefined,
-            ) ?? (() => {
+            ) ??
+            (() => {
                 throw new Error('expected playback');
             })();
 

@@ -17,7 +17,7 @@ const isHigherQualityProfile = (
  *
  * Returns undefined when the playback isn't lossless (transcoded, lossy
  * container). When the playback IS lossless but the server didn't fill in
- * bitDepth or sampleRate (Subsonic implementations are inconsistent about
+ * bitDepth or sampleRate (some servers are inconsistent about
  * populating those numeric fields for FLAC), we default to CD-quality
  * 16/44.1 — the asset map has that variant and a confirmed-lossless track
  * deserves a badge even when its exact specs aren't reported. Hi-res
@@ -35,7 +35,7 @@ export const getPlaybackQualityProfile = (
 
 /**
  * Resolve a quality profile from any home/search item. The explicit
- * qualityProfile set by annotateSubsonicAlbumsQuality wins; we fall back to
+ * qualityProfile set on the item wins; we fall back to
  * the item's playback (covers individual song hits in search) before
  * giving up. Undefined → caller renders no badge.
  */
@@ -50,7 +50,7 @@ export const getItemQualityProfile = (
 };
 
 /**
- * When album search hits lack a collection profile (Subsonic scan limit, etc.),
+ * When album search hits lack a collection profile (e.g. not yet scanned),
  * promote the best song playback profile from the same result set.
  */
 export const propagateSearchAlbumQualityFromSongs = <

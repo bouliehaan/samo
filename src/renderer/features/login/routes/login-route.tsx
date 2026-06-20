@@ -14,7 +14,6 @@ import {
     isServerLock,
 } from '/@/renderer/features/action-required/utils/window-properties';
 import JellyfinIcon from '/@/renderer/features/servers/assets/jellyfin.png';
-import NavidromeIcon from '/@/renderer/features/servers/assets/navidrome.png';
 import SubsonicIcon from '/@/renderer/features/servers/assets/opensubsonic.png';
 import { IgnoreCorsSslSwitches } from '/@/renderer/features/servers/components/ignore-cors-ssl-switches';
 import { AnimatedPage } from '/@/renderer/features/shared/components/animated-page';
@@ -45,17 +44,13 @@ const localSettings = isElectron() ? window.api.localSettings : null;
 const SERVER_ICONS: Record<ServerType, string> = {
     [ServerType.AUDIOBOOKSHELF]: AudiobookshelfIcon,
     [ServerType.JELLYFIN]: JellyfinIcon,
-    [ServerType.NAVIDROME]: NavidromeIcon,
     [ServerType.SAMO]: SamoIcon,
-    [ServerType.SUBSONIC]: SubsonicIcon,
 };
 
 const SERVER_NAMES: Record<ServerType, string> = {
     [ServerType.AUDIOBOOKSHELF]: 'Audiobookshelf',
     [ServerType.JELLYFIN]: 'Jellyfin',
-    [ServerType.NAVIDROME]: 'Navidrome',
     [ServerType.SAMO]: 'Samo',
-    [ServerType.SUBSONIC]: 'OpenSubsonic',
 };
 
 const normalizeUrl = (url: string) => url.replace(/\/$/, '');
@@ -203,16 +198,10 @@ const LoginRoute = () => {
                     userId: data.userId,
                     username: data.username,
                 };
-                if (data.ndCredential !== undefined) {
-                    updates.ndCredential = data.ndCredential;
-                }
                 updateServer(existingServer.id, updates);
                 const updated = getServerById(existingServer.id);
                 if (updated) setCurrentServer(updated);
             } else {
-                if (data.ndCredential !== undefined) {
-                    serverItem.ndCredential = data.ndCredential;
-                }
                 addServer(serverItem);
                 setCurrentServer(serverItem);
             }

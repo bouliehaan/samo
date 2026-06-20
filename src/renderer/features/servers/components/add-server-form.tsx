@@ -16,7 +16,6 @@ import {
 } from '/@/renderer/features/action-required/utils/window-properties';
 import JellyfinIcon from '/@/renderer/features/servers/assets/jellyfin.png';
 import NavidromeIcon from '/@/renderer/features/servers/assets/navidrome.png';
-import SubsonicIcon from '/@/renderer/features/servers/assets/opensubsonic.png';
 import { IgnoreCorsSslSwitches } from '/@/renderer/features/servers/components/ignore-cors-ssl-switches';
 import { useAuthStoreActions, useServerList } from '/@/renderer/store';
 import { Checkbox } from '/@/shared/components/checkbox/checkbox';
@@ -86,19 +85,11 @@ const SERVER_TYPES: Record<ServerType, ServerDetails> = {
         icon: JellyfinIcon,
         name: 'Jellyfin',
     },
-    [ServerType.NAVIDROME]: {
-        icon: NavidromeIcon,
-        name: 'Navidrome',
-    },
     [ServerType.SAMO]: {
         icon: SamoIcon,
         name: 'Samo',
     },
-    [ServerType.SUBSONIC]: {
-        icon: SubsonicIcon,
-        name: 'OpenSubsonic',
-    },
-};
+    };
 
 const ALL_SERVERS = Object.keys(SERVER_TYPES).map((serverType) => {
     const info = SERVER_TYPES[serverType];
@@ -296,10 +287,7 @@ export const AddServerForm = ({
                 serverItem.preferRemoteUrl = values.preferRemoteUrl;
             }
 
-            if (data.ndCredential !== undefined) {
-                serverItem.ndCredential = data.ndCredential;
-            }
-
+            
             if (localSettings && values.password) {
                 const saved = await localSettings.passwordSet(values.password, serverItem.id);
                 serverItem.savePassword = saved;
@@ -422,16 +410,7 @@ export const AddServerForm = ({
                         })}
                         {...form.getInputProps('password')}
                     />
-                    {form.values.type === ServerType.SUBSONIC && (
-                        <Checkbox
-                            disabled={serverLock}
-                            label={t('form.addServer.input', {
-                                context: 'legacyAuthentication',
-                                postProcess: 'titleCase',
-                            })}
-                            {...form.getInputProps('legacyAuth', { type: 'checkbox' })}
-                        />
-                    )}
+
                     {form.values.type === ServerType.JELLYFIN && (
                         <Checkbox
                             description={t('form.addServer.input', {

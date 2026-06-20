@@ -46,7 +46,7 @@ const parseExpiry = (response: SamoStreamTokenResponse): number => {
 };
 
 export const getCachedSamoStreamToken = (
-    authentication: Pick<ServerAuthenticationResult, 'credential' | 'ndCredential' | 'type' | 'url'>,
+    authentication: Pick<ServerAuthenticationResult, 'credential' | 'type' | 'url'>,
 ): string | undefined => {
     const key = cacheKey(authentication);
     const entry = cache.get(key);
@@ -62,7 +62,7 @@ export const getCachedSamoStreamToken = (
 };
 
 export const ensureSamoStreamToken = async (
-    authentication: Pick<ServerAuthenticationResult, 'credential' | 'ndCredential' | 'type' | 'url'>,
+    authentication: Pick<ServerAuthenticationResult, 'credential' | 'type' | 'url'>,
     fetcher?: SamoFetch,
 ): Promise<string | undefined> => {
     if (authentication.type !== ServerType.SAMO) return undefined;
@@ -115,7 +115,7 @@ export const ensureSamoStreamToken = async (
 export const buildSamoAuthenticatedImageRequest = (
     authentication: Pick<
         ServerAuthenticationResult,
-        'credential' | 'ndCredential' | 'type' | 'url'
+        'credential' | 'type' | 'url'
     >,
     url: string,
     cacheKey: string,

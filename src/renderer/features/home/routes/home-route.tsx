@@ -21,10 +21,10 @@ import { LibraryContainer } from '/@/renderer/features/shared/components/library
 import { LibraryHeaderBar } from '/@/renderer/features/shared/components/library-header-bar';
 import { PageErrorBoundary } from '/@/renderer/features/shared/components/page-error-boundary';
 import { AppRoute } from '/@/renderer/router/routes';
-import { useCurrentServer, useCurrentServerId, useWindowSettings } from '/@/renderer/store';
+import { useWindowSettings } from '/@/renderer/store';
 import { Spinner } from '/@/shared/components/spinner/spinner';
 import { Stack } from '/@/shared/components/stack/stack';
-import { AlbumListSort, ServerType, SortOrder } from '/@/shared/types/domain-types';
+import { AlbumListSort, SortOrder } from '/@/shared/types/domain-types';
 import { Platform } from '/@/shared/types/types';
 
 const HomeRecentlyAddedAlbums = ({
@@ -32,12 +32,6 @@ const HomeRecentlyAddedAlbums = ({
 }: {
     containerQuery?: ReturnType<typeof useGridCarouselContainerQuery>;
 }) => {
-    const server = useCurrentServer();
-
-    if (server?.type !== ServerType.NAVIDROME && server?.type !== ServerType.SAMO) {
-        return null;
-    }
-
     return (
         <AlbumInfiniteCarousel
             containerQuery={containerQuery}

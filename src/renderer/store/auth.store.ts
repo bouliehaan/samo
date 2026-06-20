@@ -39,9 +39,7 @@ export interface AuthState {
 
 const MUSIC_SERVER_TYPES = new Set<ServerType>([
     ServerType.JELLYFIN,
-    ServerType.NAVIDROME,
-    ServerType.SAMO,
-    ServerType.SUBSONIC,
+    ServerType.SAMO
 ]);
 
 const isMusicServer = (

@@ -93,7 +93,6 @@ const PodcastCover = ({
         return buildSamoAuthenticatedImageRequest(
             {
                 credential: server!.credential,
-                ndCredential: server!.ndCredential,
                 type: ServerType.SAMO,
                 url: server!.url,
             },
@@ -276,7 +275,6 @@ const PodcastDetailRoute = () => {
                 samoFetch,
                 {
                     credential: server.credential,
-                    ndCredential: server.ndCredential,
                     type: ServerType.SAMO,
                     url: server.url,
                 },

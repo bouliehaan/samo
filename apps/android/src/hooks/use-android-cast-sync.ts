@@ -27,14 +27,19 @@ export function useAndroidCastSync(): void {
             }
         });
 
+        let active = true;
         void getAndroidCastState()
-            .then(setCastState)
-            .catch(() =>
-                setCastState({
-                    isConnected: false,
-                    status: 'unavailable',
-                }),
-            );
+            .then((state) => {
+                if (active) setCastState(state);
+            })
+            .catch(() => {
+                if (active) {
+                    setCastState({
+                        isConnected: false,
+                        status: 'unavailable',
+                    });
+                }
+            });
 
         // Kick off CastContext init and an active route scan immediately —
         // discovery used to start only when the output sheet opened, so the
@@ -42,6 +47,7 @@ export function useAndroidCastSync(): void {
         void getAndroidOutputRoutes().catch(() => undefined);
 
         return () => {
+            active = false;
             castSubscription.remove();
             routesSubscription.remove();
         };

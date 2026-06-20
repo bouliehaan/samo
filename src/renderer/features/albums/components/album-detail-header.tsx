@@ -111,68 +111,7 @@ export const AlbumDetailHeader = forwardRef<HTMLDivElement>((_props, ref) => {
 
         if (!album) return [];
 
-        const originalDifferentFromRelease =
-            album?.originalDate && album?.originalDate !== album?.releaseDate;
-
-        const originalYearDifferentFromRelease =
-            album.originalYear > 0 &&
-            album.releaseYear != null &&
-            album.originalYear !== album.releaseYear;
-
         const playCount = album?.playCount;
-
-        const releasePrefix = originalDifferentFromRelease
-            ? t('page.albumDetail.released', { postProcess: 'sentenceCase' })
-            : '♫';
-
-        const releaseYearPrefix = originalYearDifferentFromRelease
-            ? t('page.albumDetail.released', { postProcess: 'sentenceCase' })
-            : '♫';
-
-        if (album.originalDate) {
-            if (originalDifferentFromRelease) {
-                items.push({
-                    id: 'originalDate',
-                    value: `♫ ${formatPartialIsoDateUTC(album.originalDate)}`,
-                });
-            }
-
-            if (releaseDate) {
-                items.push({
-                    id: 'releaseDate',
-                    value: `${releasePrefix} ${formatPartialIsoDateUTC(releaseDate)}`,
-                });
-            }
-        } else if (album.originalYear > 0) {
-            if (originalYearDifferentFromRelease) {
-                items.push({
-                    id: 'originalYear',
-                    value: `♫ ${album.originalYear}`,
-                });
-            }
-
-            if (releaseDate) {
-                items.push({
-                    id: 'releaseDate',
-                    value: `${releaseYearPrefix} ${formatPartialIsoDateUTC(releaseDate)}`,
-                });
-            } else if (releaseYear != null && releaseYear > 0) {
-                items.push({
-                    id: 'releaseYear',
-                    value: `${releaseYearPrefix} ${releaseYear}`,
-                });
-            }
-        } else if (releaseDate) {
-            items.push({
-                id: 'releaseDate',
-                value: `♫ ${formatPartialIsoDateUTC(releaseDate)}`,
-            });
-        } else if (releaseYear != null && releaseYear > 0) {
-            items.push({
-                id: 'releaseYear',
-                value: `♫ ${releaseYear}`,
-            });
-        }
 
         items.push(
             ...[
@@ -266,6 +205,11 @@ export const AlbumDetailHeader = forwardRef<HTMLDivElement>((_props, ref) => {
                 title={detailQuery?.data?.name || ''}
             >
                 <Stack gap="md" w="100%">
+                    {releaseYear != null && releaseYear > 0 && (
+                        <Text size="lg" fw={500} isMuted>
+                            {releaseYear}
+                        </Text>
+                    )}
                     <Group className={styles.metadataGroup} gap="xs">
                         {metadataItems.map((item, index) => (
                             <Fragment key={item.id}>

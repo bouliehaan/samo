@@ -3,7 +3,6 @@ import {
     buildSamoAudiobookQueueFromFiles,
     buildSamoPodcastEpisodePlayback,
     getMobileMediaDetailErrorMessage,
-    loadAudiobookshelfPlayback,
     loadMobileMediaDetail,
     type MobileHomeItem,
     MobileHomeItemType,
@@ -302,19 +301,11 @@ export const loadAndroidMediaTrackPlayback = async (
         return rebuildSamoPodcastTrackPlayback(authentication, detail, track);
     }
 
-    const timelineSegments = getTrackTimelineSegments(detail, track);
-
-    return loadAudiobookshelfPlayback({
-        artworkUrl: track.artworkUrl ?? detail.artworkUrl,
-        authentication,
-        durationSeconds: getTrackDurationSeconds(track, timelineSegments),
-        episodeId: track.episodeId,
-        itemId: track.itemId ?? detail.id,
-        startSeconds: track.startSeconds,
-        subtitle: track.subtitle ?? detail.title,
-        timelineSegments,
-        title: track.title,
-    });
+    // Music tracks always arrive with a valid `track.playback` (built by the
+    // Samo mappers / synthesizeMusicPlayback), audiobooks-with-files are served
+    // by the queue path above, and podcasts are handled just above — so a Samo
+    // track that reaches here has no playable representation.
+    throw new Error('This track cannot be played.');
 };
 
 export const addAndroidMediaTrackToPlaylist = async (

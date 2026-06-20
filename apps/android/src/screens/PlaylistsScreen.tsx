@@ -1,8 +1,9 @@
 import { MobileHomeSectionId, type MobileHomeItem } from '@samo/core/mobile';
 import { memo, useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 
 import { LibraryListRow } from '../components/LibraryListRow';
+import { SkeletonListRows } from '../components/Skeleton';
 import { LibrarySortMenu } from '../components/LibrarySortMenu';
 import { PlusGlyph, ShuffleGlyph, SortGlyph } from '../components/Glyphs';
 import { colors } from '../theme/tokens';
@@ -51,11 +52,7 @@ export const PlaylistsScreen = memo(({
     }
 
     if (homeContentState.status === 'loading') {
-        return (
-            <View style={styles.section}>
-                <ActivityIndicator color={colors.accent} />
-            </View>
-        );
+        return <SkeletonListRows />;
     }
 
     if (homeContentState.status === 'error') {
@@ -71,22 +68,26 @@ export const PlaylistsScreen = memo(({
 
     if (playlists.length === 0) {
         return (
-            <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Playlists</Text>
+            <View style={styles.playlistScreen}>
+                <View style={styles.playlistTopPanel}>
+                    <Text style={styles.homeHeaderTitle}>Playlists</Text>
+                    <View style={styles.playlistHeaderActions}>
+                        {showCreatePlaylist && onCreatePlaylist ? (
+                            <Pressable
+                                accessibilityLabel="Create playlist"
+                                accessibilityRole="button"
+                                onPress={() => {
+                                    triggerImpact('light');
+                                    onCreatePlaylist();
+                                }}
+                                style={styles.radioAddIconButton}
+                            >
+                                <PlusGlyph color={colors.muted} size={18} />
+                            </Pressable>
+                        ) : null}
+                    </View>
+                </View>
                 <Text style={styles.mutedText}>No server-backed playlists returned.</Text>
-                {showCreatePlaylist && onCreatePlaylist ? (
-                    <Pressable
-                        accessibilityLabel="Create playlist"
-                        accessibilityRole="button"
-                        onPress={() => {
-                            triggerImpact('light');
-                            onCreatePlaylist();
-                        }}
-                        style={styles.radioAddIconButton}
-                    >
-                        <PlusGlyph color={colors.muted} size={18} />
-                    </Pressable>
-                ) : null}
             </View>
         );
     }
@@ -94,12 +95,7 @@ export const PlaylistsScreen = memo(({
     return (
         <View style={styles.playlistScreen}>
             <View style={styles.playlistTopPanel}>
-                <View>
-                    <Text style={styles.libraryEyebrow}>Playlists</Text>
-                    <Text style={styles.playlistSummary}>
-                        {playlists.length} {playlists.length === 1 ? 'playlist' : 'playlists'}
-                    </Text>
-                </View>
+                <Text style={styles.homeHeaderTitle}>Playlists</Text>
                 <View style={styles.playlistHeaderActions}>
                     {showCreatePlaylist && onCreatePlaylist ? (
                         <Pressable

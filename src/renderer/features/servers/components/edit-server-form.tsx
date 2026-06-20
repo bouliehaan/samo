@@ -66,7 +66,7 @@ export const EditServerForm = ({ isUpdate, onCancel, password, server }: EditSer
         },
     });
 
-    const isSubsonic = form.values.type === ServerType.SUBSONIC;
+    const isSubsonic = false;
 
     const handleSubmit = form.onSubmit(async (values) => {
         try {
@@ -138,9 +138,6 @@ export const EditServerForm = ({ isUpdate, onCancel, password, server }: EditSer
                     username: data.username,
                 };
 
-                if (data.ndCredential !== undefined) {
-                    serverItem.ndCredential = data.ndCredential;
-                }
             }
 
             // Update optional fields

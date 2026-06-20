@@ -20,11 +20,7 @@ export enum ServerFeature {
 }
 
 export enum ServerType {
-    AUDIOBOOKSHELF = 'audiobookshelf',
-    JELLYFIN = 'jellyfin',
-    NAVIDROME = 'navidrome',
     SAMO = 'samo',
-    SUBSONIC = 'subsonic',
 }
 
 export type ServerFeatures = Partial<Record<ServerFeature, number[]>>;
@@ -48,21 +44,12 @@ export interface ServerListItemCore {
 
 export type ServerListItemWithCredentialCore = ServerListItemCore & {
     credential: string;
-    ndCredential?: string;
 };
 
 export const toServerType = (value?: string): null | ServerType => {
     switch (value?.toLowerCase()) {
-        case ServerType.AUDIOBOOKSHELF:
-            return ServerType.AUDIOBOOKSHELF;
-        case ServerType.JELLYFIN:
-            return ServerType.JELLYFIN;
-        case ServerType.NAVIDROME:
-            return ServerType.NAVIDROME;
         case ServerType.SAMO:
             return ServerType.SAMO;
-        case ServerType.SUBSONIC:
-            return ServerType.SUBSONIC;
         default:
             return null;
     }

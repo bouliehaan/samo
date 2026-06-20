@@ -11,7 +11,6 @@ import { ServerListItemWithCredential } from '/@/shared/types/domain-types';
 
 const samoAuth = (server: ServerListItemWithCredential) => ({
     credential: server.credential,
-    ndCredential: server.ndCredential,
     type: ServerType.SAMO as const,
     url: server.url,
 });

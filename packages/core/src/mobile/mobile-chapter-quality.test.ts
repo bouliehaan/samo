@@ -18,16 +18,25 @@ describe('deriveChapterQuality', () => {
 
     it('flags confident vs low-confidence audio-aligned chapters', () => {
         expect(deriveChapterQuality('audio-aligned', 0.88, 73)?.needsReview).toBe(false);
-        expect(deriveChapterQuality('audio-aligned', CHAPTER_REVIEW_CONFIDENCE - 0.01, 73)?.needsReview).toBe(true);
+        expect(
+            deriveChapterQuality('audio-aligned', CHAPTER_REVIEW_CONFIDENCE - 0.01, 73)
+                ?.needsReview,
+        ).toBe(true);
         // Missing confidence is not treated as low.
         expect(deriveChapterQuality('audio-aligned', undefined, 73)?.needsReview).toBe(false);
     });
 
     it('flags weak sources for review', () => {
         // One-chapter-per-file track splits — not real chapters.
-        expect(deriveChapterQuality('file', 0, 115)).toMatchObject({ label: 'File-based', needsReview: true });
+        expect(deriveChapterQuality('file', 0, 115)).toMatchObject({
+            label: 'File-based',
+            needsReview: true,
+        });
         // Verified Audible edition but pasted unaligned (the registration declined).
-        expect(deriveChapterQuality('audnexus', 0, 62)).toMatchObject({ label: 'From Audible', needsReview: true });
+        expect(deriveChapterQuality('audnexus', 0, 62)).toMatchObject({
+            label: 'From Audible',
+            needsReview: true,
+        });
     });
 
     it('passes through an unknown source without flagging it', () => {

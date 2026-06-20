@@ -7,8 +7,7 @@
 // full JSON `payload` so reads are lossless: the columns drive the query, the
 // payload reconstructs the exact mobile type the screens already consume.
 //
-// Only Samo sources are mirrored. Subsonic / Navidrome / Audiobookshelf keep
-// their live-network path and never touch these tables.
+// Only Samo sources are mirrored.
 //
 // Migrations are an append-only list. `MIGRATIONS[i]` upgrades the database
 // from `user_version` i to i+1; the runner in database.ts stamps the version

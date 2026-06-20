@@ -34,7 +34,7 @@ import { Spinner } from '/@/shared/components/spinner/spinner';
 import { Stack } from '/@/shared/components/stack/stack';
 import { Text } from '/@/shared/components/text/text';
 import { toast } from '/@/shared/components/toast/toast';
-import { LibraryItem, ServerType } from '/@/shared/types/domain-types';
+import { LibraryItem } from '/@/shared/types/domain-types';
 import { ItemListKey } from '/@/shared/types/types';
 
 const PlaylistSongListFiltersSidebar = () => {
@@ -210,7 +210,7 @@ const PlaylistDetailSongListRoute = () => {
     };
 
     const isSmartPlaylist = Boolean(
-        detailQuery?.data?.rules && server?.type === ServerType.NAVIDROME,
+        detailQuery?.data?.rules && false,
     );
 
     const [showQueryBuilder, setShowQueryBuilder] = useState(false);

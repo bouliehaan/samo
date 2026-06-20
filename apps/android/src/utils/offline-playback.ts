@@ -1,5 +1,5 @@
 import {
-    mimeFromAudiobookshelfExt,
+    mimeFromAudioFileExt,
     parsePodcastPlaybackEpisodeId,
     type MobileMediaDetail,
     type MobileMediaTrack,
@@ -151,7 +151,7 @@ export const buildOfflinePodcastEpisodePlayable = (
 export const mimeFromCastUri = (localUri: string | undefined): string | undefined => {
     if (!localUri) return undefined;
     const match = localUri.match(/\.([a-z0-9]+)(?:$|[?#])/i);
-    return mimeFromAudiobookshelfExt(match?.[1]) ?? undefined;
+    return mimeFromAudioFileExt(match?.[1]) ?? undefined;
 };
 
 export const resolveLocalPlayback = async (

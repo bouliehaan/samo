@@ -19,14 +19,6 @@ import { playlistsQueries } from '/@/renderer/features/playlists/api/playlists-a
 import { convertNDQueryToQueryGroup } from '/@/renderer/features/playlists/utils';
 import { useCurrentServer } from '/@/renderer/store';
 import { useQueryBuilderSettings } from '/@/renderer/store/settings.store';
-import {
-    NDSongQueryBooleanOperators,
-    NDSongQueryDateOperators,
-    NDSongQueryFields,
-    NDSongQueryNumberOperators,
-    NDSongQueryPlaylistOperators,
-    NDSongQueryStringOperators,
-} from '/@/shared/api/navidrome/navidrome-types';
 import { ActionIcon } from '/@/shared/components/action-icon/action-icon';
 import { Flex } from '/@/shared/components/flex/flex';
 import { Group } from '/@/shared/components/group/group';
@@ -373,7 +365,7 @@ export const PlaylistQueryBuilder = forwardRef(
 
             if (level === 0) {
                 setFilters((prev) => ({ ...prev, type: value }));
-                return;
+                return [];
             }
 
             const path = getTypePath(groupIndex);
@@ -459,18 +451,7 @@ export const PlaylistQueryBuilder = forwardRef(
                 });
             }
 
-            // Standard Fields group
-            if (NDSongQueryFields.length > 0) {
-                groups.push({
-                    group: t('queryBuilder.standardTags', {
-                        postProcess: 'titleCase',
-                    }),
-                    items: NDSongQueryFields,
-                });
-            }
-
             if (groups.length === 0) {
-                return NDSongQueryFields;
             }
 
             if (groups.length === 1) {
@@ -488,7 +469,6 @@ export const PlaylistQueryBuilder = forwardRef(
                     type: 'string',
                     value: 'random',
                 },
-                ...NDSongQueryFields,
             ],
             [t],
         );
@@ -511,11 +491,6 @@ export const PlaylistQueryBuilder = forwardRef(
         // Memoize operators object
         const operators = useMemo(
             () => ({
-                boolean: NDSongQueryBooleanOperators,
-                date: NDSongQueryDateOperators,
-                number: NDSongQueryNumberOperators,
-                playlist: NDSongQueryPlaylistOperators,
-                string: NDSongQueryStringOperators,
             }),
             [],
         );

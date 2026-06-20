@@ -13,7 +13,7 @@ import {
     loadMobileMediaDetail,
     loadMobilePodcastFeedForServers,
     loadMobileRadioForServers,
-    loadSongRadioQueue,
+
     type MobileContentSource,
     type MobileHomeItem,
     MobileHomeItemType,
@@ -172,6 +172,8 @@ import { InitialSyncScreen } from './src/screens/InitialSyncScreen';
 import { LibraryScreen } from './src/screens/LibraryScreen';
 import { ManageServersScreen } from './src/screens/ManageServersScreen';
 import { MediaDetailContent } from './src/screens/MediaDetailScreen';
+import { OnboardingFlow } from './src/screens/onboarding/OnboardingFlow';
+import { OnboardingSplash } from './src/screens/onboarding/OnboardingSplash';
 import { PlaylistsScreen } from './src/screens/PlaylistsScreen';
 import { RadioScreen } from './src/screens/RadioScreen';
 import { SearchOverlay, SearchScreen } from './src/screens/SearchScreen';
@@ -222,6 +224,7 @@ import {
     type AndroidHomeContentState,
     reconcileHomeContent,
 } from './src/services/home-content';
+import { loadHomeLayoutHint, saveHomeLayoutHint } from './src/services/home-layout-hint';
 import { buildHomeLoadKey, dedupeInFlight } from './src/services/in-flight-requests';
 import {
     loadPersistedLastPlayedItem,
@@ -449,11 +452,14 @@ export default function App() {
     } = navigation;
     const {
         authState,
+        bootResolved,
+        onboardingActive,
         password,
         serverConnection,
         serverHealthByKey,
         serverUrl,
         setAuthState,
+        setOnboardingActive,
         setPassword,
         setServerConnection,
         setServerHealthByKey,
@@ -574,7 +580,7 @@ export default function App() {
     /** Re-derive Home from the mirror + last-known live sections. Synchronous
      *  and cheap (bounded SQLite reads), so it runs on connect, after every
      *  sync, and whenever connections change. */
-    const refreshHomeFromMirror = useStableCallback(() => {
+    const refreshHomeFromMirror = useStableCallback((options?: { authoritative?: boolean }) => {
         if (!serverConnection) {
             return;
         }
@@ -592,10 +598,15 @@ export default function App() {
         if (!content) {
             return;
         }
+        // Only the post-sync refresh is authoritative enough to PRUNE a deleted
+        // shelf; every other derive stays additive so a transient thin mirror
+        // read can't blank the page (the cold-boot deload→reload).
         setHomeContentState((current) => ({
             content:
                 current.status === 'loaded'
-                    ? reconcileHomeContent(current.content, content)
+                    ? reconcileHomeContent(current.content, content, {
+                          prune: options?.authoritative ?? false,
+                      })
                     : content,
             status: 'loaded',
         }));
@@ -681,6 +692,14 @@ export default function App() {
             if (requestId !== homeLoadRequestId.current) {
                 return;
             }
+            // Record which live shelves had content so the NEXT cold boot can
+            // reserve their slots before the fetch returns (a genuinely-empty
+            // shelf writes 0, which clears any stale reservation). One
+            // fire-and-forget call — no new state, no effect.
+            saveHomeLayoutHint({
+                podcastFeed: live.podcastFeed.length,
+                rediscover: live.discover.length,
+            });
             if (
                 live.discover.length > 0 ||
                 live.podcastFeed.length > 0 ||
@@ -764,12 +783,14 @@ export default function App() {
     useEffect(() => {
         const uninstall = installCatalogSyncEventBridge();
         const unsubscribe = subscribeCatalogSyncCompleted(() => {
-            refreshHomeFromMirror();
+            // Post-sync is the one authoritative derive — it may prune shelves
+            // whose content was genuinely deleted on the server.
+            refreshHomeFromMirror({ authoritative: true });
             refreshLibraryFromMirror();
             // catalog_search is JS-owned (fts5 only exists in expo-sqlite's
             // bundled build) — derive it from the freshly-synced mirror.
             void reindexCatalogSearch(serverConnectionForSyncRef.current).then(() => {
-                refreshHomeFromMirror();
+                refreshHomeFromMirror({ authoritative: true });
             });
             void prefetchCatalogArtwork(serverConnectionForSyncRef.current);
         });
@@ -1086,6 +1107,10 @@ export default function App() {
                 void savePersistedLastPlayedItem(refreshed);
             }
         });
+
+        // Warm the home-layout hint cache so the next render can reserve the
+        // live shelves' slots synchronously (cold-boot no-shift).
+        void loadHomeLayoutHint();
 
         void loadLocalFavorites().then((favorites) => {
             if (isMounted) {
@@ -2022,6 +2047,34 @@ export default function App() {
                                     playlists={rootPlaylistTargets}
                                     track={rootPlaylistTrack}
                                 />
+                                {/* First-run / no-server gate. Sits above every
+                                    surface so the user can never reach Home
+                                    without a live, authenticated connection. */}
+                                {!bootResolved ? (
+                                    <View style={styles.onboardingOverlay}>
+                                        <OnboardingSplash />
+                                    </View>
+                                ) : onboardingActive || !serverConnection ? (
+                                    <View style={styles.onboardingOverlay}>
+                                        <OnboardingFlow
+                                            authState={authState}
+                                            canConnect={canConnect}
+                                            onConnect={handleConnect}
+                                            onFinish={() => {
+                                                setOnboardingActive(false);
+                                                setActiveUtilityScreen(null);
+                                            }}
+                                            password={password}
+                                            serverConnection={serverConnection}
+                                            serverUrl={serverUrl}
+                                            setAuthState={setAuthState}
+                                            setPassword={setPassword}
+                                            setServerUrl={setServerUrl}
+                                            setUsername={setUsername}
+                                            username={username}
+                                        />
+                                    </View>
+                                ) : null}
                             </View>
                         </DownloadedTrackKeysContext.Provider>
                     </DownloadedCollectionKeysContext.Provider>

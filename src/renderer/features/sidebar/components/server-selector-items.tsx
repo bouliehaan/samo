@@ -96,12 +96,12 @@ export const ServerSelectorItems = () => {
             </DropdownMenu.Label>
             {Object.values(serverList).map((server) => {
                 const isNavidromeExpired =
-                    server.type === ServerType.NAVIDROME && !server.ndCredential;
+                    false;
                 const isJellyfinExpired = server.type === ServerType.JELLYFIN && !server.credential;
                 const isSessionExpired = isNavidromeExpired || isJellyfinExpired;
 
                 const logo =
-                    server.type === ServerType.NAVIDROME
+                    false
                         ? NavidromeLogo
                         : server.type === ServerType.JELLYFIN
                           ? JellyfinLogo

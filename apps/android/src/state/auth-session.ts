@@ -7,6 +7,14 @@ import { DEFAULT_SERVER_URL } from '../utils/auth-url';
 
 export type AuthSessionState = {
     authState: AndroidAuthState;
+    // Flips true the moment the saved-session decision is made at boot (a fast
+    // local read). The UI shows a brief splash until then so neither the empty
+    // home nor the onboarding flash before we know which one to show.
+    bootResolved: boolean;
+    // Drives the first-run onboarding overlay. True while the user has no server
+    // (or one whose saved session expired) AND through the post-connect sync
+    // step, so the celebratory flow stays mounted until "Enter Samo" is tapped.
+    onboardingActive: boolean;
     password: string;
     serverConnection: ServerAuthenticationResult | null;
     serverHealthByKey: AndroidServerHealthMap;
@@ -17,6 +25,8 @@ export type AuthSessionState = {
 
 const initialAuthSessionState: AuthSessionState = {
     authState: { status: 'idle' },
+    bootResolved: false,
+    onboardingActive: false,
     password: '',
     serverConnection: null,
     serverHealthByKey: {},
@@ -28,6 +38,8 @@ const initialAuthSessionState: AuthSessionState = {
 type AuthSessionAction =
     | { type: 'patch'; patch: Partial<AuthSessionState> }
     | { type: 'reset-credentials' }
+    | { type: 'set-boot-resolved'; value: boolean }
+    | { type: 'set-onboarding-active'; value: boolean }
     | {
           type: 'set-auth-state';
           value: AndroidAuthState | ((current: AndroidAuthState) => AndroidAuthState);
@@ -57,6 +69,14 @@ const authSessionReducer = (
     switch (action.type) {
         case 'patch':
             return { ...state, ...action.patch };
+        case 'set-boot-resolved':
+            return state.bootResolved === action.value
+                ? state
+                : { ...state, bootResolved: action.value };
+        case 'set-onboarding-active':
+            return state.onboardingActive === action.value
+                ? state
+                : { ...state, onboardingActive: action.value };
         case 'reset-credentials':
             return {
                 ...state,
@@ -160,6 +180,12 @@ const setServerHealthByKey = (
     value: AndroidServerHealthMap | ((current: AndroidServerHealthMap) => AndroidServerHealthMap),
 ) => dispatchAuthSession({ type: 'set-server-health', value });
 
+const setBootResolved = (value: boolean) =>
+    dispatchAuthSession({ type: 'set-boot-resolved', value });
+
+const setOnboardingActive = (value: boolean) =>
+    dispatchAuthSession({ type: 'set-onboarding-active', value });
+
 const patchAuthSession = (patch: Partial<AuthSessionState>) =>
     dispatchAuthSession({ type: 'patch', patch });
 
@@ -174,6 +200,8 @@ export const useAuthSessionState = () => {
         ...state,
         patchAuthSession,
         setAuthState,
+        setBootResolved,
+        setOnboardingActive,
         setPassword,
         setServerConnection,
         setServerHealthByKey,

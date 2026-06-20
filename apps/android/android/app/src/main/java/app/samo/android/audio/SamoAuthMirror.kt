@@ -68,8 +68,7 @@ internal object SamoAuthMirror {
         }
     }
 
-    /** Filter the loaded connections to just Samo. The other server types
-     *  (Subsonic/Navidrome/Audiobookshelf) keep their live-network path. */
+    /** Filter the loaded connections to just Samo. */
     fun loadSamo(context: Context): List<Connection> =
         load(context).filter { it.type == "samo" }
 

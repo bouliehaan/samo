@@ -1,11 +1,7 @@
 import { type AudioDeliveryKind } from '../audio-quality';
-import {
-    getSubsonicMusicQuality,
-    type SubsonicPlayableSong,
-} from '../audio-quality/subsonic-quality-scan';
 import { type PlaybackSource } from '../playback';
 import { type ServerAuthenticationResult } from '../server/server-auth';
-import { getFetch, requestJson, type SamoFetch } from '../server/server-http';
+import { type SamoFetch } from '../server/server-http';
 import {
     type SamoAudiobook,
     type SamoAudioFile,
@@ -23,32 +19,11 @@ import { getServerConnectionKey } from '../server/server-session';
 import { ServerType } from '../server/server-types';
 
 import {
-    resolveRadioPlaybackDisplay,
     resolveSamoInternetRadioPlaybackDisplay,
 } from './mobile-radio-metadata';
 
 /** Relative skip interval for audiobook and podcast scrubbing in mobile/desktop UIs. */
 export const LONG_FORM_RELATIVE_SKIP_SECONDS = 15;
-
-// Re-exports for Android back-compat — these symbols used to live here.
-export {
-    getSubsonicMusicQuality,
-    isSubsonicSongHiRes,
-    type SubsonicPlayableSong,
-} from '../audio-quality/subsonic-quality-scan';
-
-export interface AudiobookshelfPlayableInput {
-    artworkUrl?: string;
-    authentication: ServerAuthenticationResult;
-    durationSeconds?: number;
-    episodeId?: string;
-    fetch?: SamoFetch;
-    itemId: string;
-    startSeconds?: number;
-    subtitle?: string;
-    timelineSegments?: MobilePlaybackSegment[];
-    title: string;
-}
 
 export interface MobilePlaybackSegment {
     durationSeconds?: number;
@@ -67,22 +42,16 @@ export interface MobilePlayableAudio {
     artworkImageId?: string;
     /**
      * Mime type to advertise to the Chromecast receiver, when it differs
-     * from `mimeType` (which is what the local ExoPlayer sees). Audiobookshelf
-     * commonly hands us an HLS playlist for the local player while we
-     * separately route the cast leg through a direct-file URL — the cast
-     * receiver needs the underlying file's mime (audio/mp4, audio/mpeg, …)
-     * rather than `application/x-mpegURL`.
+     * from `mimeType` (which is what the local ExoPlayer sees) — e.g. when the
+     * cast leg is routed through a direct-file URL whose underlying mime
+     * (audio/mp4, audio/mpeg, …) differs from the local stream's.
      */
     castMimeType?: string;
     /**
      * Network URL to use when handing the source to Chromecast. Set when
      * `url` is a local file path (offline downloads) so the cast receiver —
      * which can't read the phone's filesystem — gets the original streaming
-     * URL instead. Also set when the local stream is HLS but the cast
-     * receiver can't reach segments (ABS HLS playlists lose `?token=…` on
-     * relative segment URIs per RFC 3986) — in that case we route casting
-     * through a single self-authenticating file URL. Falls back to `url`
-     * when absent.
+     * URL instead. Falls back to `url` when absent.
      */
     castUrl?: string;
     contentSourceId?: string;
@@ -159,60 +128,6 @@ export interface MobilePlaybackQuality {
     serverTranscodeRequested: boolean;
 }
 
-export interface SubsonicPlayableRadioStation {
-    coverArt?: string;
-    homepageUrl?: string;
-    id?: string;
-    name?: string;
-    streamUrl?: string;
-}
-
-
-interface AudiobookshelfPlaybackSessionBody {
-    audioTracks?: AudiobookshelfPlaybackTrack[];
-}
-
-interface AudiobookshelfPlaybackTrack {
-    contentUrl?: string;
-    duration?: number;
-    index?: number;
-    ino?: string;
-    metadata?: {
-        ext?: string;
-        filename?: string;
-        size?: number;
-    };
-    mimeType?: string;
-    startOffset?: number;
-    title?: string;
-}
-
-/**
- * Minimal slice of `/api/items/:id?expanded=1`'s response — enough to locate
- * the underlying audio file for casting. `/play` may hand back an HLS
- * playlist URL with no inode in the body, so we lean on the canonical item
- * endpoint as the source of truth for the file's identity.
- */
-interface AudiobookshelfCastItemDetail {
-    id?: string;
-    media?: {
-        episodes?: Array<{
-            audioFile?: AudiobookshelfCastFile;
-            id?: string;
-        }>;
-        tracks?: AudiobookshelfCastFile[];
-    };
-}
-
-interface AudiobookshelfCastFile {
-    ino?: string;
-    metadata?: {
-        ext?: string;
-        filename?: string;
-    };
-    mimeType?: string;
-}
-
 /**
  * Default Google Cast media receiver supports lossless FLAC up to 96 kHz / 24-bit.
  * Higher sample rates (e.g. 192 kHz hi-res) must use a server-transcoded cast leg.
@@ -227,84 +142,12 @@ export const needsChromecastCompatibleStream = (quality: MobilePlaybackQuality) 
     const sampleRate = quality.sampleRate ?? 0;
     return sampleRate > CHROMECAST_MAX_LOSSLESS_SAMPLE_RATE_HZ;
 };
-
-const subsonicOriginalStreamUrl = (authentication: ServerAuthenticationResult, id: string) => {
-    // format=raw is the Subsonic / Navidrome way to explicitly disable
-    // server-side transcoding (since 1.9.0). Without it the server applies
-    // the user's "Max bit rate" preference and can hand back a transcoded MP3
-    // even for FLAC sources, which means downloads aren't bit-perfect.
-    const params = new URLSearchParams({
-        c: 'Samo',
-        format: 'raw',
-        id,
-        v: '1.13.0',
-    });
-
-    return `${authentication.url}/rest/stream.view?${params.toString()}&${authentication.credential}`;
-};
-
-/** Cast leg: omit format=raw so Navidrome/Subsonic can transcode for the receiver. */
-const subsonicChromecastStreamUrl = (authentication: ServerAuthenticationResult, id: string) => {
-    const params = new URLSearchParams({
-        c: 'Samo',
-        format: 'mp3',
-        id,
-        maxBitRate: '320',
-        v: '1.13.0',
-    });
-
-    return `${authentication.url}/rest/stream.view?${params.toString()}&${authentication.credential}`;
-};
-
-const normalizeContentUrl = (baseUrl: string, contentUrl: string) => {
-    return new URL(contentUrl, baseUrl).toString();
-};
-
 /**
- * Append `?token=…` to an ABS URL so it self-authenticates without the
- * Authorization header — the default Chromecast receiver can't send custom
- * headers, but ABS accepts the same JWT credential via this query param.
+ * Map an audio file extension to its canonical audio mime type so we can hand
+ * the cast receiver something it actually knows how to decode. Returns null
+ * for formats we can't cast.
  */
-export const appendAudiobookshelfAuthToken = (url: string, credential: string) => {
-    const separator = url.includes('?') ? '&' : '?';
-    return `${url}${separator}token=${encodeURIComponent(credential)}`;
-};
-
-const isAudiobookshelfHlsUrl = (contentUrl: string) => {
-    const normalizedUrl = contentUrl.toLowerCase();
-
-    return normalizedUrl.includes('/hls/') || normalizedUrl.includes('.m3u8');
-};
-
-/**
- * Cast-safe mime types for ABS audio files. The default Chromecast receiver
- * handles MP3, AAC (in MP4 containers like M4A/M4B), WAV, FLAC, and Ogg
- * Vorbis/Opus natively. Anything outside this set has no cast path at all,
- * so we'd rather leave the existing HLS castUrl in place and let the cast
- * receiver fall through to its own error than route playback through a
- * direct URL the receiver can't decode.
- */
-const CAST_FRIENDLY_AUDIO_MIMES = new Set<string>([
-    'audio/aac',
-    'audio/flac',
-    'audio/mp4',
-    'audio/mpeg',
-    'audio/ogg',
-    'audio/wav',
-    'audio/x-flac',
-    'audio/x-m4a',
-    'audio/x-m4b',
-    'audio/x-wav',
-]);
-
-/**
- * Map an audiobookshelf file extension to its canonical audio mime type so
- * we can hand the cast receiver something it actually knows how to decode.
- * Returns null for formats we can't cast — caller falls back to leaving the
- * HLS castUrl in place (which will surface as a cast error rather than
- * silently failing on segment auth).
- */
-export const mimeFromAudiobookshelfExt = (rawExt: string | undefined): null | string => {
+export const mimeFromAudioFileExt = (rawExt: string | undefined): null | string => {
     if (!rawExt) return null;
     const ext = rawExt.toLowerCase().replace(/^\./, '');
     switch (ext) {
@@ -329,148 +172,6 @@ export const mimeFromAudiobookshelfExt = (rawExt: string | undefined): null | st
             return null;
     }
 };
-
-/**
- * The cast receiver can't fetch ABS HLS playlists reliably: per RFC 3986, a
- * playlist's relative segment URIs resolve against the playlist URL and drop
- * its query string — so `?token=…` is lost on every segment request and ABS
- * 401s them. Workaround: route casting to `/api/items/:id/file/:ino?token=…`
- * instead. One self-authenticating request, no segments, no auth loss.
- *
- * The `ino` comes preferentially from `/api/items/:id?expanded=1` because
- * `/play`'s response doesn't reliably include one (sometimes a session-bound
- * URL is all you get, with no underlying file identity). When neither
- * surfaces an ino — or the file's format isn't one the default Chromecast
- * receiver can decode — fall back to the streaming URL so cast at least
- * surfaces an error rather than freezing on segment auth.
- */
-const buildAudiobookshelfCastUrl = (
-    authentication: ServerAuthenticationResult,
-    itemId: string,
-    streamingUrl: string,
-    audioTrack: AudiobookshelfPlaybackTrack | undefined,
-    itemCastFile: AudiobookshelfCastFile | undefined,
-): { mimeType: string | undefined; url: string } => {
-    const fallback = {
-        mimeType: undefined as string | undefined,
-        url: appendAudiobookshelfAuthToken(streamingUrl, authentication.credential),
-    };
-
-    const ino = itemCastFile?.ino ?? audioTrack?.ino;
-    if (!ino) return fallback;
-
-    const declaredMime = (itemCastFile?.mimeType ?? audioTrack?.mimeType)?.toLowerCase();
-    const ext = itemCastFile?.metadata?.ext ?? audioTrack?.metadata?.ext;
-    const directMime =
-        declaredMime && CAST_FRIENDLY_AUDIO_MIMES.has(declaredMime)
-            ? declaredMime
-            : mimeFromAudiobookshelfExt(ext);
-
-    if (!directMime) return fallback;
-
-    const fileUrl = `${authentication.url}/api/items/${itemId}/file/${ino}`;
-    return {
-        mimeType: directMime,
-        url: appendAudiobookshelfAuthToken(fileUrl, authentication.credential),
-    };
-};
-
-/**
- * Find the audio file that maps to the current playback target in the
- * `/api/items` response. For podcasts we match by episodeId; for audiobooks
- * we cast the first track (multi-file books cast file 0 only — driving cast
- * across file boundaries needs receiver-side queue support).
- */
-const findAudiobookshelfCastFile = (
-    item: AudiobookshelfCastItemDetail | undefined,
-    episodeId: string | undefined,
-): AudiobookshelfCastFile | undefined => {
-    if (!item) return undefined;
-    if (episodeId) {
-        const episode = item.media?.episodes?.find((candidate) => candidate.id === episodeId);
-        return episode?.audioFile;
-    }
-    return item.media?.tracks?.[0];
-};
-
-const getContainerFromMimeType = (mimeType: string | undefined) => {
-    if (!mimeType?.startsWith('audio/')) {
-        return null;
-    }
-
-    return mimeType.split('/')[1] ?? null;
-};
-
-export const buildSubsonicMusicPlayback = (
-    authentication: ServerAuthenticationResult,
-    song: SubsonicPlayableSong,
-    artworkUrl?: string,
-): MobilePlayableAudio | null => {
-    const id = song.id?.toString();
-
-    if (!id || !song.title) {
-        return null;
-    }
-
-    const quality = getSubsonicMusicQuality(song);
-    const castNeedsTranscode = needsChromecastCompatibleStream(quality);
-
-    return {
-        album: song.album,
-        albumId: song.albumId?.toString() ?? song.parent?.toString(),
-        artist: song.artist,
-        artistId: song.artistId?.toString(),
-        artworkUrl,
-        contentSourceId: getServerConnectionKey(authentication),
-        durationSeconds: song.duration,
-        id: `${authentication.type}:${authentication.url}:music:${id}`,
-        mimeType: song.contentType,
-        quality,
-        source: 'music',
-        subtitle: [song.artist, song.album].filter(Boolean).join(' - '),
-        title: song.title,
-        url: subsonicOriginalStreamUrl(authentication, id),
-        ...(castNeedsTranscode
-            ? {
-                  castMimeType: 'audio/mpeg',
-                  castUrl: subsonicChromecastStreamUrl(authentication, id),
-              }
-            : {}),
-    };
-};
-
-export const buildRadioPlayback = (
-    authentication: ServerAuthenticationResult,
-    station: SubsonicPlayableRadioStation,
-    artworkUrl?: string,
-): MobilePlayableAudio | null => {
-    if (!station.id || !station.name || !station.streamUrl) {
-        return null;
-    }
-
-    const display = resolveRadioPlaybackDisplay(station.name);
-
-    return {
-        artworkUrl,
-        artist: display.playerArtist,
-        contentSourceId: getServerConnectionKey(authentication),
-        homepageUrl: station.homepageUrl,
-        id: `${authentication.type}:${authentication.url}:radio:${station.id}`,
-        isLive: true,
-        quality: {
-            container: null,
-            deliveryKind: 'android-direct',
-            losslessRequired: false,
-            serverTranscodeRequested: false,
-        },
-        radioStationName: station.name,
-        source: 'radio',
-        subtitle: display.playerSubtitle,
-        title: display.playerTitle,
-        url: station.streamUrl,
-    };
-};
-
 // ---------------------------------------------------------------------------
 // Samo native playback builders
 // ---------------------------------------------------------------------------
@@ -991,112 +692,3 @@ export const refreshSamoStreamToken = async (
     return ensureSamoStreamToken(authentication, fetcher);
 };
 
-export const loadAudiobookshelfPlayback = async ({
-    artworkUrl,
-    authentication,
-    durationSeconds,
-    episodeId,
-    fetch: fetcher,
-    itemId,
-    startSeconds,
-    subtitle,
-    timelineSegments,
-    title,
-}: AudiobookshelfPlayableInput): Promise<MobilePlayableAudio> => {
-    const request = getFetch(fetcher);
-    const playPath = episodeId
-        ? `/api/items/${itemId}/play/${episodeId}`
-        : `/api/items/${itemId}/play`;
-    // Fire /play and the expanded item endpoint in parallel. /play starts
-    // the streaming session and hands us the URL the local ExoPlayer should
-    // use (often HLS). The expanded item gives us the underlying audio
-    // file's inode, which we need to build a Chromecast-safe direct URL —
-    // /play's response doesn't reliably include one. Item-fetch failures
-    // are non-fatal: we'll just fall back to the streaming URL for cast,
-    // which surfaces as an error rather than a silent freeze.
-    const [body, itemDetail] = await Promise.all([
-        requestJson<AudiobookshelfPlaybackSessionBody>(
-            request,
-            `${authentication.url}${playPath}`,
-            {
-                body: JSON.stringify({}),
-                headers: {
-                    Authorization: `Bearer ${authentication.credential}`,
-                    'Content-Type': 'application/json',
-                },
-                method: 'POST',
-            },
-        ),
-        requestJson<AudiobookshelfCastItemDetail>(
-            request,
-            `${authentication.url}/api/items/${itemId}?expanded=1`,
-            {
-                headers: { Authorization: `Bearer ${authentication.credential}` },
-                method: 'GET',
-            },
-        ).catch(() => undefined),
-    ]);
-    const audioTrack = body.audioTracks?.[0];
-    const contentUrl = audioTrack?.contentUrl;
-
-    if (!contentUrl) {
-        throw new Error('Audiobookshelf did not return an audio URL');
-    }
-
-    const source: PlaybackSource = episodeId ? 'podcast' : 'audiobook';
-    const progressOffsetSeconds =
-        typeof audioTrack.startOffset === 'number' && audioTrack.startOffset > 0
-            ? audioTrack.startOffset
-            : 0;
-    const initialPositionSeconds =
-        startSeconds !== undefined
-            ? Math.max(0, startSeconds - progressOffsetSeconds)
-            : undefined;
-    const mimeType = isAudiobookshelfHlsUrl(contentUrl)
-        ? 'application/x-mpegURL'
-        : audioTrack.mimeType;
-    const normalizedUrl = normalizeContentUrl(authentication.url, contentUrl);
-    const itemCastFile = findAudiobookshelfCastFile(itemDetail, episodeId);
-    const castTarget = buildAudiobookshelfCastUrl(
-        authentication,
-        itemId,
-        normalizedUrl,
-        audioTrack,
-        itemCastFile,
-    );
-
-    return {
-        artworkUrl,
-        // The cast receiver needs the underlying file's mime type — it
-        // can't decode the local HLS wrapper when we route casting through
-        // a direct-file URL.
-        castMimeType: castTarget.mimeType,
-        // Local ExoPlayer uses the Authorization header; Chromecast can't
-        // forward it, so cast routes via a self-authenticating `?token=…`
-        // URL — preferring the direct file when ABS gives us the inode so
-        // segment auth in HLS playlists never enters the picture.
-        castUrl: castTarget.url,
-        contentSourceId: getServerConnectionKey(authentication),
-        durationSeconds,
-        httpHeaders: {
-            Authorization: `Bearer ${authentication.credential}`,
-        },
-        id: `${authentication.type}:${authentication.url}:${source}:${itemId}${episodeId ? `:${episodeId}` : ''}`,
-        initialPositionSeconds,
-        mimeType,
-        progressOffsetSeconds,
-        quality: {
-            container: isAudiobookshelfHlsUrl(contentUrl)
-                ? 'hls'
-                : getContainerFromMimeType(audioTrack.mimeType),
-            deliveryKind: 'unknown',
-            losslessRequired: false,
-            serverTranscodeRequested: false,
-        },
-        source,
-        subtitle,
-        timelineSegments,
-        title,
-        url: normalizedUrl,
-    };
-};

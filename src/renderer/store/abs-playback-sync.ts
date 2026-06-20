@@ -89,7 +89,6 @@ export function createAbsPlaybackSyncHandle(
                 samoFetch,
                 {
                     credential: server.credential,
-                    ndCredential: server.ndCredential,
                     url: server.url,
                 },
                 kind,

@@ -1,9 +1,10 @@
 import { type MobileHomeItem } from '@samo/core/mobile';
 import { FlashList } from '@shopify/flash-list';
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 
 import { CollectionBrowseGrid } from '../components/CollectionBrowseGrid';
+import { SkeletonTileGrid } from '../components/Skeleton';
 import { LibraryFilterPills } from '../components/LibraryFilterPills';
 import { LibraryListRow } from '../components/LibraryListRow';
 import { LibraryScopeMenu } from '../components/LibraryScopeMenu';
@@ -131,11 +132,7 @@ export const LibraryScreen = memo(({
             (libraryRelevantState.status === 'idle' ||
                 libraryRelevantState.status === 'loading'))
     ) {
-        return (
-            <View style={styles.libraryStaticContent}>
-                <ActivityIndicator color={colors.accent} />
-            </View>
-        );
+        return <SkeletonTileGrid />;
     }
 
     if (

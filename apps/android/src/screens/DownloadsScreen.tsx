@@ -87,9 +87,15 @@ export const DownloadsScreen = ({
     }, []);
 
     useEffect(() => {
-        const unsubscribe = subscribeStorageLocation(setStorage);
-        void getStorageLocation().then(setStorage);
+        let active = true;
+        const unsubscribe = subscribeStorageLocation((value) => {
+            if (active) setStorage(value);
+        });
+        void getStorageLocation().then((value) => {
+            if (active) setStorage(value);
+        });
         return () => {
+            active = false;
             unsubscribe();
         };
     }, []);

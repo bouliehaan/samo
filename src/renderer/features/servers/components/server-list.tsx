@@ -52,7 +52,7 @@ export const ServerList = () => {
                                     <Group>
                                         <img
                                             src={
-                                                server.type === ServerType.NAVIDROME
+                                                false
                                                     ? NavidromeLogo
                                                     : server.type === ServerType.JELLYFIN
                                                       ? JellyfinLogo

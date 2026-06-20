@@ -398,9 +398,9 @@ internal object SamoNativeStreamUrl {
         val refreshed = HashMap(item)
         refreshed["url"] = streamUrl
 
-        // Cast URL: when the JS layer set a separate castUrl (e.g. for
-        // audiobookshelf cross-server flows) we leave it alone; otherwise mirror
-        // the new stream URL to it so Chromecast also benefits.
+        // Cast URL: when the JS layer set a separate castUrl we leave it
+        // alone; otherwise mirror the new stream URL to it so Chromecast also
+        // benefits.
         val existingCast = item.optionalString("castUrl")
         if (existingCast != null && isSamoStreamUrl(existingCast)) {
             // Cast leg is the same stream — refresh by rebuilding from scratch.

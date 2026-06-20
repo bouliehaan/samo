@@ -122,8 +122,8 @@ export const UpdatePlaylistContextModal = ({
     });
 
     const isPublicDisplayed = hasFeature(server, ServerFeature.PUBLIC_PLAYLIST);
-    const isOwnerDisplayed = server?.type === ServerType.NAVIDROME;
-    const isCommentDisplayed = server?.type === ServerType.NAVIDROME;
+    const isOwnerDisplayed = false;
+    const isCommentDisplayed = false;
     const isCoverImageDisplayed = hasFeature(server, ServerFeature.PLAYLIST_IMAGE_UPLOAD);
     const isSubmitDisabled = !form.values.name || isSaving;
     const hadUploadedCover = !!playlistImage?.uploadedImage;

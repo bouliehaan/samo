@@ -1,5 +1,8 @@
+import { ServerType } from "../server/server-types";
+import { ensureSamoStreamToken } from "../server/server-samo-stream-token";
+
 import { type ServerAuthenticationResult } from '../server/server-auth';
-import { getFetch, requestJson, type SamoFetch } from '../server/server-http';
+import { getFetch, type SamoFetch } from '../server/server-http';
 import {
     type SamoAudiobook,
     type SamoMusicAlbum,
@@ -16,23 +19,16 @@ import {
     searchSamoPodcasts,
     samoItemsOf,
 } from '../server/server-samo';
-import { ensureSamoStreamToken } from '../server/server-samo-stream-token';
-import { ServerType } from '../server/server-types';
 import {
-    buildAudiobookshelfArtworkUrl,
-    firstNonEmptyString,
     getMobileContentSource,
     type MobileContentSource,
 } from './mobile-content-source';
 import {
-    buildRadioPlayback,
     buildSamoMusicPlayback,
-    buildSubsonicMusicPlayback,
     type MobilePlayableAudio,
 } from './mobile-playback';
 import { samoAlbumQualityProfile, type MobileQualityProfile } from './mobile-home';
 import { propagateSearchAlbumQualityFromSongs } from './mobile-quality-profile';
-import { annotateSubsonicHiResCollections } from './mobile-subsonic-quality';
 
 export enum MobileSearchItemType {
     ALBUM = 'album',
@@ -60,7 +56,6 @@ export interface MobileSearchAcrossServersInput {
     authentication: ServerAuthenticationResult | null;
     fetch?: SamoFetch;
     limit?: number;
-    qualityScanLimit?: number;
     query: string;
     userRecents?: Map<string, number>;
 }
@@ -69,7 +64,6 @@ export interface MobileSearchInput {
     authentication: ServerAuthenticationResult;
     fetch?: SamoFetch;
     limit?: number;
-    qualityScanLimit?: number;
     query: string;
 }
 
@@ -86,7 +80,7 @@ export interface MobileSearchItem {
     playback?: MobilePlayableAudio;
     playCount?: number;
     /**
-     * Format profile from annotateSubsonicAlbumsQuality (albums only).
+     * Format profile for album hits (albums only).
      * Songs derive their profile from playback.quality at render time.
      * Playlists, artists, etc. are always undefined.
      */
@@ -115,144 +109,6 @@ export interface MobileSearchSectionError {
     sectionId: MobileSearchSectionId;
 }
 
-interface AudiobookshelfLibrariesBody {
-    libraries?: AudiobookshelfLibrary[];
-}
-
-interface AudiobookshelfLibrary {
-    id?: string;
-    mediaType?: string;
-    name?: string;
-}
-
-interface AudiobookshelfLibraryItem {
-    id?: string;
-    media?: {
-        authorName?: string;
-        authors?: Array<{ id?: string; name?: string }>;
-        metadata?: {
-            author?: string;
-            authorName?: string;
-            authorNameLF?: string;
-            authors?: Array<{ id?: string; name?: string }>;
-            imageUrl?: string;
-            narratorName?: string;
-            narrators?: string[];
-            publishedYear?: string;
-            title?: string;
-        };
-        narratorName?: string;
-        title?: string;
-    };
-    name?: string;
-    numEpisodes?: number;
-}
-
-interface AudiobookshelfLibraryItemsBody {
-    results?: AudiobookshelfLibraryItem[];
-}
-
-interface SubsonicAlbum {
-    artist?: string;
-    coverArt?: string;
-    id?: number | string;
-    name?: string;
-    playCount?: number;
-    played?: string;
-    title?: string;
-    year?: number;
-}
-
-interface SubsonicArtist {
-    albumCount?: number;
-    coverArt?: string;
-    id?: number | string;
-    name?: string;
-    playCount?: number;
-    played?: string;
-}
-
-interface SubsonicError {
-    message?: string;
-}
-
-interface SubsonicPlaylist {
-    coverArt?: string;
-    id?: number | string;
-    name?: string;
-    owner?: string;
-    songCount?: number;
-}
-
-interface SubsonicPlaylistsBody {
-    'subsonic-response'?: {
-        error?: SubsonicError;
-        playlists?: {
-            playlist?: SubsonicPlaylist[];
-        };
-        status?: string;
-    };
-}
-
-interface SubsonicRadioBody {
-    'subsonic-response'?: {
-        error?: SubsonicError;
-        internetRadioStations?: {
-            internetRadioStation?: SubsonicRadioStation[];
-        };
-        status?: string;
-    };
-}
-
-interface SubsonicTopSongsBody {
-    'subsonic-response'?: {
-        error?: SubsonicError;
-        status?: string;
-        topSongs?: {
-            song?: SubsonicSong[];
-        };
-    };
-}
-
-interface SubsonicRadioStation {
-    coverArt?: string;
-    homepageUrl?: string;
-    id?: string;
-    name?: string;
-    streamUrl?: string;
-}
-
-interface SubsonicSearchBody {
-    'subsonic-response'?: {
-        error?: SubsonicError;
-        searchResult3?: {
-            album?: SubsonicAlbum[];
-            artist?: SubsonicArtist[];
-            song?: SubsonicSong[];
-        };
-        status?: string;
-    };
-}
-
-interface SubsonicSong {
-    album?: string;
-    albumId?: number | string;
-    artist?: string;
-    artistId?: number | string;
-    bitDepth?: number;
-    bitRate?: number;
-    channelCount?: number;
-    contentType?: string;
-    coverArt?: string;
-    id?: number | string;
-    parent?: number | string;
-    playCount?: number;
-    played?: string;
-    samplingRate?: number;
-    suffix?: string;
-    title?: string;
-}
-
 const DEFAULT_SEARCH_LIMIT = 8;
 
 const getErrorMessage = (error: unknown) => {
@@ -262,100 +118,6 @@ const getErrorMessage = (error: unknown) => {
 export const getMobileSearchErrorMessage = getErrorMessage;
 
 const hasItems = (section: MobileSearchSection) => section.items.length > 0;
-
-const includesQuery = (value: string | undefined, query: string) => {
-    return value?.toLowerCase().includes(query.toLowerCase()) ?? false;
-};
-
-const parseIsoTimestamp = (value: string | undefined): number | undefined => {
-    if (!value) return undefined;
-    const parsed = Date.parse(value);
-    return Number.isFinite(parsed) ? parsed : undefined;
-};
-
-const getAudiobookshelfTitle = (item: AudiobookshelfLibraryItem, fallback: string) => {
-    return firstNonEmptyString(item.media?.metadata?.title, item.media?.title, item.name, fallback);
-};
-
-const getAudiobookshelfPodcastTitle = (item: AudiobookshelfLibraryItem) => {
-    return firstNonEmptyString(
-        item.name,
-        item.media?.metadata?.title,
-        item.media?.title,
-        'Podcast',
-    );
-};
-
-const getAudiobookshelfAuthor = (item: AudiobookshelfLibraryItem) => {
-    const metadata = item.media?.metadata;
-
-    return firstNonEmptyString(
-        metadata?.authorName,
-        metadata?.authorNameLF,
-        metadata?.author,
-        metadata?.authors
-            ?.map((author) => author.name)
-            .filter(Boolean)
-            .join(', '),
-        item.media?.authorName,
-        item.media?.authors
-            ?.map((author) => author.name)
-            .filter(Boolean)
-            .join(', '),
-        item.media?.narratorName,
-    );
-};
-
-const getAudiobookshelfSearchText = (item: AudiobookshelfLibraryItem) => {
-    const metadata = item.media?.metadata;
-
-    return [
-        getAudiobookshelfTitle(item, ''),
-        getAudiobookshelfAuthor(item),
-        metadata?.narratorName,
-        metadata?.narrators?.join(' '),
-        metadata?.publishedYear,
-        item.name,
-    ]
-        .filter(Boolean)
-        .join(' ');
-};
-
-const subsonicUrl = (
-    authentication: ServerAuthenticationResult,
-    path: string,
-    query: Record<string, number | string> = {},
-) => {
-    const params = new URLSearchParams({
-        c: 'Samo',
-        f: 'json',
-        v: '1.13.0',
-    });
-
-    for (const [key, value] of Object.entries(query)) {
-        params.set(key, String(value));
-    }
-
-    return `${authentication.url}/rest/${path}?${params.toString()}&${authentication.credential}`;
-};
-
-const subsonicCoverArtUrl = (
-    authentication: ServerAuthenticationResult,
-    coverArt: string | undefined,
-    entityId?: number | string,
-) => {
-    // Newer Navidrome usually populates coverArt; older Subsonic-compatible
-    // servers and some search3 responses leave it blank even when the artwork
-    // is available. getCoverArt.view accepts the entity id directly, so fall
-    // back to it whenever the explicit coverArt field is missing — produces
-    // covers for albums/artists where we previously rendered a fallback letter.
-    const target = coverArt ?? (entityId != null ? entityId.toString() : undefined);
-    if (!target) {
-        return undefined;
-    }
-
-    return subsonicUrl(authentication, 'getCoverArt.view', { id: target, size: 320 });
-};
 
 // Match-quality tiers, descending. Used to bubble obvious matches (a query that
 // IS an artist name) above incidental ones (songs that merely contain the query).
@@ -592,368 +354,6 @@ export const buildMobileSearchResultsFromItems = (
     return toSearchResults(query, groupMobileSearchItems(unique), [], context);
 };
 
-const loadAudiobookshelfSearch = async (
-    authentication: ServerAuthenticationResult,
-    fetcher: SamoFetch,
-    query: string,
-    limit: number,
-): Promise<MobileSearchResults> => {
-    const librariesBody = await requestJson<AudiobookshelfLibrariesBody>(
-        fetcher,
-        `${authentication.url}/api/libraries`,
-        {
-            headers: { Authorization: `Bearer ${authentication.credential}` },
-            method: 'GET',
-        },
-    );
-    const libraries = librariesBody.libraries ?? [];
-    const libraryResults = await Promise.allSettled(
-        libraries.map(async (library) => {
-            if (!library.id) {
-                return { items: [], library };
-            }
-
-            const body = await requestJson<AudiobookshelfLibraryItemsBody>(
-                fetcher,
-                `${authentication.url}/api/libraries/${library.id}/items`,
-                {
-                    headers: { Authorization: `Bearer ${authentication.credential}` },
-                    method: 'GET',
-                },
-            );
-
-            return { items: body.results ?? [], library };
-        }),
-    );
-
-    const errors = libraryResults.flatMap((result) =>
-        result.status === 'rejected'
-            ? [
-                  {
-                      message: getErrorMessage(result.reason),
-                      sectionId: MobileSearchSectionId.AUDIOBOOKS,
-                  },
-              ]
-            : [],
-    );
-    const items = libraryResults.flatMap((result) =>
-        result.status === 'fulfilled'
-            ? result.value.items.map((item) => ({ ...item, library: result.value.library }))
-            : [],
-    );
-
-    const audiobookItems = items
-        .filter(({ library }) => library.mediaType === 'book')
-        .filter((item) => includesQuery(getAudiobookshelfSearchText(item), query))
-        .slice(0, limit)
-        .map<MobileSearchItem>((item) => {
-            const { id, library } = item;
-
-            return {
-                artworkUrl: buildAudiobookshelfArtworkUrl(
-                    authentication,
-                    id,
-                    item.media?.metadata?.imageUrl,
-                ),
-                id: id ?? `${library.id}-${item.name}`,
-                source: getMobileContentSource(authentication),
-                subtitle: getAudiobookshelfAuthor(item),
-                title: getAudiobookshelfTitle(item, 'Untitled audiobook') ?? 'Untitled audiobook',
-                type: MobileSearchItemType.AUDIOBOOK,
-            };
-        });
-    const podcastItems = items
-        .filter(({ library }) => library.mediaType === 'podcast')
-        .filter((item) => includesQuery(getAudiobookshelfSearchText(item), query))
-        .slice(0, limit)
-        .map<MobileSearchItem>((item) => {
-            const { id, library, numEpisodes } = item;
-
-            return {
-                artworkUrl: buildAudiobookshelfArtworkUrl(
-                    authentication,
-                    id,
-                    item.media?.metadata?.imageUrl,
-                ),
-                id: id ?? `${library.id}-${item.name}`,
-                source: getMobileContentSource(authentication),
-                subtitle: numEpisodes ? `${numEpisodes} episodes` : library.name,
-                title: getAudiobookshelfPodcastTitle(item) ?? 'Podcast',
-                type: MobileSearchItemType.PODCAST,
-            };
-        });
-
-    return toSearchResults(
-        query,
-        [
-            { id: MobileSearchSectionId.AUDIOBOOKS, items: audiobookItems, title: 'Audiobooks' },
-            { id: MobileSearchSectionId.PODCASTS, items: podcastItems, title: 'Podcasts' },
-        ],
-        errors,
-    );
-};
-
-const fetchSubsonicTopSongsForArtist = async (
-    authentication: ServerAuthenticationResult,
-    fetcher: SamoFetch,
-    artistName: string,
-    count: number,
-): Promise<SubsonicSong[]> => {
-    try {
-        const body = await requestJson<SubsonicTopSongsBody>(
-            fetcher,
-            subsonicUrl(authentication, 'getTopSongs.view', { artist: artistName, count }),
-        );
-        const response = body['subsonic-response'];
-        if (response?.status !== 'ok') return [];
-        return response.topSongs?.song ?? [];
-    } catch {
-        // Top songs is best-effort. Some servers don't implement it or the artist
-        // isn't indexed by last.fm; in either case the regular search results are
-        // still good enough to show.
-        return [];
-    }
-};
-
-// Max number of artists whose top tracks we'll request alongside a search.
-// Two is enough to cover both an exact match and a runner-up without flooding
-// the server.
-const TOP_SONGS_ARTIST_FANOUT = 2;
-
-const loadSubsonicSearch = async (
-    authentication: ServerAuthenticationResult,
-    fetcher: SamoFetch,
-    query: string,
-    limit: number,
-    qualityScanLimit: number,
-): Promise<MobileSearchResults> => {
-    const [searchResult, playlistResult, radioResult] = await Promise.allSettled([
-        requestJson<SubsonicSearchBody>(
-            fetcher,
-            subsonicUrl(authentication, 'search3.view', {
-                albumCount: limit,
-                artistCount: limit,
-                query,
-                songCount: limit,
-            }),
-        ),
-        requestJson<SubsonicPlaylistsBody>(
-            fetcher,
-            subsonicUrl(authentication, 'getPlaylists.view'),
-        ),
-        requestJson<SubsonicRadioBody>(
-            fetcher,
-            subsonicUrl(authentication, 'getInternetRadioStations.view'),
-        ),
-    ]);
-
-    if (searchResult.status === 'rejected') {
-        throw searchResult.reason;
-    }
-
-    const response = searchResult.value['subsonic-response'];
-
-    if (response?.status !== 'ok') {
-        throw new Error(response?.error?.message ?? 'Search failed');
-    }
-
-    const errors: MobileSearchSectionError[] = [];
-
-    // If the query strongly resembles an artist name, fan out and grab that
-    // artist's top tracks. The popularity-aware ranker will then float those
-    // above the songs that merely contain the query string.
-    const normalizedQuery = query.trim().toLowerCase();
-    const matchedArtists = (response.searchResult3?.artist ?? [])
-        .filter((artist) => artist.name && scoreMatch(
-            { id: '', subtitle: undefined, title: artist.name, type: MobileSearchItemType.ARTIST },
-            normalizedQuery,
-        ) >= SCORE_TITLE_WORD_PREFIX)
-        .slice(0, TOP_SONGS_ARTIST_FANOUT);
-    const topSongResults = await Promise.all(
-        matchedArtists.map((artist) =>
-            fetchSubsonicTopSongsForArtist(authentication, fetcher, artist.name!, limit),
-        ),
-    );
-    const rawSongs = response.searchResult3?.song ?? [];
-    const seenSongIds = new Set<string>();
-    const mergedSongs: SubsonicSong[] = [];
-    for (const song of [...rawSongs, ...topSongResults.flat()]) {
-        const id = song.id?.toString();
-        if (!id || seenSongIds.has(id)) continue;
-        seenSongIds.add(id);
-        mergedSongs.push(song);
-    }
-
-    if (playlistResult.status === 'rejected') {
-        errors.push({
-            message: getErrorMessage(playlistResult.reason),
-            sectionId: MobileSearchSectionId.PLAYLISTS,
-        });
-    }
-
-    if (radioResult.status === 'rejected') {
-        errors.push({
-            message: getErrorMessage(radioResult.reason),
-            sectionId: MobileSearchSectionId.RADIO,
-        });
-    }
-
-    const playlistsResponse =
-        playlistResult.status === 'fulfilled'
-            ? playlistResult.value['subsonic-response']
-            : undefined;
-    const radioResponse =
-        radioResult.status === 'fulfilled' ? radioResult.value['subsonic-response'] : undefined;
-    const source = getMobileContentSource(authentication);
-    const songItems: MobileSearchItem[] = mergedSongs.flatMap((song) => {
-        const id = song.id?.toString();
-        const artworkUrl = subsonicCoverArtUrl(authentication, song.coverArt);
-        const playback = buildSubsonicMusicPlayback(authentication, song, artworkUrl);
-
-        if (!id || !song.title) {
-            return [];
-        }
-
-        return {
-            album: song.album,
-            albumId: song.albumId?.toString() ?? song.parent?.toString(),
-            artist: song.artist,
-            artistId: song.artistId?.toString(),
-            artworkUrl,
-            id,
-            lastPlayedAt: parseIsoTimestamp(song.played),
-            playback: playback ?? undefined,
-            playCount: song.playCount,
-            source: getMobileContentSource(authentication),
-            subtitle: [song.artist, song.album].filter(Boolean).join(' - '),
-            title: song.title,
-            type: MobileSearchItemType.SONG,
-        };
-    });
-    const albumItems: MobileSearchItem[] = propagateSearchAlbumQualityFromSongs(
-        await annotateSubsonicHiResCollections(
-            authentication,
-            fetcher,
-            'album',
-            (response.searchResult3?.album ?? []).flatMap((album) => {
-                const id = album.id?.toString();
-                const title = album.name ?? album.title;
-
-                if (!id || !title) {
-                    return [];
-                }
-
-                return {
-                    artworkUrl: subsonicCoverArtUrl(authentication, album.coverArt, album.id),
-                    id,
-                    lastPlayedAt: parseIsoTimestamp(album.played),
-                    playCount: album.playCount,
-                    source,
-                    subtitle: album.artist ?? (album.year ? String(album.year) : undefined),
-                    title,
-                    type: MobileSearchItemType.ALBUM,
-                };
-            }),
-            qualityScanLimit,
-        ),
-        songItems,
-    );
-    // Playlists never carry a collection-level quality badge — they're mixed
-    // by definition. Skip the hi-res scan entirely.
-    const playlistItems: MobileSearchItem[] = (playlistsResponse?.playlists?.playlist ?? [])
-        .filter((playlist) => includesQuery(playlist.name, query))
-        .slice(0, limit)
-        .flatMap((playlist) => {
-            const id = playlist.id?.toString();
-
-            if (!id || !playlist.name) {
-                return [];
-            }
-
-            return {
-                artworkUrl: subsonicCoverArtUrl(
-                    authentication,
-                    playlist.coverArt,
-                    playlist.id,
-                ),
-                id,
-                source,
-                subtitle: playlist.songCount ? `${playlist.songCount} songs` : playlist.owner,
-                title: playlist.name,
-                type: MobileSearchItemType.PLAYLIST,
-            };
-        });
-
-    return toSearchResults(
-        query,
-        [
-            {
-                id: MobileSearchSectionId.SONGS,
-                items: songItems,
-                title: 'Songs',
-            },
-            {
-                id: MobileSearchSectionId.ALBUMS,
-                items: albumItems,
-                title: 'Albums',
-            },
-            {
-                id: MobileSearchSectionId.ARTISTS,
-                items: (response.searchResult3?.artist ?? []).flatMap((artist) => {
-                    const id = artist.id?.toString();
-
-                    if (!id || !artist.name) {
-                        return [];
-                    }
-
-                    return {
-                        artworkUrl: subsonicCoverArtUrl(authentication, artist.coverArt, artist.id),
-                        id,
-                        lastPlayedAt: parseIsoTimestamp(artist.played),
-                        playCount: artist.playCount,
-                        source,
-                        subtitle: artist.albumCount ? `${artist.albumCount} albums` : undefined,
-                        title: artist.name,
-                        type: MobileSearchItemType.ARTIST,
-                    };
-                }),
-                title: 'Artists',
-            },
-            {
-                id: MobileSearchSectionId.PLAYLISTS,
-                items: playlistItems,
-                title: 'Playlists',
-            },
-            {
-                id: MobileSearchSectionId.RADIO,
-                items: (radioResponse?.internetRadioStations?.internetRadioStation ?? [])
-                    .filter((station) => includesQuery(station.name, query))
-                    .slice(0, limit)
-                    .flatMap((station) => {
-                        const artworkUrl = subsonicCoverArtUrl(authentication, station.coverArt);
-                        const playback = buildRadioPlayback(authentication, station, artworkUrl);
-
-                        if (!station.id || !station.name) {
-                            return [];
-                        }
-
-                        return {
-                            artworkUrl,
-                            id: station.id,
-                            playback: playback ?? undefined,
-                            source: getMobileContentSource(authentication),
-                            subtitle: station.homepageUrl ?? station.streamUrl,
-                            title: station.name,
-                            type: MobileSearchItemType.RADIO,
-                        };
-                    }),
-                title: 'Radio',
-            },
-        ],
-        errors,
-    );
-};
-
 const samoAlbumToSearchItem = (
     authentication: ServerAuthenticationResult,
     album: SamoMusicAlbum,
@@ -1155,7 +555,6 @@ export const searchMobileContent = async ({
     authentication,
     fetch: fetcher,
     limit = DEFAULT_SEARCH_LIMIT,
-    qualityScanLimit = limit,
     query,
 }: MobileSearchInput): Promise<MobileSearchResults> => {
     const trimmedQuery = query.trim();
@@ -1166,23 +565,6 @@ export const searchMobileContent = async ({
 
     const request = getFetch(fetcher);
 
-    if (authentication.type === ServerType.AUDIOBOOKSHELF) {
-        return loadAudiobookshelfSearch(authentication, request, trimmedQuery, limit);
-    }
-
-    if (
-        authentication.type === ServerType.NAVIDROME ||
-        authentication.type === ServerType.SUBSONIC
-    ) {
-        return loadSubsonicSearch(
-            authentication,
-            request,
-            trimmedQuery,
-            limit,
-            qualityScanLimit,
-        );
-    }
-
     if (authentication.type === ServerType.SAMO) {
         return loadSamoSearch(authentication, request, trimmedQuery, limit);
     }
@@ -1190,17 +572,12 @@ export const searchMobileContent = async ({
     throw new Error('Search is not wired for this server type');
 };
 
-const getSearchFailureSectionId = (authentication: ServerAuthenticationResult) => {
-    return authentication.type === ServerType.AUDIOBOOKSHELF
-        ? MobileSearchSectionId.AUDIOBOOKS
-        : MobileSearchSectionId.SONGS;
-};
+
 
 export const searchMobileContentAcrossServers = async ({
     authentication,
     fetch: fetcher,
     limit = DEFAULT_SEARCH_LIMIT,
-    qualityScanLimit = limit,
     query,
     userRecents,
 }: MobileSearchAcrossServersInput): Promise<MobileSearchResults> => {
@@ -1216,7 +593,6 @@ export const searchMobileContentAcrossServers = async ({
             authentication,
             fetch: request,
             limit,
-            qualityScanLimit,
             query: trimmedQuery,
         });
 

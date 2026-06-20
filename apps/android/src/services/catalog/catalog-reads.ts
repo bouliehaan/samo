@@ -41,8 +41,7 @@ const HOME_SECTION_ITEM_LIMIT = 24;
  * Local-first reads against the on-device SQLite catalog. The whole Samo library
  * is mirrored on-device (Phases 1-2), so these let every browse/detail/search
  * surface render instantly for Samo sources. Each helper returns null/empty for
- * non-Samo sources (Subsonic/Navidrome/Audiobookshelf keep the live-network
- * path) and swallows DB errors so callers fall through to the network cleanly.
+ * non-Samo sources and swallows DB errors so callers fall through to the network cleanly.
  */
 
 /** Maps a home/search item type to the catalog detail type, or undefined when

@@ -223,9 +223,9 @@ export const syncAndroidNativePlaybackQueue = (
 
 const isNetworkPlaybackUrl = (url?: string) => Boolean(url && /^https?:\/\//i.test(url));
 
-/** Subsonic/Navidrome auth in the query string — Chromecast cannot use httpHeaders. */
+/** Samo stream token auth in the query string — Chromecast cannot use httpHeaders. */
 const hasSelfAuthenticatingStreamUrl = (url: string) =>
-    /[?&](?:t|s|p|password|token)=/i.test(url);
+    /[?&]streamToken=/i.test(url);
 
 const getCastNetworkUrl = (source: MobilePlayableAudio, castSource: MobilePlayableAudio) => {
     const candidates = [
@@ -267,7 +267,7 @@ export const playAndroidAudio = async (
             ? undefined
             : bridgedSource.subtitle;
 
-    // When a self-authenticating castUrl is provided (Subsonic auth in URL
+    // When a self-authenticating castUrl is provided (Samo stream token in URL
     // params, or ABS `?token=…`), the cast leg doesn't need the headers the
     // local ExoPlayer uses. Forwarding them would trip the native guard
     // since the default Chromecast receiver can't send custom headers.

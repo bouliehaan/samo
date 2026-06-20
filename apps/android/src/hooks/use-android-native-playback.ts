@@ -55,6 +55,24 @@ import { setDownloadsPlaybackActive } from '../services/download-manager';
 
 export type { AndroidPlaybackQueue };
 
+/**
+ * The cue shown on the optimistic mini-player during the start-up window
+ * (token mint + stream resolve + first buffer), so a tap reads as "starting"
+ * not "stuck". Music starts fast enough to need none.
+ */
+const getPlaybackStartMessage = (item: MobilePlayableAudio): string | undefined => {
+    switch (item.source) {
+        case 'radio':
+            return 'Tuning in…';
+        case 'podcast':
+            return 'Loading episode…';
+        case 'audiobook':
+            return 'Loading audiobook…';
+        default:
+            return undefined;
+    }
+};
+
 export type AndroidPlayItemOptions = {
     /** Samo audiobook: open stream at this book-global second (skips server resume overlay). */
     bookStartSeconds?: number;
@@ -471,6 +489,12 @@ export function useAndroidNativePlayback(options: {
             setAndroidPlaybackState({
                 durationMs: getPlaybackItemDurationMs(item),
                 item,
+                // A source-appropriate cue so the optimistic mini-player reads as
+                // "starting" rather than "stuck" during the unavoidable token
+                // mint + stream resolve + first buffer (radio/podcast can take a
+                // few seconds). Cleared by the native event's own `event.message`
+                // the instant playback actually begins.
+                message: getPlaybackStartMessage(item),
                 // Anchor the new session to its intended start. The reducer's
                 // pending-seek grace then HOLDS the playhead here and rejects
                 // any sample that lands far from it until native confirms the

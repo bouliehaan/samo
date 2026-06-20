@@ -8,13 +8,13 @@ import { ServerType } from './server/server-types';
 export const testServerAuthentication = (
     overrides: Partial<ServerAuthenticationResult> = {},
 ): ServerAuthenticationResult => {
-    const type = overrides.type ?? ServerType.NAVIDROME;
+    const type = overrides.type ?? ServerType.SAMO;
 
     return {
         capabilities: getDefaultServerCapabilities(type),
         credential: 'test-token',
         details: 'test server',
-        kind: ServerAuthenticationKind.NAVIDROME_TOKEN,
+        kind: ServerAuthenticationKind.SAMO_TOKEN,
         title: 'Test Server',
         type,
         url: 'https://music.example.com',

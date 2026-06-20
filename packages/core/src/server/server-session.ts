@@ -104,7 +104,6 @@ const normalizeAuthenticationResult = (value: unknown): null | ServerAuthenticat
         details: typeof value.details === 'string' ? value.details : 'Saved session',
         isAdmin: typeof value.isAdmin === 'boolean' ? value.isAdmin : undefined,
         kind,
-        ndCredential: typeof value.ndCredential === 'string' ? value.ndCredential : undefined,
         serverVersion: typeof value.serverVersion === 'string' ? value.serverVersion : undefined,
         title: value.title,
         type,
@@ -130,10 +129,5 @@ export const serializeServerAuthentication = (authentication: ServerAuthenticati
 };
 
 export const supportsServerTypeOnAndroid = (type: ServerType) => {
-    return (
-        type === ServerType.AUDIOBOOKSHELF ||
-        type === ServerType.NAVIDROME ||
-        type === ServerType.SAMO ||
-        type === ServerType.SUBSONIC
-    );
+    return type === ServerType.SAMO;
 };

@@ -14,8 +14,6 @@ import { ServerType } from './server-types';
 // These are 1:1 with the JSON the server emits. We do not reshape, flatten, or
 // alias. Field names match `server_docs/api.md` and `api-integration.md` —
 // when a future Samo Server release adds a field, we add the property here.
-// Adapters that map other servers' shapes (Navidrome/Subsonic/ABS) live in
-// the per-server modules; they do not reach into this file.
 
 export interface SamoSetupStatus {
     currentStep?: 'admin' | 'done' | 'libraries' | 'scan';
@@ -653,9 +651,9 @@ const jsonHeaders = (token?: string): Record<string, string> => ({
 });
 
 export const getSamoBearerToken = (
-    authentication: Pick<ServerAuthenticationResult, 'credential' | 'ndCredential'>,
+    authentication: Pick<ServerAuthenticationResult, 'credential'>,
 ) => {
-    return authentication.ndCredential ?? authentication.credential;
+    return authentication.credential;
 };
 
 const encodeSamoId = (id: string) => encodeURIComponent(id);
@@ -696,7 +694,7 @@ export const getSamoSetupStatus = async (
 
 export const mintSamoStreamToken = async (
     fetcher: SamoFetch,
-    authentication: Pick<ServerAuthenticationResult, 'credential' | 'ndCredential' | 'url'>,
+    authentication: Pick<ServerAuthenticationResult, 'credential' | 'url'>,
 ): Promise<SamoStreamTokenResponse> => {
     return requestJson<SamoStreamTokenResponse>(
         fetcher,
@@ -732,7 +730,7 @@ interface SamoRequestOptions {
 
 const samoGet = async <T>(
     fetcher: SamoFetch,
-    authentication: Pick<ServerAuthenticationResult, 'credential' | 'ndCredential' | 'url'>,
+    authentication: Pick<ServerAuthenticationResult, 'credential' | 'url'>,
     path: string,
     options?: SamoRequestOptions,
 ): Promise<T> => {
@@ -745,7 +743,7 @@ const samoGet = async <T>(
 
 const samoSend = async <T>(
     fetcher: SamoFetch,
-    authentication: Pick<ServerAuthenticationResult, 'credential' | 'ndCredential' | 'url'>,
+    authentication: Pick<ServerAuthenticationResult, 'credential' | 'url'>,
     method: 'DELETE' | 'PATCH' | 'POST' | 'PUT',
     path: string,
     body?: unknown,
@@ -853,7 +851,7 @@ export const authenticateSamo = async ({
 
 export const getSamoCatalogOverview = async (
     fetcher: SamoFetch,
-    authentication: Pick<ServerAuthenticationResult, 'credential' | 'ndCredential' | 'url'>,
+    authentication: Pick<ServerAuthenticationResult, 'credential' | 'url'>,
     signal?: AbortSignal,
 ): Promise<SamoCatalogOverview> => {
     return samoGet<SamoCatalogOverview>(fetcher, authentication, '/catalog/overview', {
@@ -878,7 +876,7 @@ export interface SamoRecentlyAddedResults {
 
 export const listSamoCatalogRecentlyAdded = async (
     fetcher: SamoFetch,
-    authentication: Pick<ServerAuthenticationResult, 'credential' | 'ndCredential' | 'url'>,
+    authentication: Pick<ServerAuthenticationResult, 'credential' | 'url'>,
     input?: SamoListQuery,
 ): Promise<SamoRecentlyAddedResults> => {
     return samoGet<SamoRecentlyAddedResults>(
@@ -917,7 +915,7 @@ export interface SamoSyncManifest {
 
 export const fetchSamoSyncManifest = async (
     fetcher: SamoFetch,
-    authentication: Pick<ServerAuthenticationResult, 'credential' | 'ndCredential' | 'url'>,
+    authentication: Pick<ServerAuthenticationResult, 'credential' | 'url'>,
     signal?: AbortSignal,
 ): Promise<SamoSyncManifest> => {
     return samoGet<SamoSyncManifest>(fetcher, authentication, '/catalog/sync/manifest', { signal });
@@ -953,7 +951,7 @@ const listQuery = (input?: SamoListQuery) => {
 
 export const listSamoMusicArtists = async (
     fetcher: SamoFetch,
-    authentication: Pick<ServerAuthenticationResult, 'credential' | 'ndCredential' | 'url'>,
+    authentication: Pick<ServerAuthenticationResult, 'credential' | 'url'>,
     input?: SamoListQuery,
 ): Promise<SamoPaginatedResponse<SamoMusicArtist>> => {
     return samoGet<SamoPaginatedResponse<SamoMusicArtist>>(
@@ -969,7 +967,7 @@ export const listSamoMusicArtists = async (
 
 export const getSamoMusicArtist = async (
     fetcher: SamoFetch,
-    authentication: Pick<ServerAuthenticationResult, 'credential' | 'ndCredential' | 'url'>,
+    authentication: Pick<ServerAuthenticationResult, 'credential' | 'url'>,
     id: string,
     signal?: AbortSignal,
 ): Promise<SamoMusicArtist> => {
@@ -980,7 +978,7 @@ export const getSamoMusicArtist = async (
 
 export const listSamoMusicArtistAlbums = async (
     fetcher: SamoFetch,
-    authentication: Pick<ServerAuthenticationResult, 'credential' | 'ndCredential' | 'url'>,
+    authentication: Pick<ServerAuthenticationResult, 'credential' | 'url'>,
     id: string,
     input?: SamoListQuery,
 ): Promise<SamoPaginatedResponse<SamoMusicAlbum>> => {
@@ -997,7 +995,7 @@ export const listSamoMusicArtistAlbums = async (
 
 export const listSamoMusicAlbums = async (
     fetcher: SamoFetch,
-    authentication: Pick<ServerAuthenticationResult, 'credential' | 'ndCredential' | 'url'>,
+    authentication: Pick<ServerAuthenticationResult, 'credential' | 'url'>,
     input?: SamoListQuery,
 ): Promise<SamoPaginatedResponse<SamoMusicAlbum>> => {
     return samoGet<SamoPaginatedResponse<SamoMusicAlbum>>(
@@ -1013,7 +1011,7 @@ export const listSamoMusicAlbums = async (
 
 export const getSamoMusicAlbum = async (
     fetcher: SamoFetch,
-    authentication: Pick<ServerAuthenticationResult, 'credential' | 'ndCredential' | 'url'>,
+    authentication: Pick<ServerAuthenticationResult, 'credential' | 'url'>,
     id: string,
     signal?: AbortSignal,
 ): Promise<SamoMusicAlbum> => {
@@ -1022,7 +1020,7 @@ export const getSamoMusicAlbum = async (
 
 export const listSamoMusicAlbumTracks = async (
     fetcher: SamoFetch,
-    authentication: Pick<ServerAuthenticationResult, 'credential' | 'ndCredential' | 'url'>,
+    authentication: Pick<ServerAuthenticationResult, 'credential' | 'url'>,
     id: string,
     input?: SamoListQuery,
 ): Promise<SamoPaginatedResponse<SamoMusicTrack>> => {
@@ -1039,7 +1037,7 @@ export const listSamoMusicAlbumTracks = async (
 
 export const listSamoMusicTracks = async (
     fetcher: SamoFetch,
-    authentication: Pick<ServerAuthenticationResult, 'credential' | 'ndCredential' | 'url'>,
+    authentication: Pick<ServerAuthenticationResult, 'credential' | 'url'>,
     input?: SamoListQuery,
 ): Promise<SamoPaginatedResponse<SamoMusicTrack>> => {
     return samoGet<SamoPaginatedResponse<SamoMusicTrack>>(
@@ -1055,7 +1053,7 @@ export const listSamoMusicTracks = async (
 
 export const getSamoMusicTrack = async (
     fetcher: SamoFetch,
-    authentication: Pick<ServerAuthenticationResult, 'credential' | 'ndCredential' | 'url'>,
+    authentication: Pick<ServerAuthenticationResult, 'credential' | 'url'>,
     id: string,
     signal?: AbortSignal,
 ): Promise<SamoMusicTrack> => {
@@ -1064,7 +1062,7 @@ export const getSamoMusicTrack = async (
 
 export const listSamoMusicGenres = async (
     fetcher: SamoFetch,
-    authentication: Pick<ServerAuthenticationResult, 'credential' | 'ndCredential' | 'url'>,
+    authentication: Pick<ServerAuthenticationResult, 'credential' | 'url'>,
     signal?: AbortSignal,
 ): Promise<SamoPaginatedResponse<{ id?: string; name?: string }>> => {
     return samoGet<SamoPaginatedResponse<{ id?: string; name?: string }>>(
@@ -1077,7 +1075,7 @@ export const listSamoMusicGenres = async (
 
 export const listSamoMusicPlaylists = async (
     fetcher: SamoFetch,
-    authentication: Pick<ServerAuthenticationResult, 'credential' | 'ndCredential' | 'url'>,
+    authentication: Pick<ServerAuthenticationResult, 'credential' | 'url'>,
     input?: SamoListQuery,
 ): Promise<SamoPaginatedResponse<SamoMusicPlaylist>> => {
     return samoGet<SamoPaginatedResponse<SamoMusicPlaylist>>(
@@ -1093,7 +1091,7 @@ export const listSamoMusicPlaylists = async (
 
 export const getSamoMusicPlaylist = async (
     fetcher: SamoFetch,
-    authentication: Pick<ServerAuthenticationResult, 'credential' | 'ndCredential' | 'url'>,
+    authentication: Pick<ServerAuthenticationResult, 'credential' | 'url'>,
     id: string,
     signal?: AbortSignal,
 ): Promise<SamoMusicPlaylist> => {
@@ -1104,7 +1102,7 @@ export const getSamoMusicPlaylist = async (
 
 export const listSamoMusicPlaylistTracks = async (
     fetcher: SamoFetch,
-    authentication: Pick<ServerAuthenticationResult, 'credential' | 'ndCredential' | 'url'>,
+    authentication: Pick<ServerAuthenticationResult, 'credential' | 'url'>,
     id: string,
     input?: SamoListQuery,
 ): Promise<SamoPaginatedResponse<SamoMusicTrack>> => {
@@ -1121,7 +1119,7 @@ export const listSamoMusicPlaylistTracks = async (
 
 export const createSamoMusicPlaylist = async (
     fetcher: SamoFetch,
-    authentication: Pick<ServerAuthenticationResult, 'credential' | 'ndCredential' | 'url'>,
+    authentication: Pick<ServerAuthenticationResult, 'credential' | 'url'>,
     body: {
         description?: string;
         name: string;
@@ -1134,7 +1132,7 @@ export const createSamoMusicPlaylist = async (
 
 export const updateSamoMusicPlaylist = async (
     fetcher: SamoFetch,
-    authentication: Pick<ServerAuthenticationResult, 'credential' | 'ndCredential' | 'url'>,
+    authentication: Pick<ServerAuthenticationResult, 'credential' | 'url'>,
     id: string,
     body: {
         description?: string;
@@ -1154,7 +1152,7 @@ export const updateSamoMusicPlaylist = async (
 
 export const deleteSamoMusicPlaylist = async (
     fetcher: SamoFetch,
-    authentication: Pick<ServerAuthenticationResult, 'credential' | 'ndCredential' | 'url'>,
+    authentication: Pick<ServerAuthenticationResult, 'credential' | 'url'>,
     id: string,
 ): Promise<void> => {
     await samoSend<unknown>(fetcher, authentication, 'DELETE', `/music/playlists/${id}`);
@@ -1162,7 +1160,7 @@ export const deleteSamoMusicPlaylist = async (
 
 export const uploadSamoMusicPlaylistCover = async (
     fetcher: SamoFetch,
-    authentication: Pick<ServerAuthenticationResult, 'credential' | 'ndCredential' | 'url'>,
+    authentication: Pick<ServerAuthenticationResult, 'credential' | 'url'>,
     playlistId: string,
     file: Blob,
     filename = 'cover.jpg',
@@ -1194,7 +1192,7 @@ export const uploadSamoMusicPlaylistCover = async (
 
 export const searchSamoMusic = async (
     fetcher: SamoFetch,
-    authentication: Pick<ServerAuthenticationResult, 'credential' | 'ndCredential' | 'url'>,
+    authentication: Pick<ServerAuthenticationResult, 'credential' | 'url'>,
     query: string,
     options?: { limit?: number; signal?: AbortSignal },
 ): Promise<SamoMusicSearchResponse> => {
@@ -1217,7 +1215,7 @@ export type SamoMusicBrowseKind =
 
 export const getSamoMusicBrowse = async (
     fetcher: SamoFetch,
-    authentication: Pick<ServerAuthenticationResult, 'credential' | 'ndCredential' | 'url'>,
+    authentication: Pick<ServerAuthenticationResult, 'credential' | 'url'>,
     kind: SamoMusicBrowseKind,
     options?: { limit?: number; offset?: number; signal?: AbortSignal },
 ): Promise<SamoMusicBrowseResponse> => {
@@ -1238,7 +1236,7 @@ export const getSamoMusicBrowse = async (
 
 export const listSamoAudiobooks = async (
     fetcher: SamoFetch,
-    authentication: Pick<ServerAuthenticationResult, 'credential' | 'ndCredential' | 'url'>,
+    authentication: Pick<ServerAuthenticationResult, 'credential' | 'url'>,
     input?: SamoListQuery & { libraryId?: string },
 ): Promise<SamoPaginatedResponse<SamoAudiobook>> => {
     return samoGet<SamoPaginatedResponse<SamoAudiobook>>(
@@ -1257,7 +1255,7 @@ export const listSamoAudiobooks = async (
 
 export const getSamoAudiobook = async (
     fetcher: SamoFetch,
-    authentication: Pick<ServerAuthenticationResult, 'credential' | 'ndCredential' | 'url'>,
+    authentication: Pick<ServerAuthenticationResult, 'credential' | 'url'>,
     id: string,
     signal?: AbortSignal,
 ): Promise<SamoAudiobook> => {
@@ -1266,7 +1264,7 @@ export const getSamoAudiobook = async (
 
 export const searchSamoAudiobooks = async (
     fetcher: SamoFetch,
-    authentication: Pick<ServerAuthenticationResult, 'credential' | 'ndCredential' | 'url'>,
+    authentication: Pick<ServerAuthenticationResult, 'credential' | 'url'>,
     query: string,
     options?: { limit?: number; signal?: AbortSignal },
 ): Promise<SamoPaginatedResponse<SamoAudiobook>> => {
@@ -1283,7 +1281,7 @@ export const searchSamoAudiobooks = async (
 
 export const listSamoContributors = async (
     fetcher: SamoFetch,
-    authentication: Pick<ServerAuthenticationResult, 'credential' | 'ndCredential' | 'url'>,
+    authentication: Pick<ServerAuthenticationResult, 'credential' | 'url'>,
     input?: SamoListQuery,
 ): Promise<SamoPaginatedResponse<SamoContributor>> => {
     return samoGet<SamoPaginatedResponse<SamoContributor>>(
@@ -1299,7 +1297,7 @@ export const listSamoContributors = async (
 
 export const getSamoContributor = async (
     fetcher: SamoFetch,
-    authentication: Pick<ServerAuthenticationResult, 'credential' | 'ndCredential' | 'url'>,
+    authentication: Pick<ServerAuthenticationResult, 'credential' | 'url'>,
     id: string,
     options?: { include?: 'audiobooks'; limit?: number; signal?: AbortSignal },
 ): Promise<SamoContributor & { audiobooks?: SamoPaginatedResponse<SamoAudiobook> }> => {
@@ -1314,7 +1312,7 @@ export const getSamoContributor = async (
 
 export const listSamoSeries = async (
     fetcher: SamoFetch,
-    authentication: Pick<ServerAuthenticationResult, 'credential' | 'ndCredential' | 'url'>,
+    authentication: Pick<ServerAuthenticationResult, 'credential' | 'url'>,
     input?: SamoListQuery,
 ): Promise<SamoPaginatedResponse<SamoSeries>> => {
     return samoGet<SamoPaginatedResponse<SamoSeries>>(fetcher, authentication, '/series', {
@@ -1325,7 +1323,7 @@ export const listSamoSeries = async (
 
 export const getSamoSeries = async (
     fetcher: SamoFetch,
-    authentication: Pick<ServerAuthenticationResult, 'credential' | 'ndCredential' | 'url'>,
+    authentication: Pick<ServerAuthenticationResult, 'credential' | 'url'>,
     id: string,
     options?: { include?: 'audiobooks'; limit?: number; signal?: AbortSignal },
 ): Promise<SamoSeries & { audiobooks?: SamoPaginatedResponse<SamoAudiobook> }> => {
@@ -1337,7 +1335,7 @@ export const getSamoSeries = async (
 
 export const listSamoAudiobookBookmarks = async (
     fetcher: SamoFetch,
-    authentication: Pick<ServerAuthenticationResult, 'credential' | 'ndCredential' | 'url'>,
+    authentication: Pick<ServerAuthenticationResult, 'credential' | 'url'>,
     audiobookId: string,
     signal?: AbortSignal,
 ): Promise<SamoPaginatedResponse<SamoBookmark>> => {
@@ -1351,7 +1349,7 @@ export const listSamoAudiobookBookmarks = async (
 
 export const createSamoAudiobookBookmark = async (
     fetcher: SamoFetch,
-    authentication: Pick<ServerAuthenticationResult, 'credential' | 'ndCredential' | 'url'>,
+    authentication: Pick<ServerAuthenticationResult, 'credential' | 'url'>,
     audiobookId: string,
     body: { chapterId?: string; note?: string; positionSeconds?: number; title?: string },
 ): Promise<SamoBookmark> => {
@@ -1366,7 +1364,7 @@ export const createSamoAudiobookBookmark = async (
 
 export const listSamoBookmarks = async (
     fetcher: SamoFetch,
-    authentication: Pick<ServerAuthenticationResult, 'credential' | 'ndCredential' | 'url'>,
+    authentication: Pick<ServerAuthenticationResult, 'credential' | 'url'>,
     input?: SamoListQuery,
 ): Promise<SamoPaginatedResponse<SamoBookmark>> => {
     return samoGet<SamoPaginatedResponse<SamoBookmark>>(fetcher, authentication, '/bookmarks', {
@@ -1377,7 +1375,7 @@ export const listSamoBookmarks = async (
 
 export const updateSamoBookmark = async (
     fetcher: SamoFetch,
-    authentication: Pick<ServerAuthenticationResult, 'credential' | 'ndCredential' | 'url'>,
+    authentication: Pick<ServerAuthenticationResult, 'credential' | 'url'>,
     id: string,
     body: { note?: string; positionSeconds?: number; title?: string },
 ): Promise<SamoBookmark> => {
@@ -1386,7 +1384,7 @@ export const updateSamoBookmark = async (
 
 export const deleteSamoBookmark = async (
     fetcher: SamoFetch,
-    authentication: Pick<ServerAuthenticationResult, 'credential' | 'ndCredential' | 'url'>,
+    authentication: Pick<ServerAuthenticationResult, 'credential' | 'url'>,
     id: string,
 ): Promise<void> => {
     await samoSend(fetcher, authentication, 'DELETE', `/bookmarks/${id}`);
@@ -1394,7 +1392,7 @@ export const deleteSamoBookmark = async (
 
 export const listSamoCollections = async (
     fetcher: SamoFetch,
-    authentication: Pick<ServerAuthenticationResult, 'credential' | 'ndCredential' | 'url'>,
+    authentication: Pick<ServerAuthenticationResult, 'credential' | 'url'>,
     input?: SamoListQuery,
 ): Promise<SamoPaginatedResponse<SamoCollection>> => {
     return samoGet<SamoPaginatedResponse<SamoCollection>>(
@@ -1410,7 +1408,7 @@ export const listSamoCollections = async (
 
 export const getSamoCollection = async (
     fetcher: SamoFetch,
-    authentication: Pick<ServerAuthenticationResult, 'credential' | 'ndCredential' | 'url'>,
+    authentication: Pick<ServerAuthenticationResult, 'credential' | 'url'>,
     id: string,
     signal?: AbortSignal,
 ): Promise<SamoCollection> => {
@@ -1419,7 +1417,7 @@ export const getSamoCollection = async (
 
 export const listSamoAudiobookSessions = async (
     fetcher: SamoFetch,
-    authentication: Pick<ServerAuthenticationResult, 'credential' | 'ndCredential' | 'url'>,
+    authentication: Pick<ServerAuthenticationResult, 'credential' | 'url'>,
     audiobookId: string,
     options?: { limit?: number; signal?: AbortSignal },
 ): Promise<SamoPaginatedResponse<SamoListeningSession>> => {
@@ -1436,7 +1434,7 @@ export const listSamoAudiobookSessions = async (
 
 export const listSamoListeningSessions = async (
     fetcher: SamoFetch,
-    authentication: Pick<ServerAuthenticationResult, 'credential' | 'ndCredential' | 'url'>,
+    authentication: Pick<ServerAuthenticationResult, 'credential' | 'url'>,
     input?: SamoListQuery,
 ): Promise<SamoPaginatedResponse<SamoListeningSession>> => {
     return samoGet<SamoPaginatedResponse<SamoListeningSession>>(
@@ -1456,7 +1454,7 @@ export const listSamoListeningSessions = async (
 
 export const listSamoPodcasts = async (
     fetcher: SamoFetch,
-    authentication: Pick<ServerAuthenticationResult, 'credential' | 'ndCredential' | 'url'>,
+    authentication: Pick<ServerAuthenticationResult, 'credential' | 'url'>,
     input?: SamoListQuery,
 ): Promise<SamoPaginatedResponse<SamoPodcast>> => {
     return samoGet<SamoPaginatedResponse<SamoPodcast>>(fetcher, authentication, '/podcasts', {
@@ -1467,7 +1465,7 @@ export const listSamoPodcasts = async (
 
 export const getSamoPodcastShow = async (
     fetcher: SamoFetch,
-    authentication: Pick<ServerAuthenticationResult, 'credential' | 'ndCredential' | 'url'>,
+    authentication: Pick<ServerAuthenticationResult, 'credential' | 'url'>,
     id: string,
     signal?: AbortSignal,
 ): Promise<SamoPodcast> => {
@@ -1476,7 +1474,7 @@ export const getSamoPodcastShow = async (
 
 export const listSamoPodcastEpisodes = async (
     fetcher: SamoFetch,
-    authentication: Pick<ServerAuthenticationResult, 'credential' | 'ndCredential' | 'url'>,
+    authentication: Pick<ServerAuthenticationResult, 'credential' | 'url'>,
     showId: string,
     input?: SamoListQuery,
 ): Promise<SamoPaginatedResponse<SamoPodcastEpisode>> => {
@@ -1493,7 +1491,7 @@ export const listSamoPodcastEpisodes = async (
 
 export const listSamoAllPodcastEpisodes = async (
     fetcher: SamoFetch,
-    authentication: Pick<ServerAuthenticationResult, 'credential' | 'ndCredential' | 'url'>,
+    authentication: Pick<ServerAuthenticationResult, 'credential' | 'url'>,
     input?: SamoListQuery,
 ): Promise<SamoPaginatedResponse<SamoPodcastEpisode>> => {
     return samoGet<SamoPaginatedResponse<SamoPodcastEpisode>>(
@@ -1509,7 +1507,7 @@ export const listSamoAllPodcastEpisodes = async (
 
 export const getSamoPodcastEpisode = async (
     fetcher: SamoFetch,
-    authentication: Pick<ServerAuthenticationResult, 'credential' | 'ndCredential' | 'url'>,
+    authentication: Pick<ServerAuthenticationResult, 'credential' | 'url'>,
     id: string,
     signal?: AbortSignal,
 ): Promise<SamoPodcastEpisode> => {
@@ -1523,7 +1521,7 @@ export const getSamoPodcastEpisode = async (
 
 export const searchSamoPodcasts = async (
     fetcher: SamoFetch,
-    authentication: Pick<ServerAuthenticationResult, 'credential' | 'ndCredential' | 'url'>,
+    authentication: Pick<ServerAuthenticationResult, 'credential' | 'url'>,
     query: string,
     options?: { limit?: number; signal?: AbortSignal },
 ): Promise<SamoPaginatedResponse<SamoPodcast>> => {
@@ -1540,7 +1538,7 @@ export const searchSamoPodcasts = async (
 
 export const listSamoPodcastFeeds = async (
     fetcher: SamoFetch,
-    authentication: Pick<ServerAuthenticationResult, 'credential' | 'ndCredential' | 'url'>,
+    authentication: Pick<ServerAuthenticationResult, 'credential' | 'url'>,
     input?: SamoListQuery,
 ): Promise<SamoPaginatedResponse<SamoPodcastFeed>> => {
     return samoGet<SamoPaginatedResponse<SamoPodcastFeed>>(
@@ -1556,7 +1554,7 @@ export const listSamoPodcastFeeds = async (
 
 export const createSamoPodcastFeed = async (
     fetcher: SamoFetch,
-    authentication: Pick<ServerAuthenticationResult, 'credential' | 'ndCredential' | 'url'>,
+    authentication: Pick<ServerAuthenticationResult, 'credential' | 'url'>,
     body: {
         autoDownloadEnabled?: boolean;
         podcastId?: string;
@@ -1570,7 +1568,7 @@ export const createSamoPodcastFeed = async (
 /** Attach an RSS feed to an existing file-backed podcast show (hybrid library). */
 export const attachSamoPodcastShowFeed = async (
     fetcher: SamoFetch,
-    authentication: Pick<ServerAuthenticationResult, 'credential' | 'ndCredential' | 'url'>,
+    authentication: Pick<ServerAuthenticationResult, 'credential' | 'url'>,
     podcastId: string,
     body: {
         autoDownloadEnabled?: boolean;
@@ -1593,7 +1591,7 @@ export const attachSamoPodcastShowFeed = async (
 
 export const listSamoInternetRadioStations = async (
     fetcher: SamoFetch,
-    authentication: Pick<ServerAuthenticationResult, 'credential' | 'ndCredential' | 'url'>,
+    authentication: Pick<ServerAuthenticationResult, 'credential' | 'url'>,
     input?: SamoListQuery,
 ): Promise<SamoPaginatedResponse<SamoInternetRadioStation>> => {
     return samoGet<SamoPaginatedResponse<SamoInternetRadioStation>>(
@@ -1609,7 +1607,7 @@ export const listSamoInternetRadioStations = async (
 
 export const getSamoInternetRadioStation = async (
     fetcher: SamoFetch,
-    authentication: Pick<ServerAuthenticationResult, 'credential' | 'ndCredential' | 'url'>,
+    authentication: Pick<ServerAuthenticationResult, 'credential' | 'url'>,
     id: string,
     signal?: AbortSignal,
 ): Promise<SamoInternetRadioStation> => {
@@ -1623,7 +1621,7 @@ export const getSamoInternetRadioStation = async (
 
 export const createSamoInternetRadioStation = async (
     fetcher: SamoFetch,
-    authentication: Pick<ServerAuthenticationResult, 'credential' | 'ndCredential' | 'url'>,
+    authentication: Pick<ServerAuthenticationResult, 'credential' | 'url'>,
     body: {
         homepageUrl?: string;
         imageUrl?: string;
@@ -1647,7 +1645,7 @@ export const createSamoInternetRadioStation = async (
 
 export const uploadSamoInternetRadioCover = async (
     fetcher: SamoFetch,
-    authentication: Pick<ServerAuthenticationResult, 'credential' | 'ndCredential' | 'url'>,
+    authentication: Pick<ServerAuthenticationResult, 'credential' | 'url'>,
     stationId: string,
     file: Blob,
     filename = 'cover.jpg',
@@ -1679,7 +1677,7 @@ export const uploadSamoInternetRadioCover = async (
 
 export const listSamoProgrammedRadioStations = async (
     fetcher: SamoFetch,
-    authentication: Pick<ServerAuthenticationResult, 'credential' | 'ndCredential' | 'url'>,
+    authentication: Pick<ServerAuthenticationResult, 'credential' | 'url'>,
     input?: SamoListQuery,
 ): Promise<SamoPaginatedResponse<SamoProgrammedRadioStation>> => {
     return samoGet<SamoPaginatedResponse<SamoProgrammedRadioStation>>(
@@ -1725,7 +1723,7 @@ export const samoUserPlaybackState = (
 
 export const getSamoPlayback = async (
     fetcher: SamoFetch,
-    authentication: Pick<ServerAuthenticationResult, 'credential' | 'ndCredential' | 'url'>,
+    authentication: Pick<ServerAuthenticationResult, 'credential' | 'url'>,
     kind: SamoPlaybackTargetKind,
     id: string,
     signal?: AbortSignal,
@@ -1737,7 +1735,7 @@ export const getSamoPlayback = async (
 
 export const patchSamoPlayback = async (
     fetcher: SamoFetch,
-    authentication: Pick<ServerAuthenticationResult, 'credential' | 'ndCredential' | 'url'>,
+    authentication: Pick<ServerAuthenticationResult, 'credential' | 'url'>,
     kind: SamoPlaybackTargetKind,
     id: string,
     body: SamoPlaybackPatch,
@@ -1753,7 +1751,7 @@ export const patchSamoPlayback = async (
 
 export const putSamoPlayback = async (
     fetcher: SamoFetch,
-    authentication: Pick<ServerAuthenticationResult, 'credential' | 'ndCredential' | 'url'>,
+    authentication: Pick<ServerAuthenticationResult, 'credential' | 'url'>,
     kind: SamoPlaybackTargetKind,
     id: string,
     body: SamoPlaybackPatch,

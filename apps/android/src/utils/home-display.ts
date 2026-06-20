@@ -21,6 +21,8 @@ import {
 import { type HomeDisplaySection, type HomeFilter } from '../types/home';
 import { type ViewAllVariant } from '../types/view-all';
 import { type LibraryMediaType } from '../types/library-display';
+import { getHomeLayoutHint } from '../services/home-layout-hint';
+import { reconcileHomeDisplaySections } from './home-display-reconcile';
 import { clamp } from './math';
 import { mergeContentItemSignals } from './content-item';
 import { getLibraryMediaType } from './library-display';
@@ -442,6 +444,7 @@ export const getHomeDisplaySections = (
     sections: MobileHomeSection[],
     recentItems: AndroidRecentContentItem[],
     serverConnection: ServerAuthenticationResult | null,
+    previous?: HomeDisplaySection[],
 ): HomeDisplaySection[] => {
     const displaySections: HomeDisplaySection[] = [];
     const resolvedSections = sections.map((section) => ({
@@ -450,8 +453,8 @@ export const getHomeDisplaySections = (
     }));
     const sectionsById = new Map(resolvedSections.map((section) => [section.id, section]));
     // Look up fresh home items by recent-key so we can swap in current artwork URLs
-    // for recents. Persisted recents can carry stale Audiobookshelf JWT tokens or
-    // expired cover-art URLs; using the freshly-loaded equivalent fixes that.
+    // for recents. Persisted recents can carry stale or expired cover-art URLs;
+    // using the freshly-loaded equivalent fixes that.
     const freshItemsByKey = new Map<string, MobileHomeItem>();
     for (const section of resolvedSections) {
         for (const item of section.items) {
@@ -542,12 +545,28 @@ export const getHomeDisplaySections = (
         seenAlbumCanonicalKeys,
     );
 
+    // Reserve sized skeleton slots for the network-gated shelves so their late
+    // arrival fills in place instead of inserting mid-page (the Podcast-Feed
+    // "loads in a beat later and shoves everything down" flash). Signal:
+    // persisted hint primary (last launch's counts), mirror-derived fallback on
+    // a first-ever launch (has podcasts → a feed is coming). Once a live load
+    // resolves, the hint is rewritten — a genuinely-empty feed writes 0 and the
+    // reservation clears on the next render.
+    const layoutHint = getHomeLayoutHint();
+    const reservePodcastFeed =
+        podcastFeedItems.length === 0 &&
+        (layoutHint ? layoutHint.podcastFeed > 0 : podcastItems.length > 0);
+    // Rediscover sits at the bottom (low-harm insert), so only the precise hint
+    // reserves it — never the broad "has albums" fallback that could leave a
+    // stray bottom skeleton on a first launch with no Discover content.
+    const reserveRediscover = discoverItems.length < 4 && (layoutHint?.rediscover ?? 0) > 0;
+
     if (recentDisplayItems.length >= RECENTLY_PLAYED_MIN_ITEMS) {
         displaySections.push({
             items: recentDisplayItems.slice(0, RECENTLY_PLAYED_ROW_LIMIT),
             key: 'recents',
             rowCount: 2,
-            title: 'Recently Played',
+            title: '',
             variant: 'recents',
         });
     }
@@ -556,6 +575,15 @@ export const getHomeDisplaySections = (
         displaySections.push({
             items: podcastFeedItems.slice(0, 24),
             key: 'podcast-feed',
+            title: 'Podcast Feed',
+            variant: 'podcast-feed',
+        });
+    } else if (reservePodcastFeed) {
+        displaySections.push({
+            items: [],
+            key: 'podcast-feed',
+            pending: true,
+            skeletonCount: 5,
             title: 'Podcast Feed',
             variant: 'podcast-feed',
         });
@@ -625,7 +653,20 @@ export const getHomeDisplaySections = (
             title: 'Rediscover',
             variant: 'wide',
         });
+    } else if (reserveRediscover) {
+        displaySections.push({
+            items: [],
+            key: 'rediscover',
+            pending: true,
+            skeletonCount: 3,
+            title: 'Rediscover',
+            variant: 'wide',
+        });
     }
 
-    return displaySections.filter((section) => section.items.length > 0);
+    // Keep pending placeholders (which carry no items) alongside populated shelves.
+    const result = displaySections.filter(
+        (section) => section.items.length > 0 || section.pending,
+    );
+    return reconcileHomeDisplaySections(previous, result);
 };

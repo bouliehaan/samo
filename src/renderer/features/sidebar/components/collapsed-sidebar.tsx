@@ -192,7 +192,7 @@ export const CollapsedSidebar = () => {
                                     <img
                                         className={styles.serverIcon}
                                         src={
-                                            currentServer.type === ServerType.NAVIDROME
+                                            false
                                                 ? NavidromeLogo
                                                 : currentServer.type === ServerType.JELLYFIN
                                                   ? JellyfinLogo

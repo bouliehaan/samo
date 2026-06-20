@@ -53,7 +53,6 @@ export const AbsCoverImage = ({ alt, fallbackIcon, imageUrl, itemId }: AbsCoverI
         return buildSamoAuthenticatedImageRequest(
             {
                 credential: server.credential,
-                ndCredential: server.ndCredential,
                 type: ServerType.SAMO,
                 url: server.url,
             },

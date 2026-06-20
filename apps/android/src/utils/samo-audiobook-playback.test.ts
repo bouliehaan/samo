@@ -49,9 +49,6 @@ describe('shouldServerSeekAudiobookMp3', () => {
             ),
         ).toBe(false);
     });
-    it('does not touch non-Samo audiobooks', () => {
-        expect(shouldServerSeekAudiobookMp3(makeItem({ id: 'absng:audiobook:book1' }))).toBe(false);
-    });
 });
 
 describe('resolveAudiobookSeekTarget (single file)', () => {

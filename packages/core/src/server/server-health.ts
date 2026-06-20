@@ -1,12 +1,7 @@
 import { type ServerAuthenticationResult } from './server-auth';
-import {
-    formatServerCapabilities,
-    getAudiobookshelfCapabilitiesFromLibraries,
-    getDefaultServerCapabilities,
-} from './server-capabilities';
+import { formatServerCapabilities } from './server-capabilities';
 import { getFetch, normalizeBaseUrl, type SamoFetch } from './server-http';
 import { getSamoBearerToken, getSamoCapabilities, getSamoSetupStatus } from './server-samo';
-import { getSubsonicUser } from './server-subsonic';
 import { ServerType } from './server-types';
 
 export enum ServerConnectionHealthStatus {
@@ -29,12 +24,6 @@ export interface ServerConnectionHealthResult {
     message: string;
     ok: boolean;
     status: ServerConnectionHealthStatus;
-}
-
-interface AudiobookshelfLibrariesBody {
-    libraries?: Array<{
-        mediaType?: string;
-    }>;
 }
 
 class ServerHealthResponseError extends Error {
@@ -91,57 +80,6 @@ const assertOkResponse = (response: { ok: boolean; status: number }, label: stri
     }
 };
 
-const checkAudiobookshelfHealth = async (
-    authentication: ServerAuthenticationResult,
-    fetcher: SamoFetch,
-) => {
-    const baseUrl = normalizeBaseUrl(authentication.url);
-    const response = await fetcher(`${baseUrl}/api/libraries`, {
-        headers: { Authorization: `Bearer ${authentication.credential}` },
-        method: 'GET',
-    });
-
-    assertOkResponse(response, 'Audiobookshelf library check');
-
-    const body = (await response.json()) as AudiobookshelfLibrariesBody;
-    const capabilities = getAudiobookshelfCapabilitiesFromLibraries(body.libraries ?? []);
-
-    return {
-        ...authentication,
-        capabilities,
-        details: `Audiobookshelf libraries: ${formatServerCapabilities(capabilities)}`,
-        url: baseUrl,
-    };
-};
-
-const checkSubsonicCompatibleHealth = async (
-    authentication: ServerAuthenticationResult,
-    fetcher: SamoFetch,
-) => {
-    const baseUrl = normalizeBaseUrl(authentication.url);
-    const subsonic = await getSubsonicUser(
-        fetcher,
-        baseUrl,
-        authentication.credential,
-        authentication.username,
-    );
-    const capabilities = getDefaultServerCapabilities(authentication.type);
-    const label =
-        authentication.type === ServerType.NAVIDROME ? 'Navidrome Subsonic API' : 'Subsonic API';
-
-    return {
-        ...authentication,
-        capabilities,
-        details: `${label} ${subsonic.version ?? 'unknown version'}: ${formatServerCapabilities(capabilities)}`,
-        isAdmin:
-            typeof subsonic.user?.adminRole === 'boolean'
-                ? subsonic.user.adminRole
-                : authentication.isAdmin,
-        serverVersion: subsonic.version,
-        url: baseUrl,
-    };
-};
-
 const checkSamoHealth = async (
     authentication: ServerAuthenticationResult,
     fetcher: SamoFetch,
@@ -174,17 +112,6 @@ const checkServerHealth = async (
     authentication: ServerAuthenticationResult,
     fetcher: SamoFetch,
 ) => {
-    if (authentication.type === ServerType.AUDIOBOOKSHELF) {
-        return checkAudiobookshelfHealth(authentication, fetcher);
-    }
-
-    if (
-        authentication.type === ServerType.NAVIDROME ||
-        authentication.type === ServerType.SUBSONIC
-    ) {
-        return checkSubsonicCompatibleHealth(authentication, fetcher);
-    }
-
     if (authentication.type === ServerType.SAMO) {
         return checkSamoHealth(authentication, fetcher);
     }

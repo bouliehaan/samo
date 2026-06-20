@@ -2,7 +2,7 @@ import { MobileHomeItemType, MobileHomeSectionId } from '@samo/core/mobile';
 import { type ServerAuthenticationResult } from '@samo/core/server';
 import { File } from 'expo-file-system';
 import { Image as ExpoImage } from 'expo-image';
-import { memo, useEffect, useMemo, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import {
     ActivityIndicator,
     Modal,
@@ -15,6 +15,7 @@ import {
 
 import { LibrarySortMenu } from '../components/LibrarySortMenu';
 import { MediaArtwork } from '../components/MediaArtwork';
+import { SkeletonTileGrid } from '../components/Skeleton';
 import { PlayPauseGlyph, PlusGlyph } from '../components/Glyphs';
 import { useMediaContextMenu } from '../contexts/media-context-menu';
 import { triggerImpact } from '../services/haptics';
@@ -148,11 +149,7 @@ export const RadioScreen = memo(({
     }
 
     if (homeContentState.status === 'loading') {
-        return (
-            <View style={styles.section}>
-                <ActivityIndicator color={colors.accent} />
-            </View>
-        );
+        return <SkeletonTileGrid />;
     }
 
     if (homeContentState.status === 'error') {
@@ -167,12 +164,12 @@ export const RadioScreen = memo(({
         return (
             <View style={styles.radioScreen}>
                 <View style={[styles.radioGridHeader, styles.radioGridHeaderCompact]}>
-                    <Text style={styles.sectionTitle}>Stations</Text>
+                    <Text style={styles.radioSectionTitle}>Stations</Text>
                     {radioHeaderActions}
                 </View>
                 <Text style={[styles.mutedText, styles.radioEmptyText]}>
                     {!radioManageConnections
-                        ? 'Connect a Samo or Navidrome server to add radio stations from Android.'
+                        ? 'Connect a Samo server to add radio stations from Android.'
                         : 'No server-backed radio stations returned.'}
                 </Text>
                 <LibrarySortMenu
@@ -256,7 +253,7 @@ export const RadioScreen = memo(({
                 ) : null}
             </Pressable>
             <View style={styles.radioGridHeader}>
-                <Text style={styles.sectionTitle}>Stations</Text>
+                <Text style={styles.radioSectionTitle}>Stations</Text>
                 {radioHeaderActions}
             </View>
             {otherStations.length > 0 ? (
@@ -355,6 +352,14 @@ const AddRadioStationModal = ({
         | { kind: 'success'; message: string }
     >({ kind: 'idle' });
 
+    const isMounted = useRef(true);
+    useEffect(() => {
+        isMounted.current = true;
+        return () => {
+            isMounted.current = false;
+        };
+    }, []);
+
     useEffect(() => {
         if (!visible) {
             return;
@@ -384,17 +389,21 @@ const AddRadioStationModal = ({
                 return;
             }
 
-            setThumbnailFile(nextFile);
-            setThumbnailUrl('');
-            setStatus({ kind: 'idle' });
-        } catch (error) {
-            const message =
-                error instanceof Error ? error.message : 'Could not select the thumbnail image.';
-            if (message.toLowerCase().includes('cancel')) {
-                return;
+            if (isMounted.current) {
+                setThumbnailFile(nextFile);
+                setThumbnailUrl('');
+                setStatus({ kind: 'idle' });
             }
+        } catch (error) {
+            if (isMounted.current) {
+                const message =
+                    error instanceof Error ? error.message : 'Could not select the thumbnail image.';
+                if (message.toLowerCase().includes('cancel')) {
+                    return;
+                }
 
-            setStatus({ kind: 'error', message });
+                setStatus({ kind: 'error', message });
+            }
         }
     };
 
@@ -415,21 +424,27 @@ const AddRadioStationModal = ({
                     : undefined,
                 thumbnailUrl: thumbnailUrl.trim() || undefined,
             });
-            const message = result.warning ?? 'Radio station added.';
-            setStatus({ kind: 'success', message });
-            if (!result.warning) {
-                setName('');
-                setStreamUrl('');
-                setHomepageUrl('');
-                setThumbnailUrl('');
-                setThumbnailFile(null);
-                setTimeout(onClose, 450);
+            if (isMounted.current) {
+                const message = result.warning ?? 'Radio station added.';
+                setStatus({ kind: 'success', message });
+                if (!result.warning) {
+                    setName('');
+                    setStreamUrl('');
+                    setHomepageUrl('');
+                    setThumbnailUrl('');
+                    setThumbnailFile(null);
+                    setTimeout(() => {
+                        if (isMounted.current) onClose();
+                    }, 450);
+                }
             }
         } catch (error) {
-            setStatus({
-                kind: 'error',
-                message: error instanceof Error ? error.message : 'Could not add radio station.',
-            });
+            if (isMounted.current) {
+                setStatus({
+                    kind: 'error',
+                    message: error instanceof Error ? error.message : 'Could not add radio station.',
+                });
+            }
         }
     };
 
@@ -444,7 +459,7 @@ const AddRadioStationModal = ({
                     <Text style={styles.actionSheetTitle}>Add Radio Station</Text>
                     {!serverConnection ? (
                         <Text style={styles.mutedText}>
-                            Connect a Samo or Navidrome server to add radio stations from Android.
+                            Connect a Samo server to add radio stations from Android.
                         </Text>
                     ) : (
                         <ScrollView

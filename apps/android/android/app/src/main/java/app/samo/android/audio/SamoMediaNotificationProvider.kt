@@ -214,7 +214,7 @@ class SamoMediaNotificationProvider(
     /**
      * Fetch the artwork through the session's BitmapLoader (which uses the
      * data sources Samo already configured for ExoPlayer, so authenticated
-     * Subsonic + ABS URLs work), run Palette to pick a dark-leaning swatch,
+     * Samo URLs work), run Palette to pick a dark-leaning swatch,
      * stash the result in the cache, and tell Media3 to repaint.
      */
     private fun loadArtworkAndColor(

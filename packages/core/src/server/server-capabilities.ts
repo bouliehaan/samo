@@ -56,20 +56,6 @@ const parseCapabilityList = (value: unknown, fallback: ServerContentCapability[]
 };
 
 export const getDefaultServerCapabilities = (type: ServerType): ServerCapabilities => {
-    if (type === ServerType.AUDIOBOOKSHELF) {
-        return {
-            content: [ServerContentCapability.AUDIOBOOKS, ServerContentCapability.PODCASTS],
-            search: [ServerContentCapability.AUDIOBOOKS, ServerContentCapability.PODCASTS],
-        };
-    }
-
-    if (type === ServerType.NAVIDROME || type === ServerType.SUBSONIC) {
-        return {
-            content: MUSIC_CAPABILITIES,
-            search: MUSIC_CAPABILITIES,
-        };
-    }
-
     if (type === ServerType.SAMO) {
         return {
             content: [
@@ -88,26 +74,6 @@ export const getDefaultServerCapabilities = (type: ServerType): ServerCapabiliti
     return {
         content: [],
         search: [],
-    };
-};
-
-export const getAudiobookshelfCapabilitiesFromLibraries = (
-    libraries: ServerCapabilityLibrary[],
-): ServerCapabilities => {
-    const libraryMediaTypes = new Set(libraries.map((library) => library.mediaType));
-    const content: ServerContentCapability[] = [];
-
-    if (libraryMediaTypes.has('book')) {
-        content.push(ServerContentCapability.AUDIOBOOKS);
-    }
-
-    if (libraryMediaTypes.has('podcast')) {
-        content.push(ServerContentCapability.PODCASTS);
-    }
-
-    return {
-        content,
-        search: [...content],
     };
 };
 

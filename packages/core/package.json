@@ -11,8 +11,7 @@
         "./navigation": "./src/navigation/index.ts",
         "./playback": "./src/playback/index.ts",
         "./server": "./src/server/index.ts",
-        "./server/auth": "./src/server/server-auth.ts",
-        "./server/audiobookshelf": "./src/server/server-audiobookshelf.ts"
+        "./server/auth": "./src/server/server-auth.ts"
     },
     "types": "./src/index.ts",
     "scripts": {

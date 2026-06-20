@@ -1,5 +1,6 @@
 import { Dimensions, Platform } from 'react-native';
 
+import { type HomeDisplaySection } from '../types/home';
 import { spacing } from './tokens';
 
 export const SCREEN_HEIGHT = Dimensions.get('window').height;
@@ -152,6 +153,66 @@ export const HOME_MEDIA_ROW_HEIGHT_WIDE = 136;
 export const HOME_ROW_INITIAL_ITEMS = 6;
 export const HOME_ROW_RENDER_BATCH = 6;
 export const HOME_ROW_WINDOW_SIZE = 5;
+
+/**
+ * Horizontal stride of one home-row item (tile width + gap). Shared by the
+ * FlashList drawDistance/item-length in `HomeDisplayRow` and the skeleton row,
+ * so a reserved placeholder is the same width as the real tile.
+ */
+export const getHomeRowItemLength = (variant: HomeDisplaySection['variant']): number => {
+    switch (variant) {
+        case 'artist':
+            return HOME_PRIMARY_TILE - HOME_COMPACT_OFFSET + HOME_TILE_GAP;
+        case 'podcast':
+        case 'podcast-feed':
+        case 'radio':
+            return HOME_PRIMARY_TILE - HOME_ROUNDED_OFFSET + HOME_TILE_GAP;
+        case 'continue':
+        case 'wide':
+            return 320 + HOME_TILE_GAP;
+        case 'album':
+        case 'book':
+        case 'playlist':
+        case 'recents':
+            return HOME_PRIMARY_TILE + HOME_TILE_GAP;
+    }
+};
+
+/**
+ * Exact pixel height of a home shelf's scroll row for a variant. The single
+ * source of truth for both the real `HomeDisplayRow` FlashList height AND the
+ * skeleton placeholder height — equal heights are what let a pending shelf swap
+ * to real content with ZERO layout shift.
+ */
+export const getHomeSectionRowHeight = (
+    variant: HomeDisplaySection['variant'],
+    rowCount: number,
+): number => {
+    let singleHeight: number;
+    switch (variant) {
+        case 'artist':
+            singleHeight = HOME_MEDIA_ROW_HEIGHT_ARTIST;
+            break;
+        case 'podcast':
+        case 'radio':
+            singleHeight = HOME_MEDIA_ROW_HEIGHT_ROUNDED;
+            break;
+        case 'podcast-feed':
+            singleHeight = HOME_MEDIA_ROW_HEIGHT_ROUNDED + HOME_MEDIA_PROGRESS_CHROME;
+            break;
+        case 'continue':
+        case 'wide':
+            singleHeight = HOME_MEDIA_ROW_HEIGHT_WIDE;
+            break;
+        case 'recents':
+            singleHeight = HOME_MEDIA_ROW_HEIGHT_COMPACT;
+            break;
+        default:
+            singleHeight = HOME_MEDIA_ROW_HEIGHT;
+    }
+
+    return rowCount > 1 ? singleHeight * 2 + spacing.xs : singleHeight;
+};
 
 export const VIEW_ALL_SIDEBAR_GUTTER = 30;
 export const VIEW_ALL_TILE_SIZE = Math.floor(

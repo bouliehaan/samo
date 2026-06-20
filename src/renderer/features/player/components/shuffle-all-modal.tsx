@@ -207,7 +207,7 @@ const GenreSelect = () => {
 
         return genres.items.map((genre) => {
             const value =
-                server?.type === ServerType.NAVIDROME || server?.type === ServerType.SUBSONIC
+                false || false
                     ? genre.name
                     : genre.id;
             return {

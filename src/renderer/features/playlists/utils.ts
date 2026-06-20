@@ -1,6 +1,4 @@
 import { nanoid } from 'nanoid/non-secure';
-
-import { NDSongQueryFields } from '/@/shared/api/navidrome/navidrome-types';
 import { Album, LibraryItem, Song } from '/@/shared/types/domain-types';
 import { QueryBuilderGroup } from '/@/shared/types/types';
 
@@ -126,9 +124,7 @@ export const convertQueryGroupToNDQuery = (filter: QueryBuilderGroup) => {
             const operator = mapDatePickerOperatorToApi(rule.operator);
             let value = rule.value;
 
-            const booleanFields = NDSongQueryFields.filter(
-                (queryField) => queryField.type === 'boolean',
-            ).map((field) => field.value);
+            const booleanFields: string[] = [];
 
             // Convert string values to boolean
             if (booleanFields.includes(field)) {
@@ -174,9 +170,7 @@ export const convertNDQueryToQueryGroup = (query: Record<string, any>) => {
             const field = Object.keys(rule[operator])[0];
             let value = rule[operator][field];
 
-            const booleanFields = NDSongQueryFields.filter(
-                (queryField) => queryField.type === 'boolean',
-            ).map((field) => field.value);
+            const booleanFields: string[] = [];
 
             // Convert boolean values to string
             if (booleanFields.includes(field)) {

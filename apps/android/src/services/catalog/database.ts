@@ -76,7 +76,21 @@ export const getCatalogReaderSync = (): SQLite.SQLiteDatabase | null => {
         return readerDatabase;
     }
     try {
-        readerDatabase = SQLite.openDatabaseSync(DATABASE_NAME);
+        // useNewConnection is LOAD-BEARING, not optional. expo-sqlite caches
+        // native connections by path+options and hands the SAME sqlite3* back to
+        // every opener with matching options (SQLiteModule: findCachedDatabase +
+        // addRef). Without this flag, openDatabaseSync here returns the very same
+        // native handle as the async writer (openAndMigrate below). The writer's
+        // async ops run on expo's module coroutine thread while these sync reads
+        // run on the JS thread — two threads driving one non-serialized sqlite3
+        // connection during the initial sync, which corrupts the heap and aborts
+        // with "Scudo ERROR: invalid chunk state when deallocating" at close/
+        // finalize (a hard native crash seen on real devices, masked on the
+        // emulator). A dedicated connection keeps the render-path reader fully
+        // isolated from the writer; WAL still gives it a consistent snapshot.
+        readerDatabase = SQLite.openDatabaseSync(DATABASE_NAME, {
+            useNewConnection: true,
+        });
         // busy_timeout BEFORE journal_mode: the Kotlin sync engine holds
         // BEGIN IMMEDIATE through its write batches, and a connection with no
         // busy_timeout gets an INSTANT SQLITE_BUSY instead of waiting — which

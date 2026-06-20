@@ -5,7 +5,6 @@ import { MultiSelectWithInvalidData } from '/@/renderer/components/select-with-i
 import { sharedQueries } from '/@/renderer/features/shared/api/shared-api';
 import { useCurrentServerId } from '/@/renderer/store';
 import { titleCase } from '/@/renderer/utils';
-import { NDSongQueryFieldsLabelMap } from '/@/shared/api/navidrome/navidrome-types';
 import { LibraryItem } from '/@/shared/types/domain-types';
 
 interface TagFilterItemProps {
@@ -97,7 +96,6 @@ export const TagFilters = ({ query, setCustom, type }: TagFiltersProps) => {
         for (const tag of tagsQuery.data?.tags || []) {
             if (!excluded.includes(tag.name)) {
                 results.push({
-                    label: NDSongQueryFieldsLabelMap[tag.name] ?? titleCase(tag.name),
                     options: tag.options,
                     value: tag.name,
                 });

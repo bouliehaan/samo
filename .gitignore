@@ -17,3 +17,4 @@ src/**/*.jsx
 src/**/*.d.ts
 vite.react-plugin.js
 vite.react-plugin.d.ts
+.aider*

@@ -328,7 +328,47 @@ export const ViewAllScreen = memo(({
 
 ViewAllScreen.displayName = 'ViewAllScreen';
 
-const AlphabetSidebar = ({
+const AlphabetSidebarLetter = memo(({
+    isActive,
+    letter,
+    onJumpToLetter,
+    onRef,
+}: {
+    isActive: boolean;
+    letter: string;
+    onJumpToLetter: (letter: string) => void;
+    onRef: (letter: string, node: View | null) => void;
+}) => {
+    const handlePress = useCallback(() => {
+        onJumpToLetter(letter);
+    }, [letter, onJumpToLetter]);
+
+    const handleRef = useCallback((node: View | null) => {
+        onRef(letter, node);
+    }, [letter, onRef]);
+
+    return (
+        <Pressable
+            disabled={!isActive}
+            hitSlop={{ bottom: 0, left: 18, right: 4, top: 0 }}
+            onPress={handlePress}
+            ref={handleRef}
+            style={styles.alphabetSidebarLetterButton}
+        >
+            <Text
+                style={[
+                    styles.alphabetSidebarLetter,
+                    isActive && styles.alphabetSidebarLetterActive,
+                ]}
+            >
+                {letter}
+            </Text>
+        </Pressable>
+    );
+});
+AlphabetSidebarLetter.displayName = 'AlphabetSidebarLetter';
+
+const AlphabetSidebar = memo(({
     activeLetters,
     onJumpToLetter,
 }: {
@@ -340,13 +380,16 @@ const AlphabetSidebar = ({
     const lastSelectedLetterRef = useRef<string | null>(null);
 
     const measureLetterMetrics = useCallback((onMeasured?: () => void) => {
+        let active = true;
         const nextMetrics: Array<{ bottom: number; letter: string; top: number }> = [];
         let pending = ALPHABET_SIDEBAR_LETTERS.length;
 
         const finishOne = () => {
             pending -= 1;
             if (pending === 0) {
-                letterMetricsRef.current = nextMetrics.sort((left, right) => left.top - right.top);
+                if (active) {
+                    letterMetricsRef.current = nextMetrics.sort((left, right) => left.top - right.top);
+                }
                 onMeasured?.();
             }
         };
@@ -359,7 +402,7 @@ const AlphabetSidebar = ({
             }
 
             node.measureInWindow((_x, y, _width, height) => {
-                if (height > 0) {
+                if (active && height > 0) {
                     nextMetrics.push({
                         bottom: y + height,
                         letter,
@@ -369,11 +412,19 @@ const AlphabetSidebar = ({
                 finishOne();
             });
         });
+
+        return () => { active = false; };
     }, []);
 
     useEffect(() => {
-        const timer = setTimeout(() => measureLetterMetrics(), 0);
-        return () => clearTimeout(timer);
+        let cleanup: (() => void) | undefined;
+        const timer = setTimeout(() => {
+            cleanup = measureLetterMetrics();
+        }, 0);
+        return () => {
+            clearTimeout(timer);
+            if (cleanup) cleanup();
+        };
     }, [activeLetters, measureLetterMetrics]);
 
     const getLetterFromPageY = useCallback((pageY: number) => {
@@ -435,9 +486,7 @@ const AlphabetSidebar = ({
                     Math.abs(gestureState.dy) > Math.abs(gestureState.dx),
                 onPanResponderGrant: (event) => {
                     const { pageY } = event.nativeEvent;
-                    measureLetterMetrics(() => {
-                        jumpToPageY(pageY);
-                    });
+                    jumpToPageY(pageY);
                 },
                 onPanResponderMove: (event) => {
                     jumpToPageY(event.nativeEvent.pageY);
@@ -449,44 +498,39 @@ const AlphabetSidebar = ({
         [jumpToPageY, measureLetterMetrics, resetDragLetter],
     );
 
+    const handleLetterPress = useCallback((letter: string) => {
+        lastSelectedLetterRef.current = null;
+        jumpToLetter(letter);
+        lastSelectedLetterRef.current = null;
+    }, [jumpToLetter]);
+
+    const handleLetterRef = useCallback((letter: string, node: View | null) => {
+        letterRefs.current[letter] = node;
+    }, []);
+
     return (
         <View pointerEvents="box-none" style={styles.alphabetSidebar}>
             <View
                 {...panResponder.panHandlers}
                 accessibilityLabel="Alphabet jump index"
                 accessibilityRole="adjustable"
-                onLayout={() => measureLetterMetrics()}
+                onLayout={() => {
+                    const cleanup = measureLetterMetrics();
+                    // We don't have a reliable onUnlayout, but useEffect covers unmounts.
+                }}
                 style={styles.alphabetSidebarRail}
             >
-                {ALPHABET_SIDEBAR_LETTERS.map((letter) => {
-                    const isActive = activeLetters.has(letter);
-                    return (
-                        <Pressable
-                            disabled={!isActive}
-                            hitSlop={{ bottom: 0, left: 18, right: 4, top: 0 }}
-                            key={letter}
-                            onPress={() => {
-                                lastSelectedLetterRef.current = null;
-                                jumpToLetter(letter);
-                                lastSelectedLetterRef.current = null;
-                            }}
-                            ref={(node) => {
-                                letterRefs.current[letter] = node;
-                            }}
-                            style={styles.alphabetSidebarLetterButton}
-                        >
-                            <Text
-                                style={[
-                                    styles.alphabetSidebarLetter,
-                                    isActive && styles.alphabetSidebarLetterActive,
-                                ]}
-                            >
-                                {letter}
-                            </Text>
-                        </Pressable>
-                    );
-                })}
+                {ALPHABET_SIDEBAR_LETTERS.map((letter) => (
+                    <AlphabetSidebarLetter
+                        isActive={activeLetters.has(letter)}
+                        key={letter}
+                        letter={letter}
+                        onJumpToLetter={handleLetterPress}
+                        onRef={handleLetterRef}
+                    />
+                ))}
             </View>
         </View>
     );
-};
+});
+AlphabetSidebar.displayName = 'AlphabetSidebar';
