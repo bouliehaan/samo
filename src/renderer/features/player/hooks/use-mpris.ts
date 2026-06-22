@@ -9,7 +9,7 @@ import {
 } from '/@/renderer/features/radio/hooks/use-radio-player';
 import { usePlayerSong, usePlayerStore } from '/@/renderer/store';
 import { LibraryItem, QueueSong } from '/@/shared/types/domain-types';
-import { PlayerShuffle,  } from '/@/shared/types/types';
+import { PlayerShuffle, ServerType } from '/@/shared/types/types';
 
 const ipc = isElectron() ? window.api.ipc : null;
 const utils = isElectron() ? window.api.utils : null;
@@ -41,6 +41,7 @@ export const useMPRIS = () => {
 
         return {
             _itemType: LibraryItem.SONG,
+            _serverType: ServerType.SAMO,
             _serverId: '',
             _uniqueId: radioId,
             album: album || null,

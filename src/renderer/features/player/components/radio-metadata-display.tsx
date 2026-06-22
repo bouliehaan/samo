@@ -39,7 +39,7 @@ export const RadioMetadataDisplay = ({
             <div className={styles.lineItem} onClick={onStopPropagation}>
                 <Text
                     className={PlaybackSelectors.songTitle}
-                    fw={500}
+                    fw={650}
                     isNoSelect
                     onContextMenu={onToggleContextMenu}
                     overflow="hidden"

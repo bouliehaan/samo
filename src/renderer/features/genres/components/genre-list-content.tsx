@@ -1,8 +1,8 @@
 import { lazy, Suspense, useMemo } from 'react';
 
 import { useGenreListFilters } from '/@/renderer/features/genres/hooks/use-genre-list-filters';
+import { GridPageSkeleton } from '/@/renderer/features/shared/components/page-skeletons/page-skeletons';
 import { ItemListSettings, useCurrentServer, useListSettings } from '/@/renderer/store';
-import { Spinner } from '/@/shared/components/spinner/spinner';
 import { GenreListQuery } from '/@/shared/types/domain-types';
 import { ItemListKey, ListDisplayType, ListPaginationType } from '/@/shared/types/types';
 
@@ -34,7 +34,7 @@ export const GenreListContent = () => {
     const { display, grid, itemsPerPage, pagination, table } = useListSettings(ItemListKey.GENRE);
 
     return (
-        <Suspense fallback={<Spinner container />}>
+        <Suspense fallback={<GridPageSkeleton />}>
             <GenreListView
                 display={display}
                 grid={grid}

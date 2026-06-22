@@ -2,8 +2,6 @@ import { authenticateServerConnection } from '@samo/core/server';
 import isElectron from 'is-electron';
 
 import i18n from '/@/i18n/i18n';
-import { audiobookshelfController } from '/@/renderer/api/audiobookshelf/audiobookshelf-controller';
-import { JellyfinController } from '/@/renderer/api/jellyfin/jellyfin-controller';
 import { SamoController } from '/@/renderer/api/samo/samo-controller';
 import { mergeMusicFolderId } from '/@/renderer/api/utils-music-folder';
 import {
@@ -23,8 +21,6 @@ import {
 type ApiController = Partial<Record<ServerType, Partial<InternalControllerEndpoint>>>;
 
 const endpoints: ApiController = {
-    [ServerType.AUDIOBOOKSHELF]: audiobookshelfController,
-    [ServerType.JELLYFIN]: JellyfinController,
     [ServerType.SAMO]: SamoController as Partial<InternalControllerEndpoint>,
 };
 
@@ -164,7 +160,6 @@ export const controller = new Proxy({} as GeneralController, {
                         username: result.username,
                     };
                 }
-
                 return apiController('authenticate', type)(url, body);
             };
         }

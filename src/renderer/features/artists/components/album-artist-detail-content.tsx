@@ -86,7 +86,6 @@ import {
     AlbumListSort,
     LibraryItem,
     RelatedArtist,
-    ServerType,
     Song,
     SongListSort,
     SortOrder,
@@ -331,9 +330,9 @@ const AlbumArtistMetadataTopSongsContent = ({
     const currentSong = usePlayerSong();
     const player = usePlayer();
     const serverId = useCurrentServerId();
-    const server = useCurrentServer();
+    
 
-    const canStartQuery = server?.type === ServerType.JELLYFIN || !!detailQuery.data?.name;
+    const canStartQuery = !!detailQuery.data?.name;
 
     const topSongsQuery = useQuery({
         ...artistsQueries.topSongs({
@@ -588,12 +587,12 @@ const AlbumArtistMetadataTopSongs = ({
     order,
     routeId,
 }: AlbumArtistMetadataTopSongsProps) => {
-    const server = useCurrentServer();
+    
 
     const location = useLocation();
     const artistName = location.state?.item?.name || detailQuery.data?.name;
 
-    const canStartQuery = server?.type === ServerType.JELLYFIN || !!artistName;
+    const canStartQuery = !!artistName;
 
     return (
         <Suspense fallback={null}>
@@ -1071,7 +1070,7 @@ const AlbumArtistMetadataSimilarArtists = ({
             (relatedArtist: RelatedArtist): AlbumArtist => ({
                 _itemType: LibraryItem.ALBUM_ARTIST,
                 _serverId: serverId || '',
-                _serverType: (server?.type as ServerType) || ServerType.JELLYFIN,
+                _serverType: server?.type || '',
                 albumCount: null,
                 biography: null,
                 duration: null,

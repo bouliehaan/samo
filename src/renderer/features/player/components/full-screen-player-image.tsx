@@ -302,7 +302,6 @@ export const FullScreenPlayerImage = () => {
                             <LongFormPlayerArtwork
                                 alt={nowPlaying.title}
                                 className={styles.image}
-                                fallbackIcon={isPodcastMode ? 'microphone' : 'metadata'}
                                 item={isPodcastMode ? podcastItem : audiobookItem}
                                 server={isPodcastMode ? podcastServer : audiobookServer}
                             />

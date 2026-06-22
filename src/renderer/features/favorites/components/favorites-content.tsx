@@ -10,12 +10,12 @@ import {
     OverrideAlbumArtistListQuery,
 } from '/@/renderer/features/artists/components/album-artist-list-content';
 import { AnimatedPage } from '/@/renderer/features/shared/components/animated-page';
+import { GridPageSkeleton } from '/@/renderer/features/shared/components/page-skeletons/page-skeletons';
 import {
     OverrideSongListQuery,
     SongListView,
 } from '/@/renderer/features/songs/components/song-list-content';
 import { useListSettings } from '/@/renderer/store';
-import { Spinner } from '/@/shared/components/spinner/spinner';
 import { LibraryItem } from '/@/shared/types/domain-types';
 import { ItemListKey } from '/@/shared/types/types';
 
@@ -26,7 +26,7 @@ interface FavoritesContentProps {
 export const FavoritesContent = ({ itemType }: FavoritesContentProps) => {
     return (
         <AnimatedPage>
-            <Suspense fallback={<Spinner container />}>
+            <Suspense fallback={<GridPageSkeleton />}>
                 {itemType === LibraryItem.ALBUM && <AlbumFavorites />}
                 {itemType === LibraryItem.SONG && <SongFavorites />}
                 {itemType === LibraryItem.ALBUM_ARTIST && <ArtistFavorites />}

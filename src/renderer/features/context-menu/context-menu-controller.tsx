@@ -18,7 +18,7 @@ import { AppRoute } from '/@/renderer/router/routes';
 import { useAudiobookActions } from '/@/renderer/store/audiobook.store';
 import { useLibraryFavoritesActions } from '/@/renderer/store/library-favorites.store';
 import { recordRecentPodcast } from '/@/renderer/store/play-history.store';
-import { AudiobookshelfLibraryItem } from '/@/shared/api/audiobookshelf/audiobookshelf-types';
+import { LongFormLibraryItem } from '/@/shared/api/long-form-types';
 import { ContextMenu } from '/@/shared/components/context-menu/context-menu';
 import {
     Album,
@@ -138,7 +138,7 @@ type ArtistContextMenuProps = {
 };
 
 type AudiobookContextMenuProps = {
-    items: AudiobookshelfLibraryItem[];
+    items: LongFormLibraryItem[];
     server: ServerListItemWithCredential;
     type: 'audiobook';
 };
@@ -164,7 +164,7 @@ type PlaylistSongContextMenuProps = {
 };
 
 type PodcastContextMenuProps = {
-    items: AudiobookshelfLibraryItem[];
+    items: LongFormLibraryItem[];
     server: ServerListItemWithCredential;
     type: 'podcast';
 };

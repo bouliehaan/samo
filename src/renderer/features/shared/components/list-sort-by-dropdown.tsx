@@ -6,7 +6,6 @@ import { useCurrentServer } from '/@/renderer/store';
 import { Button } from '/@/shared/components/button/button';
 import { DropdownMenu } from '/@/shared/components/dropdown-menu/dropdown-menu';
 import {
-    AlbumArtistListSort,
     AlbumListSort,
     ArtistListSort,
     GenreListSort,
@@ -298,7 +297,7 @@ export const CLIENT_SIDE_ALBUM_FILTERS = [
 const ALBUM_LIST_FILTERS: Partial<
     Record<ServerType, Array<{ defaultOrder: SortOrder; name: string; value: string }>>
 > = {
-    [ServerType.JELLYFIN]: [
+    [ServerType.SAMO]: [
         {
             defaultOrder: SortOrder.ASC,
             name: i18n.t('filter.albumArtist', { postProcess: 'titleCase' }),
@@ -350,7 +349,7 @@ const ALBUM_LIST_FILTERS: Partial<
 const SONG_LIST_FILTERS: Partial<
     Record<ServerType, Array<{ defaultOrder: SortOrder; name: string; value: string }>>
 > = {
-    [ServerType.JELLYFIN]: [
+    [ServerType.SAMO]: [
         {
             defaultOrder: SortOrder.ASC,
             name: i18n.t('filter.album', { postProcess: 'titleCase' }),
@@ -407,20 +406,20 @@ const SONG_LIST_FILTERS: Partial<
 const FOLDER_LIST_FILTERS: Partial<
     Record<ServerType, Array<{ defaultOrder: SortOrder; name: string; value: string }>>
 > = {
-    [ServerType.JELLYFIN]: [
+    [ServerType.SAMO]: [
         {
             defaultOrder: SortOrder.ASC,
             name: i18n.t('filter.id', { postProcess: 'titleCase' }),
             value: SongListSort.ID,
         },
-        ...(SONG_LIST_FILTERS[ServerType.JELLYFIN] || []),
+        ...(SONG_LIST_FILTERS[ServerType.SAMO] || []),
     ],
 };
 
 const ARTIST_LIST_FILTERS: Partial<
     Record<ServerType, Array<{ defaultOrder: SortOrder; name: string; value: string }>>
 > = {
-    [ServerType.JELLYFIN]: [
+    [ServerType.SAMO]: [
         {
             defaultOrder: SortOrder.ASC,
             name: i18n.t('filter.album', { postProcess: 'titleCase' }),
@@ -452,7 +451,7 @@ const ARTIST_LIST_FILTERS: Partial<
 const GENRE_LIST_FILTERS: Partial<
     Record<ServerType, Array<{ defaultOrder: SortOrder; name: string; value: string }>>
 > = {
-    [ServerType.JELLYFIN]: [
+    [ServerType.SAMO]: [
         {
             defaultOrder: SortOrder.ASC,
             name: i18n.t('filter.name', { postProcess: 'titleCase' }),
@@ -464,7 +463,7 @@ const GENRE_LIST_FILTERS: Partial<
 const PLAYLIST_LIST_FILTERS: Partial<
     Record<ServerType, Array<{ defaultOrder: SortOrder; name: string; value: string }>>
 > = {
-    [ServerType.JELLYFIN]: [
+    [ServerType.SAMO]: [
         {
             defaultOrder: SortOrder.DESC,
             name: i18n.t('filter.duration', { postProcess: 'titleCase' }),
@@ -486,7 +485,7 @@ const PLAYLIST_LIST_FILTERS: Partial<
 const RADIO_LIST_FILTERS: Partial<
     Record<ServerType, Array<{ defaultOrder: SortOrder; name: string; value: string }>>
 > = {
-    [ServerType.JELLYFIN]: [
+    [ServerType.SAMO]: [
         {
             defaultOrder: SortOrder.ASC,
             name: i18n.t('filter.id', { postProcess: 'titleCase' }),
@@ -501,25 +500,8 @@ const RADIO_LIST_FILTERS: Partial<
 };
 
 /** Samo list pages sort client-side today — reuse Navidrome's sort options. */
-const assignSamoListSortFilters = (
-    map: Partial<
-        Record<ServerType, Array<{ defaultOrder: SortOrder; name: string; value: string }>>
-    >,
-) => {
-    if (!map[ServerType.SAMO] && map[source]) {
-        map[ServerType.SAMO] = map[source]!;
-    }
-};
-
-assignSamoListSortFilters(ALBUM_LIST_FILTERS);
-assignSamoListSortFilters(SONG_LIST_FILTERS);
-assignSamoListSortFilters(FOLDER_LIST_FILTERS);
-assignSamoListSortFilters(ALBUM_ARTIST_LIST_FILTERS);
-assignSamoListSortFilters(ARTIST_LIST_FILTERS);
-assignSamoListSortFilters(GENRE_LIST_FILTERS);
-assignSamoListSortFilters(PLAYLIST_LIST_FILTERS);
-assignSamoListSortFilters(RADIO_LIST_FILTERS);
-PLAYLIST_SONG_LIST_FILTERS[ServerType.SAMO] = CLIENT_SIDE_SONG_FILTERS;
+const ALBUM_ARTIST_LIST_FILTERS = ARTIST_LIST_FILTERS;
+const PLAYLIST_SONG_LIST_FILTERS = { [ServerType.SAMO]: CLIENT_SIDE_SONG_FILTERS };
 
 const FILTERS: Partial<Record<LibraryItem, any>> = {
     [LibraryItem.ALBUM]: ALBUM_LIST_FILTERS,

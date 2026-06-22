@@ -4,8 +4,8 @@ import { useQueryClient } from '@tanstack/react-query';
 import isElectron from 'is-electron';
 import { useEffect, useRef } from 'react';
 
-import { audiobookshelfController } from '/@/renderer/api/audiobookshelf/audiobookshelf-controller';
 import { getSongById } from '/@/renderer/features/player/utils';
+import { listSamoAudiobookLibraryItems, loadSamoPodcastLibraryItem } from '/@/renderer/api/samo/samo-long-form';
 import { useRadioStore as useRadioPlayerStore } from '/@/renderer/features/radio/hooks/use-radio-player';
 import { useRadioStore as useRadioStationStore } from '/@/renderer/features/radio/store/radio-store';
 import { useAudiobookStore } from '/@/renderer/store/audiobook.store';
@@ -42,7 +42,9 @@ const restoreAudiobookSession = async (
     const server = getServerById(session.serverId);
     if (!server) return false;
 
-    const item = await audiobookshelfController.getItem(server, session.itemId);
+    const listResult = await listSamoAudiobookLibraryItems(server);
+    const item = (listResult as any).results.find((i: any) => i.id === session.itemId) as any;
+    if (!item) return false;
     if (usePlaybackOwnerStore.getState().source) return true;
 
     const position =
@@ -76,7 +78,7 @@ const restorePodcastSession = async (
     const server = getServerById(session.serverId);
     if (!server) return false;
 
-    const item = await audiobookshelfController.getItem(server, session.itemId);
+    const item = await loadSamoPodcastLibraryItem(server, session.itemId);
     const episode = item.media?.episodes?.find((candidate) => candidate.id === session.episodeId);
     if (!episode) return false;
     if (usePlaybackOwnerStore.getState().source) return true;

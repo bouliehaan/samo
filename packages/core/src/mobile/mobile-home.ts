@@ -135,6 +135,12 @@ export interface MobileHomeItem {
    * Parent container id for leaf items (e.g. podcast show id on episode tiles).
    */
     containerId?: string;
+    /**
+     * Similar-artist tile for an artist NOT in this library: there's no detail
+     * to open, so the client routes a tap to a search for `title` instead. The
+     * `id` is synthetic (`ext:<name>`) and must never be used for a detail fetch.
+     */
+    external?: boolean;
     id: string;
     isHiRes?: boolean;
     /**

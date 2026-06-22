@@ -7,6 +7,7 @@ import styles from './home-sections.module.css';
 
 import { api } from '/@/renderer/api';
 import { fetchSamoDiscoveryHomeTracks } from '/@/renderer/api/samo/samo-controller';
+import { listSamoAudiobookLibraryItems } from '/@/renderer/api/samo/samo-long-form';
 import {
     GridCarousel,
     useGridCarouselContainerQuery,
@@ -16,18 +17,21 @@ import itemCardControlsStyles from '/@/renderer/components/item-card/item-card-c
 import { ItemImage } from '/@/renderer/components/item-image/item-image';
 import { ContextMenuController } from '/@/renderer/features/context-menu/context-menu-controller';
 import { usePlayer } from '/@/renderer/features/player/context/player-context';
+import { LongFormCoverImage } from '/@/renderer/features/player/components/long-form-cover-image';
 import { PlayButton } from '/@/renderer/features/shared/components/play-button';
 import { AppRoute } from '/@/renderer/router/routes';
 import {
     recordRecentArtist,
     recordRecentPlaylist,
     getServerById,
-    useCurrentServer,
     useCurrentServerId,
     usePlayHistoryStore,
+    useLongFormMediaServer,
 } from '/@/renderer/store';
+import { useAudiobookActions } from '/@/renderer/store/audiobook.store';
 import {
     useFavoritePlaylistIds,
+    useFavoriteAudiobookIds,
     useLibraryFavoritesActions,
 } from '/@/renderer/store/library-favorites.store';
 import { formatDateRelative, formatDurationStringShort } from '/@/renderer/utils/format';
@@ -43,7 +47,6 @@ import {
     LibraryItem,
     Playlist,
     PlaylistListSort,
-    ServerType,
     Song,
     SongListSort,
     SortOrder,
@@ -54,7 +57,6 @@ const SHELF_LIMIT = 8;
 const LIST_LIMIT = 10;
 const HOME_SONG_POOL = 500;
 const DISCOVERY_LIMIT = 10;
-const DISCOVERY_POOL = 500;
 
 const shuffleSongs = <T,>(items: T[]): T[] => {
     const copy = [...items];
@@ -64,8 +66,6 @@ const shuffleSongs = <T,>(items: T[]): T[] => {
     }
     return copy;
 };
-
-const isUnplayedSong = (song: Song) => (song.playCount ?? 0) === 0;
 
 const playlistLastPlayedMs = (
     playlist: Playlist,
@@ -106,52 +106,6 @@ const pickMostPlayedSongs = (songs: Song[], limit: number) =>
         )
         .slice(0, limit);
 
-const sampleDiscoverySpread = (pool: Song[], want: number): Song[] => {
-    if (want <= 0 || pool.length === 0) {
-        return [];
-    }
-    if (pool.length <= want) {
-        return [...pool];
-    }
-
-    const out: Song[] = [];
-    for (let index = 0; index < want; index += 1) {
-        const at =
-            want > 1 ? Math.round((index * (pool.length - 1)) / (want - 1)) : 0;
-        out.push(pool[at]!);
-    }
-    return out;
-};
-
-const buildDiscoveryQueue = (songs: Song[], limit: number) => {
-    const unplayed = songs.filter(isUnplayedSong);
-    if (!unplayed.length) return [];
-
-    const sorted = [...unplayed].sort(
-        (left, right) => Date.parse(right.createdAt ?? '') - Date.parse(left.createdAt ?? ''),
-    );
-
-    const recentWant = Math.min(limit, Math.ceil(limit * 0.7));
-    const olderWant = Math.max(0, limit - recentWant);
-    const split = Math.max(1, Math.floor(sorted.length * 0.7));
-    const recentPool = sorted.slice(0, split);
-    const olderPool = sorted.slice(split);
-
-    const seen = new Set<string>();
-    const picked = [
-        ...sampleDiscoverySpread(recentPool, recentWant),
-        ...sampleDiscoverySpread(olderPool, olderWant),
-    ].filter((song) => {
-        if (seen.has(song.id)) {
-            return false;
-        }
-        seen.add(song.id);
-        return true;
-    });
-
-    return shuffleSongs(picked).slice(0, limit);
-};
-
 const getUnplayedDiscoverySubtitle = (song: Song) => {
     if (song.createdAt) return `Added ${formatDateRelative(song.createdAt)}`;
     return 'Never played';
@@ -159,7 +113,7 @@ const getUnplayedDiscoverySubtitle = (song: Song) => {
 
 const HomeHeader = ({ title, to }: { title: string; to?: string }) => (
     <div className={styles.sectionHeader}>
-        <TextTitle fw={700} isNoSelect order={3}>
+        <TextTitle fw={700} isNoSelect order={2}>
             {title}
         </TextTitle>
         {to ? (
@@ -251,25 +205,23 @@ const useSongs = (
 
 const useHomeMostPlayedSongs = () => {
     const serverId = useCurrentServerId();
-    const server = useCurrentServer();
+    
 
     return useQuery({
         enabled: Boolean(serverId),
         queryFn: async ({ signal }) => {
-            if (server?.type === ServerType.JELLYFIN || server?.type === ServerType.SAMO) {
-                const response = await api.controller.getTopSongs({
-                    apiClientProps: { serverId, signal },
-                    query: {
-                        artist: '',
-                        artistId: '',
-                        limit: LIST_LIMIT,
-                        type: 'personal',
-                    },
-                });
-                const topItems = response.items ?? [];
-                if (topItems.length > 0) {
-                    return pickMostPlayedSongs(topItems, LIST_LIMIT);
-                }
+            const topResponse = await api.controller.getTopSongs({
+                apiClientProps: { serverId, signal },
+                query: {
+                    artist: '',
+                    artistId: '',
+                    limit: LIST_LIMIT,
+                    type: 'personal',
+                },
+            });
+            const topItems = topResponse.items ?? [];
+            if (topItems.length > 0) {
+                return pickMostPlayedSongs(topItems, LIST_LIMIT);
             }
 
             const response = await api.controller.getSongList({
@@ -295,15 +247,12 @@ export const HomeFavoritePlaylists = ({
 }) => {
     const navigate = useNavigate();
     const player = usePlayer();
-    const server = useCurrentServer();
+    
     const serverId = useCurrentServerId();
     const favoritePlaylistIds = useFavoritePlaylistIds(serverId);
     const favoritesActions = useLibraryFavoritesActions();
     const recentPlayHistory = usePlayHistoryStore((state) => state.items);
-    const playlistSortBy =
-        server?.type === ServerType.SAMO
-            ? PlaylistListSort.LAST_PLAYED_AT
-            : PlaylistListSort.UPDATED_AT;
+    const playlistSortBy = PlaylistListSort.LAST_PLAYED_AT;
 
     const playlistsQuery = useQuery({
         enabled: Boolean(serverId),
@@ -488,10 +437,10 @@ const PlaylistCard = ({
                     </button>
                 </span>
             </div>
-            <Text className={styles.title} fw={600} size="sm">
+            <Text className={styles.title} fw={650} size="sm">
                 {playlist.name}
             </Text>
-            <Text className={styles.subtitle} isMuted size="xs">
+            <Text className={styles.subtitle} isMuted size="sm">
                 {getCountText(playlist.songCount, 'track') ?? 'Playlist'}
             </Text>
         </div>
@@ -572,7 +521,7 @@ const ArtistCard = ({ artist, onClick }: { artist: AlbumArtist; onClick: () => v
         <Text className={styles.title} fw={650} size="sm">
             {artist.name}
         </Text>
-        <Text className={styles.subtitle} isMuted size="xs">
+        <Text className={styles.subtitle} isMuted size="sm">
             {getCountText(artist.albumCount, 'album') ?? getCountText(artist.songCount, 'track')}
         </Text>
     </button>
@@ -639,7 +588,7 @@ const TrackRow = ({
                 <Text className={styles.title} fw={650} size="sm">
                     {song.name}
                 </Text>
-                <Text className={styles.subtitle} isMuted size="xs">
+                <Text className={styles.subtitle} isMuted size="sm">
                     {subtitle ?? getSongSubtitle(song)}
                 </Text>
             </div>
@@ -655,8 +604,8 @@ const DiscoveryTrackRow = ({ song }: { song: Song }) => (
 );
 
 export const HomeRediscoverySection = () => {
-    const server = useCurrentServer();
-    const isJellyfin = server?.type === ServerType.JELLYFIN;
+    
+    const isJellyfin = false;
     const songsQuery = useSongs(
         'rediscovery',
         SongListSort.RECENTLY_PLAYED,
@@ -764,7 +713,7 @@ const RediscoveryFeature = ({ item }: { item: Album | Song }) => {
                 />
             </div>
             <div className={styles.trackMeta}>
-                <Text isMuted size="xs">
+                <Text isMuted size="sm">
                     Rediscover this
                 </Text>
                 <Text className={styles.title} fw={750} size="lg">
@@ -773,7 +722,7 @@ const RediscoveryFeature = ({ item }: { item: Album | Song }) => {
                 <Text className={styles.subtitle} isMuted size="sm">
                     {subtitle}
                 </Text>
-                <Text className={styles.tertiary} isMuted size="xs">
+                <Text className={styles.tertiary} isMuted size="sm">
                     {getRediscoveryCopy(item)}
                 </Text>
             </div>
@@ -841,7 +790,7 @@ const RediscoverySupport = ({ item }: { item: Album | Song }) => {
                 <Text className={styles.title} fw={650} size="sm">
                     {item.name}
                 </Text>
-                <Text className={styles.subtitle} isMuted size="xs">
+                <Text className={styles.subtitle} isMuted size="sm">
                     {getRediscoveryCopy(item)}
                 </Text>
             </div>
@@ -851,36 +800,22 @@ const RediscoverySupport = ({ item }: { item: Album | Song }) => {
 
 const useHomeDiscoverySongs = (discoverySeed: string) => {
     const serverId = useCurrentServerId();
-    const server = useCurrentServer();
+    
 
     return useQuery({
         enabled: Boolean(serverId),
         queryFn: async ({ signal }) => {
-            if (server?.type === ServerType.SAMO) {
-                const samoServer = getServerById(serverId);
-                if (!samoServer) {
-                    return [];
-                }
-
-                const tracks = await fetchSamoDiscoveryHomeTracks(samoServer, {
-                    limit: DISCOVERY_LIMIT,
-                    signal,
-                });
-
-                return shuffleSongs(tracks);
+            const samoServer = getServerById(serverId);
+            if (!samoServer) {
+                return [];
             }
 
-            const response = await api.controller.getSongList({
-                apiClientProps: { serverId, signal },
-                query: {
-                    limit: DISCOVERY_POOL,
-                    sortBy: SongListSort.RECENTLY_ADDED,
-                    sortOrder: SortOrder.DESC,
-                    startIndex: 0,
-                },
+            const tracks = await fetchSamoDiscoveryHomeTracks(samoServer, {
+                limit: DISCOVERY_LIMIT,
+                signal,
             });
 
-            return buildDiscoveryQueue(response.items ?? [], DISCOVERY_LIMIT);
+            return shuffleSongs(tracks);
         },
         queryKey: ['home', 'discover', 'songs', serverId, discoverySeed],
         staleTime: 0,
@@ -985,6 +920,126 @@ export const HomeDiscoverSection = () => {
                 ))}
             </div>
         </section>
+    );
+};
+
+export const HomeFavoriteAudiobooks = ({
+    containerQuery,
+}: {
+    containerQuery?: ReturnType<typeof useGridCarouselContainerQuery>;
+}) => {
+    const server = useLongFormMediaServer();
+    const audiobookActions = useAudiobookActions();
+    const favoriteAudiobookIds = useFavoriteAudiobookIds(server?.id);
+    const favoritesActions = useLibraryFavoritesActions();
+
+    const samoItemsQuery = useQuery({
+        enabled: Boolean(server),
+        queryFn: () => listSamoAudiobookLibraryItems(server!),
+        queryKey: ['samo', 'home', 'audiobooks', server?.id],
+        staleTime: 1000 * 60 * 5,
+    });
+
+    const items = useMemo(() => {
+        const allItems = samoItemsQuery.data ?? [];
+        const favoriteItems = allItems.filter((item) => favoriteAudiobookIds.has(item.id));
+        const nonFavoriteItems = allItems.filter((item) => !favoriteAudiobookIds.has(item.id));
+        return [...favoriteItems, ...nonFavoriteItems].slice(0, 24);
+    }, [samoItemsQuery.data, favoriteAudiobookIds]);
+
+    if (!server || !items.length) {
+        return null;
+    }
+
+    const cards = items.map((item) => {
+        const title = item.media?.metadata?.title ?? item.name ?? 'Untitled';
+        const isFavorite = favoriteAudiobookIds.has(item.id);
+        
+        return {
+            content: (
+                <div
+                    aria-label={`Play ${title}`}
+                    className={styles.mediaCard}
+                    onClick={() => audiobookActions.play(server, item)}
+                    onContextMenu={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        ContextMenuController.call({ cmd: { items: [item], server, type: 'audiobook' }, event: e });
+                    }}
+                    role="button"
+                    tabIndex={0}
+                >
+                    <div className={styles.mediaArt}>
+                        <LongFormCoverImage
+                            alt={title}
+                            fallbackIcon="metadata"
+                            imageUrl={item.media?.metadata?.imageUrl}
+                            itemId={item.id}
+                        />
+                        <span className={styles.playlistControls}>
+                            <PlayButton
+                                classNames={clsx(
+                                    itemCardControlsStyles.playButton,
+                                    itemCardControlsStyles.primary,
+                                    styles['playlist-primary-control'],
+                                )}
+                                fill
+                                onClick={(event) => {
+                                    event.preventDefault();
+                                    event.stopPropagation();
+                                    audiobookActions.play(server, item);
+                                }}
+                            />
+                            <button
+                                className={clsx(
+                                    styles.overlayBtn,
+                                    styles.overlayHeart,
+                                    isFavorite && styles.favoriteActive,
+                                )}
+                                onClick={(event) => {
+                                    event.preventDefault();
+                                    event.stopPropagation();
+                                    favoritesActions.toggle('audiobook', server.id, item.id);
+                                }}
+                                type="button"
+                            >
+                                <Icon icon="favorite" size="lg" />
+                            </button>
+                            <button
+                                className={clsx(styles.overlayBtn, styles.overlayOptions)}
+                                onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    ContextMenuController.call({ cmd: { items: [item], server, type: 'audiobook' }, event: e });
+                                }}
+                                type="button"
+                            >
+                                <Icon icon="ellipsisHorizontal" size="lg" />
+                            </button>
+                        </span>
+                    </div>
+                    <Text className={styles.title} fw={650} size="sm">
+                        {title}
+                    </Text>
+                    <Text className={styles.subtitle} isMuted size="sm">
+                        {item.media?.metadata?.author ?? item.media?.metadata?.authorName ?? 'Audiobook'}
+                    </Text>
+                </div>
+            ),
+            id: item.id,
+        };
+    });
+
+    return (
+        <GridCarousel
+            cards={cards}
+            containerQuery={containerQuery}
+            hasNextPage={false}
+            onNextPage={() => {}}
+            onPrevPage={() => {}}
+            rowCount={1}
+            title={<HomeHeader title="Audiobooks" to={AppRoute.AUDIOBOOKS} />}
+        />
     );
 };
 

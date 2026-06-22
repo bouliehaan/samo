@@ -1,5 +1,5 @@
 import { useSuspenseQuery } from '@tanstack/react-query';
-import { useRef } from 'react';
+import { Suspense, useRef } from 'react';
 import { useParams } from 'react-router';
 
 import { useItemImageUrl } from '/@/renderer/components/item-image/item-image';
@@ -15,6 +15,7 @@ import {
 import { LibraryContainer } from '/@/renderer/features/shared/components/library-container';
 import { LibraryHeaderBar } from '/@/renderer/features/shared/components/library-header-bar';
 import { PageErrorBoundary } from '/@/renderer/features/shared/components/page-error-boundary';
+import { DetailPageSkeleton } from '/@/renderer/features/shared/components/page-skeletons/page-skeletons';
 import { useFastAverageColor } from '/@/renderer/hooks';
 import { recordRecentAlbum, useAlbumBackground, useCurrentServerId } from '/@/renderer/store';
 import { LibraryItem } from '/@/shared/types/domain-types';
@@ -92,7 +93,9 @@ const AlbumDetailRoute = () => {
 const AlbumDetailRouteWithBoundary = () => {
     return (
         <PageErrorBoundary>
-            <AlbumDetailRoute />
+            <Suspense fallback={<DetailPageSkeleton />}>
+                <AlbumDetailRoute />
+            </Suspense>
         </PageErrorBoundary>
     );
 };

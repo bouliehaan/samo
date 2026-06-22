@@ -16,6 +16,7 @@ import {
 import { LibraryContainer } from '/@/renderer/features/shared/components/library-container';
 import { LibraryHeaderBar } from '/@/renderer/features/shared/components/library-header-bar';
 import { PageErrorBoundary } from '/@/renderer/features/shared/components/page-error-boundary';
+import { DetailPageSkeleton } from '/@/renderer/features/shared/components/page-skeletons/page-skeletons';
 import { useFastAverageColor } from '/@/renderer/hooks';
 import {
     recordRecentArtist,
@@ -23,7 +24,6 @@ import {
     useCurrentServer,
     useCurrentServerId,
 } from '/@/renderer/store';
-import { Spinner } from '/@/shared/components/spinner/spinner';
 import { AlbumListSort, LibraryItem, SortOrder } from '/@/shared/types/domain-types';
 
 const AlbumArtistDetailRouteContent = () => {
@@ -142,7 +142,10 @@ const AlbumArtistDetailRoute = () => {
     const routeId = (artistId || albumArtistId) as string;
 
     return (
-        <Suspense fallback={<Spinner container />} key={`album-artist-detail-suspense-${routeId}`}>
+        <Suspense
+            fallback={<DetailPageSkeleton circle />}
+            key={`album-artist-detail-suspense-${routeId}`}
+        >
             <AlbumArtistDetailRouteContent />
         </Suspense>
     );

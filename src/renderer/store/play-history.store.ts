@@ -3,7 +3,7 @@ import { persist } from 'zustand/middleware';
 
 import { touchSamoPlaylistLastPlayed } from '/@/renderer/services/samo-playlist-playback';
 import { identityPersistMigrate, PERSIST_VERSION_INITIAL } from '/@/renderer/store/persist-migrate';
-import { AudiobookshelfLibraryItem } from '/@/shared/api/audiobookshelf/audiobookshelf-types';
+import { LongFormLibraryItem } from '/@/shared/api/long-form-types';
 import {
     Album,
     AlbumArtist,
@@ -52,7 +52,7 @@ export interface RecentItem {
     key: string;
     mediaType: RecentItemType;
     radioStreamUrl?: string;
-    rawAbsItem?: AudiobookshelfLibraryItem;
+    rawAbsItem?: LongFormLibraryItem;
     selectedAt: number;
     serverId: string;
     song?: Song;
@@ -275,10 +275,10 @@ export const recordRecentRadioStation = (station: InternetRadioStation, serverId
     });
 };
 
-const getAbsTitle = (item: AudiobookshelfLibraryItem) =>
+const getAbsTitle = (item: LongFormLibraryItem) =>
     item.media?.metadata?.title ?? item.name ?? 'Untitled';
 
-const getAbsAuthor = (item: AudiobookshelfLibraryItem) => {
+const getAbsAuthor = (item: LongFormLibraryItem) => {
     const meta = item.media?.metadata;
     return (
         meta?.author ??
@@ -290,7 +290,7 @@ const getAbsAuthor = (item: AudiobookshelfLibraryItem) => {
     );
 };
 
-export const recordRecentAudiobook = (item: AudiobookshelfLibraryItem, serverId: string) => {
+export const recordRecentAudiobook = (item: LongFormLibraryItem, serverId: string) => {
     if (!serverId) return;
     const publishedYear =
         item.media?.metadata?.publishedYear ?? item.media?.publishedYear ?? undefined;
@@ -311,7 +311,7 @@ export const recordRecentAudiobook = (item: AudiobookshelfLibraryItem, serverId:
     });
 };
 
-export const recordRecentPodcast = (item: AudiobookshelfLibraryItem, serverId: string) => {
+export const recordRecentPodcast = (item: LongFormLibraryItem, serverId: string) => {
     if (!serverId) return;
     recordRecentItem({
         artwork: {

@@ -2,9 +2,9 @@ import { describe, expect, it } from 'vitest';
 
 import { getCurrentChapterIndex, getOrderedAudiobookChapters } from './audiobook-chapters';
 
-import { AudiobookshelfChapter } from '/@/shared/api/audiobookshelf/audiobookshelf-types';
+import { LongFormChapter } from '/@/shared/api/long-form-types';
 
-const chapter = (start: number, title: string): AudiobookshelfChapter => ({
+const chapter = (start: number, title: string): LongFormChapter => ({
     id: `${start}`,
     start,
     title,

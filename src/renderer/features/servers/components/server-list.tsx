@@ -2,12 +2,9 @@ import { openContextModal } from '@mantine/modals';
 import isElectron from 'is-electron';
 import { useTranslation } from 'react-i18next';
 
-import AudiobookshelfLogo from '../../../../../assets/icons/audiobookshelf.svg';
+import SamoLogo from '../../../../../build/samologo.svg';
 
 import { isServerLock } from '/@/renderer/features/action-required/utils/window-properties';
-import JellyfinLogo from '/@/renderer/features/servers/assets/jellyfin.png';
-import NavidromeLogo from '/@/renderer/features/servers/assets/navidrome.png';
-import OpenSubsonicLogo from '/@/renderer/features/servers/assets/opensubsonic.png';
 import { AddServerForm } from '/@/renderer/features/servers/components/add-server-form';
 import { IgnoreCorsSslSwitches } from '/@/renderer/features/servers/components/ignore-cors-ssl-switches';
 import { ServerListItem } from '/@/renderer/features/servers/components/server-list-item';
@@ -20,7 +17,6 @@ import { Icon } from '/@/shared/components/icon/icon';
 import { ContextModalVars } from '/@/shared/components/modal/modal';
 import { Stack } from '/@/shared/components/stack/stack';
 import { Text } from '/@/shared/components/text/text';
-import { ServerType } from '/@/shared/types/domain-types';
 
 export const ServerList = () => {
     const { t } = useTranslation();
@@ -51,15 +47,7 @@ export const ServerList = () => {
                                 <Accordion.Control>
                                     <Group>
                                         <img
-                                            src={
-                                                false
-                                                    ? NavidromeLogo
-                                                    : server.type === ServerType.JELLYFIN
-                                                      ? JellyfinLogo
-                                                      : server.type === ServerType.AUDIOBOOKSHELF
-                                                        ? AudiobookshelfLogo
-                                                        : OpenSubsonicLogo
-                                            }
+                                            src={SamoLogo}
                                             style={{
                                                 height: 'var(--theme-font-size-lg)',
                                                 width: 'var(--theme-font-size-lg)',

@@ -186,6 +186,23 @@ export interface SamoMusicArtistRef {
     sortName?: string;
 }
 
+/**
+ * Reference shown in the "Similar Artists" rail. When the artist exists in this
+ * library, `id` + `images` point at the navigable catalog artist. When it does
+ * not, `external` is true and `imageUrl` holds the external provider's picture —
+ * the client renders the tile and routes a tap to search rather than a detail
+ * fetch that would 404.
+ */
+export interface SamoArtistRef {
+    id: string;
+    images?: SamoImage[];
+    /** External provider artist picture URL — present (with `external: true`) for similar artists not in this library. */
+    imageUrl?: string;
+    /** True when this artist is NOT in the local catalog: tap routes to search, not a detail fetch. */
+    external?: boolean;
+    name: string;
+}
+
 export interface SamoMusicArtist {
     addedAt?: string;
     albumCount?: number;
@@ -201,6 +218,7 @@ export interface SamoMusicArtist {
     moods?: string[];
     name: string;
     playback?: SamoPlaybackState;
+    similarArtists?: SamoArtistRef[];
     sortName?: string;
     styles?: string[];
     trackCount?: number;
@@ -826,6 +844,7 @@ export const authenticateSamo = async ({
         // If the server's database is temporarily locked (e.g. during initial scan),
         // writing a new device token will fail. We can safely fall back to the
         // loginToken which is already valid, so the user isn't blocked.
+        // eslint-disable-next-line no-console -- deliberate auth fallback diagnostic
         console.warn('Failed to mint device token, falling back to login token', error);
     }
     const resolvedUsername = login.user?.username ?? username;
@@ -992,6 +1011,103 @@ export const listSamoMusicArtistAlbums = async (
         },
     );
 };
+
+export const listSamoMusicArtistTopTracks = async (
+    fetcher: SamoFetch,
+    authentication: Pick<ServerAuthenticationResult, 'credential' | 'url'>,
+    id: string,
+    input?: SamoListQuery,
+): Promise<SamoPaginatedResponse<SamoMusicTrack>> => {
+    return samoGet<SamoPaginatedResponse<SamoMusicTrack>>(
+        fetcher,
+        authentication,
+        `/music/artists/${encodeSamoId(id)}/top-tracks`,
+        {
+            query: listQuery(input),
+            signal: input?.signal,
+        },
+    );
+};
+
+export const listSamoMusicArtistAppearsOn = async (
+    fetcher: SamoFetch,
+    authentication: Pick<ServerAuthenticationResult, 'credential' | 'url'>,
+    id: string,
+    input?: SamoListQuery,
+): Promise<SamoPaginatedResponse<SamoMusicAlbum>> => {
+    return samoGet<SamoPaginatedResponse<SamoMusicAlbum>>(
+        fetcher,
+        authentication,
+        `/music/artists/${encodeSamoId(id)}/appears-on`,
+        {
+            query: listQuery(input),
+            signal: input?.signal,
+        },
+    );
+};
+
+// ---------------------------------------------------------------------------
+// Podcast prewarm + enclosure cache controls (admin-configurable)
+// ---------------------------------------------------------------------------
+
+export interface SamoPodcastPrewarm {
+    /** Effective newest-N episodes kept warm per show. */
+    count: number;
+    /** The server's env default, for "reset to default" affordances. */
+    default: number;
+}
+
+export interface SamoPodcastCacheSummary {
+    enabled: boolean;
+    episodeCount: number;
+    totalBytes: number;
+    /** Effective cache size cap in bytes. */
+    maxBytes: number;
+}
+
+export const getSamoPodcastPrewarm = async (
+    fetcher: SamoFetch,
+    authentication: Pick<ServerAuthenticationResult, 'credential' | 'url'>,
+    signal?: AbortSignal,
+): Promise<SamoPodcastPrewarm> =>
+    samoGet<SamoPodcastPrewarm>(fetcher, authentication, '/podcasts/prewarm', { signal });
+
+export const setSamoPodcastPrewarm = async (
+    fetcher: SamoFetch,
+    authentication: Pick<ServerAuthenticationResult, 'credential' | 'url'>,
+    count: number,
+): Promise<{ count: number }> =>
+    samoSend<{ count: number }>(fetcher, authentication, 'PUT', '/podcasts/prewarm', { count });
+
+export const getSamoPodcastCacheSummary = async (
+    fetcher: SamoFetch,
+    authentication: Pick<ServerAuthenticationResult, 'credential' | 'url'>,
+    signal?: AbortSignal,
+): Promise<SamoPodcastCacheSummary> =>
+    samoGet<SamoPodcastCacheSummary>(fetcher, authentication, '/podcasts/cache', { signal });
+
+export const clearSamoPodcastCache = async (
+    fetcher: SamoFetch,
+    authentication: Pick<ServerAuthenticationResult, 'credential' | 'url'>,
+): Promise<void> => {
+    await samoSend<unknown>(fetcher, authentication, 'DELETE', '/podcasts/cache');
+};
+
+export const getSamoPodcastCacheLimit = async (
+    fetcher: SamoFetch,
+    authentication: Pick<ServerAuthenticationResult, 'credential' | 'url'>,
+    signal?: AbortSignal,
+): Promise<{ maxBytes: number }> =>
+    samoGet<{ maxBytes: number }>(fetcher, authentication, '/podcasts/cache/limit', { signal });
+
+export const setSamoPodcastCacheLimit = async (
+    fetcher: SamoFetch,
+    authentication: Pick<ServerAuthenticationResult, 'credential' | 'url'>,
+    maxBytes: number,
+): Promise<{ maxBytes: number }> =>
+    samoSend<{ maxBytes: number }>(fetcher, authentication, 'PUT', '/podcasts/cache/limit', {
+        maxBytes,
+    });
 
 export const listSamoMusicAlbums = async (
     fetcher: SamoFetch,

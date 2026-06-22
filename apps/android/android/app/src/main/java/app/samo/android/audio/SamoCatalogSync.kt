@@ -594,11 +594,27 @@ internal object SamoCatalogSync {
         when (target.kind) {
             "artist" -> {
                 val encoded = SamoNativeStreamUrl.encodeSamoId(target.id)
+                // The artist entity carries biography + similarArtists (server
+                // hydrates them); albums are required. Top tracks + appears-on
+                // are enrichment rails — best-effort so an older server (or a
+                // transient error) still yields a usable mirrored artist page.
                 entity = SamoCatalogServerClient.fetchObject(conn, "/music/artists/$encoded")
                 children.put(
                     "albums",
                     SamoCatalogServerClient.fetchRaw(conn, "/music/artists/$encoded/albums", mapOf("limit" to "200")),
                 )
+                runCatching {
+                    children.put(
+                        "topTracks",
+                        SamoCatalogServerClient.fetchRaw(conn, "/music/artists/$encoded/top-tracks", mapOf("limit" to "5")),
+                    )
+                }
+                runCatching {
+                    children.put(
+                        "appearsOn",
+                        SamoCatalogServerClient.fetchRaw(conn, "/music/artists/$encoded/appears-on", mapOf("limit" to "20")),
+                    )
+                }
             }
             "playlist" -> {
                 entity = SamoCatalogServerClient.fetchObject(conn, "/music/playlists/${target.id}")

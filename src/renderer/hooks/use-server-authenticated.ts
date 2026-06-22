@@ -1,3 +1,4 @@
+import { ensureSamoStreamToken, ServerType } from '@samo/core/server';
 import { isAxiosError } from 'axios';
 import isElectron from 'is-electron';
 import isEqual from 'lodash/isEqual';
@@ -5,8 +6,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router';
 
 import { api } from '/@/renderer/api';
-import { samoFetch } from '/@/renderer/api/samo/samo-fetch';
 import { controller } from '/@/renderer/api/controller';
+import { samoFetch } from '/@/renderer/api/samo/samo-fetch';
 import { AppRoute } from '/@/renderer/router/routes';
 import {
     getServerById,
@@ -18,15 +19,11 @@ import { toast } from '/@/shared/components/toast/toast';
 import { AuthState } from '/@/shared/types/types';
 import { LogCategory, logFn } from '/@/shared/utils/logger';
 import { logMsg } from '/@/shared/utils/logger-message';
-import { ensureSamoStreamToken, ServerType } from '@samo/core/server';
 
 const localSettings = isElectron() ? window.api.localSettings : null;
 
 const prefetchSamoStreamToken = (
-    server: Pick<
-        NonNullable<ReturnType<typeof getServerById>>,
-        'credential' | 'type' | 'url'
-    >,
+    server: Pick<NonNullable<ReturnType<typeof getServerById>>, 'credential' | 'type' | 'url'>,
 ) => {
     if (server.type !== ServerType.SAMO) {
         return;

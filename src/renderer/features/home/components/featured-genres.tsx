@@ -126,7 +126,7 @@ export const FeaturedGenres = () => {
             {cq.isCalculated && (
                 <>
                     <Group align="flex-end" justify="space-between">
-                        <TextTitle fw={700} isNoSelect order={3}>
+                        <TextTitle fw={700} isNoSelect order={2}>
                             {t('entity.genre', { count: 2, postProcess: 'titleCase' })}
                         </TextTitle>
                         <Button

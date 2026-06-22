@@ -11,9 +11,13 @@ import { PlayerData } from '/@/shared/types/domain-types';
 
 declare module 'node-mpv';
 
-export const socketPath = isWindows()
-    ? `\\\\.\\pipe\\mpvserver-${pid}`
-    : `/tmp/node-mpv-${pid}.sock`;
+let socketId = 0;
+export const getSocketPath = () => {
+    socketId += 1;
+    return isWindows()
+        ? `\\\\.\\pipe\\mpvserver-${pid}-${Date.now()}-${socketId}`
+        : `/tmp/node-mpv-${pid}-${Date.now()}-${socketId}.sock`;
+};
 
 const MPV_QUIT_GRACE_PERIOD_MS = 750;
 const MPV_QUIT_IPC_TIMEOUT_MS = 1500;
@@ -104,7 +108,10 @@ const DEFAULT_MPV_PARAMETERS = (extraParameters?: string[]) => {
 
 const getMpvChildProcess = (instance: MpvAPI) => {
     const mpvProcess =
-        (instance as any).process || (instance as any).mpvProcess || (instance as any)._mpvProcess;
+        (instance as any).process ||
+        (instance as any).mpvProcess ||
+        (instance as any)._mpvProcess ||
+        (instance as any).mpvPlayer;
 
     return mpvProcess && typeof mpvProcess.kill === 'function' ? mpvProcess : null;
 };
@@ -251,7 +258,10 @@ export const quit = async (instance?: MpvAPI | null) => {
         await terminateMpvProcess(mpv, 'after quit', { waitBeforeSignal: true });
         if (!isWindows()) {
             try {
-                await rm(socketPath);
+                const currentSocket = (mpv as any).options?.socket;
+                if (currentSocket) {
+                    await rm(currentSocket);
+                }
             } catch {
                 // Ignore errors when removing socket file
             }
@@ -292,7 +302,7 @@ export const createMpv = async (data: {
             audio_only: true,
             auto_restart: false,
             binary,
-            socket: socketPath,
+            socket: getSocketPath(),
             // Anchor the renderer's playback clock 4× per second. The renderer
             // interpolates between anchors via performance.now(); a 1-second
             // anchor (node-mpv's default) leaves enough wall-clock-vs-audio

@@ -9,8 +9,8 @@ import { eventEmitter } from '/@/renderer/events/event-emitter';
 import { playlistsQueries } from '/@/renderer/features/playlists/api/playlists-api';
 import { PlaylistDetailAlbumView } from '/@/renderer/features/playlists/components/playlist-detail-album-view';
 import { usePlaylistTrackList } from '/@/renderer/features/playlists/hooks/use-playlist-track-list';
+import { TrackListSkeleton } from '/@/renderer/features/shared/components/page-skeletons/page-skeletons';
 import { useCurrentServer, useListSettings } from '/@/renderer/store';
-import { Spinner } from '/@/shared/components/spinner/spinner';
 import {
     LibraryItem,
     PlaylistSongListQuery,
@@ -90,7 +90,7 @@ export const PlaylistDetailSongListContent = () => {
     }, [playlistId, queryClient, server?.id]);
 
     return (
-        <Suspense fallback={<Spinner container />}>
+        <Suspense fallback={<TrackListSkeleton />}>
             <PlaylistDetailSongList data={playlistSongsQuery.data} />
         </Suspense>
     );

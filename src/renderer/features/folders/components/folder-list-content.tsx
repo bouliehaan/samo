@@ -13,15 +13,15 @@ import { FolderTreeBrowser } from '/@/renderer/features/folders/components/folde
 import { useFolderListFilters } from '/@/renderer/features/folders/hooks/use-folder-list-filters';
 import { usePlayer } from '/@/renderer/features/player/context/player-context';
 import { ListWithSidebarContainer } from '/@/renderer/features/shared/components/list-with-sidebar-container';
+import { TrackListSkeleton } from '/@/renderer/features/shared/components/page-skeletons/page-skeletons';
 import { FILTER_KEYS } from '/@/renderer/features/shared/utils';
 import { useCurrentServerId, useListSettings, usePlayerSong } from '/@/renderer/store';
-import { Spinner } from '/@/shared/components/spinner/spinner';
 import { Folder, LibraryItem, Song, SongListSort, SortOrder } from '/@/shared/types/domain-types';
 import { ItemListKey, ListDisplayType, Play } from '/@/shared/types/types';
 
 export const FolderListContent = () => {
     return (
-        <Suspense fallback={<Spinner container />}>
+        <Suspense fallback={<TrackListSkeleton />}>
             <FolderListInnerContent />
         </Suspense>
     );

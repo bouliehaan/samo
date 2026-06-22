@@ -47,7 +47,7 @@ const findAuthenticationForSource = (
     });
 };
 
-const toDetailType = (type: AndroidSelectableMediaItem['type']) => {
+export const toDetailType = (type: AndroidSelectableMediaItem['type']) => {
     const normalizedType = String(type);
 
     if (
@@ -93,6 +93,37 @@ const toDetailType = (type: AndroidSelectableMediaItem['type']) => {
     }
 
     return null;
+};
+
+/**
+ * A minimal placeholder detail built from what we already know at tap time (the
+ * tile's title + cover). It lets MediaDetailLoaded render its REAL list shell and
+ * hero in a loading state, so the SAME FlashList + the SAME hero ExpoImage stay
+ * mounted when the real detail arrives — no subtree swap, so the cached cover
+ * never unmounts and re-decodes (the skeleton→detail flash). Returns null when
+ * there's no source to address artwork with; the caller then falls back to the
+ * standalone skeleton view.
+ */
+export const buildMediaDetailShell = (loading: {
+    itemArtworkImageId?: string;
+    itemArtworkUrl?: string;
+    itemSource?: MobileHomeItem['source'];
+    itemTitle: string;
+    itemType?: MobileHomeItem['type'] | MobileSearchItem['type'];
+}): MobileMediaDetail | null => {
+    if (!loading.itemSource) {
+        return null;
+    }
+    const type = loading.itemType ? toDetailType(loading.itemType) : null;
+    return {
+        artworkImageId: loading.itemArtworkImageId,
+        artworkUrl: loading.itemArtworkUrl,
+        id: `__loading__:${loading.itemTitle}`,
+        source: loading.itemSource,
+        title: loading.itemTitle,
+        tracks: [],
+        type: type ?? MobileMediaDetailType.ALBUM,
+    };
 };
 
 const getTimelineEndSeconds = (segments: MobilePlaybackSegment[] | undefined) => {

@@ -1,8 +1,7 @@
-import { useQueries, useQuery, type UseQueryResult } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
 
 import { api } from '/@/renderer/api';
-import { audiobookshelfController } from '/@/renderer/api/audiobookshelf/audiobookshelf-controller';
 import {
     isSamoLongFormServer,
     listSamoAudiobookLibraryItems,
@@ -19,10 +18,9 @@ import {
 } from '/@/renderer/features/search/utils/relevance';
 import { useLongFormMediaServer, useCurrentServer } from '/@/renderer/store';
 import {
-    AudiobookshelfLibraryItem,
-    AudiobookshelfLibraryItemsResponse,
-    AudiobookshelfPodcastEpisode,
-} from '/@/shared/api/audiobookshelf/audiobookshelf-types';
+    LongFormLibraryItem,
+    LongFormPodcastEpisode,
+} from '/@/shared/api/long-form-types';
 import {
     Album,
     AlbumArtist,
@@ -46,7 +44,7 @@ export type RankedAlbum = { album: Album; kind: 'album'; score: number };
 
 export type RankedArtist = { artist: AlbumArtist; kind: 'artist'; score: number };
 export type RankedAudiobook = {
-    item: AudiobookshelfLibraryItem;
+    item: LongFormLibraryItem;
     kind: 'audiobook';
     score: number;
 };
@@ -57,7 +55,7 @@ export type RankedEpisode = {
 };
 export type RankedPlaylist = { kind: 'playlist'; playlist: Playlist; score: number };
 export type RankedPodcastShow = {
-    item: AudiobookshelfLibraryItem;
+    item: LongFormLibraryItem;
     kind: 'podcastShow';
     score: number;
 };
@@ -84,8 +82,8 @@ export type ResultGroupKey =
     | 'songs';
 
 export type UnifiedPodcastEpisodeResult = {
-    episode: AudiobookshelfPodcastEpisode;
-    show: AudiobookshelfLibraryItem;
+    episode: LongFormPodcastEpisode;
+    show: LongFormLibraryItem;
 };
 
 const ENTITY_GROUPS: ReadonlySet<ResultGroupKey> = new Set([
@@ -131,10 +129,10 @@ const EMPTY_RESULTS: UnifiedSearchResults = {
     songs: [],
 };
 
-const getAbsTitle = (item: AudiobookshelfLibraryItem) =>
+const getAbsTitle = (item: LongFormLibraryItem) =>
     item.media?.metadata?.title ?? item.name ?? '';
 
-const getAbsAuthor = (item: AudiobookshelfLibraryItem) => {
+const getAbsAuthor = (item: LongFormLibraryItem) => {
     const meta = item.media?.metadata;
     return meta?.author ?? meta?.authors?.map((author) => author.name).join(', ') ?? '';
 };
@@ -226,7 +224,7 @@ const rankRadio = (stations: InternetRadioStation[], ctx: NeedleContext): Ranked
         .slice(0, RESULT_LIMIT_PER_GROUP);
 
 const rankAudiobooks = (
-    items: AudiobookshelfLibraryItem[],
+    items: LongFormLibraryItem[],
     ctx: NeedleContext,
 ): RankedAudiobook[] =>
     items
@@ -247,7 +245,7 @@ const rankAudiobooks = (
         .slice(0, RESULT_LIMIT_PER_GROUP);
 
 const rankPodcastShows = (
-    items: AudiobookshelfLibraryItem[],
+    items: LongFormLibraryItem[],
     ctx: NeedleContext,
 ): RankedPodcastShow[] =>
     items
@@ -264,7 +262,7 @@ const rankPodcastShows = (
         .slice(0, RESULT_LIMIT_PER_GROUP);
 
 const rankPodcastEpisodes = (
-    items: AudiobookshelfLibraryItem[],
+    items: LongFormLibraryItem[],
     ctx: NeedleContext,
 ): RankedEpisode[] => {
     const candidates: RankedEpisode[] = [];
@@ -339,20 +337,6 @@ const getErrorMessage = (error: unknown): string | undefined => {
     return 'Search source unavailable.';
 };
 
-interface AudiobookshelfItemsQueryState {
-    error: null | string;
-    isPending: boolean;
-    items: AudiobookshelfLibraryItem[];
-}
-
-const combineAudiobookshelfItemsQueries = (
-    queries: UseQueryResult<AudiobookshelfLibraryItemsResponse, Error>[],
-): AudiobookshelfItemsQueryState => ({
-    error: getErrorMessage(queries.find((query) => query.error)?.error) ?? null,
-    isPending: queries.some((query) => query.isPending),
-    items: queries.flatMap((query) => query.data?.results ?? []),
-});
-
 /**
  * Unified search across the music server (Navidrome/Subsonic/Jellyfin),
  * radio stations, and Audiobookshelf libraries (audiobooks, podcasts, episodes).
@@ -365,7 +349,6 @@ export const useUnifiedSearch = (rawQuery: string): UnifiedSearchState => {
     const musicServer = useCurrentServer();
     const longFormMediaServer = useLongFormMediaServer();
     const isSamoLongForm = isSamoLongFormServer(longFormMediaServer);
-    const audiobookshelfServer = isSamoLongForm ? null : longFormMediaServer;
     const ctx = useMemo(() => buildNeedleContext(rawQuery), [rawQuery]);
     const enabled = ctx.needle.length > 0;
 
@@ -411,28 +394,6 @@ export const useUnifiedSearch = (rawQuery: string): UnifiedSearchState => {
         staleTime: 1000 * 60 * 5,
     });
 
-    const audiobookshelfLibrariesQuery = useQuery({
-        enabled: enabled && Boolean(audiobookshelfServer?.id),
-        gcTime: ABS_LIBRARY_GC_TIME_MS,
-        queryFn: () => audiobookshelfController.getLibraries(audiobookshelfServer!),
-        queryKey: ['audiobookshelf', 'libraries', audiobookshelfServer?.id],
-        staleTime: ABS_LIBRARY_STALE_TIME_MS,
-    });
-
-    const audiobookshelfLibraries = audiobookshelfLibrariesQuery.data?.libraries ?? [];
-
-    const audiobookshelfItemsQueryState = useQueries({
-        combine: combineAudiobookshelfItemsQueries,
-        queries: audiobookshelfLibraries.map((library) => ({
-            enabled: enabled && Boolean(audiobookshelfServer?.id),
-            gcTime: ABS_LIBRARY_GC_TIME_MS,
-            queryFn: () =>
-                audiobookshelfController.getLibraryItems(audiobookshelfServer!, library.id),
-            queryKey: ['audiobookshelf', 'library-items', audiobookshelfServer?.id, library.id],
-            staleTime: ABS_LIBRARY_STALE_TIME_MS,
-        })),
-    });
-
     const samoLongFormItemsQuery = useQuery({
         enabled: enabled && isSamoLongForm && Boolean(longFormMediaServer),
         gcTime: ABS_LIBRARY_GC_TIME_MS,
@@ -447,9 +408,7 @@ export const useUnifiedSearch = (rawQuery: string): UnifiedSearchState => {
         staleTime: ABS_LIBRARY_STALE_TIME_MS,
     });
 
-    const longFormItems = isSamoLongForm
-        ? (samoLongFormItemsQuery.data ?? [])
-        : audiobookshelfItemsQueryState.items;
+    const longFormItems = samoLongFormItemsQuery.data ?? [];
 
     const hasMusicServer = Boolean(musicServer?.id);
     const hasLongFormServer = Boolean(longFormMediaServer?.id);
@@ -459,19 +418,11 @@ export const useUnifiedSearch = (rawQuery: string): UnifiedSearchState => {
         ((hasMusicServer && musicSearchQuery.isPending) ||
             (hasMusicServer && playlistsQuery.isPending) ||
             (hasMusicServer && radioStationsQuery.isPending) ||
-            (hasLongFormServer &&
-                !isSamoLongForm &&
-                audiobookshelfLibrariesQuery.isPending) ||
-            (hasLongFormServer &&
-                !isSamoLongForm &&
-                audiobookshelfItemsQueryState.isPending) ||
-            (hasLongFormServer && isSamoLongForm && samoLongFormItemsQuery.isPending));
+                        (hasLongFormServer && isSamoLongForm && samoLongFormItemsQuery.isPending));
 
     const sourceErrors = useMemo<UnifiedSearchSourceErrors>(
         () => ({
             abs:
-                getErrorMessage(audiobookshelfLibrariesQuery.error) ??
-                audiobookshelfItemsQueryState.error ??
                 getErrorMessage(samoLongFormItemsQuery.error) ??
                 undefined,
             music: getErrorMessage(musicSearchQuery.error),
@@ -479,8 +430,6 @@ export const useUnifiedSearch = (rawQuery: string): UnifiedSearchState => {
             radio: getErrorMessage(radioStationsQuery.error),
         }),
         [
-            audiobookshelfItemsQueryState.error,
-            audiobookshelfLibrariesQuery.error,
             samoLongFormItemsQuery.error,
             musicSearchQuery.error,
             playlistsQuery.error,

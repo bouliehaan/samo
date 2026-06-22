@@ -51,6 +51,7 @@ import {
     loadAndroidMediaDetail,
     loadAndroidMediaTrackPlayback,
     isValidTrackPlayback,
+    toDetailType,
 } from '../services/media-detail';
 import { setSamoMusicFavorite } from '../services/media-favorites';
 import {
@@ -72,6 +73,7 @@ import {
 } from '../services/recent-content';
 import { dedupeRecentContentItemsByAlbumIdentity } from '../utils/recent-content-dedupe';
 import { runAndroidSearch } from '../services/search-content';
+import { triggerCatalogSyncNow } from '../services/headless-catalog-sync';
 import {
     addAndroidRadioStation,
     type AddAndroidRadioStationInput,
@@ -234,10 +236,6 @@ export interface AndroidMediaHandlers {
     ) => Promise<void>;
     handleShuffleHomeItems: (items: MobileHomeItem[]) => Promise<void>;
     handleStartAudiobook: (item: MobileHomeItem | MobileSearchItem) => Promise<void>;
-    handleStartSongRadio: (
-        track: MobileMediaTrack,
-        source: MobileContentSource | undefined,
-    ) => Promise<void>;
     handleToggleFavoriteForItem: (item: AndroidRecentContentSourceItem) => Promise<void>;
     handleToggleFavoriteForTrack: (
         track: MobileMediaTrack,
@@ -265,6 +263,8 @@ export function useAndroidMediaHandlers(
     const { auth, downloads, navigation, overlays, session } = deps;
     const {
         mediaDetailState,
+        openMediaDetail,
+        setActiveTab,
         setActiveUtilityScreen,
         setMediaDetailState,
         setSearchState,
@@ -480,7 +480,6 @@ export function useAndroidMediaHandlers(
     const beginOpenMediaDetail = useCallback(
         (item: AndroidRecentContentSourceItem) => {
             const cacheKey = getRecentContentItemKey(item);
-            const memoryCached = mediaDetailCacheRef.current.get(cacheKey);
             prefetchArtworkUrl(
                 {
                     artworkImageId: item.artworkImageId,
@@ -489,8 +488,29 @@ export function useAndroidMediaHandlers(
                 },
                 serverConnection,
             );
-            const synchronousDetail = memoryCached;
+            // First-frame detail: in-memory cache, then a SYNCHRONOUS read of the
+            // on-device SQLite mirror. The whole Samo library is mirrored, so this
+            // renders the fully-loaded detail on the FIRST frame for anything
+            // already synced — no skeleton flash, no async hop.
+            //
+            // BUT only for BOUNDED types (album/artist). Playlists and podcasts can
+            // hold hundreds of tracks/episodes; hydrating that synchronously on the
+            // tap frame freezes the UI with no feedback before it opens (the
+            // 1200-song-playlist regression). Those skip the sync read so the
+            // loading skeleton paints instantly and loadDetailWithCache hydrates
+            // off-thread. An in-memory cache hit stays instant for every type.
+            const detailType = toDetailType(item.type);
+            const allowsSyncFirstFrame =
+                detailType === MobileMediaDetailType.ALBUM ||
+                detailType === MobileMediaDetailType.ARTIST;
+            const synchronousDetail =
+                mediaDetailCacheRef.current.get(cacheKey) ??
+                (allowsSyncFirstFrame
+                    ? loadCatalogMediaDetailSync(item, serverConnection)
+                    : null) ??
+                undefined;
             if (synchronousDetail) {
+                rememberMediaDetail(mediaDetailCacheRef.current, cacheKey, synchronousDetail);
                 prefetchDetailArtworkUrls(synchronousDetail, serverConnection, [
                     {
                         artworkImageId: item.artworkImageId,
@@ -498,9 +518,9 @@ export function useAndroidMediaHandlers(
                         source: item.source,
                     },
                 ]);
-                setMediaDetailState({ detail: synchronousDetail, status: 'loaded' });
+                openMediaDetail(cacheKey, { detail: synchronousDetail, status: 'loaded' });
             } else {
-                setMediaDetailState({
+                openMediaDetail(cacheKey, {
                     itemArtworkImageId: item.artworkImageId,
                     itemArtworkUrl: item.artworkUrl,
                     itemSource: item.source,
@@ -510,7 +530,7 @@ export function useAndroidMediaHandlers(
                 });
             }
         },
-        [setMediaDetailState, serverConnection],
+        [openMediaDetail, serverConnection],
     );
 
     const loadDetailWithCache = async (
@@ -644,6 +664,13 @@ export function useAndroidMediaHandlers(
     );
 
     const handleSelectMediaItem = async (item: MobileHomeItem | MobileSearchItem) => {
+        if ('external' in item && item.external) {
+            // A similar-artist tile for an artist not in this library — there's
+            // no detail to open, so jump to Search prefilled with their name.
+            setActiveTab('search');
+            await handleSearch(item.title);
+            return;
+        }
         if (item.playback) {
             mediaDetailRequestId.current += 1;
             audiobookStartRequestId.current += 1;
@@ -1095,13 +1122,22 @@ export function useAndroidMediaHandlers(
         playlist: MobileHomeItem,
     ) => {
         await addAndroidMediaTrackToPlaylist(serverConnection, detail, track, playlist);
-        await loadHomeForConnection(serverConnection);
+        // Don't block the caller on a full Home reload (live network fetch + a
+        // whole mirror derive) — adding a song to a playlist changes neither the
+        // Home shelves nor the mirror until a sync lands anyway, so the old await
+        // was both heavy AND a no-op for what it was trying to refresh. Kick a
+        // background delta sync instead so the playlist's tracks reconcile for the
+        // next time its detail opens; the coalesced post-sync derive handles Home.
+        void triggerCatalogSyncNow();
     };
 
     const handleAddRadioStation = useCallback(
         async (input: AddAndroidRadioStationInput): Promise<AddAndroidRadioStationResult> => {
             const result = await addAndroidRadioStation(input);
-            await loadHomeForConnection(serverConnection);
+            // Radio shelves are live-fetched (not mirror-backed), so refreshing
+            // Home is the only way its radio row reflects the new station — but it
+            // must not BLOCK the add. The Radio tab updates from `result` directly.
+            void loadHomeForConnection(serverConnection);
             return result;
         },
         [loadHomeForConnection, serverConnection],
@@ -1177,22 +1213,19 @@ export function useAndroidMediaHandlers(
         }
 
         const isFavoritedNow = favoritedKeys.has(key);
+        const next = !isFavoritedNow;
+
+        // Optimistic: fill the heart and show the toast the instant the user
+        // taps, then reconcile with the server in the background. A heart that
+        // waits for a network round-trip to fill reads as sluggish; only a
+        // failure rolls the state back (and surfaces why).
+        upsertFavoriteKey(key, next);
+        setContextMenuFeedback(next ? 'Added to Favorites' : 'Removed from Favorites');
 
         try {
-            if (auth) {
-                await setSamoMusicFavorite(
-                    auth,
-                    'music-track',
-                    track.id,
-                    !isFavoritedNow,
-                );
-                upsertFavoriteKey(key, !isFavoritedNow);
-                setContextMenuFeedback(
-                    !isFavoritedNow ? 'Added to Favorites' : 'Removed from Favorites',
-                );
-                return;
-            }
+            await setSamoMusicFavorite(auth, 'music-track', track.id, next);
         } catch (error) {
+            upsertFavoriteKey(key, isFavoritedNow);
             setContextMenuFeedback(error instanceof Error ? error.message : 'Favorite failed');
         }
     };
@@ -1210,11 +1243,19 @@ export function useAndroidMediaHandlers(
             if (useSamoFavorite && auth) {
                 const kind =
                     item.type === MobileHomeItemType.ALBUM ? 'music-album' : 'music-artist';
-                await setSamoMusicFavorite(auth, kind, item.id, !isFavoritedNow);
-                upsertFavoriteKey(key, !isFavoritedNow);
-                setContextMenuFeedback(
-                    !isFavoritedNow ? 'Added to Favorites' : 'Removed from Favorites',
-                );
+                const next = !isFavoritedNow;
+                // Optimistic flip + toast; reconcile with the server after and
+                // roll back only on failure (see handleToggleFavoriteForTrack).
+                upsertFavoriteKey(key, next);
+                setContextMenuFeedback(next ? 'Added to Favorites' : 'Removed from Favorites');
+                try {
+                    await setSamoMusicFavorite(auth, kind, item.id, next);
+                } catch (error) {
+                    upsertFavoriteKey(key, isFavoritedNow);
+                    setContextMenuFeedback(
+                        error instanceof Error ? error.message : 'Favorite failed',
+                    );
+                }
                 return;
             }
 
@@ -1267,14 +1308,6 @@ export function useAndroidMediaHandlers(
         setContextMenuTarget(null);
         setIsFullPlayerOpen(false);
         await handleSelectMediaItem(synthetic);
-    };
-
-    const handleStartSongRadio = async (
-        track: MobileMediaTrack,
-        source: MobileContentSource | undefined,
-    ) => {
-        setContextMenuFeedback('Song Radio is no longer supported.');
-        setContextMenuTarget(null);
     };
 
     const canAppendToPlaybackQueue =
@@ -1788,7 +1821,11 @@ export function useAndroidMediaHandlers(
                 }
             }
 
-            await loadHomeForConnection(serverConnection);
+            // Background sync (non-blocking) so the brand-new playlist lands in the
+            // mirror and the coalesced post-sync derive surfaces it on Home —
+            // instead of blocking the success toast on a network fetch + derive
+            // that can't even show the playlist yet (the mirror has no row for it).
+            void triggerCatalogSyncNow();
             setPlaylistMenuRootState({
                 message: `Created ${playlist.title}`,
                 status: 'success',
@@ -1828,31 +1865,56 @@ export function useAndroidMediaHandlers(
             return;
         }
 
+        // Track add: the song id is already known, so commit optimistically —
+        // show success immediately (the sheet auto-dismisses on success) and
+        // write to the server in the background. Adding a song to a playlist
+        // should feel instant. A fast failure flips the still-open sheet to an
+        // error before it dismisses; the background sync reconciles real
+        // membership either way.
+        if (playlistMenuRoot.kind === 'track') {
+            const songIds = [playlistMenuRoot.track.id];
+            setPlaylistMenuRootState({
+                message: `Added to ${playlist.title}`,
+                status: 'success',
+            });
+            try {
+                await addMobileTracksToPlaylist({
+                    authentication: auth,
+                    playlistId: playlist.id,
+                    songIds,
+                });
+                void triggerCatalogSyncNow();
+            } catch (error) {
+                setPlaylistMenuRootState({
+                    message:
+                        error instanceof Error ? error.message : 'Failed to add to playlist',
+                    status: 'error',
+                });
+            }
+            return;
+        }
+
+        // Collection add: the collection's tracks must be fetched before we know
+        // what to add, so this path keeps a real loading state.
         setPlaylistMenuRootState({ playlistId: playlist.id, status: 'loading' });
         try {
-            let songIds: string[];
-
-            if (playlistMenuRoot.kind === 'track') {
-                songIds = [playlistMenuRoot.track.id];
-            } else {
-                const sourceDetail = await loadMobileMediaDetail({
-                    authentication: auth,
-                    id: playlistMenuRoot.collectionItem.id,
-                    type:
-                        playlistMenuRoot.collectionItem.type === MobileHomeItemType.PLAYLIST
-                            ? MobileMediaDetailType.PLAYLIST
-                            : MobileMediaDetailType.ALBUM,
+            const sourceDetail = await loadMobileMediaDetail({
+                authentication: auth,
+                id: playlistMenuRoot.collectionItem.id,
+                type:
+                    playlistMenuRoot.collectionItem.type === MobileHomeItemType.PLAYLIST
+                        ? MobileMediaDetailType.PLAYLIST
+                        : MobileMediaDetailType.ALBUM,
+            });
+            const songIds = sourceDetail.tracks
+                .filter((track) => track.playback?.source === 'music')
+                .map((track) => track.id);
+            if (songIds.length === 0) {
+                setPlaylistMenuRootState({
+                    message: 'No music tracks were found to add.',
+                    status: 'error',
                 });
-                songIds = sourceDetail.tracks
-                    .filter((track) => track.playback?.source === 'music')
-                    .map((track) => track.id);
-                if (songIds.length === 0) {
-                    setPlaylistMenuRootState({
-                        message: 'No music tracks were found to add.',
-                        status: 'error',
-                    });
-                    return;
-                }
+                return;
             }
 
             await addMobileTracksToPlaylist({
@@ -1860,13 +1922,12 @@ export function useAndroidMediaHandlers(
                 playlistId: playlist.id,
                 songIds,
             });
-            await loadHomeForConnection(serverConnection);
-            const addedCount = songIds.length;
+            // Non-blocking background sync instead of a full Home reload — Home is
+            // unchanged by adding tracks to an existing playlist; the track list
+            // reconciles for the next time the playlist detail opens.
+            void triggerCatalogSyncNow();
             setPlaylistMenuRootState({
-                message:
-                    addedCount === 1
-                        ? `Added to ${playlist.title}`
-                        : `Added ${addedCount} songs to ${playlist.title}`,
+                message: `Added ${songIds.length} songs to ${playlist.title}`,
                 status: 'success',
             });
         } catch (error) {
@@ -1952,7 +2013,6 @@ export function useAndroidMediaHandlers(
         handleShuffleDetailTracks,
         handleShuffleHomeItems,
         handleStartAudiobook,
-        handleStartSongRadio,
         handleToggleFavoriteForItem,
         handleToggleFavoriteForTrack,
         handleViewDetailForItem,

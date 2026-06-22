@@ -5,8 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router';
 
 import { isServerLock } from '/@/renderer/features/action-required/utils/window-properties';
-import JellyfinLogo from '/@/renderer/features/servers/assets/jellyfin.png';
-import NavidromeLogo from '/@/renderer/features/servers/assets/navidrome.png';
+
 import OpenSubsonicLogo from '/@/renderer/features/servers/assets/opensubsonic.png';
 import { AddServerForm } from '/@/renderer/features/servers/components/add-server-form';
 import { EditServerForm } from '/@/renderer/features/servers/components/edit-server-form';
@@ -105,15 +104,9 @@ function ServerSelector() {
                 const server = serverList[serverId];
                 const isNavidromeExpired =
                     false;
-                const isJellyfinExpired = server.type === ServerType.JELLYFIN && !server.credential;
-                const isSessionExpired = isNavidromeExpired || isJellyfinExpired;
+                const isSessionExpired = isNavidromeExpired;
 
-                const logo =
-                    false
-                        ? NavidromeLogo
-                        : server.type === ServerType.JELLYFIN
-                          ? JellyfinLogo
-                          : OpenSubsonicLogo;
+                const logo = OpenSubsonicLogo;
 
                 return (
                     <Button
@@ -190,7 +183,7 @@ function SetupWizard({ onExit }: { onExit: () => void }) {
     if (step === 'addAnother') {
         return (
             <AddServerForm
-                initialServerType={ServerType.AUDIOBOOKSHELF}
+                initialServerType={ServerType.SAMO}
                 key={formKey}
                 onCancel={handleBackToPrompt}
                 onSubmitSuccess={handleSubmitSuccess}

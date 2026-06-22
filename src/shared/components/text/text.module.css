@@ -5,6 +5,7 @@
 }
 
 .muted {
+    font-family: var(--theme-muted-font-family);
     color: var(--theme-colors-foreground-muted);
 }
 

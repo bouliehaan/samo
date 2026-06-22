@@ -22,6 +22,7 @@ import {
     type ServerAuthenticationResult,
 } from '@samo/core/server';
 
+import { traceSync } from '../jank-trace';
 import { type AndroidRecentContentSourceItem } from '../recent-content';
 import {
     getDetail,
@@ -417,6 +418,14 @@ const recentlyAddedFromMirror = (
  * local rows yet (fresh install before the first sync lands).
  */
 export const buildCatalogHomeContent = (
+    authentication: ServerAuthenticationResult | null,
+    live?: HomeLiveSections | null,
+): MobileHomeContent | null =>
+    // Named in the [jank] log so a slow Home derive (the per-shelf reads + the JS
+    // assembly) is distinguishable from a slow React render of the result.
+    traceSync('home.derive', () => buildCatalogHomeContentInner(authentication, live));
+
+const buildCatalogHomeContentInner = (
     authentication: ServerAuthenticationResult | null,
     live?: HomeLiveSections | null,
 ): MobileHomeContent | null => {

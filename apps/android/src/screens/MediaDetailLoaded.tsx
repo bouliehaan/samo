@@ -51,7 +51,7 @@ import {
 } from 'react-native';
 
 import { ArtworkImage } from '../components/ArtworkImage';
-import { SkeletonTrackRow } from '../components/Skeleton';
+import { SkeletonBlock, SkeletonTrackRow } from '../components/Skeleton';
 import {
     EditPlaylistSheet,
     removeSelectedPlaylistTracks,
@@ -115,6 +115,13 @@ import { getDisplaySubtitle } from '../utils/playback-time';
 import { getTrackMetadataItems } from '../player/track-metadata';
 import { detailHasHiRes, isHiFiTrack } from '../utils/media-quality';
 
+// Stable-identity placeholder rows for the loading state, so the unified detail
+// list shows skeleton rows under the (persistent) hero while the real tracks load.
+const SKELETON_TRACK_PLACEHOLDERS: MobileMediaTrack[] = Array.from(
+    { length: 8 },
+    (_, index) => ({ id: `__skeleton__${index}` }) as MobileMediaTrack,
+);
+
 const ReanimatedFlashList = Reanimated.createAnimatedComponent(FlashList) as typeof FlashList;
 const FLASH_LIST_MAINTAIN_POSITION_DISABLED = { disabled: true };
 const PLAYLIST_SEARCH_FLOATING_HEIGHT = 54;
@@ -160,6 +167,7 @@ export const MediaDetailLoaded = ({
     detail,
     fallbackArtworkImageId,
     fallbackArtworkUrl,
+    isAwaitingDetail = false,
     onAddTrackToPlaylist,
     onBack,
     onPlayTrack,
@@ -172,6 +180,9 @@ export const MediaDetailLoaded = ({
     detail: MobileMediaDetail;
     fallbackArtworkImageId?: string;
     fallbackArtworkUrl?: string;
+    /** Render the real list+hero shell against a placeholder detail while the
+     *  full detail loads — keeps the hero ExpoImage mounted (no cover flash). */
+    isAwaitingDetail?: boolean;
     onAddTrackToPlaylist: (
         detail: MobileMediaDetail,
         track: MobileMediaTrack,
@@ -622,8 +633,36 @@ export const MediaDetailLoaded = ({
             : null;
     // Download button shows for everything that has saveable media. Podcasts
     // here download every episode; long-press on a single episode row still
-    // works to grab just that one.
-    const canDownloadDetail = !isArtistDetail;
+    // works to grab just that one. Hidden while awaiting the detail — there's
+    // nothing concrete to download yet.
+    const canDownloadDetail = !isArtistDetail && !isAwaitingDetail;
+
+    // Loading-state pieces for the unified detail shell. The hero artwork and
+    // title render for real (we know them at tap time); only the chrome BELOW the
+    // title and the track rows are placeholders, so the hero ExpoImage's position
+    // in the tree never changes and the cover persists into the loaded state.
+    const listData = isAwaitingDetail ? SKELETON_TRACK_PLACEHOLDERS : displayTracks;
+    const heroSkeletonBadge = (
+        <SkeletonBlock borderRadius={4} style={{ height: 11, width: 64 }} />
+    );
+    const heroSkeletonMetaActions = (
+        <>
+            <View style={styles.albumHeroMeta}>
+                <SkeletonBlock borderRadius={4} style={{ height: 13, marginBottom: 6, width: 150 }} />
+                <SkeletonBlock borderRadius={4} style={{ height: 13, width: 104 }} />
+            </View>
+            <View style={styles.albumHeroActionsBar}>
+                <View style={styles.albumHeroLeftActions}>
+                    <SkeletonBlock borderRadius={999} style={styles.albumHeroGlyphButton} />
+                    <SkeletonBlock borderRadius={999} style={styles.albumHeroGlyphButton} />
+                </View>
+                <View style={styles.albumHeroActions}>
+                    <SkeletonBlock borderRadius={999} style={styles.albumHeroGlyphButton} />
+                    <SkeletonBlock borderRadius={999} style={{ height: 52, width: 52 }} />
+                </View>
+            </View>
+        </>
+    );
 
     // Subscribe to downloads for this specific collection so the hero can
     // switch to the completed state once every item in the collection is saved.
@@ -976,7 +1015,7 @@ export const MediaDetailLoaded = ({
             >
                 <ReanimatedFlashList
                     contentContainerStyle={styles.mediaDetailContent}
-                    data={displayTracks}
+                    data={listData}
                     drawDistance={PLAYLIST_TRACK_DRAW_DISTANCE}
                     extraData={downloadedTrackKeys}
                     getItemType={getPlaylistTrackItemType}
@@ -1001,136 +1040,146 @@ export const MediaDetailLoaded = ({
                                     />
                                 </View>
                                 <View style={styles.albumHeroBadgeRow}>
-                                    <Text style={styles.albumHeroEyebrow}>
-                                        {getDetailTypeLabel(detail.type)}
-                                    </Text>
+                                    {isAwaitingDetail ? (
+                                        heroSkeletonBadge
+                                    ) : (
+                                        <Text style={styles.albumHeroEyebrow}>
+                                            {getDetailTypeLabel(detail.type)}
+                                        </Text>
+                                    )}
                                 </View>
                                 <Text numberOfLines={2} style={styles.albumHeroTitle}>
                                     {detail.title}
                                 </Text>
-                                {detail.year ? (
-                                    <Text style={styles.albumHeroYear}>{detail.year}</Text>
-                                ) : null}
-                                <View style={styles.albumHeroMeta}>
-                                    {Array.from(
-                                        new Set(
-                                            [
-                                                detail.subtitle,
-                                                ...(detail.metadataLines ?? []).filter((line) => line !== detail.year?.toString()),
-                                            ].filter((line): line is string => Boolean(line))
-                                        )
-                                    ).map((line, index) => (
-                                        <Text
-                                            key={`${line}-${index}`}
-                                            numberOfLines={1}
-                                            style={styles.albumHeroMetaLine}
+                                {isAwaitingDetail ? (
+                                    heroSkeletonMetaActions
+                                ) : (
+                                    <>
+                                        {detail.year ? (
+                                            <Text style={styles.albumHeroYear}>{detail.year}</Text>
+                                        ) : null}
+                                        <View style={styles.albumHeroMeta}>
+                                            {Array.from(
+                                                new Set(
+                                                    [
+                                                        detail.subtitle,
+                                                        ...(detail.metadataLines ?? []).filter((line) => line !== detail.year?.toString()),
+                                                    ].filter((line): line is string => Boolean(line))
+                                                )
+                                            ).map((line, index) => (
+                                                <Text
+                                                    key={`${line}-${index}`}
+                                                    numberOfLines={1}
+                                                    style={styles.albumHeroMetaLine}
+                                                >
+                                                    {line}
+                                                </Text>
+                                            ))}
+                                            {heroFormatLabel ? (
+                                                <Text style={styles.formatBadgeMeta}>{heroFormatLabel}</Text>
+                                            ) : null}
+                                        </View>
+                                        <View
+                                            onLayout={handleHeroActionsBarLayout}
+                                            style={styles.albumHeroActionsBar}
                                         >
-                                            {line}
-                                        </Text>
-                                    ))}
-                                    {heroFormatLabel ? (
-                                        <Text style={styles.formatBadgeMeta}>{heroFormatLabel}</Text>
-                                    ) : null}
-                                </View>
-                                <View
-                                    onLayout={handleHeroActionsBarLayout}
-                                    style={styles.albumHeroActionsBar}
-                                >
-                                    <View style={styles.albumHeroLeftActions}>
-                                        {canDownloadDetail ? (
-                                            <Pressable
-                                                accessibilityLabel={
-                                                    downloadAggregate.completed
-                                                        ? 'Downloaded'
-                                                        : 'Download'
-                                                }
-                                                accessibilityRole="button"
-                                                onPress={handleDownloadDetail}
-                                                style={styles.albumHeroGlyphButton}
-                                            >
-                                                <CircularDownloadGlyph
-                                                    completed={downloadAggregate.completed}
-                                                    progress={downloadAggregate.progress}
-                                                />
-                                            </Pressable>
-                                        ) : null}
-                                        {canEditPlaylist ? (
-                                            <Pressable
-                                                accessibilityLabel="Edit playlist"
-                                                accessibilityRole="button"
-                                                onPress={() => setPlaylistEditVisible(true)}
-                                                style={styles.albumHeroGlyphButton}
-                                            >
-                                                <GearGlyph color={colors.text} />
-                                            </Pressable>
-                                        ) : null}
-                                        <Pressable
-                                            accessibilityLabel="More options"
-                                            accessibilityRole="button"
-                                            onPress={handleOpenDetailContextMenu}
-                                            style={styles.albumHeroGlyphButton}
-                                        >
-                                            <MoreGlyph color={colors.text} />
-                                        </Pressable>
-                                    </View>
-                                    <View style={styles.albumHeroActions}>
-                                        {detail.tracks.length > 0 ? (
-                                            <Pressable
-                                                accessibilityLabel={
-                                                    playlistSearchVisible
-                                                        ? 'Close playlist search'
-                                                        : 'Search playlist'
-                                                }
-                                                accessibilityRole="button"
-                                                hitSlop={8}
-                                                onPress={() => {
-                                                    if (playlistSearchVisible) {
-                                                        closePlaylistSearch();
-                                                        return;
-                                                    }
-                                                    setPlaylistSearchVisible(true);
-                                                }}
-                                                style={styles.albumHeroGlyphButton}
-                                            >
-                                                <SearchGlyph color="rgba(245,245,245,0.55)" />
-                                            </Pressable>
-                                        ) : null}
-                                        {showPlaylistShuffle ? (
-                                            <Pressable
-                                                accessibilityLabel="Shuffle"
-                                                accessibilityRole="button"
-                                                onPress={() => void onShufflePlay(detail, displayTracks)}
-                                                style={styles.albumHeroGlyphButton}
-                                            >
-                                                <ShuffleGlyph color={colors.text} size={28} />
-                                            </Pressable>
-                                        ) : null}
-                                        {heroPlayTrack ? (
-                                            <Pressable
-                                                accessibilityLabel="Play"
-                                                accessibilityRole="button"
-                                                onPress={() =>
-                                                    onPlayTrack(
-                                                        detail,
-                                                        heroPlayTrack,
-                                                        heroPlayIndex,
-                                                        heroPlayQueue,
-                                                    )
-                                                }
-                                                style={[
-                                                    styles.albumHeroGlyphButton,
-                                                    styles.albumHeroPlayButton,
-                                                ]}
-                                            >
-                                                <PlayPauseGlyph
-                                                    color={colors.background}
-                                                    isPlaying={false}
-                                                    size={22}
-                                                />
-                                            </Pressable>
-                                        ) : null}
-                                    </View>
-                                </View>
+                                            <View style={styles.albumHeroLeftActions}>
+                                                {canDownloadDetail ? (
+                                                    <Pressable
+                                                        accessibilityLabel={
+                                                            downloadAggregate.completed
+                                                                ? 'Downloaded'
+                                                                : 'Download'
+                                                        }
+                                                        accessibilityRole="button"
+                                                        onPress={handleDownloadDetail}
+                                                        style={styles.albumHeroGlyphButton}
+                                                    >
+                                                        <CircularDownloadGlyph
+                                                            completed={downloadAggregate.completed}
+                                                            progress={downloadAggregate.progress}
+                                                        />
+                                                    </Pressable>
+                                                ) : null}
+                                                {canEditPlaylist ? (
+                                                    <Pressable
+                                                        accessibilityLabel="Edit playlist"
+                                                        accessibilityRole="button"
+                                                        onPress={() => setPlaylistEditVisible(true)}
+                                                        style={styles.albumHeroGlyphButton}
+                                                    >
+                                                        <GearGlyph color={colors.text} />
+                                                    </Pressable>
+                                                ) : null}
+                                                <Pressable
+                                                    accessibilityLabel="More options"
+                                                    accessibilityRole="button"
+                                                    onPress={handleOpenDetailContextMenu}
+                                                    style={styles.albumHeroGlyphButton}
+                                                >
+                                                    <MoreGlyph color={colors.text} />
+                                                </Pressable>
+                                            </View>
+                                            <View style={styles.albumHeroActions}>
+                                                {detail.tracks.length > 0 ? (
+                                                    <Pressable
+                                                        accessibilityLabel={
+                                                            playlistSearchVisible
+                                                                ? 'Close playlist search'
+                                                                : 'Search playlist'
+                                                        }
+                                                        accessibilityRole="button"
+                                                        hitSlop={8}
+                                                        onPress={() => {
+                                                            if (playlistSearchVisible) {
+                                                                closePlaylistSearch();
+                                                                return;
+                                                            }
+                                                            setPlaylistSearchVisible(true);
+                                                        }}
+                                                        style={styles.albumHeroGlyphButton}
+                                                    >
+                                                        <SearchGlyph color="rgba(245,245,245,0.55)" />
+                                                    </Pressable>
+                                                ) : null}
+                                                {showPlaylistShuffle ? (
+                                                    <Pressable
+                                                        accessibilityLabel="Shuffle"
+                                                        accessibilityRole="button"
+                                                        onPress={() => void onShufflePlay(detail, displayTracks)}
+                                                        style={styles.albumHeroGlyphButton}
+                                                    >
+                                                        <ShuffleGlyph color={colors.text} size={28} />
+                                                    </Pressable>
+                                                ) : null}
+                                                {heroPlayTrack ? (
+                                                    <Pressable
+                                                        accessibilityLabel="Play"
+                                                        accessibilityRole="button"
+                                                        onPress={() =>
+                                                            onPlayTrack(
+                                                                detail,
+                                                                heroPlayTrack,
+                                                                heroPlayIndex,
+                                                                heroPlayQueue,
+                                                            )
+                                                        }
+                                                        style={[
+                                                            styles.albumHeroGlyphButton,
+                                                            styles.albumHeroPlayButton,
+                                                        ]}
+                                                    >
+                                                        <PlayPauseGlyph
+                                                            color={colors.background}
+                                                            isPlaying={false}
+                                                            size={22}
+                                                        />
+                                                    </Pressable>
+                                                ) : null}
+                                            </View>
+                                        </View>
+                                    </>
+                                )}
                             </View>
                             <View style={styles.homeSection}>
                                 {playlistManageMode ? (
@@ -1188,7 +1237,11 @@ export const MediaDetailLoaded = ({
                     }
                     maintainVisibleContentPosition={FLASH_LIST_MAINTAIN_POSITION_DISABLED}
                     onScroll={detailScrollHandler}
-                    renderItem={({ item, index }) => renderTrackRow(item, index)}
+                    renderItem={
+                        isAwaitingDetail
+                            ? () => <SkeletonTrackRow />
+                            : ({ item, index }) => renderTrackRow(item, index)
+                    }
                     scrollEventThrottle={16}
                     showsVerticalScrollIndicator={false}
                 />
@@ -1340,7 +1393,9 @@ export const MediaDetailLoaded = ({
                         />
                     </View>
                     <View style={styles.albumHeroBadgeRow}>
-                        {detail.type === MobileMediaDetailType.AUDIOBOOK ? null : (
+                        {isAwaitingDetail ? (
+                            heroSkeletonBadge
+                        ) : detail.type === MobileMediaDetailType.AUDIOBOOK ? null : (
                             <Text style={styles.albumHeroEyebrow}>
                                 {getDetailTypeLabel(detail.type)}
                             </Text>
@@ -1349,93 +1404,99 @@ export const MediaDetailLoaded = ({
                     <Text numberOfLines={2} style={styles.albumHeroTitle}>
                         {detail.title}
                     </Text>
-                    {detail.year ? (
-                        <Text style={styles.albumHeroYear}>{detail.year}</Text>
-                    ) : null}
-                    <View style={styles.albumHeroMeta}>
-                        {Array.from(
-                            new Set(
-                                [
-                                    detail.subtitle,
-                                    ...(detail.metadataLines ?? []).filter((line) => line !== detail.year?.toString()),
-                                ].filter((line): line is string => Boolean(line))
-                            )
-                        ).map((line, index) => (
-                            <Text
-                                key={`${line}-${index}`}
-                                numberOfLines={1}
-                                style={styles.albumHeroMetaLine}
+                    {isAwaitingDetail ? (
+                        heroSkeletonMetaActions
+                    ) : (
+                        <>
+                            {detail.year ? (
+                                <Text style={styles.albumHeroYear}>{detail.year}</Text>
+                            ) : null}
+                            <View style={styles.albumHeroMeta}>
+                                {Array.from(
+                                    new Set(
+                                        [
+                                            detail.subtitle,
+                                            ...(detail.metadataLines ?? []).filter((line) => line !== detail.year?.toString()),
+                                        ].filter((line): line is string => Boolean(line))
+                                    )
+                                ).map((line, index) => (
+                                    <Text
+                                        key={`${line}-${index}`}
+                                        numberOfLines={1}
+                                        style={styles.albumHeroMetaLine}
+                                    >
+                                        {line}
+                                    </Text>
+                                ))}
+                                {heroFormatLabel ? (
+                                    <Text style={styles.formatBadgeMeta}>{heroFormatLabel}</Text>
+                                ) : null}
+                            </View>
+                            <View
+                                onLayout={handleHeroActionsBarLayout}
+                                style={styles.albumHeroActionsBar}
                             >
-                                {line}
-                            </Text>
-                        ))}
-                        {heroFormatLabel ? (
-                            <Text style={styles.formatBadgeMeta}>{heroFormatLabel}</Text>
-                        ) : null}
-                    </View>
-                    <View
-                        onLayout={handleHeroActionsBarLayout}
-                        style={styles.albumHeroActionsBar}
-                    >
-                        <View style={styles.albumHeroLeftActions}>
-                            {canDownloadDetail ? (
-                                <Pressable
-                                    accessibilityLabel={
-                                        downloadAggregate.completed
-                                            ? 'Downloaded'
-                                            : 'Download'
-                                    }
-                                    accessibilityRole="button"
-                                    onPress={handleDownloadDetail}
-                                    style={styles.albumHeroGlyphButton}
-                                >
-                                    <CircularDownloadGlyph
-                                        completed={downloadAggregate.completed}
-                                        progress={downloadAggregate.progress}
-                                    />
-                                </Pressable>
-                            ) : null}
-                            <Pressable
-                                accessibilityLabel="More options"
-                                accessibilityRole="button"
-                                onPress={handleOpenDetailContextMenu}
-                                style={styles.albumHeroGlyphButton}
-                            >
-                                <MoreGlyph color={colors.text} />
-                            </Pressable>
-                        </View>
-                        <View style={styles.albumHeroActions}>
-                            {showPlaylistShuffle ? (
-                                <Pressable
-                                    accessibilityLabel="Shuffle"
-                                    accessibilityRole="button"
-                                    onPress={() => void onShufflePlay(detail, displayTracks)}
-                                    style={styles.albumHeroGlyphButton}
-                                >
-                                    <ShuffleGlyph color={colors.text} size={28} />
-                                </Pressable>
-                            ) : null}
-                            {heroPlayTrack ? (
-                                <Pressable
-                                    accessibilityLabel="Play"
-                                    accessibilityRole="button"
-                                    onPress={() =>
-                                        onPlayTrack(detail, heroPlayTrack, heroPlayIndex, heroPlayQueue)
-                                    }
-                                    style={[
-                                        styles.albumHeroGlyphButton,
-                                        styles.albumHeroPlayButton,
-                                    ]}
-                                >
-                                    <PlayPauseGlyph
-                                        color={colors.background}
-                                        isPlaying={false}
-                                        size={22}
-                                    />
-                                </Pressable>
-                            ) : null}
-                        </View>
-                    </View>
+                                <View style={styles.albumHeroLeftActions}>
+                                    {canDownloadDetail ? (
+                                        <Pressable
+                                            accessibilityLabel={
+                                                downloadAggregate.completed
+                                                    ? 'Downloaded'
+                                                    : 'Download'
+                                            }
+                                            accessibilityRole="button"
+                                            onPress={handleDownloadDetail}
+                                            style={styles.albumHeroGlyphButton}
+                                        >
+                                            <CircularDownloadGlyph
+                                                completed={downloadAggregate.completed}
+                                                progress={downloadAggregate.progress}
+                                            />
+                                        </Pressable>
+                                    ) : null}
+                                    <Pressable
+                                        accessibilityLabel="More options"
+                                        accessibilityRole="button"
+                                        onPress={handleOpenDetailContextMenu}
+                                        style={styles.albumHeroGlyphButton}
+                                    >
+                                        <MoreGlyph color={colors.text} />
+                                    </Pressable>
+                                </View>
+                                <View style={styles.albumHeroActions}>
+                                    {showPlaylistShuffle ? (
+                                        <Pressable
+                                            accessibilityLabel="Shuffle"
+                                            accessibilityRole="button"
+                                            onPress={() => void onShufflePlay(detail, displayTracks)}
+                                            style={styles.albumHeroGlyphButton}
+                                        >
+                                            <ShuffleGlyph color={colors.text} size={28} />
+                                        </Pressable>
+                                    ) : null}
+                                    {heroPlayTrack ? (
+                                        <Pressable
+                                            accessibilityLabel="Play"
+                                            accessibilityRole="button"
+                                            onPress={() =>
+                                                onPlayTrack(detail, heroPlayTrack, heroPlayIndex, heroPlayQueue)
+                                            }
+                                            style={[
+                                                styles.albumHeroGlyphButton,
+                                                styles.albumHeroPlayButton,
+                                            ]}
+                                        >
+                                            <PlayPauseGlyph
+                                                color={colors.background}
+                                                isPlaying={false}
+                                                size={22}
+                                            />
+                                        </Pressable>
+                                    ) : null}
+                                </View>
+                            </View>
+                        </>
+                    )}
                 </View>
             <View style={styles.homeSection}>
                 {!isMusic ? <Text style={styles.sectionTitle}>{sectionTitle}</Text> : null}
@@ -1501,7 +1562,7 @@ export const MediaDetailLoaded = ({
             <View style={styles.mediaDetailScreen}>
                 <ReanimatedFlashList
                     contentContainerStyle={styles.mediaDetailContent}
-                    data={displayTracks}
+                    data={listData}
                     drawDistance={PLAYLIST_TRACK_DRAW_DISTANCE}
                     extraData={downloadedTrackKeys}
                     keyExtractor={(track, index) => `${track.id}:${index}`}
@@ -1514,7 +1575,7 @@ export const MediaDetailLoaded = ({
                     }
                     ListHeaderComponent={albumDetailListHeader}
                     onScroll={detailScrollHandler}
-                    renderItem={renderListTrackItem}
+                    renderItem={isAwaitingDetail ? () => <SkeletonTrackRow /> : renderListTrackItem}
                     scrollEventThrottle={16}
                     showsVerticalScrollIndicator={false}
                 />

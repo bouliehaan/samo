@@ -11,6 +11,7 @@ import {
 } from '@samo/core/mobile';
 
 import { getCatalogDatabase, getCatalogReaderSync } from './database';
+import { traceSync } from '../jank-trace';
 import { safeParseJson } from '../../utils/json';
 import {
     type CatalogCountsRow,
@@ -499,13 +500,15 @@ export const getTracksSync = (
         return [];
     }
     try {
-        const rows = db.getAllSync<CatalogPayloadRow>(
-            `SELECT payload FROM catalog_track
+        const rows = traceSync(`catalog.tracks:${containerType}`, () =>
+            db.getAllSync<CatalogPayloadRow>(
+                `SELECT payload FROM catalog_track
              WHERE source_id = ? AND container_type = ? AND container_id = ?
              ORDER BY position ASC`,
-            sourceId,
-            containerType,
-            containerId,
+                sourceId,
+                containerType,
+                containerId,
+            ),
         );
         return rows
             .map((row) => parsePayload<unknown>(row))
@@ -551,7 +554,11 @@ export const getItemsByTypeSync = (
         const direction = query.direction === 'desc' ? 'DESC' : 'ASC';
         const limit = query.limit ?? -1;
         const offset = query.offset ?? 0;
-        const rows = db.getAllSync<CatalogPayloadRow>(
+        // traceSync names this read in the [jank] log if it ran slow — a slow
+        // synchronous mirror read almost always means it blocked on a writer
+        // (DELETE journal: readers and the sync engine's writes are mutually
+        // exclusive), which is the prime suspect for navigation stalls.
+        const rows = traceSync(`catalog.itemsByType:${type}`, () =>
             // No `(col IS NULL)` ordering guard: it's a computed expression that
             // makes the ORDER BY non-sargable, forcing a full scan + temp sort on
             // every Home derive (the multi-second JS-thread blocks). It's also
@@ -559,14 +566,16 @@ export const getItemsByTypeSync = (
             // the DESC shelves (added_at / last_played_at / play_count), SQLite
             // already orders NULLs last under plain DESC. So plain ORDER BY is
             // behaviour-identical AND lets the (source_id, type, col) index drive it.
-            `SELECT payload FROM catalog_item
+            db.getAllSync<CatalogPayloadRow>(
+                `SELECT payload FROM catalog_item
              WHERE source_id = ? AND type = ?
              ORDER BY ${sortColumn} ${direction}
              LIMIT ? OFFSET ?`,
-            sourceId,
-            type,
-            limit,
-            offset,
+                sourceId,
+                type,
+                limit,
+                offset,
+            ),
         );
         return rows
             .map((row) => parsePayload<MobileHomeItem>(row))
@@ -596,22 +605,24 @@ export const searchLocalSync = (
     }
     try {
         const limit = query.limit ?? 50;
-        const rows = query.sourceId
-            ? db.getAllSync<CatalogPayloadRow>(
-                  `SELECT payload FROM catalog_search
+        const rows = traceSync('catalog.searchLocal', () =>
+            query.sourceId
+                ? db.getAllSync<CatalogPayloadRow>(
+                      `SELECT payload FROM catalog_search
                    WHERE catalog_search MATCH ? AND source_id = ?
                    ORDER BY rank LIMIT ?`,
-                  match,
-                  query.sourceId,
-                  limit,
-              )
-            : db.getAllSync<CatalogPayloadRow>(
-                  `SELECT payload FROM catalog_search
+                      match,
+                      query.sourceId,
+                      limit,
+                  )
+                : db.getAllSync<CatalogPayloadRow>(
+                      `SELECT payload FROM catalog_search
                    WHERE catalog_search MATCH ?
                    ORDER BY rank LIMIT ?`,
-                  match,
-                  limit,
-              );
+                      match,
+                      limit,
+                  ),
+        );
         return rows
             .map((row) => parsePayload<MobileSearchItem>(row))
             .filter((item): item is MobileSearchItem => item !== null);

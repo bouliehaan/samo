@@ -87,7 +87,7 @@ import {
     subscribeDownloads,
 } from '../services/download-manager';
 import { type AndroidHomeContentState } from '../services/home-content';
-import { type AndroidMediaDetailState } from '../services/media-detail';
+import { type AndroidMediaDetailState, buildMediaDetailShell } from '../services/media-detail';
 import {
     type AndroidRecentContentSourceItem,
     getRecentContentItemKey,
@@ -123,6 +123,7 @@ import { MediaDetailLoadingView } from './MediaDetailLoadingView';
 import { MediaDetailLoaded } from './MediaDetailLoaded';
 export const MediaDetailContent = memo(({
     homeContentState,
+    mediaDetailKey,
     mediaDetailState,
     onAddTrackToPlaylist,
     onBack,
@@ -133,6 +134,7 @@ export const MediaDetailContent = memo(({
     serverConnection,
 }: {
     homeContentState: AndroidHomeContentState;
+    mediaDetailKey: string | null;
     mediaDetailState: AndroidMediaDetailState;
     onAddTrackToPlaylist: (
         detail: MobileMediaDetail,
@@ -157,6 +159,13 @@ export const MediaDetailContent = memo(({
     // warm cache entry instead of re-fetching detail.artworkUrl — that re-fetch is
     // the "cached art deloads then reloads" flash on the skeleton→content swap.
     const openingArtworkImageIdRef = useRef<string | undefined>(undefined);
+    const activeDetailKeyRef = useRef<string | null>(null);
+
+    if (mediaDetailKey !== activeDetailKeyRef.current) {
+        activeDetailKeyRef.current = mediaDetailKey;
+        openingArtworkUrlRef.current = undefined;
+        openingArtworkImageIdRef.current = undefined;
+    }
     const title =
         mediaDetailState.status === 'loaded'
             ? mediaDetailState.detail.title
@@ -169,9 +178,41 @@ export const MediaDetailContent = memo(({
         openingArtworkImageIdRef.current = mediaDetailState.itemArtworkImageId;
     }
 
+    // While loading, build a shell detail so MediaDetailLoaded can render its REAL
+    // list + hero in a loading state. Rendering the SAME component (and therefore
+    // the SAME hero ExpoImage) across loading→loaded is what makes the cover
+    // PERSIST instead of unmounting and re-decoding — the skeleton→detail flash.
+    // Artists fall back to the standalone skeleton: their detail is a different
+    // ScrollView layout with its own section skeletons, not this track list.
+    const shellDetail =
+        mediaDetailState.status === 'loading'
+            ? buildMediaDetailShell(mediaDetailState)
+            : null;
+    const unifiedDetail =
+        mediaDetailState.status === 'loaded'
+            ? mediaDetailState.detail
+            : shellDetail && shellDetail.type !== MobileMediaDetailType.ARTIST
+              ? shellDetail
+              : null;
+
     return (
         <>
-            {mediaDetailState.status === 'loading' ? (
+            {unifiedDetail ? (
+                <MediaDetailLoaded
+                    detail={unifiedDetail}
+                    fallbackArtworkImageId={openingArtworkImageIdRef.current}
+                    fallbackArtworkUrl={openingArtworkUrlRef.current}
+                    isAwaitingDetail={mediaDetailState.status !== 'loaded'}
+                    onAddTrackToPlaylist={onAddTrackToPlaylist}
+                    onBack={onBack}
+                    onPlayTrack={onPlayTrack}
+                    onReloadDetail={onReloadDetail}
+                    onSelectItem={onSelectItem}
+                    onShufflePlay={onShufflePlay}
+                    playlistTargets={getPlaylistTargetsForDetail(homeContentState, unifiedDetail)}
+                    serverConnection={serverConnection}
+                />
+            ) : mediaDetailState.status === 'loading' ? (
                 <MediaDetailLoadingView
                     artworkImageId={mediaDetailState.itemArtworkImageId}
                     artworkUrl={mediaDetailState.itemArtworkUrl}
@@ -185,23 +226,6 @@ export const MediaDetailContent = memo(({
                     <Text style={styles.sectionTitle}>{title}</Text>
                     <Text style={styles.errorText}>{mediaDetailState.message}</Text>
                 </View>
-            ) : mediaDetailState.status === 'loaded' ? (
-                <MediaDetailLoaded
-                    detail={mediaDetailState.detail}
-                    fallbackArtworkImageId={openingArtworkImageIdRef.current}
-                    fallbackArtworkUrl={openingArtworkUrlRef.current}
-                    onAddTrackToPlaylist={onAddTrackToPlaylist}
-                    onBack={onBack}
-                    onPlayTrack={onPlayTrack}
-                    onReloadDetail={onReloadDetail}
-                    onSelectItem={onSelectItem}
-                    onShufflePlay={onShufflePlay}
-                    playlistTargets={getPlaylistTargetsForDetail(
-                        homeContentState,
-                        mediaDetailState.detail,
-                    )}
-                    serverConnection={serverConnection}
-                />
             ) : null}
         </>
     );

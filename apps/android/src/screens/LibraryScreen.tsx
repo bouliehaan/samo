@@ -1,6 +1,6 @@
 import { type MobileHomeItem } from '@samo/core/mobile';
 import { FlashList } from '@shopify/flash-list';
-import { memo, useCallback, useEffect, useMemo, useState } from 'react';
+import { memo, useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 
 import { CollectionBrowseGrid } from '../components/CollectionBrowseGrid';
@@ -54,6 +54,12 @@ export const LibraryScreen = memo(({
     const [isScopeMenuOpen, setIsScopeMenuOpen] = useState(false);
     const [isSortMenuOpen, setIsSortMenuOpen] = useState(false);
 
+    // Pills track `activeFilter` (urgent → instant highlight); the row rebuild /
+    // browse-mode switch tracks a DEFERRED copy so re-deriving the list doesn't
+    // block the tap. Lighter than Home (this list is already virtualized) but the
+    // same root cause — a synchronous filter swap on the tap frame.
+    const deferredFilter = useDeferredValue(activeFilter);
+
     const baseItems = useMemo(
         () =>
             getLibraryBaseItems(
@@ -69,16 +75,16 @@ export const LibraryScreen = memo(({
         [baseItems, fullCollections, recentItems],
     );
     const rows = useMemo(
-        () => getLibraryRows(baseItems, recentItems, activeFilter, '', activeSort),
-        [activeFilter, activeSort, baseItems, recentItems],
+        () => getLibraryRows(baseItems, recentItems, deferredFilter, '', activeSort),
+        [deferredFilter, activeSort, baseItems, recentItems],
     );
 
     const needsFullCollection =
-        activeScope === 'all' && isCollectionBrowseFilter(activeFilter);
+        activeScope === 'all' && isCollectionBrowseFilter(deferredFilter);
     const fullCollectionState =
-        activeFilter === 'albums'
+        deferredFilter === 'albums'
             ? fullCollections.albums
-            : activeFilter === 'artists'
+            : deferredFilter === 'artists'
               ? fullCollections.artists
               : null;
     const isEnrichingFullCollection =
@@ -154,7 +160,7 @@ export const LibraryScreen = memo(({
     }
 
     const activeLabel =
-        LIBRARY_FILTERS.find((filter) => filter.id === activeFilter)?.label ?? 'All';
+        LIBRARY_FILTERS.find((filter) => filter.id === deferredFilter)?.label ?? 'All';
     const activeScopeLabel =
         LIBRARY_SCOPES.find((scope) => scope.id === activeScope)?.label ?? 'Relevant';
     const activeSortLabel =
@@ -236,7 +242,7 @@ export const LibraryScreen = memo(({
                     onChange={setActiveFilter}
                 />
             </View>
-            {isCollectionBrowseFilter(activeFilter) ? (
+            {isCollectionBrowseFilter(deferredFilter) ? (
                 <CollectionBrowseGrid
                     emptyMessage={
                         isEnrichingFullCollection
@@ -246,7 +252,7 @@ export const LibraryScreen = memo(({
                     fullItems={browseFullItems}
                     isLoading={isEnrichingFullCollection && browseSeedItems.length === 0}
                     itemSortMode={
-                        activeFilter === 'albums' || activeFilter === 'artists'
+                        deferredFilter === 'albums' || deferredFilter === 'artists'
                             ? activeSort === 'name'
                                 ? 'alphabetical'
                                 : 'playCount'

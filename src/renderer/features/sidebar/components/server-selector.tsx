@@ -3,9 +3,7 @@ import { useTranslation } from 'react-i18next';
 
 import styles from './server-selector.module.css';
 
-import JellyfinLogo from '/@/renderer/features/servers/assets/jellyfin.png';
-import NavidromeLogo from '/@/renderer/features/servers/assets/navidrome.png';
-import OpenSubsonicLogo from '/@/renderer/features/servers/assets/opensubsonic.png';
+import SamoLogo from '../../../../../build/samologo.svg';
 import { sharedQueries } from '/@/renderer/features/shared/api/shared-api';
 import { ServerSelectorItems } from '/@/renderer/features/sidebar/components/server-selector-items';
 import { useCurrentServer } from '/@/renderer/store';
@@ -17,7 +15,6 @@ import { Icon } from '/@/shared/components/icon/icon';
 import { ScrollArea } from '/@/shared/components/scroll-area/scroll-area';
 import { Stack } from '/@/shared/components/stack/stack';
 import { Text } from '/@/shared/components/text/text';
-import { ServerType } from '/@/shared/types/domain-types';
 import { ServerFeature } from '/@/shared/types/features-types';
 
 export const ServerSelector = () => {
@@ -55,12 +52,7 @@ export const ServerSelector = () => {
         return selectedMusicFolders[0].name;
     })();
 
-    const logo =
-        false
-            ? NavidromeLogo
-            : currentServer.type === ServerType.JELLYFIN
-              ? JellyfinLogo
-              : OpenSubsonicLogo;
+    const logo = SamoLogo;
 
     return (
         <DropdownMenu offset={0} position="right-start" withinPortal={false}>

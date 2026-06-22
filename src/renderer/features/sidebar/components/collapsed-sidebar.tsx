@@ -31,7 +31,7 @@ import { Group } from '/@/shared/components/group/group';
 import { Icon } from '/@/shared/components/icon/icon';
 import { ScrollArea } from '/@/shared/components/scroll-area/scroll-area';
 import { Stack } from '/@/shared/components/stack/stack';
-import { LibraryItem, ServerType } from '/@/shared/types/domain-types';
+import { LibraryItem } from '/@/shared/types/domain-types';
 import { Platform } from '/@/shared/types/types';
 
 export const CollapsedSidebar = () => {
@@ -194,7 +194,7 @@ export const CollapsedSidebar = () => {
                                         src={
                                             false
                                                 ? NavidromeLogo
-                                                : currentServer.type === ServerType.JELLYFIN
+                                                : false
                                                   ? JellyfinLogo
                                                   : OpenSubsonicLogo
                                         }

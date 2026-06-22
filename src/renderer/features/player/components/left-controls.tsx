@@ -192,9 +192,6 @@ export const LeftControls = () => {
                                                 styles.playerbarImage,
                                                 PlaybackSelectors.playerCoverArt,
                                             )}
-                                            fallbackIcon={
-                                                isPodcastMode ? 'microphone' : 'metadata'
-                                            }
                                             item={
                                                 isPodcastMode ? podcastItem : audiobookItem
                                             }
@@ -257,7 +254,7 @@ export const LeftControls = () => {
                                 <Group align="center" gap="xs" wrap="nowrap">
                                     <Text
                                         className={PlaybackSelectors.songTitle}
-                                        fw={500}
+                                        fw={650}
                                         onContextMenu={handleToggleContextMenu}
                                         overflow="hidden"
                                     >
@@ -315,7 +312,7 @@ export const LeftControls = () => {
                                     <Text
                                         className={PlaybackSelectors.songTitle}
                                         component={Link}
-                                        fw={500}
+                                        fw={650}
                                         isLink
                                         onContextMenu={handleToggleContextMenu}
                                         overflow="hidden"
@@ -390,6 +387,7 @@ export const LeftControls = () => {
                                     component={Link}
                                     fw={500}
                                     isLink
+                                    isMuted
                                     overflow="hidden"
                                     size="md"
                                     to={

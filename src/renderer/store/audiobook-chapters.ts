@@ -1,7 +1,7 @@
-import { AudiobookshelfChapter } from '/@/shared/api/audiobookshelf/audiobookshelf-types';
+import { LongFormChapter } from '/@/shared/api/long-form-types';
 
 export interface AudiobookChapterListItem {
-    chapter: AudiobookshelfChapter;
+    chapter: LongFormChapter;
     duration: number;
     end: number;
     originalIndex: number;
@@ -12,7 +12,7 @@ export interface AudiobookChapterListItem {
  * Single source of truth for "which chapter is the listener currently in?".
  */
 export function getCurrentChapterIndex(
-    chapters: AudiobookshelfChapter[],
+    chapters: LongFormChapter[],
     position: number,
     duration: number,
 ): number {
@@ -26,7 +26,7 @@ export function getCurrentChapterIndex(
 }
 
 export function getOrderedAudiobookChapters(
-    chapters: AudiobookshelfChapter[],
+    chapters: LongFormChapter[],
     duration: number,
 ): AudiobookChapterListItem[] {
     if (chapters.length <= 1 || !Number.isFinite(duration) || duration <= 0) return [];

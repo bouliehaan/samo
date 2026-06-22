@@ -1,6 +1,7 @@
 import { type ServerAuthenticationResult } from '../server/server-auth';
 import { getFetch, requestJson, type SamoFetch } from '../server/server-http';
 import {
+    type SamoArtistRef,
     type SamoAudiobook,
     type SamoAudioChapter,
     type SamoBookmark,
@@ -25,6 +26,8 @@ import {
     listSamoAudiobookBookmarks,
     listSamoAudiobookSessions,
     listSamoMusicArtistAlbums,
+    listSamoMusicArtistAppearsOn,
+    listSamoMusicArtistTopTracks,
     listSamoMusicPlaylistTracks,
     listSamoPodcastEpisodes,
     resolveSamoAlbumArtworkUrl,
@@ -564,11 +567,23 @@ const loadSamoArtistDetail = async (
     id: string,
 ): Promise<MobileMediaDetail> => {
     const streamToken = await ensureSamoStreamToken(authentication, fetcher).catch(() => undefined);
-    const [artist, albumsResponse] = await Promise.all([
+    // Albums are required; the enrichment rails (top tracks / appears-on) are
+    // best-effort — a server that doesn't serve them yet (or errors) must still
+    // yield a usable artist page, so they degrade to empty instead of throwing.
+    const [artist, albumsResponse, topTracksResponse, appearsOnResponse] = await Promise.all([
         getSamoMusicArtist(fetcher, authentication, id),
         listSamoMusicArtistAlbums(fetcher, authentication, id, { limit: 200 }),
+        listSamoMusicArtistTopTracks(fetcher, authentication, id, { limit: 5 }).catch(() => undefined),
+        listSamoMusicArtistAppearsOn(fetcher, authentication, id, { limit: 20 }).catch(() => undefined),
     ]);
-    return mapSamoArtistDetail(authentication, streamToken, artist, albumsResponse);
+    return mapSamoArtistDetail(
+        authentication,
+        streamToken,
+        artist,
+        albumsResponse,
+        topTracksResponse,
+        appearsOnResponse,
+    );
 };
 
 /**
@@ -582,9 +597,11 @@ export const mapSamoArtistDetail = (
     streamToken: string | undefined,
     artist: SamoMusicArtist,
     albumsResponse: SamoMusicAlbum[] | SamoPaginatedResponse<SamoMusicAlbum>,
+    topTracksResponse?: SamoMusicTrack[] | SamoPaginatedResponse<SamoMusicTrack>,
+    appearsOnResponse?: SamoMusicAlbum[] | SamoPaginatedResponse<SamoMusicAlbum>,
 ): MobileMediaDetail => {
     const source = getMobileContentSource(authentication);
-    const items: MobileHomeItem[] = samoItemsOf(albumsResponse).flatMap((album) => {
+    const albumToItem = (album: SamoMusicAlbum): MobileHomeItem[] => {
         if (!album.id || !album.title) return [];
         return [
             {
@@ -599,7 +616,51 @@ export const mapSamoArtistDetail = (
                 type: MobileHomeItemType.ALBUM,
             },
         ];
-    });
+    };
+
+    const items = samoItemsOf(albumsResponse).flatMap(albumToItem);
+    const appearsOnItems = appearsOnResponse
+        ? samoItemsOf(appearsOnResponse).flatMap(albumToItem)
+        : [];
+    const topTracks: MobileMediaTrack[] = topTracksResponse
+        ? samoItemsOf(topTracksResponse).map((track) =>
+              samoTrackToMediaTrack(authentication, track, undefined, streamToken),
+          )
+        : [];
+    const relatedArtists: MobileHomeItem[] = (artist.similarArtists ?? []).flatMap<MobileHomeItem>(
+        (ref: SamoArtistRef) => {
+            if (!ref.name) return [];
+            if (ref.external || !ref.id) {
+                // Not in this library: render the tile from the provider image
+                // and flag it so a tap routes to search, not a detail fetch
+                // (which would 404 on a synthetic id).
+                return [
+                    {
+                        artworkUrl: ref.imageUrl,
+                        external: true,
+                        id: ref.id || `ext:${ref.name}`,
+                        source,
+                        title: ref.name,
+                        type: MobileHomeItemType.ARTIST,
+                    },
+                ];
+            }
+            return [
+                {
+                    artworkImageId: pickSamoImageId(ref.images),
+                    artworkUrl: resolveSamoArtistArtworkUrl(
+                        authentication,
+                        { id: ref.id, images: ref.images },
+                        streamToken,
+                    ),
+                    id: ref.id,
+                    source,
+                    title: ref.name,
+                    type: MobileHomeItemType.ARTIST,
+                },
+            ];
+        },
+    );
 
     const metadataLines: string[] = [];
     if (artist.albumCount) metadataLines.push(`${artist.albumCount} albums`);
@@ -607,15 +668,18 @@ export const mapSamoArtistDetail = (
     if (artist.country) metadataLines.push(artist.country);
 
     return {
+        appearsOnItems: appearsOnItems.length > 0 ? appearsOnItems : undefined,
         artworkUrl: resolveSamoArtistArtworkUrl(authentication, artist, streamToken),
         artworkImageId: pickSamoImageId(artist.images),
         biography: artist.biography,
         id: artist.id,
         items,
         metadataLines: metadataLines.length > 0 ? metadataLines : undefined,
+        relatedArtists: relatedArtists.length > 0 ? relatedArtists : undefined,
         source,
         subtitle: artist.disambiguation,
         title: artist.name,
+        topTracks: topTracks.length > 0 ? topTracks : undefined,
         tracks: [],
         type: MobileMediaDetailType.ARTIST,
     };
@@ -1008,6 +1072,12 @@ export const mapSamoMediaDetailFromRawBundle = (
                     streamToken,
                     bundle.entity as SamoMusicArtist,
                     (bundle.children.albums ?? []) as SamoPaginatedResponse<SamoMusicAlbum>,
+                    bundle.children.topTracks as
+                        | SamoPaginatedResponse<SamoMusicTrack>
+                        | undefined,
+                    bundle.children.appearsOn as
+                        | SamoPaginatedResponse<SamoMusicAlbum>
+                        | undefined,
                 );
             case 'audiobook':
                 return mapSamoAudiobookDetail(

@@ -6,7 +6,6 @@ import { nanoid } from 'nanoid/non-secure';
 import { type FocusEvent, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import AudiobookshelfIcon from '../../../../../assets/icons/audiobookshelf.svg';
 import SamoIcon from '../../../../../build/samologo.svg';
 
 import { api } from '/@/renderer/api';
@@ -14,8 +13,6 @@ import {
     isLegacyAuth,
     isServerLock,
 } from '/@/renderer/features/action-required/utils/window-properties';
-import JellyfinIcon from '/@/renderer/features/servers/assets/jellyfin.png';
-import NavidromeIcon from '/@/renderer/features/servers/assets/navidrome.png';
 import { IgnoreCorsSslSwitches } from '/@/renderer/features/servers/components/ignore-cors-ssl-switches';
 import { useAuthStoreActions, useServerList } from '/@/renderer/store';
 import { Checkbox } from '/@/shared/components/checkbox/checkbox';
@@ -77,19 +74,11 @@ function useAutodiscovery() {
 }
 
 const SERVER_TYPES: Record<ServerType, ServerDetails> = {
-    [ServerType.AUDIOBOOKSHELF]: {
-        icon: AudiobookshelfIcon,
-        name: 'Audiobookshelf',
-    },
-    [ServerType.JELLYFIN]: {
-        icon: JellyfinIcon,
-        name: 'Jellyfin',
-    },
     [ServerType.SAMO]: {
         icon: SamoIcon,
         name: 'Samo',
     },
-    };
+};
 
 const ALL_SERVERS = Object.keys(SERVER_TYPES).map((serverType) => {
     const info = SERVER_TYPES[serverType];
@@ -116,7 +105,7 @@ export const AddServerForm = ({
     const initialServerType =
         preferredInitialServerType ??
         (localSettings ? localSettings.env.SERVER_TYPE : toServerType(window.SERVER_TYPE)) ??
-        ServerType.NAVIDROME;
+        ServerType.SAMO;
 
     const serverLock = isServerLock();
 
@@ -304,13 +293,10 @@ export const AddServerForm = ({
 
             addServer(serverItem);
 
-            if (serverItem.type !== ServerType.AUDIOBOOKSHELF) {
-                setCurrentServer(serverItem);
-            }
+            setCurrentServer(serverItem);
 
             ensureActiveServers();
             void queryClient.invalidateQueries({ queryKey: ['home'] });
-            void queryClient.invalidateQueries({ queryKey: ['audiobookshelf'] });
             void queryClient.invalidateQueries({ queryKey: ['search'] });
             closeAllModals();
 
@@ -411,21 +397,7 @@ export const AddServerForm = ({
                         {...form.getInputProps('password')}
                     />
 
-                    {form.values.type === ServerType.JELLYFIN && (
-                        <Checkbox
-                            description={t('form.addServer.input', {
-                                context: 'preferInstantMixDescription',
-                                postProcess: 'sentenceCase',
-                            })}
-                            label={t('form.addServer.input', {
-                                context: 'preferInstantMix',
-                                postProcess: 'titleCase',
-                            })}
-                            {...form.getInputProps('preferInstantMix', {
-                                type: 'checkbox',
-                            })}
-                        />
-                    )}
+
                     {isElectron() && (
                         <>
                             <Divider />

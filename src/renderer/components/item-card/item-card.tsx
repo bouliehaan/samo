@@ -1393,6 +1393,24 @@ const getItemNavigationPath = (
 
     const effectiveItemType = '_itemType' in data && data._itemType ? data._itemType : itemType;
 
+    // Similar-artist suggestions that aren't in the local library carry a synthetic
+    // `ext:` id and have no detail page. Send the user to a search for the name
+    // instead of a dead route that 404s.
+    if (
+        (effectiveItemType === LibraryItem.ALBUM_ARTIST ||
+            effectiveItemType === LibraryItem.ARTIST) &&
+        typeof data.id === 'string' &&
+        data.id.startsWith('ext:')
+    ) {
+        const name = ('name' in data && data.name ? data.name : data.id.slice(4)).trim();
+        if (!name) {
+            return null;
+        }
+        return `${generatePath(AppRoute.SEARCH, {
+            itemType: LibraryItem.SONG,
+        })}?query=${encodeURIComponent(name)}`;
+    }
+
     return getTitlePath(effectiveItemType, data.id);
 };
 

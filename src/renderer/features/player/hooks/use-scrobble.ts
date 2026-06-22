@@ -14,7 +14,7 @@ import {
     useSettingsStore,
     useTimestampStoreBase,
 } from '/@/renderer/store';
-import { LibraryItem, QueueSong, ServerType } from '/@/shared/types/domain-types';
+import { LibraryItem, QueueSong } from '/@/shared/types/domain-types';
 import { PlayerStatus } from '/@/shared/types/types';
 import { LogCategory, logFn } from '/@/shared/utils/logger';
 import { logMsg } from '/@/shared/utils/logger-message';
@@ -38,11 +38,10 @@ Scrobble Events:
     - Resets the 'isCurrentSongScrobbled' state to false
 
   - When the song is seeked:
-    - Sends the 'timeupdate' scrobble event (Jellyfin only)
-
+    - Sends the 'timeupdate' scrobble event
 
 Progress Events:
-  - When the song is playing (Jellyfin only):
+  - When the song is playing:
     - Sends the 'progress' scrobble event on an interval
 
 */
@@ -123,37 +122,6 @@ export const useScrobble = () => {
                 return;
             }
 
-            // Send Jellyfin progress events every 10 seconds
-            if (currentSong._serverType === ServerType.JELLYFIN) {
-                const timeSinceLastProgress = currentTime - lastProgressEventRef.current;
-                if (timeSinceLastProgress >= 10) {
-                    const position = currentTime * 1e7;
-                    sendScrobble.mutate(
-                        {
-                            apiClientProps: { serverId: currentSong._serverId || '' },
-                            query: {
-                                albumId: currentSong.albumId,
-                                event: 'timeupdate',
-                                id: currentSong.id,
-                                position,
-                                submission: false,
-                            },
-                        },
-                        {
-                            onSuccess: () => {
-                                logFn.debug(logMsg[LogCategory.SCROBBLE].scrobbledTimeupdate, {
-                                    category: LogCategory.SCROBBLE,
-                                    meta: {
-                                        id: currentSong.id,
-                                    },
-                                });
-                            },
-                        },
-                    );
-                    lastProgressEventRef.current = currentTime;
-                }
-            }
-
             // Check if we should submit scrobble based on conditions
             const currentSongSessionKey = getSongSessionKey(currentSong);
 
@@ -171,12 +139,7 @@ export const useScrobble = () => {
                 if (shouldSubmitScrobble) {
                     scrobbledSessionKeyRef.current = currentSongSessionKey;
 
-                    // Since jellyfin-plugin-lastfm uses the submission Position to determine if the song should actually scrobble
-                    // we just send the full duration of the song when it matches the local scrobble conditions
-                    const position =
-                        currentSong._serverType === ServerType.JELLYFIN
-                            ? currentSong.duration * 1e7
-                            : undefined;
+                    const position = undefined;
 
                     sendScrobble.mutate(
                         {
@@ -325,11 +288,6 @@ export const useScrobble = () => {
                 return;
             }
 
-            // Position scrobbles are only relevant for Jellyfin
-            if (currentSong._serverType !== ServerType.JELLYFIN) {
-                return;
-            }
-
             const now = Date.now();
             const timeSinceLastSeek = now - lastSeekEventRef.current;
 
@@ -382,7 +340,7 @@ export const useScrobble = () => {
             }
 
             // Only apply to Jellyfin controller scrobble
-            if (currentSong._serverType !== ServerType.JELLYFIN) {
+            if (false as boolean) {
                 return;
             }
 

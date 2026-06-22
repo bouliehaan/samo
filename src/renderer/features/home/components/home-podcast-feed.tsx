@@ -3,7 +3,6 @@ import clsx from 'clsx';
 import { useCallback, useMemo } from 'react';
 
 import podcastFeedStyles from './home-podcast-feed.module.css';
-import { HomeSectionTitle } from '/@/renderer/features/home/components/home-section-title';
 
 import {
     fetchSamoHomePodcastFeed,
@@ -17,15 +16,21 @@ import {
     useGridCarouselContainerQuery,
 } from '/@/renderer/components/grid-carousel/grid-carousel-v2';
 import itemCardControlsStyles from '/@/renderer/components/item-card/item-card-controls.module.css';
-import { AbsCoverImage } from '/@/renderer/features/search/components/abs-cover-image';
-import { Box } from '/@/shared/components/box/box';
+import { HomeSectionTitle } from '/@/renderer/features/home/components/home-section-title';
+import { LongFormCoverImage } from '/@/renderer/features/player/components/long-form-cover-image';
 import { PlayButton } from '/@/renderer/features/shared/components/play-button';
 import { AppRoute } from '/@/renderer/router/routes';
-import { getServerById, recordRecentPodcast, useCurrentServer, useCurrentServerId } from '/@/renderer/store';
-import { toast } from '/@/shared/components/toast/toast';
+import {
+    getServerById,
+    recordRecentPodcast,
+    useCurrentServer,
+    useCurrentServerId,
+} from '/@/renderer/store';
 import { usePodcastActions } from '/@/renderer/store/podcast.store';
 import { formatDateRelative } from '/@/renderer/utils/format';
+import { Box } from '/@/shared/components/box/box';
 import { Text } from '/@/shared/components/text/text';
+import { toast } from '/@/shared/components/toast/toast';
 import { ServerType } from '/@/shared/types/domain-types';
 
 const formatPublishedDate = (publishedAt?: string) => {
@@ -99,7 +104,7 @@ const PodcastFeedCard = ({
             tabIndex={0}
         >
             <div className={podcastFeedStyles.artWrap}>
-                <AbsCoverImage
+                <LongFormCoverImage
                     alt={title}
                     fallbackIcon="microphone"
                     imageUrl={entry.artworkUrl}
@@ -112,7 +117,7 @@ const PodcastFeedCard = ({
                     )}
                 >
                     <PlayButton
-                        className={itemCardControlsStyles.overlayPlay}
+                        classNames={clsx(itemCardControlsStyles.overlayPlay)}
                         onClick={(event) => {
                             event.preventDefault();
                             event.stopPropagation();
@@ -124,11 +129,11 @@ const PodcastFeedCard = ({
             <Text className={podcastFeedStyles.title} fw={650} lineClamp={2} size="sm">
                 {title}
             </Text>
-            <Text className={podcastFeedStyles.subtitle} isMuted lineClamp={1} size="xs">
+            <Text className={podcastFeedStyles.subtitle} isMuted lineClamp={1} size="sm">
                 {getFeedSubtitle(entry) || formatDateRelative(entry.episode.publishedAt ?? null)}
             </Text>
             {isCompleted ? (
-                <Text c="primary" size="xs">
+                <Text c="primary" size="sm">
                     Played
                 </Text>
             ) : null}
@@ -210,9 +215,7 @@ export const HomePodcastFeedSection = ({
     const cards = useMemo(
         () =>
             entries.map((entry) => ({
-                content: (
-                    <PodcastFeedCard entry={entry} onPlay={() => void playEntry(entry)} />
-                ),
+                content: <PodcastFeedCard entry={entry} onPlay={() => void playEntry(entry)} />,
                 id: entry.episode.id,
             })),
         [entries, playEntry],

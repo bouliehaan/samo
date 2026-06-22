@@ -8,7 +8,7 @@ import { TextTitle } from '/@/shared/components/text-title/text-title';
 
 export const HomeSectionTitle = ({ title, to }: { title: string; to?: string }) => (
     <Group className={styles.sectionTitle} gap="xs" justify="space-between" w="100%">
-        <TextTitle fw={700} isNoSelect order={3}>
+        <TextTitle fw={700} isNoSelect order={2}>
             {title}
         </TextTitle>
         {to ? (

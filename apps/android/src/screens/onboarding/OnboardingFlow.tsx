@@ -1,7 +1,7 @@
 import { getMobileContentSource } from '@samo/core/mobile';
 import { type ServerAuthenticationResult } from '@samo/core/server';
 import { useKeepAwake, deactivateKeepAwake } from 'expo-keep-awake';
-import { type ReactNode, useCallback, useEffect, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import {
     ActivityIndicator,
     BackHandler,
@@ -12,19 +12,21 @@ import {
     useWindowDimensions,
     View,
 } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import LinearGradient from 'react-native-linear-gradient';
 import Reanimated, {
     Easing,
     FadeIn,
     FadeInDown,
     FadeOut,
+    runOnJS,
     useAnimatedStyle,
     useSharedValue,
     withRepeat,
     withTiming,
 } from 'react-native-reanimated';
 
-import { EyeGlyph } from '../../components/Glyphs';
+import { DownCaretGlyph, EyeGlyph } from '../../components/Glyphs';
 import { useServerDiscovery, type DiscoveredServer } from '../../hooks/use-server-discovery';
 import {
     subscribeCatalogSyncState,
@@ -32,7 +34,7 @@ import {
 } from '../../services/catalog/catalog-sync-state';
 import { type AndroidAuthState } from '../../services/server-auth';
 import { colors, radii, spacing } from '../../theme/tokens';
-import { ScanPulse } from './ScanPulse';
+import { Orb } from './Orb';
 import { SuccessSeal } from './SuccessSeal';
 import { WaveDotsField } from './WaveDotsField';
 
@@ -216,7 +218,7 @@ const StepShell = ({ children }: { children: ReactNode }) => (
     </Reanimated.View>
 );
 
-const GoldButton = ({
+const PrimaryButton = ({
     label,
     loading = false,
     disabled = false,
@@ -233,23 +235,26 @@ const GoldButton = ({
         onPress={onPress}
         style={({ pressed }) => ({
             alignItems: 'center',
-            // Solid worn-gold — no gradient/bevel (those read cheap). A hairline
-            // top highlight gives it just enough of a minted, tactile edge.
-            backgroundColor: disabled ? 'rgba(212,192,138,0.28)' : pressed ? '#c9b27a' : colors.accent,
+            // Clean warm-ivory solid — no gold slab, no gradient, no bevel. Reads
+            // as a crisp premium CTA against the dark surfaces; the gold stays a
+            // whisper elsewhere (accent text/lines), not a gaudy button fill.
+            backgroundColor: disabled
+                ? 'rgba(246,246,248,0.16)'
+                : pressed
+                  ? '#dcdce2'
+                  : colors.text,
             borderRadius: 16,
-            borderTopColor: 'rgba(255,255,255,0.35)',
-            borderTopWidth: disabled ? 0 : 1,
             justifyContent: 'center',
             paddingVertical: 18,
             transform: [{ scale: pressed && !disabled ? 0.985 : 1 }],
         })}
     >
         {loading ? (
-            <ActivityIndicator color="#1f1809" />
+            <ActivityIndicator color={colors.background} />
         ) : (
             <Text
                 style={{
-                    color: disabled ? 'rgba(31,24,9,0.5)' : '#1f1809',
+                    color: disabled ? 'rgba(15,15,18,0.45)' : colors.background,
                     fontSize: 17,
                     fontWeight: '800',
                     letterSpacing: 0.3,
@@ -290,52 +295,148 @@ const onboardInputStyle = {
 // Welcome
 // ---------------------------------------------------------------------------
 
-const WelcomeStep = ({ onStart }: { onStart: () => void }) => (
-    <StepShell>
-        <View style={{ flex: 1, justifyContent: 'flex-end' }}>
-            <Reanimated.View entering={FadeInDown.delay(120).duration(700)}>
-                <Text
-                    style={{
-                        color: colors.accent,
-                        fontSize: 13,
-                        fontWeight: '800',
-                        letterSpacing: 3,
-                        marginBottom: 18,
-                        textTransform: 'uppercase',
-                    }}
-                >
-                    Welcome to
-                </Text>
-                <Text
-                    style={{
-                        color: colors.text,
-                        fontFamily: 'YoungSerif-Bold',
-                        fontSize: 64,
-                        letterSpacing: -1,
-                        lineHeight: 66,
-                    }}
-                >
-                    Samo
-                </Text>
-                <Text
-                    style={{
-                        color: colors.muted,
-                        fontSize: 18,
-                        lineHeight: 27,
-                        marginTop: 18,
-                        maxWidth: 320,
-                    }}
-                >
-                    Your music, audiobooks, and podcasts — streaming straight from
-                    your own server. Let&apos;s get you connected.
-                </Text>
-            </Reanimated.View>
-            <Reanimated.View entering={FadeInDown.delay(360).duration(700)} style={{ marginTop: 40 }}>
-                <GoldButton label="Get Started" onPress={onStart} />
-            </Reanimated.View>
-        </View>
-    </StepShell>
-);
+// Distance (px) / fling velocity past which an upward swipe commits to the next
+// step instead of springing back.
+const WELCOME_SWIPE_THRESHOLD = -90;
+const WELCOME_FLING_VELOCITY = -650;
+
+const WelcomeStep = ({ onStart }: { onStart: () => void }) => {
+    // Guard so the swipe-up and the tap fallback can never both advance.
+    const startedRef = useRef(false);
+    const start = useCallback(() => {
+        if (startedRef.current) return;
+        startedRef.current = true;
+        onStart();
+    }, [onStart]);
+
+    const dragY = useSharedValue(0); // <= 0; tracks the upward drag
+    const hintY = useSharedValue(0); // the gently bobbing chevron
+
+    useEffect(() => {
+        hintY.value = withRepeat(
+            withTiming(-12, { duration: 950, easing: Easing.inOut(Easing.quad) }),
+            -1,
+            true,
+        );
+    }, [hintY]);
+
+    const panGesture = Gesture.Pan()
+        .onUpdate((event) => {
+            dragY.value = Math.min(0, event.translationY);
+        })
+        .onEnd((event) => {
+            if (event.translationY < WELCOME_SWIPE_THRESHOLD || event.velocityY < WELCOME_FLING_VELOCITY) {
+                // Commit: slide the whole panel up and out, then advance.
+                dragY.value = withTiming(
+                    -700,
+                    { duration: 320, easing: Easing.in(Easing.cubic) },
+                    (finished) => {
+                        if (finished) {
+                            runOnJS(start)();
+                        }
+                    },
+                );
+            } else {
+                dragY.value = withTiming(0, { duration: 220, easing: Easing.out(Easing.quad) });
+            }
+        });
+
+    // Tap fallback (also keeps the screen operable for assistive tech).
+    const tapGesture = Gesture.Tap().onEnd(() => {
+        dragY.value = withTiming(
+            -700,
+            { duration: 320, easing: Easing.in(Easing.cubic) },
+            (finished) => {
+                if (finished) {
+                    runOnJS(start)();
+                }
+            },
+        );
+    });
+
+    const gesture = Gesture.Race(panGesture, tapGesture);
+
+    const panelStyle = useAnimatedStyle(() => {
+        const progress = Math.min(1, Math.max(0, -dragY.value / 360));
+        return {
+            opacity: 1 - progress * 0.85,
+            transform: [{ translateY: dragY.value }],
+        };
+    });
+    const hintStyle = useAnimatedStyle(() => ({
+        transform: [{ translateY: hintY.value }],
+    }));
+
+    return (
+        <StepShell>
+            <GestureDetector gesture={gesture}>
+                <Reanimated.View style={[{ flex: 1, justifyContent: 'flex-end' }, panelStyle]}>
+                    <Reanimated.View entering={FadeInDown.delay(120).duration(700)}>
+                        <Text
+                            style={{
+                                color: colors.accent,
+                                fontFamily: 'OfficeCodePro-Regular',
+                                fontSize: 12,
+                                letterSpacing: 3,
+                                marginBottom: 18,
+                                textTransform: 'uppercase',
+                            }}
+                        >
+                            Welcome to
+                        </Text>
+                        <Text
+                            style={{
+                                color: colors.text,
+                                fontFamily: 'YoungSerif-Bold',
+                                fontSize: 64,
+                                letterSpacing: -1,
+                                lineHeight: 66,
+                            }}
+                        >
+                            Samo
+                        </Text>
+                        <Text
+                            style={{
+                                color: colors.muted,
+                                fontFamily: 'OfficeCodePro-Regular',
+                                fontSize: 15,
+                                lineHeight: 24,
+                                marginTop: 18,
+                                maxWidth: 330,
+                            }}
+                        >
+                            Your music, audiobooks, and podcasts — streaming straight from
+                            your own server. Let&apos;s get you connected.
+                        </Text>
+                    </Reanimated.View>
+                    <Reanimated.View
+                        accessibilityHint="Swipe up to get started"
+                        accessibilityRole="button"
+                        entering={FadeInDown.delay(360).duration(700)}
+                        style={{ alignItems: 'center', marginTop: 48, paddingVertical: 12 }}
+                    >
+                        <Reanimated.View style={[{ marginBottom: 12 }, hintStyle]}>
+                            <View style={{ transform: [{ rotate: '180deg' }] }}>
+                                <DownCaretGlyph color={colors.accent} />
+                            </View>
+                        </Reanimated.View>
+                        <Text
+                            style={{
+                                color: colors.muted,
+                                fontFamily: 'OfficeCodePro-Regular',
+                                fontSize: 13,
+                                letterSpacing: 1,
+                                textTransform: 'uppercase',
+                            }}
+                        >
+                            Swipe up to begin
+                        </Text>
+                    </Reanimated.View>
+                </Reanimated.View>
+            </GestureDetector>
+        </StepShell>
+    );
+};
 
 // ---------------------------------------------------------------------------
 // Discover
@@ -357,7 +458,7 @@ const DiscoverStep = ({
         <StepShell>
             <BackLink onPress={onBack} />
             <View style={{ alignItems: 'center', marginBottom: 28, marginTop: 8 }}>
-                <ScanPulse active={!hasResults} />
+                <Orb active={!hasResults} />
             </View>
             <Text style={headingStyle}>
                 {hasResults ? 'Found your server' : 'Looking for your server'}
@@ -633,7 +734,7 @@ const ConnectStep = ({
             ) : null}
 
             <View style={{ marginTop: 24 }}>
-                <GoldButton
+                <PrimaryButton
                     disabled={!canConnect}
                     label="Connect"
                     loading={isLoading}
@@ -719,7 +820,7 @@ const SyncingStep = ({
         <StepShell>
             <View style={{ alignItems: 'center', flex: 1, justifyContent: 'center' }}>
                 <View style={{ marginBottom: 28 }}>
-                    <Breather />
+                    <Orb size={104} />
                 </View>
 
                 <Text style={[headingStyle, { textAlign: 'center' }]}>
@@ -760,46 +861,6 @@ const ProgressBar = ({ active }: { active: boolean }) => {
         >
             <Reanimated.View
                 style={[{ backgroundColor: colors.accent, borderRadius: 3, height: '100%' }, style]}
-            />
-        </View>
-    );
-};
-
-// A gently breathing gold orb for the indeterminate sync state.
-const Breather = () => {
-    const scale = useSharedValue(1);
-
-    useEffect(() => {
-        scale.value = withRepeat(
-            withTiming(1.18, { duration: 1100, easing: Easing.inOut(Easing.quad) }),
-            -1,
-            true,
-        );
-    }, [scale]);
-
-    const style = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
-
-    return (
-        <View style={{ alignItems: 'center', height: 96, justifyContent: 'center', width: 96 }}>
-            <Reanimated.View
-                style={[
-                    {
-                        backgroundColor: colors.accentSoft,
-                        borderRadius: 48,
-                        height: 96,
-                        position: 'absolute',
-                        width: 96,
-                    },
-                    style,
-                ]}
-            />
-            <View
-                style={{
-                    backgroundColor: colors.accent,
-                    borderRadius: 22,
-                    height: 44,
-                    width: 44,
-                }}
             />
         </View>
     );
@@ -858,7 +919,8 @@ const headingStyle = {
 
 const subheadingStyle = {
     color: colors.muted,
-    fontSize: 16,
-    lineHeight: 24,
+    fontFamily: 'OfficeCodePro-Regular',
+    fontSize: 15,
+    lineHeight: 23,
     marginTop: 10,
 } as const;

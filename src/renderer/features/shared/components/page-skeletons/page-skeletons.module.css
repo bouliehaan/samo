@@ -1,0 +1,124 @@
+.page {
+    display: flex;
+    flex-direction: column;
+    gap: 2rem;
+    width: 100%;
+    padding: 2rem;
+}
+
+/* ---- shared card (grid + carousel) ---- */
+.card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    min-width: 0;
+}
+
+.card-art {
+    width: 100%;
+    aspect-ratio: 1 / 1;
+}
+
+.card-art-circle {
+    width: 86%;
+    margin: 0 auto;
+    aspect-ratio: 1 / 1;
+}
+
+/* ---- grid page (library lists) ---- */
+.header-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.header-bar-controls {
+    display: flex;
+    gap: 0.75rem;
+}
+
+.grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 1.5rem;
+}
+
+/* ---- detail page (album / artist / playlist / podcast) ---- */
+.detail-header {
+    display: flex;
+    gap: 1.5rem;
+    align-items: flex-end;
+    min-height: 240px;
+    margin-bottom: 0.5rem;
+}
+
+.detail-cover {
+    flex: 0 0 auto;
+    width: 225px;
+    height: 225px;
+}
+
+.detail-meta {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    gap: 0.85rem;
+    min-width: 0;
+    padding-bottom: 0.5rem;
+}
+
+.detail-buttons {
+    display: flex;
+    gap: 0.75rem;
+    margin-top: 0.75rem;
+}
+
+.track-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.65rem;
+}
+
+.track-row {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+    height: 2.5rem;
+}
+
+.track-index {
+    flex: 0 0 1.25rem;
+}
+
+.track-art {
+    flex: 0 0 2.25rem;
+    height: 2.25rem;
+}
+
+.track-title {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.track-duration {
+    flex: 0 0 3rem;
+}
+
+/* ---- home (stacked carousels) ---- */
+.carousel-row {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.carousel-cards {
+    display: flex;
+    gap: 1.5rem;
+    overflow: hidden;
+}
+
+.carousel-card {
+    flex: 0 0 170px;
+    max-width: 170px;
+}

@@ -14,6 +14,7 @@ import { type MobilePlayableAudio, getPlaybackQualityProfile } from '@samo/core/
 import { type ServerAuthenticationResult } from '@samo/core/server';
 
 import { ArtworkImage } from '../components/ArtworkImage';
+import { usePlaybackBusy } from '../hooks/use-playback-busy';
 import { PlayPauseGlyph } from '../components/Glyphs';
 import { QualityBadge } from '../components/QualityBadge';
 import { type AndroidPlaybackState } from '../types/playback';
@@ -113,13 +114,13 @@ export const MiniPlayer = memo(({
         : lastPlayedItem;
     // While the stream resolves (token mint → connect → first buffer) the engine
     // sits in 'loading'/'buffering'. Surface that as a spinner ON the play/pause
-    // control so tapping a station/episode reads as "starting", instead of the
-    // old behaviour where the control showed a dead Play triangle and the
-    // "Tuning in…" cue was jammed into the subtitle line (the "glitch" look).
-    const isBusy =
-        isActive &&
-        (playbackState.status === 'loading' || playbackState.status === 'buffering');
+    // control so tapping a station/episode reads as "starting". A live/radio or
+    // freshly-warmed podcast start strobes buffering↔playing for a beat, so the
+    // busy decision is debounced through that flicker (see usePlaybackBusy) —
+    // otherwise the spinner blinked (podcast) or never showed at all (radio).
+    const isBusy = usePlaybackBusy(playbackState.status);
     const isPlaying = playbackState.status === 'playing';
+
     if (!displayItem) {
         return null;
     }

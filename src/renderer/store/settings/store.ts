@@ -10,7 +10,7 @@ import { createSettingsMigrate } from './migrate';
 
 import { mergeOverridingColumns } from '/@/renderer/store/utils';
 
-export const SETTINGS_STORE_VERSION = 34;
+export const SETTINGS_STORE_VERSION = 36;
 
 export const useSettingsStore = createWithEqualityFn<SettingsSlice>()(
     persist(

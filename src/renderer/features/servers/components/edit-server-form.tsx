@@ -22,8 +22,7 @@ import {
     AuthenticationResponse,
     ServerListItem,
     ServerListItemWithCredential,
-    ServerType,
-} from '/@/shared/types/domain-types';
+    } from '/@/shared/types/domain-types';
 
 const localSettings = isElectron() ? window.api.localSettings : null;
 
@@ -252,7 +251,7 @@ export const EditServerForm = ({ isUpdate, onCancel, password, server }: EditSer
                         })}
                     />
                 )}
-                {form.values.type === ServerType.JELLYFIN && (
+                {false && (
                     <Checkbox
                         description={t('form.addServer.input', {
                             context: 'preferInstantMixDescription',

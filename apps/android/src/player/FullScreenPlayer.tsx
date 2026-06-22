@@ -153,6 +153,7 @@ const CAST_ICON_ACTIVE_TINT = 'rgba(202, 160, 79, 0.78)';
 const CAST_ICON_INACTIVE_TINT = 'rgba(245, 245, 245, 0.72)';
 
 import { QueueSheetOverlay, type QueueSheetListItem, QUEUE_SHEET_ROW_HEIGHT, QUEUE_SHEET_DRAW_DISTANCE } from './QueueSheetOverlay';
+import { usePlaybackBusy } from '../hooks/use-playback-busy';
 const SLEEP_OPTIONS: { label: string; seconds: number; wide?: boolean }[] = [
     { label: '15m', seconds: 15 * 60 },
     { label: '30m', seconds: 30 * 60 },
@@ -242,6 +243,13 @@ export const FullScreenPlayer = memo(({
         setSleepSecondsLeft(seconds);
         void setAndroidSleepTimer(seconds).catch(() => undefined);
         sleepTimerRef.current = setTimeout(() => {
+            // Stop the 1Hz countdown ticker the moment the timer fires — without
+            // this it keeps running as a no-op interval until the player unmounts
+            // or the timer is cancelled.
+            if (sleepTickRef.current) {
+                clearInterval(sleepTickRef.current);
+                sleepTickRef.current = null;
+            }
             onTogglePlayback();
             setSleepSecondsLeft(null);
         }, seconds * 1000);
@@ -566,6 +574,12 @@ export const FullScreenPlayer = memo(({
         },
     );
 
+    // Spinner on the primary control while the stream resolves, matching the mini
+    // player. A live/radio or freshly-warmed podcast start strobes buffering↔
+    // playing for a beat, so the busy decision is debounced through that flicker
+    // (see usePlaybackBusy) rather than read straight off the raw status.
+    const isBusy = usePlaybackBusy(playbackState.status);
+    const isPlaying = playbackState.status === 'playing';
     // Stay mounted whenever there's something to play, so close animations
     // triggered from outside the player (back button, navigation) still get to
     // run. Visibility/interactivity is now derived from playerProgress + visible.
@@ -577,12 +591,6 @@ export const FullScreenPlayer = memo(({
         ? getPlaybackDurationMs(playbackState)
         : (displayItem.durationSeconds ?? 0) * 1000;
     const isLive = activeItem ? isLivePlayback(playbackState) : Boolean(displayItem.isLive);
-    const isPlaying = playbackState.status === 'playing';
-    // Spinner on the primary control while the stream resolves, matching the mini
-    // player — a buffering live stream shouldn't show a static Pause icon.
-    const isBusy =
-        playbackState.status !== 'idle' &&
-        (playbackState.status === 'loading' || playbackState.status === 'buffering');
     const display = activeItem
         ? getPlaybackDisplayMetadata(playbackState)
         : getPlayableDisplayMetadata(

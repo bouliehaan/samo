@@ -4,25 +4,25 @@ import { useTranslation } from 'react-i18next';
 import { useGridCarouselContainerQuery } from '/@/renderer/components/grid-carousel/grid-carousel-v2';
 import { NativeScrollArea } from '/@/renderer/components/native-scroll-area/native-scroll-area';
 import { AlbumInfiniteCarousel } from '/@/renderer/features/albums/components/album-infinite-carousel';
-import { HomeFavoriteAudiobooks } from '/@/renderer/features/home/components/home-abs-favorites';
-import { HomePodcastFeedSection } from '/@/renderer/features/home/components/home-podcast-feed';
 import {
     HomeAlbumsSection,
+    HomeDiscoverSection,
     HomeFavoriteArtists,
     HomeFavoritePlaylists,
     HomeFavoriteTracks,
-    HomeDiscoverSection,
     HomeRediscoverySection,
+    HomeFavoriteAudiobooks,
 } from '/@/renderer/features/home/components/home-media-sections';
+import { HomePodcastFeedSection } from '/@/renderer/features/home/components/home-podcast-feed';
 import { HomeRadioStations } from '/@/renderer/features/home/components/home-radio-stations';
 import { HomeSectionTitle } from '/@/renderer/features/home/components/home-section-title';
 import { AnimatedPage } from '/@/renderer/features/shared/components/animated-page';
 import { LibraryContainer } from '/@/renderer/features/shared/components/library-container';
 import { LibraryHeaderBar } from '/@/renderer/features/shared/components/library-header-bar';
 import { PageErrorBoundary } from '/@/renderer/features/shared/components/page-error-boundary';
+import { HomePageSkeleton } from '/@/renderer/features/shared/components/page-skeletons/page-skeletons';
 import { AppRoute } from '/@/renderer/router/routes';
 import { useWindowSettings } from '/@/renderer/store';
-import { Spinner } from '/@/shared/components/spinner/spinner';
 import { Stack } from '/@/shared/components/stack/stack';
 import { AlbumListSort, SortOrder } from '/@/shared/types/domain-types';
 import { Platform } from '/@/shared/types/types';
@@ -95,7 +95,7 @@ const HomeRoute = () => {
 const HomeRouteWithBoundary = () => {
     return (
         <PageErrorBoundary>
-            <Suspense fallback={<Spinner container />}>
+            <Suspense fallback={<HomePageSkeleton />}>
                 <HomeRoute />
             </Suspense>
         </PageErrorBoundary>

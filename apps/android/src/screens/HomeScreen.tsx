@@ -3,11 +3,22 @@ import {
     MobileHomeItemType,
 } from '@samo/core/mobile';
 import { FlashList } from '@shopify/flash-list';
-import { memo, useState, useMemo, useCallback, useRef } from 'react';
+import {
+    memo,
+    type ReactElement,
+    type ReactNode,
+    useState,
+    useMemo,
+    useCallback,
+    useDeferredValue,
+    useRef,
+} from 'react';
 import {
     ActivityIndicator,
     Platform,
     Pressable,
+    RefreshControl,
+    type RefreshControlProps,
     ScrollView,
     Text,
     View,
@@ -30,6 +41,7 @@ import { useStableCallback } from '../hooks/use-stable-callback';
 import {
     getHomeRowItemLength,
     getHomeSectionRowHeight,
+    HOME_PRIMARY_TILE,
 } from '../theme/layout';
 import { styles } from '../theme/styles';
 import { colors, spacing } from '../theme/tokens';
@@ -69,8 +81,10 @@ import { EmptyServerBackedScreen } from './EmptyServerBackedScreen';
 const FLASH_LIST_MAINTAIN_POSITION_DISABLED = { disabled: true };
 
 export const HomeScreen = memo(({
+    isRefreshing,
     onManageServers,
     onPrefetchItem,
+    onRefresh,
     onSelectItem,
     onViewAll,
     serverConnection,
@@ -82,7 +96,7 @@ export const HomeScreen = memo(({
 
     if (!serverConnection) {
         return (
-            <View style={styles.section}>
+            <View style={[styles.section, styles.homeSceneRoot]}>
                 <Text style={styles.sectionTitle}>Connect Your Library</Text>
                 <Text style={styles.mutedText}>
                     Connect your server to load your real library.
@@ -102,8 +116,10 @@ export const HomeScreen = memo(({
         <HomeContentStatus
             activeFilter={homeFilter}
             homeContentState={visibleHomeContentState}
+            isRefreshing={isRefreshing}
             onFilterChange={setHomeFilter}
             onPrefetchItem={onPrefetchItem}
+            onRefresh={onRefresh}
             onSelectItem={onSelectItem}
             onViewAll={onViewAll}
             recentItems={visibleRecentItems}
@@ -117,8 +133,10 @@ HomeScreen.displayName = 'HomeScreen';
 export const HomeContentStatus = ({
     activeFilter,
     homeContentState,
+    isRefreshing,
     onFilterChange,
     onPrefetchItem,
+    onRefresh,
     onSelectItem,
     onViewAll,
     recentItems,
@@ -126,8 +144,10 @@ export const HomeContentStatus = ({
 }: {
     activeFilter: HomeFilter;
     homeContentState: AndroidHomeContentState;
+    isRefreshing?: boolean;
     onFilterChange: (filter: HomeFilter) => void;
     onPrefetchItem?: (item: AndroidRecentContentSourceItem) => void;
+    onRefresh?: () => void;
     onSelectItem: (item: AndroidRecentContentSourceItem) => void;
     onViewAll?: (section: HomeDisplaySection) => void;
     recentItems: AndroidRecentContentItem[];
@@ -157,49 +177,84 @@ export const HomeContentStatus = ({
         previousSectionsRef.current = computed;
         return computed;
     }, [loadedContent, recentItems, serverConnection]);
+    // The pill highlight follows `activeFilter` (urgent — taps feel instant), but
+    // the expensive section/grid rebuild follows a DEFERRED copy so it renders at
+    // low priority instead of blocking the tap. Switching filters re-renders the
+    // whole (non-virtualized) section tree; doing that synchronously on the tap is
+    // what froze the JS thread for ~2s with no feedback. With concurrent rendering
+    // (New Arch) the old content stays painted and the pill flips immediately while
+    // the new content reconciles in the background, then swaps in.
+    const deferredFilter = useDeferredValue(activeFilter);
     const availableFilters = useMemo(
         () => getAvailableHomeFilters(allSections),
         [allSections],
     );
     const filteredSections = useMemo(
-        () => filterHomeDisplaySections(allSections, activeFilter),
-        [activeFilter, allSections],
+        () => filterHomeDisplaySections(allSections, deferredFilter),
+        [deferredFilter, allSections],
     );
     const filteredGridItems = useMemo(
         () => {
-            if (activeFilter !== 'podcasts' && activeFilter !== 'audiobooks') {
+            if (deferredFilter !== 'podcasts' && deferredFilter !== 'audiobooks') {
                 return [];
             }
 
-            const mediaType = activeFilter === 'podcasts' ? 'podcasts' : 'audiobooks';
+            const mediaType = deferredFilter === 'podcasts' ? 'podcasts' : 'audiobooks';
             return getUniqueHomeItems(
                 filteredSections
                     .flatMap((section) => section.items)
                     .filter((item) => getLibraryMediaType(item) === mediaType),
             );
         },
-        [activeFilter, filteredSections],
+        [deferredFilter, filteredSections],
+    );
+
+    // Home owns its own scroll container (rendered in App's non-ScrollView tab
+    // path, like Library) so the podcasts/audiobooks grid can be a real
+    // virtualized FlashList instead of a non-virtualized items.map of every tile.
+    const refreshControl = onRefresh ? (
+        <RefreshControl
+            colors={[colors.accent]}
+            onRefresh={onRefresh}
+            progressBackgroundColor={colors.surface}
+            refreshing={isRefreshing ?? false}
+            tintColor={colors.accent}
+        />
+    ) : undefined;
+    const renderScrollScene = (children: ReactNode) => (
+        <ScrollView
+            contentContainerStyle={styles.homeListContent}
+            refreshControl={refreshControl}
+            showsVerticalScrollIndicator={false}
+            style={styles.homeSceneRoot}
+        >
+            {children}
+        </ScrollView>
     );
 
     if (homeContentState.status === 'idle') {
-        return null;
+        return <View style={styles.homeSceneRoot} />;
     }
 
     if (homeContentState.status === 'loading') {
-        return <HomeSkeletonPage />;
+        return (
+            <View style={styles.homeSceneRoot}>
+                <HomeSkeletonPage />
+            </View>
+        );
     }
 
     if (homeContentState.status === 'error') {
-        return (
+        return renderScrollScene(
             <View style={styles.section}>
                 <Text style={styles.errorText}>{homeContentState.message}</Text>
-            </View>
+            </View>,
         );
     }
 
     if (homeContentState.content.sections.length === 0) {
         const isOfflineContent = homeContentState.content.serverTitle === 'Offline Downloads';
-        return (
+        return renderScrollScene(
             <>
                 <View style={styles.section}>
                     <Text style={styles.sectionTitle}>
@@ -212,58 +267,74 @@ export const HomeContentStatus = ({
                     </Text>
                 </View>
                 <WarningList errors={homeContentState.content.errors} title="Server warnings" />
-            </>
+            </>,
         );
     }
 
-    return (
-        <>
-            {availableFilters.length > 2 ? (
-                <ScrollView
-                    contentContainerStyle={styles.homeFilterPills}
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                >
-                    {availableFilters.map((filter) => {
-                        const isActive = filter.id === activeFilter;
+    const pillsRow =
+        availableFilters.length > 2 ? (
+            <ScrollView
+                contentContainerStyle={styles.homeFilterPills}
+                horizontal
+                showsHorizontalScrollIndicator={false}
+            >
+                {availableFilters.map((filter) => {
+                    const isActive = filter.id === activeFilter;
 
-                        return (
-                            <Pressable
-                                accessibilityRole="button"
-                                key={filter.id}
-                                onPress={() => onFilterChange(filter.id)}
+                    return (
+                        <Pressable
+                            accessibilityRole="button"
+                            key={filter.id}
+                            onPress={() => onFilterChange(filter.id)}
+                            style={[styles.homeFilterPill, isActive && styles.homeFilterPillActive]}
+                        >
+                            <Text
                                 style={[
-                                    styles.homeFilterPill,
-                                    isActive && styles.homeFilterPillActive,
+                                    styles.homeFilterPillText,
+                                    isActive && styles.homeFilterPillTextActive,
                                 ]}
                             >
-                                <Text
-                                    style={[
-                                        styles.homeFilterPillText,
-                                        isActive && styles.homeFilterPillTextActive,
-                                    ]}
-                                >
-                                    {filter.label}
-                                </Text>
-                            </Pressable>
-                        );
-                    })}
-                </ScrollView>
-            ) : null}
+                                {filter.label}
+                            </Text>
+                        </Pressable>
+                    );
+                })}
+            </ScrollView>
+        ) : null;
+
+    const warnings = (
+        <WarningList errors={homeContentState.content.errors} title="Server warnings" />
+    );
+
+    // Grid filters (podcasts/audiobooks) render the whole scene as a virtualized
+    // FlashList with the pills as its header, so only on-screen tiles mount.
+    if (
+        filteredSections.length > 0 &&
+        (deferredFilter === 'podcasts' || deferredFilter === 'audiobooks')
+    ) {
+        return (
+            <HomeFilterGrid
+                ListFooterComponent={warnings}
+                ListHeaderComponent={pillsRow}
+                items={filteredGridItems}
+                onPrefetchItem={stablePrefetchItem}
+                onSelectItem={stableSelectItem}
+                refreshControl={refreshControl}
+                serverConnection={serverConnection}
+                variant={deferredFilter === 'podcasts' ? 'podcast' : 'book'}
+            />
+        );
+    }
+
+    return renderScrollScene(
+        <>
+            {pillsRow}
             {filteredSections.length === 0 ? (
                 <View style={[styles.section, { marginTop: spacing.md }]}>
                     <Text style={styles.mutedText}>
-                        No {activeFilter === 'all' ? '' : activeFilter + ' '}content loaded yet.
+                        No {deferredFilter === 'all' ? '' : deferredFilter + ' '}content loaded yet.
                     </Text>
                 </View>
-            ) : activeFilter === 'podcasts' || activeFilter === 'audiobooks' ? (
-                <HomeFilterGrid
-                    items={filteredGridItems}
-                    onPrefetchItem={stablePrefetchItem}
-                    onSelectItem={stableSelectItem}
-                    serverConnection={serverConnection}
-                    variant={activeFilter === 'podcasts' ? 'podcast' : 'book'}
-                />
             ) : (
                 <ContentSections
                     onPrefetchItem={stablePrefetchItem}
@@ -273,8 +344,8 @@ export const HomeContentStatus = ({
                     serverConnection={serverConnection}
                 />
             )}
-            <WarningList errors={homeContentState.content.errors} title="Server warnings" />
-        </>
+            {warnings}
+        </>,
     );
 };
 
@@ -415,34 +486,81 @@ const HomeFilterGridTile = memo(({
 
 HomeFilterGridTile.displayName = 'HomeFilterGridTile';
 
+const HOME_GRID_COLUMNS = 2;
+
+interface HomeGridRow {
+    items: AndroidRecentContentSourceItem[];
+    key: string;
+}
+
+/** Pack the grid items into fixed 2-up rows so a FlashList can virtualize them. */
+const chunkHomeGridRows = (items: AndroidRecentContentSourceItem[]): HomeGridRow[] => {
+    const rows: HomeGridRow[] = [];
+    for (let index = 0; index < items.length; index += HOME_GRID_COLUMNS) {
+        const rowItems = items.slice(index, index + HOME_GRID_COLUMNS);
+        rows.push({ items: rowItems, key: rowItems.map(getContentItemKey).join('|') });
+    }
+    return rows;
+};
+
 const HomeFilterGrid = memo(({
+    ListFooterComponent,
+    ListHeaderComponent,
     items,
     onPrefetchItem,
     onSelectItem,
+    refreshControl,
     serverConnection,
     variant,
 }: {
+    ListFooterComponent?: ReactElement | null;
+    ListHeaderComponent?: ReactElement | null;
     items: AndroidRecentContentSourceItem[];
     onPrefetchItem?: (item: AndroidRecentContentSourceItem) => void;
     onSelectItem: (item: AndroidRecentContentSourceItem) => void;
+    refreshControl?: ReactElement<RefreshControlProps>;
     serverConnection: ServerAuthenticationResult | null;
     variant: 'book' | 'podcast';
 }) => {
     const isPodcast = variant === 'podcast';
+    const rows = useMemo(() => chunkHomeGridRows(items), [items]);
+    const renderRow = useCallback(
+        ({ item: row }: { item: HomeGridRow }) => (
+            <View style={styles.homeFilterGridRow}>
+                {row.items.map((item) => (
+                    <HomeFilterGridTile
+                        isPodcast={isPodcast}
+                        item={item}
+                        key={getContentItemKey(item)}
+                        onPrefetchItem={onPrefetchItem}
+                        onSelectItem={onSelectItem}
+                        serverConnection={serverConnection}
+                        variant={variant}
+                    />
+                ))}
+                {/* Pad a final odd row so the lone tile keeps its column width. */}
+                {row.items.length < HOME_GRID_COLUMNS ? (
+                    <View style={styles.homeFilterGridTile} />
+                ) : null}
+            </View>
+        ),
+        [isPodcast, onPrefetchItem, onSelectItem, serverConnection, variant],
+    );
+
     return (
-        <View style={styles.homeFilterGrid}>
-            {items.map((item) => (
-                <HomeFilterGridTile
-                    isPodcast={isPodcast}
-                    item={item}
-                    key={getContentItemKey(item)}
-                    onPrefetchItem={onPrefetchItem}
-                    onSelectItem={onSelectItem}
-                    serverConnection={serverConnection}
-                    variant={variant}
-                />
-            ))}
-        </View>
+        <FlashList
+            ListFooterComponent={ListFooterComponent}
+            ListHeaderComponent={ListHeaderComponent}
+            contentContainerStyle={styles.homeListContent}
+            data={rows}
+            drawDistance={HOME_PRIMARY_TILE * 6}
+            keyExtractor={(row) => row.key}
+            maintainVisibleContentPosition={FLASH_LIST_MAINTAIN_POSITION_DISABLED}
+            refreshControl={refreshControl}
+            renderItem={renderRow}
+            showsVerticalScrollIndicator={false}
+            style={styles.homeSceneRoot}
+        />
     );
 });
 

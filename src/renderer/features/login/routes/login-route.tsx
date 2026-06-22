@@ -4,7 +4,6 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Navigate } from 'react-router';
 
-import AudiobookshelfIcon from '../../../../../assets/icons/audiobookshelf.svg';
 import SamoIcon from '../../../../../build/samologo.svg';
 
 import { api } from '/@/renderer/api';
@@ -13,8 +12,6 @@ import {
     isLegacyAuth,
     isServerLock,
 } from '/@/renderer/features/action-required/utils/window-properties';
-import JellyfinIcon from '/@/renderer/features/servers/assets/jellyfin.png';
-import SubsonicIcon from '/@/renderer/features/servers/assets/opensubsonic.png';
 import { IgnoreCorsSslSwitches } from '/@/renderer/features/servers/components/ignore-cors-ssl-switches';
 import { AnimatedPage } from '/@/renderer/features/shared/components/animated-page';
 import { PageErrorBoundary } from '/@/renderer/features/shared/components/page-error-boundary';
@@ -42,14 +39,10 @@ import { ServerType, toServerType } from '/@/shared/types/types';
 const localSettings = isElectron() ? window.api.localSettings : null;
 
 const SERVER_ICONS: Record<ServerType, string> = {
-    [ServerType.AUDIOBOOKSHELF]: AudiobookshelfIcon,
-    [ServerType.JELLYFIN]: JellyfinIcon,
     [ServerType.SAMO]: SamoIcon,
 };
 
 const SERVER_NAMES: Record<ServerType, string> = {
-    [ServerType.AUDIOBOOKSHELF]: 'Audiobookshelf',
-    [ServerType.JELLYFIN]: 'Jellyfin',
     [ServerType.SAMO]: 'Samo',
 };
 
@@ -151,7 +144,7 @@ const LoginRoute = () => {
                 serverType as ServerType,
             );
 
-            if (!data) {
+            if (false) {
                 return toast.error({
                     message: t('error.authenticationFailed', { postProcess: 'sentenceCase' }),
                 });

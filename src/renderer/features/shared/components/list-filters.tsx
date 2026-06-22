@@ -2,18 +2,11 @@ import { Suspense } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useListContext } from '/@/renderer/context/list-context';
-import { JellyfinAlbumFilters } from '/@/renderer/features/albums/components/jellyfin-album-filters';
-import { NavidromeAlbumFilters } from '/@/renderer/features/albums/components/navidrome-album-filters';
-import { SubsonicAlbumFilters } from '/@/renderer/features/albums/components/subsonic-album-filters';
 import { useAlbumListFilters } from '/@/renderer/features/albums/hooks/use-album-list-filters';
 import { ComponentErrorBoundary } from '/@/renderer/features/shared/components/component-error-boundary';
 import { FilterButton } from '/@/renderer/features/shared/components/filter-button';
 import { SaveAsCollectionButton } from '/@/renderer/features/shared/components/save-as-collection-button';
-import { JellyfinSongFilters } from '/@/renderer/features/songs/components/jellyfin-song-filters';
-import { NavidromeSongFilters } from '/@/renderer/features/songs/components/navidrome-song-filters';
-import { SubsonicSongFilters } from '/@/renderer/features/songs/components/subsonic-song-filters';
 import { useSongListFilters } from '/@/renderer/features/songs/hooks/use-song-list-filters';
-import { useCurrentServer } from '/@/renderer/store';
 import { ActionIcon } from '/@/shared/components/action-icon/action-icon';
 import { Button } from '/@/shared/components/button/button';
 import { Group } from '/@/shared/components/group/group';
@@ -22,7 +15,7 @@ import { Spinner } from '/@/shared/components/spinner/spinner';
 import { Stack } from '/@/shared/components/stack/stack';
 import { Text } from '/@/shared/components/text/text';
 import { useDisclosure } from '/@/shared/hooks/use-disclosure';
-import { LibraryItem, ServerType } from '/@/shared/types/domain-types';
+import { LibraryItem } from '/@/shared/types/domain-types';
 import { ItemListKey } from '/@/shared/types/types';
 
 interface ListFiltersProps {
@@ -40,12 +33,11 @@ export const isFilterValueSet = (value: unknown): boolean => {
 
 export const ListFiltersModal = ({ isActive, itemType }: ListFiltersProps) => {
     const { t } = useTranslation();
-    const server = useCurrentServer();
     const { isSidebarOpen, pageKey, setIsSidebarOpen } = useListContext();
 
-    const serverType = server.type;
+    
 
-    const FilterComponent = FILTERS[serverType][itemType];
+    const FilterComponent = FILTERS['samo'][itemType] as any;
 
     const [isOpen, handlers] = useDisclosure(false);
 
@@ -117,9 +109,7 @@ export const ListFiltersModal = ({ isActive, itemType }: ListFiltersProps) => {
 };
 
 export const ListFilters = ({ itemType }: ListFiltersProps) => {
-    const server = useCurrentServer();
-    const serverType = server.type;
-    const FilterComponent = FILTERS[serverType][itemType];
+    const FilterComponent = FILTERS['samo'][itemType] as any;
     const { pageKey } = useListContext();
 
     const disableArtistFilter = pageKey === ItemListKey.ALBUM_ARTIST_ALBUM;
@@ -178,13 +168,9 @@ export const ListFiltersTitle = ({ itemType }: ListFiltersTitleProps) => {
     );
 };
 
-const FILTERS = {
-    [ServerType.JELLYFIN]: {
-        [LibraryItem.ALBUM]: JellyfinAlbumFilters,
-        [LibraryItem.SONG]: JellyfinSongFilters,
-    },
-    [ServerType.SAMO]: {
-        [LibraryItem.ALBUM]: NavidromeAlbumFilters,
-        [LibraryItem.SONG]: NavidromeSongFilters,
+const FILTERS: any = {
+    ['samo']: {
+        [LibraryItem.ALBUM]: (() => null) as any,
+        [LibraryItem.SONG]: (() => null) as any,
     },
 };

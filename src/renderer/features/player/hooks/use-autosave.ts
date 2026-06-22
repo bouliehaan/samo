@@ -1,11 +1,9 @@
 import { useEffect, useRef } from 'react';
 
 import { useSaveQueue } from '/@/renderer/features/player/hooks/use-queue-restore';
-import { useCurrentServer, usePlayerSong, useSettingsStore } from '/@/renderer/store';
-import { ServerType } from '/@/shared/types/domain-types';
+import { usePlayerSong, useSettingsStore } from '/@/renderer/store';
 
 export const useAutosave = () => {
-    const server = useCurrentServer();
     const currentSong = usePlayerSong();
     const priorSongId = useRef<string | undefined>(undefined);
     const songCount = useRef(0);
@@ -13,7 +11,7 @@ export const useAutosave = () => {
     const { mutate: savePlayQueue } = useSaveQueue();
 
     useEffect(() => {
-        if (enabled && server?.type && server.type !== ServerType.JELLYFIN) {
+        if (enabled) {
             if (currentSong?._uniqueId !== priorSongId.current) {
                 if (songCount.current === count) {
                     savePlayQueue();
@@ -25,7 +23,7 @@ export const useAutosave = () => {
                 priorSongId.current = currentSong?._uniqueId;
             }
         }
-    }, [enabled, count, currentSong?._uniqueId, savePlayQueue, server?.type]);
+    }, [enabled, count, currentSong?._uniqueId, savePlayQueue]);
 };
 
 export const AutosaveHook = () => {

@@ -143,7 +143,9 @@ export const useAppTheme = (overrideTheme?: AppTheme) => {
             const root = document.documentElement;
             root.style.setProperty(
                 '--theme-content-font-family',
-                `${builtIn}, "Noto Sans JP", "Noto Sans Hebrew", sans-serif`,
+                // Prefer the OS system font (SF Pro on macOS) for primary/white text;
+                // the configured built-in font is only a cross-platform fallback.
+                `-apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Segoe UI", ${builtIn}, "Noto Sans JP", "Noto Sans Hebrew", system-ui, sans-serif`,
             );
         }
     }, [builtIn, custom, system, type]);

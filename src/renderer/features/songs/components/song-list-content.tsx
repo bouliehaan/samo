@@ -3,11 +3,11 @@ import { lazy, Suspense, useMemo } from 'react';
 import { useListContext } from '/@/renderer/context/list-context';
 import { ListFilters, ListFiltersTitle } from '/@/renderer/features/shared/components/list-filters';
 import { ListWithSidebarContainer } from '/@/renderer/features/shared/components/list-with-sidebar-container';
+import { TrackListSkeleton } from '/@/renderer/features/shared/components/page-skeletons/page-skeletons';
 import { SaveAsCollectionButton } from '/@/renderer/features/shared/components/save-as-collection-button';
 import { useSongListFilters } from '/@/renderer/features/songs/hooks/use-song-list-filters';
 import { ItemListSettings, useCurrentServer, useListSettings } from '/@/renderer/store';
 import { ScrollArea } from '/@/shared/components/scroll-area/scroll-area';
-import { Spinner } from '/@/shared/components/spinner/spinner';
 import { Stack } from '/@/shared/components/stack/stack';
 import { LibraryItem, SongListQuery } from '/@/shared/types/domain-types';
 import { ItemListKey, ListDisplayType, ListPaginationType } from '/@/shared/types/types';
@@ -64,7 +64,7 @@ const SongListSuspenseContainer = () => {
     const { customFilters } = useListContext();
 
     return (
-        <Suspense fallback={<Spinner container />}>
+        <Suspense fallback={<TrackListSkeleton />}>
             <SongListView
                 display={display}
                 grid={grid}

@@ -10,6 +10,7 @@ import styles from './main-content.module.css';
 import { ExpandedListContainer } from '/@/renderer/components/item-list/expanded-list-container';
 import { ExpandedListItem } from '/@/renderer/components/item-list/expanded-list-item';
 import { GlobalSearchBar } from '/@/renderer/features/search/components/global-search-bar';
+import { RouteFallback } from '/@/renderer/features/shared/components/page-skeletons/route-fallback';
 import { AppMenu } from '/@/renderer/features/titlebar/components/app-menu';
 import { FullScreenOverlay } from '/@/renderer/layouts/default-layout/full-screen-overlay';
 import { FullScreenVisualizerOverlay } from '/@/renderer/layouts/default-layout/full-screen-visualizer-overlay';
@@ -26,7 +27,6 @@ import {
 import { constrainRightSidebarWidth, constrainSidebarWidth } from '/@/renderer/utils';
 import { DropdownMenu } from '/@/shared/components/dropdown-menu/dropdown-menu';
 import { Icon } from '/@/shared/components/icon/icon';
-import { Spinner } from '/@/shared/components/spinner/spinner';
 
 const MINIMUM_SIDEBAR_WIDTH = 260;
 
@@ -248,7 +248,7 @@ function MainContentBody() {
     return (
         <div className={styles.mainContentBody}>
             <div className={styles.mainContentBodyScroll}>
-                <Suspense fallback={<Spinner container />}>
+                <Suspense fallback={<RouteFallback />}>
                     <Outlet />
                 </Suspense>
             </div>
@@ -286,7 +286,7 @@ function ShellChromeControls() {
                     <DropdownMenu.Target>
                         <button
                             aria-label="Open app menu"
-                            className={styles['chrome-shell-button']}
+                            className={clsx(styles['chrome-shell-button'], styles['chrome-logo-button'])}
                             type="button"
                         >
                             <img

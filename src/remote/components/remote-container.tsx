@@ -13,7 +13,7 @@ import { Rating } from '/@/shared/components/rating/rating';
 import { Stack } from '/@/shared/components/stack/stack';
 import { Text } from '/@/shared/components/text/text';
 import { Tooltip } from '/@/shared/components/tooltip/tooltip';
-import { PlayerRepeat, PlayerStatus } from '/@/shared/types/types';
+import { PlayerRepeat, PlayerStatus, ServerType } from '/@/shared/types/types';
 
 export const RemoteContainer = () => {
     const { position, repeat, shuffle, song, status, volume } = useInfo();
@@ -98,7 +98,7 @@ export const RemoteContainer = () => {
                     }}
                     variant="transparent"
                 />
-                {(song?._serverType === 'navidrome' || song?._serverType === 'subsonic') && (
+                {song && song._serverType === ServerType.SAMO && (
                     <div style={{ margin: 'auto' }}>
                         <Tooltip label="Double click to clear" openDelay={1000}>
                             <Rating

@@ -18,6 +18,7 @@ import { useUpdatePlaylist } from '/@/renderer/features/playlists/mutations/upda
 import { AnimatedPage } from '/@/renderer/features/shared/components/animated-page';
 import { ListWithSidebarContainer } from '/@/renderer/features/shared/components/list-with-sidebar-container';
 import { PageErrorBoundary } from '/@/renderer/features/shared/components/page-error-boundary';
+import { TrackListSkeleton } from '/@/renderer/features/shared/components/page-skeletons/page-skeletons';
 import { AppRoute } from '/@/renderer/router/routes';
 import {
     PlaylistTarget,
@@ -209,9 +210,7 @@ const PlaylistDetailSongListRoute = () => {
         });
     };
 
-    const isSmartPlaylist = Boolean(
-        detailQuery?.data?.rules && false,
-    );
+    const isSmartPlaylist = Boolean(detailQuery?.data?.rules && false);
 
     const [showQueryBuilder, setShowQueryBuilder] = useState(false);
     const [isQueryBuilderExpanded, setIsQueryBuilderExpanded] = useState(false);
@@ -287,7 +286,7 @@ const PlaylistDetailSongListRoute = () => {
                             <PlaylistSongListFiltersSidebar />
                         </Suspense>
                     </ListWithSidebarContainer.SidebarPortal>
-                    <Suspense fallback={<Spinner container />}>
+                    <Suspense fallback={<TrackListSkeleton />}>
                         <PlaylistDetailSongListContent />
                     </Suspense>
                 </ListWithSidebarContainer>

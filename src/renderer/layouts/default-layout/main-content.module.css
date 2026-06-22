@@ -120,15 +120,15 @@
     outline-offset: 2px;
 }
 
-.chrome-shell-button:has(.chrome-shell-logo) {
-    width: 3rem;
-    height: 3rem;
+.chrome-logo-button {
+    width: 64px;
+    height: 64px;
 }
 
 .chrome-shell-logo {
     display: block;
-    width: 2.75rem;
-    height: 2.75rem;
+    width: 64px;
+    height: 64px;
     object-fit: contain;
 }
 

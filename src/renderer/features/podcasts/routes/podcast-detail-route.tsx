@@ -4,7 +4,7 @@ import formatDuration from 'format-duration';
 import { useMemo, useState } from 'react';
 import { useParams } from 'react-router';
 
-import { audiobookshelfController } from '/@/renderer/api/audiobookshelf/audiobookshelf-controller';
+
 import {
     isSamoBackedLibraryItem,
     isSamoLongFormServer,
@@ -21,13 +21,10 @@ import {
 } from '/@/renderer/store/library-favorites.store';
 import { usePodcastActions } from '/@/renderer/store/podcast.store';
 import {
-    AudiobookshelfLibraryItem,
-    AudiobookshelfPodcastEpisode,
-} from '/@/shared/api/audiobookshelf/audiobookshelf-types';
-import {
-    buildSamoAuthenticatedImageRequest,
-    ServerType,
-} from '@samo/core/server';
+    LongFormLibraryItem,
+    LongFormPodcastEpisode,
+} from '/@/shared/api/long-form-types';
+import { buildSamoAuthenticatedImageRequest } from '@samo/core/server';
 import { ActionIcon } from '/@/shared/components/action-icon/action-icon';
 import { Button } from '/@/shared/components/button/button';
 import { Image } from '/@/shared/components/image/image';
@@ -35,10 +32,10 @@ import { Text } from '/@/shared/components/text/text';
 import { TextInput } from '/@/shared/components/text-input/text-input';
 import { toast } from '/@/shared/components/toast/toast';
 
-const podcastTitle = (item: AudiobookshelfLibraryItem) =>
+const podcastTitle = (item: LongFormLibraryItem) =>
     item.media?.metadata?.title || item.name || 'Untitled podcast';
 
-const podcastAuthor = (item: AudiobookshelfLibraryItem) => {
+const podcastAuthor = (item: LongFormLibraryItem) => {
     const meta = item.media?.metadata;
     return meta?.author || meta?.authors?.map((a) => a.name).join(', ') || '';
 };
@@ -56,7 +53,7 @@ const formatEpisodeDate = (publishedAt?: number) => {
     }
 };
 
-const formatEpisodeDuration = (episode: AudiobookshelfPodcastEpisode) => {
+const formatEpisodeDuration = (episode: LongFormPodcastEpisode) => {
     const seconds = episode.duration ?? episode.audioFile?.duration;
     if (!seconds || !isFinite(seconds)) return null;
     return formatDuration(seconds * 1000);
@@ -75,8 +72,7 @@ const PodcastCover = ({
 
     const coverQuery = useQuery({
         enabled: Boolean(server?.id && itemId && !isSamoLongFormServer(server)),
-        queryFn: async () =>
-            (await audiobookshelfController.getItemCoverDataUrl(server!, itemId)) ?? null,
+        queryFn: async () => null,
         queryKey: ['audiobookshelf', 'cover', server?.id, itemId],
         staleTime: 1000 * 60 * 60,
     });
@@ -91,11 +87,7 @@ const PodcastCover = ({
         }
 
         return buildSamoAuthenticatedImageRequest(
-            {
-                credential: server!.credential,
-                type: ServerType.SAMO,
-                url: server!.url,
-            },
+            server!,
             coverSrc,
             ['samo', server!.id, 'podcast-cover', itemId].join(':'),
         );
@@ -120,7 +112,7 @@ const PodcastCover = ({
     );
 };
 
-const getEpisodeProgressFraction = (episode: AudiobookshelfPodcastEpisode) => {
+const getEpisodeProgressFraction = (episode: LongFormPodcastEpisode) => {
     if (episode.completed) {
         return 1;
     }
@@ -144,8 +136,8 @@ const EpisodeRow = ({
     episode,
     onPlay,
 }: {
-    episode: AudiobookshelfPodcastEpisode;
-    onPlay: (episode: AudiobookshelfPodcastEpisode) => void;
+    episode: LongFormPodcastEpisode;
+    onPlay: (episode: LongFormPodcastEpisode) => void;
 }) => {
     const date = formatEpisodeDate(episode.publishedAt);
     const duration = formatEpisodeDuration(episode);
@@ -240,11 +232,8 @@ const PodcastDetailRoute = () => {
 
     const itemQuery = useQuery({
         enabled: Boolean(server?.id && itemId),
-        queryFn: () =>
-            isSamo
-                ? loadSamoPodcastLibraryItem(server!, itemId!)
-                : audiobookshelfController.getItem(server!, itemId!),
-        queryKey: [isSamo ? 'samo' : 'audiobookshelf', 'item', server?.id, itemId],
+        queryFn: () => loadSamoPodcastLibraryItem(server!, itemId!),
+        queryKey: ['samo', 'item', server?.id, itemId],
     });
 
     const item = itemQuery.data;
@@ -254,7 +243,7 @@ const PodcastDetailRoute = () => {
         .slice()
         .sort((a, b) => (b.publishedAt ?? 0) - (a.publishedAt ?? 0));
 
-    const handlePlay = (episode: AudiobookshelfPodcastEpisode) => {
+    const handlePlay = (episode: LongFormPodcastEpisode) => {
         if (!server || !item) return;
         playPodcast(server, item, episode);
     };
@@ -273,11 +262,7 @@ const PodcastDetailRoute = () => {
         try {
             await attachSamoPodcastShowFeed(
                 samoFetch,
-                {
-                    credential: server.credential,
-                    type: ServerType.SAMO,
-                    url: server.url,
-                },
+                server!,
                 itemId,
                 { url: rssFeedUrl.trim() },
             );

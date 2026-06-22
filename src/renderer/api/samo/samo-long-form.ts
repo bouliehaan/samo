@@ -27,17 +27,17 @@ import { samoExtras } from '/@/renderer/api/samo/samo-controller';
 import { samoFetch } from '/@/renderer/api/samo/samo-fetch';
 import { useLongFormMediaServer } from '/@/renderer/store';
 import {
-    AudiobookshelfChapter,
-    AudiobookshelfLibraryItem,
-    AudiobookshelfPodcastEpisode,
-} from '/@/shared/api/audiobookshelf/audiobookshelf-types';
+    LongFormChapter,
+    LongFormLibraryItem,
+    LongFormPodcastEpisode,
+} from '/@/shared/api/long-form-types';
 import { ServerListItemWithCredential } from '/@/shared/types/domain-types';
 
 const browserFetch = samoFetch;
 
 export const SAMO_LONG_FORM_SOURCE = 'samo-long-form' as const;
 
-export type SamoBackedLibraryItem = AudiobookshelfLibraryItem & {
+export type SamoBackedLibraryItem = LongFormLibraryItem & {
     samoPath?: string;
     samoRssFeed?: { feedUrl?: string; id: string };
     samoSource?: typeof SAMO_LONG_FORM_SOURCE;
@@ -63,7 +63,7 @@ const publishedYear = (value?: number | string) => {
     return String(value);
 };
 
-const toAbsChapters = (chapters: SamoAudiobook['chapters']): AudiobookshelfChapter[] =>
+const toAbsChapters = (chapters: SamoAudiobook['chapters']): LongFormChapter[] =>
     (chapters ?? []).map((chapter, index) => ({
         id: chapter.id ?? String(index),
         start: chapter.startSeconds ?? 0,
@@ -76,7 +76,7 @@ export const isSamoLongFormServer = (server: null | ServerListItemWithCredential
 export { useLongFormMediaServer };
 
 export const isSamoBackedLibraryItem = (
-    item: AudiobookshelfLibraryItem | null | undefined,
+    item: LongFormLibraryItem | null | undefined,
 ): item is SamoBackedLibraryItem =>
     Boolean(item && (item as SamoBackedLibraryItem).samoSource === SAMO_LONG_FORM_SOURCE);
 
@@ -128,7 +128,7 @@ export const samoAudiobookToLibraryItem = (
 
 export const samoPodcastEpisodeToAbsEpisode = (
     episode: SamoPodcastEpisode,
-): AudiobookshelfPodcastEpisode => {
+): LongFormPodcastEpisode => {
     const progress = episode.progress ?? episode.playback;
     const progressSeconds = progress?.progressSeconds;
 
@@ -259,7 +259,7 @@ export const loadSamoPodcastLibraryItem = async (
 
 export const resolveSamoAudiobookPlaySession = async (
     server: ServerListItemWithCredential,
-    item: AudiobookshelfLibraryItem,
+    item: LongFormLibraryItem,
 ) => {
     const auth = samoAuth(server);
     const streamToken = await ensureStreamToken(server);
@@ -298,8 +298,8 @@ export const resolveSamoAudiobookPlaySession = async (
 
 export const resolveSamoPodcastPlaySession = async (
     server: ServerListItemWithCredential,
-    item: AudiobookshelfLibraryItem,
-    episode: AudiobookshelfPodcastEpisode,
+    item: LongFormLibraryItem,
+    episode: LongFormPodcastEpisode,
 ) => {
     const auth = samoAuth(server);
     const streamToken = await ensureStreamToken(server);

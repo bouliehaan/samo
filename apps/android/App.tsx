@@ -76,7 +76,6 @@ import {
     PermissionsAndroid,
     Platform,
     Pressable,
-    RefreshControl,
     ScrollView,
     StyleSheet,
     Text,
@@ -192,6 +191,7 @@ import {
     updateAndroidNowPlayingMetadata,
 } from './src/services/audio-playback';
 import { prefetchCatalogArtwork } from './src/services/artwork-prefetch';
+import { formatJankBreadcrumb } from './src/services/jank-trace';
 import {
     buildCatalogHomeContent,
     type HomeLiveSections,
@@ -436,7 +436,9 @@ export default function App() {
         isSearchOverlayOpen,
         libraryFullCollectionFetchTokenRef,
         libraryFullCollections,
+        mediaDetailKey,
         mediaDetailState,
+        popMediaDetail,
         searchOverlayQuery,
         searchState,
         setActiveTab,
@@ -550,8 +552,10 @@ export default function App() {
     const isHomeSurface =
         activeTab === 'home' && activeUtilityScreen === null && mediaDetailState.status === 'idle';
     const frozenDetailStateRef = useRef(mediaDetailState);
+    const frozenDetailKeyRef = useRef(mediaDetailKey);
     if (mediaDetailState.status === 'loaded') {
         frozenDetailStateRef.current = mediaDetailState;
+        frozenDetailKeyRef.current = mediaDetailKey;
     }
     const detailOverlayOpen = activeUtilityScreen === null && mediaDetailState.status !== 'idle';
     const hasCachedDetailShell = frozenDetailStateRef.current.status === 'loaded';
@@ -771,7 +775,9 @@ export default function App() {
             const lagMs = now - expected;
             if (lagMs > 1500) {
                 // eslint-disable-next-line no-console
-                console.warn(`[jank] JS thread blocked ~${Math.round(lagMs / 100) / 10}s`);
+                console.warn(
+                    `[jank] JS thread blocked ~${Math.round(lagMs / 100) / 10}s${formatJankBreadcrumb()}`,
+                );
             }
             expected = now + 2000;
         }, 2000);
@@ -1347,6 +1353,58 @@ export default function App() {
         serverConnection,
     });
 
+    // Stable props for the memoized MiniPlayer / FullScreenPlayer. These were
+    // inline in the JSX (`contentSource={...computed...}`, `onNext={() => ...}`),
+    // so every App re-render allocated fresh references and defeated the players'
+    // memo — measured on-device as Mini + FullPlayer re-rendering in lockstep
+    // with App (a ~20Hz burst during sync/boot, and along every Home refresh).
+    // Hoisting them to stable identities lets both players bail out of any App
+    // re-render that isn't actually about the playing track.
+    const playbackContentSource = useMemo(
+        () =>
+            playbackItem
+                ? getContentSourceFromPlaybackItem(playbackItem, serverConnection)
+                : undefined,
+        [playbackItem, serverConnection],
+    );
+    const handlePlayerNext = useCallback(
+        () => void handleNavigatePlayback(1),
+        [handleNavigatePlayback],
+    );
+    const handlePlayerPrevious = useCallback(
+        () => void handleNavigatePlayback(-1),
+        [handleNavigatePlayback],
+    );
+    const handlePlayerSeek = useCallback(
+        (positionMs: number) => void handleSeekPlayback(positionMs),
+        [handleSeekPlayback],
+    );
+    const handlePlayerSkipBySeconds = useCallback(
+        (offsetSeconds: number) => void handleSkipPlayback(offsetSeconds),
+        [handleSkipPlayback],
+    );
+    const handlePlayerPlayQueueIndex = useCallback(
+        (index: number) => {
+            const currentQueue = getPlaybackQueue();
+            if (!currentQueue) {
+                return;
+            }
+            const item = currentQueue.items[index];
+            if (!item) {
+                return;
+            }
+            void (async () => {
+                // Same native queue step the lock screen uses; full JS restart
+                // only as fallback.
+                if (await playQueueIndexNatively(index)) {
+                    return;
+                }
+                await playQueuedItem(item, currentQueue.items, index);
+            })();
+        },
+        [playQueueIndexNatively, playQueuedItem],
+    );
+
     useEffect(() => {
         registerNavigatePlayback(handleNavigatePlayback);
     }, [handleNavigatePlayback, registerNavigatePlayback]);
@@ -1695,8 +1753,10 @@ export default function App() {
             ) : null}
             {tabId === 'home' ? (
                 <HomeScreen
+                    isRefreshing={isRefreshingHome}
                     onManageServers={handleOpenManageServers}
                     onPrefetchItem={handlePrefetchMediaItemStable}
+                    onRefresh={serverConnection ? handleRefreshHome : undefined}
                     onSelectItem={handleSelectMediaItemStable}
                     onViewAll={handleOpenViewAll}
                     serverConnection={serverConnection}
@@ -1778,7 +1838,14 @@ export default function App() {
                                                             : styles.tabSceneHidden,
                                                     ];
 
-                                                    if (tab.id === 'library') {
+                                                    // Library and Home own their own scroll
+                                                    // containers (a virtualized FlashList), so they
+                                                    // render in a plain View rather than the shared
+                                                    // tab ScrollView — nesting a same-orientation
+                                                    // VirtualizedList inside a ScrollView disables
+                                                    // virtualization. Home's pull-to-refresh moves
+                                                    // onto its own list (see HomeScreen).
+                                                    if (tab.id === 'library' || tab.id === 'home') {
                                                         return (
                                                             <View
                                                                 key={tab.id}
@@ -1796,26 +1863,15 @@ export default function App() {
                                                         );
                                                     }
 
+                                                    // Home + Library use the View path above; the
+                                                    // remaining tabs (playlists/radio/search) have no
+                                                    // pull-to-refresh, so this scroll carries none.
                                                     return (
                                                         <ScrollView
                                                             contentContainerStyle={styles.tabContent}
                                                             key={tab.id}
                                                             pointerEvents={
                                                                 isSceneActive ? 'auto' : 'none'
-                                                            }
-                                                            refreshControl={
-                                                                tab.id === 'home' &&
-                                                                !!serverConnection ? (
-                                                                    <RefreshControl
-                                                                        colors={[colors.accent]}
-                                                                        onRefresh={handleRefreshHome}
-                                                                        progressBackgroundColor={
-                                                                            colors.surface
-                                                                        }
-                                                                        refreshing={isRefreshingHome}
-                                                                        tintColor={colors.accent}
-                                                                    />
-                                                                ) : undefined
                                                             }
                                                             showsVerticalScrollIndicator={false}
                                                             style={sceneStyle}
@@ -1854,6 +1910,11 @@ export default function App() {
                                                 >
                                                     <MediaDetailContent
                                                         homeContentState={homeContentState}
+                                                        mediaDetailKey={
+                                                            detailOverlayOpen
+                                                                ? mediaDetailKey
+                                                                : frozenDetailKeyRef.current
+                                                        }
                                                         mediaDetailState={
                                                             detailOverlayOpen
                                                                 ? mediaDetailState
@@ -1862,7 +1923,7 @@ export default function App() {
                                                         onAddTrackToPlaylist={
                                                             handleAddMediaTrackToPlaylistStable
                                                         }
-                                                        onBack={closeMediaDetail}
+                                                        onBack={popMediaDetail}
                                                         onPlayTrack={handlePlayMediaTrackStable}
                                                         onReloadDetail={handleReloadMediaDetailStable}
                                                         onSelectItem={handleSelectMediaItemStable}
@@ -1927,14 +1988,7 @@ export default function App() {
                                         <ConnectedMiniPlayer
                                             artworkImageId={playbackItem?.artworkImageId}
                                             artworkUrl={currentHighResArtworkUrl}
-                                            contentSource={
-                                                playbackItem
-                                                    ? getContentSourceFromPlaybackItem(
-                                                          playbackItem,
-                                                          serverConnection,
-                                                      )
-                                                    : undefined
-                                            }
+                                            contentSource={playbackContentSource}
                                             lastPlayedItem={lastPlayedItem}
                                             onOpenFullPlayer={handleOpenFullPlayer}
                                             onTogglePlayback={handleTogglePlayback}
@@ -1976,54 +2030,17 @@ export default function App() {
                                             <ConnectedFullScreenPlayer
                                                 artworkImageId={playbackItem?.artworkImageId}
                                                 artworkUrl={currentHighResArtworkUrl}
-                                                contentSource={
-                                                    playbackItem
-                                                        ? getContentSourceFromPlaybackItem(
-                                                              playbackItem,
-                                                              serverConnection,
-                                                          )
-                                                        : undefined
-                                                }
+                                                contentSource={playbackContentSource}
                                                 castState={castState}
                                                 isShuffled={isShuffled}
                                                 lastPlayedItem={lastPlayedItem}
                                                 onClose={handleCloseFullPlayer}
-                                                onNext={() => void handleNavigatePlayback(1)}
+                                                onNext={handlePlayerNext}
                                                 onOpenOutputPicker={handleOpenOutputPicker}
-                                                onPlayQueueIndex={(index) => {
-                                                    const currentQueue = getPlaybackQueue();
-                                                    if (!currentQueue) {
-                                                        return;
-                                                    }
-                                                    const item = currentQueue.items[index];
-                                                    if (!item) {
-                                                        return;
-                                                    }
-                                                    void (async () => {
-                                                        // Same native queue step the
-                                                        // lock screen uses; full JS
-                                                        // restart only as fallback.
-                                                        if (
-                                                            await playQueueIndexNatively(
-                                                                index,
-                                                            )
-                                                        ) {
-                                                            return;
-                                                        }
-                                                        await playQueuedItem(
-                                                            item,
-                                                            currentQueue.items,
-                                                            index,
-                                                        );
-                                                    })();
-                                                }}
-                                                onPrevious={() => void handleNavigatePlayback(-1)}
-                                                onSkipBySeconds={(offsetSeconds) =>
-                                                    void handleSkipPlayback(offsetSeconds)
-                                                }
-                                                onSeek={(positionMs) =>
-                                                    void handleSeekPlayback(positionMs)
-                                                }
+                                                onPlayQueueIndex={handlePlayerPlayQueueIndex}
+                                                onPrevious={handlePlayerPrevious}
+                                                onSkipBySeconds={handlePlayerSkipBySeconds}
+                                                onSeek={handlePlayerSeek}
                                                 onTogglePlayback={handleTogglePlayback}
                                                 onToggleShuffle={handleToggleShuffle}
                                                 playerProgress={playerProgress}

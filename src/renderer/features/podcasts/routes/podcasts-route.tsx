@@ -1,9 +1,8 @@
 import { Box, SimpleGrid, Stack, TextInput } from '@mantine/core';
-import { useQueries, useQuery } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { generatePath, useNavigate } from 'react-router';
 
-import { audiobookshelfController } from '/@/renderer/api/audiobookshelf/audiobookshelf-controller';
 import {
     isSamoLongFormServer,
     listSamoPodcastLibraryItems,
@@ -18,7 +17,7 @@ import {
     useIsLibraryFavorite,
     useLibraryFavoritesActions,
 } from '/@/renderer/store/library-favorites.store';
-import { AudiobookshelfLibraryItem } from '/@/shared/api/audiobookshelf/audiobookshelf-types';
+import { LongFormLibraryItem } from '/@/shared/api/long-form-types';
 import {
     buildSamoAuthenticatedImageRequest,
     ServerType,
@@ -27,15 +26,15 @@ import { ActionIcon } from '/@/shared/components/action-icon/action-icon';
 import { Image } from '/@/shared/components/image/image';
 import { Text } from '/@/shared/components/text/text';
 
-const podcastTitle = (item: AudiobookshelfLibraryItem) =>
+const podcastTitle = (item: LongFormLibraryItem) =>
     item.media?.metadata?.title || item.name || 'Untitled podcast';
 
-const podcastAuthor = (item: AudiobookshelfLibraryItem) => {
+const podcastAuthor = (item: LongFormLibraryItem) => {
     const meta = item.media?.metadata;
     return meta?.author || meta?.authors?.map((a) => a.name).join(', ') || '';
 };
 
-const getPodcastSearchText = (item: AudiobookshelfLibraryItem) =>
+const getPodcastSearchText = (item: LongFormLibraryItem) =>
     [
         podcastTitle(item),
         podcastAuthor(item),
@@ -46,13 +45,13 @@ const getPodcastSearchText = (item: AudiobookshelfLibraryItem) =>
         .join(' ')
         .toLowerCase();
 
-const PodcastCover = ({ item }: { item: AudiobookshelfLibraryItem }) => {
+const PodcastCover = ({ item }: { item: LongFormLibraryItem }) => {
     const server = useLongFormMediaServer();
 
     const coverQuery = useQuery({
         enabled: Boolean(server?.id && item.id && !isSamoLongFormServer(server)),
         queryFn: async () =>
-            (await audiobookshelfController.getItemCoverDataUrl(server!, item.id)) ?? null,
+            null,
         queryKey: ['audiobookshelf', 'cover', server?.id, item.id],
         staleTime: 1000 * 60 * 60,
     });
@@ -102,8 +101,8 @@ const PodcastCard = ({
     server,
     serverId,
 }: {
-    item: AudiobookshelfLibraryItem;
-    onOpen: (item: AudiobookshelfLibraryItem) => void;
+    item: LongFormLibraryItem;
+    onOpen: (item: LongFormLibraryItem) => void;
     server: ReturnType<typeof useLongFormMediaServer>;
     serverId: string | undefined;
 }) => {
@@ -186,23 +185,6 @@ const PodcastsRoute = () => {
     const [searchQuery, setSearchQuery] = useState('');
     const isSamo = isSamoLongFormServer(server);
 
-    const librariesQuery = useQuery({
-        enabled: Boolean(server) && !isSamo,
-        queryFn: () => audiobookshelfController.getLibraries(server!),
-        queryKey: ['audiobookshelf', 'libraries', server?.id],
-    });
-
-    const podcastLibraries =
-        librariesQuery.data?.libraries.filter((library) => library.mediaType === 'podcast') ?? [];
-
-    const absItemQueries = useQueries({
-        queries: podcastLibraries.map((library) => ({
-            enabled: Boolean(server?.id) && !isSamo,
-            queryFn: () => audiobookshelfController.getLibraryItems(server!, library.id),
-            queryKey: ['audiobookshelf', 'library-items', server?.id, library.id],
-        })),
-    });
-
     const samoItemsQuery = useQuery({
         enabled: Boolean(server?.id) && isSamo,
         queryFn: () => listSamoPodcastLibraryItems(server!),
@@ -210,20 +192,16 @@ const PodcastsRoute = () => {
         staleTime: 1000 * 60 * 5,
     });
 
-    const items = isSamo
-        ? (samoItemsQuery.data ?? [])
-        : absItemQueries.flatMap((query) => query.data?.results ?? []);
+    const items = samoItemsQuery.data ?? [];
     const filteredItems = useMemo(() => {
         const trimmedQuery = searchQuery.trim().toLowerCase();
         if (!trimmedQuery) return items;
 
         return items.filter((item) => getPodcastSearchText(item).includes(trimmedQuery));
     }, [items, searchQuery]);
-    const isLoading = isSamo
-        ? samoItemsQuery.isLoading
-        : librariesQuery.isLoading || absItemQueries.some((query) => query.isLoading || query.isPending);
+    const isLoading = samoItemsQuery.isLoading;
 
-    const handleOpen = (item: AudiobookshelfLibraryItem) => {
+    const handleOpen = (item: LongFormLibraryItem) => {
         if (server) {
             recordRecentPodcast(item, server.id);
         }

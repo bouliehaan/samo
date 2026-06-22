@@ -1,5 +1,6 @@
 import * as SQLite from 'expo-sqlite';
 
+import { traceSync } from '../jank-trace';
 import { MIGRATIONS } from './schema';
 
 // Opens (and lazily migrates) the single SQLite connection that backs the
@@ -127,9 +128,14 @@ export const getCatalogReaderSync = (): SQLite.SQLiteDatabase | null => {
         // finalize (a hard native crash seen on real devices, masked on the
         // emulator). A dedicated connection keeps the render-path reader fully
         // isolated from the writer; WAL still gives it a consistent snapshot.
-        readerDatabase = SQLite.openDatabaseSync(DATABASE_NAME, {
-            useNewConnection: true,
-        });
+        // Opening synchronously is itself a render-path cost — named in the
+        // [jank] log so a slow reopen (e.g. right after a sync recycles the
+        // connection) is distinguishable from a slow query.
+        readerDatabase = traceSync('catalog.openReader', () =>
+            SQLite.openDatabaseSync(DATABASE_NAME, {
+                useNewConnection: true,
+            }),
+        );
         // busy_timeout BEFORE journal_mode: the Kotlin sync engine holds
         // BEGIN IMMEDIATE through its write batches, and a connection with no
         // busy_timeout gets an INSTANT SQLITE_BUSY instead of waiting — which

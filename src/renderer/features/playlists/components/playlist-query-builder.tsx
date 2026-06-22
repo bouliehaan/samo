@@ -365,7 +365,7 @@ export const PlaylistQueryBuilder = forwardRef(
 
             if (level === 0) {
                 setFilters((prev) => ({ ...prev, type: value }));
-                return [];
+                return;
             }
 
             const path = getTypePath(groupIndex);
@@ -539,7 +539,7 @@ export const PlaylistQueryBuilder = forwardRef(
                             onDeleteRule={handleDeleteRule}
                             onDeleteRuleGroup={handleDeleteRuleGroup}
                             onResetFilters={handleResetFilters}
-                            operators={operators}
+                            operators={operators as any}
                             playlists={playlistData}
                             uniqueId={filters.uniqueId}
                         />

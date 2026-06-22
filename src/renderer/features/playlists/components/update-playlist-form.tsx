@@ -27,7 +27,6 @@ import { toast } from '/@/shared/components/toast/toast';
 import { useForm } from '/@/shared/hooks/use-form';
 import {
     LibraryItem,
-    ServerType,
     SortOrder,
     UpdatePlaylistBody,
     UpdatePlaylistQuery,
@@ -161,15 +160,6 @@ export const UpdatePlaylistContextModal = ({
     }
 
     if (isPublicDisplayed) {
-        if (server?.type === ServerType.JELLYFIN) {
-            fieldNodes.push(
-                <div key="jellyfin-public-note">
-                    {t('form.editPlaylist.publicJellyfinNote', {
-                        postProcess: 'sentenceCase',
-                    })}
-                </div>,
-            );
-        }
         fieldNodes.push(
             <Switch
                 key="public"

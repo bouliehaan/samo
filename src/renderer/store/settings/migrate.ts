@@ -382,5 +382,12 @@ export const createSettingsMigrate =
             state.playback.castReceiverAppId = initialState.playback.castReceiverAppId;
         }
 
+        if (version <= 35) {
+            // The font picker UI was removed and the desktop now matches the
+            // mobile app (Archivo for body, Office Code Pro for muted subtext).
+            // Reset any stale persisted font so the new default actually applies.
+            state.font = { ...initialState.font };
+        }
+
         return persistedState;
     };

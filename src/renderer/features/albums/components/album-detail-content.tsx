@@ -55,7 +55,6 @@ import {
     AlbumListSort,
     ExplicitStatus,
     LibraryItem,
-    ServerType,
     Song,
     SongListSort,
     SortOrder,
@@ -181,10 +180,7 @@ const AlbumMetadataTags = ({ album }: AlbumMetadataTagsProps) => {
 
         return album.recordLabels.map((label) => {
             const searchParams = new URLSearchParams();
-            const customFilters =
-                album._serverType === ServerType.JELLYFIN
-                    ? { Studios: [label] }
-                    : { recordlabel: [label] };
+            const customFilters = { recordlabel: [label] };
             const paramsWithCustom = setJsonSearchParam(
                 searchParams,
                 FILTER_KEYS.ALBUM._CUSTOM,

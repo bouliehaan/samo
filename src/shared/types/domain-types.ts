@@ -6,15 +6,6 @@ import {
     ServerType,
 } from '@samo/core/server';
 
-import {
-    JFAlbumArtistListSort,
-    JFAlbumListSort,
-    JFArtistListSort,
-    JFGenreListSort,
-    JFPlaylistListSort,
-    JFSongListSort,
-    JFSortOrder,
-} from '/@/shared/api/jellyfin/jellyfin-types';
 
 import { ServerFeatures } from '/@/shared/types/features-types';
 import { PlayerStatus } from '/@/shared/types/types';
@@ -83,14 +74,9 @@ export type User = {
 };
 
 type SortOrderMap = {
-    jellyfin: Record<SortOrder, JFSortOrder>;
 };
 
 export const sortOrderMap: SortOrderMap = {
-    jellyfin: {
-        ASC: JFSortOrder.ASC,
-        DESC: JFSortOrder.DESC,
-    },
 };
 
 export enum ExternalSource {
@@ -385,28 +371,20 @@ type BaseEndpointArgs = {
 };
 
 type GenreListSortMap = {
-    jellyfin: Record<GenreListSort, JFGenreListSort | undefined>;
     samo: Record<GenreListSort, undefined>;
 };
 
 export const genreListSortMap: GenreListSortMap = {
-    jellyfin: {
-        name: JFGenreListSort.NAME,
-    },
     samo: {
         name: undefined,
     },
 };
 
 type TagListSortMap = {
-    jellyfin: Record<TagListSort, undefined>;
     samo: Record<TagListSort, undefined>;
 };
 
 export const tagListSortMap: TagListSortMap = {
-    jellyfin: {
-        name: undefined,
-    },
     samo: {
         name: undefined,
     },
@@ -458,31 +436,10 @@ export type ListCountQuery<TQuery> = Omit<TQuery, 'startIndex'>;
 
 
 type AlbumListSortMap = {
-    jellyfin: Record<AlbumListSort, JFAlbumListSort | undefined>;
     samo: Record<AlbumListSort, undefined>;
 };
 
 export const albumListSortMap: AlbumListSortMap = {
-    jellyfin: {
-        albumArtist: JFAlbumListSort.ALBUM_ARTIST,
-        artist: undefined,
-        communityRating: JFAlbumListSort.COMMUNITY_RATING,
-        criticRating: JFAlbumListSort.CRITIC_RATING,
-        duration: undefined,
-        explicitStatus: undefined,
-        favorited: undefined,
-        id: undefined,
-        name: JFAlbumListSort.NAME,
-        playCount: JFAlbumListSort.PLAY_COUNT,
-        random: JFAlbumListSort.RANDOM,
-        rating: undefined,
-        recentlyAdded: JFAlbumListSort.RECENTLY_ADDED,
-        recentlyPlayed: undefined,
-        releaseDate: JFAlbumListSort.RELEASE_DATE,
-        songCount: undefined,
-        sortName: JFAlbumListSort.NAME,
-        year: undefined,
-    },
     samo: {
         albumArtist: undefined,
         artist: undefined,
@@ -565,33 +522,10 @@ export interface SongListQuery extends BaseQuery<SongListSort> {
 export type SongListResponse = BasePaginatedResponse<Song[]>;
 
 type SongListSortMap = {
-    jellyfin: Record<SongListSort, JFSongListSort | undefined>;
     samo: Record<SongListSort, undefined>;
 };
 
 export const songListSortMap: SongListSortMap = {
-    jellyfin: {
-        album: JFSongListSort.ALBUM,
-        albumArtist: JFSongListSort.ALBUM_ARTIST,
-        artist: JFSongListSort.ARTIST,
-        bpm: undefined,
-        channels: undefined,
-        comment: undefined,
-        duration: JFSongListSort.DURATION,
-        explicitStatus: undefined,
-        favorited: undefined,
-        genre: undefined,
-        id: undefined,
-        name: JFSongListSort.NAME,
-        playCount: JFSongListSort.PLAY_COUNT,
-        random: JFSongListSort.RANDOM,
-        rating: undefined,
-        recentlyAdded: JFSongListSort.RECENTLY_ADDED,
-        recentlyPlayed: JFSongListSort.RECENTLY_PLAYED,
-        releaseDate: JFSongListSort.RELEASE_DATE,
-        sortName: JFSongListSort.NAME,
-        year: undefined,
-    },
     samo: {
         album: undefined,
         albumArtist: undefined,
@@ -656,24 +590,10 @@ export type SongDetailQuery = { id: string };
 export type SongDetailResponse = Song;
 
 type AlbumArtistListSortMap = {
-    jellyfin: Record<AlbumArtistListSort, JFAlbumArtistListSort | undefined>;
     samo: Record<AlbumArtistListSort, undefined>;
 };
 
 export const albumArtistListSortMap: AlbumArtistListSortMap = {
-    jellyfin: {
-        album: JFAlbumArtistListSort.ALBUM,
-        albumCount: undefined,
-        duration: JFAlbumArtistListSort.DURATION,
-        favorited: undefined,
-        name: JFAlbumArtistListSort.NAME,
-        playCount: undefined,
-        random: JFAlbumArtistListSort.RANDOM,
-        rating: undefined,
-        recentlyAdded: JFAlbumArtistListSort.RECENTLY_ADDED,
-        releaseDate: undefined,
-        songCount: undefined,
-    },
     samo: {
         album: undefined,
         albumCount: undefined,
@@ -739,24 +659,10 @@ export interface ArtistListQuery extends BaseQuery<ArtistListSort> {
 export type ArtistListResponse = BasePaginatedResponse<AlbumArtist[]>;
 
 type ArtistListSortMap = {
-    jellyfin: Record<ArtistListSort, JFArtistListSort | undefined>;
     samo: Record<ArtistListSort, undefined>;
 };
 
 export const artistListSortMap: ArtistListSortMap = {
-    jellyfin: {
-        album: JFArtistListSort.ALBUM,
-        albumCount: undefined,
-        duration: JFArtistListSort.DURATION,
-        favorited: undefined,
-        name: JFArtistListSort.NAME,
-        playCount: undefined,
-        random: JFArtistListSort.RANDOM,
-        rating: undefined,
-        recentlyAdded: JFArtistListSort.RECENTLY_ADDED,
-        releaseDate: undefined,
-        songCount: undefined,
-    },
     samo: {
         album: undefined,
         albumCount: undefined,
@@ -1062,21 +968,10 @@ export type UploadPlaylistImageQuery = {
 export type UploadPlaylistImageResponse = boolean;
 
 type PlaylistListSortMap = {
-    jellyfin: Record<PlaylistListSort, JFPlaylistListSort | undefined>;
     samo: Record<PlaylistListSort, undefined>;
 };
 
 export const playlistListSortMap: PlaylistListSortMap = {
-    jellyfin: {
-        duration: JFPlaylistListSort.DURATION,
-        lastPlayedAt: undefined,
-        name: JFPlaylistListSort.NAME,
-        owner: undefined,
-        playCount: undefined,
-        public: undefined,
-        songCount: JFPlaylistListSort.SONG_COUNT,
-        updatedAt: undefined,
-    },
     samo: {
         duration: undefined,
         lastPlayedAt: undefined,
@@ -1141,14 +1036,10 @@ export interface UserListQuery extends BaseQuery<UserListSort> {
 export type UserListResponse = BasePaginatedResponse<User[]>;
 
 type UserListSortMap = {
-    jellyfin: Record<UserListSort, undefined>;
     samo: Record<UserListSort, undefined>;
 };
 
 export const userListSortMap: UserListSortMap = {
-    jellyfin: {
-        name: undefined,
-    },
     samo: {
         name: undefined,
     },

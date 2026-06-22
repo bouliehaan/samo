@@ -23,7 +23,6 @@ import { useForm } from '/@/shared/hooks/use-form';
 import {
     CreatePlaylistBody,
     ServerListItem,
-    ServerType,
     SongListSort,
 } from '/@/shared/types/domain-types';
 import { ServerFeature } from '/@/shared/types/features-types';
@@ -34,8 +33,9 @@ interface CreatePlaylistFormProps {
 
 export const CreatePlaylistForm = ({ onCancel }: CreatePlaylistFormProps) => {
     const { t } = useTranslation();
-    const mutation = useCreatePlaylist({});
     const server = useCurrentServer();
+    const mutation = useCreatePlaylist({});
+
     const queryBuilderRef = useRef<PlaylistQueryBuilderRef>(null);
 
     const form = useForm<CreatePlaylistBody>({
@@ -200,14 +200,14 @@ export const CreatePlaylistForm = ({ onCancel }: CreatePlaylistFormProps) => {
 };
 
 export const openCreatePlaylistModal = (
-    server?: ServerListItem,
+    _server?: ServerListItem,
     e?: MouseEvent<HTMLButtonElement>,
 ) => {
     e?.stopPropagation();
 
     openModal({
         children: <CreatePlaylistForm onCancel={() => closeAllModals()} />,
-        size: server?.type === ServerType?.NAVIDROME ? 'xl' : 'sm',
+        size: 'sm',
         title: t('form.createPlaylist.title', { postProcess: 'titleCase' }),
     });
 };

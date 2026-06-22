@@ -4,10 +4,10 @@ import { useListContext } from '/@/renderer/context/list-context';
 import { useAlbumListFilters } from '/@/renderer/features/albums/hooks/use-album-list-filters';
 import { ListFilters, ListFiltersTitle } from '/@/renderer/features/shared/components/list-filters';
 import { ListWithSidebarContainer } from '/@/renderer/features/shared/components/list-with-sidebar-container';
+import { GridPageSkeleton } from '/@/renderer/features/shared/components/page-skeletons/page-skeletons';
 import { SaveAsCollectionButton } from '/@/renderer/features/shared/components/save-as-collection-button';
 import { ItemListSettings, useCurrentServer, useListSettings } from '/@/renderer/store';
 import { ScrollArea } from '/@/shared/components/scroll-area/scroll-area';
-import { Spinner } from '/@/shared/components/spinner/spinner';
 import { Stack } from '/@/shared/components/stack/stack';
 import { AlbumListQuery, LibraryItem } from '/@/shared/types/domain-types';
 import { ItemListKey, ListDisplayType, ListPaginationType } from '/@/shared/types/types';
@@ -81,7 +81,7 @@ const AlbumListSuspenseContainer = () => {
     const { customFilters } = useListContext();
 
     return (
-        <Suspense fallback={<Spinner container />}>
+        <Suspense fallback={<GridPageSkeleton />}>
             <AlbumListView
                 detail={detail}
                 display={display}

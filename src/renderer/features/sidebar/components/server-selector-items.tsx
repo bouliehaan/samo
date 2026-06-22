@@ -4,9 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router';
 
 import { isServerLock } from '/@/renderer/features/action-required/utils/window-properties';
-import JellyfinLogo from '/@/renderer/features/servers/assets/jellyfin.png';
-import NavidromeLogo from '/@/renderer/features/servers/assets/navidrome.png';
-import OpenSubsonicLogo from '/@/renderer/features/servers/assets/opensubsonic.png';
+import SamoLogo from '../../../../../build/samologo.svg';
 import { ServerList } from '/@/renderer/features/servers/components/server-list';
 import { sharedQueries } from '/@/renderer/features/shared/api/shared-api';
 import { AppRoute } from '/@/renderer/router/routes';
@@ -14,7 +12,7 @@ import { useAuthStoreActions, useCurrentServer, useServerList } from '/@/rendere
 import { hasFeature } from '/@/shared/api/utils';
 import { DropdownMenu } from '/@/shared/components/dropdown-menu/dropdown-menu';
 import { Icon } from '/@/shared/components/icon/icon';
-import { ServerListItemWithCredential, ServerType } from '/@/shared/types/domain-types';
+import { ServerListItemWithCredential } from '/@/shared/types/domain-types';
 import { ServerFeature } from '/@/shared/types/features-types';
 
 export const ServerSelectorItems = () => {
@@ -95,17 +93,8 @@ export const ServerSelectorItems = () => {
                 {t('page.appMenu.selectServer', { postProcess: 'titleCase' })}
             </DropdownMenu.Label>
             {Object.values(serverList).map((server) => {
-                const isNavidromeExpired =
-                    false;
-                const isJellyfinExpired = server.type === ServerType.JELLYFIN && !server.credential;
-                const isSessionExpired = isNavidromeExpired || isJellyfinExpired;
-
-                const logo =
-                    false
-                        ? NavidromeLogo
-                        : server.type === ServerType.JELLYFIN
-                          ? JellyfinLogo
-                          : OpenSubsonicLogo;
+                const isSessionExpired = !server.credential;
+                const logo = SamoLogo;
 
                 return (
                     <DropdownMenu.Item

@@ -84,7 +84,7 @@ export function useAndroidPlaybackControls(options: {
      * No stream restarts — backward seeks always work.
      */
     const seekSamoAudiobookToBookSeconds = useCallback(
-        async (targetBookSeconds: number): Promise<boolean> => {
+        async (targetBookSeconds: number, options?: { isDiscreteSkip?: boolean }): Promise<boolean> => {
             const queue = getPlaybackQueue();
             if (!queue || queue.items.length === 0) {
                 return false;
@@ -122,9 +122,26 @@ export function useAndroidPlaybackControls(options: {
                 // Same file → local seek to the in-file position.
                 await handleSeekPlaybackRef.current?.(target.filePositionMs, {
                     fileLocal: true,
+                    isDiscreteSkip: options?.isDiscreteSkip,
                 });
                 return true;
             }
+
+            // To step the queue locally without a stream restart, we update the native
+            // queue with the target resume position, then step it natively.
+            const updatedQueue = { ...queue };
+            updatedQueue.items = [...queue.items];
+            updatedQueue.items[target.queueIndex] = withResumePosition(
+                fileItem,
+                Math.floor(target.filePositionMs / 1000)
+            );
+            setPlaybackQueue(updatedQueue);
+            syncAndroidNativePlaybackQueue(updatedQueue, serverConnection);
+
+            if (await playQueueIndexNatively(target.queueIndex)) {
+                return true;
+            }
+
             await playQueuedItem(
                 withResumePosition(fileItem, Math.floor(target.filePositionMs / 1000)),
                 queue.items,
@@ -138,7 +155,7 @@ export function useAndroidPlaybackControls(options: {
 
     const handleSeekPlayback = useCallback(async (
         positionMs: number,
-        options?: { fileLocal?: boolean },
+        options?: { fileLocal?: boolean; isDiscreteSkip?: boolean },
     ) => {
         const playbackState = getAndroidPlaybackState();
 
@@ -183,7 +200,9 @@ export function useAndroidPlaybackControls(options: {
         );
 
         try {
-            await new Promise((resolve) => setTimeout(resolve, 250));
+            if (!options?.isDiscreteSkip) {
+                await new Promise((resolve) => setTimeout(resolve, 250));
+            }
             if (seekGeneration !== seekGenerationRef.current) {
                 return;
             }
@@ -390,13 +409,14 @@ export function useAndroidPlaybackControls(options: {
             if (isSamoAudiobookPlayback(item)) {
                 const bookPosition = getTimelinePositionSeconds(item, playbackState.positionMs);
                 const targetBook = Math.max(0, bookPosition + offsetSeconds);
-                if (await seekSamoAudiobookToBookSeconds(targetBook)) {
+                if (await seekSamoAudiobookToBookSeconds(targetBook, { isDiscreteSkip: true })) {
                     return;
                 }
             }
 
             await handleSeekPlayback((playbackState.positionMs ?? 0) + offsetSeconds * 1000, {
                 fileLocal: true,
+                isDiscreteSkip: true,
             });
         },
         [handleSeekPlayback, seekSamoAudiobookToBookSeconds],
@@ -494,11 +514,11 @@ export function useAndroidPlaybackControls(options: {
                             item,
                             playbackState.positionMs,
                         );
-                        if (await seekSamoAudiobookToBookSeconds(Math.max(0, bookPosition - 30))) {
+                        if (await seekSamoAudiobookToBookSeconds(Math.max(0, bookPosition - 30), { isDiscreteSkip: true })) {
                             return;
                         }
                     }
-                    await handleSeekPlayback(0, { fileLocal: true });
+                    await handleSeekPlayback(0, { fileLocal: true, isDiscreteSkip: true });
                     return;
                 }
             }

@@ -9,12 +9,12 @@ import {
     useGridCarouselContainerQuery,
 } from '/@/renderer/components/grid-carousel/grid-carousel-v2';
 import { ItemImage } from '/@/renderer/components/item-image/item-image';
+import { LongFormCoverImage } from '/@/renderer/features/player/components/long-form-cover-image';
 import { usePlayer } from '/@/renderer/features/player/context/player-context';
 import {
     useRadioControls,
     useRadioPlayer,
 } from '/@/renderer/features/radio/hooks/use-radio-player';
-import { AbsCoverImage } from '/@/renderer/features/search/components/abs-cover-image';
 import { AppRoute } from '/@/renderer/router/routes';
 import {
     RecentItem,
@@ -163,7 +163,7 @@ const ContinueListeningCard = ({ item, onClick }: { item: RecentItem; onClick: (
         <Text className={styles.title} fw={600} size="sm">
             {item.title}
         </Text>
-        <Text className={styles.subtitle} isMuted size="xs">
+        <Text className={styles.subtitle} isMuted size="sm">
             {item.subtitle}
         </Text>
     </button>
@@ -172,7 +172,7 @@ const ContinueListeningCard = ({ item, onClick }: { item: RecentItem; onClick: (
 const RecentArtwork = ({ item }: { item: RecentItem }) => {
     if (item.artwork.kind === 'abs') {
         return (
-            <AbsCoverImage
+            <LongFormCoverImage
                 alt={item.title}
                 fallbackIcon={item.artwork.fallbackIcon}
                 imageUrl={item.artwork.imageUrl ?? item.rawAbsItem?.media?.metadata?.imageUrl}

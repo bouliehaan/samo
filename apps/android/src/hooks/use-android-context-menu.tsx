@@ -11,7 +11,6 @@ import {
     PersonGlyph,
     PlaylistAddGlyph,
     QueueAddGlyph,
-    RadioWaveGlyph,
 } from '../components/Glyphs';
 import {
     type MediaContextMenuAction,
@@ -69,7 +68,6 @@ type ContextMenuHandlers = Pick<
     | 'handleOpenCreatePlaylistForSong'
     | 'handleOpenBookInfo'
     | 'handleOpenStreamInfo'
-    | 'handleStartSongRadio'
     | 'handleToggleFavoriteForItem'
     | 'handleToggleFavoriteForTrack'
     | 'handleViewDetailForItem'
@@ -107,7 +105,6 @@ export function useAndroidContextMenu(options: {
         handleOpenCreatePlaylistForSong,
         handleOpenBookInfo,
         handleOpenStreamInfo,
-        handleStartSongRadio,
         handleToggleFavoriteForItem,
         handleToggleFavoriteForTrack,
         handleViewDetailForItem,
@@ -244,14 +241,6 @@ export function useAndroidContextMenu(options: {
                     id: 'go-album',
                     label: 'Go to Album',
                     onPress: () => void handleGoToAlbumForTrack(track, source),
-                });
-            }
-            if (track.playback?.source === 'music' && source) {
-                menuActions.push({
-                    icon: <RadioWaveGlyph color={colors.text} />,
-                    id: 'song-radio',
-                    label: 'Start Song Radio',
-                    onPress: () => void handleStartSongRadio(track, source),
                 });
             }
 
@@ -444,7 +433,6 @@ export function useAndroidContextMenu(options: {
         handleOpenCreatePlaylistForSong,
         handleOpenBookInfo,
         handleOpenStreamInfo,
-        handleStartSongRadio,
         handleToggleFavoriteForItem,
         handleToggleFavoriteForTrack,
         handleViewDetailForItem,

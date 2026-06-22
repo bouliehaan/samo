@@ -1,4 +1,3 @@
-import { audiobookshelfController } from '/@/renderer/api/audiobookshelf/audiobookshelf-controller';
 import { type SamoAudiobookFileSegment } from '/@/renderer/api/samo/samo-audiobook-stream';
 import { resolveSamoAudiobookPlaySession } from '/@/renderer/api/samo/samo-long-form';
 import {
@@ -7,15 +6,14 @@ import {
     createAbsPlaybackStore,
 } from '/@/renderer/store/abs-playback.store';
 import { getCurrentChapterIndex } from '/@/renderer/store/audiobook-chapters';
-import { normalizeResumePosition } from '/@/renderer/store/audiobook-resume-math';
 import { useLastPlaybackSessionStore } from '/@/renderer/store/last-playback-session.store';
 import { recordRecentAudiobook } from '/@/renderer/store/play-history.store';
 import { usePlayerStoreBase } from '/@/renderer/store/player.store';
 import {
-    AudiobookshelfChapter,
-    AudiobookshelfLibraryItem,
-} from '/@/shared/api/audiobookshelf/audiobookshelf-types';
-import { ServerListItemWithCredential, ServerType } from '/@/shared/types/domain-types';
+    LongFormChapter,
+    LongFormLibraryItem,
+} from '/@/shared/api/long-form-types';
+import { ServerListItemWithCredential } from '/@/shared/types/domain-types';
 
 export type { AudiobookChapterListItem } from '/@/renderer/store/audiobook-chapters';
 export {
@@ -24,7 +22,7 @@ export {
 } from '/@/renderer/store/audiobook-chapters';
 
 export interface AudiobookActions extends AbsPlaybackBaseActions {
-    play: (server: ServerListItemWithCredential, item: AudiobookshelfLibraryItem) => Promise<void>;
+    play: (server: ServerListItemWithCredential, item: LongFormLibraryItem) => Promise<void>;
     seekToNextChapter: () => void;
     seekToPreviousChapter: () => void;
     setDuration: (seconds: number) => void;
@@ -39,7 +37,7 @@ export type AudiobookState = AbsPlaybackCoreState &
 type AudiobookExtra = {
     /** Per-file manifest for whole-file streaming + cross-file seek switching. */
     audiobookFiles: SamoAudiobookFileSegment[];
-    chapters: AudiobookshelfChapter[];
+    chapters: LongFormChapter[];
     /** Book-global start offset of the file currently loaded in the player. */
     streamOffsetSeconds: number;
 };
@@ -48,7 +46,7 @@ type AudiobookResume = { resumeByItemId: Record<string, number> };
 
 const rememberAudiobookPlaybackSession = (
     server: ServerListItemWithCredential,
-    item: AudiobookshelfLibraryItem,
+    item: LongFormLibraryItem,
     position?: number,
 ) => {
     useLastPlaybackSessionStore.getState().actions.setSession({
@@ -101,8 +99,8 @@ const { selectors, store: useAudiobookStore } = createAbsPlaybackStore<
     getEpisodeForSync: () => null,
     getLoadingSeed: (_server, item) => ({
         audiobookFiles: [],
-        chapters: (item as AudiobookshelfLibraryItem).media?.chapters ?? [],
-        duration: (item as AudiobookshelfLibraryItem).media?.duration ?? 0,
+        chapters: (item as LongFormLibraryItem).media?.chapters ?? [],
+        duration: (item as LongFormLibraryItem).media?.duration ?? 0,
         streamOffsetSeconds: 0,
     }),
     getResumeKey: (state) => (state.item ? state.item.id : null),
@@ -116,34 +114,9 @@ const { selectors, store: useAudiobookStore } = createAbsPlaybackStore<
     requiresEpisode: false,
     resolvePlaySession: async (_server, item) => {
         const server = _server as ServerListItemWithCredential;
-        const libraryItem = item as AudiobookshelfLibraryItem;
+        const libraryItem = item as LongFormLibraryItem;
 
-        if (server.type === ServerType.SAMO) {
-            return resolveSamoAudiobookPlaySession(server, libraryItem);
-        }
-
-        const session = await audiobookshelfController.playItem(server, libraryItem.id);
-        const contentUrl = session.audioTracks?.[0]?.contentUrl;
-
-        if (!contentUrl) {
-            throw new Error('Audiobookshelf did not return an audio URL');
-        }
-
-        const chapters = session.libraryItem?.media?.chapters ?? libraryItem.media?.chapters ?? [];
-        const duration = session.libraryItem?.media?.duration ?? libraryItem.media?.duration ?? 0;
-        const localResume = useAudiobookStore.getState().resumeByItemId[libraryItem.id];
-        const serverResume = session.currentTime ?? 0;
-        const resumePosition = localResume !== undefined ? localResume : serverResume;
-
-        return {
-            contentUrl,
-            duration,
-            item: libraryItem,
-            patch: { chapters },
-            position: normalizeResumePosition(resumePosition, duration),
-            sessionId: session.id ?? null,
-        };
-    },
+        return resolveSamoAudiobookPlaySession(server, libraryItem) as any;    },
     resumeField: 'resumeByItemId',
     resumeInitial: { resumeByItemId: {} },
     source: 'audiobook',

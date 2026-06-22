@@ -154,8 +154,8 @@
     align-items: center;
     width: 100%;
     min-width: 0;
-    min-height: 1.25em;
     max-width: 100%;
+    min-height: 1.25em;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -173,10 +173,11 @@
 }
 
 .row.bold {
-    font-weight: 500;
+    font-weight: 650;
 }
 
 .row.muted {
+    font-family: var(--theme-muted-font-family);
     color: var(--theme-colors-foreground-muted);
 }
 

@@ -1,27 +1,27 @@
 import {
     authenticateSamo,
+    buildSamoAuthenticatedImageRequest,
     createSamoAudiobookBookmark,
     createSamoInternetRadioStation,
     createSamoMusicPlaylist,
     deleteSamoBookmark,
     deleteSamoMusicPlaylist,
     ensureSamoStreamToken,
-    buildSamoAuthenticatedImageRequest,
     getCachedSamoStreamToken,
     getSamoApiUrl,
     getSamoAudiobook,
     getSamoAudiobookCoverUrl,
-    getSamoMusicAlbumCoverUrl,
-    getSamoMusicArtistCoverUrl,
-    getSamoMusicPlaylistCoverUrl,
     getSamoAudiobookStreamUrl,
     getSamoCatalogOverview,
     getSamoExtractedCoverUrl,
     getSamoMediaImageUrl,
     getSamoMusicAlbum,
+    getSamoMusicAlbumCoverUrl,
     getSamoMusicArtist,
+    getSamoMusicArtistCoverUrl,
     getSamoMusicBrowse,
     getSamoMusicPlaylist,
+    getSamoMusicPlaylistCoverUrl,
     getSamoMusicTrack,
     getSamoMusicTrackStreamUrl,
     getSamoPodcastCoverUrl,
@@ -35,6 +35,7 @@ import {
     listSamoMusicAlbumTracks,
     listSamoMusicArtistAlbums,
     listSamoMusicArtists,
+    listSamoMusicArtistTopTracks,
     listSamoMusicGenres,
     listSamoMusicPlaylists,
     listSamoMusicPlaylistTracks,
@@ -52,6 +53,7 @@ import {
     type SamoMusicArtist,
     type SamoMusicTrack,
     type SamoPaginatedResponse,
+    type ServerListItemWithCredentialCore,
     updateSamoMusicPlaylist,
 } from '@samo/core/server';
 import isElectron from 'is-electron';
@@ -66,6 +68,7 @@ import {
     type AlbumDetailResponse,
     type AlbumListResponse,
     type AlbumListSort,
+    type ArtistListSort,
     type CreatePlaylistResponse,
     type InternalControllerEndpoint,
     LibraryItem,
@@ -92,10 +95,7 @@ let activePlaylistScrobbleId: null | string = null;
 let activePlaylistStartedId: null | string = null;
 let lastPlaylistContextId: null | string = null;
 
-const samoAuthentication = (server: {
-    credential: string;
-    url: string;
-}) => ({
+const samoAuthentication = (server: { credential: string; url: string }) => ({
     credential: server.credential,
     type: ServerType.SAMO as const,
     url: server.url,
@@ -107,8 +107,7 @@ const samoAuthentication = (server: {
  * (e.g. `album-1`) and resolve through cover routes using `itemType`.
  */
 const resolveSamoImageUrlFromQueryId = (
-    auth: { credential: string;
- url: string },
+    auth: { credential: string; url: string },
     id: string | undefined,
     streamToken: string | undefined,
     itemType: LibraryItem | undefined,
@@ -196,6 +195,18 @@ const sortAlbums = (
     const order = sortOrder === SortOrder.DESC ? -1 : 1;
     const list = [...items];
     switch (sortBy) {
+        case 'favorited' as AlbumListSort:
+            list.sort((a, b) => {
+                const aFav = a.playback?.favorite ? 1 : 0;
+                const bFav = b.playback?.favorite ? 1 : 0;
+                if (aFav !== bFav) {
+                    return (aFav - bFav) * order * -1;
+                }
+                return (
+                    (a.sortName ?? a.title ?? '').localeCompare(b.sortName ?? b.title ?? '') * order
+                );
+            });
+            break;
         case 'name' as AlbumListSort:
             list.sort(
                 (a, b) =>
@@ -225,16 +236,6 @@ const sortAlbums = (
                 return sortOrder === SortOrder.DESC ? bTime - aTime : aTime - bTime;
             });
             break;
-        case 'favorited' as AlbumListSort:
-            list.sort((a, b) => {
-                const aFav = a.playback?.favorite ? 1 : 0;
-                const bFav = b.playback?.favorite ? 1 : 0;
-                if (aFav !== bFav) {
-                    return (aFav - bFav) * order * -1;
-                }
-                return (a.sortName ?? a.title ?? '').localeCompare(b.sortName ?? b.title ?? '') * order;
-            });
-            break;
         case 'releaseDate' as AlbumListSort:
         case 'year' as AlbumListSort:
             list.sort((a, b) => ((a.releaseYear ?? 0) - (b.releaseYear ?? 0)) * order);
@@ -247,18 +248,12 @@ const sortAlbums = (
 
 const sortArtists = (
     items: SamoMusicArtist[],
-    sortBy: AlbumArtistListSort | undefined,
+    sortBy: AlbumArtistListSort | ArtistListSort | undefined,
     sortOrder: SortOrder | undefined,
 ): SamoMusicArtist[] => {
     const order = sortOrder === SortOrder.DESC ? -1 : 1;
     const list = [...items];
     switch (sortBy) {
-        case AlbumArtistListSort.PLAY_COUNT:
-            list.sort(
-                (a, b) =>
-                    ((a.playback?.playCount ?? 0) - (b.playback?.playCount ?? 0)) * order,
-            );
-            break;
         case AlbumArtistListSort.FAVORITED:
             list.sort((a, b) => {
                 const aFav = a.playback?.favorite ? 1 : 0;
@@ -270,6 +265,11 @@ const sortArtists = (
                     (a.sortName ?? a.name ?? '').localeCompare(b.sortName ?? b.name ?? '') * order
                 );
             });
+            break;
+        case AlbumArtistListSort.PLAY_COUNT:
+            list.sort(
+                (a, b) => ((a.playback?.playCount ?? 0) - (b.playback?.playCount ?? 0)) * order,
+            );
             break;
         case AlbumArtistListSort.RECENTLY_ADDED:
             list.sort((a, b) => {
@@ -293,12 +293,12 @@ const samoArtistListSort = (
     sortBy: AlbumArtistListSort | undefined,
 ): 'az' | 'playCount' | 'recent' | undefined => {
     switch (sortBy) {
+        case AlbumArtistListSort.NAME:
+            return 'az';
         case AlbumArtistListSort.PLAY_COUNT:
             return 'playCount';
         case AlbumArtistListSort.RECENTLY_ADDED:
             return 'recent';
-        case AlbumArtistListSort.NAME:
-            return 'az';
         default:
             return undefined;
     }
@@ -353,6 +353,12 @@ const sortPlaylists = (
                 );
             });
             break;
+        case PlaylistListSort.NAME:
+            list.sort(
+                (left, right) =>
+                    left.name.localeCompare(right.name, undefined, { sensitivity: 'base' }) * order,
+            );
+            break;
         case PlaylistListSort.PLAY_COUNT:
             list.sort(
                 (left, right) =>
@@ -360,21 +366,15 @@ const sortPlaylists = (
                     left.name.localeCompare(right.name, undefined, { sensitivity: 'base' }),
             );
             break;
+        case PlaylistListSort.SONG_COUNT:
+            list.sort((left, right) => ((left.songCount ?? 0) - (right.songCount ?? 0)) * order);
+            break;
         case PlaylistListSort.UPDATED_AT:
             list.sort((left, right) => {
                 const leftTime = Date.parse(left.updatedAt ?? left.createdAt ?? '') || 0;
                 const rightTime = Date.parse(right.updatedAt ?? right.createdAt ?? '') || 0;
                 return (leftTime - rightTime) * order;
             });
-            break;
-        case PlaylistListSort.SONG_COUNT:
-            list.sort((left, right) => ((left.songCount ?? 0) - (right.songCount ?? 0)) * order);
-            break;
-        case PlaylistListSort.NAME:
-            list.sort(
-                (left, right) =>
-                    left.name.localeCompare(right.name, undefined, { sensitivity: 'base' }) * order,
-            );
             break;
         default:
             break;
@@ -393,16 +393,11 @@ const sortTracksForList = (
     switch (sortBy) {
         case SongListSort.PLAY_COUNT:
             list.sort(
-                (a, b) =>
-                    ((a.playback?.playCount ?? 0) - (b.playback?.playCount ?? 0)) * order,
+                (a, b) => ((a.playback?.playCount ?? 0) - (b.playback?.playCount ?? 0)) * order,
             );
             break;
-        case SongListSort.RECENTLY_PLAYED:
-            list.sort((a, b) => {
-                const aTime = Date.parse(a.playback?.lastPlayedAt ?? '') || 0;
-                const bTime = Date.parse(b.playback?.lastPlayedAt ?? '') || 0;
-                return sortOrder === SortOrder.DESC ? bTime - aTime : aTime - bTime;
-            });
+        case SongListSort.RANDOM:
+            list.sort(() => Math.random() - 0.5);
             break;
         case SongListSort.RECENTLY_ADDED:
             list.sort((a, b) => {
@@ -411,8 +406,12 @@ const sortTracksForList = (
                 return sortOrder === SortOrder.DESC ? bTime - aTime : aTime - bTime;
             });
             break;
-        case SongListSort.RANDOM:
-            list.sort(() => Math.random() - 0.5);
+        case SongListSort.RECENTLY_PLAYED:
+            list.sort((a, b) => {
+                const aTime = Date.parse(a.playback?.lastPlayedAt ?? '') || 0;
+                const bTime = Date.parse(b.playback?.lastPlayedAt ?? '') || 0;
+                return sortOrder === SortOrder.DESC ? bTime - aTime : aTime - bTime;
+            });
             break;
         default:
             break;
@@ -424,17 +423,17 @@ const samoAlbumListSort = (
     sortBy: AlbumListSort | undefined,
 ): 'az' | 'lastPlayed' | 'playCount' | 'recent' | 'release' | undefined => {
     switch (sortBy) {
+        case 'name' as AlbumListSort:
+            return 'az';
         case 'playCount' as AlbumListSort:
             return 'playCount';
-        case 'recentlyPlayed' as AlbumListSort:
-            return 'lastPlayed';
         case 'recentlyAdded' as AlbumListSort:
             return 'recent';
+        case 'recentlyPlayed' as AlbumListSort:
+            return 'lastPlayed';
         case 'releaseDate' as AlbumListSort:
         case 'year' as AlbumListSort:
             return 'release';
-        case 'name' as AlbumListSort:
-            return 'az';
         default:
             return undefined;
     }
@@ -444,14 +443,14 @@ const samoTrackListSort = (
     sortBy: SongListSort | undefined,
 ): 'az' | 'lastPlayed' | 'playCount' | 'recent' | undefined => {
     switch (sortBy) {
-        case SongListSort.PLAY_COUNT:
-            return 'playCount';
-        case SongListSort.RECENTLY_PLAYED:
-            return 'lastPlayed';
-        case SongListSort.RECENTLY_ADDED:
-            return 'recent';
         case SongListSort.NAME:
             return 'az';
+        case SongListSort.PLAY_COUNT:
+            return 'playCount';
+        case SongListSort.RECENTLY_ADDED:
+            return 'recent';
+        case SongListSort.RECENTLY_PLAYED:
+            return 'lastPlayed';
         default:
             return undefined;
     }
@@ -461,8 +460,7 @@ const samoListDirection = (sortOrder: SortOrder | undefined): 'asc' | 'desc' | u
     sortOrder === SortOrder.DESC ? 'desc' : sortOrder === SortOrder.ASC ? 'asc' : undefined;
 
 const fetchSamoAlbumTracks = async (
-    auth: { credential: string;
- url: string },
+    auth: { credential: string; url: string },
     albumIds: string[],
 ): Promise<SamoMusicTrack[]> => {
     const uniqueAlbumIds = [...new Set(albumIds.filter(Boolean))];
@@ -488,8 +486,7 @@ const fetchSamoAlbumTracks = async (
 };
 
 const fetchSamoArtistTracks = async (
-    auth: { credential: string;
- url: string },
+    auth: { credential: string; url: string },
     artistIds: string[],
 ): Promise<SamoMusicTrack[]> => {
     const uniqueArtistIds = [...new Set(artistIds.filter(Boolean))];
@@ -509,8 +506,7 @@ const fetchSamoArtistTracks = async (
 };
 
 export const fetchSamoUnplayedHomeTracks = async (
-    server: { credential: string;
- url: string },
+    server: ServerListItemWithCredentialCore,
     options: { limit: number; signal?: AbortSignal },
 ): Promise<Song[]> => {
     const auth = samoAuthentication(server);
@@ -518,15 +514,14 @@ export const fetchSamoUnplayedHomeTracks = async (
         limit: options.limit,
         signal: options.signal,
     });
-    return samoItemsOf(
-        browse.tracks as SamoPaginatedResponse<SamoMusicTrack> | undefined,
-    ).map((track) => samoNormalize.song(track, server));
+    return samoItemsOf(browse.tracks as SamoPaginatedResponse<SamoMusicTrack> | undefined).map(
+        (track) => samoNormalize.song(track, server),
+    );
 };
 
 /** Home discovery queue: unplayed tracks with a recent/older mix (server-side). */
 export const fetchSamoDiscoveryHomeTracks = async (
-    server: { credential: string;
- url: string },
+    server: ServerListItemWithCredentialCore,
     options: { limit: number; signal?: AbortSignal },
 ): Promise<Song[]> => {
     const auth = samoAuthentication(server);
@@ -534,14 +529,13 @@ export const fetchSamoDiscoveryHomeTracks = async (
         limit: options.limit,
         signal: options.signal,
     });
-    return samoItemsOf(
-        browse.tracks as SamoPaginatedResponse<SamoMusicTrack> | undefined,
-    ).map((track) => samoNormalize.song(track, server));
+    return samoItemsOf(browse.tracks as SamoPaginatedResponse<SamoMusicTrack> | undefined).map(
+        (track) => samoNormalize.song(track, server),
+    );
 };
 
 export const fetchSamoUnplayedHomeAlbums = async (
-    server: { credential: string;
- url: string },
+    server: ServerListItemWithCredentialCore,
     options: { limit: number; signal?: AbortSignal },
 ): Promise<Album[]> => {
     const auth = samoAuthentication(server);
@@ -706,7 +700,7 @@ export const SamoController: Partial<InternalControllerEndpoint> = {
         return {
             ...normalized,
             albums: samoItemsOf(albums).map((album) => samoNormalize.album(album, server)),
-            similarArtists: null,
+            similarArtists: samoNormalize.similarArtists(artist.similarArtists, server),
         };
     },
 
@@ -716,13 +710,20 @@ export const SamoController: Partial<InternalControllerEndpoint> = {
         const auth = samoAuthentication(server);
         const artist = await getSamoMusicArtist(browserFetch, auth, query.id);
 
-        if (!artist.biography && !artist.images?.length && !artist.links?.length) {
+        const similarArtists = samoNormalize.similarArtists(artist.similarArtists, server);
+
+        if (
+            !artist.biography &&
+            !artist.images?.length &&
+            !artist.links?.length &&
+            similarArtists.length === 0
+        ) {
             return null;
         }
 
         return {
             biography: artist.biography || null,
-            similarArtists: null,
+            similarArtists,
         };
     },
 
@@ -941,9 +942,7 @@ export const SamoController: Partial<InternalControllerEndpoint> = {
         });
         const album = await getSamoMusicAlbum(browserFetch, auth, query.albumId);
         const tracks = sortSongs(samoItemsOf(tracksResponse));
-        return tracks.map((track) =>
-            samoNormalize.song(track, server, { albumName: album.title }),
-        );
+        return tracks.map((track) => samoNormalize.song(track, server, { albumName: album.title }));
     },
 
     getArtistList: async ({ apiClientProps, query }) => {
@@ -960,7 +959,7 @@ export const SamoController: Partial<InternalControllerEndpoint> = {
             filtered = filtered.filter((artist) => artist.name.toLowerCase().includes(needle));
         }
 
-        const sorted = sortArtists(filtered, query.sortOrder);
+        const sorted = sortArtists(filtered, query.sortBy, query.sortOrder);
         const page = paginate(sorted, query.startIndex, query.limit);
 
         return {
@@ -1304,12 +1303,18 @@ export const SamoController: Partial<InternalControllerEndpoint> = {
             return { items: [], startIndex: 0, totalRecordCount: 0 };
         }
         const auth = samoAuthentication(server);
-        const response = await listSamoMusicTracks(browserFetch, auth, {
-            direction: 'desc',
-            limit: query.limit ?? 10,
-            offset: 0,
-            sort: 'playCount',
-        });
+        const limit = query.limit ?? 10;
+        // Artist detail asks for an artist's top songs — use the dedicated
+        // per-artist endpoint. Without an artistId (e.g. Home), fall back to the
+        // global most-played list.
+        const response = query.artistId
+            ? await listSamoMusicArtistTopTracks(browserFetch, auth, query.artistId, { limit })
+            : await listSamoMusicTracks(browserFetch, auth, {
+                  direction: 'desc',
+                  limit,
+                  offset: 0,
+                  sort: 'playCount',
+              });
 
         return {
             items: samoItemsOf(response).map((track) => samoNormalize.song(track, server)),
@@ -1415,10 +1420,7 @@ export const SamoController: Partial<InternalControllerEndpoint> = {
                 activePlaylistScrobbleId = null;
                 activePlaylistStartedId = null;
             }
-            if (
-                query.event === 'start' &&
-                activePlaylistStartedId !== playerContext.playlistId
-            ) {
+            if (query.event === 'start' && activePlaylistStartedId !== playerContext.playlistId) {
                 activePlaylistStartedId = playerContext.playlistId;
                 await patchSamoPlayback(
                     browserFetch,
@@ -1534,91 +1536,56 @@ export const SamoController: Partial<InternalControllerEndpoint> = {
  */
 export const samoExtras = {
     createBookmark: async (
-        server: { credential: string;
- url: string },
+        server: ServerListItemWithCredentialCore,
         audiobookId: string,
         body: { chapterId?: string; note?: string; positionSeconds?: number; title?: string },
     ) => createSamoAudiobookBookmark(browserFetch, samoAuthentication(server), audiobookId, body),
 
-    deleteBookmark: async (
-        server: { credential: string;
- url: string },
-        id: string,
-    ) => deleteSamoBookmark(browserFetch, samoAuthentication(server), id),
+    deleteBookmark: async (server: ServerListItemWithCredentialCore, id: string) =>
+        deleteSamoBookmark(browserFetch, samoAuthentication(server), id),
 
-    getAudiobook: async (
-        server: { credential: string;
- url: string },
-        id: string,
-    ) => getSamoAudiobook(browserFetch, samoAuthentication(server), id),
+    getAudiobook: async (server: ServerListItemWithCredentialCore, id: string) =>
+        getSamoAudiobook(browserFetch, samoAuthentication(server), id),
 
-    getAudiobookBookmarks: async (
-        server: { credential: string;
- url: string },
-        audiobookId: string,
-    ) => listSamoAudiobookBookmarks(browserFetch, samoAuthentication(server), audiobookId),
+    getAudiobookBookmarks: async (server: ServerListItemWithCredentialCore, audiobookId: string) =>
+        listSamoAudiobookBookmarks(browserFetch, samoAuthentication(server), audiobookId),
 
-    getAudiobookCoverUrl: async (
-        server: { credential: string;
- url: string },
-        audiobookId: string,
-    ) => {
+    getAudiobookCoverUrl: async (server: ServerListItemWithCredentialCore, audiobookId: string) => {
         const auth = samoAuthentication(server);
         const streamToken = await ensureStreamTokenForServer(server);
         return getSamoAudiobookStreamUrl(auth, audiobookId, { streamToken });
     },
 
-    getBookmarks: async (
-        server: { credential: string;
- url: string },
-        limit?: number,
-    ) => listSamoBookmarks(browserFetch, samoAuthentication(server), { limit }),
+    getBookmarks: async (server: ServerListItemWithCredentialCore, limit?: number) =>
+        listSamoBookmarks(browserFetch, samoAuthentication(server), { limit }),
 
-    getCatalogOverview: async (server: {
-        credential: string;
-        url: string;
-    }) => getSamoCatalogOverview(browserFetch, samoAuthentication(server)),
+    getCatalogOverview: async (server: { credential: string; url: string }) =>
+        getSamoCatalogOverview(browserFetch, samoAuthentication(server)),
 
-    getPodcastEpisodes: async (
-        server: { credential: string;
- url: string },
-        showId: string,
-    ) => listSamoPodcastEpisodes(browserFetch, samoAuthentication(server), showId, { limit: 500 }),
+    getPodcastEpisodes: async (server: ServerListItemWithCredentialCore, showId: string) =>
+        listSamoPodcastEpisodes(browserFetch, samoAuthentication(server), showId, { limit: 500 }),
 
-    getPodcastShow: async (
-        server: { credential: string;
- url: string },
-        id: string,
-    ) => getSamoPodcastShow(browserFetch, samoAuthentication(server), id),
+    getPodcastShow: async (server: ServerListItemWithCredentialCore, id: string) =>
+        getSamoPodcastShow(browserFetch, samoAuthentication(server), id),
 
     listAudiobooks: async (
-        server: { credential: string;
- url: string },
+        server: ServerListItemWithCredentialCore,
         input?: { limit?: number; offset?: number },
     ) => listSamoAudiobooks(browserFetch, samoAuthentication(server), input),
 
     listPodcasts: async (
-        server: { credential: string;
- url: string },
+        server: ServerListItemWithCredentialCore,
         input?: { limit?: number; offset?: number },
     ) => listSamoPodcasts(browserFetch, samoAuthentication(server), input),
 
-    resolveAlbumArtworkUrl: (
-        server: { credential: string;
- url: string },
-        album: SamoMusicAlbum,
-    ) =>
+    resolveAlbumArtworkUrl: (server: ServerListItemWithCredentialCore, album: SamoMusicAlbum) =>
         resolveSamoAlbumArtworkUrl(
             samoAuthentication(server),
             album,
             getCachedSamoStreamToken(samoAuthentication(server)),
         ),
 
-    resolveArtistArtworkUrl: (
-        server: { credential: string;
- url: string },
-        artist: SamoMusicArtist,
-    ) =>
+    resolveArtistArtworkUrl: (server: ServerListItemWithCredentialCore, artist: SamoMusicArtist) =>
         resolveSamoArtistArtworkUrl(
             samoAuthentication(server),
             artist,
@@ -1626,8 +1593,7 @@ export const samoExtras = {
         ),
 
     resolveAudiobookArtworkUrl: (
-        server: { credential: string;
- url: string },
+        server: ServerListItemWithCredentialCore,
         audiobook: {
             cover?: SamoMusicAlbum['images'] extends Array<infer T> ? T : never;
             id: string;
@@ -1640,8 +1606,7 @@ export const samoExtras = {
         ),
 
     resolvePodcastArtworkUrl: (
-        server: { credential: string;
- url: string },
+        server: ServerListItemWithCredentialCore,
         podcast: {
             cover?: SamoMusicAlbum['images'] extends Array<infer T> ? T : never;
             id: string;

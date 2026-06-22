@@ -1,5 +1,5 @@
 import { type MobileHomeItem, type MobileMediaTrack } from '@samo/core/mobile';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
     ActivityIndicator,
     Modal,
@@ -48,6 +48,23 @@ export const TrackPlaylistMenu = ({
     const showCreateSection =
         isCreateMode || (canCreatePlaylist && Boolean(onCreatePlaylist));
     const showExistingPlaylists = mode === 'add';
+
+    // Auto-dismiss after a successful add/create so the sheet glides away with a
+    // brief confirmation instead of forcing a manual close (Spotify-style). The
+    // optimistic add flips straight to 'success'; if the background write fails
+    // fast it flips to 'error' first, which cancels this timer and keeps the
+    // sheet open showing why. The ref keeps the timer immune to parent
+    // re-renders recreating onClose.
+    const onCloseRef = useRef(onClose);
+    onCloseRef.current = onClose;
+    const isSuccess = actionState.status === 'success';
+    useEffect(() => {
+        if (!isSuccess) {
+            return;
+        }
+        const timer = setTimeout(() => onCloseRef.current(), 1100);
+        return () => clearTimeout(timer);
+    }, [isSuccess]);
 
     return (
         <Modal animationType="fade" onRequestClose={onClose} transparent visible={open}>

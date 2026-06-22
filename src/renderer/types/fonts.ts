@@ -6,6 +6,8 @@ export type Font = {
 };
 
 export const FONT_OPTIONS: Font[] = [
+    { label: 'Archivo', value: 'Archivo' },
+    { label: 'Office Code Pro', value: 'OfficeCodePro' },
     { label: 'Inter', value: 'Inter' },
     { label: 'Poppins', value: 'Poppins' },
 ];

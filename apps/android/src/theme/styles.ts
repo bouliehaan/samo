@@ -907,6 +907,15 @@ export const styles = StyleSheet.create({
         paddingHorizontal: HOME_EDGE_PADDING,
         paddingTop: spacing.lg,
     },
+    // Home renders its own fixed header above the list, so the list itself needs
+    // far less top padding than the shared ScrollView scenes (whose in-scroll
+    // titles rely on tabContent's top padding for their breathing room). Keeps
+    // the pills tucked up close under the big "Home" title.
+    homeListContent: {
+        paddingBottom: SCROLL_CONTENT_BOTTOM_INSET,
+        paddingHorizontal: HOME_EDGE_PADDING,
+        paddingTop: spacing.xs,
+    },
     contextMenu: {
         backgroundColor: 'rgba(18, 18, 18, 0.96)',
         borderColor: 'rgba(255, 255, 255, 0.1)',
@@ -1684,6 +1693,7 @@ export const styles = StyleSheet.create({
         justifyContent: 'space-between',
         marginBottom: 0,
         minHeight: 56,
+        paddingTop: 18,
     },
     homeFilterGrid: {
         columnGap: HOME_TILE_GAP,
@@ -1691,6 +1701,11 @@ export const styles = StyleSheet.create({
         flexWrap: 'wrap',
         marginTop: spacing.sm,
         rowGap: spacing.sm,
+    },
+    homeFilterGridRow: {
+        columnGap: HOME_TILE_GAP,
+        flexDirection: 'row',
+        marginBottom: spacing.sm,
     },
     homeFilterGridArtwork: {
         aspectRatio: 1,
@@ -1722,12 +1737,12 @@ export const styles = StyleSheet.create({
         paddingHorizontal: spacing.md,
     },
     homeFilterPillActive: {
-        backgroundColor: colors.text,
+        backgroundColor: colors.accent,
     },
     homeFilterPills: {
         gap: spacing.xs,
         paddingBottom: spacing.sm,
-        paddingTop: spacing.sm,
+        paddingTop: spacing.xs,
     },
     homeFilterPillText: {
         color: colors.text,
@@ -1737,12 +1752,15 @@ export const styles = StyleSheet.create({
     homeFilterPillTextActive: {
         color: colors.background,
     },
+    homeSceneRoot: {
+        flex: 1,
+    },
     homeHeaderTitle: {
         color: colors.text,
-        fontSize: 54,
+        fontSize: 64,
         fontFamily: 'YoungSerif-Bold',
-        letterSpacing: -1,
-        lineHeight: 56,
+        letterSpacing: -1.5,
+        lineHeight: 64,
     },
     homeSection: {
         marginBottom: spacing.md,
@@ -1859,7 +1877,7 @@ export const styles = StyleSheet.create({
         paddingHorizontal: spacing.md,
     },
     libraryFilterPillActive: {
-        backgroundColor: colors.text,
+        backgroundColor: colors.accent,
     },
     libraryFilterPills: {
         gap: spacing.xs,

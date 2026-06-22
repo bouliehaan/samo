@@ -1,15 +1,14 @@
 import { patchSamoPlayback, type SamoPlaybackTargetKind } from '@samo/core/server';
 
-import { audiobookshelfController } from '/@/renderer/api/audiobookshelf/audiobookshelf-controller';
 import { samoFetch } from '/@/renderer/api/samo/samo-fetch';
 import { clampPosition } from '/@/renderer/store/audiobook-resume-math';
 import { type PlaybackSource, usePlaybackOwnerStore } from '/@/renderer/store/playback-owner.store';
 import { subscribePlayerStatus } from '/@/renderer/store/player.store';
 import {
-    AudiobookshelfLibraryItem,
-    AudiobookshelfPodcastEpisode,
-} from '/@/shared/api/audiobookshelf/audiobookshelf-types';
-import { ServerListItemWithCredential, ServerType } from '/@/shared/types/domain-types';
+    LongFormLibraryItem,
+    LongFormPodcastEpisode,
+} from '/@/shared/api/long-form-types';
+import { ServerListItemWithCredential } from '/@/shared/types/domain-types';
 import { PlayerStatus } from '/@/shared/types/types';
 import { LogCategory, logFn } from '/@/shared/utils/logger';
 
@@ -18,8 +17,8 @@ export const SERVER_PROGRESS_SYNC_INTERVAL_S = 30;
 
 export interface AbsPlaybackProgressSlice {
     duration: number;
-    episode: AudiobookshelfPodcastEpisode | null | undefined;
-    item: AudiobookshelfLibraryItem | null;
+    episode: LongFormPodcastEpisode | null | undefined;
+    item: LongFormLibraryItem | null;
     position: number;
     requiresEpisode: boolean;
     server: null | ServerListItemWithCredential;
@@ -50,17 +49,14 @@ export function createAbsPlaybackSyncHandle(
 ): AbsPlaybackSyncHandle {
     let lastFlushedPosition = 0;
     let lastServerSyncedPosition = 0;
-    let lastServerSyncAtMs = 0;
-    let hasLoggedMissingSessionId = false;
     let playRequestId = 0;
 
     const resetProgressSync = (position: number) => {
         lastServerSyncedPosition = position;
-        lastServerSyncAtMs = Date.now();
     };
 
     const syncProgress: AbsPlaybackSyncHandle['syncProgress'] = (options) => {
-        const { duration, episode, item, position, requiresEpisode, server, sessionId } =
+        const { duration, episode, item, position, requiresEpisode, server } =
             getSlice();
 
         if (!item || !server) {
@@ -79,7 +75,7 @@ export function createAbsPlaybackSyncHandle(
 
         resetProgressSync(currentTime);
 
-        if (server.type === ServerType.SAMO) {
+        if (true) {
             const kind: SamoPlaybackTargetKind = requiresEpisode ? 'podcast-episode' : 'audiobook';
             const targetId = requiresEpisode ? episode!.id : item.id;
             const completed =
@@ -117,51 +113,6 @@ export function createAbsPlaybackSyncHandle(
             return;
         }
 
-        if (!sessionId) {
-            if (!hasLoggedMissingSessionId) {
-                logFn.warn(`[${logLabel}] Audiobookshelf progress sync unavailable`, {
-                    category: LogCategory.PLAYER,
-                    meta: {
-                        episodeId: episode?.id,
-                        itemId: item.id,
-                        reason: 'missing-session-id',
-                        trigger: options.reason,
-                    },
-                });
-                hasLoggedMissingSessionId = true;
-            }
-            return;
-        }
-
-        const now = Date.now();
-        const timeListened =
-            options.countListeningTime && lastServerSyncAtMs > 0
-                ? Math.max(0, (now - lastServerSyncAtMs) / 1000)
-                : 0;
-
-        const payload = {
-            currentTime,
-            duration: Math.max(0, duration),
-            timeListened,
-        };
-
-        const request = options.closeSession
-            ? audiobookshelfController.closePlaybackSession(server, sessionId, payload)
-            : audiobookshelfController.syncPlaybackSession(server, sessionId, payload);
-
-        void request.catch((error) => {
-            logFn.warn(`[${logLabel}] Audiobookshelf progress sync failed`, {
-                category: LogCategory.PLAYER,
-                meta: {
-                    closeSession: options.closeSession,
-                    episodeId: episode?.id,
-                    error,
-                    itemId: item.id,
-                    reason: options.reason,
-                    sessionId,
-                },
-            });
-        });
     };
 
     return {
@@ -171,11 +122,9 @@ export function createAbsPlaybackSyncHandle(
         resetAfterClose: () => {
             lastFlushedPosition = 0;
             resetProgressSync(0);
-            hasLoggedMissingSessionId = false;
         },
         resetProgressSync,
         resetSyncWarnings: () => {
-            hasLoggedMissingSessionId = false;
         },
         setLastFlushedPosition: (position) => {
             lastFlushedPosition = position;

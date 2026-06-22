@@ -157,7 +157,7 @@ export const HomeRadioStations = () => {
                                 <Text className={styles.name} fw={700} size="sm">
                                     {station.name}
                                 </Text>
-                                <Text className={styles.subtitle} isMuted size="xs">
+                                <Text className={styles.subtitle} isMuted size="sm">
                                     {station.homepageUrl || station.streamUrl}
                                 </Text>
                             </Stack>

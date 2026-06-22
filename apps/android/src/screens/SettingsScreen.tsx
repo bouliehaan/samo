@@ -20,6 +20,14 @@ import {
     type CatalogSyncState,
     subscribeCatalogSyncState,
 } from '../services/catalog/catalog-sync-state';
+import {
+    clearAllPodcastCache,
+    loadPodcastCacheState,
+    type PodcastCacheState,
+    updatePodcastCacheLimit,
+    updatePodcastPrewarmCount,
+} from '../services/podcast-cache-settings';
+import { useAuthSessionState } from '../state/auth-session';
 import { styles } from '../theme/styles';
 import { colors } from '../theme/tokens';
 
@@ -49,6 +57,13 @@ interface SettingsScreenProps {
 
 const GIBIBYTE = 1024 * 1024 * 1024;
 const ARTWORK_CACHE_PRESETS_BYTES = [1, 2, 5, 10, 20].map((gb) => gb * GIBIBYTE);
+const PODCAST_PREWARM_PRESETS = [0, 1, 3, 5, 10];
+const PODCAST_CACHE_PRESETS_BYTES = [1, 2, 5, 10, 20, 50].map((gb) => gb * GIBIBYTE);
+
+const nextPreset = <T extends number>(presets: T[], current: number): T => {
+    const index = presets.findIndex((preset) => preset >= current);
+    return presets[(index + 1) % presets.length]!;
+};
 
 const formatBytes = (bytes: number): string => {
     if (bytes >= GIBIBYTE) {
@@ -217,6 +232,46 @@ export const SettingsScreen = ({
         void clearArtworkCache().then(refreshArtworkCacheSize);
     };
 
+    const { serverConnection } = useAuthSessionState();
+    const [podcastCache, setPodcastCache] = useState<PodcastCacheState | null>(null);
+
+    const refreshPodcastCache = useCallback(async () => {
+        if (!serverConnection) {
+            setPodcastCache(null);
+            return;
+        }
+        try {
+            setPodcastCache(await loadPodcastCacheState(serverConnection));
+        } catch {
+            // Leave the last known state; a transient error shouldn't blank the UI.
+        }
+    }, [serverConnection]);
+
+    useEffect(() => {
+        void refreshPodcastCache();
+    }, [refreshPodcastCache]);
+
+    // Optimistic cycle: update locally for instant feedback, persist, then
+    // reconcile with the server's authoritative value (success or failure).
+    const handleCyclePodcastPrewarm = () => {
+        if (!serverConnection || !podcastCache) return;
+        const next = nextPreset(PODCAST_PREWARM_PRESETS, podcastCache.prewarmCount);
+        setPodcastCache({ ...podcastCache, prewarmCount: next });
+        void updatePodcastPrewarmCount(serverConnection, next).finally(refreshPodcastCache);
+    };
+
+    const handleCyclePodcastCacheLimit = () => {
+        if (!serverConnection || !podcastCache) return;
+        const next = nextPreset(PODCAST_CACHE_PRESETS_BYTES, podcastCache.maxBytes);
+        setPodcastCache({ ...podcastCache, maxBytes: next });
+        void updatePodcastCacheLimit(serverConnection, next).finally(refreshPodcastCache);
+    };
+
+    const handleClearPodcastCache = () => {
+        if (!serverConnection) return;
+        void clearAllPodcastCache(serverConnection).finally(refreshPodcastCache);
+    };
+
     const catalogStateById = new Map(catalogStates.map((state) => [state.sourceId, state]));
     const handleSyncPress = async () => {
         if (syncStatus.kind === 'running') return;
@@ -324,6 +379,57 @@ export const SettingsScreen = ({
                     </Text>
                 </View>
             </Pressable>
+            {serverConnection && podcastCache ? (
+                <>
+                    <Text style={styles.settingsSectionLabel}>Podcast cache</Text>
+                    <Pressable
+                        accessibilityRole="button"
+                        onPress={handleCyclePodcastPrewarm}
+                        style={styles.settingsRow}
+                    >
+                        <RadioWaveGlyph color={colors.text} />
+                        <View style={styles.settingsRowText}>
+                            <Text style={styles.settingsRowTitle}>Keep newest episodes ready</Text>
+                            <Text style={styles.settingsRowSubtitle}>
+                                {podcastCache.prewarmCount === 0
+                                    ? 'Off · tap to change'
+                                    : `${podcastCache.prewarmCount} newest per show · tap to change`}
+                            </Text>
+                        </View>
+                    </Pressable>
+                    <Pressable
+                        accessibilityRole="button"
+                        onPress={handleCyclePodcastCacheLimit}
+                        style={styles.settingsRow}
+                    >
+                        <DiscGlyph color={colors.text} />
+                        <View style={styles.settingsRowText}>
+                            <Text style={styles.settingsRowTitle}>Cache size limit</Text>
+                            <Text style={styles.settingsRowSubtitle}>
+                                {`${formatBytes(podcastCache.totalBytes)} of ${formatGbLimit(
+                                    podcastCache.maxBytes,
+                                )} · ${formatCount(podcastCache.episodeCount, 'episode')} · tap to change`}
+                            </Text>
+                        </View>
+                    </Pressable>
+                    <Pressable
+                        accessibilityRole="button"
+                        disabled={podcastCache.episodeCount === 0}
+                        onPress={handleClearPodcastCache}
+                        style={styles.settingsRow}
+                    >
+                        <ClearGlyph color={colors.text} />
+                        <View style={styles.settingsRowText}>
+                            <Text style={styles.settingsRowTitle}>Clear podcast cache</Text>
+                            <Text style={styles.settingsRowSubtitle}>
+                                {podcastCache.episodeCount
+                                    ? `Free up ${formatBytes(podcastCache.totalBytes)}`
+                                    : 'Cache is empty'}
+                            </Text>
+                        </View>
+                    </Pressable>
+                </>
+            ) : null}
             <Pressable
                 accessibilityRole="button"
                 onPress={onOpenDownloads}

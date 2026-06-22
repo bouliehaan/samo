@@ -26,7 +26,7 @@ import {
     usePodcastServer,
     usePodcastStore,
 } from '/@/renderer/store/podcast.store';
-import { AudiobookshelfLibraryItem } from '/@/shared/api/audiobookshelf/audiobookshelf-types';
+import { LongFormLibraryItem } from '/@/shared/api/long-form-types';
 import { ServerListItemWithCredential } from '/@/shared/types/domain-types';
 import { LibraryItem } from '/@/shared/types/domain-types';
 
@@ -211,7 +211,7 @@ export function useNowPlaying(): NowPlaying {
 
 function audiobookArtworkUrl(
     server: ServerListItemWithCredential,
-    item: AudiobookshelfLibraryItem,
+    item: LongFormLibraryItem,
 ): string | undefined {
     if (isSamoBackedLibraryItem(item)) {
         return item.media?.metadata?.imageUrl;
@@ -221,7 +221,7 @@ function audiobookArtworkUrl(
     return `${base}/api/items/${item.id}/cover?token=${encodeURIComponent(server.credential)}`;
 }
 
-function audiobookAuthor(item: AudiobookshelfLibraryItem): string {
+function audiobookAuthor(item: LongFormLibraryItem): string {
     const meta = item.media?.metadata;
 
     return (
@@ -233,13 +233,13 @@ function audiobookAuthor(item: AudiobookshelfLibraryItem): string {
     );
 }
 
-function audiobookTitle(item: AudiobookshelfLibraryItem): string {
+function audiobookTitle(item: LongFormLibraryItem): string {
     return item.media?.metadata?.title || item.name || 'Untitled audiobook';
 }
 
 function podcastArtworkUrl(
     server: ServerListItemWithCredential,
-    item: AudiobookshelfLibraryItem,
+    item: LongFormLibraryItem,
 ): string | undefined {
     if (item.media?.metadata?.imageUrl) {
         return item.media.metadata.imageUrl;
@@ -247,14 +247,14 @@ function podcastArtworkUrl(
     return audiobookArtworkUrl(server, item);
 }
 
-function podcastAuthor(item: AudiobookshelfLibraryItem): string {
+function podcastAuthor(item: LongFormLibraryItem): string {
     const meta = item.media?.metadata;
     return meta?.author || meta?.authorName || meta?.authors?.map((a) => a.name).join(', ') || '';
 }
 
 // Podcast show name (e.g. "The Daily"). Distinct from audiobookAuthor because
 // for podcasts, what feels like "title" to a user is the episode, not the show.
-function podcastShowTitle(item: AudiobookshelfLibraryItem): string {
+function podcastShowTitle(item: LongFormLibraryItem): string {
     return item.media?.metadata?.title || item.name || 'Podcast';
 }
 

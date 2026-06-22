@@ -13,6 +13,20 @@ import { type AndroidHomeContentState } from '../services/home-content';
 import { type AndroidMediaDetailState } from '../services/media-detail';
 import { type AndroidSearchState } from '../services/search-content';
 
+/**
+ * One entry in the media-detail back-stack. The detail surface is rendered from
+ * a single live slot (`mediaDetailState`); this stack holds the history BELOW
+ * the current detail so "back" returns to the artist/album/playlist you came
+ * from instead of collapsing the whole overlay to the active tab (Home).
+ * `key` is the opened item's cache key (`getRecentContentItemKey`) — it lets the
+ * open action tell "navigate to a new entity" (push) from "update the current
+ * entity" (replace the top, e.g. loading → loaded) and de-dupes re-opens.
+ */
+export type MediaDetailFrame = {
+    key: string;
+    state: AndroidMediaDetailState;
+};
+
 export type AppNavigationState = {
     activeTab: SamoMobileTabId;
     activeUtilityScreen: AndroidUtilityScreen | null;
@@ -20,6 +34,8 @@ export type AppNavigationState = {
     isFullPlayerOpen: boolean;
     isSearchOverlayOpen: boolean;
     libraryFullCollections: LibraryFullCollectionsState;
+    mediaDetailKey: string | null;
+    mediaDetailStack: MediaDetailFrame[];
     mediaDetailState: AndroidMediaDetailState;
     searchOverlayQuery: string;
     searchState: AndroidSearchState;
@@ -27,13 +43,15 @@ export type AppNavigationState = {
     viewAllRoute: null | ViewAllRoute;
 };
 
-const initialAppNavigationState: AppNavigationState = {
+export const initialAppNavigationState: AppNavigationState = {
     activeTab: 'home',
     activeUtilityScreen: null,
     homeContentState: { status: 'idle' },
     isFullPlayerOpen: false,
     isSearchOverlayOpen: false,
     libraryFullCollections: EMPTY_LIBRARY_FULL_COLLECTIONS,
+    mediaDetailKey: null,
+    mediaDetailStack: [],
     mediaDetailState: { status: 'idle' },
     searchOverlayQuery: '',
     searchState: { status: 'idle' },
@@ -41,7 +59,7 @@ const initialAppNavigationState: AppNavigationState = {
     viewAllRoute: null,
 };
 
-type AppNavigationAction =
+export type AppNavigationAction =
     | { type: 'patch'; patch: Partial<AppNavigationState> }
     | {
           type: 'set-active-tab';
@@ -74,6 +92,9 @@ type AppNavigationAction =
               | AndroidMediaDetailState
               | ((current: AndroidMediaDetailState) => AndroidMediaDetailState);
       }
+    | { type: 'open-media-detail'; key: string; mediaDetailState: AndroidMediaDetailState }
+    | { type: 'pop-media-detail' }
+    | { type: 'reset-media-detail' }
     | { type: 'set-search-overlay-query'; searchOverlayQuery: string }
     | {
           type: 'set-search-state';
@@ -88,7 +109,7 @@ type AppNavigationAction =
     | { type: 'set-view-all-route'; viewAllRoute: null | ViewAllRoute }
     | { type: 'close-view-all' };
 
-const appNavigationReducer = (
+export const appNavigationReducer = (
     state: AppNavigationState,
     action: AppNavigationAction,
 ): AppNavigationState => {
@@ -134,6 +155,57 @@ const appNavigationReducer = (
                     typeof action.mediaDetailState === 'function'
                         ? action.mediaDetailState(state.mediaDetailState)
                         : action.mediaDetailState,
+            };
+        case 'open-media-detail': {
+            // Push the current detail onto the back-stack only when it's a fully
+            // LOADED detail for a DIFFERENT entity. Pushing a loading/error shell
+            // would restore a dead spinner on back (its in-flight request was
+            // already superseded); a same-key open is a re-open/refresh, not a
+            // navigation, so it replaces in place.
+            const shouldPush =
+                state.mediaDetailState.status === 'loaded' &&
+                state.mediaDetailKey !== null &&
+                state.mediaDetailKey !== action.key;
+            return {
+                ...state,
+                mediaDetailKey: action.key,
+                mediaDetailStack: shouldPush
+                    ? [
+                          ...state.mediaDetailStack,
+                          { key: state.mediaDetailKey as string, state: state.mediaDetailState },
+                      ]
+                    : state.mediaDetailStack,
+                mediaDetailState: action.mediaDetailState,
+            };
+        }
+        case 'pop-media-detail': {
+            if (state.mediaDetailStack.length === 0) {
+                if (state.mediaDetailState.status === 'idle' && state.mediaDetailKey === null) {
+                    return state;
+                }
+                return { ...state, mediaDetailKey: null, mediaDetailState: { status: 'idle' } };
+            }
+            const frame = state.mediaDetailStack[state.mediaDetailStack.length - 1]!;
+            return {
+                ...state,
+                mediaDetailKey: frame.key,
+                mediaDetailStack: state.mediaDetailStack.slice(0, -1),
+                mediaDetailState: frame.state,
+            };
+        }
+        case 'reset-media-detail':
+            if (
+                state.mediaDetailState.status === 'idle' &&
+                state.mediaDetailStack.length === 0 &&
+                state.mediaDetailKey === null
+            ) {
+                return state;
+            }
+            return {
+                ...state,
+                mediaDetailKey: null,
+                mediaDetailStack: [],
+                mediaDetailState: { status: 'idle' },
             };
         case 'set-search-overlay-query':
             return { ...state, searchOverlayQuery: action.searchOverlayQuery };
@@ -231,6 +303,16 @@ const setMediaDetailState = (
         | ((current: AndroidMediaDetailState) => AndroidMediaDetailState),
 ) => dispatchAppNavigation({ type: 'set-media-detail', mediaDetailState });
 
+/**
+ * Navigate to a NEW media detail. Pushes the current loaded detail onto the
+ * back-stack (so `popMediaDetail` can return to it) and makes the new one the
+ * live top. `key` is the opened item's cache key — same-key opens replace in
+ * place instead of stacking a duplicate. Updates to the current detail (e.g.
+ * loading → loaded) keep using `setMediaDetailState`, which only touches the top.
+ */
+const openMediaDetail = (key: string, mediaDetailState: AndroidMediaDetailState) =>
+    dispatchAppNavigation({ type: 'open-media-detail', key, mediaDetailState });
+
 const setViewAllRoute = (viewAllRoute: null | ViewAllRoute) =>
     dispatchAppNavigation({ type: 'set-view-all-route', viewAllRoute });
 
@@ -250,12 +332,29 @@ const setSearchState = (
     searchState: AndroidSearchState | ((current: AndroidSearchState) => AndroidSearchState),
 ) => dispatchAppNavigation({ type: 'set-search-state', searchState });
 
+/**
+ * Pop one level off the detail back-stack: back to the previous detail (the
+ * artist you opened the album from), or to idle when at the root. This is the
+ * "back" gesture — wired to the hardware back button and the detail header's
+ * onBack. Runs the close side-effect so any in-flight load for the detail being
+ * left is invalidated and can't clobber the restored parent.
+ */
+const popMediaDetail = () => {
+    appNavigationOptions.onCloseMediaDetailSideEffects?.();
+    startTransition(() => {
+        dispatchAppNavigation({ type: 'pop-media-detail' });
+    });
+};
+
+/**
+ * Fully tear down the detail surface (clears the whole back-stack → idle). Used
+ * when leaving the surface entirely — switching tabs, opening a utility screen —
+ * where "back" semantics don't apply and the next open should be a fresh root.
+ */
 const closeMediaDetail = () => {
     appNavigationOptions.onCloseMediaDetailSideEffects?.();
     startTransition(() => {
-        setMediaDetailState((current) =>
-            current.status === 'idle' ? current : { status: 'idle' },
-        );
+        dispatchAppNavigation({ type: 'reset-media-detail' });
     });
 };
 
@@ -292,7 +391,7 @@ export const useAppNavigationState = (options?: UseAppNavigationOptions) => {
             }
 
             if (state.mediaDetailState.status !== 'idle') {
-                closeMediaDetail();
+                popMediaDetail();
                 return true;
             }
 
@@ -332,6 +431,8 @@ export const useAppNavigationState = (options?: UseAppNavigationOptions) => {
         closeViewAll,
         homeLoadRequestId,
         libraryFullCollectionFetchTokenRef,
+        openMediaDetail,
+        popMediaDetail,
         setActiveTab,
         setActiveUtilityScreen,
         setHomeContentState,

@@ -9,6 +9,7 @@ import {
     resolveSamoPlaylistArtworkUrl,
     resolveSamoPodcastArtworkUrl,
     resolveSamoStationArtworkUrl,
+    type SamoArtistRef,
     type SamoAudiobook,
     type SamoInternetRadioStation,
     type SamoMusicAlbum,
@@ -86,6 +87,54 @@ const buildArtistList = (
             userRating: null,
         },
     ];
+};
+
+// Map the artistmeta "Similar Artists" rail. A ref that matches a local catalog
+// artist becomes a navigable RelatedArtist (real id + Samo cover); one that does
+// not (`external`) keeps the provider image and gets a synthetic id so the
+// carousel's keys stay unique. getItemNavigationPath only links real ids, but a
+// synthetic id is still a valid (unowned) route guarded by the router error
+// boundary — externals are primarily a visual discovery rail.
+const normalizeSamoSimilarArtists = (
+    refs: SamoArtistRef[] | undefined,
+    server: null | ServerListItemWithCredential | undefined,
+): RelatedArtist[] => {
+    if (!refs || refs.length === 0) {
+        return [];
+    }
+    const auth = toAuthBundle(server);
+    const out: RelatedArtist[] = [];
+    for (const ref of refs) {
+        const name = (ref.name ?? '').trim();
+        if (!name) continue;
+
+        if (ref.external || !ref.id) {
+            out.push({
+                id: `ext:${name}`,
+                imageId: null,
+                imageUrl: ref.imageUrl ?? null,
+                name,
+                userFavorite: false,
+                userRating: null,
+            });
+            continue;
+        }
+
+        out.push({
+            id: ref.id,
+            imageId: pickSamoCatalogImageId(pickSamoImageId(ref.images)) ?? null,
+            imageUrl:
+                auth && pickSamoImageId(ref.images)
+                    ? toStoredImageUrl(
+                          resolveSamoArtistArtworkUrl(auth, { id: ref.id, images: ref.images }),
+                      )
+                    : null,
+            name,
+            userFavorite: false,
+            userRating: null,
+        });
+    }
+    return out;
 };
 
 const joinNames = (refs: SamoMusicArtistRef[] | undefined): string => {
@@ -545,5 +594,6 @@ export const samoNormalize = {
     playlist: normalizeSamoMusicPlaylist,
     podcastAsPlaylist: normalizeSamoPodcastAsPlaylist,
     podcastEpisodeAsSong: normalizeSamoPodcastEpisodeAsSong,
+    similarArtists: normalizeSamoSimilarArtists,
     song: normalizeSamoMusicTrack,
 };

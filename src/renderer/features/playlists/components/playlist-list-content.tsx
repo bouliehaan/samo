@@ -1,8 +1,8 @@
 import { lazy, Suspense, useMemo } from 'react';
 
 import { usePlaylistListFilters } from '/@/renderer/features/playlists/hooks/use-playlist-list-filters';
+import { GridPageSkeleton } from '/@/renderer/features/shared/components/page-skeletons/page-skeletons';
 import { ItemListSettings, useCurrentServer, useListSettings } from '/@/renderer/store';
-import { Spinner } from '/@/shared/components/spinner/spinner';
 import { PlaylistListQuery } from '/@/shared/types/domain-types';
 import { ItemListKey, ListDisplayType, ListPaginationType } from '/@/shared/types/types';
 
@@ -44,7 +44,7 @@ export const PlaylistListContent = () => {
     );
 
     return (
-        <Suspense fallback={<Spinner container />}>
+        <Suspense fallback={<GridPageSkeleton />}>
             <PlaylistListView
                 display={display}
                 grid={grid}

@@ -22,7 +22,6 @@ import {
 } from '/@/renderer/utils/quality-profile';
 import { usePlayer } from '/@/renderer/features/player/context/player-context';
 import { useRadioControls } from '/@/renderer/features/radio/hooks/use-radio-player';
-import { AbsCoverImage } from '/@/renderer/features/search/components/abs-cover-image';
 import {
     RankedAlbum,
     RankedArtist,
@@ -58,9 +57,9 @@ import {
 } from '/@/renderer/store/library-favorites.store';
 import { usePodcastActions } from '/@/renderer/store/podcast.store';
 import {
-    AudiobookshelfLibraryItem,
-    AudiobookshelfPodcastEpisode,
-} from '/@/shared/api/audiobookshelf/audiobookshelf-types';
+    LongFormLibraryItem,
+    LongFormPodcastEpisode,
+} from '/@/shared/api/long-form-types';
 import { Icon } from '/@/shared/components/icon/icon';
 import { useDebouncedValue } from '/@/shared/hooks/use-debounced-value';
 import {
@@ -201,17 +200,17 @@ const ResultSection = ({ children, title }: ResultSectionProps) => (
     </div>
 );
 
-const getAbsTitle = (item: AudiobookshelfLibraryItem) =>
+const getAbsTitle = (item: LongFormLibraryItem) =>
     item.media?.metadata?.title ?? item.name ?? 'Untitled';
 
-const getAbsAuthor = (item: AudiobookshelfLibraryItem) => {
+const getAbsAuthor = (item: LongFormLibraryItem) => {
     const meta = item.media?.metadata;
     return meta?.author ?? meta?.authors?.map((author) => author.name).join(', ') ?? '';
 };
 
 const getEpisodeSubtitle = (
-    show: AudiobookshelfLibraryItem,
-    episode: AudiobookshelfPodcastEpisode,
+    show: LongFormLibraryItem,
+    episode: LongFormPodcastEpisode,
 ) => {
     const showTitle = getAbsTitle(show);
     if (episode.season) return `${showTitle} · S${episode.season}`;
@@ -246,18 +245,18 @@ interface RowFactoryDeps {
     musicServerId?: null | string;
     onSelectAlbum: (album: Album) => void;
     onSelectArtist: (artist: AlbumArtist) => void;
-    onSelectAudiobook: (item: AudiobookshelfLibraryItem) => void;
+    onSelectAudiobook: (item: LongFormLibraryItem) => void;
     onSelectEpisode: (result: UnifiedPodcastEpisodeResult) => void;
     onSelectPlaylist: (playlist: Playlist) => void;
-    onSelectPodcastShow: (item: AudiobookshelfLibraryItem) => void;
+    onSelectPodcastShow: (item: LongFormLibraryItem) => void;
     onSelectRadio: (station: InternetRadioStation) => void;
     onSelectSong: (song: Song) => void;
-    onToggleAudiobookFavorite: (item: AudiobookshelfLibraryItem) => void;
+    onToggleAudiobookFavorite: (item: LongFormLibraryItem) => void;
     onToggleFavorite: (
         item: Album | AlbumArtist | Song,
         itemType: LibraryItem.ALBUM | LibraryItem.ALBUM_ARTIST | LibraryItem.SONG,
     ) => void;
-    onTogglePodcastFavorite: (item: AudiobookshelfLibraryItem) => void;
+    onTogglePodcastFavorite: (item: LongFormLibraryItem) => void;
     podcastFavoriteIds: Set<string>;
 }
 
@@ -310,14 +309,8 @@ const renderRow = (entry: RankedResult, deps: RowFactoryDeps): ReactNode => {
             const { item } = entry as RankedAudiobook;
             return (
                 <ResultRow
-                    artNode={
-                        <AbsCoverImage
-                            alt={getAbsTitle(item)}
-                            fallbackIcon="metadata"
-                            imageUrl={item.media?.metadata?.imageUrl}
-                            itemId={item.id}
-                        />
-                    }
+                    artImageUrl={item.media?.metadata?.imageUrl}
+                    artItemType={LibraryItem.SONG}
                     fallbackIcon="metadata"
                     favorite={{
                         isFavorite: deps.audiobookFavoriteIds.has(item.id),
@@ -335,14 +328,8 @@ const renderRow = (entry: RankedResult, deps: RowFactoryDeps): ReactNode => {
             const { episode } = entry as RankedEpisode;
             return (
                 <ResultRow
-                    artNode={
-                        <AbsCoverImage
-                            alt={episode.episode.title ?? getAbsTitle(episode.show)}
-                            fallbackIcon="microphone"
-                            imageUrl={episode.show.media?.metadata?.imageUrl}
-                            itemId={episode.show.id}
-                        />
-                    }
+                    artImageUrl={episode.show.media?.metadata?.imageUrl}
+                    artItemType={LibraryItem.SONG}
                     fallbackIcon="microphone"
                     key={`episode-${episode.show.id}-${episode.episode.id}`}
                     onSelect={() => deps.onSelectEpisode(episode)}
@@ -373,14 +360,8 @@ const renderRow = (entry: RankedResult, deps: RowFactoryDeps): ReactNode => {
             const { item } = entry as RankedPodcastShow;
             return (
                 <ResultRow
-                    artNode={
-                        <AbsCoverImage
-                            alt={getAbsTitle(item)}
-                            fallbackIcon="microphone"
-                            imageUrl={item.media?.metadata?.imageUrl}
-                            itemId={item.id}
-                        />
-                    }
+                    artImageUrl={item.media?.metadata?.imageUrl}
+                    artItemType={LibraryItem.SONG}
                     fallbackIcon="microphone"
                     favorite={{
                         isFavorite: deps.podcastFavoriteIds.has(item.id),
@@ -589,7 +570,7 @@ export const GlobalSearchBar = ({ className }: GlobalSearchBarProps) => {
     );
 
     const handleAudiobookSelect = useCallback(
-        (item: AudiobookshelfLibraryItem) => {
+        (item: LongFormLibraryItem) => {
             if (!longFormMediaServer) return;
             recordRecentAudiobook(item, longFormMediaServer.id);
             audiobookActions.play(longFormMediaServer, item);
@@ -599,7 +580,7 @@ export const GlobalSearchBar = ({ className }: GlobalSearchBarProps) => {
     );
 
     const handlePodcastShowSelect = useCallback(
-        (item: AudiobookshelfLibraryItem) => {
+        (item: LongFormLibraryItem) => {
             if (longFormMediaServer) {
                 recordRecentPodcast(item, longFormMediaServer.id);
             }
@@ -632,7 +613,7 @@ export const GlobalSearchBar = ({ className }: GlobalSearchBarProps) => {
     );
 
     const handleToggleAudiobookFavorite = useCallback(
-        (item: AudiobookshelfLibraryItem) => {
+        (item: LongFormLibraryItem) => {
             if (!audiobookshelfServerId) return;
             libraryFavoriteActions.toggle('audiobook', audiobookshelfServerId, item.id);
         },
@@ -640,7 +621,7 @@ export const GlobalSearchBar = ({ className }: GlobalSearchBarProps) => {
     );
 
     const handleTogglePodcastFavorite = useCallback(
-        (item: AudiobookshelfLibraryItem) => {
+        (item: LongFormLibraryItem) => {
             if (!audiobookshelfServerId) return;
             libraryFavoriteActions.toggle('podcast', audiobookshelfServerId, item.id);
         },

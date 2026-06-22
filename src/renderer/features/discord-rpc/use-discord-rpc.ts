@@ -21,7 +21,7 @@ import {
 } from '/@/renderer/store';
 import { sentenceCase } from '/@/renderer/utils';
 import { useDebouncedCallback } from '/@/shared/hooks/use-debounced-callback';
-import { LibraryItem, QueueSong, ServerType } from '/@/shared/types/domain-types';
+import { LibraryItem, QueueSong } from '/@/shared/types/domain-types';
 import { PlayerStatus } from '/@/shared/types/types';
 import { LogCategory, logFn } from '/@/shared/utils/logger';
 import { logMsg } from '/@/shared/utils/logger-message';
@@ -271,14 +271,6 @@ export const useDiscordRpc = () => {
                 } else {
                     activity.smallImageKey = 'paused';
                     activity.smallImageText = sentenceCase(current[2]);
-                }
-
-                if (discordSettings.showServerImage && song) {
-                    if (song._uniqueId === currentSong?._uniqueId && imageUrlRef.current) {
-                        if (song._serverType === ServerType.JELLYFIN) {
-                            activity.largeImageKey = imageUrlRef.current;
-                        }
-                    }
                 }
 
                 if (

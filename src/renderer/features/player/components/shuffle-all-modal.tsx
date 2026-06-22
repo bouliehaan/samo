@@ -20,7 +20,7 @@ import { Group } from '/@/shared/components/group/group';
 import { NumberInput } from '/@/shared/components/number-input/number-input';
 import { Select } from '/@/shared/components/select/select';
 import { Stack } from '/@/shared/components/stack/stack';
-import { Played, RandomSongListQuery, ServerType } from '/@/shared/types/domain-types';
+import { Played, RandomSongListQuery } from '/@/shared/types/domain-types';
 import { Play } from '/@/shared/types/types';
 
 interface ShuffleAllSlice extends RandomSongListQuery {
@@ -144,7 +144,7 @@ export const ShuffleAllContextModal = () => {
             <Suspense fallback={<Select data={[]} />}>
                 <GenreSelect />
             </Suspense>
-            {server?.type === ServerType.JELLYFIN && (
+            {false && (
                 <Select
                     clearable
                     data={PLAYED_DATA}

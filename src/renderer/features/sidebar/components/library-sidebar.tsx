@@ -1,11 +1,10 @@
-import { useQueries, useQuery } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import clsx from 'clsx';
 import { MouseEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { generatePath, useLocation, useNavigate } from 'react-router';
 
 import styles from './library-sidebar.module.css';
 
-import { audiobookshelfController } from '/@/renderer/api/audiobookshelf/audiobookshelf-controller';
 import {
     listSamoAudiobookLibraryItems,
     listSamoPodcastLibraryItems,
@@ -14,6 +13,7 @@ import { ItemImage } from '/@/renderer/components/item-image/item-image';
 import { albumQueries } from '/@/renderer/features/albums/api/album-api';
 import { artistsQueries } from '/@/renderer/features/artists/api/artists-api';
 import { ContextMenuController } from '/@/renderer/features/context-menu/context-menu-controller';
+import { LongFormCoverImage } from '/@/renderer/features/player/components/long-form-cover-image';
 import { usePlayer } from '/@/renderer/features/player/context/player-context';
 import { playlistsQueries } from '/@/renderer/features/playlists/api/playlists-api';
 import { openCreatePlaylistModal } from '/@/renderer/features/playlists/components/create-playlist-form';
@@ -23,7 +23,6 @@ import {
     useRadioControls,
     useRadioPlayer,
 } from '/@/renderer/features/radio/hooks/use-radio-player';
-import { AbsCoverImage } from '/@/renderer/features/search/components/abs-cover-image';
 import { songsQueries } from '/@/renderer/features/songs/api/songs-api';
 import { AppRoute } from '/@/renderer/router/routes';
 import {
@@ -43,10 +42,6 @@ import {
     usePodcastItem,
     useRecentItems,
 } from '/@/renderer/store';
-import {
-    AudiobookshelfLibrary,
-    AudiobookshelfLibraryItem,
-} from '/@/shared/api/audiobookshelf/audiobookshelf-types';
 import { ActionIcon } from '/@/shared/components/action-icon/action-icon';
 import { type AppIconSelection, Icon } from '/@/shared/components/icon/icon';
 import {
@@ -58,23 +53,16 @@ import {
     LibraryItem,
     Playlist,
     PlaylistListSort,
+    ServerType,
     Song,
     SongListSort,
     SortOrder,
-    ServerType,
 } from '/@/shared/types/domain-types';
 import { Play, PlayerStatus } from '/@/shared/types/types';
 
 const SIDEBAR_ITEM_LIMIT = 40;
 const SIDEBAR_RENDER_LIMIT = 200;
 const SIDEBAR_TYPE_VIEW_LIMIT = 1000;
-const ABS_LIBRARY_STALE_TIME_MS = 1000 * 60 * 5;
-const ABS_LIBRARY_GC_TIME_MS = 1000 * 60 * 30;
-
-interface AbsLibraryEntry {
-    item: AudiobookshelfLibraryItem;
-    mediaType?: string;
-}
 
 type LibraryFilter =
     | 'albums'
@@ -285,10 +273,9 @@ const recentRadioFromLibrary = (
     title: station.name,
 });
 
-const getAbsTitle = (item: AudiobookshelfLibraryItem) =>
-    item.media?.metadata?.title ?? item.name ?? 'Untitled';
+const getAbsTitle = (item: any) => item.media?.metadata?.title ?? item.name ?? 'Untitled';
 
-const getAbsAuthor = (item: AudiobookshelfLibraryItem) => {
+const getAbsAuthor = (item: any) => {
     const meta = item.media?.metadata;
     return (
         meta?.author ??
@@ -300,11 +287,7 @@ const getAbsAuthor = (item: AudiobookshelfLibraryItem) => {
     );
 };
 
-const recentAudiobookFromLibrary = (
-    item: AudiobookshelfLibraryItem,
-    serverId: string,
-    selectedAt = 0,
-): RecentItem => {
+const recentAudiobookFromLibrary = (item: any, serverId: string, selectedAt = 0): RecentItem => {
     const publishedYear =
         item.media?.metadata?.publishedYear ?? item.media?.publishedYear ?? undefined;
 
@@ -326,11 +309,7 @@ const recentAudiobookFromLibrary = (
     };
 };
 
-const recentPodcastFromLibrary = (
-    item: AudiobookshelfLibraryItem,
-    serverId: string,
-    selectedAt = 0,
-): RecentItem => ({
+const recentPodcastFromLibrary = (item: any, serverId: string, selectedAt = 0): RecentItem => ({
     artwork: {
         fallbackIcon: 'microphone',
         imageUrl: item.media?.metadata?.imageUrl,
@@ -364,7 +343,11 @@ const mergeLibraryItemsWithRecents = (
 };
 
 const getSidebarArtwork = (item: RecentItem): RecentItem['artwork'] => {
-    if (item.artwork.kind === 'abs' && !item.artwork.imageUrl && item.rawAbsItem?.media?.metadata?.imageUrl) {
+    if (
+        item.artwork.kind === 'abs' &&
+        !item.artwork.imageUrl &&
+        item.rawAbsItem?.media?.metadata?.imageUrl
+    ) {
         return {
             ...item.artwork,
             imageUrl: item.rawAbsItem.media.metadata.imageUrl,
@@ -479,67 +462,19 @@ export const LibrarySidebar = () => {
         staleTime: 1000 * 60 * 5,
     });
 
-    const absLibrariesQuery = useQuery({
-        enabled: shouldLoadLongFormView && !isSamoLongForm,
-        gcTime: ABS_LIBRARY_GC_TIME_MS,
-        queryFn: () => audiobookshelfController.getLibraries(longFormServer!),
-        queryKey: ['audiobookshelf', 'libraries', longFormServerId],
-        staleTime: ABS_LIBRARY_STALE_TIME_MS,
-    });
-
-    const absLibraries = useMemo(
-        () => absLibrariesQuery.data?.libraries ?? [],
-        [absLibrariesQuery.data?.libraries],
-    );
-
-    const absTypeLibraries = useMemo<AudiobookshelfLibrary[]>(() => {
-        if (activeFilter === 'audiobooks') {
-            return absLibraries.filter((library) => library.mediaType === 'book');
-        }
-        if (activeFilter === 'podcasts') {
-            return absLibraries.filter((library) => library.mediaType === 'podcast');
-        }
-        return [];
-    }, [absLibraries, activeFilter]);
-
-    const absItemQueries = useQueries({
-        queries: absTypeLibraries.map((library) => ({
-            enabled: shouldLoadLongFormView && !isSamoLongForm,
-            gcTime: ABS_LIBRARY_GC_TIME_MS,
-            queryFn: () =>
-                audiobookshelfController.getLibraryItems(longFormServer!, library.id),
-            queryKey: ['audiobookshelf', 'library-items', longFormServerId, library.id],
-            staleTime: ABS_LIBRARY_STALE_TIME_MS,
-        })),
-    });
-
     const samoAudiobooksQuery = useQuery({
         enabled: shouldLoadLongFormView && isSamoLongForm && activeFilter === 'audiobooks',
-        gcTime: ABS_LIBRARY_GC_TIME_MS,
         queryFn: () => listSamoAudiobookLibraryItems(longFormServer!),
         queryKey: ['samo', 'sidebar', 'audiobooks', longFormServerId],
-        staleTime: ABS_LIBRARY_STALE_TIME_MS,
+        staleTime: 1000 * 60 * 5,
     });
 
     const samoPodcastsQuery = useQuery({
         enabled: shouldLoadLongFormView && isSamoLongForm && activeFilter === 'podcasts',
-        gcTime: ABS_LIBRARY_GC_TIME_MS,
         queryFn: () => listSamoPodcastLibraryItems(longFormServer!),
         queryKey: ['samo', 'sidebar', 'podcasts', longFormServerId],
-        staleTime: ABS_LIBRARY_STALE_TIME_MS,
+        staleTime: 1000 * 60 * 5,
     });
-
-    const absEntries = useMemo<AbsLibraryEntry[]>(
-        () =>
-            absItemQueries.flatMap((query, index) => {
-                const library = absTypeLibraries[index];
-                return (query.data?.results ?? []).map((item) => ({
-                    item,
-                    mediaType: item.mediaType ?? library?.mediaType,
-                }));
-            }),
-        [absItemQueries, absTypeLibraries],
-    );
 
     const samoAudiobookEntries = useMemo(
         () =>
@@ -559,36 +494,25 @@ export const LibrarySidebar = () => {
         [samoPodcastsQuery.data],
     );
 
-    const audiobookEntries = useMemo(
-        () =>
-            isSamoLongForm
-                ? samoAudiobookEntries
-                : absEntries.filter(
-                      (entry) => entry.mediaType === 'book' || entry.item.mediaType === 'book',
-                  ),
-        [absEntries, isSamoLongForm, samoAudiobookEntries],
-    );
+    const audiobookEntries = useMemo(() => samoAudiobookEntries, [samoAudiobookEntries]);
 
-    const podcastEntries = useMemo(
-        () =>
-            isSamoLongForm
-                ? samoPodcastEntries
-                : absEntries.filter(
-                      (entry) =>
-                          entry.mediaType === 'podcast' ||
-                          entry.item.mediaType === 'podcast' ||
-                          Boolean(entry.item.media?.episodes),
-                  ),
-        [absEntries, isSamoLongForm, samoPodcastEntries],
-    );
+    const podcastEntries = useMemo(() => samoPodcastEntries, [samoPodcastEntries]);
 
     const audiobookEntryIdsKey = useMemo(
-        () => audiobookEntries.map((entry) => entry.item.id).sort().join('\0'),
+        () =>
+            audiobookEntries
+                .map((entry) => entry.item.id)
+                .sort()
+                .join('\0'),
         [audiobookEntries],
     );
 
     const podcastEntryIdsKey = useMemo(
-        () => podcastEntries.map((entry) => entry.item.id).sort().join('\0'),
+        () =>
+            podcastEntries
+                .map((entry) => entry.item.id)
+                .sort()
+                .join('\0'),
         [podcastEntries],
     );
 
@@ -640,14 +564,12 @@ export const LibrarySidebar = () => {
         ? activeFilter === 'audiobooks'
             ? samoAudiobooksQuery.isSuccess
             : samoPodcastsQuery.isSuccess
-        : absItemQueries.length > 0 && absItemQueries.every((query) => query.isSuccess);
+        : false;
 
     useEffect(() => {
         if (!longFormServerId || activeFilter !== 'audiobooks' || !longFormItemsReady) return;
         pruneStaleRecents({
-            knownItemIds: new Set(
-                audiobookEntryIdsKey ? audiobookEntryIdsKey.split('\0') : [],
-            ),
+            knownItemIds: new Set(audiobookEntryIdsKey ? audiobookEntryIdsKey.split('\0') : []),
             mediaType: 'audiobook',
             serverId: longFormServerId,
         });
@@ -1006,11 +928,10 @@ export const LibrarySidebar = () => {
         (activeFilter === 'songs' && songsQuery.isLoading) ||
         (shouldLoadLongFormView &&
             (isSamoLongForm
-                ? (activeFilter === 'audiobooks'
-                      ? samoAudiobooksQuery.isLoading
-                      : samoPodcastsQuery.isLoading)
-                : absLibrariesQuery.isLoading ||
-                  absItemQueries.some((query) => query.isLoading || query.isPending)));
+                ? activeFilter === 'audiobooks'
+                    ? samoAudiobooksQuery.isLoading
+                    : samoPodcastsQuery.isLoading
+                : false));
     const createAction =
         activeFilter === 'all' || activeFilter === 'playlists'
             ? {
@@ -1247,10 +1168,9 @@ const LibraryArtwork = ({ item }: { item: LibrarySidebarItem }): ReactNode => {
             />
         );
     }
-
     if (item.artwork.kind === 'abs') {
         return (
-            <AbsCoverImage
+            <LongFormCoverImage
                 alt={item.title}
                 fallbackIcon={item.artwork.fallbackIcon}
                 imageUrl={item.artwork.imageUrl}

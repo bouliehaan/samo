@@ -8,13 +8,13 @@ import styles from './mobile-layout.module.css';
 import { ContextMenuController } from '/@/renderer/features/context-menu/context-menu-controller';
 import { FullScreenVisualizer } from '/@/renderer/features/player/components/full-screen-visualizer';
 import { MobileFullscreenPlayer } from '/@/renderer/features/player/components/mobile-fullscreen-player';
+import { RouteFallback } from '/@/renderer/features/shared/components/page-skeletons/route-fallback';
 import { MobileSidebar } from '/@/renderer/features/sidebar/components/mobile-sidebar';
 import { PlayerBar } from '/@/renderer/layouts/default-layout/player-bar';
 import { WindowBar } from '/@/renderer/layouts/window-bar';
 import { useFullScreenPlayerOverlayState, useWindowBarStyle } from '/@/renderer/store';
 import { ActionIcon } from '/@/shared/components/action-icon/action-icon';
 import { Drawer } from '/@/shared/components/drawer/drawer';
-import { Spinner } from '/@/shared/components/spinner/spinner';
 import { useDisclosure } from '/@/shared/hooks/use-disclosure';
 import { Platform } from '/@/shared/types/types';
 
@@ -49,7 +49,7 @@ export const MobileLayout = ({ shell }: MobileLayoutProps) => {
                     variant="subtle"
                 />
                 <main className={styles.mainContent}>
-                    <Suspense fallback={<Spinner container />}>
+                    <Suspense fallback={<RouteFallback />}>
                         <Outlet />
                     </Suspense>
                 </main>

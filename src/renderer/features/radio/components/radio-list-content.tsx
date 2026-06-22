@@ -4,6 +4,7 @@ import { Suspense, useEffect, useMemo } from 'react';
 import { useListContext } from '/@/renderer/context/list-context';
 import { radioQueries } from '/@/renderer/features/radio/api/radio-api';
 import { RadioListItems } from '/@/renderer/features/radio/components/radio-list-items';
+import { GridPageSkeleton } from '/@/renderer/features/shared/components/page-skeletons/page-skeletons';
 import { useSearchTermFilter } from '/@/renderer/features/shared/hooks/use-search-term-filter';
 import { useSortByFilter } from '/@/renderer/features/shared/hooks/use-sort-by-filter';
 import { useSortOrderFilter } from '/@/renderer/features/shared/hooks/use-sort-order-filter';
@@ -11,7 +12,6 @@ import { searchLibraryItems } from '/@/renderer/features/shared/utils';
 import { useCurrentServer } from '/@/renderer/store';
 import { sortRadioList } from '/@/shared/api/utils';
 import { ScrollArea } from '/@/shared/components/scroll-area/scroll-area';
-import { Spinner } from '/@/shared/components/spinner/spinner';
 import { Stack } from '/@/shared/components/stack/stack';
 import { LibraryItem, RadioListSort, SortOrder } from '/@/shared/types/domain-types';
 import { ItemListKey } from '/@/shared/types/types';
@@ -49,11 +49,11 @@ export const RadioListContent = () => {
     }, [filteredAndSortedRadioStations.length, setItemCount]);
 
     if (radioListQuery.isLoading) {
-        return <Spinner container />;
+        return <GridPageSkeleton />;
     }
 
     return (
-        <Suspense fallback={<Spinner container />}>
+        <Suspense fallback={<GridPageSkeleton />}>
             <ScrollArea>
                 <Stack p="md">
                     <RadioListItems data={filteredAndSortedRadioStations} />

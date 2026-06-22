@@ -20,7 +20,6 @@ export interface AuthSlice extends AuthState {
         deleteServer: (id: string) => void;
         ensureActiveServers: () => void;
         getServer: (id: string) => null | ServerListItemWithCredential;
-        setActiveAudiobookshelfServer: (server: null | ServerListItemWithCredential) => void;
         setActiveMusicServer: (server: null | ServerListItemWithCredential) => void;
         setCurrentServer: (server: null | ServerListItemWithCredential) => void;
         setMusicFolderId: (musicFolderId: string[] | undefined) => void;
@@ -29,7 +28,6 @@ export interface AuthSlice extends AuthState {
 }
 
 export interface AuthState {
-    activeAudiobookshelfServerId: null | string;
     activeMusicServerId: null | string;
     currentServer: null | ServerListItemWithCredential;
     deviceId: string;
@@ -38,7 +36,7 @@ export interface AuthState {
 }
 
 const MUSIC_SERVER_TYPES = new Set<ServerType>([
-    ServerType.JELLYFIN,
+    
     ServerType.SAMO
 ]);
 
@@ -46,9 +44,6 @@ const isMusicServer = (
     server: null | ServerListItemWithCredential | undefined,
 ): server is ServerListItemWithCredential => Boolean(server && MUSIC_SERVER_TYPES.has(server.type));
 
-const isAudiobookshelfServer = (
-    server: null | ServerListItemWithCredential | undefined,
-): server is ServerListItemWithCredential => server?.type === ServerType.AUDIOBOOKSHELF;
 
 const hasConfiguredServerUrl = (server: ServerListItemWithCredential | undefined) =>
     Boolean(server?.url && normalizeBaseUrl(server.url));
@@ -98,28 +93,6 @@ export const getConfiguredMusicServer = (state: AuthState) => {
     );
 };
 
-export const getAudiobookshelfServers = (state: AuthState) =>
-    Object.values(state.serverList ?? {}).filter(
-        (server) => server.type === ServerType.AUDIOBOOKSHELF,
-    );
-
-export const getPrimaryAudiobookshelfServer = (state: AuthState) => {
-    const serverList = state.serverList ?? {};
-    const activeServer = state.activeAudiobookshelfServerId
-        ? serverList[state.activeAudiobookshelfServerId]
-        : null;
-
-    if (isAudiobookshelfServer(activeServer)) {
-        return activeServer;
-    }
-
-    if (isAudiobookshelfServer(state.currentServer)) {
-        return state.currentServer;
-    }
-
-    return getAudiobookshelfServers(state)[0] ?? null;
-};
-
 /** Samo serves music + audiobooks + podcasts from one connection (like mobile). */
 export const getLongFormMediaServer = (
     state: AuthState,
@@ -130,7 +103,7 @@ export const getLongFormMediaServer = (
         return musicServer;
     }
 
-    return getPrimaryAudiobookshelfServer(state);
+    return null;
 };
 
 const getFallbackActiveServerIds = (state: Partial<AuthState>) => {
@@ -143,12 +116,6 @@ const getFallbackActiveServerIds = (state: Partial<AuthState>) => {
         null;
 
     return {
-        activeAudiobookshelfServerId:
-            state.activeAudiobookshelfServerId ??
-            (isAudiobookshelfServer(currentServer)
-                ? currentServer.id
-                : servers.find(isAudiobookshelfServer)?.id) ??
-            null,
         activeMusicServerId:
             state.activeMusicServerId ?? fallbackMusicServer?.id ?? null,
         currentServer:
@@ -181,16 +148,6 @@ export const useAuthStore = createSubscribedTraditionalStore<AuthSlice>()(
                                 state.currentServer = args;
                             }
 
-                            if (
-                                args.type === ServerType.AUDIOBOOKSHELF &&
-                                !state.activeAudiobookshelfServerId
-                            ) {
-                                state.activeAudiobookshelfServerId = args.id;
-
-                                if (!state.currentServer) {
-                                    state.currentServer = args;
-                                }
-                            }
                         });
                     },
                     ensureActiveServers: () => {
@@ -211,9 +168,6 @@ export const useAuthStore = createSubscribedTraditionalStore<AuthSlice>()(
                                 state.activeMusicServerId = null;
                             }
 
-                            if (state.activeAudiobookshelfServerId === id) {
-                                state.activeAudiobookshelfServerId = null;
-                            }
 
                             if (state.currentServer?.id === id) {
                                 state.currentServer = null;
@@ -228,9 +182,6 @@ export const useAuthStore = createSubscribedTraditionalStore<AuthSlice>()(
                                 state.activeMusicServerId = null;
                             }
 
-                            if (state.activeAudiobookshelfServerId === id) {
-                                state.activeAudiobookshelfServerId = null;
-                            }
 
                             if (state.currentServer?.id === id) {
                                 state.currentServer = null;
@@ -241,14 +192,6 @@ export const useAuthStore = createSubscribedTraditionalStore<AuthSlice>()(
                         const server = get().serverList[id];
                         if (server) return server;
                         return null;
-                    },
-                    setActiveAudiobookshelfServer: (server) => {
-                        set((state) => {
-                            state.activeAudiobookshelfServerId = isAudiobookshelfServer(server)
-                                ? server.id
-                                : null;
-                            state.currentServer = server;
-                        });
                     },
                     setActiveMusicServer: (server) => {
                         set((state) => {
@@ -266,8 +209,6 @@ export const useAuthStore = createSubscribedTraditionalStore<AuthSlice>()(
 
                             if (MUSIC_SERVER_TYPES.has(server.type)) {
                                 state.activeMusicServerId = server.id;
-                            } else if (server.type === ServerType.AUDIOBOOKSHELF) {
-                                state.activeAudiobookshelfServerId = server.id;
                             }
                         });
                     },
@@ -313,7 +254,6 @@ export const useAuthStore = createSubscribedTraditionalStore<AuthSlice>()(
                         });
                     },
                 },
-                activeAudiobookshelfServerId: null,
                 activeMusicServerId: null,
                 currentServer: null,
                 deviceId: nanoid(),
@@ -428,12 +368,6 @@ export const useIsAdmin = () =>
 
 export const useCurrentServerWithCredential = () =>
     useAuthStore((state) => getConfiguredMusicServer(state)) as null | ServerListItemWithCredential;
-
-export const useAudiobookshelfServers = () =>
-    useAuthStore((state) => getAudiobookshelfServers(state), shallow);
-
-export const useAudiobookshelfServer = () =>
-    useAuthStore((state) => getPrimaryAudiobookshelfServer(state), shallow);
 
 export const useLongFormMediaServer = () =>
     useAuthStore((state) => getLongFormMediaServer(state), shallow);

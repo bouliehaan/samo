@@ -1,7 +1,7 @@
 declare const api: {
     audiobookshelf: {
         closePlaybackSession: (payload: {
-            body: import('../shared/api/audiobookshelf/audiobookshelf-types').AudiobookshelfPlaybackSessionSyncRequest;
+            body: import('../shared/api/long-form-types').AudiobookshelfPlaybackSessionSyncRequest;
             sessionId: string;
             token: string;
             url: string;
@@ -11,7 +11,7 @@ declare const api: {
             token: string;
             url: string;
         }) => Promise<
-            import('../shared/api/audiobookshelf/audiobookshelf-types').AudiobookshelfLibraryItem
+            import('../shared/api/long-form-types').LongFormLibraryItem
         >;
         getItemCoverDataUrl: (payload: {
             itemId: string;
@@ -22,21 +22,21 @@ declare const api: {
             token: string;
             url: string;
         }) => Promise<
-            import('../shared/api/audiobookshelf/audiobookshelf-types').AudiobookshelfLibrariesResponse
+            import('../shared/api/long-form-types').AudiobookshelfLibrariesResponse
         >;
         getLibraryItems: (payload: {
             libraryId: string;
             token: string;
             url: string;
         }) => Promise<
-            import('../shared/api/audiobookshelf/audiobookshelf-types').AudiobookshelfLibraryItemsResponse
+            import('../shared/api/long-form-types').LongFormLibraryItemsResponse
         >;
         login: (payload: {
             password: string;
             url: string;
             username: string;
         }) => Promise<
-            import('../shared/api/audiobookshelf/audiobookshelf-types').AudiobookshelfLoginResponse
+            import('../shared/api/long-form-types').AudiobookshelfLoginResponse
         >;
         playItem: (payload: {
             episodeId?: string;
@@ -44,10 +44,10 @@ declare const api: {
             token: string;
             url: string;
         }) => Promise<
-            import('../shared/api/audiobookshelf/audiobookshelf-types').AudiobookshelfPlaybackSessionResponse
+            import('../shared/api/long-form-types').AudiobookshelfPlaybackSessionResponse
         >;
         syncPlaybackSession: (payload: {
-            body: import('../shared/api/audiobookshelf/audiobookshelf-types').AudiobookshelfPlaybackSessionSyncRequest;
+            body: import('../shared/api/long-form-types').AudiobookshelfPlaybackSessionSyncRequest;
             sessionId: string;
             token: string;
             url: string;

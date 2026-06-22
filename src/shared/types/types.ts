@@ -91,8 +91,6 @@ export type RouteSlug = {
 
 export const toServerType = (value?: string): null | ServerType => {
     switch (value?.toLowerCase()) {
-        case ServerType.JELLYFIN:
-            return ServerType.JELLYFIN;
         case ServerType.SAMO:
             return ServerType.SAMO;
         default:

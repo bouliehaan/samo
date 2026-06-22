@@ -244,7 +244,7 @@ export const initialState: SettingsState = {
         showStateIcon: true,
     },
     font: {
-        builtIn: 'Inter',
+        builtIn: 'Archivo',
         custom: null,
         system: null,
         type: FontType.BUILT_IN,

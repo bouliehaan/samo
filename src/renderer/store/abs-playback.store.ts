@@ -15,9 +15,9 @@ import { identityPersistMigrate, PERSIST_VERSION_INITIAL } from '/@/renderer/sto
 import { usePlaybackOwnerStore } from '/@/renderer/store/playback-owner.store';
 import { usePlayerStoreBase } from '/@/renderer/store/player.store';
 import {
-    AudiobookshelfLibraryItem,
-    AudiobookshelfPodcastEpisode,
-} from '/@/shared/api/audiobookshelf/audiobookshelf-types';
+    LongFormLibraryItem,
+    LongFormPodcastEpisode,
+} from '/@/shared/api/long-form-types';
 import { toast } from '/@/shared/components/toast/toast';
 import { ServerListItemWithCredential } from '/@/shared/types/domain-types';
 import { PlayerStatus } from '/@/shared/types/types';
@@ -35,7 +35,7 @@ export interface AbsPlaybackCoreState {
     duration: number;
     error: null | string;
     isLoading: boolean;
-    item: AudiobookshelfLibraryItem | null;
+    item: LongFormLibraryItem | null;
     position: number;
     server: null | null | ServerListItemWithCredential;
     sessionId: null | string;
@@ -51,7 +51,7 @@ export interface AbsPlaybackStoreBundle<
         useDuration: () => number;
         useError: () => null | string;
         useIsLoading: () => boolean;
-        useItem: () => AudiobookshelfLibraryItem | null;
+        useItem: () => LongFormLibraryItem | null;
         usePosition: () => number;
         useServer: () => null | ServerListItemWithCredential;
     };
@@ -62,8 +62,8 @@ export interface AbsPlaybackStoreBundle<
 export interface AbsPlaySessionResult {
     contentUrl: string;
     duration: number;
-    episode?: AudiobookshelfPodcastEpisode | null;
-    item: AudiobookshelfLibraryItem;
+    episode?: LongFormPodcastEpisode | null;
+    item: LongFormLibraryItem;
     patch?: Partial<AbsPlaybackCoreState>;
     position: number;
     sessionId: null | string;
@@ -86,7 +86,7 @@ export interface CreateAbsPlaybackStoreConfig<
     failureToastLabel: string;
     getEpisodeForSync: (
         state: AbsPlaybackCoreState & TExtra,
-    ) => AudiobookshelfPodcastEpisode | null;
+    ) => LongFormPodcastEpisode | null;
     getLoadingSeed: (...playArgs: unknown[]) => Partial<AbsPlaybackCoreState & TExtra>;
     getResumeKey: (state: AbsPlaybackCoreState & TExtra) => null | string;
     initialExtra: TExtra;
@@ -99,10 +99,10 @@ export interface CreateAbsPlaybackStoreConfig<
     onLoseOwnershipExtra?: (state: AbsPlaybackCoreState & TExtra) => void;
     persistName: string;
     playArgsLabel: string;
-    recordRecent: (item: AudiobookshelfLibraryItem, serverId: string) => void;
+    recordRecent: (item: LongFormLibraryItem, serverId: string) => void;
     rememberSession: (args: {
-        episode?: AudiobookshelfPodcastEpisode | null;
-        item: AudiobookshelfLibraryItem;
+        episode?: LongFormPodcastEpisode | null;
+        item: LongFormLibraryItem;
         position?: number;
         server: ServerListItemWithCredential;
     }) => void;
@@ -305,9 +305,9 @@ export function createAbsPlaybackStore<
                         }
 
                         const server = playArgs[0] as ServerListItemWithCredential;
-                        const item = playArgs[1] as AudiobookshelfLibraryItem;
+                        const item = playArgs[1] as LongFormLibraryItem;
                         const episode = config.requiresEpisode
-                            ? (playArgs[2] as AudiobookshelfPodcastEpisode)
+                            ? (playArgs[2] as LongFormPodcastEpisode)
                             : null;
                         const playbackMediaKey = episode
                             ? `${item.id}:${episode.id}`

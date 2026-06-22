@@ -1,4 +1,3 @@
-import { audiobookshelfController } from '/@/renderer/api/audiobookshelf/audiobookshelf-controller';
 import {
     resolveSamoPodcastPlaySession,
 } from '/@/renderer/api/samo/samo-long-form';
@@ -7,22 +6,21 @@ import {
     type AbsPlaybackCoreState,
     createAbsPlaybackStore,
 } from '/@/renderer/store/abs-playback.store';
-import { normalizeResumePosition } from '/@/renderer/store/audiobook-resume-math';
 import { useLastPlaybackSessionStore } from '/@/renderer/store/last-playback-session.store';
 import { recordRecentPodcast } from '/@/renderer/store/play-history.store';
 import {
-    AudiobookshelfLibraryItem,
-    AudiobookshelfPodcastEpisode,
-} from '/@/shared/api/audiobookshelf/audiobookshelf-types';
-import { ServerListItemWithCredential, ServerType } from '/@/shared/types/domain-types';
+    LongFormLibraryItem,
+    LongFormPodcastEpisode,
+} from '/@/shared/api/long-form-types';
+import { ServerListItemWithCredential } from '/@/shared/types/domain-types';
 
 const resumeKey = (itemId: string, episodeId: string) => `${itemId}::${episodeId}`;
 
 export interface PodcastActions extends AbsPlaybackBaseActions {
     play: (
         server: ServerListItemWithCredential,
-        item: AudiobookshelfLibraryItem,
-        episode: AudiobookshelfPodcastEpisode,
+        item: LongFormLibraryItem,
+        episode: LongFormPodcastEpisode,
     ) => Promise<void>;
     seekToNextEpisode: () => Promise<void>;
     seekToPreviousEpisode: () => Promise<void>;
@@ -34,14 +32,14 @@ export type PodcastState = AbsPlaybackCoreState &
         actions: PodcastActions;
     };
 
-type PodcastExtra = { episode: AudiobookshelfPodcastEpisode | null };
+type PodcastExtra = { episode: LongFormPodcastEpisode | null };
 
 type PodcastResume = { resumeByEpisodeKey: Record<string, number> };
 
 const rememberPodcastPlaybackSession = (
     server: ServerListItemWithCredential,
-    item: AudiobookshelfLibraryItem,
-    episode: AudiobookshelfPodcastEpisode,
+    item: LongFormLibraryItem,
+    episode: LongFormPodcastEpisode,
     position?: number,
 ) => {
     useLastPlaybackSessionStore.getState().actions.setSession({
@@ -53,7 +51,7 @@ const rememberPodcastPlaybackSession = (
     });
 };
 
-const sortedEpisodes = (item: AudiobookshelfLibraryItem) =>
+const sortedEpisodes = (item: LongFormLibraryItem) =>
     (item.media?.episodes ?? [])
         .slice()
         .sort((a, b) => (a.publishedAt ?? 0) - (b.publishedAt ?? 0));
@@ -92,7 +90,7 @@ const { selectors, store: usePodcastStore } = createAbsPlaybackStore<
     failureToastLabel: 'Podcast playback failed',
     getEpisodeForSync: (state) => state.episode,
     getLoadingSeed: (_server, _item, episode) => {
-        const ep = episode as AudiobookshelfPodcastEpisode;
+        const ep = episode as LongFormPodcastEpisode;
         return {
             duration: ep.duration ?? ep.audioFile?.duration ?? 0,
             episode: ep,
@@ -117,45 +115,10 @@ const { selectors, store: usePodcastStore } = createAbsPlaybackStore<
     requiresEpisode: true,
     resolvePlaySession: async (_server, item, episode) => {
         const server = _server as ServerListItemWithCredential;
-        const libraryItem = item as AudiobookshelfLibraryItem;
-        const ep = episode as AudiobookshelfPodcastEpisode;
+        const libraryItem = item as LongFormLibraryItem;
+        const ep = episode as LongFormPodcastEpisode;
 
-        if (server.type === ServerType.SAMO) {
-            return resolveSamoPodcastPlaySession(server, libraryItem, ep);
-        }
-
-        const session = await audiobookshelfController.playItem(server, libraryItem.id, ep.id);
-        const contentUrl = session.audioTracks?.[0]?.contentUrl;
-
-        if (!contentUrl) {
-            throw new Error('Audiobookshelf did not return an audio URL');
-        }
-
-        const seedDuration = ep.duration ?? ep.audioFile?.duration ?? 0;
-        const localResume =
-            usePodcastStore.getState().resumeByEpisodeKey[resumeKey(libraryItem.id, ep.id)];
-        const serverResume = session.currentTime ?? 0;
-        const resumePosition = localResume !== undefined ? localResume : serverResume;
-
-        const playSessionEpisode = session.libraryItem?.media?.episodes?.find(
-            (e) => e.id === ep.id,
-        );
-        const duration =
-            playSessionEpisode?.duration ?? playSessionEpisode?.audioFile?.duration ?? seedDuration;
-
-        const sessionEpisodes = session.libraryItem?.media?.episodes;
-        const itemToStore =
-            sessionEpisodes && sessionEpisodes.length > 0 ? session.libraryItem! : libraryItem;
-
-        return {
-            contentUrl,
-            duration,
-            episode: playSessionEpisode ?? ep,
-            item: itemToStore,
-            position: normalizeResumePosition(resumePosition, duration),
-            sessionId: session.id ?? null,
-        };
-    },
+        return resolveSamoPodcastPlaySession(server, libraryItem, ep);    },
     resumeField: 'resumeByEpisodeKey',
     resumeInitial: { resumeByEpisodeKey: {} },
     source: 'podcast',
