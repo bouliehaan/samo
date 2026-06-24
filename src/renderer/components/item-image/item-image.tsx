@@ -1,12 +1,12 @@
-import { memo, useMemo } from 'react';
-import z from 'zod';
-
 import {
     buildSamoAuthenticatedImageRequest,
     isSamoApiMediaUrl,
     normalizeBaseUrl,
     ServerType,
 } from '@samo/core/server';
+import { memo, useMemo } from 'react';
+import z from 'zod';
+
 import { api } from '/@/renderer/api';
 import {
     GeneralSettingsSchema,
@@ -154,44 +154,56 @@ const resolveItemImageRequest = (
 
 export const useItemImageUrl = (args: UseItemImageUrlProps) => {
     const { id, imageUrl, itemType, size, type, useRemoteUrl } = args;
+    const explicitServerId = args.serverId;
     const serverId = useCurrentServerId();
 
     const imageRes = useImageRes();
     const sizeByType: number | undefined = type ? imageRes[type] : undefined;
 
     return useMemo(() => {
-        const targetServerId = args.serverId || serverId;
+        const targetServerId = explicitServerId || serverId;
         if (!targetServerId) {
             return undefined;
         }
 
         return resolveItemImageRequest({
-            ...args,
+            id,
+            imageUrl,
+            itemType,
             serverId: targetServerId,
+            size,
             sizeByType,
+            type,
+            useRemoteUrl,
         })?.url;
-    }, [args.serverId, id, imageUrl, itemType, serverId, size, sizeByType, type, useRemoteUrl]);
+    }, [explicitServerId, id, imageUrl, itemType, serverId, size, sizeByType, type, useRemoteUrl]);
 };
 
 export const useItemImageRequest = (args: UseItemImageUrlProps) => {
     const { id, imageUrl, itemType, size, type, useRemoteUrl } = args;
+    const explicitServerId = args.serverId;
     const serverId = useCurrentServerId();
 
     const imageRes = useImageRes();
     const sizeByType: number | undefined = type ? imageRes[type] : undefined;
 
     return useMemo(() => {
-        const targetServerId = args.serverId || serverId;
+        const targetServerId = explicitServerId || serverId;
         if (!targetServerId) {
             return undefined;
         }
 
         return resolveItemImageRequest({
-            ...args,
+            id,
+            imageUrl,
+            itemType,
             serverId: targetServerId,
+            size,
             sizeByType,
+            type,
+            useRemoteUrl,
         });
-    }, [args, id, imageUrl, itemType, serverId, size, sizeByType, type, useRemoteUrl]);
+    }, [explicitServerId, id, imageUrl, itemType, serverId, size, sizeByType, type, useRemoteUrl]);
 };
 
 export function getItemImageRequest(args: UseItemImageUrlProps) {

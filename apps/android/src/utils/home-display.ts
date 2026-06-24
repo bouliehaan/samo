@@ -447,7 +447,7 @@ export const getContentItemProgress = (item: AndroidRecentContentSourceItem) => 
 // Added, Podcast Feed) are left untouched; only the "your library" shelves
 // rotate, so the leading covers vary without changing what a section means.
 let homeFreshnessSeed: null | number = null;
-const rotateForFreshness = <T>(items: T[], salt: number): T[] => {
+export const rotateForFreshness = <T>(items: T[], salt: number): T[] => {
     if (items.length < 5) {
         return items;
     }

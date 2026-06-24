@@ -10,9 +10,17 @@ export const createSamoFetch = (): SamoFetch => {
     if (isElectron()) {
         return getFetch(
             adaptNativeFetch(async (url, init) => {
+                let serializedHeaders: Record<string, string> | undefined;
+                if (init?.headers) {
+                    serializedHeaders = {};
+                    new Headers(init.headers).forEach((value, key) => {
+                        serializedHeaders![key] = value;
+                    });
+                }
+
                 const result = await window.api.samo.request({
                     body: typeof init?.body === 'string' ? init.body : undefined,
-                    headers: init?.headers as Record<string, string> | undefined,
+                    headers: serializedHeaders,
                     method: init?.method,
                     url,
                 });

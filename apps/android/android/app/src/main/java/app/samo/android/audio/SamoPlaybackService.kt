@@ -278,9 +278,7 @@ class SamoPlaybackService : MediaSessionService() {
             .setLoadErrorHandlingPolicy(SamoLoadErrorHandlingPolicy())
         // One tuned LoadControl for every source type (music, podcast,
         // audiobook, radio): enough buffer to ride out Wi-Fi handoffs without
-        // blocking start on a full minute of media (which left podcasts stuck
-        // at 0:00). Radio used the stock config before purely as a side effect
-        // of the player-rebuild logic; these values are equally right for live.
+        // letting long sessions hoard memory and make the React Native UI lag.
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
                 /* minBufferMs = */ 15_000,

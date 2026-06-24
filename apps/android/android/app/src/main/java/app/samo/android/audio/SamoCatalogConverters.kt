@@ -202,14 +202,19 @@ internal object SamoCatalogConverters {
             trackCount > 0 -> "$trackCount tracks"
             else -> ownerName
         }
-        val artworkImageId = pickSamoImageId(playlist.optJSONArray("images"))
+        val images = playlist.optJSONArray("images")
+        val artworkImageId = pickSamoImageId(images)
+        val playlistCoverUrl = SamoNativeStreamUrl.buildStreamUrl(
+            serverUrl,
+            "/music/playlists/${encode(id)}/cover",
+            streamToken.orEmpty(),
+        )
         val artworkUrl =
-            resolveSamoImageUrl(serverUrl, playlist.optJSONArray("images"), streamToken)
-                ?: SamoNativeStreamUrl.buildStreamUrl(
-                    serverUrl,
-                    "/music/playlists/${encode(id)}/cover",
-                    streamToken.orEmpty(),
-                )
+            if (images != null && images.length() > 1) {
+                playlistCoverUrl
+            } else {
+                resolveSamoImageUrl(serverUrl, images, streamToken)
+            } ?: playlistCoverUrl
 
         val payload = JSONObject()
             .putNotNull("artworkImageId", artworkImageId)

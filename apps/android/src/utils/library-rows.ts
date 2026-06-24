@@ -1,5 +1,6 @@
 import { type AndroidHomeContentState } from '../services/home-content';
 import { type AndroidLibraryRelevantState } from '../services/library-content';
+import { rotateForFreshness } from './home-display';
 import {
     type AndroidRecentContentItem,
     type AndroidRecentContentSourceItem,
@@ -52,8 +53,10 @@ export const getRelevantLibraryItems = (
 
     const itemsByKey = new Map<string, LibraryDisplayItem>();
 
-    libraryRelevantState.items.forEach((item) => {
-        putLibraryDisplayItem(itemsByKey, item);
+    const rotated = rotateForFreshness(libraryRelevantState.items, 7);
+
+    rotated.forEach((item, index) => {
+        putLibraryDisplayItem(itemsByKey, item, rotated.length - index);
     });
 
     return [...itemsByKey.values()];

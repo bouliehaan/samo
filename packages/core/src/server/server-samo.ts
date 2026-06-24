@@ -2199,12 +2199,24 @@ export const resolveSamoPlaylistArtworkUrl = (
     playlist: Pick<SamoMusicPlaylist, 'id' | 'images'>,
     streamToken?: string,
 ): string | undefined => {
+    if ((playlist.images?.length ?? 0) > 1 && playlist.id) {
+        return finalizeSamoCoverUrl(
+            authentication,
+            getSamoMusicPlaylistCoverUrl(authentication, playlist.id, streamToken),
+            streamToken,
+        );
+    }
+
     const fromImage = resolveSamoImageUrl(authentication, pickImage(playlist.images), streamToken);
     if (fromImage) {
-        return fromImage;
+        return finalizeSamoCoverUrl(authentication, fromImage, streamToken);
     }
     if (playlist.id) {
-        return getSamoMusicPlaylistCoverUrl(authentication, playlist.id, streamToken);
+        return finalizeSamoCoverUrl(
+            authentication,
+            getSamoMusicPlaylistCoverUrl(authentication, playlist.id, streamToken),
+            streamToken,
+        );
     }
     return undefined;
 };

@@ -95,6 +95,15 @@ let activePlaylistScrobbleId: null | string = null;
 let activePlaylistStartedId: null | string = null;
 let lastPlaylistContextId: null | string = null;
 
+const shuffleArray = <T>(array: T[]): T[] => {
+    const result = [...array];
+    for (let i = result.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [result[i], result[j]] = [result[j], result[i]];
+    }
+    return result;
+};
+
 const samoAuthentication = (server: { credential: string; url: string }) => ({
     credential: server.credential,
     type: ServerType.SAMO as const,
@@ -193,7 +202,7 @@ const sortAlbums = (
     sortOrder: SortOrder | undefined,
 ): SamoMusicAlbum[] => {
     const order = sortOrder === SortOrder.DESC ? -1 : 1;
-    const list = [...items];
+    let list = [...items];
     switch (sortBy) {
         case 'favorited' as AlbumListSort:
             list.sort((a, b) => {
@@ -220,7 +229,7 @@ const sortAlbums = (
             );
             break;
         case 'random' as AlbumListSort:
-            list.sort(() => Math.random() - 0.5);
+            list = shuffleArray(list);
             break;
         case 'recentlyAdded' as AlbumListSort:
             list.sort((a, b) => {
@@ -389,7 +398,7 @@ const sortTracksForList = (
     sortOrder: SortOrder | undefined,
 ): SamoMusicTrack[] => {
     const order = sortOrder === SortOrder.DESC ? -1 : 1;
-    const list = [...items];
+    let list = [...items];
     switch (sortBy) {
         case SongListSort.PLAY_COUNT:
             list.sort(
@@ -397,7 +406,7 @@ const sortTracksForList = (
             );
             break;
         case SongListSort.RANDOM:
-            list.sort(() => Math.random() - 0.5);
+            list = shuffleArray(list);
             break;
         case SongListSort.RECENTLY_ADDED:
             list.sort((a, b) => {
@@ -1181,7 +1190,7 @@ export const SamoController: Partial<InternalControllerEndpoint> = {
             limit: (query.limit ?? 50) * 4,
         });
         const items = samoItemsOf(response);
-        const shuffled = [...items].sort(() => Math.random() - 0.5).slice(0, query.limit ?? 50);
+        const shuffled = shuffleArray(items).slice(0, query.limit ?? 50);
         return {
             items: shuffled.map((track) => samoNormalize.song(track, server)),
             startIndex: 0,

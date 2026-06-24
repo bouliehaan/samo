@@ -123,11 +123,10 @@ export const buildSamoAuthenticatedImageRequest = (
     const streamToken = getCachedSamoStreamToken(authentication);
     const bearer = getSamoBearerToken(authentication);
     const finalizedUrl = finalizeSamoMediaUrl(authentication, url, streamToken) ?? url;
-    const usesStreamToken = finalizedUrl.includes('stream_token=');
 
     return {
         cacheKey,
-        headers: bearer && !usesStreamToken ? { Authorization: `Bearer ${bearer}` } : undefined,
+        headers: bearer ? { Authorization: `Bearer ${bearer}` } : undefined,
         url: finalizedUrl,
     };
 };

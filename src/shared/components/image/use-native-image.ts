@@ -87,6 +87,9 @@ export function useNativeImage({
     const onFetchErrorRef = useRef(onFetchError);
     const [state, setState] = useState<NativeImageState>({ status: 'idle' });
 
+    const requestRef = useRef(request);
+    requestRef.current = request;
+
     const requestSignature = useMemo(() => {
         if (!request) {
             return null;
@@ -118,7 +121,9 @@ export function useNativeImage({
             loadedRequestSignatureRef.current = null;
         };
 
-        if (!request || !requestSignature) {
+        const currentRequest = requestRef.current;
+
+        if (!currentRequest || !requestSignature) {
             abortCurrentRequest();
             revokeObjectUrl();
             setState({ status: 'idle' });
@@ -151,25 +156,25 @@ export function useNativeImage({
 
         void (async () => {
             try {
-                if (canLoadImageDirectly(request)) {
+                if (canLoadImageDirectly(currentRequest)) {
                     if (abortController.signal.aborted) {
                         return;
                     }
 
-                    directUrlRef.current = request.url;
+                    directUrlRef.current = currentRequest.url;
                     loadedRequestSignatureRef.current = requestSignature;
-                    setState({ displaySrc: request.url, status: 'loaded' });
+                    setState({ displaySrc: currentRequest.url, status: 'loaded' });
                     return;
                 }
 
                 let blob: Blob;
 
                 if (canFetchMediaViaMain()) {
-                    blob = await fetchImageViaMain(request, abortController.signal);
+                    blob = await fetchImageViaMain(currentRequest, abortController.signal);
                 } else {
                     const init = {
-                        credentials: request.credentials,
-                        headers: request.headers,
+                        credentials: currentRequest.credentials,
+                        headers: currentRequest.headers,
                         signal: abortController.signal,
                     } as RequestInit & { priority?: FetchPriority };
 
@@ -177,7 +182,7 @@ export function useNativeImage({
                         init.priority = fetchPriority;
                     }
 
-                    const response = await fetch(request.url, init);
+                    const response = await fetch(currentRequest.url, init);
 
                     if (!response.ok) {
                         throw new Error(`Failed to load image: ${response.status}`);
@@ -216,7 +221,8 @@ export function useNativeImage({
                 abortControllerRef.current = null;
             }
         };
-    }, [enabled, fetchPriority, request, requestSignature]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [enabled, fetchPriority, requestSignature]);
 
     useEffect(() => {
         return () => {

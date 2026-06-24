@@ -1,3 +1,4 @@
+import { isSamoApiMediaUrl } from '@samo/core/server';
 import clsx from 'clsx';
 import {
     ForwardedRef,
@@ -20,7 +21,6 @@ import { Skeleton } from '/@/shared/components/skeleton/skeleton';
 import { useDebouncedValue } from '/@/shared/hooks/use-debounced-value';
 import { useInViewport } from '/@/shared/hooks/use-in-viewport';
 import { ImageRequest } from '/@/shared/types/domain-types';
-import { isSamoApiMediaUrl } from '@samo/core/server';
 
 const loadedImageCacheKeys = new Set<string>();
 
@@ -78,19 +78,16 @@ export function BaseImage({
     const { inViewport, ref } = enableViewport ? viewport : { inViewport: true, ref: undefined };
     const { className: containerPropsClassName, ...restContainerProps } = imageContainerProps || {};
 
-    const rawImageRequest = useMemo(
-        () => {
-            if (src && isSamoApiMediaUrl(src) && src.includes('stream_token=')) {
-                return undefined;
-            }
+    const rawImageRequest = useMemo(() => {
+        if (src && isSamoApiMediaUrl(src) && src.includes('stream_token=') && !imageRequest) {
+            return undefined;
+        }
 
-            return (
-                imageRequest ??
-                (src && !isSamoApiMediaUrl(src) ? { cacheKey: src, url: src } : undefined)
-            );
-        },
-        [imageRequest, src],
-    );
+        return (
+            imageRequest ??
+            (src && !isSamoApiMediaUrl(src) ? { cacheKey: src, url: src } : undefined)
+        );
+    }, [imageRequest, src]);
     const isInSessionCache = Boolean(
         rawImageRequest?.cacheKey && loadedImageCacheKeys.has(rawImageRequest.cacheKey),
     );
@@ -114,11 +111,7 @@ export function BaseImage({
     const samoDirectSrc = useMemo(() => {
         const candidates = [src, effectiveImageRequest?.url];
         for (const candidate of candidates) {
-            if (
-                candidate &&
-                isSamoApiMediaUrl(candidate) &&
-                candidate.includes('stream_token=')
-            ) {
+            if (candidate && isSamoApiMediaUrl(candidate) && candidate.includes('stream_token=')) {
                 return candidate;
             }
         }
