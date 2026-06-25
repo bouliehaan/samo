@@ -1,4 +1,5 @@
 import type { StateStorage } from 'zustand/middleware';
+
 import isElectron from 'is-electron';
 
 /**

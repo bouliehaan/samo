@@ -1,4 +1,3 @@
-import axios from 'axios';
 import { ipcMain } from 'electron';
 import { createServer, IncomingMessage, Server } from 'http';
 import { WebSocket, WebSocketServer, Server as WsServer } from 'ws';
@@ -241,19 +240,18 @@ const enableServer = (config: RemoteConfig): Promise<void> => {
 
                                 if (!toFetch) return;
 
-                                axios
-                                    .get(toFetch, { responseType: 'arraybuffer' })
-                                    .then((resp) => {
+                                fetch(toFetch)
+                                    .then(async (resp) => {
+                                        if (!resp.ok)
+                                            throw new Error(`HTTP error! status: ${resp.status}`);
+                                        const arrayBuffer = await resp.arrayBuffer();
                                         if (ws.readyState === WebSocket.OPEN) {
                                             send({
                                                 client: ws,
-                                                data: Buffer.from(resp.data, 'binary').toString(
-                                                    'base64',
-                                                ),
+                                                data: Buffer.from(arrayBuffer).toString('base64'),
                                                 event: 'proxy',
                                             });
                                         }
-                                        return null;
                                     })
                                     .catch((error) => {
                                         if (ws.readyState === WebSocket.OPEN) {

@@ -206,10 +206,7 @@ const GenreSelect = () => {
         if (!genres) return [];
 
         return genres.items.map((genre) => {
-            const value =
-                false || false
-                    ? genre.name
-                    : genre.id;
+            const value = false || false ? genre.name : genre.id;
             return {
                 label: genre.name,
                 value,

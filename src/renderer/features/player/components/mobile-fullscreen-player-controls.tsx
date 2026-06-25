@@ -6,6 +6,7 @@ import styles from './mobile-fullscreen-player.module.css';
 
 import { MainPlayButton, PlayerButton } from '/@/renderer/features/player/components/player-button';
 import { usePlayer } from '/@/renderer/features/player/context/player-context';
+import { usePlayerStatus } from '/@/renderer/store';
 import {
     useAudiobookActions,
     useAudiobookDuration,
@@ -17,7 +18,6 @@ import {
     usePodcastDuration,
     usePodcastPosition,
 } from '/@/renderer/store/podcast.store';
-import { usePlayerStatus } from '/@/renderer/store';
 import { Icon } from '/@/shared/components/icon/icon';
 import { QueueSong } from '/@/shared/types/domain-types';
 import { PlayerStatus } from '/@/shared/types/types';

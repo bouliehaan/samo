@@ -8,10 +8,10 @@ import {
     HomeAlbumsSection,
     HomeDiscoverSection,
     HomeFavoriteArtists,
+    HomeFavoriteAudiobooks,
     HomeFavoritePlaylists,
     HomeFavoriteTracks,
     HomeRediscoverySection,
-    HomeFavoriteAudiobooks,
 } from '/@/renderer/features/home/components/home-media-sections';
 import { HomePodcastFeedSection } from '/@/renderer/features/home/components/home-podcast-feed';
 import { HomeRadioStations } from '/@/renderer/features/home/components/home-radio-stations';

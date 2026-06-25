@@ -1,5 +1,4 @@
 import { useIsMutating, useMutation, useQueryClient } from '@tanstack/react-query';
-import { AxiosError } from 'axios';
 import { useTranslation } from 'react-i18next';
 
 import { api } from '/@/renderer/api';
@@ -21,7 +20,7 @@ export const useSetRatingMutation = (args: MutationHookArgs) => {
     const queryClient = useQueryClient();
     const { t } = useTranslation();
 
-    return useMutation<RatingResponse, AxiosError, SetRatingArgs, PreviousQueryData[]>({
+    return useMutation<RatingResponse, Error, SetRatingArgs, PreviousQueryData[]>({
         mutationFn: (args) => {
             return api.controller.setRating({
                 ...args,

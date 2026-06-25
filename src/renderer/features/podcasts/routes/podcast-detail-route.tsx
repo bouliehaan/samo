@@ -1,18 +1,18 @@
 import { Box, Group, Stack } from '@mantine/core';
+import { attachSamoPodcastShowFeed } from '@samo/core/server';
+import { buildSamoAuthenticatedImageRequest } from '@samo/core/server';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import formatDuration from 'format-duration';
 import { useMemo, useState } from 'react';
 import { useParams } from 'react-router';
 
-
+import { samoFetch } from '/@/renderer/api/samo/samo-fetch';
 import {
     isSamoBackedLibraryItem,
     isSamoLongFormServer,
     loadSamoPodcastLibraryItem,
     useLongFormMediaServer,
 } from '/@/renderer/api/samo/samo-long-form';
-import { samoFetch } from '/@/renderer/api/samo/samo-fetch';
-import { attachSamoPodcastShowFeed } from '@samo/core/server';
 import { AnimatedPage } from '/@/renderer/features/shared/components/animated-page';
 import { PageErrorBoundary } from '/@/renderer/features/shared/components/page-error-boundary';
 import {
@@ -20,16 +20,12 @@ import {
     useLibraryFavoritesActions,
 } from '/@/renderer/store/library-favorites.store';
 import { usePodcastActions } from '/@/renderer/store/podcast.store';
-import {
-    LongFormLibraryItem,
-    LongFormPodcastEpisode,
-} from '/@/shared/api/long-form-types';
-import { buildSamoAuthenticatedImageRequest } from '@samo/core/server';
+import { LongFormLibraryItem, LongFormPodcastEpisode } from '/@/shared/api/long-form-types';
 import { ActionIcon } from '/@/shared/components/action-icon/action-icon';
 import { Button } from '/@/shared/components/button/button';
 import { Image } from '/@/shared/components/image/image';
-import { Text } from '/@/shared/components/text/text';
 import { TextInput } from '/@/shared/components/text-input/text-input';
+import { Text } from '/@/shared/components/text/text';
 import { toast } from '/@/shared/components/toast/toast';
 
 const podcastTitle = (item: LongFormLibraryItem) =>
@@ -77,9 +73,7 @@ const PodcastCover = ({
         staleTime: 1000 * 60 * 60,
     });
 
-    const coverSrc = isSamoLongFormServer(server)
-        ? imageUrl
-        : (coverQuery.data ?? undefined);
+    const coverSrc = isSamoLongFormServer(server) ? imageUrl : (coverQuery.data ?? undefined);
 
     const imageRequest = useMemo(() => {
         if (!isSamoLongFormServer(server) || !coverSrc) {
@@ -260,12 +254,7 @@ const PodcastDetailRoute = () => {
 
         setIsLinkingFeed(true);
         try {
-            await attachSamoPodcastShowFeed(
-                samoFetch,
-                server!,
-                itemId,
-                { url: rssFeedUrl.trim() },
-            );
+            await attachSamoPodcastShowFeed(samoFetch, server!, itemId, { url: rssFeedUrl.trim() });
             toast.success({ message: 'RSS feed linked. Episode dates will update from the feed.' });
             await queryClient.invalidateQueries({
                 queryKey: ['samo', 'item', server.id, itemId],

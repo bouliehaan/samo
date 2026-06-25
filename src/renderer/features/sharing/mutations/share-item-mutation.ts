@@ -1,5 +1,4 @@
 import { useMutation } from '@tanstack/react-query';
-import { AxiosError } from 'axios';
 
 import { api } from '/@/renderer/api';
 import { MutationHookArgs } from '/@/renderer/lib/react-query';
@@ -10,7 +9,7 @@ export const useShareItem = (args: MutationHookArgs) => {
 
     return useMutation<
         ShareItemResponse,
-        AxiosError,
+        Error,
         ShareItemArgs,
         { previous: undefined | { items: AnyLibraryItems } }
     >({

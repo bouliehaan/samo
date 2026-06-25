@@ -29,21 +29,21 @@ export interface WebMediaEngineProps {
     onEnded: () => void;
     onError: () => void;
     onProgress?: (playedSeconds: number) => void;
+    /** Re-open the stream at `bookPosition` when seek is before the current origin. */
+    onRestartStreamAt?: (bookPosition: number) => Promise<void> | void;
     onSeekTransport?: (timestamp: number) => void;
     ownsPlayback: () => boolean;
     radioIsPlaying?: boolean;
     releaseOnError: () => void;
     resetResumeOnEnd?: () => void;
     resumePosition?: number;
+    /** Radio drives status from `isPlaying` instead of universal transport. */
+    statusFromRadio?: boolean;
     /**
      * When the stream URL starts at a book-global offset (Samo `progressSeconds`),
      * player time 0 is that offset — add this to progress and subtract on seek.
      */
     streamOffsetSeconds?: number;
-    /** Re-open the stream at `bookPosition` when seek is before the current origin. */
-    onRestartStreamAt?: (bookPosition: number) => void | Promise<void>;
-    /** Radio drives status from `isPlaying` instead of universal transport. */
-    statusFromRadio?: boolean;
     syncVolumeToEngineRef?: boolean;
 }
 
@@ -55,15 +55,15 @@ export function WebMediaEngine({
     onEnded,
     onError,
     onProgress,
+    onRestartStreamAt,
     onSeekTransport,
     ownsPlayback,
     radioIsPlaying = false,
     releaseOnError,
     resetResumeOnEnd,
     resumePosition = 0,
-    streamOffsetSeconds = 0,
-    onRestartStreamAt,
     statusFromRadio = false,
+    streamOffsetSeconds = 0,
     syncVolumeToEngineRef = false,
 }: WebMediaEngineProps) {
     const playerRef = useRef<null | WebPlayerEngineHandle>(null);

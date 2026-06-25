@@ -206,7 +206,7 @@ export const AlbumDetailHeader = forwardRef<HTMLDivElement>((_props, ref) => {
             >
                 <Stack gap="md" w="100%">
                     {releaseYear != null && releaseYear > 0 && (
-                        <Text size="lg" fw={500} isMuted>
+                        <Text fw={500} isMuted size="lg">
                             {releaseYear}
                         </Text>
                     )}

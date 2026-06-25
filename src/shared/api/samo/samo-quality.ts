@@ -1,6 +1,5 @@
-import type { SamoMusicAlbum } from '@samo/core/server';
-
 import type { QualityBadgeProfile } from '@samo/core/audio-quality';
+import type { SamoMusicAlbum } from '@samo/core/server';
 
 export const samoAlbumQualityProfile = (
     album: Pick<SamoMusicAlbum, 'maxBitDepth' | 'maxSampleRate' | 'primaryAudioFile' | 'tracks'>,
@@ -18,9 +17,9 @@ export const samoAlbumQualityProfile = (
         if (!candidate?.bitDepth || !candidate.sampleRate) continue;
         const profile = { bitDepth: candidate.bitDepth, sampleRate: candidate.sampleRate };
         if (
-            !best
-            || profile.bitDepth > best.bitDepth
-            || (profile.bitDepth === best.bitDepth && profile.sampleRate > best.sampleRate)
+            !best ||
+            profile.bitDepth > best.bitDepth ||
+            (profile.bitDepth === best.bitDepth && profile.sampleRate > best.sampleRate)
         ) {
             best = profile;
         }

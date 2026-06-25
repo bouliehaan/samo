@@ -1,4 +1,3 @@
-import { AxiosHeaders } from 'axios';
 import isElectron from 'is-electron';
 import orderBy from 'lodash/orderBy';
 import shuffle from 'lodash/shuffle';
@@ -26,7 +25,7 @@ import { ServerFeature } from '/@/shared/types/features-types';
 export const resultWithHeaders = <ItemType extends z.ZodTypeAny>(itemSchema: ItemType) => {
     return z.object({
         data: itemSchema,
-        headers: z.instanceof(AxiosHeaders),
+        headers: z.instanceof(Headers),
     });
 };
 

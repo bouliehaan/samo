@@ -1,5 +1,4 @@
 // Credits to https://github.com/tranxuanthang/lrcget for API implementation
-import axios, { AxiosResponse } from 'axios';
 
 import {
     InternetProviderLyricResponse,
@@ -15,7 +14,10 @@ const SEEARCH_URL = 'https://lrclib.net/api/search';
 const TIMEOUT_MS = 12000;
 
 const isCanceled = (error: unknown) => {
-    return axios.isCancel(error) || (error as { code?: string })?.code === 'ERR_CANCELED';
+    return (
+        (error as Error)?.name === 'AbortError' ||
+        (error as { code?: string })?.code === 'ERR_CANCELED'
+    );
 };
 
 export interface LrcLibSearchResponse {
@@ -48,20 +50,27 @@ export async function getLyricsBySongId(
     songId: string,
     signal?: AbortSignal,
 ): Promise<null | string> {
-    let result: AxiosResponse<LrcLibTrackResponse, any>;
+    let data: LrcLibTrackResponse;
 
     try {
-        result = await axios.get<LrcLibTrackResponse>(`${FETCH_URL}/${songId}`, {
-            signal,
-            timeout: TIMEOUT_MS,
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
+        if (signal) signal.addEventListener('abort', () => controller.abort());
+
+        const response = await fetch(`${FETCH_URL}/${songId}`, {
+            signal: controller.signal,
         });
+        clearTimeout(timeoutId);
+
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+        data = await response.json();
     } catch (e) {
         if (isCanceled(e)) return null;
         console.error('LrcLib lyrics request got an error!', (e as Error)?.message);
         return null;
     }
 
-    return result.data.syncedLyrics || result.data.plainLyrics || null;
+    return data.syncedLyrics || data.plainLyrics || null;
 }
 
 export async function getSearchResults(
@@ -83,14 +92,21 @@ export async function getSearchResults(
     const searchResponses = await Promise.all(
         searchQueries.map(async (searchQuery) => {
             try {
-                const result = await axios.get<LrcLibSearchResponse[]>(SEEARCH_URL, {
-                    params: {
-                        q: searchQuery,
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
+                if (signal) signal.addEventListener('abort', () => controller.abort());
+
+                const response = await fetch(
+                    `${SEEARCH_URL}?q=${encodeURIComponent(searchQuery)}`,
+                    {
+                        signal: controller.signal,
                     },
-                    signal,
-                    timeout: TIMEOUT_MS,
-                });
-                return result.data ?? [];
+                );
+                clearTimeout(timeoutId);
+
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                const data: LrcLibSearchResponse[] = await response.json();
+                return data ?? [];
             } catch (e) {
                 if (isCanceled(e)) return [];
                 console.error('LrcLib search request got an error!', (e as Error)?.message);
@@ -124,38 +140,45 @@ export async function query(
     params: LyricSearchQuery,
     signal?: AbortSignal,
 ): Promise<InternetProviderLyricResponse | null> {
-    let result: AxiosResponse<LrcLibTrackResponse, any>;
+    let data: LrcLibTrackResponse;
 
     try {
-        result = await axios.get<LrcLibTrackResponse>(FETCH_URL, {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
+        if (signal) signal.addEventListener('abort', () => controller.abort());
+
+        const url = new URL(FETCH_URL);
+        if (params.artist) url.searchParams.append('artist_name', params.artist);
+        if (params.duration) url.searchParams.append('duration', String(params.duration));
+        if (params.name) url.searchParams.append('track_name', params.name);
+
+        const response = await fetch(url.toString(), {
             headers: {
                 'User-Agent': 'LRCGET v0.2.0 (https://github.com/bouliehaan/samo)',
             },
-            params: {
-                artist_name: params.artist,
-                duration: params.duration,
-                track_name: params.name,
-            },
-            signal,
-            timeout: TIMEOUT_MS,
+            signal: controller.signal,
         });
+        clearTimeout(timeoutId);
+
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+        data = await response.json();
     } catch (e) {
         if (isCanceled(e)) return null;
         console.error('LrcLib search request got an error!', (e as Error).message);
         return null;
     }
 
-    const lyrics = result.data.syncedLyrics || result.data.plainLyrics || null;
+    const lyrics = data.syncedLyrics || data.plainLyrics || null;
 
     if (!lyrics) {
         return null;
     }
 
     return {
-        artist: result.data.artistName,
-        id: String(result.data.id),
+        artist: data.artistName,
+        id: String(data.id),
         lyrics,
-        name: result.data.name,
+        name: data.name,
         source: LyricSource.LRCLIB,
     };
 }

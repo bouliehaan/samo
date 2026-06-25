@@ -276,7 +276,6 @@ export const AddServerForm = ({
                 serverItem.preferRemoteUrl = values.preferRemoteUrl;
             }
 
-            
             if (localSettings && values.password) {
                 const saved = await localSettings.passwordSet(values.password, serverItem.id);
                 serverItem.savePassword = saved;
@@ -396,7 +395,6 @@ export const AddServerForm = ({
                         })}
                         {...form.getInputProps('password')}
                     />
-
 
                     {isElectron() && (
                         <>

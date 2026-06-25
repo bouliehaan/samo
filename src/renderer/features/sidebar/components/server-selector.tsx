@@ -1,9 +1,9 @@
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 
+import SamoLogo from '../../../../../build/samologo.svg';
 import styles from './server-selector.module.css';
 
-import SamoLogo from '../../../../../build/samologo.svg';
 import { sharedQueries } from '/@/renderer/features/shared/api/shared-api';
 import { ServerSelectorItems } from '/@/renderer/features/sidebar/components/server-selector-items';
 import { useCurrentServer } from '/@/renderer/store';

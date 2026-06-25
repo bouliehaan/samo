@@ -3,8 +3,9 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router';
 
-import { isServerLock } from '/@/renderer/features/action-required/utils/window-properties';
 import SamoLogo from '../../../../../build/samologo.svg';
+
+import { isServerLock } from '/@/renderer/features/action-required/utils/window-properties';
 import { ServerList } from '/@/renderer/features/servers/components/server-list';
 import { sharedQueries } from '/@/renderer/features/shared/api/shared-api';
 import { AppRoute } from '/@/renderer/router/routes';

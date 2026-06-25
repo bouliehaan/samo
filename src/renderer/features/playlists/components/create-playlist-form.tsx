@@ -20,11 +20,7 @@ import { Text } from '/@/shared/components/text/text';
 import { Textarea } from '/@/shared/components/textarea/textarea';
 import { toast } from '/@/shared/components/toast/toast';
 import { useForm } from '/@/shared/hooks/use-form';
-import {
-    CreatePlaylistBody,
-    ServerListItem,
-    SongListSort,
-} from '/@/shared/types/domain-types';
+import { CreatePlaylistBody, ServerListItem, SongListSort } from '/@/shared/types/domain-types';
 import { ServerFeature } from '/@/shared/types/features-types';
 
 interface CreatePlaylistFormProps {
@@ -143,20 +139,19 @@ export const CreatePlaylistForm = ({ onCancel }: CreatePlaylistFormProps) => {
                                     })}
                                 />
                             )}
-                            {false &&
-                                hasFeature(server, ServerFeature.PLAYLISTS_SMART) && (
-                                    <Switch
-                                        checked={isSmartPlaylist}
-                                        label="Is smart playlist?"
-                                        onChange={(e) => {
-                                            const next = e.currentTarget.checked;
-                                            setIsSmartPlaylist(next);
-                                            if (!next) {
-                                                setStep(1);
-                                            }
-                                        }}
-                                    />
-                                )}
+                            {false && hasFeature(server, ServerFeature.PLAYLISTS_SMART) && (
+                                <Switch
+                                    checked={isSmartPlaylist}
+                                    label="Is smart playlist?"
+                                    onChange={(e) => {
+                                        const next = e.currentTarget.checked;
+                                        setIsSmartPlaylist(next);
+                                        if (!next) {
+                                            setStep(1);
+                                        }
+                                    }}
+                                />
+                            )}
                         </Group>
                     </>
                 )}

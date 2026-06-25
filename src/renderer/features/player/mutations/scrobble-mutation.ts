@@ -1,5 +1,4 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { AxiosError } from 'axios';
 import { useRef } from 'react';
 
 import { api } from '/@/renderer/api';
@@ -12,7 +11,7 @@ export const useSendScrobble = (options?: MutationOptions) => {
     const queryClient = useQueryClient();
     const lastScrobbledAlbumKeyRef = useRef<string>('');
 
-    return useMutation<ScrobbleResponse, AxiosError, ScrobbleArgs, null>({
+    return useMutation<ScrobbleResponse, Error, ScrobbleArgs, null>({
         mutationFn: (args) => {
             return api.controller.scrobble({
                 ...args,

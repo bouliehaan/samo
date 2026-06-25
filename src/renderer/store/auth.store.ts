@@ -35,15 +35,11 @@ export interface AuthState {
     serverList: Record<string, ServerListItemWithCredential>;
 }
 
-const MUSIC_SERVER_TYPES = new Set<ServerType>([
-    
-    ServerType.SAMO
-]);
+const MUSIC_SERVER_TYPES = new Set<ServerType>([ServerType.SAMO]);
 
 const isMusicServer = (
     server: null | ServerListItemWithCredential | undefined,
 ): server is ServerListItemWithCredential => Boolean(server && MUSIC_SERVER_TYPES.has(server.type));
-
 
 const hasConfiguredServerUrl = (server: ServerListItemWithCredential | undefined) =>
     Boolean(server?.url && normalizeBaseUrl(server.url));
@@ -60,9 +56,7 @@ const sanitizeServerList = (
 
 export const getActiveMusicServer = (state: AuthState) => {
     const serverList = state.serverList ?? {};
-    const activeServer = state.activeMusicServerId
-        ? serverList[state.activeMusicServerId]
-        : null;
+    const activeServer = state.activeMusicServerId ? serverList[state.activeMusicServerId] : null;
 
     if (isMusicServer(activeServer)) {
         return activeServer;
@@ -94,9 +88,7 @@ export const getConfiguredMusicServer = (state: AuthState) => {
 };
 
 /** Samo serves music + audiobooks + podcasts from one connection (like mobile). */
-export const getLongFormMediaServer = (
-    state: AuthState,
-): null | ServerListItemWithCredential => {
+export const getLongFormMediaServer = (state: AuthState): null | ServerListItemWithCredential => {
     const musicServer = getConfiguredMusicServer(state);
 
     if (musicServer?.type === ServerType.SAMO) {
@@ -116,8 +108,7 @@ const getFallbackActiveServerIds = (state: Partial<AuthState>) => {
         null;
 
     return {
-        activeMusicServerId:
-            state.activeMusicServerId ?? fallbackMusicServer?.id ?? null,
+        activeMusicServerId: state.activeMusicServerId ?? fallbackMusicServer?.id ?? null,
         currentServer:
             currentServer ??
             fallbackMusicServer ??
@@ -147,19 +138,6 @@ export const useAuthStore = createSubscribedTraditionalStore<AuthSlice>()(
                                 state.activeMusicServerId = args.id;
                                 state.currentServer = args;
                             }
-
-                        });
-                    },
-                    ensureActiveServers: () => {
-                        set((state) => {
-                            const configuredServer = getConfiguredMusicServer(state);
-
-                            if (!configuredServer) {
-                                return;
-                            }
-
-                            state.activeMusicServerId = configuredServer.id;
-                            state.currentServer = configuredServer;
                         });
                     },
                     clearActiveServer: (id) => {
@@ -167,7 +145,6 @@ export const useAuthStore = createSubscribedTraditionalStore<AuthSlice>()(
                             if (state.activeMusicServerId === id) {
                                 state.activeMusicServerId = null;
                             }
-
 
                             if (state.currentServer?.id === id) {
                                 state.currentServer = null;
@@ -182,10 +159,21 @@ export const useAuthStore = createSubscribedTraditionalStore<AuthSlice>()(
                                 state.activeMusicServerId = null;
                             }
 
-
                             if (state.currentServer?.id === id) {
                                 state.currentServer = null;
                             }
+                        });
+                    },
+                    ensureActiveServers: () => {
+                        set((state) => {
+                            const configuredServer = getConfiguredMusicServer(state);
+
+                            if (!configuredServer) {
+                                return;
+                            }
+
+                            state.activeMusicServerId = configuredServer.id;
+                            state.currentServer = configuredServer;
                         });
                     },
                     getServer: (id) => {

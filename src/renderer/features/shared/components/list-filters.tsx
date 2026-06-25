@@ -35,8 +35,6 @@ export const ListFiltersModal = ({ isActive, itemType }: ListFiltersProps) => {
     const { t } = useTranslation();
     const { isSidebarOpen, pageKey, setIsSidebarOpen } = useListContext();
 
-    
-
     const FilterComponent = FILTERS['samo'][itemType] as any;
 
     const [isOpen, handlers] = useDisclosure(false);

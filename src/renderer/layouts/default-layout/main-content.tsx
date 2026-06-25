@@ -286,7 +286,10 @@ function ShellChromeControls() {
                     <DropdownMenu.Target>
                         <button
                             aria-label="Open app menu"
-                            className={clsx(styles['chrome-shell-button'], styles['chrome-logo-button'])}
+                            className={clsx(
+                                styles['chrome-shell-button'],
+                                styles['chrome-logo-button'],
+                            )}
                             type="button"
                         >
                             <img

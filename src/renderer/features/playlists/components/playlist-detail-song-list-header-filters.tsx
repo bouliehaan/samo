@@ -176,7 +176,7 @@ export const PlaylistDetailSongListHeaderFilters = ({
     }, [listData]);
 
     return (
-        <Flex justify="space-between" >
+        <Flex justify="space-between">
             <Group gap="sm" w="100%">
                 <Button
                     disabled={isEditMode}

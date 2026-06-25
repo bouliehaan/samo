@@ -12,26 +12,26 @@ import {
     GridCarousel,
     useGridCarouselContainerQuery,
 } from '/@/renderer/components/grid-carousel/grid-carousel-v2';
-import { AlbumInfiniteCarousel } from '/@/renderer/features/albums/components/album-infinite-carousel';
 import itemCardControlsStyles from '/@/renderer/components/item-card/item-card-controls.module.css';
 import { ItemImage } from '/@/renderer/components/item-image/item-image';
+import { AlbumInfiniteCarousel } from '/@/renderer/features/albums/components/album-infinite-carousel';
 import { ContextMenuController } from '/@/renderer/features/context-menu/context-menu-controller';
-import { usePlayer } from '/@/renderer/features/player/context/player-context';
 import { LongFormCoverImage } from '/@/renderer/features/player/components/long-form-cover-image';
+import { usePlayer } from '/@/renderer/features/player/context/player-context';
 import { PlayButton } from '/@/renderer/features/shared/components/play-button';
 import { AppRoute } from '/@/renderer/router/routes';
 import {
+    getServerById,
     recordRecentArtist,
     recordRecentPlaylist,
-    getServerById,
     useCurrentServerId,
-    usePlayHistoryStore,
     useLongFormMediaServer,
+    usePlayHistoryStore,
 } from '/@/renderer/store';
 import { useAudiobookActions } from '/@/renderer/store/audiobook.store';
 import {
-    useFavoritePlaylistIds,
     useFavoriteAudiobookIds,
+    useFavoritePlaylistIds,
     useLibraryFavoritesActions,
 } from '/@/renderer/store/library-favorites.store';
 import { formatDateRelative, formatDurationStringShort } from '/@/renderer/utils/format';
@@ -67,14 +67,8 @@ const shuffleSongs = <T,>(items: T[]): T[] => {
     return copy;
 };
 
-const playlistLastPlayedMs = (
-    playlist: Playlist,
-    localPlayedAtById: ReadonlyMap<string, number>,
-) =>
-    Math.max(
-        Date.parse(playlist.lastPlayedAt ?? '') || 0,
-        localPlayedAtById.get(playlist.id) ?? 0,
-    );
+const playlistLastPlayedMs = (playlist: Playlist, localPlayedAtById: ReadonlyMap<string, number>) =>
+    Math.max(Date.parse(playlist.lastPlayedAt ?? '') || 0, localPlayedAtById.get(playlist.id) ?? 0);
 
 const sortPlaylistsByLastPlayed = (
     playlists: Playlist[],
@@ -205,7 +199,6 @@ const useSongs = (
 
 const useHomeMostPlayedSongs = () => {
     const serverId = useCurrentServerId();
-    
 
     return useQuery({
         enabled: Boolean(serverId),
@@ -247,7 +240,7 @@ export const HomeFavoritePlaylists = ({
 }) => {
     const navigate = useNavigate();
     const player = usePlayer();
-    
+
     const serverId = useCurrentServerId();
     const favoritePlaylistIds = useFavoritePlaylistIds(serverId);
     const favoritesActions = useLibraryFavoritesActions();
@@ -372,15 +365,15 @@ const PlaylistCard = ({
         >
             <div className={styles.mediaArt}>
                 <ItemImage
-                        alt={playlist.name}
-                        enableViewport={false}
-                        id={playlist.imageId ?? playlist.id}
-                        imageContainerProps={{ className: styles.imageContainer }}
-                        itemType={LibraryItem.PLAYLIST}
-                        serverId={playlist._serverId}
-                        src={playlist.imageUrl}
-                        type="itemCard"
-                    />
+                    alt={playlist.name}
+                    enableViewport={false}
+                    id={playlist.imageId ?? playlist.id}
+                    imageContainerProps={{ className: styles.imageContainer }}
+                    itemType={LibraryItem.PLAYLIST}
+                    serverId={playlist._serverId}
+                    src={playlist.imageUrl}
+                    type="itemCard"
+                />
                 <span className={styles.badge}>
                     <Icon icon="playlist" size="0.78rem" />
                     Playlist
@@ -545,13 +538,7 @@ export const HomeFavoriteTracks = () => {
     );
 };
 
-const TrackRow = ({
-    song,
-    subtitle,
-}: {
-    song: Song;
-    subtitle?: string;
-}) => {
+const TrackRow = ({ song, subtitle }: { song: Song; subtitle?: string }) => {
     const player = usePlayer();
 
     return (
@@ -600,11 +587,13 @@ const TrackRow = ({
 };
 
 const DiscoveryTrackRow = ({ song }: { song: Song }) => (
-    <TrackRow song={song} subtitle={`${getSongSubtitle(song)} · ${getUnplayedDiscoverySubtitle(song)}`} />
+    <TrackRow
+        song={song}
+        subtitle={`${getSongSubtitle(song)} · ${getUnplayedDiscoverySubtitle(song)}`}
+    />
 );
 
 export const HomeRediscoverySection = () => {
-    
     const isJellyfin = false;
     const songsQuery = useSongs(
         'rediscovery',
@@ -800,7 +789,6 @@ const RediscoverySupport = ({ item }: { item: Album | Song }) => {
 
 const useHomeDiscoverySongs = (discoverySeed: string) => {
     const serverId = useCurrentServerId();
-    
 
     return useQuery({
         enabled: Boolean(serverId),
@@ -954,7 +942,7 @@ export const HomeFavoriteAudiobooks = ({
     const cards = items.map((item) => {
         const title = item.media?.metadata?.title ?? item.name ?? 'Untitled';
         const isFavorite = favoriteAudiobookIds.has(item.id);
-        
+
         return {
             content: (
                 <div
@@ -964,7 +952,10 @@ export const HomeFavoriteAudiobooks = ({
                     onContextMenu={(e) => {
                         e.preventDefault();
                         e.stopPropagation();
-                        ContextMenuController.call({ cmd: { items: [item], server, type: 'audiobook' }, event: e });
+                        ContextMenuController.call({
+                            cmd: { items: [item], server, type: 'audiobook' },
+                            event: e,
+                        });
                     }}
                     role="button"
                     tabIndex={0}
@@ -1010,7 +1001,10 @@ export const HomeFavoriteAudiobooks = ({
                                 onClick={(e) => {
                                     e.preventDefault();
                                     e.stopPropagation();
-                                    ContextMenuController.call({ cmd: { items: [item], server, type: 'audiobook' }, event: e });
+                                    ContextMenuController.call({
+                                        cmd: { items: [item], server, type: 'audiobook' },
+                                        event: e,
+                                    });
                                 }}
                                 type="button"
                             >
@@ -1022,7 +1016,9 @@ export const HomeFavoriteAudiobooks = ({
                         {title}
                     </Text>
                     <Text className={styles.subtitle} isMuted size="sm">
-                        {item.media?.metadata?.author ?? item.media?.metadata?.authorName ?? 'Audiobook'}
+                        {item.media?.metadata?.author ??
+                            item.media?.metadata?.authorName ??
+                            'Audiobook'}
                     </Text>
                 </div>
             ),

@@ -10,9 +10,7 @@ declare const api: {
             itemId: string;
             token: string;
             url: string;
-        }) => Promise<
-            import('../shared/api/long-form-types').LongFormLibraryItem
-        >;
+        }) => Promise<import('../shared/api/long-form-types').LongFormLibraryItem>;
         getItemCoverDataUrl: (payload: {
             itemId: string;
             token: string;
@@ -21,23 +19,17 @@ declare const api: {
         getLibraries: (payload: {
             token: string;
             url: string;
-        }) => Promise<
-            import('../shared/api/long-form-types').AudiobookshelfLibrariesResponse
-        >;
+        }) => Promise<import('../shared/api/long-form-types').AudiobookshelfLibrariesResponse>;
         getLibraryItems: (payload: {
             libraryId: string;
             token: string;
             url: string;
-        }) => Promise<
-            import('../shared/api/long-form-types').LongFormLibraryItemsResponse
-        >;
+        }) => Promise<import('../shared/api/long-form-types').LongFormLibraryItemsResponse>;
         login: (payload: {
             password: string;
             url: string;
             username: string;
-        }) => Promise<
-            import('../shared/api/long-form-types').AudiobookshelfLoginResponse
-        >;
+        }) => Promise<import('../shared/api/long-form-types').AudiobookshelfLoginResponse>;
         playItem: (payload: {
             episodeId?: string;
             itemId: string;

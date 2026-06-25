@@ -5,7 +5,6 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router';
 
 import { isServerLock } from '/@/renderer/features/action-required/utils/window-properties';
-
 import OpenSubsonicLogo from '/@/renderer/features/servers/assets/opensubsonic.png';
 import { AddServerForm } from '/@/renderer/features/servers/components/add-server-form';
 import { EditServerForm } from '/@/renderer/features/servers/components/edit-server-form';
@@ -102,8 +101,7 @@ function ServerSelector() {
         <>
             {Object.keys(serverList).map((serverId) => {
                 const server = serverList[serverId];
-                const isNavidromeExpired =
-                    false;
+                const isNavidromeExpired = false;
                 const isSessionExpired = isNavidromeExpired;
 
                 const logo = OpenSubsonicLogo;

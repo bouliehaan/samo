@@ -14,10 +14,7 @@ import { clampPosition } from '/@/renderer/store/audiobook-resume-math';
 import { identityPersistMigrate, PERSIST_VERSION_INITIAL } from '/@/renderer/store/persist-migrate';
 import { usePlaybackOwnerStore } from '/@/renderer/store/playback-owner.store';
 import { usePlayerStoreBase } from '/@/renderer/store/player.store';
-import {
-    LongFormLibraryItem,
-    LongFormPodcastEpisode,
-} from '/@/shared/api/long-form-types';
+import { LongFormLibraryItem, LongFormPodcastEpisode } from '/@/shared/api/long-form-types';
 import { toast } from '/@/shared/components/toast/toast';
 import { ServerListItemWithCredential } from '/@/shared/types/domain-types';
 import { PlayerStatus } from '/@/shared/types/types';
@@ -84,9 +81,7 @@ export interface CreateAbsPlaybackStoreConfig<
         sync: AbsPlaybackSyncHandle;
     }) => TActions;
     failureToastLabel: string;
-    getEpisodeForSync: (
-        state: AbsPlaybackCoreState & TExtra,
-    ) => LongFormPodcastEpisode | null;
+    getEpisodeForSync: (state: AbsPlaybackCoreState & TExtra) => LongFormPodcastEpisode | null;
     getLoadingSeed: (...playArgs: unknown[]) => Partial<AbsPlaybackCoreState & TExtra>;
     getResumeKey: (state: AbsPlaybackCoreState & TExtra) => null | string;
     initialExtra: TExtra;
@@ -309,9 +304,7 @@ export function createAbsPlaybackStore<
                         const episode = config.requiresEpisode
                             ? (playArgs[2] as LongFormPodcastEpisode)
                             : null;
-                        const playbackMediaKey = episode
-                            ? `${item.id}:${episode.id}`
-                            : item.id;
+                        const playbackMediaKey = episode ? `${item.id}:${episode.id}` : item.id;
 
                         usePlaybackOwnerStore.getState().claim(config.source, {
                             engine: 'web',

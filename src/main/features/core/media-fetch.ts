@@ -16,8 +16,7 @@ export const registerMediaFetchHandlers = () => {
                 throw new Error(`Failed to fetch media: ${response.status}`);
             }
 
-            const contentType =
-                response.headers.get('content-type') ?? 'application/octet-stream';
+            const contentType = response.headers.get('content-type') ?? 'application/octet-stream';
             const buffer = Buffer.from(await response.arrayBuffer());
 
             return {

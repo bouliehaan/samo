@@ -4,10 +4,7 @@ import { samoFetch } from '/@/renderer/api/samo/samo-fetch';
 import { clampPosition } from '/@/renderer/store/audiobook-resume-math';
 import { type PlaybackSource, usePlaybackOwnerStore } from '/@/renderer/store/playback-owner.store';
 import { subscribePlayerStatus } from '/@/renderer/store/player.store';
-import {
-    LongFormLibraryItem,
-    LongFormPodcastEpisode,
-} from '/@/shared/api/long-form-types';
+import { LongFormLibraryItem, LongFormPodcastEpisode } from '/@/shared/api/long-form-types';
 import { ServerListItemWithCredential } from '/@/shared/types/domain-types';
 import { PlayerStatus } from '/@/shared/types/types';
 import { LogCategory, logFn } from '/@/shared/utils/logger';
@@ -56,8 +53,7 @@ export function createAbsPlaybackSyncHandle(
     };
 
     const syncProgress: AbsPlaybackSyncHandle['syncProgress'] = (options) => {
-        const { duration, episode, item, position, requiresEpisode, server } =
-            getSlice();
+        const { duration, episode, item, position, requiresEpisode, server } = getSlice();
 
         if (!item || !server) {
             return;
@@ -112,7 +108,6 @@ export function createAbsPlaybackSyncHandle(
             });
             return;
         }
-
     };
 
     return {
@@ -124,8 +119,7 @@ export function createAbsPlaybackSyncHandle(
             resetProgressSync(0);
         },
         resetProgressSync,
-        resetSyncWarnings: () => {
-        },
+        resetSyncWarnings: () => {},
         setLastFlushedPosition: (position) => {
             lastFlushedPosition = position;
         },

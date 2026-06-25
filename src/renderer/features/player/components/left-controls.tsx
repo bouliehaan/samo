@@ -192,12 +192,8 @@ export const LeftControls = () => {
                                                 styles.playerbarImage,
                                                 PlaybackSelectors.playerCoverArt,
                                             )}
-                                            item={
-                                                isPodcastMode ? podcastItem : audiobookItem
-                                            }
-                                            server={
-                                                isPodcastMode ? podcastServer : currentServer
-                                            }
+                                            item={isPodcastMode ? podcastItem : audiobookItem}
+                                            server={isPodcastMode ? podcastServer : currentServer}
                                         />
                                     ) : (
                                         <ItemImage

@@ -1,5 +1,4 @@
 import { useIsMutating, useMutation, useQueryClient } from '@tanstack/react-query';
-import { AxiosError } from 'axios';
 import isElectron from 'is-electron';
 import { useTranslation } from 'react-i18next';
 
@@ -24,7 +23,7 @@ export const useCreateFavorite = (args: MutationHookArgs) => {
     const queryClient = useQueryClient();
     const { t } = useTranslation();
 
-    return useMutation<FavoriteResponse, AxiosError, FavoriteArgs, PreviousQueryData[]>({
+    return useMutation<FavoriteResponse, Error, FavoriteArgs, PreviousQueryData[]>({
         mutationFn: (args) => {
             return api.controller.createFavorite({
                 ...args,

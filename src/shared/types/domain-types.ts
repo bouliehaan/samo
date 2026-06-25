@@ -1,11 +1,11 @@
 import type { QualityBadgeProfile } from '@samo/core/audio-quality';
+
 import { ExplicitStatus, LibraryItem } from '@samo/core/library';
 import {
     type ServerListItemCore,
     type ServerListItemWithCredentialCore,
     ServerType,
 } from '@samo/core/server';
-
 
 import { ServerFeatures } from '/@/shared/types/features-types';
 import { PlayerStatus } from '/@/shared/types/types';
@@ -73,11 +73,9 @@ export type User = {
     updatedAt: null | string;
 };
 
-type SortOrderMap = {
-};
+type SortOrderMap = {};
 
-export const sortOrderMap: SortOrderMap = {
-};
+export const sortOrderMap: SortOrderMap = {};
 
 export enum ExternalSource {
     LASTFM = 'LASTFM',
@@ -130,6 +128,8 @@ export type Album = {
     originalYear: number;
     participants: null | Record<string, RelatedArtist[]>;
     playCount: null | number;
+    /** Populated for Samo albums (and Subsonic annotate sweep) for hi-res badges. */
+    qualityProfile?: QualityBadgeProfile;
     recordLabels: string[];
     releaseDate: null | PartialIsoDateString;
     releaseType: null | string;
@@ -144,8 +144,6 @@ export type Album = {
     userFavorite: boolean;
     userRating: null | number;
     version: null | string;
-    /** Populated for Samo albums (and Subsonic annotate sweep) for hi-res badges. */
-    qualityProfile?: QualityBadgeProfile;
 } & { songs?: Song[] };
 
 export type AlbumArtist = {
@@ -433,7 +431,6 @@ export interface AlbumListQuery extends BaseQuery<AlbumListSort> {
 export type AlbumListResponse = BasePaginatedResponse<Album[]>;
 
 export type ListCountQuery<TQuery> = Omit<TQuery, 'startIndex'>;
-
 
 type AlbumListSortMap = {
     samo: Record<AlbumListSort, undefined>;

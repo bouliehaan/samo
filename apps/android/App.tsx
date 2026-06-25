@@ -13,7 +13,6 @@ import {
     loadMobileMediaDetail,
     loadMobilePodcastFeedForServers,
     loadMobileRadioForServers,
-
     type MobileContentSource,
     type MobileHomeItem,
     MobileHomeItemType,
@@ -34,14 +33,14 @@ import { SAMO_MOBILE_TABS, type SamoMobileTabId } from '@samo/core/navigation';
 import {
     ensureSamoStreamToken,
     findServerAuthenticationForSource,
-        type ServerAuthenticationResult,
+    type ServerAuthenticationResult,
     ServerConnectionHealthStatus,
     ServerType,
-    } from '@samo/core/server';
+} from '@samo/core/server';
 import { File } from 'expo-file-system';
+import { useFonts } from 'expo-font';
 import { Image as ExpoImage } from 'expo-image';
 import { StatusBar } from 'expo-status-bar';
-import { useFonts } from 'expo-font';
 import {
     Component,
     type ComponentProps,
@@ -147,8 +146,8 @@ import {
     useAndroidMediaHandlers,
 } from './src/hooks/use-android-media-handlers';
 import { useAndroidNativePlayback } from './src/hooks/use-android-native-playback';
-import { useAndroidRadioMetadataSync } from './src/hooks/use-android-radio-metadata-sync';
 import { useAndroidPlaybackControls } from './src/hooks/use-android-playback-controls';
+import { useAndroidRadioMetadataSync } from './src/hooks/use-android-radio-metadata-sync';
 import { useAndroidServerAuth } from './src/hooks/use-android-server-auth';
 import { useReducedMotionPreference } from './src/hooks/use-reduced-motion-preference';
 import { useStableCallback } from './src/hooks/use-stable-callback';
@@ -180,6 +179,7 @@ import { SearchOverlay, SearchScreen } from './src/screens/SearchScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
 import { ViewAllScreen } from './src/screens/ViewAllScreen';
 import { loadAbsCurrentProgress } from './src/services/abs-progress';
+import { prefetchCatalogArtwork } from './src/services/artwork-prefetch';
 import {
     type AndroidCastState,
     type AndroidMediaOutputRoute,
@@ -190,8 +190,6 @@ import {
     setAndroidSleepTimer,
     updateAndroidNowPlayingMetadata,
 } from './src/services/audio-playback';
-import { prefetchCatalogArtwork } from './src/services/artwork-prefetch';
-import { formatJankBreadcrumb } from './src/services/jank-trace';
 import {
     buildCatalogHomeContent,
     type HomeLiveSections,
@@ -201,7 +199,6 @@ import {
     installCatalogSyncEventBridge,
     subscribeCatalogSyncCompleted,
 } from './src/services/catalog/catalog-sync-events';
-import { triggerCatalogSyncNow } from './src/services/headless-catalog-sync';
 import {
     type DownloadEntry,
     enqueueCollectionDownload,
@@ -221,12 +218,11 @@ import {
     loadAndroidFullCollectionLocalSync,
 } from './src/services/full-collection';
 import { triggerSelection } from './src/services/haptics';
-import {
-    type AndroidHomeContentState,
-    reconcileHomeContent,
-} from './src/services/home-content';
+import { triggerCatalogSyncNow } from './src/services/headless-catalog-sync';
+import { type AndroidHomeContentState, reconcileHomeContent } from './src/services/home-content';
 import { loadHomeLayoutHint, saveHomeLayoutHint } from './src/services/home-layout-hint';
 import { buildHomeLoadKey, dedupeInFlight } from './src/services/in-flight-requests';
+import { formatJankBreadcrumb } from './src/services/jank-trace';
 import {
     loadPersistedLastPlayedItem,
     savePersistedLastPlayedItem,
@@ -270,24 +266,20 @@ import {
     upsertRecentContentItem,
 } from './src/services/recent-content';
 import { mergeServerRecentlyPlayedIntoRecents } from './src/services/recent-content-sync';
-import {
-    collectFreshAlbumItems,
-    reconcileRecentContentItemsIfChanged,
-} from './src/utils/recent-content-dedupe';
 import { type AndroidSearchState, loadAndroidSearchResults } from './src/services/search-content';
 import { type AndroidAuthState, authenticateServer } from './src/services/server-auth';
 import {
     type AndroidServerHealthMap,
-        createCheckingServerHealthMap,
+    createCheckingServerHealthMap,
     createConnectedServerHealthStatus,
 } from './src/services/server-health';
+import { getPlaybackQueue, usePlaybackQueue } from './src/state/playback-queue-store';
 import {
     getAndroidPlaybackState,
     selectActiveAndroidPlaybackItem,
     setAndroidPlaybackState,
     useAndroidPlaybackState,
 } from './src/state/playback-store';
-import { getPlaybackQueue, usePlaybackQueue } from './src/state/playback-queue-store';
 import {
     DISMISS_DISTANCE,
     DISMISS_VELOCITY,
@@ -335,9 +327,9 @@ import {
     HOME_ARTWORK_PREFETCH_LIMIT,
     LIBRARY_FULL_COLLECTION_PREFETCH_DELAY_MS,
 } from './src/utils/app-constants';
-import { getContentSourceFromPlaybackItem } from './src/utils/content-source';
 import { addDefaultHttpScheme, DEFAULT_SERVER_URL, hasServerUrlTarget } from './src/utils/auth-url';
 import { getContentItemKey } from './src/utils/content-item';
+import { getContentSourceFromPlaybackItem } from './src/utils/content-source';
 import { getDownloadedCollectionKey, getDownloadedTrackKey } from './src/utils/download-keys';
 import {
     buildDownloadedCollectionSnapshot,
@@ -352,16 +344,7 @@ import {
     sortHomeItemsByRecents,
 } from './src/utils/home-display';
 import { getLastPlayedPersistenceKey } from './src/utils/last-played';
-import { refreshPlayableResumeFromServer } from './src/utils/playback-resume';
 import { getLibraryMediaType, toLibraryDisplayItem } from './src/utils/library-display';
-import {
-    artworkSourceUri,
-    backfillItemArtworkFields,
-    prefetchArtworkSource,
-    preparePlaybackItemForNative,
-    resolvePlaybackArtworkSourceForDisplay,
-    resolveSamoItemArtworkSourceForDisplay,
-} from './src/utils/samo-artwork-url';
 import { detailHasHiRes } from './src/utils/media-quality';
 import { buildOfflineHomeContentState } from './src/utils/offline-home';
 import { buildDownloadedMusicDetail } from './src/utils/offline-music-detail';
@@ -371,6 +354,7 @@ import {
     mimeFromCastUri,
     pickAudiobookFileIndexForTime,
 } from './src/utils/offline-playback';
+import { refreshPlayableResumeFromServer } from './src/utils/playback-resume';
 import {
     findActiveChapterIndex,
     formatChapterRange,
@@ -382,6 +366,18 @@ import {
     looksLikeUrl,
 } from './src/utils/playback-time';
 import { getPlaylistTargetsForRoot } from './src/utils/playlist-targets';
+import {
+    collectFreshAlbumItems,
+    reconcileRecentContentItemsIfChanged,
+} from './src/utils/recent-content-dedupe';
+import {
+    artworkSourceUri,
+    backfillItemArtworkFields,
+    prefetchArtworkSource,
+    preparePlaybackItemForNative,
+    resolvePlaybackArtworkSourceForDisplay,
+    resolveSamoItemArtworkSourceForDisplay,
+} from './src/utils/samo-artwork-url';
 import { getTabTitle } from './src/utils/tab-title';
 
 // @ts-ignore
@@ -400,10 +396,10 @@ const POST_SYNC_COALESCE_MS = 450;
 export default function App() {
     const [fontsLoaded] = useFonts({
         Archivo: require('./assets/fonts/Archivo.ttf'),
-        'YoungSerif-Regular': require('./assets/fonts/YoungSerif-Regular.ttf'),
-        'YoungSerif-Bold': require('./assets/fonts/YoungSerif-Bold.ttf'),
-        'OfficeCodePro-Regular': require('./assets/fonts/officecodepro-regular.otf'),
         'OfficeCodePro-Bold': require('./assets/fonts/officecodepro-bold.otf'),
+        'OfficeCodePro-Regular': require('./assets/fonts/officecodepro-regular.otf'),
+        'YoungSerif-Bold': require('./assets/fonts/YoungSerif-Bold.ttf'),
+        'YoungSerif-Regular': require('./assets/fonts/YoungSerif-Regular.ttf'),
     });
     const mediaHandlersRef = useRef<null | ReturnType<typeof useAndroidMediaHandlers>>(null);
     const libraryRelevantFetchTokenRef = useRef(0);
@@ -473,8 +469,6 @@ export default function App() {
         username,
     } = auth;
 
-
-
     const {
         artworkCacheLimitBytes,
         downloadedCollectionKeys,
@@ -541,8 +535,8 @@ export default function App() {
         absContextRef,
         handlePlayItem,
         playbackSnapshotRef,
-        playQueueIndexNatively,
         playQueuedItem,
+        playQueueIndexNatively,
         registerNavigatePlayback,
     } = useAndroidNativePlayback({ lastPlayedItem, serverConnection });
     const queue = usePlaybackQueue();
@@ -591,11 +585,8 @@ export default function App() {
         if (!serverConnection) {
             return;
         }
-        const content = buildCatalogHomeContent(
-            serverConnection,
-            lastHomeLiveSectionsRef.current,
-        );
-        // eslint-disable-next-line no-console -- mirror-derive health probe
+        const content = buildCatalogHomeContent(serverConnection, lastHomeLiveSectionsRef.current);
+
         console.log(
             '[home] derive',
             content
@@ -620,7 +611,7 @@ export default function App() {
     });
 
     const loadHomeForConnection = useCallback(
-        async (authentication: ServerAuthenticationResult | null) => {
+        async (authentication: null | ServerAuthenticationResult) => {
             const requestId = (homeLoadRequestId.current += 1);
 
             if (!authentication) {
@@ -655,12 +646,12 @@ export default function App() {
                 buildHomeLoadKey(authentication ? [authentication] : []),
                 async (): Promise<HomeLiveSections> => {
                     const [discover, podcastFeed] = await Promise.all([
-                        loadMobileDiscoveryForServers({ authentication: authentication ?? null }).catch(
-                            () => [],
-                        ),
-                        loadMobilePodcastFeedForServers({ authentication: authentication ?? null }).catch(
-                            () => [],
-                        ),
+                        loadMobileDiscoveryForServers({
+                            authentication: authentication ?? null,
+                        }).catch(() => []),
+                        loadMobilePodcastFeedForServers({
+                            authentication: authentication ?? null,
+                        }).catch(() => []),
                     ]);
                     return {
                         discover,
@@ -673,12 +664,18 @@ export default function App() {
             void dedupeInFlight(
                 buildHomeLoadKey(authentication ? [authentication] : []) + '-radio',
                 async () => {
-                    const radio = await loadMobileRadioForServers({ authentication: authentication ?? null }).catch(() => []);
+                    const radio = await loadMobileRadioForServers({
+                        authentication: authentication ?? null,
+                    }).catch(() => []);
                     if (requestId !== homeLoadRequestId.current || radio.length === 0) {
                         return;
                     }
                     lastHomeLiveSectionsRef.current = {
-                        ...(lastHomeLiveSectionsRef.current ?? { discover: [], podcastFeed: [], radio: [] }),
+                        ...(lastHomeLiveSectionsRef.current ?? {
+                            discover: [],
+                            podcastFeed: [],
+                            radio: [],
+                        }),
                         radio,
                     };
                     const assembled = buildCatalogHomeContent(
@@ -694,7 +691,7 @@ export default function App() {
                             status: 'loaded',
                         }));
                     }
-                }
+                },
             );
             if (requestId !== homeLoadRequestId.current) {
                 return;
@@ -707,11 +704,7 @@ export default function App() {
                 podcastFeed: live.podcastFeed.length,
                 rediscover: live.discover.length,
             });
-            if (
-                live.discover.length > 0 ||
-                live.podcastFeed.length > 0 ||
-                live.radio.length > 0
-            ) {
+            if (live.discover.length > 0 || live.podcastFeed.length > 0 || live.radio.length > 0) {
                 lastHomeLiveSectionsRef.current = live;
             }
             const assembled = buildCatalogHomeContent(
@@ -774,7 +767,6 @@ export default function App() {
             const now = Date.now();
             const lagMs = now - expected;
             if (lagMs > 1500) {
-                // eslint-disable-next-line no-console
                 console.warn(
                     `[jank] JS thread blocked ~${Math.round(lagMs / 100) / 10}s${formatJankBreadcrumb()}`,
                 );
@@ -796,7 +788,7 @@ export default function App() {
     // Home/Library derive whenever the app is backgrounded, so a long listening
     // session with the screen off never burns seconds of JS thread re-deriving
     // surfaces the user can't see. The AppState→active handler flushes it.
-    const postSyncDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const postSyncDebounceRef = useRef<null | ReturnType<typeof setTimeout>>(null);
     const mirrorDirtyRef = useRef(false);
 
     // The actual post-sync work, deferred past any in-flight gesture/animation so
@@ -873,7 +865,7 @@ export default function App() {
     // Cover syncs that ran while the app was closed (background WorkManager
     // rounds emit no events into a dead JS world): one index top-up per boot.
     useEffect(() => {
-        if (!!serverConnection) {
+        if (serverConnection) {
             void reindexCatalogSearch(serverConnection);
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -882,7 +874,7 @@ export default function App() {
     // Paint Home from the mirror the moment connections exist (cold launch,
     // restore, connect) — no network on this path.
     useEffect(() => {
-        if (!!serverConnection) {
+        if (serverConnection) {
             refreshHomeFromMirror();
         }
     }, [serverConnection, refreshHomeFromMirror]);
@@ -909,11 +901,7 @@ export default function App() {
     });
 
     const startLibraryFullCollectionLoad = useStableCallback(() => {
-        if (
-            isOfflineMode ||
-            !serverConnection ||
-            homeContentState.status !== 'loaded'
-        ) {
+        if (isOfflineMode || !serverConnection || homeContentState.status !== 'loaded') {
             return;
         }
 
@@ -977,10 +965,7 @@ export default function App() {
                 loadAndroidFullCollection(serverConnection, 'artist'),
             ]);
             setLibraryFullCollections((current) => {
-                if (
-                    current.albums.status !== 'loaded' &&
-                    current.artists.status !== 'loaded'
-                ) {
+                if (current.albums.status !== 'loaded' && current.artists.status !== 'loaded') {
                     return current;
                 }
                 return { albums, artists };
@@ -1251,7 +1236,7 @@ export default function App() {
     // runs ONE search. The input itself stays instant (setSearchOverlayQuery
     // updates the value synchronously at the call site); only the heavy network
     // search is deferred.
-    const overlaySearchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const overlaySearchTimerRef = useRef<null | ReturnType<typeof setTimeout>>(null);
     const runOverlaySearchDebounced = useStableCallback((rawQuery: string) => {
         if (overlaySearchTimerRef.current) {
             clearTimeout(overlaySearchTimerRef.current);
@@ -1348,8 +1333,8 @@ export default function App() {
     } = useAndroidPlaybackControls({
         lastPlayedItem,
         playbackSnapshotRef,
-        playQueueIndexNatively,
         playQueuedItem,
+        playQueueIndexNatively,
         serverConnection,
     });
 
@@ -1806,360 +1791,395 @@ export default function App() {
         <GestureHandlerRootView style={styles.gestureRoot}>
             <ErrorBoundary label="App">
                 <ServerConnectionsContext.Provider value={serverConnection}>
-                <MediaContextMenuContext.Provider value={contextMenu.api}>
-                    <DownloadedCollectionKeysContext.Provider value={downloadedCollectionKeys}>
-                        <DownloadedTrackKeysContext.Provider value={downloadedTrackKeys}>
-                            <View style={styles.safeArea}>
-                                <StatusBar style="light" />
-                                <KeyboardAvoidingView
-                                    behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-                                    style={styles.keyboardView}
-                                >
-                                    <View style={styles.root}>
-                                        <View style={styles.appContent}>
-                                            <View
-                                                pointerEvents={
-                                                    utilityScreenContent ||
-                                                    mediaDetailState.status !== 'idle' ||
-                                                    (activeUtilityScreen === 'view-all' &&
-                                                        viewAllRoute)
-                                                        ? 'none'
-                                                        : 'auto'
-                                                }
-                                                style={styles.tabSceneHost}
-                                            >
-                                                {SAMO_MOBILE_TABS.map((tab) => {
-                                                    const isSceneActive = tab.id === activeTab;
-                                                    const isSceneMounted = visitedTabs.has(tab.id);
-                                                    const sceneStyle = [
-                                                        styles.tabScene,
-                                                        isSceneActive
-                                                            ? styles.tabSceneActive
-                                                            : styles.tabSceneHidden,
-                                                    ];
+                    <MediaContextMenuContext.Provider value={contextMenu.api}>
+                        <DownloadedCollectionKeysContext.Provider value={downloadedCollectionKeys}>
+                            <DownloadedTrackKeysContext.Provider value={downloadedTrackKeys}>
+                                <View style={styles.safeArea}>
+                                    <StatusBar style="light" />
+                                    <KeyboardAvoidingView
+                                        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+                                        style={styles.keyboardView}
+                                    >
+                                        <View style={styles.root}>
+                                            <View style={styles.appContent}>
+                                                <View
+                                                    pointerEvents={
+                                                        utilityScreenContent ||
+                                                        mediaDetailState.status !== 'idle' ||
+                                                        (activeUtilityScreen === 'view-all' &&
+                                                            viewAllRoute)
+                                                            ? 'none'
+                                                            : 'auto'
+                                                    }
+                                                    style={styles.tabSceneHost}
+                                                >
+                                                    {SAMO_MOBILE_TABS.map((tab) => {
+                                                        const isSceneActive = tab.id === activeTab;
+                                                        const isSceneMounted = visitedTabs.has(
+                                                            tab.id,
+                                                        );
+                                                        const sceneStyle = [
+                                                            styles.tabScene,
+                                                            isSceneActive
+                                                                ? styles.tabSceneActive
+                                                                : styles.tabSceneHidden,
+                                                        ];
 
-                                                    // Library and Home own their own scroll
-                                                    // containers (a virtualized FlashList), so they
-                                                    // render in a plain View rather than the shared
-                                                    // tab ScrollView — nesting a same-orientation
-                                                    // VirtualizedList inside a ScrollView disables
-                                                    // virtualization. Home's pull-to-refresh moves
-                                                    // onto its own list (see HomeScreen).
-                                                    if (tab.id === 'library' || tab.id === 'home') {
+                                                        // Library and Home own their own scroll
+                                                        // containers (a virtualized FlashList), so they
+                                                        // render in a plain View rather than the shared
+                                                        // tab ScrollView — nesting a same-orientation
+                                                        // VirtualizedList inside a ScrollView disables
+                                                        // virtualization. Home's pull-to-refresh moves
+                                                        // onto its own list (see HomeScreen).
+                                                        if (
+                                                            tab.id === 'library' ||
+                                                            tab.id === 'home'
+                                                        ) {
+                                                            return (
+                                                                <View
+                                                                    key={tab.id}
+                                                                    pointerEvents={
+                                                                        isSceneActive
+                                                                            ? 'auto'
+                                                                            : 'none'
+                                                                    }
+                                                                    style={sceneStyle}
+                                                                >
+                                                                    <ErrorBoundary
+                                                                        label={`tab-${tab.id}`}
+                                                                    >
+                                                                        {isSceneMounted
+                                                                            ? renderTabSceneContent(
+                                                                                  tab.id,
+                                                                              )
+                                                                            : null}
+                                                                    </ErrorBoundary>
+                                                                </View>
+                                                            );
+                                                        }
+
+                                                        // Home + Library use the View path above; the
+                                                        // remaining tabs (playlists/radio/search) have no
+                                                        // pull-to-refresh, so this scroll carries none.
                                                         return (
-                                                            <View
+                                                            <ScrollView
+                                                                contentContainerStyle={
+                                                                    styles.tabContent
+                                                                }
                                                                 key={tab.id}
                                                                 pointerEvents={
                                                                     isSceneActive ? 'auto' : 'none'
                                                                 }
+                                                                showsVerticalScrollIndicator={false}
                                                                 style={sceneStyle}
                                                             >
-                                                                <ErrorBoundary label={`tab-${tab.id}`}>
+                                                                <ErrorBoundary
+                                                                    label={`tab-${tab.id}`}
+                                                                >
                                                                     {isSceneMounted
-                                                                        ? renderTabSceneContent(tab.id)
+                                                                        ? renderTabSceneContent(
+                                                                              tab.id,
+                                                                          )
                                                                         : null}
                                                                 </ErrorBoundary>
-                                                            </View>
+                                                            </ScrollView>
                                                         );
-                                                    }
-
-                                                    // Home + Library use the View path above; the
-                                                    // remaining tabs (playlists/radio/search) have no
-                                                    // pull-to-refresh, so this scroll carries none.
-                                                    return (
-                                                        <ScrollView
-                                                            contentContainerStyle={styles.tabContent}
-                                                            key={tab.id}
-                                                            pointerEvents={
-                                                                isSceneActive ? 'auto' : 'none'
+                                                    })}
+                                                </View>
+                                                {utilityScreenContent ? (
+                                                    <ScrollView
+                                                        contentContainerStyle={[
+                                                            styles.content,
+                                                            styles.utilityScrollContent,
+                                                        ]}
+                                                        keyboardShouldPersistTaps="handled"
+                                                        style={[
+                                                            styles.navOverlay,
+                                                            styles.tabUtilityScene,
+                                                        ]}
+                                                    >
+                                                        {utilityScreenContent}
+                                                    </ScrollView>
+                                                ) : null}
+                                                {activeUtilityScreen === null &&
+                                                (detailOverlayOpen || hasCachedDetailShell) ? (
+                                                    <Reanimated.View
+                                                        pointerEvents={
+                                                            detailOverlayOpen ? 'auto' : 'none'
+                                                        }
+                                                        style={[
+                                                            styles.navOverlay,
+                                                            detailOverlayStyle,
+                                                        ]}
+                                                    >
+                                                        <MediaDetailContent
+                                                            homeContentState={homeContentState}
+                                                            mediaDetailKey={
+                                                                detailOverlayOpen
+                                                                    ? mediaDetailKey
+                                                                    : frozenDetailKeyRef.current
                                                             }
-                                                            showsVerticalScrollIndicator={false}
-                                                            style={sceneStyle}
-                                                        >
-                                                            <ErrorBoundary label={`tab-${tab.id}`}>
-                                                                {isSceneMounted
-                                                                    ? renderTabSceneContent(tab.id)
-                                                                    : null}
-                                                            </ErrorBoundary>
-                                                        </ScrollView>
-                                                    );
-                                                })}
-                                            </View>
-                                            {utilityScreenContent ? (
-                                                <ScrollView
-                                                    contentContainerStyle={[
-                                                        styles.content,
-                                                        styles.utilityScrollContent,
-                                                    ]}
-                                                    keyboardShouldPersistTaps="handled"
-                                                    style={[
-                                                        styles.navOverlay,
-                                                        styles.tabUtilityScene,
-                                                    ]}
-                                                >
-                                                    {utilityScreenContent}
-                                                </ScrollView>
-                                            ) : null}
-                                            {activeUtilityScreen === null &&
-                                            (detailOverlayOpen || hasCachedDetailShell) ? (
-                                                <Reanimated.View
-                                                    pointerEvents={
-                                                        detailOverlayOpen ? 'auto' : 'none'
-                                                    }
-                                                    style={[styles.navOverlay, detailOverlayStyle]}
-                                                >
-                                                    <MediaDetailContent
-                                                        homeContentState={homeContentState}
-                                                        mediaDetailKey={
-                                                            detailOverlayOpen
-                                                                ? mediaDetailKey
-                                                                : frozenDetailKeyRef.current
+                                                            mediaDetailState={
+                                                                detailOverlayOpen
+                                                                    ? mediaDetailState
+                                                                    : frozenDetailStateRef.current
+                                                            }
+                                                            onAddTrackToPlaylist={
+                                                                handleAddMediaTrackToPlaylistStable
+                                                            }
+                                                            onBack={popMediaDetail}
+                                                            onPlayTrack={handlePlayMediaTrackStable}
+                                                            onReloadDetail={
+                                                                handleReloadMediaDetailStable
+                                                            }
+                                                            onSelectItem={
+                                                                handleSelectMediaItemStable
+                                                            }
+                                                            onShufflePlay={
+                                                                handleShuffleDetailTracks
+                                                            }
+                                                            serverConnection={serverConnection}
+                                                        />
+                                                    </Reanimated.View>
+                                                ) : null}
+                                                {activeUtilityScreen === 'view-all' &&
+                                                viewAllRoute ? (
+                                                    <Reanimated.View
+                                                        entering={
+                                                            reducedMotion
+                                                                ? undefined
+                                                                : FadeIn.duration(180)
                                                         }
-                                                        mediaDetailState={
-                                                            detailOverlayOpen
-                                                                ? mediaDetailState
-                                                                : frozenDetailStateRef.current
-                                                        }
-                                                        onAddTrackToPlaylist={
-                                                            handleAddMediaTrackToPlaylistStable
-                                                        }
-                                                        onBack={popMediaDetail}
-                                                        onPlayTrack={handlePlayMediaTrackStable}
-                                                        onReloadDetail={handleReloadMediaDetailStable}
-                                                        onSelectItem={handleSelectMediaItemStable}
-                                                        onShufflePlay={handleShuffleDetailTracks}
+                                                        style={[
+                                                            styles.navOverlay,
+                                                            styles.navOverlayTop,
+                                                        ]}
+                                                    >
+                                                        <ErrorBoundary label="ViewAllScreen">
+                                                            <ViewAllScreen
+                                                                fullState={viewAllFullState}
+                                                                onBack={handleViewAllBack}
+                                                                onSelectItem={
+                                                                    handleSelectViewAllItem
+                                                                }
+                                                                route={viewAllRoute}
+                                                            />
+                                                        </ErrorBoundary>
+                                                    </Reanimated.View>
+                                                ) : null}
+                                                {isSearchOverlayOpen ? (
+                                                    <SearchOverlay
+                                                        onClose={() => {
+                                                            setIsSearchOverlayOpen(false);
+                                                            setSearchOverlayQuery('');
+                                                        }}
+                                                        onSearch={(q) => {
+                                                            setSearchOverlayQuery(q);
+                                                            runOverlaySearchDebounced(q);
+                                                        }}
+                                                        onSelectItem={(item) => {
+                                                            setIsSearchOverlayOpen(false);
+                                                            setSearchOverlayQuery('');
+                                                            handleSelectMediaItemStable(item);
+                                                        }}
+                                                        query={searchOverlayQuery}
+                                                        searchState={searchState}
                                                         serverConnection={serverConnection}
                                                     />
-                                                </Reanimated.View>
-                                            ) : null}
-                                            {activeUtilityScreen === 'view-all' && viewAllRoute ? (
-                                                <Reanimated.View
-                                                    entering={
-                                                        reducedMotion
-                                                            ? undefined
-                                                            : FadeIn.duration(180)
-                                                    }
-                                                    style={[
-                                                        styles.navOverlay,
-                                                        styles.navOverlayTop,
-                                                    ]}
-                                                >
-                                                    <ErrorBoundary label="ViewAllScreen">
-                                                        <ViewAllScreen
-                                                            fullState={viewAllFullState}
-                                                            onBack={handleViewAllBack}
-                                                            onSelectItem={handleSelectViewAllItem}
-                                                            route={viewAllRoute}
-                                                        />
-                                                    </ErrorBoundary>
-                                                </Reanimated.View>
-                                            ) : null}
-                                            {isSearchOverlayOpen ? (
-                                                <SearchOverlay
-                                                    onClose={() => {
-                                                        setIsSearchOverlayOpen(false);
-                                                        setSearchOverlayQuery('');
-                                                    }}
-                                                    onSearch={(q) => {
-                                                        setSearchOverlayQuery(q);
-                                                        runOverlaySearchDebounced(q);
-                                                    }}
-                                                    onSelectItem={(item) => {
-                                                        setIsSearchOverlayOpen(false);
-                                                        setSearchOverlayQuery('');
-                                                        handleSelectMediaItemStable(item);
-                                                    }}
-                                                    query={searchOverlayQuery}
-                                                    searchState={searchState}
-                                                    serverConnection={serverConnection}
-                                                />
-                                            ) : null}
-                                        </View>
-                                        <NowPlayingMetadataSync />
-                                        {/* World dim — fades in over the page + tab bar as the
+                                                ) : null}
+                                            </View>
+                                            <NowPlayingMetadataSync />
+                                            {/* World dim — fades in over the page + tab bar as the
                         player rises. Below the player shells (zIndex 9000 vs
                         their 9999/10000). pointerEvents:none so the page
                         below stays interactive while the player is closed. */}
-                                        <Reanimated.View
-                                            pointerEvents="none"
-                                            style={[styles.playerWorldDim, worldDimStyle]}
-                                        />
-                                        <ErrorBoundary label="MiniPlayer">
-                                        <ConnectedMiniPlayer
-                                            artworkImageId={playbackItem?.artworkImageId}
-                                            artworkUrl={currentHighResArtworkUrl}
-                                            contentSource={playbackContentSource}
-                                            lastPlayedItem={lastPlayedItem}
-                                            onOpenFullPlayer={handleOpenFullPlayer}
-                                            onTogglePlayback={handleTogglePlayback}
-                                            playerProgress={playerProgress}
-                                            reducedMotion={reducedMotion}
-                                            serverConnection={serverConnection}
-                                        />
-                                        </ErrorBoundary>
-                                        <ErrorBoundary
-                                            fallback={(error, retry) => (
-                                                // If the fullscreen player throws, just dismiss it
-                                                // rather than blocking the whole app. The user can
-                                                // still see the miniplayer and tap to reopen.
-                                                <View style={styles.errorBoundaryRoot}>
-                                                    <Text style={styles.errorBoundaryTitle}>
-                                                        Player error
-                                                    </Text>
-                                                    <Text style={styles.errorBoundarySubtitle}>
-                                                        {error.message}
-                                                    </Text>
-                                                    <Pressable
-                                                        accessibilityRole="button"
-                                                        onPress={() => {
-                                                            setIsFullPlayerOpen(false);
-                                                            retry();
-                                                        }}
-                                                        style={styles.errorBoundaryButton}
-                                                    >
-                                                        <Text
-                                                            style={styles.errorBoundaryButtonText}
-                                                        >
-                                                            Dismiss
-                                                        </Text>
-                                                    </Pressable>
-                                                </View>
-                                            )}
-                                            label="FullScreenPlayer"
-                                        >
-                                            <ConnectedFullScreenPlayer
-                                                artworkImageId={playbackItem?.artworkImageId}
-                                                artworkUrl={currentHighResArtworkUrl}
-                                                contentSource={playbackContentSource}
-                                                castState={castState}
-                                                isShuffled={isShuffled}
-                                                lastPlayedItem={lastPlayedItem}
-                                                onClose={handleCloseFullPlayer}
-                                                onNext={handlePlayerNext}
-                                                onOpenOutputPicker={handleOpenOutputPicker}
-                                                onPlayQueueIndex={handlePlayerPlayQueueIndex}
-                                                onPrevious={handlePlayerPrevious}
-                                                onSkipBySeconds={handlePlayerSkipBySeconds}
-                                                onSeek={handlePlayerSeek}
-                                                onTogglePlayback={handleTogglePlayback}
-                                                onToggleShuffle={handleToggleShuffle}
-                                                playerProgress={playerProgress}
-                                                queue={queue}
-                                                reducedMotion={reducedMotion}
-                                                serverConnection={serverConnection}
-                                                visible={isFullPlayerOpen}
+                                            <Reanimated.View
+                                                pointerEvents="none"
+                                                style={[styles.playerWorldDim, worldDimStyle]}
                                             />
-                                        </ErrorBoundary>
-                                        <OutputPickerModal
-                                            castState={castState}
-                                            onClose={handleCloseOutputPicker}
-                                            visible={outputPickerVisible}
-                                        />
-                                        <Reanimated.View
-                                            pointerEvents={isFullPlayerOpen ? 'none' : 'auto'}
-                                            style={[styles.tabBar, tabBarAnimatedStyle]}
-                                        >
-                                            {SAMO_MOBILE_TABS.map((tab) => {
-                                                const isActive = tab.id === activeTab;
-                                                return (
-                                                    <Pressable
-                                                        accessibilityRole="button"
-                                                        key={tab.id}
-                                                        // onPressIn (touch-down) for the snappiest
-                                                        // possible switch; onPress would dispatch the
-                                                        // same navigation a second time on release.
-                                                        onPressIn={() => handleTabPress(tab.id)}
-                                                        style={[
-                                                            styles.tabButton,
-                                                            isActive && styles.tabButtonActive,
-                                                        ]}
-                                                    >
-                                                        <TabIcon active={isActive} id={tab.id} />
-                                                        <Text
+                                            <ErrorBoundary label="MiniPlayer">
+                                                <ConnectedMiniPlayer
+                                                    artworkImageId={playbackItem?.artworkImageId}
+                                                    artworkUrl={currentHighResArtworkUrl}
+                                                    contentSource={playbackContentSource}
+                                                    lastPlayedItem={lastPlayedItem}
+                                                    onOpenFullPlayer={handleOpenFullPlayer}
+                                                    onTogglePlayback={handleTogglePlayback}
+                                                    playerProgress={playerProgress}
+                                                    reducedMotion={reducedMotion}
+                                                    serverConnection={serverConnection}
+                                                />
+                                            </ErrorBoundary>
+                                            <ErrorBoundary
+                                                fallback={(error, retry) => (
+                                                    // If the fullscreen player throws, just dismiss it
+                                                    // rather than blocking the whole app. The user can
+                                                    // still see the miniplayer and tap to reopen.
+                                                    <View style={styles.errorBoundaryRoot}>
+                                                        <Text style={styles.errorBoundaryTitle}>
+                                                            Player error
+                                                        </Text>
+                                                        <Text style={styles.errorBoundarySubtitle}>
+                                                            {error.message}
+                                                        </Text>
+                                                        <Pressable
+                                                            accessibilityRole="button"
+                                                            onPress={() => {
+                                                                setIsFullPlayerOpen(false);
+                                                                retry();
+                                                            }}
+                                                            style={styles.errorBoundaryButton}
+                                                        >
+                                                            <Text
+                                                                style={
+                                                                    styles.errorBoundaryButtonText
+                                                                }
+                                                            >
+                                                                Dismiss
+                                                            </Text>
+                                                        </Pressable>
+                                                    </View>
+                                                )}
+                                                label="FullScreenPlayer"
+                                            >
+                                                <ConnectedFullScreenPlayer
+                                                    artworkImageId={playbackItem?.artworkImageId}
+                                                    artworkUrl={currentHighResArtworkUrl}
+                                                    castState={castState}
+                                                    contentSource={playbackContentSource}
+                                                    isShuffled={isShuffled}
+                                                    lastPlayedItem={lastPlayedItem}
+                                                    onClose={handleCloseFullPlayer}
+                                                    onNext={handlePlayerNext}
+                                                    onOpenOutputPicker={handleOpenOutputPicker}
+                                                    onPlayQueueIndex={handlePlayerPlayQueueIndex}
+                                                    onPrevious={handlePlayerPrevious}
+                                                    onSeek={handlePlayerSeek}
+                                                    onSkipBySeconds={handlePlayerSkipBySeconds}
+                                                    onTogglePlayback={handleTogglePlayback}
+                                                    onToggleShuffle={handleToggleShuffle}
+                                                    playerProgress={playerProgress}
+                                                    queue={queue}
+                                                    reducedMotion={reducedMotion}
+                                                    serverConnection={serverConnection}
+                                                    visible={isFullPlayerOpen}
+                                                />
+                                            </ErrorBoundary>
+                                            <OutputPickerModal
+                                                castState={castState}
+                                                onClose={handleCloseOutputPicker}
+                                                visible={outputPickerVisible}
+                                            />
+                                            <Reanimated.View
+                                                pointerEvents={isFullPlayerOpen ? 'none' : 'auto'}
+                                                style={[styles.tabBar, tabBarAnimatedStyle]}
+                                            >
+                                                {SAMO_MOBILE_TABS.map((tab) => {
+                                                    const isActive = tab.id === activeTab;
+                                                    return (
+                                                        <Pressable
+                                                            accessibilityRole="button"
+                                                            key={tab.id}
+                                                            // onPressIn (touch-down) for the snappiest
+                                                            // possible switch; onPress would dispatch the
+                                                            // same navigation a second time on release.
+                                                            onPressIn={() => handleTabPress(tab.id)}
                                                             style={[
-                                                                styles.tabLabel,
-                                                                isActive && styles.tabLabelActive,
+                                                                styles.tabButton,
+                                                                isActive && styles.tabButtonActive,
                                                             ]}
                                                         >
-                                                            {tab.label}
-                                                        </Text>
-                                                    </Pressable>
-                                                );
-                                            })}
-                                        </Reanimated.View>
-                                    </View>
-                                </KeyboardAvoidingView>
-                                <MediaContextMenu
-                                    actions={contextMenu.actions}
-                                    artworkImageId={contextMenu.artworkImageId}
-                                    artworkUrl={contextMenu.artworkUrl}
-                                    contentSource={contextMenu.contentSource}
-                                    eyebrow={contextMenu.eyebrow}
-                                    feedback={contextMenu.feedback}
-                                    isCircularArtwork={contextMenu.isCircularArtwork}
-                                    onClose={contextMenu.onClose}
-                                    subtitle={contextMenu.subtitle}
-                                    target={contextMenu.target}
-                                    title={contextMenu.title}
-                                />
-                                <StreamInfoModal
-                                    item={streamInfoItem}
-                                    onClose={() => setStreamInfoItem(null)}
-                                />
-                                <BookInformationModal
-                                    onClose={closeBookInfo}
-                                    state={bookInfoState}
-                                />
-                                <TrackPlaylistMenu
-                                    actionState={playlistMenuRootState}
-                                    canCreatePlaylist={rootPlaylistCanCreate}
-                                    mode={rootPlaylistMenuMode}
-                                    onAddToPlaylist={(playlist) =>
-                                        void handleAddToPlaylistFromRoot(playlist)
-                                    }
-                                    onClose={() => {
-                                        setPlaylistMenuRoot(null);
-                                        setPlaylistMenuRootState({ status: 'idle' });
-                                    }}
-                                    onCreatePlaylist={(name) =>
-                                        void handleCreatePlaylistFromRoot(name)
-                                    }
-                                    open={playlistMenuRoot !== null}
-                                    playlists={rootPlaylistTargets}
-                                    track={rootPlaylistTrack}
-                                />
-                                {/* First-run / no-server gate. Sits above every
+                                                            <TabIcon
+                                                                active={isActive}
+                                                                id={tab.id}
+                                                            />
+                                                            <Text
+                                                                style={[
+                                                                    styles.tabLabel,
+                                                                    isActive &&
+                                                                        styles.tabLabelActive,
+                                                                ]}
+                                                            >
+                                                                {tab.label}
+                                                            </Text>
+                                                        </Pressable>
+                                                    );
+                                                })}
+                                            </Reanimated.View>
+                                        </View>
+                                    </KeyboardAvoidingView>
+                                    <MediaContextMenu
+                                        actions={contextMenu.actions}
+                                        artworkImageId={contextMenu.artworkImageId}
+                                        artworkUrl={contextMenu.artworkUrl}
+                                        contentSource={contextMenu.contentSource}
+                                        eyebrow={contextMenu.eyebrow}
+                                        feedback={contextMenu.feedback}
+                                        isCircularArtwork={contextMenu.isCircularArtwork}
+                                        onClose={contextMenu.onClose}
+                                        subtitle={contextMenu.subtitle}
+                                        target={contextMenu.target}
+                                        title={contextMenu.title}
+                                    />
+                                    <StreamInfoModal
+                                        item={streamInfoItem}
+                                        onClose={() => setStreamInfoItem(null)}
+                                    />
+                                    <BookInformationModal
+                                        onClose={closeBookInfo}
+                                        state={bookInfoState}
+                                    />
+                                    <TrackPlaylistMenu
+                                        actionState={playlistMenuRootState}
+                                        canCreatePlaylist={rootPlaylistCanCreate}
+                                        mode={rootPlaylistMenuMode}
+                                        onAddToPlaylist={(playlist) =>
+                                            void handleAddToPlaylistFromRoot(playlist)
+                                        }
+                                        onClose={() => {
+                                            setPlaylistMenuRoot(null);
+                                            setPlaylistMenuRootState({ status: 'idle' });
+                                        }}
+                                        onCreatePlaylist={(name) =>
+                                            void handleCreatePlaylistFromRoot(name)
+                                        }
+                                        open={playlistMenuRoot !== null}
+                                        playlists={rootPlaylistTargets}
+                                        track={rootPlaylistTrack}
+                                    />
+                                    {/* First-run / no-server gate. Sits above every
                                     surface so the user can never reach Home
                                     without a live, authenticated connection. */}
-                                {!bootResolved ? (
-                                    <View style={styles.onboardingOverlay}>
-                                        <OnboardingSplash />
-                                    </View>
-                                ) : onboardingActive || !serverConnection ? (
-                                    <View style={styles.onboardingOverlay}>
-                                        <OnboardingFlow
-                                            authState={authState}
-                                            canConnect={canConnect}
-                                            onConnect={handleConnect}
-                                            onFinish={() => {
-                                                setOnboardingActive(false);
-                                                setActiveUtilityScreen(null);
-                                            }}
-                                            password={password}
-                                            serverConnection={serverConnection}
-                                            serverUrl={serverUrl}
-                                            setAuthState={setAuthState}
-                                            setPassword={setPassword}
-                                            setServerUrl={setServerUrl}
-                                            setUsername={setUsername}
-                                            username={username}
-                                        />
-                                    </View>
-                                ) : null}
-                            </View>
-                        </DownloadedTrackKeysContext.Provider>
-                    </DownloadedCollectionKeysContext.Provider>
-                </MediaContextMenuContext.Provider>
+                                    {!bootResolved ? (
+                                        <View style={styles.onboardingOverlay}>
+                                            <OnboardingSplash />
+                                        </View>
+                                    ) : onboardingActive || !serverConnection ? (
+                                        <View style={styles.onboardingOverlay}>
+                                            <OnboardingFlow
+                                                authState={authState}
+                                                canConnect={canConnect}
+                                                onConnect={handleConnect}
+                                                onFinish={() => {
+                                                    setOnboardingActive(false);
+                                                    setActiveUtilityScreen(null);
+                                                }}
+                                                password={password}
+                                                serverConnection={serverConnection}
+                                                serverUrl={serverUrl}
+                                                setAuthState={setAuthState}
+                                                setPassword={setPassword}
+                                                setServerUrl={setServerUrl}
+                                                setUsername={setUsername}
+                                                username={username}
+                                            />
+                                        </View>
+                                    ) : null}
+                                </View>
+                            </DownloadedTrackKeysContext.Provider>
+                        </DownloadedCollectionKeysContext.Provider>
+                    </MediaContextMenuContext.Provider>
                 </ServerConnectionsContext.Provider>
             </ErrorBoundary>
         </GestureHandlerRootView>

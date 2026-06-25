@@ -2,12 +2,12 @@ import { useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
 
 import { api } from '/@/renderer/api';
+import { queryKeys } from '/@/renderer/api/query-keys';
 import {
     isSamoLongFormServer,
     listSamoAudiobookLibraryItems,
     listSamoPodcastLibraryItems,
 } from '/@/renderer/api/samo/samo-long-form';
-import { queryKeys } from '/@/renderer/api/query-keys';
 import { playlistsQueries } from '/@/renderer/features/playlists/api/playlists-api';
 import { searchQueries } from '/@/renderer/features/search/api/search-api';
 import {
@@ -16,11 +16,8 @@ import {
     normalize,
     scoreCandidate,
 } from '/@/renderer/features/search/utils/relevance';
-import { useLongFormMediaServer, useCurrentServer } from '/@/renderer/store';
-import {
-    LongFormLibraryItem,
-    LongFormPodcastEpisode,
-} from '/@/shared/api/long-form-types';
+import { useCurrentServer, useLongFormMediaServer } from '/@/renderer/store';
+import { LongFormLibraryItem, LongFormPodcastEpisode } from '/@/shared/api/long-form-types';
 import {
     Album,
     AlbumArtist,
@@ -129,8 +126,7 @@ const EMPTY_RESULTS: UnifiedSearchResults = {
     songs: [],
 };
 
-const getAbsTitle = (item: LongFormLibraryItem) =>
-    item.media?.metadata?.title ?? item.name ?? '';
+const getAbsTitle = (item: LongFormLibraryItem) => item.media?.metadata?.title ?? item.name ?? '';
 
 const getAbsAuthor = (item: LongFormLibraryItem) => {
     const meta = item.media?.metadata;
@@ -223,10 +219,7 @@ const rankRadio = (stations: InternetRadioStation[], ctx: NeedleContext): Ranked
         .sort((a, b) => b.score - a.score || a.station.name.localeCompare(b.station.name))
         .slice(0, RESULT_LIMIT_PER_GROUP);
 
-const rankAudiobooks = (
-    items: LongFormLibraryItem[],
-    ctx: NeedleContext,
-): RankedAudiobook[] =>
+const rankAudiobooks = (items: LongFormLibraryItem[], ctx: NeedleContext): RankedAudiobook[] =>
     items
         .filter((item) => item.mediaType !== 'podcast')
         .map<RankedAudiobook>((item) => ({
@@ -244,10 +237,7 @@ const rankAudiobooks = (
         .sort((a, b) => b.score - a.score || getAbsTitle(a.item).localeCompare(getAbsTitle(b.item)))
         .slice(0, RESULT_LIMIT_PER_GROUP);
 
-const rankPodcastShows = (
-    items: LongFormLibraryItem[],
-    ctx: NeedleContext,
-): RankedPodcastShow[] =>
+const rankPodcastShows = (items: LongFormLibraryItem[], ctx: NeedleContext): RankedPodcastShow[] =>
     items
         .filter((item) => item.mediaType === 'podcast')
         .map<RankedPodcastShow>((item) => ({
@@ -261,10 +251,7 @@ const rankPodcastShows = (
         .sort((a, b) => b.score - a.score || getAbsTitle(a.item).localeCompare(getAbsTitle(b.item)))
         .slice(0, RESULT_LIMIT_PER_GROUP);
 
-const rankPodcastEpisodes = (
-    items: LongFormLibraryItem[],
-    ctx: NeedleContext,
-): RankedEpisode[] => {
+const rankPodcastEpisodes = (items: LongFormLibraryItem[], ctx: NeedleContext): RankedEpisode[] => {
     const candidates: RankedEpisode[] = [];
 
     for (const item of items) {
@@ -418,13 +405,11 @@ export const useUnifiedSearch = (rawQuery: string): UnifiedSearchState => {
         ((hasMusicServer && musicSearchQuery.isPending) ||
             (hasMusicServer && playlistsQuery.isPending) ||
             (hasMusicServer && radioStationsQuery.isPending) ||
-                        (hasLongFormServer && isSamoLongForm && samoLongFormItemsQuery.isPending));
+            (hasLongFormServer && isSamoLongForm && samoLongFormItemsQuery.isPending));
 
     const sourceErrors = useMemo<UnifiedSearchSourceErrors>(
         () => ({
-            abs:
-                getErrorMessage(samoLongFormItemsQuery.error) ??
-                undefined,
+            abs: getErrorMessage(samoLongFormItemsQuery.error) ?? undefined,
             music: getErrorMessage(musicSearchQuery.error),
             playlists: getErrorMessage(playlistsQuery.error),
             radio: getErrorMessage(radioStationsQuery.error),

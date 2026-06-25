@@ -1,6 +1,5 @@
 import { closeAllModals, openModal } from '@mantine/modals';
 import { useQuery } from '@tanstack/react-query';
-import axios from 'axios';
 import DOMPurify from 'dompurify';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -70,10 +69,10 @@ const ReleaseNotesContent = ({ onDismiss, version }: ReleaseNotesContentProps) =
     // Fetch list of recent releases for the selector
     const { data: releasesList = [] } = useQuery({
         queryFn: async () => {
-            const response = await axios.get<GitHubRelease[]>(GITHUB_RELEASES_URL, {
-                params: { per_page: RELEASES_TO_FETCH },
-            });
-            return response.data;
+            const response = await fetch(`${GITHUB_RELEASES_URL}?per_page=${RELEASES_TO_FETCH}`);
+            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+            const data: GitHubRelease[] = await response.json();
+            return data;
         },
         queryKey: ['github-releases-list'],
         retry: 2,
@@ -109,11 +108,10 @@ const ReleaseNotesContent = ({ onDismiss, version }: ReleaseNotesContentProps) =
         queryFn: async () => {
             const base = latestStableRelease!.tag_name;
             const head = 'development';
-            const response = await axios.get<GitHubCompareResponse>(
-                `${GITHUB_COMPARE_URL}/${base}...${head}`,
-                { params: { per_page: 100 } },
-            );
-            return response.data;
+            const response = await fetch(`${GITHUB_COMPARE_URL}/${base}...${head}?per_page=100`);
+            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+            const data: GitHubCompareResponse = await response.json();
+            return data;
         },
         queryKey: ['github-compare', latestStableRelease?.tag_name, 'development'],
         retry: 2,
@@ -127,10 +125,10 @@ const ReleaseNotesContent = ({ onDismiss, version }: ReleaseNotesContentProps) =
     } = useQuery({
         enabled: !isAlpha,
         queryFn: async () => {
-            const response = await axios.get<GitHubRelease>(
-                `${GITHUB_RELEASES_URL}/tags/${toTag(selectedVersion)}`,
-            );
-            return response.data;
+            const response = await fetch(`${GITHUB_RELEASES_URL}/tags/${toTag(selectedVersion)}`);
+            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+            const data: GitHubRelease = await response.json();
+            return data;
         },
         queryKey: ['github-release', selectedVersion],
         retry: 2,
@@ -140,20 +138,18 @@ const ReleaseNotesContent = ({ onDismiss, version }: ReleaseNotesContentProps) =
     const { data: htmlContent, isLoading: isConverting } = useQuery({
         enabled: !isAlpha && !!releaseData?.body,
         queryFn: async () => {
-            const response = await axios.post(
-                'https://api.github.com/markdown',
-                {
+            const response = await fetch('https://api.github.com/markdown', {
+                body: JSON.stringify({
                     mode: 'gfm',
                     text: releaseData?.body ?? '',
+                }),
+                headers: {
+                    'Content-Type': 'application/json',
                 },
-                {
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    responseType: 'text',
-                },
-            );
-            return response.data;
+                method: 'POST',
+            });
+            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+            return response.text();
         },
         queryKey: ['github-markdown', releaseData?.body],
         retry: 2,

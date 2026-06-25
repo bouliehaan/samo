@@ -88,7 +88,9 @@ export const registerSamoIpcHandlers = () => {
                 method: data.method,
             });
 
-            const body = response.text ? await response.text() : JSON.stringify(await response.json());
+            const body = response.text
+                ? await response.text()
+                : JSON.stringify(await response.json());
 
             const headers: Record<string, string> = {};
             if (response.headers?.get) {

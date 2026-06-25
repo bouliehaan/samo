@@ -16,12 +16,12 @@ import {
     stopDesktopCastSession,
 } from '/@/renderer/services/chromecast/desktop-cast-service';
 import { useDesktopCastState } from '/@/renderer/store/cast.store';
+import { usePlayerStatus } from '/@/renderer/store/player.store';
 import {
     usePlaybackSettings,
     usePlaybackType,
     useSettingsStoreActions,
 } from '/@/renderer/store/settings.store';
-import { usePlayerStatus } from '/@/renderer/store/player.store';
 import { ActionIcon } from '/@/shared/components/action-icon/action-icon';
 import { Icon } from '/@/shared/components/icon/icon';
 import { Popover } from '/@/shared/components/popover/popover';
@@ -210,9 +210,7 @@ const OutputPickerContent = memo(
         const emptyMessage = getCastEmptyMessage(castState.status);
         const castDevices = castState.devices;
         const localDevices =
-            audioDevices.length > 0
-                ? audioDevices
-                : [{ label: 'This computer', value: 'default' }];
+            audioDevices.length > 0 ? audioDevices : [{ label: 'This computer', value: 'default' }];
         const showCastConnectRow =
             !castState.isConnected &&
             castState.status !== 'unavailable' &&
@@ -250,7 +248,11 @@ const OutputPickerContent = memo(
                         </Text>
                     </span>
                     <span className={styles.state}>
-                        {isSelecting ? <Spinner size={16} /> : isSelected ? <Icon icon="check" /> : null}
+                        {isSelecting ? (
+                            <Spinner size={16} />
+                        ) : isSelected ? (
+                            <Icon icon="check" />
+                        ) : null}
                     </span>
                 </button>
             );
@@ -309,7 +311,11 @@ const OutputPickerContent = memo(
                         </Text>
                     </span>
                     <span className={styles.state}>
-                        {isSelecting ? <Spinner size={16} /> : isSelected ? <Icon icon="check" /> : null}
+                        {isSelecting ? (
+                            <Spinner size={16} />
+                        ) : isSelected ? (
+                            <Icon icon="check" />
+                        ) : null}
                     </span>
                 </button>
             );
@@ -360,9 +366,7 @@ const OutputPickerContent = memo(
                               title: 'Connect to Chromecast',
                           })
                         : null}
-                    {!castState.isConnected &&
-                    castDevices.length === 0 &&
-                    !showCastConnectRow ? (
+                    {!castState.isConnected && castDevices.length === 0 && !showCastConnectRow ? (
                         <Text className={styles.hint} size="sm">
                             {isScanningForCast ? 'Looking for Chromecast devices...' : emptyMessage}
                         </Text>

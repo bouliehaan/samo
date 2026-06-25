@@ -40,8 +40,7 @@ type WindowWithApi = Window & {
 const getFetchMediaFromMain = () => (window as WindowWithApi).api?.utils?.fetchMedia;
 
 const canFetchMediaViaMain = (): boolean =>
-    typeof window !== 'undefined' &&
-    Boolean(getFetchMediaFromMain());
+    typeof window !== 'undefined' && Boolean(getFetchMediaFromMain());
 
 const base64ToBlob = (data: string, contentType: string): Blob => {
     const binary = atob(data);
@@ -54,10 +53,7 @@ const base64ToBlob = (data: string, contentType: string): Blob => {
     return new Blob([bytes], { type: contentType });
 };
 
-const fetchImageViaMain = async (
-    request: ImageRequest,
-    signal: AbortSignal,
-): Promise<Blob> => {
+const fetchImageViaMain = async (request: ImageRequest, signal: AbortSignal): Promise<Blob> => {
     const fetchMedia = getFetchMediaFromMain();
     if (!fetchMedia) {
         throw new Error('Main-process media fetch is unavailable.');
@@ -133,11 +129,7 @@ export function useNativeImage({
         if (!enabled) {
             abortCurrentRequest();
             const cachedSrc = objectUrlRef.current ?? directUrlRef.current;
-            setState(
-                cachedSrc
-                    ? { displaySrc: cachedSrc, status: 'loaded' }
-                    : { status: 'idle' },
-            );
+            setState(cachedSrc ? { displaySrc: cachedSrc, status: 'loaded' } : { status: 'idle' });
             return;
         }
 
@@ -221,7 +213,6 @@ export function useNativeImage({
                 abortControllerRef.current = null;
             }
         };
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [enabled, fetchPriority, requestSignature]);
 
     useEffect(() => {

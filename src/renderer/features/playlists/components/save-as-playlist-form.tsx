@@ -10,10 +10,7 @@ import { Switch } from '/@/shared/components/switch/switch';
 import { TextInput } from '/@/shared/components/text-input/text-input';
 import { toast } from '/@/shared/components/toast/toast';
 import { useForm } from '/@/shared/hooks/use-form';
-import {
-    CreatePlaylistBody,
-    CreatePlaylistResponse
-} from '/@/shared/types/domain-types';
+import { CreatePlaylistBody, CreatePlaylistResponse } from '/@/shared/types/domain-types';
 import { ServerFeature } from '/@/shared/types/features-types';
 
 interface SaveAsPlaylistFormProps {

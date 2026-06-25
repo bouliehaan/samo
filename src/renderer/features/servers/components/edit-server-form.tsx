@@ -22,7 +22,7 @@ import {
     AuthenticationResponse,
     ServerListItem,
     ServerListItemWithCredential,
-    } from '/@/shared/types/domain-types';
+} from '/@/shared/types/domain-types';
 
 const localSettings = isElectron() ? window.api.localSettings : null;
 
@@ -136,7 +136,6 @@ export const EditServerForm = ({ isUpdate, onCancel, password, server }: EditSer
                     userId: data.userId,
                     username: data.username,
                 };
-
             }
 
             // Update optional fields

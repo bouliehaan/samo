@@ -2,6 +2,7 @@ import type { SetActivity } from '@xhayper/discord-rpc';
 
 import isElectron from 'is-electron';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+
 import { useItemImageUrl } from '/@/renderer/components/item-image/item-image';
 import {
     useIsRadioActive,

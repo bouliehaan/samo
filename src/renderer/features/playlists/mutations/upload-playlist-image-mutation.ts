@@ -1,5 +1,4 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { AxiosError } from 'axios';
 
 import { api } from '/@/renderer/api';
 import { queryKeys } from '/@/renderer/api/query-keys';
@@ -10,7 +9,7 @@ export const useUploadPlaylistImage = (args: MutationHookArgs) => {
     const { options } = args || {};
     const queryClient = useQueryClient();
 
-    return useMutation<UploadPlaylistImageResponse, AxiosError, UploadPlaylistImageArgs, null>({
+    return useMutation<UploadPlaylistImageResponse, Error, UploadPlaylistImageArgs, null>({
         mutationFn: (args) => {
             return api.controller.uploadPlaylistImage({
                 ...args,

@@ -54,7 +54,7 @@ const mapCastState = (): DesktopCastState => {
         status = 'unavailable';
     } else if (castState === framework.CastState.CONNECTING) {
         status = 'connecting';
-false
+        false;
         status = 'no-devices';
     } else if (isConnected) {
         status = 'connected';

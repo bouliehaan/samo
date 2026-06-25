@@ -1,5 +1,4 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { AxiosError } from 'axios';
 
 import { api } from '/@/renderer/api';
 import { queryKeys } from '/@/renderer/api/query-keys';
@@ -15,7 +14,7 @@ export const useCreateRadioStation = (args: MutationHookArgs) => {
 
     return useMutation<
         CreateInternetRadioStationResponse,
-        AxiosError,
+        Error,
         CreateInternetRadioStationArgs,
         null
     >({

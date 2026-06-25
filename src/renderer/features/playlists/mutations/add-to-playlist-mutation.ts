@@ -1,5 +1,4 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { AxiosError } from 'axios';
 
 import { api } from '/@/renderer/api';
 import { queryKeys } from '/@/renderer/api/query-keys';
@@ -15,7 +14,7 @@ export const useAddToPlaylist = (args: MutationHookArgs) => {
 
     const { addRecentPlaylist } = useRecentPlaylists(serverId);
 
-    return useMutation<AddToPlaylistResponse, AxiosError, AddToPlaylistArgs, null>({
+    return useMutation<AddToPlaylistResponse, Error, AddToPlaylistArgs, null>({
         mutationFn: (args) => {
             return api.controller.addToPlaylist({
                 ...args,

@@ -1,5 +1,6 @@
-import { resolve } from 'path';
 import type { Alias } from 'vite';
+
+import { resolve } from 'path';
 
 const coreSrc = resolve(__dirname, 'packages/core/src');
 

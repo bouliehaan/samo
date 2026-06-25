@@ -13,13 +13,8 @@ import { generatePath, useNavigate } from 'react-router';
 
 import styles from './global-search-bar.module.css';
 
-import { QualityBadge } from '/@/renderer/components/quality-badge/quality-badge';
 import { ItemImage } from '/@/renderer/components/item-image/item-image';
-import {
-    getAlbumQualityProfile,
-    getSongQualityProfile,
-    usePlaybackDeliveryKind,
-} from '/@/renderer/utils/quality-profile';
+import { QualityBadge } from '/@/renderer/components/quality-badge/quality-badge';
 import { usePlayer } from '/@/renderer/features/player/context/player-context';
 import { useRadioControls } from '/@/renderer/features/radio/hooks/use-radio-player';
 import {
@@ -57,9 +52,11 @@ import {
 } from '/@/renderer/store/library-favorites.store';
 import { usePodcastActions } from '/@/renderer/store/podcast.store';
 import {
-    LongFormLibraryItem,
-    LongFormPodcastEpisode,
-} from '/@/shared/api/long-form-types';
+    getAlbumQualityProfile,
+    getSongQualityProfile,
+    usePlaybackDeliveryKind,
+} from '/@/renderer/utils/quality-profile';
+import { LongFormLibraryItem, LongFormPodcastEpisode } from '/@/shared/api/long-form-types';
 import { Icon } from '/@/shared/components/icon/icon';
 import { useDebouncedValue } from '/@/shared/hooks/use-debounced-value';
 import {
@@ -154,8 +151,8 @@ const ResultRow = ({
                 {qualityProfile ? (
                     <QualityBadge
                         className={styles.rowQualityBadge}
-                        thumb
                         profile={qualityProfile}
+                        thumb
                     />
                 ) : null}
             </div>
@@ -208,10 +205,7 @@ const getAbsAuthor = (item: LongFormLibraryItem) => {
     return meta?.author ?? meta?.authors?.map((author) => author.name).join(', ') ?? '';
 };
 
-const getEpisodeSubtitle = (
-    show: LongFormLibraryItem,
-    episode: LongFormPodcastEpisode,
-) => {
+const getEpisodeSubtitle = (show: LongFormLibraryItem, episode: LongFormPodcastEpisode) => {
     const showTitle = getAbsTitle(show);
     if (episode.season) return `${showTitle} · S${episode.season}`;
     return showTitle;

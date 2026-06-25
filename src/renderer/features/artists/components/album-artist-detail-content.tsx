@@ -330,7 +330,6 @@ const AlbumArtistMetadataTopSongsContent = ({
     const currentSong = usePlayerSong();
     const player = usePlayer();
     const serverId = useCurrentServerId();
-    
 
     const canStartQuery = !!detailQuery.data?.name;
 
@@ -587,8 +586,6 @@ const AlbumArtistMetadataTopSongs = ({
     order,
     routeId,
 }: AlbumArtistMetadataTopSongsProps) => {
-    
-
     const location = useLocation();
     const artistName = location.state?.item?.name || detailQuery.data?.name;
 

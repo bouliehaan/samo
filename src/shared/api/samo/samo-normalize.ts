@@ -1,5 +1,3 @@
-import { samoAlbumQualityProfile } from './samo-quality';
-
 import {
     pickSamoCatalogImageId,
     pickSamoImageId,
@@ -21,6 +19,8 @@ import {
     type SamoPodcastEpisode,
 } from '@samo/core/server';
 
+import { samoAlbumQualityProfile } from './samo-quality';
+
 import {
     type Album,
     type AlbumArtist,
@@ -41,13 +41,13 @@ import {
 // are just data binding for the UI components. Samo's field names appear
 // directly on the wire and we slot them into the well-known internal types.
 
-const toStoredImageUrl = (url: string | undefined): string | null => url ?? null;
+const toStoredImageUrl = (url: string | undefined): null | string => url ?? null;
 
 const metadataArtworkUrl = (
     auth: ReturnType<typeof toAuthBundle>,
     images: SamoMusicAlbum['images'] | SamoMusicTrack['images'] | undefined,
     entity?: { id?: string; images?: SamoMusicAlbum['images'] },
-): string | null => {
+): null | string => {
     if (!auth || !pickSamoImageId(images)) {
         return null;
     }
@@ -322,6 +322,7 @@ export const normalizeSamoMusicAlbum = (
         originalYear: originalRelease.year ?? 0,
         participants: null,
         playCount: album.playback?.playCount ?? null,
+        qualityProfile: samoAlbumQualityProfile(album),
         recordLabels: album.recordLabel ? [album.recordLabel] : [],
         releaseDate: release.date,
         releaseType: album.releaseType ?? null,
@@ -338,7 +339,6 @@ export const normalizeSamoMusicAlbum = (
         userFavorite: album.playback?.favorite ?? false,
         userRating: album.playback?.rating ?? null,
         version: null,
-        qualityProfile: samoAlbumQualityProfile(album),
     };
 };
 
@@ -450,7 +450,9 @@ export const normalizeSamoAudiobookAsAlbum = (
     );
     const audioFile = audiobook.primaryAudioFile ?? audiobook.audioFiles?.[0];
     const auth = toAuthBundle(server);
-    const imageUrl = auth ? toStoredImageUrl(resolveSamoAudiobookArtworkUrl(auth, audiobook)) : null;
+    const imageUrl = auth
+        ? toStoredImageUrl(resolveSamoAudiobookArtworkUrl(auth, audiobook))
+        : null;
     const publishedYear =
         typeof audiobook.book?.publishedYear === 'string'
             ? Number.parseInt(audiobook.book.publishedYear, 10)
@@ -561,8 +563,7 @@ export const normalizeSamoPodcastEpisodeAsSong = (
         id: episode.id,
         imageId: podcast?.id ?? episode.podcastId ?? null,
         imageUrl: null,
-        lastPlayedAt:
-            episode.progress?.lastPlayedAt ?? episode.playback?.lastPlayedAt ?? null,
+        lastPlayedAt: episode.progress?.lastPlayedAt ?? episode.playback?.lastPlayedAt ?? null,
         lyrics: null,
         mbzRecordingId: null,
         mbzTrackId: null,
@@ -580,8 +581,7 @@ export const normalizeSamoPodcastEpisodeAsSong = (
         trackNumber: episode.episodeNumber ?? 1,
         trackSubtitle: episode.subtitle ?? null,
         updatedAt: episode.publishedAt ?? new Date(0).toISOString(),
-        userFavorite:
-            episode.progress?.favorite ?? episode.playback?.favorite ?? false,
+        userFavorite: episode.progress?.favorite ?? episode.playback?.favorite ?? false,
         userRating: episode.progress?.rating ?? episode.playback?.rating ?? null,
     };
 };

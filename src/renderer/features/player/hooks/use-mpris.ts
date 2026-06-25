@@ -41,8 +41,8 @@ export const useMPRIS = () => {
 
         return {
             _itemType: LibraryItem.SONG,
-            _serverType: ServerType.SAMO,
             _serverId: '',
+            _serverType: ServerType.SAMO,
             _uniqueId: radioId,
             album: album || null,
             albumArtistName: artist || '',

@@ -1,5 +1,4 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { AxiosError } from 'axios';
 
 import { api } from '/@/renderer/api';
 import { queryKeys } from '/@/renderer/api/query-keys';
@@ -10,7 +9,7 @@ export const useDeleteArtistImage = (args: MutationHookArgs) => {
     const { options } = args || {};
     const queryClient = useQueryClient();
 
-    return useMutation<DeleteArtistImageResponse, AxiosError, DeleteArtistImageArgs, null>({
+    return useMutation<DeleteArtistImageResponse, Error, DeleteArtistImageArgs, null>({
         mutationFn: (args) => {
             return api.controller.deleteArtistImage({
                 ...args,

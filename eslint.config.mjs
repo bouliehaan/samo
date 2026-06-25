@@ -11,6 +11,9 @@ export default tseslint.config(
             '**/node_modules',
             '**/dist',
             '**/out',
+            '**/build',
+            '**/.expo',
+            '**/coverage',
             'packages/core/src/**/*.js',
             'packages/core/src/**/*.d.ts',
         ],
@@ -77,7 +80,7 @@ export default tseslint.config(
     },
     eslintConfigPrettier,
     {
-        files: ['apps/android/src/**/*.{ts,tsx}'],
+        files: ['apps/android/**/*.{ts,tsx}'],
         rules: {
             '@typescript-eslint/explicit-function-return-type': 'off',
             '@typescript-eslint/no-unused-vars': 'off',
@@ -128,6 +131,14 @@ export default tseslint.config(
             'prettier/prettier': 'off',
             quotes: 'off',
             semi: 'off',
+        },
+    },
+    {
+        // Plain CommonJS build/config scripts (metro.config.js, scripts/*.js) —
+        // require() is correct here, not an error.
+        files: ['**/*.{js,cjs,mjs}'],
+        rules: {
+            '@typescript-eslint/no-require-imports': 'off',
         },
     },
 );

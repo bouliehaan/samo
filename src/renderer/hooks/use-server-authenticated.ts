@@ -1,5 +1,4 @@
 import { ensureSamoStreamToken, ServerType } from '@samo/core/server';
-import { isAxiosError } from 'axios';
 import isElectron from 'is-electron';
 import isEqual from 'lodash/isEqual';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -47,17 +46,15 @@ const isNetworkError = (error: any): boolean => {
         error.message && typeof error.message === 'string' ? (error.message as string) : null;
     const messageLower = message?.toLowerCase();
 
-    if (messageLower?.includes('network') || messageLower?.includes('timeout')) {
+    if (
+        messageLower?.includes('network') ||
+        messageLower?.includes('timeout') ||
+        messageLower?.includes('fetch')
+    ) {
         return true;
     }
 
-    return (
-        isAxiosError(error) &&
-        (error.code === 'ERR_NETWORK' ||
-            error.code === 'ECONNABORTED' ||
-            error.code === 'ETIMEDOUT' ||
-            !navigator.onLine)
-    );
+    return !navigator.onLine;
 };
 
 export const useServerAuthenticated = () => {

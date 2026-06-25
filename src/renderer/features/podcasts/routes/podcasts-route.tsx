@@ -1,4 +1,5 @@
 import { Box, SimpleGrid, Stack, TextInput } from '@mantine/core';
+import { buildSamoAuthenticatedImageRequest, ServerType } from '@samo/core/server';
 import { useQuery } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { generatePath, useNavigate } from 'react-router';
@@ -18,10 +19,6 @@ import {
     useLibraryFavoritesActions,
 } from '/@/renderer/store/library-favorites.store';
 import { LongFormLibraryItem } from '/@/shared/api/long-form-types';
-import {
-    buildSamoAuthenticatedImageRequest,
-    ServerType,
-} from '@samo/core/server';
 import { ActionIcon } from '/@/shared/components/action-icon/action-icon';
 import { Image } from '/@/shared/components/image/image';
 import { Text } from '/@/shared/components/text/text';
@@ -50,8 +47,7 @@ const PodcastCover = ({ item }: { item: LongFormLibraryItem }) => {
 
     const coverQuery = useQuery({
         enabled: Boolean(server?.id && item.id && !isSamoLongFormServer(server)),
-        queryFn: async () =>
-            null,
+        queryFn: async () => null,
         queryKey: ['audiobookshelf', 'cover', server?.id, item.id],
         staleTime: 1000 * 60 * 60,
     });

@@ -489,11 +489,7 @@ export const PlaylistQueryBuilder = forwardRef(
         );
 
         // Memoize operators object
-        const operators = useMemo(
-            () => ({
-            }),
-            [],
-        );
+        const operators = useMemo(() => ({}), []);
 
         const handleAddSortEntry = useCallback(() => {
             extraFiltersForm.insertListItem('sortEntries', { field: '', order: 'asc' });

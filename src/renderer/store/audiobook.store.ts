@@ -9,10 +9,7 @@ import { getCurrentChapterIndex } from '/@/renderer/store/audiobook-chapters';
 import { useLastPlaybackSessionStore } from '/@/renderer/store/last-playback-session.store';
 import { recordRecentAudiobook } from '/@/renderer/store/play-history.store';
 import { usePlayerStoreBase } from '/@/renderer/store/player.store';
-import {
-    LongFormChapter,
-    LongFormLibraryItem,
-} from '/@/shared/api/long-form-types';
+import { LongFormChapter, LongFormLibraryItem } from '/@/shared/api/long-form-types';
 import { ServerListItemWithCredential } from '/@/shared/types/domain-types';
 
 export type { AudiobookChapterListItem } from '/@/renderer/store/audiobook-chapters';
@@ -116,7 +113,8 @@ const { selectors, store: useAudiobookStore } = createAbsPlaybackStore<
         const server = _server as ServerListItemWithCredential;
         const libraryItem = item as LongFormLibraryItem;
 
-        return resolveSamoAudiobookPlaySession(server, libraryItem) as any;    },
+        return resolveSamoAudiobookPlaySession(server, libraryItem) as any;
+    },
     resumeField: 'resumeByItemId',
     resumeInitial: { resumeByItemId: {} },
     source: 'audiobook',

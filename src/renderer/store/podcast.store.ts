@@ -1,6 +1,4 @@
-import {
-    resolveSamoPodcastPlaySession,
-} from '/@/renderer/api/samo/samo-long-form';
+import { resolveSamoPodcastPlaySession } from '/@/renderer/api/samo/samo-long-form';
 import {
     type AbsPlaybackBaseActions,
     type AbsPlaybackCoreState,
@@ -8,10 +6,7 @@ import {
 } from '/@/renderer/store/abs-playback.store';
 import { useLastPlaybackSessionStore } from '/@/renderer/store/last-playback-session.store';
 import { recordRecentPodcast } from '/@/renderer/store/play-history.store';
-import {
-    LongFormLibraryItem,
-    LongFormPodcastEpisode,
-} from '/@/shared/api/long-form-types';
+import { LongFormLibraryItem, LongFormPodcastEpisode } from '/@/shared/api/long-form-types';
 import { ServerListItemWithCredential } from '/@/shared/types/domain-types';
 
 const resumeKey = (itemId: string, episodeId: string) => `${itemId}::${episodeId}`;
@@ -118,7 +113,8 @@ const { selectors, store: usePodcastStore } = createAbsPlaybackStore<
         const libraryItem = item as LongFormLibraryItem;
         const ep = episode as LongFormPodcastEpisode;
 
-        return resolveSamoPodcastPlaySession(server, libraryItem, ep);    },
+        return resolveSamoPodcastPlaySession(server, libraryItem, ep);
+    },
     resumeField: 'resumeByEpisodeKey',
     resumeInitial: { resumeByEpisodeKey: {} },
     source: 'podcast',
