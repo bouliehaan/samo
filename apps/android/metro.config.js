@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-require-imports, perfectionist/sort-imports */
+/* eslint-disable perfectionist/sort-imports */
 
 const path = require('path');
 const fs = require('fs');

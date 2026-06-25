@@ -128,6 +128,9 @@ export function createAbsPlaybackStore<
 >(
     config: CreateAbsPlaybackStoreConfig<TResume, TExtra, TActions, TResumeField>,
 ): AbsPlaybackStoreBundle<AbsPlaybackCoreState & TExtra & TResume, TActions> {
+    // forward-declared; assigned once below, after the store that its actions
+    // close over has been created.
+    // eslint-disable-next-line prefer-const
     let sync!: AbsPlaybackSyncHandle;
 
     type FullState = AbsPlaybackCoreState & TExtra & TResume & { actions: TActions };

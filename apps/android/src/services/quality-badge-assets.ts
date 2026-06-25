@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-require-imports */
+ 
 import { type MobileQualityProfile } from '@samo/core/mobile';
 import { type ImageSourcePropType } from 'react-native';
 

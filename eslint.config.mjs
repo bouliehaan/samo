@@ -14,8 +14,8 @@ export default tseslint.config(
             '**/build',
             '**/.expo',
             '**/coverage',
+            '**/*.d.ts',
             'packages/core/src/**/*.js',
-            'packages/core/src/**/*.d.ts',
         ],
     },
     tseslint.configs.recommended,
@@ -57,7 +57,14 @@ export default tseslint.config(
             '@typescript-eslint/explicit-function-return-type': 'off',
             '@typescript-eslint/no-duplicate-enum-values': 'off',
             '@typescript-eslint/no-explicit-any': 'off',
-            '@typescript-eslint/no-unused-vars': 'warn',
+            '@typescript-eslint/no-unused-vars': [
+                'warn',
+                {
+                    argsIgnorePattern: '^_',
+                    caughtErrorsIgnorePattern: '^_',
+                    varsIgnorePattern: '^_',
+                },
+            ],
             curly: ['error', 'all'],
             indent: [
                 'error',
@@ -82,7 +89,11 @@ export default tseslint.config(
     {
         files: ['apps/android/**/*.{ts,tsx}'],
         rules: {
+            // RN/Expo convention: require() for bundled assets, @ts-ignore for
+            // the untyped native module surface.
+            '@typescript-eslint/ban-ts-comment': 'off',
             '@typescript-eslint/explicit-function-return-type': 'off',
+            '@typescript-eslint/no-require-imports': 'off',
             '@typescript-eslint/no-unused-vars': 'off',
             curly: 'off',
             indent: 'off',
@@ -107,7 +118,11 @@ export default tseslint.config(
         },
     },
     {
-        files: ['apps/android/src/utils/log.ts', 'apps/android/src/components/ErrorBoundary.tsx'],
+        files: [
+            'apps/android/App.tsx',
+            'apps/android/src/utils/log.ts',
+            'apps/android/src/components/ErrorBoundary.tsx',
+        ],
         rules: {
             'no-console': 'off',
         },
@@ -138,6 +153,7 @@ export default tseslint.config(
         // require() is correct here, not an error.
         files: ['**/*.{js,cjs,mjs}'],
         rules: {
+            '@typescript-eslint/explicit-function-return-type': 'off',
             '@typescript-eslint/no-require-imports': 'off',
         },
     },

@@ -868,7 +868,7 @@ export default function App() {
         if (serverConnection) {
             void reindexCatalogSearch(serverConnection);
         }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+         
     }, [!!serverConnection]);
 
     // Paint Home from the mirror the moment connections exist (cold launch,

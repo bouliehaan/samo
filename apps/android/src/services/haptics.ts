@@ -14,7 +14,7 @@ const getHapticsModule = (): HapticsModule | null => {
     }
 
     try {
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
+         
         cached = require('expo-haptics') as HapticsModule;
     } catch {
         cached = null;

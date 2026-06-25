@@ -12,7 +12,7 @@ const __dirname = path.dirname(__filename);
  */
 
 // This is not a typescript file, and is called by electron-builder, so we cannot use typescript features here.
-// eslint-disable-next-line @typescript-eslint/explicit-function-return-type
+
 export default async function afterAllArtifactBuild(buildResult) {
     // Check if this build includes Linux as a target
     const isLinux = Array.from(buildResult.platformToTargets.keys()).some(

@@ -451,9 +451,6 @@ export const PlaylistQueryBuilder = forwardRef(
                 });
             }
 
-            if (groups.length === 0) {
-            }
-
             if (groups.length === 1) {
                 return groups[0].items;
             }

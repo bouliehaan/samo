@@ -73,7 +73,7 @@ export type User = {
     updatedAt: null | string;
 };
 
-type SortOrderMap = {};
+type SortOrderMap = Record<string, never>;
 
 export const sortOrderMap: SortOrderMap = {};
 

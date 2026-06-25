@@ -34,7 +34,6 @@ interface Logger {
 
 const DEFAULT_LOG_LEVEL = process.env.NODE_ENV === 'production' ? 'info' : 'debug';
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const NO_OP: LogFn = (_message?: string, ..._optionalParams: any[]) => {};
 
 const colors = {

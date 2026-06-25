@@ -267,7 +267,6 @@ export const useAppStore = createWithEqualityFn<AppSlice>()(
             },
             name: 'store_app',
             partialize: (state) => {
-                // eslint-disable-next-line @typescript-eslint/no-unused-vars -- ignore non-persisted state
                 const { globalExpanded: _, ...rest } = state;
                 return rest;
             },
