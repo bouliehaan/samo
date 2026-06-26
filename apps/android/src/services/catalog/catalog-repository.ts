@@ -494,20 +494,22 @@ export const getTracksSync = (
     sourceId: string,
     containerType: CatalogContainerType,
     containerId: string,
+    limit?: number,
 ): unknown[] => {
     const db = getCatalogReaderSync();
     if (!db) {
         return [];
     }
     try {
+        const bounded = typeof limit === 'number' && limit > 0;
         const rows = traceSync(`catalog.tracks:${containerType}`, () =>
             db.getAllSync<CatalogPayloadRow>(
                 `SELECT payload FROM catalog_track
              WHERE source_id = ? AND container_type = ? AND container_id = ?
-             ORDER BY position ASC`,
-                sourceId,
-                containerType,
-                containerId,
+             ORDER BY position ASC${bounded ? ' LIMIT ?' : ''}`,
+                ...(bounded
+                    ? [sourceId, containerType, containerId, limit]
+                    : [sourceId, containerType, containerId]),
             ),
         );
         return rows

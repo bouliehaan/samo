@@ -236,6 +236,13 @@ export const loadCatalogMediaDetailSync = (
     }
 };
 
+/**
+ * Max tracks hydrated synchronously for a big list's instant first frame; the
+ * async full load fills the rest. Sized to cover a typical playlist fully while
+ * capping the per-track hydration cost when a 1000-track playlist is tapped.
+ */
+const PLAYLIST_SYNC_WINDOW = 120;
+
 const loadCatalogMediaDetailSyncInner = (
     item: AndroidRecentContentSourceItem,
     serverConnection: ServerAuthenticationResult | null,
@@ -268,6 +275,35 @@ const loadCatalogMediaDetailSyncInner = (
             title: item.title,
             tracks,
             type: MobileMediaDetailType.ALBUM,
+        };
+    }
+
+    if (detailType === MobileMediaDetailType.PLAYLIST) {
+        const auth = findServerAuthenticationForSource(serverConnection, source);
+        if (!auth) {
+            return null;
+        }
+        // Windowed first frame: hydrate at most PLAYLIST_SYNC_WINDOW tracks so a
+        // big playlist opens instantly instead of freezing the tap frame on
+        // hundreds of per-track hydrations. Marked `partial` so loadDetailWithCache
+        // replaces it with the full track list + playlist metadata right after.
+        const tracks = hydrateCatalogTracks(
+            getTracksSync(source.id, 'playlist', item.id, PLAYLIST_SYNC_WINDOW),
+            auth,
+        );
+        if (tracks.length === 0) {
+            return null;
+        }
+        return {
+            artworkImageId: item.artworkImageId,
+            artworkUrl: item.artworkUrl,
+            id: item.id,
+            partial: true,
+            source,
+            subtitle: item.subtitle,
+            title: item.title,
+            tracks,
+            type: MobileMediaDetailType.PLAYLIST,
         };
     }
 

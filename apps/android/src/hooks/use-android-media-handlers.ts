@@ -502,7 +502,8 @@ export function useAndroidMediaHandlers(
             const detailType = toDetailType(item.type);
             const allowsSyncFirstFrame =
                 detailType === MobileMediaDetailType.ALBUM ||
-                detailType === MobileMediaDetailType.ARTIST;
+                detailType === MobileMediaDetailType.ARTIST ||
+                detailType === MobileMediaDetailType.PLAYLIST;
             const synchronousDetail =
                 mediaDetailCacheRef.current.get(cacheKey) ??
                 (allowsSyncFirstFrame
@@ -510,7 +511,12 @@ export function useAndroidMediaHandlers(
                     : null) ??
                 undefined;
             if (synchronousDetail) {
-                rememberMediaDetail(mediaDetailCacheRef.current, cacheKey, synchronousDetail);
+                // A `partial` detail (windowed first frame of a big playlist) is
+                // not cached as complete — loadDetailWithCache fills the full
+                // track list + playlist meta immediately after.
+                if (!synchronousDetail.partial) {
+                    rememberMediaDetail(mediaDetailCacheRef.current, cacheKey, synchronousDetail);
+                }
                 prefetchDetailArtworkUrls(synchronousDetail, serverConnection, [
                     {
                         artworkImageId: item.artworkImageId,
@@ -541,8 +547,12 @@ export function useAndroidMediaHandlers(
         const isCurrentRequest = () => mediaDetailRequestId.current === requestId;
         const cacheKey = getRecentContentItemKey(item);
 
-        // Layer 1: in-memory cache — instant.
+        // Layer 1: in-memory cache — instant. A `partial` cached detail (a
+        // windowed first frame) is treated as a miss so the full list loads.
         let cached = mediaDetailCacheRef.current.get(cacheKey);
+        if (cached?.partial) {
+            cached = undefined;
+        }
 
         // Layer 1.5: local SQLite catalog — instant, authoritative for Samo, and
         // works offline. The entire library is mirrored on-device, so this makes

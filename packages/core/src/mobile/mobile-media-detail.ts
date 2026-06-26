@@ -241,6 +241,13 @@ export interface MobileMediaDetail {
         ownerId?: string;
         public?: boolean;
     };
+    /**
+     * Windowed first frame: true when `tracks` holds only the first screenful of
+     * a large list (e.g. a big playlist opened instantly from the local mirror).
+     * The async full load replaces it, so a partial detail must NOT be cached as
+     * if it were complete.
+     */
+    partial?: boolean;
     source: MobileContentSource;
     subtitle?: string;
     title: string;
