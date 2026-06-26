@@ -331,15 +331,32 @@ const mergeLibraryItemsWithRecents = (
     recentItems: RecentItem[],
     mediaType: LibrarySidebarMediaType,
 ) => {
-    const libraryKeys = new Set(libraryItems.map((item) => item.key));
+    // Dedup on a STABLE identity (mediaType + itemId), not `key`: the key embeds
+    // serverId, and a recent persisted under a server id that no longer matches
+    // the freshly-built library item (e.g. after an app restart) slips past a
+    // key-based filter and shows the same item twice. itemIds are server-unique,
+    // so mediaType:itemId is the right identity. The trailing pass also collapses
+    // any same-item duplicates already sitting in the persisted recents.
+    const stableId = (item: RecentItem) => `${item.mediaType}:${item.itemId}`;
+    const libraryIds = new Set(libraryItems.map(stableId));
     const orphanedRecentItems = recentItems.filter(
-        (item) => item.mediaType === mediaType && !libraryKeys.has(item.key),
+        (item) => item.mediaType === mediaType && !libraryIds.has(stableId(item)),
     );
 
-    return [...libraryItems, ...orphanedRecentItems].sort((a, b) => {
-        if (a.selectedAt !== b.selectedAt) return b.selectedAt - a.selectedAt;
-        return a.title.localeCompare(b.title);
-    });
+    const seen = new Set<string>();
+    return [...libraryItems, ...orphanedRecentItems]
+        .filter((item) => {
+            const id = stableId(item);
+            if (seen.has(id)) {
+                return false;
+            }
+            seen.add(id);
+            return true;
+        })
+        .sort((a, b) => {
+            if (a.selectedAt !== b.selectedAt) return b.selectedAt - a.selectedAt;
+            return a.title.localeCompare(b.title);
+        });
 };
 
 const getSidebarArtwork = (item: RecentItem): RecentItem['artwork'] => {

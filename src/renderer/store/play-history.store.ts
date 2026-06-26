@@ -136,7 +136,14 @@ export const usePlayHistoryStore = create<PlayHistoryState>()(
                     set((state) => ({
                         items: compactItems([
                             nextEntry,
-                            ...state.items.filter((item) => item.key !== key),
+                            // Dedup on the stable mediaType+itemId, not the full
+                            // `key`: if serverId drifts across a restart the same
+                            // item would otherwise accumulate a second entry.
+                            ...state.items.filter(
+                                (item) =>
+                                    item.mediaType !== entry.mediaType ||
+                                    item.itemId !== entry.itemId,
+                            ),
                         ]),
                     }));
                 },

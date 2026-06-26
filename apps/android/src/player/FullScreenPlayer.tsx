@@ -122,6 +122,7 @@ import {
     FROSTED_GLASS_SHEEN_LOCATIONS,
 } from '../utils/color';
 import { clamp } from '../utils/math';
+import { logSeekGesture } from '../utils/seek-debug';
 import { formatQualityProfile } from '../services/quality-badge-assets';
 import { triggerImpact } from '../services/haptics';
 import {
@@ -375,6 +376,7 @@ export const FullScreenPlayer = memo(({
                 .failOffsetX([-28, 28])
                 .onStart(() => {
                     'worklet';
+                    runOnJS(logSeekGesture)('player:drag:activate');
                     dragStartQueue.value = queueProgress.value;
                     dragMode.value = queueProgress.value > 0 ? 'queue' : 'player';
                 })
@@ -521,6 +523,10 @@ export const FullScreenPlayer = memo(({
                 .enabled(canSkipPlayback)
                 .activeOffsetX([-30, 30])
                 .failOffsetY([-30, 30])
+                .onStart(() => {
+                    'worklet';
+                    runOnJS(logSeekGesture)('player:skip:activate');
+                })
                 .onEnd((event) => {
                     'worklet';
                     if (event.translationX < -80 || event.velocityX < -700) {
@@ -534,6 +540,16 @@ export const FullScreenPlayer = memo(({
 
     const playerGesture = useMemo(
         () => Gesture.Simultaneous(dragGesture, skipGesture),
+        [dragGesture, skipGesture],
+    );
+
+    // Handed to the seek bar so its tap/pan can `blocksExternalGesture` these
+    // shell pans — a touch that lands on the bar gives the seek gesture first
+    // claim instead of racing the dismiss/skip pans with no tiebreaker (the
+    // nested-GestureDetector conflict that made drags on the bar flaky after
+    // the PanResponder→RNGH migration).
+    const seekExternalGestures = useMemo(
+        () => [dragGesture, skipGesture],
         [dragGesture, skipGesture],
     );
 
@@ -811,6 +827,7 @@ export const FullScreenPlayer = memo(({
                 <View style={styles.fullPlayerProgress}>
                     <SegmentedSeekBar
                         durationMs={durationMs}
+                        externalGestures={seekExternalGestures}
                         isLive={isLive}
                         isPlaying={playbackState.status === 'playing'}
                         onSeek={handleTimelineSeek}
