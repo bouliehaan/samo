@@ -152,14 +152,23 @@ const eventEmitter = samoAudio ? new NativeEventEmitter(samoAudio) : null;
 export const isAndroidNativePlaybackAvailable = () => Boolean(samoAudio);
 
 export const shouldMirrorPlaybackQueueToNative = (queue: {
+    index: number;
     items: MobilePlayableAudio[];
 }): boolean => {
     if (queue.items.length <= 1) {
         return false;
     }
 
-    // Radio is a live single-item stream — there is no queue to advance.
-    if (queue.items.some((item) => item.source === 'radio')) {
+    // Radio is a live, endless stream you can't gaplessly advance OUT of, so
+    // when it's the CURRENTLY PLAYING item there's no queue to mirror. But radio
+    // sitting LATER in the queue MUST still be mirrored: native auto-advance is
+    // the only advancer that runs while the app is asleep (JS is frozen by
+    // Doze), so the old `.some(radio)` — which refused the WHOLE queue if radio
+    // appeared anywhere — left a backgrounded "podcast → radio" queue with
+    // nothing for native to advance into, and it never advanced. onMediaItem-
+    // Transition adopts the radio item correctly when ExoPlayer reaches it
+    // (currentSource.source = "radio" for the live-reconnect path; offload off).
+    if (queue.items[queue.index]?.source === 'radio') {
         return false;
     }
 

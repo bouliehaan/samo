@@ -613,7 +613,10 @@ export function useAndroidNativePlayback(options: {
 
             const nativeQueue =
                 itemToPlay.source !== 'radio' &&
-                shouldMirrorPlaybackQueueToNative({ items: queueItemsForSession })
+                shouldMirrorPlaybackQueueToNative({
+                    index: nextQueueIndex,
+                    items: queueItemsForSession,
+                })
                     ? {
                           index: nextQueueIndex,
                           items: queueItemsForSession,
