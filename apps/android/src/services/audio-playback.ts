@@ -6,6 +6,7 @@ import {
     attachNativeStreamCredentialsToQueue,
 } from '../utils/native-stream-auth';
 import { peekLocalDownloadForTrack } from './download-manager';
+import { shouldMirrorPlaybackQueueToNative } from '../utils/playback-queue-mirror';
 import { NativeEventEmitter, NativeModules } from 'react-native';
 
 export interface AndroidAudioDeviceInfo {
@@ -151,56 +152,10 @@ const eventEmitter = samoAudio ? new NativeEventEmitter(samoAudio) : null;
 
 export const isAndroidNativePlaybackAvailable = () => Boolean(samoAudio);
 
-export const shouldMirrorPlaybackQueueToNative = (queue: {
-    index: number;
-    items: MobilePlayableAudio[];
-}): boolean => {
-    if (queue.items.length <= 1) {
-        return false;
-    }
-
-    // Radio is a live, endless stream you can't gaplessly advance OUT of, so
-    // when it's the CURRENTLY PLAYING item there's no queue to mirror. But radio
-    // sitting LATER in the queue MUST still be mirrored: native auto-advance is
-    // the only advancer that runs while the app is asleep (JS is frozen by
-    // Doze), so the old `.some(radio)` — which refused the WHOLE queue if radio
-    // appeared anywhere — left a backgrounded "podcast → radio" queue with
-    // nothing for native to advance into, and it never advanced. onMediaItem-
-    // Transition adopts the radio item correctly when ExoPlayer reaches it
-    // (currentSource.source = "radio" for the live-reconnect path; offload off).
-    if (queue.items[queue.index]?.source === 'radio') {
-        return false;
-    }
-
-    // Single-file audiobook split into chapter rows: every chapter is the SAME
-    // stream URL. Mirroring that makes ExoPlayer treat each chapter as its own
-    // item, and a seek-time STATE_ENDED blip can auto-advance into the next
-    // chapter and kill playback. Only that degenerate case opts out.
-    if (queue.items.every((item) => item.source === 'audiobook')) {
-        const streamUrls = new Set(queue.items.map((item) => item.url));
-        if (streamUrls.size === 1) {
-            return false;
-        }
-    }
-
-    // History: music was excluded from the native mirror pending verification
-    // of the Kotlin auto-advance path. Phase 1 added it to the mirror on the
-    // theory that `SamoAudioEngine.requestQueueAdvanceFromEnded` →
-    // `playQueueItemAt` already covers music, but device testing surfaced
-    // "music stops after the first song." That root cause was the at-advance-
-    // time token mint; it's now solved by SamoResolvingDataSource, which
-    // re-mints each track's token natively as ExoPlayer loads it. Music now
-    // plays as a full native Media3 playlist: JS pushes the entire queue and
-    // SamoAudioEngine advances it via onMediaItemTransition, so a locked phone
-    // keeps playing the whole queue for hours with no JS in the song loop.
-
-    // Everything else (podcast episodes, multi-file audiobooks, mixed
-    // song→podcast queues) is owned by the native queue: Kotlin advances via
-    // SamoAudioEngine.requestQueueAdvanceFromEnded → playQueueItemAt, which
-    // reads the next item's full payload (initialPositionSeconds, artwork,
-    // URL) and rebuilds the MediaItem.
-    return true;
-};
+// The queue-mirror gate lives in a pure, unit-tested module (its radio branch
+// regressed background podcast→radio advance). Re-exported here for the existing
+// import sites.
+export { shouldMirrorPlaybackQueueToNative };
 
 /** Keep the native service queue in sync with JS Up Next mutations. */
 export const syncAndroidNativePlaybackQueue = (
