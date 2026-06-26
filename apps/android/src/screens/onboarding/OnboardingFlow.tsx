@@ -320,8 +320,8 @@ const SYNC_MESSAGES = [
     'Summoning bangers…',
     'Buttering playlists…',
     'Yelling at the database…',
-    'Defragging your vibes…',
-    'Feeding the algorithm…',
+    'Oiling the turntable…',
+    'Feeding the gremlins…',
     'Decrunching numbers…',
     'Convincing the bits…',
     'Tuning the subwoofer…',
@@ -918,7 +918,14 @@ const SyncingStep = ({
                 >
                     {headline}
                 </Reanimated.Text>
-                <Text style={[subheadingStyle, { textAlign: 'center' }]}>{detail}</Text>
+                <Text
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.8}
+                    numberOfLines={1}
+                    style={[subheadingStyle, { textAlign: 'center' }]}
+                >
+                    {detail}
+                </Text>
 
                 <ProgressBar active={hasProgress} />
             </View>
