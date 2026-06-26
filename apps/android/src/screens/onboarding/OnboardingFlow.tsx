@@ -23,6 +23,7 @@ import Reanimated, {
     useAnimatedStyle,
     useSharedValue,
     withRepeat,
+    withSpring,
     withTiming,
 } from 'react-native-reanimated';
 
@@ -32,6 +33,7 @@ import {
     subscribeCatalogSyncState,
     type CatalogSyncState,
 } from '../../services/catalog/catalog-sync-state';
+import { triggerImpact } from '../../services/haptics';
 import { type AndroidAuthState } from '../../services/server-auth';
 import { colors, radii, spacing } from '../../theme/tokens';
 import { Orb } from './Orb';
@@ -299,6 +301,8 @@ const onboardInputStyle = {
 // step instead of springing back.
 const WELCOME_SWIPE_THRESHOLD = -90;
 const WELCOME_FLING_VELOCITY = -650;
+// How far up the panel travels before it's fully gone (then we advance).
+const EXIT_DISTANCE = 700;
 
 const WelcomeStep = ({ onStart }: { onStart: () => void }) => {
     // Guard so the swipe-up and the tap fallback can never both advance.
@@ -311,6 +315,7 @@ const WelcomeStep = ({ onStart }: { onStart: () => void }) => {
 
     const dragY = useSharedValue(0); // <= 0; tracks the upward drag
     const hintY = useSharedValue(0); // the gently bobbing chevron
+    const passedThreshold = useSharedValue(false); // one-shot latch for the detent haptic
 
     useEffect(() => {
         hintY.value = withRepeat(
@@ -323,13 +328,33 @@ const WelcomeStep = ({ onStart }: { onStart: () => void }) => {
     const panGesture = Gesture.Pan()
         .onUpdate((event) => {
             dragY.value = Math.min(0, event.translationY);
+            // One soft detent tick the instant you've pulled far enough to
+            // commit, so the threshold is something you feel.
+            const past = event.translationY < WELCOME_SWIPE_THRESHOLD;
+            if (past && !passedThreshold.value) {
+                passedThreshold.value = true;
+                runOnJS(triggerImpact)('light');
+            } else if (!past && passedThreshold.value) {
+                passedThreshold.value = false;
+            }
         })
         .onEnd((event) => {
-            if (event.translationY < WELCOME_SWIPE_THRESHOLD || event.velocityY < WELCOME_FLING_VELOCITY) {
-                // Commit: slide the whole panel up and out, then advance.
-                dragY.value = withTiming(
-                    -700,
-                    { duration: 320, easing: Easing.in(Easing.cubic) },
+            passedThreshold.value = false;
+            const commit =
+                event.translationY < WELCOME_SWIPE_THRESHOLD ||
+                event.velocityY < WELCOME_FLING_VELOCITY;
+            if (commit) {
+                runOnJS(triggerImpact)('medium');
+                // Carry the fling velocity into the exit so the panel leaves
+                // with real momentum instead of a fixed-duration slide.
+                dragY.value = withSpring(
+                    -EXIT_DISTANCE,
+                    {
+                        damping: 38,
+                        overshootClamping: true,
+                        stiffness: 210,
+                        velocity: event.velocityY,
+                    },
                     (finished) => {
                         if (finished) {
                             runOnJS(start)();
@@ -337,15 +362,21 @@ const WelcomeStep = ({ onStart }: { onStart: () => void }) => {
                     },
                 );
             } else {
-                dragY.value = withTiming(0, { duration: 220, easing: Easing.out(Easing.quad) });
+                // Spring back under its own momentum, not a linear snap.
+                dragY.value = withSpring(0, {
+                    damping: 16,
+                    stiffness: 170,
+                    velocity: event.velocityY,
+                });
             }
         });
 
     // Tap fallback (also keeps the screen operable for assistive tech).
     const tapGesture = Gesture.Tap().onEnd(() => {
-        dragY.value = withTiming(
-            -700,
-            { duration: 320, easing: Easing.in(Easing.cubic) },
+        runOnJS(triggerImpact)('medium');
+        dragY.value = withSpring(
+            -EXIT_DISTANCE,
+            { damping: 42, overshootClamping: true, stiffness: 220 },
             (finished) => {
                 if (finished) {
                     runOnJS(start)();
