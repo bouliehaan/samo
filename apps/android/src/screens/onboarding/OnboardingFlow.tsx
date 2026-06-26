@@ -307,18 +307,34 @@ const EXIT_DISTANCE = 700;
 // Rotating status lines for the library sync. Real progress lives in the live
 // item/track counts below; these are the "it's actually doing something"
 // personality so the long detail-crawl tail never sits frozen on one string.
+// Kept short (≤ ~22 chars) on purpose so they always fit one line at the fixed
+// font below — no wrap, no font jumping. Add freely, just keep them brief.
 const SYNC_MESSAGES = [
-    'Combobulating the data…',
-    'Sorting your albums…',
-    'Polishing the cover art…',
-    'Caching artist details…',
-    'Untangling the genres…',
+    'Combobulating data…',
     'Reticulating splines…',
-    'Lining up the deep cuts…',
-    'Teaching the server your taste…',
-    'Buffing the hi-hats…',
-    'Tuning the airwaves…',
-    'Almost there…',
+    'Herding the MP3s…',
+    'Bribing the metadata…',
+    'Aligning your chakras…',
+    'Greasing the gears…',
+    'Waking the hamsters…',
+    'Summoning bangers…',
+    'Buttering playlists…',
+    'Yelling at the database…',
+    'Defragging your vibes…',
+    'Feeding the algorithm…',
+    'Decrunching numbers…',
+    'Convincing the bits…',
+    'Tuning the subwoofer…',
+    'Polishing each pixel…',
+    'Untangling the wires…',
+    'Negotiating with WiFi…',
+    'Counting the bangers…',
+    'Shuffling the cosmos…',
+    'Finding lost socks…',
+    'Hyping the speakers…',
+    'Sorting your albums…',
+    'Caching the details…',
+    'Almost there, promise…',
 ];
 
 const useRotatingMessage = (messages: string[], intervalMs: number, active: boolean) => {
@@ -847,7 +863,7 @@ const SyncingStep = ({
     // No manual escape any more, so guarantee we're never trapped on a sync that
     // never reports a terminal state.
     const showSuccess = isDone || stranded;
-    const headline = useRotatingMessage(SYNC_MESSAGES, 2600, !showSuccess);
+    const headline = useRotatingMessage(SYNC_MESSAGES, 3600, !showSuccess);
 
     useEffect(() => {
         if (showSuccess) {
@@ -892,10 +908,13 @@ const SyncingStep = ({
                 </View>
 
                 <Reanimated.Text
+                    adjustsFontSizeToFit
                     entering={FadeIn.duration(420)}
                     exiting={FadeOut.duration(220)}
                     key={headline}
-                    style={[headingStyle, { textAlign: 'center' }]}
+                    minimumFontScale={0.85}
+                    numberOfLines={1}
+                    style={[headingStyle, { fontSize: 23, textAlign: 'center' }]}
                 >
                     {headline}
                 </Reanimated.Text>
