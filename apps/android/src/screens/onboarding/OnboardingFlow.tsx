@@ -542,6 +542,13 @@ const DiscoverStep = ({
                                     {server.Name}
                                 </Text>
                                 <Text
+                                    // Truncate the MIDDLE, not the tail: two
+                                    // servers on a LAN differ by their last IP
+                                    // octet / port at the END of the address, so
+                                    // tail-ellipsis cut off exactly the part that
+                                    // tells them apart and the buttons looked
+                                    // identical. head…tail keeps the distinguisher.
+                                    ellipsizeMode="middle"
                                     numberOfLines={1}
                                     style={{
                                         color: colors.muted,
