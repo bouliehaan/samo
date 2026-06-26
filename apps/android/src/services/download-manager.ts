@@ -712,6 +712,28 @@ export const getLocalDownloadForTrack = async (
     return { localUri: match.localUri, sourceUrl: match.sourceUrl };
 };
 
+/**
+ * Synchronous twin of {@link getLocalDownloadForTrack} for the playback choke
+ * point: returns a completed download's local URI from the in-memory registry
+ * without awaiting native.list(). A cold registry (not warmed yet) or no match
+ * returns null, so callers simply keep the network URL — a cold lookup means
+ * "stream this time", never a wrong file.
+ */
+export const peekLocalDownloadForTrack = (
+    trackId: string,
+    sourceId: string,
+): string | null => {
+    if (!cachedRegistry) return null;
+    const match = cachedRegistry.find(
+        (entry) =>
+            entry.trackId === trackId &&
+            entry.collection.sourceId === sourceId &&
+            entry.status === 'completed' &&
+            entry.localUri,
+    );
+    return match?.localUri ?? null;
+};
+
 export interface OfflineAudiobookFile {
     durationSeconds?: number;
     index: number;

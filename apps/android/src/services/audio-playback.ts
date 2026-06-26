@@ -5,6 +5,7 @@ import {
     attachNativeStreamCredentials,
     attachNativeStreamCredentialsToQueue,
 } from '../utils/native-stream-auth';
+import { peekLocalDownloadForTrack } from './download-manager';
 import { NativeEventEmitter, NativeModules } from 'react-native';
 
 export interface AndroidAudioDeviceInfo {
@@ -214,14 +215,41 @@ export const syncAndroidNativePlaybackQueue = (
     }
 
     const credentialedQueue = attachNativeStreamCredentialsToQueue(queue, serverConnection);
+    const offlineItems = credentialedQueue.items.map(resolveOfflinePlayable);
     void samoAudio.setPlaybackQueue({
         queueIndex: credentialedQueue.index,
-        queueItems: credentialedQueue.items,
-        source: credentialedQueue.items[credentialedQueue.index]?.source,
+        queueItems: offlineItems,
+        source: offlineItems[credentialedQueue.index]?.source,
     });
 };
 
 const isNetworkPlaybackUrl = (url?: string) => Boolean(url && /^https?:\/\//i.test(url));
+
+/**
+ * Route a downloaded item's playback at its local file instead of the network
+ * stream, so downloads play network-independently EVERYWHERE — not just the few
+ * tap handlers that special-cased offline. Looked up by the item's progress
+ * target id (the music-track / podcast-episode id) + content source. The
+ * (credentialed) network URL is preserved on `castUrl` because the Chromecast
+ * receiver can't read the phone's local files. No download / cold registry
+ * leaves the item unchanged, so this can only ever swap to a real local copy.
+ */
+const resolveOfflinePlayable = (item: MobilePlayableAudio): MobilePlayableAudio => {
+    const trackId = item.samoProgressTargetId;
+    const sourceId = item.contentSourceId;
+    if (!trackId || !sourceId) {
+        return item;
+    }
+    const localUri = peekLocalDownloadForTrack(trackId, sourceId);
+    if (!localUri || localUri === item.url) {
+        return item;
+    }
+    return {
+        ...item,
+        castUrl: item.castUrl ?? (isNetworkPlaybackUrl(item.url) ? item.url : undefined),
+        url: localUri,
+    };
+};
 
 /** Samo stream token auth in the query string — Chromecast cannot use httpHeaders. */
 const hasSelfAuthenticatingStreamUrl = (url: string) =>
@@ -258,7 +286,9 @@ export const playAndroidAudio = async (
     // recents persisted before buildRadioPlayback stopped storing the
     // homepage URL in subtitle still carry one. Strip anything that looks
     // like a URL so stale persisted data can't leak into the system UI.
-    const bridgedSource = attachNativeStreamCredentials(source, serverConnection);
+    const bridgedSource = resolveOfflinePlayable(
+        attachNativeStreamCredentials(source, serverConnection),
+    );
     const bridgedCastSource = attachNativeStreamCredentials(castSource, serverConnection);
 
     const sanitizedSubtitle =
@@ -299,7 +329,7 @@ export const playAndroidAudio = async (
                   );
                   return {
                       queueIndex: credentialed.index,
-                      queueItems: credentialed.items,
+                      queueItems: credentialed.items.map(resolveOfflinePlayable),
                   };
               })()
             : {};
