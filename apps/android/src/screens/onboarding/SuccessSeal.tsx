@@ -17,6 +17,8 @@ import Reanimated, {
 } from 'react-native-reanimated';
 
 import { CheckGlyph } from '../../components/Glyphs';
+import { triggerImpact } from '../../services/haptics';
+import { Orb } from './Orb';
 
 // The premium "you're set" seal: the breathing gold sync orb morphs into a green
 // check, the word "Done" settles in, a glint sweeps across — then the whole thing
@@ -124,6 +126,7 @@ export const SuccessSeal = ({
             // Honour reduce-motion: snap to the resolved check, hold briefly, leave.
             form.value = 1;
             pop.value = 1;
+            triggerImpact('medium');
             const timer = setTimeout(finish, FORM_MS + HOLD_MS);
             return () => clearTimeout(timer);
         }
@@ -149,7 +152,9 @@ export const SuccessSeal = ({
                 },
             ),
         );
-        return undefined;
+        // A solid thunk the instant the check lands.
+        const hapticTimer = setTimeout(() => triggerImpact('medium'), 180);
+        return () => clearTimeout(hapticTimer);
     }, [dissipate, finish, form, pop, reduced, shimmer]);
 
     // Soft bloom of light that puffs out as the seal lets go.
@@ -264,21 +269,30 @@ export const SuccessSeal = ({
                         />
                     </Reanimated.View>
 
-                    <Reanimated.View
-                        style={[
-                            {
-                                backgroundColor: GOLD,
-                                borderRadius: 22,
-                                height: 44,
-                                position: 'absolute',
-                                width: 44,
-                            },
-                            discStyle,
-                        ]}
-                    />
                     <Reanimated.View style={checkStyle}>
                         <CheckGlyph color={SUCCESS} size={46} />
                     </Reanimated.View>
+                </Reanimated.View>
+
+                {/* The real particle orb sits OVER the core (outside its clip) and
+                    gathers inward as the check takes its place — so the orb itself
+                    forms into the seal. */}
+                <Reanimated.View
+                    pointerEvents="none"
+                    style={[
+                        {
+                            alignItems: 'center',
+                            bottom: 0,
+                            justifyContent: 'center',
+                            left: 0,
+                            position: 'absolute',
+                            right: 0,
+                            top: 0,
+                        },
+                        discStyle,
+                    ]}
+                >
+                    <Orb active={false} size={140} />
                 </Reanimated.View>
 
                 {/* Motes on top so the burst reads clearly over the dissolving

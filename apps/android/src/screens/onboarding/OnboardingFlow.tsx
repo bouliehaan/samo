@@ -304,6 +304,35 @@ const WELCOME_FLING_VELOCITY = -650;
 // How far up the panel travels before it's fully gone (then we advance).
 const EXIT_DISTANCE = 700;
 
+// Rotating status lines for the library sync. Real progress lives in the live
+// item/track counts below; these are the "it's actually doing something"
+// personality so the long detail-crawl tail never sits frozen on one string.
+const SYNC_MESSAGES = [
+    'Combobulating the data…',
+    'Sorting your albums…',
+    'Polishing the cover art…',
+    'Caching artist details…',
+    'Untangling the genres…',
+    'Reticulating splines…',
+    'Lining up the deep cuts…',
+    'Teaching the server your taste…',
+    'Buffing the hi-hats…',
+    'Tuning the airwaves…',
+    'Almost there…',
+];
+
+const useRotatingMessage = (messages: string[], intervalMs: number, active: boolean) => {
+    const [index, setIndex] = useState(0);
+    useEffect(() => {
+        if (!active) {
+            return undefined;
+        }
+        const id = setInterval(() => setIndex((i) => (i + 1) % messages.length), intervalMs);
+        return () => clearInterval(id);
+    }, [active, intervalMs, messages.length]);
+    return messages[index % messages.length];
+};
+
 const WelcomeStep = ({ onStart }: { onStart: () => void }) => {
     // Guard so the swipe-up and the tap fallback can never both advance.
     const startedRef = useRef(false);
@@ -489,7 +518,7 @@ const DiscoverStep = ({
         <StepShell>
             <BackLink onPress={onBack} />
             <View style={{ alignItems: 'center', marginBottom: 28, marginTop: 8 }}>
-                <Orb active={!hasResults} />
+                <Orb active={!hasResults} size={152} />
             </View>
             <Text style={headingStyle}>
                 {hasResults ? 'Found your server' : 'Looking for your server'}
@@ -818,6 +847,7 @@ const SyncingStep = ({
     // No manual escape any more, so guarantee we're never trapped on a sync that
     // never reports a terminal state.
     const showSuccess = isDone || stranded;
+    const headline = useRotatingMessage(SYNC_MESSAGES, 2600, !showSuccess);
 
     useEffect(() => {
         if (showSuccess) {
@@ -857,13 +887,18 @@ const SyncingStep = ({
     return (
         <StepShell>
             <View style={{ alignItems: 'center', flex: 1, justifyContent: 'center' }}>
-                <View style={{ marginBottom: 28 }}>
-                    <Orb size={104} />
+                <View style={{ marginBottom: 32 }}>
+                    <Orb size={180} />
                 </View>
 
-                <Text style={[headingStyle, { textAlign: 'center' }]}>
-                    Setting up your library
-                </Text>
+                <Reanimated.Text
+                    entering={FadeIn.duration(420)}
+                    exiting={FadeOut.duration(220)}
+                    key={headline}
+                    style={[headingStyle, { textAlign: 'center' }]}
+                >
+                    {headline}
+                </Reanimated.Text>
                 <Text style={[subheadingStyle, { textAlign: 'center' }]}>{detail}</Text>
 
                 <ProgressBar active={hasProgress} />
