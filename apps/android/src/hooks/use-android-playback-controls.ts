@@ -73,7 +73,7 @@ export function useAndroidPlaybackControls(options: {
         playQueuedItem,
         serverConnection,
     } = options;
-    const { setIsShuffled } = useAppSessionState();
+    const { isShuffled, setIsShuffled } = useAppSessionState();
     const seekGenerationRef = useRef(0);
 
     /**
@@ -423,27 +423,30 @@ export function useAndroidPlaybackControls(options: {
     );
 
     const handleToggleShuffle = useCallback(() => {
-        setIsShuffled((current) => {
-            const next = !current;
-            const queue = getPlaybackQueue();
+        const willShuffle = !isShuffled;
 
-            if (next && queue) {
+        // Reorder the canonical queue and push it to native OUTSIDE the state
+        // updater. Running these external-store writes inside setIsShuffled's
+        // reducer fired them mid-render, so the queue sheet's useSyncExternalStore
+        // subscription could miss the update — the playback order shuffled but the
+        // visible "Up Next" list never followed it.
+        if (willShuffle) {
+            const queue = getPlaybackQueue();
+            if (queue && queue.items.length > 1) {
                 const before = queue.items.slice(0, queue.index + 1);
-                const after = [...queue.items.slice(queue.index + 1)];
+                const after = queue.items.slice(queue.index + 1);
                 for (let i = after.length - 1; i > 0; i -= 1) {
                     const j = Math.floor(Math.random() * (i + 1));
                     [after[i], after[j]] = [after[j], after[i]];
                 }
-                setPlaybackQueue({
-                    ...queue,
-                    items: [...before, ...after],
-                });
-                syncAndroidNativePlaybackQueue(getPlaybackQueue(), serverConnection);
+                const reordered = { ...queue, items: [...before, ...after] };
+                setPlaybackQueue(reordered);
+                syncAndroidNativePlaybackQueue(reordered, serverConnection);
             }
+        }
 
-            return next;
-        });
-    }, [serverConnection, setIsShuffled]);
+        setIsShuffled(willShuffle);
+    }, [isShuffled, serverConnection, setIsShuffled]);
 
     const handleNavigatePlayback = useCallback(
         async (direction: -1 | 1) => {

@@ -16,7 +16,7 @@ import {
     findServerAuthenticationForSource,
     type ServerAuthenticationResult,
 } from '@samo/core/server';
-import { FlashList } from '@shopify/flash-list';
+import { FlashList, type FlashListRef } from '@shopify/flash-list';
 import { Image as ExpoImage } from 'expo-image';
 import { StatusBar } from 'expo-status-bar';
 import ditherTexture from '../../assets/dither.png';
@@ -154,6 +154,7 @@ const CAST_ICON_INACTIVE_TINT = 'rgba(245, 245, 245, 0.72)';
 
 export type QueueSheetListItem =
     | { chapter: MobilePlaybackSegment; index: number; kind: 'chapter' }
+    | { id: string; kind: 'header'; label: string }
     | { index: number; item: MobilePlayableAudio; kind: 'queue' };
 
 const EMPTY_QUEUE_SHEET_ROWS: QueueSheetListItem[] = [];
@@ -197,22 +198,74 @@ export const QueueSheetOverlay = memo(({
     const activeChapterIndex = showingChapters
         ? findActiveChapterIndex(chapters!, positionSeconds)
         : -1;
+    const currentIndex = queue?.index ?? -1;
     const queueSheetRows = useMemo<QueueSheetListItem[]>(
         () => {
             if (!interactive) {
                 return EMPTY_QUEUE_SHEET_ROWS;
             }
 
-            return showingChapters
-                ? (chapters ?? []).map((chapter, index) => ({
-                      chapter,
-                      index,
-                      kind: 'chapter' as const,
-                  }))
-                : items.map((item, index) => ({ index, item, kind: 'queue' as const }));
+            if (showingChapters) {
+                return (chapters ?? []).map((chapter, index) => ({
+                    chapter,
+                    index,
+                    kind: 'chapter' as const,
+                }));
+            }
+
+            // Group the flat queue into Previously played / Now playing / Up next
+            // so the sheet reads like a timeline instead of one undifferentiated
+            // list, and so the player can scroll straight to the current track.
+            const rows: QueueSheetListItem[] = [];
+            items.forEach((item, index) => {
+                if (index === 0 && currentIndex > 0) {
+                    rows.push({ id: 'header-history', kind: 'header', label: 'Previously played' });
+                }
+                if (index === currentIndex) {
+                    rows.push({ id: 'header-now', kind: 'header', label: 'Now playing' });
+                }
+                if (index === currentIndex + 1) {
+                    rows.push({ id: 'header-next', kind: 'header', label: 'Up next' });
+                }
+                rows.push({ index, item, kind: 'queue' as const });
+            });
+            return rows;
         },
-        [chapters, interactive, items, showingChapters],
+        [chapters, currentIndex, interactive, items, showingChapters],
     );
+    const nowPlayingRowIndex = useMemo(() => {
+        if (showingChapters) {
+            return Math.max(0, activeChapterIndex);
+        }
+        return queueSheetRows.findIndex(
+            (row) =>
+                (row.kind === 'header' && row.id === 'header-now') ||
+                (row.kind === 'queue' && row.index === currentIndex),
+        );
+    }, [activeChapterIndex, currentIndex, queueSheetRows, showingChapters]);
+    const listRef = useRef<FlashListRef<QueueSheetListItem>>(null);
+    const wasInteractiveRef = useRef(false);
+    useEffect(() => {
+        const justOpened = interactive && !wasInteractiveRef.current;
+        wasInteractiveRef.current = interactive;
+        if (!justOpened || nowPlayingRowIndex < 0) {
+            return;
+        }
+        // Wait a frame so FlashList has laid out the rows before scrolling to the
+        // currently-playing section when the sheet opens.
+        const handle = setTimeout(() => {
+            try {
+                listRef.current?.scrollToIndex({
+                    animated: false,
+                    index: nowPlayingRowIndex,
+                    viewPosition: 0.15,
+                });
+            } catch {
+                // FlashList throws if the row isn't measured yet; the next open retries.
+            }
+        }, 50);
+        return () => clearTimeout(handle);
+    }, [interactive, nowPlayingRowIndex]);
     const listScrollYRef = useRef(0);
     const listDragStartYRef = useRef<number | null>(null);
     const listDragStartedAtTopRef = useRef(false);
@@ -251,6 +304,9 @@ export const QueueSheetOverlay = memo(({
         }
     }, [onClose]);
     const keyExtractor = useCallback((row: QueueSheetListItem) => {
+        if (row.kind === 'header') {
+            return row.id;
+        }
         if (row.kind === 'chapter') {
             return `${row.chapter.id}-${row.index}`;
         }
@@ -260,6 +316,14 @@ export const QueueSheetOverlay = memo(({
     const getItemType = useCallback((row: QueueSheetListItem) => row.kind, []);
     const renderItem = useCallback(
         ({ item: row }: { item: QueueSheetListItem }) => {
+            if (row.kind === 'header') {
+                return (
+                    <View style={styles.queueSectionHeader}>
+                        <Text style={styles.queueSectionHeaderText}>{row.label}</Text>
+                    </View>
+                );
+            }
+
             if (row.kind === 'chapter') {
                 const isActive = row.index === activeChapterIndex;
                 const chapter = row.chapter;
@@ -419,6 +483,7 @@ export const QueueSheetOverlay = memo(({
                 </GestureDetector>
                 <Reanimated.View style={styles.queueSheetScroll}>
                     <ReanimatedFlashList
+                        ref={listRef}
                         contentContainerStyle={styles.queueSheetContent}
                         data={queueSheetRows}
                         drawDistance={QUEUE_SHEET_DRAW_DISTANCE}

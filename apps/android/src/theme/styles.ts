@@ -2801,6 +2801,19 @@ export const styles = StyleSheet.create({
         fontSize: 15,
         fontWeight: '600',
     },
+    queueSectionHeader: {
+        paddingBottom: 6,
+        paddingHorizontal: spacing.lg,
+        paddingTop: 16,
+    },
+    queueSectionHeaderText: {
+        color: colors.muted,
+        fontFamily: 'OfficeCodePro-Regular',
+        fontSize: 11,
+        fontWeight: '700',
+        letterSpacing: 1.2,
+        textTransform: 'uppercase',
+    },
     queueSheet: {
         backgroundColor: 'rgba(12, 10, 8, 0.96)',
         borderTopLeftRadius: 18,
