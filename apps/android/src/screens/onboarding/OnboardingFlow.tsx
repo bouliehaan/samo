@@ -307,34 +307,38 @@ const EXIT_DISTANCE = 700;
 // Rotating status lines for the library sync. Real progress lives in the live
 // item/track counts below; these are the "it's actually doing something"
 // personality so the long detail-crawl tail never sits frozen on one string.
-// Kept short (≤ ~22 chars) on purpose so they always fit one line at the fixed
-// font below — no wrap, no font jumping. Add freely, just keep them brief.
+// Jacob's list, in his voice. Lengths vary, so the headline below auto-fits its
+// font (numberOfLines=1 + adjustsFontSizeToFit) to keep every one on a single line.
 const SYNC_MESSAGES = [
-    'Combobulating data…',
-    'Reticulating splines…',
-    'Herding the MP3s…',
-    'Bribing the metadata…',
-    'Degaussing the tape…',
-    'Greasing the gears…',
-    'Waking the hamsters…',
-    'Summoning bangers…',
-    'Buttering playlists…',
-    'Yelling at the database…',
-    'Oiling the turntable…',
-    'Warming up the tubes…',
-    'Decrunching numbers…',
-    'Convincing the bits…',
-    'Tuning the subwoofer…',
-    'Polishing each pixel…',
-    'Untangling the wires…',
-    'Negotiating with WiFi…',
-    'Counting the bangers…',
-    'Sorting the B-sides…',
-    'Finding lost socks…',
-    'Hyping the speakers…',
-    'Sorting your albums…',
-    'Caching the details…',
-    'Almost there, promise…',
+    "Twisting the biscuit",
+    "Determining the circumference",
+    "Analyzing the jazz",
+    "Turning the tables",
+    "Preparing your mom",
+    "Eating dinner",
+    "Going to the movies",
+    "Riding the wave",
+    "Shooting the stars",
+    "Determining the vibe",
+    "Learning to dance",
+    "Greasing the gears",
+    "Herding the MP3's",
+    "Almost there, maybe",
+    "Yeah definitely almost there",
+    "Decrunching the numbers",
+    "Walking the hamsters",
+    "Greasing the palms",
+    "Sorting your albums",
+    "Decompiling the Database",
+    "Checking for noodles",
+    "Hey, who put this here?",
+    "Organizing YOUR stuff...",
+    "Waxing and waning",
+    "Pretending to work",
+    "Watching TV",
+    "Hey I remember this one",
+    "You have good taste",
+    "THIS ONNNEEEEEE!!!!!!!!!!!",
 ];
 
 const useRotatingMessage = (messages: string[], intervalMs: number, active: boolean) => {
@@ -863,7 +867,7 @@ const SyncingStep = ({
     // No manual escape any more, so guarantee we're never trapped on a sync that
     // never reports a terminal state.
     const showSuccess = isDone || stranded;
-    const headline = useRotatingMessage(SYNC_MESSAGES, 3600, !showSuccess);
+    const headline = useRotatingMessage(SYNC_MESSAGES, 5000, !showSuccess);
 
     useEffect(() => {
         if (showSuccess) {
@@ -912,9 +916,9 @@ const SyncingStep = ({
                     entering={FadeIn.duration(420)}
                     exiting={FadeOut.duration(220)}
                     key={headline}
-                    minimumFontScale={0.85}
+                    minimumFontScale={0.55}
                     numberOfLines={1}
-                    style={[headingStyle, { fontSize: 23, textAlign: 'center' }]}
+                    style={[headingStyle, { fontSize: 24, textAlign: 'center' }]}
                 >
                     {headline}
                 </Reanimated.Text>
