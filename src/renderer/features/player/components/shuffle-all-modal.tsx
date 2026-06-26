@@ -56,12 +56,6 @@ const useShuffleAllStore = createWithEqualityFn<ShuffleAllSlice>()(
     ),
 );
 
-const PLAYED_DATA: { label: string; value: Played }[] = [
-    { label: 'all tracks', value: Played.All },
-    { label: 'only unplayed tracks', value: Played.Never },
-    { label: 'only played tracks', value: Played.Played },
-];
-
 export const useShuffleAllStoreActions = () => useShuffleAllStore((state) => state.actions);
 
 export const ShuffleAllContextModal = () => {
@@ -144,17 +138,6 @@ export const ShuffleAllContextModal = () => {
             <Suspense fallback={<Select data={[]} />}>
                 <GenreSelect />
             </Suspense>
-            {false && (
-                <Select
-                    clearable
-                    data={PLAYED_DATA}
-                    label={t('form.shuffleAll.input_played', { postProcess: 'sentenceCase' })}
-                    onChange={(e) => {
-                        setStore({ played: e as Played });
-                    }}
-                    value={played}
-                />
-            )}
             <Divider />
             <PlayButtonGroup
                 loading={(isFetching && fetchTypeRef.current) || false}
@@ -197,7 +180,6 @@ export const openShuffleAllModal = async () => {
 
 const GenreSelect = () => {
     const { t } = useTranslation();
-    const server = useCurrentServer();
     const { genre } = useShuffleAllStore();
     const { data: genres } = useGenreList();
     const { setStore } = useShuffleAllStoreActions();
@@ -206,13 +188,13 @@ const GenreSelect = () => {
         if (!genres) return [];
 
         return genres.items.map((genre) => {
-            const value = false || false ? genre.name : genre.id;
+            const value = genre.id;
             return {
                 label: genre.name,
                 value,
             };
         });
-    }, [genres, server.type]);
+    }, [genres]);
 
     return (
         <Select

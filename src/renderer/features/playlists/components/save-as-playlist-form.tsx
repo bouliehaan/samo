@@ -75,15 +75,6 @@ export const SaveAsPlaylistForm = ({
                     required
                     {...form.getInputProps('name')}
                 />
-                {false && (
-                    <TextInput
-                        label={t('form.createPlaylist.input', {
-                            context: 'description',
-                            postProcess: 'titleCase',
-                        })}
-                        {...form.getInputProps('comment')}
-                    />
-                )}
                 {isPublicDisplayed && (
                     <Switch
                         label={t('form.createPlaylist.input', {

@@ -395,7 +395,10 @@ export const useUnifiedSearch = (rawQuery: string): UnifiedSearchState => {
         staleTime: ABS_LIBRARY_STALE_TIME_MS,
     });
 
-    const longFormItems = samoLongFormItemsQuery.data ?? [];
+    const longFormItems = useMemo(
+        () => samoLongFormItemsQuery.data ?? [],
+        [samoLongFormItemsQuery.data],
+    );
 
     const hasMusicServer = Boolean(musicServer?.id);
     const hasLongFormServer = Boolean(longFormMediaServer?.id);

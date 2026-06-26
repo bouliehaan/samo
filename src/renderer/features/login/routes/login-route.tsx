@@ -144,12 +144,6 @@ const LoginRoute = () => {
                 serverType as ServerType,
             );
 
-            if (false) {
-                return toast.error({
-                    message: t('error.authenticationFailed', { postProcess: 'sentenceCase' }),
-                });
-            }
-
             const normalizedUrl = normalizeUrl(serverUrl);
             const normalizedRemoteURL = normalizeUrl(remoteUrl);
             const existingServer = serverLock

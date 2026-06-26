@@ -17,7 +17,6 @@ import { Stack } from '/@/shared/components/stack/stack';
 import { Switch } from '/@/shared/components/switch/switch';
 import { TextInput } from '/@/shared/components/text-input/text-input';
 import { Text } from '/@/shared/components/text/text';
-import { Textarea } from '/@/shared/components/textarea/textarea';
 import { toast } from '/@/shared/components/toast/toast';
 import { useForm } from '/@/shared/hooks/use-form';
 import { CreatePlaylistBody, ServerListItem, SongListSort } from '/@/shared/types/domain-types';
@@ -41,7 +40,7 @@ export const CreatePlaylistForm = ({ onCancel }: CreatePlaylistFormProps) => {
             queryBuilderRules: undefined,
         },
     });
-    const [isSmartPlaylist, setIsSmartPlaylist] = useState(false);
+    const [isSmartPlaylist] = useState(false);
     const [step, setStep] = useState<1 | 2>(1);
 
     const handleSubmit = form.onSubmit((values) => {
@@ -116,17 +115,6 @@ export const CreatePlaylistForm = ({ onCancel }: CreatePlaylistFormProps) => {
                             required
                             {...form.getInputProps('name')}
                         />
-                        {false && (
-                            <Textarea
-                                autosize
-                                label={t('form.createPlaylist.input', {
-                                    context: 'description',
-                                    postProcess: 'titleCase',
-                                })}
-                                minRows={5}
-                                {...form.getInputProps('comment')}
-                            />
-                        )}
                         <Group>
                             {isPublicDisplayed && (
                                 <Switch
@@ -137,19 +125,6 @@ export const CreatePlaylistForm = ({ onCancel }: CreatePlaylistFormProps) => {
                                     {...form.getInputProps('public', {
                                         type: 'checkbox',
                                     })}
-                                />
-                            )}
-                            {false && hasFeature(server, ServerFeature.PLAYLISTS_SMART) && (
-                                <Switch
-                                    checked={isSmartPlaylist}
-                                    label="Is smart playlist?"
-                                    onChange={(e) => {
-                                        const next = e.currentTarget.checked;
-                                        setIsSmartPlaylist(next);
-                                        if (!next) {
-                                            setStep(1);
-                                        }
-                                    }}
                                 />
                             )}
                         </Group>

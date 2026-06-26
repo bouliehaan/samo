@@ -346,7 +346,6 @@ export const useDiscordRpc = () => {
         },
         [
             discordSettings.showAsListening,
-            discordSettings.showServerImage,
             discordSettings.showStateIcon,
             discordSettings.showPaused,
             lastfmApiKey,
@@ -354,7 +353,6 @@ export const useDiscordRpc = () => {
             discordSettings.displayType,
             discordSettings.linkType,
             lastUniqueId,
-            currentSong?._uniqueId,
             isRadioActive,
             isRadioPlaying,
             radioMetadata?.artist,

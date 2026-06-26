@@ -96,7 +96,6 @@ export const AlbumDetailHeader = forwardRef<HTMLDivElement>((_props, ref) => {
     };
 
     const releaseYear = detailQuery?.data?.releaseYear;
-    const releaseDate = detailQuery?.data?.releaseDate;
 
     const deliveryKind = usePlaybackDeliveryKind();
     const albumQualityProfile = detailQuery?.data
@@ -145,7 +144,7 @@ export const AlbumDetailHeader = forwardRef<HTMLDivElement>((_props, ref) => {
         );
 
         return items.filter((item) => !!item.value);
-    }, [albumQualityLabel, detailQuery?.data, releaseDate, releaseYear, t]);
+    }, [albumQualityLabel, detailQuery?.data, t]);
 
     const headerItem = useMemo(() => {
         const album = detailQuery?.data;

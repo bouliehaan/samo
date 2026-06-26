@@ -183,7 +183,7 @@ const AudiobooksRoute = () => {
         staleTime: 1000 * 60 * 5,
     });
 
-    const items = samoItemsQuery.data ?? [];
+    const items = useMemo(() => samoItemsQuery.data ?? [], [samoItemsQuery.data]);
     const filteredItems = useMemo(() => {
         const trimmedQuery = searchQuery.trim().toLowerCase();
         if (!trimmedQuery) return items;

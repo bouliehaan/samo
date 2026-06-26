@@ -184,7 +184,7 @@ export const HomePodcastFeedSection = ({
         staleTime: 1000 * 60,
     });
 
-    const entries = feedQuery.data ?? [];
+    const entries = useMemo(() => feedQuery.data ?? [], [feedQuery.data]);
 
     const playEntry = useCallback(
         async (entry: SamoPodcastFeedEntry) => {

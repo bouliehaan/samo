@@ -71,7 +71,7 @@ export function createAbsPlaybackSyncHandle(
 
         resetProgressSync(currentTime);
 
-        if (true) {
+        {
             const kind: SamoPlaybackTargetKind = requiresEpisode ? 'podcast-episode' : 'audiobook';
             const targetId = requiresEpisode ? episode!.id : item.id;
             const completed =

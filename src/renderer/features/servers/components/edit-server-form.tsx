@@ -250,21 +250,6 @@ export const EditServerForm = ({ isUpdate, onCancel, password, server }: EditSer
                         })}
                     />
                 )}
-                {false && (
-                    <Checkbox
-                        description={t('form.addServer.input', {
-                            context: 'preferInstantMixDescription',
-                            postProcess: 'sentenceCase',
-                        })}
-                        label={t('form.addServer.input', {
-                            context: 'preferInstantMix',
-                            postProcess: 'titleCase',
-                        })}
-                        {...form.getInputProps('preferInstantMix', {
-                            type: 'checkbox',
-                        })}
-                    />
-                )}
                 <Group justify="flex-end">
                     <ModalButton onClick={onCancel}>{t('common.cancel')}</ModalButton>
                     <ModalButton loading={isLoading} type="submit" variant="filled">

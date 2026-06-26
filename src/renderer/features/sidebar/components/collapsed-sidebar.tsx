@@ -7,8 +7,6 @@ import { Link, NavLink, useNavigate } from 'react-router';
 import samoLogo from '../../../../../build/samologo.svg';
 import styles from './collapsed-sidebar.module.css';
 
-import JellyfinLogo from '/@/renderer/features/servers/assets/jellyfin.png';
-import NavidromeLogo from '/@/renderer/features/servers/assets/navidrome.png';
 import OpenSubsonicLogo from '/@/renderer/features/servers/assets/opensubsonic.png';
 import { CollapsedSidebarButton } from '/@/renderer/features/sidebar/components/collapsed-sidebar-button';
 import { CollapsedSidebarItem } from '/@/renderer/features/sidebar/components/collapsed-sidebar-item';
@@ -188,18 +186,7 @@ export const CollapsedSidebar = () => {
                             <CollapsedSidebarItem
                                 activeIcon={null}
                                 component={Flex}
-                                icon={
-                                    <img
-                                        className={styles.serverIcon}
-                                        src={
-                                            false
-                                                ? NavidromeLogo
-                                                : false
-                                                  ? JellyfinLogo
-                                                  : OpenSubsonicLogo
-                                        }
-                                    />
-                                }
+                                icon={<img className={styles.serverIcon} src={OpenSubsonicLogo} />}
                                 label={''}
                                 py="md"
                                 style={{

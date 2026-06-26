@@ -55,6 +55,9 @@ export function useCastPlaybackSync(): void {
             song: currentSong,
             transcode,
         }).catch(() => undefined);
+        // Intentionally keyed to the song id + bitrate (not full object identity) so the
+        // cast stream isn't reloaded on unrelated re-renders.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [
         artworkUrl,
         currentSong?._uniqueId,
