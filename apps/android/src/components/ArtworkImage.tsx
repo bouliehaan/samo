@@ -10,6 +10,7 @@ import {
 
 import { type MobileContentSource } from '@samo/core/mobile';
 import {
+    clearSamoStreamTokenCache,
     ensureSamoStreamToken,
     findServerAuthenticationForSource,
     getCachedSamoStreamToken,
@@ -114,12 +115,17 @@ export const ArtworkImage = ({
     }
     const pinnedLocalUri = pinnedRef.current.uri;
     const [localFailed, setLocalFailed] = useState(false);
+    // One forced token re-mint per cover identity — recovers from a stale-token
+    // 401 (server rotated the token but our cache still held the old one) without
+    // flip-flopping into an infinite retry.
+    const remoteRetriedRef = useRef(false);
 
     // A genuinely new cover (canonical identity changed) clears BOTH latches so
     // the fresh image gets a clean attempt.
     useEffect(() => {
         setErrored(false);
         setLocalFailed(false);
+        remoteRetriedRef.current = false;
     }, [canonicalKey]);
 
     // A stream-token refresh changes the remote URL but NOT the canonical key.
@@ -211,12 +217,32 @@ export const ArtworkImage = ({
             contentFit="cover"
             onError={() => {
                 // A managed-cache file that went missing/corrupt falls back to
-                // the remote source; a genuine remote failure shows the letter.
+                // the remote source.
                 if (useLocal) {
                     setLocalFailed(true);
-                } else {
-                    setErrored(true);
+                    return;
                 }
+                // A remote failure on a Samo cover is usually a STALE stream token:
+                // the server rotated it but our cache still held the old one, so
+                // the re-mint effect (which only fires when NO token is cached)
+                // never ran and the URL keeps 401-ing. Force ONE re-mint + retry
+                // before giving up to the letter — this is the "mini sometimes
+                // loses its artwork" fix.
+                if (contentSource && resolvedConnections && !remoteRetriedRef.current) {
+                    const auth = findServerAuthenticationForSource(
+                        resolvedConnections,
+                        contentSource,
+                    );
+                    if (auth) {
+                        remoteRetriedRef.current = true;
+                        clearSamoStreamTokenCache(auth);
+                        void ensureSamoStreamToken(auth)
+                            .then(() => setStreamTokenRevision((current) => current + 1))
+                            .catch(() => setErrored(true));
+                        return;
+                    }
+                }
+                setErrored(true);
             }}
             onLoad={onLoad}
             // The cached file as the placeholder: a FRESHLY MOUNTED expo-image

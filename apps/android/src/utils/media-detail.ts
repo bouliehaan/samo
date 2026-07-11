@@ -1,15 +1,6 @@
-import {
-    type MobileHomeItem,
-    MobileHomeItemType,
-    type MobileMediaDetail,
-    MobileMediaDetailType,
-    type MobileMediaTrack,
-    MobileHomeSectionId,
-} from '@samo/core/mobile';
+import { MobileMediaDetailType, type MobileMediaTrack } from '@samo/core/mobile';
 
-import { type AndroidHomeContentState } from '../services/home-content';
 import { SCREEN_HEIGHT } from '../theme/layout';
-import { looksLikeUrl } from './playback-time';
 
 export const getDetailTypeLabel = (type: MobileMediaDetailType) => {
     if (type === MobileMediaDetailType.AUDIOBOOK) return 'Audiobook';
@@ -17,23 +8,6 @@ export const getDetailTypeLabel = (type: MobileMediaDetailType) => {
     if (type === MobileMediaDetailType.PLAYLIST) return 'Playlist';
     if (type === MobileMediaDetailType.ARTIST) return 'Artist';
     return 'Album';
-};
-
-export const getPlaylistTargetsForDetail = (
-    homeContentState: AndroidHomeContentState,
-    detail: MobileMediaDetail,
-) => {
-    if (homeContentState.status !== 'loaded') {
-        return [];
-    }
-
-    return homeContentState.content.sections
-        .filter((section) => section.id === MobileHomeSectionId.PLAYLISTS)
-        .flatMap((section) => section.items)
-        .filter(
-            (item) =>
-                item.type === MobileHomeItemType.PLAYLIST && item.source?.id === detail.source.id,
-        );
 };
 
 export type PlaylistTrackFilter = 'all' | 'hifi';

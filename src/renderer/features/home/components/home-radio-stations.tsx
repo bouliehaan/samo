@@ -15,6 +15,7 @@ import {
 } from '/@/renderer/features/radio/hooks/use-radio-player';
 import { AppRoute } from '/@/renderer/router/routes';
 import { useCurrentServer } from '/@/renderer/store';
+import { hiddenHomeItemKey, useHiddenHomeKeys } from '/@/renderer/store/hidden-home-items.store';
 import { useFavoriteRadioStationIds } from '/@/renderer/store/library-favorites.store';
 import { Icon } from '/@/shared/components/icon/icon';
 import { Text } from '/@/shared/components/text/text';
@@ -36,6 +37,7 @@ export const HomeRadioStations = () => {
     const { currentStreamUrl, isPlaying } = useRadioPlayer();
     const { play, stop } = useRadioControls();
     const favoriteIds = useFavoriteRadioStationIds(server?.id);
+    const hiddenKeys = useHiddenHomeKeys();
     const { ref: gridRef, width: gridWidth } = useElementSize();
 
     const radioListQuery = useQuery({
@@ -43,7 +45,20 @@ export const HomeRadioStations = () => {
         enabled: Boolean(server?.id),
     });
 
-    const allStations = useMemo(() => radioListQuery.data ?? [], [radioListQuery.data]);
+    const allStations = useMemo(
+        () =>
+            (radioListQuery.data ?? []).filter(
+                (station) =>
+                    !hiddenKeys.has(
+                        hiddenHomeItemKey({
+                            id: station.id,
+                            serverId: server?.id,
+                            type: 'radio',
+                        }),
+                    ),
+            ),
+        [radioListQuery.data, hiddenKeys, server?.id],
+    );
 
     const favoriteStations = useMemo(
         () => allStations.filter((station) => favoriteIds.has(station.id)),
@@ -99,7 +114,16 @@ export const HomeRadioStations = () => {
                             onContextMenu={(event) => {
                                 event.preventDefault();
                                 ContextMenuController.call({
-                                    cmd: { items: [station], serverId: server.id, type: 'radio' },
+                                    cmd: {
+                                        homeItemKey: hiddenHomeItemKey({
+                                            id: station.id,
+                                            serverId: server.id,
+                                            type: 'radio',
+                                        }),
+                                        items: [station],
+                                        serverId: server.id,
+                                        type: 'radio',
+                                    },
                                     event,
                                 });
                             }}

@@ -20,6 +20,9 @@ export type MediaContextMenuKind =
     | 'song';
 
 export interface MediaContextMenuOpenOptions {
+    // True when opened from the Home screen, so the menu offers "Remove from
+    // Home" (a non-destructive per-device hide). Off everywhere else.
+    allowRemoveFromHome?: boolean;
     // True when the menu is opened from the detail page itself, so we should
     // skip the "Open Album/Playlist/Artist" action (you're already there).
     suppressOpenAction?: boolean;
@@ -35,6 +38,9 @@ export type MediaContextMenuTarget =
     | {
           detail?: MobileMediaDetail;
           kind: 'song';
+          // Content key to hide when "Remove from Home" is chosen; only set when
+          // the menu was opened from the Home screen.
+          removeFromHomeKey?: string;
           source?: MobileContentSource;
           suppressDownloadAction?: boolean;
           suppressOpenAction?: boolean;
@@ -44,6 +50,7 @@ export type MediaContextMenuTarget =
     | {
           item: AndroidRecentContentSourceItem;
           kind: Exclude<MediaContextMenuKind, 'song'>;
+          removeFromHomeKey?: string;
           suppressDownloadAction?: boolean;
           suppressOpenAction?: boolean;
           suppressQueueAction?: boolean;

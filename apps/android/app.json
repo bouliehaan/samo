@@ -3,6 +3,7 @@
     "name": "Samo",
     "slug": "samo-android",
     "version": "1.0.0",
+    "orientation": "portrait",
     "icon": "../../assets/icons/final2-android-icon.png",
     "newArchEnabled": true,
     "splash": {

@@ -1,4 +1,4 @@
-import { Dimensions, Platform } from 'react-native';
+import { Dimensions, Platform, StatusBar } from 'react-native';
 
 import { type HomeDisplaySection } from '../types/home';
 import { spacing } from './tokens';
@@ -6,7 +6,17 @@ import { spacing } from './tokens';
 export const SCREEN_HEIGHT = Dimensions.get('window').height;
 export const SCREEN_WIDTH = Dimensions.get('window').width;
 
-export const PLAYER_SAFE_TOP = Platform.OS === 'android' ? 24 : 0;
+/**
+ * REAL Android status-bar height. The old hardcoded 24 was only ever right on
+ * older/smaller devices — modern phones report 28–40+dp (punch-hole cameras),
+ * so every screen's header sat partially UNDER the status bar and the Home
+ * glass pane looked "cut off". StatusBar.currentHeight is stable for the
+ * process lifetime, so a module constant is safe.
+ */
+export const STATUS_BAR_INSET =
+    Platform.OS === 'android' ? (StatusBar.currentHeight ?? 24) : 0;
+
+export const PLAYER_SAFE_TOP = STATUS_BAR_INSET;
 
 /** Tab bar chrome — keep in sync with `styles.tabBar`. */
 export const TAB_BAR_PADDING_TOP = 8;
@@ -20,10 +30,34 @@ export const MINI_PLAYER_BOTTOM = TAB_BAR_HEIGHT;
 export const MINI_PLAYER_ARTWORK_SIZE = 58;
 export const MINI_PLAYER_VERTICAL_PADDING = 12;
 export const MINI_PLAYER_HEIGHT = MINI_PLAYER_ARTWORK_SIZE + MINI_PLAYER_VERTICAL_PADDING * 2;
-/** Mini player overlaps scroll content by its height only — tab bar is already out of flow. */
-export const SCROLL_CONTENT_BOTTOM_INSET = MINI_PLAYER_HEIGHT + spacing.sm;
+/**
+ * The whole bottom dock (tab bar + mini player) now FLOATS over the scenes on
+ * one shared frosted-glass pane — the tab bar left the flex flow, so scroll
+ * content runs underneath it and every scrolling screen must clear the full
+ * dock height.
+ */
+export const SCROLL_CONTENT_BOTTOM_INSET = TAB_BAR_HEIGHT + MINI_PLAYER_HEIGHT + spacing.sm;
+/**
+ * Bottom inset when the mini player is hidden (nothing playing and nothing in
+ * the last-played slot): just the floating tab bar plus a breathing gap —
+ * anything more is dead space (the "chin"). See `useScrollContentBottomInset`.
+ */
+export const SCROLL_CONTENT_BOTTOM_INSET_COLLAPSED = TAB_BAR_HEIGHT + spacing.sm;
 /** Slightly rounder than flat; echoes display bottom corners without a pill shape. */
 export const MINI_PLAYER_RADIUS = 34;
+
+/**
+ * The floating Home top bar (big serif title + settings button) — the dock's
+ * glass mirrored to the top edge. Height budget mirrors the header row's
+ * real metrics: 18 above the 64px title line, plus breathing room below so
+ * the title never crowds the pane's bottom edge (the mini player lesson).
+ */
+export const TOP_CHROME_PADDING_TOP = 18;
+export const TOP_CHROME_TITLE_HEIGHT = 64;
+export const TOP_CHROME_PADDING_BOTTOM = 10;
+export const TOP_CHROME_HEIGHT =
+    TOP_CHROME_PADDING_TOP + TOP_CHROME_TITLE_HEIGHT + TOP_CHROME_PADDING_BOTTOM;
+export const TOP_CHROME_RADIUS = 18;
 
 export const FULL_PLAYER_EXPANDED_TOP = -PLAYER_SAFE_TOP;
 export const FULL_PLAYER_PADDING_TOP = Platform.OS === 'android' ? 42 : 24;
@@ -96,6 +130,10 @@ export const DISMISS_VELOCITY = 900;
 export const QUEUE_SHEET_HEIGHT = Math.round(SCREEN_HEIGHT * 0.78);
 export const QUEUE_CLOSE_DISTANCE = 30;
 export const QUEUE_CLOSE_VELOCITY = 360;
+// Queue rows are FIXED height — the drag-to-reorder slot math derives insertion
+// positions arithmetically from these instead of measuring virtualized rows.
+export const QUEUE_SHEET_ROW_HEIGHT = 60;
+export const QUEUE_SHEET_HEADER_ROW_HEIGHT = 36;
 
 // Two album cards must fit perfectly across the screen with breathing room.
 export const HOME_EDGE_PADDING = 10;
@@ -168,6 +206,7 @@ export const getHomeRowItemLength = (variant: HomeDisplaySection['variant']): nu
         case 'radio':
             return HOME_PRIMARY_TILE - HOME_ROUNDED_OFFSET + HOME_TILE_GAP;
         case 'continue':
+        case 'explo':
         case 'wide':
             return 320 + HOME_TILE_GAP;
         case 'album':
@@ -201,6 +240,7 @@ export const getHomeSectionRowHeight = (
             singleHeight = HOME_MEDIA_ROW_HEIGHT_ROUNDED + HOME_MEDIA_PROGRESS_CHROME;
             break;
         case 'continue':
+        case 'explo':
         case 'wide':
             singleHeight = HOME_MEDIA_ROW_HEIGHT_WIDE;
             break;

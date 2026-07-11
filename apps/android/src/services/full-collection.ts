@@ -5,7 +5,7 @@ import {
 } from '@samo/core/mobile';
 import { type ServerAuthenticationResult } from '@samo/core/server';
 
-import { loadCatalogCollection, loadCatalogCollectionSync } from './catalog/catalog-reads';
+import { loadCatalogCollection } from './catalog/catalog-reads';
 
 export type AndroidFullCollectionState =
     | { items: MobileHomeItem[]; status: 'loaded' }
@@ -36,33 +36,49 @@ export const loadAndroidFullCollectionLocal = async (
 ): Promise<MobileHomeItem[] | null> => {
     if (!authentication) return null;
     const type = HOME_TYPE_BY_VARIANT[variant];
-    const items = await loadCatalogCollection(authentication, type);
-    return items && items.length > 0 ? items : null;
+    // Paged, with a yield between pages. The single unbounded read parsed
+    // EVERY row payload of the type in one JS-thread burst (hundreds of ms on
+    // a big library) right as the View All navigation was animating — the
+    // sync 800-item seed painted instantly and then the whole app hitched.
+    // Chunking bounds each burst; the assembled list still swaps in whole.
+    const PAGE_SIZE = 500;
+    const items: MobileHomeItem[] = [];
+    for (let offset = 0; ; offset += PAGE_SIZE) {
+        const page = await loadCatalogCollection(authentication, type, {
+            limit: PAGE_SIZE,
+            offset,
+        });
+        if (!page || page.length === 0) {
+            break;
+        }
+        items.push(...page);
+        if (page.length < PAGE_SIZE) {
+            break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    return items.length > 0 ? items : null;
 };
 
-// Bounded so the synchronous first-paint read stays a sub-frame operation even
-// for huge libraries; the async `loadAndroidFullCollectionLocal` then fills the
-// complete list off the UI thread.
-//
-// NOTE: tried reducing this to 100 to cut on-nav sync work — it made first
-// Library open WORSE (showed a loading state / cold-start delay) because the
-// large seed was actually masking a one-time cold cost by painting most of the
-// library instantly. Reverted. The real first-open lag is a cold-start cost
-// (lazy SQLite reader open + first query + mount), not the seed size — needs
-// on-device profiling, not blind tuning.
-const SYNC_FIRST_PAINT_LIMIT = 800;
+// Bounded first-paint slice: one capped read that resolves in a single native
+// round-trip, so the grid mounts with content almost immediately while
+// `loadAndroidFullCollectionLocal` pages in the complete list behind it. The
+// cap keeps the payload marshalled over the bridge small; the earlier
+// JS-thread-blocking synchronous read this replaced is gone entirely.
+const FIRST_PAINT_LIMIT = 800;
 
 /**
- * Synchronous first-paint slice of a View-All / Library grid from the catalog,
- * so the screen mounts with content on the first frame (no loading state).
+ * Fast first-paint slice of a View-All / Library grid from the catalog. Reads
+ * off the JS thread (native reader thread), so it never blocks a navigation
+ * frame the way the old synchronous read did.
  */
-export const loadAndroidFullCollectionLocalSync = (
+export const loadAndroidFullCollectionLocalFirstPage = async (
     authentication: ServerAuthenticationResult | null,
     variant: MobileFullCollectionVariant | 'podcast-feed',
-): MobileHomeItem[] => {
+): Promise<MobileHomeItem[]> => {
     if (!authentication) return [];
     const type = HOME_TYPE_BY_VARIANT[variant];
-    return loadCatalogCollectionSync(authentication, type, { limit: SYNC_FIRST_PAINT_LIMIT });
+    return (await loadCatalogCollection(authentication, type, { limit: FIRST_PAINT_LIMIT })) ?? [];
 };
 
 /** Full collection state from the mirror. `loading` means the mirror has no

@@ -8,7 +8,7 @@ import {
 } from '@samo/core/mobile';
 import { type ServerAuthenticationResult } from '@samo/core/server';
 
-import { searchLocal } from './catalog/catalog-repository';
+import { searchLocal } from './catalog/catalog-reads';
 
 export type AndroidSearchState =
     | { message: string; query: string; status: 'error' }
@@ -58,9 +58,8 @@ const searchCatalogResults = async (
     userRecents: Map<string, number> | undefined,
 ): Promise<MobileSearchResults | null> => {
     try {
-        const items = await searchLocal(query, {
+        const items = await searchLocal(authentication, query, {
             limit: ANDROID_LOCAL_SEARCH_LIMIT,
-            sourceId: getMobileContentSource(authentication).id,
         });
         return items.length > 0
             ? buildMobileSearchResultsFromItems(query, items, { userRecents })

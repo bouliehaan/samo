@@ -15,6 +15,7 @@ class SamoAudioPackage : ReactPackage {
       SamoDownloadsModule(reactContext),
       SamoLastPlayedModule(reactContext),
       SamoCatalogSyncModule(reactContext),
+      SamoCatalogQueryModule(reactContext),
       SamoAuthMirrorModule(reactContext),
     )
   }

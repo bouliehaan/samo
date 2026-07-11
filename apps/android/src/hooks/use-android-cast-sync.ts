@@ -6,16 +6,15 @@ import {
     subscribeToAndroidCastEvents,
     subscribeToAndroidOutputRouteEvents,
 } from '../services/audio-playback';
-import { useAppSessionState } from '../state/app-session';
+import { setCastState } from '../state/app-session';
 
 /**
  * Hydrates cast state and pre-warms the Cast SDK + MediaRouter discovery on
  * mount so Chromecast devices are already being scanned before the user opens
- * the output picker.
+ * the output picker. Write-only: dispatches through the module-level setter,
+ * so it subscribes to nothing.
  */
 export function useAndroidCastSync(): void {
-    const { setCastState } = useAppSessionState();
-
     useEffect(() => {
         const castSubscription = subscribeToAndroidCastEvents((event) => {
             setCastState(event);
@@ -51,5 +50,5 @@ export function useAndroidCastSync(): void {
             castSubscription.remove();
             routesSubscription.remove();
         };
-    }, [setCastState]);
+    }, []);
 }

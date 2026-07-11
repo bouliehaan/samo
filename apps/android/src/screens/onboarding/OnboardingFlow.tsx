@@ -473,19 +473,6 @@ const WelcomeStep = ({ onStart }: { onStart: () => void }) => {
                         >
                             Samo
                         </Text>
-                        <Text
-                            style={{
-                                color: colors.muted,
-                                fontFamily: 'OfficeCodePro-Regular',
-                                fontSize: 15,
-                                lineHeight: 24,
-                                marginTop: 18,
-                                maxWidth: 330,
-                            }}
-                        >
-                            Your music, audiobooks, and podcasts — streaming straight from
-                            your own server. Let&apos;s get you connected.
-                        </Text>
                     </Reanimated.View>
                     <Reanimated.View
                         accessibilityHint="Swipe up to get started"

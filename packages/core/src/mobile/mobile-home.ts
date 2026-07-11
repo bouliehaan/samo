@@ -11,6 +11,7 @@ import {
     type SamoPodcast,
     type SamoPodcastEpisode,
     type SamoProgrammedRadioStation,
+    findSamoExploPlaylist,
     getSamoMusicBrowse,
     listSamoCatalogRecentlyAdded,
     type SamoRecentlyAddedEntry,
@@ -32,6 +33,7 @@ import {
     resolveSamoPodcastEpisodeArtworkUrl,
     resolveSamoStationArtworkUrl,
     samoItemsOf,
+    samoPlaylistHasCoverGrid,
 } from '../server/server-samo';
 import { ensureSamoStreamToken, getCachedSamoStreamToken } from '../server/server-samo-stream-token';
 import { ServerType } from '../server/server-types';
@@ -50,6 +52,13 @@ import {
     formatRadioTagsLine,
 } from './mobile-radio-metadata';
 
+/** Cached formatter – avoids re-creating Intl.DateTimeFormat per episode. */
+const episodeDateFormat = new Intl.DateTimeFormat(undefined, {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+});
+
 export enum MobileHomeItemType {
     ALBUM = 'album',
     ARTIST = 'artist',
@@ -63,6 +72,7 @@ export enum MobileHomeItemType {
 export enum MobileHomeSectionId {
     AUDIOBOOKS = 'audiobooks',
     DISCOVER = 'discover',
+    EXPLO = 'explo',
     FAVORITE_ALBUMS = 'favorite-albums',
     FAVORITE_ARTISTS = 'favorite-artists',
     PLAYLISTS = 'playlists',
@@ -83,12 +93,14 @@ export interface MobileHomeContentForServersInput {
     authentication: ServerAuthenticationResult | null;
     fetch?: SamoFetch;
     limit?: number;
+    signal?: AbortSignal;
 }
 
 export interface MobileHomeContentInput {
     authentication: ServerAuthenticationResult;
     fetch?: SamoFetch;
     limit?: number;
+    signal?: AbortSignal;
 }
 
 export interface MobileHomeItem {
@@ -141,6 +153,14 @@ export interface MobileHomeItem {
      * `id` is synthetic (`ext:<name>`) and must never be used for a detail fetch.
      */
     external?: boolean;
+    /**
+     * Set by the explo folder integration - the album is fully sourced from
+     * an unmanaged auto-tagged drop folder. Consumers that build a "Recently
+     * Added" style shelf from raw mirror/list data (rather than one of the
+     * server's own filtered /recently-added endpoints) must filter this out
+     * themselves - the server can't do it for them there.
+     */
+    hiddenFromRecentlyAdded?: boolean;
     id: string;
     isHiRes?: boolean;
     /**
@@ -331,6 +351,7 @@ const samoAlbumToHomeItem = (
         addedAt: toEpochMs(album.addedAt),
         artworkImageId: pickSamoImageId(album.images),
         artworkUrl: resolveSamoAlbumArtworkUrl(authentication, album, streamToken),
+        hiddenFromRecentlyAdded: album.hiddenFromRecentlyAdded || undefined,
         id: album.id,
         lastPlayedAt: toEpochMs(album.playback?.lastPlayedAt),
         playCount: album.playback?.playCount,
@@ -373,7 +394,12 @@ const samoPlaylistToHomeItem = (
     if (!playlist.id || !playlist.name) return null;
 
     return {
-        artworkImageId: pickSamoImageId(playlist.images),
+        // A grid playlist (>1 cover) renders the server-composited 2x2 at
+        // artworkUrl; emitting a single first-cover imageId here would make the
+        // display resolver prefer that one cover and lose the grid.
+        artworkImageId: samoPlaylistHasCoverGrid(playlist)
+            ? undefined
+            : pickSamoImageId(playlist.images),
         artworkUrl: resolveSamoPlaylistArtworkUrl(authentication, playlist, streamToken),
         id: playlist.id,
         lastPlayedAt: toEpochMs(playlist.playback?.lastPlayedAt),
@@ -614,11 +640,7 @@ const samoPodcastEpisodeToHomeItem = (
         streamToken,
     );
     const releaseLabel = publishedMs
-        ? new Intl.DateTimeFormat(undefined, {
-              day: 'numeric',
-              month: 'short',
-              year: 'numeric',
-          }).format(publishedMs)
+        ? episodeDateFormat.format(publishedMs)
         : undefined;
     const subtitle = [showTitle, releaseLabel].filter(Boolean).join(' · ');
 
@@ -993,6 +1015,44 @@ export const loadMobileRadioForServers = async ({
     return items;
 };
 
+/**
+ * The server-managed Explo playlist for the Home "New from Explo" card, or
+ * an empty array when it doesn't exist yet / has no tracks / the feature
+ * isn't configured on this server. Like radio, the on-device mirror has no
+ * way to identify which playlist (if any) is the system-managed one — the
+ * `system` flag isn't part of the mirrored item shape — so this is fetched
+ * live alongside the other server-curated sections rather than read from the
+ * mirror.
+ */
+export const loadMobileExploForServers = async ({
+    authentication,
+    fetch: fetcher,
+}: {
+    authentication: ServerAuthenticationResult | null;
+    fetch?: SamoFetch;
+}): Promise<MobileHomeItem[]> => {
+    const request = getFetch(fetcher);
+
+    if (!authentication || authentication.type !== ServerType.SAMO) {
+        return [];
+    }
+
+    try {
+        const source = getMobileContentSource(authentication);
+        const streamToken = await resolveSamoStreamToken(authentication, request);
+        const playlist = await findSamoExploPlaylist(request, authentication);
+        // No card at all until the server has actually dropped tracks into
+        // it — an empty Explo playlist reads the same as "not set up yet"
+        // from the listener's point of view.
+        if (!playlist || !playlist.trackCount) return [];
+        const item = samoPlaylistToHomeItem(authentication, playlist, streamToken, source);
+        return item ? [item] : [];
+    } catch {
+        // Explo is best-effort; the rest of Home should still render.
+        return [];
+    }
+};
+
 export const loadMobileDiscoveryForServers = async ({
     authentication,
     fetch: fetcher,
@@ -1139,6 +1199,7 @@ const loadSamoHomeContent = async (
     authentication: ServerAuthenticationResult,
     fetcher: SamoFetch,
     limit: number,
+    signal?: AbortSignal,
 ): Promise<MobileHomeContent> => {
     const source = getMobileContentSource(authentication);
     const streamToken = await resolveSamoStreamToken(authentication, fetcher);
@@ -1148,33 +1209,43 @@ const loadSamoHomeContent = async (
         sort: 'playCount' as const,
     };
 
+    // -----------------------------------------------------------------------
+    // Tier 1 — above-the-fold: what the user sees first (~3 concurrent calls)
+    // -----------------------------------------------------------------------
     const [
         recentlyAddedResult,
-        topArtistsResult,
         topAlbumsResult,
-        discoveryResult,
-        podcastFeedResult,
-        playlistsResult,
-        audiobooksResult,
-        podcastsResult,
-        internetRadioResult,
-        programmedRadioResult,
+        topArtistsResult,
     ] = await Promise.allSettled([
         loadSamoRecentlyAddedHomeItems(authentication, fetcher, streamToken, source, limit),
-        listSamoMusicArtists(fetcher, authentication, playCountListQuery).then((body) =>
-            samoItemsOf(body).flatMap((artist) => {
-                const item = samoArtistToHomeItem(authentication, artist, streamToken, source);
-                return item ? [item] : [];
-            }),
-        ),
         listSamoMusicAlbums(fetcher, authentication, playCountListQuery).then((body) =>
             samoItemsOf(body).flatMap((album) => {
                 const item = samoAlbumToHomeItem(authentication, album, streamToken, source);
                 return item ? [item] : [];
             }),
         ),
-        loadSamoDiscoveryHomeItems(authentication, fetcher, streamToken, source),
-        loadSamoPodcastFeedHomeItems(authentication, fetcher, streamToken, source),
+        listSamoMusicArtists(fetcher, authentication, playCountListQuery).then((body) =>
+            samoItemsOf(body).flatMap((artist) => {
+                const item = samoArtistToHomeItem(authentication, artist, streamToken, source);
+                return item ? [item] : [];
+            }),
+        ),
+    ]);
+
+    // Bail early if the caller cancelled (e.g. user switched servers).
+    if (signal?.aborted) {
+        throw new Error('loadSamoHomeContent aborted');
+    }
+
+    // -----------------------------------------------------------------------
+    // Tier 2 — mid-screen sections (~4 concurrent calls)
+    // -----------------------------------------------------------------------
+    const [
+        playlistsResult,
+        exploResult,
+        audiobooksResult,
+        discoveryResult,
+    ] = await Promise.allSettled([
         listSamoMusicPlaylists(fetcher, authentication, { limit: 200 }).then((body) =>
             sortHomeItemsByLastPlayed(
                 samoItemsOf(body).flatMap((playlist) => {
@@ -1183,12 +1254,37 @@ const loadSamoHomeContent = async (
                 }),
             ).slice(0, limit),
         ),
+        findSamoExploPlaylist(fetcher, authentication).then((playlist) => {
+            // No section at all until the server has actually dropped tracks
+            // into it — an empty Explo playlist is indistinguishable from "not
+            // set up yet" from the listener's point of view.
+            if (!playlist || !playlist.trackCount) return [];
+            const item = samoPlaylistToHomeItem(authentication, playlist, streamToken, source);
+            return item ? [item] : [];
+        }),
         listSamoAudiobooks(fetcher, authentication, { limit }).then((body) =>
             samoItemsOf(body).flatMap((audiobook) => {
                 const item = samoAudiobookToHomeItem(authentication, audiobook, streamToken, source);
                 return item ? [item] : [];
             }),
         ),
+        loadSamoDiscoveryHomeItems(authentication, fetcher, streamToken, source),
+    ]);
+
+    if (signal?.aborted) {
+        throw new Error('loadSamoHomeContent aborted');
+    }
+
+    // -----------------------------------------------------------------------
+    // Tier 3 — off-screen content (~4 concurrent calls)
+    // -----------------------------------------------------------------------
+    const [
+        podcastFeedResult,
+        podcastsResult,
+        internetRadioResult,
+        programmedRadioResult,
+    ] = await Promise.allSettled([
+        loadSamoPodcastFeedHomeItems(authentication, fetcher, streamToken, source),
         listSamoPodcasts(fetcher, authentication, { limit }).then((body) =>
             samoItemsOf(body).flatMap((podcast) => {
                 const item = samoPodcastToHomeItem(authentication, podcast, streamToken, source);
@@ -1237,6 +1333,7 @@ const loadSamoHomeContent = async (
     pushError(discoveryResult, MobileHomeSectionId.DISCOVER);
     pushError(podcastFeedResult, MobileHomeSectionId.PODCAST_FEED);
     pushError(playlistsResult, MobileHomeSectionId.PLAYLISTS);
+    pushError(exploResult, MobileHomeSectionId.EXPLO);
     pushError(audiobooksResult, MobileHomeSectionId.AUDIOBOOKS);
     pushError(podcastsResult, MobileHomeSectionId.PODCASTS);
     pushError(internetRadioResult, MobileHomeSectionId.RADIO);
@@ -1289,6 +1386,11 @@ const loadSamoHomeContent = async (
             title: 'Playlists',
         },
         {
+            id: MobileHomeSectionId.EXPLO,
+            items: settledOrEmpty(exploResult),
+            title: 'New from Explore',
+        },
+        {
             id: MobileHomeSectionId.RADIO,
             items: radioItems,
             title: 'Radio',
@@ -1308,10 +1410,18 @@ const SAMO_FULL_COLLECTION_MAX_PAGES = 40;
 
 const loadSamoFullCollectionPaged = async <T>(
     page: (input: { limit: number; offset: number }) => Promise<SamoPaginatedResponse<T> | T[]>,
+    options?: {
+        /** Deliver each page to the consumer as it arrives. Return `false` to
+         *  stop paging early (e.g. user navigated away). */
+        onPage?: (batch: T[], cumulativeCount: number) => boolean | void;
+        /** Abort signal — checked between pages to bail out early. */
+        signal?: AbortSignal;
+    },
 ): Promise<T[]> => {
     const all: T[] = [];
 
     for (let i = 0; i < SAMO_FULL_COLLECTION_MAX_PAGES; i += 1) {
+        if (options?.signal?.aborted) break;
         const response = await page({
             limit: SAMO_FULL_COLLECTION_LIMIT,
             offset: i * SAMO_FULL_COLLECTION_LIMIT,
@@ -1319,6 +1429,11 @@ const loadSamoFullCollectionPaged = async <T>(
         const batch = samoItemsOf<T>(response);
         if (batch.length === 0) break;
         all.push(...batch);
+        // Stream to consumer as pages arrive (for incremental rendering).
+        if (options?.onPage) {
+            const shouldContinue = options.onPage(batch, all.length);
+            if (shouldContinue === false) break;
+        }
         if (batch.length < SAMO_FULL_COLLECTION_LIMIT) break;
     }
 
@@ -1523,11 +1638,12 @@ export const loadMobileHomeContent = async ({
     authentication,
     fetch: fetcher,
     limit = DEFAULT_HOME_LIMIT,
+    signal,
 }: MobileHomeContentInput): Promise<MobileHomeContent> => {
     const request = getFetch(fetcher);
 
     if (authentication.type === ServerType.SAMO) {
-        return loadSamoHomeContent(authentication, request, limit);
+        return loadSamoHomeContent(authentication, request, limit, signal);
     }
 
     throw new Error('Home content is not wired for this server type');

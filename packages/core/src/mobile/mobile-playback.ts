@@ -57,6 +57,14 @@ export interface MobilePlayableAudio {
     contentSourceId?: string;
     durationSeconds?: number;
     /**
+     * Authenticated server proxy stream for this item, present when `url`
+     * points somewhere else (a podcast's direct CDN enclosure). Native falls
+     * back to this when the direct open fails, and its presence marks the item
+     * as server-backed for credential/progress-sync attachment even though
+     * `url` is external.
+     */
+    serverStreamUrl?: string;
+    /**
      * Radio-only: the station's homepage URL, kept separate from `subtitle`
      * so the Android notification (which uses subtitle as the artist line)
      * doesn't leak a raw URL into the lock-screen UI. The Stream Information
@@ -579,17 +587,48 @@ export const applySamoPodcastStreamResume = (
     }
 
     const resume = Math.max(0, Math.floor(resumeSeconds));
+    const proxyUrl = getSamoPodcastEpisodeStreamUrl(authentication, episodeId, { streamToken });
+
+    // Direct-enclosure mode: the playable URL stays the episode's own CDN
+    // enclosure (no server hop); the freshly-tokened proxy rides along as the
+    // native fallback. Legacy/proxy mode keeps rebuilding `url` itself.
+    if (playback.serverStreamUrl !== undefined) {
+        return {
+            ...playback,
+            initialPositionSeconds: resume,
+            progressOffsetSeconds: 0,
+            serverStreamUrl: proxyUrl,
+        };
+    }
 
     return {
         ...playback,
         initialPositionSeconds: resume,
         progressOffsetSeconds: 0,
-        url: getSamoPodcastEpisodeStreamUrl(authentication, episodeId, { streamToken }),
+        url: proxyUrl,
     };
 };
 
 export const isSamoPodcastPlayback = (item: MobilePlayableAudio) =>
     item.source === 'podcast' && item.id.startsWith(`${ServerType.SAMO}:`);
+
+/**
+ * A playable direct enclosure: plain http(s) only. Anything else (missing,
+ * malformed, exotic schemes) falls back to the server proxy.
+ */
+const pickDirectPodcastEnclosureUrl = (enclosureUrl: string | undefined): string | undefined => {
+    if (!enclosureUrl) {
+        return undefined;
+    }
+    try {
+        const parsed = new URL(enclosureUrl);
+        return parsed.protocol === 'http:' || parsed.protocol === 'https:'
+            ? enclosureUrl
+            : undefined;
+    } catch {
+        return undefined;
+    }
+};
 
 export const buildSamoPodcastEpisodePlayback = (
     authentication: ServerAuthenticationResult,
@@ -618,6 +657,24 @@ export const buildSamoPodcastEpisodePlayback = (
         ? Date.parse(episode.publishedAt)
         : undefined;
 
+    // Source selection, smartest-first:
+    //   1. The SERVER already holds the bytes (proxy cache or a local-library
+    //      episode) → stream through the server: disk-fast, no CDN walk.
+    //   2. Otherwise stream the CDN enclosure DIRECTLY — the proxy costs a
+    //      whole extra network leg (brutal through a remote tunnel) plus its
+    //      first-fetch ad-chain walk. The proxy rides along in
+    //      `serverStreamUrl` as the native open-failure fallback.
+    //   3. No usable enclosure → proxy.
+    // A file downloaded ON THE PHONE supersedes all of this at play/queue time
+    // via resolveOfflinePlayable. Progress sync is keyed on the episode id and
+    // is identical in every mode.
+    const serverHoldsEpisode =
+        episode.cache?.cached === true || episode.cache?.local === true;
+    const directEnclosureUrl = serverHoldsEpisode
+        ? undefined
+        : pickDirectPodcastEnclosureUrl(episode.enclosureUrl);
+    const proxyUrl = getSamoPodcastEpisodeStreamUrl(authentication, episode.id, { streamToken });
+
     return applySamoPodcastStreamResume(
         {
             artworkUrl,
@@ -630,9 +687,10 @@ export const buildSamoPodcastEpisodePlayback = (
                     ? publishedAtMs
                     : undefined,
             quality,
+            serverStreamUrl: directEnclosureUrl ? proxyUrl : undefined,
             source: 'podcast',
             title,
-            url: getSamoPodcastEpisodeStreamUrl(authentication, episode.id, { streamToken }),
+            url: directEnclosureUrl ?? proxyUrl,
         },
         resumeSeconds,
         authentication,

@@ -5,7 +5,7 @@ import { persist } from 'zustand/middleware';
 import { identityPersistMigrate, PERSIST_VERSION_INITIAL } from '/@/renderer/store/persist-migrate';
 
 // Local favorites for media types whose backends do not expose a first-class
-// "favorite" concept (Audiobookshelf books/podcasts, playlists) or where we deliberately
+// "favorite" concept (Samo long-form books/podcasts, playlists) or where we deliberately
 // keep them client-side (radio stations) so the home page surfaces what *this
 // user* cares about, not the entire library. Music album/artist/song favorites
 // continue to flow through Subsonic `star`/`unstar`.

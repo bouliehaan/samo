@@ -30,6 +30,6 @@ export const loadAndroidLibraryRelevantContent = async (
     // here — a fresh install whose post-sync mirror read returned 0 (until
     // the next recycle/sync). The token-based race guard in App.tsx then
     // swallowed every subsequent retry, so the skeleton never lifted.
-    const items = loadCatalogLibraryRelevantItems(authentication);
+    const items = await loadCatalogLibraryRelevantItems(authentication);
     return { items, loadedAt: Date.now(), status: 'loaded' };
 };

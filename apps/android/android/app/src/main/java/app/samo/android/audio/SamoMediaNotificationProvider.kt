@@ -73,7 +73,11 @@ class SamoMediaNotificationProvider(
             mediaSession.player.currentMediaItem?.mediaMetadata ?: mediaSession.player.mediaMetadata
         val artworkUri = metadata.artworkUri
         if (artworkUri != null) {
-            val artworkKey = artworkUri.toString()
+            // Cache key is the TOKEN-STRIPPED identity: the same cover must hit
+            // the cache across stream-token rotations (~25 min), or a long
+            // screen-off session re-fetches art with whatever token the queue
+            // item was built with hours ago — a guaranteed 401 and a grey tile.
+            val artworkKey = SamoNativeStreamUrl.canonicalArtworkCacheKey(artworkUri.toString())
             if (artworkCache[artworkKey] == null && artworkKey !in inFlightLoads) {
                 inFlightLoads.add(artworkKey)
                 loadArtworkAndColor(
@@ -126,6 +130,7 @@ class SamoMediaNotificationProvider(
         val player = mediaSession.player
         val metadata = player.currentMediaItem?.mediaMetadata ?: player.mediaMetadata
         val artworkKey = metadata.artworkUri?.toString()
+            ?.let { SamoNativeStreamUrl.canonicalArtworkCacheKey(it) }
         val cached = artworkKey?.let { artworkCache[it] }
         val title = metadata.title?.toString().orEmpty()
         val artist = metadata.artist?.toString().orEmpty()

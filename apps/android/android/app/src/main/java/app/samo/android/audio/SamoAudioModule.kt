@@ -53,6 +53,9 @@ class SamoAudioModule(
   fun seekTo(positionMs: Double, promise: Promise) = engine.seekTo(positionMs, promise)
 
   @ReactMethod
+  fun setRepeatMode(mode: String, promise: Promise) = engine.setRepeatMode(mode, promise)
+
+  @ReactMethod
   fun setSleepTimer(seconds: Double, promise: Promise) = engine.setSleepTimer(seconds, promise)
 
   @ReactMethod
@@ -63,6 +66,10 @@ class SamoAudioModule(
 
   @ReactMethod
   fun getStatus(promise: Promise) = engine.getStatus(promise)
+
+  @ReactMethod
+  fun getResumeProgress(kind: String, targetId: String, promise: Promise) =
+    engine.getResumeProgress(kind, targetId, promise)
 
   @ReactMethod
   fun updateNowPlayingMetadata(metadata: ReadableMap, promise: Promise) =

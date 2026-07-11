@@ -7,6 +7,7 @@ import { AlbumInfiniteCarousel } from '/@/renderer/features/albums/components/al
 import {
     HomeAlbumsSection,
     HomeDiscoverSection,
+    HomeExploSection,
     HomeFavoriteArtists,
     HomeFavoriteAudiobooks,
     HomeFavoritePlaylists,
@@ -23,6 +24,7 @@ import { PageErrorBoundary } from '/@/renderer/features/shared/components/page-e
 import { HomePageSkeleton } from '/@/renderer/features/shared/components/page-skeletons/page-skeletons';
 import { AppRoute } from '/@/renderer/router/routes';
 import { useWindowSettings } from '/@/renderer/store';
+import { useHiddenHomeIdsByType } from '/@/renderer/store/hidden-home-items.store';
 import { Stack } from '/@/shared/components/stack/stack';
 import { AlbumListSort, SortOrder } from '/@/shared/types/domain-types';
 import { Platform } from '/@/shared/types/types';
@@ -32,10 +34,13 @@ const HomeRecentlyAddedAlbums = ({
 }: {
     containerQuery?: ReturnType<typeof useGridCarouselContainerQuery>;
 }) => {
+    const hiddenAlbumIds = useHiddenHomeIdsByType('album');
     return (
         <AlbumInfiniteCarousel
             containerQuery={containerQuery}
             enableRefresh
+            enableRemoveFromHome
+            excludeIds={hiddenAlbumIds}
             queryKey={['home', 'album', 'recently-added'] as const}
             rowCount={1}
             sortBy={AlbumListSort.RECENTLY_ADDED}
@@ -76,6 +81,7 @@ const HomeRoute = () => {
                         ref={containerQuery.ref}
                     >
                         <HomeRadioStations />
+                        <HomeExploSection />
                         <HomeFavoritePlaylists containerQuery={containerQuery} />
                         <HomeFavoriteAudiobooks containerQuery={containerQuery} />
                         <HomePodcastFeedSection containerQuery={containerQuery} />

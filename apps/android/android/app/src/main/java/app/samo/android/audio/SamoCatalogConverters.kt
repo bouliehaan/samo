@@ -94,6 +94,12 @@ internal object SamoCatalogConverters {
                 ?: SamoNativeStreamUrl.buildMusicAlbumCoverUrl(serverUrl, id, streamToken.orEmpty())
         val quality = samoAlbumQualityProfile(album)
         val hiRes = album.optBoolean("hiRes")
+        // Explo-sourced albums: the server excludes them from its own
+        // /recently-added endpoints, but Android's home "Recently Added" shelf
+        // reads this mirror instead of calling that endpoint, so the flag has
+        // to ride along in the payload for recentlyAddedFromMirror to filter
+        // on. No new column - it's a display-time filter, not a query one.
+        val hiddenFromRecentlyAdded = album.optBoolean("hiddenFromRecentlyAdded")
 
         val payload = JSONObject()
             .putNotNull("addedAt", toEpochMs(album.optString("addedAt").nullIfBlank()))
@@ -108,6 +114,7 @@ internal object SamoCatalogConverters {
             .put("title", title)
             .put("type", "album")
             .also { if (hiRes) it.put("isHiRes", true) }
+            .also { if (hiddenFromRecentlyAdded) it.put("hiddenFromRecentlyAdded", true) }
 
         return ItemBinding(
             sourceId = sourceId,
@@ -203,14 +210,21 @@ internal object SamoCatalogConverters {
             else -> ownerName
         }
         val images = playlist.optJSONArray("images")
-        val artworkImageId = pickSamoImageId(images)
+        // A playlist with >1 cover renders the server-composited 2x2 grid at
+        // /music/playlists/{id}/cover. The JS display resolver
+        // (resolveSamoItemArtworkSourceForDisplay) prefers artworkImageId over
+        // artworkUrl, so emitting a single first-cover id here would override the
+        // grid with one cover. Drop the id for grid playlists. Kotlin twin of the
+        // JS mapper fix in packages/core (samoPlaylistHasCoverGrid).
+        val hasCoverGrid = images != null && images.length() > 1
+        val artworkImageId = if (hasCoverGrid) null else pickSamoImageId(images)
         val playlistCoverUrl = SamoNativeStreamUrl.buildStreamUrl(
             serverUrl,
             "/music/playlists/${encode(id)}/cover",
             streamToken.orEmpty(),
         )
         val artworkUrl =
-            if (images != null && images.length() > 1) {
+            if (hasCoverGrid) {
                 playlistCoverUrl
             } else {
                 resolveSamoImageUrl(serverUrl, images, streamToken)

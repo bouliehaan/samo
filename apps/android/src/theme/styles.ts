@@ -19,10 +19,17 @@ import {
     MINI_PLAYER_RADIUS,
     MINI_PLAYER_VERTICAL_PADDING,
     SCROLL_CONTENT_BOTTOM_INSET,
+    STATUS_BAR_INSET,
     TAB_BAR_BUTTON_MIN_HEIGHT,
+    TAB_BAR_HEIGHT,
     TAB_BAR_PADDING_BOTTOM,
     TAB_BAR_PADDING_TOP,
+    TOP_CHROME_HEIGHT,
+    TOP_CHROME_PADDING_BOTTOM,
+    TOP_CHROME_RADIUS,
+    QUEUE_SHEET_HEADER_ROW_HEIGHT,
     QUEUE_SHEET_HEIGHT,
+    QUEUE_SHEET_ROW_HEIGHT,
     SCREEN_HEIGHT,
     SCREEN_WIDTH,
     VIEW_ALL_SIDEBAR_GUTTER,
@@ -907,14 +914,13 @@ export const styles = StyleSheet.create({
         paddingHorizontal: HOME_EDGE_PADDING,
         paddingTop: spacing.lg,
     },
-    // Home renders its own fixed header above the list, so the list itself needs
-    // far less top padding than the shared ScrollView scenes (whose in-scroll
-    // titles rely on tabContent's top padding for their breathing room). Keeps
-    // the pills tucked up close under the big "Home" title.
     homeListContent: {
         paddingBottom: SCROLL_CONTENT_BOTTOM_INSET,
         paddingHorizontal: HOME_EDGE_PADDING,
-        paddingTop: spacing.xs,
+        // The Home header now FLOATS on the top glass pane, so the list
+        // scrolls underneath it and must clear its full height at rest —
+        // the top mirror of SCROLL_CONTENT_BOTTOM_INSET.
+        paddingTop: TOP_CHROME_HEIGHT + spacing.xs,
     },
     contextMenu: {
         backgroundColor: 'rgba(18, 18, 18, 0.96)',
@@ -2319,6 +2325,14 @@ export const styles = StyleSheet.create({
         padding: 12,
         width: 320,
     },
+    exploTileEyebrow: {
+        color: colors.accent,
+        fontSize: 10,
+        fontWeight: '900',
+        letterSpacing: 1.2,
+        marginBottom: 2,
+        textTransform: 'uppercase',
+    },
     mediaTitle: {
         color: colors.text,
         fontSize: 14,
@@ -2343,10 +2357,19 @@ export const styles = StyleSheet.create({
         lineHeight: 19,
     },
     miniPlayer: {
-        backgroundColor: colors.surface,
+        // The mini player is CONTENT riding on the shared frosted dock pane
+        // (BottomChromeBackdrop) — it paints no surface of its own, so there is
+        // no boundary (and no seam) between it and the tab bar below.
+        backgroundColor: 'transparent',
         borderTopLeftRadius: MINI_PLAYER_RADIUS,
         borderTopRightRadius: MINI_PLAYER_RADIUS,
         bottom: MINI_PLAYER_BOTTOM,
+        // Pinned to the SAME constant the glass pane (bottomChromeWithMini) is
+        // sized with. Without this the row is intrinsically sized, and a
+        // 3-line track (radio/audiobook) used to grow it past the pane so the
+        // title crowded the glass's top edge. Content is budgeted to fit: see
+        // miniPlayerTitle/miniPlayerSubtitle line metrics.
+        height: MINI_PLAYER_HEIGHT,
         left: 0,
         overflow: 'hidden',
         position: 'absolute',
@@ -2391,15 +2414,24 @@ export const styles = StyleSheet.create({
         color: colors.muted,
         fontSize: 14,
         fontFamily: 'OfficeCodePro-Regular',
+        includeFontPadding: false,
         lineHeight: 18,
     },
     miniPlayerText: {
         flex: 1,
     },
+    // Line metrics are LOAD-BEARING: playback metadata is up to three lines
+    // (radio/audiobook), and 20 + 2 + 18 + 18 must equal
+    // MINI_PLAYER_ARTWORK_SIZE (58) so the tallest text block never outgrows
+    // the row the glass pane budgets for. Android's default line box for
+    // 16px bold (~24 with font padding) is what pushed 3-line tracks past
+    // the pane's top edge.
     miniPlayerTitle: {
         color: colors.text,
         fontSize: 16,
         fontWeight: '700',
+        includeFontPadding: false,
+        lineHeight: 20,
         marginBottom: 2,
     },
     miniPlayerTitleRow: {
@@ -2603,11 +2635,6 @@ export const styles = StyleSheet.create({
         right: spacing.lg,
         zIndex: 24,
     },
-    playlistHeaderActions: {
-        alignItems: 'center',
-        flexDirection: 'row',
-        gap: spacing.sm,
-    },
     playlistPillButton: {
         alignItems: 'center',
         backgroundColor: colors.accent,
@@ -2645,11 +2672,27 @@ export const styles = StyleSheet.create({
         left: 8,
         top: 2,
     },
+    /**
+     * Playlists header stack: the 64px serif title CANNOT share a row with
+     * the sort pill + shuffle pill on narrow phones (the "+" ended up reading
+     * as "Playlists+" and the pill clipped). Same pattern as Home: title row
+     * first (title + one icon button), controls on their own row beneath.
+     */
     playlistTopPanel: {
+        flexDirection: 'column',
+        marginBottom: spacing.md,
+    },
+    playlistTitleRow: {
         alignItems: 'center',
         flexDirection: 'row',
         justifyContent: 'space-between',
-        marginBottom: spacing.md,
+    },
+    playlistControlsRow: {
+        alignItems: 'center',
+        flexDirection: 'row',
+        gap: spacing.sm,
+        justifyContent: 'flex-end',
+        marginTop: spacing.sm,
     },
     primaryButton: {
         alignItems: 'center',
@@ -2755,8 +2798,76 @@ export const styles = StyleSheet.create({
         alignItems: 'center',
         flexDirection: 'row',
         gap: 12,
+        height: QUEUE_SHEET_ROW_HEIGHT,
         paddingHorizontal: spacing.lg,
-        paddingVertical: 8,
+    },
+    /** Fixed-height shell so drag slot math can be pure arithmetic. */
+    queueRowShell: {
+        height: QUEUE_SHEET_ROW_HEIGHT,
+    },
+    queueRowContentWrap: {
+        flex: 1,
+        flexDirection: 'row',
+    },
+    queueRowPressable: {
+        alignItems: 'center',
+        flex: 1,
+        flexDirection: 'row',
+        gap: 12,
+        height: QUEUE_SHEET_ROW_HEIGHT,
+        paddingLeft: spacing.lg,
+    },
+    queueRowRemoveUnderlay: {
+        ...StyleSheet.absoluteFillObject,
+        alignItems: 'flex-end',
+        backgroundColor: '#58251f',
+        justifyContent: 'center',
+        paddingRight: spacing.lg,
+    },
+    queueRowRemoveText: {
+        color: '#ffb1a3',
+        fontFamily: 'OfficeCodePro-Medium',
+        fontSize: 12,
+        letterSpacing: 0.6,
+        textTransform: 'uppercase',
+    },
+    queueDragHandle: {
+        alignItems: 'center',
+        height: QUEUE_SHEET_ROW_HEIGHT,
+        justifyContent: 'center',
+        width: 52,
+    },
+    queueRowDragSource: {
+        opacity: 0.3,
+    },
+    /** Floating copy of the dragged row, rendered above the list viewport. */
+    queueDragTwin: {
+        backgroundColor: colors.surfaceHigh,
+        borderColor: colors.borderStrong,
+        borderRadius: 12,
+        borderWidth: StyleSheet.hairlineWidth,
+        elevation: 12,
+        height: QUEUE_SHEET_ROW_HEIGHT,
+        left: spacing.xs,
+        position: 'absolute',
+        right: spacing.xs,
+        shadowColor: '#000',
+        shadowOffset: { height: 6, width: 0 },
+        shadowOpacity: 0.4,
+        shadowRadius: 12,
+        top: 0,
+        zIndex: 30,
+    },
+    /** Accent insertion line marking the drop slot while dragging. */
+    queueDropIndicator: {
+        backgroundColor: colors.accent,
+        borderRadius: 1,
+        height: 2,
+        left: spacing.lg,
+        position: 'absolute',
+        right: spacing.lg,
+        top: 0,
+        zIndex: 20,
     },
     queueRowBody: {
         flex: 1,
@@ -2802,9 +2913,10 @@ export const styles = StyleSheet.create({
         fontWeight: '600',
     },
     queueSectionHeader: {
+        height: QUEUE_SHEET_HEADER_ROW_HEIGHT,
+        justifyContent: 'flex-end',
         paddingBottom: 6,
         paddingHorizontal: spacing.lg,
-        paddingTop: 16,
     },
     queueSectionHeaderText: {
         color: colors.muted,
@@ -3068,11 +3180,15 @@ export const styles = StyleSheet.create({
         flexDirection: 'column',
         position: 'relative',
     },
-    /** Tab scenes, nav overlays, and player chrome — sits above the in-flow tab bar. */
+    /** Tab scenes, nav overlays, and player chrome — sits above the in-flow tab bar.
+     *  overflow stays VISIBLE: the Home top-glass pane extends STATUS_BAR_INSET
+     *  above this box to run under the translucent status bar, and any 'hidden'
+     *  here (or on tabSceneHost) clips it flat at the content origin. Nothing
+     *  else overhangs: every child is absolute-fill, and the scene dissolve's
+     *  6px rise only dips below the bottom edge, under the dock chrome. */
     appContent: {
         flex: 1,
         minHeight: 0,
-        overflow: 'hidden',
         position: 'relative',
     },
     row: {
@@ -3089,7 +3205,9 @@ export const styles = StyleSheet.create({
     safeArea: {
         backgroundColor: colors.background,
         flex: 1,
-        paddingTop: Platform.OS === 'android' ? 24 : 0,
+        // The REAL status-bar height — the hardcoded 24 sat every header
+        // partially under the status bar on modern (taller-inset) phones.
+        paddingTop: STATUS_BAR_INSET,
     },
     searchArtwork: {
         backgroundColor: colors.surface,
@@ -3570,35 +3688,127 @@ export const styles = StyleSheet.create({
         lineHeight: 18,
     },
     tabBar: {
-        backgroundColor: colors.surface,
+        // Content row on the shared frosted dock pane — floats over the scenes
+        // (out of flex flow) so scroll content runs beneath the glass.
+        backgroundColor: 'transparent',
+        bottom: 0,
         flexDirection: 'row',
+        left: 0,
         paddingBottom: TAB_BAR_PADDING_BOTTOM,
         paddingHorizontal: spacing.xs,
         paddingTop: TAB_BAR_PADDING_TOP,
+        position: 'absolute',
+        right: 0,
+        zIndex: 10,
+    },
+    /**
+     * The shared frosted-glass pane under the mini player + tab bar — ONE
+     * surface for the whole dock, so the two rows read as one piece and no
+     * seam can exist between them. Blur + tint + chroma washes live inside
+     * (BottomChromeBackdrop); this is geometry only.
+     */
+    bottomChrome: {
+        borderColor: 'rgba(255, 255, 255, 0.09)',
+        borderTopWidth: StyleSheet.hairlineWidth,
+        bottom: 0,
+        left: 0,
+        overflow: 'hidden',
+        position: 'absolute',
+        right: 0,
+        zIndex: 9,
+    },
+    bottomChromeWithMini: {
+        borderTopLeftRadius: MINI_PLAYER_RADIUS,
+        borderTopRightRadius: MINI_PLAYER_RADIUS,
+        height: TAB_BAR_HEIGHT + MINI_PLAYER_HEIGHT,
+    },
+    bottomChromeBare: {
+        borderTopLeftRadius: 18,
+        borderTopRightRadius: 18,
+        height: TAB_BAR_HEIGHT,
+    },
+    /**
+     * A whisper of smoke over the chrome glass (dock AND Home top bar) —
+     * just enough to seat ink on busy artwork. PURE BLACK on purpose: a
+     * black overlay is multiplicative (zero additive veil), so it dims what
+     * shows through without greying it. The pane's darkness comes from this
+     * plus the BlurView's in-matrix `brightness` dim (chromeGlass token).
+     * Any non-black smoke here reads as cast on the black glass — the old
+     * (4,4,7) was a third of the "bluish greyish" complaint; grey lift
+     * belongs to nothing.
+     */
+    chromeSmoke: {
+        backgroundColor: 'rgba(0, 0, 0, 0.26)',
+    },
+    /**
+     * The Home top bar's glass pane — the dock's material mirrored to the
+     * top edge (geometry only; layers live in TopChromeBackdrop). Content
+     * scrolls beneath it; the floating header row rides on top.
+     */
+    topChrome: {
+        // No hairline here, unlike the dock: the dock's top hairline reads
+        // as light catching the glass edge, but the same line at the pane's
+        // bottom sat right above the filter pills and read as a stray
+        // divider (Jacob vetoed it). The pane's edge is the soft tonal
+        // boundary of the glass itself.
+        borderBottomLeftRadius: TOP_CHROME_RADIUS,
+        borderBottomRightRadius: TOP_CHROME_RADIUS,
+        // The glass runs from the PHYSICAL top of the screen (under the
+        // translucent status bar) down past the header row — the pane
+        // stopping at the padded content origin is what read as "cut off by
+        // the status bar". Requires overflow VISIBLE on appContent +
+        // tabSceneHost (see appContent) and the translucent StatusBar in
+        // App.tsx. The floating header row stays at the padded origin, so
+        // the title itself never sits under the status icons.
+        height: TOP_CHROME_HEIGHT + STATUS_BAR_INSET,
+        left: 0,
+        overflow: 'hidden',
+        position: 'absolute',
+        right: 0,
+        top: -STATUS_BAR_INSET,
+        zIndex: 9,
+    },
+    /**
+     * Lifts the Home header out of the flex flow onto the top glass pane —
+     * same move the dock made: scroll content runs underneath, the header
+     * is just ink riding the glass. Keeps styles.header's own row layout.
+     */
+    homeHeaderFloating: {
+        height: TOP_CHROME_HEIGHT,
+        left: 0,
+        paddingBottom: TOP_CHROME_PADDING_BOTTOM,
+        position: 'absolute',
+        right: 0,
+        top: 0,
         zIndex: 10,
     },
     tabScene: {
         ...StyleSheet.absoluteFillObject,
         backgroundColor: colors.background,
     },
-    tabSceneActive: {
-        opacity: 1,
+    /** Active scene layers above the one fading out (TabSceneContainer). */
+    tabSceneOnTop: {
         zIndex: 1,
     },
-    tabSceneHidden: {
-        // display:'none' (NOT opacity:0) so an inactive scene is fully removed
-        // from layout AND from the touch hierarchy. The scenes are absolute-fill
-        // and stacked on top of each other; an opacity:0 scene stayed touchable,
-        // and because `pointerEvents="none"` on a ScrollView does not block its
-        // children on Android, taps fell THROUGH the invisible scene sitting over
-        // Home to whatever tile was under the finger — which is why every Home
-        // tap (landing on the Radio scene stacked above it) played the radio
-        // station in that spot. A display:'none' view cannot be tapped.
+    /**
+     * Resting state for a hidden scene: display:'none' (NOT opacity:0) so it is
+     * fully removed from layout AND the touch hierarchy. The scenes are
+     * absolute-fill and stacked; an opacity-0 ScrollView on Android still let
+     * taps fall THROUGH to its children — the historical "every Home tap played
+     * the radio station stacked over it" bug. TabSceneContainer only lifts this
+     * during its brief fade-out, behind a plain View with pointerEvents:'none'
+     * (a reliable subtree blocker — the fall-through was ScrollView-specific).
+     */
+    tabSceneDetached: {
         display: 'none',
     },
+    /** Inner scroll container inside the absolute-fill animated scene layer. */
+    tabSceneFill: {
+        flex: 1,
+    },
+    /** overflow visible on purpose — see appContent. */
     tabSceneHost: {
         flex: 1,
-        overflow: 'hidden',
         position: 'relative',
     },
     /** Full-screen layer above the always-mounted tab host (detail, settings, view-all). */

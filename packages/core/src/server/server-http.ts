@@ -61,6 +61,53 @@ export const withRequestTimeout = (
     };
 };
 
+/** One retry, 500ms backoff — matches docs/PERFORMANCE_AND_NETWORK.md's P0. */
+const RETRY_DELAY_MS = 500;
+
+const isRetryableTransportError = (error: unknown): boolean => {
+    if (!(error instanceof Error)) {
+        return false;
+    }
+    // TypeError is how RN/browser fetch surfaces a real connection failure
+    // (DNS, refused, dropped mid-request). The timeout message is
+    // withRequestTimeout's own AbortError, rethrown with this text below.
+    // Neither means the request was invalid — both are worth one retry.
+    return error.name === 'TypeError' || error.message.startsWith('Request timed out');
+};
+
+/**
+ * Retry a single idempotent GET once, with a short backoff, on a transient
+ * transport failure (timeout / dropped connection) — never on an HTTP error
+ * response (that's a real answer, not a transport problem) and never on a
+ * mutation. On a LAN a dropped request almost never happens; over a real
+ * internet connection (e.g. through a Cloudflare Tunnel) a single blip is
+ * common enough that surfacing it as a hard failure — turning "podcast feed
+ * didn't load" into "reload the app" — is worse than the cost of one retry.
+ *
+ * Steps aside entirely when the caller already supplies an AbortSignal:
+ * that caller (e.g. the interactive auth fetcher, or a screen's own
+ * request-cancellation token) is already managing its own retry/cancel
+ * story, and doubling up would fight it.
+ */
+const withIdempotentRetry = (fetcher: SamoFetch): SamoFetch => {
+    return async (url, init) => {
+        const method = (init?.method ?? 'GET').toUpperCase();
+        if (method !== 'GET' || init?.signal) {
+            return fetcher(url, init);
+        }
+
+        try {
+            return await fetcher(url, init);
+        } catch (error) {
+            if (!isRetryableTransportError(error)) {
+                throw error;
+            }
+            await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
+            return fetcher(url, init);
+        }
+    };
+};
+
 export const getFetch = (
     fetcher?: SamoFetch,
     timeoutMs = DEFAULT_SAMO_REQUEST_TIMEOUT_MS,
@@ -72,7 +119,7 @@ export const getFetch = (
         throw new Error('Fetch is not available');
     }
 
-    return withRequestTimeout(resolvedFetch, timeoutMs);
+    return withIdempotentRetry(withRequestTimeout(resolvedFetch, timeoutMs));
 };
 
 export const normalizeBaseUrl = (url: string | null | undefined) =>
@@ -84,9 +131,9 @@ export const requestJson = async <T>(
     init?: SamoFetchInit,
 ): Promise<T> => {
     const response = await fetcher(url, init);
-    const bodyText = response.text ? await response.text() : '';
 
     if (!response.ok) {
+        const bodyText = response.text ? await response.text() : '';
         const detail = bodyText.trim().slice(0, 200);
         throw new Error(
             detail
@@ -95,16 +142,9 @@ export const requestJson = async <T>(
         );
     }
 
-    if (!bodyText.trim()) {
-        throw new Error(`Empty response from ${url}`);
-    }
-
     try {
-        return JSON.parse(bodyText) as T;
+        return (await response.json()) as T;
     } catch {
-        const detail = bodyText.trim().slice(0, 200);
-        throw new Error(
-            detail ? `Invalid JSON response: ${detail}` : `Invalid JSON response from ${url}`,
-        );
+        throw new Error(`Invalid JSON response from ${url}`);
     }
 };

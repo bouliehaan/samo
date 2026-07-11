@@ -3,7 +3,6 @@ import { useCallback, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router';
 
 import { CommandPalette } from '/@/renderer/features/search/components/command-palette';
-import { useGarbageCollection } from '/@/renderer/hooks/use-garbage-collection';
 import { useIsMobile } from '/@/renderer/hooks/use-is-mobile';
 import { DefaultLayout } from '/@/renderer/layouts/default-layout';
 import { MobileLayout } from '/@/renderer/layouts/mobile-layout/mobile-layout';
@@ -35,7 +34,6 @@ export const ResponsiveLayout = ({ shell }: ResponsiveLayoutProps) => {
         <>
             <ResponsiveLayoutBase shell={shell} />
             <LayoutHotkeys />
-            <GarbageCollection />
         </>
     );
 };
@@ -106,9 +104,4 @@ const LayoutHotkeys = () => {
     useHotkeys(hotkeys);
 
     return <CommandPalette modalProps={modalProps} />;
-};
-
-const GarbageCollection = () => {
-    useGarbageCollection();
-    return null;
 };

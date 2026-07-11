@@ -397,6 +397,7 @@ export const normalizeSamoMusicPlaylist = (
         id: playlist.id,
         imageId: pickSamoCatalogImageId(pickSamoImageId(playlist.images)) ?? null,
         imageUrl,
+        isSystem: playlist.system ?? false,
         lastPlayedAt: playlist.playback?.lastPlayedAt ?? null,
         name: playlist.name,
         owner: playlist.ownerName ?? null,

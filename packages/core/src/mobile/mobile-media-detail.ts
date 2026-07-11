@@ -39,6 +39,7 @@ import {
     resolveSamoPodcastArtworkUrl,
     resolveSamoPodcastEpisodeArtworkUrl,
     samoItemsOf,
+    samoPlaylistHasCoverGrid,
 } from '../server/server-samo';
 import { ensureSamoStreamToken } from '../server/server-samo-stream-token';
 import { ServerType } from '../server/server-types';
@@ -241,13 +242,6 @@ export interface MobileMediaDetail {
         ownerId?: string;
         public?: boolean;
     };
-    /**
-     * Windowed first frame: true when `tracks` holds only the first screenful of
-     * a large list (e.g. a big playlist opened instantly from the local mirror).
-     * The async full load replaces it, so a partial detail must NOT be cached as
-     * if it were complete.
-     */
-    partial?: boolean;
     source: MobileContentSource;
     subtitle?: string;
     title: string;
@@ -267,6 +261,7 @@ export interface MobileMediaDetailInput {
     authentication: ServerAuthenticationResult;
     fetch?: SamoFetch;
     id: string;
+    signal?: AbortSignal;
     type: MobileMediaDetailType;
 }
 
@@ -692,17 +687,44 @@ export const mapSamoArtistDetail = (
     };
 };
 
+/**
+ * Every track of a playlist, paginated to exhaustion. A single limit=500 page
+ * silently truncated larger playlists — the UI then showed 500 tracks as if
+ * that were the whole list. Stops on the first short/empty page; the 50k
+ * ceiling is a runaway guard, not a product limit.
+ */
+const listAllSamoPlaylistTracks = async (
+    authentication: ServerAuthenticationResult,
+    fetcher: SamoFetch,
+    id: string,
+): Promise<SamoMusicTrack[]> => {
+    const pageSize = 500;
+    const collected: SamoMusicTrack[] = [];
+    for (let offset = 0; offset < 50_000; offset += pageSize) {
+        const response = await listSamoMusicPlaylistTracks(fetcher, authentication, id, {
+            limit: pageSize,
+            offset,
+        });
+        const batch = samoItemsOf(response);
+        collected.push(...batch);
+        if (batch.length < pageSize) {
+            break;
+        }
+    }
+    return collected;
+};
+
 const loadSamoPlaylistDetail = async (
     authentication: ServerAuthenticationResult,
     fetcher: SamoFetch,
     id: string,
 ): Promise<MobileMediaDetail> => {
     const streamToken = await ensureSamoStreamToken(authentication, fetcher).catch(() => undefined);
-    const [playlist, tracksResponse] = await Promise.all([
+    const [playlist, tracks] = await Promise.all([
         getSamoMusicPlaylist(fetcher, authentication, id),
-        listSamoMusicPlaylistTracks(fetcher, authentication, id, { limit: 500 }),
+        listAllSamoPlaylistTracks(authentication, fetcher, id),
     ]);
-    return mapSamoPlaylistDetail(authentication, streamToken, playlist, tracksResponse);
+    return mapSamoPlaylistDetail(authentication, streamToken, playlist, tracks);
 };
 
 /** Pure mapping twin of {@link loadSamoPlaylistDetail} — see mapSamoArtistDetail. */
@@ -719,12 +741,22 @@ export const mapSamoPlaylistDetail = (
 
     return {
         artworkUrl: resolveSamoPlaylistArtworkUrl(authentication, playlist, streamToken),
-        artworkImageId: pickSamoImageId(playlist.images),
+        // A grid playlist (>1 cover) renders the server-composited 2x2 at
+        // artworkUrl; a single first-cover imageId here would make the display
+        // resolver prefer that one cover and lose the grid.
+        artworkImageId: samoPlaylistHasCoverGrid(playlist)
+            ? undefined
+            : pickSamoImageId(playlist.images),
         id: playlist.id,
         metadataLines: playlist.description ? [playlist.description] : undefined,
         playlistMeta: {
             description: playlist.description?.trim() || undefined,
-            editable: isPlaylistOwnedByUser(authentication, playlist.ownerId),
+            // A server-managed system playlist (the explo "Explore" queue) is
+            // never client-editable, no matter who owns it: the server
+            // re-derives its name/membership every reconcile pass and refuses
+            // client mutations with a 403.
+            editable:
+                !playlist.system && isPlaylistOwnedByUser(authentication, playlist.ownerId),
             ownerId: playlist.ownerId,
             public: playlist.public,
         },
@@ -886,17 +918,40 @@ export const mapSamoAudiobookDetail = (
     };
 };
 
+/** Every episode of a show, paginated to exhaustion — same rationale (and
+ *  same runaway guard) as {@link listAllSamoPlaylistTracks}. */
+const listAllSamoPodcastEpisodes = async (
+    authentication: ServerAuthenticationResult,
+    fetcher: SamoFetch,
+    showId: string,
+): Promise<SamoPodcastEpisode[]> => {
+    const pageSize = 500;
+    const collected: SamoPodcastEpisode[] = [];
+    for (let offset = 0; offset < 50_000; offset += pageSize) {
+        const response = await listSamoPodcastEpisodes(fetcher, authentication, showId, {
+            limit: pageSize,
+            offset,
+        });
+        const batch = samoItemsOf(response);
+        collected.push(...batch);
+        if (batch.length < pageSize) {
+            break;
+        }
+    }
+    return collected;
+};
+
 const loadSamoPodcastDetail = async (
     authentication: ServerAuthenticationResult,
     fetcher: SamoFetch,
     id: string,
 ): Promise<MobileMediaDetail> => {
     const streamToken = await ensureSamoStreamToken(authentication, fetcher).catch(() => undefined);
-    const [podcast, episodesResponse] = await Promise.all([
+    const [podcast, episodes] = await Promise.all([
         getSamoPodcastShow(fetcher, authentication, id),
-        listSamoPodcastEpisodes(fetcher, authentication, id, { limit: 500 }),
+        listAllSamoPodcastEpisodes(authentication, fetcher, id),
     ]);
-    return mapSamoPodcastDetail(authentication, streamToken, podcast, episodesResponse);
+    return mapSamoPodcastDetail(authentication, streamToken, podcast, episodes);
 };
 
 /** Pure mapping twin of {@link loadSamoPodcastDetail} — see mapSamoArtistDetail. */
@@ -1125,9 +1180,14 @@ export const loadMobileMediaDetail = async ({
     authentication,
     fetch: fetcher,
     id,
+    signal,
     type,
 }: MobileMediaDetailInput): Promise<MobileMediaDetail> => {
     const request = getFetch(fetcher);
+
+    if (signal?.aborted) {
+        throw new Error('loadMobileMediaDetail aborted');
+    }
 
     if (authentication.type === ServerType.SAMO) {
         return loadSamoMediaDetail(authentication, request, id, type);
@@ -1218,8 +1278,12 @@ export const addMobileTracksToPlaylist = async ({
             .map((track) => track.id)
             .filter(Boolean) as string[];
         const merged = [...existingIds];
+        const mergedSet = new Set<string>(existingIds);
         for (const id of filteredSongIds) {
-            if (!merged.includes(id)) merged.push(id);
+            if (!mergedSet.has(id)) {
+                mergedSet.add(id);
+                merged.push(id);
+            }
         }
 
         await requestJson<unknown>(request, `${authentication.url}/api/v1/music/playlists/${playlistId}`, {

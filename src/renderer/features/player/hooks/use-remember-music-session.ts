@@ -11,7 +11,7 @@ import { useTimestampStoreBase } from '/@/renderer/store/timestamp.store';
 import { PlayerShuffle } from '/@/shared/types/types';
 
 // How often to persist the current timestamp into the last-music-session while music is
-// playing. Matches the audiobookshelf cadence — long enough to avoid IDB churn, short
+// playing. Matches the long-form cadence — long enough to avoid IDB churn, short
 // enough that a hard quit doesn't lose more than a few seconds of resume position.
 const POSITION_FLUSH_INTERVAL_MS = 10_000;
 

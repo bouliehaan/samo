@@ -5,8 +5,6 @@ import {
     ArtistItem,
     ArtistReleaseTypeItem,
     BarAlign,
-    DiscordDisplayType,
-    DiscordLinkType,
     GenreTarget,
     HomeFeatureStyle,
     HomeItem,
@@ -232,16 +230,6 @@ export const initialState: SettingsState = {
     css: {
         content: '',
         enabled: false,
-    },
-    discord: {
-        clientId: '1165957668758900787',
-        displayType: DiscordDisplayType.SAMO,
-        enabled: false,
-        linkType: DiscordLinkType.NONE,
-        showAsListening: false,
-        showPaused: true,
-        showServerImage: false,
-        showStateIcon: true,
     },
     font: {
         builtIn: 'Archivo',

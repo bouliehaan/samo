@@ -8,6 +8,7 @@ import {
     type ReactElement,
     type ReactNode,
     useState,
+    useLayoutEffect,
     useMemo,
     useCallback,
     useDeferredValue,
@@ -15,6 +16,8 @@ import {
 } from 'react';
 import {
     ActivityIndicator,
+    type NativeScrollEvent,
+    type NativeSyntheticEvent,
     Platform,
     Pressable,
     RefreshControl,
@@ -37,6 +40,7 @@ import {
     useDownloadedTrackKeys,
 } from '../contexts/downloaded-keys';
 import { useMediaContextMenu } from '../contexts/media-context-menu';
+import { useScrollContentBottomInset } from '../hooks/use-scroll-content-bottom-inset';
 import { useStableCallback } from '../hooks/use-stable-callback';
 import {
     getHomeRowItemLength,
@@ -51,6 +55,7 @@ import {
     type AndroidRecentContentSourceItem,
 } from '../services/recent-content';
 import { useAppNavigationSelector } from '../state/app-navigation';
+import { useHiddenHomeKeys } from '../state/hidden-home';
 import { type ServerAuthenticationResult } from '@samo/core/server';
 import {
     type ContentBackedScreenProps,
@@ -79,6 +84,10 @@ import { getLibraryMediaType } from '../utils/library-display';
 import { EmptyServerBackedScreen } from './EmptyServerBackedScreen';
 
 const FLASH_LIST_MAINTAIN_POSITION_DISABLED = { disabled: true };
+
+// Sections are ~300px tall; pre-render about two ahead so a normal scroll
+// never catches a blank row while keeping boot to the visible shelves.
+const HOME_SECTION_DRAW_DISTANCE = 600;
 
 export const HomeScreen = memo(({
     isRefreshing,
@@ -153,6 +162,7 @@ export const HomeContentStatus = ({
     recentItems: AndroidRecentContentItem[];
     serverConnection: ServerAuthenticationResult | null;
 }) => {
+    const bottomInset = useScrollContentBottomInset();
     const stablePrefetchItem = useStableCallback(onPrefetchItem ?? (() => {}));
     const stableSelectItem = useStableCallback(onSelectItem);
     const stableViewAll = useStableCallback((section: HomeDisplaySection): void => {
@@ -177,6 +187,26 @@ export const HomeContentStatus = ({
         previousSectionsRef.current = computed;
         return computed;
     }, [loadedContent, recentItems, serverConnection]);
+    // Drop user-hidden items ("Remove from Home"). Preserve object identity when
+    // nothing is hidden (the common case) and for shelves with no hidden items,
+    // so the memoized tiles/rows don't needlessly re-render.
+    const hiddenKeys = useHiddenHomeKeys();
+    const visibleSections = useMemo(() => {
+        if (hiddenKeys.size === 0) {
+            return allSections;
+        }
+        return allSections
+            .map((section) => {
+                if (section.pending) {
+                    return section;
+                }
+                const items = section.items.filter(
+                    (item) => !hiddenKeys.has(getContentItemKey(item)),
+                );
+                return items.length === section.items.length ? section : { ...section, items };
+            })
+            .filter((section) => section.pending || section.items.length > 0);
+    }, [allSections, hiddenKeys]);
     // The pill highlight follows `activeFilter` (urgent — taps feel instant), but
     // the expensive section/grid rebuild follows a DEFERRED copy so it renders at
     // low priority instead of blocking the tap. Switching filters re-renders the
@@ -186,12 +216,12 @@ export const HomeContentStatus = ({
     // the new content reconciles in the background, then swaps in.
     const deferredFilter = useDeferredValue(activeFilter);
     const availableFilters = useMemo(
-        () => getAvailableHomeFilters(allSections),
-        [allSections],
+        () => getAvailableHomeFilters(visibleSections),
+        [visibleSections],
     );
     const filteredSections = useMemo(
-        () => filterHomeDisplaySections(allSections, deferredFilter),
-        [deferredFilter, allSections],
+        () => filterHomeDisplaySections(visibleSections, deferredFilter),
+        [deferredFilter, visibleSections],
     );
     const filteredGridItems = useMemo(
         () => {
@@ -209,6 +239,35 @@ export const HomeContentStatus = ({
         [deferredFilter, filteredSections],
     );
 
+    // Per-shelf horizontal scroll positions, keyed by section key. The vertical
+    // FlashList below RECYCLES row components as you scroll, and a recycled
+    // native ScrollView keeps its old offset — without this map, scrolling deep
+    // into "Top Albums", then down the page, could hand that offset to
+    // "Podcasts". Rows restore their own offset (or 0) on recycle/remount.
+    const sectionScrollOffsetsRef = useRef(new Map<string, number>());
+    const canViewAll = Boolean(onViewAll);
+    const renderSection = useCallback(
+        ({ item: section }: { item: HomeDisplaySection }) =>
+            section.pending ? (
+                <HomeSkeletonRow
+                    count={section.skeletonCount ?? 4}
+                    title={section.title || undefined}
+                    variant={section.variant}
+                />
+            ) : (
+                <HomeDisplayRow
+                    allowRemoveFromHome
+                    horizontalOffsets={sectionScrollOffsetsRef.current}
+                    onPrefetchItem={stablePrefetchItem}
+                    onSelectItem={stableSelectItem}
+                    onViewAll={canViewAll ? stableViewAll : undefined}
+                    section={section}
+                    serverConnection={serverConnection}
+                />
+            ),
+        [canViewAll, serverConnection, stablePrefetchItem, stableSelectItem, stableViewAll],
+    );
+
     // Home owns its own scroll container (rendered in App's non-ScrollView tab
     // path, like Library) so the podcasts/audiobooks grid can be a real
     // virtualized FlashList instead of a non-virtualized items.map of every tile.
@@ -223,7 +282,7 @@ export const HomeContentStatus = ({
     ) : undefined;
     const renderScrollScene = (children: ReactNode) => (
         <ScrollView
-            contentContainerStyle={styles.homeListContent}
+            contentContainerStyle={[styles.homeListContent, { paddingBottom: bottomInset }]}
             refreshControl={refreshControl}
             showsVerticalScrollIndicator={false}
             style={styles.homeSceneRoot}
@@ -326,26 +385,43 @@ export const HomeContentStatus = ({
         );
     }
 
-    return renderScrollScene(
-        <>
-            {pillsRow}
-            {filteredSections.length === 0 ? (
+    if (filteredSections.length === 0) {
+        return renderScrollScene(
+            <>
+                {pillsRow}
                 <View style={[styles.section, { marginTop: spacing.md }]}>
                     <Text style={styles.mutedText}>
                         No {deferredFilter === 'all' ? '' : deferredFilter + ' '}content loaded yet.
                     </Text>
                 </View>
-            ) : (
-                <ContentSections
-                    onPrefetchItem={stablePrefetchItem}
-                    onSelectItem={stableSelectItem}
-                    onViewAll={onViewAll ? stableViewAll : undefined}
-                    sections={filteredSections}
-                    serverConnection={serverConnection}
-                />
-            )}
-            {warnings}
-        </>,
+                {warnings}
+            </>,
+        );
+    }
+
+    // The section list is a vertical FlashList so only the visible shelves
+    // (plus drawDistance) mount — a heavy Home used to mount every horizontal
+    // carousel at once inside a ScrollView. Item types keep recycling pools
+    // homogeneous (a 2-row band never recycles into a single-row shelf).
+    return (
+        <FlashList
+            ListFooterComponent={warnings}
+            ListHeaderComponent={pillsRow}
+            contentContainerStyle={[styles.homeListContent, { paddingBottom: bottomInset }]}
+            data={filteredSections}
+            drawDistance={HOME_SECTION_DRAW_DISTANCE}
+            getItemType={(section) =>
+                section.pending
+                    ? `pending:${section.variant}`
+                    : `${section.variant}:${section.rowCount ?? 1}`
+            }
+            keyExtractor={(section) => section.key}
+            maintainVisibleContentPosition={FLASH_LIST_MAINTAIN_POSITION_DISABLED}
+            refreshControl={refreshControl}
+            renderItem={renderSection}
+            showsVerticalScrollIndicator={false}
+            style={styles.homeSceneRoot}
+        />
     );
 };
 
@@ -444,13 +520,22 @@ const HomeFilterGridTile = memo(({
     variant: 'book' | 'podcast';
 }) => {
     const subtitle = getHomeItemSubtitle(item, variant);
+    const contextMenu = useMediaContextMenu();
 
     return (
         <Pressable
             key={getContentItemKey(item)}
+            // Long-press parity with HomeMediaTile — this wiring was verified
+            // on-device (episode menu from the podcast pill grid) and then lost
+            // in the June-20 tree churn; keep it with the tile.
+            onLongPress={() => contextMenu.openForItem(item)}
             onPress={() => onSelectItem(item)}
             onPressIn={() => onPrefetchItem?.(item)}
-            style={styles.homeFilterGridTile}
+            style={({ pressed }) => [styles.homeFilterGridTile, pressed && styles.tilePressed]}
+            // Long enough that a scroll-start doesn't flash the tile, short
+            // enough that a deliberate press visibly responds — instant-
+            // feedback tenet.
+            unstable_pressDelay={60}
         >
             <ArtworkImage
                 artworkImageId={item.artworkImageId}
@@ -523,6 +608,7 @@ const HomeFilterGrid = memo(({
     variant: 'book' | 'podcast';
 }) => {
     const isPodcast = variant === 'podcast';
+    const bottomInset = useScrollContentBottomInset();
     const rows = useMemo(() => chunkHomeGridRows(items), [items]);
     const renderRow = useCallback(
         ({ item: row }: { item: HomeGridRow }) => (
@@ -551,7 +637,7 @@ const HomeFilterGrid = memo(({
         <FlashList
             ListFooterComponent={ListFooterComponent}
             ListHeaderComponent={ListHeaderComponent}
-            contentContainerStyle={styles.homeListContent}
+            contentContainerStyle={[styles.homeListContent, { paddingBottom: bottomInset }]}
             data={rows}
             drawDistance={HOME_PRIMARY_TILE * 6}
             keyExtractor={(row) => row.key}
@@ -570,6 +656,7 @@ const androidTrimCaptionFont =
     Platform.OS === 'android' ? ({ includeFontPadding: false } as const) : {};
 
 interface HomeMediaTileProps {
+    allowRemoveFromHome?: boolean;
     item: AndroidRecentContentSourceItem;
     onPrefetchItem?: (item: AndroidRecentContentSourceItem) => void;
     onSelectItem: (item: AndroidRecentContentSourceItem) => void;
@@ -584,6 +671,7 @@ const isDownloadableCollectionMediaType = (mediaType: LibraryMediaType | undefin
     mediaType === 'podcasts';
 
 const HomeMediaTile = memo(({
+    allowRemoveFromHome,
     item,
     onPrefetchItem,
     onSelectItem,
@@ -598,11 +686,12 @@ const HomeMediaTile = memo(({
     const isArtist = sectionVariant === 'artist';
     const isBook = sectionVariant === 'book';
     const isContinue = sectionVariant === 'continue';
+    const isExplo = sectionVariant === 'explo';
     const isPlaylist = sectionVariant === 'playlist';
     const isPodcast = sectionVariant === 'podcast' || sectionVariant === 'podcast-feed';
     const isRadioSection = sectionVariant === 'radio';
     const isRecent = sectionVariant === 'recents';
-    const isWide = sectionVariant === 'wide' || isContinue;
+    const isWide = sectionVariant === 'wide' || isContinue || isExplo;
     const isRadio = item.type === MobileHomeItemType.RADIO;
     const mediaType = getLibraryMediaType(item);
     // An artist tile rendered inside a Recents/mixed row must still
@@ -664,11 +753,14 @@ const HomeMediaTile = memo(({
     return (
         <Pressable
             accessibilityRole="button"
-            onLongPress={() => contextMenu.openForItem(item)}
+            onLongPress={() => contextMenu.openForItem(item, { allowRemoveFromHome })}
             onPress={() => onSelectItem(item)}
             onPressIn={() => onPrefetchItem?.(item)}
             style={({ pressed }) => [tileStyle, pressed && styles.tilePressed]}
-            unstable_pressDelay={110}
+            // Long enough that a scroll-start doesn't flash the tile, short
+            // enough that a deliberate press visibly responds — instant-
+            // feedback tenet.
+            unstable_pressDelay={60}
         >
             <ArtworkImage
                 artworkImageId={item.artworkImageId}
@@ -688,6 +780,11 @@ const HomeMediaTile = memo(({
                         isArtist && styles.mediaTextCentered,
                     ]}
                 >
+                    {isExplo ? (
+                        <Text style={styles.exploTileEyebrow} {...androidTrimCaptionFont}>
+                            Explore
+                        </Text>
+                    ) : null}
                     <Text
                         numberOfLines={isRecent ? 1 : 2}
                         style={[
@@ -726,7 +823,9 @@ const HomeMediaTile = memo(({
                             ) : null}
                         </View>
                     ) : null}
-                    {(isContinue || (isPodcast && sectionVariant === 'podcast-feed')) &&
+                    {(isContinue ||
+                        (isPodcast && sectionVariant === 'podcast-feed') ||
+                        isBook) &&
                     progress !== undefined ? (
                         <View style={styles.continueProgressTrack}>
                             <View
@@ -747,12 +846,22 @@ const HomeMediaTile = memo(({
 HomeMediaTile.displayName = 'HomeMediaTile';
 
 interface HomeDisplayRowProps {
+    allowRemoveFromHome?: boolean;
+    /** When rendered inside the recycling section list: per-section-key store
+     *  of the shelf's horizontal scroll offset, restored on recycle/remount. */
+    horizontalOffsets?: Map<string, number>;
     onPrefetchItem?: (item: AndroidRecentContentSourceItem) => void;
     onSelectItem: (item: AndroidRecentContentSourceItem) => void;
     onViewAll?: (section: HomeDisplaySection) => void;
     section: HomeDisplaySection;
     serverConnection: ServerAuthenticationResult | null;
 }
+
+/** The slice of the FlashList ref the offset restore needs (dodges the
+ *  list-item generic, which differs between the 1-row and multi-row shelves). */
+type HorizontalShelfHandle = {
+    scrollToOffset: (params: { animated?: boolean; offset: number }) => void;
+};
 
 /** TL → TR → BL → BR per 2-row band, then continue columns to the right. */
 const chunkHomeSectionItems = (
@@ -783,6 +892,8 @@ const chunkHomeSectionItems = (
 };
 
 const HomeDisplayRow = memo(({
+    allowRemoveFromHome,
+    horizontalOffsets,
     onPrefetchItem,
     onSelectItem,
     onViewAll,
@@ -799,9 +910,36 @@ const HomeDisplayRow = memo(({
         () => (rowCount > 1 ? chunkHomeSectionItems(section.items, rowCount) : []),
         [rowCount, section.items],
     );
+
+    // Recycle-safe horizontal position: when the vertical list reuses this row
+    // for a DIFFERENT section (key change), snap to that section's remembered
+    // offset (or the start) before paint — never the previous section's.
+    const shelfRef = useRef<HorizontalShelfHandle | null>(null);
+    // Callback ref: FlashList's ref generic differs per branch, but both
+    // satisfy the structural handle (param contravariance makes this assign).
+    const setShelfRef = useCallback((instance: HorizontalShelfHandle | null) => {
+        shelfRef.current = instance;
+    }, []);
+    const sectionKey = section.key;
+    useLayoutEffect(() => {
+        if (!horizontalOffsets) {
+            return;
+        }
+        shelfRef.current?.scrollToOffset({
+            animated: false,
+            offset: horizontalOffsets.get(sectionKey) ?? 0,
+        });
+    }, [horizontalOffsets, sectionKey]);
+    const rememberShelfOffset = useCallback(
+        (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+            horizontalOffsets?.set(sectionKey, event.nativeEvent.contentOffset.x);
+        },
+        [horizontalOffsets, sectionKey],
+    );
     const renderItem = useCallback(
         ({ item }: { item: AndroidRecentContentSourceItem }) => (
             <HomeMediaTile
+                allowRemoveFromHome={allowRemoveFromHome}
                 item={item}
                 onPrefetchItem={onPrefetchItem}
                 onSelectItem={onSelectItem}
@@ -809,13 +947,14 @@ const HomeDisplayRow = memo(({
                 serverConnection={serverConnection}
             />
         ),
-        [onPrefetchItem, onSelectItem, section.variant, serverConnection],
+        [allowRemoveFromHome, onPrefetchItem, onSelectItem, section.variant, serverConnection],
     );
     const renderColumn = useCallback(
         ({ item: column }: { item: AndroidRecentContentSourceItem[] }) => (
             <View style={styles.homeMultiRowColumn}>
                 {column.map((item) => (
                     <HomeMediaTile
+                        allowRemoveFromHome={allowRemoveFromHome}
                         item={item}
                         key={getContentItemKey(item)}
                         onPrefetchItem={onPrefetchItem}
@@ -826,7 +965,7 @@ const HomeDisplayRow = memo(({
                 ))}
             </View>
         ),
-        [onPrefetchItem, onSelectItem, section.variant, serverConnection],
+        [allowRemoveFromHome, onPrefetchItem, onSelectItem, section.variant, serverConnection],
     );
 
     return (
@@ -854,6 +993,9 @@ const HomeDisplayRow = memo(({
                     horizontal
                     keyExtractor={(column) => column.map(getContentItemKey).join('|')}
                     maintainVisibleContentPosition={FLASH_LIST_MAINTAIN_POSITION_DISABLED}
+                    onMomentumScrollEnd={rememberShelfOffset}
+                    onScrollEndDrag={rememberShelfOffset}
+                    ref={setShelfRef}
                     renderItem={renderColumn}
                     showsHorizontalScrollIndicator={false}
                     style={{ ...styles.homeRowList, height: rowHeight }}
@@ -865,6 +1007,9 @@ const HomeDisplayRow = memo(({
                     horizontal
                     keyExtractor={getContentItemKey}
                     maintainVisibleContentPosition={FLASH_LIST_MAINTAIN_POSITION_DISABLED}
+                    onMomentumScrollEnd={rememberShelfOffset}
+                    onScrollEndDrag={rememberShelfOffset}
+                    ref={setShelfRef}
                     renderItem={renderItem}
                     showsHorizontalScrollIndicator={false}
                     style={{ ...styles.homeRowList, height: rowHeight }}
@@ -877,12 +1022,14 @@ const HomeDisplayRow = memo(({
 HomeDisplayRow.displayName = 'HomeDisplayRow';
 
 const ContentSections = memo(({
+    allowRemoveFromHome,
     onPrefetchItem,
     onSelectItem,
     onViewAll,
     sections,
     serverConnection,
 }: {
+    allowRemoveFromHome?: boolean;
     onPrefetchItem?: (item: AndroidRecentContentSourceItem) => void;
     onSelectItem: (item: AndroidRecentContentSourceItem) => void;
     onViewAll?: (section: HomeDisplaySection) => void;
@@ -901,6 +1048,7 @@ const ContentSections = memo(({
                     />
                 ) : (
                     <HomeDisplayRow
+                        allowRemoveFromHome={allowRemoveFromHome}
                         key={section.key}
                         onPrefetchItem={onPrefetchItem}
                         onSelectItem={onSelectItem}

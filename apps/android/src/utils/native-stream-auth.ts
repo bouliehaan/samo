@@ -54,7 +54,15 @@ export const attachNativeStreamCredentials = (
     item: MobilePlayableAudio,
     serverConnection: ServerAuthenticationResult | null,
 ): MobilePlayableAudio => {
-    if (!isSamoApiStreamUrl(item.url) && !isSamoApiStreamUrl(item.castUrl)) {
+    // serverStreamUrl marks a server-backed item whose playable `url` is
+    // external (direct podcast enclosure). It MUST still get credentials —
+    // native uses them for the proxy fallback mint AND for the progress-sync
+    // PATCH that keeps resume positions flowing while JS is asleep.
+    if (
+        !isSamoApiStreamUrl(item.url) &&
+        !isSamoApiStreamUrl(item.castUrl) &&
+        !isSamoApiStreamUrl(item.serverStreamUrl)
+    ) {
         return item;
     }
 

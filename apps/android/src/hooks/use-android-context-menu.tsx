@@ -1,10 +1,10 @@
 import { MobileMediaDetailType, type MobileContentSource } from '@samo/core/mobile';
-import { type ServerAuthenticationResult } from '@samo/core/server';
 import { useMemo } from 'react';
 
 import {
     BookInfoGlyph,
     ChaptersGlyph,
+    ClearGlyph,
     DiscGlyph,
     DownloadGlyph,
     HeartGlyph,
@@ -19,8 +19,50 @@ import {
     type MediaContextMenuApi,
     type MediaContextMenuTarget,
 } from '../contexts/media-context-menu';
+import {
+    handleDownloadCollectionItem,
+    handleDownloadSongTrack,
+} from '../handlers/download-handlers';
+import {
+    findAuthForSource,
+    getFavoriteKeyForItem,
+    getFavoriteKeyForTrack,
+    handleToggleFavoriteForItem,
+    handleToggleFavoriteForTrack,
+} from '../handlers/favorites-handlers';
+import { handleOpenBookInfo, handleOpenStreamInfo } from '../handlers/info-handlers';
+import {
+    handleGoToAlbumForTrack,
+    handleGoToArtistForTrack,
+    handleViewDetailForItem,
+} from '../handlers/media-detail-handlers';
+import {
+    handleOpenAddToPlaylistForCollection,
+    handleOpenAddToPlaylistForSong,
+    handleOpenCreatePlaylistForCollection,
+    handleOpenCreatePlaylistForSong,
+} from '../handlers/playlist-handlers';
+import {
+    canAppendToPlaybackQueue,
+    handleAddCollectionToQueue,
+    handleAddRadioToQueue,
+    handleAddTrackToQueue,
+} from '../handlers/queue-handlers';
 import { triggerImpact } from '../services/haptics';
+import { useAppSessionSelector } from '../state/app-session';
+import { useAuthSessionSelector } from '../state/auth-session';
+import { hideFromHome } from '../state/hidden-home';
+import {
+    setContextMenuFeedback,
+    setContextMenuTarget,
+    useMediaOverlaysSelector,
+} from '../state/media-overlays';
+import {
+    selectActiveAndroidPlaybackItem,
+    useAndroidPlaybackState,
+} from '../state/playback-store';
 import { colors } from '../theme/tokens';
+import { getContentItemKey } from '../utils/content-item';
 import { getContentSourceFromPlaybackItem } from '../utils/content-source';
 import {
     inferContextMenuKindFromItem,
@@ -29,14 +71,9 @@ import {
     synthesizeTrackFromPodcastEpisodeItem,
 } from '../utils/context-menu-infer';
 import { isSongSearchItem, synthesizeTrackFromSongItem } from '../utils/search-tracks';
-import {
-    type AndroidMediaHandlerDeps,
-    type AndroidMediaHandlers,
-} from './use-android-media-handlers';
 
 export interface AndroidContextMenuSurface {
     actions: MediaContextMenuAction[];
-    api: MediaContextMenuApi;
     artworkImageId?: string;
     artworkUrl?: string;
     contentSource?: MobileContentSource;
@@ -49,128 +86,95 @@ export interface AndroidContextMenuSurface {
     title: string;
 }
 
-type ContextMenuHandlers = Pick<
-    AndroidMediaHandlers,
-    | 'canAppendToPlaybackQueue'
-    | 'findAuthForSource'
-    | 'getFavoriteKeyForItem'
-    | 'getFavoriteKeyForTrack'
-    | 'handleAddCollectionToQueue'
-    | 'handleAddRadioToQueue'
-    | 'handleAddTrackToQueue'
-    | 'handleDownloadCollectionItem'
-    | 'handleDownloadSongTrack'
-    | 'handleGoToAlbumForTrack'
-    | 'handleGoToArtistForTrack'
-    | 'handleOpenAddToPlaylistForCollection'
-    | 'handleOpenAddToPlaylistForSong'
-    | 'handleOpenCreatePlaylistForCollection'
-    | 'handleOpenCreatePlaylistForSong'
-    | 'handleOpenBookInfo'
-    | 'handleOpenStreamInfo'
-    | 'handleToggleFavoriteForItem'
-    | 'handleToggleFavoriteForTrack'
-    | 'handleViewDetailForItem'
->;
+/**
+ * The long-press API tiles call. It only writes module-level overlay state, so
+ * it's a module constant — the MediaContextMenuContext.Provider value never
+ * changes and tiles' useMediaContextMenu() subscriptions never re-render.
+ */
+export const mediaContextMenuApi: MediaContextMenuApi = {
+    openForItem: (item, openOptions) => {
+        // Captured while we still have the original Home item — song-kind
+        // targets (search songs, podcast-feed episodes) don't keep it.
+        const removeFromHomeKey = openOptions?.allowRemoveFromHome
+            ? getContentItemKey(item)
+            : undefined;
+        if (isSongSearchItem(item)) {
+            triggerImpact('medium');
+            setContextMenuFeedback(null);
+            setContextMenuTarget({
+                kind: 'song',
+                removeFromHomeKey,
+                source: item.source,
+                suppressDownloadAction: openOptions?.suppressDownloadAction,
+                suppressOpenAction: openOptions?.suppressOpenAction,
+                suppressQueueAction: openOptions?.suppressQueueAction,
+                track: synthesizeTrackFromSongItem(item),
+            });
+            return;
+        }
+        if (isPodcastEpisodeHomeItem(item)) {
+            // Podcast Feed episode tile — route through the song-kind
+            // target the show detail rows use, so the episode gets the
+            // same Favorites + Download episode menu instead of the
+            // silent nothing an unmapped kind used to produce.
+            triggerImpact('medium');
+            setContextMenuFeedback(null);
+            setContextMenuTarget({
+                detail: synthesizePodcastDetailFromEpisodeItem(item) ?? undefined,
+                kind: 'song',
+                removeFromHomeKey,
+                source: item.source,
+                suppressDownloadAction: openOptions?.suppressDownloadAction,
+                suppressOpenAction: openOptions?.suppressOpenAction,
+                suppressQueueAction: openOptions?.suppressQueueAction,
+                track: synthesizeTrackFromPodcastEpisodeItem(item),
+            });
+            return;
+        }
+        const kind = inferContextMenuKindFromItem(item);
+        if (!kind) {
+            return;
+        }
+        triggerImpact('medium');
+        setContextMenuFeedback(null);
+        setContextMenuTarget({
+            item,
+            kind,
+            removeFromHomeKey,
+            suppressDownloadAction: openOptions?.suppressDownloadAction,
+            suppressOpenAction: openOptions?.suppressOpenAction,
+            suppressQueueAction: openOptions?.suppressQueueAction,
+        });
+    },
+    openForTrack: (track, detail) => {
+        triggerImpact('medium');
+        setContextMenuFeedback(null);
+        setContextMenuTarget({
+            detail,
+            kind: 'song',
+            source: detail?.source,
+            track,
+        });
+    },
+};
 
-export function useAndroidContextMenu(options: {
-    deps: Pick<AndroidMediaHandlerDeps, 'overlays' | 'session'>;
-    handlers: ContextMenuHandlers;
-    serverConnection: ServerAuthenticationResult | null;
-}): AndroidContextMenuSurface {
-    const { deps, handlers, serverConnection } = options;
-    const {
-        contextMenuFeedback,
-        contextMenuTarget,
-        setContextMenuFeedback,
-        setContextMenuTarget,
-    } = deps.overlays;
-    const { favoritedKeys } = deps.session;
+const closeContextMenu = () => {
+    setContextMenuTarget(null);
+    setContextMenuFeedback(null);
+};
 
-    const {
-        canAppendToPlaybackQueue,
-        findAuthForSource,
-        getFavoriteKeyForItem,
-        getFavoriteKeyForTrack,
-        handleAddCollectionToQueue,
-        handleAddRadioToQueue,
-        handleAddTrackToQueue,
-        handleDownloadCollectionItem,
-        handleDownloadSongTrack,
-        handleGoToAlbumForTrack,
-        handleGoToArtistForTrack,
-        handleOpenAddToPlaylistForCollection,
-        handleOpenAddToPlaylistForSong,
-        handleOpenCreatePlaylistForCollection,
-        handleOpenCreatePlaylistForSong,
-        handleOpenBookInfo,
-        handleOpenStreamInfo,
-        handleToggleFavoriteForItem,
-        handleToggleFavoriteForTrack,
-        handleViewDetailForItem,
-    } = handlers;
-
-    const api = useMemo<MediaContextMenuApi>(
-        () => ({
-            openForItem: (item, openOptions) => {
-                if (isSongSearchItem(item)) {
-                    triggerImpact('medium');
-                    setContextMenuFeedback(null);
-                    setContextMenuTarget({
-                        kind: 'song',
-                        source: item.source,
-                        suppressDownloadAction: openOptions?.suppressDownloadAction,
-                        suppressOpenAction: openOptions?.suppressOpenAction,
-                        suppressQueueAction: openOptions?.suppressQueueAction,
-                        track: synthesizeTrackFromSongItem(item),
-                    });
-                    return;
-                }
-                if (isPodcastEpisodeHomeItem(item)) {
-                    // Podcast Feed episode tile — route through the song-kind
-                    // target the show detail rows use, so the episode gets the
-                    // same Favorites + Download episode menu instead of the
-                    // silent nothing an unmapped kind used to produce.
-                    triggerImpact('medium');
-                    setContextMenuFeedback(null);
-                    setContextMenuTarget({
-                        detail: synthesizePodcastDetailFromEpisodeItem(item) ?? undefined,
-                        kind: 'song',
-                        source: item.source,
-                        suppressDownloadAction: openOptions?.suppressDownloadAction,
-                        suppressOpenAction: openOptions?.suppressOpenAction,
-                        suppressQueueAction: openOptions?.suppressQueueAction,
-                        track: synthesizeTrackFromPodcastEpisodeItem(item),
-                    });
-                    return;
-                }
-                const kind = inferContextMenuKindFromItem(item);
-                if (!kind) {
-                    return;
-                }
-                triggerImpact('medium');
-                setContextMenuFeedback(null);
-                setContextMenuTarget({
-                    item,
-                    kind,
-                    suppressDownloadAction: openOptions?.suppressDownloadAction,
-                    suppressOpenAction: openOptions?.suppressOpenAction,
-                    suppressQueueAction: openOptions?.suppressQueueAction,
-                });
-            },
-            openForTrack: (track, detail) => {
-                triggerImpact('medium');
-                setContextMenuFeedback(null);
-                setContextMenuTarget({
-                    detail,
-                    kind: 'song',
-                    source: detail?.source,
-                    track,
-                });
-            },
-        }),
-        [setContextMenuFeedback, setContextMenuTarget],
-    );
+/**
+ * Renders the context-menu surface from the overlay store. Every action is a
+ * stable module-level handler, so the memo below only recomputes when the
+ * target, favorites, or queueability actually change.
+ */
+export function useAndroidContextMenu(): AndroidContextMenuSurface {
+    const contextMenuTarget = useMediaOverlaysSelector((state) => state.contextMenuTarget);
+    const contextMenuFeedback = useMediaOverlaysSelector((state) => state.contextMenuFeedback);
+    const favoritedKeys = useAppSessionSelector((state) => state.favoritedKeys);
+    const serverConnection = useAuthSessionSelector((state) => state.serverConnection);
+    const activePlaybackItem = useAndroidPlaybackState(selectActiveAndroidPlaybackItem);
+    const canAppendToQueue = canAppendToPlaybackQueue(activePlaybackItem);
 
     const actions = useMemo<MediaContextMenuAction[]>(() => {
         if (!contextMenuTarget) {
@@ -190,7 +194,7 @@ export function useAndroidContextMenu(options: {
             // this was hard-gated to 'music', which is why long-pressing a podcast
             // episode (source 'podcast') offered no Add to Queue at all.
             const canQueueTrack =
-                canAppendToPlaybackQueue &&
+                canAppendToQueue &&
                 !contextMenuTarget.suppressQueueAction &&
                 track.playback != null &&
                 track.playback.source !== 'radio';
@@ -264,6 +268,19 @@ export function useAndroidContextMenu(options: {
                 });
             }
 
+            if (contextMenuTarget.removeFromHomeKey) {
+                const homeKey = contextMenuTarget.removeFromHomeKey;
+                menuActions.push({
+                    icon: <ClearGlyph color={colors.text} />,
+                    id: 'remove-from-home',
+                    label: 'Remove from Home',
+                    onPress: () => {
+                        hideFromHome(homeKey);
+                        setContextMenuTarget(null);
+                    },
+                });
+            }
+
             return menuActions;
         }
 
@@ -287,7 +304,7 @@ export function useAndroidContextMenu(options: {
         const suppressQueue = contextMenuTarget.suppressQueueAction === true;
 
         if (contextMenuTarget.kind === 'audiobook') {
-            if (canAppendToPlaybackQueue && !suppressQueue) {
+            if (canAppendToQueue && !suppressQueue) {
                 menuActions.push({
                     icon: <QueueAddGlyph color={colors.text} />,
                     id: 'queue',
@@ -336,9 +353,9 @@ export function useAndroidContextMenu(options: {
             // A live station can't sit mid-queue, but it CAN be queued at the tail
             // to take over when the current podcast/audiobook (and anything after
             // it) finishes — the fall-asleep handoff. Only offered when something
-            // queueable is already playing (canAppendToPlaybackQueue is false while
+            // queueable is already playing (canAppendToQueue is false while
             // radio itself is the active item).
-            if (canAppendToPlaybackQueue && !suppressQueue) {
+            if (canAppendToQueue && !suppressQueue) {
                 menuActions.push({
                     icon: <QueueAddGlyph color={colors.text} />,
                     id: 'queue',
@@ -357,7 +374,7 @@ export function useAndroidContextMenu(options: {
             contextMenuTarget.kind === 'playlist'
         ) {
             const auth = findAuthForSource(item.source?.id);
-            if (canAppendToPlaybackQueue && !suppressQueue) {
+            if (canAppendToQueue && !suppressQueue) {
                 menuActions.push({
                     icon: <QueueAddGlyph color={colors.text} />,
                     id: 'queue',
@@ -396,8 +413,7 @@ export function useAndroidContextMenu(options: {
                 menuActions.push({
                     icon: <ChaptersGlyph color={colors.text} />,
                     id: 'open',
-                    label:
-                        contextMenuTarget.kind === 'album' ? 'Open Album' : 'Open Playlist',
+                    label: contextMenuTarget.kind === 'album' ? 'Open Album' : 'Open Playlist',
                     onPress: () => void handleViewDetailForItem(item),
                 });
             }
@@ -412,31 +428,21 @@ export function useAndroidContextMenu(options: {
             }
         }
 
+        if (contextMenuTarget.removeFromHomeKey) {
+            const homeKey = contextMenuTarget.removeFromHomeKey;
+            menuActions.push({
+                icon: <ClearGlyph color={colors.text} />,
+                id: 'remove-from-home',
+                label: 'Remove from Home',
+                onPress: () => {
+                    hideFromHome(homeKey);
+                    setContextMenuTarget(null);
+                },
+            });
+        }
+
         return menuActions;
-    }, [
-        canAppendToPlaybackQueue,
-        contextMenuTarget,
-        favoritedKeys,
-        findAuthForSource,
-        getFavoriteKeyForItem,
-        getFavoriteKeyForTrack,
-        handleAddCollectionToQueue,
-        handleAddRadioToQueue,
-        handleAddTrackToQueue,
-        handleDownloadCollectionItem,
-        handleDownloadSongTrack,
-        handleGoToAlbumForTrack,
-        handleGoToArtistForTrack,
-        handleOpenAddToPlaylistForCollection,
-        handleOpenAddToPlaylistForSong,
-        handleOpenCreatePlaylistForCollection,
-        handleOpenCreatePlaylistForSong,
-        handleOpenBookInfo,
-        handleOpenStreamInfo,
-        handleToggleFavoriteForItem,
-        handleToggleFavoriteForTrack,
-        handleViewDetailForItem,
-    ]);
+    }, [canAppendToQueue, contextMenuTarget, favoritedKeys]);
 
     const eyebrow = contextMenuTarget
         ? contextMenuTarget.kind === 'song'
@@ -489,21 +495,15 @@ export function useAndroidContextMenu(options: {
             : contextMenuTarget.item.subtitle
         : undefined;
 
-    const onClose = () => {
-        setContextMenuTarget(null);
-        setContextMenuFeedback(null);
-    };
-
     return {
         actions,
-        api,
         artworkImageId,
         artworkUrl,
         contentSource,
         eyebrow,
         feedback: contextMenuFeedback,
         isCircularArtwork,
-        onClose,
+        onClose: closeContextMenu,
         subtitle,
         target: contextMenuTarget,
         title,

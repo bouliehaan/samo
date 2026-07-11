@@ -4,9 +4,47 @@ import {
     getFetch,
     type ServerAuthenticationResult,
 } from '@samo/core/server';
-import { ipcMain } from 'electron';
+import { ipcMain, net } from 'electron';
 
-const samoFetch = adaptNativeFetch(fetch);
+// Route ALL desktop Samo traffic through Electron's `net.fetch` (Chromium's
+// network stack), NOT Node's global `fetch` (undici). The renderer already
+// proxies every Samo call here via IPC, so this one client governs auth,
+// health, catalog AND progress sync. undici was the cause of "server
+// unavailable" / "TypeError: fetch failed" even when the server loads fine in
+// a browser: undici ignores the app's `ignore-certificate-errors` switch,
+// resolves `localhost`/mDNS IPv6-first against an IPv4-only box, and bypasses
+// the system proxy/DNS — all of which Chromium (and therefore `net.fetch`)
+// handles, which is exactly why the same URL works in the browser. `net.fetch`
+// is invoked lazily per-request so it runs after `app` is ready.
+const samoFetch = adaptNativeFetch((url, init) => net.fetch(url, init));
+
+/**
+ * `net.fetch`/undici surface the real reason on `error.cause`, but Electron's
+ * IPC only serializes an error's `message`/`stack` — so the renderer just saw
+ * "fetch failed". Fold the cause into the message so auth failures are
+ * actionable (e.g. "... (net::ERR_CONNECTION_REFUSED)").
+ */
+const withFetchDiagnostics = async <T>(operation: () => Promise<T>): Promise<T> => {
+    try {
+        return await operation();
+    } catch (error) {
+        if (error instanceof Error) {
+            const cause = (error as { cause?: unknown }).cause;
+            const causeText =
+                cause instanceof Error
+                    ? cause.message
+                    : typeof cause === 'string'
+                      ? cause
+                      : cause && typeof cause === 'object' && 'code' in cause
+                        ? String((cause as { code: unknown }).code)
+                        : undefined;
+            if (causeText && !error.message.includes(causeText)) {
+                throw new Error(`${error.message} (${causeText})`);
+            }
+        }
+        throw error;
+    }
+};
 
 export const registerSamoIpcHandlers = () => {
     ipcMain.handle(
@@ -20,13 +58,15 @@ export const registerSamoIpcHandlers = () => {
                 username: string;
             },
         ): Promise<ServerAuthenticationResult> =>
-            authenticateSamo({
-                deviceLabel: data.deviceLabel,
-                fetch: samoFetch,
-                password: data.password,
-                url: data.url,
-                username: data.username,
-            }),
+            withFetchDiagnostics(() =>
+                authenticateSamo({
+                    deviceLabel: data.deviceLabel,
+                    fetch: samoFetch,
+                    password: data.password,
+                    url: data.url,
+                    username: data.username,
+                }),
+            ),
     );
 
     ipcMain.handle(
@@ -38,12 +78,11 @@ export const registerSamoIpcHandlers = () => {
                 url: string;
             },
         ): Promise<{ id: string; isAdmin: boolean; name: string }> => {
-            const response = await getFetch(samoFetch)(
-                `${data.url.replace(/\/+$/, '')}/api/v1/users/me`,
-                {
+            const response = await withFetchDiagnostics(() =>
+                getFetch(samoFetch)(`${data.url.replace(/\/+$/, '')}/api/v1/users/me`, {
                     headers: { Authorization: `Bearer ${data.credential}` },
                     method: 'GET',
-                },
+                }),
             );
 
             if (!response.ok) {
@@ -82,11 +121,13 @@ export const registerSamoIpcHandlers = () => {
             status: number;
             statusText: string;
         }> => {
-            const response = await getFetch(samoFetch)(data.url, {
-                body: data.body,
-                headers: data.headers,
-                method: data.method,
-            });
+            const response = await withFetchDiagnostics(() =>
+                getFetch(samoFetch)(data.url, {
+                    body: data.body,
+                    headers: data.headers,
+                    method: data.method,
+                }),
+            );
 
             const body = response.text
                 ? await response.text()

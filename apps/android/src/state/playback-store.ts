@@ -2,6 +2,7 @@ import { useSyncExternalStore } from 'react';
 import { type MobilePlayableAudio } from '@samo/core/mobile';
 
 import { type AndroidPlaybackState } from '../types/playback';
+import { getActiveTimelineSegment } from '../utils/playback-time';
 
 type PlaybackListener = () => void;
 type PlaybackUpdater = (current: AndroidPlaybackState) => AndroidPlaybackState;
@@ -56,6 +57,7 @@ export const useAndroidPlaybackState = <Selected = AndroidPlaybackState>(
 const MINI_PLAYER_IDLE_STATE: AndroidPlaybackState = { status: 'idle' };
 
 let miniPlayerSnapshot: AndroidPlaybackState = MINI_PLAYER_IDLE_STATE;
+let miniSnapshotChapterStart = -1;
 
 /** Stable snapshot for useSyncExternalStore — must keep referential equality between calls. */
 const getMiniPlayerSnapshot = (): AndroidPlaybackState => {
@@ -63,22 +65,38 @@ const getMiniPlayerSnapshot = (): AndroidPlaybackState => {
 
     if (state.status === 'idle') {
         miniPlayerSnapshot = MINI_PLAYER_IDLE_STATE;
+        miniSnapshotChapterStart = -1;
         return miniPlayerSnapshot;
     }
+
+    // Audiobooks show the CURRENT CHAPTER, which is derived from position. Fold
+    // the active chapter's start-second into the equality check so the mini
+    // re-renders when the book crosses a chapter boundary — but NOT on every 1s
+    // position tick within the same chapter. Other sources don't use position in
+    // the mini, so chapterStart stays -1 and they keep item+status stability.
+    const chapterStart =
+        state.item.source === 'audiobook'
+            ? (getActiveTimelineSegment(state.item, state.positionMs)?.startSeconds ?? -1)
+            : -1;
 
     if (
         miniPlayerSnapshot.status !== 'idle' &&
         miniPlayerSnapshot.item === state.item &&
         miniPlayerSnapshot.status === state.status &&
         miniPlayerSnapshot.message === state.message &&
-        miniPlayerSnapshot.sessionId === state.sessionId
+        miniPlayerSnapshot.sessionId === state.sessionId &&
+        miniSnapshotChapterStart === chapterStart
     ) {
         return miniPlayerSnapshot;
     }
 
+    miniSnapshotChapterStart = chapterStart;
     miniPlayerSnapshot = {
         item: state.item,
         message: state.message,
+        // Carry the position so the chapter resolves; the reference only changes
+        // on a chapter boundary (above), so this isn't a per-tick re-render.
+        positionMs: state.positionMs,
         sessionId: state.sessionId,
         status: state.status,
     };
@@ -86,8 +104,9 @@ const getMiniPlayerSnapshot = (): AndroidPlaybackState => {
 };
 
 /**
- * Mini player only cares about item + play/pause status. Skip re-renders
- * when the native poll updates position/duration without changing those.
+ * Mini player cares about item + play/pause status, plus the current audiobook
+ * CHAPTER (which moves with position). Skip re-renders on plain position ticks
+ * that don't cross a chapter boundary.
  */
 export const useMiniPlayerPlaybackState = () =>
     useSyncExternalStore(

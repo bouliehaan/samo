@@ -10,20 +10,19 @@ import org.json.JSONException
 import org.json.JSONObject
 
 /**
- * Native reader for the on-device Samo catalog (`samo-catalog.db`). The DB is
- * owned by JS through `services/catalog/database.ts` (expo-sqlite); this file
- * opens the SAME file in DELETE mode and only ever runs SELECTs.
- * We rely on POSIX file locks to safely interleave reads with the JS writer's
- * sync transactions.
+ * THE reader for the on-device Samo catalog (`samo-catalog.db`). Kotlin owns
+ * the file outright (writes: SamoCatalogWriter; search index:
+ * SamoCatalogSearch); this connection only ever runs SELECTs. It serves both
+ * the native paths (artwork URL minting, queue payload lookups) and — via the
+ * SamoCatalogQuery bridge module — every JS mirror read. Under WAL it reads a
+ * consistent snapshot concurrently with a mid-flight sync, so a query never
+ * waits on the writer.
  *
  * The connection is lazily opened on first use because the DB file does not
- * exist until the JS catalog warms — a fresh install with no Samo servers
- * connected will see [findArtworkImageIdForTrack] etc. return null until the
- * user finishes onboarding. Subsequent process restarts find the file already
- * on disk and the reader opens in microseconds.
- *
- * Writes (Phase 5) will route through a separate writer connection: this object
- * is the read-only seam, so query callers stay clear of transaction ordering.
+ * exist until the first sync creates it — a fresh install with no Samo
+ * servers connected will see every query return null/empty until onboarding
+ * finishes. Subsequent process restarts find the file already on disk and the
+ * reader opens in microseconds.
  */
 internal object SamoCatalogDb {
     private const val TAG = "SamoCatalogDb"
@@ -222,6 +221,20 @@ internal object SamoCatalogDb {
     fun warm(context: Context) {
         val db = ensureReader(context)
         if (db != null) {
+            // One-time DELETE→WAL transition for installs whose file predates
+            // Kotlin ownership. Idempotent (already-WAL answers instantly) and
+            // fail-soft (BUSY just means the writer flips it at the next
+            // sync). journal_mode is a file property, so whichever connection
+            // wins persists it.
+            try {
+                db.rawQuery("PRAGMA journal_mode = WAL", null).use { c ->
+                    if (c.moveToFirst()) {
+                        Log.i(TAG, "catalog journal_mode=${c.getString(0)}")
+                    }
+                }
+            } catch (_: Exception) {
+                // reader keeps working in whatever mode the file is in
+            }
             val stats = getStats(context)
             if (stats != null) {
                 Log.i(
@@ -267,6 +280,11 @@ internal object SamoCatalogDb {
                     SQLiteDatabase.OPEN_READWRITE,
                     SamoNoDeleteDatabaseErrorHandler,
                 )
+                // Short queue instead of an instant SQLITE_BUSY if a read
+                // lands exactly on a checkpoint (WAL) or, pre-flip, on a
+                // write batch (DELETE). These reads run on background
+                // threads, so waiting here never freezes the UI or JS.
+                db.rawQuery("PRAGMA busy_timeout = 2000", null).use { c -> c.moveToFirst() }
                 reader = db
                 lastOpenAttemptFailed = false
                 db
@@ -277,6 +295,161 @@ internal object SamoCatalogDb {
                 }
                 null
             }
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Bridge query surface (SamoCatalogQueryModule) — the reads that used to
+    // run as synchronous expo-sqlite statements ON the JS thread. Each returns
+    // raw `payload` JSON strings; the JS side hydrates them through the same
+    // core mappers as before. All run on the module's background executor.
+    // -----------------------------------------------------------------------
+
+    /** Mirror of the JS SORT_COLUMNS map — the query API speaks the JS sort
+     *  names so the bridge wrapper stays a pass-through. */
+    private val SORT_COLUMNS = mapOf(
+        "title" to "sort_name",
+        "added" to "added_at",
+        "lastPlayed" to "last_played_at",
+        "playCount" to "play_count",
+    )
+
+    fun queryItemsByType(
+        context: Context,
+        sourceId: String,
+        type: String,
+        sort: String?,
+        direction: String?,
+        limit: Int,
+        offset: Int,
+    ): List<String> {
+        val sortColumn = SORT_COLUMNS[sort ?: "title"] ?: "sort_name"
+        val dir = if (direction.equals("desc", ignoreCase = true)) "DESC" else "ASC"
+        // Plain ORDER BY on the (source_id, type, col) index — no NULL-guard
+        // expression (see the JS predecessor's non-sargable-scan incident).
+        // `id` tiebreaker keeps paged walks deterministic when sort values tie.
+        return queryStringList(
+            context,
+            """
+            SELECT payload FROM catalog_item
+            WHERE source_id = ? AND type = ?
+            ORDER BY $sortColumn $dir, id ASC
+            LIMIT ? OFFSET ?
+            """.trimIndent(),
+            arrayOf(sourceId, type, limit.toString(), offset.toString()),
+        )
+    }
+
+    fun queryItemById(context: Context, sourceId: String, type: String, id: String): String? =
+        queryOptionalString(
+            context,
+            "SELECT payload FROM catalog_item WHERE source_id = ? AND type = ? AND id = ? LIMIT 1",
+            arrayOf(sourceId, type, id),
+        )
+
+    fun queryDetail(context: Context, sourceId: String, cacheKey: String): String? =
+        queryOptionalString(
+            context,
+            "SELECT payload FROM catalog_detail WHERE source_id = ? AND cache_key = ? LIMIT 1",
+            arrayOf(sourceId, cacheKey),
+        )
+
+    fun queryTracks(
+        context: Context,
+        sourceId: String,
+        containerType: String,
+        containerId: String,
+        limit: Int,
+    ): List<String> =
+        queryStringList(
+            context,
+            """
+            SELECT payload FROM catalog_track
+            WHERE source_id = ? AND container_type = ? AND container_id = ?
+            ORDER BY position ASC
+            LIMIT ?
+            """.trimIndent(),
+            // SQLite treats LIMIT -1 as "no limit", matching the JS API's
+            // optional bound.
+            arrayOf(sourceId, containerType, containerId, limit.toString()),
+        )
+
+    fun querySearch(
+        context: Context,
+        rawQuery: String,
+        sourceId: String?,
+        limit: Int,
+    ): List<SamoCatalogSearch.Hit> {
+        val db = ensureReader(context) ?: return emptyList()
+        return SamoCatalogSearch.search(db, rawQuery, sourceId, limit)
+    }
+
+    data class SyncStateRow(
+        val sourceId: String,
+        val status: String,
+        val lastSyncedAt: Long?,
+        val lastAttemptAt: Long?,
+        val error: String?,
+        val itemCount: Long,
+        val trackCount: Long,
+        val detailCount: Long,
+        val updatedAt: Long,
+    )
+
+    fun querySyncStates(context: Context): List<SyncStateRow> {
+        val db = ensureReader(context) ?: return emptyList()
+        return try {
+            val rows = ArrayList<SyncStateRow>()
+            db.rawQuery(
+                """
+                SELECT source_id, status, last_synced_at, last_attempt_at, error,
+                       item_count, track_count, detail_count, updated_at
+                FROM catalog_sync_state
+                """.trimIndent(),
+                null,
+            ).use { c ->
+                while (c.moveToNext()) {
+                    rows.add(
+                        SyncStateRow(
+                            sourceId = c.getString(0),
+                            status = c.getString(1),
+                            lastSyncedAt = if (c.isNull(2)) null else c.getLong(2),
+                            lastAttemptAt = if (c.isNull(3)) null else c.getLong(3),
+                            error = if (c.isNull(4)) null else c.getString(4),
+                            itemCount = c.getLong(5),
+                            trackCount = c.getLong(6),
+                            detailCount = c.getLong(7),
+                            updatedAt = c.getLong(8),
+                        ),
+                    )
+                }
+            }
+            rows
+        } catch (error: Exception) {
+            Log.w(TAG, "sync-state query failed", error)
+            emptyList()
+        }
+    }
+
+    private fun queryStringList(
+        context: Context,
+        sql: String,
+        args: Array<String>,
+    ): List<String> {
+        val db = ensureReader(context) ?: return emptyList()
+        return try {
+            val rows = ArrayList<String>()
+            db.rawQuery(sql, args).use { cursor ->
+                while (cursor.moveToNext()) {
+                    if (!cursor.isNull(0)) {
+                        rows.add(cursor.getString(0))
+                    }
+                }
+            }
+            rows
+        } catch (error: Exception) {
+            Log.w(TAG, "query failed: ${sql.take(80)}…", error)
+            emptyList()
         }
     }
 

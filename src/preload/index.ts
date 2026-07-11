@@ -3,7 +3,6 @@ import { contextBridge } from 'electron';
 
 import { autodiscover } from './autodiscover';
 import { browser } from './browser';
-import { discordRpc } from './discord-rpc';
 import { ipc } from './ipc';
 import { localSettings } from './local-settings';
 import { lyrics } from './lyrics';
@@ -17,7 +16,6 @@ import { utils } from './utils';
 const api = {
     autodiscover,
     browser,
-    discordRpc,
     ipc,
     localSettings,
     lyrics,

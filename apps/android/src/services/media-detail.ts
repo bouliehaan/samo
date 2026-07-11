@@ -1,5 +1,4 @@
 import {
-    addMobileTracksToPlaylist,
     buildSamoAudiobookQueueFromFiles,
     buildSamoPodcastEpisodePlayback,
     getMobileMediaDetailErrorMessage,
@@ -303,7 +302,7 @@ export const loadAndroidMediaTrackPlayback = async (
             const bookStart = track.startSeconds ?? playable.progressOffsetSeconds ?? 0;
             // Whole-file/local-seek model: pick the file that contains this book
             // position and play it from the in-file remainder. The caller
-            // (use-android-media-handlers) builds the full multi-file queue; this
+            // (handlers/playback-handlers) builds the full multi-file queue; this
             // single-item path covers callers that only need one playable.
             const queue = buildSamoAudiobookQueueFromFiles(authentication, {
                 artworkUrl: detail.artworkUrl,
@@ -339,29 +338,3 @@ export const loadAndroidMediaTrackPlayback = async (
     throw new Error('This track cannot be played.');
 };
 
-export const addAndroidMediaTrackToPlaylist = async (
-    serverConnection: ServerAuthenticationResult | null,
-    detail: MobileMediaDetail,
-    track: MobileMediaTrack,
-    playlist: MobileHomeItem,
-): Promise<void> => {
-    if (track.playback?.source !== 'music') {
-        throw new Error('Only music tracks can be added to playlists from Android right now.');
-    }
-
-    if (detail.source.id !== playlist.source?.id) {
-        throw new Error('Choose a playlist from the same music server.');
-    }
-
-    const authentication = findAuthenticationForSource(serverConnection, detail.source.id);
-
-    if (!authentication) {
-        throw new Error('The server for this track is no longer connected.');
-    }
-
-    await addMobileTracksToPlaylist({
-        authentication,
-        playlistId: playlist.id,
-        songIds: [track.id],
-    });
-};

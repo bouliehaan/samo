@@ -65,6 +65,7 @@ export interface MobileSearchInput {
     fetch?: SamoFetch;
     limit?: number;
     query: string;
+    signal?: AbortSignal;
 }
 
 export interface MobileSearchItem {
@@ -556,11 +557,16 @@ export const searchMobileContent = async ({
     fetch: fetcher,
     limit = DEFAULT_SEARCH_LIMIT,
     query,
+    signal,
 }: MobileSearchInput): Promise<MobileSearchResults> => {
     const trimmedQuery = query.trim();
 
     if (!trimmedQuery) {
         return toSearchResults('', []);
+    }
+
+    if (signal?.aborted) {
+        return toSearchResults(trimmedQuery, []);
     }
 
     const request = getFetch(fetcher);

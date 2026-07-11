@@ -7,12 +7,14 @@ import {
     MobileHomeItemType,
     MobileHomeSectionId,
     MobileMediaDetailType,
+    MobileSearchItemType,
     type MobileHomeContent,
     type MobileHomeItem,
     type MobileHomeSection,
     type MobileMediaDetail,
     type MobileMediaTrack,
     type MobilePlayableAudio,
+    type MobileSearchItem,
 } from '@samo/core/mobile';
 import {
     findServerAuthenticationForSource,
@@ -22,16 +24,13 @@ import {
     type ServerAuthenticationResult,
 } from '@samo/core/server';
 
-import { traceSync } from '../jank-trace';
 import { type AndroidRecentContentSourceItem } from '../recent-content';
 import {
     getDetail,
-    getDetailSync,
     getItemById,
     getItemsByType,
-    getItemsByTypeSync,
     getTracks,
-    getTracksSync,
+    searchCatalogRaw,
     type CatalogItemQuery,
     type CatalogItemSort,
 } from './catalog-repository';
@@ -216,121 +215,6 @@ export const loadCatalogMediaDetail = async (
 };
 
 /**
- * Synchronous twin of {@link loadCatalogMediaDetail} for the render path: lets a
- * detail screen mount with full content on the first frame (no loading view).
- * Returns null for non-Samo / unknown types / a cold reader.
- */
-export const loadCatalogMediaDetailSync = (
-    item: AndroidRecentContentSourceItem,
-    serverConnection: ServerAuthenticationResult | null,
-): MobileMediaDetail | null => {
-    const startedAt = Date.now();
-    try {
-        return loadCatalogMediaDetailSyncInner(item, serverConnection);
-    } finally {
-        const elapsed = Date.now() - startedAt;
-        if (elapsed > 200) {
-            // eslint-disable-next-line no-console
-            console.warn(`[perf] sync detail read took ${elapsed}ms (${item.title})`);
-        }
-    }
-};
-
-/**
- * Max tracks hydrated synchronously for a big list's instant first frame; the
- * async full load fills the rest. Sized to cover a typical playlist fully while
- * capping the per-track hydration cost when a 1000-track playlist is tapped.
- */
-const PLAYLIST_SYNC_WINDOW = 120;
-
-const loadCatalogMediaDetailSyncInner = (
-    item: AndroidRecentContentSourceItem,
-    serverConnection: ServerAuthenticationResult | null,
-): MobileMediaDetail | null => {
-    const source = item.source;
-    if (!isSamoSource(source) || !source) {
-        return null;
-    }
-    const detailType = DETAIL_TYPE_BY_ITEM_TYPE[item.type];
-    if (!detailType) {
-        return null;
-    }
-
-    if (detailType === MobileMediaDetailType.ALBUM) {
-        const auth = findServerAuthenticationForSource(serverConnection, source);
-        if (!auth) {
-            return null;
-        }
-        const tracks = hydrateCatalogTracks(getTracksSync(source.id, 'album', item.id), auth);
-        if (tracks.length === 0) {
-            return null;
-        }
-        return {
-            artworkImageId: item.artworkImageId,
-            artworkUrl: item.artworkUrl,
-            id: item.id,
-            qualityProfile: item.qualityProfile,
-            source,
-            subtitle: item.subtitle,
-            title: item.title,
-            tracks,
-            type: MobileMediaDetailType.ALBUM,
-        };
-    }
-
-    if (detailType === MobileMediaDetailType.PLAYLIST) {
-        const auth = findServerAuthenticationForSource(serverConnection, source);
-        if (!auth) {
-            return null;
-        }
-        // Windowed first frame: hydrate at most PLAYLIST_SYNC_WINDOW tracks so a
-        // big playlist opens instantly instead of freezing the tap frame on
-        // hundreds of per-track hydrations. Marked `partial` so loadDetailWithCache
-        // replaces it with the full track list + playlist metadata right after.
-        const tracks = hydrateCatalogTracks(
-            getTracksSync(source.id, 'playlist', item.id, PLAYLIST_SYNC_WINDOW),
-            auth,
-        );
-        if (tracks.length === 0) {
-            return null;
-        }
-        return {
-            artworkImageId: item.artworkImageId,
-            artworkUrl: item.artworkUrl,
-            id: item.id,
-            partial: true,
-            source,
-            subtitle: item.subtitle,
-            title: item.title,
-            tracks,
-            type: MobileMediaDetailType.PLAYLIST,
-        };
-    }
-
-    return hydrateDetailPayload(
-        getDetailSync(source.id, detailType, item.id),
-        source,
-        serverConnection,
-    );
-};
-
-/** Synchronous twin of {@link loadCatalogCollection} for instant grid render. */
-export const loadCatalogCollectionSync = (
-    authentication: ServerAuthenticationResult,
-    type: MobileHomeItemType,
-    query: CatalogItemQuery = {},
-): MobileHomeItem[] => {
-    if (!authentication) {
-        return [];
-    }
-    try {
-        return getItemsByTypeSync(getMobileContentSource(authentication).id, type, query);
-    } catch {
-        return [];
-    }
-};
-
-/**
  * Instant full-collection items for a Samo source from the catalog, or null when
  * the source isn't Samo / the catalog has no rows for that type yet.
  */
@@ -415,31 +299,57 @@ const CATALOG_HOME_SECTIONS: CatalogHomeSectionSpec[] = [
 /** Server-curated sections fetched live and interleaved by the assembler. */
 export interface HomeLiveSections {
     discover: MobileHomeItem[];
+    explo: MobileHomeItem[];
     podcastFeed: MobileHomeItem[];
     radio: MobileHomeItem[];
 }
 
+/** Internal collection read that coalesces failures/empties to []. */
+const readCollection = async (
+    authentication: ServerAuthenticationResult,
+    type: MobileHomeItemType,
+    query: CatalogItemQuery,
+): Promise<MobileHomeItem[]> => {
+    try {
+        return await getItemsByType(getMobileContentSource(authentication).id, type, query);
+    } catch {
+        return [];
+    }
+};
+
 /** Cross-type Recently Added (albums + audiobooks + podcasts by addedAt),
  *  matching what the old network fan-out's recently-added endpoint served. */
-const recentlyAddedFromMirror = (
+const recentlyAddedFromMirror = async (
     authentication: ServerAuthenticationResult,
-): MobileHomeItem[] => {
+): Promise<MobileHomeItem[]> => {
+    // Explo-sourced albums are excluded from the server's own /recently-added
+    // endpoints (catalog.ListRecentlyAdded / MusicBrowseRecentlyAdded), but
+    // this shelf reads the on-device mirror directly instead of calling
+    // those endpoints, so it has to apply the same exclusion itself using
+    // the `hiddenFromRecentlyAdded` flag carried in the mirrored payload
+    // (see SamoCatalogConverters.albumToItem). Over-fetch albums so filtering
+    // some out still leaves enough to fill the shelf.
+    const [rawAlbums, audiobooks, podcasts] = await Promise.all([
+        readCollection(authentication, MobileHomeItemType.ALBUM, {
+            direction: 'desc',
+            limit: HOME_SECTION_ITEM_LIMIT * 2,
+            sort: 'added',
+        }),
+        readCollection(authentication, MobileHomeItemType.AUDIOBOOK, {
+            direction: 'desc',
+            limit: HOME_SECTION_ITEM_LIMIT,
+            sort: 'added',
+        }),
+        readCollection(authentication, MobileHomeItemType.PODCAST, {
+            direction: 'desc',
+            limit: HOME_SECTION_ITEM_LIMIT,
+            sort: 'added',
+        }),
+    ]);
     const pool = [
-        ...loadCatalogCollectionSync(authentication, MobileHomeItemType.ALBUM, {
-            direction: 'desc',
-            limit: HOME_SECTION_ITEM_LIMIT,
-            sort: 'added',
-        }),
-        ...loadCatalogCollectionSync(authentication, MobileHomeItemType.AUDIOBOOK, {
-            direction: 'desc',
-            limit: HOME_SECTION_ITEM_LIMIT,
-            sort: 'added',
-        }),
-        ...loadCatalogCollectionSync(authentication, MobileHomeItemType.PODCAST, {
-            direction: 'desc',
-            limit: HOME_SECTION_ITEM_LIMIT,
-            sort: 'added',
-        }),
+        ...rawAlbums.filter((item) => !item.hiddenFromRecentlyAdded),
+        ...audiobooks,
+        ...podcasts,
     ];
     return pool
         .sort((left, right) => (right.addedAt ?? 0) - (left.addedAt ?? 0))
@@ -448,40 +358,41 @@ const recentlyAddedFromMirror = (
 
 /**
  * THE Home builder: every library-backed section reads the on-device mirror
- * synchronously (the mirror IS the source of truth — freshness is the sync
- * engine's job), and the server-curated live sections the caller fetched are
- * interleaved in the canonical order. Returns null when no Samo source has
- * local rows yet (fresh install before the first sync lands).
+ * (the mirror IS the source of truth — freshness is the sync engine's job),
+ * and the server-curated live sections the caller fetched are interleaved in
+ * the canonical order. All shelf queries fan out in parallel on the native
+ * reader's background thread — the JS thread only assembles the results.
+ * Returns null when no Samo source has local rows yet (fresh install before
+ * the first sync lands).
  */
-export const buildCatalogHomeContent = (
+export const buildCatalogHomeContent = async (
     authentication: ServerAuthenticationResult | null,
     live?: HomeLiveSections | null,
-): MobileHomeContent | null =>
-    // Named in the [jank] log so a slow Home derive (the per-shelf reads + the JS
-    // assembly) is distinguishable from a slow React render of the result.
-    traceSync('home.derive', () => buildCatalogHomeContentInner(authentication, live));
-
-const buildCatalogHomeContentInner = (
-    authentication: ServerAuthenticationResult | null,
-    live?: HomeLiveSections | null,
-): MobileHomeContent | null => {
+): Promise<MobileHomeContent | null> => {
     if (!authentication) {
         return null;
     }
 
-    const mirrorSections = new Map<MobileHomeSectionId, MobileHomeSection>();
-    for (const spec of CATALOG_HOME_SECTIONS) {
-        const items = loadCatalogCollectionSync(authentication, spec.type, {
-            direction: spec.direction,
-            limit: HOME_SECTION_ITEM_LIMIT,
-            sort: spec.sort,
-        });
+    const [shelves, recentlyAdded] = await Promise.all([
+        Promise.all(
+            CATALOG_HOME_SECTIONS.map(async (spec) => ({
+                items: await readCollection(authentication, spec.type, {
+                    direction: spec.direction,
+                    limit: HOME_SECTION_ITEM_LIMIT,
+                    sort: spec.sort,
+                }),
+                spec,
+            })),
+        ),
+        recentlyAddedFromMirror(authentication),
+    ]);
 
+    const mirrorSections = new Map<MobileHomeSectionId, MobileHomeSection>();
+    for (const { items, spec } of shelves) {
         if (items.length > 0) {
             mirrorSections.set(spec.id, { id: spec.id, items, title: spec.title });
         }
     }
-    const recentlyAdded = recentlyAddedFromMirror(authentication);
 
     const sections: MobileHomeSection[] = [];
     const pushLive = (id: MobileHomeSectionId, title: string, items?: MobileHomeItem[]) => {
@@ -504,6 +415,7 @@ const buildCatalogHomeContentInner = (
     pushMirror(MobileHomeSectionId.AUDIOBOOKS);
     pushMirror(MobileHomeSectionId.PODCASTS);
     pushMirror(MobileHomeSectionId.PLAYLISTS);
+    pushLive(MobileHomeSectionId.EXPLO, 'New from Explore', live?.explo);
     pushLive(MobileHomeSectionId.RADIO, 'Radio', live?.radio);
 
     if (sections.length === 0) {
@@ -525,23 +437,12 @@ const buildCatalogHomeContentInner = (
  * type:id. Radio is intentionally absent — it isn't mirrored and the Library
  * surfaces don't depend on it.
  */
-export const loadCatalogLibraryRelevantItems = (
+export const loadCatalogLibraryRelevantItems = async (
     authentication: ServerAuthenticationResult | null,
-): MobileHomeItem[] => {
+): Promise<MobileHomeItem[]> => {
     if (!authentication) {
         return [];
     }
-
-    const seen = new Set<string>();
-    const items: MobileHomeItem[] = [];
-    const push = (item: MobileHomeItem) => {
-        const key = `${item.type}:${item.id}`;
-        if (seen.has(key)) {
-            return;
-        }
-        seen.add(key);
-        items.push(item);
-    };
 
     const RELEVANT_LIMIT = 80;
     const buckets: Array<[MobileHomeItemType, CatalogItemSort, 'asc' | 'desc']> = [
@@ -555,14 +456,84 @@ export const loadCatalogLibraryRelevantItems = (
         [MobileHomeItemType.AUDIOBOOK, 'added', 'desc'],
         [MobileHomeItemType.PODCAST, 'title', 'asc'],
     ];
-    for (const [type, sort, direction] of buckets) {
-        for (const item of loadCatalogCollectionSync(authentication, type, {
-            direction,
-            limit: RELEVANT_LIMIT,
-            sort,
-        })) {
-            push(item);
+    // Parallel reads; the dedupe below walks results in bucket order, so the
+    // relevance ordering (first bucket wins the duplicate) is unchanged.
+    const results = await Promise.all(
+        buckets.map(([type, sort, direction]) =>
+            readCollection(authentication, type, { direction, limit: RELEVANT_LIMIT, sort }),
+        ),
+    );
+
+    const seen = new Set<string>();
+    const items: MobileHomeItem[] = [];
+    for (const bucket of results) {
+        for (const item of bucket) {
+            const key = `${item.type}:${item.id}`;
+            if (seen.has(key)) {
+                continue;
+            }
+            seen.add(key);
+            items.push(item);
         }
+    }
+    return items;
+};
+
+/**
+ * Ranked local search, hydrated. Song hits carry raw catalog_track payloads
+ * and hydrate through the shared core track mapper (stream URLs need the auth
+ * context); item hits are stored MobileHomeItems reshaped to search items.
+ * The FTS index itself lives in Kotlin (SamoCatalogSearch) — this is the only
+ * JS-side mapping step.
+ */
+export const searchLocal = async (
+    authentication: ServerAuthenticationResult,
+    rawQuery: string,
+    options: { limit?: number } = {},
+): Promise<MobileSearchItem[]> => {
+    const hits = await searchCatalogRaw(rawQuery, {
+        limit: options.limit,
+        sourceId: getMobileContentSource(authentication).id,
+    });
+    const items: MobileSearchItem[] = [];
+    for (const hit of hits) {
+        if (hit.type === MobileSearchItemType.SONG) {
+            const track = hydrateCatalogTrack(hit.payload, authentication);
+            if (track) {
+                items.push({
+                    album: track.album,
+                    albumId: track.albumId,
+                    artist: track.artist,
+                    artistId: track.artistId,
+                    artworkImageId: track.artworkImageId,
+                    artworkUrl: track.artworkUrl,
+                    id: track.id,
+                    playback: track.playback,
+                    source: getMobileContentSource(authentication),
+                    subtitle: track.subtitle,
+                    title: track.title,
+                    type: MobileSearchItemType.SONG,
+                });
+            }
+            continue;
+        }
+        const item = hit.payload as MobileHomeItem;
+        if (!item || typeof item !== 'object' || !item.id || !item.title) {
+            continue;
+        }
+        items.push({
+            artworkImageId: item.artworkImageId,
+            artworkUrl: item.artworkUrl,
+            id: item.id,
+            isHiRes: item.isHiRes,
+            lastPlayedAt: item.lastPlayedAt,
+            playCount: item.playCount,
+            qualityProfile: item.qualityProfile,
+            source: item.source,
+            subtitle: item.subtitle,
+            title: item.title,
+            type: hit.type as MobileSearchItemType,
+        });
     }
     return items;
 };

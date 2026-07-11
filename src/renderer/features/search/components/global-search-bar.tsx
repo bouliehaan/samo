@@ -223,7 +223,7 @@ const GROUP_TITLES: Record<ResultGroupKey, string> = {
 };
 
 const SOURCE_WARNING_LABELS: Record<UnifiedSearchSourceKey, string> = {
-    abs: 'Audiobookshelf',
+    longForm: 'Podcasts & Audiobooks',
     music: 'Music',
     playlists: 'Playlists',
     radio: 'Radio',
@@ -457,14 +457,14 @@ export const GlobalSearchBar = ({ className }: GlobalSearchBarProps) => {
     const musicServer = useCurrentServer();
     const musicServerId = musicServer?.id;
     const longFormMediaServer = useLongFormMediaServer();
-    const audiobookshelfServerId = longFormMediaServer?.id;
+    const longFormServerId = longFormMediaServer?.id;
     const audiobookActions = useAudiobookActions();
     const podcastActions = usePodcastActions();
     const radioControls = useRadioControls();
     const setFavorite = useSetFavorite();
     const libraryFavoriteActions = useLibraryFavoritesActions();
-    const audiobookFavoriteIds = useFavoriteAudiobookIds(audiobookshelfServerId);
-    const podcastFavoriteIds = useFavoritePodcastIds(audiobookshelfServerId);
+    const audiobookFavoriteIds = useFavoriteAudiobookIds(longFormServerId);
+    const podcastFavoriteIds = useFavoritePodcastIds(longFormServerId);
 
     const closeDropdown = useCallback(() => setIsOpen(false), []);
 
@@ -608,18 +608,18 @@ export const GlobalSearchBar = ({ className }: GlobalSearchBarProps) => {
 
     const handleToggleAudiobookFavorite = useCallback(
         (item: LongFormLibraryItem) => {
-            if (!audiobookshelfServerId) return;
-            libraryFavoriteActions.toggle('audiobook', audiobookshelfServerId, item.id);
+            if (!longFormServerId) return;
+            libraryFavoriteActions.toggle('audiobook', longFormServerId, item.id);
         },
-        [audiobookshelfServerId, libraryFavoriteActions],
+        [longFormServerId, libraryFavoriteActions],
     );
 
     const handleTogglePodcastFavorite = useCallback(
         (item: LongFormLibraryItem) => {
-            if (!audiobookshelfServerId) return;
-            libraryFavoriteActions.toggle('podcast', audiobookshelfServerId, item.id);
+            if (!longFormServerId) return;
+            libraryFavoriteActions.toggle('podcast', longFormServerId, item.id);
         },
-        [audiobookshelfServerId, libraryFavoriteActions],
+        [longFormServerId, libraryFavoriteActions],
     );
 
     const rowDeps: RowFactoryDeps = useMemo(

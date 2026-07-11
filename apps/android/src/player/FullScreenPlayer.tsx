@@ -65,6 +65,7 @@ import {
     EllipsisVerticalGlyph,
     MoreGlyph,
     PlayPauseGlyph,
+    RepeatGlyph,
     ShuffleGlyph,
     SleepTimerGlyph,
     TrackSkipGlyph,
@@ -122,7 +123,7 @@ import {
     FROSTED_GLASS_SHEEN_LOCATIONS,
 } from '../utils/color';
 import { clamp } from '../utils/math';
-import { logSeekGesture } from '../utils/seek-debug';
+import { logSeekGesture, SEEK_GESTURE_DEBUG } from '../utils/seek-debug';
 import { formatQualityProfile } from '../services/quality-badge-assets';
 import { triggerImpact } from '../services/haptics';
 import {
@@ -173,6 +174,7 @@ export const FullScreenPlayer = memo(({
     isShuffled,
     lastPlayedItem,
     onClose,
+    onCycleRepeatMode,
     onNext,
     onOpenOutputPicker,
     onPlayQueueIndex,
@@ -185,6 +187,7 @@ export const FullScreenPlayer = memo(({
     playerProgress,
     queue,
     reducedMotion,
+    repeatMode,
     serverConnection,
     visible,
 }: {
@@ -198,6 +201,7 @@ export const FullScreenPlayer = memo(({
     isShuffled: boolean;
     lastPlayedItem: MobilePlayableAudio | null;
     onClose: () => void;
+    onCycleRepeatMode: () => void;
     onNext: () => void;
     onOpenOutputPicker: () => void;
     onPlayQueueIndex?: (index: number) => void;
@@ -210,6 +214,7 @@ export const FullScreenPlayer = memo(({
     playerProgress: SharedValue<number>;
     queue: { index: number; items: MobilePlayableAudio[] } | null;
     reducedMotion: boolean;
+    repeatMode: 'all' | 'off' | 'one';
     serverConnection: ServerAuthenticationResult | null;
     visible: boolean;
 }) => {
@@ -376,7 +381,9 @@ export const FullScreenPlayer = memo(({
                 .failOffsetX([-28, 28])
                 .onStart(() => {
                     'worklet';
-                    runOnJS(logSeekGesture)('player:drag:activate');
+                    if (SEEK_GESTURE_DEBUG) {
+                        runOnJS(logSeekGesture)('player:drag:activate');
+                    }
                     dragStartQueue.value = queueProgress.value;
                     dragMode.value = queueProgress.value > 0 ? 'queue' : 'player';
                 })
@@ -525,7 +532,9 @@ export const FullScreenPlayer = memo(({
                 .failOffsetY([-30, 30])
                 .onStart(() => {
                     'worklet';
-                    runOnJS(logSeekGesture)('player:skip:activate');
+                    if (SEEK_GESTURE_DEBUG) {
+                        runOnJS(logSeekGesture)('player:skip:activate');
+                    }
                 })
                 .onEnd((event) => {
                     'worklet';
@@ -627,7 +636,9 @@ export const FullScreenPlayer = memo(({
     const showShuffleControl = !isLongFormSource && displayItem.source !== 'radio';
     const showSkipControls = displayItem.source !== 'radio';
     const showLongFormSkip = Boolean(onSkipBySeconds) && isLongFormSource;
-    const showSleepInBottomBar = isLongFormSource;
+    // Music parks Sleep in the bottom bar (like long-form) so the main
+    // controls read shuffle | prev | play | next | repeat.
+    const showSleepInBottomBar = isLongFormSource || isMusicSource;
     const showCastInMainControls = displayItem.source === 'radio';
     const castButton = (
         <Pressable
@@ -935,7 +946,20 @@ export const FullScreenPlayer = memo(({
                         ) : (
                             <View style={styles.playerControlButtonSpacer} />
                         )}
-                        {!showSleepInBottomBar ? (
+                        {isMusicSource ? (
+                            <PlayerIconButton
+                                accessibilityLabel={
+                                    repeatMode === 'off'
+                                        ? 'Repeat off. Tap to repeat all.'
+                                        : repeatMode === 'all'
+                                          ? 'Repeat all. Tap to repeat one.'
+                                          : 'Repeat one. Tap to turn off.'
+                                }
+                                onPress={onCycleRepeatMode}
+                            >
+                                <RepeatGlyph color={colors.text} mode={repeatMode} />
+                            </PlayerIconButton>
+                        ) : !showSleepInBottomBar ? (
                             <PlayerIconButton
                                 accessibilityLabel="Sleep Timer"
                                 onPress={() =>
@@ -1001,7 +1025,9 @@ export const FullScreenPlayer = memo(({
             onClose={closeQueue}
             onPlayQueueIndex={onPlayQueueIndex}
             queue={queue}
+            queueProgress={queueProgress}
             serverConnection={serverConnection}
+            settleSpring={settleSpring}
             sheetStyle={queueSheetStyle}
         />
 

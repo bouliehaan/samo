@@ -39,8 +39,6 @@ const APP_THEMES = new Set([
     'vscodeLightPlus',
 ]);
 
-const DISCORD_DISPLAY_TYPES = new Set(['artist', 'samo', 'song']);
-const DISCORD_LINK_TYPES = new Set(['last_fm', 'musicbrainz', 'musicbrainz_last_fm', 'none']);
 const LYRICS_ALIGNMENTS = new Set(['center', 'left', 'right']);
 const FONT_TYPES = new Set(['builtIn', 'custom', 'system']);
 const HOME_FEATURE_STYLES = new Set(['multiple', 'single']);
@@ -48,7 +46,7 @@ const SIDE_QUEUE_TYPES = new Set(['sideDrawerQueue', 'sideQueue']);
 const SIDE_QUEUE_LAYOUTS = new Set(['horizontal', 'vertical']);
 
 export type EnvSettingsOverrides = DeepPartial<
-    Pick<SettingsState, 'autoDJ' | 'css' | 'discord' | 'font' | 'general' | 'lyrics' | 'playback'>
+    Pick<SettingsState, 'autoDJ' | 'css' | 'font' | 'general' | 'lyrics' | 'playback'>
 >;
 
 type DeepPartial<T> = {
@@ -255,29 +253,6 @@ const ENV_SETTING_SPECS: EnvSettingSpec[] = [
         path: ['playback', 'transcode', 'enabled'],
         type: 'bool',
     },
-    { key: 'FS_DISCORD_ENABLED', path: ['discord', 'enabled'], type: 'bool' },
-    {
-        key: 'FS_DISCORD_CLIENT_ID',
-        path: ['discord', 'clientId'],
-        skipIfEmpty: true,
-        type: 'string',
-    },
-    {
-        enumSet: DISCORD_DISPLAY_TYPES,
-        key: 'FS_DISCORD_DISPLAY_TYPE',
-        path: ['discord', 'displayType'],
-        type: 'enum',
-    },
-    {
-        enumSet: DISCORD_LINK_TYPES,
-        key: 'FS_DISCORD_LINK_TYPE',
-        path: ['discord', 'linkType'],
-        type: 'enum',
-    },
-    { key: 'FS_DISCORD_SHOW_AS_LISTENING', path: ['discord', 'showAsListening'], type: 'bool' },
-    { key: 'FS_DISCORD_SHOW_PAUSED', path: ['discord', 'showPaused'], type: 'bool' },
-    { key: 'FS_DISCORD_SHOW_SERVER_IMAGE', path: ['discord', 'showServerImage'], type: 'bool' },
-    { key: 'FS_DISCORD_SHOW_STATE_ICON', path: ['discord', 'showStateIcon'], type: 'bool' },
     { key: 'FS_LYRICS_FETCH', path: ['lyrics', 'fetch'], type: 'bool' },
     { key: 'FS_LYRICS_FOLLOW', path: ['lyrics', 'follow'], type: 'bool' },
     { key: 'FS_LYRICS_DELAY_MS', path: ['lyrics', 'delayMs'], type: 'num' },

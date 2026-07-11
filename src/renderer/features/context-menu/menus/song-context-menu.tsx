@@ -6,6 +6,7 @@ import { GetInfoAction } from '/@/renderer/features/context-menu/actions/get-inf
 import { GoToAction } from '/@/renderer/features/context-menu/actions/go-to-action';
 import { PlayAction } from '/@/renderer/features/context-menu/actions/play-action';
 import { PlayTrackRadioAction } from '/@/renderer/features/context-menu/actions/play-track-radio-action';
+import { RemoveFromHomeAction } from '/@/renderer/features/context-menu/actions/remove-from-home-action';
 import { RemoveFromRecentsAction } from '/@/renderer/features/context-menu/actions/remove-from-recents-action';
 import { SetFavoriteAction } from '/@/renderer/features/context-menu/actions/set-favorite-action';
 import { SetRatingAction } from '/@/renderer/features/context-menu/actions/set-rating-action';
@@ -16,12 +17,18 @@ import { ContextMenu } from '/@/shared/components/context-menu/context-menu';
 import { LibraryItem, Song } from '/@/shared/types/domain-types';
 
 interface SongContextMenuProps {
+    homeItemKey?: string;
     items: Song[];
     recentItemKey?: string;
     type: LibraryItem.SONG;
 }
 
-export const SongContextMenu = ({ items, recentItemKey, type }: SongContextMenuProps) => {
+export const SongContextMenu = ({
+    homeItemKey,
+    items,
+    recentItemKey,
+    type,
+}: SongContextMenuProps) => {
     const { ids } = useMemo(() => {
         const ids = items.map((item) => item.id);
         return { ids };
@@ -50,6 +57,12 @@ export const SongContextMenu = ({ items, recentItemKey, type }: SongContextMenuP
                 <>
                     <ContextMenu.Divider />
                     <RemoveFromRecentsAction recentItemKey={recentItemKey} />
+                </>
+            ) : null}
+            {homeItemKey ? (
+                <>
+                    <ContextMenu.Divider />
+                    <RemoveFromHomeAction homeItemKey={homeItemKey} />
                 </>
             ) : null}
         </ContextMenu.Content>

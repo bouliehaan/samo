@@ -1,15 +1,16 @@
-import { startTransition, useSyncExternalStore, useEffect, useRef } from 'react';
-import { BackHandler } from 'react-native';
+import { startTransition, useSyncExternalStore } from 'react';
 import { SAMO_MOBILE_TABS, type SamoMobileTabId } from '@samo/core/navigation';
 
 import { type AndroidUtilityScreen } from '../types/app-navigation';
 import { type ViewAllRoute } from '../types/view-all';
 import {
     EMPTY_LIBRARY_FULL_COLLECTIONS,
+    EMPTY_LIBRARY_RELEVANT_STATE,
     type LibraryFullCollectionsState,
 } from '../types/library-tab';
 import { type AndroidFullCollectionState } from '../services/full-collection';
 import { type AndroidHomeContentState } from '../services/home-content';
+import { type AndroidLibraryRelevantState } from '../services/library-content';
 import { type AndroidMediaDetailState } from '../services/media-detail';
 import { type AndroidSearchState } from '../services/search-content';
 
@@ -34,6 +35,7 @@ export type AppNavigationState = {
     isFullPlayerOpen: boolean;
     isSearchOverlayOpen: boolean;
     libraryFullCollections: LibraryFullCollectionsState;
+    libraryRelevantState: AndroidLibraryRelevantState;
     mediaDetailKey: string | null;
     mediaDetailStack: MediaDetailFrame[];
     mediaDetailState: AndroidMediaDetailState;
@@ -41,6 +43,10 @@ export type AppNavigationState = {
     searchState: AndroidSearchState;
     viewAllFullState: AndroidFullCollectionState;
     viewAllRoute: null | ViewAllRoute;
+    /** Tabs whose scenes have mounted (lazy mounting: a scene mounts on first
+     *  visit and stays mounted). Lives in the store so it survives a React
+     *  root remount alongside activeTab. */
+    visitedTabs: ReadonlySet<SamoMobileTabId>;
 };
 
 export const initialAppNavigationState: AppNavigationState = {
@@ -50,6 +56,7 @@ export const initialAppNavigationState: AppNavigationState = {
     isFullPlayerOpen: false,
     isSearchOverlayOpen: false,
     libraryFullCollections: EMPTY_LIBRARY_FULL_COLLECTIONS,
+    libraryRelevantState: EMPTY_LIBRARY_RELEVANT_STATE,
     mediaDetailKey: null,
     mediaDetailStack: [],
     mediaDetailState: { status: 'idle' },
@@ -57,6 +64,7 @@ export const initialAppNavigationState: AppNavigationState = {
     searchState: { status: 'idle' },
     viewAllFullState: { status: 'idle' },
     viewAllRoute: null,
+    visitedTabs: new Set<SamoMobileTabId>(['home']),
 };
 
 export type AppNavigationAction =
@@ -85,6 +93,12 @@ export type AppNavigationAction =
           libraryFullCollections:
               | LibraryFullCollectionsState
               | ((current: LibraryFullCollectionsState) => LibraryFullCollectionsState);
+      }
+    | {
+          type: 'set-library-relevant';
+          libraryRelevantState:
+              | AndroidLibraryRelevantState
+              | ((current: AndroidLibraryRelevantState) => AndroidLibraryRelevantState);
       }
     | {
           type: 'set-media-detail';
@@ -119,7 +133,15 @@ export const appNavigationReducer = (
         case 'set-active-tab': {
             const activeTab =
                 typeof action.value === 'function' ? action.value(state.activeTab) : action.value;
-            return { ...state, activeTab };
+            if (activeTab === state.activeTab && state.visitedTabs.has(activeTab)) {
+                return state;
+            }
+            // Visiting a tab marks its scene mounted, in the same commit as the
+            // tab switch, so the scene renders on the switch frame.
+            const visitedTabs = state.visitedTabs.has(activeTab)
+                ? state.visitedTabs
+                : new Set(state.visitedTabs).add(activeTab);
+            return { ...state, activeTab, visitedTabs };
         }
         case 'set-active-utility': {
             const activeUtilityScreen =
@@ -148,6 +170,15 @@ export const appNavigationReducer = (
                         ? action.libraryFullCollections(state.libraryFullCollections)
                         : action.libraryFullCollections,
             };
+        case 'set-library-relevant': {
+            const libraryRelevantState =
+                typeof action.libraryRelevantState === 'function'
+                    ? action.libraryRelevantState(state.libraryRelevantState)
+                    : action.libraryRelevantState;
+            return libraryRelevantState === state.libraryRelevantState
+                ? state
+                : { ...state, libraryRelevantState };
+        }
         case 'set-media-detail':
             return {
                 ...state,
@@ -328,6 +359,12 @@ const setLibraryFullCollections = (
         | ((current: LibraryFullCollectionsState) => LibraryFullCollectionsState),
 ) => dispatchAppNavigation({ type: 'set-library-full-collections', libraryFullCollections });
 
+const setLibraryRelevantState = (
+    libraryRelevantState:
+        | AndroidLibraryRelevantState
+        | ((current: AndroidLibraryRelevantState) => AndroidLibraryRelevantState),
+) => dispatchAppNavigation({ type: 'set-library-relevant', libraryRelevantState });
+
 const setSearchState = (
     searchState: AndroidSearchState | ((current: AndroidSearchState) => AndroidSearchState),
 ) => dispatchAppNavigation({ type: 'set-search-state', searchState });
@@ -363,88 +400,40 @@ const closeViewAll = () => {
     dispatchAppNavigation({ type: 'close-view-all' });
 };
 
-export const useAppNavigationState = (options?: UseAppNavigationOptions) => {
-    if (options) {
-        setAppNavigationOptions(options);
+/** A bottom-bar tab press: land on the tab with every overlay dismissed. */
+const pressTab = (tabId: SamoMobileTabId): void => {
+    setActiveUtilityScreen((current) => (current === null ? current : null));
+    if (appNavigationState.mediaDetailState.status !== 'idle') {
+        closeMediaDetail();
     }
+    setActiveTab((current) => (current === tabId ? current : tabId));
+};
 
-    const state = useSyncExternalStore(
-        subscribeAppNavigation,
-        getAppNavigationState,
-        getAppNavigationState,
-    );
-
-    const libraryFullCollectionFetchTokenRef = useRef(0);
-    const homeLoadRequestId = useRef(0);
-
-    useEffect(() => {
-        const handler = BackHandler.addEventListener('hardwareBackPress', () => {
-            if (state.isSearchOverlayOpen) {
-                setIsSearchOverlayOpen(false);
-                setSearchOverlayQuery('');
-                return true;
-            }
-
-            if (state.isFullPlayerOpen) {
-                setIsFullPlayerOpen(false);
-                return true;
-            }
-
-            if (state.mediaDetailState.status !== 'idle') {
-                popMediaDetail();
-                return true;
-            }
-
-            if (
-                state.activeUtilityScreen === 'add-server' ||
-                state.activeUtilityScreen === 'downloads' ||
-                state.activeUtilityScreen === 'manage-servers'
-            ) {
-                setActiveUtilityScreen('settings');
-                return true;
-            }
-
-            if (state.activeUtilityScreen === 'view-all') {
-                closeViewAll();
-                return true;
-            }
-
-            if (state.activeUtilityScreen === 'settings') {
-                setActiveUtilityScreen(null);
-                return true;
-            }
-
-            return false;
-        });
-
-        return () => handler.remove();
-    }, [
-        state.activeUtilityScreen,
-        state.isFullPlayerOpen,
-        state.isSearchOverlayOpen,
-        state.mediaDetailState.status,
-    ]);
-
-    return {
-        ...state,
-        closeMediaDetail,
-        closeViewAll,
-        homeLoadRequestId,
-        libraryFullCollectionFetchTokenRef,
-        openMediaDetail,
-        popMediaDetail,
-        setActiveTab,
-        setActiveUtilityScreen,
-        setHomeContentState,
-        setIsFullPlayerOpen,
-        setIsSearchOverlayOpen,
-        setLibraryFullCollections,
-        setMediaDetailState,
-        setSearchOverlayQuery,
-        setSearchState,
-        setViewAllFullState,
-        setViewAllRoute,
-    };
+// ---------------------------------------------------------------------------
+// Module-level exports. The setters above are singletons already; exporting
+// them (plus the getter) lets event handlers and self-subscribing host
+// components read/write navigation state without the monolith hook — a
+// consumer that only needs one action never subscribes to the whole store.
+// ---------------------------------------------------------------------------
+export const getAppNavigation = getAppNavigationState;
+export {
+    closeMediaDetail,
+    closeViewAll,
+    openMediaDetail,
+    popMediaDetail,
+    pressTab,
+    setActiveTab,
+    setActiveUtilityScreen,
+    setHomeContentState,
+    setIsFullPlayerOpen,
+    setIsSearchOverlayOpen,
+    setLibraryFullCollections,
+    setLibraryRelevantState,
+    setMediaDetailState,
+    setSearchOverlayQuery,
+    setSearchState,
+    setViewAllFullState,
+    setViewAllRoute,
 };
 
 export const useAppNavigationSelector = <Selected>(

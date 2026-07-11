@@ -25,6 +25,8 @@ export interface AndroidAudioDeviceInfo {
     outputSampleRate?: string;
 }
 
+export type AndroidRepeatMode = 'all' | 'off' | 'one';
+
 export interface AndroidNativePlaybackEvent {
     bitPerfect?: AndroidPlaybackTruth;
     cast?: {
@@ -37,6 +39,8 @@ export interface AndroidNativePlaybackEvent {
     positionMs?: number;
     queueIndex?: number;
     queueLength?: number;
+    /** The user's repeat SETTING (native is authoritative; survives JS restarts). */
+    repeatMode?: AndroidRepeatMode;
     sessionId?: string;
     source?: {
         artworkUrl?: string;
@@ -129,6 +133,7 @@ interface SamoAudioNativeModule {
     selectOutputRoute: (
         route: Pick<AndroidMediaOutputRoute, 'deviceId' | 'kind' | 'routeId'>,
     ) => Promise<AndroidMediaOutputState>;
+    setRepeatMode: (mode: AndroidRepeatMode) => Promise<AndroidNativePlaybackEvent>;
     setSleepTimer: (seconds: number) => Promise<AndroidNativePlaybackEvent>;
     cancelSleepTimer: () => Promise<AndroidNativePlaybackEvent>;
     setPlaybackQueue: (queue: {
@@ -284,6 +289,13 @@ export const playAndroidAudio = async (
         bridgedSource.castMimeType ??
         bridgedCastSource.mimeType;
 
+    // The play() payload is AUTHORITATIVE for the native queue mirror: it
+    // either carries the real queue, or an explicit EMPTY one. Omitting the
+    // key preserves whatever mirror the engine already holds (that omission
+    // is reserved for the engine's own internal playLocally calls during a
+    // native advance) — so a fresh single-item or radio play that merely
+    // omitted it left YESTERDAY'S queue armed, and the end of that item
+    // auto-advanced into a stale playlist.
     const queuePayload =
         queue && shouldMirrorPlaybackQueueToNative(queue) && source.source !== 'radio'
             ? (() => {
@@ -296,7 +308,7 @@ export const playAndroidAudio = async (
                       queueItems: credentialed.items.map(resolveOfflinePlayable),
                   };
               })()
-            : {};
+            : { queueIndex: 0, queueItems: [] };
 
     return samoAudio.play({
         ...bridgedSource,
@@ -335,6 +347,16 @@ export const stopAndroidAudio = async () => {
     }
 
     return samoAudio.stop();
+};
+
+/** Set the user's repeat mode. Native stores the setting and applies it to
+ *  music playback only (Media3 handles the looping with zero JS in the loop). */
+export const setAndroidRepeatMode = async (mode: AndroidRepeatMode) => {
+    if (!samoAudio) {
+        throw new Error('Native Android audio engine is not available');
+    }
+
+    return samoAudio.setRepeatMode(mode);
 };
 
 export const seekAndroidAudio = async (positionMs: number) => {

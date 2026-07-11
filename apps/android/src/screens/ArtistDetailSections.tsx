@@ -104,7 +104,6 @@ import {
 } from '../utils/download-keys';
 import {
     getDetailTypeLabel,
-    getPlaylistTargetsForDetail,
     getPlaylistTrackItemType,
     getPlaylistTrackSearchText,
     PLAYLIST_TRACK_DRAW_DISTANCE,

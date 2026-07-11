@@ -27,7 +27,7 @@ import {
     updatePodcastCacheLimit,
     updatePodcastPrewarmCount,
 } from '../services/podcast-cache-settings';
-import { useAuthSessionState } from '../state/auth-session';
+import { useAuthSessionSelector } from '../state/auth-session';
 import { styles } from '../theme/styles';
 import { colors } from '../theme/tokens';
 
@@ -232,7 +232,7 @@ export const SettingsScreen = ({
         void clearArtworkCache().then(refreshArtworkCacheSize);
     };
 
-    const { serverConnection } = useAuthSessionState();
+    const serverConnection = useAuthSessionSelector((state) => state.serverConnection);
     const [podcastCache, setPodcastCache] = useState<PodcastCacheState | null>(null);
 
     const refreshPodcastCache = useCallback(async () => {

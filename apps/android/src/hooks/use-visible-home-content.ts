@@ -1,19 +1,26 @@
 import { useMemo } from 'react';
-import { type ServerAuthenticationResult } from '@samo/core/server';
 
 import { useAppNavigationSelector } from '../state/app-navigation';
-import { useAuthSessionState } from '../state/auth-session';
-import { useDownloadsState } from '../state/downloads-state';
+import { useAuthSessionSelector } from '../state/auth-session';
+import { useDownloadsSelector } from '../state/downloads-state';
 import { buildOfflineHomeContentState } from '../utils/offline-home';
 import { getDownloadedCollectionKey } from '../utils/download-keys';
 
 export const useVisibleHomeContentState = () => {
     const homeContentState = useAppNavigationSelector((state) => state.homeContentState);
-    const { serverConnection } = useAuthSessionState();
-    const { downloadedCollections, downloadedCollectionKeys, isOfflineMode } = useDownloadsState();
+    const serverConnection = useAuthSessionSelector((state) => state.serverConnection);
+    const isOfflineMode = useDownloadsSelector((state) => state.isOfflineMode);
+    // Guarded: while online these stay a stable null, so download-snapshot
+    // churn never re-renders the Home surface through this hook.
+    const downloadedCollections = useDownloadsSelector((state) =>
+        state.isOfflineMode ? state.downloadedCollections : null,
+    );
+    const downloadedCollectionKeys = useDownloadsSelector((state) =>
+        state.isOfflineMode ? state.downloadedCollectionKeys : null,
+    );
 
     return useMemo(() => {
-        if (!isOfflineMode) {
+        if (!isOfflineMode || !downloadedCollections || !downloadedCollectionKeys) {
             return homeContentState;
         }
         const offlineContentState = buildOfflineHomeContentState(

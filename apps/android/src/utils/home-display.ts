@@ -83,7 +83,13 @@ export const filterHomeDisplaySections = (
         return sections;
     }
 
-    const musicVariants: HomeDisplaySection['variant'][] = ['album', 'artist', 'playlist', 'wide'];
+    const musicVariants: HomeDisplaySection['variant'][] = [
+        'album',
+        'artist',
+        'explo',
+        'playlist',
+        'wide',
+    ];
     const podcastVariants: HomeDisplaySection['variant'][] = ['podcast', 'podcast-feed'];
     const audiobookVariants: HomeDisplaySection['variant'][] = ['book'];
     const radioVariants: HomeDisplaySection['variant'][] = ['radio'];
@@ -183,7 +189,10 @@ export const filterHomeDisplaySections = (
 export const getAvailableHomeFilters = (sections: HomeDisplaySection[]) => {
     const variants = new Set(sections.map((s) => s.variant));
     const hasMusicContent =
-        variants.has('album') || variants.has('artist') || variants.has('playlist');
+        variants.has('album') ||
+        variants.has('artist') ||
+        variants.has('playlist') ||
+        variants.has('explo');
     const hasPodcastContent = variants.has('podcast') || variants.has('podcast-feed');
     const hasAudiobookContent = variants.has('book');
     const hasRadioContent = variants.has('radio');
@@ -381,6 +390,8 @@ export const getViewAllVariant = (
         case 'continue':
         case 'podcast-feed':
             return 'podcast-feed';
+        // Explo is a single featured card (one playlist) — nothing to view all.
+        case 'explo':
         case 'radio':
         case 'recents':
         case 'wide':
@@ -558,6 +569,9 @@ export const getHomeDisplaySections = (
     const playlistItems = sortHomeItemsByLastPlayed(
         getHomeItemsForSection(sectionsById, MobileHomeSectionId.PLAYLISTS, recentItems),
     );
+    // Server-managed "system" playlist — at most one item, so nothing to
+    // dedupe/sort beyond what the core layer already produced.
+    const exploItems = sectionsById.get(MobileHomeSectionId.EXPLO)?.items ?? [];
     const discoverItems = filterItemsExcludingAlbumCanonicalKeys(
         sectionsById.get(MobileHomeSectionId.DISCOVER)?.items ?? [],
         seenAlbumCanonicalKeys,
@@ -619,6 +633,19 @@ export const getHomeDisplaySections = (
         });
     }
 
+    // Featured single-card row for the server-managed Explo drop playlist.
+    // Deliberately sits high (right under Recently Added) since it's fresh,
+    // curated content — not rotated for freshness like the library shelves
+    // below, since there's only ever the one card.
+    if (exploItems.length > 0) {
+        displaySections.push({
+            items: exploItems,
+            key: MobileHomeSectionId.EXPLO,
+            title: 'New from Explore',
+            variant: 'explo',
+        });
+    }
+
     if (albumItems.length > 0) {
         displaySections.push({
             items: rotateForFreshness(albumItems, 1),
@@ -655,9 +682,14 @@ export const getHomeDisplaySections = (
         });
     }
 
-    if (playlistItems.length > 0) {
+    // The Explore queue already has its own featured card above — drop it from
+    // the generic shelf so it doesn't appear on Home twice. (It stays in the
+    // Library playlist list, where completeness beats curation.)
+    const exploPlaylistIds = new Set(exploItems.map((item) => item.id));
+    const shelfPlaylistItems = playlistItems.filter((item) => !exploPlaylistIds.has(item.id));
+    if (shelfPlaylistItems.length > 0) {
         displaySections.push({
-            items: rotateForFreshness(playlistItems, 5).slice(0, 16),
+            items: rotateForFreshness(shelfPlaylistItems, 5).slice(0, 16),
             key: MobileHomeSectionId.PLAYLISTS,
             title: 'Playlists',
             variant: 'playlist',

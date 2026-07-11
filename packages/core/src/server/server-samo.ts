@@ -242,6 +242,8 @@ export interface SamoMusicAlbum {
     durationSeconds?: number;
     externalIds?: SamoExternalIds;
     genres?: string[];
+    /** Set by the explo folder integration - excludes the album from Recently Added shelves. */
+    hiddenFromRecentlyAdded?: boolean;
     id: string;
     images?: SamoImage[];
     moods?: string[];
@@ -334,6 +336,8 @@ export interface SamoMusicPlaylist {
     ownerName?: string;
     playback?: SamoPlaybackState;
     public?: boolean;
+    /** Server-managed playlist (e.g. the explo auto-tagged drop playlist) rather than user-created. */
+    system?: boolean;
     trackCount?: number;
     tracks?: SamoMusicTrack[];
     updatedAt?: string;
@@ -547,6 +551,18 @@ export interface SamoPodcast {
 export interface SamoPodcastEpisode {
     addedAt?: string;
     audioFiles?: SamoAudioFile[];
+    /**
+     * Server-side enclosure availability (wire field `cache`): `cached` = the
+     * proxy cache holds the bytes, `local` = the episode file lives in the
+     * server's own library. Either way the server serves it from disk, so the
+     * proxy beats a direct CDN fetch for these episodes.
+     */
+    cache?: {
+        cached?: boolean;
+        downloadedAt?: string;
+        local?: boolean;
+        sizeBytes?: number;
+    };
     chapters?: SamoAudioChapter[];
     description?: string;
     duration?: number;
@@ -558,6 +574,7 @@ export interface SamoPodcastEpisode {
     externalIds?: SamoExternalIds;
     id: string;
     images?: SamoImage[];
+    /** Dead vocabulary — the server never emits these; see `cache`. */
     isCached?: boolean;
     isLocal?: boolean;
     name?: string;
@@ -1214,6 +1231,21 @@ export const getSamoMusicPlaylist = async (
     return samoGet<SamoMusicPlaylist>(fetcher, authentication, `/music/playlists/${id}`, {
         signal,
     });
+};
+
+/**
+ * Finds the server-managed "Explo" playlist among a user's playlists, or
+ * undefined if it doesn't exist yet (no drops processed) or the feature
+ * isn't configured on this server. Shared by both clients' home screens so
+ * "how do we recognize the Explo playlist" lives in exactly one place.
+ */
+export const findSamoExploPlaylist = async (
+    fetcher: SamoFetch,
+    authentication: Pick<ServerAuthenticationResult, 'credential' | 'url'>,
+    signal?: AbortSignal,
+): Promise<SamoMusicPlaylist | undefined> => {
+    const page = await listSamoMusicPlaylists(fetcher, authentication, { limit: 100, signal });
+    return (page.items ?? []).find((playlist) => playlist.system);
 };
 
 export const listSamoMusicPlaylistTracks = async (
@@ -2194,12 +2226,23 @@ export const resolveSamoArtistArtworkUrl = (
     return undefined;
 };
 
+/**
+ * A playlist with more than one cover gets a server-composited 2x2 grid at
+ * `/music/playlists/{id}/cover`. Callers that carry a *single* `imageId`
+ * alongside the artwork URL (the mobile mappers) must drop it when this is
+ * true, or the single first cover would override the grid. Single source of
+ * truth for the grid threshold — keep it aligned with the resolver below.
+ */
+export const samoPlaylistHasCoverGrid = (
+    playlist: Pick<SamoMusicPlaylist, 'images'>,
+): boolean => (playlist.images?.length ?? 0) > 1;
+
 export const resolveSamoPlaylistArtworkUrl = (
     authentication: Pick<ServerAuthenticationResult, 'url'>,
     playlist: Pick<SamoMusicPlaylist, 'id' | 'images'>,
     streamToken?: string,
 ): string | undefined => {
-    if ((playlist.images?.length ?? 0) > 1 && playlist.id) {
+    if (samoPlaylistHasCoverGrid(playlist) && playlist.id) {
         return finalizeSamoCoverUrl(
             authentication,
             getSamoMusicPlaylistCoverUrl(authentication, playlist.id, streamToken),

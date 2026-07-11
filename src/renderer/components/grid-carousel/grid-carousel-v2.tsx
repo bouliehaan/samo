@@ -156,13 +156,22 @@ function BaseGridCarousel(props: GridCarouselProps) {
         placeholderRows,
     ]);
 
-    const shouldLoadNextPage = visibleCards.length < cardsToShow * rowCount;
+    // Keep paging until the visible row is actually full of (unfiltered) cards,
+    // not just once. Hiding items ("Remove from home") can filter out most of a
+    // loaded page; with a large hidden set the row would otherwise stay short
+    // forever. Gating on `!isFetchingNextPage` + re-running as `cards` grows
+    // makes this cascade page-by-page on demand and stop the moment the row
+    // fills or the server runs out (`hasNextPage` false) — no over-fetching.
+    const shouldLoadNextPage =
+        visibleCards.length < cardsToShow * rowCount &&
+        hasNextPage === true &&
+        !isFetchingNextPage;
 
     useEffect(() => {
         if (shouldLoadNextPage) {
             loadNextPage?.();
         }
-    }, [loadNextPage, shouldLoadNextPage]);
+    }, [loadNextPage, shouldLoadNextPage, cards.length]);
 
     const isPrevDisabled = currentPage.page === 0;
     const hasMoreCards = (currentPage.page + 1) * cardsToShow * rowCount < cards.length;

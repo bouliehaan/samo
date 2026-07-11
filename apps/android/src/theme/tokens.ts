@@ -87,3 +87,16 @@ export const gradients = {
     goldSheen: ['#f3e8c8', '#d4c08a'] as const,
     artworkScrim: ['rgba(0,0,0,0)', 'rgba(0,0,0,0.55)', 'rgba(0,0,0,0.85)'] as const,
 };
+
+/**
+ * The chrome glass material — BlurView props shared by the bottom dock and
+ * the Home top bar so both panes are the same piece of hardware and tuning
+ * happens in ONE place. brightness/saturation live INSIDE the blur via the
+ * patched expo-blur ColorMatrix (see BottomChromeBackdrop's doc for why
+ * darkness must be multiplicative, never smoke alpha).
+ */
+export const chromeGlass = {
+    brightness: 0.35,
+    intensity: 26,
+    saturation: 1.7,
+} as const;

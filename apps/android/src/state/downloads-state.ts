@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useReducer, useRef } from 'react';
+import { useSyncExternalStore } from 'react';
 
 import {
     DEFAULT_ARTWORK_CACHE_LIMIT_BYTES,
@@ -9,9 +9,11 @@ import {
     loadArtworkCacheLimitBytes,
     saveArtworkCacheLimitBytes,
 } from '../services/artwork-cache-settings';
-import { warmCatalogDatabase } from '../services/catalog/database';
 import { subscribeDownloads } from '../services/download-manager';
-import { loadOfflineModePreference } from '../services/offline-mode';
+import {
+    loadOfflineModePreference,
+    saveOfflineModePreference,
+} from '../services/offline-mode';
 import {
     buildDownloadedCollectionSnapshot,
     EMPTY_DOWNLOADED_COLLECTION_SNAPSHOT,
@@ -58,76 +60,120 @@ const downloadsReducer = (state: DownloadsState, action: DownloadsAction): Downl
     }
 };
 
-export const useDownloadsState = () => {
-    const [state, dispatch] = useReducer(downloadsReducer, initialDownloadsState);
-    const snapshotRef = useRef<DownloadedCollectionSnapshot>(EMPTY_DOWNLOADED_COLLECTION_SNAPSHOT);
+// ---------------------------------------------------------------------------
+// Module-level singleton store (same pattern as app-session.ts / playback-store.ts).
+//
+// Previously a per-call useReducer inside `useDownloadsState`, which meant
+// every download-progress tick dispatched into whichever component happened to
+// host the hook — typically App.tsx — causing the entire tree to re-render.
+// Lifting to a module-level store lets every consumer share one copy AND
+// lets components subscribe to fine-grained slices via useDownloadsSelector.
+// ---------------------------------------------------------------------------
 
-    const setIsOfflineMode = useCallback(
-        (isOfflineMode: boolean | ((current: boolean) => boolean)) => {
-            dispatch({
-                type: 'set-offline-mode',
-                isOfflineMode:
-                    typeof isOfflineMode === 'function'
-                        ? isOfflineMode(state.isOfflineMode)
-                        : isOfflineMode,
-            });
-        },
-        [state.isOfflineMode],
-    );
+let downloadsState: DownloadsState = initialDownloadsState;
+const downloadsListeners = new Set<() => void>();
 
-    const setArtworkCacheLimit = useCallback((bytes: number) => {
-        const next = Math.max(0, Math.round(bytes));
-        dispatch({ type: 'set-artwork-cache-limit', bytes: next });
-        applyArtworkCacheLimitBytes(next);
-        void saveArtworkCacheLimitBytes(next);
-    }, []);
+const dispatchDownloads = (action: DownloadsAction): void => {
+    const next = downloadsReducer(downloadsState, action);
+    if (Object.is(next, downloadsState)) {
+        return;
+    }
+    downloadsState = next;
+    downloadsListeners.forEach((listener) => listener());
+};
 
-    useEffect(() => {
-        let isMounted = true;
-
-        // Warm the catalog (writer migrates; reader connection opens) and the
-        // artwork index up front so the first render can resolve both
-        // synchronously — no loading state, no cover-art flicker.
-        warmCatalogDatabase();
-        warmArtworkCache();
-
-        void loadOfflineModePreference().then((next) => {
-            if (isMounted) {
-                dispatch({ type: 'set-offline-mode', isOfflineMode: next });
-            }
-        });
-
-        void loadArtworkCacheLimitBytes().then((bytes) => {
-            // Apply the persisted cap to the cache on launch (this also evicts
-            // down to it) and reflect it in state for the Settings UI.
-            applyArtworkCacheLimitBytes(bytes);
-            if (isMounted) {
-                dispatch({ type: 'set-artwork-cache-limit', bytes });
-            }
-        });
-
-        return () => {
-            isMounted = false;
-        };
-    }, []);
-
-    useEffect(() => {
-        const unsubscribe = subscribeDownloads((entries) => {
-            const nextSnapshot = buildDownloadedCollectionSnapshot(entries);
-            if (snapshotRef.current.signature === nextSnapshot.signature) {
-                return;
-            }
-            snapshotRef.current = nextSnapshot;
-            dispatch({ type: 'apply-snapshot', snapshot: nextSnapshot });
-        });
-
-        return unsubscribe;
-    }, []);
-
-    return {
-        ...state,
-        downloadedCollectionSnapshotRef: snapshotRef,
-        setArtworkCacheLimit,
-        setIsOfflineMode,
+const subscribeDownloadsStore = (listener: () => void): (() => void) => {
+    downloadsListeners.add(listener);
+    return () => {
+        downloadsListeners.delete(listener);
     };
 };
+
+const getDownloadsState = () => downloadsState;
+
+// Snapshot cache lives at module level now — previously it was a useRef inside
+// the hook, but it's really cache state for the subscription dedup, not
+// per-component state.
+let downloadedCollectionSnapshotCache: DownloadedCollectionSnapshot =
+    EMPTY_DOWNLOADED_COLLECTION_SNAPSHOT;
+
+// Module-level setters — stable identity, no useCallback needed.
+// Persistence lives in the setter (not at call sites) so no toggle path can
+// forget it; the boot load below dispatches directly and skips the re-save.
+const setIsOfflineMode = (isOfflineMode: boolean | ((current: boolean) => boolean)) => {
+    const resolved =
+        typeof isOfflineMode === 'function'
+            ? isOfflineMode(downloadsState.isOfflineMode)
+            : isOfflineMode;
+    dispatchDownloads({ type: 'set-offline-mode', isOfflineMode: resolved });
+    void saveOfflineModePreference(resolved);
+};
+
+const setArtworkCacheLimit = (bytes: number) => {
+    const next = Math.max(0, Math.round(bytes));
+    dispatchDownloads({ type: 'set-artwork-cache-limit', bytes: next });
+    applyArtworkCacheLimitBytes(next);
+    void saveArtworkCacheLimitBytes(next);
+};
+
+// ---------------------------------------------------------------------------
+// Boot-time side effects — run once when the module loads, not per-component.
+// These are the same effects that lived in the old useEffect([], []) hooks.
+// ---------------------------------------------------------------------------
+
+let _booted = false;
+
+const bootDownloadsStore = () => {
+    if (_booted) return;
+    _booted = true;
+
+    // Warm the artwork index up front so the first render can resolve covers
+    // without flicker. (The catalog itself is Kotlin-owned now — its reader
+    // warms at native engine init, no JS warm needed.)
+    warmArtworkCache();
+
+    void loadOfflineModePreference().then((next) => {
+        dispatchDownloads({ type: 'set-offline-mode', isOfflineMode: next });
+    });
+
+    void loadArtworkCacheLimitBytes().then((bytes) => {
+        // Apply the persisted cap to the cache on launch (this also evicts
+        // down to it) and reflect it in state for the Settings UI.
+        applyArtworkCacheLimitBytes(bytes);
+        dispatchDownloads({ type: 'set-artwork-cache-limit', bytes });
+    });
+
+    // Subscribe to native download-manager changes — the snapshot dedup
+    // prevents dispatching when nothing meaningful changed.
+    subscribeDownloads((entries) => {
+        const nextSnapshot = buildDownloadedCollectionSnapshot(entries);
+        if (downloadedCollectionSnapshotCache.signature === nextSnapshot.signature) {
+            return;
+        }
+        downloadedCollectionSnapshotCache = nextSnapshot;
+        dispatchDownloads({ type: 'apply-snapshot', snapshot: nextSnapshot });
+    });
+};
+
+// Boot eagerly when the module loads.
+bootDownloadsStore();
+
+// Exported for event handlers that read downloads state at call time without
+// subscribing (module-store getter, same pattern as playback-store), and for
+// components that only WRITE and shouldn't subscribe at all.
+export const getDownloadsSnapshot = () => downloadsState;
+export { setArtworkCacheLimit, setIsOfflineMode as setDownloadsOfflineMode };
+
+/**
+ * Subscribe to a single slice of the downloads state. Consumers that only need
+ * one field (e.g. offline mode, or download keys) re-render when THAT field
+ * changes instead of on every snapshot update.
+ */
+export const useDownloadsSelector = <Selected>(
+    selector: (state: DownloadsState) => Selected,
+): Selected =>
+    useSyncExternalStore(
+        subscribeDownloadsStore,
+        () => selector(downloadsState),
+        () => selector(downloadsState),
+    );

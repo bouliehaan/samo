@@ -120,7 +120,15 @@ export const AddServerForm = ({
             preferRemoteUrl: false,
             remoteUrl: '',
             type: initialServerType,
-            url: configuredServerUrl || 'http://',
+            // Default to https:// rather than http://: samo-server itself never
+            // terminates TLS, so a bare LAN box only ever needs http (and a LAN
+            // server is normally reached via autodiscovery below, not typed by
+            // hand). A hand-typed address disproportionately means "a real
+            // hostname somewhere else" (e.g. behind a Cloudflare Tunnel), where
+            // defaulting to plaintext http means the password typed into this
+            // form goes out in the clear unless the user thinks to fix the
+            // scheme themselves.
+            url: configuredServerUrl || 'https://',
             username: '',
         },
     });

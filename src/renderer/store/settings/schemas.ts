@@ -74,10 +74,6 @@ const ArtistReleaseTypeItemSchema = z.enum([
 
 const BindingActionsSchema = z.nativeEnum(BindingActions);
 
-const DiscordDisplayTypeSchema = z.enum(['artist', 'samo', 'song']);
-
-const DiscordLinkTypeSchema = z.enum(['last_fm', 'musicbrainz', 'musicbrainz_last_fm', 'none']);
-
 const GenreTargetSchema = z.enum(['album', 'track']);
 
 const PlaylistTargetSchema = z.enum(['album', 'track']);
@@ -182,17 +178,6 @@ const MpvSettingsSchema = z.object({
 const CssSettingsSchema = z.object({
     content: z.string().transform((val) => sanitizeCss(`<style>${val}`)),
     enabled: z.boolean(),
-});
-
-const DiscordSettingsSchema = z.object({
-    clientId: z.string(),
-    displayType: DiscordDisplayTypeSchema,
-    enabled: z.boolean(),
-    linkType: DiscordLinkTypeSchema,
-    showAsListening: z.boolean(),
-    showPaused: z.boolean(),
-    showServerImage: z.boolean(),
-    showStateIcon: z.boolean(),
 });
 
 const FontSettingsSchema = z.object({
@@ -588,7 +573,6 @@ const AutoDJSettingsSchema = z.object({
 export const ValidationSettingsStateSchema = z.object({
     autoDJ: AutoDJSettingsSchema,
     css: CssSettingsSchema,
-    discord: DiscordSettingsSchema,
     font: FontSettingsSchema,
     general: GeneralSettingsSchema,
     hotkeys: HotkeysSettingsSchema,
@@ -654,19 +638,6 @@ export enum BarAlign {
 }
 
 export { BindingActions } from '/@/shared/types/hotkeys';
-
-export enum DiscordDisplayType {
-    ARTIST_NAME = 'artist',
-    SAMO = 'samo',
-    SONG_NAME = 'song',
-}
-
-export enum DiscordLinkType {
-    LAST_FM = 'last_fm',
-    MBZ = 'musicbrainz',
-    MBZ_LAST_FM = 'musicbrainz_last_fm',
-    NONE = 'none',
-}
 
 export enum GenreTarget {
     ALBUM = 'album',

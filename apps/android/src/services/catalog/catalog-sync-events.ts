@@ -5,7 +5,6 @@ import {
     refreshCatalogSyncStateFromDb,
     type NativeCatalogSyncEvent,
 } from './catalog-sync-state';
-import { consolidateCatalogAfterSync, recycleCatalogConnections } from './database';
 
 // Glue between the Kotlin sync engine and the JS world. One install per app
 // lifetime (App.tsx effect): forwards SamoCatalogSyncState device events into
@@ -45,34 +44,18 @@ export const installCatalogSyncEventBridge = (): (() => void) => {
             // surfaces should render whatever exists rather than wait for a
             // perfect pass.
             if (event.status === 'synced' || event.status === 'error') {
-                // Recycle FIRST, synchronously, before any listener runs. The
-                // Kotlin engine just closed its native writer, which released
-                // this process's POSIX locks on the catalog DB and (intended to)
-                // checkpoint the WAL into the main file. Our cached JS
-                // connections are now bound to dropped locks / a stale snapshot
-                // and would read 0 rows — dropping (and CLOSING the sync
-                // reader so its .shm lock actually goes away) means the fresh
-                // open below sees the freshly-synced catalog. Without this,
-                // the first sync leaves Library/Playlists blank until restart.
-                recycleCatalogConnections();
-                // Then consolidate: open the writer fresh, run a PASSIVE
-                // wal_checkpoint, and probe the row count. This guards the
-                // (known-real) case where Kotlin's TRUNCATE checkpoint hit
-                // SQLITE_BUSY against our old reader and silently left data
-                // stranded in the WAL — by the time we run here the reader is
-                // closed, so PASSIVE has a clean window. Listeners fan out only
-                // AFTER this completes, so refreshHomeFromMirror reads the
-                // post-consolidate state.
-                void (async () => {
-                    await consolidateCatalogAfterSync();
-                    completedListeners.forEach((listener) => {
-                        try {
-                            listener(event.sourceId);
-                        } catch {
-                            // a post-sync hook must never break the bridge
-                        }
-                    });
-                })();
+                // Kotlin owns the DB end-to-end now: the reader is a single
+                // long-lived native connection under WAL, so there are no JS
+                // SQLite connections to recycle and no cross-engine POSIX-lock
+                // choreography to run. The freshly-committed rows are visible
+                // to the next bridge read immediately — just fan out.
+                completedListeners.forEach((listener) => {
+                    try {
+                        listener(event.sourceId);
+                    } catch {
+                        // a post-sync hook must never break the bridge
+                    }
+                });
             }
         },
     );

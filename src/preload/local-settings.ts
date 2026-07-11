@@ -66,16 +66,8 @@ const openFileSelector = async (options?: OpenDialogOptions) => {
 
 export const toServerType = (value?: string): null | string => {
     switch (value?.toLowerCase()) {
-        case 'audiobookshelf':
-            return 'audiobookshelf';
-        case 'jellyfin':
-            return 'jellyfin';
-        case 'navidrome':
-            return 'navidrome';
         case 'samo':
             return 'samo';
-        case 'subsonic':
-            return 'subsonic';
         default:
             return null;
     }

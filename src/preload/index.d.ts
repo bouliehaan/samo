@@ -1,50 +1,4 @@
 declare const api: {
-    audiobookshelf: {
-        closePlaybackSession: (payload: {
-            body: import('../shared/api/long-form-types').AudiobookshelfPlaybackSessionSyncRequest;
-            sessionId: string;
-            token: string;
-            url: string;
-        }) => Promise<void>;
-        getItem: (payload: {
-            itemId: string;
-            token: string;
-            url: string;
-        }) => Promise<import('../shared/api/long-form-types').LongFormLibraryItem>;
-        getItemCoverDataUrl: (payload: {
-            itemId: string;
-            token: string;
-            url: string;
-        }) => Promise<null | string>;
-        getLibraries: (payload: {
-            token: string;
-            url: string;
-        }) => Promise<import('../shared/api/long-form-types').AudiobookshelfLibrariesResponse>;
-        getLibraryItems: (payload: {
-            libraryId: string;
-            token: string;
-            url: string;
-        }) => Promise<import('../shared/api/long-form-types').LongFormLibraryItemsResponse>;
-        login: (payload: {
-            password: string;
-            url: string;
-            username: string;
-        }) => Promise<import('../shared/api/long-form-types').AudiobookshelfLoginResponse>;
-        playItem: (payload: {
-            episodeId?: string;
-            itemId: string;
-            token: string;
-            url: string;
-        }) => Promise<
-            import('../shared/api/long-form-types').AudiobookshelfPlaybackSessionResponse
-        >;
-        syncPlaybackSession: (payload: {
-            body: import('../shared/api/long-form-types').AudiobookshelfPlaybackSessionSyncRequest;
-            sessionId: string;
-            token: string;
-            url: string;
-        }) => Promise<void>;
-    };
     autodiscover: {
         discover: (
             onReply: (server: import('../shared/types/types').DiscoveredServerItem) => void,
@@ -63,13 +17,6 @@ declare const api: {
         quit: () => void;
         setIgnoreMouseEvents: (ignore: boolean) => void;
         unmaximize: () => void;
-    };
-    discordRpc: {
-        clearActivity: () => void;
-        initialize: (clientId: string) => Promise<any>;
-        isConnected: () => Promise<any>;
-        quit: () => void;
-        setActivity: (activity: import('@xhayper/discord-rpc').SetActivity) => void;
     };
     localSettings: {
         disableMediaKeys: () => void;
@@ -373,7 +320,6 @@ declare const api: {
         }>;
         disableAutoUpdates: () => string | undefined;
         download: (url: string) => void;
-        forceGarbageCollection: () => boolean;
         isLinux: () => boolean;
         isMacOS: () => boolean;
         isWindows: () => boolean;

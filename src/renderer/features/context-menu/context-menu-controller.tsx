@@ -3,6 +3,7 @@ import { useEffect, useRef } from 'react';
 import { createCallable } from 'react-call';
 import { generatePath, useNavigate, useParams } from 'react-router';
 
+import { RemoveFromHomeAction } from '/@/renderer/features/context-menu/actions/remove-from-home-action';
 import { AlbumArtistContextMenu } from '/@/renderer/features/context-menu/menus/album-artist-context-menu';
 import { AlbumContextMenu } from '/@/renderer/features/context-menu/menus/album-context-menu';
 import { ArtistContextMenu } from '/@/renderer/features/context-menu/menus/artist-context-menu';
@@ -123,11 +124,13 @@ export type ContextMenuCommand =
     | SongContextMenuProps;
 
 type AlbumArtistContextMenuProps = {
+    homeItemKey?: string;
     items: AlbumArtist[];
     type: LibraryItem.ALBUM_ARTIST;
 };
 
 type AlbumContextMenuProps = {
+    homeItemKey?: string;
     items: Album[];
     type: LibraryItem.ALBUM;
 };
@@ -138,6 +141,7 @@ type ArtistContextMenuProps = {
 };
 
 type AudiobookContextMenuProps = {
+    homeItemKey?: string;
     items: LongFormLibraryItem[];
     server: ServerListItemWithCredential;
     type: 'audiobook';
@@ -154,6 +158,7 @@ type GenreContextMenuProps = {
 };
 
 type PlaylistContextMenuProps = {
+    homeItemKey?: string;
     items: Playlist[];
     type: LibraryItem.PLAYLIST;
 };
@@ -164,6 +169,7 @@ type PlaylistSongContextMenuProps = {
 };
 
 type PodcastContextMenuProps = {
+    homeItemKey?: string;
     items: LongFormLibraryItem[];
     server: ServerListItemWithCredential;
     type: 'podcast';
@@ -175,6 +181,7 @@ type QueueSongContextMenuProps = {
 };
 
 type RadioContextMenuProps = {
+    homeItemKey?: string;
     items: InternetRadioStation[];
     serverId: string;
     type: 'radio';
@@ -187,12 +194,13 @@ type RecentItemContextMenuProps = {
 };
 
 type SongContextMenuProps = {
+    homeItemKey?: string;
     items: Song[];
     recentItemKey?: string;
     type: LibraryItem.SONG;
 };
 
-const AudiobookContextMenu = ({ items, server }: AudiobookContextMenuProps) => {
+const AudiobookContextMenu = ({ homeItemKey, items, server }: AudiobookContextMenuProps) => {
     const navigate = useNavigate();
     const { play } = useAudiobookActions();
     const { toggle } = useLibraryFavoritesActions();
@@ -214,11 +222,17 @@ const AudiobookContextMenu = ({ items, server }: AudiobookContextMenuProps) => {
             >
                 Favorite
             </ContextMenu.Item>
+            {homeItemKey ? (
+                <>
+                    <ContextMenu.Divider />
+                    <RemoveFromHomeAction homeItemKey={homeItemKey} />
+                </>
+            ) : null}
         </ContextMenu.Content>
     );
 };
 
-const PodcastContextMenu = ({ items, server }: PodcastContextMenuProps) => {
+const PodcastContextMenu = ({ homeItemKey, items, server }: PodcastContextMenuProps) => {
     const navigate = useNavigate();
     const { toggle } = useLibraryFavoritesActions();
     const item = items[0];
@@ -251,11 +265,17 @@ const PodcastContextMenu = ({ items, server }: PodcastContextMenuProps) => {
             >
                 Favorite
             </ContextMenu.Item>
+            {homeItemKey ? (
+                <>
+                    <ContextMenu.Divider />
+                    <RemoveFromHomeAction homeItemKey={homeItemKey} />
+                </>
+            ) : null}
         </ContextMenu.Content>
     );
 };
 
-const RadioContextMenu = ({ items, serverId }: RadioContextMenuProps) => {
+const RadioContextMenu = ({ homeItemKey, items, serverId }: RadioContextMenuProps) => {
     const { play } = useRadioControls();
     const { toggle } = useLibraryFavoritesActions();
     const station = items[0];
@@ -283,6 +303,12 @@ const RadioContextMenu = ({ items, serverId }: RadioContextMenuProps) => {
             >
                 Favorite
             </ContextMenu.Item>
+            {homeItemKey ? (
+                <>
+                    <ContextMenu.Divider />
+                    <RemoveFromHomeAction homeItemKey={homeItemKey} />
+                </>
+            ) : null}
         </ContextMenu.Content>
     );
 };

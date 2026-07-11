@@ -111,6 +111,19 @@ internal object SamoNativeStreamUrl {
         val kind = item.optionalString("samoProgressKind")
         val targetId = item.optionalString("samoProgressTargetId")
 
+        // A downloaded item plays from a local file:// / content:// URI and needs
+        // no stream token. resolveOfflinePlayable (JS) swaps url -> localUri but
+        // KEEPS serverUrl/bearer/samoProgressKind/samoProgressTargetId on the
+        // item, which would otherwise drive the buildFromKindAndTarget path below
+        // to REBUILD url as the network stream URL — re-streaming a track the user
+        // already downloaded (wasting bandwidth, and stalling a background
+        // auto-advance entirely when the device is offline-but-mint-attempted).
+        // Leave the local URI untouched so offline playback survives the advance.
+        val existingUrl = item.optionalString("url")
+        if (existingUrl != null && isLocalPlaybackUrl(existingUrl)) {
+            return RefreshResult.NotApplicable(item)
+        }
+
         // Phase 2 PROPER: when the item carries the kind + target id, build the
         // URL from scratch instead of patching a JS-supplied URL. This is the
         // native authoritative path — survives a stale `url`, picks the
@@ -206,6 +219,14 @@ internal object SamoNativeStreamUrl {
         }
 
     /**
+     * True when [url] points at an on-device file rather than the network — a
+     * downloaded track (`file://`) or a SAF tree document (`content://`). These
+     * play offline and never need a minted stream token.
+     */
+    private fun isLocalPlaybackUrl(url: String): Boolean =
+        url.startsWith("file:", ignoreCase = true) || url.startsWith("content:", ignoreCase = true)
+
+    /**
      * Cache-only token refresh for a Samo media URL — safe on the main thread
      * (never touches the network). Returns the URL with the cached token
      * substituted, or null when there's nothing to do (non-Samo URL, missing
@@ -229,6 +250,32 @@ internal object SamoNativeStreamUrl {
         }
         return if (refreshed == url) null else refreshed
     }
+
+    /**
+     * Stable identity for a piece of artwork regardless of which stream token
+     * its URL happens to carry — the Kotlin twin of the JS
+     * `canonicalArtworkKey`. Cache bitmaps under THIS, never under the raw
+     * URL: a token rotation must be a cache HIT for a cover we already
+     * decoded, not a re-download keyed by a string that changes every ~25
+     * minutes (and 401s once the old token dies).
+     */
+    fun canonicalArtworkCacheKey(url: String): String =
+        try {
+            val parsed = URL(url)
+            val retained = parsed.query
+                ?.split("&")
+                ?.filter { part -> part.isNotBlank() && !part.startsWith("stream_token=") }
+                ?.joinToString("&")
+                .orEmpty()
+            buildString {
+                append(parsed.protocol).append("://").append(parsed.authority).append(parsed.path)
+                if (retained.isNotEmpty()) {
+                    append('?').append(retained)
+                }
+            }
+        } catch (_: Exception) {
+            url
+        }
 
     // -----------------------------------------------------------------------
     // Phase 2 PROPER: native URL builders.

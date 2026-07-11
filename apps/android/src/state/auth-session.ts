@@ -189,24 +189,31 @@ const setOnboardingActive = (value: boolean) =>
 const patchAuthSession = (patch: Partial<AuthSessionState>) =>
     dispatchAuthSession({ type: 'patch', patch });
 
-export const useAuthSessionState = () => {
-    const state = useSyncExternalStore(
+/**
+ * Subscribe to a single slice of the auth session. Consumers that only need
+ * one field (e.g. `serverConnection`) re-render when THAT field changes, not
+ * on every login-form keystroke.
+ */
+export const useAuthSessionSelector = <Selected>(
+    selector: (state: AuthSessionState) => Selected,
+): Selected =>
+    useSyncExternalStore(
         subscribeAuthSession,
-        getAuthSessionState,
-        getAuthSessionState,
+        () => selector(authSessionState),
+        () => selector(authSessionState),
     );
 
-    return {
-        ...state,
-        patchAuthSession,
-        setAuthState,
-        setBootResolved,
-        setOnboardingActive,
-        setPassword,
-        setServerConnection,
-        setServerHealthByKey,
-        setServerType,
-        setServerUrl,
-        setUsername,
-    };
+// Module-level exports so event handlers can read/write auth state at call
+// time without subscribing (same pattern as playback-store).
+export const getAuthSession = getAuthSessionState;
+export {
+    patchAuthSession,
+    setAuthState,
+    setBootResolved,
+    setOnboardingActive,
+    setPassword,
+    setServerConnection,
+    setServerHealthByKey,
+    setServerUrl,
+    setUsername,
 };

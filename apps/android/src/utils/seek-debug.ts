@@ -19,11 +19,12 @@
  * `player:skip:activate` with no `pan:activate` — the parent player gesture
  * won the touch instead of the seek bar.
  *
- * Flip SEEK_GESTURE_DEBUG to false (or delete this file and its call sites)
- * once the gesture behavior is confirmed good — the runOnJS hops out of the
- * gesture worklets make this unfit to leave on in a shipping build.
+ * Flip SEEK_GESTURE_DEBUG to true to re-arm when chasing a gesture regression.
+ * Call sites check the flag INSIDE the worklet before runOnJS — with the flag
+ * off the worklet→JS hop is skipped entirely, so shipping builds pay nothing.
+ * (Verified good on-device 2026-07-02: tap and pan both commit first-touch.)
  */
-export const SEEK_GESTURE_DEBUG = true;
+export const SEEK_GESTURE_DEBUG = false;
 
 export function logSeekGesture(event: string, data?: Record<string, unknown>): void {
     if (!SEEK_GESTURE_DEBUG) {

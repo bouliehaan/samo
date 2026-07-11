@@ -9,7 +9,7 @@ import {
     prefetchArtworkUrls,
     type ArtworkPrefetchEntry,
 } from './artwork-cache';
-import { getItemsByTypeSync } from './catalog/catalog-repository';
+import { getItemsByType } from './catalog/catalog-repository';
 
 /**
  * Proactively caches the WHOLE library's cover art after a sync, so browsing
@@ -30,8 +30,8 @@ const ART_BEARING_TYPES: MobileHomeItemType[] = [
 
 let inFlight: Promise<void> | null = null;
 
-// Yield to the event loop every N resolutions so the (synchronous) URL-building
-// loop over a large library can't block the UI thread.
+// Yield to the event loop every N resolutions so the URL-building loop over a
+// large library can't monopolize the JS thread between awaits.
 const RESOLVE_YIELD_EVERY = 250;
 const yieldToEventLoop = (): Promise<void> =>
     new Promise((resolve) => setTimeout(resolve, 0));
@@ -52,7 +52,7 @@ const collectArtwork = async (
     let resolved = 0;
     const sourceId = getMobileContentSource(connection).id;
     for (const type of ART_BEARING_TYPES) {
-        const items = getItemsByTypeSync(sourceId, type);
+        const items = await getItemsByType(sourceId, type);
         for (const item of items) {
             resolved += 1;
             if (resolved % RESOLVE_YIELD_EVERY === 0) {

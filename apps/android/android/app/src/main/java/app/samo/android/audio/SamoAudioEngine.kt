@@ -268,6 +268,10 @@ internal class SamoAudioEngine(
       position = { binder.boundService?.getCurrentPlayer()?.currentPosition },
       duration = { binder.boundService?.getCurrentPlayer()?.duration },
     )
+    // Durable last-position journal: replays any write a previous process was
+    // killed before acknowledging, so a hard kill mid-final-write no longer
+    // loses the spot. filesDir is app-private internal storage.
+    SamoProgressSync.bindPersistence(reactContext.filesDir)
     SamoProgressSync.onPlaybackStalled = {
       mainHandler.post {
         val player = binder.boundService?.getCurrentPlayer()
@@ -314,6 +318,15 @@ internal class SamoAudioEngine(
    *  player's own state machine. */
   private var engineMode: SamoPlaybackRecovery.Mode = SamoPlaybackRecovery.Mode.Normal
   private var lastAutoAdvanceSessionId: String? = null
+  /**
+   * The user's repeat setting (Player.REPEAT_MODE_*). Media3 owns the actual
+   * looping (native gapless repeat with zero JS in the loop, same as
+   * auto-advance); the engine stores the USER intent here because playLocally
+   * builds playback state from scratch per play and must re-apply it. Applied
+   * to the player only for MUSIC — repeating a live radio stream is
+   * meaningless, and long-form content doesn't expose the control.
+   */
+  private var userRepeatMode: Int = Player.REPEAT_MODE_OFF
   /**
    * Monotonic stamp for playback commands (play / stop / queue nav). Async
    * URL-refresh callbacks capture the stamp at request time and only issue
@@ -485,6 +498,14 @@ internal class SamoAudioEngine(
   private fun buildMusicMediaItem(item: HashMap<String, Any?>): MediaItem {
     val url = (item["url"] as? String).orEmpty()
     val mediaId = (item["id"] as? String) ?: url
+    // Direct-enclosure podcast items carry their authenticated proxy twin —
+    // register it so an open failure on the CDN URL retries via the server.
+    SamoDirectStreamFallback.register(
+      directUrl = url,
+      proxyUrl = item["serverStreamUrl"] as? String,
+      serverUrl = item["serverUrl"] as? String,
+      bearer = item["serverBearerToken"] as? String,
+    )
     val title = (item["title"] as? String) ?: "Samo"
     val subtitle = item["subtitle"] as? String
     val artworkUrl = item["artworkUrl"] as? String
@@ -504,7 +525,17 @@ internal class SamoAudioEngine(
   }
 
   private fun playLocally(source: ReadableMap, promise: Promise) {
-    source.syncNativePlaybackQueue(null)?.let { nativePlaybackQueue = it }
+    // A play() that CARRIES the queueItems key is authoritative for the
+    // mirror — including an empty list, which is JS explicitly saying "this
+    // play has no Up Next" (single item, radio). The old `?.let` treated
+    // empty the same as ABSENT and preserved whatever stale queue the engine
+    // still held from the previous session, so finishing the new item could
+    // auto-advance into yesterday's playlist. Only the engine's own internal
+    // plays (mirror-queue advance via playQueueItemAt) omit the key, and
+    // those are exactly the calls that must preserve the live mirror.
+    if (source.hasKey("queueItems") && !source.isNull("queueItems")) {
+      nativePlaybackQueue = source.syncNativePlaybackQueue(null)
+    }
 
     val url = source.getOptionalString("url")
     if (url == null) {
@@ -516,6 +547,14 @@ internal class SamoAudioEngine(
     val subtitle = source.getOptionalString("subtitle")
     val artworkUrl = source.getOptionalString("artworkUrl")
     val mediaId = source.getOptionalString("id") ?: sessionId
+    // Single-item plays need the direct→proxy fallback registered too (the
+    // playlist path registers per item in buildMusicMediaItem).
+    SamoDirectStreamFallback.register(
+      directUrl = url,
+      proxyUrl = source.getOptionalString("serverStreamUrl"),
+      serverUrl = source.getOptionalString("serverUrl"),
+      bearer = source.getOptionalString("serverBearerToken"),
+    )
     val mimeType = getMediaItemMimeType(url, source.getOptionalString("mimeType"))
     val requestHeaders = source.getHttpHeaders()
     val quality = source.getSourceQuality()
@@ -612,7 +651,7 @@ internal class SamoAudioEngine(
       )
       currentSessionId = sessionId
       lastAutoAdvanceSessionId = null
-      resolvedPlayer.repeatMode = Player.REPEAT_MODE_OFF
+      resolvedPlayer.repeatMode = effectiveRepeatMode(sourceLabel)
       // Music plays as a FULL native playlist: load every queue item so
       // ExoPlayer walks the whole queue itself — advancing track-to-track via
       // onMediaItemTransition with zero JS in the loop, so a locked phone keeps
@@ -722,6 +761,36 @@ internal class SamoAudioEngine(
         emitState("playing")
         promise.resolve(getStatusMap(resolvedPlayer, "playing"))
       }
+    }
+  }
+
+  /** Map a stored Player.REPEAT_MODE_* to the mode the player should actually run. */
+  private fun effectiveRepeatMode(sourceLabel: String?): Int =
+    if (sourceLabel == "music") userRepeatMode else Player.REPEAT_MODE_OFF
+
+  private fun repeatModeLabel(): String = when (userRepeatMode) {
+    Player.REPEAT_MODE_ONE -> "one"
+    Player.REPEAT_MODE_ALL -> "all"
+    else -> "off"
+  }
+
+  fun setRepeatMode(mode: String, promise: Promise) {
+    mainHandler.post {
+      userRepeatMode = when (mode) {
+        "one" -> Player.REPEAT_MODE_ONE
+        "all" -> Player.REPEAT_MODE_ALL
+        else -> Player.REPEAT_MODE_OFF
+      }
+      // Apply live only to a player that already exists — never start the
+      // playback service for a preference write. playLocally re-applies the
+      // mode on every real play, so a stored-but-unapplied value is fine.
+      val resolvedPlayer = binder.boundService?.getCurrentPlayer()
+      if (resolvedPlayer == null) {
+        promise.resolve(getIdleStatusMap())
+        return@post
+      }
+      resolvedPlayer.repeatMode = effectiveRepeatMode(currentSource?.source)
+      promise.resolve(getStatusMap(resolvedPlayer))
     }
   }
 
@@ -845,6 +914,24 @@ internal class SamoAudioEngine(
         reactContext.stopService(intent)
       } catch (error: Exception) {
         promise.reject("SAMO_AUDIO_ERROR", error.message, error)
+      }
+    }
+  }
+
+  /**
+   * Latest locally-cached resume position for an item, used by JS as a fallback
+   * when the live server progress read fails on a flaky LAN. Resolves a map
+   * `{ progressSeconds, completed }` or null when nothing is cached.
+   */
+  fun getResumeProgress(kind: String, targetId: String, promise: Promise) {
+    SamoProgressSync.getResumeSeconds(kind, targetId) { seconds, completed ->
+      if (seconds == null) {
+        promise.resolve(null)
+      } else {
+        val map = Arguments.createMap()
+        map.putDouble("progressSeconds", seconds.toDouble())
+        map.putBoolean("completed", completed)
+        promise.resolve(map)
       }
     }
   }
@@ -1167,9 +1254,17 @@ internal class SamoAudioEngine(
         val newIndex = player.currentMediaItemIndex
         if (newIndex !in queue.items.indices) return
 
+        // Captured BEFORE lastKnownPlaybackMediaId is overwritten below — the
+        // OUTGOING item's id, used to tell "advancing within the same book"
+        // (continue) from "entering a book from another queue item" (resume).
+        val previousMediaId = lastKnownPlaybackMediaId
+
         // The OUTGOING track just finished. AUTO = natural end → submit the play
-        // (music play-count / long-form completed). SEEK = user skip → no submit.
-        val completed = reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO
+        // (music play-count / long-form completed). REPEAT = natural end looping
+        // back onto itself (repeat-one) — every completed loop is a real listen,
+        // so it submits too. SEEK = user skip → no submit.
+        val completed = reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO ||
+          reason == Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT
         SamoProgressSync.detach(completed = completed, reason = if (completed) "ended" else "skip")
 
         // Adopt the new current track natively — no JS needed. getStatusMap
@@ -1274,21 +1369,49 @@ internal class SamoAudioEngine(
         // `initialPositionSeconds` from an earlier same-item recovery restart,
         // and honoring it here is how a skipped song's progress leaked into the
         // next track's start position.
-        val resumeMs = if ((newItem["source"] as? String) == "podcast") {
-          ((newItem["initialPositionSeconds"] as? Number)?.toLong()
-            ?: (newItem["progressOffsetSeconds"] as? Number)?.toLong()
-            ?: 0L).coerceAtLeast(0L) * 1000L
+        val transitionSource = newItem["source"] as? String
+        val itemMap = SamoBridgeMapCopier.toWritableMap(HashMap(newItem))
+        if (transitionSource == "audiobook") {
+          // Queue-advance INTO an audiobook (e.g. songs → book) must resume where
+          // the listener left off, fully in Kotlin so it works while the screen is
+          // asleep. The native journal is authoritative (survives Doze + process
+          // death). But advancing WITHIN the same book (file N → N+1) just
+          // continues at the next file's start — never re-seek there, or a stale
+          // journal value would yank playback backward.
+          val bookId = newItem["samoProgressTargetId"] as? String
+          val previousBookId = parseAudiobookIdFromPlaybackId(previousMediaId)
+          val advancingWithinSameBook = bookId != null && bookId == previousBookId
+          if (bookId.isNullOrBlank() || advancingWithinSameBook) {
+            SamoProgressSync.attach(itemMap, sessionId, 0L)
+          } else {
+            val offsetSeconds = (newItem["progressOffsetSeconds"] as? Number)?.toLong() ?: 0L
+            SamoProgressSync.getResumeSeconds("audiobook", bookId) { seconds, completed ->
+              val resumeMs = if (seconds != null && seconds > 0 && !completed) {
+                ((seconds - offsetSeconds).coerceAtLeast(0L)) * 1000L
+              } else {
+                0L
+              }
+              mainHandler.post {
+                if (resumeMs > 0L) {
+                  player.seekTo(resumeMs)
+                }
+                SamoProgressSync.attach(itemMap, sessionId, resumeMs)
+              }
+            }
+          }
         } else {
-          0L
+          val resumeMs = if (transitionSource == "podcast") {
+            ((newItem["initialPositionSeconds"] as? Number)?.toLong()
+              ?: (newItem["progressOffsetSeconds"] as? Number)?.toLong()
+              ?: 0L).coerceAtLeast(0L) * 1000L
+          } else {
+            0L
+          }
+          if (resumeMs > 0L) {
+            player.seekTo(resumeMs)
+          }
+          SamoProgressSync.attach(itemMap, sessionId, resumeMs)
         }
-        if (resumeMs > 0L) {
-          player.seekTo(resumeMs)
-        }
-        SamoProgressSync.attach(
-          SamoBridgeMapCopier.toWritableMap(HashMap(newItem)),
-          sessionId,
-          resumeMs,
-        )
         Log.i(
           "SamoAudio",
           "media transition index=$newIndex reason=$reason completed=$completed id=${newItem["id"]}",
@@ -1386,6 +1509,20 @@ internal class SamoAudioEngine(
       )
       service.refreshPlaybackNotification()
     }
+  }
+
+  /**
+   * Book id out of an audiobook playback id. Mirrors the JS
+   * parseSamoAudiobookIdFromPlaybackId — handles both `…:audiobook:<bookId>` and
+   * the per-file `…:audiobook:<bookId>:file:<mediaFileId>` form. Returns null for
+   * any non-audiobook id (so a song → book advance reads as a book change).
+   */
+  private fun parseAudiobookIdFromPlaybackId(playbackId: String?): String? {
+    if (playbackId.isNullOrBlank()) return null
+    return Regex(":audiobook:([^:]+)(?::file:[^:]+)?$")
+      .find(playbackId)
+      ?.groupValues
+      ?.getOrNull(1)
   }
 
   override fun emitState(status: String?) {
@@ -1588,7 +1725,25 @@ internal class SamoAudioEngine(
     val item = queue.items.getOrNull(index) ?: return false
     queue.index = index
     val commandId = ++playCommandSequence
+    startQueueItemRefresh(index, item, commandId, attempt = 1)
+    return true
+  }
 
+  /** One retry after a short backoff before falling back to the item's stored
+   *  URL. The first mint after hours of screen-off sleep rides a connection
+   *  pool full of silently-dead sockets (and a radio that just woke), so a
+   *  single transient failure is the COMMON case there — and the stored URL's
+   *  token is precisely the one that has expired by then, so falling back to
+   *  it on the first miss turned "one flaky request" into "queue stops until
+   *  the app is opened". */
+  private val queueAdvanceMintRetryDelayMs = 2_500L
+
+  private fun startQueueItemRefresh(
+    index: Int,
+    item: HashMap<String, Any?>,
+    commandId: Long,
+    attempt: Int,
+  ) {
     SamoNativeStreamUrl.refreshQueueItemAsync(reactContext, item) { result ->
       mainHandler.post {
         if (commandId != playCommandSequence) {
@@ -1600,17 +1755,32 @@ internal class SamoAudioEngine(
           return@post
         }
 
-        // Native auto-advance: pick the freshest URL we have. A Network/Server
-        // mint failure falls through to the original URL — the existing token
-        // may still be valid. If it isn't, the player error path will route
-        // through SamoPlaybackRecovery, which knows how to park for network
-        // rather than burn retries on a stale URL.
+        if (result is SamoNativeStreamUrl.RefreshResult.MintFailed &&
+          attempt == 1 &&
+          (result.reason == SamoNativeStreamUrl.MintFailureReason.Network ||
+            result.reason == SamoNativeStreamUrl.MintFailureReason.Server)
+        ) {
+          Log.w(
+            "SamoAudio",
+            "auto-advance mint failed (${result.reason}); retrying once in ${queueAdvanceMintRetryDelayMs}ms",
+          )
+          mainHandler.postDelayed(
+            { startQueueItemRefresh(index, item, commandId, attempt = 2) },
+            queueAdvanceMintRetryDelayMs,
+          )
+          return@post
+        }
+
+        // Freshest URL we have. After the bounded retry a Network/Server mint
+        // failure falls through to the original URL — the existing token may
+        // still be valid (short sleeps). If it isn't, the player error path
+        // routes through SamoPlaybackRecovery, whose 401 leg force-mints.
         val refreshedItem = when (result) {
           is SamoNativeStreamUrl.RefreshResult.Ready -> result.item
           is SamoNativeStreamUrl.RefreshResult.MintFailed -> {
             Log.w(
               "SamoAudio",
-              "auto-advance mint failed (${result.reason}); using original URL",
+              "auto-advance mint failed (${result.reason}) after $attempt attempt(s); using original URL",
             )
             result.originalItem
           }
@@ -1623,7 +1793,6 @@ internal class SamoAudioEngine(
         playLocally(playSource, SamoNoOpPromise)
       }
     }
-    return true
   }
 
   private fun getDetachedStatusMap(status: String): WritableMap {
@@ -1817,6 +1986,9 @@ internal class SamoAudioEngine(
     map.putDouble("positionMs", resolvedPlayer.currentPosition.toDouble())
     map.putDouble("durationMs", if (duration == C.TIME_UNSET) -1.0 else duration.toDouble())
     map.putBoolean("isPlaying", resolvedPlayer.isPlaying)
+    // The USER setting, not the player's live mode — non-music sources run
+    // with the player forced to REPEAT_MODE_OFF while the setting persists.
+    map.putString("repeatMode", repeatModeLabel())
     map.putMap("bitPerfect", SamoBitPerfect.getBitPerfectTruthMap(currentBitPerfectTruth))
 
     if (source != null) {
@@ -1850,6 +2022,7 @@ internal class SamoAudioEngine(
     map.putBoolean("isPlaying", false)
     map.putDouble("positionMs", 0.0)
     map.putDouble("durationMs", -1.0)
+    map.putString("repeatMode", repeatModeLabel())
     map.putMap("bitPerfect", SamoBitPerfect.getBitPerfectTruthMap(SamoBitPerfectTruth.unknown()))
     return map
   }

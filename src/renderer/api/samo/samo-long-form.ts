@@ -70,8 +70,7 @@ const toAbsChapters = (chapters: SamoAudiobook['chapters']): LongFormChapter[] =
         title: chapter.title,
     }));
 
-export const isSamoLongFormServer = (server: null | ServerListItemWithCredential | undefined) =>
-    server?.type === ServerType.SAMO;
+
 
 export { useLongFormMediaServer };
 
@@ -197,11 +196,30 @@ export const listSamoAudiobookLibraryItems = async (
 
 export const listSamoPodcastLibraryItems = async (
     server: ServerListItemWithCredential,
+    options?: { includeEpisodes?: boolean },
 ): Promise<SamoBackedLibraryItem[]> => {
     const auth = samoAuth(server);
     const streamToken = await ensureStreamToken(server);
     const response = await listSamoPodcasts(browserFetch, auth, { limit: 500 });
     const shows = samoItemsOf(response);
+
+    // The Podcasts grid and sidebar only render show summaries (cover, title,
+    // author, episode count). Fetching every show's full episode list here was
+    // an N+1 — the page blocked on one request PER show (each up to 500
+    // episodes) before first paint, which is the "super slow podcast loading".
+    // Episode count comes from the show summary (`episodeCount`), so the list
+    // needs no episodes at all. Detail pages load episodes on demand via
+    // `loadSamoPodcastLibraryItem`; only callers that match against episode
+    // titles (unified search) opt back into the per-show fetch.
+    if (!options?.includeEpisodes) {
+        return shows.map((show) =>
+            samoPodcastToLibraryItem(
+                show,
+                [],
+                resolveSamoPodcastArtworkUrl(auth, show, streamToken),
+            ),
+        );
+    }
 
     return Promise.all(
         shows.map(async (show) => {

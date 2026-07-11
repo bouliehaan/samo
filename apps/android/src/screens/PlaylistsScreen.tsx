@@ -1,14 +1,14 @@
 import { MobileHomeSectionId, type MobileHomeItem } from '@samo/core/mobile';
-import { memo, useMemo, useState } from 'react';
+import { FlashList } from '@shopify/flash-list';
+import { memo, useCallback, useMemo, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 
 import { LibraryListRow } from '../components/LibraryListRow';
 import { SkeletonListRows } from '../components/Skeleton';
 import { LibrarySortMenu } from '../components/LibrarySortMenu';
 import { PlusGlyph, ShuffleGlyph, SortGlyph } from '../components/Glyphs';
+import { useScrollContentBottomInset } from '../hooks/use-scroll-content-bottom-inset';
 import { colors } from '../theme/tokens';
-import { type AndroidHomeContentState } from '../services/home-content';
-import { type AndroidRecentContentItem } from '../services/recent-content';
 import { useVisibleHomeContentState } from '../hooks/use-visible-home-content';
 import { useVisibleRecentItems } from '../hooks/use-visible-recent-items';
 import { triggerImpact } from '../services/haptics';
@@ -16,6 +16,7 @@ import { styles } from '../theme/styles';
 import { LIBRARY_SORTS, type LibrarySort } from '../types/library-tab';
 import { type PlaylistsScreenProps } from '../types/playlists';
 import { getSectionsById, sortHomeItemsByRecents } from '../utils/home-display';
+import { type LibraryDisplayItem } from '../types/library-display';
 import { toLibraryDisplayItem } from '../utils/library-display';
 import { EmptyServerBackedScreen } from './EmptyServerBackedScreen';
 
@@ -46,6 +47,30 @@ export const PlaylistsScreen = memo(({
         () => playlists.filter((playlist) => playlist.playback),
         [playlists],
     );
+    const bottomInset = useScrollContentBottomInset();
+
+    // Pre-derive the virtualizable rows: each carries its display model + the
+    // original item for onPress. Building this once (not per render row) keeps
+    // FlashList's recycled renderItem cheap.
+    const rows = useMemo(
+        () =>
+            playlists
+                .map((item) => {
+                    const displayItem = toLibraryDisplayItem(item);
+                    return displayItem ? { displayItem, item } : null;
+                })
+                .filter((row): row is { displayItem: LibraryDisplayItem; item: MobileHomeItem } =>
+                    row !== null,
+                ),
+        [playlists],
+    );
+
+    const renderRow = useCallback(
+        ({ item: row }: { item: { displayItem: LibraryDisplayItem; item: MobileHomeItem } }) => (
+            <LibraryListRow displayItem={row.displayItem} onPress={() => onSelectItem(row.item)} />
+        ),
+        [onSelectItem],
+    );
 
     if (homeContentState.status === 'idle') {
         return <EmptyServerBackedScreen tabTitle="Playlists" />;
@@ -70,8 +95,8 @@ export const PlaylistsScreen = memo(({
         return (
             <View style={styles.playlistScreen}>
                 <View style={styles.playlistTopPanel}>
-                    <Text style={styles.homeHeaderTitle}>Playlists</Text>
-                    <View style={styles.playlistHeaderActions}>
+                    <View style={styles.playlistTitleRow}>
+                        <Text style={styles.homeHeaderTitle}>Playlists</Text>
                         {showCreatePlaylist && onCreatePlaylist ? (
                             <Pressable
                                 accessibilityLabel="Create playlist"
@@ -92,63 +117,66 @@ export const PlaylistsScreen = memo(({
         );
     }
 
-    return (
-        <View style={styles.playlistScreen}>
-            <View style={styles.playlistTopPanel}>
+    const listHeader = (
+        <View style={styles.playlistTopPanel}>
+            {/* Title row carries ONLY the title + one icon button (Home's
+                pattern). The pills live on their own row below — the 64px
+                serif title never negotiates space with them again. */}
+            <View style={styles.playlistTitleRow}>
                 <Text style={styles.homeHeaderTitle}>Playlists</Text>
-                <View style={styles.playlistHeaderActions}>
-                    {showCreatePlaylist && onCreatePlaylist ? (
-                        <Pressable
-                            accessibilityLabel="Create playlist"
-                            accessibilityRole="button"
-                            onPress={() => {
-                                triggerImpact('light');
-                                onCreatePlaylist();
-                            }}
-                            style={styles.radioAddIconButton}
-                        >
-                            <PlusGlyph color={colors.muted} size={18} />
-                        </Pressable>
-                    ) : null}
+                {showCreatePlaylist && onCreatePlaylist ? (
                     <Pressable
-                        accessibilityLabel={`Sort by ${activeSortLabel}. Tap to change.`}
+                        accessibilityLabel="Create playlist"
                         accessibilityRole="button"
-                        android_ripple={{ borderless: true, color: 'rgba(255, 255, 255, 0.08)' }}
                         onPress={() => {
                             triggerImpact('light');
-                            setIsSortMenuOpen(true);
+                            onCreatePlaylist();
                         }}
-                        style={styles.librarySortBadge}
+                        style={styles.radioAddIconButton}
                     >
-                        <SortGlyph color={colors.muted} />
-                        <Text style={styles.librarySortText}>{activeSortLabel}</Text>
+                        <PlusGlyph color={colors.muted} size={18} />
                     </Pressable>
-                    {allPlayableItems.length > 1 ? (
-                        <Pressable
-                            accessibilityLabel="Shuffle all playlists"
-                            accessibilityRole="button"
-                            onPress={() => void onShufflePlay(allPlayableItems)}
-                            style={styles.playlistPillButton}
-                        >
-                            <ShuffleGlyph color={colors.background} />
-                            <Text style={styles.playlistPillButtonText}>Shuffle</Text>
-                        </Pressable>
-                    ) : null}
-                </View>
+                ) : null}
             </View>
-            <View style={styles.libraryList}>
-                {playlists.map((item) => {
-                    const displayItem = toLibraryDisplayItem(item);
+            <View style={styles.playlistControlsRow}>
+                <Pressable
+                    accessibilityLabel={`Sort by ${activeSortLabel}. Tap to change.`}
+                    accessibilityRole="button"
+                    android_ripple={{ borderless: true, color: 'rgba(255, 255, 255, 0.08)' }}
+                    onPress={() => {
+                        triggerImpact('light');
+                        setIsSortMenuOpen(true);
+                    }}
+                    style={styles.librarySortBadge}
+                >
+                    <SortGlyph color={colors.muted} />
+                    <Text style={styles.librarySortText}>{activeSortLabel}</Text>
+                </Pressable>
+                {allPlayableItems.length > 1 ? (
+                    <Pressable
+                        accessibilityLabel="Shuffle all playlists"
+                        accessibilityRole="button"
+                        onPress={() => void onShufflePlay(allPlayableItems)}
+                        style={styles.playlistPillButton}
+                    >
+                        <ShuffleGlyph color={colors.background} />
+                        <Text style={styles.playlistPillButtonText}>Shuffle</Text>
+                    </Pressable>
+                ) : null}
+            </View>
+        </View>
+    );
 
-                    return displayItem ? (
-                        <LibraryListRow
-                            displayItem={displayItem}
-                            key={displayItem.key}
-                            onPress={() => onSelectItem(item)}
-                        />
-                    ) : null;
-                })}
-            </View>
+    return (
+        <View style={styles.playlistScreen}>
+            <FlashList
+                ListHeaderComponent={listHeader}
+                contentContainerStyle={{ paddingBottom: bottomInset }}
+                data={rows}
+                keyExtractor={(row) => row.displayItem.key}
+                renderItem={renderRow}
+                showsVerticalScrollIndicator={false}
+            />
             <LibrarySortMenu
                 activeSort={activeSort}
                 onClose={() => setIsSortMenuOpen(false)}

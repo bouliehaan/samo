@@ -6,7 +6,10 @@ import { generatePath, Link, useNavigate } from 'react-router';
 import styles from './home-sections.module.css';
 
 import { api } from '/@/renderer/api';
-import { fetchSamoDiscoveryHomeTracks } from '/@/renderer/api/samo/samo-controller';
+import {
+    fetchSamoDiscoveryHomeTracks,
+    fetchSamoExploPlaylist,
+} from '/@/renderer/api/samo/samo-controller';
 import { listSamoAudiobookLibraryItems } from '/@/renderer/api/samo/samo-long-form';
 import {
     GridCarousel,
@@ -29,6 +32,11 @@ import {
     usePlayHistoryStore,
 } from '/@/renderer/store';
 import { useAudiobookActions } from '/@/renderer/store/audiobook.store';
+import {
+    hiddenHomeItemKey,
+    useHiddenHomeIdsByType,
+    useHiddenHomeKeys,
+} from '/@/renderer/store/hidden-home-items.store';
 import {
     useFavoriteAudiobookIds,
     useFavoritePlaylistIds,
@@ -57,6 +65,11 @@ const SHELF_LIMIT = 8;
 const LIST_LIMIT = 10;
 const HOME_SONG_POOL = 500;
 const DISCOVERY_LIMIT = 10;
+// Fixed-count shelves fetch a surplus beyond what they display so that hiding an
+// item ("Remove from home") backfills the row from the next-best item instead of
+// leaving it short. Each shelf filters hidden items, then slices to its display
+// limit. (The album shelves use the infinite carousel, which backfills already.)
+const SHELF_FETCH_LIMIT = 40;
 
 const shuffleSongs = <T,>(items: T[]): T[] => {
     const copy = [...items];
@@ -140,7 +153,7 @@ const useAlbums = (
             api.controller.getAlbumList({
                 apiClientProps: { serverId, signal },
                 query: {
-                    limit: SHELF_LIMIT,
+                    limit: SHELF_FETCH_LIMIT,
                     sortBy,
                     sortOrder,
                     startIndex: 0,
@@ -160,40 +173,13 @@ const useTopArtists = () => {
             api.controller.getAlbumArtistList({
                 apiClientProps: { serverId, signal },
                 query: {
-                    limit: SHELF_LIMIT,
+                    limit: SHELF_FETCH_LIMIT,
                     sortBy: AlbumArtistListSort.PLAY_COUNT,
                     sortOrder: SortOrder.DESC,
                     startIndex: 0,
                 },
             }),
         queryKey: ['home', 'artists', 'top-played', serverId],
-    });
-};
-
-const useSongs = (
-    key: string,
-    sortBy: SongListSort,
-    sortOrder: SortOrder,
-    limit = LIST_LIMIT,
-    query?: { favorite?: boolean },
-    options?: { enabled?: boolean },
-) => {
-    const serverId = useCurrentServerId();
-
-    return useQuery({
-        enabled: Boolean(serverId) && (options?.enabled ?? true),
-        queryFn: ({ signal }) =>
-            api.controller.getSongList({
-                apiClientProps: { serverId, signal },
-                query: {
-                    limit,
-                    sortBy,
-                    sortOrder,
-                    startIndex: 0,
-                    ...query,
-                },
-            }),
-        queryKey: ['home', 'songs', key, sortBy, sortOrder, query, serverId],
     });
 };
 
@@ -208,13 +194,13 @@ const useHomeMostPlayedSongs = () => {
                 query: {
                     artist: '',
                     artistId: '',
-                    limit: LIST_LIMIT,
+                    limit: SHELF_FETCH_LIMIT,
                     type: 'personal',
                 },
             });
             const topItems = topResponse.items ?? [];
             if (topItems.length > 0) {
-                return pickMostPlayedSongs(topItems, LIST_LIMIT);
+                return pickMostPlayedSongs(topItems, SHELF_FETCH_LIMIT);
             }
 
             const response = await api.controller.getSongList({
@@ -227,7 +213,7 @@ const useHomeMostPlayedSongs = () => {
                 },
             });
 
-            return pickMostPlayedSongs(response.items ?? [], LIST_LIMIT);
+            return pickMostPlayedSongs(response.items ?? [], SHELF_FETCH_LIMIT);
         },
         queryKey: ['home', 'mostPlayed', serverId],
     });
@@ -281,10 +267,22 @@ export const HomeFavoritePlaylists = ({
         return map;
     }, [recentPlayHistory, serverId]);
 
+    const hiddenKeys = useHiddenHomeKeys();
     const playlists = useMemo(() => {
         const allPlaylists = playlistsQuery.data?.items ?? [];
-        return sortPlaylistsByLastPlayed(allPlaylists, localPlaylistPlayedAt).slice(0, SHELF_LIMIT);
-    }, [localPlaylistPlayedAt, playlistsQuery.data?.items]);
+        return sortPlaylistsByLastPlayed(allPlaylists, localPlaylistPlayedAt)
+            .filter(
+                (playlist) =>
+                    !hiddenKeys.has(
+                        hiddenHomeItemKey({
+                            id: playlist.id,
+                            serverId: playlist._serverId,
+                            type: 'playlist',
+                        }),
+                    ),
+            )
+            .slice(0, SHELF_LIMIT);
+    }, [hiddenKeys, localPlaylistPlayedAt, playlistsQuery.data?.items]);
 
     if (!playlists.length) return null;
 
@@ -344,7 +342,15 @@ const PlaylistCard = ({
         event.preventDefault();
         event.stopPropagation();
         ContextMenuController.call({
-            cmd: { items: [playlist], type: LibraryItem.PLAYLIST },
+            cmd: {
+                homeItemKey: hiddenHomeItemKey({
+                    id: playlist.id,
+                    serverId: playlist._serverId,
+                    type: 'playlist',
+                }),
+                items: [playlist],
+                type: LibraryItem.PLAYLIST,
+            },
             event,
         });
     };
@@ -440,6 +446,105 @@ const PlaylistCard = ({
     );
 };
 
+const useHomeExploPlaylist = () => {
+    const serverId = useCurrentServerId();
+
+    return useQuery({
+        enabled: Boolean(serverId),
+        queryFn: async ({ signal }) => {
+            const samoServer = getServerById(serverId);
+            if (!samoServer) {
+                return undefined;
+            }
+
+            return fetchSamoExploPlaylist(samoServer, signal);
+        },
+        queryKey: ['home', 'explo', 'playlist', serverId],
+        staleTime: 1000 * 60 * 5,
+    });
+};
+
+/**
+ * Featured card for the server-managed "Explo" playlist (weekly untagged-drop
+ * auto-playlist). Renders nothing until the server has processed at least one
+ * drop with tracks in it — no placeholder/loading card, matching every other
+ * home section's "if empty, render null" convention. Opens through the exact
+ * same playlist detail route as any other playlist; there's nothing special
+ * about the Explo playlist once you're inside it.
+ */
+export const HomeExploSection = () => {
+    const navigate = useNavigate();
+    const playlistQuery = useHomeExploPlaylist();
+    const hiddenKeys = useHiddenHomeKeys();
+
+    const playlist = playlistQuery.data;
+    const isHidden =
+        playlist &&
+        hiddenKeys.has(
+            hiddenHomeItemKey({ id: playlist.id, serverId: playlist._serverId, type: 'playlist' }),
+        );
+
+    if (!playlist || isHidden || !playlist.songCount) return null;
+
+    const open = () =>
+        navigate(generatePath(AppRoute.PLAYLISTS_DETAIL_SONGS, { playlistId: playlist.id }));
+
+    const handleContextMenu = (event: React.MouseEvent<HTMLButtonElement>) => {
+        event.preventDefault();
+        event.stopPropagation();
+
+        ContextMenuController.call({
+            cmd: {
+                homeItemKey: hiddenHomeItemKey({
+                    id: playlist.id,
+                    serverId: playlist._serverId,
+                    type: 'playlist',
+                }),
+                items: [playlist],
+                type: LibraryItem.PLAYLIST,
+            },
+            event,
+        });
+    };
+
+    return (
+        <section className={styles.section}>
+            <HomeHeader title="Fresh from Explore" />
+            <button
+                className={clsx(styles.featureCard, styles.featureCardAccent)}
+                onClick={open}
+                onContextMenu={handleContextMenu}
+                type="button"
+            >
+                <div className={styles.featureArt}>
+                    <ItemImage
+                        alt={playlist.name}
+                        enableViewport={false}
+                        id={playlist.imageId ?? playlist.id}
+                        imageContainerProps={{ className: styles.imageContainer }}
+                        itemType={LibraryItem.PLAYLIST}
+                        serverId={playlist._serverId}
+                        src={playlist.imageUrl}
+                        type="itemCard"
+                    />
+                </div>
+                <div className={styles.trackMeta}>
+                    <span className={styles.featureBadge}>EXPLORE</span>
+                    <Text className={styles.title} fw={750} size="lg">
+                        {playlist.name}
+                    </Text>
+                    <Text className={styles.subtitle} isMuted size="sm">
+                        This week&apos;s unrecognized tracks, freshly identified
+                    </Text>
+                    <Text className={styles.tertiary} isMuted size="sm">
+                        {getCountText(playlist.songCount, 'track') ?? 'Playlist'}
+                    </Text>
+                </div>
+            </button>
+        </section>
+    );
+};
+
 export const HomeFavoriteArtists = ({
     containerQuery,
 }: {
@@ -447,7 +552,19 @@ export const HomeFavoriteArtists = ({
 }) => {
     const navigate = useNavigate();
     const artistsQuery = useTopArtists();
-    const artists = artistsQuery.data?.items ?? [];
+    const hiddenKeys = useHiddenHomeKeys();
+    const artists = (artistsQuery.data?.items ?? [])
+        .filter(
+            (artist) =>
+                !hiddenKeys.has(
+                    hiddenHomeItemKey({
+                        id: artist.id,
+                        serverId: artist._serverId,
+                        type: 'artist',
+                    }),
+                ),
+        )
+        .slice(0, SHELF_LIMIT);
 
     if (!artists.length) return null;
 
@@ -491,6 +608,11 @@ const ArtistCard = ({ artist, onClick }: { artist: AlbumArtist; onClick: () => v
 
             ContextMenuController.call({
                 cmd: {
+                    homeItemKey: hiddenHomeItemKey({
+                        id: artist.id,
+                        serverId: artist._serverId,
+                        type: 'artist',
+                    }),
                     items: [artist],
                     type: LibraryItem.ALBUM_ARTIST,
                 },
@@ -522,7 +644,15 @@ const ArtistCard = ({ artist, onClick }: { artist: AlbumArtist; onClick: () => v
 
 export const HomeFavoriteTracks = () => {
     const songsQuery = useHomeMostPlayedSongs();
-    const songs = songsQuery.data ?? [];
+    const hiddenKeys = useHiddenHomeKeys();
+    const songs = (songsQuery.data ?? [])
+        .filter(
+            (song) =>
+                !hiddenKeys.has(
+                    hiddenHomeItemKey({ id: song.id, serverId: song._serverId, type: 'song' }),
+                ),
+        )
+        .slice(0, LIST_LIMIT);
 
     if (!songs.length) return null;
 
@@ -551,6 +681,11 @@ const TrackRow = ({ song, subtitle }: { song: Song; subtitle?: string }) => {
 
                 ContextMenuController.call({
                     cmd: {
+                        homeItemKey: hiddenHomeItemKey({
+                            id: song.id,
+                            serverId: song._serverId,
+                            type: 'song',
+                        }),
                         items: [song],
                         type: LibraryItem.SONG,
                     },
@@ -594,33 +729,27 @@ const DiscoveryTrackRow = ({ song }: { song: Song }) => (
 );
 
 export const HomeRediscoverySection = () => {
-    const isJellyfin = false;
-    const songsQuery = useSongs(
-        'rediscovery',
-        SongListSort.RECENTLY_PLAYED,
-        SortOrder.ASC,
-        6,
-        undefined,
-        { enabled: isJellyfin },
-    );
     const albumsQuery = useAlbums(AlbumListSort.RECENTLY_PLAYED, SortOrder.ASC, undefined, {
-        enabled: !isJellyfin,
+        enabled: true,
     });
-    const songs = isJellyfin
-        ? (songsQuery.data?.items ?? []).filter(
-              (song) => Boolean(song.lastPlayedAt) && (song.playCount ?? 0) > 0,
-          )
-        : [];
-    const albums = !isJellyfin
-        ? (albumsQuery.data?.items ?? []).filter(
-              (album) => Boolean(album.lastPlayedAt) && (album.playCount ?? 0) > 0,
-          )
-        : [];
+    const hiddenKeys = useHiddenHomeKeys();
+    const albums = (albumsQuery.data?.items ?? []).filter(
+        (album) =>
+            Boolean(album.lastPlayedAt) &&
+            (album.playCount ?? 0) > 0 &&
+            !hiddenKeys.has(
+                hiddenHomeItemKey({
+                    id: album.id,
+                    serverId: album._serverId,
+                    type: 'album',
+                }),
+            ),
+    );
 
-    if (!songs.length && !albums.length) return null;
+    if (!albums.length) return null;
 
-    const feature = albums[0] ?? songs[0];
-    const support = (albums.length ? albums.slice(1, 6) : songs.slice(1, 6)) as Array<Album | Song>;
+    const feature = albums[0];
+    const support = albums.slice(1, 6) as Array<Album | Song>;
 
     return (
         <section className={styles.section}>
@@ -666,6 +795,11 @@ const RediscoveryFeature = ({ item }: { item: Album | Song }) => {
         if (isSong) {
             ContextMenuController.call({
                 cmd: {
+                    homeItemKey: hiddenHomeItemKey({
+                        id: item.id,
+                        serverId: item._serverId,
+                        type: 'song',
+                    }),
                     items: [item as Song],
                     type: LibraryItem.SONG,
                 },
@@ -674,6 +808,11 @@ const RediscoveryFeature = ({ item }: { item: Album | Song }) => {
         } else {
             ContextMenuController.call({
                 cmd: {
+                    homeItemKey: hiddenHomeItemKey({
+                        id: item.id,
+                        serverId: item._serverId,
+                        type: 'album',
+                    }),
                     items: [item as Album],
                     type: LibraryItem.ALBUM,
                 },
@@ -740,6 +879,11 @@ const RediscoverySupport = ({ item }: { item: Album | Song }) => {
         if (isSong) {
             ContextMenuController.call({
                 cmd: {
+                    homeItemKey: hiddenHomeItemKey({
+                        id: item.id,
+                        serverId: item._serverId,
+                        type: 'song',
+                    }),
                     items: [item as Song],
                     type: LibraryItem.SONG,
                 },
@@ -748,6 +892,11 @@ const RediscoverySupport = ({ item }: { item: Album | Song }) => {
         } else {
             ContextMenuController.call({
                 cmd: {
+                    homeItemKey: hiddenHomeItemKey({
+                        id: item.id,
+                        serverId: item._serverId,
+                        type: 'album',
+                    }),
                     items: [item as Album],
                     type: LibraryItem.ALBUM,
                 },
@@ -799,7 +948,7 @@ const useHomeDiscoverySongs = (discoverySeed: string) => {
             }
 
             const tracks = await fetchSamoDiscoveryHomeTracks(samoServer, {
-                limit: DISCOVERY_LIMIT,
+                limit: SHELF_FETCH_LIMIT,
                 signal,
             });
 
@@ -840,6 +989,7 @@ export const HomeAlbumsSection = ({
     containerQuery?: ReturnType<typeof useGridCarouselContainerQuery>;
 }) => {
     const serverId = useCurrentServerId();
+    const hiddenAlbumIds = useHiddenHomeIdsByType('album');
 
     const strategyQuery = useQuery({
         enabled: Boolean(serverId),
@@ -873,6 +1023,8 @@ export const HomeAlbumsSection = ({
         <AlbumInfiniteCarousel
             containerQuery={containerQuery}
             enableRefresh
+            enableRemoveFromHome
+            excludeIds={hiddenAlbumIds}
             queryKey={strategyQuery.data.queryKey}
             rowCount={1}
             sortBy={strategyQuery.data.sortBy}
@@ -885,7 +1037,15 @@ export const HomeAlbumsSection = ({
 export const HomeDiscoverSection = () => {
     const [discoverySeed] = useState(() => `${Date.now()}:${Math.random()}`);
     const songsQuery = useHomeDiscoverySongs(discoverySeed);
-    const songs = songsQuery.data ?? [];
+    const hiddenKeys = useHiddenHomeKeys();
+    const songs = (songsQuery.data ?? [])
+        .filter(
+            (song) =>
+                !hiddenKeys.has(
+                    hiddenHomeItemKey({ id: song.id, serverId: song._serverId, type: 'song' }),
+                ),
+        )
+        .slice(0, DISCOVERY_LIMIT);
 
     if (songsQuery.isPending) {
         return (
@@ -920,6 +1080,7 @@ export const HomeFavoriteAudiobooks = ({
     const audiobookActions = useAudiobookActions();
     const favoriteAudiobookIds = useFavoriteAudiobookIds(server?.id);
     const favoritesActions = useLibraryFavoritesActions();
+    const hiddenKeys = useHiddenHomeKeys();
 
     const samoItemsQuery = useQuery({
         enabled: Boolean(server),
@@ -929,11 +1090,16 @@ export const HomeFavoriteAudiobooks = ({
     });
 
     const items = useMemo(() => {
-        const allItems = samoItemsQuery.data ?? [];
+        const allItems = (samoItemsQuery.data ?? []).filter(
+            (item) =>
+                !hiddenKeys.has(
+                    hiddenHomeItemKey({ id: item.id, serverId: server?.id, type: 'audiobook' }),
+                ),
+        );
         const favoriteItems = allItems.filter((item) => favoriteAudiobookIds.has(item.id));
         const nonFavoriteItems = allItems.filter((item) => !favoriteAudiobookIds.has(item.id));
         return [...favoriteItems, ...nonFavoriteItems].slice(0, 24);
-    }, [samoItemsQuery.data, favoriteAudiobookIds]);
+    }, [samoItemsQuery.data, favoriteAudiobookIds, hiddenKeys, server?.id]);
 
     if (!server || !items.length) {
         return null;
@@ -953,7 +1119,16 @@ export const HomeFavoriteAudiobooks = ({
                         e.preventDefault();
                         e.stopPropagation();
                         ContextMenuController.call({
-                            cmd: { items: [item], server, type: 'audiobook' },
+                            cmd: {
+                                homeItemKey: hiddenHomeItemKey({
+                                    id: item.id,
+                                    serverId: server.id,
+                                    type: 'audiobook',
+                                }),
+                                items: [item],
+                                server,
+                                type: 'audiobook',
+                            },
                             event: e,
                         });
                     }}
@@ -1002,7 +1177,16 @@ export const HomeFavoriteAudiobooks = ({
                                     e.preventDefault();
                                     e.stopPropagation();
                                     ContextMenuController.call({
-                                        cmd: { items: [item], server, type: 'audiobook' },
+                                        cmd: {
+                                            homeItemKey: hiddenHomeItemKey({
+                                                id: item.id,
+                                                serverId: server.id,
+                                                type: 'audiobook',
+                                            }),
+                                            items: [item],
+                                            server,
+                                            type: 'audiobook',
+                                        },
                                         event: e,
                                     });
                                 }}

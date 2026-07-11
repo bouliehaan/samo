@@ -5,6 +5,7 @@ import { DeletePlaylistAction } from '/@/renderer/features/context-menu/actions/
 import { EditPlaylistAction } from '/@/renderer/features/context-menu/actions/edit-playlist-action';
 import { GetInfoAction } from '/@/renderer/features/context-menu/actions/get-info-action';
 import { PlayAction } from '/@/renderer/features/context-menu/actions/play-action';
+import { RemoveFromHomeAction } from '/@/renderer/features/context-menu/actions/remove-from-home-action';
 import { SetFavoriteAction } from '/@/renderer/features/context-menu/actions/set-favorite-action';
 import { ContextMenuPreview } from '/@/renderer/features/context-menu/components/context-menu-preview';
 import { usePermissions } from '/@/renderer/store';
@@ -13,11 +14,12 @@ import { ContextMenu } from '/@/shared/components/context-menu/context-menu';
 import { LibraryItem, Playlist } from '/@/shared/types/domain-types';
 
 interface PlaylistContextMenuProps {
+    homeItemKey?: string;
     items: Playlist[];
     type: LibraryItem.PLAYLIST;
 }
 
-export const PlaylistContextMenu = ({ items, type }: PlaylistContextMenuProps) => {
+export const PlaylistContextMenu = ({ homeItemKey, items, type }: PlaylistContextMenuProps) => {
     const { ids } = useMemo(() => {
         const ids = items.map((item) => item.id);
         return { ids };
@@ -28,9 +30,13 @@ export const PlaylistContextMenu = ({ items, type }: PlaylistContextMenuProps) =
     const canEditPublic = permissions.playlists.editPublic;
 
     const includesNonOwnedPublic = items.some((item) => item.public && item.ownerId !== userId);
+    // Server-managed playlists (the Samo "Explore" queue) are re-derived by
+    // the server every reconcile pass — edits/deletes are refused with a 403,
+    // so don't offer them.
+    const includesSystem = items.some((item) => item.isSystem);
 
-    const canEditPlaylist = canEditPublic || !includesNonOwnedPublic;
-    const canDeletePlaylist = canEditPublic || !includesNonOwnedPublic;
+    const canEditPlaylist = !includesSystem && (canEditPublic || !includesNonOwnedPublic);
+    const canDeletePlaylist = !includesSystem && (canEditPublic || !includesNonOwnedPublic);
 
     return (
         <ContextMenu.Content
@@ -50,6 +56,12 @@ export const PlaylistContextMenu = ({ items, type }: PlaylistContextMenuProps) =
             <DeletePlaylistAction disabled={!canDeletePlaylist} items={items} />
             <ContextMenu.Divider />
             <GetInfoAction disabled={items.length === 0} items={items} />
+            {homeItemKey ? (
+                <>
+                    <ContextMenu.Divider />
+                    <RemoveFromHomeAction homeItemKey={homeItemKey} />
+                </>
+            ) : null}
         </ContextMenu.Content>
     );
 };

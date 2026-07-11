@@ -207,7 +207,6 @@ const settingsKeys = [
     'store_settings_playback',
     'store_settings_lyrics',
     'store_settings_window',
-    'store_settings_discord',
     'store_settings_font',
     'store_settings_css',
     'store_settings_remote',
@@ -240,7 +239,6 @@ export const splitSettingsStorage: StateStorage = {
                     splitData.playback = state.playback;
                     splitData.lyrics = state.lyrics;
                     splitData.window = state.window;
-                    splitData.discord = state.discord;
                     splitData.font = state.font;
                     splitData.css = state.css;
                     splitData.remote = state.remote;

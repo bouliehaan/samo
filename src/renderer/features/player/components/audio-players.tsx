@@ -4,7 +4,6 @@ import { useEffect } from 'react';
 import { eventEmitter } from '/@/renderer/events/event-emitter';
 import { UserFavoriteEventPayload, UserRatingEventPayload } from '/@/renderer/events/events';
 import { AudiobookWebPlayer } from '/@/renderer/features/audiobooks/components/audiobook-web-player';
-import { DiscordRpcHook } from '/@/renderer/features/discord-rpc/use-discord-rpc';
 import { MainPlayerListenerHook } from '/@/renderer/features/player/audio-player/hooks/use-main-player-listener';
 import { MpvPlayer } from '/@/renderer/features/player/audio-player/mpv-player';
 import { WebPlayer } from '/@/renderer/features/player/audio-player/web-player';
@@ -129,7 +128,6 @@ export const AudioPlayers = () => {
             <SleepTimerHook />
             <ScrobbleHook />
             <PowerSaveBlockerHook />
-            <DiscordRpcHook />
             <MPRISHook />
             <MainPlayerListenerHook />
             <MediaSessionHook />

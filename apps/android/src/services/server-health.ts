@@ -17,7 +17,13 @@ export interface AndroidServerHealthSummary {
     statuses: AndroidServerHealthMap;
 }
 
-const ANDROID_SERVER_HEALTH_TIMEOUT_MS = 8_000;
+// Boot-time check of a saved server connection. Runs in the background after
+// the splash has already lifted on the local (offline-first) read, so it
+// isn't blocking a visible spinner — 8s was tuned for a LAN box and made a
+// perfectly healthy Cloudflare-Tunnel round trip look "unreachable," which
+// then surfaced as a scary "Saved server session needs attention" message for
+// a server that was just slow, not down.
+const ANDROID_SERVER_HEALTH_TIMEOUT_MS = 15_000;
 
 const checkAndroidServerConnectionWithTimeout = (
     authentication: ServerAuthenticationResult,

@@ -3,94 +3,28 @@ import {
     type MobileHomeItem,
     MobileHomeItemType,
 } from '@samo/core/mobile';
+import { FlashList } from '@shopify/flash-list';
+import { memo, useCallback, useMemo } from 'react';
+import { Pressable, Text, View } from 'react-native';
 
-import { sortCollectionHomeItems } from '../utils/collection-sort';
-import {
-    FlashList,
-    type FlashListRef,
-} from '@shopify/flash-list';
-import {
-    memo,
-    useCallback,
-    useEffect,
-    useMemo,
-    useRef,
-    useState,
-} from 'react';
-import {
-    ActivityIndicator,
-    PanResponder,
-    Pressable,
-    Text,
-    View,
-} from 'react-native';
-
+import { AlphabetSidebar } from '../components/AlphabetSidebar';
 import { ArtworkImage } from '../components/ArtworkImage';
 import { SkeletonTile } from '../components/Skeleton';
-import { androidLog } from '../utils/log';
 import { QualityBadge } from '../components/QualityBadge';
 import { useMediaContextMenu } from '../contexts/media-context-menu';
+import { type AlphabetRailRow, useAlphabetRail } from '../hooks/use-alphabet-rail';
+import { useScrollContentBottomInset } from '../hooks/use-scroll-content-bottom-inset';
 import { type AndroidFullCollectionState } from '../services/full-collection';
 import {
     type AndroidRecentContentSourceItem,
     getRecentContentItemKey,
 } from '../services/recent-content';
-import { triggerSelection } from '../services/haptics';
+import { type CollectionItemSortMode } from '../utils/collection-sort';
 import { VIEW_ALL_ROW_HEIGHT } from '../theme/layout';
 import { styles } from '../theme/styles';
-import { colors } from '../theme/tokens';
 import { type ViewAllRoute } from '../types/view-all';
 
 const FLASH_LIST_MAINTAIN_POSITION_DISABLED = { disabled: true };
-
-// Letters that anchor the alphabet sidebar. '#' catches anything starting with
-// a digit or non-Latin character so every item maps somewhere.
-const ALPHABET_SIDEBAR_LETTERS = [
-    '#', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K',
-    'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W',
-    'X', 'Y', 'Z',
-] as const;
-
-/**
- * Build a map of sidebar letter to row index for ViewAll's two-column layout.
- * The value is the row the letter falls into, so the sidebar can hand the list
- * a row index directly for scrollToIndex.
- */
-const buildAlphabetLetterIndex = (
-    items: MobileHomeItem[],
-): Map<string, number> => {
-    const map = new Map<string, number>();
-    items.forEach((item, index) => {
-        const first = item.title.charAt(0).toUpperCase();
-        const letter = first >= 'A' && first <= 'Z' ? first : '#';
-        if (!map.has(letter)) {
-            map.set(letter, Math.floor(index / 2));
-        }
-    });
-    return map;
-};
-
-type ViewAllRow = {
-    key: string;
-    left: MobileHomeItem;
-    right: MobileHomeItem | undefined;
-};
-
-const chunkIntoViewAllRows = (items: MobileHomeItem[]): ViewAllRow[] => {
-    const rows: ViewAllRow[] = [];
-    for (let index = 0; index < items.length; index += 2) {
-        const left = items[index];
-        const right = items[index + 1];
-        rows.push({
-            // Row identity is its left item. Adding/removing items below this
-            // row won't shift the key, so React keeps the row mounted.
-            key: `row:${getRecentContentItemKey(left)}`,
-            left,
-            right,
-        });
-    }
-    return rows;
-};
 
 type ViewAllTileProps = {
     item: MobileHomeItem;
@@ -157,15 +91,11 @@ export const ViewAllScreen = memo(({
     route,
 }: ViewAllScreenProps) => {
     const contextMenu = useMediaContextMenu();
-    // FlashList is single-column over pre-chunked row records. Keeping each
-    // two-up visual row as one recycled item avoids the old numColumns cell
-    // stacking bug while moving the heavy library grid onto native recycling.
-    const listRef = useRef<FlashListRef<ViewAllRow>>(null);
-    const jumpFeedbackTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-    const [jumpFeedbackLetter, setJumpFeedbackLetter] = useState<string | null>(null);
+    const bottomInset = useScrollContentBottomInset();
     const isLoading = fullState.status === 'loading';
     const isError = fullState.status === 'error';
-    const sortedItems = useMemo(() => {
+
+    const mergedItems = useMemo(() => {
         // Prefer the exhaustive list once it lands; until then show the
         // home-content slice the route was opened with so the grid isn't empty
         // during the fetch. Merge the cached items either way so a brief stale
@@ -185,57 +115,19 @@ export const ViewAllScreen = memo(({
             seen.add(key);
             merged.push(item);
         }
-        const sortMode =
-            route.variant === 'album' || route.variant === 'artist' ? 'playCount' : 'alphabetical';
-        return sortCollectionHomeItems(merged, sortMode);
-    }, [fullState, route.items, route.variant]);
-    const rows = useMemo(() => chunkIntoViewAllRows(sortedItems), [sortedItems]);
-    const letterIndex = useMemo(
-        () => buildAlphabetLetterIndex(sortedItems),
-        [sortedItems],
-    );
+        return merged;
+    }, [fullState, route.items]);
 
-    useEffect(() => {
-        return () => {
-            if (jumpFeedbackTimeoutRef.current) {
-                clearTimeout(jumpFeedbackTimeoutRef.current);
-            }
-        };
-    }, []);
+    // Albums and artists lead with most-played for discovery; everything else is
+    // already A–Z. The rail flips whichever it is to A–Z for the jump.
+    const baseSortMode: CollectionItemSortMode =
+        route.variant === 'album' || route.variant === 'artist' ? 'playCount' : 'alphabetical';
 
-    const showJumpFeedback = useCallback((letter: string) => {
-        if (jumpFeedbackTimeoutRef.current) {
-            clearTimeout(jumpFeedbackTimeoutRef.current);
-        }
-        setJumpFeedbackLetter(letter);
-        jumpFeedbackTimeoutRef.current = setTimeout(() => {
-            setJumpFeedbackLetter(null);
-            jumpFeedbackTimeoutRef.current = null;
-        }, 420);
-    }, []);
-
-    const handleJumpToLetter = useCallback(
-        (letter: string) => {
-            const rowIndex = letterIndex.get(letter);
-            if (typeof rowIndex !== 'number') return;
-            showJumpFeedback(letter);
-            try {
-                const scroll = listRef.current?.scrollToIndex({
-                    animated: false,
-                    index: rowIndex,
-                });
-                void scroll?.catch(() => {
-                    listRef.current?.scrollToOffset({
-                        animated: false,
-                        offset: rowIndex * VIEW_ALL_ROW_HEIGHT,
-                    });
-                });
-            } catch (error) {
-                androidLog.warn('[ViewAllScreen] scrollToIndex threw', error);
-            }
-        },
-        [letterIndex, showJumpFeedback],
-    );
+    const { jumpFeedbackLetter, letterIndex, listRef, onJumpToLetter, rows } = useAlphabetRail({
+        baseSortMode,
+        items: mergedItems,
+        resetKey: route.variant,
+    });
 
     const handleOpenContextMenu = useCallback(
         (item: MobileHomeItem) => contextMenu.openForItem(item),
@@ -243,7 +135,7 @@ export const ViewAllScreen = memo(({
     );
 
     const renderRow = useCallback(
-        ({ item: row }: { item: ViewAllRow }) => (
+        ({ item: row }: { item: AlphabetRailRow }) => (
             <View style={styles.viewAllRow}>
                 <ViewAllTile
                     item={row.left}
@@ -264,7 +156,7 @@ export const ViewAllScreen = memo(({
         [handleOpenContextMenu, onSelectItem],
     );
 
-    const keyExtractor = useCallback((row: ViewAllRow) => row.key, []);
+    const keyExtractor = useCallback((row: AlphabetRailRow) => row.key, []);
 
     return (
         <View style={styles.viewAllScreen}>
@@ -300,7 +192,10 @@ export const ViewAllScreen = memo(({
                     )
                 ) : (
                     <FlashList
-                        contentContainerStyle={styles.viewAllListContent}
+                        contentContainerStyle={[
+                            styles.viewAllListContent,
+                            { paddingBottom: bottomInset },
+                        ]}
                         data={rows}
                         drawDistance={VIEW_ALL_ROW_HEIGHT * 8}
                         keyExtractor={keyExtractor}
@@ -312,7 +207,7 @@ export const ViewAllScreen = memo(({
                 )}
                 <AlphabetSidebar
                     activeLetters={letterIndex}
-                    onJumpToLetter={handleJumpToLetter}
+                    onJumpToLetter={onJumpToLetter}
                 />
                 {jumpFeedbackLetter ? (
                     <View pointerEvents="none" style={styles.viewAllJumpOverlay}>
@@ -327,210 +222,3 @@ export const ViewAllScreen = memo(({
 });
 
 ViewAllScreen.displayName = 'ViewAllScreen';
-
-const AlphabetSidebarLetter = memo(({
-    isActive,
-    letter,
-    onJumpToLetter,
-    onRef,
-}: {
-    isActive: boolean;
-    letter: string;
-    onJumpToLetter: (letter: string) => void;
-    onRef: (letter: string, node: View | null) => void;
-}) => {
-    const handlePress = useCallback(() => {
-        onJumpToLetter(letter);
-    }, [letter, onJumpToLetter]);
-
-    const handleRef = useCallback((node: View | null) => {
-        onRef(letter, node);
-    }, [letter, onRef]);
-
-    return (
-        <Pressable
-            disabled={!isActive}
-            hitSlop={{ bottom: 0, left: 18, right: 4, top: 0 }}
-            onPress={handlePress}
-            ref={handleRef}
-            style={styles.alphabetSidebarLetterButton}
-        >
-            <Text
-                style={[
-                    styles.alphabetSidebarLetter,
-                    isActive && styles.alphabetSidebarLetterActive,
-                ]}
-            >
-                {letter}
-            </Text>
-        </Pressable>
-    );
-});
-AlphabetSidebarLetter.displayName = 'AlphabetSidebarLetter';
-
-const AlphabetSidebar = memo(({
-    activeLetters,
-    onJumpToLetter,
-}: {
-    activeLetters: Map<string, number>;
-    onJumpToLetter: (letter: string) => void;
-}) => {
-    const letterRefs = useRef<Record<string, View | null>>({});
-    const letterMetricsRef = useRef<Array<{ bottom: number; letter: string; top: number }>>([]);
-    const lastSelectedLetterRef = useRef<string | null>(null);
-
-    const measureLetterMetrics = useCallback((onMeasured?: () => void) => {
-        let active = true;
-        const nextMetrics: Array<{ bottom: number; letter: string; top: number }> = [];
-        let pending = ALPHABET_SIDEBAR_LETTERS.length;
-
-        const finishOne = () => {
-            pending -= 1;
-            if (pending === 0) {
-                if (active) {
-                    letterMetricsRef.current = nextMetrics.sort((left, right) => left.top - right.top);
-                }
-                onMeasured?.();
-            }
-        };
-
-        ALPHABET_SIDEBAR_LETTERS.forEach((letter) => {
-            const node = letterRefs.current[letter];
-            if (!node) {
-                finishOne();
-                return;
-            }
-
-            node.measureInWindow((_x, y, _width, height) => {
-                if (active && height > 0) {
-                    nextMetrics.push({
-                        bottom: y + height,
-                        letter,
-                        top: y,
-                    });
-                }
-                finishOne();
-            });
-        });
-
-        return () => { active = false; };
-    }, []);
-
-    useEffect(() => {
-        let cleanup: (() => void) | undefined;
-        const timer = setTimeout(() => {
-            cleanup = measureLetterMetrics();
-        }, 0);
-        return () => {
-            clearTimeout(timer);
-            if (cleanup) cleanup();
-        };
-    }, [activeLetters, measureLetterMetrics]);
-
-    const getLetterFromPageY = useCallback((pageY: number) => {
-        const metrics = letterMetricsRef.current;
-        if (metrics.length === 0) {
-            return null;
-        }
-
-        const containing = metrics.find((metric) => pageY >= metric.top && pageY <= metric.bottom);
-        if (containing) {
-            return containing.letter;
-        }
-
-        let nearest = metrics[0];
-        let nearestDistance = Math.abs(pageY - (nearest.top + nearest.bottom) / 2);
-        for (let index = 1; index < metrics.length; index += 1) {
-            const candidate = metrics[index];
-            const distance = Math.abs(pageY - (candidate.top + candidate.bottom) / 2);
-            if (distance < nearestDistance) {
-                nearest = candidate;
-                nearestDistance = distance;
-            }
-        }
-
-        return nearest.letter;
-    }, []);
-
-    const jumpToLetter = useCallback(
-        (letter: string) => {
-            if (!activeLetters.has(letter)) return;
-            if (lastSelectedLetterRef.current === letter) return;
-
-            lastSelectedLetterRef.current = letter;
-            triggerSelection();
-            onJumpToLetter(letter);
-        },
-        [activeLetters, onJumpToLetter],
-    );
-
-    const jumpToPageY = useCallback(
-        (pageY: number) => {
-            const letter = getLetterFromPageY(pageY);
-            if (letter) {
-                jumpToLetter(letter);
-            }
-        },
-        [getLetterFromPageY, jumpToLetter],
-    );
-
-    const resetDragLetter = useCallback(() => {
-        lastSelectedLetterRef.current = null;
-    }, []);
-
-    const panResponder = useMemo(
-        () =>
-            PanResponder.create({
-                onMoveShouldSetPanResponder: (_event, gestureState) =>
-                    Math.abs(gestureState.dy) > 2 &&
-                    Math.abs(gestureState.dy) > Math.abs(gestureState.dx),
-                onPanResponderGrant: (event) => {
-                    const { pageY } = event.nativeEvent;
-                    jumpToPageY(pageY);
-                },
-                onPanResponderMove: (event) => {
-                    jumpToPageY(event.nativeEvent.pageY);
-                },
-                onPanResponderRelease: resetDragLetter,
-                onPanResponderTerminate: resetDragLetter,
-                onStartShouldSetPanResponder: () => false,
-            }),
-        [jumpToPageY, measureLetterMetrics, resetDragLetter],
-    );
-
-    const handleLetterPress = useCallback((letter: string) => {
-        lastSelectedLetterRef.current = null;
-        jumpToLetter(letter);
-        lastSelectedLetterRef.current = null;
-    }, [jumpToLetter]);
-
-    const handleLetterRef = useCallback((letter: string, node: View | null) => {
-        letterRefs.current[letter] = node;
-    }, []);
-
-    return (
-        <View pointerEvents="box-none" style={styles.alphabetSidebar}>
-            <View
-                {...panResponder.panHandlers}
-                accessibilityLabel="Alphabet jump index"
-                accessibilityRole="adjustable"
-                onLayout={() => {
-                    const cleanup = measureLetterMetrics();
-                    // We don't have a reliable onUnlayout, but useEffect covers unmounts.
-                }}
-                style={styles.alphabetSidebarRail}
-            >
-                {ALPHABET_SIDEBAR_LETTERS.map((letter) => (
-                    <AlphabetSidebarLetter
-                        isActive={activeLetters.has(letter)}
-                        key={letter}
-                        letter={letter}
-                        onJumpToLetter={handleLetterPress}
-                        onRef={handleLetterRef}
-                    />
-                ))}
-            </View>
-        </View>
-    );
-});
-AlphabetSidebar.displayName = 'AlphabetSidebar';

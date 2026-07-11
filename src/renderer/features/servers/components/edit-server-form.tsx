@@ -65,8 +65,6 @@ export const EditServerForm = ({ isUpdate, onCancel, password, server }: EditSer
         },
     });
 
-    const isSubsonic = false;
-
     const handleSubmit = form.onSubmit(async (values) => {
         try {
             setIsLoading(true);
@@ -239,17 +237,6 @@ export const EditServerForm = ({ isUpdate, onCancel, password, server }: EditSer
                     })}
                     {...form.getInputProps('password')}
                 />
-                {isSubsonic && (
-                    <Checkbox
-                        label={t('form.addServer.input', {
-                            context: 'legacyAuthentication',
-                            postProcess: 'titleCase',
-                        })}
-                        {...form.getInputProps('legacyAuth', {
-                            type: 'checkbox',
-                        })}
-                    />
-                )}
                 <Group justify="flex-end">
                     <ModalButton onClick={onCancel}>{t('common.cancel')}</ModalButton>
                     <ModalButton loading={isLoading} type="submit" variant="filled">

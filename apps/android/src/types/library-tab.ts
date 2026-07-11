@@ -30,6 +30,10 @@ export interface LibraryScreenProps {
     fullCollections: LibraryFullCollectionsState;
     fullCollectionsEnabled: boolean;
     hasServerConnections: boolean;
+    // True only while the Library browse is the foreground surface. The alphabet
+    // rail's ephemeral A–Z flip resets when this drops so returning to the page
+    // shows the base (recents) order again.
+    isForeground?: boolean;
     libraryRelevantState: AndroidLibraryRelevantState;
     onEnsureFullCollections?: () => void;
     onSelectItem: (item: AndroidRecentContentSourceItem) => void;

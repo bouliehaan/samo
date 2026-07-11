@@ -6,6 +6,7 @@ import { GetInfoAction } from '/@/renderer/features/context-menu/actions/get-inf
 import { GoToAction } from '/@/renderer/features/context-menu/actions/go-to-action';
 import { PlayAction } from '/@/renderer/features/context-menu/actions/play-action';
 import { PlayAlbumRadioAction } from '/@/renderer/features/context-menu/actions/play-album-radio-action';
+import { RemoveFromHomeAction } from '/@/renderer/features/context-menu/actions/remove-from-home-action';
 import { SetFavoriteAction } from '/@/renderer/features/context-menu/actions/set-favorite-action';
 import { SetRatingAction } from '/@/renderer/features/context-menu/actions/set-rating-action';
 import { ShareAction } from '/@/renderer/features/context-menu/actions/share-action';
@@ -15,11 +16,12 @@ import { ContextMenu } from '/@/shared/components/context-menu/context-menu';
 import { Album, LibraryItem } from '/@/shared/types/domain-types';
 
 interface AlbumContextMenuProps {
+    homeItemKey?: string;
     items: Album[];
     type: LibraryItem.ALBUM;
 }
 
-export const AlbumContextMenu = ({ items, type }: AlbumContextMenuProps) => {
+export const AlbumContextMenu = ({ homeItemKey, items, type }: AlbumContextMenuProps) => {
     const { ids } = useMemo(() => {
         const ids = items.map((item) => item.id);
         return { ids };
@@ -48,6 +50,12 @@ export const AlbumContextMenu = ({ items, type }: AlbumContextMenuProps) => {
             <GoToAction items={items} />
             <ContextMenu.Divider />
             <GetInfoAction disabled={items.length === 0} items={items} />
+            {homeItemKey ? (
+                <>
+                    <ContextMenu.Divider />
+                    <RemoveFromHomeAction homeItemKey={homeItemKey} />
+                </>
+            ) : null}
         </ContextMenu.Content>
     );
 };

@@ -19,7 +19,11 @@ import {
 } from '../services/audio-playback';
 import type { AbsProgressContext } from '../services/abs-progress';
 import { buildAbsProgressContextFromPlayable } from '../utils/abs-progress-math';
-import { setAppSessionIsShuffled, useAppSessionSelector } from '../state/app-session';
+import {
+    setAppSessionIsShuffled,
+    setAppSessionRepeatMode,
+    useAppSessionSelector,
+} from '../state/app-session';
 import {
     type AndroidPlaybackQueue,
     getPlaybackQueue,
@@ -311,6 +315,12 @@ export function useAndroidNativePlayback(options: {
 
         try {
             const event = await getAndroidPlaybackStatus();
+            // Native owns the repeat SETTING (it survives a JS restart while the
+            // playback service keeps the process). Adopt it even when idle so
+            // the button doesn't silently disagree with the engine.
+            if (event.repeatMode) {
+                setAppSessionRepeatMode(event.repeatMode);
+            }
             if (event.status === 'idle') {
                 return;
             }

@@ -1,7 +1,40 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MobilePlayableAudio } from '@samo/core/mobile';
 
-import { mergePreparedQueueItem } from './playback-resume';
+import type { AndroidPlaybackState } from '../types/playback';
+
+import {
+    getResumePositionSeconds,
+    mergePreparedQueueItem,
+    refreshPlayableResumeFromServer,
+} from './playback-resume';
+
+// vitest hoists vi.hoisted + vi.mock above the imports above, so these apply.
+const { getNativeResumeProgressMock, loadAbsCurrentProgressMock } = vi.hoisted(() => ({
+    getNativeResumeProgressMock: vi.fn(),
+    loadAbsCurrentProgressMock: vi.fn(),
+}));
+
+vi.mock('../services/abs-progress', () => ({
+    loadAbsCurrentProgress: loadAbsCurrentProgressMock,
+}));
+
+vi.mock('./native-resume', () => ({
+    getNativeResumeProgress: getNativeResumeProgressMock,
+}));
+
+vi.mock('@samo/core/server', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('@samo/core/server')>();
+    return {
+        ...actual,
+        ensureSamoStreamToken: async () => undefined,
+        findServerAuthenticationForSource: () => ({
+            credential: 'tok',
+            type: 'samo',
+            url: 'https://samo',
+        }),
+    };
+});
 
 const baseItem = (overrides: Partial<MobilePlayableAudio> = {}): MobilePlayableAudio => ({
     id: 'samo:https://samo:music:track-1',
@@ -73,5 +106,136 @@ describe('mergePreparedQueueItem', () => {
         const merged = mergePreparedQueueItem(original, prepared);
 
         expect('initialPositionSeconds' in merged).toBe(false);
+    });
+});
+
+describe('getResumePositionSeconds', () => {
+    // THE fundamental bug: returning to an audiobook from radio. The live
+    // playback state is the RADIO (playing, different id), so the playhead-reuse
+    // guard fails. The audiobook branch used to `return 0` here — discarding the
+    // resume position that refreshPlayableResumeFromServer / the queue build had
+    // baked into item.initialPositionSeconds. So the value reached the progress
+    // writer but never became a seek, and the book played from 0.
+    it('honors the item resume position for an audiobook when not reusing the playhead', () => {
+        const item = baseItem({
+            id: 'samo:https://samo:audiobook:book-7:file:mf-3',
+            initialPositionSeconds: 2526,
+            progressOffsetSeconds: 0,
+            source: 'audiobook',
+        });
+        const playingRadio = {
+            item: baseItem({ id: 'samo:https://samo:internet-radio:r1', source: 'radio' }),
+            positionMs: 5_000,
+            status: 'playing',
+        } as unknown as AndroidPlaybackState;
+
+        expect(getResumePositionSeconds(item, playingRadio)).toBe(2526);
+    });
+
+    it('still reuses the live playhead for an audiobook paused on the same item', () => {
+        const item = baseItem({
+            id: 'samo:https://samo:audiobook:book-7:file:mf-3',
+            progressOffsetSeconds: 0,
+            source: 'audiobook',
+        });
+        const pausedSame = {
+            item,
+            positionMs: 90_000,
+            status: 'paused',
+        } as unknown as AndroidPlaybackState;
+
+        expect(getResumePositionSeconds(item, pausedSame)).toBe(90);
+    });
+});
+
+describe('refreshPlayableResumeFromServer', () => {
+    beforeEach(() => {
+        loadAbsCurrentProgressMock.mockReset();
+        getNativeResumeProgressMock.mockReset();
+        getNativeResumeProgressMock.mockResolvedValue(null);
+    });
+
+    // THE regression: audiobook queue ids are the per-file form
+    // `…:audiobook:<bookId>:file:<mediaFileId>`, but resume used a bare
+    // `/:audiobook:([^:]+)$/` that never matched it → the server position was
+    // never loaded → every book resumed at 0 (and looked like "no cross-device
+    // sync" even though the native writer had saved progress).
+    it('loads + applies server resume for a per-file audiobook id', async () => {
+        loadAbsCurrentProgressMock.mockResolvedValue({
+            currentTimeSeconds: 1234,
+            isFinished: false,
+        });
+
+        const item = baseItem({
+            contentSourceId: 'samo:https://samo',
+            id: 'samo:https://samo:audiobook:book-7:file:mf-3',
+            source: 'audiobook',
+            url: 'https://samo/api/v1/audiobooks/book-7/stream?mediaFileId=mf-3',
+        });
+
+        const result = await refreshPlayableResumeFromServer(item, null);
+
+        // Keyed on the BOOK id, not the per-file id.
+        expect(loadAbsCurrentProgressMock).toHaveBeenCalledWith(expect.anything(), 'book-7');
+        expect(result.initialPositionSeconds).toBe(1234);
+    });
+
+    it('leaves the item untouched when the server has no progress and no cache', async () => {
+        loadAbsCurrentProgressMock.mockResolvedValue(null);
+
+        const item = baseItem({
+            contentSourceId: 'samo:https://samo',
+            id: 'samo:https://samo:audiobook:book-7:file:mf-3',
+            source: 'audiobook',
+        });
+
+        const result = await refreshPlayableResumeFromServer(item, null);
+
+        expect(result.initialPositionSeconds).toBeUndefined();
+    });
+
+    // The flaky-LAN fix: when the live server read fails (returns null), resume
+    // from the native local cache instead of restarting the book at 0 — which is
+    // what then overwrote the good server position. Repro: scrub to 42 min →
+    // switch to radio → switch back during a momentary LAN drop → reset to 0.
+    it('falls back to the native resume cache when the server read fails', async () => {
+        loadAbsCurrentProgressMock.mockResolvedValue(null);
+        getNativeResumeProgressMock.mockResolvedValue({
+            completed: false,
+            progressSeconds: 2526,
+        });
+
+        const item = baseItem({
+            contentSourceId: 'samo:https://samo',
+            id: 'samo:https://samo:audiobook:book-7:file:mf-3',
+            source: 'audiobook',
+        });
+
+        const result = await refreshPlayableResumeFromServer(item, null);
+
+        expect(getNativeResumeProgressMock).toHaveBeenCalledWith('audiobook', 'book-7');
+        expect(result.initialPositionSeconds).toBe(2526);
+    });
+
+    it('prefers the server position over the cache when the server answers', async () => {
+        loadAbsCurrentProgressMock.mockResolvedValue({
+            currentTimeSeconds: 1234,
+            isFinished: false,
+        });
+        getNativeResumeProgressMock.mockResolvedValue({
+            completed: false,
+            progressSeconds: 9999,
+        });
+
+        const item = baseItem({
+            contentSourceId: 'samo:https://samo',
+            id: 'samo:https://samo:audiobook:book-7:file:mf-3',
+            source: 'audiobook',
+        });
+
+        const result = await refreshPlayableResumeFromServer(item, null);
+
+        expect(result.initialPositionSeconds).toBe(1234);
+        expect(getNativeResumeProgressMock).not.toHaveBeenCalled();
     });
 });

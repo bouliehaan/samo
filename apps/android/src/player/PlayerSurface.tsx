@@ -14,6 +14,7 @@ import {
 import {
     ensureSamoStreamToken,
     findServerAuthenticationForSource,
+    getCachedSamoStreamToken,
     type ServerAuthenticationResult,
 } from '@samo/core/server';
 import { FlashList } from '@shopify/flash-list';
@@ -204,27 +205,35 @@ export const NowPlayingMetadataSync = memo(() => {
                         serverConnectionRef.current,
                     ),
                 ) ?? state.item.artworkUrl;
-            // Never push a TOKEN-LESS Samo artwork URL into the native
-            // notification: the JS token cache goes stale during long native-
-            // driven sessions (nothing on the JS side mints anymore), and the
-            // resolver then yields a URL the notification's header-less fetch
-            // can only 401 on — overwriting native's fresh artwork with a grey
-            // tile. Omit the field instead (native keeps its own, freshened at
-            // each transition) and mint in the background so the NEXT push
-            // carries a live token again.
+            // Never push a Samo artwork URL the notification's header-less
+            // fetch can only 401 on — that overwrites native's fresh artwork
+            // with a grey tile. Two ways to be that URL: it carries NO stream
+            // token at all, or the JS token cache has gone stale during a long
+            // native-driven session (nothing on the JS side mints anymore), so
+            // the resolver could only pass through whatever expired token the
+            // item was built with. In both cases omit the field (native keeps
+            // its own artwork, freshened at each transition) and mint in the
+            // background so the NEXT push carries a live token again.
+            const contentSource = getContentSourceFromPlaybackItem(
+                state.item,
+                serverConnectionRef.current,
+            );
+            const auth = contentSource
+                ? findServerAuthenticationForSource(
+                      serverConnectionRef.current,
+                      contentSource,
+                  )
+                : undefined;
+            const isSamoApiArtworkUrl = Boolean(
+                resolvedArtworkUrl && resolvedArtworkUrl.includes('/api/v1/'),
+            );
+            const hasLiveToken = auth ? Boolean(getCachedSamoStreamToken(auth)) : false;
             let artworkUrl = resolvedArtworkUrl;
-            if (isSamoMediaUrlMissingStreamToken(resolvedArtworkUrl)) {
+            if (
+                isSamoMediaUrlMissingStreamToken(resolvedArtworkUrl) ||
+                (isSamoApiArtworkUrl && !hasLiveToken)
+            ) {
                 artworkUrl = undefined;
-                const contentSource = getContentSourceFromPlaybackItem(
-                    state.item,
-                    serverConnectionRef.current,
-                );
-                const auth = contentSource
-                    ? findServerAuthenticationForSource(
-                          serverConnectionRef.current,
-                          contentSource,
-                      )
-                    : undefined;
                 if (auth) {
                     void ensureSamoStreamToken(auth)
                         .then(() => syncMetadata())

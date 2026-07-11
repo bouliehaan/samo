@@ -50,17 +50,22 @@ internal object SamoHttp {
             .build()
 
     /**
-     * Fail-fast client for the small idempotent JSON control calls (progress
-     * PATCH, stream-token mint). A fresh LAN connection answers in single-digit
-     * ms; a multi-second wait now only ever means genuine network loss (the
-     * stale-socket case is gone), so we fail fast and let the caller's recovery
-     * react instead of hanging.
+     * Client for the small idempotent JSON control calls (progress PATCH,
+     * stream-token mint). Originally 4s/6s on the assumption every Samo
+     * Server is a LAN box a fresh connection reaches in single-digit ms —
+     * that stopped holding once servers became reachable through a Cloudflare
+     * Tunnel, where a healthy request can legitimately take a couple of
+     * seconds (tunnel hop + real internet RTT + TLS). 8s/12s still fails fast
+     * enough that a genuinely dead connection doesn't hang the caller for
+     * long, but no longer misclassifies a slow-but-alive WAN round trip as
+     * "network loss" the way the old budget did (the stale-socket case this
+     * client was built to fix is unrelated to these values — see `base`).
      */
     val control: OkHttpClient =
         base.newBuilder()
-            .connectTimeout(4, TimeUnit.SECONDS)
-            .readTimeout(6, TimeUnit.SECONDS)
-            .writeTimeout(6, TimeUnit.SECONDS)
+            .connectTimeout(8, TimeUnit.SECONDS)
+            .readTimeout(12, TimeUnit.SECONDS)
+            .writeTimeout(12, TimeUnit.SECONDS)
             .build()
 
     /**

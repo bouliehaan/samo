@@ -1,33 +1,19 @@
-import { buildAudioQualityBadgeItems } from '@samo/core/audio-quality';
 import {
-    getDetailQualityProfile,
-    getItemQualityProfile,
-    getPlaybackQualityProfile,
-    createMobilePlaylist,
     isMobilePlaylistDetailEditable,
-    type MobileHomeItem,
-    MobileHomeItemType,
     type MobileMediaDetail,
     MobileMediaDetailType,
     type MobileMediaTrack,
-    type MobileSearchItem,
 } from '@samo/core/mobile';
-import { type ServerAuthenticationResult, findServerAuthenticationForSource } from '@samo/core/server';
-import { FlashList } from '@shopify/flash-list';
-import Reanimated, {
-    interpolate,
-    runOnJS,
-    useAnimatedReaction,
-    useAnimatedScrollHandler,
-    useAnimatedStyle,
-    useSharedValue,
-    withSpring,
-    withTiming,
-} from 'react-native-reanimated';
 import {
-    Fragment,
+    findServerAuthenticationForSource,
+    type ServerAuthenticationResult,
+} from '@samo/core/server';
+import { FlashList } from '@shopify/flash-list';
+import Reanimated from 'react-native-reanimated';
+import {
     memo,
     useCallback,
+    useDeferredValue,
     useEffect,
     useMemo,
     useRef,
@@ -36,84 +22,40 @@ import {
 import {
     ActivityIndicator,
     Alert,
-    Animated,
-    type ImageStyle,
     InteractionManager,
-    Keyboard,
-    type LayoutChangeEvent,
     Pressable,
-    ScrollView,
-    type StyleProp,
     Text,
-    TextInput,
     View,
-    type ViewStyle,
 } from 'react-native';
 
-import { ArtworkImage } from '../components/ArtworkImage';
-import { SkeletonBlock, SkeletonTrackRow } from '../components/Skeleton';
 import {
     EditPlaylistSheet,
     removeSelectedPlaylistTracks,
 } from '../components/EditPlaylistSheet';
 import { PlaylistTrackControls } from '../components/PlaylistTrackControls';
-import { QualityBadge, QualitySpec } from '../components/QualityBadge';
-import {
-    CheckGlyph,
-    CircularDownloadGlyph,
-    ClearGlyph,
-    DiscGlyph,
-    DownloadGlyph,
-    EllipsisVerticalGlyph,
-    GearGlyph,
-    HeartGlyph,
-    MoreGlyph,
-    PlayPauseGlyph,
-    SearchGlyph,
-    ShuffleGlyph,
-    TrackDownloadedGlyph,
-} from '../components/Glyphs';
-import { TrackPlaylistMenu } from '../components/TrackPlaylistMenu';
-import { type MediaContextMenuKind } from '../contexts/media-context-menu';
-import { type HomeDisplaySection } from '../types/home';
-import {
-    useDownloadedCollectionKeys,
-    useDownloadedTrackKeys,
-} from '../contexts/downloaded-keys';
-import { useMediaContextMenu } from '../contexts/media-context-menu';
-import {
-    type DownloadEntry,
-    enqueueCollectionDownload,
-    subscribeDownloads,
-} from '../services/download-manager';
-import { type AndroidHomeContentState } from '../services/home-content';
-import { type AndroidMediaDetailState } from '../services/media-detail';
-import {
-    type AndroidRecentContentSourceItem,
-    getRecentContentItemKey,
-} from '../services/recent-content';
-import { triggerImpact, triggerSelection } from '../services/haptics';
-import { formatQualityProfile } from '../services/quality-badge-assets';
-import { SCREEN_HEIGHT } from '../theme/layout';
+import { SkeletonTrackRow } from '../components/Skeleton';
+import { useCollapsedDetailHeader } from '../hooks/use-collapsed-detail-header';
+import { useScrollContentBottomInset } from '../hooks/use-scroll-content-bottom-inset';
+import { useStableCallback } from '../hooks/use-stable-callback';
+import { type AndroidRecentContentSourceItem } from '../services/recent-content';
+import { triggerSelection } from '../services/haptics';
 import { styles } from '../theme/styles';
 import { colors, spacing } from '../theme/tokens';
-import { getContentItemKey } from '../utils/content-item';
-import {
-    getDownloadedCollectionKey,
-    getDownloadedTrackKey,
-} from '../utils/download-keys';
 import {
     getDetailTypeLabel,
-    getPlaylistTargetsForDetail,
     getPlaylistTrackItemType,
     getPlaylistTrackSearchText,
     PLAYLIST_TRACK_DRAW_DISTANCE,
-    type PlaylistTrackFilter,
-    type PlaylistTrackSort,
 } from '../utils/media-detail';
-import { getDisplaySubtitle } from '../utils/playback-time';
-import { getTrackMetadataItems } from '../player/track-metadata';
-import { detailHasHiRes, isHiFiTrack } from '../utils/media-quality';
+import { isHiFiTrack } from '../utils/media-quality';
+import { ArtistDetailSections } from './ArtistDetailSections';
+import {
+    DetailHeroArtwork,
+    MediaDetailCollapsedTopbar,
+    MediaDetailHero,
+} from './MediaDetailHero';
+import { MediaDetailTrackRow } from './MediaDetailTrackRow';
+import { PlaylistFloatingSearch } from './PlaylistFloatingSearch';
 
 // Stable-identity placeholder rows for the loading state, so the unified detail
 // list shows skeleton rows under the (persistent) hero while the real tracks load.
@@ -124,57 +66,26 @@ const SKELETON_TRACK_PLACEHOLDERS: MobileMediaTrack[] = Array.from(
 
 const ReanimatedFlashList = Reanimated.createAnimatedComponent(FlashList) as typeof FlashList;
 const FLASH_LIST_MAINTAIN_POSITION_DISABLED = { disabled: true };
-const PLAYLIST_SEARCH_FLOATING_HEIGHT = 54;
 
-import { ArtistDetailSections, ArtistAlbumTile } from './ArtistDetailSections';
-const DetailHeroArtwork = ({
-    artworkImageId,
-    contentSource,
-    fallbackUri,
-    letter,
-    primaryUri,
-    round,
-    serverConnection,
-    style,
-    wrapStyle,
-}: {
-    artworkImageId?: string;
-    contentSource?: MobileMediaDetail['source'];
-    fallbackUri?: string;
-    letter: string;
-    primaryUri?: string;
-    round?: boolean;
-    serverConnection?: ServerAuthenticationResult | null;
-    style: StyleProp<ImageStyle>;
-    wrapStyle?: StyleProp<ViewStyle>;
-}) => {
-    const uri = primaryUri ?? fallbackUri;
-    const image = (
-        <ArtworkImage
-            artworkImageId={artworkImageId}
-            contentSource={contentSource}
-            fallbackStyle={round ? styles.detailArtworkFallback : styles.albumHeroArtworkFallback}
-            letter={letter}
-            serverConnection={serverConnection}
-            style={style}
-            uri={uri}
-        />
-    );
-    return wrapStyle ? <View style={wrapStyle}>{image}</View> : image;
-};
+const renderSkeletonRow = () => <SkeletonTrackRow />;
 
-export const MediaDetailLoaded = ({
+/**
+ * A loaded (or loading-shell) media detail. This is an orchestrator: the
+ * hero, collapsed top bar, track rows, and floating search are memoized
+ * subcomponents with stable callbacks, so a search keystroke re-renders the
+ * (cheap) list data, a selection tap re-renders one row, and a download
+ * progress tick re-renders one button — never the whole surface.
+ */
+export const MediaDetailLoaded = memo(function MediaDetailLoaded({
     detail,
     fallbackArtworkImageId,
     fallbackArtworkUrl,
     isAwaitingDetail = false,
-    onAddTrackToPlaylist,
     onBack,
     onPlayTrack,
     onReloadDetail,
     onSelectItem,
     onShufflePlay,
-    playlistTargets,
     serverConnection,
 }: {
     detail: MobileMediaDetail;
@@ -183,11 +94,6 @@ export const MediaDetailLoaded = ({
     /** Render the real list+hero shell against a placeholder detail while the
      *  full detail loads — keeps the hero ExpoImage mounted (no cover flash). */
     isAwaitingDetail?: boolean;
-    onAddTrackToPlaylist: (
-        detail: MobileMediaDetail,
-        track: MobileMediaTrack,
-        playlist: MobileHomeItem,
-    ) => Promise<void>;
     onBack: () => void;
     onPlayTrack: (
         detail: MobileMediaDetail,
@@ -198,31 +104,14 @@ export const MediaDetailLoaded = ({
     onReloadDetail?: () => Promise<void>;
     onSelectItem: (item: AndroidRecentContentSourceItem) => void;
     onShufflePlay: (detail: MobileMediaDetail, tracks?: MobileMediaTrack[]) => void;
-    playlistTargets: MobileHomeItem[];
     serverConnection: ServerAuthenticationResult | null;
-}) => {
+}) {
     const [playlistEditVisible, setPlaylistEditVisible] = useState(false);
     const [playlistManageMode, setPlaylistManageMode] = useState(false);
-    const [isTransitioning, setIsTransitioning] = useState(true);
-
-    useEffect(() => {
-        const task = InteractionManager.runAfterInteractions(() => {
-            setIsTransitioning(false);
-        });
-        return () => task.cancel();
-    }, []);
     const [playlistSelectedTrackIds, setPlaylistSelectedTrackIds] = useState<Set<string>>(
         () => new Set(),
     );
     const [playlistManageSaving, setPlaylistManageSaving] = useState(false);
-    const [playlistMenuTrack, setPlaylistMenuTrack] = useState<MobileMediaTrack | null>(null);
-    const [playlistActionState, setPlaylistActionState] = useState<
-        | { status: 'error'; message: string }
-        | { playlistId: string; status: 'loading' }
-        | { message: string; status: 'success' }
-        | { status: 'idle' }
-    >({ status: 'idle' });
-    const [isDetailDownloadRequested, setIsDetailDownloadRequested] = useState(false);
     // Playlist-only filter + sort. Playlists are mixed format and mixed
     // artists by definition, so being able to scope to Hi-Fi only or
     // re-sort by title/artist is the user-facing affordance the user
@@ -232,53 +121,30 @@ export const MediaDetailLoaded = ({
     const [playlistSortAsc, setPlaylistSortAsc] = useState(true);
     const [playlistSearchVisible, setPlaylistSearchVisible] = useState(false);
     const [playlistSearchQuery, setPlaylistSearchQuery] = useState('');
-    const mediaDetailScreenRef = useRef<View>(null);
-    const playlistSearchInputRef = useRef<TextInput>(null);
-    const [mediaDetailRootFrame, setMediaDetailRootFrame] = useState({
-        height: SCREEN_HEIGHT,
-        y: 0,
-    });
-    const [playlistKeyboardScreenY, setPlaylistKeyboardScreenY] = useState<number | null>(null);
-    const playlistSearchLayoutProgress = useSharedValue(0);
-    const playlistSearchBubbleProgress = useSharedValue(0);
-    const playlistSearchAnimatedStyle = useAnimatedStyle(() => ({
-        opacity: interpolate(playlistSearchLayoutProgress.value, [0, 0.5, 1], [0, 1, 1]),
-        transform: [
-            {
-                translateY: interpolate(
-                    playlistSearchBubbleProgress.value,
-                    [0, 1],
-                    [32, 0],
-                ),
-            },
-            { scale: playlistSearchBubbleProgress.value },
-        ],
-        transformOrigin: ['65%', '100%', 0],
-    }));
-    const playlistSearchFloatingTop = useMemo(() => {
-        const fallbackTop =
-            mediaDetailRootFrame.height - PLAYLIST_SEARCH_FLOATING_HEIGHT - spacing.lg;
-        if (!playlistKeyboardScreenY) {
-            return Math.max(spacing.md, fallbackTop);
-        }
-        return Math.max(
-            spacing.md,
-            playlistKeyboardScreenY -
-                mediaDetailRootFrame.y -
-                PLAYLIST_SEARCH_FLOATING_HEIGHT -
-                spacing.md,
-        );
-    }, [mediaDetailRootFrame.height, mediaDetailRootFrame.y, playlistKeyboardScreenY]);
-    const measureMediaDetailRoot = useCallback(() => {
-        mediaDetailScreenRef.current?.measureInWindow((_x, y, _width, height) => {
-            setMediaDetailRootFrame({ height, y });
+    // The input echoes keystrokes urgently; the (potentially large) filter +
+    // re-layout below follows this deferred copy at low priority, so typing
+    // in a 1,000-track playlist never stutters the keyboard.
+    const deferredSearchQuery = useDeferredValue(playlistSearchQuery);
+
+    // First frame after a navigation renders a capped list so the open
+    // animation never contends with a full playlist mount.
+    const [isTransitioning, setIsTransitioning] = useState(true);
+    useEffect(() => {
+        const task = InteractionManager.runAfterInteractions(() => {
+            setIsTransitioning(false);
         });
+        return () => task.cancel();
     }, []);
-    const firstTrack = detail.tracks[0];
-    const contextMenu = useMediaContextMenu();
-    const downloadedTrackKeys = useDownloadedTrackKeys();
-    const isMusic = detail.type === MobileMediaDetailType.ALBUM || detail.type === MobileMediaDetailType.PLAYLIST;
+
+    const rootRef = useRef<View>(null);
+    const bottomInset = useScrollContentBottomInset();
+    const collapsedHeader = useCollapsedDetailHeader();
+
+    const isMusic =
+        detail.type === MobileMediaDetailType.ALBUM ||
+        detail.type === MobileMediaDetailType.PLAYLIST;
     const isPlaylistDetail = detail.type === MobileMediaDetailType.PLAYLIST;
+    const isArtistDetail = detail.type === MobileMediaDetailType.ARTIST;
     const canEditPlaylist = isPlaylistDetail && isMobilePlaylistDetailEditable(detail);
     const playlistAuth = useMemo(
         () => findServerAuthenticationForSource(serverConnection, detail.source),
@@ -301,54 +167,6 @@ export const MediaDetailLoaded = ({
         setPlaylistSearchVisible(false);
         setPlaylistSearchQuery('');
     }, [detail.id, detail.source.id]);
-    useEffect(() => {
-        const showSubscription = Keyboard.addListener('keyboardDidShow', (event) => {
-            measureMediaDetailRoot();
-            setPlaylistKeyboardScreenY(event.endCoordinates.screenY);
-        });
-        const frameSubscription = Keyboard.addListener('keyboardDidChangeFrame', (event) => {
-            measureMediaDetailRoot();
-            setPlaylistKeyboardScreenY(event.endCoordinates.screenY);
-        });
-        const hideSubscription = Keyboard.addListener('keyboardDidHide', () => {
-            setPlaylistKeyboardScreenY(null);
-        });
-
-        return () => {
-            showSubscription.remove();
-            frameSubscription.remove();
-            hideSubscription.remove();
-        };
-    }, [measureMediaDetailRoot]);
-    useEffect(() => {
-        if (playlistSearchVisible) {
-            measureMediaDetailRoot();
-        }
-    }, [measureMediaDetailRoot, playlistSearchVisible]);
-    useEffect(() => {
-        if (!playlistSearchVisible) return;
-        const id = setTimeout(() => playlistSearchInputRef.current?.focus(), 80);
-        return () => clearTimeout(id);
-    }, [playlistSearchVisible]);
-    useEffect(() => {
-        if (playlistSearchVisible) {
-            playlistSearchLayoutProgress.value = withTiming(1, { duration: 200 });
-            playlistSearchBubbleProgress.value = withSpring(1, {
-                damping: 12,
-                mass: 0.55,
-                stiffness: 180,
-            });
-        } else {
-            playlistSearchBubbleProgress.value = withTiming(0, { duration: 160 });
-            playlistSearchLayoutProgress.value = withTiming(0, { duration: 200 });
-        }
-    }, [playlistSearchBubbleProgress, playlistSearchLayoutProgress, playlistSearchVisible]);
-    const closePlaylistSearch = useCallback(() => {
-        setPlaylistSearchQuery('');
-        setPlaylistSearchVisible(false);
-        playlistSearchInputRef.current?.blur();
-        Keyboard.dismiss();
-    }, []);
 
     /**
      * Track list after the playlist's filter + sort controls are applied.
@@ -358,11 +176,9 @@ export const MediaDetailLoaded = ({
      */
     const fullDisplayTracks = useMemo(() => {
         if (!isPlaylistDetail) return detail.tracks;
-        const playlistSearchNeedle = playlistSearchQuery.trim().toLocaleLowerCase();
+        const playlistSearchNeedle = deferredSearchQuery.trim().toLocaleLowerCase();
         let filtered =
-            playlistFilter === 'hifi'
-                ? detail.tracks.filter(isHiFiTrack)
-                : detail.tracks;
+            playlistFilter === 'hifi' ? detail.tracks.filter(isHiFiTrack) : detail.tracks;
         if (playlistSearchNeedle) {
             filtered = filtered.filter((track) =>
                 getPlaylistTrackSearchText(track).includes(playlistSearchNeedle),
@@ -375,18 +191,16 @@ export const MediaDetailLoaded = ({
             return playlistSortAsc ? filtered : [...filtered].reverse();
         }
         const sorted = [...filtered].sort((left, right) => {
-            const leftKey =
-                playlistSort === 'artist' ? left.artist ?? '' : left.title ?? '';
-            const rightKey =
-                playlistSort === 'artist' ? right.artist ?? '' : right.title ?? '';
+            const leftKey = playlistSort === 'artist' ? left.artist ?? '' : left.title ?? '';
+            const rightKey = playlistSort === 'artist' ? right.artist ?? '' : right.title ?? '';
             return leftKey.localeCompare(rightKey, undefined, { sensitivity: 'base' });
         });
         return playlistSortAsc ? sorted : sorted.reverse();
     }, [
+        deferredSearchQuery,
         detail.tracks,
         isPlaylistDetail,
         playlistFilter,
-        playlistSearchQuery,
         playlistSort,
         playlistSortAsc,
     ]);
@@ -402,64 +216,12 @@ export const MediaDetailLoaded = ({
     const firstPlayableDisplayIndex = firstPlayableDisplayTrack
         ? displayTracks.indexOf(firstPlayableDisplayTrack)
         : -1;
-    const heroPlayTrack = isPlaylistDetail ? firstPlayableDisplayTrack : firstTrack;
+    const heroPlayTrack = isPlaylistDetail ? firstPlayableDisplayTrack : detail.tracks[0];
     const heroPlayIndex = isPlaylistDetail ? firstPlayableDisplayIndex : 0;
-    const heroPlayQueue = isPlaylistDetail ? displayTracks : undefined;
     const canPlayDetail = Boolean(heroPlayTrack);
     const showPlaylistShuffle = isPlaylistDetail && playableDisplayTracks.length > 0;
     const showAlbumDiscHeaders =
         detail.type === MobileMediaDetailType.ALBUM && (detail.discCount ?? 0) > 1;
-    const detailScrollY = useSharedValue(0);
-    const detailScrollHandler = useAnimatedScrollHandler({
-        onScroll: (event) => {
-            detailScrollY.value = event.contentOffset.y;
-        },
-    });
-    const [collapsedHeaderTriggerY, setCollapsedHeaderTriggerY] = useState(220);
-    const [isCollapsedHeaderInteractive, setIsCollapsedHeaderInteractive] = useState(false);
-    const collapsedHeaderRevealStartY = Math.max(0, collapsedHeaderTriggerY - 28);
-    const collapsedHeaderRevealEndY = collapsedHeaderTriggerY + 12;
-    const handleHeroActionsBarLayout = useCallback((event: LayoutChangeEvent) => {
-        const nextTriggerY = Math.max(180, event.nativeEvent.layout.y + spacing.lg);
-
-        setCollapsedHeaderTriggerY((current) =>
-            Math.abs(current - nextTriggerY) < 1 ? current : nextTriggerY,
-        );
-    }, []);
-    useAnimatedReaction(
-        () => detailScrollY.value >= collapsedHeaderRevealStartY,
-        (isVisible, wasVisible) => {
-            if (isVisible !== wasVisible) {
-                runOnJS(setIsCollapsedHeaderInteractive)(isVisible);
-            }
-        },
-    );
-    const collapsedHeaderBackdropStyle = useAnimatedStyle(() => ({
-        opacity: interpolate(
-            detailScrollY.value,
-            [collapsedHeaderRevealStartY, collapsedHeaderRevealEndY],
-            [0, 1],
-            'clamp',
-        ),
-    }));
-    const collapsedHeaderContentStyle = useAnimatedStyle(() => ({
-        opacity: interpolate(
-            detailScrollY.value,
-            [collapsedHeaderRevealStartY, collapsedHeaderRevealEndY],
-            [0, 1],
-            'clamp',
-        ),
-        transform: [
-            {
-                translateY: interpolate(
-                    detailScrollY.value,
-                    [collapsedHeaderRevealStartY, collapsedHeaderRevealEndY],
-                    [8, 0],
-                    'clamp',
-                ),
-            },
-        ],
-    }));
 
     const sectionTitle =
         detail.type === MobileMediaDetailType.AUDIOBOOK
@@ -468,7 +230,7 @@ export const MediaDetailLoaded = ({
               ? 'Episodes'
               : detail.type === MobileMediaDetailType.ARTIST
                 ? 'Albums'
-              : 'Tracks';
+                : 'Tracks';
     const emptyText =
         detail.type === MobileMediaDetailType.AUDIOBOOK
             ? 'No chapters returned by the server.'
@@ -476,83 +238,44 @@ export const MediaDetailLoaded = ({
               ? 'No episodes returned by the server.'
               : detail.type === MobileMediaDetailType.ARTIST
                 ? 'No albums returned by the server.'
-              : 'No playable tracks returned by the server.';
-    const artistAlbumSections: HomeDisplaySection[] =
-        detail.type === MobileMediaDetailType.ARTIST && detail.items && detail.items.length > 0
-            ? [
-                  {
-                      items: detail.items,
-                      key: `artist-${detail.id}-albums`,
-                      title: sectionTitle,
-                      variant: 'album',
-                  },
-              ]
-            : [];
-    const handleAddToPlaylist = async (playlist: MobileHomeItem) => {
-        if (!playlistMenuTrack) {
+                : 'No playable tracks returned by the server.';
+
+    // Hero cover identity. Prefer the cover the skeleton already showed (and
+    // cached) so the loaded hero resolves to the SAME canonical key — its disk
+    // peek hits, so the placeholder paints the cover on the new view's first
+    // frame and the skeleton→detail swap shows no blank flash. Atomic on/off:
+    // mixing the opening imageId with the detail url (or vice-versa) can resolve
+    // to a THIRD key that's cached as neither. Falls back to detail art when the
+    // detail was opened without an opening cover (deep link, etc.).
+    const hasOpeningArt = fallbackArtworkUrl != null || fallbackArtworkImageId != null;
+    const heroArtworkImageId = hasOpeningArt ? fallbackArtworkImageId : detail.artworkImageId;
+    const heroArtworkUrl = hasOpeningArt ? fallbackArtworkUrl : detail.artworkUrl;
+
+    const listData = isAwaitingDetail ? SKELETON_TRACK_PLACEHOLDERS : displayTracks;
+
+    // ------------------------------------------------------------------
+    // Stable callbacks for the memoized hero / topbar / rows. useStableCallback
+    // reads the latest closure at call time, so these never change identity
+    // and never invalidate the children below.
+    // ------------------------------------------------------------------
+    const handleHeroPlay = useStableCallback(() => {
+        if (!heroPlayTrack) {
             return;
         }
-
-        setPlaylistActionState({ playlistId: playlist.id, status: 'loading' });
-
-        try {
-            await onAddTrackToPlaylist(detail, playlistMenuTrack, playlist);
-            setPlaylistActionState({
-                message: `Added to ${playlist.title}`,
-                status: 'success',
-            });
-        } catch (error) {
-            setPlaylistActionState({
-                message: error instanceof Error ? error.message : 'Failed to add to playlist',
-                status: 'error',
-            });
-        }
-    };
-    const canCreatePlaylist = useMemo(() => {
-        const auth = findServerAuthenticationForSource(serverConnection, detail.source);
-
-        return Boolean(auth);
-    }, [detail.source, serverConnection]);
-    const handleCreatePlaylist = async (name: string) => {
-        if (!playlistMenuTrack) {
-            return;
-        }
-
-        const auth = findServerAuthenticationForSource(serverConnection, detail.source);
-
-        if (!auth) {
-            setPlaylistActionState({
-                message: 'The server for this item is no longer connected.',
-                status: 'error',
-            });
-            return;
-        }
-
-        setPlaylistActionState({ playlistId: '__create__', status: 'loading' });
-
-        try {
-            const playlist = await createMobilePlaylist({
-                authentication: auth,
-                name,
-                songIds: [playlistMenuTrack.id],
-            });
-            setPlaylistActionState({
-                message: `Created ${playlist.title}`,
-                status: 'success',
-            });
-        } catch (error) {
-            setPlaylistActionState({
-                message: error instanceof Error ? error.message : 'Failed to create playlist',
-                status: 'error',
-            });
-        }
-    };
-    const openPlaylistMenu = (track: MobileMediaTrack) => {
-        setPlaylistActionState({ status: 'idle' });
-        setPlaylistMenuTrack(track);
-    };
-
-    const togglePlaylistTrackSelection = (trackId: string) => {
+        onPlayTrack(
+            detail,
+            heroPlayTrack,
+            heroPlayIndex,
+            isPlaylistDetail ? displayTracks : undefined,
+        );
+    });
+    const handleHeroShuffle = useStableCallback(() => {
+        void onShufflePlay(detail, displayTracks);
+    });
+    const handleRowPlay = useStableCallback((track: MobileMediaTrack, index: number) => {
+        onPlayTrack(detail, track, index, displayTracks);
+    });
+    const handleToggleSelect = useCallback((trackId: string) => {
         setPlaylistSelectedTrackIds((current) => {
             const next = new Set(current);
             if (next.has(trackId)) {
@@ -563,9 +286,28 @@ export const MediaDetailLoaded = ({
             return next;
         });
         triggerSelection();
-    };
+    }, []);
+    const handleToggleSearch = useStableCallback(() => {
+        if (playlistSearchVisible) {
+            setPlaylistSearchQuery('');
+            setPlaylistSearchVisible(false);
+            return;
+        }
+        setPlaylistSearchVisible(true);
+    });
+    const handleOpenEditPlaylist = useCallback(() => setPlaylistEditVisible(true), []);
+    const handleCloseEditPlaylist = useCallback(() => setPlaylistEditVisible(false), []);
+    const handleManageTracks = useCallback(() => {
+        setPlaylistManageMode(true);
+        setPlaylistSelectedTrackIds(new Set());
+    }, []);
+    const handleCancelManage = useCallback(() => {
+        setPlaylistManageMode(false);
+        setPlaylistSelectedTrackIds(new Set());
+    }, []);
+    const handlePlaylistSaved = useStableCallback(() => void onReloadDetail?.());
 
-    const handleRemoveSelectedPlaylistTracks = () => {
+    const handleRemoveSelectedPlaylistTracks = useStableCallback(() => {
         if (!playlistAuth || playlistSelectedTrackIds.size === 0) {
             return;
         }
@@ -607,417 +349,97 @@ export const MediaDetailLoaded = ({
                 },
             ],
         );
-    };
+    });
 
-    const isArtistDetail = detail.type === MobileMediaDetailType.ARTIST;
-    // Hero cover identity. Prefer the cover the skeleton already showed (and
-    // cached) so the loaded hero resolves to the SAME canonical key — its disk
-    // peek hits, so the placeholder paints the cover on the new view's first
-    // frame and the skeleton→detail swap shows no blank flash. Atomic on/off:
-    // mixing the opening imageId with the detail url (or vice-versa) can resolve
-    // to a THIRD key that's cached as neither. Falls back to detail art when the
-    // detail was opened without an opening cover (deep link, etc.).
-    const hasOpeningArt = fallbackArtworkUrl != null || fallbackArtworkImageId != null;
-    const heroArtworkImageId = hasOpeningArt ? fallbackArtworkImageId : detail.artworkImageId;
-    const heroArtworkUrl = hasOpeningArt ? fallbackArtworkUrl : detail.artworkUrl;
-    const showDetailHiRes = detailHasHiRes(detail);
-    // Playlists never get a collection-level format badge — they're mixed by
-    // definition. Per-track badges on the track rows below still show.
-    const heroBadgeProfile =
-        detail.type === MobileMediaDetailType.PLAYLIST
-            ? undefined
-            : getDetailQualityProfile(detail);
-    const heroFormatLabel =
-        detail.type === MobileMediaDetailType.ALBUM
-            ? formatQualityProfile(heroBadgeProfile)
-            : null;
-    // Download button shows for everything that has saveable media. Podcasts
-    // here download every episode; long-press on a single episode row still
-    // works to grab just that one. Hidden while awaiting the detail — there's
-    // nothing concrete to download yet.
-    const canDownloadDetail = !isArtistDetail && !isAwaitingDetail;
-
-    // Loading-state pieces for the unified detail shell. The hero artwork and
-    // title render for real (we know them at tap time); only the chrome BELOW the
-    // title and the track rows are placeholders, so the hero ExpoImage's position
-    // in the tree never changes and the cover persists into the loaded state.
-    const listData = isAwaitingDetail ? SKELETON_TRACK_PLACEHOLDERS : displayTracks;
-    const heroSkeletonBadge = (
-        <SkeletonBlock borderRadius={4} style={{ height: 11, width: 64 }} />
-    );
-    const heroSkeletonMetaActions = (
-        <>
-            <View style={styles.albumHeroMeta}>
-                <SkeletonBlock borderRadius={4} style={{ height: 13, marginBottom: 6, width: 150 }} />
-                <SkeletonBlock borderRadius={4} style={{ height: 13, width: 104 }} />
-            </View>
-            <View style={styles.albumHeroActionsBar}>
-                <View style={styles.albumHeroLeftActions}>
-                    <SkeletonBlock borderRadius={999} style={styles.albumHeroGlyphButton} />
-                    <SkeletonBlock borderRadius={999} style={styles.albumHeroGlyphButton} />
-                </View>
-                <View style={styles.albumHeroActions}>
-                    <SkeletonBlock borderRadius={999} style={styles.albumHeroGlyphButton} />
-                    <SkeletonBlock borderRadius={999} style={{ height: 52, width: 52 }} />
-                </View>
-            </View>
-        </>
-    );
-
-    // Subscribe to downloads for this specific collection so the hero can
-    // switch to the completed state once every item in the collection is saved.
-    const [collectionDownloads, setCollectionDownloads] = useState<DownloadEntry[]>([]);
-    const collectionDownloadsSignatureRef = useRef('');
-    useEffect(() => {
-        setIsDetailDownloadRequested(false);
-    }, [detail.id, detail.source.id]);
-    useEffect(() => {
-        const unsubscribe = subscribeDownloads((entries) => {
-            const nextDownloads = entries.filter(
-                (entry) =>
-                    entry.collection.sourceId === detail.source.id &&
-                    entry.collection.id === detail.id,
-            );
-            const nextSignature = nextDownloads
-                .map((entry) =>
-                    [
-                        entry.id,
-                        entry.status,
-                        entry.progress ?? '',
-                        entry.bytesDownloaded ?? '',
-                        entry.totalBytes ?? '',
-                        entry.localUri ?? '',
-                        entry.errorMessage ?? '',
-                    ].join(':'),
-                )
-                .join('|');
-            if (collectionDownloadsSignatureRef.current === nextSignature) {
-                return;
-            }
-            collectionDownloadsSignatureRef.current = nextSignature;
-            setCollectionDownloads(nextDownloads);
-        });
-        return () => {
-            unsubscribe();
-        };
-    }, [detail.id, detail.source.id]);
-
-    const expectedDownloadTrackIds = useMemo(() => {
-        if (detail.type === MobileMediaDetailType.PODCAST) {
-            return detail.tracks.map((track) => track.id);
-        }
-        if (
-            detail.type === MobileMediaDetailType.ALBUM ||
-            detail.type === MobileMediaDetailType.PLAYLIST
-        ) {
-            return detail.tracks
-                .filter((track) => Boolean(track.playback?.url))
-                .map((track) => track.id);
-        }
-        return [];
-    }, [detail.tracks, detail.type]);
-    const downloadAggregate = useMemo(() => {
-        const emptyAggregate = { completed: false, progress: 0 };
-        const startingProgress = 0.06;
-        if (collectionDownloads.length === 0) {
-            return isDetailDownloadRequested
-                ? { completed: false, progress: startingProgress }
-                : emptyAggregate;
-        }
-        const latestByTrackId = new Map<string, DownloadEntry>();
-        for (const entry of collectionDownloads) {
-            const current = latestByTrackId.get(entry.trackId);
-            if (!current || entry.enqueuedAt > current.enqueuedAt) {
-                latestByTrackId.set(entry.trackId, entry);
-            }
-        }
-        const getEntryProgress = (entry: DownloadEntry | undefined) => {
-            if (!entry) return 0;
-            if (entry.status === 'completed') return 1;
-            if (entry.status === 'downloading') {
-                return Math.max(entry.progress ?? 0, startingProgress);
-            }
-            if (entry.status === 'queued') return startingProgress;
-            return 0;
-        };
-        if (detail.type === MobileMediaDetailType.AUDIOBOOK) {
-            const entries = [...latestByTrackId.values()];
-            const completed =
-                entries.length > 0 && entries.every((entry) => entry.status === 'completed');
-            const hasActiveDownload = entries.some(
-                (entry) => entry.status === 'queued' || entry.status === 'downloading',
-            );
-            const isActive = completed || hasActiveDownload || isDetailDownloadRequested;
-            const rawProgress =
-                entries.reduce((sum, entry) => sum + getEntryProgress(entry), 0) /
-                Math.max(entries.length, 1);
-            return {
-                completed,
-                progress: isActive
-                    ? Math.max(isDetailDownloadRequested ? startingProgress : 0, rawProgress)
-                    : 0,
-            };
-        }
-        if (expectedDownloadTrackIds.length === 0) {
-            return emptyAggregate;
-        }
-        const expectedEntries = expectedDownloadTrackIds.map((trackId) =>
-            latestByTrackId.get(trackId),
-        );
-        const completed = expectedEntries.every((entry) => entry?.status === 'completed');
-        const hasFullCollectionSet = expectedEntries.every(
-            (entry) =>
-                entry?.status === 'queued' ||
-                entry?.status === 'downloading' ||
-                entry?.status === 'completed',
-        );
-        const isActive = completed || hasFullCollectionSet || isDetailDownloadRequested;
-        if (!isActive) {
-            return emptyAggregate;
-        }
-        const rawProgress =
-            expectedEntries.reduce((sum, entry) => sum + getEntryProgress(entry), 0) /
-            expectedDownloadTrackIds.length;
-        return {
-            completed,
-            progress: Math.max(isDetailDownloadRequested ? startingProgress : 0, rawProgress),
-        };
-    }, [
-        collectionDownloads,
-        detail.type,
-        expectedDownloadTrackIds,
-        isDetailDownloadRequested,
-    ]);
-
-    const handleOpenDetailContextMenu = () => {
-        const kind: Exclude<MediaContextMenuKind, 'song'> | null =
-            detail.type === MobileMediaDetailType.ALBUM
-                ? 'album'
-                : detail.type === MobileMediaDetailType.PLAYLIST
-                  ? 'playlist'
-                  : detail.type === MobileMediaDetailType.AUDIOBOOK
-                    ? 'audiobook'
-                    : detail.type === MobileMediaDetailType.PODCAST
-                      ? 'podcast'
-                      : null;
-        if (!kind) {
-            return;
-        }
-        const homeType =
-            kind === 'album'
-                ? MobileHomeItemType.ALBUM
-                : kind === 'playlist'
-                  ? MobileHomeItemType.PLAYLIST
-                  : kind === 'audiobook'
-                    ? MobileHomeItemType.AUDIOBOOK
-                    : MobileHomeItemType.PODCAST;
-        const syntheticItem: MobileHomeItem = {
-            artworkUrl: detail.artworkUrl,
-            id: detail.id,
-            isHiRes: showDetailHiRes,
-            source: detail.source,
-            subtitle: detail.subtitle,
-            title: detail.title,
-            type: homeType,
-        };
-        contextMenu.openForItem(syntheticItem, {
-            // The hero already shows a visible Download button; don't duplicate it here.
-            suppressDownloadAction: true,
-            suppressOpenAction: true,
-        });
-    };
-
-    const handleDownloadDetail = async () => {
-        // Visual feedback comes from the circular download glyph and the
-        // Downloads tab — no need for a popup on click.
-        setIsDetailDownloadRequested(true);
-        const result = await enqueueCollectionDownload(detail, serverConnection);
-        if (result.reason) {
-            setIsDetailDownloadRequested(false);
-            Alert.alert('Download', result.reason);
-        } else if (result.enqueued === 0 && result.skipped === 0) {
-            setIsDetailDownloadRequested(false);
-        }
-    };
-
-    const renderTrackRow = useCallback(
-        (track: MobileMediaTrack, index: number) => {
-            const qualityItems =
-                isMusic && track.playback
-                    ? buildAudioQualityBadgeItems({
-                          ...track.playback.quality,
-                          compact: true,
-                          mode: 'playerbar',
-                      })
-                    : [];
-            const meta = getTrackMetadataItems(
-                detail,
-                track,
-                qualityItems.map((item) => item.label),
-                isMusic,
-            );
-            const canAddToPlaylist =
-                track.playback?.source === 'music' && playlistTargets.length > 0;
-            const hasOverflowActions =
-                canAddToPlaylist || track.playback?.source === 'music';
-            const isAlbumDetail = detail.type === MobileMediaDetailType.ALBUM;
-            const trackBadgeProfile =
-                detail.type === MobileMediaDetailType.PLAYLIST
-                    ? getPlaybackQualityProfile(track.playback)
-                    : undefined;
-            const isDownloadedTrack = downloadedTrackKeys.has(
-                getDownloadedTrackKey(detail.source.id, track.id),
-            );
-
-            const isManageMode = isPlaylistDetail && playlistManageMode;
-            const isTrackSelected = playlistSelectedTrackIds.has(track.id);
-
-            return (
-                <Pressable
-                    accessibilityRole="button"
-                    onLongPress={() => contextMenu.openForTrack(track, detail)}
-                    onPress={() => {
-                        if (isManageMode) {
-                            togglePlaylistTrackSelection(track.id);
-                            return;
-                        }
-                        onPlayTrack(detail, track, index, displayTracks);
-                    }}
-                    style={styles.trackRow}
-                >
-                    {isManageMode ? (
-                        <View
-                            style={[
-                                styles.playlistTrackSelect,
-                                isTrackSelected && styles.playlistTrackSelectChecked,
-                            ]}
-                        >
-                            {isTrackSelected ? <CheckGlyph color={colors.background} size={12} /> : null}
-                        </View>
-                    ) : null}
-                    {isAlbumDetail ? (
-                        <View style={styles.albumTrackNumber}>
-                            <Text style={styles.albumTrackNumberText}>
-                                {track.trackNumber ?? index + 1}
-                            </Text>
-                        </View>
-                    ) : null}
-                    {!isAlbumDetail ? (
-                        <View>
-                            {track.artworkUrl ?? detail.artworkUrl ?? fallbackArtworkUrl ? (
-                                <ArtworkImage
-                                    artworkImageId={
-                                        track.artworkImageId ?? detail.artworkImageId
-                                    }
-                                    contentSource={detail.source}
-                                    letter={track.title.slice(0, 1).toUpperCase()}
-                                    serverConnection={serverConnection}
-                                    style={styles.trackArtwork}
-                                    uri={track.artworkUrl ?? detail.artworkUrl ?? fallbackArtworkUrl}
-                                />
-                            ) : (
-                                <View style={styles.trackArtworkFallback}>
-                                    <Text style={styles.trackArtworkLetter}>
-                                        {track.title.slice(0, 1).toUpperCase()}
-                                    </Text>
-                                </View>
-                            )}
-                        </View>
-                    ) : null}
-                    <View style={styles.trackText}>
-                        <Text numberOfLines={1} style={styles.trackTitle}>
-                            {track.title}
-                        </Text>
-                        {meta.length > 0 || isDownloadedTrack ? (
-                            <View style={styles.trackMetadataLine}>
-                                {isDownloadedTrack ? <TrackDownloadedGlyph size={10} /> : null}
-                                {meta.length > 0 ? (
-                                    <Text
-                                        numberOfLines={1}
-                                        style={[
-                                            styles.mediaSubtitle,
-                                            styles.trackMetadataText,
-                                        ]}
-                                    >
-                                        {meta.join(' · ')}
-                                    </Text>
-                                ) : null}
-                            </View>
-                        ) : null}
-                    </View>
-                    {hasOverflowActions ? (
-                        <Pressable
-                            accessibilityLabel={`More options for ${track.title}`}
-                            accessibilityRole="button"
-                            onPress={(event) => {
-                                event.stopPropagation();
-                                contextMenu.openForTrack(track, detail);
-                            }}
-                            style={styles.trackMenuButton}
-                        >
-                            <MoreGlyph color={colors.muted} />
-                        </Pressable>
-                    ) : null}
-                </Pressable>
-            );
-        },
-        [
-            contextMenu,
-            detail,
-            displayTracks,
-            downloadedTrackKeys,
-            fallbackArtworkUrl,
-            isMusic,
-            isPlaylistDetail,
-            onPlayTrack,
-            playlistManageMode,
-            playlistSelectedTrackIds,
-            playlistTargets.length,
-        ],
-    );
-
-    const renderListTrackItem = useCallback(
+    const isManageMode = isPlaylistDetail && playlistManageMode;
+    const renderTrackItem = useCallback(
         ({ index, item: track }: { index: number; item: MobileMediaTrack }) => {
             const discNumber = track.discNumber ?? 1;
             const previousDiscNumber =
                 index > 0 ? (displayTracks[index - 1]?.discNumber ?? 1) : null;
             const shouldShowDiscHeader =
-                showAlbumDiscHeaders &&
-                (index === 0 || previousDiscNumber !== discNumber);
+                showAlbumDiscHeaders && (index === 0 || previousDiscNumber !== discNumber);
 
             return (
-                <>
-                    {shouldShowDiscHeader ? (
-                        <View style={styles.albumDiscHeader}>
-                            <Text style={styles.albumDiscHeaderText}>Disc {discNumber}</Text>
-                        </View>
-                    ) : null}
-                    {renderTrackRow(track, index)}
-                </>
+                <MediaDetailTrackRow
+                    detail={detail}
+                    discHeader={shouldShowDiscHeader ? discNumber : null}
+                    fallbackArtworkUrl={fallbackArtworkUrl}
+                    index={index}
+                    isManageMode={isManageMode}
+                    isSelected={playlistSelectedTrackIds.has(track.id)}
+                    onPlay={handleRowPlay}
+                    onToggleSelect={handleToggleSelect}
+                    serverConnection={serverConnection}
+                    track={track}
+                />
             );
         },
-        [displayTracks, renderTrackRow, showAlbumDiscHeaders],
+        [
+            detail,
+            displayTracks,
+            fallbackArtworkUrl,
+            handleRowPlay,
+            handleToggleSelect,
+            isManageMode,
+            playlistSelectedTrackIds,
+            serverConnection,
+            showAlbumDiscHeaders,
+        ],
     );
 
-    const playlistEmptyText =
-        detail.tracks.length === 0
-            ? emptyText
-            : playlistSearchQuery.trim()
-              ? 'No tracks match this search.'
-              : 'No tracks match the current filter.';
+    const hero = (
+        <MediaDetailHero
+            canEditPlaylist={canEditPlaylist}
+            detail={detail}
+            fallbackArtworkUrl={fallbackArtworkUrl}
+            heroArtworkImageId={heroArtworkImageId}
+            heroArtworkUrl={heroArtworkUrl}
+            isAwaitingDetail={isAwaitingDetail}
+            onEditPlaylist={handleOpenEditPlaylist}
+            onLayoutActionsBar={collapsedHeader.onHeroActionsBarLayout}
+            onPlayHero={handleHeroPlay}
+            onShuffleHero={handleHeroShuffle}
+            onToggleSearch={handleToggleSearch}
+            searchToggleVisible={playlistSearchVisible}
+            serverConnection={serverConnection}
+            showPlayButton={canPlayDetail}
+            showSearchToggle={isPlaylistDetail && detail.tracks.length > 0}
+            showShuffle={showPlaylistShuffle}
+        />
+    );
+
+    const collapsedTopbar = (
+        <MediaDetailCollapsedTopbar
+            backdropStyle={collapsedHeader.backdropStyle}
+            contentStyle={collapsedHeader.contentStyle}
+            isInteractive={collapsedHeader.isInteractive}
+            onBack={onBack}
+            onPlay={handleHeroPlay}
+            onShuffle={handleHeroShuffle}
+            showPlay={canPlayDetail}
+            showShuffle={showPlaylistShuffle}
+            title={detail.title}
+        />
+    );
 
     if (isPlaylistDetail) {
+        const playlistEmptyText =
+            detail.tracks.length === 0
+                ? emptyText
+                : playlistSearchQuery.trim()
+                  ? 'No tracks match this search.'
+                  : 'No tracks match the current filter.';
+
         return (
-            <View
-                onLayout={measureMediaDetailRoot}
-                ref={mediaDetailScreenRef}
-                style={styles.mediaDetailScreen}
-            >
+            <View ref={rootRef} style={styles.mediaDetailScreen}>
                 <ReanimatedFlashList
-                    contentContainerStyle={styles.mediaDetailContent}
+                    contentContainerStyle={[
+                        styles.mediaDetailContent,
+                        { paddingBottom: bottomInset },
+                    ]}
                     data={listData}
                     drawDistance={PLAYLIST_TRACK_DRAW_DISTANCE}
-                    extraData={downloadedTrackKeys}
                     getItemType={getPlaylistTrackItemType}
                     keyboardDismissMode="on-drag"
                     keyboardShouldPersistTaps="handled"
@@ -1027,162 +449,9 @@ export const MediaDetailLoaded = ({
                     }
                     ListHeaderComponent={
                         <>
-                            <View style={styles.albumHero}>
-                                <View style={styles.albumHeroArtworkWrap}>
-                                    <DetailHeroArtwork
-                                        artworkImageId={heroArtworkImageId}
-                                        contentSource={detail.source}
-                                        fallbackUri={fallbackArtworkUrl}
-                                        letter={detail.title.slice(0, 1)}
-                                        primaryUri={heroArtworkUrl}
-                                        serverConnection={serverConnection}
-                                        style={styles.albumHeroArtwork}
-                                    />
-                                </View>
-                                <View style={styles.albumHeroBadgeRow}>
-                                    {isAwaitingDetail ? (
-                                        heroSkeletonBadge
-                                    ) : (
-                                        <Text style={styles.albumHeroEyebrow}>
-                                            {getDetailTypeLabel(detail.type)}
-                                        </Text>
-                                    )}
-                                </View>
-                                <Text numberOfLines={2} style={styles.albumHeroTitle}>
-                                    {detail.title}
-                                </Text>
-                                {isAwaitingDetail ? (
-                                    heroSkeletonMetaActions
-                                ) : (
-                                    <>
-                                        {detail.year ? (
-                                            <Text style={styles.albumHeroYear}>{detail.year}</Text>
-                                        ) : null}
-                                        <View style={styles.albumHeroMeta}>
-                                            {Array.from(
-                                                new Set(
-                                                    [
-                                                        detail.subtitle,
-                                                        ...(detail.metadataLines ?? []).filter((line) => line !== detail.year?.toString()),
-                                                    ].filter((line): line is string => Boolean(line))
-                                                )
-                                            ).map((line, index) => (
-                                                <Text
-                                                    key={`${line}-${index}`}
-                                                    numberOfLines={1}
-                                                    style={styles.albumHeroMetaLine}
-                                                >
-                                                    {line}
-                                                </Text>
-                                            ))}
-                                            {heroFormatLabel ? (
-                                                <Text style={styles.formatBadgeMeta}>{heroFormatLabel}</Text>
-                                            ) : null}
-                                        </View>
-                                        <View
-                                            onLayout={handleHeroActionsBarLayout}
-                                            style={styles.albumHeroActionsBar}
-                                        >
-                                            <View style={styles.albumHeroLeftActions}>
-                                                {canDownloadDetail ? (
-                                                    <Pressable
-                                                        accessibilityLabel={
-                                                            downloadAggregate.completed
-                                                                ? 'Downloaded'
-                                                                : 'Download'
-                                                        }
-                                                        accessibilityRole="button"
-                                                        onPress={handleDownloadDetail}
-                                                        style={styles.albumHeroGlyphButton}
-                                                    >
-                                                        <CircularDownloadGlyph
-                                                            completed={downloadAggregate.completed}
-                                                            progress={downloadAggregate.progress}
-                                                        />
-                                                    </Pressable>
-                                                ) : null}
-                                                {canEditPlaylist ? (
-                                                    <Pressable
-                                                        accessibilityLabel="Edit playlist"
-                                                        accessibilityRole="button"
-                                                        onPress={() => setPlaylistEditVisible(true)}
-                                                        style={styles.albumHeroGlyphButton}
-                                                    >
-                                                        <GearGlyph color={colors.text} />
-                                                    </Pressable>
-                                                ) : null}
-                                                <Pressable
-                                                    accessibilityLabel="More options"
-                                                    accessibilityRole="button"
-                                                    onPress={handleOpenDetailContextMenu}
-                                                    style={styles.albumHeroGlyphButton}
-                                                >
-                                                    <MoreGlyph color={colors.text} />
-                                                </Pressable>
-                                            </View>
-                                            <View style={styles.albumHeroActions}>
-                                                {detail.tracks.length > 0 ? (
-                                                    <Pressable
-                                                        accessibilityLabel={
-                                                            playlistSearchVisible
-                                                                ? 'Close playlist search'
-                                                                : 'Search playlist'
-                                                        }
-                                                        accessibilityRole="button"
-                                                        hitSlop={8}
-                                                        onPress={() => {
-                                                            if (playlistSearchVisible) {
-                                                                closePlaylistSearch();
-                                                                return;
-                                                            }
-                                                            setPlaylistSearchVisible(true);
-                                                        }}
-                                                        style={styles.albumHeroGlyphButton}
-                                                    >
-                                                        <SearchGlyph color="rgba(245,245,245,0.55)" />
-                                                    </Pressable>
-                                                ) : null}
-                                                {showPlaylistShuffle ? (
-                                                    <Pressable
-                                                        accessibilityLabel="Shuffle"
-                                                        accessibilityRole="button"
-                                                        onPress={() => void onShufflePlay(detail, displayTracks)}
-                                                        style={styles.albumHeroGlyphButton}
-                                                    >
-                                                        <ShuffleGlyph color={colors.text} size={28} />
-                                                    </Pressable>
-                                                ) : null}
-                                                {heroPlayTrack ? (
-                                                    <Pressable
-                                                        accessibilityLabel="Play"
-                                                        accessibilityRole="button"
-                                                        onPress={() =>
-                                                            onPlayTrack(
-                                                                detail,
-                                                                heroPlayTrack,
-                                                                heroPlayIndex,
-                                                                heroPlayQueue,
-                                                            )
-                                                        }
-                                                        style={[
-                                                            styles.albumHeroGlyphButton,
-                                                            styles.albumHeroPlayButton,
-                                                        ]}
-                                                    >
-                                                        <PlayPauseGlyph
-                                                            color={colors.background}
-                                                            isPlaying={false}
-                                                            size={22}
-                                                        />
-                                                    </Pressable>
-                                                ) : null}
-                                            </View>
-                                        </View>
-                                    </>
-                                )}
-                            </View>
+                            {hero}
                             <View style={styles.homeSection}>
-                                {playlistManageMode ? (
+                                {isManageMode ? (
                                     <View style={styles.playlistManageBar}>
                                         <Text style={styles.playlistManageBarText}>
                                             {playlistSelectedTrackIds.size} selected
@@ -1191,10 +460,7 @@ export const MediaDetailLoaded = ({
                                             <Pressable
                                                 accessibilityRole="button"
                                                 disabled={playlistManageSaving}
-                                                onPress={() => {
-                                                    setPlaylistManageMode(false);
-                                                    setPlaylistSelectedTrackIds(new Set());
-                                                }}
+                                                onPress={handleCancelManage}
                                             >
                                                 <Text style={styles.editPlaylistGhostButtonText}>
                                                     Cancel
@@ -1211,7 +477,11 @@ export const MediaDetailLoaded = ({
                                                 {playlistManageSaving ? (
                                                     <ActivityIndicator color={colors.accent} />
                                                 ) : (
-                                                    <Text style={styles.editPlaylistDangerButtonText}>
+                                                    <Text
+                                                        style={
+                                                            styles.editPlaylistDangerButtonText
+                                                        }
+                                                    >
                                                         Remove
                                                     </Text>
                                                 )}
@@ -1236,141 +506,24 @@ export const MediaDetailLoaded = ({
                         </>
                     }
                     maintainVisibleContentPosition={FLASH_LIST_MAINTAIN_POSITION_DISABLED}
-                    onScroll={detailScrollHandler}
-                    renderItem={
-                        isAwaitingDetail
-                            ? () => <SkeletonTrackRow />
-                            : ({ item, index }) => renderTrackRow(item, index)
-                    }
+                    onScroll={collapsedHeader.scrollHandler}
+                    renderItem={isAwaitingDetail ? renderSkeletonRow : renderTrackItem}
                     scrollEventThrottle={16}
                     showsVerticalScrollIndicator={false}
                 />
-                <Reanimated.View
-                    pointerEvents={playlistSearchVisible ? 'auto' : 'none'}
-                    style={[
-                        styles.playlistFloatingSearchWrapper,
-                        { top: playlistSearchFloatingTop },
-                        playlistSearchAnimatedStyle,
-                    ]}
-                >
-                    <View
-                        style={[
-                            styles.inlineSearchBar,
-                            styles.inlineSearchBarElevated,
-                            styles.playlistFloatingSearchBar,
-                        ]}
-                    >
-                        <SearchGlyph color={colors.muted} />
-                        <TextInput
-                            autoCapitalize="none"
-                            autoCorrect={false}
-                            onChangeText={setPlaylistSearchQuery}
-                            placeholder="Search this playlist"
-                            placeholderTextColor={colors.muted}
-                            ref={playlistSearchInputRef}
-                            returnKeyType="search"
-                            style={styles.inlineSearchInput}
-                            value={playlistSearchQuery}
-                        />
-                        {playlistSearchQuery.length > 0 ? (
-                            <Pressable
-                                accessibilityLabel="Clear playlist search"
-                                accessibilityRole="button"
-                                onPress={() => setPlaylistSearchQuery('')}
-                                style={styles.inlineSearchIconButton}
-                            >
-                                <ClearGlyph color={colors.muted} />
-                            </Pressable>
-                        ) : null}
-                    </View>
-                </Reanimated.View>
-                <View pointerEvents="box-none" style={styles.detailCollapsedTopbar}>
-                    <Reanimated.View
-                        pointerEvents="none"
-                        style={[
-                            styles.detailCollapsedTopbarBackdrop,
-                            collapsedHeaderBackdropStyle,
-                        ]}
-                    />
-                    <Pressable
-                        accessibilityLabel="Back"
-                        accessibilityRole="button"
-                        onPress={onBack}
-                        style={styles.detailCollapsedBackButton}
-                    >
-                        <Text style={styles.detailCollapsedBackGlyph}>‹</Text>
-                    </Pressable>
-                    <Reanimated.View
-                        pointerEvents="none"
-                        style={[
-                            styles.detailCollapsedTitleWrap,
-                            collapsedHeaderContentStyle,
-                        ]}
-                    >
-                        <Text numberOfLines={1} style={styles.detailCollapsedTitle}>
-                            {detail.title}
-                        </Text>
-                    </Reanimated.View>
-                    <Reanimated.View
-                        pointerEvents={isCollapsedHeaderInteractive ? 'auto' : 'none'}
-                        style={[styles.detailCollapsedActions, collapsedHeaderContentStyle]}
-                    >
-                        {showPlaylistShuffle ? (
-                            <Pressable
-                                accessibilityLabel="Shuffle"
-                                accessibilityRole="button"
-                                hitSlop={10}
-                                onPress={() => void onShufflePlay(detail, displayTracks)}
-                                style={styles.detailCollapsedIconButton}
-                            >
-                                <ShuffleGlyph color={colors.text} size={20} />
-                            </Pressable>
-                        ) : null}
-                        {canPlayDetail && heroPlayTrack ? (
-                            <Pressable
-                                accessibilityLabel="Play"
-                                accessibilityRole="button"
-                                onPress={() =>
-                                    onPlayTrack(
-                                        detail,
-                                        heroPlayTrack,
-                                        heroPlayIndex,
-                                        heroPlayQueue,
-                                    )
-                                }
-                                style={styles.detailCollapsedPlayButton}
-                            >
-                                <PlayPauseGlyph
-                                    color={colors.background}
-                                    isPlaying={false}
-                                    size={16}
-                                />
-                            </Pressable>
-                        ) : null}
-                    </Reanimated.View>
-                </View>
-                <TrackPlaylistMenu
-                    actionState={playlistActionState}
-                    canCreatePlaylist={canCreatePlaylist}
-                    onAddToPlaylist={(playlist) => void handleAddToPlaylist(playlist)}
-                    onClose={() => {
-                        setPlaylistMenuTrack(null);
-                        setPlaylistActionState({ status: 'idle' });
-                    }}
-                    onCreatePlaylist={(name) => void handleCreatePlaylist(name)}
-                    open={Boolean(playlistMenuTrack)}
-                    playlists={playlistTargets}
-                    track={playlistMenuTrack}
+                <PlaylistFloatingSearch
+                    onChangeQuery={setPlaylistSearchQuery}
+                    query={playlistSearchQuery}
+                    rootRef={rootRef}
+                    visible={playlistSearchVisible}
                 />
+                {collapsedTopbar}
                 <EditPlaylistSheet
                     detail={detail}
-                    onClose={() => setPlaylistEditVisible(false)}
+                    onClose={handleCloseEditPlaylist}
                     onDeleted={onBack}
-                    onManageTracks={() => {
-                        setPlaylistManageMode(true);
-                        setPlaylistSelectedTrackIds(new Set());
-                    }}
-                    onSaved={() => void onReloadDetail?.()}
+                    onManageTracks={handleManageTracks}
+                    onSaved={handlePlaylistSaved}
                     serverConnection={serverConnection}
                     visible={playlistEditVisible}
                 />
@@ -1378,193 +531,16 @@ export const MediaDetailLoaded = ({
         );
     }
 
-    const albumDetailListHeader = (
-        <>
-            <View style={styles.albumHero}>
-                    <View style={styles.albumHeroArtworkWrap}>
-                        <DetailHeroArtwork
-                            artworkImageId={heroArtworkImageId}
-                            contentSource={detail.source}
-                            fallbackUri={fallbackArtworkUrl}
-                            letter={detail.title.slice(0, 1)}
-                            primaryUri={heroArtworkUrl}
-                            serverConnection={serverConnection}
-                            style={styles.albumHeroArtwork}
-                        />
-                    </View>
-                    <View style={styles.albumHeroBadgeRow}>
-                        {isAwaitingDetail ? (
-                            heroSkeletonBadge
-                        ) : detail.type === MobileMediaDetailType.AUDIOBOOK ? null : (
-                            <Text style={styles.albumHeroEyebrow}>
-                                {getDetailTypeLabel(detail.type)}
-                            </Text>
-                        )}
-                    </View>
-                    <Text numberOfLines={2} style={styles.albumHeroTitle}>
-                        {detail.title}
-                    </Text>
-                    {isAwaitingDetail ? (
-                        heroSkeletonMetaActions
-                    ) : (
-                        <>
-                            {detail.year ? (
-                                <Text style={styles.albumHeroYear}>{detail.year}</Text>
-                            ) : null}
-                            <View style={styles.albumHeroMeta}>
-                                {Array.from(
-                                    new Set(
-                                        [
-                                            detail.subtitle,
-                                            ...(detail.metadataLines ?? []).filter((line) => line !== detail.year?.toString()),
-                                        ].filter((line): line is string => Boolean(line))
-                                    )
-                                ).map((line, index) => (
-                                    <Text
-                                        key={`${line}-${index}`}
-                                        numberOfLines={1}
-                                        style={styles.albumHeroMetaLine}
-                                    >
-                                        {line}
-                                    </Text>
-                                ))}
-                                {heroFormatLabel ? (
-                                    <Text style={styles.formatBadgeMeta}>{heroFormatLabel}</Text>
-                                ) : null}
-                            </View>
-                            <View
-                                onLayout={handleHeroActionsBarLayout}
-                                style={styles.albumHeroActionsBar}
-                            >
-                                <View style={styles.albumHeroLeftActions}>
-                                    {canDownloadDetail ? (
-                                        <Pressable
-                                            accessibilityLabel={
-                                                downloadAggregate.completed
-                                                    ? 'Downloaded'
-                                                    : 'Download'
-                                            }
-                                            accessibilityRole="button"
-                                            onPress={handleDownloadDetail}
-                                            style={styles.albumHeroGlyphButton}
-                                        >
-                                            <CircularDownloadGlyph
-                                                completed={downloadAggregate.completed}
-                                                progress={downloadAggregate.progress}
-                                            />
-                                        </Pressable>
-                                    ) : null}
-                                    <Pressable
-                                        accessibilityLabel="More options"
-                                        accessibilityRole="button"
-                                        onPress={handleOpenDetailContextMenu}
-                                        style={styles.albumHeroGlyphButton}
-                                    >
-                                        <MoreGlyph color={colors.text} />
-                                    </Pressable>
-                                </View>
-                                <View style={styles.albumHeroActions}>
-                                    {showPlaylistShuffle ? (
-                                        <Pressable
-                                            accessibilityLabel="Shuffle"
-                                            accessibilityRole="button"
-                                            onPress={() => void onShufflePlay(detail, displayTracks)}
-                                            style={styles.albumHeroGlyphButton}
-                                        >
-                                            <ShuffleGlyph color={colors.text} size={28} />
-                                        </Pressable>
-                                    ) : null}
-                                    {heroPlayTrack ? (
-                                        <Pressable
-                                            accessibilityLabel="Play"
-                                            accessibilityRole="button"
-                                            onPress={() =>
-                                                onPlayTrack(detail, heroPlayTrack, heroPlayIndex, heroPlayQueue)
-                                            }
-                                            style={[
-                                                styles.albumHeroGlyphButton,
-                                                styles.albumHeroPlayButton,
-                                            ]}
-                                        >
-                                            <PlayPauseGlyph
-                                                color={colors.background}
-                                                isPlaying={false}
-                                                size={22}
-                                            />
-                                        </Pressable>
-                                    ) : null}
-                                </View>
-                            </View>
-                        </>
-                    )}
-                </View>
-            <View style={styles.homeSection}>
-                {!isMusic ? <Text style={styles.sectionTitle}>{sectionTitle}</Text> : null}
-            </View>
-        </>
-    );
-
-    const detailCollapsedTopbar = (
-        <View pointerEvents="box-none" style={styles.detailCollapsedTopbar}>
-            <Reanimated.View
-                pointerEvents="none"
-                style={[styles.detailCollapsedTopbarBackdrop, collapsedHeaderBackdropStyle]}
-            />
-            <Pressable
-                accessibilityLabel="Back"
-                accessibilityRole="button"
-                onPress={onBack}
-                style={styles.detailCollapsedBackButton}
-            >
-                <Text style={styles.detailCollapsedBackGlyph}>‹</Text>
-            </Pressable>
-            <Reanimated.View
-                pointerEvents="none"
-                style={[styles.detailCollapsedTitleWrap, collapsedHeaderContentStyle]}
-            >
-                <Text numberOfLines={1} style={styles.detailCollapsedTitle}>
-                    {detail.title}
-                </Text>
-            </Reanimated.View>
-            <Reanimated.View
-                pointerEvents={isCollapsedHeaderInteractive ? 'auto' : 'none'}
-                style={[styles.detailCollapsedActions, collapsedHeaderContentStyle]}
-            >
-                {showPlaylistShuffle ? (
-                    <Pressable
-                        accessibilityLabel="Shuffle"
-                        accessibilityRole="button"
-                        hitSlop={10}
-                        onPress={() => void onShufflePlay(detail, displayTracks)}
-                        style={styles.detailCollapsedIconButton}
-                    >
-                        <ShuffleGlyph color={colors.text} size={20} />
-                    </Pressable>
-                ) : null}
-                {canPlayDetail && heroPlayTrack ? (
-                    <Pressable
-                        accessibilityLabel="Play"
-                        accessibilityRole="button"
-                        onPress={() =>
-                            onPlayTrack(detail, heroPlayTrack, heroPlayIndex, heroPlayQueue)
-                        }
-                        style={styles.detailCollapsedPlayButton}
-                    >
-                        <PlayPauseGlyph color={colors.background} isPlaying={false} size={16} />
-                    </Pressable>
-                ) : null}
-            </Reanimated.View>
-        </View>
-    );
-
     if (!isArtistDetail) {
         return (
             <View style={styles.mediaDetailScreen}>
                 <ReanimatedFlashList
-                    contentContainerStyle={styles.mediaDetailContent}
+                    contentContainerStyle={[
+                        styles.mediaDetailContent,
+                        { paddingBottom: bottomInset },
+                    ]}
                     data={listData}
                     drawDistance={PLAYLIST_TRACK_DRAW_DISTANCE}
-                    extraData={downloadedTrackKeys}
                     keyExtractor={(track, index) => `${track.id}:${index}`}
                     ListEmptyComponent={
                         <Text style={styles.mutedText}>
@@ -1573,26 +549,22 @@ export const MediaDetailLoaded = ({
                                 : 'No tracks match the current filter.'}
                         </Text>
                     }
-                    ListHeaderComponent={albumDetailListHeader}
-                    onScroll={detailScrollHandler}
-                    renderItem={isAwaitingDetail ? () => <SkeletonTrackRow /> : renderListTrackItem}
+                    ListHeaderComponent={
+                        <>
+                            {hero}
+                            <View style={styles.homeSection}>
+                                {!isMusic ? (
+                                    <Text style={styles.sectionTitle}>{sectionTitle}</Text>
+                                ) : null}
+                            </View>
+                        </>
+                    }
+                    onScroll={collapsedHeader.scrollHandler}
+                    renderItem={isAwaitingDetail ? renderSkeletonRow : renderTrackItem}
                     scrollEventThrottle={16}
                     showsVerticalScrollIndicator={false}
                 />
-                {detailCollapsedTopbar}
-                <TrackPlaylistMenu
-                    actionState={playlistActionState}
-                    canCreatePlaylist={canCreatePlaylist}
-                    onAddToPlaylist={(playlist) => void handleAddToPlaylist(playlist)}
-                    onClose={() => {
-                        setPlaylistMenuTrack(null);
-                        setPlaylistActionState({ status: 'idle' });
-                    }}
-                    onCreatePlaylist={(name) => void handleCreatePlaylist(name)}
-                    open={Boolean(playlistMenuTrack)}
-                    playlists={playlistTargets}
-                    track={playlistMenuTrack}
-                />
+                {collapsedTopbar}
             </View>
         );
     }
@@ -1600,8 +572,8 @@ export const MediaDetailLoaded = ({
     return (
         <View style={styles.mediaDetailScreen}>
             <Reanimated.ScrollView
-                contentContainerStyle={styles.mediaDetailContent}
-                onScroll={detailScrollHandler}
+                contentContainerStyle={[styles.mediaDetailContent, { paddingBottom: bottomInset }]}
+                onScroll={collapsedHeader.scrollHandler}
                 scrollEventThrottle={16}
                 showsVerticalScrollIndicator={false}
             >
@@ -1636,21 +608,7 @@ export const MediaDetailLoaded = ({
                     serverConnection={serverConnection}
                 />
             </Reanimated.ScrollView>
-            {detailCollapsedTopbar}
-            <TrackPlaylistMenu
-                actionState={playlistActionState}
-                canCreatePlaylist={canCreatePlaylist}
-                onAddToPlaylist={(playlist) => void handleAddToPlaylist(playlist)}
-                onClose={() => {
-                    setPlaylistMenuTrack(null);
-                    setPlaylistActionState({ status: 'idle' });
-                }}
-                onCreatePlaylist={(name) => void handleCreatePlaylist(name)}
-                open={Boolean(playlistMenuTrack)}
-                playlists={playlistTargets}
-                track={playlistMenuTrack}
-            />
+            {collapsedTopbar}
         </View>
     );
-};
-
+});

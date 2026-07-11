@@ -6,7 +6,6 @@ import podcastFeedStyles from './home-podcast-feed.module.css';
 
 import {
     fetchSamoHomePodcastFeed,
-    isSamoLongFormServer,
     loadSamoPodcastLibraryItem,
     samoPodcastEpisodeToAbsEpisode,
     type SamoPodcastFeedEntry,
@@ -189,7 +188,7 @@ export const HomePodcastFeedSection = ({
     const playEntry = useCallback(
         async (entry: SamoPodcastFeedEntry) => {
             const showId = entry.episode.podcastId;
-            if (!samoServer || !showId || !isSamoLongFormServer(samoServer)) {
+            if (!samoServer || !showId) {
                 return;
             }
 

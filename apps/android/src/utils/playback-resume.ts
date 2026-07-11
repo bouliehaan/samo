@@ -3,6 +3,7 @@ import {
     type MobilePlayableAudio,
     parsePodcastPlaybackEpisodeId,
     parsePodcastPlaybackShowId,
+    parseSamoAudiobookIdFromPlaybackId,
 } from '@samo/core/mobile';
 import {
     ensureSamoStreamToken,
@@ -13,6 +14,7 @@ import {
 import { loadAbsCurrentProgress } from '../services/abs-progress';
 import { type AndroidPlaybackState } from '../types/playback';
 
+import { getNativeResumeProgress } from './native-resume';
 import { isSamoAudiobookPlayback } from './samo-audiobook-playback';
 
 const samoFetch: typeof fetch = (url, init) => fetch(url, init);
@@ -46,6 +48,17 @@ export const getResumePositionSeconds = (
             (playbackState.positionMs ?? 0) > 0
         ) {
             return Math.floor((playbackState.positionMs ?? 0) / 1000);
+        }
+
+        // Not reusing the LIVE playhead (e.g. returning to the book from radio, or
+        // a fresh open): honor the resume position baked into the item by the queue
+        // build / refreshPlayableResumeFromServer, exactly like the music path
+        // below. Returning 0 here was THE bug — the recovered position reached the
+        // progress writer (the "started" write logged the right seconds) but never
+        // became an actual seek, so the book played from 0 and then overwrote the
+        // saved position with ~0.
+        if (item.initialPositionSeconds && item.initialPositionSeconds > 0) {
+            return item.initialPositionSeconds;
         }
 
         return 0;
@@ -144,11 +157,31 @@ export const refreshPlayableResumeFromServer = async (
                 streamToken,
             );
         }
+        // Server read failed (null) — fall back to the native local resume cache
+        // so a transient LAN outage can't restart the episode at 0.
+        if (!progress) {
+            const cached = await getNativeResumeProgress('podcast-episode', episodeId);
+            if (cached && cached.progressSeconds > 0 && !cached.completed) {
+                const streamToken = await ensureSamoStreamToken(authentication, samoFetch).catch(
+                    () => undefined,
+                );
+                return applySamoPodcastStreamResume(
+                    item,
+                    Math.floor(cached.progressSeconds),
+                    authentication,
+                    streamToken,
+                );
+            }
+        }
         return item;
     }
 
-    const audiobookMatch = item.id.match(/:audiobook:([^:]+)$/);
-    const itemId = audiobookMatch?.[1];
+    // Audiobook queue ids are the per-file form `…:audiobook:<bookId>:file:<mediaFileId>`
+    // (see samoAudiobookFilePlaybackId). A bare `/:audiobook:([^:]+)$/` never
+    // matched that, so this returned early and the server resume position was
+    // NEVER loaded — every audiobook started at 0 even though the native writer
+    // had saved progress. Use the shared parser that handles BOTH id shapes.
+    const itemId = parseSamoAudiobookIdFromPlaybackId(item.id);
     if (!itemId) {
         return item;
     }
@@ -156,6 +189,16 @@ export const refreshPlayableResumeFromServer = async (
     const progress = await loadAbsCurrentProgress(authentication, itemId);
     if (progress?.currentTimeSeconds && progress.currentTimeSeconds > 0 && !progress.isFinished) {
         return withResumePosition(item, progress.currentTimeSeconds);
+    }
+    // Server read failed (null) — fall back to the native local resume cache so a
+    // transient LAN outage can't restart the book at 0 (which then overwrote the
+    // good server position). A genuinely-finished book returns a non-null
+    // progress with isFinished, so it stays at 0 and never hits this fallback.
+    if (!progress) {
+        const cached = await getNativeResumeProgress('audiobook', itemId);
+        if (cached && cached.progressSeconds > 0 && !cached.completed) {
+            return withResumePosition(item, Math.floor(cached.progressSeconds));
+        }
     }
 
     return item;
@@ -169,9 +212,14 @@ export const shouldAutoRecoverPlayback = (source: MobilePlayableAudio['source'] 
  * without it. The overlay is a nicety (cross-device resume); the tap is the
  * job. An unbounded wait here is what made episode taps look completely dead
  * while the server was slow — and the queued-up dead taps then replayed in a
- * burst once it recovered.
+ * burst once it recovered. 4s was tuned assuming a LAN box; a Samo Server
+ * reached over the internet (Cloudflare Tunnel) can legitimately take longer
+ * than that to answer, which silently dropped the resume position far more
+ * often than a slow-but-healthy server should. 8s matches the interactive
+ * budget already used for login (`AUTH_REQUEST_TIMEOUT_MS`) — still bounded,
+ * just no longer tuned for LAN-only latency.
  */
-export const RESUME_REFRESH_TIMEOUT_MS = 4000;
+export const RESUME_REFRESH_TIMEOUT_MS = 8000;
 
 /** [refreshPlayableResumeFromServer] with a hard time budget — resolves the
  *  item unchanged when the server can't answer in time. */

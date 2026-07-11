@@ -101,30 +101,51 @@ internal fun parseNativePlaybackQueue(
   sourceLabel: String?,
 ): SamoNativePlaybackQueue? {
   val queueArray = queueItems ?: return null
-  if (queueArray.size() < 2) {
-    return null
-  }
-
-  if (sourceLabel == "radio") {
-    return null
-  }
-
   val items = ArrayList<HashMap<String, Any?>>(queueArray.size())
   for (index in 0 until queueArray.size()) {
     val item = queueArray.getMap(index) ?: continue
-    if (item.getOptionalString("source") == "radio") {
-      return null
-    }
     items.add(SamoBridgeMapCopier.toHashMap(item))
   }
+  return buildNativePlaybackQueue(items, queueIndex, sourceLabel)
+}
 
+/**
+ * Pure mirror-queue decision, split out of [parseNativePlaybackQueue] so it can
+ * be unit-tested without the React Native bridge types.
+ *
+ * Radio is a live, endless stream you can't gaplessly advance OUT of, so when
+ * it's the CURRENTLY PLAYING item ([sourceLabel]) there's no queue to mirror.
+ * But a radio item sitting LATER in the queue MUST stay in the mirror: native
+ * auto-advance — STATE_ENDED -> requestQueueAdvanceFromEnded ->
+ * tryNavigateNativeQueue -> playQueueItemAt -> playLocally(radio) — is the ONLY
+ * advancer that runs while the app is asleep (JS is frozen by Doze). The old
+ * code returned null for the WHOLE queue the moment ANY item was radio, which
+ * left a backgrounded "podcast -> radio" (also music/audiobook -> radio, or
+ * radio mid-queue) with nothing for native to advance into: the radio never
+ * started until the user unlocked the phone and the JS nav-request backstop
+ * thawed. The JS gate shouldMirrorPlaybackQueueToNative (playback-queue-mirror.ts)
+ * was already fixed to mirror radio-later queues; this is the other half of that
+ * fix. Radio items are kept HERE but stay out of the gapless ExoPlayer timeline
+ * (the `all { music || podcast }` gates in playLocally and reconcileExoPlaylistToQueue
+ * exclude them), so a radio-bearing queue always takes the single-item +
+ * mirror-advance path, and playLocally treats the radio item as a live stream
+ * when it's reached.
+ */
+internal fun buildNativePlaybackQueue(
+  items: List<HashMap<String, Any?>>,
+  queueIndex: Int?,
+  sourceLabel: String?,
+): SamoNativePlaybackQueue? {
   if (items.size < 2) {
+    return null
+  }
+  if (sourceLabel == "radio") {
     return null
   }
 
   val requestedIndex = queueIndex ?: 0
   val clampedIndex = requestedIndex.coerceIn(0, items.lastIndex)
-  return SamoNativePlaybackQueue(items, clampedIndex)
+  return SamoNativePlaybackQueue(items.toMutableList(), clampedIndex)
 }
 
 internal fun ReadableMap.syncNativePlaybackQueue(

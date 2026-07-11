@@ -1,7 +1,11 @@
-import { createContext, useContext } from 'react';
+import { useDownloadsSelector } from '../state/downloads-state';
 
-export const DownloadedCollectionKeysContext = createContext<Set<string>>(new Set());
-export const DownloadedTrackKeysContext = createContext<Set<string>>(new Set());
+// These hooks read straight from the module-level downloads store, so a tile
+// that shows a "downloaded" tick re-renders when the key Sets change and on
+// nothing else. (They used to be React Contexts provided by App.tsx — that
+// propagated every download tick through the whole tree.)
 
-export const useDownloadedCollectionKeys = () => useContext(DownloadedCollectionKeysContext);
-export const useDownloadedTrackKeys = () => useContext(DownloadedTrackKeysContext);
+export const useDownloadedCollectionKeys = () =>
+    useDownloadsSelector((s) => s.downloadedCollectionKeys);
+export const useDownloadedTrackKeys = () =>
+    useDownloadsSelector((s) => s.downloadedTrackKeys);

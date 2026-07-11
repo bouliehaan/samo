@@ -41,21 +41,18 @@ class MainActivity : ReactActivity() {
   }
 
   /**
-    * Align the back button behavior with Android S
-    * where moving root activities to background instead of finishing activities.
-    * @see <a href="https://developer.android.com/reference/android/app/Activity#onBackPressed()">onBackPressed</a>
+    * Root back must BACKGROUND the task, never finish the activity. The
+    * playback foreground service keeps the process — and the JS VM with its
+    * module stores — alive across a finish, so the next launch re-runs the
+    * React root against surviving store state (observed: restored tab with a
+    * permanently blank scene). The Android 12+ system default is supposed to
+    * move root launcher tasks to back on its own, but this device (LineageOS,
+    * API 36) still finished the activity — so enforce it on every SDK level.
     */
   override fun invokeDefaultOnBackPressed() {
-      if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.R) {
-          if (!moveTaskToBack(false)) {
-              // For non-root activities, use the default implementation to finish them.
-              super.invokeDefaultOnBackPressed()
-          }
-          return
+      if (!moveTaskToBack(false)) {
+          // Non-root activities keep the default finish behavior.
+          super.invokeDefaultOnBackPressed()
       }
-
-      // Use the default back button implementation on Android S
-      // because it's doing more than [Activity.moveTaskToBack] in fact.
-      super.invokeDefaultOnBackPressed()
   }
 }

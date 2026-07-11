@@ -4,7 +4,6 @@ import { useMemo } from 'react';
 import { api } from '/@/renderer/api';
 import { queryKeys } from '/@/renderer/api/query-keys';
 import {
-    isSamoLongFormServer,
     listSamoAudiobookLibraryItems,
     listSamoPodcastLibraryItems,
 } from '/@/renderer/api/samo/samo-long-form';
@@ -103,7 +102,7 @@ export interface UnifiedSearchResults {
 }
 
 export type UnifiedSearchSourceErrors = Partial<Record<UnifiedSearchSourceKey, string>>;
-export type UnifiedSearchSourceKey = 'abs' | 'music' | 'playlists' | 'radio';
+export type UnifiedSearchSourceKey = 'longForm' | 'music' | 'playlists' | 'radio';
 
 export interface UnifiedSearchState {
     bestMatches: RankedResult[];
@@ -335,7 +334,6 @@ const getErrorMessage = (error: unknown): string | undefined => {
 export const useUnifiedSearch = (rawQuery: string): UnifiedSearchState => {
     const musicServer = useCurrentServer();
     const longFormMediaServer = useLongFormMediaServer();
-    const isSamoLongForm = isSamoLongFormServer(longFormMediaServer);
     const ctx = useMemo(() => buildNeedleContext(rawQuery), [rawQuery]);
     const enabled = ctx.needle.length > 0;
 
@@ -382,12 +380,14 @@ export const useUnifiedSearch = (rawQuery: string): UnifiedSearchState => {
     });
 
     const samoLongFormItemsQuery = useQuery({
-        enabled: enabled && isSamoLongForm && Boolean(longFormMediaServer),
+        enabled: enabled && Boolean(longFormMediaServer),
         gcTime: ABS_LIBRARY_GC_TIME_MS,
         queryFn: async () => {
             const [audiobooks, podcasts] = await Promise.all([
                 listSamoAudiobookLibraryItems(longFormMediaServer!),
-                listSamoPodcastLibraryItems(longFormMediaServer!),
+                // Search ranks individual episode titles, so it needs each show's
+                // episodes (opt-in — the library grid/sidebar skip this N+1).
+                listSamoPodcastLibraryItems(longFormMediaServer!, { includeEpisodes: true }),
             ]);
             return [...audiobooks, ...podcasts];
         },
@@ -408,11 +408,11 @@ export const useUnifiedSearch = (rawQuery: string): UnifiedSearchState => {
         ((hasMusicServer && musicSearchQuery.isPending) ||
             (hasMusicServer && playlistsQuery.isPending) ||
             (hasMusicServer && radioStationsQuery.isPending) ||
-            (hasLongFormServer && isSamoLongForm && samoLongFormItemsQuery.isPending));
+            (hasLongFormServer && samoLongFormItemsQuery.isPending));
 
     const sourceErrors = useMemo<UnifiedSearchSourceErrors>(
         () => ({
-            abs: getErrorMessage(samoLongFormItemsQuery.error) ?? undefined,
+            longForm: getErrorMessage(samoLongFormItemsQuery.error) ?? undefined,
             music: getErrorMessage(musicSearchQuery.error),
             playlists: getErrorMessage(playlistsQuery.error),
             radio: getErrorMessage(radioStationsQuery.error),

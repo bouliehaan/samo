@@ -5,7 +5,6 @@ import { useMemo, useState } from 'react';
 import { generatePath, useNavigate } from 'react-router';
 
 import {
-    isSamoLongFormServer,
     listSamoPodcastLibraryItems,
     useLongFormMediaServer,
 } from '/@/renderer/api/samo/samo-long-form';
@@ -45,30 +44,21 @@ const getPodcastSearchText = (item: LongFormLibraryItem) =>
 const PodcastCover = ({ item }: { item: LongFormLibraryItem }) => {
     const server = useLongFormMediaServer();
 
-    const coverQuery = useQuery({
-        enabled: Boolean(server?.id && item.id && !isSamoLongFormServer(server)),
-        queryFn: async () => null,
-        queryKey: ['audiobookshelf', 'cover', server?.id, item.id],
-        staleTime: 1000 * 60 * 60,
-    });
-
-    const coverSrc = isSamoLongFormServer(server)
-        ? (item.media?.metadata?.imageUrl ?? undefined)
-        : (coverQuery.data ?? undefined);
+    const coverSrc = item.media?.metadata?.imageUrl ?? undefined;
 
     const imageRequest = useMemo(() => {
-        if (!isSamoLongFormServer(server) || !coverSrc) {
+        if (!coverSrc || !server) {
             return undefined;
         }
 
         return buildSamoAuthenticatedImageRequest(
             {
-                credential: server!.credential,
+                credential: server.credential,
                 type: ServerType.SAMO,
-                url: server!.url,
+                url: server.url,
             },
             coverSrc,
-            ['samo', server!.id, 'podcast-cover', item.id].join(':'),
+            ['samo', server.id, 'podcast-cover', item.id].join(':'),
         );
     }, [coverSrc, item.id, server]);
 
@@ -179,10 +169,9 @@ const PodcastsRoute = () => {
     const server = useLongFormMediaServer();
     const navigate = useNavigate();
     const [searchQuery, setSearchQuery] = useState('');
-    const isSamo = isSamoLongFormServer(server);
 
     const samoItemsQuery = useQuery({
-        enabled: Boolean(server?.id) && isSamo,
+        enabled: Boolean(server?.id),
         queryFn: () => listSamoPodcastLibraryItems(server!),
         queryKey: ['samo', 'podcasts', server?.id],
         staleTime: 1000 * 60 * 5,
@@ -212,15 +201,11 @@ const PodcastsRoute = () => {
                         <Text fw={700} size="xl">
                             Podcasts
                         </Text>
-                        <Text isMuted>
-                            {isSamo
-                                ? 'Browse podcasts from your Samo server.'
-                                : 'Browse your Audiobookshelf podcasts.'}
-                        </Text>
+                        <Text isMuted>Browse podcasts from your Samo server.</Text>
                     </Stack>
 
                     {!server ? (
-                        <Text isMuted>Add a Samo or Audiobookshelf server to browse podcasts.</Text>
+                        <Text isMuted>Add a Samo server to browse podcasts.</Text>
                     ) : isLoading ? (
                         <Text isMuted>Loading podcasts…</Text>
                     ) : !items.length ? (

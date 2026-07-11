@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from 'react';
 import { type MobilePlayableAudio } from '@samo/core/mobile';
 
-import { type AndroidCastState } from '../services/audio-playback';
+import { type AndroidCastState, type AndroidRepeatMode } from '../services/audio-playback';
 import { type AndroidLocalFavoriteItem } from '../services/local-favorites';
 import { type AndroidRecentContentItem } from '../services/recent-content';
 
@@ -12,6 +12,7 @@ export type AppSessionState = {
     lastPlayedItem: MobilePlayableAudio | null;
     localFavorites: AndroidLocalFavoriteItem[];
     recentContentItems: AndroidRecentContentItem[];
+    repeatMode: AndroidRepeatMode;
 };
 
 const initialAppSessionState: AppSessionState = {
@@ -24,6 +25,7 @@ const initialAppSessionState: AppSessionState = {
     lastPlayedItem: null,
     localFavorites: [],
     recentContentItems: [],
+    repeatMode: 'off',
 };
 
 type AppSessionAction =
@@ -43,6 +45,10 @@ type AppSessionAction =
           localFavorites:
               | AndroidLocalFavoriteItem[]
               | ((current: AndroidLocalFavoriteItem[]) => AndroidLocalFavoriteItem[]);
+      }
+    | {
+          type: 'set-repeat-mode';
+          repeatMode: AndroidRepeatMode | ((current: AndroidRepeatMode) => AndroidRepeatMode);
       }
     | {
           type: 'set-recent-content';
@@ -94,6 +100,14 @@ const appSessionReducer = (state: AppSessionState, action: AppSessionAction): Ap
                     typeof action.localFavorites === 'function'
                         ? action.localFavorites(state.localFavorites)
                         : action.localFavorites,
+            };
+        case 'set-repeat-mode':
+            return {
+                ...state,
+                repeatMode:
+                    typeof action.repeatMode === 'function'
+                        ? action.repeatMode(state.repeatMode)
+                        : action.repeatMode,
             };
         case 'set-recent-content':
             return {
@@ -169,23 +183,9 @@ const setFavoritedKeys = (
 const setIsShuffled = (isShuffled: boolean | ((current: boolean) => boolean)) =>
     dispatchAppSession({ type: 'set-is-shuffled', isShuffled });
 
-export const useAppSessionState = () => {
-    const state = useSyncExternalStore(
-        subscribeAppSession,
-        getAppSessionState,
-        getAppSessionState,
-    );
-
-    return {
-        ...state,
-        setCastState,
-        setFavoritedKeys,
-        setIsShuffled,
-        setLastPlayedItem,
-        setLocalFavorites,
-        setRecentContentItems,
-    };
-};
+const setRepeatMode = (
+    repeatMode: AndroidRepeatMode | ((current: AndroidRepeatMode) => AndroidRepeatMode),
+) => dispatchAppSession({ type: 'set-repeat-mode', repeatMode });
 
 /**
  * Subscribe to a single slice of the session state. Consumers that only need
@@ -203,5 +203,15 @@ export const useAppSessionSelector = <Selected>(
     );
 
 // The singleton setters are also exported directly so hooks that only WRITE a
-// field can dispatch without subscribing to the whole store.
-export { setIsShuffled as setAppSessionIsShuffled };
+// field can dispatch without subscribing to the whole store; the getter lets
+// event handlers read at call time without subscribing at all.
+export const getAppSession = getAppSessionState;
+export {
+    setIsShuffled as setAppSessionIsShuffled,
+    setRepeatMode as setAppSessionRepeatMode,
+    setCastState,
+    setFavoritedKeys,
+    setLastPlayedItem,
+    setLocalFavorites,
+    setRecentContentItems,
+};

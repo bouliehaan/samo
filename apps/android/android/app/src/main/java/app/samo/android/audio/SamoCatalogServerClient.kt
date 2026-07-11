@@ -10,6 +10,9 @@ import java.net.SocketTimeoutException
 import java.net.URL
 import java.net.URLEncoder
 import java.net.UnknownHostException
+import java.util.concurrent.Callable
+import java.util.concurrent.ExecutionException
+import java.util.concurrent.Executors
 
 /**
  * Native HTTP client for the Samo catalog endpoints used by Phase 5's
@@ -98,6 +101,48 @@ internal object SamoCatalogServerClient {
         return accumulator
     }
 
+    /** One page's records plus the server-reported `total` (-1 if absent). */
+    private data class PageResult(val records: List<JSONObject>, val total: Int)
+
+    /**
+     * Fetch exactly one page. Extracted out of the old `fetchPagesStreaming`
+     * loop body so both the plain sequential walk and the bounded-concurrency
+     * walk ([fetchAllPagesConcurrent]) share one request-shape implementation.
+     */
+    private fun fetchPage(
+        auth: SamoAuthMirror.Connection,
+        path: String,
+        offset: Int,
+        updatedSince: String?,
+        extraQuery: Map<String, String>,
+    ): PageResult {
+        val query = HashMap<String, String>(extraQuery).apply {
+            put("limit", PAGE_LIMIT.toString())
+            put("offset", offset.toString())
+            if (!updatedSince.isNullOrBlank()) put("updatedSince", updatedSince)
+        }
+        val body = getJson(auth, path, query)
+        // `items` is the real key (Go Page struct). `data` kept as a
+        // fallback for any endpoint that predates the unified Page shape —
+        // the original client read ONLY `data`, which exists nowhere, so
+        // every page came back "empty" with no error and the mirror
+        // silently stayed blank. samoItemsOf on the JS side reads `items`;
+        // this now matches it.
+        val page: JSONArray = when (body) {
+            is JSONObject ->
+                body.optJSONArray("items") ?: body.optJSONArray("data") ?: JSONArray()
+            is JSONArray -> body // a few endpoints return a bare array
+            else -> throw FetchException(FailureKind.Server, "$path: unexpected body shape")
+        }
+        val records = ArrayList<JSONObject>(page.length())
+        for (i in 0 until page.length()) {
+            val record = page.optJSONObject(i) ?: continue
+            records.add(record)
+        }
+        val total = (body as? JSONObject)?.optInt("total", -1) ?: -1
+        return PageResult(records, total)
+    }
+
     /**
      * Page-streaming fetch: [onPage] receives each page (≤200 rows) and the
      * page is released before the next request. Large tables MUST use this —
@@ -114,38 +159,84 @@ internal object SamoCatalogServerClient {
         var offset = 0
         var pageIndex = 0
         while (pageIndex < MAX_PAGES) {
-            val query = HashMap<String, String>(extraQuery).apply {
-                put("limit", PAGE_LIMIT.toString())
-                put("offset", offset.toString())
-                if (!updatedSince.isNullOrBlank()) put("updatedSince", updatedSince)
-            }
-            val body = getJson(auth, path, query)
-            // `items` is the real key (Go Page struct). `data` kept as a
-            // fallback for any endpoint that predates the unified Page shape —
-            // the original client read ONLY `data`, which exists nowhere, so
-            // every page came back "empty" with no error and the mirror
-            // silently stayed blank. samoItemsOf on the JS side reads `items`;
-            // this now matches it.
-            val page: JSONArray = when (body) {
-                is JSONObject ->
-                    body.optJSONArray("items") ?: body.optJSONArray("data") ?: JSONArray()
-                is JSONArray -> body // a few endpoints return a bare array
-                else -> throw FetchException(FailureKind.Server, "$path: unexpected body shape")
-            }
-            if (page.length() == 0) break
-            val records = ArrayList<JSONObject>(page.length())
-            for (i in 0 until page.length()) {
-                val record = page.optJSONObject(i) ?: continue
-                records.add(record)
-            }
-            onPage(records)
-            offset += page.length()
+            val page = fetchPage(auth, path, offset, updatedSince, extraQuery)
+            if (page.records.isEmpty()) break
+            onPage(page.records)
+            offset += page.records.size
             // Termination: trust `total` when the body carries it; otherwise a
             // short page means we're done. (No `hasMore` field exists.)
-            val total = (body as? JSONObject)?.optInt("total", -1) ?: -1
-            if (total in 0..offset) break
-            if (page.length() < PAGE_LIMIT) break
+            if (page.total in 0..offset) break
+            if (page.records.size < PAGE_LIMIT) break
             pageIndex += 1
+        }
+    }
+
+    /**
+     * Same contract as [fetchPagesStreaming] (each batch released to [onBatch]
+     * before the next round, same memory bound), but once the first page
+     * reports a trustworthy `total`, the remaining pages are fetched with
+     * bounded concurrency instead of one at a time.
+     *
+     * Why: on a LAN, a sequential page walk is invisible — each round trip is
+     * single-digit ms. Over a real internet connection (e.g. through a
+     * Cloudflare Tunnel) round-trip latency dominates instead of bandwidth, so
+     * a 14k-row table at 200 rows/page is 70 SEQUENTIAL round trips. That's
+     * the difference between a sync that finishes in a few seconds and one
+     * that takes minutes and gets cut off by the onboarding sync's anti-strand
+     * guard, landing the user on a half-populated Home. Fetching pages
+     * concurrently hides that latency behind [concurrency]-way parallelism —
+     * the same "concurrent fetch, serial write via onBatch" shape
+     * `crawlDetails` already uses in SamoCatalogSync.
+     *
+     * Falls back to a single page (caller sees no more data) if `total` isn't
+     * reported — planning concurrent offsets needs a trustworthy page count
+     * up front, and every current Samo endpoint's Page envelope includes one.
+     */
+    fun fetchAllPagesConcurrent(
+        auth: SamoAuthMirror.Connection,
+        path: String,
+        concurrency: Int,
+        updatedSince: String? = null,
+        extraQuery: Map<String, String> = emptyMap(),
+        onBatch: (List<JSONObject>) -> Unit,
+    ) {
+        val first = fetchPage(auth, path, 0, updatedSince, extraQuery)
+        if (first.records.isNotEmpty()) onBatch(first.records)
+        if (first.records.size < PAGE_LIMIT || first.total < 0) return
+        val offsetAfterFirst = first.records.size
+        if (first.total <= offsetAfterFirst) return
+
+        val remainingOffsets = mutableListOf<Int>()
+        var nextOffset = offsetAfterFirst
+        var pageIndex = 1
+        while (nextOffset < first.total && pageIndex < MAX_PAGES) {
+            remainingOffsets.add(nextOffset)
+            nextOffset += PAGE_LIMIT
+            pageIndex += 1
+        }
+        if (remainingOffsets.isEmpty()) return
+
+        val pool = Executors.newFixedThreadPool(concurrency.coerceAtLeast(1))
+        try {
+            for (batch in remainingOffsets.chunked(concurrency.coerceAtLeast(1))) {
+                val tasks = batch.map { pageOffset ->
+                    Callable { fetchPage(auth, path, pageOffset, updatedSince, extraQuery) }
+                }
+                for (future in pool.invokeAll(tasks)) {
+                    val page = try {
+                        future.get()
+                    } catch (execError: ExecutionException) {
+                        // Unwrap so callers' `catch (FetchException)` blocks
+                        // still match by type, same as a direct sequential
+                        // fetchPage() throw would — invokeAll boxes the
+                        // Callable's exception until .get() is called.
+                        throw execError.cause ?: execError
+                    }
+                    if (page.records.isNotEmpty()) onBatch(page.records)
+                }
+            }
+        } finally {
+            pool.shutdown()
         }
     }
 

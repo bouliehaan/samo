@@ -5,13 +5,19 @@ import type { ServerAuthenticationResult } from '@samo/core/server';
 import { useCallback, useRef, type MutableRefObject } from 'react';
 
 import {
+    type AndroidRepeatMode,
     getAndroidPlaybackStatus,
     pauseAndroidAudio,
     resumeAndroidAudio,
     seekAndroidAudio,
+    setAndroidRepeatMode,
     syncAndroidNativePlaybackQueue,
 } from '../services/audio-playback';
-import { useAppSessionState } from '../state/app-session';
+import {
+    getAppSession,
+    setAppSessionIsShuffled,
+    setAppSessionRepeatMode,
+} from '../state/app-session';
 import {
     getPlaybackQueue,
     setPlaybackQueue,
@@ -43,6 +49,7 @@ import {
 } from '../utils/playback-time';
 
 export interface AndroidPlaybackControls {
+    handleCycleRepeatMode: () => void;
     handleNavigatePlayback: (direction: -1 | 1) => Promise<void>;
     handleSeekPlayback: (positionMs: number) => Promise<void>;
     handleSkipPlayback: (offsetSeconds: number) => Promise<void>;
@@ -73,7 +80,6 @@ export function useAndroidPlaybackControls(options: {
         playQueuedItem,
         serverConnection,
     } = options;
-    const { isShuffled, setIsShuffled } = useAppSessionState();
     const seekGenerationRef = useRef(0);
 
     /**
@@ -423,7 +429,9 @@ export function useAndroidPlaybackControls(options: {
     );
 
     const handleToggleShuffle = useCallback(() => {
-        const willShuffle = !isShuffled;
+        // Read at call time from the module store — this handler needs no
+        // render subscription.
+        const willShuffle = !getAppSession().isShuffled;
 
         // Reorder the canonical queue and push it to native OUTSIDE the state
         // updater. Running these external-store writes inside setIsShuffled's
@@ -445,8 +453,21 @@ export function useAndroidPlaybackControls(options: {
             }
         }
 
-        setIsShuffled(willShuffle);
-    }, [isShuffled, serverConnection, setIsShuffled]);
+        setAppSessionIsShuffled(willShuffle);
+    }, [serverConnection]);
+
+    const handleCycleRepeatMode = useCallback(() => {
+        const repeatMode = getAppSession().repeatMode;
+        const order: AndroidRepeatMode[] = ['off', 'all', 'one'];
+        const next = order[(order.indexOf(repeatMode) + 1) % order.length]!;
+        // Optimistic store write for instant button feedback; native is the
+        // authority and stores the setting (Media3 does the actual looping).
+        setAppSessionRepeatMode(next);
+        setAndroidRepeatMode(next).catch(() => {
+            // Native unavailable (e.g. cast-only session) — keep the UI honest.
+            setAppSessionRepeatMode(repeatMode);
+        });
+    }, []);
 
     const handleNavigatePlayback = useCallback(
         async (direction: -1 | 1) => {
@@ -551,6 +572,7 @@ export function useAndroidPlaybackControls(options: {
     );
 
     return {
+        handleCycleRepeatMode,
         handleNavigatePlayback,
         handleSeekPlayback,
         handleSkipPlayback,

@@ -41,6 +41,23 @@ internal object SamoCatalogSync {
     /** Concurrent detail fetches per batch (network-bound; writes stay serial). */
     private const val DETAIL_FETCH_CONCURRENCY = 4
 
+    /**
+     * PRAGMA user_version latch for detail-bundle shape migrations. Version 1:
+     * playlist tracks + podcast episodes are paginated to exhaustion (bundles
+     * written earlier are truncated at 500 and get one forced re-crawl).
+     */
+    private const val DETAIL_BUNDLE_SCHEMA_VERSION = 1
+
+    /**
+     * Concurrent page fetches for the /music/tracks walk — the single
+     * largest sequential leg of a sync (14k+ rows / 200 per page = 70+
+     * round trips for a big library). See
+     * SamoCatalogServerClient.fetchAllPagesConcurrent for why this matters
+     * once the server is reached over a real internet connection instead of
+     * a LAN.
+     */
+    private const val TRACK_FETCH_CONCURRENCY = 4
+
     private val COLLECTION_VARIANTS = listOf(
         Variant("album", "albums", "/music/albums"),
         Variant("artist", "artists", "/music/artists"),
@@ -236,6 +253,12 @@ internal object SamoCatalogSync {
             priorState?.cursor
         }
 
+        // Reconcile the Kotlin-owned FTS index from the rows this pass wrote,
+        // BEFORE the 'synced' event — so search freshness lands with the same
+        // event that re-derives Home/Library. Fail-soft internally: an FTS
+        // hiccup never fails the sync.
+        SamoCatalogSearch.reconcile(context, sourceId)
+
         val finalCounts = SamoCatalogWriter.withTransactionImmediate(context) { db ->
             val sourceCounts = SamoCatalogWriter.getSourceCounts(db, sourceId)
             if (!hadRealErrors || counts.items > 0 || counts.tracks > 0) {
@@ -246,10 +269,11 @@ internal object SamoCatalogSync {
             sourceCounts
         }
 
-        // Close the native writer before emitting the sync event. This ensures the
-        // SQLite file locks and WAL index locks are fully released before the JS
-        // environment (expo-sqlite) begins its concurrent search-indexing pass,
-        // avoiding POSIX lock-merging memory corruption.
+        // Close the writer between syncs: frees the connection's page cache
+        // for 30 idle minutes and lets SQLite checkpoint the WAL. Nothing on
+        // the JS side holds handles to this file anymore, so this close is
+        // purely local hygiene (the old POSIX lock-release choreography with
+        // expo-sqlite is gone).
         SamoCatalogWriter.close()
 
         SamoCatalogSyncEvents.emit(
@@ -319,7 +343,11 @@ internal object SamoCatalogSync {
         //    256MB heap on-device. No grouping needed: each row's `position`
         //    is the (disc, track) formula, independent of its siblings.
         try {
-            SamoCatalogServerClient.fetchPagesStreaming(conn, "/music/tracks") { records ->
+            SamoCatalogServerClient.fetchAllPagesConcurrent(
+                conn,
+                "/music/tracks",
+                TRACK_FETCH_CONCURRENCY,
+            ) { records ->
                 val rows = records.mapNotNull { record ->
                     SamoCatalogConverters.musicTrackToAlbumTrack(
                         sourceId = sourceId,
@@ -359,6 +387,14 @@ internal object SamoCatalogSync {
         }
         val details = crawlDetails(context, conn, sourceId, syncedAt, crawlTargets, errors) {
             progress(context, sourceId, totalItems, totalTracks, it)
+        }
+
+        // A clean full pass rewrote every bundle exhaustively — the truncated-
+        // bundle backfill (see runDelta) has nothing left to do.
+        if (errors.isEmpty()) {
+            SamoCatalogWriter.withTransactionImmediate(context) { db ->
+                db.version = DETAIL_BUNDLE_SCHEMA_VERSION
+            }
         }
 
         return Counts(totalItems, totalTracks, details, errors)
@@ -418,9 +454,10 @@ internal object SamoCatalogSync {
         val justUpsertedTrackIds = HashSet<String>()
         val changedTrackArtistIds = HashSet<String>()
         try {
-            SamoCatalogServerClient.fetchPagesStreaming(
+            SamoCatalogServerClient.fetchAllPagesConcurrent(
                 conn,
                 "/music/tracks",
+                TRACK_FETCH_CONCURRENCY,
                 updatedSince = watermark,
             ) { records ->
                 val rows = records.mapNotNull { record ->
@@ -473,8 +510,33 @@ internal object SamoCatalogSync {
         }
         podcastTargets.forEach { crawlTargets.add(DetailTarget("podcast", it)) }
 
-        val details = crawlDetails(context, conn, sourceId, syncedAt, crawlTargets, errors) {
+        // One-time exhaustive-detail backfill (latched via PRAGMA user_version):
+        // bundles stored before the pagination fix are TRUNCATED at 500 playlist
+        // tracks / podcast episodes, and a delta only re-crawls entities whose
+        // row changed — a big playlist that never changes again would stay
+        // truncated forever. Re-crawl them all once; the latch is only advanced
+        // after an error-free pass so an interrupted backfill retries.
+        var detailBackfillPending = false
+        SamoCatalogWriter.withTransactionImmediate(context) { db ->
+            if (db.version < DETAIL_BUNDLE_SCHEMA_VERSION) {
+                detailBackfillPending = true
+                for (kind in listOf("playlist", "podcast")) {
+                    SamoCatalogWriter.getItemIdsByType(db, sourceId, kind).forEach {
+                        crawlTargets.add(DetailTarget(kind, it))
+                    }
+                }
+            }
+        }
+
+        val details = crawlDetails(
+            context, conn, sourceId, syncedAt, crawlTargets.distinct(), errors,
+        ) {
             progress(context, sourceId, totalItems, totalTracks, it)
+        }
+        if (detailBackfillPending && errors.isEmpty()) {
+            SamoCatalogWriter.withTransactionImmediate(context) { db ->
+                db.version = DETAIL_BUNDLE_SCHEMA_VERSION
+            }
         }
 
         // Manifest-based deletion reconcile across every table.
@@ -618,9 +680,13 @@ internal object SamoCatalogSync {
             }
             "playlist" -> {
                 entity = SamoCatalogServerClient.fetchObject(conn, "/music/playlists/${target.id}")
+                // Paginate to exhaustion — a single limit=500 page silently
+                // TRUNCATED any larger playlist in the mirror, so a
+                // 1,200-track playlist could never render complete from the
+                // local catalog no matter what the read path did.
                 children.put(
                     "tracks",
-                    SamoCatalogServerClient.fetchRaw(conn, "/music/playlists/${target.id}/tracks", mapOf("limit" to "500")),
+                    JSONArray(SamoCatalogServerClient.fetchAllPages(conn, "/music/playlists/${target.id}/tracks")),
                 )
             }
             "audiobook" -> {
@@ -636,9 +702,11 @@ internal object SamoCatalogSync {
             }
             "podcast" -> {
                 entity = SamoCatalogServerClient.fetchObject(conn, "/podcasts/shows/${target.id}")
+                // Same exhaustive walk as playlists: daily shows pass 500
+                // episodes quickly, and a capped page hid everything older.
                 children.put(
                     "episodes",
-                    SamoCatalogServerClient.fetchRaw(conn, "/podcasts/shows/${target.id}/episodes", mapOf("limit" to "500")),
+                    JSONArray(SamoCatalogServerClient.fetchAllPages(conn, "/podcasts/shows/${target.id}/episodes")),
                 )
             }
             else -> throw IllegalArgumentException("unknown detail kind ${target.kind}")

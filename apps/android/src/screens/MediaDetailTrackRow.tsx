@@ -1,0 +1,172 @@
+import { buildAudioQualityBadgeItems } from '@samo/core/audio-quality';
+import {
+    type MobileMediaDetail,
+    MobileMediaDetailType,
+    type MobileMediaTrack,
+} from '@samo/core/mobile';
+import { type ServerAuthenticationResult } from '@samo/core/server';
+import { memo } from 'react';
+import { Pressable, Text, View } from 'react-native';
+
+import { ArtworkImage } from '../components/ArtworkImage';
+import { CheckGlyph, MoreGlyph, TrackDownloadedGlyph } from '../components/Glyphs';
+import { useDownloadedTrackKeys } from '../contexts/downloaded-keys';
+import { useMediaContextMenu } from '../contexts/media-context-menu';
+import { getTrackMetadataItems } from '../player/track-metadata';
+import { styles } from '../theme/styles';
+import { colors } from '../theme/tokens';
+import { getDownloadedTrackKey } from '../utils/download-keys';
+
+/**
+ * One track/chapter/episode row. Memoized and self-subscribed to the
+ * downloaded-keys store, so list-level state changes (search text, selection
+ * elsewhere, manage-mode toggles on other rows) skip it entirely, and a
+ * download completing re-renders only the mounted rows.
+ */
+export const MediaDetailTrackRow = memo(function MediaDetailTrackRow({
+    detail,
+    discHeader,
+    fallbackArtworkUrl,
+    index,
+    isManageMode,
+    isSelected,
+    onPlay,
+    onToggleSelect,
+    serverConnection,
+    track,
+}: {
+    detail: MobileMediaDetail;
+    /** Render a "Disc N" header above this row (multi-disc albums). */
+    discHeader?: null | number;
+    fallbackArtworkUrl?: string;
+    index: number;
+    isManageMode: boolean;
+    isSelected: boolean;
+    onPlay: (track: MobileMediaTrack, index: number) => void;
+    onToggleSelect: (trackId: string) => void;
+    serverConnection: ServerAuthenticationResult | null;
+    track: MobileMediaTrack;
+}) {
+    const contextMenu = useMediaContextMenu();
+    const downloadedTrackKeys = useDownloadedTrackKeys();
+
+    const isMusic =
+        detail.type === MobileMediaDetailType.ALBUM ||
+        detail.type === MobileMediaDetailType.PLAYLIST;
+    const isAlbumDetail = detail.type === MobileMediaDetailType.ALBUM;
+    const qualityItems =
+        isMusic && track.playback
+            ? buildAudioQualityBadgeItems({
+                  ...track.playback.quality,
+                  compact: true,
+                  mode: 'playerbar',
+              })
+            : [];
+    const meta = getTrackMetadataItems(
+        detail,
+        track,
+        qualityItems.map((item) => item.label),
+        isMusic,
+    );
+    const hasOverflowActions = track.playback?.source === 'music';
+    const isDownloadedTrack = downloadedTrackKeys.has(
+        getDownloadedTrackKey(detail.source.id, track.id),
+    );
+
+    const row = (
+        <Pressable
+            accessibilityRole="button"
+            onLongPress={() => contextMenu.openForTrack(track, detail)}
+            onPress={() => {
+                if (isManageMode) {
+                    onToggleSelect(track.id);
+                    return;
+                }
+                onPlay(track, index);
+            }}
+            style={styles.trackRow}
+        >
+            {isManageMode ? (
+                <View
+                    style={[
+                        styles.playlistTrackSelect,
+                        isSelected && styles.playlistTrackSelectChecked,
+                    ]}
+                >
+                    {isSelected ? <CheckGlyph color={colors.background} size={12} /> : null}
+                </View>
+            ) : null}
+            {isAlbumDetail ? (
+                <View style={styles.albumTrackNumber}>
+                    <Text style={styles.albumTrackNumberText}>
+                        {track.trackNumber ?? index + 1}
+                    </Text>
+                </View>
+            ) : null}
+            {!isAlbumDetail ? (
+                <View>
+                    {track.artworkUrl ?? detail.artworkUrl ?? fallbackArtworkUrl ? (
+                        <ArtworkImage
+                            artworkImageId={track.artworkImageId ?? detail.artworkImageId}
+                            contentSource={detail.source}
+                            letter={track.title.slice(0, 1).toUpperCase()}
+                            serverConnection={serverConnection}
+                            style={styles.trackArtwork}
+                            uri={track.artworkUrl ?? detail.artworkUrl ?? fallbackArtworkUrl}
+                        />
+                    ) : (
+                        <View style={styles.trackArtworkFallback}>
+                            <Text style={styles.trackArtworkLetter}>
+                                {track.title.slice(0, 1).toUpperCase()}
+                            </Text>
+                        </View>
+                    )}
+                </View>
+            ) : null}
+            <View style={styles.trackText}>
+                <Text numberOfLines={1} style={styles.trackTitle}>
+                    {track.title}
+                </Text>
+                {meta.length > 0 || isDownloadedTrack ? (
+                    <View style={styles.trackMetadataLine}>
+                        {isDownloadedTrack ? <TrackDownloadedGlyph size={10} /> : null}
+                        {meta.length > 0 ? (
+                            <Text
+                                numberOfLines={1}
+                                style={[styles.mediaSubtitle, styles.trackMetadataText]}
+                            >
+                                {meta.join(' · ')}
+                            </Text>
+                        ) : null}
+                    </View>
+                ) : null}
+            </View>
+            {hasOverflowActions ? (
+                <Pressable
+                    accessibilityLabel={`More options for ${track.title}`}
+                    accessibilityRole="button"
+                    onPress={(event) => {
+                        event.stopPropagation();
+                        contextMenu.openForTrack(track, detail);
+                    }}
+                    style={styles.trackMenuButton}
+                >
+                    <MoreGlyph color={colors.muted} />
+                </Pressable>
+            ) : null}
+        </Pressable>
+    );
+
+    if (discHeader == null) {
+        return row;
+    }
+
+    return (
+        <>
+            <View style={styles.albumDiscHeader}>
+                <Text style={styles.albumDiscHeaderText}>Disc {discHeader}</Text>
+            </View>
+            {row}
+        </>
+    );
+});

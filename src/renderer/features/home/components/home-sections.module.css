@@ -241,6 +241,32 @@
     border-color: color-mix(in srgb, var(--theme-colors-primary-filled) 34%, transparent);
 }
 
+.feature-card-accent {
+    background: linear-gradient(
+        135deg,
+        color-mix(in srgb, var(--theme-colors-primary-filled) 10%, transparent),
+        color-mix(in srgb, var(--theme-colors-surface) 90%, transparent) 60%
+    );
+    border-color: color-mix(in srgb, var(--theme-colors-primary-filled) 28%, transparent);
+}
+
+.feature-card-accent:hover {
+    border-color: color-mix(in srgb, var(--theme-colors-primary-filled) 50%, transparent);
+}
+
+.feature-badge {
+    width: fit-content;
+    padding: 0.12rem 0.42rem;
+    font-size: 0.64rem;
+    font-weight: 800;
+    line-height: 1;
+    color: color-mix(in srgb, var(--theme-colors-primary-filled) 92%, white 8%);
+    letter-spacing: 0.02em;
+    background: color-mix(in srgb, var(--theme-colors-primary-filled) 14%, transparent);
+    border: 1px solid color-mix(in srgb, var(--theme-colors-primary-filled) 30%, transparent);
+    border-radius: 999px;
+}
+
 .feature-art {
     aspect-ratio: 1;
     overflow: hidden;

@@ -2,7 +2,7 @@ import { ipcRenderer } from 'electron';
 
 // NOTE — this is the wide IPC escape hatch from the original feishin design (audit
 // finding D4). Long-term it should be deleted in favor of the typed namespaces
-// (audiobookshelf, mpvPlayer, mpris, …); leave it here until every caller using
+// (mpvPlayer, mpris, …); leave it here until every caller using
 // the `const ipc = isElectron() ? window.api.ipc : null;` pattern has been
 // retyped to a specific namespace.
 

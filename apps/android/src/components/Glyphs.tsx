@@ -4,6 +4,7 @@ import Svg, { Circle as SvgCircle, Path as SvgPath } from 'react-native-svg';
 
 import outputPickerIcon from '../../../../assets/monitor.png';
 import heartIcon from '../../assets/icons/heart.png';
+import repeatIcon from '../../assets/icons/repeat.png';
 import shuffleIcon from '../../assets/icons/shuffle.png';
 import sleepTimerIcon from '../../assets/icons/sleep-timer.png';
 import { styles } from '../theme/styles';
@@ -753,6 +754,52 @@ export const ShuffleGlyph = ({
             size={size}
             source={shuffleIcon}
         />
+    );
+};
+
+export const DragHandleGlyph = ({ color }: { color: string }) => {
+    return (
+        <View style={{ gap: 4 }}>
+            <View style={{ backgroundColor: color, borderRadius: 1, height: 2, width: 18 }} />
+            <View style={{ backgroundColor: color, borderRadius: 1, height: 2, width: 18 }} />
+        </View>
+    );
+};
+
+export const RepeatGlyph = ({
+    color,
+    mode,
+    size = 24,
+}: {
+    color: string;
+    mode: 'all' | 'off' | 'one';
+    size?: number;
+}) => {
+    const active = mode !== 'off';
+    return (
+        <View style={{ alignItems: 'center', height: 28, justifyContent: 'center', width: 28 }}>
+            <FullPlayerImageGlyph
+                active={active}
+                color={active ? colors.accent : color}
+                size={size}
+                source={repeatIcon}
+            />
+            {mode === 'one' ? (
+                // The loop's hollow center carries the "1" (repeat-one), matching
+                // the Material repeat_one silhouette without a second asset.
+                <Text
+                    style={{
+                        color: colors.accent,
+                        fontSize: 9,
+                        fontWeight: '700',
+                        position: 'absolute',
+                        textAlign: 'center',
+                    }}
+                >
+                    1
+                </Text>
+            ) : null}
+        </View>
     );
 };
 

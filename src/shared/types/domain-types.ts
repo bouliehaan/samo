@@ -276,6 +276,10 @@ export type Playlist = {
     id: string;
     imageId: null | string;
     imageUrl: null | string;
+    /** Server-managed playlist (e.g. the Samo explo "Explore" queue): the
+     *  server re-derives its name/membership, so clients must not offer
+     *  edit/delete/add-to for it (the server refuses with a 403 anyway). */
+    isSystem?: boolean;
     lastPlayedAt?: null | string;
     name: string;
     owner: null | string;

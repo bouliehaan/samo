@@ -1,131 +1,24 @@
-import { buildAudioQualityBadgeItems } from '@samo/core/audio-quality';
 import {
-    getDetailQualityProfile,
-    getItemQualityProfile,
-    getPlaybackQualityProfile,
-    createMobilePlaylist,
-    isMobilePlaylistDetailEditable,
-    type MobileHomeItem,
-    MobileHomeItemType,
     type MobileMediaDetail,
     MobileMediaDetailType,
     type MobileMediaTrack,
-    type MobileSearchItem,
 } from '@samo/core/mobile';
-import { type ServerAuthenticationResult, findServerAuthenticationForSource } from '@samo/core/server';
-import { FlashList } from '@shopify/flash-list';
-import Reanimated, {
-    interpolate,
-    runOnJS,
-    useAnimatedReaction,
-    useAnimatedScrollHandler,
-    useAnimatedStyle,
-    useSharedValue,
-    withSpring,
-    withTiming,
-} from 'react-native-reanimated';
-import {
-    Fragment,
-    memo,
-    useCallback,
-    useEffect,
-    useMemo,
-    useRef,
-    useState,
-} from 'react';
-import {
-    ActivityIndicator,
-    Alert,
-    Animated,
-    type ImageStyle,
-    InteractionManager,
-    Keyboard,
-    type LayoutChangeEvent,
-    Pressable,
-    ScrollView,
-    type StyleProp,
-    Text,
-    TextInput,
-    View,
-    type ViewStyle,
-} from 'react-native';
+import { type ServerAuthenticationResult } from '@samo/core/server';
+import { memo, useRef } from 'react';
+import { Text, View } from 'react-native';
 
-import { ArtworkImage } from '../components/ArtworkImage';
-import { SkeletonTrackRow } from '../components/Skeleton';
 import {
-    EditPlaylistSheet,
-    removeSelectedPlaylistTracks,
-} from '../components/EditPlaylistSheet';
-import { PlaylistTrackControls } from '../components/PlaylistTrackControls';
-import { QualityBadge, QualitySpec } from '../components/QualityBadge';
-import {
-    CheckGlyph,
-    CircularDownloadGlyph,
-    ClearGlyph,
-    DiscGlyph,
-    DownloadGlyph,
-    EllipsisVerticalGlyph,
-    GearGlyph,
-    HeartGlyph,
-    MoreGlyph,
-    PlayPauseGlyph,
-    SearchGlyph,
-    ShuffleGlyph,
-    TrackDownloadedGlyph,
-} from '../components/Glyphs';
-import { TrackPlaylistMenu } from '../components/TrackPlaylistMenu';
-import { type MediaContextMenuKind } from '../contexts/media-context-menu';
-import { type HomeDisplaySection } from '../types/home';
-import {
-    useDownloadedCollectionKeys,
-    useDownloadedTrackKeys,
-} from '../contexts/downloaded-keys';
-import { useMediaContextMenu } from '../contexts/media-context-menu';
-import {
-    type DownloadEntry,
-    enqueueCollectionDownload,
-    subscribeDownloads,
-} from '../services/download-manager';
-import { type AndroidHomeContentState } from '../services/home-content';
-import { type AndroidMediaDetailState, buildMediaDetailShell } from '../services/media-detail';
-import {
-    type AndroidRecentContentSourceItem,
-    getRecentContentItemKey,
-} from '../services/recent-content';
-import { triggerImpact, triggerSelection } from '../services/haptics';
-import { formatQualityProfile } from '../services/quality-badge-assets';
-import { SCREEN_HEIGHT } from '../theme/layout';
+    type AndroidMediaDetailState,
+    buildMediaDetailShell,
+} from '../services/media-detail';
+import { type AndroidRecentContentSourceItem } from '../services/recent-content';
 import { styles } from '../theme/styles';
-import { colors, spacing } from '../theme/tokens';
-import { getContentItemKey } from '../utils/content-item';
-import {
-    getDownloadedCollectionKey,
-    getDownloadedTrackKey,
-} from '../utils/download-keys';
-import {
-    getDetailTypeLabel,
-    getPlaylistTargetsForDetail,
-    getPlaylistTrackItemType,
-    getPlaylistTrackSearchText,
-    PLAYLIST_TRACK_DRAW_DISTANCE,
-    type PlaylistTrackFilter,
-    type PlaylistTrackSort,
-} from '../utils/media-detail';
-import { getDisplaySubtitle } from '../utils/playback-time';
-import { getTrackMetadataItems } from '../player/track-metadata';
-import { detailHasHiRes, isHiFiTrack } from '../utils/media-quality';
-
-const ReanimatedFlashList = Reanimated.createAnimatedComponent(FlashList) as typeof FlashList;
-const FLASH_LIST_MAINTAIN_POSITION_DISABLED = { disabled: true };
-const PLAYLIST_SEARCH_FLOATING_HEIGHT = 54;
-
-import { MediaDetailLoadingView } from './MediaDetailLoadingView';
 import { MediaDetailLoaded } from './MediaDetailLoaded';
+import { MediaDetailLoadingView } from './MediaDetailLoadingView';
+
 export const MediaDetailContent = memo(({
-    homeContentState,
     mediaDetailKey,
     mediaDetailState,
-    onAddTrackToPlaylist,
     onBack,
     onPlayTrack,
     onReloadDetail,
@@ -133,14 +26,8 @@ export const MediaDetailContent = memo(({
     onShufflePlay,
     serverConnection,
 }: {
-    homeContentState: AndroidHomeContentState;
     mediaDetailKey: string | null;
     mediaDetailState: AndroidMediaDetailState;
-    onAddTrackToPlaylist: (
-        detail: MobileMediaDetail,
-        track: MobileMediaTrack,
-        playlist: MobileHomeItem,
-    ) => Promise<void>;
     onBack: () => void;
     onPlayTrack: (
         detail: MobileMediaDetail,
@@ -185,9 +72,7 @@ export const MediaDetailContent = memo(({
     // Artists fall back to the standalone skeleton: their detail is a different
     // ScrollView layout with its own section skeletons, not this track list.
     const shellDetail =
-        mediaDetailState.status === 'loading'
-            ? buildMediaDetailShell(mediaDetailState)
-            : null;
+        mediaDetailState.status === 'loading' ? buildMediaDetailShell(mediaDetailState) : null;
     const unifiedDetail =
         mediaDetailState.status === 'loaded'
             ? mediaDetailState.detail
@@ -203,13 +88,11 @@ export const MediaDetailContent = memo(({
                     fallbackArtworkImageId={openingArtworkImageIdRef.current}
                     fallbackArtworkUrl={openingArtworkUrlRef.current}
                     isAwaitingDetail={mediaDetailState.status !== 'loaded'}
-                    onAddTrackToPlaylist={onAddTrackToPlaylist}
                     onBack={onBack}
                     onPlayTrack={onPlayTrack}
                     onReloadDetail={onReloadDetail}
                     onSelectItem={onSelectItem}
                     onShufflePlay={onShufflePlay}
-                    playlistTargets={getPlaylistTargetsForDetail(homeContentState, unifiedDetail)}
                     serverConnection={serverConnection}
                 />
             ) : mediaDetailState.status === 'loading' ? (
@@ -232,4 +115,3 @@ export const MediaDetailContent = memo(({
 });
 
 MediaDetailContent.displayName = 'MediaDetailContent';
-

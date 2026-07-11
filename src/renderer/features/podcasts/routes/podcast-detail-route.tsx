@@ -9,7 +9,6 @@ import { useParams } from 'react-router';
 import { samoFetch } from '/@/renderer/api/samo/samo-fetch';
 import {
     isSamoBackedLibraryItem,
-    isSamoLongFormServer,
     loadSamoPodcastLibraryItem,
     useLongFormMediaServer,
 } from '/@/renderer/api/samo/samo-long-form';
@@ -66,24 +65,17 @@ const PodcastCover = ({
 }) => {
     const server = useLongFormMediaServer();
 
-    const coverQuery = useQuery({
-        enabled: Boolean(server?.id && itemId && !isSamoLongFormServer(server)),
-        queryFn: async () => null,
-        queryKey: ['audiobookshelf', 'cover', server?.id, itemId],
-        staleTime: 1000 * 60 * 60,
-    });
-
-    const coverSrc = isSamoLongFormServer(server) ? imageUrl : (coverQuery.data ?? undefined);
+    const coverSrc = imageUrl;
 
     const imageRequest = useMemo(() => {
-        if (!isSamoLongFormServer(server) || !coverSrc) {
+        if (!coverSrc || !server) {
             return undefined;
         }
 
         return buildSamoAuthenticatedImageRequest(
-            server!,
+            server,
             coverSrc,
-            ['samo', server!.id, 'podcast-cover', itemId].join(':'),
+            ['samo', server.id, 'podcast-cover', itemId].join(':'),
         );
     }, [coverSrc, itemId, server]);
 
@@ -216,7 +208,6 @@ const EpisodeRow = ({
 const PodcastDetailRoute = () => {
     const { itemId } = useParams<{ itemId: string }>();
     const server = useLongFormMediaServer();
-    const isSamo = isSamoLongFormServer(server);
     const queryClient = useQueryClient();
     const { play: playPodcast } = usePodcastActions();
     const isFavorite = useIsLibraryFavorite('podcast', server?.id, itemId ?? '');
@@ -228,6 +219,10 @@ const PodcastDetailRoute = () => {
         enabled: Boolean(server?.id && itemId),
         queryFn: () => loadSamoPodcastLibraryItem(server!, itemId!),
         queryKey: ['samo', 'item', server?.id, itemId],
+        // Keep a freshly-opened show warm so navigating back into it (or in from
+        // a Home/search tile) paints instantly instead of refetching the full
+        // episode list every time.
+        staleTime: 1000 * 60 * 5,
     });
 
     const item = itemQuery.data;
@@ -243,7 +238,6 @@ const PodcastDetailRoute = () => {
     };
 
     const canLinkRss =
-        isSamo &&
         isSamoBackedLibraryItem(item) &&
         Boolean(item.samoPath && !item.samoPath.startsWith('samo://')) &&
         !item.samoRssFeed;
@@ -273,7 +267,7 @@ const PodcastDetailRoute = () => {
             <Box h="100%" style={{ overflowY: 'auto' }}>
                 <Stack gap="xl" p="2rem" pb="6rem">
                     {!server ? (
-                        <Text isMuted>Add a Samo or Audiobookshelf server to browse podcasts.</Text>
+                        <Text isMuted>Add a Samo server to browse podcasts.</Text>
                     ) : itemQuery.isLoading ? (
                         <Text isMuted>Loading podcast…</Text>
                     ) : !item ? (

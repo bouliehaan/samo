@@ -4,7 +4,9 @@ import { type SamoAudiobook } from '../server/server-samo';
 import { ServerType } from '../server/server-types';
 import { testServerAuthentication } from '../test-fixtures';
 import {
+    applySamoPodcastStreamResume,
     buildSamoAudiobookFileQueue,
+    buildSamoPodcastEpisodePlayback,
     CHROMECAST_MAX_LOSSLESS_SAMPLE_RATE_HZ,
     mimeFromAudioFileExt,
     needsChromecastCompatibleStream,
@@ -146,5 +148,63 @@ describe('buildSamoAudiobookFileQueue', () => {
         });
         expect(parseSamoAudiobookIdFromPlaybackId(queue!.items[0]!.id)).toBe('book-1');
         expect(parseSamoAudiobookIdFromPlaybackId(queue!.items[2]!.id)).toBe('book-1');
+    });
+});
+
+describe('buildSamoPodcastEpisodePlayback source routing', () => {
+    const auth = testServerAuthentication({ type: ServerType.SAMO, url: 'https://samo.example.com' });
+    const baseEpisode = {
+        durationSeconds: 1800,
+        enclosureUrl: 'https://cdn.example.net/shows/ep-1.mp3?tk=abc',
+        id: 'episode-1',
+        podcastId: 'show-1',
+        title: 'Episode One',
+    };
+
+    it('streams the enclosure directly with the proxy riding as fallback', () => {
+        const playback = buildSamoPodcastEpisodePlayback(auth, baseEpisode, 'show-1');
+        expect(playback?.url).toBe('https://cdn.example.net/shows/ep-1.mp3?tk=abc');
+        expect(playback?.serverStreamUrl).toContain('/podcasts/episodes/episode-1/stream');
+        expect(playback?.serverStreamUrl).toContain('https://samo.example.com');
+    });
+
+    it('prefers the server proxy when the server already holds the bytes', () => {
+        for (const cache of [{ cached: true }, { local: true }]) {
+            const playback = buildSamoPodcastEpisodePlayback(
+                auth,
+                { ...baseEpisode, cache },
+                'show-1',
+            );
+            expect(playback?.url).toContain('/podcasts/episodes/episode-1/stream');
+            expect(playback?.serverStreamUrl).toBeUndefined();
+        }
+    });
+
+    it('falls back to the proxy when the enclosure is missing or not http(s)', () => {
+        for (const enclosureUrl of [undefined, 'ftp://old.example.net/ep.mp3', 'not a url']) {
+            const playback = buildSamoPodcastEpisodePlayback(
+                auth,
+                { ...baseEpisode, enclosureUrl },
+                'show-1',
+            );
+            expect(playback?.url).toContain('/podcasts/episodes/episode-1/stream');
+            expect(playback?.serverStreamUrl).toBeUndefined();
+        }
+    });
+
+    it('keeps the direct URL across a resume refresh and re-tokens the fallback', () => {
+        const playback = buildSamoPodcastEpisodePlayback(
+            auth,
+            { ...baseEpisode, progress: { progressSeconds: 90 } },
+            'show-1',
+            undefined,
+            'tok-1',
+        );
+        expect(playback?.url).toBe(baseEpisode.enclosureUrl);
+        expect(playback?.initialPositionSeconds).toBe(90);
+        const refreshed = applySamoPodcastStreamResume(playback!, 120, auth, 'tok-2');
+        expect(refreshed.url).toBe(baseEpisode.enclosureUrl);
+        expect(refreshed.initialPositionSeconds).toBe(120);
+        expect(refreshed.serverStreamUrl).toContain('stream_token=tok-2');
     });
 });

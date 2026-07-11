@@ -29,19 +29,6 @@ export const resultWithHeaders = <ItemType extends z.ZodTypeAny>(itemSchema: Ite
     });
 };
 
-export const resultSubsonicBaseResponse = <ItemType extends z.ZodRawShape>(
-    itemSchema: ItemType,
-) => {
-    return z.object({
-        'subsonic-response': z
-            .object({
-                status: z.string(),
-                version: z.string(),
-            })
-            .extend(itemSchema),
-    });
-};
-
 export const hasFeature = (server: null | ServerListItem, feature: ServerFeature): boolean => {
     if (!server || !server.features) {
         return false;

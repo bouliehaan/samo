@@ -9,14 +9,6 @@ declare global {
         FS_AUTO_DJ_TIMING?: string;
         FS_CSS_CONTENT?: string;
         FS_CSS_ENABLED?: string;
-        FS_DISCORD_CLIENT_ID?: string;
-        FS_DISCORD_DISPLAY_TYPE?: string;
-        FS_DISCORD_ENABLED?: string;
-        FS_DISCORD_LINK_TYPE?: string;
-        FS_DISCORD_SHOW_AS_LISTENING?: string;
-        FS_DISCORD_SHOW_PAUSED?: string;
-        FS_DISCORD_SHOW_SERVER_IMAGE?: string;
-        FS_DISCORD_SHOW_STATE_ICON?: string;
         FS_FONT_BUILT_IN?: string;
         FS_FONT_SYSTEM?: string;
         FS_FONT_TYPE?: string;

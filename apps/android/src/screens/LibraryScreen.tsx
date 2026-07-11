@@ -10,6 +10,7 @@ import { LibraryListRow } from '../components/LibraryListRow';
 import { LibraryScopeMenu } from '../components/LibraryScopeMenu';
 import { LibrarySortMenu } from '../components/LibrarySortMenu';
 import { SortGlyph } from '../components/Glyphs';
+import { useScrollContentBottomInset } from '../hooks/use-scroll-content-bottom-inset';
 import { useVisibleHomeContentState } from '../hooks/use-visible-home-content';
 import { useVisibleRecentItems } from '../hooks/use-visible-recent-items';
 import { triggerImpact } from '../services/haptics';
@@ -42,12 +43,14 @@ export const LibraryScreen = memo(({
     fullCollections,
     fullCollectionsEnabled,
     hasServerConnections,
+    isForeground = true,
     libraryRelevantState,
     onEnsureFullCollections,
     onSelectItem,
 }: LibraryScreenProps) => {
     const homeContentState = useVisibleHomeContentState();
     const recentItems = useVisibleRecentItems();
+    const bottomInset = useScrollContentBottomInset();
     const [activeFilter, setActiveFilter] = useState<LibraryFilter>('all');
     const [activeScope, setActiveScope] = useState<LibraryScope>('relevant');
     const [activeSort, setActiveSort] = useState<LibrarySort>('recents');
@@ -125,7 +128,7 @@ export const LibraryScreen = memo(({
 
     if (!hasServerConnections) {
         return (
-            <View style={styles.libraryStaticContent}>
+            <View style={[styles.libraryStaticContent, { paddingBottom: bottomInset }]}>
                 <EmptyServerBackedScreen tabTitle="Library" />
             </View>
         );
@@ -153,7 +156,7 @@ export const LibraryScreen = memo(({
                   : 'Could not load your library.';
 
         return (
-            <View style={styles.libraryStaticContent}>
+            <View style={[styles.libraryStaticContent, { paddingBottom: bottomInset }]}>
                 <Text style={styles.errorText}>{message}</Text>
             </View>
         );
@@ -250,6 +253,7 @@ export const LibraryScreen = memo(({
                             : 'Nothing to show here yet.'
                     }
                     fullItems={browseFullItems}
+                    isForeground={isForeground}
                     isLoading={isEnrichingFullCollection && browseSeedItems.length === 0}
                     itemSortMode={
                         deferredFilter === 'albums' || deferredFilter === 'artists'
@@ -259,11 +263,15 @@ export const LibraryScreen = memo(({
                             : 'alphabetical'
                     }
                     onSelectItem={onSelectItem}
+                    resetKey={deferredFilter}
                     seedItems={browseSeedItems}
                 />
             ) : (
                 <FlashList
-                    contentContainerStyle={styles.libraryListContent}
+                    contentContainerStyle={[
+                        styles.libraryListContent,
+                        { paddingBottom: bottomInset },
+                    ]}
                     data={rows}
                     drawDistance={LIBRARY_ROW_DRAW_DISTANCE}
                     keyExtractor={(row) => row.key}

@@ -7,6 +7,7 @@ import {
     deleteSamoBookmark,
     deleteSamoMusicPlaylist,
     ensureSamoStreamToken,
+    findSamoExploPlaylist,
     getCachedSamoStreamToken,
     getSamoApiUrl,
     getSamoAudiobook,
@@ -526,6 +527,21 @@ export const fetchSamoUnplayedHomeTracks = async (
     return samoItemsOf(browse.tracks as SamoPaginatedResponse<SamoMusicTrack> | undefined).map(
         (track) => samoNormalize.song(track, server),
     );
+};
+
+/**
+ * The server-managed "Explo" playlist (weekly untagged-drop auto-playlist), if
+ * the server has processed any drops yet. Returns undefined otherwise so the
+ * home section can render nothing. Once found, it's normalized like any other
+ * playlist — it's an ordinary playlist once opened.
+ */
+export const fetchSamoExploPlaylist = async (
+    server: ServerListItemWithCredentialCore,
+    signal?: AbortSignal,
+): Promise<Playlist | undefined> => {
+    const auth = samoAuthentication(server);
+    const playlist = await findSamoExploPlaylist(browserFetch, auth, signal);
+    return playlist ? samoNormalize.playlist(playlist, server) : undefined;
 };
 
 /** Home discovery queue: unplayed tracks with a recent/older mix (server-side). */
@@ -1142,18 +1158,28 @@ export const SamoController: Partial<InternalControllerEndpoint> = {
             limit: listLimit,
             offset: listOffset,
         });
-        const items: Playlist[] = sortPlaylists(
-            samoItemsOf(response).map((playlist) => samoNormalize.playlist(playlist, server)),
-            sortBy,
-            sortOrder,
+        let normalized = samoItemsOf(response).map((playlist) =>
+            samoNormalize.playlist(playlist, server),
         );
+        // Samo has no rules-based smart playlists; its equivalent of "not a
+        // user-editable playlist" is the server-managed system playlist (the
+        // explo "Explore" queue). The add-to-playlist surfaces pass this flag
+        // to list only playlists the user can actually add to — the server
+        // would 403 an add to a system playlist anyway.
+        let filteredCount = 0;
+        if (query.excludeSmartPlaylists) {
+            const before = normalized.length;
+            normalized = normalized.filter((playlist) => !playlist.isSystem);
+            filteredCount = before - normalized.length;
+        }
+        const items: Playlist[] = sortPlaylists(normalized, sortBy, sortOrder);
 
         const page = paginate(items, pageStart, pageLimit);
 
         return {
             items: page.items,
             startIndex: page.startIndex,
-            totalRecordCount: response.total ?? items.length,
+            totalRecordCount: (response.total ?? items.length) - filteredCount,
         };
     },
 

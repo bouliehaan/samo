@@ -2,6 +2,13 @@
     "name": "@samo/android",
     "version": "1.0.0",
     "private": true,
+    "expo": {
+        "autolinking": {
+            "android": {
+                "buildFromSource": ["expo-blur"]
+            }
+        }
+    },
     "main": "index.ts",
     "scripts": {
         "android": "NODE_ENV=development JAVA_HOME=\"/Applications/Android Studio.app/Contents/jbr/Contents/Home\" expo run:android",
@@ -21,6 +28,7 @@
         "@samo/core": "file:../../packages/core",
         "@shopify/flash-list": "2.0.2",
         "expo": "~54.0.33",
+        "expo-blur": "~15.0.8",
         "expo-file-system": "~19.0.22",
         "expo-font": "~14.0.12",
         "expo-haptics": "~15.0.8",

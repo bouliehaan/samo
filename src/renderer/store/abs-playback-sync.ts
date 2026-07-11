@@ -1,13 +1,12 @@
-import { patchSamoPlayback, type SamoPlaybackTargetKind } from '@samo/core/server';
+import { type SamoPlaybackTargetKind } from '@samo/core/server';
 
-import { samoFetch } from '/@/renderer/api/samo/samo-fetch';
 import { clampPosition } from '/@/renderer/store/audiobook-resume-math';
 import { type PlaybackSource, usePlaybackOwnerStore } from '/@/renderer/store/playback-owner.store';
 import { subscribePlayerStatus } from '/@/renderer/store/player.store';
+import { enqueueProgressWrite } from '/@/renderer/store/progress-write-queue';
 import { LongFormLibraryItem, LongFormPodcastEpisode } from '/@/shared/api/long-form-types';
 import { ServerListItemWithCredential } from '/@/shared/types/domain-types';
 import { PlayerStatus } from '/@/shared/types/types';
-import { LogCategory, logFn } from '/@/shared/utils/logger';
 
 export const POSITION_PERSIST_DEBOUNCE_S = 10;
 export const SERVER_PROGRESS_SYNC_INTERVAL_S = 30;
@@ -41,7 +40,7 @@ export interface AbsPlaybackSyncHandle {
 export type AbsProgressReason = 'close' | 'pause' | 'progress' | 'seek';
 
 export function createAbsPlaybackSyncHandle(
-    logLabel: string,
+    _logLabel: string,
     getSlice: () => AbsPlaybackProgressSlice,
 ): AbsPlaybackSyncHandle {
     let lastFlushedPosition = 0;
@@ -77,15 +76,14 @@ export function createAbsPlaybackSyncHandle(
             const completed =
                 duration > 0 && currentTime > 0 && currentTime / Math.max(duration, 1) >= 0.96;
 
-            void patchSamoPlayback(
-                samoFetch,
-                {
-                    credential: server.credential,
-                    url: server.url,
-                },
+            // Route through the durable retry/offline queue: coalesces by
+            // target, retries with backoff, persists across app restarts, and
+            // flushes on reconnect — so a blip (or quit) on the close-flush no
+            // longer silently drops the position.
+            enqueueProgressWrite({
+                credential: server.credential,
                 kind,
-                targetId,
-                {
+                patch: {
                     completed,
                     progressSeconds: Math.max(0, Math.round(currentTime)),
                     touchLastPlayedAt: Boolean(
@@ -93,18 +91,8 @@ export function createAbsPlaybackSyncHandle(
                     ),
                     touchLastPositionAt: true,
                 },
-            ).catch((error) => {
-                logFn.warn(`[${logLabel}] Samo long-form progress sync failed`, {
-                    category: LogCategory.PLAYER,
-                    meta: {
-                        episodeId: episode?.id,
-                        error,
-                        itemId: item.id,
-                        kind,
-                        reason: options.reason,
-                        targetId,
-                    },
-                });
+                targetId,
+                url: server.url,
             });
             return;
         }

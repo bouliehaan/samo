@@ -67,15 +67,15 @@ export const loadAbsCurrentProgress = async (
 /**
  * Bounded variant for tap-to-play paths: a user is waiting, so a sick server
  * gets [timeoutMs] to answer and then playback proceeds without the overlay
- * (same fallback the unbounded read already used on error). Mirrors the 4s
+ * (same fallback the unbounded read already used on error). Mirrors the
  * budget `refreshPlayableResumeFromServerBounded` gives the same read inside
- * playQueuedItem.
+ * playQueuedItem (`RESUME_REFRESH_TIMEOUT_MS`) — kept in sync with it.
  */
 export const loadAbsCurrentProgressBounded = (
     authentication: ServerAuthenticationResult,
     itemId: string,
     episodeId?: string,
-    timeoutMs = 4_000,
+    timeoutMs = 8_000,
 ): Promise<AbsLoadedProgress | null> =>
     Promise.race([
         loadAbsCurrentProgress(authentication, itemId, episodeId),

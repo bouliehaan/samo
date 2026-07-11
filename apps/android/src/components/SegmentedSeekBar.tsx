@@ -17,7 +17,7 @@ import { SCREEN_WIDTH } from '../theme/layout';
 import { styles } from '../theme/styles';
 import { spacing } from '../theme/tokens';
 import { clamp } from '../utils/math';
-import { logSeekGesture } from '../utils/seek-debug';
+import { logSeekGesture, SEEK_GESTURE_DEBUG } from '../utils/seek-debug';
 import {
     getSeekSegmentGapWidth,
     getSeekSegments,
@@ -250,15 +250,19 @@ export const SegmentedSeekBar = memo(({
                 .hitSlop(SEEK_HIT_SLOP)
                 .onBegin(() => {
                     'worklet';
-                    runOnJS(logSeekGesture)('tap:begin', { trackWidth });
+                    if (SEEK_GESTURE_DEBUG) {
+                        runOnJS(logSeekGesture)('tap:begin', { trackWidth });
+                    }
                 })
                 .onEnd((event, success) => {
                     'worklet';
-                    runOnJS(logSeekGesture)('tap:end', {
-                        success,
-                        x: event.x,
-                        trackWidth,
-                    });
+                    if (SEEK_GESTURE_DEBUG) {
+                        runOnJS(logSeekGesture)('tap:end', {
+                            success,
+                            x: event.x,
+                            trackWidth,
+                        });
+                    }
                     if (!success) return;
                     if (trackWidth <= 0) return;
                     const progress = clampWorklet(event.x / trackWidth);
@@ -267,7 +271,9 @@ export const SegmentedSeekBar = memo(({
                 })
                 .onFinalize((_event, success) => {
                     'worklet';
-                    runOnJS(logSeekGesture)('tap:finalize', { success });
+                    if (SEEK_GESTURE_DEBUG) {
+                        runOnJS(logSeekGesture)('tap:finalize', { success });
+                    }
                 });
             return externalGestures && externalGestures.length > 0
                 ? tap.blocksExternalGesture(...externalGestures)
@@ -292,14 +298,18 @@ export const SegmentedSeekBar = memo(({
                 .hitSlop(SEEK_HIT_SLOP)
                 .onBegin(() => {
                     'worklet';
-                    runOnJS(logSeekGesture)('pan:begin', { trackWidth });
+                    if (SEEK_GESTURE_DEBUG) {
+                        runOnJS(logSeekGesture)('pan:begin', { trackWidth });
+                    }
                 })
                 .onStart((event) => {
                     'worklet';
-                    runOnJS(logSeekGesture)('pan:activate', {
-                        x: event.x,
-                        trackWidth,
-                    });
+                    if (SEEK_GESTURE_DEBUG) {
+                        runOnJS(logSeekGesture)('pan:activate', {
+                            x: event.x,
+                            trackWidth,
+                        });
+                    }
                     if (trackWidth <= 0) return;
                     panActivated.value = true;
                     dragProgress.value = clampWorklet(event.x / trackWidth);
@@ -317,7 +327,9 @@ export const SegmentedSeekBar = memo(({
                     }
                     const progress = clampWorklet(event.x / trackWidth);
                     dragProgress.value = progress;
-                    runOnJS(logSeekGesture)('pan:end', { progress });
+                    if (SEEK_GESTURE_DEBUG) {
+                        runOnJS(logSeekGesture)('pan:end', { progress });
+                    }
                     runOnJS(commitSeek)(progress);
                 })
                 .onFinalize((_event, success) => {
@@ -329,7 +341,9 @@ export const SegmentedSeekBar = memo(({
                     // active and got cancelled mid-drag, the user's drag was
                     // interrupted with no committed seek — snap back to live.
                     const wasActive = panActivated.value;
-                    runOnJS(logSeekGesture)('pan:finalize', { success, wasActive });
+                    if (SEEK_GESTURE_DEBUG) {
+                        runOnJS(logSeekGesture)('pan:finalize', { success, wasActive });
+                    }
                     panActivated.value = false;
                     if (!success && wasActive) {
                         dragProgress.value = DRAG_IDLE;

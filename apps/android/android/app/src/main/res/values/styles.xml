@@ -3,7 +3,10 @@
     <item name="android:enforceNavigationBarContrast" tools:targetApi="29">true</item>
     <item name="android:editTextBackground">@drawable/rn_edit_text_material</item>
     <item name="colorPrimary">@color/colorPrimary</item>
-    <item name="android:statusBarColor">#ffffff</item>
+    <!-- Transparent so the first frame (before the JS StatusBar call lands)
+         already matches the runtime translucent bar - the white default
+         flashed an opaque strip on devices without OS-enforced edge-to-edge. -->
+    <item name="android:statusBarColor">@android:color/transparent</item>
   </style>
   <style name="Theme.App.SplashScreen" parent="AppTheme">
     <item name="android:windowBackground">@drawable/ic_launcher_background</item>

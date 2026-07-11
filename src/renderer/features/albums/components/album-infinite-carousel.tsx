@@ -11,8 +11,11 @@ import {
 import { DataRow, MemoizedItemCard } from '/@/renderer/components/item-card/item-card';
 import { useDefaultItemListControls } from '/@/renderer/components/item-list/helpers/item-list-controls';
 import { useGridRows } from '/@/renderer/components/item-list/helpers/use-grid-rows';
+import { DefaultItemControlProps } from '/@/renderer/components/item-list/types';
+import { ContextMenuController } from '/@/renderer/features/context-menu/context-menu-controller';
 import { useAlbumQualityProfiles } from '/@/renderer/hooks/use-album-quality-profiles';
 import { useCurrentServerId } from '/@/renderer/store';
+import { hiddenHomeItemKey } from '/@/renderer/store/hidden-home-items.store';
 import {
     Album,
     AlbumListQuery,
@@ -26,6 +29,8 @@ import { ItemListKey } from '/@/shared/types/types';
 interface AlbumCarouselProps {
     containerQuery?: ReturnType<typeof useGridCarouselContainerQuery>;
     enableRefresh?: boolean;
+    // Home shelves opt in so album tiles offer "Remove from home screen".
+    enableRemoveFromHome?: boolean;
     excludeIds?: string[];
     query?: Partial<Omit<AlbumListQuery, 'startIndex'>>;
     queryKey?: QueryFunctionContext['queryKey'];
@@ -39,6 +44,7 @@ const BaseAlbumInfiniteCarousel = (props: AlbumCarouselProps & { rows: DataRow[]
     const {
         containerQuery,
         enableRefresh,
+        enableRemoveFromHome,
         excludeIds,
         query: additionalQuery,
         queryKey,
@@ -58,7 +64,34 @@ const BaseAlbumInfiniteCarousel = (props: AlbumCarouselProps & { rows: DataRow[]
         refetch,
     } = useAlbumListInfinite(sortBy, sortOrder, 20, additionalQuery, queryKey);
 
-    const controls = useDefaultItemListControls();
+    // Home album shelves render through the shared item-card, whose context menu
+    // is driven by `controls.onMore`. Override it (stable identity so the cards
+    // stay memoized) to tag the command with a `homeItemKey`, which makes the
+    // album menu surface "Remove from home screen". Carousel tiles have no
+    // multi-select, so a single-item menu is the correct behaviour here.
+    const handleHomeMore = useCallback(({ event, item }: DefaultItemControlProps) => {
+        if (!item || !event) {
+            return;
+        }
+        const album = item as Album;
+        ContextMenuController.call({
+            cmd: {
+                homeItemKey: hiddenHomeItemKey({
+                    id: album.id,
+                    serverId: album._serverId,
+                    type: 'album',
+                }),
+                items: [album],
+                type: LibraryItem.ALBUM,
+            },
+            event,
+        });
+    }, []);
+    const controlsArgs = useMemo(
+        () => (enableRemoveFromHome ? { overrides: { onMore: handleHomeMore } } : undefined),
+        [enableRemoveFromHome, handleHomeMore],
+    );
+    const controls = useDefaultItemListControls(controlsArgs);
 
     const flattenedItems = useMemo(() => {
         const allItems = albums?.pages.flatMap((page: AlbumListResponse) => page.items) || [];

@@ -6,27 +6,25 @@ import android.util.Log
 import java.io.File
 
 /**
- * Writer connection on the shared `samo-catalog.db`. The JS side (expo-sqlite,
- * `services/catalog/database.ts`) is the OTHER writer; both use WAL +
- * `busy_timeout`, so SQLite serializes them at the page level — one writer's
- * `BEGIN IMMEDIATE` blocks the other on `SQLITE_BUSY` until the busy_timeout
- * elapses or the lock is released.
+ * THE writer on `samo-catalog.db`. Kotlin is the file's SOLE owner: the sync
+ * engine writes through here, SamoCatalogSearch maintains the FTS index
+ * through here, and SamoCatalogDb serves every read (JS queries arrive over
+ * the SamoCatalogQuery bridge module). The JS expo-sqlite connections — the
+ * old second engine whose lock-manager mismatch forced DELETE-journal mode
+ * and caused the render-path read stalls — are gone.
  *
  * BUNDLED SQLITE ONLY (io.requery sqlite-android, an AOSP-API fork shipping
  * its own modern libsqlite3x.so): the PLATFORM SQLite must never open this
- * file. Sharing it between the OS library and expo-sqlite's bundled build
- * made hot-WAL handoffs fragile across process kills, and the platform
- * DefaultDatabaseErrorHandler deleted the whole database on a misjudged
- * corruption verdict (the 2026-06-12 vanishing-mirror incident). The AOSP
- * API quirks documented below (rawQuery for row-returning PRAGMAs etc.)
- * apply identically to the fork.
+ * file. The platform DefaultDatabaseErrorHandler deleted the whole database
+ * on a misjudged corruption verdict (the 2026-06-12 vanishing-mirror
+ * incident). The AOSP API quirks documented below (rawQuery for
+ * row-returning PRAGMAs etc.) apply identically to the fork.
  *
- * This file owns the schema bootstrap (idempotent CREATE TABLE IF NOT EXISTS
- * mirroring the JS-side MIGRATION_V1 in `schema.ts`) so a fresh install where
- * the JS catalog hasn't run yet still gets a usable DB. PRAGMA user_version
- * is NOT touched here — that's the JS migration runner's domain. Our writes
- * are forward-compatible with whatever version the JS side has stamped, since
- * MIGRATION_V1 is the only migration and v1 columns are stable.
+ * This file owns the ENTIRE schema bootstrap (idempotent CREATE IF NOT
+ * EXISTS, including the legacy JS MIGRATION_V1/V2 shapes so upgraded installs
+ * and fresh installs converge on the same schema). PRAGMA user_version is
+ * left untouched: released JS runners stamped 2 there, and nothing reads it
+ * anymore.
  *
  * The writer is a singleton with a lazy-init guard. Mutations route through
  * `withTransactionImmediate { ... }` which uses `BEGIN IMMEDIATE` — the only
@@ -64,14 +62,21 @@ internal object SamoCatalogWriter {
                 SamoNoDeleteDatabaseErrorHandler,
             )
             try {
-                // DELETE mode (rollback journal) coordinates the two SQLite builds
-                // via POSIX file locks, avoiding the corrupt-shared-memory crashes
-                // of WAL. busy_timeout still queues writers on BEGIN IMMEDIATE.
-                db.rawQuery("PRAGMA journal_mode = DELETE", null).use { c ->
+                // WAL: Kotlin is the ONLY engine on this file now (the JS
+                // expo-sqlite connections are gone), so the historical reason
+                // for DELETE mode — POSIX-lock coordination between two SQLite
+                // builds that couldn't share a lock manager — no longer exists.
+                // WAL lets the query module's reader serve the UI a consistent
+                // snapshot WHILE a sync writes, instead of blocking on it.
+                // The flip persists in the file; a BUSY failure (e.g. the
+                // reader mid-query on the very first post-update open) is
+                // tolerated — everything still works in DELETE, just without
+                // read/write concurrency — and the next open retries.
+                db.rawQuery("PRAGMA journal_mode = WAL", null).use { c ->
                     if (c.moveToFirst()) {
                         val mode = c.getString(0)
-                        if (!mode.equals("delete", ignoreCase = true)) {
-                            Log.w(TAG, "expected DELETE, got $mode")
+                        if (!mode.equals("wal", ignoreCase = true)) {
+                            Log.w(TAG, "journal_mode flip to WAL pending, still $mode")
                         }
                     }
                 }
@@ -133,10 +138,10 @@ internal object SamoCatalogWriter {
     }
 
     /**
-     * CREATE TABLE IF NOT EXISTS for every table the JS MIGRATION_V1 owns.
-     * Idempotent — runs on every ensureOpen. The CREATE statements MUST stay
-     * byte-equivalent to the JS migration text or `user_version` drift will
-     * make the JS runner refuse to upgrade.
+     * CREATE TABLE IF NOT EXISTS for the whole catalog schema. Idempotent —
+     * runs on every ensureOpen. Statements stay shape-identical to the legacy
+     * JS migrations so upgraded installs (tables already present) and fresh
+     * installs (created here) end up byte-equivalent.
      */
     private fun bootstrapSchema(db: SQLiteDatabase) {
         db.execSQL(
@@ -236,12 +241,21 @@ internal object SamoCatalogWriter {
             "CREATE INDEX IF NOT EXISTS idx_catalog_detail_synced " +
                 "ON catalog_detail (source_id, synced_at)",
         )
-        // catalog_search (FTS5) is deliberately ABSENT here: Android's platform
-        // SQLite is built WITHOUT the fts5 module ("no such module: fts5"), so
-        // this connection can neither create nor touch it. The expo-sqlite side
-        // (bundled sqlite3 WITH fts5) owns that table exclusively — the JS
-        // search indexer derives it from catalog_item/catalog_track after each
-        // sync. Never reference catalog_search from Kotlin.
+        // The JS-era MIGRATION_V2 indexes (type-scoped sort columns for the
+        // Home/Library derives). Kotlin owns ALL schema now — the JS migration
+        // runner is gone — so they live here with the rest of the bootstrap.
+        db.execSQL(
+            "CREATE INDEX IF NOT EXISTS idx_catalog_item_type_play_count " +
+                "ON catalog_item (source_id, type, play_count)",
+        )
+        db.execSQL(
+            "CREATE INDEX IF NOT EXISTS idx_catalog_item_type_last_played " +
+                "ON catalog_item (source_id, type, last_played_at)",
+        )
+        // catalog_search (FTS5) + its cursor table — Kotlin-owned since the
+        // ownership consolidation (requery's bundled SQLite ships fts5; the
+        // old "no such module: fts5" constraint was the PLATFORM library).
+        SamoCatalogSearch.bootstrap(db)
         db.execSQL(
             """
             CREATE TABLE IF NOT EXISTS catalog_sync_state (
