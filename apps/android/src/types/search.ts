@@ -18,17 +18,14 @@ export type SearchScope =
     | 'podcasts'
     | 'radio';
 
-export interface SearchScreenProps {
-    hasServerConnections: boolean;
-    onSearch: (query: string) => void;
-    onSelectItem: (item: MobileSearchItem) => void;
-    onSelectRecentItem: (item: AndroidRecentContentSourceItem) => void;
-    searchState: AndroidSearchState;
-    serverConnection: ServerAuthenticationResult | null;
-}
-
 export interface SearchOverlayProps {
-    onClose: () => void;
+    /**
+     * Whether search has actually been COMPLETED, as opposed to merely being
+     * dragged in. While false the overlay is mounted and visible in proportion to
+     * the pull, but inert: no focus, no keyboard, no touches. That is what lets a
+     * half-finished pull be reversed — nothing has committed yet.
+     */
+    isCommitted: boolean;
     onSearch: (query: string) => void;
     onSelectItem: (item: AndroidRecentContentSourceItem) => void;
     query: string;

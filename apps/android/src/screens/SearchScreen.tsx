@@ -1,20 +1,18 @@
-import {
-    type MobileSearchItem,
-    type MobileSearchSection,
-} from '@samo/core/mobile';
+import { type MobileSearchItem, type MobileSearchSection } from '@samo/core/mobile';
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import {
     ActivityIndicator,
+    Image,
     Pressable,
     ScrollView,
-    StyleSheet,
     Text,
     TextInput,
     View,
 } from 'react-native';
-
+import Reanimated, { Extrapolation, interpolate, useAnimatedStyle } from 'react-native-reanimated';
+import samoLogo from '../../assets/samo-logo.png';
 import { ClearGlyph, SearchGlyph } from '../components/Glyphs';
-import { InlineSearchBar } from '../components/InlineSearchBar';
+import { useSearchPullContext } from '../components/search-pull/SearchPullContext';
 import { LibraryListRow } from '../components/LibraryListRow';
 import { WarningList } from '../components/WarningList';
 import {
@@ -26,24 +24,23 @@ import { useVisibleRecentItems } from '../hooks/use-visible-recent-items';
 import { type AndroidSearchState } from '../services/search-content';
 import { styles } from '../theme/styles';
 import { colors } from '../theme/tokens';
-import { type SearchOverlayProps, type SearchScope, type SearchScreenProps } from '../types/search';
+import { type SearchOverlayProps, type SearchScope } from '../types/search';
 import {
     getAvailableSearchScopes,
     getSearchSectionsForScope,
     isItemInSearchScope,
 } from '../utils/search-scopes';
 import { toLibraryDisplayItem } from '../utils/library-display';
-import { EmptyServerBackedScreen } from './EmptyServerBackedScreen';
 
 const SEARCH_SCOPE_COPY: Record<SearchScope, { accent: string; subtitle: string }> = {
     albums: { accent: colors.accent, subtitle: 'Records and releases' },
     all: { accent: colors.accent, subtitle: 'Everything connected' },
-    artists: { accent: '#c8aef2', subtitle: 'Performers and creators' },
-    audiobooks: { accent: '#b99af0', subtitle: 'Books and chapters' },
+    artists: { accent: '#dfe5ec', subtitle: 'Performers and creators' },
+    audiobooks: { accent: '#c3ccd8', subtitle: 'Books and chapters' },
     music: { accent: colors.accent, subtitle: 'Songs, albums, artists' },
     playlists: { accent: colors.accent, subtitle: 'Saved listening paths' },
-    podcasts: { accent: '#8fb8a1', subtitle: 'Shows and episodes' },
-    radio: { accent: '#7fb0d8', subtitle: 'Stations' },
+    podcasts: { accent: '#a9b4c2', subtitle: 'Shows and episodes' },
+    radio: { accent: '#8f9aa9', subtitle: 'Stations' },
 };
 
 const SearchScopePills = ({
@@ -60,6 +57,9 @@ const SearchScopePills = ({
             contentContainerStyle={styles.searchScopePills}
             horizontal
             showsHorizontalScrollIndicator={false}
+            // ScrollView's base style is flexGrow:1 — inside the overlay panel
+            // that inflated each pill into a screen-tall capsule.
+            style={styles.searchScopePillsBar}
         >
             {scopes.map((scope) => {
                 const isActive = scope.id === activeScope;
@@ -110,14 +110,11 @@ const SearchBrowseContent = ({
     });
     const browseScopes = availableScopes.filter((scope) => scope.id !== 'all');
 
+    // No standing "Search across your library" masthead: the field says that,
+    // the keyboard is already up, and the heading pushed the only two useful
+    // things here (what you played, where you can look) below the fold.
     return (
         <>
-            <View style={styles.searchBrowseSection}>
-                <Text style={styles.searchSurfaceTitle}>Search across your library</Text>
-                <Text style={styles.searchSurfaceSubtitle}>
-                    Music, stations, books, and shows from your connected sources.
-                </Text>
-            </View>
             {rows.length > 0 ? (
                 <View style={styles.searchRecentSection}>
                     <Text style={styles.searchBrowseTitle}>Recent</Text>
@@ -134,8 +131,8 @@ const SearchBrowseContent = ({
             ) : null}
             {browseScopes.length > 0 ? (
                 <View style={styles.searchRecentSection}>
-                    <Text style={styles.searchBrowseTitle}>Available Media</Text>
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                    <Text style={styles.searchBrowseTitle}>Browse</Text>
+                    <View style={styles.searchSourceGrid}>
                         {browseScopes.map((scope) => {
                             const copy = SEARCH_SCOPE_COPY[scope.id];
 
@@ -144,7 +141,10 @@ const SearchBrowseContent = ({
                                     accessibilityRole="button"
                                     key={scope.id}
                                     onPress={() => onScopeChange(scope.id)}
-                                    style={styles.searchSourceCard}
+                                    style={({ pressed }) => [
+                                        styles.searchSourceCard,
+                                        pressed && styles.searchSourcePressed,
+                                    ]}
                                 >
                                     <View
                                         style={[
@@ -161,42 +161,20 @@ const SearchBrowseContent = ({
                                 </Pressable>
                             );
                         })}
-                    </ScrollView>
+                    </View>
                 </View>
             ) : null}
         </>
     );
 };
 
-const SearchSections = ({
-    onSelectItem,
-    sections,
-}: {
-    onSelectItem: (item: MobileSearchItem) => void;
-    sections: MobileSearchSection[];
-}) => {
-    return (
-        <>
-            {sections.map((section) => (
-                <View key={section.id} style={styles.searchResultSection}>
-                    <Text style={styles.sectionTitle}>{section.title}</Text>
-                    <View style={styles.libraryList}>
-                        {section.items.map((item) => {
-                            const displayItem = toLibraryDisplayItem(item);
-
-                            return displayItem ? (
-                                <LibraryListRow
-                                    displayItem={displayItem}
-                                    key={displayItem.key}
-                                    onPress={() => onSelectItem(item)}
-                                />
-                            ) : null;
-                        })}
-                    </View>
-                </View>
-            ))}
-        </>
-    );
+type SearchResultSection = {
+    id: string;
+    title: string;
+    rows: Array<{
+        item: MobileSearchItem;
+        displayItem: NonNullable<ReturnType<typeof toLibraryDisplayItem>>;
+    }>;
 };
 
 const SearchResults = ({
@@ -208,23 +186,54 @@ const SearchResults = ({
     onSelectItem: (item: MobileSearchItem) => void;
     searchState: AndroidSearchState;
 }) => {
+    const sections = useMemo(() => {
+        if (searchState.status !== 'loaded') {
+            return [];
+        }
+        const scoped = getSearchSectionsForScope(searchState.results.sections, activeScope);
+        const built: SearchResultSection[] = [];
+        for (const section of scoped) {
+            const rows: SearchResultSection['rows'] = [];
+            for (const item of section.items) {
+                const displayItem = toLibraryDisplayItem(item);
+                if (displayItem) {
+                    rows.push({ displayItem, item });
+                }
+            }
+            // A section whose items ALL failed to map used to still emit its
+            // header — an orphan title floating over nothing.
+            if (rows.length > 0) {
+                built.push({ id: section.id, rows, title: section.title });
+            }
+        }
+        return built;
+    }, [searchState, activeScope]);
+
     if (searchState.status === 'idle' || searchState.status === 'loading') {
         return null;
     }
 
     if (searchState.status === 'error') {
         return (
-            <View style={styles.section}>
-                <Text style={styles.errorText}>{searchState.message}</Text>
-            </View>
+            <ScrollView
+                keyboardShouldPersistTaps="handled"
+                showsVerticalScrollIndicator={false}
+                style={styles.searchOverlayResults}
+            >
+                <View style={styles.section}>
+                    <Text style={styles.errorText}>{searchState.message}</Text>
+                </View>
+            </ScrollView>
         );
     }
 
-    const sections = getSearchSectionsForScope(searchState.results.sections, activeScope);
-
     if (sections.length === 0) {
         return (
-            <>
+            <ScrollView
+                keyboardShouldPersistTaps="handled"
+                showsVerticalScrollIndicator={false}
+                style={styles.searchOverlayResults}
+            >
                 <View style={styles.section}>
                     <Text style={styles.sectionTitle}>No Results</Text>
                     <Text style={styles.mutedText}>
@@ -232,183 +241,136 @@ const SearchResults = ({
                     </Text>
                 </View>
                 <WarningList errors={searchState.results.errors} title="Search warnings" />
-            </>
+            </ScrollView>
         );
     }
 
+    // Plain ScrollView on purpose: results are capped small (dozens of rows),
+    // so virtualization buys nothing here — and the recycled FlashList inside
+    // this absolute overlay drew cells at phantom offsets on device (rows
+    // scattered down the page with giant voids between them). Do not put a
+    // recycling list back in this overlay.
     return (
-        <>
-            <SearchSections onSelectItem={onSelectItem} sections={sections} />
+        <ScrollView
+            contentContainerStyle={styles.searchOverlayResultsContent}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+            style={styles.searchOverlayResults}
+        >
+            {sections.map((section) => (
+                <View key={section.id} style={styles.searchResultSection}>
+                    <Text style={styles.sectionTitle}>{section.title}</Text>
+                    <View style={styles.libraryList}>
+                        {section.rows.map(({ displayItem, item }) => (
+                            <LibraryListRow
+                                displayItem={displayItem}
+                                key={displayItem.key}
+                                onPress={() => onSelectItem(item)}
+                            />
+                        ))}
+                    </View>
+                </View>
+            ))}
             <WarningList errors={searchState.results.errors} title="Search warnings" />
-        </>
+        </ScrollView>
     );
 };
 
-export const SearchScreen = memo(({
-    hasServerConnections,
-    onSearch,
-    onSelectItem,
-    onSelectRecentItem,
-    searchState,
-    serverConnection,
-}: SearchScreenProps) => {
-    const homeContentState = useVisibleHomeContentState();
-    const recentItems = useVisibleRecentItems();
-    const [query, setQuery] = useState(searchState.status === 'loaded' ? searchState.query : '');
-    const availableScopes = useMemo(
-        () => getAvailableSearchScopes(homeContentState, serverConnection, recentItems),
-        [homeContentState, recentItems, serverConnection],
-    );
-    const [activeScope, setActiveScope] = useState<SearchScope>('all');
-    const browseRecentItems = useMemo(() => recentItems.slice(0, 6), [recentItems]);
+export const SearchOverlay = memo(
+    ({
+        isCommitted,
+        onSearch,
+        onSelectItem,
+        query,
+        searchState,
+        serverConnection,
+    }: SearchOverlayProps) => {
+        const { pull } = useSearchPullContext();
+        /*
+         * Search ARRIVES on the same value the finger is driving (see pullReveal):
+         * reveal 1 is the seated bar, 2 is search fully open, and this is the span
+         * between them. Not an entrance animation played at you once a decision was
+         * made elsewhere — the second half of one continuous gesture, which is why
+         * easing the drag back takes it away again.
+         */
+        const arrivalStyle = useAnimatedStyle(() => ({
+            opacity: interpolate(pull.value, [1, 2], [0, 1], Extrapolation.CLAMP),
+        }));
+        const homeContentState = useVisibleHomeContentState();
+        const recentItems = useVisibleRecentItems();
+        const inputRef = useRef<TextInput>(null);
+        const availableScopes = useMemo(
+            () => getAvailableSearchScopes(homeContentState, serverConnection, recentItems),
+            [homeContentState, recentItems, serverConnection],
+        );
+        const [activeScope, setActiveScope] = useState<SearchScope>('all');
+        const overlayRecentItems = useMemo(() => recentItems.slice(0, 8), [recentItems]);
 
-    useEffect(() => {
-        if (searchState.status === 'idle') {
-            setQuery('');
-        }
-    }, [searchState.status]);
+        useEffect(() => {
+            // Focus — and so the KEYBOARD — only once the gesture has actually
+            // completed. The overlay mounts and becomes visible well before this,
+            // while the pull is still in flight, and raising the keyboard then would
+            // both commit a decision the user has not made and be impossible to undo:
+            // Android gives no way to partially retract an IME. So the keyboard is
+            // the last thing to happen, after the screen the user was already
+            // watching arrive has finished arriving.
+            if (!isCommitted) {
+                return;
+            }
+            inputRef.current?.focus();
+            // Android sometimes drops a focus request that lands mid-animation; this
+            // re-asserts it once the motion has settled.
+            const id = setTimeout(() => {
+                if (!inputRef.current?.isFocused()) {
+                    inputRef.current?.focus();
+                }
+            }, 250);
+            return () => clearTimeout(id);
+        }, [isCommitted]);
 
-    useEffect(() => {
-        const trimmedQuery = query.trim();
+        useEffect(() => {
+            if (!availableScopes.some((scope) => scope.id === activeScope)) {
+                setActiveScope('all');
+            }
+        }, [activeScope, availableScopes]);
 
-        if (!trimmedQuery) {
-            onSearch('');
-            return;
-        }
-
-        const timeoutId = setTimeout(() => onSearch(trimmedQuery), 280);
-
-        return () => clearTimeout(timeoutId);
-    }, [onSearch, query]);
-
-    useEffect(() => {
-        if (!availableScopes.some((scope) => scope.id === activeScope)) {
-            setActiveScope('all');
-        }
-    }, [activeScope, availableScopes]);
-
-    if (!hasServerConnections) {
-        return <EmptyServerBackedScreen tabTitle="Search" />;
-    }
-
-    return (
-        <>
-            <View style={styles.searchPanel}>
-                <InlineSearchBar
-                    elevated
-                    isLoading={searchState.status === 'loading'}
-                    onChange={setQuery}
-                    onClear={() => {
-                        setQuery('');
-                    }}
-                    placeholder="Find anything in Samo"
-                    value={query}
-                />
-            </View>
-            <SearchScopePills
-                activeScope={activeScope}
-                onScopeChange={setActiveScope}
-                scopes={availableScopes}
-            />
-            {query.trim() ? null : (
-                <SearchBrowseContent
-                    activeScope={activeScope}
-                    availableScopes={availableScopes}
-                    onScopeChange={setActiveScope}
-                    onSelectItem={onSelectRecentItem}
-                    recentItems={browseRecentItems}
-                />
-            )}
-            {query.trim() ? (
-                <SearchResults
-                    activeScope={activeScope}
-                    onSelectItem={onSelectItem}
-                    searchState={searchState}
-                />
-            ) : null}
-        </>
-    );
-});
-SearchScreen.displayName = 'SearchScreen';
-
-export const SearchOverlay = memo(({
-    onClose,
-    onSearch,
-    onSelectItem,
-    query,
-    searchState,
-    serverConnection,
-}: SearchOverlayProps) => {
-    const homeContentState = useVisibleHomeContentState();
-    const recentItems = useVisibleRecentItems();
-    const inputRef = useRef<TextInput>(null);
-    const availableScopes = useMemo(
-        () => getAvailableSearchScopes(homeContentState, serverConnection, recentItems),
-        [homeContentState, recentItems, serverConnection],
-    );
-    const [activeScope, setActiveScope] = useState<SearchScope>('all');
-    const overlayRecentItems = useMemo(() => recentItems.slice(0, 8), [recentItems]);
-
-    useEffect(() => {
-        const id = setTimeout(() => inputRef.current?.focus(), 80);
-        return () => clearTimeout(id);
-    }, []);
-
-    useEffect(() => {
-        if (!availableScopes.some((scope) => scope.id === activeScope)) {
-            setActiveScope('all');
-        }
-    }, [activeScope, availableScopes]);
-
-    return (
-        <View style={styles.searchOverlay}>
-            <Pressable
-                accessibilityLabel="Close search"
-                onPress={onClose}
-                style={StyleSheet.absoluteFillObject}
-            />
-            <View style={styles.searchOverlayPanel}>
-                <View style={styles.searchOverlayBar}>
-                    <SearchGlyph color={colors.muted} />
-                    <TextInput
-                        autoCapitalize="none"
-                        onChangeText={onSearch}
-                        placeholder="Find anything in Samo"
-                        placeholderTextColor={colors.muted}
-                        ref={inputRef}
-                        returnKeyType="search"
-                        style={styles.searchOverlayInput}
-                        value={query}
-                    />
-                    {searchState.status === 'loading' ? (
-                        <ActivityIndicator color={colors.accent} size="small" />
-                    ) : query.length > 0 ? (
-                        <Pressable
-                            accessibilityLabel="Clear"
-                            onPress={() => onSearch('')}
-                            style={styles.searchOverlayClear}
-                        >
-                            <ClearGlyph color={colors.muted} />
-                        </Pressable>
-                    ) : null}
+        // No card, no sheet: the whole screen darkens and the search field sits
+        // exactly where the Home drawer's field sits (same row geometry), so
+        // opening search reads as the drawer field simply coming alive — keyboard
+        // up, results right there. The dim fades in rather than cutting, which is
+        // what sells "came alive" over "a screen replaced the page".
+        return (
+            <Reanimated.View
+                pointerEvents={isCommitted ? 'auto' : 'none'}
+                style={[styles.searchOverlay, arrivalStyle]}
+            >
+                {/*
+                    NO FIELD HERE. The pull surface owns the one search field in
+                    the app and keeps it on screen the whole time search is open,
+                    so this row only reserves its height. Drawing a second field,
+                    magnifier and samo-S at these same coordinates is what made
+                    all three visibly double as the two layers crossfaded.
+                */}
+                <View pointerEvents="none" style={styles.homeSearchDrawer}>
+                    <View style={styles.searchOverlayFieldSpacer} />
                 </View>
                 <SearchScopePills
                     activeScope={activeScope}
                     onScopeChange={setActiveScope}
                     scopes={availableScopes}
                 />
-                <ScrollView
-                    keyboardShouldPersistTaps="handled"
-                    showsVerticalScrollIndicator={false}
-                    style={styles.searchOverlayResults}
-                >
-                    {query.trim() ? (
-                        <SearchResults
-                            activeScope={activeScope}
-                            onSelectItem={onSelectItem}
-                            searchState={searchState}
-                        />
-                    ) : (
+                {query.trim() ? (
+                    <SearchResults
+                        activeScope={activeScope}
+                        onSelectItem={onSelectItem}
+                        searchState={searchState}
+                    />
+                ) : (
+                    <ScrollView
+                        keyboardShouldPersistTaps="handled"
+                        showsVerticalScrollIndicator={false}
+                        style={styles.searchOverlayResults}
+                    >
                         <SearchBrowseContent
                             activeScope={activeScope}
                             availableScopes={availableScopes}
@@ -416,10 +378,10 @@ export const SearchOverlay = memo(({
                             onSelectItem={onSelectItem}
                             recentItems={overlayRecentItems}
                         />
-                    )}
-                </ScrollView>
-            </View>
-        </View>
-    );
-});
+                    </ScrollView>
+                )}
+            </Reanimated.View>
+        );
+    },
+);
 SearchOverlay.displayName = 'SearchOverlay';

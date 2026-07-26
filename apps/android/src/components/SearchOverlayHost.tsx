@@ -1,6 +1,7 @@
 import { type MobileHomeItem, type MobileSearchItem } from '@samo/core/mobile';
 import { memo } from 'react';
 
+import { useSearchPullContext } from './search-pull/SearchPullContext';
 import { handleSelectMediaItem } from '../handlers/media-detail-handlers';
 import { handleSearch } from '../handlers/search-handlers';
 import { SearchOverlay } from '../screens/SearchScreen';
@@ -42,11 +43,6 @@ const handleSearchOverlayQuery = (query: string): void => {
     runOverlaySearchDebounced(query);
 };
 
-const handleCloseSearchOverlay = (): void => {
-    setIsSearchOverlayOpen(false);
-    setSearchOverlayQuery('');
-};
-
 const handleSearchOverlaySelect = (item: MobileHomeItem | MobileSearchItem): void => {
     setIsSearchOverlayOpen(false);
     setSearchOverlayQuery('');
@@ -62,14 +58,20 @@ export const SearchOverlayHost = memo(function SearchOverlayHost() {
     const searchOverlayQuery = useAppNavigationSelector((state) => state.searchOverlayQuery);
     const searchState = useAppNavigationSelector((state) => state.searchState);
     const serverConnection = useAuthSessionSelector((state) => state.serverConnection);
+    const { isSearchMounted } = useSearchPullContext();
 
-    if (!isSearchOverlayOpen) {
+    // Mounted EARLY — as soon as the pull is meaningfully underway — so the
+    // overlay can be dragged into view rather than appearing after the fact.
+    // Getting the render out of the way during the slack of stage one also keeps
+    // it off the frame where stage two begins, which is the one moment the
+    // motion has to be perfectly smooth.
+    if (!isSearchMounted && !isSearchOverlayOpen) {
         return null;
     }
 
     return (
         <SearchOverlay
-            onClose={handleCloseSearchOverlay}
+            isCommitted={isSearchOverlayOpen}
             onSearch={handleSearchOverlayQuery}
             onSelectItem={handleSearchOverlaySelect}
             query={searchOverlayQuery}
