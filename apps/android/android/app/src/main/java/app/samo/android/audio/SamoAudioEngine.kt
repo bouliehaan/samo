@@ -1263,8 +1263,23 @@ internal class SamoAudioEngine(
         // (music play-count / long-form completed). REPEAT = natural end looping
         // back onto itself (repeat-one) — every completed loop is a real listen,
         // so it submits too. SEEK = user skip → no submit.
-        val completed = reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO ||
+        val naturalEnd = reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO ||
           reason == Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT
+
+        // ...except a multi-file audiobook, where one queue item is one FILE of
+        // the book. Progress is keyed on the BOOK, so submitting here marked the
+        // whole book finished every time a file ended — roughly every ten minutes
+        // on a chapter-per-file rip. The next resume read then saw completed=true
+        // and restarted the book at 0, which is what "audiobook progress sync is
+        // broken" looked like. Crossing a file boundary inside one book is not an
+        // ending; the real end of the last file lands in STATE_ENDED, which still
+        // submits.
+        val outgoingBookId = parseAudiobookIdFromPlaybackId(previousMediaId)
+        val incomingBookId =
+          parseAudiobookIdFromPlaybackId(queue.items[newIndex]["id"] as? String)
+        val continuingSameBook =
+          outgoingBookId != null && outgoingBookId == incomingBookId
+        val completed = naturalEnd && !continuingSameBook
         SamoProgressSync.detach(completed = completed, reason = if (completed) "ended" else "skip")
 
         // Adopt the new current track natively — no JS needed. getStatusMap
