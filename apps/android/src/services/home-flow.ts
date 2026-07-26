@@ -15,6 +15,7 @@ import {
 } from '../utils/recent-content-dedupe';
 import { buildCatalogHomeContent, type HomeLiveSections } from './catalog/catalog-reads';
 import { reconcileHomeContent } from './home-content';
+import { traceAsync } from './jank-trace';
 import { saveHomeLayoutHint } from './home-layout-hint';
 import { buildHomeLoadKey, dedupeInFlight } from './in-flight-requests';
 import {
@@ -43,7 +44,9 @@ export const refreshHomeFromMirror = async (options?: {
     if (!serverConnection) {
         return;
     }
-    const content = await buildCatalogHomeContent(serverConnection, lastHomeLiveSections);
+    const content = await traceAsync('home.deriveFromMirror', () =>
+        buildCatalogHomeContent(serverConnection, lastHomeLiveSections),
+    );
     if (!content) {
         return;
     }

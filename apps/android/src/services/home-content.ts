@@ -1,6 +1,7 @@
 import { type MobileHomeContent, type MobileHomeItem } from '@samo/core/mobile';
 
 import { getContentItemKey } from '../utils/content-item';
+import { traceSync } from './jank-trace';
 
 // Home assembles from the on-device mirror (catalog-reads buildCatalogHomeContent)
 // plus live server-curated sections; this module owns only the shared state
@@ -74,6 +75,16 @@ export const reconcileHomeContent = (
     if (!previous) {
         return next;
     }
+    return traceSync('home.reconcileContent', () =>
+        reconcileHomeContentInner(previous, next, options),
+    );
+};
+
+const reconcileHomeContentInner = (
+    previous: MobileHomeContent,
+    next: MobileHomeContent,
+    options?: { prune?: boolean },
+): MobileHomeContent => {
 
     // Mid-sync the on-device mirror can briefly read THIN — a shelf that's
     // really still there returns zero rows and drops out of `next`. Applying

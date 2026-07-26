@@ -22,6 +22,7 @@ import { type HomeDisplaySection, type HomeFilter } from '../types/home';
 import { type ViewAllVariant } from '../types/view-all';
 import { type LibraryMediaType } from '../types/library-display';
 import { getHomeLayoutHint } from '../services/home-layout-hint';
+import { traceSync } from '../services/jank-trace';
 import { reconcileHomeDisplaySections } from './home-display-reconcile';
 import { clamp } from './math';
 import { getContentItemKey, mergeContentItemSignals } from './content-item';
@@ -32,7 +33,10 @@ import {
     filterItemsExcludingAlbumCanonicalKeys,
     getCanonicalAlbumIdentityKey,
 } from './recent-content-dedupe';
-import { resolveSamoItemArtworkSourceForDisplay } from './samo-artwork-url';
+import {
+    getArtworkResolutionGeneration,
+    resolveSamoItemArtworkSourceForDisplay,
+} from './samo-artwork-url';
 
 const sortHomeItemsByLastPlayed = (items: MobileHomeItem[]): MobileHomeItem[] =>
     [...items].sort((left, right) => {
@@ -238,30 +242,67 @@ export const resolveItemArtworkUrl = (
 };
 
 /**
- * Apply resolveItemArtworkUrl across a list of items, returning each item
- * unchanged when it already had artwork. Used to backfill recents (which may
- * have been persisted before the entity-id fallback existed) without
- * mutating the persisted store.
+ * Per-source-item memo of the backfill below, valid until the credentials
+ * behind the URLs rotate. Keyed on the SOURCE item, which
+ * `reconcileHomeContent` already keeps stable across derives, so a re-derive
+ * of unchanged content returns the identical objects.
+ *
+ * Weak, so an item that falls out of Home is collected with its entry.
+ */
+const resolvedArtworkItems = new WeakMap<
+    object,
+    { generation: number; resolved: AndroidRecentContentSourceItem }
+>();
+
+/**
+ * Backfill `artworkUrl` for items that have no artwork id to render from —
+ * recents persisted before the id fallback existed — without mutating the
+ * persisted store.
+ *
+ * An item that DOES carry `artworkImageId` is returned untouched, and that is
+ * load-bearing rather than an optimization. The resolved URL embeds the
+ * current `stream_token`, which Samo rotates (~25 min, and on every re-auth),
+ * so stamping it onto every item made every item a NEW object on every
+ * derive — differing from its predecessor in exactly one field, the token.
+ * That was the entire reason Home's derive was expensive: hundreds of
+ * allocations, then a deep value-compare of every item against its
+ * predecessor (`reconcileHomeDisplaySections`, which has to canonicalize the
+ * token away) purely to hand the old object back. Nothing consumed the
+ * backfilled URL either — every display path (`ArtworkImage`) and the prefetch
+ * walker resolve from `artworkImageId` first, which is stable.
  */
 export const withResolvedArtwork = <T extends AndroidRecentContentSourceItem>(
     items: T[],
     serverConnection: ServerAuthenticationResult | null,
 ): T[] => {
-    return items.map((item) => {
+    const generation = getArtworkResolutionGeneration();
+    let changed = false;
+    const resolvedItems = items.map((item) => {
+        if (item.artworkImageId) {
+            return item;
+        }
+        const cached = resolvedArtworkItems.get(item);
+        if (cached && cached.generation === generation) {
+            changed ||= cached.resolved !== item;
+            return cached.resolved as T;
+        }
+
         const imageSource = resolveSamoItemArtworkSourceForDisplay(item, serverConnection);
         const artworkUrl =
             typeof imageSource === 'string' ? imageSource : imageSource?.uri;
+        const resolved =
+            !artworkUrl || artworkUrl === item.artworkUrl
+                ? item
+                : ({ ...item, artworkUrl } as T);
 
-        if (!artworkUrl || (artworkUrl === item.artworkUrl && item.artworkImageId)) {
-            return item;
-        }
-
-        return {
-            ...item,
-            artworkUrl,
-            artworkImageId: item.artworkImageId,
-        } as T;
+        resolvedArtworkItems.set(item, { generation, resolved });
+        changed ||= resolved !== item;
+        return resolved;
     });
+
+    // Nothing was backfilled — hand back the SAME array so callers that compare
+    // by identity (and the memoized sections above them) see no change at all.
+    return changed ? resolvedItems : items;
 };
 
 export const getArtworkImageSourceForItem = (
@@ -476,10 +517,12 @@ export const getHomeDisplaySections = (
     previous?: HomeDisplaySection[],
 ): HomeDisplaySection[] => {
     const displaySections: HomeDisplaySection[] = [];
-    const resolvedSections = sections.map((section) => ({
-        ...section,
-        items: withResolvedArtwork(section.items, serverConnection),
-    }));
+    const resolvedSections = traceSync('home.resolveArtwork', () =>
+        sections.map((section) => ({
+            ...section,
+            items: withResolvedArtwork(section.items, serverConnection),
+        })),
+    );
     const sectionsById = new Map(resolvedSections.map((section) => [section.id, section]));
     // Look up fresh home items by recent-key so we can swap in current artwork URLs
     // for recents. Persisted recents can carry stale or expired cover-art URLs;
@@ -496,7 +539,7 @@ export const getHomeDisplaySections = (
             }
         }
     }
-    const recentDisplayItems = withResolvedArtwork(
+    const recentDisplayItems = traceSync('home.recents', () => withResolvedArtwork(
         dedupeRecentDisplayItems(
             recentItems.flatMap((recentItem) => {
                 if (
@@ -525,7 +568,7 @@ export const getHomeDisplaySections = (
             }),
         ),
         serverConnection,
-    );
+    ));
     const seenAlbumCanonicalKeys = collectAlbumCanonicalKeys(recentDisplayItems);
     const recentlyAddedItems = buildRecentlyAddedHeroRow(sectionsById, seenAlbumCanonicalKeys);
     for (const item of recentlyAddedItems) {
@@ -726,5 +769,7 @@ export const getHomeDisplaySections = (
                 : section,
         )
         .filter((section) => section.items.length > 0 || section.pending);
-    return reconcileHomeDisplaySections(previous, result);
+    return traceSync('home.reconcileSections', () =>
+        reconcileHomeDisplaySections(previous, result),
+    );
 };
