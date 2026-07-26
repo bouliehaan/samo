@@ -572,7 +572,6 @@ const MetadataSection = memo(
                                     internalState={internalState}
                                     item={item}
                                     itemType={item._itemType}
-                                    showRating={false}
                                     type="compact"
                                 />
                             )}

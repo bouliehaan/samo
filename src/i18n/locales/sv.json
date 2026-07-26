@@ -14,7 +14,6 @@
         "removeFromQueue": "ta bort från kö",
         "deselectAll": "avmarkera alla",
         "moveToBottom": "flytta till botten",
-        "setRating": "sätt betyg",
         "toggleSmartPlaylistEditor": "växla $t(entity.smartPlaylist) redigerare",
         "removeFromFavorites": "ta bort från $t(entity.favorite, {\"count\": 2})",
         "downloadStarted": "startade nedladdning av {{count}} objekt",
@@ -196,7 +195,6 @@
         "name": "namn",
         "dateAdded": "datum tillagt",
         "releaseDate": "utgivningsdag",
-        "communityRating": "betyg från communityn",
         "path": "sökväg",
         "favorited": "favoritmärkt",
         "albumArtist": "$t(entity.albumArtist, {\"count\": 1})",
@@ -217,7 +215,6 @@
         "album": "$t(entity.album, {\"count\": 1})",
         "trackNumber": "spår",
         "songCount": "sångräkning",
-        "criticRating": "kritikerbetyg",
         "albumCount": "$t(entity.album, {\"count\": 2}) antal",
         "explicitStatus": "$t(common.explicitStatus)"
     },
@@ -318,7 +315,6 @@
         "contextMenu": {
             "addToPlaylist": "$t(action.addToPlaylist)",
             "addToFavorites": "$t(action.addToFavorites)",
-            "setRating": "$t(action.setRating)",
             "moveToTop": "$t(action.moveToTop)",
             "deletePlaylist": "$t(action.deletePlaylist)",
             "moveToBottom": "$t(action.moveToBottom)",

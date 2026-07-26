@@ -388,8 +388,6 @@ export const tagListSortMap: TagListSortMap = {
 export enum AlbumListSort {
     ALBUM_ARTIST = 'albumArtist',
     ARTIST = 'artist',
-    COMMUNITY_RATING = 'communityRating',
-    CRITIC_RATING = 'criticRating',
     DURATION = 'duration',
     EXPLICIT_STATUS = 'explicitStatus',
     FAVORITED = 'favorited',
@@ -436,8 +434,6 @@ export const albumListSortMap: AlbumListSortMap = {
     samo: {
         albumArtist: undefined,
         artist: undefined,
-        communityRating: undefined,
-        criticRating: undefined,
         duration: undefined,
         explicitStatus: undefined,
         favorited: undefined,

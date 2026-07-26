@@ -15,7 +15,6 @@
         "removeFromFavorites": "odstrani iz $t(entity.favorite, {\"count\": 2})",
         "removeFromPlaylist": "odstrani iz $t(entity.playlist, {\"count\": 1})",
         "removeFromQueue": "odstrani iz čakalne vrste",
-        "setRating": "nastavi oceno",
         "toggleSmartPlaylistEditor": "preklopi urejevalnik $t(entity.smartPlaylist)",
         "viewPlaylists": "poglej $t(entity.playlist, {\"count\": 2})",
         "openIn": {
@@ -231,8 +230,6 @@
         "bpm": "bpm",
         "channels": "$t(common.channel_other)",
         "comment": "komentar",
-        "communityRating": "ocena skupnosti",
-        "criticRating": "ocena kritikov",
         "dateAdded": "dodano",
         "disc": "disk",
         "duration": "trajanje",
@@ -388,7 +385,6 @@
             "removeFromFavorites": "$t(action.removeFromFavorites)",
             "removeFromPlaylist": "$t(action.removeFromPlaylist)",
             "removeFromQueue": "$t(action.removeFromQueue)",
-            "setRating": "$t(action.setRating)",
             "playShuffled": "$t(player.shuffle)",
             "shareItem": "deli",
             "showDetails": "pridobi informacije"

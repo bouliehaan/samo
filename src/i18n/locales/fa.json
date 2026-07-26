@@ -47,7 +47,6 @@
         "removeFromQueue": "حذف از صف",
         "deselectAll": "لغو انتخاب همه",
         "moveToBottom": "انتقال به پایین",
-        "setRating": "تعیین امتیاز",
         "toggleSmartPlaylistEditor": "تغییر ویرایشگر $t(entity.smartPlaylist)",
         "removeFromFavorites": "حذف از $t(entity.favorite, {\"count\": 2})",
         "openIn": {
@@ -323,10 +322,8 @@
         "lastPlayed": "به تازگی پخش شده",
         "toYear": "تا سال",
         "fromYear": "از سال",
-        "criticRating": "امتیاز منتقدین",
         "album": "$t(entity.album, {\"count\": 1})",
         "trackNumber": "قطعه",
-        "communityRating": "رتبه بندی جامعه",
         "isCompilation": "مخلوط است"
     },
     "form": {
@@ -474,7 +471,6 @@
             "createPlaylist": "$t(action.createPlaylist)",
             "moveToBottom": "$t(action.moveToBottom)",
             "moveToTop": "$t(action.moveToTop)",
-            "setRating": "$t(action.setRating)",
             "deletePlaylist": "$t(action.deletePlaylist)",
             "moveToNext": "$t(action.moveToNext)"
         },

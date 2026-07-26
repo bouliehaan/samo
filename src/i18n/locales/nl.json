@@ -13,7 +13,6 @@
         "removeFromQueue": "verwijder uit wachtrij",
         "deselectAll": "deselecteer alles",
         "moveToBottom": "verplaats naar einde",
-        "setRating": "kies beoordeling",
         "toggleSmartPlaylistEditor": "editor $t(entity.smartPlaylist) schakelen",
         "removeFromFavorites": "verwijder uit $t(entity.favorite, {\"count\": 2})",
         "clearQueue": "verwijder lijst",
@@ -168,8 +167,6 @@
         "newVersionAvailable": "een nieuwe versie is beschikbaar"
     },
     "filter": {
-        "communityRating": "community rating",
-        "criticRating": "criticus rating",
         "mostPlayed": "meest gespeeld",
         "comment": "commentaar",
         "playCount": "aantal keer afgespeeld",
@@ -216,7 +213,6 @@
     },
     "page": {
         "contextMenu": {
-            "setRating": "$t(action.setRating)",
             "addToPlaylist": "$t(action.addToPlaylist)",
             "addToFavorites": "$t(action.addToFavorites)",
             "moveToTop": "$t(action.moveToTop)",
@@ -759,7 +755,6 @@
         "minimumScrobbleSeconds_description": "de minimale duur in seconden dat van een nummer gespeeld moet zijn om deze te scrobblen",
         "minimumScrobbleSeconds": "minimale duur voor scrobblen (seconden)",
         "mpvExecutablePath_description": "bepaal het pad naar het uitvoerbare bestand van mpv. indien leeg wordt het standaard pad gebruikt",
-        "showRatings": "toon beoordelingssterren",
         "showVisualizerInSidebar_description": "een paneel met de visualiseerder wordt aan de zijbalk toegevoegd",
         "showVisualizerInSidebar": "toon visualiseerder in zijbalk",
         "combinedLyricsAndVisualizer_description": "combineer songtekst en visualiseerder in hetzelfde paneel",
@@ -863,7 +858,6 @@
         "preferLocalLyrics": "prefereer lokale songteksten",
         "showLyricsInSidebar_description": "er zal een paneel worden toegevoegd aan de wachtrij waarin songteksten worden getoond",
         "showLyricsInSidebar": "toon songteksten in zijbalk",
-        "showRatings_description": "toont beoordelingssterren in de interface",
         "sampleRate": "bemonsteringsfrequentie",
         "sampleRate_description": "de bemonsteringsfrequentie die wordt gebruikt als de gekozen bemonsteringsfrequentie afwijkt van die van de actieve media. bij een waarde lager dan 8000 wordt de standaard frequentie gebruikt",
         "savePlayQueue_description": "sla de wachtij op bij het afsluiten van de applicatie en herstel deze als de applicatie wordt geopend",

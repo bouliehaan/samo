@@ -200,7 +200,6 @@
         "removeFromQueue": "ukloni iz liste",
         "deselectAll": "deselektuj sve",
         "moveToBottom": "idi na dno",
-        "setRating": "oceni",
         "toggleSmartPlaylistEditor": "pokreni $t(entity.smartPlaylist) editor",
         "removeFromFavorites": "ukloni iz $t(entity.favorite, {\"count\": 2})",
         "openIn": {
@@ -398,7 +397,6 @@
         "dateAdded": "datum dodavanja",
         "releaseDate": "datum izdavanja",
         "albumCount": "$t(entity.album, {\"count\": 2}) albuma",
-        "communityRating": "ocena zajednice",
         "path": "putanja",
         "favorited": "favoriti",
         "albumArtist": "$t(entity.albumArtist, {\"count\": 1})",
@@ -417,7 +415,6 @@
         "lastPlayed": "zadnje puštana",
         "toYear": "do godine",
         "fromYear": "iz godine",
-        "criticRating": "ocena kritičara",
         "album": "$t(entity.album, {\"count\": 1})",
         "trackNumber": "pesma"
     },
@@ -468,7 +465,6 @@
         "contextMenu": {
             "addToPlaylist": "$t(action.addToPlaylist)",
             "addToFavorites": "$t(action.addToFavorites)",
-            "setRating": "$t(action.setRating)",
             "moveToTop": "$t(action.moveToTop)",
             "deletePlaylist": "$t(action.deletePlaylist)",
             "moveToBottom": "$t(action.moveToBottom)",

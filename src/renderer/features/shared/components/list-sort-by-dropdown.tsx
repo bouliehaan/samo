@@ -298,16 +298,6 @@ const ALBUM_LIST_FILTERS: Partial<
             value: AlbumListSort.ID,
         },
         {
-            defaultOrder: SortOrder.DESC,
-            name: i18n.t('filter.communityRating', { postProcess: 'titleCase' }),
-            value: AlbumListSort.COMMUNITY_RATING,
-        },
-        {
-            defaultOrder: SortOrder.DESC,
-            name: i18n.t('filter.criticRating', { postProcess: 'titleCase' }),
-            value: AlbumListSort.CRITIC_RATING,
-        },
-        {
             defaultOrder: SortOrder.ASC,
             name: i18n.t('filter.name', { postProcess: 'titleCase' }),
             value: AlbumListSort.NAME,

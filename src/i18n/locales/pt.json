@@ -15,7 +15,6 @@
         "removeFromFavorites": "remover de $t(entity.favorite, {\"count\": 2})",
         "removeFromPlaylist": "remover da $t(entity.playlist, {\"count\": 1})",
         "removeFromQueue": "remover da fila",
-        "setRating": "definir classificação",
         "toggleSmartPlaylistEditor": "alternar editor $t(entity.smartPlaylist)",
         "viewPlaylists": "ver $t(entity.playlist, {\"count\": 2})",
         "openIn": {
@@ -211,8 +210,6 @@
         "bpm": "bpm",
         "channels": "$t(common.channel_other)",
         "comment": "comentário",
-        "communityRating": "Nota da comunidade",
-        "criticRating": "avaliação da crítica",
         "dateAdded": "data de adição",
         "disc": "disco",
         "duration": "duração",
@@ -367,7 +364,6 @@
             "removeFromFavorites": "$t(action.removeFromFavorites)",
             "removeFromPlaylist": "$t(action.removeFromPlaylist)",
             "removeFromQueue": "$t(action.removeFromQueue)",
-            "setRating": "$t(action.setRating)",
             "playShuffled": "$t(player.shuffle)",
             "shareItem": "partilhar elemento",
             "showDetails": "obter informações"

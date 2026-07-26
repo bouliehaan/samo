@@ -31,7 +31,6 @@ interface ItemCardControlsProps {
     internalState?: ItemListStateActions;
     item: Album | AlbumArtist | Artist | Genre | Playlist | Song | undefined;
     itemType: LibraryItem;
-    showRating?: boolean;
     type?: 'compact' | 'default' | 'poster';
 }
 

@@ -163,8 +163,6 @@ export const useSidebarCollapsedNavigation = () =>
 export const usePlayerbarOpenDrawer = () =>
     useSettingsStore((state) => state.general.playerbarOpenDrawer, shallow);
 
-export const useShowRatings = () => useSettingsStore((state) => state.general.showRatings, shallow);
-
 export const useArtistRadioCount = () =>
     useSettingsStore((state) => state.general.artistRadioCount, shallow);
 

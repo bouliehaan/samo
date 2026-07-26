@@ -20,7 +20,6 @@
             "lastfm": "Last.fm에서 보기"
         },
         "viewPlaylists": "$t(entity.playlist, {\"count\": 2}) 보기",
-        "setRating": "평점 지정",
         "toggleSmartPlaylistEditor": "$t(entity.smartPlaylist) 편집기 펼치기",
         "addOrRemoveFromSelection": "선택항목에서 추가 또는 제거",
         "selectRangeOfItems": "항목의 범위 선택",
@@ -215,8 +214,6 @@
         "album": "$t(entity.album, {\"count\": 1})",
         "albumArtist": "$t(entity.albumArtist, {\"count\": 1})",
         "artist": "$t(entity.artist, {\"count\": 1})",
-        "communityRating": "커뮤니티 평점",
-        "criticRating": "비평가 평점",
         "disc": "디스크",
         "bitrate": "비트 전송률",
         "biography": "바이오그래피",

@@ -298,7 +298,6 @@ export const initialState: SettingsState = {
         qobuz: true,
         resume: true,
         showLyricsInSidebar: true,
-        showRatings: false,
         showVisualizerInSidebar: true,
         sidebarCollapsedNavigation: true,
         sidebarCollapseShared: false,
