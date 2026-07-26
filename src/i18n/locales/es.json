@@ -262,7 +262,6 @@
         "lastfmApiKey_description": "la clave API para {{lastfm}}. Requerida para la portada",
         "lastfmApiKey": "Clave API para {{lastfm}}",
         "discordServeImage": "Servir imágenes de {{discord}} desde el servidor",
-        "discordServeImage_description": "Comparte el arte de la portada para el estado de actividad de {{discord}} desde el propio servidor, solo disponible para Jellyfin y Navidrome. {{discord}} usa un bot para obtener las imágenes, por lo que tu servidor debe ser alcanzable desde el Internet público",
         "lastfm": "Mostrar enlaces de last.fm",
         "lastfm_description": "Muestra enlaces a Last.fm en las páginas de artistas/álbumes",
         "musicbrainz": "Mostrar enlaces de MusicBrainz",
@@ -408,7 +407,6 @@
         "primaryShade_description": "Sobreescribe el tono principal (0-9) usado para los botones, enlaces, y otros elementos de colores primarios",
         "autosave": "Guardar automáticamente la cola de reproducción",
         "autosaveCount": "Frecuencia de guardado automática de la cola de reproducción",
-        "autosave_description": "Permite guardar automáticamente la cola de reproducción en tu servidor. Esto solo es posible cuando se usa Navidrome/Subsonic, y no puedes tener una cola de reproducción mezclada.",
         "autosaveCount_description": "Cuántas pistas cambian antes de que la cola sea guardada. 1 (mínimo) quiere decir que todas las canciones cambian",
         "spotify_description": "Muestra enlaces a Spotify en las páginas de artistas/álbumes",
         "spotify": "Mostrar enlaces de Spotify",
@@ -618,7 +616,6 @@
         "audioDeviceFetchError": "un error ocurrió cuando se intentó obtener los dispositivos de audio",
         "invalidServer": "servidor inválido",
         "loginRateError": "demasiados intentos de inicio de sesión, por favor inténtalo en unos segundos",
-        "badAlbum": "Estás viendo esta página porque esta canción no forma parte de un álbum. Este problema puede ocurrir si tienes una canción en el nivel superior de tu carpeta de música. Jellyfin solo agrupa pistas si están en una carpeta",
         "networkError": "Ocurrió un error de red",
         "openError": "No se pudo abrir el archivo",
         "badValue": "Opción inválida \"{{value}}\". Este valor ya no existe",
@@ -945,8 +942,7 @@
         },
         "editPlaylist": {
             "title": "editar $t(entity.playlist, {\"count\": 1})",
-            "success": "$t(entity.playlist, {\"count\": 1}) actualizada correctamente",
-            "publicJellyfinNote": "Jellyfin por alguna razón no expone si una lista de reproducción es pública o no. Si deseas que ésta siga siendo pública, por favor ten seleccionada la siguiente entrada"
+            "success": "$t(entity.playlist, {\"count\": 1}) actualizada correctamente"
         },
         "queryEditor": {
             "input_optionMatchAll": "coincidir todos",

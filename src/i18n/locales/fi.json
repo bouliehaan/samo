@@ -215,7 +215,6 @@
         "invalidServer": "virheellinen palvelin",
         "audioDeviceFetchError": "äänentoistolaitteita haettaessa tapahtui virhe",
         "authenticationFailed": "tunnistautuminen epäonnistui",
-        "badAlbum": "näet tämän sivun koska tämä kappale ei ole osa albumia. Näet tämän todennäköisesti jos kappaleesi on päämusiikkikansiosi juuressa. Jellyfin ryhmittää kappaleet vain jos ne ovat kansiossa",
         "apiRouteError": "pyynnön reititys epäonnistui",
         "credentialsRequired": "käyttäjätunnuksia vaaditaan",
         "loginRateError": "liian monta kirjautumisyritystä, kokeile muutaman sekuntin päästä uudestaan",
@@ -331,8 +330,7 @@
         },
         "editPlaylist": {
             "success": "$t(entity.playlist, {\"count\": 1}) päivitetty onnistuneesti",
-            "title": "muokkaa $t(entity.playlist, {\"count\": 1})",
-            "publicJellyfinNote": "Jellyfin ei jostain syystä kerro onko soittolista julkinen vai ei. Jos haluat sen pysyvän julkisena, pidä seuraava valinta valittuna"
+            "title": "muokkaa $t(entity.playlist, {\"count\": 1})"
         },
         "lyricSearch": {
             "input_artist": "$t(entity.artist, {\"count\": 1})",
@@ -606,7 +604,6 @@
         "useSystemTheme": "käytä järjestelmän teemaa",
         "volumeWheelStep": "äänenvoimakkuusrullan askel",
         "discordServeImage": "jaa {{discord}} kuvat palvelimelta",
-        "discordServeImage_description": "jaa kansikuvat {{discord}}n rich presenceä varten suoraan palvelimelta. saatavilla vain Jellyfinille ja Navidromelle",
         "musicbrainz_description": "näytä linkit MusicBrainz sivulle artistin/albumin sivuilla, jos MusicBrainz ID löytyy",
         "lastfm": "näytä last.fm linkit",
         "lastfm_description": "näytä linkit Last.fm sivulle artistin/albumin sivuilla",

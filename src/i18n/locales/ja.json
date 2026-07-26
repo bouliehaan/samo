@@ -279,7 +279,6 @@
         "discordLinkType_description": "{{discord}} Rich Presence において、曲とアーティストのフィールドに {{lastfm}} または {{musicbrainz}} への外部リンクを追加します。{{musicbrainz}} は最も正確ですが、タグが必要でアーティストリンクを提供しません。一方、{{lastfm}} は常にリンクを提供します。追加のネットワークリクエストは発生しません",
         "discordPausedStatus": "一時停止時に Rich Presence を表示",
         "discordRichPresence": "{{discord}} Rich Presence",
-        "discordServeImage_description": "{{discord}} Rich Presence 用のカバーアートをサーバーから共有します。Jellyfin と Navidrome でのみ利用できます。{{discord}} は bot を使用して画像を取得するため、サーバーはパブリックインターネットからアクセスできる必要があります",
         "exportImportSettings_control_exportText": "設定をエクスポート",
         "exportImportSettings_control_importText": "設定をインポート",
         "exportImportSettings_control_title": "設定をインポート/エクスポート",
@@ -386,7 +385,6 @@
         "playerItemConfiguration_description": "全画面プレーヤーに表示する項目と順序を設定します",
         "playerItemConfiguration": "プレーヤーの項目設定",
         "autosave": "再生キューを自動的に保存",
-        "autosave_description": "再生キューをサーバーに自動的に保存できるようにします。これは Navidrome/Subsonic を使用している場合にのみ可能であり、再生キューを混在させることはできません。",
         "autosaveCount": "自動再生キューの保存頻度",
         "autosaveCount_description": "キューが保存されるまでにトラックが変更される回数を設定します。1 (最小値) は曲が変わるたびに保存されることを意味します",
         "useThemePrimaryShade_description": "選択したテーマで定義されたプライマリシェードをプライマリカラーのバリアントに使用します",
@@ -719,7 +717,6 @@
         "invalidServer": "無効なサーバー",
         "loginRateError": "ログイン試行回数が多すぎます。数秒後に再試行してください",
         "endpointNotImplementedError": "{{serverType}} にはエンドポイント {{endpoint}} が実装されていません",
-        "badAlbum": "このページが表示されたのは、この曲がアルバムに含まれていないためです。この問題は、音楽フォルダーの最上位に曲がある場合に発生する可能性が高くなります。Jellyfin は、トラックがフォルダー内にある場合にのみトラックをグループ化します",
         "networkError": "ネットワークエラーが発生しました",
         "notificationDenied": "通知の許可が拒否されました。この設定は効果がありません",
         "openError": "ファイルを開けませんでした",
@@ -1053,7 +1050,6 @@
         },
         "editPlaylist": {
             "title": "$t(entity.playlist, {\"count\": 1}) を編集",
-            "publicJellyfinNote": "Jellyfin では、何らかの理由でプレイリストが公開されているかどうかが表示されません。公開されたままにしたい場合は、以下の項目を選択してください",
             "success": "$t(entity.playlist, {\"count\": 1}) が正常に更新されました"
         },
         "shareItem": {

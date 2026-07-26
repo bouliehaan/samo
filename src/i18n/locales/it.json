@@ -376,7 +376,6 @@
         "discordListening": "mostra stato come in ascolto",
         "discordListening_description": "mostra lo stato come in ascolto invece che in riproduzione",
         "discordServeImage": "recupera le immagini di {{discord}} dal server",
-        "discordServeImage_description": "condividi la copertina per lo stato attività di {{discord}} direttamente dal server, disponibile solo per Jellyfin e Navidrome",
         "externalLinks": "mostra link esterni",
         "externalLinks_description": "consente di visualizzare link esterni (Last.fm, MusicBrainz) sulle pagine di artista/album",
         "preferLocalLyrics": "utilizza i testi locali",
@@ -484,7 +483,6 @@
         "audioDeviceFetchError": "si è verificato un errore nel provare ad ottenre i device audio",
         "invalidServer": "server non valido",
         "loginRateError": "troppi tentativi di accesso, per favore riprova tra qualche secondo",
-        "badAlbum": "stai visualizzando questa pagina perché questa canzone non fa parte di un album. probabilmente vedi questo messaggio perché hai una canzone posizionata direttamente nella cartella principale della tua libreria musicale. Jellyfin raggruppa le tracce solo se si trovano all’interno di una cartella",
         "badValue": "opzione non valida \"{{value}}\". valore inesistente",
         "networkError": "si è verificato un errore di rete",
         "openError": "impossibile aprire il file",
@@ -787,7 +785,6 @@
         },
         "editPlaylist": {
             "title": "modifica $t(entity.playlist, {\"count\": 1})",
-            "publicJellyfinNote": "Jellyfin non mostra se una playlist è pubblica o meno. Se vuoi che rimanga pubblica, assicurati di selezionare l’opzione seguente",
             "success": "$t(entity.playlist, {\"count\": 1}) aggiornato con successo"
         },
         "shareItem": {

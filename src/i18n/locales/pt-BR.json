@@ -172,7 +172,6 @@
         },
         "editPlaylist": {
             "title": "editar $t(entity.playlist, {\"count\": 1})",
-            "publicJellyfinNote": "O Jellyfin por algum motivo não expõe se uma playlist é pública ou não. Se você deseja que ela permaneça pública, por favor selecione a seguinte entrada",
             "success": "$t(entity.playlist, {\"count\": 1}) atualizada com sucesso"
         },
         "addToPlaylist": {
@@ -262,7 +261,6 @@
         "discordListening_description": "Mostrar status como ouvindo em vez de reproduzindo",
         "discordRichPresence_description": "Ativar status de reprodução no Rich Presence do {{discord}}. As chaves de imagem são: {{icon}}, {{playing}} e {{paused}}",
         "discordServeImage": "Servir imagens do {{discord}} a partir do servidor",
-        "discordServeImage_description": "Compartilhar a capa para o Rich Presence do {{discord}} a partir do próprio servidor, disponível apenas para Jellyfin e Navidrome. O {{discord}} usa um bot para buscar imagens, portanto seu servidor deve estar acessível pela internet pública",
         "discordUpdateInterval": "Intervalo de atualização do Rich Presence do {{discord}}",
         "discordDisplayType": "Tipo de exibição da presença do {{discord}}",
         "discordDisplayType_description": "Altera o que você está ouvindo no seu status",
@@ -834,7 +832,6 @@
         "audioDeviceFetchError": "ocorreu um erro ao tentar obter dispositivos de áudio",
         "invalidServer": "servidor inválido",
         "loginRateError": "muitas tentativas de login, tente novamente em alguns segundos",
-        "badAlbum": "você está vendo este erro por que está música não é parte de algum álbum. um motivo comum para você estar vendo este erro é se a sua música estiver na raiz da sua pasta de músicas. o Jellyfin apenas agrupa as músicas se elas estiveram na mesma pasta",
         "networkError": "ocorreu um erro na internet",
         "openError": "não foi possível abrir o arquivo",
         "badValue": "opção inválida \"{{value}}\". este valor não existe no momento",

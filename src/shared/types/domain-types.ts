@@ -128,7 +128,7 @@ export type Album = {
     originalYear: number;
     participants: null | Record<string, RelatedArtist[]>;
     playCount: null | number;
-    /** Populated for Samo albums (and Subsonic annotate sweep) for hi-res badges. */
+    /** Populated for Samo albums, for hi-res badges. */
     qualityProfile?: QualityBadgeProfile;
     recordLabels: string[];
     releaseDate: null | PartialIsoDateString;
@@ -240,9 +240,6 @@ export type Genre = {
 export type GenreListArgs = BaseEndpointArgs & { query: GenreListQuery };
 
 export interface GenreListQuery extends BaseQuery<GenreListSort> {
-    _custom?: {
-        jellyfin?: null;
-    };
     limit?: number;
     musicFolderId?: string | string[];
     searchTerm?: string;
@@ -732,6 +729,8 @@ export type CreatePlaylistBody = {
     ownerId?: string;
     public?: boolean;
     queryBuilderRules?: PlaylistRules;
+    /** Seed the new playlist with these tracks. */
+    songIds?: string[];
     sync?: boolean;
 };
 

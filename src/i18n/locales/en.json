@@ -213,7 +213,7 @@
         "apiRouteError": "unable to route request",
         "audioDeviceFetchError": "an error occurred when trying to get audio devices",
         "authenticationFailed": "authentication failed",
-        "badAlbum": "you are seeing this page because this song is not part of an album. you are most likely seeing this issue if you have a song at the top level of your music folder. Jellyfin only groups tracks if they are in a folder",
+        "badAlbum": "you are seeing this page because this song is not part of an album. this usually means the file sits at the top level of your music folder rather than in an album folder",
         "badValue": "invalid option \"{{value}}\". this value no longer exists",
         "credentialsRequired": "credentials required",
         "endpointNotImplementedError": "endpoint {{endpoint}} is not implemented for {{serverType}}",
@@ -373,7 +373,6 @@
             "title": "delete $t(entity.playlist, {\"count\": 1})"
         },
         "editPlaylist": {
-            "publicJellyfinNote": "Jellyfin for some reason does not expose whether a playlist is public or not. If you wish for this to remain public, please have the following input selected",
             "success": "$t(entity.playlist, {\"count\": 1}) updated successfully",
             "title": "edit $t(entity.playlist, {\"count\": 1})"
         },
@@ -736,7 +735,6 @@
         "autoDJ_timing": "timing",
         "autoDJ_timing_description": "the number of songs remaining in the queue before auto DJ is triggered",
         "autosave": "automatically save play queue",
-        "autosave_description": "enable automatically saving the play queue to your server. this is only possible when using Navidrome/Subsonic, and you cannot have a mixed play queue.",
         "autosaveCount": "automatic play queue save frequency",
         "autosaveCount_description": "how many track changes before the queue is saved. 1 (minimum) means every song change",
         "accentColor_description": "sets the accent color for the application",
@@ -818,7 +816,6 @@
         "discordRichPresence": "{{discord}} rich presence",
         "discordRichPresence_description": "enable playback status in {{discord}} rich presence. Image keys are: {{icon}}, {{playing}}, and {{paused}}",
         "discordServeImage": "serve {{discord}} images from server",
-        "discordServeImage_description": "share cover art for {{discord}} rich presence from server itself, only available for Jellyfin and Navidrome. {{discord}} uses a bot to fetch images, so your server must be reachable from the public internet",
         "discordStateIcon": "show playing icon",
         "discordStateIcon_description": "show a small playing icon in the rich presence status. the paused icon is always shown when \"Show rich presence when paused\" is enabled",
         "discordUpdateInterval": "{{discord}} rich presence update interval",

@@ -117,7 +117,7 @@ export const useServerAuthenticated = () => {
             try {
                 setReady(AuthState.LOADING);
 
-                // Use userId if available, otherwise fall back to username (for Subsonic/Navidrome)
+                // Use userId if available, otherwise fall back to username.
                 const userId = serverWithAuth.userId || serverWithAuth.username;
 
                 if (!userId) {

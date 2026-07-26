@@ -176,7 +176,6 @@
         "apiRouteError": "istek yönlendirilemiyor",
         "audioDeviceFetchError": "ses aygıtları alınmaya çalışılırken bir hata oluştu",
         "authenticationFailed": "kimlik doğrulaması başarısız",
-        "badAlbum": "bu sayfayı görüyorsunuz çünkü bu şarkı bir albümün parçası değil. büyük olasılıkla müzik klasörünüzün en üst seviyesinde bir şarkınız varsa bu sorunu görüyorsunuz. Jellyfin yalnızca bir klasör içindeyse parçaları gruplandırır",
         "badValue": "geçersiz seçenek \"{{value}}\". bu değer artık mevcut değil",
         "remotePortError": "uzak sunucu bağlantı noktası ayarlanmaya çalışılırken bir hata oluştu",
         "remotePortWarning": "yeni bağlantı noktasını uygulamak için sunucuyu yeniden başlatın",
@@ -278,7 +277,6 @@
             "title": "$t(entity.playlist, {\"count\": 1}) listesini sil"
         },
         "editPlaylist": {
-            "publicJellyfinNote": "Jellyfin bazı nedenlerden dolayı bir çalma listesinin herkese açık olup olmadığını göstermez. Bunun herkese açık kalmasını istiyorsanız, lütfen aşağıdaki girdiyi seçin",
             "success": "$t(entity.playlist, {\"count\": 1}) listesi başarıyla güncellendi",
             "title": "$t(entity.playlist, {\"count\": 1}) listesini düzenle"
         },
@@ -545,7 +543,6 @@
         "discordListening_description": "durumu çalma yerine dinleme olarak göster",
         "discordRichPresence_description": "{{discord}} \"Rich Presence\" oynatma durumunu etkinleştirin. Görüntü tuşları şunlardır: {{icon}}, {{playing}} ve {{paused}}",
         "discordServeImage": "sunucudan {{discord}} resimleri servis et",
-        "discordServeImage_description": "sunucudan {{discord}} Rich Presence için kapak resmi paylaşın, yalnızca Jellyfin ve Navidrome için kullanılabilir",
         "discordUpdateInterval": "{{discord}} Rich Presence güncelleme aralığı",
         "discordUpdateInterval_description": "her güncelleme arasındaki saniye cinsinden süre (minimum 15 saniye)",
         "gaplessAudio": "aralıksız ses",

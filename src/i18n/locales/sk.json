@@ -204,7 +204,6 @@
             "title": "odstrániť $t(entity.playlist, {\"count\": 1})"
         },
         "editPlaylist": {
-            "publicJellyfinNote": "Jellyfin z nejakého dôvodu neinformuje, či je playlist verejný alebo nie. Ak si ho želáte ponechať ako verejný, ponechajte nasledujúci vstup ako povolený",
             "success": "$t(entity.playlist, {\"count\": 1}) úspešne aktualizovaný",
             "title": "upraviť $t(entity.playlist, {\"count\": 1})"
         },
@@ -294,7 +293,6 @@
         "apiRouteError": "nie je možné zaslať požiadavku",
         "audioDeviceFetchError": "pri vyhľadávaní zvukových zariadení sa vyskytla chyba",
         "authenticationFailed": "overenie zlyhalo",
-        "badAlbum": "túto stránku vidíte, pretože táto skladba nie je súčasťou albumu. najčastejšou príčinou tohto problému býva umiestnenie skladby priamo v priečinku hudobnej knižnice. Jellyfin navzájom prepája iba skladby, ktoré sú spolu v jednom priečinku",
         "badValue": "neplatná možnosť \"{{value}}\". táto hodnota už neexistuje",
         "credentialsRequired": "vyžadujú sa prihlasovacie údaje",
         "endpointNotImplementedError": "koncový bod {{endpoint}} nie je implementovaný v {{serverType}}",
@@ -552,7 +550,6 @@
         "discordListening_description": "zobraziť status počúvanie namiesto prehrávanie",
         "discordRichPresence_description": "povoliť status prehrávania v {{discord}} rich presence. Obrázky kláves sú: {{icon}}, {{playing}} a {{paused}}",
         "discordServeImage": "poskytuje {{discord}} obrázky zo servera",
-        "discordServeImage_description": "zdieľať obrázok albumu na {{discord}} rich presence priamo zo servera, dostupné iba pre Jellyfin a Navidrome",
         "discordUpdateInterval": "interval aktualizácií {{discord}} rich presence",
         "discordUpdateInterval_description": "čas v sekundách medzi dvomi nasledujúcimi aktualizáciami (minimálne 15 sekúnd)",
         "discordDisplayType": "typ zobrazenia {{discord}} presence",

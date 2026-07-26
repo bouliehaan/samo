@@ -423,8 +423,7 @@
         },
         "editPlaylist": {
             "success": "$t(entity.playlist, {\"count\": 1}) s'ha actualitzat amb èxit",
-            "title": "editar la $t(entity.playlist, {\"count\": 1})",
-            "publicJellyfinNote": "Per algun motiu, Jellyfin no exposa si una llista de reproducció és pública o no. Si voleu que es mantingui pública, seleccioneu la següent entrada"
+            "title": "editar la $t(entity.playlist, {\"count\": 1})"
         },
         "lyricSearch": {
             "input_artist": "$t(entity.artist, {\"count\": 1})",
@@ -626,7 +625,6 @@
         "discordListening_description": "mosta l'estat com escoltant en comptes de jugant",
         "discordRichPresence_description": "activa l'estat de reproducció a l'activitat de {{discord}}. Les tecles d'imatge són: {{icon}}, {{playing}} i {{paused}}",
         "discordServeImage": "serveix imatges de {{discord}} des del servidor",
-        "discordServeImage_description": "comparteix la caràtula per l'estat d'activitat de {{discord}} des del servidor; només disponible per Jellyfin i Navidrome. {{discord}} fa ser un bot per trobar les imatges, de manera que el vostre servidor ha de ser visible per l'internet públic",
         "discordUpdateInterval": "interval d'actualització de l'estat d'activitat de {{discord}}",
         "externalLinks": "mostra enllaços externs",
         "externalLinks_description": "permet mostrar enllaços externs (Last.fm, MusicBrainz) a les pàgines d'artista/àlbum",
@@ -900,7 +898,6 @@
         "discordStateIcon": "mostra la icona de reproducció",
         "discordStateIcon_description": "mostra una petita icona de reproducció a l'estat d'activitat. l'icona de pausa es mostra quan \"mostra l'estat d'activitat quan està en pausa\" està activat",
         "autosave": "desa automàticament la cua de reproducció",
-        "autosave_description": "activa el desament automàtic de la cua de reproducció al teu servidor. això només és possible quan s'utilitza Navidrome/Subsonic i no es pot tenir una cua de reproducció mixta.",
         "autosaveCount": "freqüència de desament de cua de reproducció automàtica",
         "autosaveCount_description": "quants canvis de pista abans que es desi la cua. 1 (mínim) significa cada canvi de cançó",
         "useThemePrimaryShade": "utilitza l'ombra primària del tema",
@@ -1135,7 +1132,6 @@
         "apiRouteError": "no es pot encaminar la sol·licitud",
         "audioDeviceFetchError": "hi ha hagut un error en obtenir els dispositius d'àudio",
         "authenticationFailed": "autenticació fallida",
-        "badAlbum": "esteu veient aquesta pàgina perquè aquesta cançó no és part de cap àlbum. aquest problema pot passar si teniu una cançó al nivell superior de la vostra carpeta de música. Jellyfin només agrupa pistes si són en una carpeta",
         "badValue": "l'opció \"{{value}}\"és invàlida. aquest valor ja no existeix",
         "loginRateError": "massa intents d'inici de sessió, intenteu-ho de nou d'aquí uns segons",
         "mpvRequired": "Cal l'MPV",

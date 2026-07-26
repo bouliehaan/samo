@@ -674,7 +674,7 @@ export const SamoController: Partial<InternalControllerEndpoint> = {
             description: body.comment,
             name: body.name,
             public: body.public ?? false,
-            trackIds: body._custom?.navidrome?.songIds,
+            trackIds: body.songIds,
         });
         return { id: playlist.id };
     },

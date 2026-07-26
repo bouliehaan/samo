@@ -184,7 +184,6 @@
         "apiRouteError": "tidak dapat mengarahkan permintaan",
         "audioDeviceFetchError": "terjadi kesalahan saat mencoba mengambil perangkat audio",
         "authenticationFailed": "autentikasi gagal",
-        "badAlbum": "Anda melihat halaman ini karena lagu ini tidak termasuk dalam album. Masalah ini bisa terjadi jika Anda memiliki lagu di tingkat atas folder musik Anda. Jellyfin hanya mengelompokkan lagu jika mereka berada di dalam folder",
         "credentialsRequired": "kredensial diperlukan",
         "endpointNotImplementedError": "endpoint {{endpoint}} tidak diimplementasikan untuk {{serverType}}",
         "genericError": "terjadi kesalahan",
@@ -302,7 +301,6 @@
             "title": "hapus $t(entity.playlist, {\"count\": 1})"
         },
         "editPlaylist": {
-            "publicJellyfinNote": "Jellyfin entah bagaimana tidak menampilkan apakah playlist ini publik atau tidak. Jika Anda ingin playlist ini tetap publik, harap pilih entri berikut",
             "success": "$t(entity.playlist, {\"count\": 1}) berhasil diperbarui",
             "title": "ubah $t(entity.playlist, {\"count\": 1})"
         },
@@ -877,7 +875,6 @@
         "discordPausedStatus": "tampilkan rich presence saat dijeda",
         "discordRichPresence": "rich presence {{discord}}",
         "discordServeImage": "sajikan gambar {{discord}} dari server",
-        "discordServeImage_description": "bagikan cover art untuk rich presence {{discord}} dari server itu sendiri, hanya tersedia untuk Jellyfin dan Navidrome. {{discord}} menggunakan bot untuk mengambil gambar, jadi server Anda harus dapat dijangkau dari internet publik",
         "enableAutoTranslation_description": "aktifkan terjemahan secara otomatis saat lirik dimuat",
         "enableAutoTranslation": "aktifkan terjemahan otomatis",
         "exportImportSettings_control_description": "ekspor dan impor pengaturan melalui JSON",

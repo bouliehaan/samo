@@ -193,7 +193,7 @@ subscribePlayerStateEvent(
                 'xesam:trackNumber': song.trackNumber ? song.trackNumber : null,
                 'xesam:useCount':
                     song.playCount !== null && song.playCount !== undefined ? song.playCount : null,
-                // User ratings are only on Navidrome/Subsonic and are on a scale of 1-5
+                // User ratings are on a scale of 1-5
                 'xesam:userRating': song.userRating ? song.userRating / 5 : null,
             };
         } catch (err) {

@@ -207,7 +207,6 @@
         "audioDeviceFetchError": "der opstod en fejl under hentning af lydenheder",
         "badValue": "ugyldig indstilling \"{{value}}\". denne værdi eksisterer ikke længere",
         "authenticationFailed": "godkendelse mislykkedes",
-        "badAlbum": "du ser denne side, fordi denne sang ikke er en del af et album. du ser sandsynligvis denne fejl, hvis du har en sang i rodmappen af din musikmappe. Jellyfin grupperer kun numre, hvis de er i en mappe",
         "credentialsRequired": "loginoplysninger påkrævet",
         "endpointNotImplementedError": "endpointet {{endpoint}} er ikke implementeret for {{serverType}}",
         "genericError": "der opstod en fejl",
@@ -358,7 +357,6 @@
             "title": "slet $t(entity.playlist, {\"count\": 1})"
         },
         "editPlaylist": {
-            "publicJellyfinNote": "Jellyfin viser af en eller anden grund ikke, om en playliste er offentlig eller ej. Hvis du ønsker, at den forbliver offentlig, skal du have følgende felt markeret",
             "success": "$t(entity.playlist, {\"count\": 1}) opdateret",
             "title": "rediger $t(entity.playlist, {\"count\": 1})"
         },
@@ -770,7 +768,6 @@
         "discordRichPresence": "{{discord}} Rich Presence",
         "discordRichPresence_description": "aktiver afspilningsstatus i {{discord}} Rich Presence. Billednøgler er: {{icon}}, {{playing}} og {{paused}}",
         "discordServeImage": "server {{discord}}-billeder fra serveren",
-        "discordServeImage_description": "del coverart til {{discord}} Rich Presence fra selve serveren, kun tilgængelig for Jellyfin og Navidrome. {{discord}} bruger en bot til at hente billeder, så din server skal være tilgængelig fra det offentlige internet",
         "discordUpdateInterval": "{{discord}} Rich Presence-opdateringsinterval",
         "discordUpdateInterval_description": "tiden i sekunder mellem hver opdatering (minimum 15 sekunder)",
         "enableAutoTranslation_description": "aktiver oversættelse automatisk, når sangtekster indlæses",

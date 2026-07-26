@@ -211,7 +211,6 @@
         "remotePortWarning": "indítsd újra a szervert az új PORT használatához",
         "genericError": "hiba történt",
         "endpointNotImplementedError": "a(z) {{endpoint}} végpont nincs implementálva a következőhöz: {{serverType}}",
-        "badAlbum": "azért látod ezt az oldalt mert ez a zeneszám nem része egy albumnak. ez általában akkor történik amikor egy szám a zenekönyvtárad gyökerébe kerül. a Jellyfin csak mappákba rendezett számokat csoportosít",
         "loginRateError": "túl sok bejelentkezési kísérlet, kérlek próbáld újra pár másodperc múlva",
         "mpvRequired": "MPV szükséges",
         "invalidServer": "érvénytelen szerver",
@@ -312,7 +311,6 @@
         },
         "editPlaylist": {
             "success": "$t(entity.playlist, {\"count\": 1}) sikeresen módosítva",
-            "publicJellyfinNote": "A Jellyfin valamiért nem teszi közzé, hogy egy lejátszási lista publikus-e vagy sem. Amennyiben azt szeretnéd, hogy publikus maradjon, válaszd ki az alábbi beviteli mezőt",
             "title": "szerkesztés $t(entity.playlist, {\"count\": 1})"
         },
         "lyricSearch": {
@@ -695,7 +693,6 @@
         "discordRichPresence": "{{discord}} rich presence",
         "discordRichPresence_description": "engedélyezze a lejátszási állapotot a {{discord}} rich presence-ben. A kép kulcsok: {{icon}}, {{playing}} és {{paused}}",
         "discordServeImage": "{{discord}} képek kiszolgálása a szerverről",
-        "discordServeImage_description": "megosztja a {{discord}} borítóképet a szerverről (csak Jellyfin és Navidrome esetén elérhető). A {{discord}} botot használ a képek letöltéséhez, ezért a szervernek elérhetőnek kell lennie a nyilvános interneten",
         "discordUpdateInterval": "{{discord}} rich presence frissítési intervallum",
         "discordUpdateInterval_description": "az egyes frissítések közötti idő másodpercben (minimum 15 másodperc)",
         "enableAutoTranslation_description": "a dalszöveg betöltésekor automatikusan engedélyezze a fordítást",

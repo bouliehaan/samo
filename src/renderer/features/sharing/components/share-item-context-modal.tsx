@@ -27,7 +27,7 @@ export const ShareItemContextModal = ({
 
     const shareItemMutation = useShareItem({});
 
-    // Uses the same default as Navidrome: 1 year
+    // Default share lifetime: 1 year.
     const defaultDate = dayjs().add(1, 'year').format('YYYY-MM-DD HH:mm:ss');
 
     const form = useForm({

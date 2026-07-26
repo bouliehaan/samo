@@ -7,7 +7,7 @@ import { Link, NavLink, useNavigate } from 'react-router';
 import samoLogo from '../../../../../build/samologo.svg';
 import styles from './collapsed-sidebar.module.css';
 
-import OpenSubsonicLogo from '/@/renderer/features/servers/assets/opensubsonic.png';
+import SamoLogo from '/@/renderer/assets/icons/128x128.png';
 import { CollapsedSidebarButton } from '/@/renderer/features/sidebar/components/collapsed-sidebar-button';
 import { CollapsedSidebarItem } from '/@/renderer/features/sidebar/components/collapsed-sidebar-item';
 import { ServerSelectorItems } from '/@/renderer/features/sidebar/components/server-selector-items';
@@ -186,7 +186,7 @@ export const CollapsedSidebar = () => {
                             <CollapsedSidebarItem
                                 activeIcon={null}
                                 component={Flex}
-                                icon={<img className={styles.serverIcon} src={OpenSubsonicLogo} />}
+                                icon={<img className={styles.serverIcon} src={SamoLogo} />}
                                 label={''}
                                 py="md"
                                 style={{

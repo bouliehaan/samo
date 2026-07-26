@@ -338,11 +338,6 @@ export const useScrobble = () => {
                 return;
             }
 
-            // Only apply to Jellyfin controller scrobble
-            if (false as boolean) {
-                return;
-            }
-
             const currentTimestamp = useTimestampStoreBase.getState().timestamp;
             const position = currentTimestamp * 1e7;
 

@@ -252,7 +252,6 @@
         "audioDeviceFetchError": "wystąpił błąd podczas próby znalezienia urządzeń dźwiękowych",
         "invalidServer": "nieprawidłowy serwer",
         "loginRateError": "zbyt dużo prób logowania, poczekaj chwilę i spróbuj ponownie",
-        "badAlbum": "ta strona jest wyświetlana, ponieważ ten utwór nie jest częścią albumu. najprawdopodobniej ten problem występuje, jeśli utwór znajduje się w nadrzędnym folderze plików z muzyką. Jellyfin grupuje utwory tylko wtedy, gdy znajdują się one w folderze",
         "networkError": "wystąpił błąd sieciowy",
         "openError": "nie można otworzyć pliku",
         "badValue": "niewłaściwa opcja \"{{value}}\". ta wartość już nie istnieje",
@@ -374,8 +373,7 @@
         },
         "editPlaylist": {
             "title": "edytuj $t(entity.playlist, {\"count\": 1})",
-            "success": "$t(entity.playlist, {\"count\": 1}) zaktualizowana pomyślnie",
-            "publicJellyfinNote": "Z jakiegoś powodu Jellyfin nie udostępnia informacji na temat publiczności playlisty. Jeżeli chcesz, aby ta pozostała publiczna, mniej wybraną poniższą opcję"
+            "success": "$t(entity.playlist, {\"count\": 1}) zaktualizowana pomyślnie"
         },
         "shareItem": {
             "allowDownloading": "zezwól na pobieranie",
@@ -911,7 +909,6 @@
         "musicbrainz_description": "pokazuj linki do MusicBrainz na stronach wykonawców/albumów, gdzie istnieje MusicBrainz ID",
         "discordPausedStatus": "pokaż status podczas pauzy",
         "discordServeImage": "wysyłaj obrazy dla {{discord}} z serwera",
-        "discordServeImage_description": "pokazuj okładki w statusie {{discord}} prosto z serwera, dostępne tylko dla Jellyfin i Navidrome. {{discord}} używa bota do pobierania obrazów, więc twój serwer musi być dostępny publicznie w internecie",
         "analyticsDisable": "Zrezygnuj z analityki bazowanej na użytkowaniu",
         "analyticsDisable_description": "Zanonymizowane dane użytkowania są wysyłane do dewelopera w celu poprawienia aplikacji",
         "artistBackground": "obraz tła wykonawcy",
@@ -1048,7 +1045,6 @@
         "playerItemConfiguration_description": "skonfiguruj jakie elementy są pokazywane i w jakiej kolejności, w odtwarzaczu pełnoekranowym",
         "playerItemConfiguration": "konfiguracja elementów odtwarzacza",
         "autosave": "automatycznie zapisuj kolejkę odtwarzania",
-        "autosave_description": "włącz automatyczne zapisywanie kolejki odtwarzania na twój serwer. to jest możliwe tylko gdy używane jest Navidrome/Subsonic, i nie masz zmixowanej kolejki odtwarzania.",
         "autosaveCount": "częstotliwość automatycznego zapisywania kolejki odtwarzania",
         "autosaveCount_description": "ile razy piosenka zostanie zmieniona przed zapisaniem kolejki. 1 (najmniejsze) oznacza zapisywanie kolejki po każdej zmianie piosenki",
         "listenbrainz_description": "pokaż linki do ListenBrainz na stronach wykonawców/albumów",

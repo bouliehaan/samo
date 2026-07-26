@@ -182,7 +182,6 @@
         "apiRouteError": "não é possível encaminhar a solicitação",
         "audioDeviceFetchError": "ocorreu um erro ao tentar obter dispositivos de áudio",
         "authenticationFailed": "falha na autenticação",
-        "badAlbum": "está a ver este erro por que está música não é parte de algum album. um motivo comum para si estar a ver este erro é se a sua música estiver na raiz da sua pasta de músicas. o Jellyfin apenas agrupa as músicas se elas estiveram na mesma pasta",
         "badValue": "opção inválida \"{{value}}\". este valor não existe no momento",
         "credentialsRequired": "credenciais necessárias",
         "endpointNotImplementedError": "endpoint {{endpoint}} não está implementado para {{serverType}}",
@@ -281,7 +280,6 @@
             "title": "apagar $t(entity.playlist, {\"count\": 1})"
         },
         "editPlaylist": {
-            "publicJellyfinNote": "O Jellyfin por algum motivo não expõe se uma playlist é pública ou não. Se deseja que ela permaneça pública, por favor selecione a seguinte entrada",
             "success": "$t(entity.playlist, {\"count\": 1}) atualizada com sucesso",
             "title": "editar $t(entity.playlist, {\"count\": 1})"
         },

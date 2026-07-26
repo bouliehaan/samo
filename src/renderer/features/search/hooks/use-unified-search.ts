@@ -324,8 +324,8 @@ const getErrorMessage = (error: unknown): string | undefined => {
 };
 
 /**
- * Unified search across the music server (Navidrome/Subsonic/Jellyfin),
- * radio stations, and Audiobookshelf libraries (audiobooks, podcasts, episodes).
+ * Unified search across music, radio stations, and long-form libraries
+ * (audiobooks, podcasts, episodes).
  *
  * Results are scored and ranked with a small relevance layer so the dropdown
  * surfaces the strongest matches first regardless of media type. Group order

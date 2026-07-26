@@ -4,11 +4,11 @@ import { persist } from 'zustand/middleware';
 
 import { identityPersistMigrate, PERSIST_VERSION_INITIAL } from '/@/renderer/store/persist-migrate';
 
-// Local favorites for media types whose backends do not expose a first-class
-// "favorite" concept (Samo long-form books/podcasts, playlists) or where we deliberately
-// keep them client-side (radio stations) so the home page surfaces what *this
-// user* cares about, not the entire library. Music album/artist/song favorites
-// continue to flow through Subsonic `star`/`unstar`.
+// Local favorites for media types the server does not expose a first-class
+// "favorite" concept for (long-form books/podcasts, playlists), or where we
+// deliberately keep them client-side (radio stations) so the home page surfaces
+// what *this user* cares about rather than the entire library. Music album /
+// artist / song favorites are server-side and go through the Samo API.
 
 export type LibraryFavoriteType = 'audiobook' | 'playlist' | 'podcast' | 'radio';
 

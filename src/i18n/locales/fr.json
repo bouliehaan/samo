@@ -246,7 +246,6 @@
         "loginRateError": "trop de tentatives de connexion, merci de réessayer dans quelques secondes",
         "openError": "impossible d'ouvrir le fichier",
         "networkError": "une erreur de réseau est survenue",
-        "badAlbum": "vous voyez cette page parce que ce titre ne fait pas parti d'un album. vous rencontrez probablement cette erreur si vous avez un titre à la racine de votre dossier musique. Jellyfin gère les pistes uniquement si elles sont dans un sous-dossier, qui est lui-même dans un dossier \"Musique(s)\"",
         "badValue": "option {{value}} invalide. cette valeur n'existe plus",
         "notificationDenied": "les autorisations pour les notifications ont été refusées. ce paramètre n'a aucun effet",
         "multipleServerSaveQueueError": "la file d'attente contient un ou plusieurs titres qui ne proviennent pas du serveur actuel. Ceci n'est pas prise en charge",
@@ -730,7 +729,6 @@
         "lastfmApiKey": "clé API {{lastfm}}",
         "lastfmApiKey_description": "la clé API pour {{lastfm}}. requise pour la pochette d'album",
         "discordServeImage": "servir l'image {{discord}} depuis le serveur",
-        "discordServeImage_description": "partage la pochette d'album pour le statut d'activité {{discord}} depuis le serveur directement (disponible uniquement pour Jellyfin et Navidrome). {{discord}} utilise un bot pour récupérer les images, votre serveur doit donc être accessible depuis internet",
         "lastfm": "afficher les liens last.fm",
         "musicbrainz_description": "affiche les liens vers MusicBrainz sur les pages artiste/album, lorsque l'identifiant MusicBrainz existe",
         "lastfm_description": "affiche les liens vers last.fm sur les pages artiste/album",
@@ -864,7 +862,6 @@
         "sidebarPlaylistListFilterRegex_placeholder": "ex. ^Mix Journalier*",
         "sidebarPlaylistListFilterRegex": "filtre de liste de lecture en expression régulière",
         "autosave": "sauvegarder automatiquement la file d'attente",
-        "autosave_description": "activez la sauvegarde automatique de la file d'attente sur votre serveur. Cette fonction est uniquement disponible avec Navidrome/Subsonic et ne permet pas d'utiliser une file d'attente mixte.",
         "autosaveCount": "fréquence de sauvegarde automatique de la file d'attente",
         "autosaveCount_description": "nombre de changement de piste avant la sauvegarde de la file d'attente. 1 (minimum) signifie chaque changement de titre",
         "useThemePrimaryShade": "utiliser la teinte principale du thème",
@@ -948,7 +945,6 @@
         },
         "editPlaylist": {
             "title": "modifier $t(entity.playlist, {\"count\": 1})",
-            "publicJellyfinNote": "Jellyfin n'indique pas si une liste de lecture est publique ou non. Si vous souhaitez que cette liste de lecture reste publique, veuillez sélectionner l'entrée suivante",
             "success": "$t(entity.playlist, {\"count\": 1}) mis à jour avec succès"
         },
         "lyricSearch": {

@@ -189,7 +189,6 @@
         "audioDeviceFetchError": "Beim Versuch, Audiogeräte abzurufen, ist ein Fehler aufgetreten",
         "invalidServer": "Ungültiger Server",
         "loginRateError": "Zu viele Anmeldeversuche, bitte versuche es in einigen Sekunden erneut",
-        "badAlbum": "sie sehen diese Seite, weil dieses Lied nicht Teil eines Albums ist. Dieses Problem tritt meist auf, wenn sich ein Lied im Überordner befindet. Jellyfin gruppiert Tracks nur, wenn diese sich innerhalb eines Ordners befinden",
         "networkError": "ein Netzwerkfehler ist aufgetreten",
         "openError": "datei kann nicht geöffnet werden",
         "badValue": "ungültige option \"{{value}}\". Dieser Wert existiert nicht mehr",
@@ -305,8 +304,7 @@
         },
         "editPlaylist": {
             "title": "Bearbeite $t(entity.playlist, {\"count\": 1})",
-            "success": "$t(entity.playlist, {\"count\": 1}) erfolgreich aktualisiert",
-            "publicJellyfinNote": "Jellyfin legt aus irgendwelchen Gründen nicht offen ob eine Wiedergabeliste öffentlich ist oder nicht. Wenn du möchtest, dass sie öffentlich bleibt, wähle bitte diese Option aus"
+            "success": "$t(entity.playlist, {\"count\": 1}) erfolgreich aktualisiert"
         },
         "lyricSearch": {
             "title": "Songtext Suche",
@@ -989,7 +987,6 @@
         "discordPausedStatus": "Zeige Rich Presence bei Pause",
         "discordRichPresence": "{{discord}} Rich Presence",
         "discordServeImage": "Bilder für {{discord}} vom Server beziehen",
-        "discordServeImage_description": "Bezieht die Coverbilder für {{discord}} Rich Presence vom Server selbst. Nur verfügbar für Jellyfin und Navidrome. Damit der Bot von {{discord}} die Coverbilder abrufen kann, muss der Server öffentlich erreichbar sein",
         "enableAutoTranslation": "Automatische Übersetzung aktivieren",
         "externalLinks": "Externe Links anzeigen",
         "externalLinks_description": "Aktiviert die Anzeige externer Links (Last.fm, MusicBrainz) auf Artist/Album Seiten",
@@ -1108,7 +1105,6 @@
         "queryBuilderCustomFields_inputLabel": "Label",
         "queryBuilderCustomFields_description": "Füge benutzerdefinierte Felder für den Abfrage-Editor hinzu",
         "autosave": "Automatisch aktuelle Wiedergabeliste speichern",
-        "autosave_description": "Aktiviere die automatische Speicherung der aktuellen Wiedergabe auf dem Server. Diese Funktion ist nur bei Navidrome/Subsonic Servern verfügbar und es darf sich nicht um eine gemischte Wiedergabeliste handeln.",
         "autosaveCount": "Häufigkeit der automatischen Speicherung bei Wiedergabelisten",
         "autosaveCount_description": "Wieviele Lieder gespielt werden, bevor die Wiedergabeliste gespeichert wird. 1 (Minimum) bedeutet die Speicherung nach jedem gespielten Lied",
         "useThemeAccentColor_description": "Verwendet die Primärfarbe des gewählten Themas anstatt einer ausgewählten Akzentfarbe",

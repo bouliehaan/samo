@@ -171,7 +171,6 @@
         "audioDeviceFetchError": "ett fel uppstod vid hämtning av ljudenheter",
         "invalidServer": "ogiltig server",
         "loginRateError": "för många inloggningsförsök, försök igen om några sekunder",
-        "badAlbum": "du ser denna sidan eftersom denna låten inte är en del av ett album. du ser troligtvis detta problemet för att du har en låt på toppnivån i din musikmapp. Jellyfin grupperar bara låtar om de finns i en mapp",
         "badValue": "felaktigt alternativ \"{{value}}\". detta värde existerar inte längre",
         "multipleServerSaveQueueError": "spelningskön har en eller flera låtar som inte är från den nuvarande valda servern. detta är inte stöttat",
         "networkError": "en nätverksfel uppstod",
@@ -275,8 +274,7 @@
             "title": "sångtext sök"
         },
         "editPlaylist": {
-            "title": "redigera $t(entity.playlist, {\"count\": 1})",
-            "publicJellyfinNote": "Jellyfin visar av någon anledning inte om en spellista är publik eller inte. Om du önskar att denna ska förbli publik, så får du ha följande indata markerade"
+            "title": "redigera $t(entity.playlist, {\"count\": 1})"
         },
         "largeFetchConfirmation": {
             "title": "lägg till objekt till kön",

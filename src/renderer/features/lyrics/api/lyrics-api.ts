@@ -69,27 +69,27 @@ const fetchLocalLyrics = async (params: {
     if (!server) return null;
 
     if (hasFeature(server, ServerFeature.LYRICS_MULTIPLE_STRUCTURED)) {
-        const subsonicLyrics = await api.controller
+        const structuredLyrics = await api.controller
             .getStructuredLyrics({
                 apiClientProps: { serverId, signal },
                 query: { songId: song.id },
             })
             .catch(() => null);
-        if (subsonicLyrics?.length) return subsonicLyrics;
+        if (structuredLyrics?.length) return structuredLyrics;
         return null;
     }
 
     if (hasFeature(server, ServerFeature.LYRICS_SINGLE_STRUCTURED)) {
-        const jfLyrics = await api.controller
+        const singleLyrics = await api.controller
             .getLyrics({
                 apiClientProps: { serverId, signal },
                 query: { songId: song.id },
             })
             .catch(() => null);
-        if (jfLyrics) {
+        if (singleLyrics) {
             return {
                 artist: song.artists?.[0]?.name,
-                lyrics: jfLyrics,
+                lyrics: singleLyrics,
                 name: song.name,
                 remote: false,
                 source: server?.name ?? 'music server',

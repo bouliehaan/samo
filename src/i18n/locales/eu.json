@@ -351,7 +351,6 @@
         "serverNotSelectedError": "ez da zerbitzaririk hautatu",
         "serverRequired": "zerbitzaria beharrezkoa da",
         "sessionExpiredError": "zure saioa iraungi da",
-        "badAlbum": "Orrialde hau ikusten ari zara abesti hau album batekoa ez delako. Ziurrenik arazo hau ikusten ari zara zure musika karpetaren goiko mailan abesti bat baduzu. Jellyfinek abestiak karpeta batean badaude taldekatzen ditu bakarrik",
         "loginRateError": "Saioa hasteko saiakera gehiegi egin dira, saiatu berriro segundo batzuk barru",
         "notificationDenied": "jakinarazpenetarako baimenak ukatu dira. Ezarpen honek ez du eraginik",
         "systemFontError": "errore bat gertatu da sistemaren letra-tipoak lortzen saiatzean",
@@ -486,7 +485,6 @@
         "discordListening": "erakutsi egoera entzuten bezala",
         "discordRichPresence_description": "gaitu erreprodukzioa egoera {{discord}}-en jarduera-egoeran. Irudi gakoak hauek dira: {{icon}}, {{playing}}, eta {{paused}}",
         "discordServeImage": "zerbitzatu {{discord}} irudiak zerbitzaritik",
-        "discordServeImage_description": "partekatu {{discord}} jarduera-egoerarentzako azala artea zerbitzaritik bertatik, Jellyfin eta Navidrome-rentzat bakarrik eskuragarri. {{discord}}-(e)k bot bat erabiltzen du irudiak eskuratzeko, beraz, zure zerbitzaria internet publikotik eskuragarri egon behar da",
         "discordUpdateInterval": "{{discord}} jarduera-egoera eguneraketa tartea",
         "discordLinkType_none": "$t(common.none)",
         "albumBackground": "albumaren atzeko planoaren irudia",
@@ -767,8 +765,7 @@
         },
         "editPlaylist": {
             "success": "$t(entity.playlist, {\"count\": 1}) behar bezala eguneratu da",
-            "title": "$t(entity.playlist, {\"count\": 1}) editatu",
-            "publicJellyfinNote": "Arrazoiren batengatik, Jellyfin ez du erakusten erreprodukzio-zerrendak publikoak diren edo ez. Hau publiko izaten jarraitzea nahi baduzu, hautatu sarrera hau"
+            "title": "$t(entity.playlist, {\"count\": 1}) editatu"
         },
         "queryEditor": {
             "title": "kontsulta editorea",

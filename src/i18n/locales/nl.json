@@ -452,7 +452,6 @@
         "networkError": "een netwerkfout heeft zich voorgedaan",
         "notificationDenied": "toestemming voor meldingen werd afgewezen. Deze instelling heeft geen effect",
         "openError": "kon het bestand niet openen",
-        "badAlbum": "je ziet deze pagina omdat dit nummer niet onderdeel is van een album. je komt waarchijnlijk dit probleem tegen als je een nummer op het bovenste niveau van je muziekmap hebt staan. Jellyfin kan alleen nummers groeperen als ze in een folder zitten",
         "multipleServerSaveQueueError": "De afspeellijst bevat een of meer nummers die niet afkomstig zijn van de huidige server. Dit wordt niet ondersteund",
         "noNetwork": "server niet beschikbaar",
         "noNetworkDescription": "kan geen verbinding maken met deze server",
@@ -798,7 +797,6 @@
         "discordIdleStatus": "toon inactiviteit in rich presence",
         "discordRichPresence_description": "toon afspeelstatus in {{discord}} rich presence. Afbeeldingssleutelwoorden zijn {{icon}}, {{playing}} en {{paused}}",
         "discordServeImage": "deel afbeeldingen van de server met {{discord}}",
-        "discordServeImage_description": "deel albumhoezen voor {{discord}} rich presence vanaf de server zelf. enkel beschikbaar voor Jellyfin en Navidrome. {{discord}} gebruikt een bot om afbeeldingen op te vragen, dus moet je server publiek toegankelijk zijn",
         "discordUpdateInterval": "verversinterval voor {{discord}} rich presence",
         "discordUpdateInterval_description": "de interval in seconden tussen elke update (minimaal 15 seconden)",
         "enableAutoTranslation_description": "schakel automatische vertaling in na het laden van songteksten",
@@ -963,7 +961,6 @@
         "discordStateIcon": "toon afspeelicoon",
         "discordStateIcon_description": "toon een klein afspeelicoon in de rich-presence-status. het gepauzeerde icoon wordt altijd getoond als \"rich presence tonen wanneer gepauzeerd\" is ingeschakeld",
         "autosave": "afspeelwachtrij automatisch opslaan",
-        "autosave_description": "schakel in dat de afspeelwachtrij automatisch wordt opgeslagen op je server. dit is enkel mogelijk bij gebruik van Navidrome/Subsonic met een niet-gemengde afspeelwachtrij.",
         "autosaveCount": "frequentie automatisch opslaan afspeelwachtrij",
         "autosaveCount_description": "aantal nummerwisselingen voordat de wachtrij wordt opgeslagen. bij 1 (het minimum) treedt dit bij elke nummerwissel op",
         "useThemePrimaryShade": "gebruikt primaire tint van thema",
@@ -1041,7 +1038,6 @@
         },
         "editPlaylist": {
             "title": "$t(entity.playlist, {\"count\": 1}) aanpassen",
-            "publicJellyfinNote": "Jellyfin laat niet weten of een playlist publiek of privaat is. Als u wilt dat dit publiek blijft, selecteer de volgende invoer",
             "success": "$t(entity.playlist, {\"count\": 1}) succesvol geüpdatet"
         },
         "updateServer": {

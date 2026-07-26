@@ -4,8 +4,8 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router';
 
+import SamoLogo from '/@/renderer/assets/icons/128x128.png';
 import { isServerLock } from '/@/renderer/features/action-required/utils/window-properties';
-import OpenSubsonicLogo from '/@/renderer/features/servers/assets/opensubsonic.png';
 import { AddServerForm } from '/@/renderer/features/servers/components/add-server-form';
 import { EditServerForm } from '/@/renderer/features/servers/components/edit-server-form';
 import { AppRoute } from '/@/renderer/router/routes';
@@ -101,10 +101,12 @@ function ServerSelector() {
         <>
             {Object.keys(serverList).map((serverId) => {
                 const server = serverList[serverId];
-                const isNavidromeExpired = false;
-                const isSessionExpired = isNavidromeExpired;
+                // Samo sessions do not expire client-side; the server answers
+                // 401 and the auth layer handles it. Kept as a named constant
+                // so the branch below still reads as a decision.
+                const isSessionExpired = false;
 
-                const logo = OpenSubsonicLogo;
+                const logo = SamoLogo;
 
                 return (
                     <Button

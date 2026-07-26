@@ -202,7 +202,6 @@
         "apiRouteError": "preusmeritev zahteve ni bila mogoča",
         "audioDeviceFetchError": "napaka pri poskusu pridobivanja avdio naprav",
         "authenticationFailed": "napaka pri avtentikaciji",
-        "badAlbum": "ta stran je prikazana ker skladba ne pripada nobenemu albumu. skladba se verjetno nahaja na vrhu datotečne strukture direktorija z glasbo. Jellyfin razporedi skladbe v skupine samo v primeru, ko se nahajajo v direktoriju",
         "badValue": "neveljavna možnost \"{{value}}\". ta vrednost ne obstaja več",
         "credentialsRequired": "zahtevana prijava",
         "endpointNotImplementedError": "{{serverType}} ne implementira končne točke {{endpoint}}",
@@ -301,7 +300,6 @@
             "title": "izbriši $t(entity.playlist, {\"count\": 1})"
         },
         "editPlaylist": {
-            "publicJellyfinNote": "Jellyfin ne poda informacij o tem, ali gre za javni ali zasebni seznam predvajanja. Če želite, da seznam predvajanja ostane javen, izberite naslednji vnos",
             "success": "$t(entity.playlist, {\"count\": 1}) uspešno posodobljen",
             "title": "uredi $t(entity.playlist, {\"count\": 1})"
         },
@@ -559,7 +557,6 @@
         "discordListening_description": "prikaži status poslušanja namesto predvajanja",
         "discordRichPresence_description": "omogoči prikaz statusa predvajanja v {{discord}} bogati prezenci. Oznake slike so: {{icon}}, {{playing}} in {{paused}}",
         "discordServeImage": "pošiljaj {{discord}} u slike iz strežnika",
-        "discordServeImage_description": "deli naslovne slike za {{discord}} bogato prisotnost iz samega strežnika, na voljo samo za Jellyfin in Navidrome",
         "discordUpdateInterval": "interval posodabljanja {{discord}} bogate prezence",
         "discordUpdateInterval_description": "čas v sekundah med posameznimi posodobitvami (najmanj 15 sekund)",
         "enableRemote": "omogoči oddaljeno upravljanje strežnika",

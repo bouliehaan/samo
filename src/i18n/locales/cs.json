@@ -262,7 +262,6 @@
         "lastfmApiKey": "klíč API {{lastfm}}",
         "lastfmApiKey_description": "klíč API pro {{lastfm}}. vyžadováno pro obaly alb",
         "discordServeImage": "načítat obrázky {{discord}} ze serveru",
-        "discordServeImage_description": "sdílet obaly alb pro {{discord}} rich presence ze samotného serveru, dostupné pouze pro Jellyfin a Navidrome. {{discord}} používá bota pro získávání obrázků, váš server tudíž musí být dosažitelný z veřejného internetu",
         "lastfm": "zobrazit odkazy na last.fm",
         "lastfm_description": "na stránkách umělců a alb zobrazit odkazy na Last.fm",
         "musicbrainz": "zobrazit odkazy na MusicBrainz",
@@ -407,7 +406,6 @@
         "playerItemConfiguration_description": "nastavit, které položky budou zobrazeny a v jakém pořadí, v celoobrazovkovém přehrávači",
         "playerItemConfiguration": "nastavení položek přehrávače",
         "autosave": "automaticky ukládat frontu přehrávání",
-        "autosave_description": "zapnout automatické ukládání fronty přehrávání na server. toto je možné pouze při použití Navidrome/Subsonic a není možné mít kombinovanou frontu přehrávání.",
         "autosaveCount": "četnost automatického ukládání fronty přehrávání",
         "autosaveCount_description": "kolik změn skladeb se může provést před uložením fronty. 1 (minimum) znamená při každé změně skladby",
         "spotify_description": "na stránkách umělců a alb zobrazit odkazy na Spotify",
@@ -727,7 +725,6 @@
         "audioDeviceFetchError": "při pokusu o přístup ke zvukovým zařízením se vyskytla chyba",
         "invalidServer": "neplatný server",
         "loginRateError": "příliš mnoho pokusů o přihlášení, zkuste to znovu za pár vteřin",
-        "badAlbum": "tuto stránku vidíte, protože tato skladba není součástí alba. tento problém může nastat, pokud máte skladbu na nejvyšší úrovni vaší složky s hudbou. Jellyfin seskupuje skladby pouze, pokud se nacházejí ve složce",
         "networkError": "vyskytla se chyba sítě",
         "openError": "nepodařilo se otevřít soubor",
         "badValue": "neplatná možnost „{{value}}“. tato možnost již neexistuje",
@@ -1063,8 +1060,7 @@
         },
         "editPlaylist": {
             "title": "upravit $t(entity.playlist, {\"count\": 1})",
-            "success": "$t(entity.playlist, {\"count\": 1}) úspěšně aktualizován",
-            "publicJellyfinNote": "Jellyfin z nějakého důvodu neukazuje, zda je seznam skladeb veřejný, nebo ne. Pokud si přejete, aby zůstal veřejný, zvolte prosím následující vstup"
+            "success": "$t(entity.playlist, {\"count\": 1}) úspěšně aktualizován"
         },
         "shareItem": {
             "allowDownloading": "umožnit stahování",
