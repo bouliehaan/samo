@@ -119,13 +119,7 @@ const noiseAt = (x, y, scale, offsetX, offsetY) => {
 // Signed, zero-mean film grain in framebuffer-code units.
 const grainAt = (x, y) => {
     const fine = noiseAt(x, y, GRAIN_SCALE, 0, 0);
-    const clump = noiseAt(
-        x,
-        y,
-        GRAIN_CLUMP_SCALE,
-        GRAIN_CLUMP_OFFSET_X,
-        GRAIN_CLUMP_OFFSET_Y,
-    );
+    const clump = noiseAt(x, y, GRAIN_CLUMP_SCALE, GRAIN_CLUMP_OFFSET_X, GRAIN_CLUMP_OFFSET_Y);
     // Octave sum normalized back to the source's amplitude, so GRAIN_GAIN
     // stays the single strength knob.
     return (GRAIN_GAIN * (fine + clump * GRAIN_CLUMP_WEIGHT)) / (1 + GRAIN_CLUMP_WEIGHT);
