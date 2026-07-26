@@ -470,7 +470,6 @@
     "common": {
         "backward": "戻る",
         "increase": "増加",
-        "rating": "評価",
         "bpm": "BPM",
         "refresh": "再読み込み",
         "unknown": "不明",
@@ -639,7 +638,6 @@
                 "lastPlayed": "最後に再生",
                 "trackNumber": "トラック番号",
                 "rowIndex": "行インデックス",
-                "rating": "$t(common.rating)",
                 "artist": "$t(entity.artist, {\"count\": 1})",
                 "album": "$t(entity.album, {\"count\": 1})",
                 "note": "$t(common.note)",
@@ -670,7 +668,6 @@
         "column": {
             "comment": "コメント",
             "album": "アルバム",
-            "rating": "評価",
             "favorite": "お気に入り",
             "playCount": "再生回数",
             "albumCount": "$t(entity.album, {\"count\": 2})",
@@ -737,7 +734,6 @@
         "recentlyPlayed": "最近の再生",
         "isRated": "評価済み",
         "title": "タイトル",
-        "rating": "評価",
         "search": "検索",
         "bitrate": "ビットレート",
         "recentlyAdded": "最近の追加",

@@ -2,7 +2,7 @@ import isElectron from 'is-electron';
 import { useEffect } from 'react';
 
 import { eventEmitter } from '/@/renderer/events/event-emitter';
-import { UserFavoriteEventPayload, UserRatingEventPayload } from '/@/renderer/events/events';
+import { UserFavoriteEventPayload } from '/@/renderer/events/events';
 import { AudiobookWebPlayer } from '/@/renderer/features/audiobooks/components/audiobook-web-player';
 import { MainPlayerListenerHook } from '/@/renderer/features/player/audio-player/hooks/use-main-player-listener';
 import { MpvPlayer } from '/@/renderer/features/player/audio-player/mpv-player';
@@ -30,7 +30,6 @@ import { RemoteHook } from '/@/renderer/features/remote/hooks/use-remote';
 import { VisualizerSystemAudioBridgeHook } from '/@/renderer/features/visualizer/components/visualizer-system-audio-bridge';
 import {
     updateQueueFavorites,
-    updateQueueRatings,
     useCurrentServerId,
     usePlaybackSettings,
     usePlaybackType,
@@ -156,7 +155,7 @@ const AudioPlayersContent = ({
         }
     }, [audioContext, audioDeviceId]);
 
-    // Listen to favorite and rating events to update queue songs
+    // Listen to favorite events to update queue songs
     useEffect(() => {
         const handleFavorite = (payload: UserFavoriteEventPayload) => {
             if (payload.itemType !== LibraryItem.SONG || payload.serverId !== serverId) {
@@ -166,20 +165,10 @@ const AudioPlayersContent = ({
             updateQueueFavorites(payload.id, payload.favorite);
         };
 
-        const handleRating = (payload: UserRatingEventPayload) => {
-            if (payload.itemType !== LibraryItem.SONG || payload.serverId !== serverId) {
-                return;
-            }
-
-            updateQueueRatings(payload.id, payload.rating);
-        };
-
         eventEmitter.on('USER_FAVORITE', handleFavorite);
-        eventEmitter.on('USER_RATING', handleRating);
 
         return () => {
             eventEmitter.off('USER_FAVORITE', handleFavorite);
-            eventEmitter.off('USER_RATING', handleRating);
         };
     }, [serverId]);
 

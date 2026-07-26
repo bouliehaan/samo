@@ -1531,24 +1531,6 @@ export const SamoController: Partial<InternalControllerEndpoint> = {
         return null;
     },
 
-    setRating: async ({ apiClientProps, query }) => {
-        const server = apiClientProps.server;
-        if (!server) throw new Error('No server');
-        const auth = samoAuthentication(server);
-        const kind =
-            query.type === LibraryItem.ALBUM
-                ? 'music-album'
-                : query.type === LibraryItem.ALBUM_ARTIST || query.type === LibraryItem.ARTIST
-                  ? 'music-artist'
-                  : 'music-track';
-        await Promise.all(
-            query.id.map((id) =>
-                patchSamoPlayback(browserFetch, auth, kind, id, { rating: query.rating }),
-            ),
-        );
-        return null;
-    },
-
     updateInternetRadioStation: async () => {
         throw new Error('Internet radio station updates are not wired for Samo yet.');
     },

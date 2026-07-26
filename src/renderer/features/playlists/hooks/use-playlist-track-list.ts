@@ -24,13 +24,6 @@ export function applyClientSideSongFilters(songs: Song[], query: Record<string, 
         result = result.filter((s) => s.userFavorite === false);
     }
 
-    const hasRating = query[FILTER_KEYS.SONG.HAS_RATING] as boolean | undefined;
-    if (hasRating === true) {
-        result = result.filter((s) => s.userRating != null && s.userRating > 0);
-    } else if (hasRating === false) {
-        result = result.filter((s) => s.userRating == null || s.userRating === 0);
-    }
-
     const albumArtistIdsMode =
         (query[FILTER_KEYS.SONG.ALBUM_ARTIST_IDS_MODE] as 'and' | 'or' | undefined) ?? 'and';
     const albumArtistIds = query[FILTER_KEYS.SONG.ALBUM_ARTIST_IDS] as string[] | undefined;

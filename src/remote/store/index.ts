@@ -169,24 +169,6 @@ export const useRemoteStore = createWithEqualityFn<SettingsSlice>()(
                                         });
                                         break;
                                     }
-                                    case 'rating': {
-                                        logFn.debug(
-                                            logMsg[LogCategory.REMOTE].ratingEventReceived,
-                                            {
-                                                category: LogCategory.REMOTE,
-                                                meta: {
-                                                    id: data.id,
-                                                    rating: data.rating,
-                                                },
-                                            },
-                                        );
-                                        set((state) => {
-                                            if (state.info.song?.id === data.id) {
-                                                state.info.song.userRating = data.rating;
-                                            }
-                                        });
-                                        break;
-                                    }
                                     case 'repeat': {
                                         logFn.debug(
                                             logMsg[LogCategory.REMOTE].repeatEventReceived,

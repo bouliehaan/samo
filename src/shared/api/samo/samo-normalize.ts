@@ -66,7 +66,6 @@ const toRelatedArtist = (ref: SamoMusicArtistRef): RelatedArtist => ({
     imageUrl: null,
     name: ref.name ?? '',
     userFavorite: false,
-    userRating: null,
 });
 
 const buildArtistList = (
@@ -84,7 +83,6 @@ const buildArtistList = (
             imageUrl: null,
             name: fallbackName,
             userFavorite: false,
-            userRating: null,
         },
     ];
 };
@@ -115,7 +113,6 @@ const normalizeSamoSimilarArtists = (
                 imageUrl: ref.imageUrl ?? null,
                 name,
                 userFavorite: false,
-                userRating: null,
             });
             continue;
         }
@@ -131,7 +128,6 @@ const normalizeSamoSimilarArtists = (
                     : null,
             name,
             userFavorite: false,
-            userRating: null,
         });
     }
     return out;
@@ -282,7 +278,6 @@ export const normalizeSamoMusicTrack = (
         trackSubtitle: track.trackSubtitle ?? null,
         updatedAt: track.updatedAt ?? track.addedAt ?? new Date(0).toISOString(),
         userFavorite: track.playback?.favorite ?? false,
-        userRating: track.playback?.rating ?? null,
     };
 };
 
@@ -346,7 +341,6 @@ export const normalizeSamoMusicAlbum = (
         tags: album.tags ? { tags: album.tags } : null,
         updatedAt: album.updatedAt ?? album.addedAt ?? new Date(0).toISOString(),
         userFavorite: album.playback?.favorite ?? false,
-        userRating: album.playback?.rating ?? null,
         version: null,
     };
 };
@@ -379,7 +373,6 @@ export const normalizeSamoMusicArtist = (
         similarArtists: null,
         songCount: artist.trackCount ?? null,
         userFavorite: artist.playback?.favorite ?? false,
-        userRating: artist.playback?.rating ?? null,
     };
 
     if (role === LibraryItem.ARTIST) {
@@ -503,7 +496,6 @@ export const normalizeSamoAudiobookAsAlbum = (
         tags: audiobook.tags ? { tags: audiobook.tags } : null,
         updatedAt: audiobook.updatedAt ?? audiobook.addedAt ?? new Date(0).toISOString(),
         userFavorite: audiobook.progress?.favorite ?? false,
-        userRating: audiobook.progress?.rating ?? null,
         version: null,
     };
 };
@@ -592,7 +584,6 @@ export const normalizeSamoPodcastEpisodeAsSong = (
         trackSubtitle: episode.subtitle ?? null,
         updatedAt: episode.publishedAt ?? new Date(0).toISOString(),
         userFavorite: episode.progress?.favorite ?? episode.playback?.favorite ?? false,
-        userRating: episode.progress?.rating ?? episode.playback?.rating ?? null,
     };
 };
 

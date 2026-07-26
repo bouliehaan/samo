@@ -47,7 +47,6 @@ import { ImageColumn } from '/@/renderer/components/item-list/item-table-list/co
 import { NumericColumn } from '/@/renderer/components/item-list/item-table-list/columns/numeric-column';
 import { PathColumn } from '/@/renderer/components/item-list/item-table-list/columns/path-column';
 import { PlaylistReorderColumn } from '/@/renderer/components/item-list/item-table-list/columns/playlist-reorder-column';
-import { RatingColumn } from '/@/renderer/components/item-list/item-table-list/columns/rating-column';
 import { RowIndexColumn } from '/@/renderer/components/item-list/item-table-list/columns/row-index-column';
 import { SizeColumn } from '/@/renderer/components/item-list/item-table-list/columns/size-column';
 import { TextColumn } from '/@/renderer/components/item-list/item-table-list/columns/text-column';
@@ -304,9 +303,6 @@ const ItemTableListColumnBase = (props: ItemTableListColumn) => {
 
             case TableColumn.USER_FAVORITE:
                 return <FavoriteColumn {...props} {...dragProps} controls={controls} type={type} />;
-
-            case TableColumn.USER_RATING:
-                return <RatingColumn {...props} {...dragProps} controls={controls} type={type} />;
 
             case TableColumn.YEAR:
                 return <YearColumn {...props} {...dragProps} controls={controls} type={type} />;
@@ -1065,11 +1061,6 @@ export const columnLabelMap: Record<TableColumn, ReactNode | string> = {
     [TableColumn.USER_FAVORITE]: (
         <Flex className={styles.headerIconWrapper}>
             <Icon icon="favorite" />
-        </Flex>
-    ),
-    [TableColumn.USER_RATING]: (
-        <Flex className={styles.headerIconWrapper}>
-            <Icon icon="star" />
         </Flex>
     ),
     [TableColumn.YEAR]: i18n.t('table.column.releaseYear', { postProcess: 'upperCase' }) as string,

@@ -200,11 +200,6 @@ export const CLIENT_SIDE_SONG_FILTERS = [
     },
     {
         defaultOrder: SortOrder.DESC,
-        name: i18n.t('filter.rating', { postProcess: 'titleCase' }),
-        value: SongListSort.RATING,
-    },
-    {
-        defaultOrder: SortOrder.DESC,
         name: i18n.t('filter.recentlyAdded', { postProcess: 'titleCase' }),
         value: SongListSort.RECENTLY_ADDED,
     },
@@ -260,11 +255,6 @@ export const CLIENT_SIDE_ALBUM_FILTERS = [
         defaultOrder: SortOrder.ASC,
         name: i18n.t('filter.random', { postProcess: 'titleCase' }),
         value: AlbumListSort.RANDOM,
-    },
-    {
-        defaultOrder: SortOrder.DESC,
-        name: i18n.t('filter.rating', { postProcess: 'titleCase' }),
-        value: AlbumListSort.RATING,
     },
     {
         defaultOrder: SortOrder.DESC,

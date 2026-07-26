@@ -471,7 +471,6 @@ const PlayerFilterFieldSchema = z.enum([
     'path',
     'playCount',
     'favorite',
-    'rating',
 ]);
 
 const PlayerFilterOperatorSchema = z.enum([

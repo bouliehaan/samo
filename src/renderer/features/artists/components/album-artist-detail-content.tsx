@@ -1082,7 +1082,6 @@ const AlbumArtistMetadataSimilarArtists = ({
                 similarArtists: null,
                 songCount: null,
                 userFavorite: relatedArtist.userFavorite,
-                userRating: relatedArtist.userRating,
             }),
         );
     }, [relatedArtists, server?.type, serverId]);

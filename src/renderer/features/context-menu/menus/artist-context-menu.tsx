@@ -7,7 +7,6 @@ import { GoToAction } from '/@/renderer/features/context-menu/actions/go-to-acti
 import { PlayAction } from '/@/renderer/features/context-menu/actions/play-action';
 import { PlayArtistRadioAction } from '/@/renderer/features/context-menu/actions/play-artist-radio-action';
 import { SetFavoriteAction } from '/@/renderer/features/context-menu/actions/set-favorite-action';
-import { SetRatingAction } from '/@/renderer/features/context-menu/actions/set-rating-action';
 import { ShareAction } from '/@/renderer/features/context-menu/actions/share-action';
 import { ContextMenuPreview } from '/@/renderer/features/context-menu/components/context-menu-preview';
 import { recordRecentArtist } from '/@/renderer/store/play-history.store';
@@ -39,7 +38,6 @@ export const ArtistContextMenu = ({ items, type }: ArtistContextMenuProps) => {
             <AddToPlaylistAction items={ids} itemType={LibraryItem.ARTIST} />
             <ContextMenu.Divider />
             <SetFavoriteAction ids={ids} items={items} itemType={LibraryItem.ARTIST} />
-            <SetRatingAction ids={ids} itemType={LibraryItem.ARTIST} />
             <ContextMenu.Divider />
             <DownloadAction ids={ids} />
             <ShareAction ids={ids} itemType={LibraryItem.ARTIST} />

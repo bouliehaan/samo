@@ -238,7 +238,6 @@ const ItemCardStandardImageArea = memo(function ItemCardStandardImageArea({
         [styles.isRound]: isRound,
     });
 
-    const hasRating = false;
     const albumQualityProfile =
         itemType === LibraryItem.ALBUM && data
             ? getAlbumQualityProfile(data as AlbumWithQualityProfile, (data as Album).songs)
@@ -270,7 +269,6 @@ const ItemCardStandardImageArea = memo(function ItemCardStandardImageArea({
                 />
             )}
             {albumQualityProfile ? <QualityBadge overlay profile={albumQualityProfile} /> : null}
-            {hasRating && <div className={styles.ratingBadge} />}
             <AnimatePresence>
                 {withControls && showControls && (
                     <ItemCardControls
@@ -369,8 +367,6 @@ const CompactItemCardImageArea = memo(function CompactItemCardImageArea({
         [styles.isRound]: isRound,
     });
 
-    const hasRating = false;
-
     const imageContainerContent = (
         <>
             {itemType === LibraryItem.GENRE &&
@@ -397,7 +393,6 @@ const CompactItemCardImageArea = memo(function CompactItemCardImageArea({
                     type="itemCard"
                 />
             )}
-            {hasRating && <div className={styles.ratingBadge} />}
             <AnimatePresence>
                 {withControls && showControls && data && (
                     <ItemCardControls

@@ -42,7 +42,6 @@ enum AlbumFilterKeys {
     COMPILATION = 'compilation',
     FAVORITE = 'favorite',
     GENRE_ID = 'genreIds',
-    HAS_RATING = 'hasRating',
     MAX_YEAR = 'maxYear',
     MIN_YEAR = 'minYear',
     RECENTLY_PLAYED = 'isRecentlyPlayed',
@@ -68,7 +67,6 @@ enum SongFilterKeys {
     FAVORITE = 'favorite',
     GENRE_ID = 'genreIds',
     GENRE_ID_MODE = 'genreIdsMode',
-    HAS_RATING = 'hasRating',
     MAX_YEAR = 'maxYear',
     MIN_YEAR = 'minYear',
 }

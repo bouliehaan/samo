@@ -142,7 +142,6 @@ export type Album = {
     tags: null | Record<string, string[]>;
     updatedAt: string;
     userFavorite: boolean;
-    userRating: null | number;
     version: null | string;
 } & { songs?: Song[] };
 
@@ -165,7 +164,6 @@ export type AlbumArtist = {
     songCount: null | number;
     uploadedImage?: string;
     userFavorite: boolean;
-    userRating: null | number;
 };
 
 export type Artist = Omit<AlbumArtist, '_itemType'> & {
@@ -302,7 +300,6 @@ export type RelatedArtist = {
     imageUrl: null | string;
     name: string;
     userFavorite: boolean;
-    userRating: null | number;
 };
 
 export type Song = {
@@ -352,7 +349,6 @@ export type Song = {
     trackSubtitle: null | string;
     updatedAt: string;
     userFavorite: boolean;
-    userRating: null | number;
 };
 
 type ApiContext = {
@@ -401,7 +397,6 @@ export enum AlbumListSort {
     NAME = 'name',
     PLAY_COUNT = 'playCount',
     RANDOM = 'random',
-    RATING = 'rating',
     RECENTLY_ADDED = 'recentlyAdded',
     RECENTLY_PLAYED = 'recentlyPlayed',
     RELEASE_DATE = 'releaseDate',
@@ -450,7 +445,6 @@ export const albumListSortMap: AlbumListSortMap = {
         name: undefined,
         playCount: undefined,
         random: undefined,
-        rating: undefined,
         recentlyAdded: undefined,
         recentlyPlayed: undefined,
         releaseDate: undefined,
@@ -475,7 +469,6 @@ export enum SongListSort {
     NAME = 'name',
     PLAY_COUNT = 'playCount',
     RANDOM = 'random',
-    RATING = 'rating',
     RECENTLY_ADDED = 'recentlyAdded',
     RECENTLY_PLAYED = 'recentlyPlayed',
     RELEASE_DATE = 'releaseDate',
@@ -506,7 +499,6 @@ export interface SongListQuery extends BaseQuery<SongListSort> {
     artistIds?: string[];
     favorite?: boolean;
     genreIds?: string[];
-    hasRating?: boolean;
     imageSize?: number;
     limit?: number;
     maxYear?: number;
@@ -539,7 +531,6 @@ export const songListSortMap: SongListSortMap = {
         name: undefined,
         playCount: undefined,
         random: undefined,
-        rating: undefined,
         recentlyAdded: undefined,
         recentlyPlayed: undefined,
         releaseDate: undefined,
@@ -556,7 +547,6 @@ export enum AlbumArtistListSort {
     NAME = 'name',
     PLAY_COUNT = 'playCount',
     RANDOM = 'random',
-    RATING = 'rating',
     RECENTLY_ADDED = 'recentlyAdded',
     RELEASE_DATE = 'releaseDate',
     SONG_COUNT = 'songCount',
@@ -600,7 +590,6 @@ export const albumArtistListSortMap: AlbumArtistListSortMap = {
         name: undefined,
         playCount: undefined,
         random: undefined,
-        rating: undefined,
         recentlyAdded: undefined,
         releaseDate: undefined,
         songCount: undefined,
@@ -617,7 +606,6 @@ export enum ArtistListSort {
     NAME = 'name',
     PLAY_COUNT = 'playCount',
     RANDOM = 'random',
-    RATING = 'rating',
     RECENTLY_ADDED = 'recentlyAdded',
     RELEASE_DATE = 'releaseDate',
     SONG_COUNT = 'songCount',
@@ -669,7 +657,6 @@ export const artistListSortMap: ArtistListSortMap = {
         name: undefined,
         playCount: undefined,
         random: undefined,
-        rating: undefined,
         recentlyAdded: undefined,
         releaseDate: undefined,
         songCount: undefined,
@@ -831,15 +818,6 @@ export type PlaylistRules = Record<string, any> & {
     sort?: string;
 };
 
-export type RatingQuery = {
-    id: string[];
-    rating: number;
-    type: LibraryItem;
-};
-
-// Rating
-export type RatingResponse = null | undefined;
-
 export type RemoveFromPlaylistArgs = BaseEndpointArgs & {
     query: RemoveFromPlaylistQuery;
 };
@@ -867,8 +845,6 @@ export type ReplacePlaylistQuery = {
 
 // Replace playlist
 export type ReplacePlaylistResponse = null | undefined;
-
-export type SetRatingArgs = BaseEndpointArgs & { query: RatingQuery };
 
 export type ShareItemArgs = BaseEndpointArgs & { body: ShareItemBody };
 
@@ -1281,7 +1257,6 @@ export type ControllerEndpoint = {
     scrobble: (args: ScrobbleArgs) => Promise<ScrobbleResponse>;
     search: (args: SearchArgs) => Promise<SearchResponse>;
     setPlaylistSongs: (args: SetPlaylistSongsArgs) => Promise<SetPlaylistSongsResponse>;
-    setRating?: (args: SetRatingArgs) => Promise<RatingResponse>;
     shareItem?: (args: ShareItemArgs) => Promise<ShareItemResponse>;
     updateInternetRadioStation: (
         args: UpdateInternetRadioStationArgs,
@@ -1449,7 +1424,6 @@ export type InternalControllerEndpoint = {
     setPlaylistSongs: (
         args: ReplaceApiClientProps<SetPlaylistSongsArgs>,
     ) => Promise<SetPlaylistSongsResponse>;
-    setRating?: (args: ReplaceApiClientProps<SetRatingArgs>) => Promise<RatingResponse>;
     shareItem?: (args: ReplaceApiClientProps<ShareItemArgs>) => Promise<ShareItemResponse>;
     updateInternetRadioStation: (
         args: ReplaceApiClientProps<UpdateInternetRadioStationArgs>,

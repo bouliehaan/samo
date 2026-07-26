@@ -175,7 +175,6 @@
     "common": {
         "backward": "به عقب",
         "increase": "افزایش",
-        "rating": "امتیاز",
         "bpm": "bpm",
         "refresh": "تازه‌سازی",
         "unknown": "ناشناخته",
@@ -297,7 +296,6 @@
         "isRated": "امتیاز داده شده است",
         "owner": "$t(common.owner)",
         "title": "عنوان",
-        "rating": "امتیاز",
         "search": "جست‌وجو",
         "bitrate": "بیت‌ریت",
         "genre": "$t(entity.genre, {\"count\": 1})",
@@ -589,7 +587,6 @@
             "genre": "$t(entity.genre, {\"count\": 1})",
             "comment": "دیدگاه",
             "playCount": "تعداد پخش",
-            "rating": "امتیاز",
             "path": "مسیر",
             "releaseYear": "سال",
             "dateAdded": "تاریخ افزوده شدن",

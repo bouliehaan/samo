@@ -64,7 +64,6 @@ const PlaylistSongListFiltersModal = () => {
             isFilterValueSet(query[FILTER_KEYS.SONG.ARTIST_IDS]) ||
             query[FILTER_KEYS.SONG.FAVORITE] !== undefined ||
             isFilterValueSet(query[FILTER_KEYS.SONG.GENRE_ID]) ||
-            query[FILTER_KEYS.SONG.HAS_RATING] !== undefined ||
             query[FILTER_KEYS.SONG.MAX_YEAR] !== undefined ||
             query[FILTER_KEYS.SONG.MIN_YEAR] !== undefined,
         );

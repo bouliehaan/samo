@@ -81,7 +81,6 @@
         "random": "satunnainen",
         "reload": "lataa uudelleen",
         "quit": "poistu",
-        "rating": "arvostelu",
         "refresh": "virkistä",
         "reset": "nollaa",
         "playerMustBePaused": "soittimen täytyy olla pysäytetty",
@@ -250,7 +249,6 @@
         "lastPlayed": "viimeksi toistettu",
         "mostPlayed": "eniten toistettu",
         "isRecentlyPlayed": "on äskettäin toistettu",
-        "rating": "arvostelu",
         "recentlyAdded": "äskettäin lisätty",
         "recentlyUpdated": "äskettäin päivitetty",
         "releaseDate": "julkaisupäivä",
@@ -928,7 +926,6 @@
                 "bpm": "$t(common.bpm)",
                 "genre": "$t(entity.genre, {\"count\": 1})",
                 "playCount": "toistojen lukumäärä",
-                "rating": "$t(common.rating)",
                 "releaseDate": "julkaisupäivämäärä",
                 "size": "$t(common.size)",
                 "songCount": "$t(entity.track, {\"count\": 2})",
@@ -964,7 +961,6 @@
             "favorite": "suosikki",
             "genre": "$t(entity.genre, {\"count\": 1})",
             "playCount": "toistoja",
-            "rating": "arvostelu",
             "releaseDate": "julkaisupäivämäärä"
         }
     },

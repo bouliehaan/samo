@@ -46,7 +46,6 @@
     "common": {
         "backward": "achteruit",
         "increase": "verhogen",
-        "rating": "rating",
         "bpm": "bpm",
         "areYouSure": "weet je het zeker?",
         "edit": "aanpassen",
@@ -169,7 +168,6 @@
         "newVersionAvailable": "een nieuwe versie is beschikbaar"
     },
     "filter": {
-        "rating": "rating",
         "communityRating": "community rating",
         "criticRating": "criticus rating",
         "mostPlayed": "meest gespeeld",
@@ -504,7 +502,6 @@
     },
     "table": {
         "column": {
-            "rating": "rating",
             "size": "$t(common.size)",
             "albumArtist": "albumartiest",
             "biography": "biografie",
@@ -534,7 +531,6 @@
         },
         "config": {
             "label": {
-                "rating": "$t(common.rating)",
                 "composer": "componist",
                 "dateAdded": "datum toegevoegd",
                 "discNumber": "discnummer",

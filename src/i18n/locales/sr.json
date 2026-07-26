@@ -211,7 +211,6 @@
     "common": {
         "backward": "nazad",
         "increase": "povećaj",
-        "rating": "ocena",
         "bpm": "bpm",
         "refresh": "osveži",
         "unknown": "nepoznato",
@@ -316,7 +315,6 @@
                 "lastPlayed": "zadnje puštana",
                 "trackNumber": "broj pesme",
                 "rowIndex": "indeks reda",
-                "rating": "$t(common.rating)",
                 "artist": "$t(entity.artist, {\"count\": 1})",
                 "album": "$t(entity.album, {\"count\": 1})",
                 "note": "$t(common.note)",
@@ -337,7 +335,6 @@
         "column": {
             "comment": "komentar",
             "album": "album",
-            "rating": "rejting",
             "favorite": "favorit",
             "playCount": "puštanja",
             "albumCount": "$t(entity.album, {\"count\": 2})",
@@ -392,7 +389,6 @@
         "isRated": "je ocenjena",
         "owner": "$t(common.owner)",
         "title": "naziv",
-        "rating": "rejting",
         "search": "pretraga",
         "bitrate": "bitrejt",
         "genre": "$t(entity.genre, {\"count\": 1})",

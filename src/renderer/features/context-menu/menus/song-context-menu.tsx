@@ -9,7 +9,6 @@ import { PlayTrackRadioAction } from '/@/renderer/features/context-menu/actions/
 import { RemoveFromHomeAction } from '/@/renderer/features/context-menu/actions/remove-from-home-action';
 import { RemoveFromRecentsAction } from '/@/renderer/features/context-menu/actions/remove-from-recents-action';
 import { SetFavoriteAction } from '/@/renderer/features/context-menu/actions/set-favorite-action';
-import { SetRatingAction } from '/@/renderer/features/context-menu/actions/set-rating-action';
 import { ShareAction } from '/@/renderer/features/context-menu/actions/share-action';
 import { ShowInFileExplorerAction } from '/@/renderer/features/context-menu/actions/show-in-file-explorer-action';
 import { ContextMenuPreview } from '/@/renderer/features/context-menu/components/context-menu-preview';
@@ -44,7 +43,6 @@ export const SongContextMenu = ({
             <AddToPlaylistAction items={ids} itemType={LibraryItem.SONG} />
             <ContextMenu.Divider />
             <SetFavoriteAction ids={ids} items={items} itemType={LibraryItem.SONG} />
-            <SetRatingAction ids={ids} itemType={LibraryItem.SONG} />
             <ContextMenu.Divider />
             <DownloadAction ids={ids} />
             <ShareAction ids={ids} itemType={LibraryItem.SONG} />

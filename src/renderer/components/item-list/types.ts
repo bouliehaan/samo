@@ -48,13 +48,6 @@ export interface ItemControls {
         itemType,
         playType,
     }: DefaultItemControlProps & { playType: Play }) => void;
-    onRating?: ({
-        index,
-        internalState,
-        item,
-        itemType,
-        rating,
-    }: DefaultItemControlProps & { rating: number }) => void;
 }
 
 export interface ItemListComponentProps<TQuery> {

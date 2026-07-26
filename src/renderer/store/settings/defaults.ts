@@ -665,7 +665,6 @@ export const initialState: SettingsState = {
                         TableColumn.PLAY_COUNT,
                         TableColumn.LAST_PLAYED,
                         TableColumn.USER_FAVORITE,
-                        TableColumn.USER_RATING,
                     ],
                 }),
                 enableAlternateRowColors: false,

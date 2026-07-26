@@ -42,7 +42,6 @@
     "common": {
         "backward": "bakåt",
         "increase": "öka",
-        "rating": "betyg",
         "bpm": "bpm",
         "refresh": "laddaom",
         "unknown": "okänd",
@@ -189,7 +188,6 @@
         "isRated": "är betygsatt",
         "owner": "$t(common.owner)",
         "title": "titel",
-        "rating": "betyg",
         "search": "sök",
         "bitrate": "bithastighet",
         "genre": "$t(entity.genre, {\"count\": 1})",

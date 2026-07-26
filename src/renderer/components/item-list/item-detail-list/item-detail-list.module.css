@@ -248,8 +248,7 @@
         }
     }
 
-    &:hover .favorite-badge,
-    &:hover .rating-badge {
+    &:hover .favorite-badge {
         opacity: 0;
     }
 }
@@ -266,27 +265,6 @@
     box-shadow: 0 0 10px 8px rgb(0 0 0 / 80%);
     opacity: 1;
     transform: rotate(-45deg);
-    transition: opacity 0.2s ease-in-out;
-}
-
-.rating-badge {
-    position: absolute;
-    top: var(--theme-spacing-sm);
-    right: var(--theme-spacing-sm);
-    z-index: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: var(--theme-spacing-xs) var(--theme-spacing-sm);
-    font-size: var(--theme-font-size-md);
-    font-weight: 600;
-    color: var(--theme-colors-foreground);
-    text-shadow: 0 1px 2px rgb(0 0 0 / 80%);
-    pointer-events: none;
-    background-color: var(--theme-colors-primary);
-    border-radius: var(--theme-radius-md);
-    box-shadow: 0 2px 8px rgb(0 0 0 / 50%);
-    opacity: 1;
     transition: opacity 0.2s ease-in-out;
 }
 

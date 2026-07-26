@@ -83,7 +83,6 @@ const getRowIdFromTableColumn = (tableColumn: TableColumn): null | string => {
         [TableColumn.TITLE_COMBINED]: null,
         [TableColumn.TRACK_NUMBER]: null,
         [TableColumn.USER_FAVORITE]: 'userFavorite',
-        [TableColumn.USER_RATING]: 'rating',
         [TableColumn.YEAR]: 'releaseYear',
     };
     return columnToRowIdMap[tableColumn] || null;

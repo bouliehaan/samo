@@ -8,7 +8,6 @@ export type PlayerStateEvents = {
     playback: PlayerStatus;
     position: number;
     privateMode: boolean;
-    rating: { ids: string[]; rating: number; serverId: string };
     repeat: PlayerRepeat;
     seek: number;
     shuffle: boolean;
@@ -25,7 +24,6 @@ const handlers: { [K in EventName]: Set<Handler<K>> } = {
     playback: new Set(),
     position: new Set(),
     privateMode: new Set(),
-    rating: new Set(),
     repeat: new Set(),
     seek: new Set(),
     shuffle: new Set(),
@@ -72,9 +70,6 @@ ipcMain.on('update-song', (_event, song: QueueSong | undefined, imageUrl?: null 
 );
 ipcMain.on('update-favorite', (_event, favorite: boolean, serverId: string, ids: string[]) =>
     dispatch('favorite', { favorite, ids, serverId }),
-);
-ipcMain.on('update-rating', (_event, rating: number, serverId: string, ids: string[]) =>
-    dispatch('rating', { ids, rating, serverId }),
 );
 ipcMain.on('update-private-mode', (_event, privateMode: boolean) =>
     dispatch('privateMode', privateMode),

@@ -49,7 +49,6 @@ export function playlistSongsToAlbums(songs: Song[]): PlaylistAlbumRow[] {
             tags: song.tags,
             updatedAt: song.updatedAt,
             userFavorite: false,
-            userRating: null,
             version: null,
         });
     };

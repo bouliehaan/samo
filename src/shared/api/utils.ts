@@ -249,20 +249,6 @@ export const sortSongList = (songs: Song[], sortBy: SongListSort, sortOrder: Sor
             results = shuffle(results);
             break;
 
-        case SongListSort.RATING:
-            results = orderBy(
-                results,
-                [
-                    'userRating',
-                    (v) => v.name.toLowerCase(),
-                    (v) => v.album?.toLowerCase(),
-                    'discNumber',
-                    'trackNumber',
-                ],
-                [order, order, order, order, order],
-            );
-            break;
-
         case SongListSort.RECENTLY_ADDED:
             results = orderBy(
                 results,
@@ -427,10 +413,6 @@ export const sortAlbumArtistList = (
             results = orderBy(artists, [(v) => v.name.toLowerCase()], [order]);
             break;
 
-        case AlbumArtistListSort.RATING:
-            results = orderBy(artists, ['userRating'], [order]);
-            break;
-
         default:
             break;
     }
@@ -468,9 +450,6 @@ export const sortAlbumList = (albums: Album[], sortBy: AlbumListSort, sortOrder:
             break;
         case AlbumListSort.RANDOM:
             results = shuffle(results);
-            break;
-        case AlbumListSort.RATING:
-            results = orderBy(results, ['userRating'], [order]);
             break;
         case AlbumListSort.RECENTLY_ADDED:
             results = orderBy(results, ['createdAt'], [order]);

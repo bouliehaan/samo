@@ -45,7 +45,6 @@
     },
     "common": {
         "increase": "增高",
-        "rating": "评分",
         "bpm": "bpm",
         "refresh": "刷新",
         "unknown": "未知",
@@ -648,7 +647,6 @@
         "playCount": "播放次数",
         "recentlyPlayed": "最近播放",
         "title": "标题",
-        "rating": "评分",
         "search": "搜索",
         "bitrate": "比特率",
         "recentlyAdded": "最近添加",
@@ -1064,7 +1062,6 @@
                 "lastPlayed": "最后播放",
                 "trackNumber": "音轨编号",
                 "rowIndex": "行索引",
-                "rating": "$t(common.rating)",
                 "artist": "$t(entity.artist, {\"count\": 1})",
                 "album": "$t(entity.album, {\"count\": 1})",
                 "note": "$t(common.note)",
@@ -1096,7 +1093,6 @@
         "column": {
             "comment": "评论",
             "album": "专辑",
-            "rating": "评分",
             "favorite": "收藏",
             "playCount": "播放次数",
             "albumCount": "$t(entity.album, {\"count\": 2})",

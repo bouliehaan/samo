@@ -1613,17 +1613,6 @@ export const updateQueueFavorites = (ids: string[], favorite: boolean) => {
     });
 };
 
-export const updateQueueRatings = (ids: string[], rating: null | number) => {
-    usePlayerStoreBase.setState((state) => {
-        Object.values(state.queue.songs).forEach((song) => {
-            if (ids.includes(song.id)) {
-                song.userRating = rating;
-            }
-        });
-        touchQueueRevision(state.queue);
-    });
-};
-
 export const incrementQueuePlayCount = (ids: string[]) => {
     usePlayerStoreBase.setState((state) => {
         Object.values(state.queue.songs).forEach((song) => {
@@ -1684,11 +1673,7 @@ export const usePlayerSong = () => {
             return state.playbackSnapshot.currentSong;
         },
         (prev, next) => {
-            return (
-                prev?._uniqueId === next?._uniqueId &&
-                prev?.userFavorite === next?.userFavorite &&
-                prev?.userRating === next?.userRating
-            );
+            return prev?._uniqueId === next?._uniqueId && prev?.userFavorite === next?.userFavorite;
         },
     );
 };

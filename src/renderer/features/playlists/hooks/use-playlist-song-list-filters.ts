@@ -63,11 +63,6 @@ export const usePlaylistSongListFilters = () => {
         [searchParams],
     );
 
-    const hasRating = useMemo(
-        () => parseBooleanParam(searchParams, FILTER_KEYS.SONG.HAS_RATING),
-        [searchParams],
-    );
-
     const custom = useMemo(
         () => parseCustomFiltersParam(searchParams, FILTER_KEYS.SONG._CUSTOM),
         [searchParams],
@@ -143,20 +138,6 @@ export const usePlaylistSongListFilters = () => {
         [setSearchParams],
     );
 
-    const setHasRating = useCallback(
-        (value: boolean | null) => {
-            runInUrlTransition(() => {
-                setSearchParams(
-                    (prev) => setSearchParam(prev, FILTER_KEYS.SONG.HAS_RATING, value),
-                    {
-                        replace: true,
-                    },
-                );
-            });
-        },
-        [setSearchParams],
-    );
-
     const setAlbumArtistIdsMode = useCallback(
         (value: 'and' | 'or') => setAlbumArtistIdsModeStore(value),
         [setAlbumArtistIdsModeStore],
@@ -214,7 +195,6 @@ export const usePlaylistSongListFilters = () => {
                             [FILTER_KEYS.SONG.ARTIST_IDS]: null,
                             [FILTER_KEYS.SONG.FAVORITE]: null,
                             [FILTER_KEYS.SONG.GENRE_ID]: null,
-                            [FILTER_KEYS.SONG.HAS_RATING]: null,
                             [FILTER_KEYS.SONG.MAX_YEAR]: null,
                             [FILTER_KEYS.SONG.MIN_YEAR]: null,
                         },
@@ -238,7 +218,6 @@ export const usePlaylistSongListFilters = () => {
             [FILTER_KEYS.SONG.FAVORITE]: favorite ?? undefined,
             [FILTER_KEYS.SONG.GENRE_ID]: genreId ?? undefined,
             [FILTER_KEYS.SONG.GENRE_ID_MODE]: genreIdsMode,
-            [FILTER_KEYS.SONG.HAS_RATING]: hasRating ?? undefined,
             [FILTER_KEYS.SONG.MAX_YEAR]: maxYear ?? undefined,
             [FILTER_KEYS.SONG.MIN_YEAR]: minYear ?? undefined,
         }),
@@ -254,7 +233,6 @@ export const usePlaylistSongListFilters = () => {
             favorite,
             genreId,
             genreIdsMode,
-            hasRating,
             maxYear,
             minYear,
         ],
@@ -271,7 +249,6 @@ export const usePlaylistSongListFilters = () => {
         setFavorite,
         setGenreId,
         setGenreIdsMode,
-        setHasRating,
         setMaxYear,
         setMinYear,
         setSearchTerm,

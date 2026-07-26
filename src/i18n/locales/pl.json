@@ -45,7 +45,6 @@
     },
     "common": {
         "increase": "zwiększ",
-        "rating": "ocena",
         "bpm": "bpm",
         "refresh": "odśwież",
         "unknown": "nieznany",
@@ -272,7 +271,6 @@
         "recentlyPlayed": "ostatnio odtwarzane",
         "isRated": "jest ocenione",
         "title": "tytuł",
-        "rating": "ocena",
         "search": "wyszukaj",
         "bitrate": "bitrate",
         "recentlyAdded": "ostatnio dodane",
@@ -1113,7 +1111,6 @@
                 "lastPlayed": "ostatnio odtwarzane",
                 "trackNumber": "numer utworu",
                 "rowIndex": "indeks wiersza",
-                "rating": "$t(common.rating)",
                 "artist": "$t(entity.artist, {\"count\": 1})",
                 "album": "$t(entity.album, {\"count\": 1})",
                 "note": "$t(common.note)",
@@ -1144,7 +1141,6 @@
         "column": {
             "comment": "komentarz",
             "album": "album",
-            "rating": "ocena",
             "favorite": "ulubione",
             "playCount": "odtwarzane",
             "albumCount": "$t(entity.album, {\"count\": 2})",

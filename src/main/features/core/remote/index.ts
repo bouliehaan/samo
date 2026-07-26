@@ -265,17 +265,6 @@ const enableServer = (config: RemoteConfig): Promise<void> => {
 
                                 break;
                             }
-                            case 'rating': {
-                                const { id, rating } = json;
-                                if (id && id === currentState.song?.id) {
-                                    getMainWindow()?.webContents.send('request-rating', {
-                                        id,
-                                        rating,
-                                        serverId: currentState.song._serverId,
-                                    });
-                                }
-                                break;
-                            }
                             case 'repeat': {
                                 getMainWindow()?.webContents.send('renderer-player-toggle-repeat');
                                 break;
@@ -414,20 +403,6 @@ subscribePlayerStateEvent('favorite', ({ favorite, ids, serverId }) => {
         if (songId === id) {
             currentState.song.userFavorite = favorite;
             broadcast({ data: { favorite, id: songId }, event: 'favorite' });
-            return;
-        }
-    }
-});
-
-subscribePlayerStateEvent('rating', ({ ids, rating, serverId }) => {
-    if (currentState.song?._serverId !== serverId) return;
-
-    const id = currentState.song.id;
-
-    for (const songId of ids) {
-        if (songId === id) {
-            currentState.song.userRating = rating;
-            broadcast({ data: { id: songId, rating }, event: 'rating' });
             return;
         }
     }

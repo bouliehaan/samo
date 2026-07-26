@@ -58,11 +58,6 @@ export const useAlbumListFilters = (listKey?: ItemListKey) => {
         [searchParams],
     );
 
-    const hasRating = useMemo(
-        () => parseBooleanParam(searchParams, FILTER_KEYS.ALBUM.HAS_RATING),
-        [searchParams],
-    );
-
     const recentlyPlayed = useMemo(
         () => parseBooleanParam(searchParams, FILTER_KEYS.ALBUM.RECENTLY_PLAYED),
         [searchParams],
@@ -145,20 +140,6 @@ export const useAlbumListFilters = (listKey?: ItemListKey) => {
         [setSearchParams],
     );
 
-    const setHasRating = useCallback(
-        (value: boolean | null) => {
-            runInUrlTransition(() => {
-                setSearchParams(
-                    (prev) => setSearchParam(prev, FILTER_KEYS.ALBUM.HAS_RATING, value),
-                    {
-                        replace: true,
-                    },
-                );
-            });
-        },
-        [setSearchParams],
-    );
-
     const setRecentlyPlayed = useCallback(
         (value: boolean | null) => {
             runInUrlTransition(() => {
@@ -215,7 +196,6 @@ export const useAlbumListFilters = (listKey?: ItemListKey) => {
                             [FILTER_KEYS.ALBUM.COMPILATION]: null,
                             [FILTER_KEYS.ALBUM.FAVORITE]: null,
                             [FILTER_KEYS.ALBUM.GENRE_ID]: null,
-                            [FILTER_KEYS.ALBUM.HAS_RATING]: null,
                             [FILTER_KEYS.ALBUM.MAX_YEAR]: null,
                             [FILTER_KEYS.ALBUM.MIN_YEAR]: null,
                             [FILTER_KEYS.ALBUM.RECENTLY_PLAYED]: null,
@@ -235,7 +215,6 @@ export const useAlbumListFilters = (listKey?: ItemListKey) => {
             [FILTER_KEYS.ALBUM.COMPILATION]: compilation ?? undefined,
             [FILTER_KEYS.ALBUM.FAVORITE]: favorite ?? undefined,
             [FILTER_KEYS.ALBUM.GENRE_ID]: genreId ?? undefined,
-            [FILTER_KEYS.ALBUM.HAS_RATING]: hasRating ?? undefined,
             [FILTER_KEYS.ALBUM.MAX_YEAR]: maxYear ?? undefined,
             [FILTER_KEYS.ALBUM.MIN_YEAR]: minYear ?? undefined,
             [FILTER_KEYS.ALBUM.RECENTLY_PLAYED]: recentlyPlayed ?? undefined,
@@ -249,7 +228,6 @@ export const useAlbumListFilters = (listKey?: ItemListKey) => {
             compilation,
             favorite,
             genreId,
-            hasRating,
             maxYear,
             minYear,
             recentlyPlayed,
@@ -267,7 +245,6 @@ export const useAlbumListFilters = (listKey?: ItemListKey) => {
         setCustom,
         setFavorite,
         setGenreId,
-        setHasRating,
         setMaxYear,
         setMinYear,
         setRecentlyPlayed,

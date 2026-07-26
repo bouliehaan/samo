@@ -156,10 +156,7 @@ export const PlaylistDetailAlbumView = ({ data }: { data: PlaylistSongListRespon
     const rows = useGridRows(LibraryItem.ALBUM, ItemListKey.PLAYLIST_ALBUM, grid.size);
 
     const tableColumns = useMemo(() => {
-        return table.columns.filter(
-            (column) =>
-                column.id !== TableColumn.USER_FAVORITE && column.id !== TableColumn.USER_RATING,
-        );
+        return table.columns.filter((column) => column.id !== TableColumn.USER_FAVORITE);
     }, [table.columns]);
 
     const renderAlbumList = () => {

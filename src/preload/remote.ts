@@ -16,12 +16,6 @@ const requestPosition = (cb: (event: IpcRendererEvent, data: { position: number 
     ipcRenderer.on('request-position', cb);
 };
 
-const requestRating = (
-    cb: (event: IpcRendererEvent, data: { id: string; rating: number; serverId: string }) => void,
-) => {
-    ipcRenderer.on('request-rating', cb);
-};
-
 const requestSeek = (cb: (event: IpcRendererEvent, data: { offset: number }) => void) => {
     ipcRenderer.on('request-seek', cb);
 };
@@ -61,10 +55,6 @@ const updateSetting = (
     return ipcRenderer.invoke('remote-settings', enabled, port, username, password);
 };
 
-const updateRating = (rating: number, serverId: string, ids: string[]) => {
-    ipcRenderer.send('update-rating', rating, serverId, ids);
-};
-
 const updateRepeat = (repeat: string) => {
     ipcRenderer.send('update-repeat', repeat);
 };
@@ -92,7 +82,6 @@ const updatePosition = (timeSec: number) => {
 export const remote = {
     requestFavorite,
     requestPosition,
-    requestRating,
     requestSeek,
     requestVolume,
     setRemoteEnabled,
@@ -101,7 +90,6 @@ export const remote = {
     updatePassword,
     updatePlayback,
     updatePosition,
-    updateRating,
     updateRepeat,
     updateSetting,
     updateShuffle,

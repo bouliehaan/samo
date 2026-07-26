@@ -165,7 +165,6 @@ export enum TableColumn {
     TITLE_COMBINED = 'titleCombined',
     TRACK_NUMBER = 'trackNumber',
     USER_FAVORITE = 'userFavorite',
-    USER_RATING = 'userRating',
     YEAR = 'releaseYear',
 }
 

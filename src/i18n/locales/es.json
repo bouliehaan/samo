@@ -470,7 +470,6 @@
     "common": {
         "backward": "hacia atrás",
         "increase": "aumentar",
-        "rating": "calificación",
         "bpm": "bpm",
         "refresh": "actualizar",
         "unknown": "desconocido",
@@ -635,7 +634,6 @@
         "recentlyPlayed": "recientemente reproducido",
         "isRated": "Está calificado",
         "title": "título",
-        "rating": "calificación",
         "search": "buscar",
         "bitrate": "tasa de bits",
         "recentlyAdded": "recientemente añadido",
@@ -1004,7 +1002,6 @@
     },
     "table": {
         "column": {
-            "rating": "calificación",
             "comment": "comentarios",
             "album": "álbum",
             "favorite": "favorito",
@@ -1034,7 +1031,6 @@
         },
         "config": {
             "label": {
-                "rating": "$t(common.rating)",
                 "dateAdded": "fecha de adición",
                 "bpm": "$t(common.bpm)",
                 "lastPlayed": "última reproducción",

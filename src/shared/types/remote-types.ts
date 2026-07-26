@@ -10,7 +10,6 @@ export type ClientEvent =
     | ClientAuth
     | ClientFavorite
     | ClientPosition
-    | ClientRating
     | ClientSimpleEvent
     | ClientVolume;
 
@@ -25,11 +24,6 @@ export interface ClientPosition {
     position: number;
 }
 
-export interface ClientRating {
-    event: 'rating';
-    id: string;
-    rating: number;
-}
 export interface ClientSimpleEvent {
     event: 'next' | 'pause' | 'play' | 'previous' | 'proxy' | 'repeat' | 'shuffle';
 }
@@ -50,7 +44,6 @@ export type ServerEvent =
     | ServerPlayStatus
     | ServerPosition
     | ServerProxy
-    | ServerRating
     | ServerRepeat
     | ServerShuffle
     | ServerSong
@@ -75,11 +68,6 @@ export interface ServerPosition {
 export interface ServerProxy {
     data: string;
     event: 'proxy';
-}
-
-export interface ServerRating {
-    data: { id: string; rating: number };
-    event: 'rating';
 }
 
 export interface ServerRepeat {

@@ -97,7 +97,6 @@
     "common": {
         "backward": "en arrière",
         "increase": "augmenter",
-        "rating": "note",
         "bpm": "BPM",
         "refresh": "rafraichir",
         "unknown": "inconnu",
@@ -264,7 +263,6 @@
         "recentlyPlayed": "récemment joué",
         "isRated": "est noté",
         "title": "titre",
-        "rating": "note",
         "search": "recherche",
         "bitrate": "bitrate binaire",
         "recentlyAdded": "ajout récent",
@@ -1120,7 +1118,6 @@
                 "actions": "$t(common.action, {\"count\": 2})",
                 "favorite": "$t(common.favorite)",
                 "albumArtist": "$t(entity.albumArtist, {\"count\": 1})",
-                "rating": "$t(common.rating)",
                 "note": "$t(common.note)",
                 "owner": "$t(common.owner)",
                 "path": "$t(common.path)",
@@ -1143,7 +1140,6 @@
         "column": {
             "comment": "commentaire",
             "album": "album",
-            "rating": "note",
             "favorite": "favori",
             "playCount": "lectures",
             "releaseYear": "année",

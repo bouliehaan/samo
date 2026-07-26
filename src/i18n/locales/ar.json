@@ -111,7 +111,6 @@
         "previousSong": "$t(entity.track, {\"count\": 1}) السابق",
         "quit": "خروج",
         "random": "عشوائي",
-        "rating": "التقييم",
         "refresh": "تحديث",
         "reload": "تحديث",
         "reset": "إعادة تعيين",

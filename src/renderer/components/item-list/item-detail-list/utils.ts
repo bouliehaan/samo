@@ -14,20 +14,14 @@ const FIXED_TRACK_COLUMN_WIDTHS: Partial<Record<TableColumn, number>> = {
     [TableColumn.SAMPLE_RATE]: 112,
     [TableColumn.TRACK_NUMBER]: 64,
     [TableColumn.USER_FAVORITE]: 32,
-    [TableColumn.USER_RATING]: 64,
     [TableColumn.YEAR]: 56,
 };
 
-const HOVER_ONLY_COLUMNS: TableColumn[] = [
-    TableColumn.ACTIONS,
-    TableColumn.USER_FAVORITE,
-    TableColumn.USER_RATING,
-];
+const HOVER_ONLY_COLUMNS: TableColumn[] = [TableColumn.ACTIONS, TableColumn.USER_FAVORITE];
 
 const NO_HORIZONTAL_PADDING_COLUMNS: TableColumn[] = [
     TableColumn.ACTIONS,
     TableColumn.USER_FAVORITE,
-    TableColumn.USER_RATING,
 ];
 
 export function getTrackColumnFixed(columnId: TableColumn): {
@@ -51,15 +45,11 @@ export function isTrackColumnHoverOnly(columnId: TableColumn): boolean {
 export function shouldShowHoverOnlyColumnContent(
     columnId: TableColumn,
     isRowHovered: boolean,
-    song: { userFavorite?: boolean | null; userRating?: null | number },
+    song: { userFavorite?: boolean | null },
 ): boolean {
     if (!HOVER_ONLY_COLUMNS.includes(columnId)) {
         return true;
     }
 
-    return (
-        isRowHovered ||
-        (columnId === TableColumn.USER_FAVORITE && song.userFavorite !== false) ||
-        (columnId === TableColumn.USER_RATING && song.userRating !== null && song.userRating !== 0)
-    );
+    return isRowHovered || (columnId === TableColumn.USER_FAVORITE && song.userFavorite !== false);
 }

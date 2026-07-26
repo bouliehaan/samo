@@ -46,7 +46,6 @@
     "common": {
         "backward": "назад",
         "increase": "увеличить",
-        "rating": "рейтинг",
         "bpm": "уд./мин.",
         "refresh": "обновить",
         "unknown": "неизвестно",
@@ -259,7 +258,6 @@
                 "lastPlayed": "последний",
                 "trackNumber": "номер трека",
                 "rowIndex": "номер строки",
-                "rating": "$t(common.rating)",
                 "note": "$t(common.note)",
                 "biography": "$t(common.biography)",
                 "owner": "$t(common.owner)",
@@ -276,7 +274,6 @@
             }
         },
         "column": {
-            "rating": "рейтинг",
             "favorite": "любимый",
             "playCount": "воспроизведений",
             "releaseYear": "год",
@@ -352,7 +349,6 @@
         "recentlyPlayed": "проигрывались недавно",
         "owner": "$t(common.owner)",
         "title": "название",
-        "rating": "рейтинг",
         "search": "поиск",
         "recentlyAdded": "недавно добавленные",
         "note": "заметка",

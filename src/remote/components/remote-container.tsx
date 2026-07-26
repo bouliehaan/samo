@@ -1,6 +1,4 @@
 import formatDuration from 'format-duration';
-import debounce from 'lodash/debounce';
-import { useCallback, useEffect, useMemo } from 'react';
 import { RiPauseFill, RiPlayFill, RiVolumeUpFill } from 'react-icons/ri';
 
 import { PlayerImage } from '/@/remote/components/player-image';
@@ -9,11 +7,9 @@ import { useInfo, useSend, useShowImage } from '/@/remote/store';
 import { ActionIcon } from '/@/shared/components/action-icon/action-icon';
 import { Flex } from '/@/shared/components/flex/flex';
 import { Group } from '/@/shared/components/group/group';
-import { Rating } from '/@/shared/components/rating/rating';
 import { Stack } from '/@/shared/components/stack/stack';
 import { Text } from '/@/shared/components/text/text';
-import { Tooltip } from '/@/shared/components/tooltip/tooltip';
-import { PlayerRepeat, PlayerStatus, ServerType } from '/@/shared/types/types';
+import { PlayerRepeat, PlayerStatus } from '/@/shared/types/types';
 
 export const RemoteContainer = () => {
     const { position, repeat, shuffle, song, status, volume } = useInfo();
@@ -21,17 +17,6 @@ export const RemoteContainer = () => {
     const showImage = useShowImage();
 
     const id = song?.id;
-
-    const setRating = useCallback(
-        (rating: number) => {
-            send({ event: 'rating', id: id!, rating });
-        },
-        [send, id],
-    );
-
-    const debouncedSetRating = useMemo(() => debounce(setRating, 400), [setRating]);
-
-    useEffect(() => () => debouncedSetRating.cancel(), [debouncedSetRating]);
 
     return (
         <Stack gap="md" h="100dvh" w="100%">
@@ -98,18 +83,6 @@ export const RemoteContainer = () => {
                     }}
                     variant="transparent"
                 />
-                {song && song._serverType === ServerType.SAMO && (
-                    <div style={{ margin: 'auto' }}>
-                        <Tooltip label="Double click to clear" openDelay={1000}>
-                            <Rating
-                                onChange={debouncedSetRating}
-                                onDoubleClick={() => debouncedSetRating(0)}
-                                style={{ margin: 'auto' }}
-                                value={song.userRating ?? 0}
-                            />
-                        </Tooltip>
-                    </div>
-                )}
             </Group>
             <Group gap="xs" grow>
                 <ActionIcon

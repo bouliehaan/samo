@@ -24,7 +24,6 @@ import { ImageColumn } from './image-column';
 import { LastPlayedColumn } from './last-played-column';
 import { PathColumn } from './path-column';
 import { PlayCountColumn } from './play-count-column';
-import { RatingColumn } from './rating-column';
 import { ReleaseDateColumn } from './release-date-column';
 import { RowIndexColumn } from './row-index-column';
 import { SampleRateColumn } from './sample-rate-column';
@@ -69,7 +68,6 @@ const COLUMN_MAP: Partial<Record<TableColumn, CellComponent>> = {
     [TableColumn.TITLE_COMBINED]: TitleCombinedColumn,
     [TableColumn.TRACK_NUMBER]: TrackNumberColumn,
     [TableColumn.USER_FAVORITE]: FavoriteColumn,
-    [TableColumn.USER_RATING]: RatingColumn,
     [TableColumn.YEAR]: YearColumn,
 };
 
@@ -114,7 +112,6 @@ export {
     LastPlayedColumn,
     PathColumn,
     PlayCountColumn,
-    RatingColumn,
     ReleaseDateColumn,
     RowIndexColumn,
     SampleRateColumn,

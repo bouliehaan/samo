@@ -123,18 +123,6 @@
     }
 }
 
-.rating {
-    position: absolute;
-    top: 0;
-    right: 0;
-    padding: var(--theme-spacing-md);
-
-    svg {
-        stroke: white;
-        stroke-width: 1.5px;
-    }
-}
-
 .secondary-button.options {
     right: 0;
     bottom: 0;

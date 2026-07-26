@@ -273,8 +273,6 @@ const getSongFieldValue = (song: Song, field: string): boolean | null | number |
             return song.path || '';
         case 'playCount':
             return song.playCount;
-        case 'rating':
-            return song.userRating || 0;
         case 'year':
             return song.releaseYear || 0;
         default:

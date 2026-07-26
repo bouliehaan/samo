@@ -11,7 +11,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { queryKeys } from '/@/renderer/api/query-keys';
 import { useListContext } from '/@/renderer/context/list-context';
 import { eventEmitter } from '/@/renderer/events/event-emitter';
-import { UserFavoriteEventPayload, UserRatingEventPayload } from '/@/renderer/events/events';
+import { UserFavoriteEventPayload } from '/@/renderer/events/events';
 import { getListRefreshMutationKey } from '/@/renderer/features/shared/components/list-refresh-button';
 import { LibraryItem } from '/@/shared/types/domain-types';
 
@@ -413,28 +413,10 @@ export const useItemListInfiniteLoader = ({
             return updateItems(dataIndexes, { userFavorite: payload.favorite });
         };
 
-        const handleRating = (payload: UserRatingEventPayload) => {
-            if (payload.itemType !== itemType || payload.serverId !== serverId) {
-                return;
-            }
-
-            const dataIndexes = payload.id
-                .map((id: string) => (data as any).idToIndexMap?.get(id))
-                .filter((idx): idx is number => typeof idx === 'number');
-
-            if (dataIndexes.length === 0) {
-                return;
-            }
-
-            return updateItems(dataIndexes, { userRating: payload.rating });
-        };
-
         eventEmitter.on('USER_FAVORITE', handleFavorite);
-        eventEmitter.on('USER_RATING', handleRating);
 
         return () => {
             eventEmitter.off('USER_FAVORITE', handleFavorite);
-            eventEmitter.off('USER_RATING', handleRating);
         };
     }, [data, eventKey, itemType, serverId, updateItems]);
 

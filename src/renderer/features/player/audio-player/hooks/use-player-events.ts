@@ -56,12 +56,6 @@ interface PlayerEventsCallbacks {
         itemType: LibraryItem;
         serverId: string;
     }) => void;
-    onUserRating?: (properties: {
-        id: string[];
-        itemType: LibraryItem;
-        rating: null | number;
-        serverId: string;
-    }) => void;
 }
 
 export function usePlayerEvents(callbacks: PlayerEventsCallbacks, deps: React.DependencyList) {
@@ -174,10 +168,6 @@ function createPlayerEvents(callbacks: PlayerEventsCallbacks): PlayerEvents {
         eventEmitter.on('USER_FAVORITE', callbacks.onUserFavorite);
     }
 
-    if (callbacks.onUserRating) {
-        eventEmitter.on('USER_RATING', callbacks.onUserRating);
-    }
-
     return {
         cleanup: () => {
             unsubscribers.forEach((unsubscribe) => unsubscribe());
@@ -198,9 +188,6 @@ function createPlayerEvents(callbacks: PlayerEventsCallbacks): PlayerEvents {
             }
             if (callbacks.onUserFavorite) {
                 eventEmitter.off('USER_FAVORITE', callbacks.onUserFavorite);
-            }
-            if (callbacks.onUserRating) {
-                eventEmitter.off('USER_RATING', callbacks.onUserRating);
             }
         },
     };

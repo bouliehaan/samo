@@ -480,7 +480,6 @@ const MetadataSection = memo(
         }, []);
 
         const isFavorite = item.userFavorite ?? false;
-        const hasRating = false;
 
         const metadataExtra = useMemo(() => {
             const parts: Array<{ content: React.ReactNode; key: string }> = [];
@@ -565,7 +564,6 @@ const MetadataSection = memo(
                             type="itemCard"
                         />
                         {isFavorite && <div className={styles.favoriteBadge} />}
-                        {hasRating && <div className={styles.ratingBadge} />}
                         <AnimatePresence>
                             {controls && isImageHovered && (
                                 <ItemCardControls
@@ -1320,7 +1318,7 @@ export const ItemDetailList = ({
     const trackColumns = useMemo((): ItemTableListColumnConfig[] => {
         const raw = tableConfig?.columns;
         if (raw && raw.length > 0) {
-            return parseTableColumns(raw).filter((column) => column.id !== TableColumn.USER_RATING);
+            return parseTableColumns(raw);
         }
         return pickTableColumns({
             columns: SONG_TABLE_COLUMNS,

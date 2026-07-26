@@ -265,16 +265,6 @@ declare const api: {
                 },
             ) => void,
         ) => void;
-        requestRating: (
-            cb: (
-                event: Electron.CrossProcessExports.IpcRendererEvent,
-                data: {
-                    id: string;
-                    rating: number;
-                    serverId: string;
-                },
-            ) => void,
-        ) => void;
         requestSeek: (
             cb: (
                 event: Electron.CrossProcessExports.IpcRendererEvent,
@@ -297,7 +287,6 @@ declare const api: {
         updatePassword: (password: string) => void;
         updatePlayback: (playback: import('@samo/core').PlayerStatus) => void;
         updatePosition: (timeSec: number) => void;
-        updateRating: (rating: number, serverId: string, ids: string[]) => void;
         updateRepeat: (repeat: string) => void;
         updateSetting: (
             enabled: boolean,

@@ -54,7 +54,6 @@ export const useMPRIS = () => {
                           imageUrl: null,
                           name: artist,
                           userFavorite: false,
-                          userRating: null,
                       },
                   ]
                 : [],
@@ -68,7 +67,6 @@ export const useMPRIS = () => {
                           imageUrl: null,
                           name: artist,
                           userFavorite: false,
-                          userRating: null,
                       },
                   ]
                 : [],
@@ -108,7 +106,6 @@ export const useMPRIS = () => {
             trackSubtitle: null,
             updatedAt: new Date().toISOString(),
             userFavorite: false,
-            userRating: null,
         };
     }, [isRadioActive, isRadioPlaying, radioMetadata, stationName]);
 

@@ -470,7 +470,6 @@
     "common": {
         "backward": "zpátky",
         "increase": "zvýčit",
-        "rating": "hodnocení",
         "bpm": "bpm",
         "refresh": "obnovit",
         "unknown": "neznámý",
@@ -647,7 +646,6 @@
                 "lastPlayed": "naposledy přehráno",
                 "trackNumber": "číslo stopy",
                 "rowIndex": "index řádku",
-                "rating": "$t(common.rating)",
                 "artist": "$t(entity.artist, {\"count\": 1})",
                 "album": "$t(entity.album, {\"count\": 1})",
                 "note": "$t(common.note)",
@@ -678,7 +676,6 @@
         "column": {
             "comment": "komentář",
             "album": "album",
-            "rating": "hodnocení",
             "favorite": "oblíbené",
             "playCount": "přehrání",
             "albumCount": "$t(entity.album, {\"count\": 2})",
@@ -749,7 +746,6 @@
         "isRated": "je hodnoceno",
         "owner": "$t(common.owner)",
         "title": "název",
-        "rating": "hodnocení",
         "search": "hledat",
         "bitrate": "datový tok",
         "genre": "$t(entity.genre, {\"count\": 1})",
