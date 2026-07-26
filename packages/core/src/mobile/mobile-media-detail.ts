@@ -201,6 +201,13 @@ export interface MobileMediaDetail {
      */
     contributors?: MobileMediaDetailContributor[];
     /**
+     * Audiobook-only — the WHOLE BOOK's length in seconds, the timeline that
+     * `chapters` and `audiobookFiles[].startOffsetSeconds` are expressed on.
+     * Distinct from any single track/file duration; play paths thread it onto
+     * the queue as `timelineDurationSeconds` so the seek bar spans the book.
+     */
+    durationSeconds?: number;
+    /**
      * Podcast-only — feed source + poll state for the show.
      */
     feed?: MobileMediaDetailPodcastFeed;
@@ -357,7 +364,16 @@ export const samoTrackToMediaTrack = (
 ): MobileMediaTrack => {
     const artworkUrl =
         resolveSamoAlbumArtworkUrl(authentication, { images: track.images }, streamToken) ??
-        albumArtworkUrl;
+        albumArtworkUrl ??
+        // A track with no embedded art of its own (e.g. explo drops, whose art
+        // is applied to the ALBUM, not the file) resolves to its album cover by
+        // id. Without this, tracks built with no album fallback — every playlist
+        // row, the library mirror, artist top tracks — carry NO artwork: the
+        // player shows a blank cover and playlist rows borrow the playlist's own
+        // art, so every explo track renders the same image (the reported bug).
+        (track.albumId
+            ? resolveSamoAlbumArtworkUrl(authentication, { id: track.albumId }, streamToken)
+            : undefined);
     const artworkImageId = pickSamoImageId(track.images) ?? albumArtworkImageId;
     const playback = buildSamoMusicPlayback(
         authentication,
@@ -375,6 +391,7 @@ export const samoTrackToMediaTrack = (
         album: track.albumTitle,
         albumId: track.albumId,
         artist,
+        artistId: track.artistIds?.[0] ?? track.albumArtistIds?.[0],
         artworkUrl,
         artworkImageId,
         discNumber: normalizeSamoDiscNumber(track.discNumber),
@@ -904,6 +921,7 @@ export const mapSamoAudiobookDetail = (
             name: person.name,
             role: 'narrator',
         })),
+        durationSeconds: audiobook.durationSeconds,
         id: audiobook.id,
         listeningSessions: samoSessionsToDetail(samoItemsOf(sessionsResponse)),
         metadataLines: metadataLines.length > 0 ? metadataLines : undefined,

@@ -11,6 +11,7 @@ import {
     mimeFromAudioFileExt,
     needsChromecastCompatibleStream,
     parseSamoAudiobookIdFromPlaybackId,
+    parseSamoAudiobookMediaFileIdFromPlaybackId,
     pickSamoAudiobookFileIndexForBookTime,
     samoAudiobookFilePlaybacks,
 } from './mobile-playback';
@@ -149,10 +150,69 @@ describe('buildSamoAudiobookFileQueue', () => {
         expect(parseSamoAudiobookIdFromPlaybackId(queue!.items[0]!.id)).toBe('book-1');
         expect(parseSamoAudiobookIdFromPlaybackId(queue!.items[2]!.id)).toBe('book-1');
     });
+
+    it('gives every file the WHOLE-BOOK timeline duration, not its own', () => {
+        // The seek bar, the duration label and the tap->position mapping are all
+        // book-global (as are progressOffsetSeconds and the chapter markers), so
+        // reading the per-file durationSeconds there rendered the book as a bar
+        // one file wide and sent every chapter tap into the first file.
+        const queue = buildSamoAudiobookFileQueue(samoAuth(), threeFileBook(), {
+            bookStartSeconds: 0,
+        });
+        expect(queue!.items.map((i) => i.timelineDurationSeconds)).toEqual([1620, 1620, 1620]);
+        // ...while each item's own stream length stays per-file.
+        expect(queue!.items.map((i) => i.durationSeconds)).toEqual([600, 540, 480]);
+    });
+
+    it('derives the timeline from the file manifest when the book duration is absent', () => {
+        const { durationSeconds: _omitted, ...bookWithoutDuration } = threeFileBook();
+        const queue = buildSamoAudiobookFileQueue(
+            samoAuth(),
+            bookWithoutDuration as SamoAudiobook,
+            { bookStartSeconds: 0 },
+        );
+        // Last file ends at 1140 + 480.
+        expect(queue!.items[0]!.timelineDurationSeconds).toBe(1620);
+    });
+
+    it('equals the file duration for a one-file book', () => {
+        const queue = buildSamoAudiobookFileQueue(
+            samoAuth(),
+            {
+                audioFiles: [{ durationMs: 3_600_000, id: 'only', startOffsetSeconds: 0 }],
+                book: { title: 'One File' },
+                durationSeconds: 3600,
+                id: 'book-2',
+            } as SamoAudiobook,
+            { bookStartSeconds: 0 },
+        );
+        expect(queue!.items[0]!.timelineDurationSeconds).toBe(3600);
+        expect(queue!.items[0]!.durationSeconds).toBe(3600);
+    });
+});
+
+describe('parseSamoAudiobookMediaFileIdFromPlaybackId', () => {
+    it('recovers the file id the queue item was built against', () => {
+        const queue = buildSamoAudiobookFileQueue(samoAuth(), threeFileBook(), {
+            bookStartSeconds: 0,
+        });
+        expect(
+            queue!.items.map((item) => parseSamoAudiobookMediaFileIdFromPlaybackId(item.id)),
+        ).toEqual(['file-1', 'file-2', 'file-3']);
+    });
+
+    it('returns undefined for the single-id form', () => {
+        expect(
+            parseSamoAudiobookMediaFileIdFromPlaybackId('samo:https://s:audiobook:book-1'),
+        ).toBeUndefined();
+    });
 });
 
 describe('buildSamoPodcastEpisodePlayback source routing', () => {
-    const auth = testServerAuthentication({ type: ServerType.SAMO, url: 'https://samo.example.com' });
+    const auth = testServerAuthentication({
+        type: ServerType.SAMO,
+        url: 'https://samo.example.com',
+    });
     const baseEpisode = {
         durationSeconds: 1800,
         enclosureUrl: 'https://cdn.example.net/shows/ep-1.mp3?tk=abc',

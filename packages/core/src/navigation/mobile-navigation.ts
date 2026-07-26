@@ -3,12 +3,12 @@ export interface SamoMobileTabDefinition {
     label: string;
 }
 
-export type SamoMobileTabId = 'home' | 'library' | 'playlists' | 'radio' | 'search';
+export type SamoMobileTabId = 'audiobooks' | 'home' | 'playlists' | 'podcasts' | 'radio';
 
 export const SAMO_MOBILE_TABS = [
     { id: 'home', label: 'Home' },
-    { id: 'search', label: 'Search' },
-    { id: 'library', label: 'Library' },
+    { id: 'podcasts', label: 'Podcasts' },
+    { id: 'audiobooks', label: 'Audiobooks' },
     { id: 'playlists', label: 'Playlists' },
     { id: 'radio', label: 'Radio' },
 ] satisfies SamoMobileTabDefinition[];

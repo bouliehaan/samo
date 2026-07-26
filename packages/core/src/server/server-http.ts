@@ -142,6 +142,24 @@ export const requestJson = async <T>(
         );
     }
 
+    // 204s and other empty bodies are success, not JSON — DELETE endpoints
+    // (e.g. playlist delete) answer 204 No Content, and parsing "" used to
+    // throw here, so the client reported a failure for a delete that had
+    // already succeeded server-side.
+    if (response.status === 204) {
+        return undefined as T;
+    }
+    if (response.text) {
+        const text = await response.text();
+        if (!text.trim()) {
+            return undefined as T;
+        }
+        try {
+            return JSON.parse(text) as T;
+        } catch {
+            throw new Error(`Invalid JSON response from ${url}`);
+        }
+    }
     try {
         return (await response.json()) as T;
     } catch {

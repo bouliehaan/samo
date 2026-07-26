@@ -693,6 +693,44 @@ export const getSamoBearerToken = (
 
 const encodeSamoId = (id: string) => encodeURIComponent(id);
 
+/**
+ * `application/x-www-form-urlencoded` serialization of one query component —
+ * byte-identical to what `URLSearchParams` emits (space as `+`, and the five
+ * characters `!'()~` percent-encoded, which `encodeURIComponent` leaves bare).
+ * These URLs are compared as strings all over the app (artwork cache keys,
+ * queue item identity), so the encoding has to match the URL object's exactly.
+ */
+const encodeQueryComponent = (value: string): string =>
+    encodeURIComponent(value)
+        .replace(/%20/g, '+')
+        .replace(/[!'()~]/g, (character) => `%${character.charCodeAt(0).toString(16).toUpperCase()}`);
+
+/**
+ * Origin for a server base URL, parsed ONCE per distinct URL.
+ *
+ * `new URL()` cost real frames: every Samo URL used to construct one (often
+ * several), and Home alone builds ~900 artwork URLs per derive — on device
+ * that measured 0.11ms per construction, i.e. most of a ~900ms synchronous
+ * block, repeated on every re-derive. Since every API path here is ABSOLUTE,
+ * URL resolution against the base is exactly "origin + path" — so parse the
+ * base once, cache the origin, and concatenate from then on.
+ *
+ * The cache is keyed by the raw base string and is effectively fixed-size (one
+ * entry per configured server).
+ */
+const apiOriginCache = new Map<string, string>();
+const getSamoApiOrigin = (baseUrl: string): string => {
+    const cached = apiOriginCache.get(baseUrl);
+    if (cached !== undefined) {
+        return cached;
+    }
+    // Trailing slash: matches the `new URL(path, `${baseUrl}/`)` this replaced,
+    // so a base carrying a path prefix resolves the same way it always did.
+    const origin = new URL(`${baseUrl}/`).origin;
+    apiOriginCache.set(baseUrl, origin);
+    return origin;
+};
+
 export const getSamoApiUrl = (
     server: Pick<ServerAuthenticationResult, 'url'>,
     path: string,
@@ -706,14 +744,18 @@ export const getSamoApiUrl = (
     const apiPath = path.startsWith('/api/v1')
         ? path
         : `/api/v1${path.startsWith('/') ? path : `/${path}`}`;
-    const url = new URL(apiPath, `${baseUrl}/`);
+    const url = `${getSamoApiOrigin(baseUrl)}${apiPath}`;
 
-    for (const [key, value] of Object.entries(query ?? {})) {
+    if (!query) {
+        return url;
+    }
+    let search = '';
+    for (const [key, value] of Object.entries(query)) {
         if (value === undefined) continue;
-        url.searchParams.set(key, String(value));
+        search += `${search ? '&' : '?'}${encodeQueryComponent(key)}=${encodeQueryComponent(String(value))}`;
     }
 
-    return url.toString();
+    return `${url}${search}`;
 };
 
 export const getSamoSetupStatus = async (
@@ -1925,22 +1967,22 @@ export interface SamoStreamUrlOptions {
     streamToken?: string;
 }
 
+/** Stream/media URL. Params keep their historical order (disc, mediaFileId,
+ *  offsetSeconds, progressSeconds, stream_token) — these strings are compared
+ *  and cached verbatim, so the order is part of the contract. */
 const buildStreamUrl = (
     authentication: Pick<ServerAuthenticationResult, 'url'>,
     path: string,
     options?: SamoStreamUrlOptions,
 ) => {
-    const url = new URL(getSamoApiUrl(authentication, path));
+    const query: Record<string, number | string | undefined> = {};
+    if (options?.disc !== undefined) query.disc = options.disc;
+    if (options?.mediaFileId) query.mediaFileId = options.mediaFileId;
+    if (options?.offsetSeconds !== undefined) query.offsetSeconds = options.offsetSeconds;
+    if (options?.progressSeconds !== undefined) query.progressSeconds = options.progressSeconds;
+    if (options?.streamToken) query.stream_token = options.streamToken;
 
-    if (options?.disc !== undefined) url.searchParams.set('disc', String(options.disc));
-    if (options?.mediaFileId) url.searchParams.set('mediaFileId', options.mediaFileId);
-    if (options?.offsetSeconds !== undefined)
-        url.searchParams.set('offsetSeconds', String(options.offsetSeconds));
-    if (options?.progressSeconds !== undefined)
-        url.searchParams.set('progressSeconds', String(options.progressSeconds));
-    if (options?.streamToken) url.searchParams.set('stream_token', options.streamToken);
-
-    return url.toString();
+    return getSamoApiUrl(authentication, path, query);
 };
 
 export const getSamoMusicTrackStreamUrl = (
@@ -2095,6 +2137,24 @@ const appendSamoStreamTokenToUrl = (
         return url;
     }
 
+    // Hot path: the URL came from our own builder with this exact token
+    // already embedded, so the parse-and-reserialize below would hand back the
+    // identical string. Home finalizes hundreds of artwork URLs per derive and
+    // each `new URL()` measured ~0.11ms on device — this early-out is worth
+    // real frames. Guarded on the origin so it only ever short-circuits URLs
+    // this module produced (those are already normalized).
+    try {
+        const origin = getSamoApiOrigin(normalizeBaseUrl(authentication.url));
+        if (
+            url.startsWith(origin) &&
+            url.includes(`stream_token=${encodeQueryComponent(streamToken)}`)
+        ) {
+            return url;
+        }
+    } catch {
+        // Unparseable base — fall through to the general path below.
+    }
+
     try {
         const parsed = new URL(url);
         const base = new URL(authentication.url);
@@ -2103,20 +2163,25 @@ const appendSamoStreamTokenToUrl = (
         // loopback/hostname from scan time. Rewrite API paths to the origin
         // the client actually connected with so stream tokens attach and the
         // device can reach the host.
-        if (parsed.pathname.includes('/api/v1/')) {
-            parsed.protocol = base.protocol;
-            parsed.host = base.host;
-        } else if (parsed.origin !== base.origin) {
+        //
+        // Rebuild from `base.origin` rather than assigning `.protocol`/`.host`:
+        // the host setter only replaces the port when the value it is given
+        // carries one, so re-homing `http://10.0.0.5:6969/api/v1/…` onto an
+        // `https://host` base used to leave the scan-time PORT in place and
+        // emit `https://host:6969/…` — an address the client can't reach.
+        const target =
+            parsed.origin === base.origin
+                ? parsed
+                : parsed.pathname.includes('/api/v1/')
+                  ? new URL(`${base.origin}${parsed.pathname}${parsed.search}${parsed.hash}`)
+                  : null;
+        if (!target) {
+            // Someone else's host, and not an API path we own — leave it alone.
             return url;
         }
 
-        if (parsed.searchParams.has('stream_token')) {
-            parsed.searchParams.set('stream_token', streamToken);
-            return parsed.toString();
-        }
-
-        parsed.searchParams.set('stream_token', streamToken);
-        return parsed.toString();
+        target.searchParams.set('stream_token', streamToken);
+        return target.toString();
     } catch {
         return url;
     }

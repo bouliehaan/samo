@@ -2,7 +2,12 @@ import { describe, expect, it } from 'vitest';
 
 import { type SamoFetch } from './server-http';
 import {
+    finalizeSamoMediaUrl,
     findSamoExploPlaylist,
+    getSamoApiUrl,
+    getSamoAudiobookStreamUrl,
+    getSamoMetadataImageUrl,
+    getSamoMusicTrackStreamUrl,
     resolveSamoPlaylistArtworkUrl,
     samoPlaylistHasCoverGrid,
 } from './server-samo';
@@ -42,6 +47,130 @@ describe('Samo artwork URLs', () => {
         );
 
         expect(request.headers).toEqual({ Authorization: 'Bearer bearer-token' });
+    });
+});
+
+/**
+ * The URL builders these lock used to construct a `URL` object per call (often
+ * several per artwork item), which measured as most of a ~1s synchronous block
+ * on Home. They build strings now — and these URLs are compared verbatim all
+ * over the app (artwork disk-cache keys, queue item identity, the server's own
+ * routing), so "same output as the URL object would produce" is a contract,
+ * not an implementation detail. The oracle below is exactly the code that was
+ * replaced, so any drift fails here rather than on a device.
+ */
+const buildViaUrlObject = (
+    base: string,
+    path: string,
+    query?: Record<string, boolean | number | string | undefined>,
+): string => {
+    const url = new URL(path, `${base}/`);
+    for (const [key, value] of Object.entries(query ?? {})) {
+        if (value === undefined) continue;
+        url.searchParams.set(key, String(value));
+    }
+    return url.toString();
+};
+
+describe('Samo URL building', () => {
+    const cases: Array<[string, string, Record<string, boolean | number | string | undefined>?]> = [
+        ['no query', '/api/v1/media/images/cover_a/image', undefined],
+        ['a stream token', '/api/v1/media/images/cover_a/image', { stream_token: 'smt_abc123' }],
+        [
+            'several params in order',
+            '/api/v1/audiobooks/b1/stream',
+            {
+                mediaFileId: 'file-7',
+                progressSeconds: 12.5,
+                stream_token: 'smt_abc123',
+            },
+        ],
+        [
+            'a value needing escapes',
+            '/api/v1/music/tracks/t1/stream',
+            {
+                stream_token: 'a b&c=d/e?f+g!h~i',
+            },
+        ],
+        [
+            'an id needing escapes',
+            `/api/v1/music/playlists/${encodeURIComponent('playlist 1')}/cover`,
+            undefined,
+        ],
+        ['a boolean and a number', '/api/v1/music/albums', { includeTracks: true, limit: 50 }],
+    ];
+
+    for (const [label, path, query] of cases) {
+        it(`matches the URL object for ${label}`, () => {
+            expect(getSamoApiUrl(auth, path, query)).toBe(buildViaUrlObject(auth.url, path, query));
+        });
+    }
+
+    it('resolves an absolute API path against the origin, ignoring a base path prefix', () => {
+        const prefixed = { ...auth, url: 'https://music.example/subdir' };
+
+        expect(getSamoApiUrl(prefixed, '/media/images/cover_a/image')).toBe(
+            buildViaUrlObject('https://music.example/subdir', '/api/v1/media/images/cover_a/image'),
+        );
+    });
+
+    it('builds the same stream URLs it always did', () => {
+        expect(getSamoMetadataImageUrl(auth, 'cover_a', 'smt_1')).toBe(
+            buildViaUrlObject(auth.url, '/api/v1/media/images/cover_a/image', {
+                stream_token: 'smt_1',
+            }),
+        );
+        expect(getSamoMusicTrackStreamUrl(auth, 'track 1', { streamToken: 'smt_1' })).toBe(
+            buildViaUrlObject(auth.url, '/api/v1/music/tracks/track%201/stream', {
+                stream_token: 'smt_1',
+            }),
+        );
+        expect(
+            getSamoAudiobookStreamUrl(auth, 'b1', {
+                mediaFileId: 'f2',
+                progressSeconds: 30,
+                streamToken: 'smt_1',
+            }),
+        ).toBe(
+            buildViaUrlObject(auth.url, '/api/v1/audiobooks/b1/stream', {
+                mediaFileId: 'f2',
+                progressSeconds: 30,
+                stream_token: 'smt_1',
+            }),
+        );
+    });
+
+    it('returns an already-tokenized URL of ours untouched', () => {
+        const url = getSamoMetadataImageUrl(auth, 'cover_a', 'smt_1');
+
+        expect(finalizeSamoMediaUrl(auth, url, 'smt_1')).toBe(url);
+    });
+
+    it('rewrites a stale token rather than short-circuiting', () => {
+        const stale = getSamoMetadataImageUrl(auth, 'cover_a', 'smt_stale');
+
+        expect(finalizeSamoMediaUrl(auth, stale, 'smt_fresh')).toBe(
+            getSamoMetadataImageUrl(auth, 'cover_a', 'smt_fresh'),
+        );
+    });
+
+    it('re-homes a scan-time API URL on the connected origin, PORT included', () => {
+        // The port is the point: the old rewrite assigned `.host`, which
+        // leaves an existing port untouched, so this used to come back as
+        // `https://music.example:6969/…` — unreachable.
+        expect(
+            finalizeSamoMediaUrl(
+                auth,
+                'http://192.168.1.10:6969/api/v1/media/images/cover_a/image',
+                'smt_1',
+            ),
+        ).toBe('https://music.example/api/v1/media/images/cover_a/image?stream_token=smt_1');
+    });
+
+    it('leaves a foreign non-API URL alone', () => {
+        expect(finalizeSamoMediaUrl(auth, 'https://cdn.example/art/cover.jpg', 'smt_1')).toBe(
+            'https://cdn.example/art/cover.jpg',
+        );
     });
 });
 

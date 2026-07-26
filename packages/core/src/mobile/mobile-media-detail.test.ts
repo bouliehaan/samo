@@ -1,9 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import { type SamoFetch } from '../server/server-http';
-import { type SamoMusicPlaylist } from '../server/server-samo';
+import { type SamoMusicPlaylist, type SamoMusicTrack } from '../server/server-samo';
 import { testServerAuthentication } from '../test-fixtures';
-
 import {
     loadMobileMediaDetail,
     mapSamoPlaylistDetail,
@@ -38,6 +37,28 @@ describe('mapSamoPlaylistDetail artwork', () => {
         const detail = mapSamoPlaylistDetail(auth, undefined, playlist([{ id: 'cover_a' }]), []);
 
         expect(detail.artworkImageId).toBe('cover_a');
+    });
+
+    it('falls a playlist track with no embedded art back to its own album cover', () => {
+        // Explo drops apply their fetched art to the ALBUM, not the file, so the
+        // track ships with an empty images[] but a real albumId. In a playlist
+        // (built with no album fallback) the track must resolve to its own
+        // /albums/{albumId}/cover — not undefined (blank player) and not the
+        // playlist's art (which made every explo row show the same image).
+        const detail = mapSamoPlaylistDetail(auth, undefined, playlist([{ id: 'cover_a' }]), [
+            { albumId: 'alb1', id: 't1', title: 'Espresso' } as SamoMusicTrack,
+            { albumId: 'alb2', id: 't2', title: 'Birds of a Feather' } as SamoMusicTrack,
+        ]);
+
+        expect(detail.tracks[0]?.artworkUrl).toBe(
+            'https://music.example/api/v1/music/albums/alb1/cover',
+        );
+        expect(detail.tracks[0]?.artworkImageId).toBeUndefined();
+        // Distinct albums resolve to distinct covers — the rows are no longer
+        // identical.
+        expect(detail.tracks[1]?.artworkUrl).toBe(
+            'https://music.example/api/v1/music/albums/alb2/cover',
+        );
     });
 });
 
@@ -89,12 +110,7 @@ describe('large playlist / podcast pagination', () => {
         const offsets: number[] = [];
         const detail = await loadMobileMediaDetail({
             authentication: auth,
-            fetch: buildFetch(
-                '/tracks',
-                { id: 'pl1', name: 'Mega Mix' },
-                1234,
-                offsets,
-            ),
+            fetch: buildFetch('/tracks', { id: 'pl1', name: 'Mega Mix' }, 1234, offsets),
             id: 'pl1',
             type: MobileMediaDetailType.PLAYLIST,
         });

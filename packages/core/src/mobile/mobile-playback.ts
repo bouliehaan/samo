@@ -121,6 +121,23 @@ export interface MobilePlayableAudio {
     serverUrl?: string;
     subtitle?: string;
     timelineSegments?: MobilePlaybackSegment[];
+    /**
+     * Total length of the BOOK-GLOBAL timeline that `progressOffsetSeconds` and
+     * `timelineSegments` are expressed on — i.e. the whole audiobook, not this
+     * file.
+     *
+     * `durationSeconds` on a multi-file audiobook item is the FILE's own length
+     * (what the native engine reports). The displayed playhead, the chapter
+     * markers, and the seek bar's tap→position mapping are all book-global, so
+     * anything that needs "how long is the thing this bar represents" must read
+     * THIS field. Using `durationSeconds` there is what made a 40-hour book
+     * render as a ~10-minute bar with chapters that drifted further off the
+     * deeper into the book you got.
+     *
+     * Equal to `durationSeconds` for a one-file book; unset for non-audiobooks
+     * (nothing else has a timeline wider than its own stream).
+     */
+    timelineDurationSeconds?: number;
     title: string;
     url: string;
 }
@@ -257,6 +274,9 @@ export const buildSamoMusicPlayback = (
         album: track.albumTitle,
         albumId: track.albumId,
         artist: track.displayArtist,
+        // First credited artist wins; the full-screen player resolves this id
+        // against the local catalog mirror for the header avatar.
+        artistId: track.artistIds?.[0] ?? track.albumArtistIds?.[0],
         artworkUrl,
         artworkImageId: pickSamoImageId(track.images) ?? artworkImageId,
         contentSourceId: getServerConnectionKey(authentication),
@@ -278,6 +298,25 @@ export const parseSamoAudiobookIdFromPlaybackId = (playbackId: string): string |
     // must be ignored.
     const match = playbackId.match(/:audiobook:([^:]+)(?::file:[^:]+)?$/);
     return match?.[1];
+};
+
+/**
+ * The per-file media id in `…:audiobook:<bookId>:file:<mediaFileId>`, or
+ * undefined for the single-id form. Twin of Kotlin's
+ * `SamoNativeStreamUrl.parseAudiobookMediaFileId` — both sides rebuild the
+ * stream URL from the playback id, so both must recover the same file id or
+ * the two rebuilds point at different audio.
+ */
+export const parseSamoAudiobookMediaFileIdFromPlaybackId = (
+    playbackId: string,
+): string | undefined => {
+    const marker = ':file:';
+    const markerIndex = playbackId.lastIndexOf(marker);
+    if (markerIndex < 0) {
+        return undefined;
+    }
+
+    return playbackId.slice(markerIndex + marker.length) || undefined;
 };
 
 export const parseSamoMusicTrackIdFromPlaybackId = (playbackId: string): string | undefined => {
@@ -388,6 +427,31 @@ const fileDurationSeconds = (file: SamoAudioFile): number => {
     return file.durationSeconds ?? 0;
 };
 
+/**
+ * Length of the book-global timeline a per-file queue spans: the end of the
+ * last file, or the server's own book duration when that runs longer (a file
+ * with a missing duration would otherwise cut the timeline short).
+ *
+ * This is the number the seek bar, the duration label, and the progress clamp
+ * all need — NOT the per-file `durationSeconds` each queue item carries.
+ */
+export const samoAudiobookTimelineDurationSeconds = (
+    files: readonly SamoAudiobookFilePlayback[],
+    bookDurationSeconds?: number,
+): number | undefined => {
+    const lastFile = files[files.length - 1];
+    const filesEnd = lastFile
+        ? lastFile.startOffsetSeconds + (lastFile.durationSeconds || 0)
+        : 0;
+    const bookDuration =
+        bookDurationSeconds && Number.isFinite(bookDurationSeconds) && bookDurationSeconds > 0
+            ? bookDurationSeconds
+            : 0;
+    const timeline = Math.max(filesEnd, bookDuration);
+
+    return timeline > 0 ? timeline : undefined;
+};
+
 /** Pick the file whose [startOffset, startOffset+duration) span contains the book second. */
 export const pickSamoAudiobookFileIndexForBookTime = (
     files: readonly SamoAudiobookFilePlayback[],
@@ -460,6 +524,7 @@ export const buildSamoAudiobookFileQueue = (
         mimeTypeFor: (mediaFileId) => mimeById.get(mediaFileId),
         streamToken: options.streamToken,
         subtitle: authors,
+        timelineDurationSeconds: audiobook.durationSeconds,
         timelineSegments,
         title,
     });
@@ -481,6 +546,9 @@ export const buildSamoAudiobookQueueFromFiles = (
         mimeTypeFor?: (mediaFileId: string) => string | undefined;
         streamToken?: string;
         subtitle?: string;
+        /** Whole-book duration when the caller knows it; derived from the file
+         *  manifest otherwise. See [MobilePlayableAudio.timelineDurationSeconds]. */
+        timelineDurationSeconds?: number;
         timelineSegments?: MobilePlaybackSegment[];
         title: string;
     },
@@ -493,6 +561,13 @@ export const buildSamoAudiobookQueueFromFiles = (
             ? params.timelineSegments
             : undefined;
     const index = pickSamoAudiobookFileIndexForBookTime(params.files, bookStart);
+    // Every item in the queue shares the same book-global timeline length —
+    // that's the whole point: the seek bar spans the BOOK while each item's
+    // `durationSeconds` stays the file's own (native) length.
+    const timelineDurationSeconds = samoAudiobookTimelineDurationSeconds(
+        params.files,
+        params.timelineDurationSeconds,
+    );
 
     const items = params.files.map((file, fileIndex) => {
         const initialPositionSeconds =
@@ -514,6 +589,7 @@ export const buildSamoAudiobookQueueFromFiles = (
             quality: samoQualityForFile(undefined, 'android-direct', false),
             source: 'audiobook' as const,
             subtitle: params.subtitle,
+            timelineDurationSeconds,
             timelineSegments: sharedTimeline,
             title: params.title,
             // Whole file; the player seeks locally. No progressSeconds/offset.
