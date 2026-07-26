@@ -5,6 +5,7 @@ import android.content.res.Configuration
 
 import android.util.Log
 import app.samo.android.audio.SamoAudioPackage
+import app.samo.android.ime.SamoImeControlPackage
 import com.facebook.react.PackageList
 import com.google.android.gms.cast.framework.CastContext
 import com.facebook.react.ReactApplication
@@ -29,6 +30,7 @@ class MainApplication : Application(), ReactApplication {
               // Packages that cannot be autolinked yet can be added manually here, for example:
               // add(MyReactNativePackage())
               add(SamoAudioPackage())
+              add(SamoImeControlPackage())
             }
 
           override fun getJSMainModuleName(): String = ".expo/.virtual-metro-entry"

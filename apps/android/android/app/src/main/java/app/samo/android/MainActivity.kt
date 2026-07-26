@@ -3,6 +3,7 @@ package app.samo.android
 import android.os.Build
 import android.os.Bundle
 
+import androidx.core.view.WindowCompat
 import com.facebook.react.ReactActivity
 import com.facebook.react.ReactActivityDelegate
 import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint.fabricEnabled
@@ -17,6 +18,10 @@ class MainActivity : ReactActivity() {
     // This is required for expo-splash-screen.
     setTheme(R.style.AppTheme);
     super.onCreate(null)
+    // Required for SamoImeControlModule: the app must own its insets before the
+    // system will hand over the IME animation. Without this the window is resized
+    // FOR us and controlWindowInsetsAnimation has nothing to give.
+    WindowCompat.setDecorFitsSystemWindows(window, false)
   }
 
   /**
