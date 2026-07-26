@@ -238,7 +238,8 @@ export const initialState: SettingsState = {
         type: FontType.BUILT_IN,
     },
     general: {
-        accent: '#e8d5b0',
+        // Cool brushed-silver hallmark, matching the Android monochrome tokens.
+        accent: '#c6d0dd',
         albumBackground: false,
         albumBackgroundBlur: 3,
         artistBackground: true,

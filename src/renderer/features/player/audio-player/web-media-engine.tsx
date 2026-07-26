@@ -40,6 +40,13 @@ export interface WebMediaEngineProps {
     /** Radio drives status from `isPlaying` instead of universal transport. */
     statusFromRadio?: boolean;
     /**
+     * Length of the stream currently loaded, when it covers only PART of the
+     * book-global timeline (one file of a multi-file audiobook). A seek past its
+     * end can't be served locally, so it re-opens through `onRestartStreamAt`
+     * instead. Omit for streams that span the whole timeline.
+     */
+    streamDurationSeconds?: number;
+    /**
      * When the stream URL starts at a book-global offset (Samo `progressSeconds`),
      * player time 0 is that offset — add this to progress and subtract on seek.
      */
@@ -63,6 +70,7 @@ export function WebMediaEngine({
     resetResumeOnEnd,
     resumePosition = 0,
     statusFromRadio = false,
+    streamDurationSeconds = 0,
     streamOffsetSeconds = 0,
     syncVolumeToEngineRef = false,
 }: WebMediaEngineProps) {
@@ -148,11 +156,19 @@ export function WebMediaEngine({
 
             const bookPosition = Math.max(0, timestamp);
 
-            if (
-                streamOffsetSeconds > 0 &&
-                bookPosition < streamOffsetSeconds - 0.25 &&
-                onRestartStreamAt
-            ) {
+            // Outside the span the loaded stream covers — in EITHER direction.
+            // Forward used to fall through to the local seek below, which asked
+            // the media element for a time past its end: it clamped, fired
+            // `ended`, and the ended handler advanced to the NEXT file while the
+            // transport was still switching to the TARGET file. Whichever landed
+            // last won, so a forward seek across a file boundary could drop you
+            // in the wrong chapter. Re-open at the target instead.
+            const beforeStream = bookPosition < streamOffsetSeconds - 0.25;
+            const afterStream =
+                streamDurationSeconds > 0 &&
+                bookPosition >= streamOffsetSeconds + streamDurationSeconds;
+
+            if ((beforeStream || afterStream) && onRestartStreamAt) {
                 void onRestartStreamAt(bookPosition);
                 onSeekTransport?.(bookPosition);
                 return;
@@ -163,7 +179,14 @@ export function WebMediaEngine({
             onSeekTransport?.(bookPosition);
         });
         return unsub;
-    }, [mode, onRestartStreamAt, onSeekTransport, ownsPlayback, streamOffsetSeconds]);
+    }, [
+        mode,
+        onRestartStreamAt,
+        onSeekTransport,
+        ownsPlayback,
+        streamDurationSeconds,
+        streamOffsetSeconds,
+    ]);
 
     const wireWebAudio = useCallback(
         async (player: ReactPlayer, options?: { allowReuseSource?: boolean }) => {

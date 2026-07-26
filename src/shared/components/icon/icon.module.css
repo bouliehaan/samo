@@ -43,30 +43,27 @@ img.size-2xl,
 img.size-3xl,
 img.size-4xl,
 img.size-5xl,
-.maskIcon.size-xs,
-.maskIcon.size-sm,
-.maskIcon.size-md,
-.maskIcon.size-lg,
-.maskIcon.size-xl,
-.maskIcon.size-2xl,
-.maskIcon.size-3xl,
-.maskIcon.size-4xl,
-.maskIcon.size-5xl {
+.mask-icon.size-xs,
+.mask-icon.size-sm,
+.mask-icon.size-md,
+.mask-icon.size-lg,
+.mask-icon.size-xl,
+.mask-icon.size-2xl,
+.mask-icon.size-3xl,
+.mask-icon.size-4xl,
+.mask-icon.size-5xl {
     width: 1em;
     height: 1em;
 }
 
-.maskIcon {
+.mask-icon {
     display: inline-block;
     flex-shrink: 0;
     vertical-align: middle;
-    background-color: currentColor;
-    mask-position: center;
+    background-color: currentcolor;
     mask-repeat: no-repeat;
+    mask-position: center;
     mask-size: contain;
-    -webkit-mask-position: center;
-    -webkit-mask-repeat: no-repeat;
-    -webkit-mask-size: contain;
 }
 
 .color-default {

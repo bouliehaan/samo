@@ -29,6 +29,15 @@ export function AudiobookWebPlayer() {
 
     const isSamoAudiobook = server?.type === ServerType.SAMO;
 
+    // Index of the file currently loaded in the media element. Every cross-file
+    // decision below (what span the element covers, what comes next, whether
+    // this is the last file) keys off it, so it's resolved once here instead of
+    // being re-derived — divergently — at each call site.
+    const currentFileIndex = files.findIndex(
+        (file) => file.startOffsetSeconds === streamOffsetSeconds,
+    );
+    const currentFile = currentFileIndex >= 0 ? files[currentFileIndex] : undefined;
+
     /**
      * Switch the player to the underlying file that contains `bookPosition` and
      * resume there. With whole-file serving this is how a cross-file seek works:
@@ -68,23 +77,15 @@ export function AudiobookWebPlayer() {
         [files, item, seekTo, server],
     );
 
+    // Book-global bookkeeping only. Whether a seek needs a FILE SWITCH is the
+    // engine's call now (it knows the span the loaded stream covers and routes
+    // out-of-span seeks to onRestartStreamAt); doing it here too meant a
+    // cross-file seek switched files twice, from two different code paths.
     const handleSeekTransport = useCallback(
         (bookPosition: number) => {
-            if (isSamoAudiobook && files.length > 0) {
-                const fileIndex = pickSamoAudiobookFileIndex(files, bookPosition);
-                const file = files[fileIndex];
-                // A seek that lands outside the file currently loaded must switch
-                // files; otherwise the in-file local seek (handled by the engine)
-                // is enough.
-                if (file && file.startOffsetSeconds !== streamOffsetSeconds) {
-                    void switchToFileAtBookPosition(bookPosition);
-                    return;
-                }
-            }
-
             seekTo(bookPosition);
         },
-        [files, isSamoAudiobook, seekTo, streamOffsetSeconds, switchToFileAtBookPosition],
+        [seekTo],
     );
 
     /**
@@ -95,17 +96,14 @@ export function AudiobookWebPlayer() {
      */
     const handleEnded = useCallback(() => {
         if (isSamoAudiobook && files.length > 0) {
-            const currentIndex = files.findIndex(
-                (file) => file.startOffsetSeconds === streamOffsetSeconds,
-            );
-            const nextFile = currentIndex >= 0 ? files[currentIndex + 1] : undefined;
+            const nextFile = currentFileIndex >= 0 ? files[currentFileIndex + 1] : undefined;
             if (nextFile) {
                 void switchToFileAtBookPosition(nextFile.startOffsetSeconds);
                 return;
             }
         }
         release();
-    }, [files, isSamoAudiobook, release, streamOffsetSeconds, switchToFileAtBookPosition]);
+    }, [currentFileIndex, files, isSamoAudiobook, release, switchToFileAtBookPosition]);
 
     return (
         <WebMediaEngine
@@ -132,11 +130,8 @@ export function AudiobookWebPlayer() {
                 // Only the FINAL file's end means the book is finished — resetting
                 // the saved resume at an intermediate file boundary would wipe the
                 // listener's progress mid-book.
-                if (isSamoAudiobook && files.length > 0) {
-                    const lastFile = files[files.length - 1];
-                    if (lastFile && lastFile.startOffsetSeconds !== streamOffsetSeconds) {
-                        return;
-                    }
+                if (isSamoAudiobook && files.length > 0 && currentFileIndex !== files.length - 1) {
+                    return;
                 }
                 const { item: currentItem } = useAudiobookStore.getState();
                 if (currentItem) {
@@ -146,6 +141,7 @@ export function AudiobookWebPlayer() {
                 }
             }}
             resumePosition={resumePosition}
+            streamDurationSeconds={currentFile?.durationSeconds}
             streamOffsetSeconds={streamOffsetSeconds}
         />
     );

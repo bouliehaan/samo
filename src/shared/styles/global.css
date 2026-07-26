@@ -133,7 +133,9 @@ button {
     font-display: swap;
 }
 
-/* Match the mobile app: Office Code Pro for body, Young Serif for headings. */
+/* Match the mobile app: Office Code Pro for muted subtext, Bricolage Grotesque
+   for headings — a contemporary editorial grotesque whose warmth plays off Office
+   Code Pro's precision. (Young Serif and Space Grotesk are both retired.) */
 @font-face {
     font-family: OfficeCodePro;
     font-style: normal;
@@ -151,18 +153,18 @@ button {
 }
 
 @font-face {
-    font-family: YoungSerif;
+    font-family: BricolageGrotesque;
     font-style: normal;
-    font-weight: 400;
-    src: url('../../../assets/fonts/YoungSerif-Regular.ttf');
+    font-weight: 500;
+    src: url('../../../assets/fonts/BricolageGrotesque-Medium.ttf');
     font-display: swap;
 }
 
 @font-face {
-    font-family: YoungSerif;
+    font-family: BricolageGrotesque;
     font-style: normal;
     font-weight: 700;
-    src: url('../../../assets/fonts/YoungSerif-Bold.ttf');
+    src: url('../../../assets/fonts/BricolageGrotesque-Bold.ttf');
     font-display: swap;
 }
 
@@ -305,7 +307,7 @@ button {
 :root {
     --theme-background-noise: url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIzMDAiIGhlaWdodD0iMzAwIj48ZmlsdGVyIGlkPSJhIiB4PSIwIiB5PSIwIj48ZmVUdXJidWxlbmNlIHR5cGU9ImZyYWN0YWxOb2lzZSIgYmFzZUZyZXF1ZW5jeT0iLjc1IiBzdGl0Y2hUaWxlcz0ic3RpdGNoIi8+PGZlQ29sb3JNYXRyaXggdHlwZT0ic2F0dXJhdGUiIHZhbHVlcz0iMCIvPjwvZmlsdGVyPjxwYXRoIGZpbHRlcj0idXJsKCNhKSIgb3BhY2l0eT0iLjA1IiBkPSJNMCAwaDMwMHYzMDBIMHoiLz48L3N2Zz4=');
     --theme-fullscreen-player-text-shadow: black 0px 0px 10px;
-    --theme-heading-font-family: youngserif, 'Noto Sans JP', 'Noto Sans Hebrew', serif;
+    --theme-heading-font-family: bricolagegrotesque, 'Noto Sans JP', 'Noto Sans Hebrew', sans-serif;
     --theme-muted-font-family: officecodepro, 'Noto Sans JP', 'Noto Sans Hebrew', monospace;
     --theme-font-size-xs: var(--mantine-font-size-xs);
     --theme-font-size-sm: var(--mantine-font-size-sm);

@@ -21,16 +21,16 @@
 
 .card-art-circle {
     width: 86%;
-    margin: 0 auto;
     aspect-ratio: 1 / 1;
+    margin: 0 auto;
 }
 
 /* ---- grid page (library lists) ---- */
 .header-bar {
     display: flex;
+    gap: 1rem;
     align-items: center;
     justify-content: space-between;
-    gap: 1rem;
 }
 
 .header-bar-controls {

@@ -163,9 +163,7 @@ function BaseGridCarousel(props: GridCarouselProps) {
     // makes this cascade page-by-page on demand and stop the moment the row
     // fills or the server runs out (`hasNextPage` false) — no over-fetching.
     const shouldLoadNextPage =
-        visibleCards.length < cardsToShow * rowCount &&
-        hasNextPage === true &&
-        !isFetchingNextPage;
+        visibleCards.length < cardsToShow * rowCount && hasNextPage === true && !isFetchingNextPage;
 
     useEffect(() => {
         if (shouldLoadNextPage) {

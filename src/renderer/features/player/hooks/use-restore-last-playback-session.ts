@@ -50,8 +50,20 @@ const restoreAudiobookSession = async (
     if (!item) return false;
     if (usePlaybackOwnerStore.getState().source) return true;
 
+    // Server first. `session.position` and `resumeByItemId` are both THIS
+    // machine's memory, so restoring from them showed a book at the spot this
+    // desktop last left it even when the phone had since moved it hours ahead.
+    // The list fetch above already carries the server's per-user progress; a
+    // finished book restarts, matching what pressing play would resolve to.
+    const serverProgress = item.mediaProgress;
+    const serverPosition = serverProgress?.isFinished
+        ? 0
+        : (serverProgress?.currentTime ?? undefined);
     const position =
-        session.position ?? useAudiobookStore.getState().resumeByItemId[session.itemId] ?? 0;
+        serverPosition ??
+        session.position ??
+        useAudiobookStore.getState().resumeByItemId[session.itemId] ??
+        0;
 
     useAudiobookStore.setState((state) => ({
         chapters: item.media?.chapters ?? [],

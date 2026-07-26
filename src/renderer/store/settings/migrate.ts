@@ -389,5 +389,15 @@ export const createSettingsMigrate =
             state.font = { ...initialState.font };
         }
 
+        if (version <= 36) {
+            // Monochrome direction: retire the warm-gold accent for the cool
+            // brushed-silver hallmark, matching the Android tokens. Only flip
+            // users still on the old default — anyone who chose their own accent
+            // keeps it.
+            if (state.general.accent === '#e8d5b0') {
+                state.general.accent = initialState.general.accent;
+            }
+        }
+
         return persistedState;
     };
