@@ -2,142 +2,75 @@ import { needsChromecastCompatibleStream } from '@samo/core/mobile';
 import isElectron from 'is-electron';
 
 import { getSongUrl } from '/@/renderer/features/player/audio-player/hooks/use-stream-url';
-import { loadCastFramework } from '/@/renderer/services/chromecast/cast-framework-loader';
-import {
-    type DesktopCastDevice,
-    type DesktopCastState,
-    useCastStore,
-} from '/@/renderer/store/cast.store';
+import { type DesktopCastState, useCastStore } from '/@/renderer/store/cast.store';
 import { QueueSong } from '/@/shared/types/domain-types';
 
-/** Google Default Media Receiver — plays standard HTTP audio streams on the TV. */
-const DEFAULT_RECEIVER_APP_ID = 'CC1AD845';
-
-const getCastFramework = () => window.cast?.framework;
-
-let initialized = false;
-let context: cast.framework.CastContext | null = null;
-let sessionListenerInstalled = false;
+/**
+ * Renderer-side facade over the native Cast engine in the Electron main process
+ * (`src/main/features/core/cast`). The main process owns mDNS discovery and the
+ * Cast v2 protocol; this module just forwards intent over IPC and mirrors the
+ * pushed state into the cast store. The Google web Sender SDK it replaced never
+ * worked in Electron (no Chromium Media Router).
+ */
 
 const setCastState = (next: Partial<DesktopCastState>) => {
     useCastStore.getState().setCast(next);
 };
 
-const mapCastState = (): DesktopCastState => {
-    const framework = getCastFramework();
-    if (!context || !framework) {
-        return {
-            deviceName: null,
-            devices: [],
-            isConnected: false,
-            isScanning: false,
-            status: 'unavailable',
-        };
-    }
+let stateSubscribed = false;
 
-    const castState = context.getCastState();
-    const session = context.getCurrentSession();
-    const deviceName = session?.getCastDevice()?.friendlyName ?? null;
-    const isConnected = castState === framework.CastState.CONNECTED;
-
-    const devices: DesktopCastDevice[] = [];
-    if (deviceName && session) {
-        devices.push({
-            id: session.getSessionId(),
-            isSelected: true,
-            name: deviceName,
-        });
-    }
-
-    let status: DesktopCastState['status'] = 'disconnected';
-    if (!isElectron()) {
-        status = 'unavailable';
-    } else if (castState === framework.CastState.CONNECTING) {
-        status = 'connecting';
-    } else if (isConnected) {
-        status = 'connected';
-    } else if (castState === framework.CastState.NOT_CONNECTED) {
-        status = 'disconnected';
-    }
-
-    return {
-        deviceName,
-        devices,
-        isConnected,
-        isScanning: castState === framework.CastState.CONNECTING,
-        status,
-    };
+/** Wire the main→renderer state push into the store exactly once. */
+const ensureStateSubscription = () => {
+    if (stateSubscribed || !isElectron()) return;
+    stateSubscribed = true;
+    window.api.cast.onState((state) => setCastState(state));
 };
 
-const refreshCastState = () => {
-    setCastState(mapCastState());
-};
-
-const installSessionListener = () => {
-    const framework = getCastFramework();
-    if (!context || !framework || sessionListenerInstalled) return;
-    sessionListenerInstalled = true;
-    context.addEventListener(framework.CastContextEventType.CAST_STATE_CHANGED, refreshCastState);
-    context.addEventListener(
-        framework.CastContextEventType.SESSION_STATE_CHANGED,
-        refreshCastState,
-    );
-};
-
-export const initializeDesktopCast = async () => {
+export const initializeDesktopCast = async (): Promise<boolean> => {
     if (!isElectron()) {
         setCastState({ status: 'unavailable' });
         return false;
     }
-
-    const loaded = await loadCastFramework();
-    const framework = getCastFramework();
-    if (!loaded || !framework) {
+    ensureStateSubscription();
+    try {
+        const state = await window.api.cast.startDiscovery();
+        setCastState(state);
+        return true;
+    } catch {
         setCastState({ status: 'unavailable' });
         return false;
     }
-
-    context = framework.CastContext.getInstance();
-    const options = new framework.CastOptions();
-    options.receiverApplicationId = DEFAULT_RECEIVER_APP_ID;
-    options.autoJoinPolicy = framework.AutoJoinPolicy.ORIGIN_SCOPED;
-
-    if (!initialized) {
-        context.setOptions(options);
-        installSessionListener();
-        initialized = true;
-    } else {
-        context.setOptions(options);
-    }
-
-    refreshCastState();
-    return true;
 };
 
-export const requestDesktopCastSession = async () => {
-    if (!context) {
-        throw new Error('Chromecast is not available in this environment.');
+export const requestDesktopCastSession = async (deviceId?: string) => {
+    if (!isElectron()) {
+        throw new Error('Chromecast is only available in the desktop app.');
     }
+    ensureStateSubscription();
     setCastState({ isScanning: true, status: 'connecting' });
     try {
-        await context.requestSession();
-        refreshCastState();
+        await window.api.cast.connect(deviceId);
     } catch (error) {
-        refreshCastState();
+        // Refresh from the authoritative snapshot so a failed connect doesn't
+        // leave the picker stuck on "connecting".
+        try {
+            setCastState(await window.api.cast.getState());
+        } catch {
+            setCastState({ status: 'unavailable' });
+        }
         throw error;
     }
 };
 
 export const stopDesktopCastSession = async () => {
-    const session = context?.getCurrentSession();
-    if (!session) return;
-    await session.endSession(true);
-    refreshCastState();
+    if (!isElectron()) return;
+    await window.api.cast.disconnect();
 };
 
-const getRemoteMediaClient = (): cast.framework.RemoteMediaClient | null => {
-    const session = context?.getCurrentSession() ?? null;
-    return session?.getMediaClient() ?? null;
+/** Open the OS pane holding the local-network grant Cast depends on. */
+export const openDesktopCastNetworkSettings = async () => {
+    if (!isElectron()) return;
+    await window.api.cast.openNetworkSettings();
 };
 
 const buildCastStreamUrl = async (
@@ -154,17 +87,11 @@ const buildCastStreamUrl = async (
         serverTranscodeRequested: transcode.enabled,
     });
 
-    const castTranscode = needsTranscode
-        ? {
-              bitrate: transcode.bitrate,
-              enabled: true,
-              format: transcode.format,
-          }
-        : {
-              bitrate: transcode.bitrate,
-              enabled: false,
-              format: transcode.format,
-          };
+    const castTranscode = {
+        bitrate: transcode.bitrate,
+        enabled: needsTranscode ? true : false,
+        format: transcode.format,
+    };
 
     return getSongUrl(song, castTranscode, needsTranscode);
 };
@@ -180,8 +107,7 @@ export const loadDesktopCastMedia = async ({
     song: QueueSong;
     transcode: { bitrate?: number; enabled: boolean; format?: string };
 }) => {
-    const client = getRemoteMediaClient();
-    if (!client || !globalThis.chrome?.cast?.media) {
+    if (!isElectron()) {
         throw new Error('No active Chromecast session.');
     }
 
@@ -190,64 +116,37 @@ export const loadDesktopCastMedia = async ({
         throw new Error('Chromecast requires a network stream URL for the current track.');
     }
 
-    const mediaInfo = new chrome.cast.media.MediaInfo(contentUrl, song.container || 'audio/mpeg');
-    mediaInfo.streamType = chrome.cast.media.StreamType.BUFFERED;
-    mediaInfo.metadata = new chrome.cast.media.MusicTrackMediaMetadata();
-    mediaInfo.metadata.title = song.name;
-    mediaInfo.metadata.artist = song.artistName || song.albumArtistName;
-    mediaInfo.metadata.albumName = song.album ?? undefined;
-    if (artworkUrl) {
-        mediaInfo.metadata.images = [new chrome.cast.Image(artworkUrl)];
-    }
-
-    const request = new chrome.cast.media.LoadRequest(mediaInfo);
-    request.currentTime = Math.max(0, positionMs / 1000);
-    request.autoplay = true;
-
-    return new Promise<void>((resolve, reject) => {
-        client.loadMedia(
-            request,
-            () => resolve(),
-            (error) => reject(error ?? new Error('Chromecast load failed')),
-        );
+    await window.api.cast.load({
+        album: song.album ?? undefined,
+        artist: song.artistName || song.albumArtistName || undefined,
+        artworkUrl,
+        contentType: song.container || 'audio/mpeg',
+        contentUrl,
+        positionSeconds: Math.max(0, positionMs / 1000),
+        title: song.name,
     });
 };
 
 export const pauseDesktopCast = async () => {
-    const client = getRemoteMediaClient();
-    if (!client) return;
-    await new Promise<void>((resolve, reject) => {
-        client.pause(null, resolve, reject);
-    });
+    if (!isElectron()) return;
+    await window.api.cast.pause();
 };
 
 export const playDesktopCast = async () => {
-    const client = getRemoteMediaClient();
-    if (!client) return;
-    await new Promise<void>((resolve, reject) => {
-        client.play(null, resolve, reject);
-    });
+    if (!isElectron()) return;
+    await window.api.cast.play();
 };
 
 export const seekDesktopCast = async (positionMs: number) => {
-    const client = getRemoteMediaClient();
-    if (!client || !globalThis.chrome?.cast?.media) return;
-    const seekRequest = new chrome.cast.media.SeekRequest();
-    seekRequest.currentTime = Math.max(0, positionMs / 1000);
-    await new Promise<void>((resolve, reject) => {
-        client.seek(seekRequest, resolve, reject);
-    });
+    if (!isElectron()) return;
+    await window.api.cast.seek(Math.max(0, positionMs / 1000));
 };
 
-export const getDesktopCastSnapshot = () => mapCastState();
+export const getDesktopCastSnapshot = (): DesktopCastState => useCastStore.getState().cast;
 
-export const isDesktopCastConnected = () => {
-    const framework = getCastFramework();
-    if (!context || !framework) return false;
-    return context.getCastState() === framework.CastState.CONNECTED;
-};
+export const isDesktopCastConnected = (): boolean => useCastStore.getState().cast.isConnected;
 
-/** Pre-warm CastContext so devices appear before the output sheet opens. */
+/** Pre-warm discovery so devices appear before the output sheet opens. */
 export const warmDesktopCastDiscovery = async () => {
     await initializeDesktopCast();
 };

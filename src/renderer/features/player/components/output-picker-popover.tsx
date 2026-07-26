@@ -12,6 +12,7 @@ import {
 import {
     getDesktopCastSnapshot,
     initializeDesktopCast,
+    openDesktopCastNetworkSettings,
     requestDesktopCastSession,
     stopDesktopCastSession,
 } from '/@/renderer/services/chromecast/desktop-cast-service';
@@ -34,6 +35,12 @@ import { PlayerStatus, PlayerType } from '/@/shared/types/types';
 const getCastEmptyMessage = (status: ReturnType<typeof getDesktopCastSnapshot>['status']) => {
     if (!isElectron()) {
         return 'Chromecast is only available in the desktop app.';
+    }
+    if (status === 'blocked') {
+        // The OS is refusing the subnet outright, so scanning harder cannot help.
+        return window.api?.utils?.isMacOS?.()
+            ? 'Samo cannot reach your local network. Turn Samo on under Privacy & Security → Local Network.'
+            : 'Samo cannot reach your local network. Allow it through your firewall.';
     }
     if (status === 'unavailable') {
         return 'Chromecast is unavailable. Check your network connection and restart the app.';
@@ -173,22 +180,25 @@ const OutputPickerContent = memo(
             ],
         );
 
-        const handleConnectCast = useCallback(async () => {
-            setSelectingId('__cast_connect__');
-            setError(null);
-            try {
-                await requestDesktopCastSession();
-                onClose();
-            } catch (connectError) {
-                setError(
-                    connectError instanceof Error
-                        ? connectError.message
-                        : 'Could not connect to Chromecast.',
-                );
-            } finally {
-                setSelectingId(null);
-            }
-        }, [onClose]);
+        const handleConnectCast = useCallback(
+            async (deviceId?: string) => {
+                setSelectingId(deviceId ?? '__cast_connect__');
+                setError(null);
+                try {
+                    await requestDesktopCastSession(deviceId);
+                    onClose();
+                } catch (connectError) {
+                    setError(
+                        connectError instanceof Error
+                            ? connectError.message
+                            : 'Could not connect to Chromecast.',
+                    );
+                } finally {
+                    setSelectingId(null);
+                }
+            },
+            [onClose],
+        );
 
         const handleDisconnectCast = useCallback(async () => {
             setSelectingId('__cast_disconnect__');
@@ -213,6 +223,7 @@ const OutputPickerContent = memo(
             audioDevices.length > 0 ? audioDevices : [{ label: 'This computer', value: 'default' }];
         const showCastConnectRow =
             !castState.isConnected &&
+            castState.status !== 'blocked' &&
             castState.status !== 'unavailable' &&
             castState.status !== 'no-devices';
         const isScanningForCast =
@@ -351,7 +362,7 @@ const OutputPickerContent = memo(
                               renderCastRow({
                                   id: device.id,
                                   isSelected: device.isSelected,
-                                  onClick: () => void handleConnectCast(),
+                                  onClick: () => void handleConnectCast(device.id),
                                   subtitle: 'Tap to connect',
                                   title: device.name,
                               }),
@@ -370,6 +381,15 @@ const OutputPickerContent = memo(
                         <Text className={styles.hint} size="sm">
                             {isScanningForCast ? 'Looking for Chromecast devices...' : emptyMessage}
                         </Text>
+                    ) : null}
+                    {castState.status === 'blocked' && window.api?.utils?.isMacOS?.() ? (
+                        <button
+                            className={styles.hintAction}
+                            onClick={() => void openDesktopCastNetworkSettings()}
+                            type="button"
+                        >
+                            Open Local Network settings
+                        </button>
                     ) : null}
                     {isScanningForCast && castDevices.length === 0 && showCastConnectRow ? (
                         <div className={styles.loading}>

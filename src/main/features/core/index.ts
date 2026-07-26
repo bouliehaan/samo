@@ -1,4 +1,5 @@
 import './autodiscover';
+import './cast';
 import './media-fetch';
 import './samo';
 import './lyrics';

@@ -15,6 +15,7 @@ export interface DesktopCastState {
 }
 
 export type DesktopCastStatus =
+    | 'blocked'
     | 'connected'
     | 'connecting'
     | 'disconnected'

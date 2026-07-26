@@ -3,6 +3,7 @@ import { contextBridge } from 'electron';
 
 import { autodiscover } from './autodiscover';
 import { browser } from './browser';
+import { cast } from './cast';
 import { ipc } from './ipc';
 import { localSettings } from './local-settings';
 import { lyrics } from './lyrics';
@@ -16,6 +17,7 @@ import { utils } from './utils';
 const api = {
     autodiscover,
     browser,
+    cast,
     ipc,
     localSettings,
     lyrics,

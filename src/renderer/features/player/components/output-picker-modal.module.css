@@ -18,11 +18,11 @@
     overflow-y: auto;
 }
 
-.sectionLabel {
-    color: var(--theme-colors-foreground-muted);
+.section-label {
     font-weight: 700;
-    letter-spacing: 0.04em;
+    color: var(--theme-colors-foreground-muted);
     text-transform: uppercase;
+    letter-spacing: 0.04em;
 }
 
 .row {
@@ -45,8 +45,8 @@
 }
 
 .row-selected {
-    border-color: rgb(202 160 79 / 45%);
     background: rgb(202 160 79 / 12%);
+    border-color: rgb(202 160 79 / 45%);
 }
 
 .row-disabled {
@@ -108,4 +108,18 @@
 
 .hint {
     color: var(--theme-colors-foreground-muted);
+}
+
+.hint-action {
+    align-self: flex-start;
+    padding: 0.25rem 0;
+    font-size: var(--theme-font-size-sm);
+    color: var(--theme-colors-primary);
+    cursor: pointer;
+    background: none;
+    border: none;
+}
+
+.hint-action:hover {
+    text-decoration: underline;
 }

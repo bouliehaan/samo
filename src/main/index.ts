@@ -308,6 +308,9 @@ async function createWindow(first = true): Promise<void> {
     mainWindow = new BrowserWindow({
         acceptFirstMouse: true,
         autoHideMenuBar: true,
+        // Paints black behind the web contents (resizes repaint the window
+        // background before the renderer catches up) — no white flash.
+        backgroundColor: '#000000',
         frame: false,
         ...(isMacOS() && {
             frame: true,
