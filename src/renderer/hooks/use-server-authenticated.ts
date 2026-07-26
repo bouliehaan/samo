@@ -14,6 +14,7 @@ import {
     useAuthStoreActions,
     useCurrentServerId,
 } from '/@/renderer/store';
+import { isAuthFailure } from '/@/shared/api/samo/samo-http-errors';
 import { toast } from '/@/shared/components/toast/toast';
 import { AuthState } from '/@/shared/types/types';
 import { LogCategory, logFn } from '/@/shared/utils/logger';
@@ -172,12 +173,15 @@ export const useServerAuthenticated = () => {
                     setReady(AuthState.VALID);
                     return;
                 } catch (getUserInfoError: any) {
-                    // Check if it's a forbidden/authentication error (401 or 403)
-                    const isForbiddenError =
-                        getUserInfoError?.response?.status === 401 ||
-                        getUserInfoError?.response?.status === 403 ||
-                        getUserInfoError?.message?.toLowerCase().includes('forbidden') ||
-                        getUserInfoError?.message?.toLowerCase().includes('unauthorized');
+                    // Is this a dead session (recover by re-authenticating) or an
+                    // unreachable server (must keep the session)? `isAuthFailure`
+                    // reads a structured status first and falls back to parsing a
+                    // trailing "(401)" out of the message — which is all that
+                    // survives from call sites that still throw bare Errors across
+                    // IPC. This check used to only match the words "forbidden"/
+                    // "unauthorized", so a real 401 from the IPC path never matched
+                    // and the saved-password re-auth below was unreachable.
+                    const isForbiddenError = isAuthFailure(getUserInfoError);
 
                     // Only reauthenticate if it's a forbidden error AND password is saved
                     if (isForbiddenError && serverWithAuth.savePassword && localSettings) {

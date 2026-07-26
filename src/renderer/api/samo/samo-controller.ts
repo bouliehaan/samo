@@ -61,6 +61,7 @@ import isElectron from 'is-electron';
 
 import { samoFetch } from '/@/renderer/api/samo/samo-fetch';
 import { usePlayerStoreBase } from '/@/renderer/store/player.store';
+import { SamoHttpError } from '/@/shared/api/samo/samo-http-errors';
 import { samoNormalize } from '/@/shared/api/samo/samo-normalize';
 import {
     type Album,
@@ -1363,15 +1364,21 @@ export const SamoController: Partial<InternalControllerEndpoint> = {
         if (!server) throw new Error('No server');
 
         if (isElectron()) {
-            const body = await window.api.samo.getUserInfo({
+            const result = await window.api.samo.getUserInfo({
                 credential: server.credential,
                 url: server.url,
             });
 
+            // Rebuild the error on this side of the IPC boundary so it carries a
+            // real status, matching what the browserFetch path below throws.
+            if (!result.ok) {
+                throw new SamoHttpError(result.status);
+            }
+
             return {
-                id: body.id || server.userId || '',
-                isAdmin: body.isAdmin,
-                name: body.name || server.username || '',
+                id: result.value.id || server.userId || '',
+                isAdmin: result.value.isAdmin,
+                name: result.value.name || server.username || '',
             };
         }
 
@@ -1381,11 +1388,7 @@ export const SamoController: Partial<InternalControllerEndpoint> = {
             method: 'GET',
         });
         if (!response.ok) {
-            if (response.status === 401 || response.status === 403) {
-                throw new Error(`Unauthorized (${response.status})`);
-            }
-
-            throw new Error(`Failed to reach Samo server (${response.status})`);
+            throw new SamoHttpError(response.status);
         }
 
         const body = (await response.json()) as {

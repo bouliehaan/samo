@@ -14,6 +14,11 @@ export const SERVER_PROGRESS_SYNC_INTERVAL_S = 30;
 export interface AbsPlaybackProgressSlice {
     duration: number;
     episode: LongFormPodcastEpisode | null | undefined;
+    /**
+     * Whether a stream was ever resolved for this session — i.e. whether the
+     * position is something the listener actually reached rather than a seed.
+     */
+    hasStream: boolean;
     item: LongFormLibraryItem | null;
     position: number;
     requiresEpisode: boolean;
@@ -52,13 +57,24 @@ export function createAbsPlaybackSyncHandle(
     };
 
     const syncProgress: AbsPlaybackSyncHandle['syncProgress'] = (options) => {
-        const { duration, episode, item, position, requiresEpisode, server } = getSlice();
+        const { duration, episode, hasStream, item, position, requiresEpisode, server } =
+            getSlice();
 
         if (!item || !server) {
             return;
         }
 
         if (requiresEpisode && !episode) {
+            return;
+        }
+
+        // Never report a position nothing ever played FROM. Restoring the last
+        // session at launch seeds item + position from local state without
+        // opening a stream; the close-flush that fires when the listener then
+        // plays something else (owner handoff / release) would PATCH that stale
+        // local position over the newer one the server already had from another
+        // device — silently rewinding a book you'd advanced on your phone.
+        if (!hasStream) {
             return;
         }
 

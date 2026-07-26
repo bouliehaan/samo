@@ -221,9 +221,18 @@ export const normalizeSamoMusicTrack = (
     };
     const auth = toAuthBundle(server);
     const imageId = pickSamoCatalogImageId(pickSamoImageId(track.images)) ?? null;
-    const imageUrl = metadataArtworkUrl(auth, track.images, {
-        id: track.albumId ?? track.id,
-    });
+    const imageUrl =
+        metadataArtworkUrl(auth, track.images, {
+            id: track.albumId ?? track.id,
+        }) ??
+        // A track with no embedded art of its own (e.g. an explo drop, whose art
+        // is applied to the ALBUM, not the file) falls back to its album cover by
+        // id — so the player and playlist rows show the real cover instead of
+        // nothing / the playlist's own art. metadataArtworkUrl bails on empty
+        // track.images before this fallback, so resolve it directly here.
+        (auth && track.albumId
+            ? toStoredImageUrl(resolveSamoAlbumArtworkUrl(auth, { id: track.albumId }))
+            : null);
 
     return {
         _itemType: LibraryItem.SONG,

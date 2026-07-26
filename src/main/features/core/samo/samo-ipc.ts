@@ -1,3 +1,5 @@
+import type { SamoIpcResult, SamoUserInfo } from '/@/shared/api/samo/samo-http-errors';
+
 import {
     adaptNativeFetch,
     authenticateSamo,
@@ -77,7 +79,7 @@ export const registerSamoIpcHandlers = () => {
                 credential: string;
                 url: string;
             },
-        ): Promise<{ id: string; isAdmin: boolean; name: string }> => {
+        ): Promise<SamoIpcResult<SamoUserInfo>> => {
             const response = await withFetchDiagnostics(() =>
                 getFetch(samoFetch)(`${data.url.replace(/\/+$/, '')}/api/v1/users/me`, {
                     headers: { Authorization: `Bearer ${data.credential}` },
@@ -85,8 +87,12 @@ export const registerSamoIpcHandlers = () => {
                 }),
             );
 
+            // Return the status rather than throwing: `ipcRenderer.invoke`
+            // flattens a thrown Error to its message, which dropped the status
+            // and left the renderer unable to tell a dead session (401/403) from
+            // an unreachable server. The renderer rebuilds the error from this.
             if (!response.ok) {
-                throw new Error(`Failed to reach Samo server (${response.status})`);
+                return { ok: false, status: response.status };
             }
 
             const body = (await response.json()) as {
@@ -97,9 +103,12 @@ export const registerSamoIpcHandlers = () => {
             };
 
             return {
-                id: body.id ?? '',
-                isAdmin: body.role === 'admin',
-                name: body.displayName ?? body.username ?? '',
+                ok: true,
+                value: {
+                    id: body.id ?? '',
+                    isAdmin: body.role === 'admin',
+                    name: body.displayName ?? body.username ?? '',
+                },
             };
         },
     );

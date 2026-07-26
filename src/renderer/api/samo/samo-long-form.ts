@@ -70,8 +70,6 @@ const toAbsChapters = (chapters: SamoAudiobook['chapters']): LongFormChapter[] =
         title: chapter.title,
     }));
 
-
-
 export { useLongFormMediaServer };
 
 export const isSamoBackedLibraryItem = (
@@ -93,6 +91,8 @@ export const samoAudiobookToLibraryItem = (
             ?.map((person) => person.name)
             .filter(Boolean)
             .join(', ') ?? '';
+
+    const progress = audiobook.progress;
 
     return {
         id: audiobook.id,
@@ -119,6 +119,17 @@ export const samoAudiobookToLibraryItem = (
             subtitle: audiobook.book?.subtitle,
             title: audiobook.book?.title ?? 'Untitled audiobook',
         },
+        // Server-side per-user progress, carried so callers that only have a
+        // library item (the launch session restore) can seed the playhead from
+        // the SERVER rather than from this machine's last-known position — that
+        // local value is stale the moment you listen on another device.
+        mediaProgress: progress
+            ? {
+                  currentTime: progress.progressSeconds,
+                  duration: audiobook.durationSeconds,
+                  isFinished: progress.completed,
+              }
+            : undefined,
         mediaType: 'book',
         name: audiobook.book?.title ?? 'Untitled audiobook',
         samoSource: SAMO_LONG_FORM_SOURCE,

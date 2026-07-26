@@ -424,6 +424,10 @@ export function createAbsPlaybackStore<
         return {
             duration: state.duration,
             episode: config.getEpisodeForSync(state),
+            // A resolved contentUrl is what separates "this actually played" from
+            // a restored/seeded session; release() and the owner handoff both
+            // sync BEFORE clearing it, so the flush that matters still sees it.
+            hasStream: state.contentUrl !== null,
             item: state.item,
             position: state.position,
             requiresEpisode: config.requiresEpisode,
