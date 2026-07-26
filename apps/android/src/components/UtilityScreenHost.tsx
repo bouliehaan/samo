@@ -1,5 +1,6 @@
-import { memo, useMemo } from 'react';
+import { memo, useMemo, useRef } from 'react';
 import { ScrollView } from 'react-native';
+import Reanimated, { FadeIn, useAnimatedStyle } from 'react-native-reanimated';
 import { ServerType } from '@samo/core/server';
 import { getMobileContentSource } from '@samo/core/mobile';
 
@@ -8,17 +9,12 @@ import { DownloadsScreen } from '../screens/DownloadsScreen';
 import { InitialSyncScreen } from '../screens/InitialSyncScreen';
 import { ManageServersScreen } from '../screens/ManageServersScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
+import { usePresenceTransition } from '../hooks/use-presence-transition';
+import { useReducedMotionPreference } from '../hooks/use-reduced-motion-preference';
 import { useScrollContentBottomInset } from '../hooks/use-scroll-content-bottom-inset';
-import {
-    canConnectWith,
-    connectServer,
-    disconnectServer,
-} from '../services/server-session';
+import { canConnectWith, connectServer, disconnectServer } from '../services/server-session';
 import { syncWithServer } from '../services/server-sync';
-import {
-    setActiveUtilityScreen,
-    useAppNavigationSelector,
-} from '../state/app-navigation';
+import { setActiveUtilityScreen, useAppNavigationSelector } from '../state/app-navigation';
 import {
     setPassword,
     setServerUrl,
@@ -30,6 +26,7 @@ import {
     setDownloadsOfflineMode,
     useDownloadsSelector,
 } from '../state/downloads-state';
+import { durations, travel } from '../theme/motion';
 import { styles } from '../theme/styles';
 import { addDefaultHttpScheme, DEFAULT_SERVER_URL } from '../utils/auth-url';
 
@@ -55,18 +52,14 @@ const handleOpenAddServer = () => {
  * this host only — App.tsx never hears about it.
  */
 export const UtilityScreenHost = memo(function UtilityScreenHost() {
-    const activeUtilityScreen = useAppNavigationSelector(
-        (state) => state.activeUtilityScreen,
-    );
+    const activeUtilityScreen = useAppNavigationSelector((state) => state.activeUtilityScreen);
     const authState = useAuthSessionSelector((state) => state.authState);
     const password = useAuthSessionSelector((state) => state.password);
     const serverConnection = useAuthSessionSelector((state) => state.serverConnection);
     const serverHealthByKey = useAuthSessionSelector((state) => state.serverHealthByKey);
     const serverUrl = useAuthSessionSelector((state) => state.serverUrl);
     const username = useAuthSessionSelector((state) => state.username);
-    const artworkCacheLimitBytes = useDownloadsSelector(
-        (state) => state.artworkCacheLimitBytes,
-    );
+    const artworkCacheLimitBytes = useDownloadsSelector((state) => state.artworkCacheLimitBytes);
     const isOfflineMode = useDownloadsSelector((state) => state.isOfflineMode);
     const scrollBottomInset = useScrollContentBottomInset();
 
@@ -85,8 +78,31 @@ export const UtilityScreenHost = memo(function UtilityScreenHost() {
         [serverConnection],
     );
 
+    const reducedMotion = useReducedMotionPreference();
+
+    // These five screens were the app's last hard cut: tapping the gear
+    // swapped Home for Settings on a frame boundary, with nothing connecting
+    // the two. They now arrive and leave on the same rise-and-fade every other
+    // full-screen surface uses, so the whole app has ONE way of presenting a
+    // page over another.
+    const { isMounted, progress } = usePresenceTransition(activeUtilityScreen !== null);
+
+    // activeUtilityScreen is null for the entire exit, and null selects no
+    // screen — without this the host would fade out a blank background instead
+    // of the settings page the user just dismissed.
+    const lastScreenRef = useRef(activeUtilityScreen);
+    if (activeUtilityScreen !== null) {
+        lastScreenRef.current = activeUtilityScreen;
+    }
+    const screen = activeUtilityScreen ?? lastScreenRef.current;
+
+    const overlayStyle = useAnimatedStyle(() => ({
+        opacity: progress.value,
+        transform: [{ translateY: (1 - progress.value) * travel.screen }],
+    }));
+
     const content =
-        activeUtilityScreen === 'settings' ? (
+        screen === 'settings' ? (
             <SettingsScreen
                 artworkCacheLimitBytes={artworkCacheLimitBytes}
                 catalogSources={catalogSources}
@@ -98,7 +114,7 @@ export const UtilityScreenHost = memo(function UtilityScreenHost() {
                 onToggleOfflineMode={setDownloadsOfflineMode}
                 serverCount={serverConnection ? 1 : 0}
             />
-        ) : activeUtilityScreen === 'manage-servers' ? (
+        ) : screen === 'manage-servers' ? (
             <ManageServersScreen
                 authState={authState}
                 onAddServer={handleOpenAddServer}
@@ -106,9 +122,9 @@ export const UtilityScreenHost = memo(function UtilityScreenHost() {
                 serverConnection={serverConnection}
                 serverHealthByKey={serverHealthByKey}
             />
-        ) : activeUtilityScreen === 'downloads' ? (
+        ) : screen === 'downloads' ? (
             <DownloadsScreen serverConnection={serverConnection} />
-        ) : activeUtilityScreen === 'add-server' ? (
+        ) : screen === 'add-server' ? (
             <AddServerScreen
                 authState={authState}
                 canConnect={canConnect}
@@ -123,28 +139,43 @@ export const UtilityScreenHost = memo(function UtilityScreenHost() {
                 serverUrl={serverUrl}
                 username={username}
             />
-        ) : activeUtilityScreen === 'initial-sync' ? (
+        ) : screen === 'initial-sync' ? (
             <InitialSyncScreen
                 onComplete={handleInitialSyncComplete}
                 serverConnection={serverConnection}
             />
         ) : null;
 
-    if (!content) {
+    if (!isMounted || !content) {
         return null;
     }
 
     return (
-        <ScrollView
-            contentContainerStyle={[
-                styles.content,
-                styles.utilityScrollContent,
-                { paddingBottom: scrollBottomInset },
-            ]}
-            keyboardShouldPersistTaps="handled"
-            style={[styles.navOverlay, styles.tabUtilityScene]}
+        <Reanimated.View
+            pointerEvents={activeUtilityScreen !== null ? 'auto' : 'none'}
+            style={[styles.navOverlay, overlayStyle]}
         >
-            {content}
-        </ScrollView>
+            {/* Keyed on the screen id, so moving BETWEEN utility screens
+                (Settings → Downloads → Manage Servers) dissolves too. Those
+                swaps remount the subtree either way — the key only gives the
+                remount something to fade up from. */}
+            <Reanimated.View
+                entering={reducedMotion ? undefined : FadeIn.duration(durations.state)}
+                key={screen}
+                style={styles.tabUtilityScene}
+            >
+                <ScrollView
+                    contentContainerStyle={[
+                        styles.content,
+                        styles.utilityScrollContent,
+                        { paddingBottom: scrollBottomInset },
+                    ]}
+                    keyboardShouldPersistTaps="handled"
+                    style={styles.tabUtilityScene}
+                >
+                    {content}
+                </ScrollView>
+            </Reanimated.View>
+        </Reanimated.View>
     );
 });

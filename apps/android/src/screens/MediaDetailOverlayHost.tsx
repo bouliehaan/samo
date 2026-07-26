@@ -1,20 +1,9 @@
-import { memo, useEffect, useRef } from 'react';
-import Reanimated, {
-    Easing,
-    useAnimatedStyle,
-    useSharedValue,
-    withTiming,
-} from 'react-native-reanimated';
+import { memo, useRef } from 'react';
+import Reanimated, { useAnimatedStyle } from 'react-native-reanimated';
 
-import {
-    handleSelectMediaItem,
-    reloadCurrentMediaDetail,
-} from '../handlers/media-detail-handlers';
-import {
-    handlePlayMediaTrack,
-    handleShuffleDetailTracks,
-} from '../handlers/playback-handlers';
-import { useReducedMotionPreference } from '../hooks/use-reduced-motion-preference';
+import { handleSelectMediaItem, reloadCurrentMediaDetail } from '../handlers/media-detail-handlers';
+import { handlePlayMediaTrack, handleShuffleDetailTracks } from '../handlers/playback-handlers';
+import { usePresenceTransition } from '../hooks/use-presence-transition';
 import { popMediaDetail, useAppNavigationSelector } from '../state/app-navigation';
 import { useAuthSessionSelector } from '../state/auth-session';
 import { styles } from '../theme/styles';
@@ -27,53 +16,58 @@ import { MediaDetailContent } from './MediaDetailScreen';
  * reopening paints instantly without a remount.
  */
 export const MediaDetailOverlayHost = memo(function MediaDetailOverlayHost() {
-    const reducedMotion = useReducedMotionPreference();
     const mediaDetailState = useAppNavigationSelector((state) => state.mediaDetailState);
     const mediaDetailKey = useAppNavigationSelector((state) => state.mediaDetailKey);
     const activeUtilityScreen = useAppNavigationSelector((state) => state.activeUtilityScreen);
     const serverConnection = useAuthSessionSelector((state) => state.serverConnection);
 
-    const frozenDetailStateRef = useRef(mediaDetailState);
-    const frozenDetailKeyRef = useRef(mediaDetailKey);
-    if (mediaDetailState.status === 'loaded') {
-        frozenDetailStateRef.current = mediaDetailState;
-        frozenDetailKeyRef.current = mediaDetailKey;
-    }
     const detailOverlayOpen = activeUtilityScreen === null && mediaDetailState.status !== 'idle';
-    const hasCachedDetailShell = frozenDetailStateRef.current.status === 'loaded';
 
-    // Detail overlay entrance: a quick fade + small rise so opening a playlist /
-    // album / artist reads as a card lifting in rather than a hard cut. Honors
-    // the OS reduced-motion setting.
-    const detailOverlayProgress = useSharedValue(0);
-    useEffect(() => {
-        // Ease-OUT (fast start) so the content is visibly there within a frame or
-        // two — the tap is confirmed immediately instead of fading up from black.
-        // Open carries a touch longer for presence; back-to-home stays instant.
-        detailOverlayProgress.value = withTiming(detailOverlayOpen ? 1 : 0, {
-            duration: reducedMotion ? 0 : detailOverlayOpen ? 200 : 110,
-            easing: Easing.out(Easing.cubic),
-        });
-    }, [detailOverlayOpen, detailOverlayProgress, reducedMotion]);
+    // Page-level cross-fade, both directions. The exit is the new half: this
+    // host returned null on the closing render, so the close animation it
+    // already had never rendered a single frame. The presence hook holds the
+    // subtree through it.
+    const { isMounted, progress } = usePresenceTransition(detailOverlayOpen);
+
+    // The state goes `idle` the instant back is pressed, and `idle` renders
+    // NOTHING (MediaDetailScreen bails to null). Keeping the host mounted
+    // through the exit would therefore fade out an empty background rather than
+    // the page the user is dismissing. Hold the last real state for the exit —
+    // the same "carry the value across the transition" idiom MediaDetailScreen
+    // already uses for the opening artwork.
+    const lastRenderedRef = useRef({ key: mediaDetailKey, state: mediaDetailState });
+    if (mediaDetailState.status !== 'idle') {
+        lastRenderedRef.current = { key: mediaDetailKey, state: mediaDetailState };
+    }
+    const rendered = detailOverlayOpen
+        ? { key: mediaDetailKey, state: mediaDetailState }
+        : lastRenderedRef.current;
+
+    // Opacity ONLY, deliberately. The page's own parts are choreographed
+    // (cover leads, title follows, rows cascade — see theme/choreography), and
+    // a translate here would add itself to every one of them equally: the cover
+    // would travel its 10dp PLUS this, the rows their 20dp plus this, and the
+    // mass hierarchy that makes the assembly read as physical would flatten
+    // back into the slab it replaced. The host fades; the parts move.
     const detailOverlayStyle = useAnimatedStyle(() => ({
-        opacity: detailOverlayProgress.value,
-        transform: [{ translateY: (1 - detailOverlayProgress.value) * 16 }],
+        opacity: progress.value,
     }));
 
-    if (activeUtilityScreen !== null || (!detailOverlayOpen && !hasCachedDetailShell)) {
+    if (activeUtilityScreen !== null || !isMounted || rendered.state.status === 'idle') {
         return null;
     }
 
     return (
         <Reanimated.View
+            // Dead to touch the moment it starts leaving: a surface mid-exit is
+            // still on screen, and a tap landing on a page that is 80% gone
+            // navigates somewhere the user did not aim at.
             pointerEvents={detailOverlayOpen ? 'auto' : 'none'}
             style={[styles.navOverlay, detailOverlayStyle]}
         >
             <MediaDetailContent
-                mediaDetailKey={detailOverlayOpen ? mediaDetailKey : frozenDetailKeyRef.current}
-                mediaDetailState={
-                    detailOverlayOpen ? mediaDetailState : frozenDetailStateRef.current
-                }
+                mediaDetailKey={rendered.key}
+                mediaDetailState={rendered.state}
                 onBack={popMediaDetail}
                 onPlayTrack={handlePlayMediaTrack}
                 onReloadDetail={reloadCurrentMediaDetail}
