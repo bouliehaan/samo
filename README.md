@@ -14,7 +14,7 @@ Honest state of things, so nobody installs this expecting a finished product:
 |------|-------|
 | **Android app** | The most actively developed surface. Native ExoPlayer engine, offline downloads, Chromecast, on-device catalog mirror. |
 | **`@samo/core`** | Samo-only. Shared server client, playback and media-detail mapping, covered by tests. |
-| **Desktop (Electron)** | Samo-only. The Jellyfin, Navidrome, Subsonic and Audiobookshelf backends from the Feishin lineage are gone. |
+| **Desktop (Electron)** | Samo-only. Every other backend from the Feishin lineage has been removed. |
 
 This is a personal project developed in the open. There is no stability promise and no migration guarantee between versions yet.
 

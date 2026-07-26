@@ -3,9 +3,10 @@
     "version": "1.0.0",
     "description": "A modern self-hosted music player.",
     "keywords": [
-        "subsonic",
-        "navidrome",
-        "jellyfin",
+        "samo",
+        "audiobooks",
+        "podcasts",
+        "self-hosted",
         "react",
         "electron"
     ],

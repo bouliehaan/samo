@@ -1,81 +1,89 @@
-# Performance & network review (Samo mobile)
+# Performance & network (Samo mobile)
 
-This document captures a cross-platform pass focused on **Android**, with changes in **`@samo/core`** where they benefit macOS/desktop too.
+Where the Android client spends time, and what it does about it. Changes live in
+**`@samo/core`** wherever the desktop benefits too.
 
-## What we shipped in this pass
-
-| Area | Change | Benefit |
-|------|--------|---------|
-| **Core HTTP** | `withRequestTimeout` in `getFetch()` (30s default) | Hung Subsonic/ABS requests fail fast on Android + desktop |
-| **Artist detail** | Parallel `annotateSubsonicAlbumsQuality` for albums + appears-on | Shorter artist page load on Navidrome |
-| **Android boot** | Single home fetch after health check (removed duplicate pre-health fetch) | One less full home fan-out on launch |
-| **Android dedup** | `dedupeInFlight` for home + detail network loads | Duplicate taps / boot refresh share one in-flight promise |
-| **Album detail UI** | `FlashList` for album/audiobook/podcast track lists | Large albums no longer mount hundreds of rows at once |
-| **Detail artwork** | `ArtworkImage` + press-in prefetch (prior session) | Hero art reuses home disk cache |
-
-## Android UI — remaining hotspots
-
-1. **`App.tsx` monolith** — navigation, downloads, and home refresh still re-render five mounted tab scenes. Consider tab-level `React.memo` boundaries or moving tabs into a navigator with lazy screens.
-2. **Home scroll model** — vertical `ScrollView` + per-section horizontal `FlashList` keeps inactive tabs alive. Consider one vertical `FlashList` of sections or unmounting inactive tabs after first visit.
-3. **Player store ticks** — 1s position polling re-renders components using full `useAndroidPlaybackState()`. Narrow selectors (`status`, `positionMs`) in `PlayerSurface.tsx`.
-4. **Download context** — global `Set` context invalidates all tiles on progress. Per-tile revision or ref-based lookups would reduce churn.
-5. **`getImageColors` on fullscreen open** — CPU-heavy; defer until after expand animation or cache by artwork URL.
-
-## Network architecture (current)
+## Network architecture
 
 ```text
 Android services (home-content, media-detail, search-content)
     → @samo/core/mobile (loadMobileHomeContent*, loadMobileMediaDetail, search*)
         → server-http (getFetch → requestJson)
-            → Subsonic REST / Audiobookshelf API
+            → Samo Server /api/v1
 ```
 
-**Caching (client-side, not HTTP cache):**
+**Caching is client-side, not HTTP cache:**
 
-- Home: `home-content-cache.ts` (disk, stale-while-revalidate)
-- Detail: `media-detail-cache.ts` + in-memory LRU
-- Android: `in-flight-requests.ts` coalesces duplicate fetches
+- Detail: `media-detail-cache.ts` plus an in-memory LRU, stale-while-revalidate
+  (memory → disk → network refresh)
+- Artwork: `artwork-cache.ts`, with a user-configurable size limit
+- Catalog: an on-device SQLite mirror, synced by Kotlin, so Home and Library
+  derive from local data rather than the network
+- `in-flight-requests.ts` coalesces duplicate fetches, so a double tap or a
+  boot-time refresh shares one promise
 
-**What works well:**
+**Resilience:**
 
-- Multi-server `Promise.allSettled`
-- Subsonic home sections fetched in parallel
-- Detail stale-while-revalidate (memory → disk → network refresh)
-- Health checks parallel per server (Android 8s timeout on health only — now all REST calls have core timeout)
+- `withRequestTimeout` in `getFetch()` (30s default), so a hung request fails
+  fast instead of hanging a surface
+- Health checks run in parallel per server
+- `samo-http-errors` classifies failures, so React Query retries only what a
+  retry can fix — a 401 or 404 fails immediately rather than after several
+  pointless attempts
 
-## Network — recommended next steps
+## Where the time goes
 
-### P0 — Resilience
+The JS thread is the scarce resource. A 2s heartbeat in `App.tsx` logs whenever
+it fires late (`[jank] JS thread blocked ~Ns`), and `jank-trace.ts` names the
+operation responsible instead of leaving it as "render/GC/native".
 
-1. **Retry idempotent GETs once** in `requestJson` on transient failures (timeout, network error). Exponential backoff 300–800ms. Skip for mutations.
-2. **Abort on navigation** — pass `AbortSignal` from detail/home request tokens into fetch so stale responses are cancelled, not just ignored in UI.
+The heavy synchronous pass on the render path is `getHomeDisplaySections` — it
+walks every shelf of a multi-thousand-item library, and is traced by name for
+exactly that reason.
 
-### P1 — Efficiency
+**Mitigations already in place:**
 
-3. **Decouple hi-res badge scans from home critical path** — return home sections after list endpoints; run `annotateSubsonicHiResCollections` in a second phase and patch UI. Today `qualityScanLimit: 8` still blocks `loadAndroidHomeContent` completion.
-4. **Cache quality annotations** by `(serverId, albumId)` in memory/disk to avoid re-scanning on every home refresh.
-5. **Paginate `loadAllSubsonicAlbums`** with `Promise.all` on first N pages or cap concurrent page fetches.
+- Home is a vertical `FlashList` of shelves, so only visible ones mount. Item
+  types keep recycling pools homogeneous.
+- Tab scenes mount once and then rest frozen (`react-freeze`), so background
+  tabs cost nothing on store updates and revisiting is a thaw, not a remount.
+- Filter pills update urgently while the section rebuild follows a deferred
+  copy, so a filter tap flips immediately instead of blocking on a re-render.
+- Dense catalog grids decode artwork as RGB_565 (`decodeFormat="rgb"`), which is
+  what took the big browse grids off the bitmap-upload jank.
+- Post-sync derives run behind `InteractionManager`, and are deferred entirely
+  while backgrounded, so a long listening session with the screen off never
+  burns seconds of JS thread on surfaces nobody can see.
+- Animation runs on the UI thread (see `theme/motion.ts`), so transitions are
+  unaffected by whatever the JS thread is doing.
 
-### P2 — Speed
+## Remaining hotspots
 
-6. **Progressive artist detail** — return shell after `getArtist` + top songs; stream biography / appears-on / quality in follow-up state updates.
-7. **HTTP/2 connection reuse** — ensure native fetch keeps connections alive per host (default on modern RN; verify no per-request custom agent breaking reuse).
-8. **Smaller first paint for home** — optional `limit: 12` on cold start, then `limit: 36` refresh.
+1. **Player store ticks** — 1s position polling re-renders anything reading the
+   full playback state. Narrow selectors where it still happens.
+2. **`getImageColors` on fullscreen open** — CPU-heavy. Defer past the expand
+   animation, or cache by artwork URL.
+3. **Abort on navigation** — request tokens are checked on arrival, but the
+   fetch itself is not cancelled. Threading an `AbortSignal` through would stop
+   paying for responses nobody will read.
+4. **Retry idempotent GETs once** in `requestJson` on transient failures
+   (timeout, network error), 300–800ms backoff. Mutations must not retry.
 
 ## Measuring
 
-- Metro: filter `[nav-perf]` for overlay open, disk cache, first frame (debug instrumentation; remove when done).
-- Android Studio profiler: CPU during album open (FlashList vs old `.map`).
-- Server logs: count `getAlbum.view` during home load vs artist open.
+- `adb logcat -s ReactNativeJS` and watch for `[jank]`
+- Android Studio profiler: CPU during a detail open
+- Server logs: request count during a home load versus a detail open
 
 ## Files to know
 
 | Topic | Path |
 |-------|------|
-| HTTP timeout | `packages/core/src/server/server-http.ts` |
-| Artist detail | `packages/core/src/mobile/mobile-media-detail.ts` |
+| HTTP timeout + error classification | `packages/core/src/server/server-http.ts` |
+| Detail loaders | `packages/core/src/mobile/mobile-media-detail.ts` |
 | Home loaders | `packages/core/src/mobile/mobile-home.ts` |
-| Quality scan | `packages/core/src/mobile/mobile-subsonic-quality.ts` |
-| Android detail cache flow | `apps/android/src/hooks/use-android-media-handlers.ts` |
+| Jank breadcrumbs | `apps/android/src/services/jank-trace.ts` |
 | In-flight dedup | `apps/android/src/services/in-flight-requests.ts` |
-| Album track list | `apps/android/src/screens/MediaDetailScreen.tsx` |
+| Home rendering | `apps/android/src/screens/home/HomeContent.tsx` |
+| Detail rendering | `apps/android/src/screens/MediaDetailLoaded.tsx` |
+| Motion constraints | `apps/android/src/theme/motion.ts` |

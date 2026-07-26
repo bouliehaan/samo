@@ -53,10 +53,10 @@ If the IDE Problems panel still shows noise: **reload the window** after pulling
 
 - **Put here:** server HTTP, mobile playables, cast URL policy, audio-quality predicates.
 - **Keep out:** React/Zustand, Android UI, renderer routes.
-- **Do not re-expand** monolithic `SamoAudioModule.kt` or duplicate ABS HTTP outside `packages/core/src/server/server-audiobookshelf.ts`.
+- **Do not re-expand** monolithic `SamoAudioModule.kt`, and do not duplicate server HTTP outside `packages/core/src/server/`.
 
 ## Cast / playback
 
-- **Local:** `format=raw` Subsonic when applicable.
+- **Local:** original-file streaming when the device can play it directly.
 - **Chromecast:** ~96 kHz FLAC ceiling → hi-res uses transcode leg on cast URL only.
-- **Auth in URL:** Subsonic creds in query → no Cast `httpHeaders` block.
+- **Auth in URL:** stream token in the query string → no Cast `httpHeaders` block.

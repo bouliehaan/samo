@@ -23,9 +23,9 @@ body:
     - type: input
       id: server-version
       attributes:
-          label: Music Server and Version
-          description: What music server are you using?
-          placeholder: ex. Navidrome v0.55.0, LMS v3.67.0, Jellyfin v10.10.7, etc.
+          label: Samo Server version
+          description: Which version of samo-server are you running?
+          placeholder: ex. v0.1.0
       validations:
           required: true
 

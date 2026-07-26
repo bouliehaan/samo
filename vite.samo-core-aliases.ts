@@ -14,10 +14,6 @@ export const samoCoreAliases: Alias[] = [
         find: '@samo/core/server/auth',
         replacement: resolve(coreSrc, 'server/server-auth.ts'),
     },
-    {
-        find: '@samo/core/server/audiobookshelf',
-        replacement: resolve(coreSrc, 'server/server-audiobookshelf.ts'),
-    },
     { find: '@samo/core/playback', replacement: resolve(coreSrc, 'playback/index.ts') },
     { find: '@samo/core/server', replacement: resolve(coreSrc, 'server/index.ts') },
     { find: '@samo/core/mobile', replacement: resolve(coreSrc, 'mobile/index.ts') },

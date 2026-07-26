@@ -11,19 +11,6 @@ body:
               - label: 'Yes'
                 required: true
 
-    - type: dropdown
-      id: server-specific
-      attributes:
-          label: Is this a server-specific feature?
-          options:
-              - Not server-specific
-              - OpenSubsonic
-              - Jellyfin
-              - Navidrome
-          default: 0
-      validations:
-          required: true
-
     - type: textarea
       id: solution
       attributes:
