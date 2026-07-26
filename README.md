@@ -2,7 +2,7 @@
 
 A self-hosted listening client for music, audiobooks, podcasts, and radio — one library, one queue, one history, on the desktop and on Android.
 
-Samo is the client half of a pair. The server half is [samo-server](https://github.com/bouliehaan/samo-server), which is a native media server rather than a wrapper around Navidrome or Audiobookshelf: the four media kinds are first-class domains that share playback state, recents, and browsing instead of being stapled together in the client.
+Samo is the client half of a pair. The server half is [samo-server](https://github.com/bouliehaan/samo-server) — a native media server, not a wrapper around other servers: the four media kinds are first-class domains that share playback state, recents, and browsing, instead of being stapled together in the client.
 
 Samo began as a fork of [Feishin](https://github.com/jeffvli/feishin) and keeps its GPL-3.0 licence. See [Credits](#credits).
 
