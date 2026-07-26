@@ -12,12 +12,16 @@ import {
     TextInput,
     View,
 } from 'react-native';
+import { GestureDetector } from 'react-native-gesture-handler';
+import Reanimated from 'react-native-reanimated';
 
 import { LibrarySortMenu } from '../components/LibrarySortMenu';
 import { MediaArtwork } from '../components/MediaArtwork';
+import { useSearchPull } from '../components/search-pull/useSearchPull';
 import { SkeletonTileGrid } from '../components/Skeleton';
 import { PlusGlyph } from '../components/Glyphs';
 import { useMediaContextMenu } from '../contexts/media-context-menu';
+import { useScrollContentBottomInset } from '../hooks/use-scroll-content-bottom-inset';
 import { triggerImpact } from '../services/haptics';
 import { getPersistedServerAuthKey } from '../services/persisted-server';
 import {
@@ -25,6 +29,7 @@ import {
     type AddAndroidRadioStationResult,
     canAddAndroidRadioStation,
 } from '../services/radio-stations';
+import { PAGE_TOP_INSET } from '../theme/layout';
 import { styles } from '../theme/styles';
 import { colors } from '../theme/tokens';
 import { LIBRARY_SORTS, type LibrarySort } from '../types/library-tab';
@@ -48,6 +53,12 @@ export const RadioScreen = memo(({
     const homeContentState = useVisibleHomeContentState();
     const recentItems = useVisibleRecentItems();
     const contextMenu = useMediaContextMenu();
+    const bottomInset = useScrollContentBottomInset();
+    const {
+        gesture: searchPullGesture,
+        nativeGesture: searchPullNativeGesture,
+        scrollProps: searchPullScrollProps,
+    } = useSearchPull('radio');
     // Own the playback subscription rather than receiving the now-playing id from
     // App — keeps the (5s) radio-metadata re-render local to this screen.
     const activePlaybackItem = useAndroidPlaybackState(selectActiveAndroidPlaybackItem);
@@ -73,8 +84,9 @@ export const RadioScreen = memo(({
     const activeSortLabel =
         LIBRARY_SORTS.find((sort) => sort.id === activeSort)?.label ?? 'Recents';
     const activeSortShortLabel = activeSort === 'name' ? 'Name' : 'Recent';
+    // Sort anchors the left edge, add-station the right — one quiet row.
     const radioHeaderActions = (
-        <View style={styles.radioHeaderActions}>
+        <>
             <Pressable
                 accessibilityLabel={`Sort by ${activeSortLabel}. Tap to change.`}
                 accessibilityRole="button"
@@ -102,7 +114,7 @@ export const RadioScreen = memo(({
             >
                 <PlusGlyph color={colors.muted} size={18} />
             </Pressable>
-        </View>
+        </>
     );
 
     if (homeContentState.status === 'idle') {
@@ -115,51 +127,39 @@ export const RadioScreen = memo(({
 
     if (homeContentState.status === 'error') {
         return (
-            <View style={styles.section}>
+            <View style={[styles.section, { marginTop: PAGE_TOP_INSET }]}>
                 <Text style={styles.errorText}>{homeContentState.message}</Text>
             </View>
         );
     }
 
-    if (stations.length === 0) {
-        return (
-            <View style={styles.radioScreen}>
-                <View style={styles.playlistTopPanel}>
-                    <Text style={styles.homeHeaderTitle}>Radio</Text>
+    // Empty and loaded share ONE drawer-bearing scroll host — the empty state
+    // (no stations, common on Radio) must carry the pull-down search drawer
+    // just like every other page, so it can't be a separate bare View.
+    return (
+        <View style={styles.tabSceneFill}>
+            <GestureDetector gesture={searchPullGesture}>
+            <View collapsable={false} style={styles.tabSceneFill}>
+            <GestureDetector gesture={searchPullNativeGesture}>
+            <Reanimated.ScrollView
+                contentContainerStyle={[
+                    styles.radioScrollContent,
+                    { paddingBottom: bottomInset },
+                ]}
+                showsVerticalScrollIndicator={false}
+                style={styles.tabSceneFill}
+                {...searchPullScrollProps}
+            >
+                <View style={styles.pageControlsRow}>
                     {radioHeaderActions}
                 </View>
-                <Text style={[styles.mutedText, styles.radioEmptyText]}>
-                    {!radioManageConnections
-                        ? 'Connect a Samo server to add radio stations from Android.'
-                        : 'No server-backed radio stations returned.'}
-                </Text>
-                <LibrarySortMenu
-                    activeSort={activeSort}
-                    onClose={() => setIsSortMenuOpen(false)}
-                    onSelect={(next) => {
-                        setActiveSort(next);
-                        setIsSortMenuOpen(false);
-                    }}
-                    visible={isSortMenuOpen}
-                />
-                <AddRadioStationModal
-                    onClose={() => setIsAddModalOpen(false)}
-                    onSubmit={onAddStation}
-                    serverConnection={radioManageConnections}
-                    visible={isAddModalOpen}
-                />
-            </View>
-        );
-    }
-
-    return (
-        <View style={styles.radioScreen}>
-            <View style={styles.playlistTopPanel}>
-                <Text style={styles.homeHeaderTitle}>Radio</Text>
-                {radioHeaderActions}
-            </View>
-            {sortedStations.length > 0 ? (
-                <>
+                {sortedStations.length === 0 ? (
+                    <Text style={[styles.mutedText, styles.radioEmptyText]}>
+                        {!radioManageConnections
+                            ? 'Connect a Samo server to add radio stations from Android.'
+                            : 'No server-backed radio stations returned.'}
+                    </Text>
+                ) : (
                     <View style={styles.radioGrid}>
                         {sortedStations.map((station) => {
                             const isPlaying =
@@ -207,8 +207,11 @@ export const RadioScreen = memo(({
                             );
                         })}
                     </View>
-                </>
-            ) : null}
+                )}
+            </Reanimated.ScrollView>
+            </GestureDetector>
+            </View>
+            </GestureDetector>
             <LibrarySortMenu
                 activeSort={activeSort}
                 onClose={() => setIsSortMenuOpen(false)}

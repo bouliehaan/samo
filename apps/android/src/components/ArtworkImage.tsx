@@ -32,7 +32,9 @@ import { resolveSamoItemArtworkSourceForDisplay } from '../utils/samo-artwork-ur
  */
 export const ArtworkImage = ({
     artworkImageId,
+    blurRadius,
     contentSource,
+    decodeFormat,
     fallbackStyle,
     letter,
     onLoad,
@@ -43,6 +45,18 @@ export const ArtworkImage = ({
     uri,
 }: {
     artworkImageId?: string;
+    /**
+     * Android decode color space. `'rgb'` decodes to 16-bit RGB_565 (no alpha),
+     * halving the decoded bitmap's memory + GPU-upload bytes versus the default
+     * 32-bit `'argb'`. Opaque cover art shows no visible difference at tile size,
+     * so dense recycling grids pass `'rgb'` to double how many covers stay in the
+     * memory cache before eviction (fewer re-decodes / less blank-on-scroll-back),
+     * while large heroes keep `'argb'` where gradient banding could surface.
+     */
+    decodeFormat?: 'argb' | 'rgb';
+    /** Blur the decoded cover (for artwork used as a backdrop wash, not as a
+     *  picture). Applied natively by expo-image — no extra render pass here. */
+    blurRadius?: number;
     contentSource?: Pick<MobileContentSource, 'id' | 'type' | 'url'>;
     fallbackStyle?: StyleProp<ViewStyle>;
     letter: string;
@@ -213,8 +227,10 @@ export const ArtworkImage = ({
 
     return (
         <ExpoImage
+            blurRadius={blurRadius}
             cachePolicy={useLocal ? 'memory' : 'memory-disk'}
             contentFit="cover"
+            decodeFormat={decodeFormat}
             onError={() => {
                 // A managed-cache file that went missing/corrupt falls back to
                 // the remote source.

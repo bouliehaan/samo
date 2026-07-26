@@ -1,7 +1,7 @@
 import { Text, useWindowDimensions, View } from 'react-native';
 import Reanimated, { FadeIn } from 'react-native-reanimated';
 
-import { colors } from '../../theme/tokens';
+import { colors, fonts } from '../../theme/tokens';
 import { WaveDotsField } from './WaveDotsField';
 
 /**
@@ -26,7 +26,7 @@ export const OnboardingSplash = () => {
                 <Text
                     style={{
                         color: colors.text,
-                        fontFamily: 'YoungSerif-Bold',
+                        fontFamily: fonts.heading,
                         fontSize: 44,
                         letterSpacing: -0.5,
                     }}

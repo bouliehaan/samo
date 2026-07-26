@@ -61,7 +61,11 @@ export const buildAbsProgressContextFromPlayable = (
         }
         return {
             authentication,
-            durationSeconds: item.durationSeconds ?? 0,
+            // Progress is reported against the BOOK, and getAbsProgressSeconds
+            // clamps to this — so it has to be the book's length. `durationSeconds`
+            // is the current FILE's, which clamped every multi-file book's synced
+            // position to the length of one file.
+            durationSeconds: item.timelineDurationSeconds ?? item.durationSeconds ?? 0,
             episodeId: undefined,
             itemId,
         };

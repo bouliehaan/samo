@@ -1,6 +1,7 @@
 import { type MobileHomeItem, type MobileHomeItemType } from '@samo/core/mobile';
 
 import { safeParseJson } from '../../utils/json';
+import { traceSync } from '../jank-trace';
 import {
     nativeGetDetail,
     nativeGetItemById,
@@ -28,6 +29,11 @@ export interface CatalogItemQuery {
     sort?: CatalogItemSort;
 }
 
+/** Just the ordering half of a browse query — what a caller paging a WHOLE
+ *  collection specifies (the reader always tiebreaks on `id`, so a paged walk
+ *  stays deterministic). Defaults to `sort_name` ASC when omitted. */
+export type CatalogItemOrdering = Pick<CatalogItemQuery, 'direction' | 'sort'>;
+
 export interface CatalogSearchQuery {
     limit?: number;
     sourceId?: string;
@@ -54,9 +60,11 @@ export const getItemsByType = async (
         offset: query.offset ?? 0,
         sort: query.sort,
     });
-    return rows
-        .map((row) => parsePayload<MobileHomeItem>(row))
-        .filter((item): item is MobileHomeItem => item !== null);
+    return traceSync(`catalog.parseRows:${type}:${rows.length}`, () =>
+        rows
+            .map((row) => parsePayload<MobileHomeItem>(row))
+            .filter((item): item is MobileHomeItem => item !== null),
+    );
 };
 
 export const getItemById = async (

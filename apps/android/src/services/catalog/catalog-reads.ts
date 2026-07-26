@@ -100,6 +100,7 @@ const synthesizeMusicPlayback = (
     album: track.album,
     albumId: track.albumId,
     artist: track.artist,
+    artistId: track.artistId,
     artworkImageId: track.artworkImageId,
     artworkUrl: track.artworkUrl,
     contentSourceId: getServerConnectionKey(authentication),
@@ -536,4 +537,53 @@ export const searchLocal = async (
         });
     }
     return items;
+};
+
+/**
+ * Fast local-catalog lookup for a single artist home item by id. Used by the
+ * full-screen player to resolve the artist's photo (artworkUrl/artworkImageId)
+ * without a network round-trip. Returns null for non-Samo sources or a cache
+ * miss (artist not yet synced).
+ */
+export const loadArtistHomeItemById = async (
+    sourceId: string,
+    artistId: string,
+): Promise<MobileHomeItem | null> => {
+    try {
+        return await getItemById(sourceId, MobileHomeItemType.ARTIST, artistId);
+    } catch {
+        return null;
+    }
+};
+
+/**
+ * Artist lookup by display name for playables with no `artistId` — queue items
+ * restored from the native persisted queue and mirror rows written before the
+ * id was threaded through the track mappers. Exact (case-insensitive) title
+ * match against local FTS artist hits; the first credited name is also tried
+ * because `artist` is a display string ("A, B"). Null on any miss — the player
+ * falls back to the plain collapse caret.
+ */
+export const loadArtistHomeItemByName = async (
+    sourceId: string,
+    artistName: string,
+): Promise<MobileHomeItem | null> => {
+    const candidates = [artistName.trim(), artistName.split(',')[0]!.trim()].filter(Boolean);
+    for (const candidate of candidates) {
+        try {
+            const hits = await searchCatalogRaw(candidate, { limit: 8, sourceId });
+            for (const hit of hits) {
+                if (hit.type !== MobileSearchItemType.ARTIST) {
+                    continue;
+                }
+                const item = hit.payload as MobileHomeItem;
+                if (item?.id && item.title?.toLowerCase() === candidate.toLowerCase()) {
+                    return item;
+                }
+            }
+        } catch {
+            return null;
+        }
+    }
+    return null;
 };

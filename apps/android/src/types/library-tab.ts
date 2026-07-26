@@ -26,24 +26,25 @@ export interface LibraryFullCollectionsState {
     artists: AndroidFullCollectionState;
 }
 
-export interface LibraryScreenProps {
-    fullCollections: LibraryFullCollectionsState;
-    fullCollectionsEnabled: boolean;
-    hasServerConnections: boolean;
-    // True only while the Library browse is the foreground surface. The alphabet
-    // rail's ephemeral A–Z flip resets when this drops so returning to the page
-    // shows the base (recents) order again.
-    isForeground?: boolean;
-    libraryRelevantState: AndroidLibraryRelevantState;
-    onEnsureFullCollections?: () => void;
-    onSelectItem: (item: AndroidRecentContentSourceItem) => void;
-}
+/** The media types that own a whole navbar tab, and therefore a browse grid
+ *  that must list the COMPLETE collection — not the Home shelf slice. */
+export type MediaTypeCollectionKey = Extract<LibraryMediaType, 'audiobooks' | 'podcasts'>;
+
+export const MEDIA_TYPE_COLLECTION_KEYS: MediaTypeCollectionKey[] = ['audiobooks', 'podcasts'];
+
+/** Full mirror collections behind the Audiobooks / Podcasts tab grids. */
+export type MediaTypeCollectionsState = Record<MediaTypeCollectionKey, AndroidFullCollectionState>;
 
 export const LIBRARY_ROW_DRAW_DISTANCE = 62 * 12;
 
 export const EMPTY_LIBRARY_FULL_COLLECTIONS: LibraryFullCollectionsState = {
     albums: { status: 'idle' },
     artists: { status: 'idle' },
+};
+
+export const EMPTY_MEDIA_TYPE_COLLECTIONS: MediaTypeCollectionsState = {
+    audiobooks: { status: 'idle' },
+    podcasts: { status: 'idle' },
 };
 
 export const EMPTY_LIBRARY_RELEVANT_STATE: AndroidLibraryRelevantState = {

@@ -46,6 +46,7 @@ const BrowseTile = memo(({ item, onOpenContextMenu, onSelectItem }: BrowseTilePr
             <ArtworkImage
                 artworkImageId={item.artworkImageId}
                 contentSource={item.source}
+                decodeFormat="rgb"
                 fallbackStyle={[
                     styles.viewAllTileArtworkFallback,
                     isArtist && styles.libraryArtworkRound,

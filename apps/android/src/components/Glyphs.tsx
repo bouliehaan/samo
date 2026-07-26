@@ -220,6 +220,42 @@ export const SearchGlyph = ({ color }: { color: string }) => {
     );
 };
 
+export const ChevronRightGlyph = ({
+    color,
+    size = 18,
+}: {
+    color: string;
+    size?: number;
+}) => {
+    return (
+        <Svg height={size} viewBox="0 0 24 24" width={size}>
+            <SvgPath
+                d="M9 5l7 7-7 7"
+                fill="none"
+                stroke={color}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+            />
+        </Svg>
+    );
+};
+
+export const TrashGlyph = ({ color }: { color: string }) => {
+    return (
+        <Svg height={20} viewBox="0 0 24 24" width={20}>
+            <SvgPath
+                d="M4 7h16M10 4h4M6.5 7l1 13h9l1-13M10 11v6M14 11v6"
+                fill="none"
+                stroke={color}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={1.8}
+            />
+        </Svg>
+    );
+};
+
 export const EyeGlyph = ({
     closed = false,
     color,
@@ -830,16 +866,36 @@ export const TabIcon = ({ active, id }: { active: boolean; id: SamoMobileTabId }
         );
     }
 
-    if (id === 'search') {
+    if (id === 'podcasts') {
+        // Universal podcast icon: concentric arcs above a dot.
+        // Same silhouette used by Apple Podcasts, Spotify and Google.
         return (
             <View style={styles.tabIcon}>
-                <View style={[styles.tabSearchCircle, { borderColor: color }]} />
-                <View style={[styles.tabSearchHandle, { backgroundColor: color }]} />
+                <Svg height={24} viewBox="0 0 24 24" width={24}>
+                    {/* Outer arc */}
+                    <SvgPath
+                        d="M6.5 16.5A7 7 0 0 1 12 5a7 7 0 0 1 5.5 11.5"
+                        fill="none"
+                        stroke={color}
+                        strokeLinecap="round"
+                        strokeWidth={1.9}
+                    />
+                    {/* Inner arc */}
+                    <SvgPath
+                        d="M9.5 14.5A4 4 0 0 1 12 8a4 4 0 0 1 2.5 6.5"
+                        fill="none"
+                        stroke={color}
+                        strokeLinecap="round"
+                        strokeWidth={1.9}
+                    />
+                    {/* Center dot / mic indicator */}
+                    <SvgCircle cx={12} cy={17} fill={color} r={2.1} />
+                </Svg>
             </View>
         );
     }
 
-    if (id === 'library') {
+    if (id === 'audiobooks') {
         return (
             <View style={styles.tabIcon}>
                 <View style={[styles.tabLibraryBook, { borderColor: color }]} />

@@ -13,6 +13,7 @@ import {
     View,
 } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { KeyboardProvider } from 'react-native-keyboard-controller';
 import Reanimated, { useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 import { ensureSamoStreamToken, ServerType } from '@samo/core/server';
 
@@ -21,21 +22,18 @@ import { AppOverlays } from './src/components/AppOverlays';
 import { BottomChromeBackdrop } from './src/components/BottomChromeBackdrop';
 import { ErrorBoundary } from './src/components/ErrorBoundary';
 import { SearchOverlayHost } from './src/components/SearchOverlayHost';
+import { SearchPullProvider } from './src/components/search-pull/SearchPullContext';
+import { SearchPullSurface } from './src/components/search-pull/SearchPullSurface';
+import { StatusBarScrim } from './src/components/StatusBarScrim';
 import { TabBar } from './src/components/TabBar';
 import { TabScenes } from './src/components/TabScenes';
 import { UtilityScreenHost } from './src/components/UtilityScreenHost';
 import { MediaContextMenuContext } from './src/contexts/media-context-menu';
 import { ServerConnectionsContext } from './src/contexts/server-connections';
-import {
-    bumpViewAllFetchToken,
-    invalidateMediaDetailRequests,
-} from './src/handlers/handler-state';
+import { bumpViewAllFetchToken, invalidateMediaDetailRequests } from './src/handlers/handler-state';
 import { mediaContextMenuApi } from './src/hooks/use-android-context-menu';
 import { useAndroidBackHandling } from './src/hooks/use-android-back-handling';
-import {
-    tabBarSinkTranslateY,
-    worldDimOpacity,
-} from './src/player/player-motion';
+import { tabBarSinkTranslateY, worldDimOpacity } from './src/player/player-motion';
 import { PlaybackEngine } from './src/player/PlaybackEngine';
 import { PlayerDock } from './src/player/PlayerDock';
 import { NowPlayingMetadataSync } from './src/player/PlayerSurface';
@@ -50,7 +48,7 @@ import {
 import { resumeDownloadsOnForeground } from './src/services/download-manager';
 import { refreshHomeFromMirror } from './src/services/home-flow';
 import { loadHomeLayoutHint } from './src/services/home-layout-hint';
-import { formatJankBreadcrumb } from './src/services/jank-trace';
+import { formatJankBreadcrumb, traceAsync } from './src/services/jank-trace';
 import {
     refreshLibraryFromMirror,
     resetLibraryContent,
@@ -73,6 +71,7 @@ import { getAuthSession, useAuthSessionSelector } from './src/state/auth-session
 import { useDownloadsSelector } from './src/state/downloads-state';
 import { hydrateHiddenHome } from './src/state/hidden-home';
 import { styles } from './src/theme/styles';
+import { fonts } from './src/theme/tokens';
 import {
     HOME_ARTWORK_PREFETCH_LIMIT,
     LIBRARY_FULL_COLLECTION_PREFETCH_DELAY_MS,
@@ -86,11 +85,11 @@ import {
 // @ts-ignore
 Text.defaultProps = Text.defaultProps || {};
 // @ts-ignore
-Text.defaultProps.style = { fontFamily: 'Archivo' };
+Text.defaultProps.style = { fontFamily: fonts.body };
 // @ts-ignore
 TextInput.defaultProps = TextInput.defaultProps || {};
 // @ts-ignore
-TextInput.defaultProps.style = { fontFamily: 'Archivo' };
+TextInput.defaultProps.style = { fontFamily: fonts.body };
 
 // Closing the media detail / View All must invalidate their in-flight loads
 // so a late response can't clobber the restored surface. Wired once at module
@@ -120,7 +119,7 @@ const flushPostSyncRefresh = () => {
             try {
                 await refreshHomeFromMirror({ authoritative: true });
                 refreshLibraryFromMirror();
-                await prefetchCatalogArtwork(auth);
+                await traceAsync('catalog.prefetchArtwork', () => prefetchCatalogArtwork(auth));
             } catch (error) {
                 console.error('[catalog] post-sync derive/prefetch failed', error);
             }
@@ -137,12 +136,16 @@ let postSyncDebounce: null | ReturnType<typeof setTimeout> = null;
 let mirrorDirty = false;
 
 export default function App() {
+    // Keyed off the `fonts` tokens, not repeated string literals: the registered
+    // family name and the name every style asks for are then the SAME value by
+    // construction, so swapping a typeface is a one-line edit in tokens.ts plus
+    // the asset — it can no longer half-land.
     const [fontsLoaded] = useFonts({
-        Archivo: require('./assets/fonts/Archivo.ttf'),
-        'OfficeCodePro-Bold': require('./assets/fonts/officecodepro-bold.otf'),
-        'OfficeCodePro-Regular': require('./assets/fonts/officecodepro-regular.otf'),
-        'YoungSerif-Bold': require('./assets/fonts/YoungSerif-Bold.ttf'),
-        'YoungSerif-Regular': require('./assets/fonts/YoungSerif-Regular.ttf'),
+        [fonts.body]: require('./assets/fonts/Archivo.ttf'),
+        [fonts.monoBold]: require('./assets/fonts/officecodepro-bold.otf'),
+        [fonts.mono]: require('./assets/fonts/officecodepro-regular.otf'),
+        [fonts.heading]: require('./assets/fonts/BricolageGrotesque-Bold.ttf'),
+        [fonts.headingMedium]: require('./assets/fonts/BricolageGrotesque-Medium.ttf'),
     });
 
     // The ONLY store slices App itself subscribes to. Both change rarely
@@ -226,9 +229,9 @@ export default function App() {
         };
     }, []);
 
-    // Flush a mirror refresh that was deferred while backgrounded. This is the
-    // moment the user reopens the app after a long listening session — derive
-    // once here instead of having frozen the UI repeatedly in the background.
+    // Flush a mirror refresh that was deferred while backgrounded AND
+    // re-queue stranded downloads — consolidated into one AppState listener
+    // so state changes don't tear down and re-create listeners.
     useEffect(() => {
         const subscription = AppState.addEventListener('change', (next) => {
             if (next !== 'active') {
@@ -248,9 +251,10 @@ export default function App() {
             if (mirrorDirty) {
                 flushPostSyncRefresh();
             }
+            void resumeDownloadsOnForeground(serverConnection);
         });
         return () => subscription.remove();
-    }, []);
+    }, [serverConnection]);
 
     // Paint Home from the mirror the moment connections exist (cold launch,
     // restore, connect) — no network on this path.
@@ -258,18 +262,6 @@ export default function App() {
         if (serverConnection) {
             void refreshHomeFromMirror();
         }
-    }, [serverConnection]);
-
-    // Resume any stranded downloads when the app returns to the foreground —
-    // re-queues transfers the OS suspended in the background and pumps the queue
-    // so it doesn't sit on "queued" forever after a backgrounding.
-    useEffect(() => {
-        const subscription = AppState.addEventListener('change', (next) => {
-            if (next === 'active') {
-                void resumeDownloadsOnForeground(serverConnection);
-            }
-        });
-        return () => subscription.remove();
     }, [serverConnection]);
 
     // Library loads follow the Home load edge (the mirror is warm by then).
@@ -309,27 +301,32 @@ export default function App() {
     // re-walk; a full refresh or connect does.
     useEffect(() => {
         if (homeLoadedAt === 0) return;
-        const homeContentState = getAppNavigation().homeContentState;
-        if (homeContentState.status !== 'loaded') return;
-        const sources: Array<string | { headers: Record<string, string>; uri: string }> = [];
-        for (const section of homeContentState.content.sections) {
-            for (const item of section.items.slice(0, HOME_ARTWORK_PREFETCH_LIMIT)) {
-                const resolved = resolveSamoItemArtworkSourceForDisplay(
-                    {
-                        artworkImageId: item.artworkImageId,
-                        artworkUrl: item.artworkUrl,
-                        source: item.source,
-                    },
-                    serverConnection,
-                );
-                if (resolved) {
-                    sources.push(resolved);
+        // Defer past in-flight gestures/animations so the prefetch loop
+        // never lands on a tap or transition frame.
+        const handle = InteractionManager.runAfterInteractions(() => {
+            const homeContentState = getAppNavigation().homeContentState;
+            if (homeContentState.status !== 'loaded') return;
+            const sources: Array<string | { headers: Record<string, string>; uri: string }> = [];
+            for (const section of homeContentState.content.sections) {
+                for (const item of section.items.slice(0, HOME_ARTWORK_PREFETCH_LIMIT)) {
+                    const resolved = resolveSamoItemArtworkSourceForDisplay(
+                        {
+                            artworkImageId: item.artworkImageId,
+                            artworkUrl: item.artworkUrl,
+                            source: item.source,
+                        },
+                        serverConnection,
+                    );
+                    if (resolved) {
+                        sources.push(resolved);
+                    }
                 }
             }
-        }
-        for (const source of sources.slice(0, HOME_ARTWORK_PREFETCH_LIMIT)) {
-            prefetchArtworkSource(source);
-        }
+            for (const source of sources.slice(0, HOME_ARTWORK_PREFETCH_LIMIT)) {
+                prefetchArtworkSource(source);
+            }
+        });
+        return () => handle.cancel();
     }, [homeLoadedAt, serverConnection]);
 
     // Recents persisted before this server session may be missing artwork
@@ -421,52 +418,88 @@ export default function App() {
                     on font IO. It renders null, so nothing unstyled can flash. */}
                 <PlaybackEngine />
                 {!fontsLoaded ? null : (
-                <ServerConnectionsContext.Provider value={serverConnection}>
-                    <MediaContextMenuContext.Provider value={mediaContextMenuApi}>
-                        <View style={styles.safeArea}>
-                            {/* translucent + transparent draws the app UNDER the
+                    <ServerConnectionsContext.Provider value={serverConnection}>
+                        <MediaContextMenuContext.Provider value={mediaContextMenuApi}>
+                            <View style={styles.safeArea}>
+                                {/* translucent + transparent draws the app UNDER the
                                 status bar on every Android version. app.json's
                                 edgeToEdgeEnabled is prebuild-only — this bare
                                 workflow never applies it, so older devices (no
                                 OS-enforced edge-to-edge) showed an opaque bar
-                                that visually cut the Home glass off. safeArea's
-                                STATUS_BAR_INSET padding is the matching, single
-                                clearance for the content below. */}
-                            <StatusBar backgroundColor="transparent" style="light" translucent />
-                            <NowPlayingMetadataSync />
-                            <KeyboardAvoidingView
-                                behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-                                style={styles.keyboardView}
-                            >
-                                <View style={styles.root}>
-                                    <View style={styles.appContent}>
-                                        <TabScenes />
-                                        <UtilityScreenHost />
-                                        <MediaDetailOverlayHost />
-                                        <ViewAllOverlayHost />
-                                        <SearchOverlayHost />
-                                    </View>
-                                    {/* World dim — fades in over the page + tab bar as the
+                                that visually cut the Home glass off. Per-screen
+                                STATUS_BAR_INSET paddings are the matching
+                                clearance below. The bar must stay VISIBLE:
+                                `hidden` removes the clock/battery and collapses
+                                STATUS_BAR_INSET to 0, shoving every screen's
+                                header into the display cutout. */}
+                                <StatusBar
+                                    backgroundColor="transparent"
+                                    style="light"
+                                    translucent
+                                />
+                                <NowPlayingMetadataSync />
+                                {/* Gives the app worklet-level access to the real IME
+                                position (useReanimatedKeyboardAnimation), so the
+                                search surface can move WITH the keyboard instead
+                                of being surprised by it. */}
+                                <KeyboardProvider>
+                                    <KeyboardAvoidingView
+                                        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+                                        style={styles.keyboardView}
+                                    >
+                                        <View style={styles.root}>
+                                            <SearchPullProvider>
+                                                <View style={styles.appContent}>
+                                                    <TabScenes />
+                                                    <UtilityScreenHost />
+                                                    <MediaDetailOverlayHost />
+                                                    <ViewAllOverlayHost />
+                                                    {/* Status-bar legibility veil over the
+                                            edge-to-edge pages/overlays. zIndex
+                                            9500: above every scrolling surface,
+                                            below the search overlay (11000);
+                                            the player + tab bar are LATER
+                                            SIBLINGS of appContent, so they
+                                            paint over it by tree order. */}
+                                                    <StatusBarScrim />
+                                                    {/* The pull-down search surface (10550/
+                                            10600) sits above the page + scrim and
+                                            below the full search overlay, so a
+                                            commit paints over the peek bar on the
+                                            same field row. */}
+                                                    <SearchPullSurface />
+                                                    <SearchOverlayHost />
+                                                </View>
+                                            </SearchPullProvider>
+                                            {/* World dim — fades in over the page + tab bar as the
                                         player rises. Below the player shells (zIndex 9000 vs
                                         their 9999/10000). pointerEvents:none so the page
                                         below stays interactive while the player is closed. */}
-                                    <Reanimated.View
-                                        pointerEvents="none"
-                                        style={[styles.playerWorldDim, worldDimStyle]}
-                                    />
-                                    <BottomChromeBackdrop sinkStyle={tabBarAnimatedStyle} />
-                                    <PlayerDock playerProgress={playerProgress} />
-                                    <TabBar
-                                        playerProgress={playerProgress}
-                                        sinkStyle={tabBarAnimatedStyle}
-                                    />
-                                </View>
-                            </KeyboardAvoidingView>
-                            <AppOverlays />
-                            <OnboardingGate />
-                        </View>
-                    </MediaContextMenuContext.Provider>
-                </ServerConnectionsContext.Provider>
+                                            <Reanimated.View
+                                                pointerEvents="none"
+                                                style={[styles.playerWorldDim, worldDimStyle]}
+                                            />
+                                            <BottomChromeBackdrop sinkStyle={tabBarAnimatedStyle} />
+                                            {/* TabBar mounts BEFORE PlayerDock: the icons only need
+                                        to sit above the glass pane, while the OPEN full
+                                        player must cover the whole screen INCLUDING the tab
+                                        bar. They tie at zIndex 10000, so sibling order is
+                                        the tiebreak — dock last, or the icons paint over the
+                                        open player. Rest-state taps still reach the bar via
+                                        the player shell's pointerEvents gate. */}
+                                            <TabBar
+                                                playerProgress={playerProgress}
+                                                sinkStyle={tabBarAnimatedStyle}
+                                            />
+                                            <PlayerDock playerProgress={playerProgress} />
+                                        </View>
+                                    </KeyboardAvoidingView>
+                                </KeyboardProvider>
+                                <AppOverlays />
+                                <OnboardingGate />
+                            </View>
+                        </MediaContextMenuContext.Provider>
+                    </ServerConnectionsContext.Provider>
                 )}
             </ErrorBoundary>
         </GestureHandlerRootView>

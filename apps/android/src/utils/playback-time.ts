@@ -146,6 +146,18 @@ export const getPlaybackItemDurationMs = (item: MobilePlayableAudio) => {
         : undefined;
 };
 
+/**
+ * Length of the book-global timeline the item's playhead and chapter markers
+ * live on. Falls back to the item's own stream length for anything that has no
+ * wider timeline (single-file books, offline items built before the manifest
+ * carried a book duration).
+ */
+export const getPlaybackItemTimelineDurationMs = (item: MobilePlayableAudio) => {
+    return item.timelineDurationSeconds && item.timelineDurationSeconds > 0
+        ? item.timelineDurationSeconds * 1000
+        : getPlaybackItemDurationMs(item);
+};
+
 export const getPlaybackEventDurationMs = (
     event: AndroidNativePlaybackEvent,
     item: MobilePlayableAudio,
@@ -177,20 +189,23 @@ export const getPlaybackDurationMs = (playbackState: AndroidPlaybackState) => {
     }
 
     const item = playbackState.item;
-    // Audiobook / Samo-podcast streams open at a book-global offset on the server
-    // (it truncates the body), so the native engine reports only the PARTIAL stream
-    // duration (full − offset). The DISPLAY position, however, is converted to
-    // book-absolute by getDisplayPositionMs (it folds progressOffsetSeconds in). If
-    // the bar's duration stays partial while the playhead is book-absolute, the
-    // playhead and every chapter marker land in the wrong place the moment you resume
-    // past the start — which is almost always. Use the book-absolute duration so the
-    // two agree: the catalog's full duration, or (partial stream + offset) as a
-    // fallback. Stored playbackState.durationMs is left untouched (it stays stream-
-    // relative to match the stored file position, so end-detection keeps working).
+    // An audiobook's DISPLAY position is book-absolute (getDisplayPositionMs folds
+    // progressOffsetSeconds in) and so are its chapter markers, so the duration this
+    // returns — which drives the bar's total, the duration label, and the seek bar's
+    // tap→position mapping — must be book-absolute too, or the playhead and every
+    // marker land somewhere the audio isn't.
+    //
+    // `timelineDurationSeconds` IS that number. `durationSeconds` is NOT: on a
+    // multi-file book it's the current FILE's length, so reading it here rendered a
+    // 40-hour book as a bar one file wide (~10 min) whose chapter taps all landed
+    // inside the first file, drifting further off the deeper into the book you were.
+    // A one-file book has them equal, which is why single-file playback looked fine.
+    // Stored playbackState.durationMs is left untouched (it stays file-relative to
+    // match the stored file position, so end-detection keeps working).
     if (usesTimelinePlaybackPosition(item)) {
-        const fullBookMs = getPlaybackItemDurationMs(item);
-        if (fullBookMs) {
-            return fullBookMs;
+        const timelineMs = getPlaybackItemTimelineDurationMs(item);
+        if (timelineMs) {
+            return timelineMs;
         }
         const offsetMs = Math.max(0, item.progressOffsetSeconds ?? 0) * 1000;
         return playbackState.durationMs && playbackState.durationMs > 0

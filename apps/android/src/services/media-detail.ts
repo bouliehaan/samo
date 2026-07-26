@@ -311,6 +311,7 @@ export const loadAndroidMediaTrackPlayback = async (
                 files: detail.audiobookFiles,
                 streamToken,
                 subtitle: detail.authorsSummary ?? detail.subtitle,
+                timelineDurationSeconds: detail.durationSeconds,
                 timelineSegments: getTrackTimelineSegments(detail, track),
                 title: detail.title,
             });

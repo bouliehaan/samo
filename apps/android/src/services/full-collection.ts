@@ -6,6 +6,7 @@ import {
 import { type ServerAuthenticationResult } from '@samo/core/server';
 
 import { loadCatalogCollection } from './catalog/catalog-reads';
+import { type CatalogItemOrdering } from './catalog/catalog-repository';
 
 export type AndroidFullCollectionState =
     | { items: MobileHomeItem[]; status: 'loaded' }
@@ -33,6 +34,7 @@ const HOME_TYPE_BY_VARIANT: Record<MobileFullCollectionVariant | 'podcast-feed',
 export const loadAndroidFullCollectionLocal = async (
     authentication: ServerAuthenticationResult | null,
     variant: MobileFullCollectionVariant | 'podcast-feed',
+    ordering: CatalogItemOrdering = {},
 ): Promise<MobileHomeItem[] | null> => {
     if (!authentication) return null;
     const type = HOME_TYPE_BY_VARIANT[variant];
@@ -45,8 +47,10 @@ export const loadAndroidFullCollectionLocal = async (
     const items: MobileHomeItem[] = [];
     for (let offset = 0; ; offset += PAGE_SIZE) {
         const page = await loadCatalogCollection(authentication, type, {
+            direction: ordering.direction,
             limit: PAGE_SIZE,
             offset,
+            sort: ordering.sort,
         });
         if (!page || page.length === 0) {
             break;
@@ -87,10 +91,11 @@ export const loadAndroidFullCollectionLocalFirstPage = async (
 export const loadAndroidFullCollection = async (
     authentication: ServerAuthenticationResult | null,
     variant: MobileFullCollectionVariant,
+    ordering: CatalogItemOrdering = {},
 ): Promise<AndroidFullCollectionState> => {
     if (!authentication) {
         return { status: 'idle' };
     }
-    const items = await loadAndroidFullCollectionLocal(authentication, variant);
+    const items = await loadAndroidFullCollectionLocal(authentication, variant, ordering);
     return items ? { items, status: 'loaded' } : { status: 'loading' };
 };

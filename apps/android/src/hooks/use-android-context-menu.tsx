@@ -1,4 +1,5 @@
 import { MobileMediaDetailType, type MobileContentSource } from '@samo/core/mobile';
+import { ServerType } from '@samo/core/server';
 import { useMemo } from 'react';
 
 import {
@@ -11,6 +12,7 @@ import {
     PersonGlyph,
     PlaylistAddGlyph,
     QueueAddGlyph,
+    TrashGlyph,
 } from '../components/Glyphs';
 import {
     type MediaContextMenuAction,
@@ -37,6 +39,7 @@ import {
     handleViewDetailForItem,
 } from '../handlers/media-detail-handlers';
 import {
+    handleDeletePlaylistForItem,
     handleOpenAddToPlaylistForCollection,
     handleOpenAddToPlaylistForSong,
     handleOpenCreatePlaylistForCollection,
@@ -162,6 +165,9 @@ const closeContextMenu = () => {
     setContextMenuTarget(null);
     setContextMenuFeedback(null);
 };
+
+/** Matches styles.mediaContextActionDestructive so icon and label read as one. */
+const DESTRUCTIVE_TINT = '#ff7a6e';
 
 /**
  * Renders the context-menu surface from the overlay store. Every action is a
@@ -415,6 +421,15 @@ export function useAndroidContextMenu(): AndroidContextMenuSurface {
                     id: 'open',
                     label: contextMenuTarget.kind === 'album' ? 'Open Album' : 'Open Playlist',
                     onPress: () => void handleViewDetailForItem(item),
+                });
+            }
+            if (contextMenuTarget.kind === 'playlist' && auth?.type === ServerType.SAMO) {
+                menuActions.push({
+                    destructive: true,
+                    icon: <TrashGlyph color={DESTRUCTIVE_TINT} />,
+                    id: 'delete-playlist',
+                    label: 'Delete Playlist',
+                    onPress: () => handleDeletePlaylistForItem(item),
                 });
             }
         } else if (contextMenuTarget.kind === 'artist') {

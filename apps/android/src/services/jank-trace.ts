@@ -46,6 +46,30 @@ export const traceSync = <T>(label: string, fn: () => T): T => {
     }
 };
 
+/**
+ * Time an asynchronous operation; record it if the whole await ran past the
+ * floor. Needed since the catalog moved behind the Kotlin promise bridge — the
+ * heavy work is no longer synchronous, but a slow bridge round-trip still
+ * lands its continuation (and everything downstream of it) on the JS thread,
+ * so it belongs in the breadcrumb. `currentActivity` is deliberately NOT set
+ * here: an awaited op isn't holding the thread for its whole duration, and
+ * claiming otherwise would mislabel an unrelated block that overlaps it.
+ */
+export const traceAsync = async <T>(label: string, fn: () => Promise<T>): Promise<T> => {
+    const start = Date.now();
+    try {
+        return await fn();
+    } finally {
+        const ms = Date.now() - start;
+        if (ms >= RECORD_FLOOR_MS) {
+            recentSlowOps.push({ label, ms });
+            if (recentSlowOps.length > RING_SIZE) {
+                recentSlowOps.shift();
+            }
+        }
+    }
+};
+
 /** Drain the recorded slow ops and render them for the jank log line. */
 export const formatJankBreadcrumb = (): string => {
     const drained = recentSlowOps.slice();

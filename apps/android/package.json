@@ -5,7 +5,9 @@
     "expo": {
         "autolinking": {
             "android": {
-                "buildFromSource": ["expo-blur"]
+                "buildFromSource": [
+                    "expo-blur"
+                ]
             }
         }
     },
@@ -38,11 +40,14 @@
         "expo-sqlite": "~16.0.10",
         "expo-status-bar": "~3.0.9",
         "react": "19.1.0",
+        "react-freeze": "^1.0.4",
         "react-native": "0.81.5",
         "react-native-gesture-handler": "~2.28.0",
         "react-native-image-colors": "2.6.0",
+        "react-native-keyboard-controller": "^1.22.2",
         "react-native-linear-gradient": "^2.8.3",
         "react-native-reanimated": "~4.1.7",
+        "react-native-safe-area-context": "~5.6.2",
         "react-native-svg": "15.12.1",
         "react-native-udp": "^4.1.7"
     },

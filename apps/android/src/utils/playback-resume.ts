@@ -72,7 +72,20 @@ export const getResumePositionSeconds = (
         return Math.floor((playbackState.positionMs ?? 0) / 1000);
     }
 
-    if (item.initialPositionSeconds && item.initialPositionSeconds > 0) {
+    // Music tracks always start at 0 — never honor a stale
+    // initialPositionSeconds that leaked in via error recovery or queue
+    // merging.  This matches the Kotlin side (SamoAudioEngine) which
+    // enforces resumeMs = 0L for music on every native transition.
+    // Long-form content (podcast/audiobook) is handled by the
+    // isSamoAudiobookPlayback branch above and by
+    // refreshPlayableResumeFromServer, so this path is only reached by
+    // music and radio.
+    if (
+        item.source !== 'music' &&
+        item.source !== 'radio' &&
+        item.initialPositionSeconds &&
+        item.initialPositionSeconds > 0
+    ) {
         return item.initialPositionSeconds;
     }
 

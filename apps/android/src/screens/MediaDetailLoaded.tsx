@@ -10,33 +10,18 @@ import {
 } from '@samo/core/server';
 import { FlashList } from '@shopify/flash-list';
 import Reanimated from 'react-native-reanimated';
-import {
-    memo,
-    useCallback,
-    useDeferredValue,
-    useEffect,
-    useMemo,
-    useRef,
-    useState,
-} from 'react';
-import {
-    ActivityIndicator,
-    Alert,
-    InteractionManager,
-    Pressable,
-    Text,
-    View,
-} from 'react-native';
+import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, Alert, Pressable, Text, View } from 'react-native';
 
-import {
-    EditPlaylistSheet,
-    removeSelectedPlaylistTracks,
-} from '../components/EditPlaylistSheet';
+import { Choreographed } from '../components/Choreographed';
+import { EditPlaylistSheet, removeSelectedPlaylistTracks } from '../components/EditPlaylistSheet';
 import { PlaylistTrackControls } from '../components/PlaylistTrackControls';
 import { SkeletonTrackRow } from '../components/Skeleton';
+import { useChoreography } from '../hooks/use-choreography';
 import { useCollapsedDetailHeader } from '../hooks/use-collapsed-detail-header';
 import { useScrollContentBottomInset } from '../hooks/use-scroll-content-bottom-inset';
 import { useStableCallback } from '../hooks/use-stable-callback';
+import { useTransitioningMount } from '../hooks/use-transitioning-mount';
 import { type AndroidRecentContentSourceItem } from '../services/recent-content';
 import { triggerSelection } from '../services/haptics';
 import { styles } from '../theme/styles';
@@ -49,11 +34,7 @@ import {
 } from '../utils/media-detail';
 import { isHiFiTrack } from '../utils/media-quality';
 import { ArtistDetailSections } from './ArtistDetailSections';
-import {
-    DetailHeroArtwork,
-    MediaDetailCollapsedTopbar,
-    MediaDetailHero,
-} from './MediaDetailHero';
+import { DetailHeroArtwork, MediaDetailCollapsedTopbar, MediaDetailHero } from './MediaDetailHero';
 import { MediaDetailTrackRow } from './MediaDetailTrackRow';
 import { PlaylistFloatingSearch } from './PlaylistFloatingSearch';
 
@@ -126,19 +107,24 @@ export const MediaDetailLoaded = memo(function MediaDetailLoaded({
     // in a 1,000-track playlist never stutters the keyboard.
     const deferredSearchQuery = useDeferredValue(playlistSearchQuery);
 
-    // First frame after a navigation renders a capped list so the open
+    // First frames after a navigation render a capped list so the open
     // animation never contends with a full playlist mount.
-    const [isTransitioning, setIsTransitioning] = useState(true);
-    useEffect(() => {
-        const task = InteractionManager.runAfterInteractions(() => {
-            setIsTransitioning(false);
-        });
-        return () => task.cancel();
-    }, []);
+    const isTransitioning = useTransitioningMount();
 
     const rootRef = useRef<View>(null);
     const bottomInset = useScrollContentBottomInset();
     const collapsedHeader = useCollapsedDetailHeader();
+
+    // One clock for this page's entrance, restarted only when the DETAIL
+    // changes — navigating album → album re-runs the assembly, while a
+    // favourite toggling or a download landing leaves it alone.
+    //
+    // This is also what makes the cascade safe under FlashList recycling. A
+    // row's slot is derived from its index against this clock, so rows mounted
+    // after the clock reaches 1 (i.e. everything the user scrolls to) evaluate
+    // to "already at rest" and never animate. Recycled rows do not re-play the
+    // entrance, which is the usual way a staggered list turns into a mess.
+    const entranceClock = useChoreography(detail.id);
 
     const isMusic =
         detail.type === MobileMediaDetailType.ALBUM ||
@@ -191,8 +177,8 @@ export const MediaDetailLoaded = memo(function MediaDetailLoaded({
             return playlistSortAsc ? filtered : [...filtered].reverse();
         }
         const sorted = [...filtered].sort((left, right) => {
-            const leftKey = playlistSort === 'artist' ? left.artist ?? '' : left.title ?? '';
-            const rightKey = playlistSort === 'artist' ? right.artist ?? '' : right.title ?? '';
+            const leftKey = playlistSort === 'artist' ? (left.artist ?? '') : (left.title ?? '');
+            const rightKey = playlistSort === 'artist' ? (right.artist ?? '') : (right.title ?? '');
             return leftKey.localeCompare(rightKey, undefined, { sensitivity: 'base' });
         });
         return playlistSortAsc ? sorted : sorted.reverse();
@@ -361,23 +347,26 @@ export const MediaDetailLoaded = memo(function MediaDetailLoaded({
                 showAlbumDiscHeaders && (index === 0 || previousDiscNumber !== discNumber);
 
             return (
-                <MediaDetailTrackRow
-                    detail={detail}
-                    discHeader={shouldShowDiscHeader ? discNumber : null}
-                    fallbackArtworkUrl={fallbackArtworkUrl}
-                    index={index}
-                    isManageMode={isManageMode}
-                    isSelected={playlistSelectedTrackIds.has(track.id)}
-                    onPlay={handleRowPlay}
-                    onToggleSelect={handleToggleSelect}
-                    serverConnection={serverConnection}
-                    track={track}
-                />
+                <Choreographed cascadeIndex={index} clock={entranceClock}>
+                    <MediaDetailTrackRow
+                        detail={detail}
+                        discHeader={shouldShowDiscHeader ? discNumber : null}
+                        fallbackArtworkUrl={fallbackArtworkUrl}
+                        index={index}
+                        isManageMode={isManageMode}
+                        isSelected={playlistSelectedTrackIds.has(track.id)}
+                        onPlay={handleRowPlay}
+                        onToggleSelect={handleToggleSelect}
+                        serverConnection={serverConnection}
+                        track={track}
+                    />
+                </Choreographed>
             );
         },
         [
             detail,
             displayTracks,
+            entranceClock,
             fallbackArtworkUrl,
             handleRowPlay,
             handleToggleSelect,
@@ -391,6 +380,7 @@ export const MediaDetailLoaded = memo(function MediaDetailLoaded({
     const hero = (
         <MediaDetailHero
             canEditPlaylist={canEditPlaylist}
+            clock={entranceClock}
             detail={detail}
             fallbackArtworkUrl={fallbackArtworkUrl}
             heroArtworkImageId={heroArtworkImageId}
@@ -478,9 +468,7 @@ export const MediaDetailLoaded = memo(function MediaDetailLoaded({
                                                     <ActivityIndicator color={colors.accent} />
                                                 ) : (
                                                     <Text
-                                                        style={
-                                                            styles.editPlaylistDangerButtonText
-                                                        }
+                                                        style={styles.editPlaylistDangerButtonText}
                                                     >
                                                         Remove
                                                     </Text>

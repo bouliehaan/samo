@@ -34,6 +34,8 @@ import {
     withResumePosition,
 } from '../utils/playback-resume';
 import {
+    getSamoFileBookSpanSeconds,
+    getSamoFilePositionMs,
     isSamoAudiobookPlayback,
     resolveAudiobookSeekTarget,
     shouldServerSeekAudiobookMp3,
@@ -182,9 +184,35 @@ export function useAndroidPlaybackControls(options: {
                 ? item.durationSeconds * 1000
                 : durationMs;
 
-        const uiPositionMs = isGlobalAudiobookSeek
-            ? clamp(positionMs, 0, durationMs ?? Math.max(0, positionMs))
-            : clamp(positionMs, 0, fileDurationMs ?? durationMs ?? Math.max(0, positionMs));
+        // An audiobook bar seek arrives in BOOK seconds (the bar spans the book);
+        // everything else arrives in the stream's own.
+        const bookTargetSeconds = isGlobalAudiobookSeek
+            ? clamp(positionMs, 0, durationMs ?? Math.max(0, positionMs)) / 1000
+            : undefined;
+
+        // ...but `playbackState.positionMs` is FILE-relative — getDisplayPositionMs
+        // folds the file's book offset back in for display — so the value handed to
+        // native, painted optimistically, and held as the pending-seek target all
+        // have to be file-relative too. Writing the book position here made every
+        // multi-file seek flash at (target + file offset), i.e. the wrong chapter,
+        // and pinned it there for the whole grace window: the engine's file-relative
+        // echo could never come near a book-relative target, so the reducer kept
+        // holding the bogus value instead of releasing on confirmation.
+        const uiPositionMs =
+            bookTargetSeconds !== undefined
+                ? getSamoFilePositionMs(item, bookTargetSeconds)
+                : clamp(positionMs, 0, fileDurationMs ?? durationMs ?? Math.max(0, positionMs));
+
+        // A target outside the loaded file gets there by stepping the queue, and
+        // that path paints its own resume position on the incoming item. Painting
+        // one against THIS file first would just be a wrong flash before the track
+        // changes (and the reducer discards the grace on track change anyway).
+        const fileSpan = getSamoFileBookSpanSeconds(item);
+        const seekStaysInCurrentFile =
+            bookTargetSeconds === undefined ||
+            (bookTargetSeconds >= fileSpan.startSeconds &&
+                (fileSpan.endSeconds <= fileSpan.startSeconds ||
+                    bookTargetSeconds < fileSpan.endSeconds));
 
         const seekGeneration = (seekGenerationRef.current += 1);
 
@@ -194,16 +222,18 @@ export function useAndroidPlaybackControls(options: {
         // trip the backward-guard against every real post-seek sample, and the
         // bar would get permanently stuck at the pre-seek position.
         const pendingSeekAtMs = Date.now();
-        setAndroidPlaybackState((current) =>
-            current.status === 'idle'
-                ? current
-                : {
-                      ...current,
-                      pendingSeekAtMs,
-                      pendingSeekTargetMs: uiPositionMs,
-                      positionMs: uiPositionMs,
-                  },
-        );
+        if (seekStaysInCurrentFile) {
+            setAndroidPlaybackState((current) =>
+                current.status === 'idle'
+                    ? current
+                    : {
+                          ...current,
+                          pendingSeekAtMs,
+                          pendingSeekTargetMs: uiPositionMs,
+                          positionMs: uiPositionMs,
+                      },
+            );
+        }
 
         try {
             if (!options?.isDiscreteSkip) {
@@ -215,8 +245,8 @@ export function useAndroidPlaybackControls(options: {
 
             // For a Samo audiobook the seek bar is book-global. Route it through the
             // queue resolver so it lands in the right file and seeks locally.
-            if (isGlobalAudiobookSeek) {
-                if (await seekSamoAudiobookToBookSeconds(positionMs / 1000)) {
+            if (bookTargetSeconds !== undefined) {
+                if (await seekSamoAudiobookToBookSeconds(bookTargetSeconds)) {
                     return;
                 }
             }

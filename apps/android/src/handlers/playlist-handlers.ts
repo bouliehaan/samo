@@ -1,6 +1,7 @@
 import {
     addMobileTracksToPlaylist,
     createMobilePlaylist,
+    deleteMobilePlaylist,
     getMobileContentSource,
     loadMobileMediaDetail,
     type MobileHomeItem,
@@ -13,6 +14,7 @@ import { Alert } from 'react-native';
 
 import { triggerCatalogSyncNow } from '../services/headless-catalog-sync';
 import { type AndroidRecentContentSourceItem } from '../services/recent-content';
+import { setHomeContentState } from '../state/app-navigation';
 import { getAuthSession } from '../state/auth-session';
 import {
     getMediaOverlays,
@@ -22,6 +24,67 @@ import {
     setPlaylistMenuRootState,
 } from '../state/media-overlays';
 import { findAuthForSource } from './favorites-handlers';
+
+/**
+ * Long-press → Delete on a playlist row. Confirms, deletes on the server,
+ * then drops the playlist from the loaded Home content OPTIMISTICALLY so the
+ * Playlists tab updates on the next frame — the background sync reconciles
+ * the mirror afterwards (same trust-the-server-later shape as playlist adds).
+ */
+export const handleDeletePlaylistForItem = (item: AndroidRecentContentSourceItem): void => {
+    const auth = findAuthForSource(item.source?.id);
+    if (!auth) {
+        setContextMenuFeedback('Deleting playlists is only available for Samo servers.');
+        return;
+    }
+    Alert.alert('Delete playlist', `Delete "${item.title}"? This cannot be undone.`, [
+        { style: 'cancel', text: 'Cancel' },
+        {
+            style: 'destructive',
+            text: 'Delete',
+            onPress: () => {
+                void (async () => {
+                    try {
+                        await deleteMobilePlaylist({
+                            authentication: auth,
+                            playlistId: item.id,
+                        });
+                        setContextMenuTarget(null);
+                        setContextMenuFeedback(null);
+                        setHomeContentState((current) => {
+                            if (current.status !== 'loaded') {
+                                return current;
+                            }
+                            let changed = false;
+                            const sections = current.content.sections.map((section) => {
+                                const items = section.items.filter(
+                                    (candidate) =>
+                                        candidate.type !== MobileHomeItemType.PLAYLIST ||
+                                        candidate.id !== item.id,
+                                );
+                                if (items.length === section.items.length) {
+                                    return section;
+                                }
+                                changed = true;
+                                return { ...section, items };
+                            });
+                            return changed
+                                ? { ...current, content: { ...current.content, sections } }
+                                : current;
+                        });
+                        void triggerCatalogSyncNow();
+                    } catch (error) {
+                        setContextMenuFeedback(
+                            error instanceof Error
+                                ? error.message
+                                : 'Failed to delete playlist',
+                        );
+                    }
+                })();
+            },
+        },
+    ]);
+};
 
 export const handleOpenAddToPlaylistForSong = (
     track: MobileMediaTrack,

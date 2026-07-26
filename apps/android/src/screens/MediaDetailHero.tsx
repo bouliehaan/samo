@@ -17,9 +17,10 @@ import {
     View,
     type ViewStyle,
 } from 'react-native';
-import Reanimated, { type useAnimatedStyle } from 'react-native-reanimated';
+import Reanimated, { type SharedValue, type useAnimatedStyle } from 'react-native-reanimated';
 
 import { ArtworkImage } from '../components/ArtworkImage';
+import { Choreographed } from '../components/Choreographed';
 import {
     CircularDownloadGlyph,
     GearGlyph,
@@ -247,6 +248,7 @@ const DetailDownloadButton = memo(function DetailDownloadButton({
  */
 export const MediaDetailHero = memo(function MediaDetailHero({
     canEditPlaylist,
+    clock,
     detail,
     fallbackArtworkUrl,
     heroArtworkImageId,
@@ -264,6 +266,9 @@ export const MediaDetailHero = memo(function MediaDetailHero({
     showShuffle,
 }: {
     canEditPlaylist: boolean;
+    /** The page's entrance clock — the hero's parts read their own slices of
+     *  it so the cover leads and the text/actions follow. */
+    clock: SharedValue<number>;
     detail: MobileMediaDetail;
     fallbackArtworkUrl?: string;
     heroArtworkImageId?: string;
@@ -296,9 +301,7 @@ export const MediaDetailHero = memo(function MediaDetailHero({
             ? undefined
             : getDetailQualityProfile(detail);
     const heroFormatLabel =
-        detail.type === MobileMediaDetailType.ALBUM
-            ? formatQualityProfile(heroBadgeProfile)
-            : null;
+        detail.type === MobileMediaDetailType.ALBUM ? formatQualityProfile(heroBadgeProfile) : null;
 
     const handleOpenDetailContextMenu = () => {
         const kind: Exclude<MediaContextMenuKind, 'song'> | null =
@@ -367,127 +370,151 @@ export const MediaDetailHero = memo(function MediaDetailHero({
 
     return (
         <View style={styles.albumHero}>
-            <View style={styles.albumHeroArtworkWrap}>
-                <DetailHeroArtwork
-                    artworkImageId={heroArtworkImageId}
-                    contentSource={detail.source}
-                    fallbackUri={fallbackArtworkUrl}
-                    letter={detail.title.slice(0, 1)}
-                    primaryUri={heroArtworkUrl}
-                    serverConnection={serverConnection}
-                    style={styles.albumHeroArtwork}
-                />
-            </View>
-            <View style={styles.albumHeroBadgeRow}>
-                {isAwaitingDetail ? (
-                    heroSkeletonBadge
-                ) : isAudiobook ? null : (
-                    <Text style={styles.albumHeroEyebrow}>{getDetailTypeLabel(detail.type)}</Text>
-                )}
-            </View>
-            <Text numberOfLines={2} style={styles.albumHeroTitle}>
-                {detail.title}
-            </Text>
+            {/* The cover is the mass: it leads, and travels least. */}
+            <Choreographed clock={clock} stage="lead" style={styles.albumHeroStage}>
+                <View style={styles.albumHeroArtworkWrap}>
+                    <DetailHeroArtwork
+                        artworkImageId={heroArtworkImageId}
+                        contentSource={detail.source}
+                        fallbackUri={fallbackArtworkUrl}
+                        letter={detail.title.slice(0, 1)}
+                        primaryUri={heroArtworkUrl}
+                        serverConnection={serverConnection}
+                        style={styles.albumHeroArtwork}
+                    />
+                </View>
+            </Choreographed>
+            {/* Type + title hang off the cover — later, and further. */}
+            <Choreographed clock={clock} stage="follow" style={styles.albumHeroStage}>
+                <View style={styles.albumHeroBadgeRow}>
+                    {isAwaitingDetail ? (
+                        heroSkeletonBadge
+                    ) : isAudiobook ? null : (
+                        <Text style={styles.albumHeroEyebrow}>
+                            {getDetailTypeLabel(detail.type)}
+                        </Text>
+                    )}
+                </View>
+                <Text numberOfLines={2} style={styles.albumHeroTitle}>
+                    {detail.title}
+                </Text>
+            </Choreographed>
             {isAwaitingDetail ? (
                 heroSkeletonMetaActions
             ) : (
                 <>
-                    {detail.year ? <Text style={styles.albumHeroYear}>{detail.year}</Text> : null}
-                    <View style={styles.albumHeroMeta}>
-                        {Array.from(
-                            new Set(
-                                [
-                                    detail.subtitle,
-                                    ...(detail.metadataLines ?? []).filter(
-                                        (line) => line !== detail.year?.toString(),
-                                    ),
-                                ].filter((line): line is string => Boolean(line)),
-                            ),
-                        ).map((line, index) => (
-                            <Text
-                                key={`${line}-${index}`}
-                                numberOfLines={1}
-                                style={styles.albumHeroMetaLine}
-                            >
-                                {line}
-                            </Text>
-                        ))}
-                        {heroFormatLabel ? (
-                            <Text style={styles.formatBadgeMeta}>{heroFormatLabel}</Text>
+                    <Choreographed clock={clock} stage="follow" style={styles.albumHeroStage}>
+                        {detail.year ? (
+                            <Text style={styles.albumHeroYear}>{detail.year}</Text>
                         ) : null}
-                    </View>
-                    <View onLayout={onLayoutActionsBar} style={styles.albumHeroActionsBar}>
-                        <View style={styles.albumHeroLeftActions}>
-                            {canDownloadDetail ? (
-                                <DetailDownloadButton
-                                    detail={detail}
-                                    serverConnection={serverConnection}
-                                />
-                            ) : null}
-                            {canEditPlaylist ? (
-                                <Pressable
-                                    accessibilityLabel="Edit playlist"
-                                    accessibilityRole="button"
-                                    onPress={onEditPlaylist}
-                                    style={styles.albumHeroGlyphButton}
+                    </Choreographed>
+                    <Choreographed clock={clock} stage="follow" style={styles.albumHeroStage}>
+                        <View style={styles.albumHeroMeta}>
+                            {Array.from(
+                                new Set(
+                                    [
+                                        detail.subtitle,
+                                        ...(detail.metadataLines ?? []).filter(
+                                            (line) => line !== detail.year?.toString(),
+                                        ),
+                                    ].filter((line): line is string => Boolean(line)),
+                                ),
+                            ).map((line, index) => (
+                                <Text
+                                    key={`${line}-${index}`}
+                                    numberOfLines={1}
+                                    style={styles.albumHeroMetaLine}
                                 >
-                                    <GearGlyph color={colors.text} />
-                                </Pressable>
+                                    {line}
+                                </Text>
+                            ))}
+                            {heroFormatLabel ? (
+                                <Text style={styles.formatBadgeMeta}>{heroFormatLabel}</Text>
                             ) : null}
-                            <Pressable
-                                accessibilityLabel="More options"
-                                accessibilityRole="button"
-                                onPress={handleOpenDetailContextMenu}
-                                style={styles.albumHeroGlyphButton}
-                            >
-                                <MoreGlyph color={colors.text} />
-                            </Pressable>
                         </View>
-                        <View style={styles.albumHeroActions}>
-                            {showSearchToggle ? (
-                                <Pressable
-                                    accessibilityLabel={
-                                        searchToggleVisible
-                                            ? 'Close playlist search'
-                                            : 'Search playlist'
-                                    }
-                                    accessibilityRole="button"
-                                    hitSlop={8}
-                                    onPress={onToggleSearch}
-                                    style={styles.albumHeroGlyphButton}
-                                >
-                                    <SearchGlyph color="rgba(245,245,245,0.55)" />
-                                </Pressable>
-                            ) : null}
-                            {showShuffle ? (
-                                <Pressable
-                                    accessibilityLabel="Shuffle"
-                                    accessibilityRole="button"
-                                    onPress={onShuffleHero}
-                                    style={styles.albumHeroGlyphButton}
-                                >
-                                    <ShuffleGlyph color={colors.text} size={28} />
-                                </Pressable>
-                            ) : null}
-                            {showPlayButton ? (
-                                <Pressable
-                                    accessibilityLabel="Play"
-                                    accessibilityRole="button"
-                                    onPress={onPlayHero}
-                                    style={[
-                                        styles.albumHeroGlyphButton,
-                                        styles.albumHeroPlayButton,
-                                    ]}
-                                >
-                                    <PlayPauseGlyph
-                                        color={colors.background}
-                                        isPlaying={false}
-                                        size={22}
+                    </Choreographed>
+                    {/* onLayout rides the WRAPPER: layout.y is parent-relative,
+                        so measuring the inner bar here would report ~0 and peg
+                        the collapsed-header trigger to its floor. */}
+                    <Choreographed
+                        clock={clock}
+                        onLayout={onLayoutActionsBar}
+                        stage="trail"
+                        style={styles.albumHeroStage}
+                    >
+                        <View style={styles.albumHeroActionsBar}>
+                            <View style={styles.albumHeroLeftActions}>
+                                {canDownloadDetail ? (
+                                    <DetailDownloadButton
+                                        detail={detail}
+                                        serverConnection={serverConnection}
                                     />
+                                ) : null}
+                                {canEditPlaylist ? (
+                                    <Pressable
+                                        accessibilityLabel="Edit playlist"
+                                        accessibilityRole="button"
+                                        onPress={onEditPlaylist}
+                                        style={styles.albumHeroGlyphButton}
+                                    >
+                                        <GearGlyph color={colors.text} />
+                                    </Pressable>
+                                ) : null}
+                                <Pressable
+                                    accessibilityLabel="More options"
+                                    accessibilityRole="button"
+                                    onPress={handleOpenDetailContextMenu}
+                                    style={styles.albumHeroGlyphButton}
+                                >
+                                    <MoreGlyph color={colors.text} />
                                 </Pressable>
-                            ) : null}
+                            </View>
+                            <View style={styles.albumHeroActions}>
+                                {showSearchToggle ? (
+                                    <Pressable
+                                        accessibilityLabel={
+                                            searchToggleVisible
+                                                ? 'Close playlist search'
+                                                : 'Search playlist'
+                                        }
+                                        accessibilityRole="button"
+                                        hitSlop={8}
+                                        onPress={onToggleSearch}
+                                        style={styles.albumHeroGlyphButton}
+                                    >
+                                        <SearchGlyph color="rgba(245,245,245,0.55)" />
+                                    </Pressable>
+                                ) : null}
+                                {showShuffle ? (
+                                    <Pressable
+                                        accessibilityLabel="Shuffle"
+                                        accessibilityRole="button"
+                                        onPress={onShuffleHero}
+                                        style={styles.albumHeroGlyphButton}
+                                    >
+                                        <ShuffleGlyph color={colors.text} size={28} />
+                                    </Pressable>
+                                ) : null}
+                                {showPlayButton ? (
+                                    <Pressable
+                                        accessibilityLabel="Play"
+                                        accessibilityRole="button"
+                                        onPress={onPlayHero}
+                                        style={[
+                                            styles.albumHeroGlyphButton,
+                                            styles.albumHeroPlayButton,
+                                        ]}
+                                    >
+                                        <PlayPauseGlyph
+                                            color={colors.background}
+                                            isPlaying={false}
+                                            size={22}
+                                        />
+                                    </Pressable>
+                                ) : null}
+                            </View>
                         </View>
-                    </View>
+                    </Choreographed>
                 </>
             )}
         </View>
@@ -526,48 +553,53 @@ export const MediaDetailCollapsedTopbar = memo(function MediaDetailCollapsedTopb
                 pointerEvents="none"
                 style={[styles.detailCollapsedTopbarBackdrop, backdropStyle]}
             />
-            <Pressable
-                accessibilityLabel="Back"
-                accessibilityRole="button"
-                onPress={onBack}
-                style={styles.detailCollapsedBackButton}
-            >
-                <Text style={styles.detailCollapsedBackGlyph}>‹</Text>
-            </Pressable>
-            <Reanimated.View
-                pointerEvents="none"
-                style={[styles.detailCollapsedTitleWrap, contentStyle]}
-            >
-                <Text numberOfLines={1} style={styles.detailCollapsedTitle}>
-                    {title}
-                </Text>
-            </Reanimated.View>
-            <Reanimated.View
-                pointerEvents={isInteractive ? 'auto' : 'none'}
-                style={[styles.detailCollapsedActions, contentStyle]}
-            >
-                {showShuffle ? (
-                    <Pressable
-                        accessibilityLabel="Shuffle"
-                        accessibilityRole="button"
-                        hitSlop={10}
-                        onPress={onShuffle}
-                        style={styles.detailCollapsedIconButton}
-                    >
-                        <ShuffleGlyph color={colors.text} size={20} />
-                    </Pressable>
-                ) : null}
-                {showPlay ? (
-                    <Pressable
-                        accessibilityLabel="Play"
-                        accessibilityRole="button"
-                        onPress={onPlay}
-                        style={styles.detailCollapsedPlayButton}
-                    >
-                        <PlayPauseGlyph color={colors.background} isPlaying={false} size={16} />
-                    </Pressable>
-                ) : null}
-            </Reanimated.View>
+            {/* Controls live in their own row pinned under the status bar —
+                the outer box spans the bar too (so the backdrop covers it),
+                but nothing tappable may sit up there. */}
+            <View pointerEvents="box-none" style={styles.detailCollapsedTopbarRow}>
+                <Pressable
+                    accessibilityLabel="Back"
+                    accessibilityRole="button"
+                    onPress={onBack}
+                    style={styles.detailCollapsedBackButton}
+                >
+                    <Text style={styles.detailCollapsedBackGlyph}>‹</Text>
+                </Pressable>
+                <Reanimated.View
+                    pointerEvents="none"
+                    style={[styles.detailCollapsedTitleWrap, contentStyle]}
+                >
+                    <Text numberOfLines={1} style={styles.detailCollapsedTitle}>
+                        {title}
+                    </Text>
+                </Reanimated.View>
+                <Reanimated.View
+                    pointerEvents={isInteractive ? 'auto' : 'none'}
+                    style={[styles.detailCollapsedActions, contentStyle]}
+                >
+                    {showShuffle ? (
+                        <Pressable
+                            accessibilityLabel="Shuffle"
+                            accessibilityRole="button"
+                            hitSlop={10}
+                            onPress={onShuffle}
+                            style={styles.detailCollapsedIconButton}
+                        >
+                            <ShuffleGlyph color={colors.text} size={20} />
+                        </Pressable>
+                    ) : null}
+                    {showPlay ? (
+                        <Pressable
+                            accessibilityLabel="Play"
+                            accessibilityRole="button"
+                            onPress={onPlay}
+                            style={styles.detailCollapsedPlayButton}
+                        >
+                            <PlayPauseGlyph color={colors.background} isPlaying={false} size={16} />
+                        </Pressable>
+                    ) : null}
+                </Reanimated.View>
+            </View>
         </View>
     );
 });

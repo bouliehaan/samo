@@ -18,6 +18,7 @@ import Reanimated, {
 
 import { CheckGlyph } from '../../components/Glyphs';
 import { triggerImpact } from '../../services/haptics';
+import { fonts } from '../../theme/tokens';
 import { Orb } from './Orb';
 
 // The premium "you're set" seal: the breathing gold sync orb morphs into a green
@@ -28,7 +29,7 @@ import { Orb } from './Orb';
 // land, so the app underneath is already full by the time it's revealed.
 
 const SUCCESS = '#2ed573';
-const GOLD = '#d4c08a';
+const SILVER = '#cfd8e3';
 
 // Timeline (ms from mount).
 const FORM_MS = 440; // orb → check morph
@@ -41,7 +42,7 @@ const CORE = 96; // diameter of the seal disc
 // Deterministic mote field — an even ring with gentle per-index jitter reads more
 // intentional (and more expensive-looking) than true randomness, which clumps.
 const TAU = Math.PI * 2;
-const MOTE_COLORS = [SUCCESS, GOLD, '#ecdcb2', '#7bed9f', '#ffffff'];
+const MOTE_COLORS = [SUCCESS, SILVER, '#eef2f7', '#7bed9f', '#ffffff'];
 const MOTES = Array.from({ length: 20 }, (_, i) => {
     const ring = i % 3;
     return {
@@ -308,7 +309,7 @@ export const SuccessSeal = ({
                 style={[
                     {
                         color: '#f6f6f8',
-                        fontFamily: 'YoungSerif-Bold',
+                        fontFamily: fonts.heading,
                         fontSize: 26,
                         letterSpacing: -0.3,
                         marginTop: 26,

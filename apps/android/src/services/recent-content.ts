@@ -8,6 +8,7 @@ import {
 } from '@samo/core/mobile';
 
 import { fsDeleteItem, fsGetItem, fsSetItem } from './fs-storage';
+import { getContentItemKey } from '../utils/content-item';
 import { safeParseJson } from '../utils/json';
 
 // v2 invalidates stale persisted playback payloads from older builds.
@@ -29,11 +30,14 @@ export type RecentContentRecordOptions = {
     directSong?: boolean;
 };
 
+/** The item identity key. Same formula (and now the same memoized builder) as
+ *  `getContentItemKey` — the two must never diverge: recents are matched to
+ *  shelf items by this string. */
 export const getRecentContentItemKey = (item: {
     id: string;
     source?: { id: string };
     type: string;
-}) => `${item.source?.id ?? 'server'}:${item.type}:${item.id}`;
+}) => getContentItemKey(item);
 
 /** Artist pages share playback timestamps with albums/tracks — omit from recents. */
 export const isArtistRecentContentItem = (item: { type: string }) =>

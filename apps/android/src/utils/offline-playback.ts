@@ -62,6 +62,7 @@ const buildAudiobookFilePlayable = (
     initialPositionSeconds: number,
     streamUrl: string,
     idSuffix: string,
+    timelineDurationSeconds?: number,
 ): MobilePlayableAudio => ({
     artworkUrl: detail.artworkUrl,
     castMimeType: mimeFromCastUri(streamUrl),
@@ -79,15 +80,34 @@ const buildAudiobookFilePlayable = (
     },
     source: 'audiobook',
     subtitle: detail.subtitle,
+    timelineDurationSeconds,
     title: detail.title,
     url: streamUrl,
 });
+
+/**
+ * Book-global timeline length for a downloaded multi-file book: the end of its
+ * last file. Downloaded queue items carry book-global offsets and chapters just
+ * like streamed ones, so they need the same whole-book duration or the seek bar
+ * collapses to the current file (see MobilePlayableAudio.timelineDurationSeconds).
+ */
+export const audiobookFilesTimelineDurationSeconds = (
+    files: readonly AudiobookFileTimeSegment[],
+): number | undefined => {
+    const lastFile = files[files.length - 1];
+    if (!lastFile) {
+        return undefined;
+    }
+    const end = lastFile.startOffsetSeconds + (lastFile.durationSeconds ?? 0);
+    return end > 0 ? end : undefined;
+};
 
 export const buildOfflineAudiobookPlayable = (
     detail: MobileMediaDetail,
     file: OfflineAudiobookFile,
     initialPositionSeconds: number,
     authentication?: ServerAuthenticationResult,
+    timelineDurationSeconds?: number,
 ): MobilePlayableAudio => {
     return buildAudiobookFilePlayable(
         detail,
@@ -95,6 +115,7 @@ export const buildOfflineAudiobookPlayable = (
         initialPositionSeconds,
         file.localUri,
         'offline',
+        timelineDurationSeconds,
     );
 };
 

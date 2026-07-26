@@ -458,7 +458,7 @@ export const SettingsScreen = ({
                     thumbColor={isOfflineMode ? colors.accent : '#ffffff'}
                     trackColor={{
                         false: 'rgba(255, 255, 255, 0.18)',
-                        true: 'rgba(202, 160, 79, 0.45)',
+                        true: 'rgba(207, 216, 227, 0.45)',
                     }}
                     value={isOfflineMode}
                 />

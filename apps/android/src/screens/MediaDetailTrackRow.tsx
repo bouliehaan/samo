@@ -107,7 +107,16 @@ export const MediaDetailTrackRow = memo(function MediaDetailTrackRow({
                 <View>
                     {track.artworkUrl ?? detail.artworkUrl ?? fallbackArtworkUrl ? (
                         <ArtworkImage
-                            artworkImageId={track.artworkImageId ?? detail.artworkImageId}
+                            // The detail's cached artwork id is a fallback for
+                            // tracks with NO art of their own — never for tracks
+                            // that carry an artworkUrl. The resolver prefers the
+                            // id, so passing the playlist/album id here would
+                            // mask every track's real cover with the detail's
+                            // (the "explo tracks all show the playlist art" bug).
+                            artworkImageId={
+                                track.artworkImageId ??
+                                (track.artworkUrl ? undefined : detail.artworkImageId)
+                            }
                             contentSource={detail.source}
                             letter={track.title.slice(0, 1).toUpperCase()}
                             serverConnection={serverConnection}

@@ -3,6 +3,9 @@ import { ServerType } from '@samo/core/server';
 import { type MobilePlayableAudio } from '@samo/core/mobile';
 
 import {
+    getSamoBookPositionSeconds,
+    getSamoFileBookSpanSeconds,
+    getSamoFilePositionMs,
     isMp3PlayableAudio,
     resolveAudiobookSeekTarget,
     shouldServerSeekAudiobookMp3,
@@ -58,5 +61,25 @@ describe('resolveAudiobookSeekTarget (single file)', () => {
         expect(target.queueIndex).toBe(0);
         expect(Math.round(target.bookPositionSeconds)).toBe(503);
         expect(Math.round(target.filePositionMs)).toBe(502982);
+    });
+});
+
+describe('book-time <-> file-time round trip (multi-file)', () => {
+    // File 4 of a chapter-per-file rip: 10 minutes long, starting 30 minutes in.
+    const file = makeItem({ durationSeconds: 600, progressOffsetSeconds: 1800 });
+
+    it('converts a book target to the file position the engine reports in', () => {
+        // The seek bar hands over BOOK seconds; playbackState.positionMs is
+        // FILE-relative. Optimistically painting the book value put the playhead
+        // at book+offset (2100 -> displayed 3900) — a whole different chapter —
+        // and the file-relative echo from native could never confirm it, so the
+        // wrong value was held for the entire pending-seek grace.
+        expect(getSamoFilePositionMs(file, 2100)).toBe(300_000);
+        expect(getSamoBookPositionSeconds(file, 300_000)).toBe(2100);
+    });
+
+    it('reports the file span so a cross-file target can be told apart', () => {
+        const span = getSamoFileBookSpanSeconds(file);
+        expect(span).toEqual({ endSeconds: 2400, startSeconds: 1800 });
     });
 });

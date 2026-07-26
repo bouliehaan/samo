@@ -29,10 +29,11 @@ import {
     closeMediaDetail,
     getAppNavigation,
     openMediaDetail,
-    setActiveTab,
     setActiveUtilityScreen,
     setIsFullPlayerOpen,
+    setIsSearchOverlayOpen,
     setMediaDetailState,
+    setSearchOverlayQuery,
     setViewAllFullState,
     setViewAllRoute,
 } from '../state/app-navigation';
@@ -296,8 +297,10 @@ export const handleSelectMediaItem = async (
 ): Promise<void> => {
     if ('external' in item && item.external) {
         // A similar-artist tile for an artist not in this library — there's
-        // no detail to open, so jump to Search prefilled with their name.
-        setActiveTab('search');
+        // no detail to open, so raise the search overlay prefilled with
+        // their name (the dedicated Search tab is gone).
+        setSearchOverlayQuery(item.title);
+        setIsSearchOverlayOpen(true);
         await handleSearch(item.title);
         return;
     }

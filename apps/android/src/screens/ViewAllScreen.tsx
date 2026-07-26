@@ -48,6 +48,7 @@ const ViewAllTile = memo(({ item, onOpenContextMenu, onSelectItem }: ViewAllTile
             <ArtworkImage
                 artworkImageId={item.artworkImageId}
                 contentSource={item.source}
+                decodeFormat="rgb"
                 fallbackStyle={[
                     styles.viewAllTileArtworkFallback,
                     isArtist && styles.libraryArtworkRound,

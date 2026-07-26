@@ -35,7 +35,7 @@ import {
 } from '../../services/catalog/catalog-sync-state';
 import { triggerImpact } from '../../services/haptics';
 import { type AndroidAuthState } from '../../services/server-auth';
-import { colors, radii, spacing } from '../../theme/tokens';
+import { colors, fonts, radii, spacing } from '../../theme/tokens';
 import { Orb } from './Orb';
 import { SuccessSeal } from './SuccessSeal';
 import { WaveDotsField } from './WaveDotsField';
@@ -449,31 +449,6 @@ const WelcomeStep = ({ onStart }: { onStart: () => void }) => {
         <StepShell>
             <GestureDetector gesture={gesture}>
                 <Reanimated.View style={[{ flex: 1, justifyContent: 'flex-end' }, panelStyle]}>
-                    <Reanimated.View entering={FadeInDown.delay(120).duration(700)}>
-                        <Text
-                            style={{
-                                color: colors.accent,
-                                fontFamily: 'OfficeCodePro-Regular',
-                                fontSize: 12,
-                                letterSpacing: 3,
-                                marginBottom: 18,
-                                textTransform: 'uppercase',
-                            }}
-                        >
-                            Welcome to
-                        </Text>
-                        <Text
-                            style={{
-                                color: colors.text,
-                                fontFamily: 'YoungSerif-Bold',
-                                fontSize: 64,
-                                letterSpacing: -1,
-                                lineHeight: 66,
-                            }}
-                        >
-                            Samo
-                        </Text>
-                    </Reanimated.View>
                     <Reanimated.View
                         accessibilityHint="Swipe up to get started"
                         accessibilityRole="button"
@@ -488,7 +463,7 @@ const WelcomeStep = ({ onStart }: { onStart: () => void }) => {
                         <Text
                             style={{
                                 color: colors.muted,
-                                fontFamily: 'OfficeCodePro-Regular',
+                                fontFamily: fonts.mono,
                                 fontSize: 13,
                                 letterSpacing: 1,
                                 textTransform: 'uppercase',
@@ -586,7 +561,7 @@ const DiscoverStep = ({
                                     numberOfLines={1}
                                     style={{
                                         color: colors.muted,
-                                        fontFamily: 'OfficeCodePro-Regular',
+                                        fontFamily: fonts.mono,
                                         fontSize: 13,
                                         marginTop: 3,
                                     }}
@@ -705,7 +680,7 @@ const ConnectStep = ({
                             numberOfLines={1}
                             style={{
                                 color: colors.muted,
-                                fontFamily: 'OfficeCodePro-Regular',
+                                fontFamily: fonts.mono,
                                 fontSize: 12,
                                 marginTop: 2,
                             }}
@@ -1000,14 +975,14 @@ const ServerGlyph = ({ color }: { color: string }) => (
 
 const headingStyle = {
     color: colors.text,
-    fontFamily: 'YoungSerif-Bold',
+    fontFamily: fonts.heading,
     fontSize: 30,
     letterSpacing: -0.5,
 } as const;
 
 const subheadingStyle = {
     color: colors.muted,
-    fontFamily: 'OfficeCodePro-Regular',
+    fontFamily: fonts.mono,
     fontSize: 15,
     lineHeight: 23,
     marginTop: 10,

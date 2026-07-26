@@ -29,6 +29,7 @@ import { setAndroidPlaybackState } from '../state/playback-store';
 import { rememberMediaDetail } from '../utils/media-detail-cache';
 import { getNativeResumeProgress } from '../utils/native-resume';
 import {
+    audiobookFilesTimelineDurationSeconds,
     buildAudiobookFilePlaybackQueue,
     buildOfflineAudiobookPlayable,
     buildOfflinePodcastEpisodePlayable,
@@ -102,6 +103,7 @@ export const handlePlayMediaTrack = async (
                     files: detail.audiobookFiles,
                     streamToken,
                     subtitle: detail.authorsSummary ?? detail.subtitle,
+                    timelineDurationSeconds: detail.durationSeconds,
                     timelineSegments: getTrackTimelineSegments(detail, track),
                     title: detail.title,
                 });
@@ -226,21 +228,25 @@ export const handlePlayMediaTrack = async (
         if (!isCurrentRequest()) return;
         if (offlineFiles.length > 1) {
             const targetBookSeconds = trackToPlay.startSeconds ?? 0;
+            const timelineDurationSeconds =
+                audiobookFilesTimelineDurationSeconds(offlineFiles);
             const { index: startIndex, items } = buildAudiobookFilePlaybackQueue(
                 detail,
                 offlineFiles,
                 targetBookSeconds,
                 (file, initialPositionSeconds) =>
-                    buildOfflineAudiobookPlayable(detail, file, initialPositionSeconds, absAuth),
+                    buildOfflineAudiobookPlayable(
+                        detail,
+                        file,
+                        initialPositionSeconds,
+                        absAuth,
+                        timelineDurationSeconds,
+                    ),
             );
             if (absAuth && trackToPlay.itemId) {
-                const totalDurationSeconds = offlineFiles.reduce(
-                    (sum, file) => sum + (file.durationSeconds ?? 0),
-                    0,
-                );
                 absContextRef.current = {
                     authentication: absAuth,
-                    durationSeconds: totalDurationSeconds,
+                    durationSeconds: timelineDurationSeconds ?? 0,
                     episodeId: undefined,
                     itemId: trackToPlay.itemId,
                 };
@@ -268,7 +274,11 @@ export const handlePlayMediaTrack = async (
         ) {
             absContextRef.current = {
                 authentication: absAuth,
-                durationSeconds: playable.durationSeconds ?? 0,
+                // Book-global for audiobooks (a multi-file item's own
+                // durationSeconds is just the current file); podcasts stream
+                // whole, so the two are the same there.
+                durationSeconds:
+                    playable.timelineDurationSeconds ?? playable.durationSeconds ?? 0,
                 episodeId: trackToPlay.episodeId,
                 itemId: trackToPlay.itemId,
             };

@@ -2,12 +2,18 @@ import { MobileHomeSectionId, type MobileHomeItem } from '@samo/core/mobile';
 import { FlashList } from '@shopify/flash-list';
 import { memo, useCallback, useMemo, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
+import { GestureDetector } from 'react-native-gesture-handler';
+import Reanimated from 'react-native-reanimated';
 
 import { LibraryListRow } from '../components/LibraryListRow';
+import { useSearchPull } from '../components/search-pull/useSearchPull';
 import { SkeletonListRows } from '../components/Skeleton';
 import { LibrarySortMenu } from '../components/LibrarySortMenu';
-import { PlusGlyph, ShuffleGlyph, SortGlyph } from '../components/Glyphs';
+import { PlusGlyph, ShuffleGlyph } from '../components/Glyphs';
+
 import { useScrollContentBottomInset } from '../hooks/use-scroll-content-bottom-inset';
+import { useTransitioningMount } from '../hooks/use-transitioning-mount';
+import { PAGE_TOP_INSET } from '../theme/layout';
 import { colors } from '../theme/tokens';
 import { useVisibleHomeContentState } from '../hooks/use-visible-home-content';
 import { useVisibleRecentItems } from '../hooks/use-visible-recent-items';
@@ -20,6 +26,10 @@ import { type LibraryDisplayItem } from '../types/library-display';
 import { toLibraryDisplayItem } from '../utils/library-display';
 import { EmptyServerBackedScreen } from './EmptyServerBackedScreen';
 
+// Animated host so the pull-down search's scroll handler runs on the UI thread
+// — a plain FlashList would swallow the worklet (see useSearchPull).
+const ReanimatedFlashList = Reanimated.createAnimatedComponent(FlashList) as typeof FlashList;
+
 export const PlaylistsScreen = memo(({
     onCreatePlaylist,
     onSelectItem,
@@ -28,6 +38,12 @@ export const PlaylistsScreen = memo(({
 }: PlaylistsScreenProps) => {
     const homeContentState = useVisibleHomeContentState();
     const recentItems = useVisibleRecentItems();
+    const isTransitioning = useTransitioningMount();
+    const {
+        gesture: searchPullGesture,
+        renderScrollComponent: searchPullRenderScrollComponent,
+        scrollProps: searchPullScrollProps,
+    } = useSearchPull('playlists');
     const [activeSort, setActiveSort] = useState<LibrarySort>('recents');
     const [isSortMenuOpen, setIsSortMenuOpen] = useState(false);
     const basePlaylists = useMemo(() => {
@@ -76,13 +92,13 @@ export const PlaylistsScreen = memo(({
         return <EmptyServerBackedScreen tabTitle="Playlists" />;
     }
 
-    if (homeContentState.status === 'loading') {
+    if (homeContentState.status === 'loading' || isTransitioning) {
         return <SkeletonListRows />;
     }
 
     if (homeContentState.status === 'error') {
         return (
-            <View style={styles.section}>
+            <View style={[styles.section, { marginTop: PAGE_TOP_INSET }]}>
                 <Text style={styles.errorText}>{homeContentState.message}</Text>
             </View>
         );
@@ -90,26 +106,31 @@ export const PlaylistsScreen = memo(({
 
     const activeSortLabel =
         LIBRARY_SORTS.find((sort) => sort.id === activeSort)?.label ?? 'Recents';
+    const activeSortShortLabel = activeSort === 'name' ? 'Name' : 'Recent';
+
+
+    const createButton =
+        showCreatePlaylist && onCreatePlaylist ? (
+            <Pressable
+                accessibilityLabel="Create playlist"
+                accessibilityRole="button"
+                onPress={() => {
+                    triggerImpact('light');
+                    onCreatePlaylist();
+                }}
+                style={styles.radioAddIconButton}
+            >
+                <PlusGlyph color={colors.muted} size={18} />
+            </Pressable>
+        ) : null;
 
     if (playlists.length === 0) {
         return (
-            <View style={styles.playlistScreen}>
+            <View style={[styles.playlistScreen, styles.playlistListContent]}>
                 <View style={styles.playlistTopPanel}>
-                    <View style={styles.playlistTitleRow}>
-                        <Text style={styles.homeHeaderTitle}>Playlists</Text>
-                        {showCreatePlaylist && onCreatePlaylist ? (
-                            <Pressable
-                                accessibilityLabel="Create playlist"
-                                accessibilityRole="button"
-                                onPress={() => {
-                                    triggerImpact('light');
-                                    onCreatePlaylist();
-                                }}
-                                style={styles.radioAddIconButton}
-                            >
-                                <PlusGlyph color={colors.muted} size={18} />
-                            </Pressable>
-                        ) : null}
+                    <View style={styles.pageControlsRow}>
+                        <View style={styles.playlistControlsGroup} />
+                        <View style={styles.playlistControlsGroup}>{createButton}</View>
                     </View>
                 </View>
                 <Text style={styles.mutedText}>No server-backed playlists returned.</Text>
@@ -117,28 +138,14 @@ export const PlaylistsScreen = memo(({
         );
     }
 
+    // No page title — just the useful bits on one quiet row: sort on the
+    // left, shuffle + create on the right. The search drawer rides above it,
+    // wrapped in the HOME_EDGE_PADDING context its field expects (this list's
+    // content container isn't padded — the rows inset themselves).
     const listHeader = (
+        <>
         <View style={styles.playlistTopPanel}>
-            {/* Title row carries ONLY the title + one icon button (Home's
-                pattern). The pills live on their own row below — the 64px
-                serif title never negotiates space with them again. */}
-            <View style={styles.playlistTitleRow}>
-                <Text style={styles.homeHeaderTitle}>Playlists</Text>
-                {showCreatePlaylist && onCreatePlaylist ? (
-                    <Pressable
-                        accessibilityLabel="Create playlist"
-                        accessibilityRole="button"
-                        onPress={() => {
-                            triggerImpact('light');
-                            onCreatePlaylist();
-                        }}
-                        style={styles.radioAddIconButton}
-                    >
-                        <PlusGlyph color={colors.muted} size={18} />
-                    </Pressable>
-                ) : null}
-            </View>
-            <View style={styles.playlistControlsRow}>
+            <View style={styles.pageControlsRow}>
                 <Pressable
                     accessibilityLabel={`Sort by ${activeSortLabel}. Tap to change.`}
                     accessibilityRole="button"
@@ -147,36 +154,43 @@ export const PlaylistsScreen = memo(({
                         triggerImpact('light');
                         setIsSortMenuOpen(true);
                     }}
-                    style={styles.librarySortBadge}
+                    style={styles.radioSortButton}
                 >
-                    <SortGlyph color={colors.muted} />
-                    <Text style={styles.librarySortText}>{activeSortLabel}</Text>
+                    <Text style={styles.radioSortText}>{activeSortShortLabel}</Text>
                 </Pressable>
-                {allPlayableItems.length > 1 ? (
-                    <Pressable
-                        accessibilityLabel="Shuffle all playlists"
-                        accessibilityRole="button"
-                        onPress={() => void onShufflePlay(allPlayableItems)}
-                        style={styles.playlistPillButton}
-                    >
-                        <ShuffleGlyph color={colors.background} />
-                        <Text style={styles.playlistPillButtonText}>Shuffle</Text>
-                    </Pressable>
-                ) : null}
+                <View style={styles.playlistControlsGroup}>
+                    {allPlayableItems.length > 1 ? (
+                        <Pressable
+                            accessibilityLabel="Shuffle all playlists"
+                            accessibilityRole="button"
+                            onPress={() => void onShufflePlay(allPlayableItems)}
+                            style={styles.playlistPillButton}
+                        >
+                            <ShuffleGlyph color={colors.background} />
+                            <Text style={styles.playlistPillButtonText}>Shuffle</Text>
+                        </Pressable>
+                    ) : null}
+                    {createButton}
+                </View>
             </View>
         </View>
+        </>
     );
 
     return (
         <View style={styles.playlistScreen}>
-            <FlashList
+            <GestureDetector gesture={searchPullGesture}>
+            <ReanimatedFlashList
                 ListHeaderComponent={listHeader}
-                contentContainerStyle={{ paddingBottom: bottomInset }}
+                contentContainerStyle={[styles.playlistListContent, { paddingBottom: bottomInset }]}
                 data={rows}
                 keyExtractor={(row) => row.displayItem.key}
                 renderItem={renderRow}
+                renderScrollComponent={searchPullRenderScrollComponent}
                 showsVerticalScrollIndicator={false}
+                {...searchPullScrollProps}
             />
+            </GestureDetector>
             <LibrarySortMenu
                 activeSort={activeSort}
                 onClose={() => setIsSortMenuOpen(false)}

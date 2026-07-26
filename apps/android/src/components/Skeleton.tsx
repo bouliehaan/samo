@@ -16,6 +16,7 @@ import {
     HOME_PRIMARY_TILE,
     HOME_ROUNDED_OFFSET,
     HOME_TILE_GAP,
+    PAGE_TOP_INSET,
 } from '../theme/layout';
 import { type HomeDisplaySection } from '../types/home';
 
@@ -153,6 +154,9 @@ export const SkeletonTileGrid = ({ count = 12 }: { count?: number }) => (
                 flexWrap: 'wrap',
                 gap: 16,
                 padding: 16,
+                // Same page-top line as the loaded page — the scenes no longer
+                // pad their containers for the status bar.
+                paddingTop: PAGE_TOP_INSET,
                 width: '100%',
             }}
         >
@@ -171,7 +175,7 @@ export const SkeletonTileGrid = ({ count = 12 }: { count?: number }) => (
  */
 export const SkeletonListRows = ({ count = 8 }: { count?: number }) => (
     <SkeletonPulseProvider>
-        <View style={{ paddingHorizontal: spacing.md, paddingTop: spacing.sm }}>
+        <View style={{ paddingHorizontal: spacing.md, paddingTop: PAGE_TOP_INSET }}>
             {Array.from({ length: count }).map((_, index) => (
                 <SkeletonTrackRow key={index} />
             ))}
@@ -347,7 +351,7 @@ const HOME_SKELETON_PAGE_ROWS: Array<{ count: number; variant: HomeSkeletonVaria
  */
 export const HomeSkeletonPage = () => (
     <SkeletonPulseProvider>
-        <View style={{ paddingTop: spacing.md }}>
+        <View style={{ paddingTop: PAGE_TOP_INSET }}>
             {HOME_SKELETON_PAGE_ROWS.map((row, index) => (
                 <HomeSkeletonRowContent
                     count={row.count}

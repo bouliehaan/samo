@@ -183,8 +183,15 @@ export const ArtistDetailSections = ({
                                 <View>
                                     {track.artworkUrl ?? detail.artworkUrl ?? fallbackArtworkUrl ? (
                                         <ArtworkImage
+                                            // Fall back to the artist's cached art id
+                                            // only for tracks with no art of their own —
+                                            // the resolver prefers the id, so the artist
+                                            // portrait would mask real track covers.
                                             artworkImageId={
-                                                track.artworkImageId ?? detail.artworkImageId
+                                                track.artworkImageId ??
+                                                (track.artworkUrl
+                                                    ? undefined
+                                                    : detail.artworkImageId)
                                             }
                                             contentSource={detail.source}
                                             letter={track.title.slice(0, 1).toUpperCase()}

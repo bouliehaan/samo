@@ -1,12 +1,16 @@
 import { startTransition, useSyncExternalStore } from 'react';
 import { SAMO_MOBILE_TABS, type SamoMobileTabId } from '@samo/core/navigation';
 
+import { emitTabReselected } from './tab-reselect';
+
 import { type AndroidUtilityScreen } from '../types/app-navigation';
 import { type ViewAllRoute } from '../types/view-all';
 import {
     EMPTY_LIBRARY_FULL_COLLECTIONS,
     EMPTY_LIBRARY_RELEVANT_STATE,
+    EMPTY_MEDIA_TYPE_COLLECTIONS,
     type LibraryFullCollectionsState,
+    type MediaTypeCollectionsState,
 } from '../types/library-tab';
 import { type AndroidFullCollectionState } from '../services/full-collection';
 import { type AndroidHomeContentState } from '../services/home-content';
@@ -39,6 +43,7 @@ export type AppNavigationState = {
     mediaDetailKey: string | null;
     mediaDetailStack: MediaDetailFrame[];
     mediaDetailState: AndroidMediaDetailState;
+    mediaTypeCollections: MediaTypeCollectionsState;
     searchOverlayQuery: string;
     searchState: AndroidSearchState;
     viewAllFullState: AndroidFullCollectionState;
@@ -60,6 +65,7 @@ export const initialAppNavigationState: AppNavigationState = {
     mediaDetailKey: null,
     mediaDetailStack: [],
     mediaDetailState: { status: 'idle' },
+    mediaTypeCollections: EMPTY_MEDIA_TYPE_COLLECTIONS,
     searchOverlayQuery: '',
     searchState: { status: 'idle' },
     viewAllFullState: { status: 'idle' },
@@ -105,6 +111,12 @@ export type AppNavigationAction =
           mediaDetailState:
               | AndroidMediaDetailState
               | ((current: AndroidMediaDetailState) => AndroidMediaDetailState);
+      }
+    | {
+          type: 'set-media-type-collections';
+          mediaTypeCollections:
+              | MediaTypeCollectionsState
+              | ((current: MediaTypeCollectionsState) => MediaTypeCollectionsState);
       }
     | { type: 'open-media-detail'; key: string; mediaDetailState: AndroidMediaDetailState }
     | { type: 'pop-media-detail' }
@@ -187,6 +199,15 @@ export const appNavigationReducer = (
                         ? action.mediaDetailState(state.mediaDetailState)
                         : action.mediaDetailState,
             };
+        case 'set-media-type-collections': {
+            const mediaTypeCollections =
+                typeof action.mediaTypeCollections === 'function'
+                    ? action.mediaTypeCollections(state.mediaTypeCollections)
+                    : action.mediaTypeCollections;
+            return mediaTypeCollections === state.mediaTypeCollections
+                ? state
+                : { ...state, mediaTypeCollections };
+        }
         case 'open-media-detail': {
             // Push the current detail onto the back-stack only when it's a fully
             // LOADED detail for a DIFFERENT entity. Pushing a loading/error shell
@@ -365,6 +386,12 @@ const setLibraryRelevantState = (
         | ((current: AndroidLibraryRelevantState) => AndroidLibraryRelevantState),
 ) => dispatchAppNavigation({ type: 'set-library-relevant', libraryRelevantState });
 
+const setMediaTypeCollections = (
+    mediaTypeCollections:
+        | MediaTypeCollectionsState
+        | ((current: MediaTypeCollectionsState) => MediaTypeCollectionsState),
+) => dispatchAppNavigation({ type: 'set-media-type-collections', mediaTypeCollections });
+
 const setSearchState = (
     searchState: AndroidSearchState | ((current: AndroidSearchState) => AndroidSearchState),
 ) => dispatchAppNavigation({ type: 'set-search-state', searchState });
@@ -402,11 +429,33 @@ const closeViewAll = () => {
 
 /** A bottom-bar tab press: land on the tab with every overlay dismissed. */
 const pressTab = (tabId: SamoMobileTabId): void => {
+    // A press on the ALREADY-ACTIVE tab while its BARE page is showing (no
+    // overlay to dismiss, nothing else the press could mean) is the "take me
+    // back to the top" gesture — glide that page's list to the top (and retract
+    // the search surface), and on Home also freshen it. Detect BEFORE the
+    // dismissals below, so a press that closes an overlay stays just a dismissal.
+    const isBareTabReselect =
+        appNavigationState.activeTab === tabId &&
+        appNavigationState.activeUtilityScreen === null &&
+        appNavigationState.mediaDetailState.status === 'idle' &&
+        !appNavigationState.isSearchOverlayOpen;
     setActiveUtilityScreen((current) => (current === null ? current : null));
     if (appNavigationState.mediaDetailState.status !== 'idle') {
         closeMediaDetail();
     }
+    // The search overlay is a full-screen layer INSIDE appContent, while the
+    // tab bar is a later sibling of appContent — so the bar is still tappable
+    // underneath it and pressTab really does run. Without this line the press
+    // switched the tab behind an overlay that stayed up, which reads exactly
+    // like a dead navbar: you tap, nothing appears to happen, you tap again.
+    // "Land on the tab with every overlay dismissed" has to mean every one.
+    if (appNavigationState.isSearchOverlayOpen) {
+        setIsSearchOverlayOpen(false);
+    }
     setActiveTab((current) => (current === tabId ? current : tabId));
+    if (isBareTabReselect) {
+        emitTabReselected(tabId);
+    }
 };
 
 // ---------------------------------------------------------------------------
@@ -430,6 +479,7 @@ export {
     setLibraryFullCollections,
     setLibraryRelevantState,
     setMediaDetailState,
+    setMediaTypeCollections,
     setSearchOverlayQuery,
     setSearchState,
     setViewAllFullState,

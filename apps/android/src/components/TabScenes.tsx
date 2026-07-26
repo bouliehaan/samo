@@ -1,8 +1,7 @@
 import { SAMO_MOBILE_TABS, type SamoMobileTabId } from '@samo/core/navigation';
-import { Fragment, memo, useCallback, useState } from 'react';
-import { Image, Pressable, ScrollView, Text, View } from 'react-native';
+import { memo, useCallback, useEffect, useState } from 'react';
+import { View } from 'react-native';
 
-import samoLogo from '../../assets/samo-logo.png';
 import { handleAddRadioStation } from '../handlers/info-handlers';
 import {
     handleOpenViewAll,
@@ -11,41 +10,30 @@ import {
 } from '../handlers/media-detail-handlers';
 import { handleShuffleHomeItems } from '../handlers/playback-handlers';
 import { handleOpenCreatePlaylistStandalone } from '../handlers/playlist-handlers';
-import { handleSearch } from '../handlers/search-handlers';
 import { useReducedMotionPreference } from '../hooks/use-reduced-motion-preference';
-import { useScrollContentBottomInset } from '../hooks/use-scroll-content-bottom-inset';
 import { EmptyServerBackedScreen } from '../screens/EmptyServerBackedScreen';
-import { HomeScreen } from '../screens/HomeScreen';
-import { LibraryScreen } from '../screens/LibraryScreen';
+import { HomeScreen } from '../screens/home/HomeScreen';
+import { MediaTypeGridScreen } from '../screens/MediaTypeGridScreen';
 import { PlaylistsScreen } from '../screens/PlaylistsScreen';
 import { RadioScreen } from '../screens/RadioScreen';
-import { SearchScreen } from '../screens/SearchScreen';
 import { triggerCatalogSyncNow } from '../services/headless-catalog-sync';
 import { loadHomeForConnection } from '../services/home-flow';
-import { startLibraryFullCollectionLoad } from '../services/library-flow';
 import { ServerType } from '@samo/core/server';
 import {
-    closeMediaDetail,
     setActiveUtilityScreen,
     useAppNavigationSelector,
 } from '../state/app-navigation';
+import { subscribeTabReselected } from '../state/tab-reselect';
 import { useAuthSessionSelector } from '../state/auth-session';
-import { useDownloadsSelector } from '../state/downloads-state';
 import { styles } from '../theme/styles';
 import { getTabTitle } from '../utils/tab-title';
 import { ErrorBoundary } from './ErrorBoundary';
 import { TabSceneContainer } from './TabSceneContainer';
-import { TopChromeBackdrop } from './TopChromeBackdrop';
 
-const handleOpenSettings = () => {
-    setActiveUtilityScreen('settings');
-    closeMediaDetail();
-};
 const handleOpenManageServers = () => setActiveUtilityScreen('manage-servers');
 
 const HomeTabScene = memo(function HomeTabScene() {
     const serverConnection = useAuthSessionSelector((state) => state.serverConnection);
-    const isSearchOverlayOpen = useAppNavigationSelector((state) => state.isSearchOverlayOpen);
     const [isRefreshingHome, setIsRefreshingHome] = useState(false);
 
     const handleRefreshHome = useCallback(async (): Promise<void> => {
@@ -73,34 +61,31 @@ const HomeTabScene = memo(function HomeTabScene() {
         }
     }, [serverConnection]);
 
+    // Home tab re-tap is now the ONLY way to refresh: the pull-down gesture
+    // belongs to search (see useSearchPull), so Home's RefreshControl is
+    // display-only. The re-tap glides the page to the top and fires the refresh;
+    // the spinner still shows via the isRefreshingHome → RefreshControl wiring.
+    // The reselect signal now carries every tab's id — ignore all but Home's.
+    useEffect(
+        () =>
+            subscribeTabReselected((tabId) => {
+                if (tabId === 'home') {
+                    void handleRefreshHome();
+                }
+            }),
+        [handleRefreshHome],
+    );
+
     return (
-        <Fragment>
-            {!isSearchOverlayOpen ? (
-                <Fragment>
-                    <TopChromeBackdrop />
-                    <View style={[styles.header, styles.homeHeaderFloating]}>
-                        <Text style={styles.homeHeaderTitle}>Home</Text>
-                        <Pressable
-                            accessibilityLabel="Settings"
-                            accessibilityRole="button"
-                            onPress={handleOpenSettings}
-                            style={styles.appIconButton}
-                        >
-                            <Image source={samoLogo} style={styles.appIcon} />
-                        </Pressable>
-                    </View>
-                </Fragment>
-            ) : null}
-            <HomeScreen
-                isRefreshing={isRefreshingHome}
-                onManageServers={handleOpenManageServers}
-                onPrefetchItem={prefetchMediaDetailCache}
-                onRefresh={serverConnection ? handleRefreshHome : undefined}
-                onSelectItem={handleSelectMediaItem}
-                onViewAll={handleOpenViewAll}
-                serverConnection={serverConnection}
-            />
-        </Fragment>
+        <HomeScreen
+            isRefreshing={isRefreshingHome}
+            onManageServers={handleOpenManageServers}
+            onPrefetchItem={prefetchMediaDetailCache}
+            onRefresh={serverConnection ? handleRefreshHome : undefined}
+            onSelectItem={handleSelectMediaItem}
+            onViewAll={handleOpenViewAll}
+            serverConnection={serverConnection}
+        />
     );
 });
 
@@ -118,48 +103,12 @@ const PlaylistsTabScene = memo(function PlaylistsTabScene() {
     );
 });
 
-const LibraryTabScene = memo(function LibraryTabScene() {
-    const serverConnection = useAuthSessionSelector((state) => state.serverConnection);
-    const isOfflineMode = useDownloadsSelector((state) => state.isOfflineMode);
-    const libraryFullCollections = useAppNavigationSelector(
-        (state) => state.libraryFullCollections,
-    );
-    const libraryRelevantState = useAppNavigationSelector((state) => state.libraryRelevantState);
-    // True only while the Library browse is the foreground surface — the
-    // alphabet rail's ephemeral A–Z flip resets when this drops.
-    const isLibrarySurface = useAppNavigationSelector(
-        (state) =>
-            state.activeTab === 'library' &&
-            state.activeUtilityScreen === null &&
-            state.mediaDetailState.status === 'idle',
-    );
-
-    return (
-        <LibraryScreen
-            fullCollections={libraryFullCollections}
-            fullCollectionsEnabled={!isOfflineMode}
-            hasServerConnections={Boolean(serverConnection)}
-            isForeground={isLibrarySurface}
-            libraryRelevantState={libraryRelevantState}
-            onEnsureFullCollections={startLibraryFullCollectionLoad}
-            onSelectItem={handleSelectMediaItem}
-        />
-    );
+const PodcastsTabScene = memo(function PodcastsTabScene() {
+    return <MediaTypeGridScreen mediaType="podcasts" />;
 });
 
-const SearchTabScene = memo(function SearchTabScene() {
-    const serverConnection = useAuthSessionSelector((state) => state.serverConnection);
-    const searchState = useAppNavigationSelector((state) => state.searchState);
-    return (
-        <SearchScreen
-            hasServerConnections={Boolean(serverConnection)}
-            onSearch={handleSearch}
-            onSelectItem={handleSelectMediaItem}
-            onSelectRecentItem={handleSelectMediaItem}
-            searchState={searchState}
-            serverConnection={serverConnection}
-        />
-    );
+const AudiobooksTabScene = memo(function AudiobooksTabScene() {
+    return <MediaTypeGridScreen mediaType="audiobooks" />;
 });
 
 const RadioTabScene = memo(function RadioTabScene() {
@@ -178,10 +127,10 @@ const renderTabSceneContent = (tabId: SamoMobileTabId) =>
         <HomeTabScene />
     ) : tabId === 'playlists' ? (
         <PlaylistsTabScene />
-    ) : tabId === 'library' ? (
-        <LibraryTabScene />
-    ) : tabId === 'search' ? (
-        <SearchTabScene />
+    ) : tabId === 'podcasts' ? (
+        <PodcastsTabScene />
+    ) : tabId === 'audiobooks' ? (
+        <AudiobooksTabScene />
     ) : tabId === 'radio' ? (
         <RadioTabScene />
     ) : (
@@ -195,7 +144,6 @@ const renderTabSceneContent = (tabId: SamoMobileTabId) =>
  */
 export const TabScenes = memo(function TabScenes() {
     const reducedMotion = useReducedMotionPreference();
-    const scrollBottomInset = useScrollContentBottomInset();
     const activeTab = useAppNavigationSelector((state) => state.activeTab);
     const visitedTabs = useAppNavigationSelector((state) => state.visitedTabs);
     // Any overlay above the tab scenes swallows their pointer events.
@@ -212,42 +160,21 @@ export const TabScenes = memo(function TabScenes() {
                 const isSceneActive = tab.id === activeTab;
                 const isSceneMounted = visitedTabs.has(tab.id);
 
-                // Home, Library and Playlists own their own virtualized
-                // FlashList, so they render bare rather than in the shared tab
-                // ScrollView — nesting a same-orientation VirtualizedList inside
-                // a ScrollView disables virtualization (every row mounts and
-                // stays mounted for the tab's whole life). Each applies the tab
-                // bottom inset on its own list. Radio and Search stay on the
-                // shared ScrollView: their content is short (a handful of
-                // stations; an overlay-driven search) so virtualization buys
-                // nothing, and Radio's 2-up grid keeps its exact flex-wrap
-                // layout this way.
-                const ownsList =
-                    tab.id === 'library' || tab.id === 'home' || tab.id === 'playlists';
+                // Every tab owns its own scroll host — the FlashList tabs so a
+                // same-orientation VirtualizedList isn't nested in a ScrollView
+                // (which would disable virtualization), and Radio a plain
+                // Reanimated.ScrollView. That ownership is also what lets each
+                // tab carry the pull-down search drawer, whose reveal rides its
+                // host's own animated scroll handler.
                 return (
                     <TabSceneContainer
                         isActive={isSceneActive}
                         key={tab.id}
                         reducedMotion={reducedMotion}
                     >
-                        {ownsList ? (
-                            <ErrorBoundary label={`tab-${tab.id}`}>
-                                {isSceneMounted ? renderTabSceneContent(tab.id) : null}
-                            </ErrorBoundary>
-                        ) : (
-                            <ScrollView
-                                contentContainerStyle={[
-                                    styles.tabContent,
-                                    { paddingBottom: scrollBottomInset },
-                                ]}
-                                showsVerticalScrollIndicator={false}
-                                style={styles.tabSceneFill}
-                            >
-                                <ErrorBoundary label={`tab-${tab.id}`}>
-                                    {isSceneMounted ? renderTabSceneContent(tab.id) : null}
-                                </ErrorBoundary>
-                            </ScrollView>
-                        )}
+                        <ErrorBoundary label={`tab-${tab.id}`}>
+                            {isSceneMounted ? renderTabSceneContent(tab.id) : null}
+                        </ErrorBoundary>
                     </TabSceneContainer>
                 );
             })}
