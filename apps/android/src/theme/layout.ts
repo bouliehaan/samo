@@ -1,4 +1,5 @@
 import { Dimensions, Platform, StatusBar } from 'react-native';
+import { initialWindowMetrics } from 'react-native-safe-area-context';
 
 import { type HomeDisplaySection } from '../types/home';
 import { spacing } from './tokens';
@@ -7,21 +8,67 @@ export const SCREEN_HEIGHT = Dimensions.get('window').height;
 export const SCREEN_WIDTH = Dimensions.get('window').width;
 
 /**
- * REAL Android status-bar height. The old hardcoded 24 was only ever right on
- * older/smaller devices — modern phones report 28–40+dp (punch-hole cameras),
- * so every screen's header sat partially UNDER the status bar and the Home
- * glass pane looked "cut off". StatusBar.currentHeight is stable for the
- * process lifetime, so a module constant is safe.
+ * REAL Android status-bar height, from the native window insets
+ * (react-native-safe-area-context's startup constant — no provider needed,
+ * and the app is portrait-locked so it never changes mid-process). RN's
+ * StatusBar.currentHeight reads the legacy status_bar_height resource, which
+ * mis-reports on display-cutout devices — that lie is what forced the old
+ * "+28dp of insurance" page tops (the giant foreheads). It remains ONLY as
+ * the fallback for a stale binary that predates the native module
+ * (initialWindowMetrics is null there, and JS-only re-syncs keep working).
  */
+const NATIVE_WINDOW_TOP_INSET = initialWindowMetrics?.insets.top ?? 0;
 export const STATUS_BAR_INSET =
-    Platform.OS === 'android' ? (StatusBar.currentHeight ?? 24) : 0;
+    Platform.OS === 'android'
+        ? NATIVE_WINDOW_TOP_INSET > 0
+            ? Math.round(NATIVE_WINDOW_TOP_INSET)
+            : (StatusBar.currentHeight ?? 24)
+        : 0;
+
+/**
+ * THE top clearance for every page's first row: the real status bar + one
+ * tight, uniform breathing gap (Spotify-tier). All five tabs, the search
+ * overlay, view-all and utility headers share this single token — never add
+ * per-page "optical" fudge on top of it; that's how the foreheads happened.
+ */
+export const PAGE_TOP_INSET = STATUS_BAR_INSET + 8;
+
+/** Home scene + search overlay top — SAME value as every other page top.
+ *  Kept as its own name because these two surfaces MUST stay equal to each
+ *  other (the overlay's field lands exactly on the drawer's field row), and
+ *  the shared token spells that contract out. */
+export const HOME_SCENE_TOP_INSET = PAGE_TOP_INSET;
+
+/**
+ * Search field geometry, shared by the floating pull-down surface
+ * (SearchPullSurface) and the full-search overlay so both land the field on the
+ * identical row — opening search reads as the pulled bar coming alive. The
+ * pull's own thresholds and springs live in components/search-pull.
+ */
+export const HOME_SEARCH_FIELD_HEIGHT = 52;
+export const HOME_SEARCH_DRAWER_PADDING = 10;
+/**
+ * The gap between the open drawer's bottom lip and the filter pills — and,
+ * once the drawer is parked, the strip of page that sits under the status bar.
+ *
+ * It is BOTH because the drawer rides the scroll: whatever separates the field
+ * from the pills when open is what the pills are offset by at rest. That is
+ * why the previous drawer had a ~56dp void under its field — this spacer was a
+ * whole HOME_SCENE_TOP_INSET, because the row had to be geometrically
+ * off-screen at rest and the pills still had to clear the clock. The reveal
+ * animation lifts that requirement (see HOME_SEARCH_DRAWER_HIDE_TRANSLATE), so
+ * the gap can now just be a gap.
+ */
+export const HOME_SEARCH_DRAWER_REST_GAP = 12;
 
 export const PLAYER_SAFE_TOP = STATUS_BAR_INSET;
 
-/** Tab bar chrome — keep in sync with `styles.tabBar`. */
-export const TAB_BAR_PADDING_TOP = 8;
-export const TAB_BAR_PADDING_BOTTOM = 16;
-export const TAB_BAR_BUTTON_MIN_HEIGHT = 62;
+/** Tab bar chrome — keep in sync with `styles.tabBar`. Icon-only: the
+ *  buttons are shorter than the labeled era, with the reclaimed height spent
+ *  on even breathing room around the (scaled-up) glyphs. */
+export const TAB_BAR_PADDING_TOP = 14;
+export const TAB_BAR_PADDING_BOTTOM = 20;
+export const TAB_BAR_BUTTON_MIN_HEIGHT = 44;
 export const TAB_BAR_HEIGHT =
     TAB_BAR_PADDING_TOP + TAB_BAR_BUTTON_MIN_HEIGHT + TAB_BAR_PADDING_BOTTOM;
 
@@ -46,20 +93,14 @@ export const SCROLL_CONTENT_BOTTOM_INSET_COLLAPSED = TAB_BAR_HEIGHT + spacing.sm
 /** Slightly rounder than flat; echoes display bottom corners without a pill shape. */
 export const MINI_PLAYER_RADIUS = 34;
 
-/**
- * The floating Home top bar (big serif title + settings button) — the dock's
- * glass mirrored to the top edge. Height budget mirrors the header row's
- * real metrics: 18 above the 64px title line, plus breathing room below so
- * the title never crowds the pane's bottom edge (the mini player lesson).
- */
-export const TOP_CHROME_PADDING_TOP = 18;
-export const TOP_CHROME_TITLE_HEIGHT = 64;
-export const TOP_CHROME_PADDING_BOTTOM = 10;
-export const TOP_CHROME_HEIGHT =
-    TOP_CHROME_PADDING_TOP + TOP_CHROME_TITLE_HEIGHT + TOP_CHROME_PADDING_BOTTOM;
-export const TOP_CHROME_RADIUS = 18;
-
-export const FULL_PLAYER_EXPANDED_TOP = -PLAYER_SAFE_TOP;
+// The app shell no longer pads for the status bar (screens self-clear with
+// STATUS_BAR_INSET), so the player shell's parent already starts at physical
+// y=0 and the expanded player docks at 0 — NOT -PLAYER_SAFE_TOP. The old
+// offset assumed a safeArea-padded shell; keeping it after that padding was
+// removed shifted the open player up one status-bar-height (header under the
+// clock) and left an inset-tall strip of the parked shell peeking at the
+// screen's bottom edge.
+export const FULL_PLAYER_EXPANDED_TOP = 0;
 export const FULL_PLAYER_PADDING_TOP = Platform.OS === 'android' ? 42 : 24;
 export const FULL_PLAYER_PADDING_BOTTOM = 28;
 // Match the absolute miniplayer (`bottom: MINI_PLAYER_BOTTOM`) so the
@@ -188,6 +229,14 @@ export const HOME_MEDIA_ROW_HEIGHT_ARTIST =
 export const HOME_MEDIA_ROW_HEIGHT_ROUNDED =
     HOME_PRIMARY_TILE - HOME_ROUNDED_OFFSET + HOME_MEDIA_TILE_CHROME;
 export const HOME_MEDIA_ROW_HEIGHT_WIDE = 136;
+/**
+ * The Explore drop's featured card. It is the only home shelf that is a single
+ * item, so it is not a carousel at all — it spans the full content width like
+ * a hero (`HomeExploreHero`), and this is its exact height.
+ */
+export const EXPLORE_HERO_PADDING = 14;
+export const EXPLORE_HERO_ARTWORK = 112;
+export const EXPLORE_HERO_HEIGHT = EXPLORE_HERO_ARTWORK + EXPLORE_HERO_PADDING * 2;
 export const HOME_ROW_INITIAL_ITEMS = 6;
 export const HOME_ROW_RENDER_BATCH = 6;
 export const HOME_ROW_WINDOW_SIZE = 5;
@@ -205,8 +254,11 @@ export const getHomeRowItemLength = (variant: HomeDisplaySection['variant']): nu
         case 'podcast-feed':
         case 'radio':
             return HOME_PRIMARY_TILE - HOME_ROUNDED_OFFSET + HOME_TILE_GAP;
-        case 'continue':
+        // The Explore hero spans the page, so its "stride" is the whole
+        // content width — nothing ever scrolls beside it.
         case 'explo':
+            return SCREEN_WIDTH - HOME_EDGE_PADDING * 2;
+        case 'continue':
         case 'wide':
             return 320 + HOME_TILE_GAP;
         case 'album':
@@ -239,8 +291,10 @@ export const getHomeSectionRowHeight = (
         case 'podcast-feed':
             singleHeight = HOME_MEDIA_ROW_HEIGHT_ROUNDED + HOME_MEDIA_PROGRESS_CHROME;
             break;
-        case 'continue':
         case 'explo':
+            singleHeight = EXPLORE_HERO_HEIGHT;
+            break;
+        case 'continue':
         case 'wide':
             singleHeight = HOME_MEDIA_ROW_HEIGHT_WIDE;
             break;
@@ -253,6 +307,12 @@ export const getHomeSectionRowHeight = (
 
     return rowCount > 1 ? singleHeight * 2 + spacing.xs : singleHeight;
 };
+
+/** Two-up "Browse" cards in the search overlay — same arithmetic as the home
+ *  tiles so both grids sit on the identical column edges. */
+export const SEARCH_BROWSE_CARD_WIDTH = Math.floor(
+    (SCREEN_WIDTH - HOME_EDGE_PADDING * 2 - spacing.sm) / 2,
+);
 
 export const VIEW_ALL_SIDEBAR_GUTTER = 30;
 export const VIEW_ALL_TILE_SIZE = Math.floor(

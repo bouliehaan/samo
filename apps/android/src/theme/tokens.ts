@@ -3,44 +3,77 @@
  *
  * Premium-dark system: a considered near-black BASE with a ladder of elevated
  * surfaces stacked above it, so the UI reads as physical layers instead of a
- * flat OLED void. The luxe gold accent is the identity — "you got your hands on
- * something genuinely nice, no subscription required" — used sparingly as a
- * hallmark, never as wallpaper.
+ * flat OLED void. The accent is cool monochrome — brushed-steel silver with a
+ * faint blue cast — used sparingly as a hallmark, never as wallpaper.
  */
 export const colors = {
-    // Creamy worn-gold accent — the soul of the product. Aged ivory with a
-    // touch of gold (think well-worn piano keys), not a brassy rapper chain.
-    // Classy-expensive, used sparingly as a hallmark.
-    accent: '#d4c08a',
-    /** Lighter creamy gold for hero / active states. */
-    accentBright: '#ecdcb2',
-    /** Faint gold wash for tinted fills. */
-    accentSoft: 'rgba(212, 192, 138, 0.13)',
-    /** Gold hairline / outline. */
-    accentLine: 'rgba(212, 192, 138, 0.4)',
+    // Cool silver accent — moonlit brushed aluminum, not warm gold. A step
+    // deeper than white so it reads as a TONE, not a blown highlight;
+    // classy-expensive, used sparingly as a hallmark.
+    accent: '#c6d0dd',
+    /** Brighter ice-silver for hero / active states. */
+    accentBright: '#e9eef5',
+    /** Faint silver wash for tinted fills. */
+    accentSoft: 'rgba(198, 208, 221, 0.12)',
+    /** Silver hairline / outline. */
+    accentLine: 'rgba(198, 208, 221, 0.36)',
 
-    // Elevation ladder (darkest → lightest). Each step is a physical surface.
-    /** App base — super-dark neutral grey, not pure black. */
-    background: '#0f0f12',
+    // Elevation ladder (darkest → lightest), each step a physical surface.
+    // The whole ladder carries a faint cool blue-grey cast — monochrome with
+    // GREY in it, not flat black-and-white — so depth reads as atmosphere.
+    /** App base — super-dark cool grey, not pure black. */
+    background: '#0e0f13',
     /** Subtle raise (sticky headers, scrims). */
-    backgroundElevated: '#16161a',
+    backgroundElevated: '#15171c',
     /** Cards, list rows, tiles. */
-    panel: '#1a1a1f',
+    panel: '#191b21',
     /** Raised chrome — sheets, the player/tab blob, segmented controls. */
-    surface: '#242429',
+    surface: '#23262e',
     /** Highest — popovers, menus, active chips. */
-    surfaceHigh: '#2e2e35',
+    surfaceHigh: '#2d3039',
 
     // Hairlines.
     border: 'rgba(255, 255, 255, 0.07)',
     borderStrong: 'rgba(255, 255, 255, 0.12)',
 
-    // Ink.
-    text: '#f6f6f8',
-    muted: '#9a9aa3',
+    // Ink — cool-cast to match the ladder.
+    text: '#f4f6f9',
+    muted: '#98a1ad',
     /** Tertiary / disabled ink. */
-    faint: '#6c6c75',
+    faint: '#69707c',
 };
+
+/**
+ * Type families — the ONE place a typeface name is spelled out.
+ *
+ * Every `fontFamily:` in the app must reference this object, never a bare
+ * string: swapping a face has already cost two full 12-file literal sweeps
+ * (Young Serif → Space Grotesk → Bricolage Grotesque), and each sweep is a
+ * chance to miss a file and ship mixed type.
+ *
+ * The values are the REGISTERED family names — they must stay identical to the
+ * `useFonts` keys in App.tsx, which is why App.tsx builds that map from these
+ * tokens with computed keys rather than repeating the strings.
+ */
+export const fonts = {
+    /** Display / headings — Bricolage Grotesque, the brand voice. */
+    heading: 'BricolageGrotesque-Bold',
+    /** Lighter display weight for secondary headings. */
+    headingMedium: 'BricolageGrotesque-Medium',
+    /** Body copy — the app-wide Text/TextInput default. */
+    body: 'Archivo',
+    /** Monospace — labels, metadata, timecodes, pills. */
+    mono: 'OfficeCodePro-Regular',
+    /** Monospace, bold. */
+    monoBold: 'OfficeCodePro-Bold',
+    /**
+     * Monospace, medium. NOTE: this face is NOT registered in App.tsx's
+     * useFonts (no officecodepro-medium asset ships), so the one style using
+     * it falls back to the system face. Kept as a token to preserve the
+     * existing rendering exactly; drop it or add the asset deliberately.
+     */
+    monoMedium: 'OfficeCodePro-Medium',
+} as const;
 
 export const spacing = {
     xs: 8,
@@ -81,10 +114,10 @@ export const elevation = {
     },
 };
 
-/** Gradients for hero moments (gold hallmark, artwork scrims). */
+/** Gradients for hero moments (silver hallmark, artwork scrims). */
 export const gradients = {
-    gold: ['#ecdcb2', '#d4c08a', '#a8946a'] as const,
-    goldSheen: ['#f3e8c8', '#d4c08a'] as const,
+    gold: ['#eef2f7', '#cfd8e3', '#98a3b1'] as const,
+    goldSheen: ['#f6f9fc', '#cfd8e3'] as const,
     artworkScrim: ['rgba(0,0,0,0)', 'rgba(0,0,0,0.55)', 'rgba(0,0,0,0.85)'] as const,
 };
 
