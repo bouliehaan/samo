@@ -9,6 +9,7 @@ import Reanimated, {
     withSpring,
 } from 'react-native-reanimated';
 
+import { useScrollEdgeHaptics } from '../../hooks/use-scroll-edge-haptics';
 import { triggerImpact } from '../../services/haptics';
 import { beginImeControl, finishImeControl, setImeFraction } from '../../services/ime-control';
 import { subscribeTabReselected } from '../../state/tab-reselect';
@@ -47,7 +48,8 @@ type DrawerScrollable = {
  * 1. The scroll's own native gesture is made explicit as `nativeGesture` and
  *    attached to the actual scroll view — via `renderScrollComponent` on a
  *    FlashList, or an inner `<GestureDetector>` on a plain ScrollView — and the
- *    pan declares `.simultaneousWithExternalGesture(nativeGesture)`.
+ *    pan declares `.blocksExternalGesture(nativeGesture)`, so a pull the finger
+ *    is driving does not also scroll the page underneath it.
  *
  * 2. The pan uses `.manualActivation(true)` and explicitly FAILS itself whenever
  *    the pull is not wanted (not at the top, heading upward, mostly sideways).
@@ -125,11 +127,22 @@ export const useSearchPull = (tabId: SamoMobileTabId) => {
         scrollable?.scrollTo?.({ animated: true, y: 0 });
     }, []);
 
-    const scrollHandler = useAnimatedScrollHandler({
-        onScroll: (event) => {
-            scrollY.value = event.contentOffset.y;
+    const reportScrollEdge = useScrollEdgeHaptics();
+    const scrollHandler = useAnimatedScrollHandler(
+        {
+            onScroll: (event) => {
+                scrollY.value = event.contentOffset.y;
+                // Every tab's scroll runs through here, so the top/bottom detent
+                // is wired once for all of them rather than per page.
+                reportScrollEdge(
+                    event.contentOffset.y,
+                    event.contentSize.height,
+                    event.layoutMeasurement.height,
+                );
+            },
         },
-    });
+        [reportScrollEdge],
+    );
 
     const gesture = useMemo(() => {
         const openSpring = reducedMotion ? REDUCED_MOTION_SPRING : SEARCH_PULL_OPEN_SPRING;
@@ -137,15 +150,35 @@ export const useSearchPull = (tabId: SamoMobileTabId) => {
 
         return (
             Gesture.Pan()
-                .simultaneousWithExternalGesture(nativeGesture)
+                /*
+                 * BLOCKS, not simultaneous-with.
+                 *
+                 * Simultaneity is what let the page keep scrolling underneath a
+                 * pull the finger was already driving: both gestures ran, so one
+                 * drag moved the search surface AND the list at the same time.
+                 * The surface came down over a page that was sliding away under
+                 * it — two responses to one finger.
+                 *
+                 * Blocking makes the scroller wait for this pan to FAIL before it
+                 * may activate. That is only affordable because of the manual
+                 * activation below: the pan resolves on the first move event —
+                 * fail (not at the top, heading up, mostly sideways) or activate
+                 * — so an ordinary scroll waits a single frame for an answer
+                 * rather than being gated behind a whole gesture.
+                 *
+                 * The pairing matters. Blocking with `.activeOffsetY()` instead
+                 * would be the old app-wide "scrolls up but not down" bug with
+                 * the volume turned up, because that pan never fails at all.
+                 */
+                .blocksExternalGesture(nativeGesture)
                 /*
                  * MANUAL ACTIVATION IS LOAD-BEARING. Do not go back to
                  * `.activeOffsetY()`.
                  *
                  * `activeOffsetY(+n)` activates the pan on ANY downward drag, at
-                 * any scroll position. An activated pan owns the touch — and
-                 * `simultaneousWithExternalGesture` did NOT keep the list
-                 * scrolling underneath it. The result was a list that scrolled up
+                 * any scroll position. An activated pan owns the touch, and
+                 * declaring simultaneity did NOT keep the list scrolling
+                 * underneath it. The result was a list that scrolled up
                  * but not down: every downward drag went into a pan that had
                  * already decided (correctly) not to reveal anything, and was then
                  * swallowed. Upward drags never activated the pan, so those still
