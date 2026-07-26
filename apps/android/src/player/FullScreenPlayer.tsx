@@ -1,56 +1,15 @@
 import { buildAudioQualityBadgeItems } from '@samo/core/audio-quality';
-import {
-    getMobileContentSource,
-    getPlaybackQualityProfile,
-    parsePodcastPlaybackShowId,
-    MobileHomeItemType,
-    MobileSearchItemType,
-    type MobileHomeItem,
-    type MobilePlayableAudio,
-    type MobilePlaybackSegment,
-    type MobileSearchItem,
-    LONG_FORM_RELATIVE_SKIP_SECONDS,
-} from '@samo/core/mobile';
-import {
-    ensureSamoStreamToken,
-    findServerAuthenticationForSource,
-    type ServerAuthenticationResult,
-} from '@samo/core/server';
-import { FlashList } from '@shopify/flash-list';
-import { Image as ExpoImage } from 'expo-image';
-import { StatusBar } from 'expo-status-bar';
-import ditherTexture from '../../assets/dither.png';
-import {
-    type ComponentProps,
-    memo,
-    useCallback,
-    useEffect,
-    useMemo,
-    useRef,
-    useState,
-} from 'react';
-import {
-    ActivityIndicator,
-    type GestureResponderEvent,
-    Image,
-    Modal,
-    type NativeScrollEvent,
-    type NativeSyntheticEvent,
-    Pressable,
-    ScrollView,
-    StyleSheet,
-    Text,
-    View,
-} from 'react-native';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import LinearGradient from 'react-native-linear-gradient';
+import { type MobilePlayableAudio, type MobileHomeItem, LONG_FORM_RELATIVE_SKIP_SECONDS } from '@samo/core/mobile';
+import { type ServerAuthenticationResult } from '@samo/core/server';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, Animated, Pressable, Text, View } from 'react-native';
+import { GestureDetector } from 'react-native-gesture-handler';
 import Reanimated, {
     interpolate,
     runOnJS,
     type SharedValue,
     useAnimatedReaction,
     useAnimatedStyle,
-    useSharedValue,
     withSpring,
     withTiming,
 } from 'react-native-reanimated';
@@ -59,112 +18,130 @@ import { ArtworkImage } from '../components/ArtworkImage';
 import { ArtworkZoomModal } from '../components/ArtworkZoomModal';
 import {
     CastGlyph,
-    ChaptersGlyph,
-    CheckGlyph,
     DownCaretGlyph,
     EllipsisVerticalGlyph,
-    MoreGlyph,
     PlayPauseGlyph,
     RepeatGlyph,
     ShuffleGlyph,
     SleepTimerGlyph,
     TrackSkipGlyph,
 } from '../components/Glyphs';
-import { QualityBadge, QualityBadgeRow } from '../components/QualityBadge';
+import { QualityBadgeRow } from '../components/QualityBadge';
 import { SegmentedSeekBar } from '../components/SegmentedSeekBar';
-import { SwipeDismissSheet } from '../components/SwipeDismissSheet';
 import { useMediaContextMenu } from '../contexts/media-context-menu';
+import { type AndroidCastState } from '../services/audio-playback';
 import {
-    type AndroidCastState,
-    type AndroidMediaOutputRoute,
-    type AndroidMediaOutputState,
-    cancelAndroidSleepTimer,
-    getAndroidOutputRoutes,
-    isAndroidNativePlaybackAvailable,
-    selectAndroidOutputRoute,
-    setAndroidSleepTimer,
-    subscribeToAndroidOutputRouteEvents,
-    updateAndroidNowPlayingMetadata,
-} from '../services/audio-playback';
-import { getContentSourceFromPlaybackItem } from '../utils/content-source';
-import { getPersistedServerAuthKey } from '../services/persisted-server';
-import { useServerConnections } from '../contexts/server-connections';
+    loadArtistHomeItemById,
+    loadArtistHomeItemByName,
+} from '../services/catalog/catalog-reads';
 import { getPlayerPositionMsForAbsProgress } from '../utils/abs-progress-math';
-import {
-    artworkSourceUri,
-    isSamoMediaUrlMissingStreamToken,
-    resolvePlaybackArtworkSourceForDisplay,
-} from '../utils/samo-artwork-url';
-import {
-    getAndroidPlaybackState,
-    subscribeAndroidPlaybackState,
-    useAndroidPlaybackState,
-    useMiniPlayerPlaybackState,
-} from '../state/playback-store';
 import { type AndroidPlaybackState } from '../types/playback';
 import {
-    findActiveChapterIndex,
-    formatChapterRange,
     formatPlaybackTime,
-    getActivePlaybackStatus,
     getDurationLabel,
     getPlayableDisplayMetadata,
     getPlaybackDisplayMetadata,
     getPlaybackDurationMs,
     getDisplayPositionMs,
-    getStablePlaybackPositionMs,
     isLivePlayback,
 } from '../utils/playback-time';
-import {
-    FROSTED_BACKDROP_STOPS,
-    FROSTED_GLASS_DEPTH,
-    FROSTED_GLASS_DEPTH_LOCATIONS,
-    FROSTED_GLASS_SHEEN,
-    FROSTED_GLASS_SHEEN_LOCATIONS,
-} from '../utils/color';
-import { clamp } from '../utils/math';
-import { logSeekGesture, SEEK_GESTURE_DEBUG } from '../utils/seek-debug';
-import { formatQualityProfile } from '../services/quality-badge-assets';
 import { triggerImpact } from '../services/haptics';
 import {
-    DISMISS_DISTANCE,
-    DISMISS_VELOCITY,
-    FULL_PLAYER_PADDING_TOP,
     FULL_PLAYER_PLAY_GLYPH_SIZE,
     OPEN_SPRING,
-    PLAYER_EXPANSION_DISTANCE,
-    QUEUE_CLOSE_DISTANCE,
-    QUEUE_CLOSE_VELOCITY,
-    QUEUE_SHEET_HEIGHT,
     REDUCED_MOTION_SPRING,
     SCREEN_HEIGHT,
-    SCREEN_WIDTH,
 } from '../theme/layout';
 import { styles } from '../theme/styles';
 import { colors } from '../theme/tokens';
+import { usePlaybackBusy } from '../hooks/use-playback-busy';
+import { peekArtworkLocalUri } from '../services/artwork-cache';
+import { resolveSamoItemArtworkSourceForDisplay } from '../utils/samo-artwork-url';
+import { FrostedBackdrop } from './FrostedBackdrop';
+import { buildPlaybackContextItem } from './playback-context-item';
 import { PlayerIconButton } from './PlayerIconButton';
 import {
     PLAYER_CLOSE_SPRING,
     PLAYER_OPEN_SPRING,
     shellTopRadius,
 } from './player-motion';
+import { QueueSheetOverlay } from './QueueSheetOverlay';
+import { SleepTimerSheet } from './SleepTimerSheet';
+import { usePlayerShellGestures } from './use-player-shell-gestures';
+import { useSleepTimer } from './use-sleep-timer';
 
-const ReanimatedFlashList = Reanimated.createAnimatedComponent(FlashList) as typeof FlashList;
-const FLASH_LIST_MAINTAIN_POSITION_DISABLED = { disabled: true };
-const CAST_ICON_ACTIVE_TINT = 'rgba(202, 160, 79, 0.78)';
+const CAST_ICON_ACTIVE_TINT = 'rgba(207, 216, 227, 0.85)';
 const CAST_ICON_INACTIVE_TINT = 'rgba(245, 245, 245, 0.72)';
 
-import { QueueSheetOverlay, type QueueSheetListItem, QUEUE_SHEET_ROW_HEIGHT, QUEUE_SHEET_DRAW_DISTANCE } from './QueueSheetOverlay';
-import { usePlaybackBusy } from '../hooks/use-playback-busy';
-const SLEEP_OPTIONS: { label: string; seconds: number; wide?: boolean }[] = [
-    { label: '15m', seconds: 15 * 60 },
-    { label: '30m', seconds: 30 * 60 },
-    { label: '45m', seconds: 45 * 60 },
-    { label: '1h', seconds: 60 * 60 },
-    { label: '1h 30m', seconds: 90 * 60 },
-    { label: '2h', seconds: 120 * 60 },
-    { label: 'End of track', seconds: -1, wide: true },
-];
+/** Marquee (ticker) for single-line player text (title + subtitle lines) that
+ *  may overflow the player width; static when the text fits. */
+const PlayerMarqueeText = memo(({
+    children,
+    style,
+}: {
+    children: string;
+    style?: object | object[];
+}) => {
+    const translateX = useRef(new Animated.Value(0)).current;
+    const containerWidth = useRef(0);
+    const textWidth = useRef(0);
+    const animRef = useRef<Animated.CompositeAnimation | null>(null);
+
+    const startScroll = useCallback(() => {
+        const overflow = textWidth.current - containerWidth.current;
+        if (overflow <= 0) {
+            return;
+        }
+        animRef.current?.stop();
+        translateX.setValue(0);
+        animRef.current = Animated.loop(
+            Animated.sequence([
+                Animated.delay(1200),
+                Animated.timing(translateX, {
+                    duration: Math.max(3000, overflow * 20),
+                    toValue: -overflow,
+                    useNativeDriver: true,
+                }),
+                Animated.delay(1000),
+                Animated.timing(translateX, {
+                    duration: 300,
+                    toValue: 0,
+                    useNativeDriver: true,
+                }),
+            ]),
+        );
+        animRef.current.start();
+    }, [translateX]);
+
+    useEffect(() => {
+        return () => {
+            animRef.current?.stop();
+        };
+    }, []);
+
+    return (
+        <View
+            onLayout={(e) => {
+                containerWidth.current = e.nativeEvent.layout.width;
+                startScroll();
+            }}
+            style={styles.fullPlayerMarqueeContainer}
+        >
+            <Animated.Text
+                numberOfLines={1}
+                onLayout={(e) => {
+                    textWidth.current = e.nativeEvent.layout.width;
+                    startScroll();
+                }}
+                style={[style, { transform: [{ translateX }] }]}
+            >
+                {children}
+            </Animated.Text>
+        </View>
+    );
+});
+
+PlayerMarqueeText.displayName = 'PlayerMarqueeText';
 
 export const FullScreenPlayer = memo(({
     artworkImageId,
@@ -175,6 +152,7 @@ export const FullScreenPlayer = memo(({
     lastPlayedItem,
     onClose,
     onCycleRepeatMode,
+    onGoToArtist,
     onNext,
     onOpenOutputPicker,
     onPlayQueueIndex,
@@ -202,6 +180,10 @@ export const FullScreenPlayer = memo(({
     lastPlayedItem: MobilePlayableAudio | null;
     onClose: () => void;
     onCycleRepeatMode: () => void;
+    /** Called when the user taps the artist avatar — closes player + navigates
+     *  to artist page. `resolvedArtistId` carries the mirror-resolved id when
+     *  the playable itself has none (name-fallback lookups). */
+    onGoToArtist?: (item: MobilePlayableAudio, resolvedArtistId?: string) => void;
     onNext: () => void;
     onOpenOutputPicker: () => void;
     onPlayQueueIndex?: (index: number) => void;
@@ -223,64 +205,73 @@ export const FullScreenPlayer = memo(({
     // Collapsed shell is invisible but was still above the tab bar (zIndex 10000).
     // Gate hits so the navbar stays tappable at rest; enable once expansion starts.
     const [isShellInteractive, setIsShellInteractive] = useState(false);
-    const [sleepSecondsLeft, setSleepSecondsLeft] = useState<null | number>(null);
-    // Queue sheet position: 0 = hidden below the screen, 1 = fully expanded.
-    // Driven by the same vertical-drag gesture that handles player dismiss,
-    // mode-switched per drag based on direction and current state.
-    const queueProgress = useSharedValue(0);
-    const dragMode = useSharedValue<'player' | 'queue'>('player');
-    const dragStartQueue = useSharedValue(0);
     const contextMenu = useMediaContextMenu();
-    const sleepTimerRef = useRef<NodeJS.Timeout | null>(null);
-    const sleepTickRef = useRef<NodeJS.Timeout | null>(null);
+    const sleepTimer = useSleepTimer(onTogglePlayback);
     const activeItem = playbackState.status !== 'idle' ? playbackState.item : null;
     const displayItem: MobilePlayableAudio | null = activeItem ?? lastPlayedItem;
-    const isResting = !activeItem && Boolean(displayItem);
     const canSkipPlayback = Boolean(displayItem && displayItem.source !== 'radio');
 
-    const startSleepTimer = useCallback((seconds: number) => {
-        if (sleepTimerRef.current) clearTimeout(sleepTimerRef.current);
-        if (sleepTickRef.current) clearInterval(sleepTickRef.current);
-        if (seconds === -1) {
-            void cancelAndroidSleepTimer().catch(() => undefined);
-            setSleepSecondsLeft(-1);
-            return;
+    // Collapsed quality pill toggle state — flip between quality-spec and bitrate/path view.
+    const [qualityPillFlipped, setQualityPillFlipped] = useState(false);
+
+    // Artist avatar — loaded from the local catalog mirror by artistId.
+    const [artistItem, setArtistItem] = useState<MobileHomeItem | null>(null);
+    const artistFetchRef = useRef<string | null>(null);
+
+    // The URI the backdrop extracts its tint from — resolved the same way
+    // ArtworkImage resolves the cover (imageId → tokened URL), then swapped
+    // for the prefetched LOCAL file when the cache has it, so extraction is
+    // instant, offline-safe, and never trips a 401.
+    const paletteArtworkUrl = useMemo(() => {
+        const resolved = resolveSamoItemArtworkSourceForDisplay(
+            { artworkImageId, artworkUrl, source: contentSource },
+            serverConnection,
+        );
+        const remoteUri = (typeof resolved === 'string' ? resolved : resolved?.uri) ?? artworkUrl;
+        if (!remoteUri) {
+            return undefined;
         }
-        setSleepSecondsLeft(seconds);
-        void setAndroidSleepTimer(seconds).catch(() => undefined);
-        sleepTimerRef.current = setTimeout(() => {
-            // Stop the 1Hz countdown ticker the moment the timer fires — without
-            // this it keeps running as a no-op interval until the player unmounts
-            // or the timer is cancelled.
-            if (sleepTickRef.current) {
-                clearInterval(sleepTickRef.current);
-                sleepTickRef.current = null;
-            }
-            onTogglePlayback();
-            setSleepSecondsLeft(null);
-        }, seconds * 1000);
-        sleepTickRef.current = setInterval(() => {
-            setSleepSecondsLeft((s) => (s !== null && s > 0 ? s - 1 : null));
-        }, 1000);
-    }, [onTogglePlayback]);
+        return peekArtworkLocalUri(remoteUri) ?? remoteUri;
+    }, [artworkImageId, artworkUrl, contentSource, serverConnection]);
 
-    const cancelSleepTimer = useCallback(() => {
-        if (sleepTimerRef.current) clearTimeout(sleepTimerRef.current);
-        if (sleepTickRef.current) clearInterval(sleepTickRef.current);
-        void cancelAndroidSleepTimer().catch(() => undefined);
-        setSleepSecondsLeft(null);
-    }, []);
-
-    useEffect(() => {
-        return () => {
-            if (sleepTimerRef.current) clearTimeout(sleepTimerRef.current);
-            if (sleepTickRef.current) clearInterval(sleepTickRef.current);
-            void cancelAndroidSleepTimer().catch(() => undefined);
-        };
-    }, []);
     useEffect(() => {
         setIsArtworkZoomOpen(false);
+        // Reset pill state on track change.
+        setQualityPillFlipped(false);
     }, [artworkUrl]);
+
+    // Fetch artist info from the local catalog mirror whenever the playing
+    // track changes. Prefers the track's artistId; items without one (queues
+    // restored from the native persisted queue, pre-fix mirror rows) fall back
+    // to a name lookup. Null on miss — the header shows the down-caret.
+    useEffect(() => {
+        const artistId = displayItem?.artistId;
+        const artistName = displayItem?.artist;
+        const sourceId = displayItem?.contentSourceId;
+        if (!sourceId || (!artistId && !artistName) || displayItem?.source !== 'music') {
+            setArtistItem(null);
+            return;
+        }
+        const fetchKey = `${sourceId}:${artistId ?? `name:${artistName}`}`;
+        if (artistFetchRef.current === fetchKey) return;
+        artistFetchRef.current = fetchKey;
+        const lookup = artistId
+            ? loadArtistHomeItemById(sourceId, artistId).then(
+                  (item) => item ?? (artistName ? loadArtistHomeItemByName(sourceId, artistName) : null),
+              )
+            : loadArtistHomeItemByName(sourceId, artistName!);
+        void lookup.then((item) => {
+            // Guard against stale responses if the track changed during the await.
+            if (artistFetchRef.current === fetchKey) {
+                setArtistItem(item);
+            }
+        });
+    }, [
+        displayItem?.artist,
+        displayItem?.artistId,
+        displayItem?.contentSourceId,
+        displayItem?.source,
+    ]);
 
     const openSpring = reducedMotion ? REDUCED_MOTION_SPRING : PLAYER_OPEN_SPRING;
     const closeSpring = reducedMotion ? REDUCED_MOTION_SPRING : PLAYER_CLOSE_SPRING;
@@ -304,263 +295,31 @@ export const FullScreenPlayer = memo(({
         if (!item) {
             return;
         }
-
-        // contentSourceId is set on newly-built playback objects, but a track
-        // persisted as lastPlayedItem before this build won't have it — so
-        // also fall back to extracting the prefix from the well-known playback
-        // id format `<authType>:<authUrl>:<source>:<innerId>[:<episodeId>]`.
-        const idPrefixMatch = item.id.match(
-            /^([^:]+:[^:]+):(?:music|audiobook|podcast(?:-episode)?|radio):/,
-        );
-        const sourceId = item.contentSourceId ?? idPrefixMatch?.[1];
-        const auth = sourceId && serverConnection && getPersistedServerAuthKey(serverConnection) === sourceId ? serverConnection : undefined;
-        const contentSource = auth ? getMobileContentSource(auth) : undefined;
-        // Playback ids look like `<authType>:<authUrl>:<source>:<innerId>[:<episodeId>]`.
-        // Strip the prefix so menu actions like "Go to Album" hit real underlying ids.
-        const idMatch = item.id.match(/:(?:music|audiobook|podcast(?:-episode)?|radio):(.+)$/);
-        const innerId = idMatch ? idMatch[1] : item.id;
-
-        if (item.source === 'music') {
-            const songItem: MobileSearchItem = {
-                album: item.album,
-                albumId: item.albumId,
-                artist: item.artist,
-                artistId: item.artistId,
-                artworkImageId: item.artworkImageId,
-                artworkUrl: item.artworkUrl,
-                id: innerId,
-                playback: item,
-                source: contentSource,
-                subtitle: item.subtitle,
-                title: item.title,
-                type: MobileSearchItemType.SONG,
-            };
-            contextMenu.openForItem(songItem, { suppressQueueAction: true });
-            return;
-        }
-
-        if (item.source === 'radio') {
-            const radioItem: MobileHomeItem = {
-                artworkUrl: item.artworkUrl,
-                id: innerId,
-                playback: item,
-                source: contentSource,
-                subtitle: item.subtitle,
-                title: item.title,
-                type: MobileHomeItemType.RADIO,
-            };
-            contextMenu.openForItem(radioItem, { suppressQueueAction: true });
-            return;
-        }
-
-        if (item.source === 'audiobook' || item.source === 'podcast') {
-            const ownerId =
-                parsePodcastPlaybackShowId(item.id) ??
-                (item.source === 'podcast' ? innerId.split(':')[0] : innerId);
-            const homeItem: MobileHomeItem = {
-                artworkUrl: item.artworkUrl,
-                id: ownerId,
-                source: contentSource,
-                subtitle: item.subtitle,
-                title: item.title,
-                type:
-                    item.source === 'audiobook'
-                        ? MobileHomeItemType.AUDIOBOOK
-                        : MobileHomeItemType.PODCAST,
-            };
-            contextMenu.openForItem(homeItem, { suppressQueueAction: true });
+        const menuItem = buildPlaybackContextItem(item, serverConnection);
+        if (menuItem) {
+            contextMenu.openForItem(menuItem, { suppressQueueAction: true });
         }
     }, [contextMenu, lastPlayedItem, playbackState, serverConnection]);
 
-    // One vertical pan on the shell: drag up from the dock opens the panel;
-    // drag down dismisses; upward while open can raise the queue sheet.
-    const dragGesture = useMemo(
-        () =>
-            Gesture.Pan()
-                .activeOffsetY([-8, 10])
-                .failOffsetX([-28, 28])
-                .onStart(() => {
-                    'worklet';
-                    if (SEEK_GESTURE_DEBUG) {
-                        runOnJS(logSeekGesture)('player:drag:activate');
-                    }
-                    dragStartQueue.value = queueProgress.value;
-                    dragMode.value = queueProgress.value > 0 ? 'queue' : 'player';
-                })
-                .onChange((event) => {
-                    'worklet';
-                    // Only promote a player drag into a queue-raise while the
-                    // player is still fully docked. Once it has been pulled down
-                    // even slightly we're dismissing, so an upward wobble must
-                    // NOT hijack the gesture into queue mode — that path left
-                    // playerProgress stranded mid-screen (the "stuck halfway"
-                    // glitch) because the queue branch of onEnd never settled it.
-                    if (
-                        dragMode.value === 'player' &&
-                        event.translationY < -10 &&
-                        playerProgress.value > 0.98
-                    ) {
-                        dragMode.value = 'queue';
-                    }
-
-                    if (dragMode.value === 'queue') {
-                        const fraction =
-                            -event.translationY / QUEUE_SHEET_HEIGHT;
-                        const next = dragStartQueue.value + fraction;
-                        queueProgress.value = next > 1 ? 1 : next < 0 ? 0 : next;
-                        return;
-                    }
-
-                    const dragFraction = event.translationY / PLAYER_EXPANSION_DISTANCE;
-                    const next = 1 - dragFraction;
-                    playerProgress.value = next > 1 ? 1 : next < 0 ? 0 : next;
-                })
-                .onEnd((event) => {
-                    'worklet';
-                    if (dragMode.value === 'queue') {
-                        // Safety net: the player sits fully docked behind the
-                        // queue sheet, so guarantee it lands at 1 no matter how
-                        // the mode flipped during the drag.
-                        if (playerProgress.value < 1) {
-                            playerProgress.value = withSpring(1, settleSpring);
-                        }
-                        if (
-                            dragStartQueue.value > 0.8 &&
-                            (event.translationY > QUEUE_CLOSE_DISTANCE ||
-                                event.velocityY > QUEUE_CLOSE_VELOCITY)
-                        ) {
-                            queueProgress.value = withSpring(0, settleSpring);
-                            return;
-                        }
-
-                        // Snap open or closed based on position + velocity.
-                        const opening =
-                            queueProgress.value > 0.5 ||
-                            event.velocityY < -700;
-                        queueProgress.value = withSpring(
-                            opening ? 1 : 0,
-                            settleSpring,
-                        );
-                        return;
-                    }
-                    const shouldDismiss =
-                        event.translationY > DISMISS_DISTANCE ||
-                        (event.velocityY > DISMISS_VELOCITY &&
-                            event.translationY > 40);
-                    if (shouldDismiss) {
-                        const onFinish = (finished?: boolean) => {
-                            'worklet';
-                            if (finished) {
-                                runOnJS(onClose)();
-                            }
-                        };
-                        playerProgress.value = reducedMotion
-                            ? withTiming(0, { duration: 0 }, onFinish)
-                            : withSpring(
-                                  0,
-                                  {
-                                      ...closeSpring,
-                                      velocity:
-                                          -event.velocityY / PLAYER_EXPANSION_DISTANCE,
-                                  },
-                                  onFinish,
-                              );
-                        return;
-                    }
-                    playerProgress.value = withSpring(1, {
-                        ...openSpring,
-                        velocity: -event.velocityY / PLAYER_EXPANSION_DISTANCE,
-                    });
-                }),
-        [
-            closeSpring,
-            dragMode,
-            dragStartQueue,
-            onClose,
-            openSpring,
-            playerProgress,
-            queueProgress,
-            reducedMotion,
-            settleSpring,
-        ],
-    );
-
-    // Animated styles for the queue overlay. The sheet rises from the bottom
-    // of the screen; a separate dimming backdrop fades in alongside it so the
-    // player content underneath visibly recedes.
-    const queueBackdropStyle = useAnimatedStyle(() => ({
-        opacity: interpolate(queueProgress.value, [0, 1], [0, 0.55], 'clamp'),
-    }));
-    const queueSheetStyle = useAnimatedStyle(() => ({
-        transform: [
-            {
-                translateY: interpolate(
-                    queueProgress.value,
-                    [0, 1],
-                    [QUEUE_SHEET_HEIGHT, 0],
-                    'clamp',
-                ),
-            },
-        ],
-    }));
-
-    // Gate pointerEvents on the backdrop + sheet so the player below stays
-    // interactive when the queue is closed (an invisible Pressable at opacity 0
-    // would otherwise swallow taps).
-    const [isQueueInteractive, setIsQueueInteractive] = useState(false);
-    useAnimatedReaction(
-        () => queueProgress.value > 0.05,
-        (open, previous) => {
-            if (open !== previous) {
-                runOnJS(setIsQueueInteractive)(open);
-            }
-        },
-    );
-
-    const closeQueue = useCallback(() => {
-        queueProgress.value = withSpring(0, settleSpring);
-    }, [queueProgress, settleSpring]);
-
-    // Horizontal swipe-to-skip. Separated so it can fail cleanly when the gesture
-    // is clearly vertical — composing with Simultaneous lets the user
-    // start a swipe in either direction without one stealing the other.
-    const skipGesture = useMemo(
-        () =>
-            Gesture.Pan()
-                .enabled(canSkipPlayback)
-                .activeOffsetX([-30, 30])
-                .failOffsetY([-30, 30])
-                .onStart(() => {
-                    'worklet';
-                    if (SEEK_GESTURE_DEBUG) {
-                        runOnJS(logSeekGesture)('player:skip:activate');
-                    }
-                })
-                .onEnd((event) => {
-                    'worklet';
-                    if (event.translationX < -80 || event.velocityX < -700) {
-                        runOnJS(onNext)();
-                    } else if (event.translationX > 80 || event.velocityX > 700) {
-                        runOnJS(onPrevious)();
-                    }
-                }),
-        [canSkipPlayback, onNext, onPrevious],
-    );
-
-    const playerGesture = useMemo(
-        () => Gesture.Simultaneous(dragGesture, skipGesture),
-        [dragGesture, skipGesture],
-    );
-
-    // Handed to the seek bar so its tap/pan can `blocksExternalGesture` these
-    // shell pans — a touch that lands on the bar gives the seek gesture first
-    // claim instead of racing the dismiss/skip pans with no tiebreaker (the
-    // nested-GestureDetector conflict that made drags on the bar flaky after
-    // the PanResponder→RNGH migration).
-    const seekExternalGestures = useMemo(
-        () => [dragGesture, skipGesture],
-        [dragGesture, skipGesture],
-    );
+    const {
+        closeQueue,
+        isQueueInteractive,
+        playerGesture,
+        queueBackdropStyle,
+        queueProgress,
+        queueSheetStyle,
+        seekExternalGestures,
+    } = usePlayerShellGestures({
+        canSkipPlayback,
+        closeSpring,
+        onClose,
+        onNext,
+        onPrevious,
+        openSpring,
+        playerProgress,
+        reducedMotion,
+        settleSpring,
+    });
 
     // One solid card sliding up over the app. The shell is laid out once at full
     // size (styles.fullPlayer: top 0, height SCREEN_HEIGHT, opaque) and parked
@@ -631,6 +390,79 @@ export const FullScreenPlayer = memo(({
               mode: 'detail',
           })
         : [];
+
+    // Collapsed quality pill: derive the two views from qualityItems.
+    // items[0] = path (DIRECT/Transcoded), items[1] = format (FLAC/MP3),
+    // items[2..] = bit-depth, sample-rate, or bitrate.
+    // Plain derivation, NOT useMemo: it sits below the `!displayItem` early
+    // return (a rules-of-hooks violation), and qualityItems is a fresh array
+    // every render so memoizing on it could never hit anyway.
+    const collapsedPill = (() => {
+        if (qualityItems.length === 0) return null;
+        const pathItem = qualityItems[0];
+        const formatItem = qualityItems[1];
+        const bitrateItem = qualityItems[qualityItems.length - 1];
+
+        // HI-RES direct (bit-depth present, direct tone)
+        const isHiRes = qualityItems.some(
+            (q) => q.tone === 'direct' && q.label.includes('/'),
+        );
+
+        if (isHiRes) {
+            // Find the bd/sr spec item (e.g. "16/44.1")
+            const specItem = qualityItems.find(
+                (q) => q.tone === 'direct' && q.label.includes('/'),
+            );
+            const viewA = specItem ? `HI-RES\u00a0|\u00a0${specItem.label}` : 'HI-RES';
+            const viewB = `${bitrateItem?.label ?? ''}\u00a0|\u00a0${pathItem?.label ?? ''}`;
+            return {
+                canToggle: true,
+                labelA: viewA,
+                labelB: viewB,
+                tone: 'direct' as const,
+            };
+        }
+
+        // Lossless direct without explicit bit depth (e.g. FLAC)
+        const isLosslessDirect = pathItem?.tone === 'direct' || formatItem?.tone === 'direct';
+        if (isLosslessDirect && formatItem) {
+            const viewA = `LOSSLESS\u00a0|\u00a0${formatItem.label}`;
+            const viewB = bitrateItem && bitrateItem !== formatItem
+                ? `${bitrateItem.label}\u00a0|\u00a0${pathItem?.label ?? ''}`
+                : pathItem?.label ?? '';
+            return {
+                canToggle: bitrateItem !== formatItem,
+                labelA: viewA,
+                labelB: viewB,
+                tone: 'direct' as const,
+            };
+        }
+
+        // Transcoded
+        if (pathItem?.tone === 'transcoded') {
+            const viewA = formatItem
+                ? `${formatItem.label}\u00a0|\u00a0${bitrateItem?.label ?? ''}`
+                : bitrateItem?.label ?? 'TRANSCODED';
+            return {
+                canToggle: false,
+                labelA: viewA,
+                labelB: '',
+                tone: 'transcoded' as const,
+            };
+        }
+
+        // Lossy/unknown — show format + bitrate, no toggle
+        const viewA = formatItem && bitrateItem && bitrateItem !== formatItem
+            ? `${formatItem.label}\u00a0|\u00a0${bitrateItem.label}`
+            : (formatItem ?? bitrateItem)?.label ?? '';
+        return {
+            canToggle: false,
+            labelA: viewA,
+            labelB: '',
+            tone: 'neutral' as const,
+        };
+    })();
+
     const isLongFormSource =
         displayItem.source === 'audiobook' || displayItem.source === 'podcast';
     const showShuffleControl = !isLongFormSource && displayItem.source !== 'radio';
@@ -666,13 +498,13 @@ export const FullScreenPlayer = memo(({
             accessibilityLabel="Sleep Timer"
             accessibilityRole="button"
             onPress={() =>
-                sleepSecondsLeft !== null ? cancelSleepTimer() : setSleepMenuVisible(true)
+                sleepTimer.secondsLeft !== null ? sleepTimer.cancel() : setSleepMenuVisible(true)
             }
             style={styles.fullPlayerBottomBarButton}
         >
             <SleepTimerGlyph
-                active={sleepSecondsLeft !== null}
-                color={sleepSecondsLeft !== null ? colors.accent : colors.text}
+                active={sleepTimer.secondsLeft !== null}
+                color={sleepTimer.secondsLeft !== null ? colors.accent : colors.text}
             />
         </Pressable>
     );
@@ -710,62 +542,58 @@ export const FullScreenPlayer = memo(({
                 playerAnimatedStyle,
             ]}
         >
-            {/* Frosted-glass backdrop. Deliberately album-independent — one
-                consistent premium surface instead of a color that repaints per
-                track. A warm charcoal base wash is lifted by a soft diagonal
-                glass sheen (light catching the surface), grounded by a gentle
-                bottom vignette, and textured with fine frost grain (the dither
-                overlay) so the whole panel reads as gilded frosted glass. */}
-            <View
-                pointerEvents="none"
-                style={StyleSheet.absoluteFillObject}
-            >
-                <LinearGradient
-                    colors={FROSTED_BACKDROP_STOPS as unknown as string[]}
-                    end={{ x: 0.82, y: 1 }}
-                    pointerEvents="none"
-                    start={{ x: 0.18, y: 0 }}
-                    style={StyleSheet.absoluteFillObject}
-                />
-                <LinearGradient
-                    colors={FROSTED_GLASS_SHEEN as unknown as string[]}
-                    end={{ x: 0.85, y: 0.9 }}
-                    locations={FROSTED_GLASS_SHEEN_LOCATIONS as unknown as number[]}
-                    pointerEvents="none"
-                    start={{ x: 0.05, y: 0 }}
-                    style={StyleSheet.absoluteFillObject}
-                />
-                <LinearGradient
-                    colors={FROSTED_GLASS_DEPTH as unknown as string[]}
-                    end={{ x: 0.5, y: 1 }}
-                    locations={FROSTED_GLASS_DEPTH_LOCATIONS as unknown as number[]}
-                    pointerEvents="none"
-                    start={{ x: 0.5, y: 0.5 }}
-                    style={StyleSheet.absoluteFillObject}
-                />
-                <View
-                    pointerEvents="none"
-                    style={[StyleSheet.absoluteFillObject, styles.fullPlayerDither]}
-                >
-                    <Image
-                        resizeMode="repeat"
-                        source={ditherTexture}
-                        style={StyleSheet.absoluteFillObject}
-                    />
-                </View>
-            </View>
+            <FrostedBackdrop artworkUrl={paletteArtworkUrl} />
 
             <Reanimated.View style={styles.fullPlayerExpandedPanel}>
             <View style={styles.fullPlayerContent}>
             <View style={styles.fullPlayerHeader}>
-                <Pressable
-                    accessibilityLabel="Close player"
-                    accessibilityRole="button"
-                    onPress={dismissPlayer}
-                    style={styles.fullPlayerHeaderButton}
-                >
-                    <DownCaretGlyph color={colors.text} />
-                </Pressable>
+                {isMusicSource && (displayItem.artistId || artistItem) ? (
+                    // Artist avatar — tappable to navigate to artist page.
+                    <Pressable
+                        accessibilityLabel={
+                            artistItem
+                                ? `Go to ${displayItem.artist ?? 'artist'} page`
+                                : 'Close player'
+                        }
+                        accessibilityRole="button"
+                        onPress={() => {
+                            if (onGoToArtist && (displayItem.artistId || artistItem?.id)) {
+                                onGoToArtist(displayItem, artistItem?.id);
+                            } else {
+                                dismissPlayer();
+                            }
+                        }}
+                        style={styles.fullPlayerArtistAvatarButton}
+                    >
+                        {artistItem ? (
+                            <ArtworkImage
+                                artworkImageId={artistItem.artworkImageId}
+                                contentSource={artistItem.source}
+                                fallbackStyle={styles.fullPlayerArtistAvatarFallback}
+                                letter={(displayItem.artist ?? '?').slice(0, 1)}
+                                serverConnection={serverConnection}
+                                style={styles.fullPlayerArtistAvatar}
+                                uri={artistItem.artworkUrl}
+                            />
+                        ) : (
+                            // Fallback while loading or no artwork — show initial.
+                            <View style={styles.fullPlayerArtistAvatarFallback}>
+                                <Text style={styles.fullPlayerArtistAvatarLetter}>
+                                    {(displayItem.artist ?? '?').slice(0, 1).toUpperCase()}
+                                </Text>
+                            </View>
+                        )}
+                    </Pressable>
+                ) : (
+                    <Pressable
+                        accessibilityLabel="Close player"
+                        accessibilityRole="button"
+                        onPress={dismissPlayer}
+                        style={styles.fullPlayerHeaderButton}
+                    >
+                        <DownCaretGlyph color={colors.text} />
+                    </Pressable>
+                )}
                 <View style={styles.fullPlayerHeaderSpacer} />
                 <Pressable
                     accessibilityLabel="More options"
@@ -814,24 +642,56 @@ export const FullScreenPlayer = memo(({
                 ]}
             >
                 <View style={styles.fullPlayerMetadata}>
-                    {display.lines.length > 0 ? (
-                        <Text numberOfLines={2} style={styles.fullPlayerTitle}>
-                            {display.lines[0]}
-                        </Text>
-                    ) : (
-                        <Text numberOfLines={2} style={styles.fullPlayerTitle}>
-                            {displayTitle}
-                        </Text>
-                    )}
-                    {display.lines.slice(1).map((line) => (
-                        <Text key={line} numberOfLines={1} style={styles.fullPlayerSubtitle}>
+                    {/* ONE line + marquee, the industry pattern (Spotify/Apple
+                        Music): the old 2-row wrap crowded the metadata block,
+                        and a title too long for even two rows was silently
+                        unreadable. The ticker only runs when the text
+                        overflows, so short titles render static. */}
+                    <PlayerMarqueeText style={styles.fullPlayerTitle}>
+                        {displayTitle}
+                    </PlayerMarqueeText>
+                    {display.lines.slice(1).map((line, index) => (
+                        <PlayerMarqueeText key={`${line}-${index}`} style={styles.fullPlayerSubtitle}>
                             {line}
-                        </Text>
+                        </PlayerMarqueeText>
                     ))}
-                    {qualityItems.length > 0 ? (
-                        <View style={styles.fullPlayerQualityRow}>
-                            <QualityBadgeRow items={qualityItems} />
-                        </View>
+                    {collapsedPill ? (
+                        <Pressable
+                            accessibilityLabel={
+                                qualityPillFlipped
+                                    ? 'Show quality format'
+                                    : 'Show bitrate and stream path'
+                            }
+                            accessibilityRole="button"
+                            onPress={() => {
+                                if (!collapsedPill.canToggle) return;
+                                triggerImpact('light');
+                                setQualityPillFlipped((v) => !v);
+                            }}
+                            style={[
+                                styles.fullPlayerCollapsedPill,
+                                collapsedPill.tone === 'direct' &&
+                                    styles.fullPlayerCollapsedPillDirect,
+                                collapsedPill.tone === 'transcoded' &&
+                                    styles.fullPlayerCollapsedPillTranscoded,
+                                collapsedPill.canToggle &&
+                                    styles.fullPlayerCollapsedPillTappable,
+                            ]}
+                        >
+                            <Text
+                                numberOfLines={1}
+                                style={[
+                                    styles.fullPlayerCollapsedPillText,
+                                    collapsedPill.tone === 'direct' &&
+                                        styles.fullPlayerCollapsedPillTextDirect,
+                                ]}
+                            >
+                                {qualityPillFlipped && collapsedPill.canToggle
+                                    ? collapsedPill.labelB
+                                    : collapsedPill.labelA}
+                            </Text>
+
+                        </Pressable>
                     ) : null}
                 </View>
 
@@ -963,15 +823,15 @@ export const FullScreenPlayer = memo(({
                             <PlayerIconButton
                                 accessibilityLabel="Sleep Timer"
                                 onPress={() =>
-                                    sleepSecondsLeft !== null
-                                        ? cancelSleepTimer()
+                                    sleepTimer.secondsLeft !== null
+                                        ? sleepTimer.cancel()
                                         : setSleepMenuVisible(true)
                                 }
                             >
                                 <SleepTimerGlyph
-                                    active={sleepSecondsLeft !== null}
+                                    active={sleepTimer.secondsLeft !== null}
                                     color={
-                                        sleepSecondsLeft !== null
+                                        sleepTimer.secondsLeft !== null
                                             ? colors.accent
                                             : colors.text
                                     }
@@ -981,9 +841,10 @@ export const FullScreenPlayer = memo(({
                     </View>
                 </View>
 
-                {sleepSecondsLeft !== null && sleepSecondsLeft !== -1 && (
+                {sleepTimer.secondsLeft !== null && sleepTimer.secondsLeft !== -1 && (
                     <Text style={styles.fullPlayerSleepLabel}>
-                        Sleeping in {Math.floor(sleepSecondsLeft / 60)}:{String(sleepSecondsLeft % 60).padStart(2, '0')}
+                        Sleeping in {Math.floor(sleepTimer.secondsLeft / 60)}:
+                        {String(sleepTimer.secondsLeft % 60).padStart(2, '0')}
                     </Text>
                 )}
 
@@ -1041,48 +902,12 @@ export const FullScreenPlayer = memo(({
             visible={isArtworkZoomOpen}
         />
 
-        {/* Sleep timer picker */}
-        <Modal animationType="slide" onRequestClose={() => setSleepMenuVisible(false)} transparent visible={sleepMenuVisible}>
-            <Pressable onPress={() => setSleepMenuVisible(false)} style={styles.modalBackdrop}>
-                <SwipeDismissSheet
-                    onDismiss={() => setSleepMenuVisible(false)}
-                    style={styles.actionSheet}
-                >
-                    <View style={styles.actionSheetHandle} />
-                    <Text style={styles.actionSheetTitle}>Sleep Timer</Text>
-                    <View style={styles.sleepPillGrid}>
-                        {SLEEP_OPTIONS.map((opt) => {
-                            const isActive = sleepSecondsLeft !== null
-                                && ((opt.seconds === -1 && sleepSecondsLeft === -1)
-                                    || (opt.seconds !== -1 && sleepSecondsLeft > 0 && Math.abs(opt.seconds - sleepSecondsLeft) <= 1));
-                            return (
-                                <Pressable
-                                    key={opt.label}
-                                    onPress={() => {
-                                        startSleepTimer(opt.seconds);
-                                        setSleepMenuVisible(false);
-                                    }}
-                                    style={[
-                                        styles.sleepPill,
-                                        opt.wide ? styles.sleepPillWide : null,
-                                        isActive ? styles.sleepPillActive : null,
-                                    ]}
-                                >
-                                    <Text
-                                        style={[
-                                            styles.sleepPillText,
-                                            isActive ? styles.sleepPillTextActive : null,
-                                        ]}
-                                    >
-                                        {opt.label}
-                                    </Text>
-                                </Pressable>
-                            );
-                        })}
-                    </View>
-                </SwipeDismissSheet>
-            </Pressable>
-        </Modal>
+        <SleepTimerSheet
+            onClose={() => setSleepMenuVisible(false)}
+            onSelect={sleepTimer.start}
+            secondsLeft={sleepTimer.secondsLeft}
+            visible={sleepMenuVisible}
+        />
 
         {/* Universal MediaContextMenu (rendered at App root) handles the "..." menu. */}
         </>

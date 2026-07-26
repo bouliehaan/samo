@@ -150,12 +150,11 @@ import {
 
 const ReanimatedFlashList = Reanimated.createAnimatedComponent(FlashList) as typeof FlashList;
 const FLASH_LIST_MAINTAIN_POSITION_DISABLED = { disabled: true };
-const CAST_ICON_ACTIVE_TINT = 'rgba(202, 160, 79, 0.78)';
+const CAST_ICON_ACTIVE_TINT = 'rgba(207, 216, 227, 0.85)';
 const CAST_ICON_INACTIVE_TINT = 'rgba(245, 245, 245, 0.72)';
 
 import { MiniPlayer } from './MiniPlayer';
 import { FullScreenPlayer } from './FullScreenPlayer';
-import { QueueSheetOverlay, type QueueSheetListItem, QUEUE_SHEET_ROW_HEIGHT, QUEUE_SHEET_DRAW_DISTANCE } from './QueueSheetOverlay';
 import { OutputPickerModal, getOutputRouteGlyphLabel, getCastPickerEmptyMessage } from './OutputPickerModal';
 export { OutputPickerModal };
 export const ConnectedMiniPlayer = memo((

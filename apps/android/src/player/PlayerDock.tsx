@@ -1,9 +1,11 @@
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
+import { type MobilePlayableAudio } from '@samo/core/mobile';
 import { Pressable, Text, View } from 'react-native';
 import { type SharedValue, withSpring, withTiming } from 'react-native-reanimated';
 
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { useReducedMotionPreference } from '../hooks/use-reduced-motion-preference';
+import { handleGoToArtistForTrack } from '../handlers/media-detail-handlers';
 import {
     setIsFullPlayerOpen,
     useAppNavigationSelector,
@@ -162,6 +164,27 @@ export const PlayerDock = memo(function PlayerDock({
     }, [playerProgress, reducedMotion]);
     const handleOpenOutputPicker = useCallback(() => setOutputPickerVisible(true), []);
     const handleCloseOutputPicker = useCallback(() => setOutputPickerVisible(false), []);
+    const handleGoToArtist = useCallback(
+        (playbackItem: MobilePlayableAudio, resolvedArtistId?: string) => {
+            // Dismiss the player first so the artist detail opens cleanly.
+            playerProgress.value = withSpring(
+                0,
+                reducedMotion ? REDUCED_MOTION_SPRING : PLAYER_CLOSE_SPRING,
+            );
+            setIsFullPlayerOpen(false);
+            const source = getContentSourceFromPlaybackItem(playbackItem, serverConnection);
+            void handleGoToArtistForTrack(
+                {
+                    artist: playbackItem.artist,
+                    artistId: resolvedArtistId ?? playbackItem.artistId,
+                    id: playbackItem.id,
+                    title: playbackItem.title,
+                },
+                source ?? undefined,
+            );
+        },
+        [playerProgress, reducedMotion, serverConnection],
+    );
 
     return (
         <>
@@ -209,6 +232,7 @@ export const PlayerDock = memo(function PlayerDock({
                     lastPlayedItem={lastPlayedItem}
                     onClose={handleCloseFullPlayer}
                     onCycleRepeatMode={handleCycleRepeatMode}
+                    onGoToArtist={handleGoToArtist}
                     onNext={handlePlayerNext}
                     onOpenOutputPicker={handleOpenOutputPicker}
                     onPlayQueueIndex={handlePlayerPlayQueueIndex}
