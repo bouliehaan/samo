@@ -258,10 +258,6 @@ const PlaylistPropertyMapping: ItemDetailRow<Playlist>[] = [
     },
     { key: 'owner', label: 'common.owner' },
     { key: 'public', label: 'form.createPlaylist.input_public' },
-    {
-        label: 'entity.smartPlaylist',
-        render: (playlist) => (playlist.rules ? BoolField(true) : null),
-    },
     { key: 'id', label: 'filter.id' },
 ];
 

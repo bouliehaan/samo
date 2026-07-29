@@ -11,7 +11,8 @@ import {
 import { getPlaybackQueue, setPlaybackQueue } from '../../state/playback-queue-store';
 import { getAndroidPlaybackState, setAndroidPlaybackState } from '../../state/playback-store';
 import { setAppSessionIsShuffled } from '../../state/app-session';
-import { buildAbsProgressContextFromPlayable } from '../../utils/abs-progress-math';
+import { isOfflineNow } from '../../state/network-state';
+import { buildPlaybackProgressContextFromPlayable } from '../../utils/playback-progress-math';
 import { resolveLocalPlayback } from '../../utils/offline-playback';
 import {
     getResumePositionSeconds,
@@ -176,7 +177,7 @@ export const playQueuedItem = async (
         sessionId: session.id,
         status: 'loading',
     });
-    ctx.absContextRef.current = buildAbsProgressContextFromPlayable(
+    ctx.progressContextRef.current = buildPlaybackProgressContextFromPlayable(
         item,
         ctx.serverConnectionsRef.current,
     );
@@ -217,7 +218,7 @@ export const playQueuedItem = async (
         : withResumePosition(baseItem, resumeSeconds);
     const initialPositionMs =
         prePositionResume || !resumeSeconds || resumeSeconds <= 0 ? 0 : resumeSeconds * 1000;
-    ctx.absContextRef.current = buildAbsProgressContextFromPlayable(
+    ctx.progressContextRef.current = buildPlaybackProgressContextFromPlayable(
         itemToPlay,
         ctx.serverConnectionsRef.current,
     );
@@ -294,6 +295,26 @@ export const playQueuedItem = async (
             ? nativeItem
             : await resolveLocalPlayback(nativeItem);
         if (!isCurrentPlaybackSession()) return;
+
+        // Offline, `resolveLocalPlayback` has just given the authoritative
+        // answer to "is this on the device?" — so a URL that is still remote is
+        // a track that cannot play, and starting it would buffer until the
+        // recovery layer parked it with no explanation. Say so instead. This
+        // sits AFTER the resolve deliberately: the synchronous registry peek
+        // used elsewhere answers null while the registry is cold, and refusing
+        // to play something the user did download is far worse than a slow no.
+        if (isOfflineNow() && /^https?:/i.test(playable.url)) {
+            setAndroidPlaybackState({
+                durationMs: getPlaybackItemDurationMs(nativeItem),
+                item: nativeItem,
+                message: 'Not available offline.',
+                positionMs: 0,
+                sessionId: session.id,
+                status: 'error',
+            });
+            return;
+        }
+
         let event = await playAndroidAudio(
             playable,
             session.id,

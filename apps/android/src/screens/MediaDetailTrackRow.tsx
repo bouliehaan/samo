@@ -6,15 +6,17 @@ import {
 } from '@samo/core/mobile';
 import { type ServerAuthenticationResult } from '@samo/core/server';
 import { memo } from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 
 import { ArtworkImage } from '../components/ArtworkImage';
 import { CheckGlyph, MoreGlyph, TrackDownloadedGlyph } from '../components/Glyphs';
+import { PressableScale } from '../components/PressableScale';
 import { useDownloadedTrackKeys } from '../contexts/downloaded-keys';
 import { useMediaContextMenu } from '../contexts/media-context-menu';
 import { getTrackMetadataItems } from '../player/track-metadata';
+import { presses } from '../theme/motion';
 import { styles } from '../theme/styles';
-import { colors } from '../theme/tokens';
+import { colors, radii } from '../theme/tokens';
 import { getDownloadedTrackKey } from '../utils/download-keys';
 
 /**
@@ -74,8 +76,11 @@ export const MediaDetailTrackRow = memo(function MediaDetailTrackRow({
     );
 
     const row = (
-        <Pressable
+        <PressableScale
+            {...presses.row}
             accessibilityRole="button"
+            highlight={colors.panel}
+            highlightRadius={radii.sm}
             onLongPress={() => contextMenu.openForTrack(track, detail)}
             onPress={() => {
                 if (isManageMode) {
@@ -151,19 +156,22 @@ export const MediaDetailTrackRow = memo(function MediaDetailTrackRow({
                 ) : null}
             </View>
             {hasOverflowActions ? (
-                <Pressable
+                <PressableScale
+                    {...presses.control}
                     accessibilityLabel={`More options for ${track.title}`}
                     accessibilityRole="button"
-                    onPress={(event) => {
-                        event.stopPropagation();
-                        contextMenu.openForTrack(track, detail);
-                    }}
+                    // Nested inside the row's own gesture: the deeper handler
+                    // wins arbitration, so the row does not also fire. `chrome`
+                    // because a 38dp target has no room to spend a scroll-safety
+                    // window before it answers.
+                    chrome
+                    onPress={() => contextMenu.openForTrack(track, detail)}
                     style={styles.trackMenuButton}
                 >
                     <MoreGlyph color={colors.muted} />
-                </Pressable>
+                </PressableScale>
             ) : null}
-        </Pressable>
+        </PressableScale>
     );
 
     if (discHeader == null) {

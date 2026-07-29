@@ -13,7 +13,6 @@ import {
     getArtistSongsById,
     getGenreSongsById,
     getPlaylistSongsById,
-    getSongsByFolder,
 } from '/@/renderer/features/player/utils';
 import { playlistsQueries } from '/@/renderer/features/playlists/api/playlists-api';
 import { useAddToPlaylist } from '/@/renderer/features/playlists/mutations/add-to-playlist-mutation';
@@ -46,15 +45,13 @@ export const AddToPlaylistContextModal = ({
 }: ContextModalProps<{
     albumId?: string[];
     artistId?: string[];
-    folderId?: string[];
     genreId?: string[];
     initialSelectedIds?: string[];
     playlistId?: string[];
     songId?: string[];
 }>) => {
     const { t } = useTranslation();
-    const { albumId, artistId, folderId, genreId, initialSelectedIds, playlistId, songId } =
-        innerProps;
+    const { albumId, artistId, genreId, initialSelectedIds, playlistId, songId } = innerProps;
     const serverId = useCurrentServerId();
     const [isLoading, setIsLoading] = useState(false);
     const [search, setSearch] = useState<string>('');
@@ -179,15 +176,6 @@ export const AddToPlaylistContextModal = ({
                     serverId,
                 });
 
-                allSongIds.push(...(songs?.items?.map((song) => song.id) || []));
-            }
-
-            if (folderId && folderId.length > 0) {
-                const songs = await getSongsByFolder({
-                    id: folderId,
-                    queryClient,
-                    serverId,
-                });
                 allSongIds.push(...(songs?.items?.map((song) => song.id) || []));
             }
 

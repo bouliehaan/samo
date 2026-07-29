@@ -194,15 +194,28 @@ internal class SamoDownloadWorker(
         var url = entry.sourceUrl
         var serverUrl = entry.serverUrl
         var bearer = entry.serverBearer
+        val mirror = SamoAuthMirror.loadSamo(applicationContext)
         if (serverUrl.isNullOrBlank() || bearer.isNullOrBlank()) {
             // Entries enqueued before auth context rode along (or whose JS
             // caller had none): recover it from the auth mirror by host
             // match — the same fallback the player's resolving data source
             // uses. Without this, retrying a legacy entry replays its stale
             // minted-at-enqueue token straight into another 401.
-            val connection = SamoAuthMirror.loadSamo(applicationContext)
-                .firstOrNull { entry.sourceUrl.startsWith(it.url) }
+            val connection = mirror.firstOrNull { entry.sourceUrl.startsWith(it.url) }
             if (connection != null) {
+                serverUrl = connection.url
+                bearer = connection.credential
+            }
+        } else if (mirror.none { it.url == serverUrl }) {
+            // The address this entry was queued against is no longer one the
+            // app uses — the server moved, or we left the LAN and are now
+            // reaching it through its remote address. A queued download can
+            // easily outlive the network it was queued on, and retrying it
+            // against a dead origin just burns the retry budget, so re-home it
+            // onto whichever address currently holds the same credential.
+            val connection = mirror.firstOrNull { it.credential == bearer } ?: mirror.firstOrNull()
+            if (connection != null) {
+                url = SamoNativeStreamUrl.rehomeUrl(url, connection.url) ?: url
                 serverUrl = connection.url
                 bearer = connection.credential
             }

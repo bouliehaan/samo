@@ -2,7 +2,6 @@ import { MobileHomeSectionId, type MobileHomeItem } from '@samo/core/mobile';
 import { FlashList } from '@shopify/flash-list';
 import { memo, useCallback, useMemo, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
-import { GestureDetector } from 'react-native-gesture-handler';
 import Reanimated from 'react-native-reanimated';
 
 import { LibraryListRow } from '../components/LibraryListRow';
@@ -40,7 +39,6 @@ export const PlaylistsScreen = memo(({
     const recentItems = useVisibleRecentItems();
     const isTransitioning = useTransitioningMount();
     const {
-        gesture: searchPullGesture,
         renderScrollComponent: searchPullRenderScrollComponent,
         scrollProps: searchPullScrollProps,
     } = useSearchPull('playlists');
@@ -179,7 +177,6 @@ export const PlaylistsScreen = memo(({
 
     return (
         <View style={styles.playlistScreen}>
-            <GestureDetector gesture={searchPullGesture}>
             <ReanimatedFlashList
                 ListHeaderComponent={listHeader}
                 contentContainerStyle={[styles.playlistListContent, { paddingBottom: bottomInset }]}
@@ -190,7 +187,6 @@ export const PlaylistsScreen = memo(({
                 showsVerticalScrollIndicator={false}
                 {...searchPullScrollProps}
             />
-            </GestureDetector>
             <LibrarySortMenu
                 activeSort={activeSort}
                 onClose={() => setIsSortMenuOpen(false)}

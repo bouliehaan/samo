@@ -280,6 +280,13 @@ export interface MobileMediaTrack {
     artworkUrl?: string;
     /** Samo metadata `images[].id` for display-time URL rebuild. */
     artworkImageId?: string;
+    /**
+     * Long-form show notes. Podcast episodes only — the feed's own episode
+     * description, which the server has always sent and nothing on the client
+     * ever carried, so there was no way to read an episode's blurb from the
+     * app at all. Music tracks have no equivalent and leave this undefined.
+     */
+    description?: string;
     durationSeconds?: number;
     discNumber?: number;
     episodeId?: string;
@@ -999,6 +1006,7 @@ export const mapSamoPodcastDetail = (
             {
                 artworkUrl: resolveSamoPodcastEpisodeArtworkUrl(authentication, episode, streamToken)
                     ?? showArtwork,
+                description: episode.description,
                 durationSeconds: episode.durationSeconds ?? episode.duration,
                 episodeId: episode.id,
                 id: episode.id,

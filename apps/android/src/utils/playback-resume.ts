@@ -11,7 +11,7 @@ import {
     type ServerAuthenticationResult,
 } from '@samo/core/server';
 
-import { loadAbsCurrentProgress } from '../services/abs-progress';
+import { loadCurrentPlaybackProgress } from '../services/playback-progress';
 import { type AndroidPlaybackState } from '../types/playback';
 
 import { getNativeResumeProgress } from './native-resume';
@@ -158,7 +158,7 @@ export const refreshPlayableResumeFromServer = async (
             return item;
         }
 
-        const progress = await loadAbsCurrentProgress(authentication, showId, episodeId);
+        const progress = await loadCurrentPlaybackProgress(authentication, showId, episodeId);
         if (progress?.currentTimeSeconds && progress.currentTimeSeconds > 0 && !progress.isFinished) {
             const streamToken = await ensureSamoStreamToken(authentication, samoFetch).catch(
                 () => undefined,
@@ -199,7 +199,7 @@ export const refreshPlayableResumeFromServer = async (
         return item;
     }
 
-    const progress = await loadAbsCurrentProgress(authentication, itemId);
+    const progress = await loadCurrentPlaybackProgress(authentication, itemId);
     if (progress?.currentTimeSeconds && progress.currentTimeSeconds > 0 && !progress.isFinished) {
         return withResumePosition(item, progress.currentTimeSeconds);
     }

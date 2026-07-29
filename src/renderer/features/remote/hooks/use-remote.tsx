@@ -13,7 +13,6 @@ import { LogCategory, logFn } from '/@/shared/utils/logger';
 import { logMsg } from '/@/shared/utils/logger-message';
 
 const remote = isElectron() ? window.api.remote : null;
-const ipc = isElectron() ? window.api.ipc : null;
 
 export const useRemote = () => {
     const { mediaSeekToTimestamp, mediaSkipForward, setVolume } = usePlayerActions();
@@ -62,55 +61,56 @@ export const useRemote = () => {
             return;
         }
 
-        remote.requestPosition((_e: unknown, data: { position: number }) => {
-            logFn.debug(logMsg[LogCategory.REMOTE].requestPositionReceived, {
-                category: LogCategory.REMOTE,
-                meta: { position: data.position },
-            });
-            const newTime = data.position;
-            mediaSeekToTimestamp(newTime);
-        });
-
-        remote.requestSeek((_e: unknown, data: { offset: number }) => {
-            logFn.debug(logMsg[LogCategory.REMOTE].requestSeekReceived, {
-                category: LogCategory.REMOTE,
-                meta: { offset: data.offset },
-            });
-            mediaSkipForward(data.offset);
-        });
-
-        remote.requestVolume((_e: unknown, data: { volume: number }) => {
-            logFn.debug(logMsg[LogCategory.REMOTE].requestVolumeReceived, {
-                category: LogCategory.REMOTE,
-                meta: { volume: data.volume },
-            });
-            setVolume(data.volume);
-        });
-
-        remote.requestFavorite(
-            (_e: unknown, data: { favorite: boolean; id: string; serverId: string }) => {
-                logFn.debug(logMsg[LogCategory.REMOTE].requestFavoriteReceived, {
+        const unsubscribers = [
+            remote.requestPosition((_e: unknown, data: { position: number }) => {
+                logFn.debug(logMsg[LogCategory.REMOTE].requestPositionReceived, {
                     category: LogCategory.REMOTE,
-                    meta: { favorite: data.favorite, id: data.id, serverId: data.serverId },
+                    meta: { position: data.position },
                 });
-                const mutator = data.favorite
-                    ? addToFavoritesMutation
-                    : removeFromFavoritesMutation;
-                mutator.mutate({
-                    apiClientProps: { serverId: data.serverId },
-                    query: {
-                        id: [data.id],
-                        type: LibraryItem.SONG,
-                    },
+                const newTime = data.position;
+                mediaSeekToTimestamp(newTime);
+            }),
+
+            remote.requestSeek((_e: unknown, data: { offset: number }) => {
+                logFn.debug(logMsg[LogCategory.REMOTE].requestSeekReceived, {
+                    category: LogCategory.REMOTE,
+                    meta: { offset: data.offset },
                 });
-            },
-        );
+                mediaSkipForward(data.offset);
+            }),
+
+            remote.requestVolume((_e: unknown, data: { volume: number }) => {
+                logFn.debug(logMsg[LogCategory.REMOTE].requestVolumeReceived, {
+                    category: LogCategory.REMOTE,
+                    meta: { volume: data.volume },
+                });
+                setVolume(data.volume);
+            }),
+
+            remote.requestFavorite(
+                (_e: unknown, data: { favorite: boolean; id: string; serverId: string }) => {
+                    logFn.debug(logMsg[LogCategory.REMOTE].requestFavoriteReceived, {
+                        category: LogCategory.REMOTE,
+                        meta: { favorite: data.favorite, id: data.id, serverId: data.serverId },
+                    });
+                    const mutator = data.favorite
+                        ? addToFavoritesMutation
+                        : removeFromFavoritesMutation;
+                    mutator.mutate({
+                        apiClientProps: { serverId: data.serverId },
+                        query: {
+                            id: [data.id],
+                            type: LibraryItem.SONG,
+                        },
+                    });
+                },
+            ),
+        ];
 
         return () => {
-            ipc?.removeAllListeners('request-position');
-            ipc?.removeAllListeners('request-seek');
-            ipc?.removeAllListeners('request-volume');
-            ipc?.removeAllListeners('request-favorite');
+            for (const unsubscribe of unsubscribers) {
+                unsubscribe();
+            }
         };
     }, [
         addToFavoritesMutation,

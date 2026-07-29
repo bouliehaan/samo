@@ -4,7 +4,7 @@ import { ItemListStateActions } from '/@/renderer/components/item-list/helpers/i
 import { eventEmitter } from '/@/renderer/events/event-emitter';
 import { PlayerContext } from '/@/renderer/features/player/context/player-context';
 import { useDragDrop } from '/@/renderer/hooks/use-drag-drop';
-import { Folder, LibraryItem, QueueSong, Song } from '/@/shared/types/domain-types';
+import { LibraryItem, QueueSong, Song } from '/@/shared/types/domain-types';
 import { DragOperation, DragTarget, DragTargetMap } from '/@/shared/types/drag-and-drop';
 
 interface DragDropState<TElement extends HTMLElement = HTMLDivElement> {
@@ -164,52 +164,6 @@ export const useItemDragDropState = <TElement extends HTMLElement = HTMLDivEleme
                                       sourceItemType,
                                       { edge: args.edge, uniqueId: droppedOnUniqueId },
                                   );
-                                  break;
-                              }
-                              case DragTarget.FOLDER: {
-                                  const items = args.source.item;
-
-                                  const { folders, songs } = (items || []).reduce<{
-                                      folders: Folder[];
-                                      songs: Song[];
-                                  }>(
-                                      (acc, item) => {
-                                          if (
-                                              (item as unknown as Song)._itemType ===
-                                              LibraryItem.SONG
-                                          ) {
-                                              acc.songs.push(item as unknown as Song);
-                                          } else if (
-                                              (item as unknown as Folder)._itemType ===
-                                              LibraryItem.FOLDER
-                                          ) {
-                                              acc.folders.push(item as unknown as Folder);
-                                          }
-                                          return acc;
-                                      },
-                                      { folders: [], songs: [] },
-                                  );
-
-                                  const folderIds = folders.map((folder) => folder.id);
-
-                                  // Handle folders: fetch and add to queue
-                                  if (folderIds.length > 0) {
-                                      playerContext.addToQueueByFetch(
-                                          sourceServerId,
-                                          folderIds,
-                                          LibraryItem.FOLDER,
-                                          { edge: args.edge, uniqueId: droppedOnUniqueId },
-                                      );
-                                  }
-
-                                  // Handle songs: add directly to queue
-                                  if (songs.length > 0) {
-                                      playerContext.addToQueueByData(songs, {
-                                          edge: args.edge,
-                                          uniqueId: droppedOnUniqueId,
-                                      });
-                                  }
-
                                   break;
                               }
                               case DragTarget.GENRE: {

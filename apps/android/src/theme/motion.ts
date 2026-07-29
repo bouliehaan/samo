@@ -79,9 +79,20 @@ export const durations = {
     screenEnter: 200,
     /** The same surface leaving. Roughly half — nobody watches an exit. */
     screenExit: 120,
-    /** Cross-fade between sibling scenes (tab switch in). */
-    sceneEnter: 170,
-    /** Cross-fade out. */
+    /**
+     * A sibling scene dissolving in (tab switch). The single most-repeated
+     * transition in the app, so it sits at the fast end of the budget above:
+     * the switch also has to pay for React thawing the incoming scene before
+     * this can start, and enter + thaw together must still land inside the
+     * ~220ms a caused interaction gets.
+     */
+    sceneEnter: 140,
+    /**
+     * A sibling scene leaving. Only for a scene that is genuinely UNCOVERED as
+     * it goes — a tab switch does NOT use this, because the outgoing tab is
+     * covered by the incoming one and fading it as well is what put a dark
+     * flash in the middle of every switch (see TabSceneContainer).
+     */
     sceneExit: 130,
     /** A sheet/menu backdrop fading up. */
     scrim: 140,
@@ -122,6 +133,30 @@ export const travel = {
     screen: 16,
     /** A sheet rising from the bottom edge. */
     sheet: 28,
+} as const;
+
+/**
+ * How far a surface sinks and dims under a finger, by the KIND of surface.
+ *
+ * Same argument as the durations above: press depth is the most-repeated
+ * animation in the app, so a literal `0.96` copied into each tile file is the
+ * fastest way to end up with two adjacent tiles answering the finger by
+ * different amounts. Spread one of these into a `PressableScale`.
+ *
+ * The depths are not interchangeable — they are calibrated to size. A 0.96
+ * sink is a card being pushed into the page; the same 0.96 on a 44dp round
+ * control is a wobble, and on a full-bleed hero it is the whole screen lurching.
+ */
+export const presses = {
+    /** Small round chrome: transport controls, icon buttons. */
+    control: { dimTo: 0.88, scaleTo: 0.9 } as const,
+    /** Full-width heroes — same weight of answer, a fraction of the travel. */
+    hero: { dimTo: 0.88, scaleTo: 0.985 } as const,
+    /** List rows. No sink at all: a row is part of a column, and scaling one
+     *  breaks the column's edge. The highlight fill carries the whole response. */
+    row: { dimTo: 1, scaleTo: 1 } as const,
+    /** Catalog tiles — a card you could pick up, so it takes the deepest sink. */
+    tile: { dimTo: 0.82, scaleTo: 0.96 } as const,
 } as const;
 
 /**

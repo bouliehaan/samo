@@ -1,5 +1,6 @@
 import { ipcRenderer, IpcRendererEvent, OpenDialogOptions, webFrame } from 'electron';
 
+import { HotkeyBindings } from '/@/shared/types/hotkeys';
 import { TitleTheme } from '/@/shared/types/types';
 
 const set = (
@@ -23,6 +24,12 @@ const enableMediaKeys = () => {
 
 const disableMediaKeys = () => {
     ipcRenderer.send('global-media-keys-disable');
+};
+
+// Re-registers every global accelerator in main and rebuilds the native menu
+// accelerators, so it has to be sent the complete binding map, not a delta.
+const setGlobalShortcuts = (bindings: HotkeyBindings) => {
+    ipcRenderer.send('set-global-shortcuts', bindings);
 };
 
 const passwordGet = async (server: string): Promise<null | string> => {
@@ -103,6 +110,7 @@ export const localSettings = {
     passwordSet,
     restart,
     set,
+    setGlobalShortcuts,
     setZoomFactor,
     themeSet,
 };

@@ -9,9 +9,8 @@ import {
 } from '/@/renderer/features/radio/hooks/use-radio-player';
 import { usePlayerSong, usePlayerStore } from '/@/renderer/store';
 import { LibraryItem, QueueSong } from '/@/shared/types/domain-types';
-import { PlayerShuffle, ServerType } from '/@/shared/types/types';
+import { PlayerShuffle } from '/@/shared/types/types';
 
-const ipc = isElectron() ? window.api.ipc : null;
 const utils = isElectron() ? window.api.utils : null;
 const mpris = isElectron() && (utils?.isLinux() || utils?.isMacOS()) ? window.api.mpris : null;
 
@@ -42,7 +41,6 @@ export const useMPRIS = () => {
         return {
             _itemType: LibraryItem.SONG,
             _serverId: '',
-            _serverType: ServerType.SAMO,
             _uniqueId: radioId,
             album: album || null,
             albumArtistName: artist || '',
@@ -114,32 +112,32 @@ export const useMPRIS = () => {
             return;
         }
 
-        mpris?.requestPosition((_e: unknown, data: { position: number }) => {
-            player.mediaSeekToTimestamp(data.position);
-        });
+        const unsubscribers = [
+            mpris.requestPosition((_e: unknown, data: { position: number }) => {
+                player.mediaSeekToTimestamp(data.position);
+            }),
 
-        mpris?.requestSeek((_e: unknown, data: { offset: number }) => {
-            player.mediaSkipForward(data.offset);
-        });
+            mpris.requestSeek((_e: unknown, data: { offset: number }) => {
+                player.mediaSkipForward(data.offset);
+            }),
 
-        mpris?.requestToggleRepeat(() => {
-            player.toggleRepeat();
-        });
+            mpris.requestToggleRepeat(() => {
+                player.toggleRepeat();
+            }),
 
-        mpris?.requestToggleShuffle(() => {
-            player.toggleShuffle();
-        });
+            mpris.requestToggleShuffle(() => {
+                player.toggleShuffle();
+            }),
 
-        mpris?.requestVolume((_e: unknown, data: { volume: number }) => {
-            player.setVolume(data.volume);
-        });
+            mpris.requestVolume((_e: unknown, data: { volume: number }) => {
+                player.setVolume(data.volume);
+            }),
+        ];
 
         return () => {
-            ipc?.removeAllListeners('mpris-request-toggle-repeat');
-            ipc?.removeAllListeners('mpris-request-toggle-shuffle');
-            ipc?.removeAllListeners('request-position');
-            ipc?.removeAllListeners('request-seek');
-            ipc?.removeAllListeners('request-volume');
+            for (const unsubscribe of unsubscribers) {
+                unsubscribe();
+            }
         };
     }, [player]);
 

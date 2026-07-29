@@ -1,7 +1,6 @@
 {
     "action": {
         "addToFavorites": "add to $t(entity.favorite, {\"count\": 2})",
-        "addToPlaylist": "add to $t(entity.playlist, {\"count\": 1})",
         "addOrRemoveFromSelection": "add or remove from selection",
         "selectRangeOfItems": "select a range of items",
         "clearQueue": "clear queue",
@@ -9,28 +8,18 @@
         "createPlaylist": "create $t(entity.playlist, {\"count\": 1})",
         "createRadioStation": "create $t(entity.radioStation, {\"count\": 1})",
         "deletePlaylist": "delete $t(entity.playlist, {\"count\": 1})",
-        "deleteRadioStation": "delete $t(entity.radioStation, {\"count\": 1})",
         "selectAll": "select all",
-        "deselectAll": "deselect all",
-        "downloadStarted": "started download of {{count}} items",
         "editPlaylist": "edit $t(entity.playlist, {\"count\": 1})",
-        "goToPage": "go to page",
-        "moveToNext": "move to next",
-        "moveToBottom": "move to bottom",
-        "moveToTop": "move to top",
         "moveUp": "move up",
         "moveDown": "move down",
         "holdToMoveToTop": "hold to move to top",
         "holdToMoveToBottom": "hold to move to bottom",
-        "moveItems": "move items",
         "shuffle": "shuffle",
         "shuffleAll": "shuffle all",
         "shuffleSelected": "shuffle selected",
-        "refresh": "$t(common.refresh)",
         "removeFromFavorites": "remove from $t(entity.favorite, {\"count\": 2})",
         "removeFromPlaylist": "remove from $t(entity.playlist, {\"count\": 1})",
         "removeFromQueue": "remove from queue",
-        "toggleSmartPlaylistEditor": "toggle $t(entity.smartPlaylist) editor",
         "viewPlaylists": "view $t(entity.playlist, {\"count\": 2})",
         "viewMore": "view more",
         "openApplicationDirectory": "open application directory",
@@ -214,18 +203,10 @@
         "badAlbum": "you are seeing this page because this song is not part of an album. this usually means the file sits at the top level of your music folder rather than in an album folder",
         "badValue": "invalid option \"{{value}}\". this value no longer exists",
         "credentialsRequired": "credentials required",
-        "endpointNotImplementedError": "endpoint {{endpoint}} is not implemented for {{serverType}}",
         "genericError": "an error occurred",
-        "invalidJson": "invalid JSON",
         "invalidServer": "invalid server",
-        "localFontAccessDenied": "access denied to local fonts",
-        "loginRateError": "too many login attempts, please try again in a few seconds",
-        "mpvRequired": "MPV required",
-        "multipleServerSaveQueueError": "the play queue has one or more songs which are not from the current server. this is not supported",
-        "networkError": "a network error occurred",
         "noNetwork": "server unavailable",
         "noNetworkDescription": "couldn't connect to this server",
-        "notificationDenied": "permissions for notifications were denied. this setting has no effect",
         "openError": "could not open file",
         "playbackError": "an error occurred when trying to play the media",
         "playbackPausedDueToError": "playback was paused due to an error",
@@ -233,12 +214,9 @@
         "remoteEnableError": "an error occurred when trying to $t(common.enable) the remote server",
         "remotePortError": "an error occurred when trying to set the remote server port",
         "remotePortWarning": "restart the server to apply the new port",
-        "saveQueueFailed": "failed to save queue",
         "serverLockSingleServer": "only one server is allowed when server is locked",
         "serverNotSelectedError": "no server selected",
         "serverRequired": "server required",
-        "sessionExpiredError": "your session has expired",
-        "systemFontError": "an error occurred when trying to get system fonts",
         "settingsSyncError": "discrepancies were found between the settings in the renderer and the main process. restart the application to apply the changes"
     },
     "filter": {
@@ -248,13 +226,8 @@
         "matchOr": "or",
         "albumCount": "$t(entity.album, {\"count\": 2}) count",
         "artist": "$t(entity.artist, {\"count\": 1})",
-        "biography": "biography",
-        "bitrate": "bitrate",
         "bpm": "bpm",
-        "channels": "$t(common.channel, {\"count\": 2})",
         "comment": "comment",
-        "dateAdded": "date added",
-        "disc": "disc",
         "duration": "duration",
         "favorited": "favorited",
         "fromYear": "from year",
@@ -262,28 +235,17 @@
         "id": "id",
         "isCompilation": "is compilation",
         "isFavorited": "is favorited",
-        "isPublic": "is public",
-        "isRated": "is rated",
-        "isRecentlyPlayed": "is recently played",
         "lastPlayed": "last played",
-        "mostPlayed": "most played",
         "name": "name",
-        "note": "note",
-        "owner": "$t(common.owner)",
-        "path": "path",
         "playCount": "play count",
         "random": "random",
         "recentlyAdded": "recently added",
         "recentlyPlayed": "recently played",
-        "recentlyUpdated": "recently updated",
         "releaseDate": "release date",
         "releaseYear": "release year",
-        "search": "search",
         "songCount": "song count",
         "sortName": "sort name",
-        "title": "title",
         "toYear": "to year",
-        "trackNumber": "track",
         "explicitStatus": "$t(common.explicitStatus)"
     },
     "datetime": {
@@ -291,27 +253,6 @@
         "secondShort": "s",
         "hourShort": "h",
         "dayShort": "d"
-    },
-    "filterOperator": {
-        "after": "is after",
-        "afterDate": "is after (date)",
-        "before": "is before",
-        "beforeDate": "is before (date)",
-        "contains": "contains",
-        "endsWith": "ends with",
-        "inPlaylist": "is in",
-        "inTheLast": "is in the last",
-        "inTheRange": "is in the range",
-        "inTheRangeDate": "is in the range (date)",
-        "is": "is",
-        "isNot": "is not",
-        "isGreaterThan": "is greater than",
-        "isLessThan": "is less than",
-        "matchesRegex": "matches regex",
-        "notContains": "does not contain",
-        "notInPlaylist": "is not in",
-        "notInTheLast": "is not in the last",
-        "startsWith": "starts with"
     },
     "form": {
         "addServer": {
@@ -353,8 +294,6 @@
             "title": "create $t(entity.playlist, {\"count\": 1})"
         },
         "createRadioStation": {
-            "success": "radio station created successfully",
-            "title": "create radio station",
             "input_homepageUrl": "homepage url",
             "input_name": "name",
             "input_streamUrl": "stream url"
@@ -363,8 +302,6 @@
             "success": "radio station updated successfully"
         },
         "deletePlaylist": {
-            "input_confirm": "type the name of the $t(entity.playlist, {\"count\": 1}) to confirm",
-            "success": "$t(entity.playlist, {\"count\": 1}) deleted successfully",
             "title": "delete $t(entity.playlist, {\"count\": 1})"
         },
         "editPlaylist": {
@@ -381,41 +318,14 @@
             "input_name": "$t(common.name)",
             "title": "lyric search"
         },
-        "queryEditor": {
-            "title": "query editor",
-            "input_optionMatchAll": "match all",
-            "input_optionMatchAny": "match any",
-            "addRuleGroup": "add rule group",
-            "removeRuleGroup": "remove rule group",
-            "resetToDefault": "reset to default",
-            "clearFilters": "clear filters"
-        },
-        "saveQueue": {
-            "success": "saved play queue to server"
-        },
-        "shareItem": {
-            "allowDownloading": "allow downloading",
-            "copyToClipboard": "Copy to clipboard: Ctrl+C, Enter",
-            "description": "description",
-            "setExpiration": "set expiration",
-            "success": "share link copied to clipboard (or click here to open)",
-            "successMustClick": "share created successfully. click here to open",
-            "expireInvalid": "expiration must be in the future",
-            "createFailed": "failed to create share (is sharing enabled?)"
-        },
         "shuffleAll": {
             "title": "play random",
             "input_genre": "$t(entity.genre, {\"count\": 1})",
             "input_limit": "how many songs?",
             "input_minYear": "from year",
-            "input_maxYear": "to year",
-            "input_played": "play filter",
-            "input_played_optionAll": "all tracks",
-            "input_played_optionUnplayed": "only unplayed tracks",
-            "input_played_optionPlayed": "only played tracks"
+            "input_maxYear": "to year"
         },
         "updateServer": {
-            "success": "server updated successfully",
             "title": "update server"
         },
         "privateMode": {
@@ -431,7 +341,6 @@
             "favoriteSongs": "favorite songs",
             "groupingTypeAll": "all release types",
             "groupingTypePrimary": "primary release types",
-            "recentReleases": "recent releases",
             "viewDiscography": "view discography",
             "relatedArtists": "related $t(entity.artist, {\"count\": 2})",
             "topSongs": "top songs",
@@ -447,12 +356,9 @@
         },
         "albumDetail": {
             "moreFromArtist": "more from this $t(entity.artist, {\"count\": 1})",
-            "moreFromGeneric": "more from {{item}}",
-            "released": "released"
+            "moreFromGeneric": "more from {{item}}"
         },
         "albumList": {
-            "artistAlbums": "albums by {{artist}}",
-            "genreAlbums": "\"{{genre}}\" $t(entity.album, {\"count\": 2})",
             "title": "$t(entity.album, {\"count\": 2})"
         },
         "radioList": {
@@ -472,14 +378,12 @@
         },
         "appMenu": {
             "collapseSidebar": "collapse sidebar",
-            "commandPalette": "open command palette",
             "expandSidebar": "expand sidebar",
             "goBack": "go back",
             "goForward": "go forward",
             "manageServers": "manage servers",
             "privateModeOff": "turn off private mode",
             "privateModeOn": "turn on private mode",
-            "openBrowserDevtools": "open browser devtools",
             "quit": "$t(common.quit)",
             "selectServer": "select server",
             "selectMusicFolder": "select music folder",
@@ -488,62 +392,36 @@
             "settings": "$t(common.setting, {\"count\": 2})",
             "syncWithServer": "sync with server",
             "syncWithServerInProgress": "syncing with server",
-            "syncWithServerSuccess": "synced with server",
-            "version": "version {{version}}"
+            "syncWithServerSuccess": "synced with server"
         },
         "manageServers": {
             "title": "manage servers",
-            "serverDetails": "server details",
             "url": "URL",
             "username": "username",
             "editServerDetailsTooltip": "edit server details",
             "removeServer": "remove server"
         },
         "contextMenu": {
-            "addFavorite": "$t(action.addToFavorites)",
-            "addLast": "$t(player.addLast)",
-            "addNext": "$t(player.addNext)",
-            "addToFavorites": "$t(action.addToFavorites)",
             "addToPlaylist": "$t(action.addToPlaylist)",
-            "createPlaylist": "$t(action.createPlaylist)",
-            "deletePlaylist": "$t(action.deletePlaylist)",
-            "deselectAll": "$t(action.deselectAll)",
             "download": "download",
             "moveItems": "$t(action.moveItems)",
             "moveToNext": "$t(action.moveToNext)",
             "moveToBottom": "$t(action.moveToBottom)",
             "moveToTop": "$t(action.moveToTop)",
-            "numberSelected": "{{count}} selected",
-            "play": "$t(player.play)",
-            "playSimilarSongs": "$t(player.playSimilarSongs)",
-            "removeFromFavorites": "$t(action.removeFromFavorites)",
-            "removeFromPlaylist": "$t(action.removeFromPlaylist)",
-            "removeFromQueue": "$t(action.removeFromQueue)",
-            "playShuffled": "$t(player.shuffle)",
-            "shareItem": "share item",
             "goTo": "go to",
             "goToAlbum": "go to $t(entity.album, {\"count\": 1})",
-            "goToAlbumArtist": "go to $t(entity.albumArtist, {\"count\": 1})",
             "showDetails": "get info"
         },
         "fullscreenPlayer": {
             "config": {
-                "dynamicBackground": "dynamic background",
-                "dynamicImageBlur": "image blur size",
-                "dynamicIsImage": "enable background image",
                 "followCurrentLyric": "follow current lyric",
                 "lyricAlignment": "lyric alignment",
-                "lyricOffset": "lyrics offset (ms)",
                 "lyricGap": "lyric gap",
                 "lyricSize": "lyric size",
                 "lyricOpacityNonActive": "non-active lyric opacity",
                 "lyricScaleNonActive": "non-active lyric scale",
-                "opacity": "opacity",
-                "showLyricMatch": "show lyric match",
-                "showLyricProvider": "show lyric provider",
                 "synchronized": "synchronized",
-                "unsynchronized": "unsynchronized",
-                "useImageAspectRatio": "use image aspect ratio"
+                "unsynchronized": "unsynchronized"
             },
             "lyrics": "lyrics",
             "related": "related",
@@ -552,12 +430,7 @@
             "noLyrics": "no lyrics found"
         },
         "genreList": {
-            "showAlbums": "show $t(entity.genre, {\"count\": 1}) $t(entity.album, {\"count\": 2})",
-            "showTracks": "show $t(entity.genre, {\"count\": 1}) $t(entity.track, {\"count\": 2})",
             "title": "$t(entity.genre, {\"count\": 2})"
-        },
-        "folderList": {
-            "title": "$t(entity.folder, {\"count\": 2})"
         },
         "globalSearch": {
             "commands": {
@@ -568,21 +441,12 @@
             "title": "commands"
         },
         "home": {
-            "explore": "explore from your library",
-            "genres": "$t(entity.genre, {\"count\": 2})",
-            "mostPlayed": "most played",
-            "newlyAdded": "newly added releases",
-            "recentlyPlayed": "recently played",
-            "recentlyReleased": "recently released",
             "title": "$t(common.home)"
         },
         "itemDetail": {
             "copyPath": "copy path to clipboard",
             "copiedPath": "path copied successfully",
             "openFile": "show track in file manager"
-        },
-        "playlist": {
-            "reorder": "reordering only enabled when sorting by id"
         },
         "playlistList": {
             "title": "$t(entity.playlist, {\"count\": 2})"
@@ -593,28 +457,16 @@
         },
         "setting": {
             "advanced": "advanced",
-            "analytics": "analytics",
             "generalTab": "general",
             "hotkeysTab": "hotkeys",
-            "playbackTab": "playback",
-            "windowTab": "window",
             "updates": "update",
             "cache": "cache",
             "application": "application",
-            "queryBuilder": "query builder",
             "theme": "theme",
-            "controls": "controls",
-            "sidebar": "sidebar",
             "remote": "remote",
             "exportImport": "import/export",
-            "scrobble": "scrobble",
-            "audio": "audio",
             "lyrics": "lyrics",
-            "lyricsDisplay": "lyrics display",
-            "transcoding": "transcoding",
-            "discord": "discord",
-            "logger": "logger",
-            "playerFilters": "player filters"
+            "lyricsDisplay": "lyrics display"
         },
         "sidebar": {
             "albumArtists": "$t(entity.albumArtist, {\"count\": 2})",
@@ -635,8 +487,6 @@
             "tracks": "$t(entity.track, {\"count\": 2})"
         },
         "trackList": {
-            "artistTracks": "tracks by {{artist}}",
-            "genreTracks": "\"{{genre}}\" $t(entity.track, {\"count\": 2})",
             "title": "$t(entity.track, {\"count\": 2})"
         }
     },
@@ -656,22 +506,14 @@
         "play": "play",
         "playbackFetchCancel": "this is taking a while… close the notification to cancel",
         "playbackFetchInProgress": "loading songs…",
-        "playbackFetchNoResults": "no songs found",
         "playbackSpeed": "playback speed",
         "playRandom": "play random",
-        "playSimilarSongs": "play similar songs",
         "previous": "previous",
-        "queue_clear": "clear queue",
-        "queue_moveToBottom": "move selected to top",
-        "queue_moveToTop": "move selected to bottom",
-        "queue_remove": "remove selected",
         "repeat": "repeat",
         "repeat_all": "repeat all",
         "repeat_off": "repeat disabled",
         "repeat_one": "repeat one",
         "repeat_other": "",
-        "restoreQueueFromServer": "restore queue from server",
-        "saveQueueToServer": "save queue to server",
         "shuffle": "play (shuffled)",
         "shuffle_off": "shuffle disabled",
         "skip": "skip",
@@ -688,15 +530,9 @@
         "sleepTimer_minutes": "{{count}} min",
         "sleepTimer_hours": "{{count}} hr",
         "sleepTimer_custom": "custom",
-        "sleepTimer_off": "off",
-        "sleepTimer_timeRemaining": "{{time}} remaining",
         "sleepTimer_setCustom": "set timer",
         "sleepTimer_cancel": "cancel timer",
         "pausePlaybackToChangeSetting": "Pause playback to change setting"
-    },
-    "queryBuilder": {
-        "standardTags": "standard tags",
-        "customTags": "custom tags"
     },
     "releaseType": {
         "primary": {
@@ -1108,8 +944,6 @@
             "codec": "$t(common.codec)",
             "comment": "comment",
             "dateAdded": "date added",
-            "discNumber": "disc",
-            "favorite": "favorite",
             "genre": "$t(entity.genre, {\"count\": 1})",
             "lastPlayed": "last played",
             "path": "path",
@@ -1120,12 +954,10 @@
             "size": "$t(common.size)",
             "songCount": "$t(entity.track, {\"count\": 2})",
             "title": "title",
-            "trackNumber": "track",
             "owner": "owner"
         },
         "config": {
             "general": {
-                "advancedSettings": "advanced settings",
                 "autoFitColumns": "auto fit columns",
                 "autosize": "autosize",
                 "moveUp": "move up",
@@ -1135,17 +967,13 @@
                 "alignLeft": "align left",
                 "alignCenter": "align center",
                 "alignRight": "align right",
-                "followCurrentSong": "follow current song",
                 "displayType": "display type",
                 "gap": "$t(common.gap)",
-                "itemGap": "item gap (px)",
-                "itemSize": "item size (px)",
                 "itemsPerRow": "items per row",
                 "size": "$t(common.size)",
                 "size_default": "default",
                 "size_compact": "compact",
                 "size_large": "large",
-                "tableColumns": "table columns",
                 "pagination": "pagination",
                 "pagination_itemsPerPage": "items per page",
                 "pagination_infinite": "infinite",
@@ -1207,10 +1035,6 @@
         "mainText": "drop a file here"
     },
     "visualizer": {
-        "systemAudioConsentAllow": "Allow",
-        "systemAudioConsentBody": "The visualizer requires access to the system audio to work",
-        "systemAudioConsentDecline": "Deny",
-        "systemAudioConsentTitle": "Allow access to system audio?",
         "systemAudioCaptureFailed": "Could not start capture: {{message}}",
         "systemAudioNoAudioTrack": "No audio track was returned. Ensure audio capture is enabled when prompted.",
         "systemAudioExclusiveModeNotSupported": "Visualizer is unavailable while audio exclusive mode is enabled. Disable Audio Exclusive Mode in MPV settings and try again.",
@@ -1224,7 +1048,6 @@
         "blendTime": "Blend Time",
         "presets": "Presets",
         "selectPreset": "Select Preset",
-        "applyPreset": "Apply Preset",
         "saveAsPreset": "Save as Preset",
         "updatePreset": "Update Preset",
         "copyConfiguration": "Copy Configuration",
@@ -1278,8 +1101,6 @@
         "frequencyScale": "Frequency Scale",
         "sensitivity": "Sensitivity",
         "weightingFilter": "Weighting Filter",
-        "minimumDecibels": "Minimum Decibels",
-        "maximumDecibels": "Maximum Decibels",
         "linearAmplitude": "Linear Amplitude",
         "linearBoost": "Linear Boost",
         "peakBehavior": "Peak Behavior",

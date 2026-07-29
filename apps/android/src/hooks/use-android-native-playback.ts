@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, type MutableRefObject } from 'react';
 import { AppState } from 'react-native';
 
 import { setDownloadsPlaybackActive } from '../services/download-manager';
-import type { AbsProgressContext } from '../services/abs-progress';
+import type { PlaybackProgressContext } from '../services/playback-progress';
 import { useAppSessionSelector } from '../state/app-session';
 import { type AndroidPlaybackQueue } from '../state/playback-queue-store';
 import { selectAndroidPlaybackStatus, useAndroidPlaybackState } from '../state/playback-store';
@@ -26,7 +26,7 @@ export type { AndroidPlaybackQueue };
 export type { AndroidPlayItemOptions };
 
 export interface AndroidNativePlaybackController {
-    absContextRef: MutableRefObject<AbsProgressContext | null>;
+    progressContextRef: MutableRefObject<PlaybackProgressContext | null>;
     handlePlayItem: (
         item: MobilePlayableAudio,
         queueItems?: MobilePlayableAudio[],
@@ -149,7 +149,7 @@ export function useAndroidNativePlayback(options: {
     );
 
     return {
-        absContextRef: ctx.absContextRef,
+        progressContextRef: ctx.progressContextRef,
         handlePlayItem: playQueuedItemStable,
         hydrateNativePlaybackState: hydrateStable,
         playbackSnapshotRef: ctx.playbackSnapshotRef,

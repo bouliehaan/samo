@@ -17,7 +17,8 @@ import {
 } from '/@/renderer/store';
 import { PlayerShuffle } from '/@/shared/types/types';
 
-const ipc = isElectron() ? window.api.ipc : null;
+const playerState = isElectron() ? window.api.playerState : null;
+const utils = isElectron() ? window.api.utils : null;
 
 export const useNativeMenuSync = () => {
     const { t } = useTranslation();
@@ -33,114 +34,58 @@ export const useNativeMenuSync = () => {
     } = usePlayerPlaybackControlsState();
 
     useEffect(() => {
-        if (!isElectron()) {
-            return undefined;
-        }
-
-        window.api.utils.rendererOpenSettings(() => {
+        return utils?.rendererOpenSettings(() => {
             openSettingsModal();
         });
-
-        return () => {
-            ipc?.removeAllListeners('renderer-open-settings');
-        };
     }, []);
 
     useEffect(() => {
-        if (!isElectron()) {
-            return undefined;
-        }
-
-        window.api.utils.rendererOpenCommandPalette(() => {
+        return utils?.rendererOpenCommandPalette(() => {
             openCommandPalette();
         });
-
-        return () => {
-            ipc?.removeAllListeners('renderer-open-command-palette');
-        };
     }, [openCommandPalette]);
 
     useEffect(() => {
-        if (!isElectron()) {
-            return undefined;
-        }
-
-        window.api.utils.rendererOpenManageServers(() => {
+        return utils?.rendererOpenManageServers(() => {
             openModal({
                 children: <ServerList />,
                 title: t('page.manageServers.title', { postProcess: 'titleCase' }),
             });
         });
-
-        return () => {
-            ipc?.removeAllListeners('renderer-open-manage-servers');
-        };
     }, [t]);
 
     useEffect(() => {
-        if (!isElectron()) {
-            return undefined;
-        }
-
-        window.api.utils.rendererTogglePrivateMode(() => {
+        return utils?.rendererTogglePrivateMode(() => {
             setPrivateMode(!privateMode);
         });
-
-        return () => {
-            ipc?.removeAllListeners('renderer-toggle-private-mode');
-        };
     }, [privateMode, setPrivateMode]);
 
     useEffect(() => {
-        if (!isElectron()) {
-            return undefined;
-        }
-
-        window.api.utils.rendererToggleSidebar(() => {
+        return utils?.rendererToggleSidebar(() => {
             setSideBar({ collapsed: !sidebar.collapsed });
         });
-
-        return () => {
-            ipc?.removeAllListeners('renderer-toggle-sidebar');
-        };
     }, [setSideBar, sidebar.collapsed]);
 
     useEffect(() => {
-        if (!isElectron()) {
-            return;
-        }
-
         if (!playerHydrated) {
             return;
         }
 
-        ipc?.send('update-playback', playerStatus);
-        ipc?.send('update-repeat', playerRepeat);
-        ipc?.send('update-shuffle', playerShuffle !== PlayerShuffle.NONE);
+        playerState?.updatePlayback(playerStatus);
+        playerState?.updateRepeat(playerRepeat);
+        playerState?.updateShuffle(playerShuffle !== PlayerShuffle.NONE);
     }, [playerHydrated, playerRepeat, playerShuffle, playerStatus]);
 
     useEffect(() => {
-        if (!isElectron()) {
-            return;
-        }
-
-        ipc?.send('update-private-mode', privateMode);
+        playerState?.updatePrivateMode(privateMode);
     }, [privateMode]);
 
     useEffect(() => {
-        if (!isElectron()) {
-            return;
-        }
-
-        ipc?.send('update-sidebar-collapsed', sidebar.collapsed);
+        playerState?.updateSidebarCollapsed(sidebar.collapsed);
     }, [sidebar.collapsed]);
 
     useEffect(() => {
-        if (!isElectron()) {
-            return undefined;
-        }
-
-        window.api.utils.rendererOpenReleaseNotes(() => {
+        return utils?.rendererOpenReleaseNotes(() => {
             openReleaseNotesModal(
                 t('common.newVersion', {
                     postProcess: 'sentenceCase',
@@ -148,9 +93,5 @@ export const useNativeMenuSync = () => {
                 }) as string,
             );
         });
-
-        return () => {
-            ipc?.removeAllListeners('renderer-open-release-notes');
-        };
     }, [t]);
 };

@@ -43,7 +43,7 @@ import {
 } from './utils';
 import './features';
 
-import { BindingActions } from '/@/shared/types/hotkeys';
+import { BindingActions, HotkeyBindings } from '/@/shared/types/hotkeys';
 import { PlayerRepeat, PlayerStatus, PlayerType, TitleTheme } from '/@/shared/types/types';
 
 protocol.registerSchemesAsPrivileged([{ privileges: { bypassCSP: true }, scheme: 'samo' }]);
@@ -639,10 +639,7 @@ const textEntryMenuAcceleratorHotkeys = new Set([
     'tab',
 ]);
 
-const getMenuAccelerator = (
-    data: Record<BindingActions, { allowGlobal: boolean; hotkey: string; isGlobal: boolean }>,
-    action: BindingActions,
-) => {
+const getMenuAccelerator = (data: HotkeyBindings, action: BindingActions) => {
     const hotkey = data[action]?.hotkey;
 
     if (!hotkey) return undefined;
@@ -683,59 +680,53 @@ const HOTKEY_ACTIONS: Partial<Record<BindingActions, () => void>> = {
         getMainWindow()?.webContents.send('renderer-player-volume-up'),
 };
 
-ipcMain.on(
-    'set-global-shortcuts',
-    (
-        _event,
-        data: Record<BindingActions, { allowGlobal: boolean; hotkey: string; isGlobal: boolean }>,
-    ) => {
-        // Since we're not tracking the previous shortcuts, we need to unregister all of them
-        globalShortcut.unregisterAll();
+ipcMain.on('set-global-shortcuts', (_event, data: HotkeyBindings) => {
+    // Since we're not tracking the previous shortcuts, we need to unregister all of them
+    globalShortcut.unregisterAll();
 
-        for (const shortcut of Object.keys(data)) {
-            const isGlobalHotkey = data[shortcut as BindingActions].isGlobal;
-            const isValidHotkey =
-                data[shortcut as BindingActions].hotkey &&
-                data[shortcut as BindingActions].hotkey !== '';
+    for (const shortcut of Object.keys(data)) {
+        const isGlobalHotkey = data[shortcut as BindingActions].isGlobal;
+        const isValidHotkey =
+            data[shortcut as BindingActions].hotkey &&
+            data[shortcut as BindingActions].hotkey !== '';
 
-            if (isGlobalHotkey && isValidHotkey) {
-                const accelerator = hotkeyToElectronAccelerator(
-                    data[shortcut as BindingActions].hotkey,
-                );
+        if (isGlobalHotkey && isValidHotkey) {
+            const accelerator = hotkeyToElectronAccelerator(
+                data[shortcut as BindingActions].hotkey,
+            );
 
-                globalShortcut.register(accelerator, () => {
-                    HOTKEY_ACTIONS[shortcut as BindingActions]?.();
-                });
-            }
+            globalShortcut.register(accelerator, () => {
+                HOTKEY_ACTIONS[shortcut as BindingActions]?.();
+            });
         }
+    }
 
-        playbackMenuAccelerators = {
-            next: getMenuAccelerator(data, BindingActions.NEXT),
-            playPause:
-                getMenuAccelerator(data, BindingActions.PLAY_PAUSE) ||
-                getMenuAccelerator(data, BindingActions.PLAY) ||
-                getMenuAccelerator(data, BindingActions.PAUSE),
-            previous: getMenuAccelerator(data, BindingActions.PREVIOUS),
-            repeat: getMenuAccelerator(data, BindingActions.TOGGLE_REPEAT),
-            seekBackward: getMenuAccelerator(data, BindingActions.SKIP_BACKWARD),
-            seekForward: getMenuAccelerator(data, BindingActions.SKIP_FORWARD),
-            shuffle: getMenuAccelerator(data, BindingActions.SHUFFLE),
-            stop: getMenuAccelerator(data, BindingActions.STOP),
-            volumeDown: getMenuAccelerator(data, BindingActions.VOLUME_DOWN),
-            volumeUp: getMenuAccelerator(data, BindingActions.VOLUME_UP),
-        };
+    playbackMenuAccelerators = {
+        next: getMenuAccelerator(data, BindingActions.NEXT),
+        playPause:
+            getMenuAccelerator(data, BindingActions.PLAY_PAUSE) ||
+            getMenuAccelerator(data, BindingActions.PLAY) ||
+            getMenuAccelerator(data, BindingActions.PAUSE),
+        previous: getMenuAccelerator(data, BindingActions.PREVIOUS),
+        repeat: getMenuAccelerator(data, BindingActions.TOGGLE_REPEAT),
+        seekBackward: getMenuAccelerator(data, BindingActions.SKIP_BACKWARD),
+        seekForward: getMenuAccelerator(data, BindingActions.SKIP_FORWARD),
+        shuffle: getMenuAccelerator(data, BindingActions.SHUFFLE),
+        stop: getMenuAccelerator(data, BindingActions.STOP),
+        volumeDown: getMenuAccelerator(data, BindingActions.VOLUME_DOWN),
+        volumeUp: getMenuAccelerator(data, BindingActions.VOLUME_UP),
+    };
 
-        if (isMacOS()) {
-            rebuildMainMenu();
-        }
+    if (isMacOS()) {
+        rebuildMainMenu();
+    }
 
-        const globalMediaKeysEnabled = store.get('global_media_hotkeys', true) as boolean;
+    const globalMediaKeysEnabled = store.get('global_media_hotkeys', true) as boolean;
 
-        if (globalMediaKeysEnabled) {
-            enableMediaKeys(mainWindow);
-        }
-    },
-);
+    if (globalMediaKeysEnabled) {
+        enableMediaKeys(mainWindow);
+    }
+});
 
 ipcMain.on(
     'logger',

@@ -39,6 +39,8 @@ import {
 import { formatQualityProfile } from '../services/quality-badge-assets';
 import { styles } from '../theme/styles';
 import { colors } from '../theme/tokens';
+import { handleOpenDetailInfo } from '../handlers/info-handlers';
+import { triggerImpact } from '../services/haptics';
 import { getDetailTypeLabel } from '../utils/media-detail';
 import { detailHasHiRes } from '../utils/media-quality';
 
@@ -289,6 +291,14 @@ export const MediaDetailHero = memo(function MediaDetailHero({
     const contextMenu = useMediaContextMenu();
     const isArtistDetail = detail.type === MobileMediaDetailType.ARTIST;
     const isAudiobook = detail.type === MobileMediaDetailType.AUDIOBOOK;
+    // Only these two have an information sheet to open. Null elsewhere, which
+    // is what keeps the title an ordinary Text on albums, artists and playlists
+    // rather than a control that looks pressable and does nothing.
+    const infoVariant: 'audiobook' | 'podcast' | null = isAudiobook
+        ? 'audiobook'
+        : detail.type === MobileMediaDetailType.PODCAST
+          ? 'podcast'
+          : null;
     // Download button shows for everything that has saveable media. Podcasts
     // here download every episode; long-press on a single episode row still
     // works to grab just that one. Hidden while awaiting the detail — there's
@@ -395,9 +405,31 @@ export const MediaDetailHero = memo(function MediaDetailHero({
                         </Text>
                     )}
                 </View>
-                <Text numberOfLines={2} style={styles.albumHeroTitle}>
-                    {detail.title}
-                </Text>
+                {/* The title clips at two lines, and podcast names routinely run
+                    past that with no way to read the rest — so on the two kinds
+                    that HAVE an information sheet, a long-press opens it. The
+                    sheet wraps the title in full and carries the description,
+                    which is the other half of what was unreachable here.
+                    Everything else keeps a plain, unpressable Text. */}
+                {infoVariant ? (
+                    <Pressable
+                        accessibilityHint="Shows the full title and description"
+                        accessibilityLabel={`${detail.title}. Long press for information.`}
+                        accessibilityRole="button"
+                        onLongPress={() => {
+                            triggerImpact('medium');
+                            handleOpenDetailInfo(detail, infoVariant);
+                        }}
+                    >
+                        <Text numberOfLines={2} style={styles.albumHeroTitle}>
+                            {detail.title}
+                        </Text>
+                    </Pressable>
+                ) : (
+                    <Text numberOfLines={2} style={styles.albumHeroTitle}>
+                        {detail.title}
+                    </Text>
+                )}
             </Choreographed>
             {isAwaitingDetail ? (
                 heroSkeletonMetaActions

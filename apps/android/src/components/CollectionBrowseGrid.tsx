@@ -5,10 +5,11 @@ import {
 } from '@samo/core/mobile';
 import { FlashList } from '@shopify/flash-list';
 import { memo, useCallback, useMemo } from 'react';
-import { ActivityIndicator, Pressable, Text, View } from 'react-native';
+import { ActivityIndicator, Text, View } from 'react-native';
 
 import { AlphabetSidebar } from './AlphabetSidebar';
 import { ArtworkImage } from './ArtworkImage';
+import { PressableScale } from './PressableScale';
 import { QualityBadge } from './QualityBadge';
 import { useMediaContextMenu } from '../contexts/media-context-menu';
 import { type AlphabetRailRow, useAlphabetRail } from '../hooks/use-alphabet-rail';
@@ -18,7 +19,9 @@ import {
     type AndroidRecentContentSourceItem,
     getRecentContentItemKey,
 } from '../services/recent-content';
+import { chromeGlassScrollProps } from '../state/chrome-glass';
 import { VIEW_ALL_ROW_HEIGHT } from '../theme/layout';
+import { presses } from '../theme/motion';
 import { styles } from '../theme/styles';
 import { colors } from '../theme/tokens';
 
@@ -36,12 +39,12 @@ const BrowseTile = memo(({ item, onOpenContextMenu, onSelectItem }: BrowseTilePr
         item.type === MobileHomeItemType.PLAYLIST ? undefined : getItemQualityProfile(item);
 
     return (
-        <Pressable
+        <PressableScale
+            {...presses.tile}
             accessibilityRole="button"
             onLongPress={() => onOpenContextMenu(item)}
             onPress={() => onSelectItem(item)}
-            style={({ pressed }) => [styles.viewAllTile, pressed && styles.tilePressed]}
-            unstable_pressDelay={110}
+            style={styles.viewAllTile}
         >
             <ArtworkImage
                 artworkImageId={item.artworkImageId}
@@ -68,7 +71,7 @@ const BrowseTile = memo(({ item, onOpenContextMenu, onSelectItem }: BrowseTilePr
                 </View>
                 <QualityBadge tile profile={tileBadgeProfile} />
             </View>
-        </Pressable>
+        </PressableScale>
     );
 });
 BrowseTile.displayName = 'BrowseTile';
@@ -156,6 +159,7 @@ export const CollectionBrowseGrid = memo(({
                 )
             ) : (
                 <FlashList
+                    {...chromeGlassScrollProps}
                     contentContainerStyle={[
                         styles.libraryBrowseListContent,
                         { paddingBottom: bottomInset },

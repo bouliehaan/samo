@@ -1,21 +1,14 @@
 {
     "action": {
         "editPlaylist": "edytuj $t(entity.playlist, {\"count\": 1})",
-        "goToPage": "idź do strony",
         "clearQueue": "wyczyść kolejkę",
         "addToFavorites": "dodaj do $t(entity.favorite, {\"count\": 2})",
         "removeFromPlaylist": "usuń z $t(entity.playlist, {\"count\": 1})",
         "viewPlaylists": "zobacz $t(entity.playlist, {\"count\": 2})",
-        "refresh": "$t(common.refresh)",
         "removeFromQueue": "usuń z kolejki",
-        "deselectAll": "odznacz wszystko",
-        "toggleSmartPlaylistEditor": "przełącz edytor $t(entity.smartPlaylist)",
         "removeFromFavorites": "usuń z $t(entity.favorite, {\"count\": 2})",
-        "moveToTop": "przesuń na górę",
-        "addToPlaylist": "dodaj do $t(entity.playlist, {\"count\": 1})",
         "createPlaylist": "utwórz $t(entity.playlist, {\"count\": 1})",
         "deletePlaylist": "usuń $t(entity.playlist, {\"count\": 1})",
-        "moveToBottom": "przesuń na dół",
         "openIn": {
             "lastfm": "Otwórz w Last.fm",
             "musicbrainz": "Otwórz w MusicBrainz",
@@ -23,9 +16,6 @@
             "qobuz": "Otwórz w Qobuz",
             "spotify": "Otwórz w Spotify"
         },
-        "moveToNext": "przesuń na następne",
-        "downloadStarted": "rozpoczęto pobieranie {{count}} elementów",
-        "moveItems": "przenieś elementy",
         "shuffle": "odtwarzaj losowo",
         "shuffleAll": "odtwarzaj wszystkie losowo",
         "shuffleSelected": "odtwarzaj losowo wybrane",
@@ -35,7 +25,6 @@
         "holdToMoveToTop": "przytrzymaj aby, przesunąć na górę",
         "holdToMoveToBottom": "przytrzymaj aby, przesunąć na dół",
         "createRadioStation": "utwórz $t(entity.radioStation, {\"count\": 1})",
-        "deleteRadioStation": "usuń $t(entity.radioStation, {\"count\": 1})",
         "addOrRemoveFromSelection": "dodaj lub usuń z wyboru",
         "selectRangeOfItems": "wybierz zakres elementów",
         "selectAll": "wybierz wszystkie",
@@ -232,60 +221,38 @@
     },
     "error": {
         "remotePortWarning": "uruchom ponownie serwer aby używać nowego portu",
-        "systemFontError": "wystąpił błąd podczas próby pobrania czcionek systemowych",
         "playbackError": "wystąpił błąd podczas próby odtwarzania mediów",
-        "endpointNotImplementedError": "punkt końcowy {{endpoint}} nie został zaimplementowany dla {{serverType}}",
         "remotePortError": "wystąpił problem podczas ustawiania portu dla zdalnego serwera",
         "serverRequired": "wymagany serwer",
         "authenticationFailed": "uwierzytelnianie nie powiodło się",
         "apiRouteError": "nie można wykonać żądania",
         "genericError": "wystąpił błąd",
         "credentialsRequired": "wymagane poświadczenia",
-        "sessionExpiredError": "twoja sesja wygasła",
         "remoteEnableError": "wystąpił błąd podczas próby $t(common.enable) zdalnego serwera",
-        "localFontAccessDenied": "dostęp do lokalnych czcionek odrzucony",
         "serverNotSelectedError": "nie zaznaczono serwera",
         "remoteDisableError": "wystąpił błąd podczas próby $t(common.disable) zdalnego serwera",
-        "mpvRequired": "wymagane MPV",
         "audioDeviceFetchError": "wystąpił błąd podczas próby znalezienia urządzeń dźwiękowych",
         "invalidServer": "nieprawidłowy serwer",
-        "loginRateError": "zbyt dużo prób logowania, poczekaj chwilę i spróbuj ponownie",
-        "networkError": "wystąpił błąd sieciowy",
         "openError": "nie można otworzyć pliku",
         "badValue": "niewłaściwa opcja \"{{value}}\". ta wartość już nie istnieje",
-        "notificationDenied": "odmówiono uprawnień dla powiadomień. to ustawienie nie będzie miało efektu",
-        "multipleServerSaveQueueError": "kolejka odtwarzania ma jedną lub więcej piosenek które nie pochodzą z aktualnego serwera. to nie jest wspierane",
-        "saveQueueFailed": "nie udało się zapisać kolejki",
         "settingsSyncError": "zostały znalezione różnice pomiędzy ustawieniami w rendererze a głównym procesem. uruchom aplikację ponownie aby, zastosować zmiany",
         "noNetwork": "serwer niedostępny",
         "noNetworkDescription": "nie udało się połączyć z tym serwerem",
-        "invalidJson": "nieprawidłowy JSON",
         "serverLockSingleServer": "dozwolony jest tylko jeden serwer gdy serwer jest zablokowany",
         "playbackPausedDueToError": "odtwarzanie zostało wstrzymane z powodu błędu"
     },
     "filter": {
-        "mostPlayed": "najczęściej odtwarzane",
         "playCount": "liczba odtworzeń",
         "isCompilation": "jest kompilacją",
         "recentlyPlayed": "ostatnio odtwarzane",
-        "isRated": "jest ocenione",
-        "title": "tytuł",
-        "search": "wyszukaj",
-        "bitrate": "bitrate",
         "recentlyAdded": "ostatnio dodane",
-        "note": "notatka",
         "name": "nazwa",
-        "dateAdded": "dodano datę",
         "releaseDate": "data premiery",
-        "path": "ścieżka",
         "favorited": "ulubione",
         "albumArtist": "$t(entity.albumArtist, {\"count\": 1})",
-        "isRecentlyPlayed": "było niedawno odtwarzane",
         "isFavorited": "jest ulubione",
         "bpm": "bpm",
         "releaseYear": "rok wydania",
-        "disc": "płyta",
-        "biography": "biografia",
         "songCount": "liczba utworów",
         "artist": "$t(entity.artist, {\"count\": 1})",
         "duration": "długość",
@@ -293,15 +260,10 @@
         "lastPlayed": "ostatnio odtwarzane",
         "toYear": "do roku",
         "fromYear": "od roku",
-        "trackNumber": "utwór",
         "comment": "komentarz",
-        "recentlyUpdated": "ostatnio aktualizowane",
-        "channels": "$t(common.channel, {\"count\": 2})",
-        "owner": "$t(common.owner)",
         "genre": "$t(entity.genre, {\"count\": 1})",
         "albumCount": "liczba $t(entity.album, {\"count\": 2})",
         "id": "id",
-        "isPublic": "jest publiczny",
         "album": "$t(entity.album, {\"count\": 1})",
         "explicitStatus": "$t(common.explicitStatus)",
         "sortName": "sortowanie po nazwie",
@@ -310,9 +272,7 @@
     },
     "form": {
         "deletePlaylist": {
-            "title": "usuń $t(entity.playlist, {\"count\": 1})",
-            "success": "$t(entity.playlist, {\"count\": 1}) usunięta pomyślnie",
-            "input_confirm": "wpisz nazwę $t(entity.playlist, {\"count\": 1}) aby potwierdzić"
+            "title": "usuń $t(entity.playlist, {\"count\": 1})"
         },
         "createPlaylist": {
             "input_description": "$t(common.description)",
@@ -349,17 +309,7 @@
             "searchOrCreate": "wyszukaj $t(entity.playlist, {\"count\": 2}) lub wpisz, aby utworzyć nową"
         },
         "updateServer": {
-            "title": "uaktualnij serwer",
-            "success": "serwer zaaktualizowany pomyślnie"
-        },
-        "queryEditor": {
-            "input_optionMatchAll": "dopasuj wszystkie",
-            "input_optionMatchAny": "dopasuj dowolne",
-            "title": "edytor zapytań",
-            "addRuleGroup": "dodaj grupę zasad",
-            "removeRuleGroup": "usuń grupę zasad",
-            "resetToDefault": "przywróć domyślne",
-            "clearFilters": "wyczyść filtry"
+            "title": "uaktualnij serwer"
         },
         "lyricSearch": {
             "input_name": "$t(common.name)",
@@ -369,16 +319,6 @@
         "editPlaylist": {
             "title": "edytuj $t(entity.playlist, {\"count\": 1})",
             "success": "$t(entity.playlist, {\"count\": 1}) zaktualizowana pomyślnie"
-        },
-        "shareItem": {
-            "allowDownloading": "zezwól na pobieranie",
-            "description": "opis",
-            "setExpiration": "ustaw czas wygaśnięcia",
-            "success": "link do udostępniania skopiowany do schowka (lub kliknij tutaj, aby otworzyć)",
-            "createFailed": "nie udało się utworzyć linku do udostępniania (czy udostępnianie jest włączone?)",
-            "expireInvalid": "ustawiony czas wygaśnięcia musi być w przyszłości",
-            "copyToClipboard": "Skopiuj do schowka: Ctrl+C, Enter",
-            "successMustClick": "udostępnianie utworzone pomyślnie, kliknij tutaj żeby otworzyć"
         },
         "privateMode": {
             "enabled": "tryb prywatny włączony, status odtwarzania jest ukryty przed usługami zewnętrznymi",
@@ -394,18 +334,9 @@
             "input_genre": "$t(entity.genre, {\"count\": 1})",
             "input_limit": "ile piosenek?",
             "input_minYear": "z roku",
-            "input_maxYear": "do roku",
-            "input_played": "filtr odtwarzania",
-            "input_played_optionAll": "wszystkie utwory",
-            "input_played_optionUnplayed": "tylko nieodtworzone utwory",
-            "input_played_optionPlayed": "tylko odtworzone utwory"
-        },
-        "saveQueue": {
-            "success": "zapisano kolejkę odtwarzania na serwerze"
+            "input_maxYear": "do roku"
         },
         "createRadioStation": {
-            "success": "stacja radiowa utworzona pomyślnie",
-            "title": "utwórz stację radiową",
             "input_homepageUrl": "url strony głównej",
             "input_name": "nazwa",
             "input_streamUrl": "url strumienia"
@@ -422,20 +353,12 @@
     "page": {
         "fullscreenPlayer": {
             "config": {
-                "showLyricMatch": "pokaż dopasowanie tekstu",
-                "dynamicBackground": "dynamiczne tło",
                 "synchronized": "zsynchronizowane",
                 "followCurrentLyric": "podążaj za aktualnym tekstem",
-                "opacity": "przezroczystość",
                 "lyricSize": "rozmiar tekstu",
-                "showLyricProvider": "pokaż dostawce tekstu",
                 "unsynchronized": "niezsynchronizowane",
                 "lyricAlignment": "wyrównaj tekst",
-                "useImageAspectRatio": "użyj współczynnika proporcji obrazu",
                 "lyricGap": "odstępy tekstu",
-                "dynamicImageBlur": "rozmiar rozmycia obrazu",
-                "dynamicIsImage": "włącz obraz w tle",
-                "lyricOffset": "opóźnienie tekstów (ms)",
                 "lyricOpacityNonActive": "przezroczystość nieaktywnego tekstu",
                 "lyricScaleNonActive": "skala nieaktywnego tekstu"
             },
@@ -447,12 +370,10 @@
         },
         "appMenu": {
             "selectServer": "wybierz serwer",
-            "version": "wersja {{version}}",
             "settings": "$t(common.setting, {\"count\": 2})",
             "manageServers": "zarządzaj serwerami",
             "expandSidebar": "rozwiń pasek boczny",
             "collapseSidebar": "zwiń pasek boczny",
-            "openBrowserDevtools": "otwórz narzędzia deweloperskie przeglądarki",
             "quit": "$t(common.quit)",
             "goBack": "do tyłu",
             "goForward": "do przodu",
@@ -460,53 +381,31 @@
             "privateModeOn": "włącz tryb prywatny",
             "selectMusicFolder": "wybierz folder muzyki",
             "noMusicFolder": "nie wybrano folderu muzyki",
-            "multipleMusicFolders": "wybrano {{count}} folderów muzyki",
-            "commandPalette": "otwórz paletę komend"
+            "multipleMusicFolders": "wybrano {{count}} folderów muzyki"
         },
         "contextMenu": {
             "addToPlaylist": "$t(action.addToPlaylist)",
-            "addToFavorites": "$t(action.addToFavorites)",
             "moveToTop": "$t(action.moveToTop)",
-            "deletePlaylist": "$t(action.deletePlaylist)",
             "moveToBottom": "$t(action.moveToBottom)",
-            "createPlaylist": "$t(action.createPlaylist)",
-            "removeFromPlaylist": "$t(action.removeFromPlaylist)",
-            "removeFromFavorites": "$t(action.removeFromFavorites)",
-            "addNext": "$t(player.addNext)",
-            "deselectAll": "$t(action.deselectAll)",
-            "addLast": "$t(player.addLast)",
-            "addFavorite": "$t(action.addToFavorites)",
-            "play": "$t(player.play)",
-            "numberSelected": "zaznaczono {{count}}",
-            "removeFromQueue": "$t(action.removeFromQueue)",
-            "shareItem": "udostępnij pozycję",
             "showDetails": "zobacz informacje",
             "download": "pobierz",
-            "playShuffled": "$t(player.shuffle)",
-            "playSimilarSongs": "$t(player.playSimilarSongs)",
             "moveToNext": "$t(action.moveToNext)",
             "goToAlbum": "przejdź do $t(entity.album, {\"count\": 1})",
-            "goToAlbumArtist": "przejdź do $t(entity.albumArtist, {\"count\": 1})",
             "moveItems": "$t(action.moveItems)",
             "goTo": "przejdź do"
         },
         "albumDetail": {
             "moreFromArtist": "więcej od $t(entity.artist, {\"count\": 1})",
-            "moreFromGeneric": "więcej od {{item}}",
-            "released": "wydany"
+            "moreFromGeneric": "więcej od {{item}}"
         },
         "albumArtistList": {
             "title": "$t(entity.albumArtist, {\"count\": 2})"
         },
         "genreList": {
-            "title": "$t(entity.genre, {\"count\": 2})",
-            "showAlbums": "pokaż $t(entity.album, {\"count\": 2}) $t(entity.genre, {\"count\": 1})",
-            "showTracks": "pokaż $t(entity.track, {\"count\": 2}) $t(entity.genre, {\"count\": 1})"
+            "title": "$t(entity.genre, {\"count\": 2})"
         },
         "albumList": {
-            "title": "$t(entity.album, {\"count\": 2})",
-            "artistAlbums": "albumy wykonawcy {{artist}}",
-            "genreAlbums": "$t(entity.album, {\"count\": 2}) \"{{genre}}\""
+            "title": "$t(entity.album, {\"count\": 2})"
         },
         "sidebar": {
             "nowPlaying": "teraz odtwarzane",
@@ -527,43 +426,23 @@
             "collections": "kolekcje"
         },
         "home": {
-            "mostPlayed": "najczęściej odtwarzane",
-            "newlyAdded": "niedawno dodane",
-            "title": "$t(common.home)",
-            "explore": "przeglądaj z biblioteki",
-            "recentlyPlayed": "ostatnio odtwarzane",
-            "recentlyReleased": "ostatnio wydane",
-            "genres": "$t(entity.genre, {\"count\": 2})"
+            "title": "$t(common.home)"
         },
         "setting": {
-            "playbackTab": "odtworzenia",
             "generalTab": "ogólne",
             "hotkeysTab": "skróty klawiszowe",
-            "windowTab": "okno",
             "advanced": "zaawansowane",
-            "analytics": "analityka",
             "updates": "aktualizacja",
             "cache": "cache",
             "application": "aplikacja",
-            "queryBuilder": "kreator zapytań",
             "theme": "motyw",
-            "controls": "sterowanie",
-            "sidebar": "pasek boczny",
             "remote": "zdalne",
             "exportImport": "import/eksport",
-            "scrobble": "scrobble",
-            "audio": "audio",
             "lyrics": "tekst",
-            "transcoding": "transkodowanie",
-            "discord": "discord",
-            "playerFilters": "filtry odtwarzacza",
-            "logger": "logger",
             "lyricsDisplay": "wyświetlanie tekstu"
         },
         "trackList": {
-            "title": "$t(entity.track, {\"count\": 2})",
-            "artistTracks": "utwory przez {{artist}}",
-            "genreTracks": "$t(entity.track, {\"count\": 2}) \"{{genre}}\""
+            "title": "$t(entity.track, {\"count\": 2})"
         },
         "globalSearch": {
             "commands": {
@@ -580,7 +459,6 @@
             "topSongs": "popularne utwory",
             "topSongsFrom": "popularne utwory z {{title}}",
             "about": "O {{artist}}",
-            "recentReleases": "ostatnie wydania",
             "viewAll": "zobacz wszystko",
             "viewDiscography": "przeglądaj dyskografię",
             "relatedArtists": "powiązane z $t(entity.artist, {\"count\": 2})",
@@ -603,17 +481,10 @@
             "url": "URL",
             "username": "nazwa użytkownika",
             "removeServer": "usuń serwer",
-            "serverDetails": "szczegóły serwera",
             "editServerDetailsTooltip": "edytuj szczegóły serwera"
-        },
-        "playlist": {
-            "reorder": "zmiana kolejności jest możliwa tylko podczas sortowania według id"
         },
         "favorites": {
             "title": "$t(entity.favorite, {\"count\": 2})"
-        },
-        "folderList": {
-            "title": "$t(entity.folder, {\"count\": 2})"
         },
         "radioList": {
             "title": "stacje radiowe"
@@ -636,7 +507,6 @@
         "repeat_all": "powtarzaj wszystkie",
         "stop": "stop",
         "repeat": "powtarzaj jeden",
-        "queue_remove": "usuń zaznaczone",
         "playRandom": "odtwarzaj losowo",
         "skip": "pomiń",
         "previous": "poprzedni",
@@ -645,7 +515,6 @@
         "favorite": "ulubione",
         "next": "następny",
         "shuffle": "odtwarzaj (losowo)",
-        "playbackFetchNoResults": "nie znaleziono utworów",
         "playbackFetchInProgress": "wczytywanie utworów…",
         "addNext": "następne",
         "playbackSpeed": "prędkość odtwarzania",
@@ -653,23 +522,17 @@
         "play": "odtwarzaj",
         "repeat_off": "powtarzanie wyłączone",
         "pause": "wstrzymaj",
-        "queue_clear": "wyczyść kolejke",
         "muted": "wyciszone",
         "unfavorite": "usuń z ulubionych",
-        "queue_moveToTop": "przesuń zaznaczone na dół",
-        "queue_moveToBottom": "przesuń zaznaczone na górę",
         "shuffle_off": "losowa kolejność wyłączona",
         "addLast": "ostatnie",
         "mute": "wycisz",
         "skip_forward": "przeskocz do przodu",
         "viewQueue": "zobacz kolejkę",
-        "playSimilarSongs": "odtwarzaj podobne",
         "addLastShuffled": "ostatnie (wylosowane)",
         "addNextShuffled": "następne (wylosowane)",
         "holdToShuffle": "przytrzymaj aby odtwarzać losowo",
         "lyrics": "tekst",
-        "restoreQueueFromServer": "przywróć kolejkę z serwera",
-        "saveQueueToServer": "zapisz kolejkę na serwerze",
         "artistRadio": "radio wykonawcy",
         "trackRadio": "radio utworu",
         "sleepTimer": "wyłącznik czasowy",
@@ -677,8 +540,6 @@
         "sleepTimer_minutes": "{{count}} min",
         "sleepTimer_hours": "{{count}} godz",
         "sleepTimer_custom": "niestandardowy",
-        "sleepTimer_off": "wyłączony",
-        "sleepTimer_timeRemaining": "pozostało {{time}}",
         "sleepTimer_setCustom": "ustaw wyłącznik",
         "sleepTimer_cancel": "anuluj wyłączanie",
         "albumRadio": "radio albumu"
@@ -1065,13 +926,8 @@
             "general": {
                 "displayType": "typ wyświetlania",
                 "gap": "$t(common.gap)",
-                "tableColumns": "kolumny tabeli",
                 "autoFitColumns": "automatyczne dopasowanie kolumn",
                 "size": "$t(common.size)",
-                "itemSize": "rozmiar elementu (px)",
-                "itemGap": "odstęp między elementami (px)",
-                "followCurrentSong": "śledź aktualną piosenkę",
-                "advancedSettings": "zaawansowane ustawienia",
                 "autosize": "rozmiar automatyczny",
                 "moveUp": "przesuń w górę",
                 "moveDown": "przesuń w dół",
@@ -1135,7 +991,6 @@
         "column": {
             "comment": "komentarz",
             "album": "album",
-            "favorite": "ulubione",
             "playCount": "odtwarzane",
             "albumCount": "$t(entity.album, {\"count\": 2})",
             "releaseYear": "rok",
@@ -1148,11 +1003,9 @@
             "dateAdded": "data dodania",
             "artist": "$t(entity.artist, {\"count\": 1})",
             "songCount": "$t(entity.track, {\"count\": 2})",
-            "trackNumber": "utwór",
             "genre": "$t(entity.genre, {\"count\": 1})",
             "albumArtist": "wykonawca albumu",
             "path": "ścieżka",
-            "discNumber": "płyta",
             "channels": "$t(common.channel, {\"count\": 2})",
             "size": "$t(common.size)",
             "codec": "$t(common.codec)",
@@ -1160,10 +1013,6 @@
             "bitDepth": "$t(common.bitDepth)",
             "sampleRate": "$t(common.sampleRate)"
         }
-    },
-    "queryBuilder": {
-        "standardTags": "tagi standardowe",
-        "customTags": "tagi niestandardowe"
     },
     "releaseType": {
         "primary": {
@@ -1193,27 +1042,6 @@
         "error_readingFile": "wystąpił problem z odczytaniem pliku: {{errorMessage}}",
         "mainText": "upuść plik tutaj"
     },
-    "filterOperator": {
-        "after": "jest po",
-        "afterDate": "jest po (dacie)",
-        "before": "jest przed",
-        "beforeDate": "jest przed (datą)",
-        "contains": "zawiera",
-        "endsWith": "kończy się na",
-        "inPlaylist": "jest w",
-        "inTheLast": "jest w ostatnim",
-        "inTheRange": "jest w zakresie",
-        "inTheRangeDate": "jest w zakresie (dat)",
-        "is": "jest",
-        "isNot": "nie jest",
-        "isGreaterThan": "jest większe od",
-        "isLessThan": "jest mniejsze od",
-        "matchesRegex": "pasuje do wyrażenia regularnego (regex)",
-        "notContains": "nie zawiera",
-        "notInPlaylist": "nie jest w",
-        "notInTheLast": "nie jest w ostatnim",
-        "startsWith": "zaczyna się od"
-    },
     "datetime": {
         "minuteShort": "min",
         "secondShort": "sek",
@@ -1241,7 +1069,6 @@
         "blendTime": "Czas Mieszania",
         "presets": "Ustawienia",
         "selectPreset": "Wybierz Ustawienie",
-        "applyPreset": "Zastosuj Ustawienie",
         "saveAsPreset": "Zapisz jako Ustawienie",
         "updatePreset": "Uaktualnij Ustawienie",
         "presetName": "Nazwa Ustawienia",
@@ -1283,8 +1110,6 @@
         "frequencyScale": "Skala Częstotliwości",
         "sensitivity": "Czułość",
         "weightingFilter": "Filtr Wagi",
-        "minimumDecibels": "Minimum Decybeli",
-        "maximumDecibels": "Maksimum Decybeli",
         "linearAmplitude": "Amplituda Linearna",
         "linearBoost": "Podbicie Linearne",
         "peakBehavior": "Zachowanie Szczytów",
@@ -1368,10 +1193,6 @@
         "pasteGradient": "Wklej Gradient",
         "pasteGradientPlaceholder": "Wklej tutaj JSON gradientu...",
         "ansiBands": "Paski ANSI",
-        "systemAudioConsentAllow": "Zezwól",
-        "systemAudioConsentBody": "Wizualizer wymaga dostępu do audio systemu do działania",
-        "systemAudioConsentDecline": "Odmów",
-        "systemAudioConsentTitle": "Przyznać dostęp do audio systemu?",
         "systemAudioCaptureFailed": "Nie udało się rozpocząć przechwytywania: {{message}}",
         "systemAudioNoAudioTrack": "Nie została zwrócona żadna ścieżka audio. Sprawdź czy przechwytywanie audio będzie włączone, gdy będzie o to prośba.",
         "systemAudioExclusiveModeNotSupported": "Wizualizer jest niedostępny w gdy tryb wyłącznie z dźwiękiek jest włączony. Wyłącz tryb wyłącznie audio w ustawieniach MPV i spróbuj ponownie."

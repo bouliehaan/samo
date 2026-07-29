@@ -681,7 +681,6 @@ export enum SidebarItem {
     ARTISTS_ALL = 'Artists-all',
     COLLECTIONS = 'Collections',
     FAVORITES = 'Favorites',
-    FOLDERS = 'Folders',
     GENRES = 'Genres',
     HOME = 'Home',
     NOW_PLAYING = 'Now Playing',

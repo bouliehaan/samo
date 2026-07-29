@@ -14,9 +14,8 @@ import {
 import { useIsActiveRow } from '/@/renderer/components/item-list/item-table-list/item-table-list-context';
 import { JoinedArtists } from '/@/renderer/features/albums/components/joined-artists';
 import { ExplicitIndicator } from '/@/shared/components/explicit-indicator/explicit-indicator';
-import { Icon } from '/@/shared/components/icon/icon';
 import { Text } from '/@/shared/components/text/text';
-import { Folder, LibraryItem, QueueSong } from '/@/shared/types/domain-types';
+import { LibraryItem, QueueSong } from '/@/shared/types/domain-types';
 
 export const DefaultTitleArtistColumn = (props: ItemTableListInnerColumn) => {
     const rowItem = props.getRowItem?.(props.rowIndex) ?? (props.data as any[])[props.rowIndex];
@@ -152,44 +151,6 @@ export const QueueSongTitleArtistColumn = (props: ItemTableListInnerColumn) => {
         );
     }
 
-    if ((rowItem as unknown as Folder)?._itemType === LibraryItem.FOLDER) {
-        const rowHeight = props.getRowHeight(props.rowIndex, props);
-        const path = getTitlePath(props.itemType, (rowItem as any).id as string);
-
-        const item = rowItem as any;
-        const textStyles = isActive ? { color: 'var(--theme-colors-primary)' } : {};
-
-        const titleLinkProps = path
-            ? {
-                  component: Link,
-                  isLink: true,
-                  state: { item },
-                  to: path,
-              }
-            : {};
-
-        const title = (rowItem as unknown as Folder)?.name;
-
-        return (
-            <TableColumnContainer
-                className={clsx(styles.titleArtist, styles[alignClass])}
-                containerStyle={{ '--row-height': `${rowHeight}px` } as CSSProperties}
-                {...props}
-            >
-                <Icon className={styles.folderIcon} icon="folder" size="2xl" />
-                <Text
-                    className={styles.title}
-                    isNoSelect
-                    size="md"
-                    {...titleLinkProps}
-                    style={textStyles}
-                >
-                    {title}
-                </Text>
-            </TableColumnContainer>
-        );
-    }
-
     if (row === null) {
         return <ColumnNullFallback {...props} />;
     }
@@ -201,7 +162,6 @@ const TitleArtistColumnBase = (props: ItemTableListInnerColumn) => {
     const { itemType } = props;
 
     switch (itemType) {
-        case LibraryItem.FOLDER:
         case LibraryItem.PLAYLIST_SONG:
         case LibraryItem.QUEUE_SONG:
         case LibraryItem.SONG:

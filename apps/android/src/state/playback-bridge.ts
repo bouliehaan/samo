@@ -1,7 +1,7 @@
 import { type MutableRefObject } from 'react';
 import { type MobilePlayableAudio } from '@samo/core/mobile';
 
-import { type AbsProgressContext } from '../services/abs-progress';
+import { type PlaybackProgressContext } from '../services/playback-progress';
 import { type AndroidPlayItemOptions } from '../hooks/use-android-native-playback';
 
 /**
@@ -12,7 +12,7 @@ import { type AndroidPlayItemOptions } from '../hooks/use-android-native-playbac
  * the existing registerNavigatePlayback, widened to the whole engine.
  */
 export type PlaybackBridge = {
-    absContextRef: MutableRefObject<AbsProgressContext | null>;
+    progressContextRef: MutableRefObject<PlaybackProgressContext | null>;
     cycleRepeatMode: () => void;
     handlePlayItem: (
         item: MobilePlayableAudio,

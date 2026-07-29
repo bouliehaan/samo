@@ -24,6 +24,21 @@ const looksLikeLanHost = (host: string): boolean => {
     return bareHost.length > 0 && PRIVATE_HOST_PATTERNS.some((pattern) => pattern.test(bareHost));
 };
 
+/**
+ * Whether an address is one that only resolves on the local network.
+ *
+ * Used to file a newly connected server's address as its LOCAL or its REMOTE
+ * endpoint without asking: someone who set up over `192.168.1.5:4000` has given
+ * us a LAN address, and someone who typed a hostname has given us one that
+ * works from anywhere. The guess is only ever a starting point — network
+ * settings let either slot be edited.
+ */
+export const isLanServerUrl = (value: string): boolean => {
+    const withoutScheme = value.trim().replace(/^[a-z][a-z\d+\-.]*:\/\//i, '');
+    const host = withoutScheme.split('/')[0] ?? '';
+    return looksLikeLanHost(host);
+};
+
 export const addDefaultHttpScheme = (value: string) => {
     const trimmed = value.trim();
 

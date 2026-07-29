@@ -7,7 +7,6 @@ import {
     setMediaTypeCollections,
 } from '../state/app-navigation';
 import { getAuthSession } from '../state/auth-session';
-import { getDownloadsSnapshot } from '../state/downloads-state';
 import {
     EMPTY_LIBRARY_FULL_COLLECTIONS,
     EMPTY_LIBRARY_RELEVANT_STATE,
@@ -48,9 +47,14 @@ const MEDIA_TYPE_COLLECTION_ORDERING: Record<MediaTypeCollectionKey, CatalogItem
     podcasts: { direction: 'asc', sort: 'title' },
 };
 
+// NOTE: none of the loads in this module touch the network — every one reads
+// the on-device catalog mirror. They used to bail out when offline mode was on,
+// which is what emptied the Library tab the moment the Wi-Fi dropped, and is
+// also why "offline mode" felt like it did nothing but delete the app's
+// contents. Being offline is not a reason to stop reading local data.
 export const startLibraryRelevantLoad = (): void => {
     const serverConnection = getAuthSession().serverConnection;
-    if (getDownloadsSnapshot().isOfflineMode || !serverConnection) {
+    if (!serverConnection) {
         return;
     }
 
@@ -69,11 +73,7 @@ export const startLibraryRelevantLoad = (): void => {
 
 export const startLibraryFullCollectionLoad = (): void => {
     const serverConnection = getAuthSession().serverConnection;
-    if (
-        getDownloadsSnapshot().isOfflineMode ||
-        !serverConnection ||
-        getAppNavigation().homeContentState.status !== 'loaded'
-    ) {
+    if (!serverConnection || getAppNavigation().homeContentState.status !== 'loaded') {
         return;
     }
 
@@ -138,7 +138,7 @@ export const startLibraryFullCollectionLoad = (): void => {
  */
 export const startMediaTypeCollectionLoad = (mediaType: MediaTypeCollectionKey): void => {
     const serverConnection = getAuthSession().serverConnection;
-    if (getDownloadsSnapshot().isOfflineMode || !serverConnection) {
+    if (!serverConnection) {
         return;
     }
 

@@ -636,6 +636,21 @@ export const getHomeDisplaySections = (
     // stray bottom skeleton on a first launch with no Discover content.
     const reserveRediscover = discoverItems.length < 4 && (layoutHint?.rediscover ?? 0) > 0;
 
+    // Only present while offline (see use-visible-home-content), and first when
+    // it is: with no network, "what is already on this phone" is the only thing
+    // on Home that can actually be played, so it leads. Mixed-type, so it uses
+    // the recents variant and picks up the filter pills' per-item scrubbing for
+    // free.
+    const downloadedItems = sectionsById.get(MobileHomeSectionId.DOWNLOADED)?.items ?? [];
+    if (downloadedItems.length > 0) {
+        displaySections.push({
+            items: downloadedItems,
+            key: MobileHomeSectionId.DOWNLOADED,
+            title: 'Downloaded',
+            variant: 'recents',
+        });
+    }
+
     if (recentDisplayItems.length >= RECENTLY_PLAYED_MIN_ITEMS) {
         displaySections.push({
             items: recentDisplayItems.slice(0, RECENTLY_PLAYED_ROW_LIMIT),

@@ -287,10 +287,6 @@ export const homeStyles = StyleSheet.create({
         flex: 1,
         minWidth: 0,
     },
-    tilePressed: {
-        opacity: 0.82,
-        transform: [{ scale: 0.96 }],
-    },
     mediaArtwork: {
         aspectRatio: 1,
         backgroundColor: colors.surface,
@@ -466,7 +462,7 @@ export const homeStyles = StyleSheet.create({
     },
     /** Same cover, blurred to a wash — the card's only source of colour. */
     exploreHeroBackdrop: {
-        ...StyleSheet.absoluteFillObject,
+        ...StyleSheet.absoluteFill,
     },
     exploreHeroEyebrow: {
         color: colors.accent,
@@ -476,10 +472,6 @@ export const homeStyles = StyleSheet.create({
         marginBottom: 6,
         textTransform: 'uppercase',
     },
-    exploreHeroPressed: {
-        opacity: 0.88,
-        transform: [{ scale: 0.985 }],
-    },
     exploreHeroRow: {
         alignItems: 'center',
         flexDirection: 'row',
@@ -488,7 +480,7 @@ export const homeStyles = StyleSheet.create({
     },
     /** Darkens the blur enough for text, densest behind the copy column. */
     exploreHeroScrim: {
-        ...StyleSheet.absoluteFillObject,
+        ...StyleSheet.absoluteFill,
     },
     exploreHeroSubtitle: {
         color: colors.muted,

@@ -1,11 +1,9 @@
 import { queryOptions } from '@tanstack/react-query';
 import isElectron from 'is-electron';
 
-import { api } from '/@/renderer/api';
 import { queryKeys } from '/@/renderer/api/query-keys';
 import { QueryHookArgs } from '/@/renderer/lib/react-query';
 import { getServerById, useSettingsStore } from '/@/renderer/store';
-import { hasFeature } from '/@/shared/api/utils';
 import {
     FullLyricsMetadata,
     InternetProviderLyricResponse,
@@ -20,7 +18,6 @@ import {
     StructuredLyric,
     SynchronizedLyricsArray,
 } from '/@/shared/types/domain-types';
-import { ServerFeature } from '/@/shared/types/features-types';
 
 const lyricsIpc = isElectron() ? window.api.lyrics : null;
 
@@ -64,39 +61,9 @@ const fetchLocalLyrics = async (params: {
     signal?: AbortSignal;
     song: QueueSong;
 }): Promise<FullLyricsMetadata | null | StructuredLyric[]> => {
-    const { serverId, signal, song } = params;
+    const { serverId, song } = params;
     const server = getServerById(serverId);
     if (!server) return null;
-
-    if (hasFeature(server, ServerFeature.LYRICS_MULTIPLE_STRUCTURED)) {
-        const structuredLyrics = await api.controller
-            .getStructuredLyrics({
-                apiClientProps: { serverId, signal },
-                query: { songId: song.id },
-            })
-            .catch(() => null);
-        if (structuredLyrics?.length) return structuredLyrics;
-        return null;
-    }
-
-    if (hasFeature(server, ServerFeature.LYRICS_SINGLE_STRUCTURED)) {
-        const singleLyrics = await api.controller
-            .getLyrics({
-                apiClientProps: { serverId, signal },
-                query: { songId: song.id },
-            })
-            .catch(() => null);
-        if (singleLyrics) {
-            return {
-                artist: song.artists?.[0]?.name,
-                lyrics: singleLyrics,
-                name: song.name,
-                remote: false,
-                source: server?.name ?? 'music server',
-            };
-        }
-        return null;
-    }
 
     if (song.lyrics) {
         return {

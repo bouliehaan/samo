@@ -1,7 +1,5 @@
 {
     "action": {
-        "moveToBottom": "alttakine geç",
-        "moveToTop": "başa dön",
         "removeFromFavorites": "$t(entity.favorite, {\"count\": 2})lerden kaldır",
         "removeFromPlaylist": "$t(entity.playlist, {\"count\": 1}) listesinden kaldır",
         "removeFromQueue": "sıradan kaldır",
@@ -11,22 +9,14 @@
             "musicbrainz": "MusicBrainz'da aç"
         },
         "addToFavorites": "$t(entity.favorite, {\"count\": 2}) listesine ekle",
-        "addToPlaylist": "$t(entity.playlist, {\"count\": 1}) listesine ekle",
         "clearQueue": "sırayı temizle",
         "createPlaylist": "$t(entity.playlist, {\"count\": 1}) listesini oluştur",
         "deletePlaylist": "$t(entity.playlist, {\"count\": 1}) listesini sil",
-        "deselectAll": "seçimleri kaldır",
         "editPlaylist": "$t(entity.playlist, {\"count\": 1}) listesini düzenle",
-        "goToPage": "sayfaya git",
-        "moveToNext": "sonrakine geç",
-        "refresh": "$t(common.refresh)",
-        "toggleSmartPlaylistEditor": "$t(entity.smartPlaylist) düzenleyiciye geç",
         "addOrRemoveFromSelection": "seçime ekle veya seçimi kaldır",
         "selectRangeOfItems": "bir dizi öğe seçin",
         "createRadioStation": "$t(entity.radioStation, {\"count\": 1}) oluştur",
-        "deleteRadioStation": "$t(entity.radioStation, {\"count\": 1}) istasyonunu sil",
         "selectAll": "tümünü seç",
-        "downloadStarted": "{{count}} öğenin indirilmesine başlandı",
         "moveUp": "yukarı kaydır",
         "moveDown": "aşağı kaydır"
     },
@@ -179,16 +169,8 @@
         "remotePortWarning": "yeni bağlantı noktasını uygulamak için sunucuyu yeniden başlatın",
         "serverNotSelectedError": "sunucu seçili değil",
         "serverRequired": "sunucu gerekli",
-        "sessionExpiredError": "oturumunuzun süresi doldu",
-        "systemFontError": "sistem fontlarını almaya çalışırken bir hata oluştu",
-        "endpointNotImplementedError": "{{endpoint}} uç noktası bu {{serverType}} için uygulanamaz",
         "genericError": "bir hata oluştu",
         "invalidServer": "geçersiz sunucu",
-        "localFontAccessDenied": "yerel fontlara erişim reddedildi",
-        "loginRateError": "çok fazla giriş denemesi, lütfen birkaç saniye içinde tekrar deneyin",
-        "mpvRequired": "MPV gerekli",
-        "networkError": "bir ağ hatası meydana geldi",
-        "notificationDenied": "bildirimler için izinler reddedildi. bu ayarın hiçbir etkisi yoktur",
         "openError": "dosya açılamadı",
         "playbackError": "medya oynatmayı çalışırken bir hata meydana geldi",
         "credentialsRequired": "ki̇mli̇k bi̇lgi̇leri̇ gerekli",
@@ -197,44 +179,28 @@
     },
     "filter": {
         "albumCount": "$t(entity.album, {\"count\": 2}) sayısı",
-        "biography": "biyografi",
-        "bitrate": "bit hızı",
         "bpm": "bpm",
         "comment": "yorum",
-        "dateAdded": "tarih eklendi",
-        "disc": "disk",
         "duration": "süre",
         "favorited": "favorilendi",
         "fromYear": "yılından itibaren",
         "id": "kimlik",
         "isCompilation": "derleme",
         "isFavorited": "favorilendi",
-        "isPublic": "halka açıktır",
-        "isRated": "oylandı",
-        "isRecentlyPlayed": "yakın zamanda çalındı",
         "lastPlayed": "son çalınan",
-        "mostPlayed": "en çok çalınan",
         "name": "isim",
-        "note": "not",
-        "owner": "$t(common.owner)",
-        "path": "yol",
         "playCount": "çalma sayısı",
         "random": "rastgele",
         "recentlyAdded": "yakın zamanda eklendi",
         "recentlyPlayed": "yakın zamanda oynadı",
-        "recentlyUpdated": "yakın zamanda güncellendi",
         "releaseDate": "çıkış tarihi",
         "releaseYear": "çıkış yılı",
-        "search": "arama",
         "songCount": "şarkı sayısı",
-        "title": "başlık",
         "toYear": "yılına kadar",
-        "trackNumber": "parça",
         "genre": "$t(entity.genre, {\"count\": 1})",
         "album": "$t(entity.album, {\"count\": 1})",
         "albumArtist": "$t(entity.albumArtist, {\"count\": 1})",
-        "artist": "$t(entity.artist, {\"count\": 1})",
-        "channels": "$t(common.channel_other)"
+        "artist": "$t(entity.artist, {\"count\": 1})"
     },
     "form": {
         "addServer": {
@@ -267,8 +233,6 @@
             "title": "$t(entity.playlist, {\"count\": 1}) listesini oluştur"
         },
         "deletePlaylist": {
-            "input_confirm": "onaylamak için $t(entity.playlist, {\"count\": 1}) listesinin adını yazın",
-            "success": "$t(entity.playlist, {\"count\": 1}) listesi başarıyla silindi",
             "title": "$t(entity.playlist, {\"count\": 1}) listesini sil"
         },
         "editPlaylist": {
@@ -280,21 +244,7 @@
             "input_name": "$t(common.name)",
             "title": "şarkı sözü arama"
         },
-        "queryEditor": {
-            "title": "sorgu düzenleyici",
-            "input_optionMatchAll": "hepsini eşleştir",
-            "input_optionMatchAny": "herhangi biriyle eşleştir"
-        },
-        "shareItem": {
-            "allowDownloading": "indirmeye izin ver",
-            "description": "açıklama",
-            "setExpiration": "sona erme tarihi ayarla",
-            "success": "paylaşma bağlantısı panoya kopyalandı (veya açmak için buraya tıklayın)",
-            "expireInvalid": "son kullanma tarihi gelecekte olmalı",
-            "createFailed": "paylaşım oluşturulamadı (paylaşım etkin mi?)"
-        },
         "updateServer": {
-            "success": "sunucu başarıyla güncellendi",
             "title": "sunucuyu güncelle"
         },
         "privateMode": {
@@ -307,7 +257,6 @@
         "albumArtistDetail": {
             "about": "{{artist}} hakkında",
             "appearsOn": "üzerinde görünür",
-            "recentReleases": "son sürümler",
             "viewDiscography": "diskografiyi görüntüle",
             "relatedArtists": "$t(entity.artist, {\"count\": 2}) ile benzer",
             "topSongs": "en iyi şarkılar",
@@ -316,54 +265,29 @@
             "topSongsFrom": "{{title}} tarafından en iyi şarkılar"
         },
         "contextMenu": {
-            "addLast": "$t(player.addLast)",
-            "addNext": "$t(player.addNext)",
-            "addToFavorites": "$t(action.addToFavorites)",
             "addToPlaylist": "$t(action.addToPlaylist)",
-            "createPlaylist": "$t(action.createPlaylist)",
-            "deletePlaylist": "$t(action.deletePlaylist)",
-            "deselectAll": "$t(action.deselectAll)",
             "download": "indir",
             "moveToNext": "$t(action.moveToNext)",
             "moveToBottom": "$t(action.moveToBottom)",
             "moveToTop": "$t(action.moveToTop)",
-            "numberSelected": "{{count}} seçildi",
-            "play": "$t(player.play)",
-            "playSimilarSongs": "$t(player.playSimilarSongs)",
-            "removeFromFavorites": "$t(action.removeFromFavorites)",
-            "removeFromPlaylist": "$t(action.removeFromPlaylist)",
-            "removeFromQueue": "$t(action.removeFromQueue)",
-            "addFavorite": "$t(action.addToFavorites)",
-            "playShuffled": "$t(player.shuffle)",
-            "shareItem": "öğeyi paylaş",
             "showDetails": "bilgi al",
-            "goToAlbum": "$t(entity.album, {\"count\": 1}) sayfasına git",
-            "goToAlbumArtist": "$t(entity.albumArtist, {\"count\": 1}) sayfasına git"
+            "goToAlbum": "$t(entity.album, {\"count\": 1}) sayfasına git"
         },
         "manageServers": {
             "url": "URL",
             "username": "kullanıcıadı",
             "editServerDetailsTooltip": "sunucu ayrıntılarını düzenle",
             "removeServer": "sunucuyu kaldır",
-            "title": "sunucuları yönet",
-            "serverDetails": "sunucu detayları"
+            "title": "sunucuları yönet"
         },
         "fullscreenPlayer": {
             "config": {
-                "dynamicBackground": "dinamik arka plan",
-                "dynamicImageBlur": "görüntü bulanıklık boyutu",
-                "dynamicIsImage": "arka plan resmini etkinleştir",
                 "followCurrentLyric": "şu anki şarkı sözlerini takip et",
                 "lyricAlignment": "şarkı sözü hizalama",
-                "lyricOffset": "şarkı sözü ofseti (ms)",
                 "lyricGap": "şarkı sözü boşluğu",
                 "lyricSize": "şarkı sözü boyutu",
-                "opacity": "opaklık",
-                "showLyricMatch": "şarkı sözü eşleşmesini göster",
-                "showLyricProvider": "şarkı sözü sağlayıcısını göster",
                 "synchronized": "eşitlenmiş",
-                "unsynchronized": "eşitlenmemiş",
-                "useImageAspectRatio": "görüntü en boy oranını kullanın"
+                "unsynchronized": "eşitlenmemiş"
             },
             "lyrics": "şarkı sözleri",
             "related": "i̇lgili",
@@ -372,8 +296,6 @@
             "noLyrics": "şarkı sözü bulunamadı"
         },
         "genreList": {
-            "showAlbums": "$t(entity.genre, {\"count\": 1}) $t(entity.album, {\"count\": 2}) göster",
-            "showTracks": "$t(entity.genre, {\"count\": 1})$t(entity.track, {\"count\": 2}) göster",
             "title": "$t(entity.genre, {\"count\": 2})"
         },
         "globalSearch": {
@@ -385,10 +307,6 @@
             "title": "komutlar"
         },
         "home": {
-            "explore": "kütüphanenizden keşfedin",
-            "mostPlayed": "en çok çalınan",
-            "newlyAdded": "yeni eklenenler",
-            "recentlyPlayed": "yakınlarda çalınanlar",
             "title": "$t(common.home)"
         },
         "itemDetail": {
@@ -396,18 +314,13 @@
             "copiedPath": "yol başarıyla kopyalandı",
             "openFile": "dosya yöneticisinde parçayı göster"
         },
-        "playlist": {
-            "reorder": "yeniden sıralama yalnızca kimliğe göre sıralama yapıldığında etkinleştirilir"
-        },
         "playlistList": {
             "title": "$t(entity.playlist, {\"count\": 2})"
         },
         "setting": {
             "advanced": "gelişmiş",
             "generalTab": "genel",
-            "hotkeysTab": "kısayol tuşları",
-            "playbackTab": "oynatma",
-            "windowTab": "pencere"
+            "hotkeysTab": "kısayol tuşları"
         },
         "sidebar": {
             "albumArtists": "$t(entity.albumArtist, {\"count\": 2})",
@@ -425,8 +338,6 @@
             "tracks": "$t(entity.track, {\"count\": 2})"
         },
         "trackList": {
-            "artistTracks": "{{artist}} parçaları",
-            "genreTracks": "\"{{genre}}\" $t(entity.track, {\"count\": 2})",
             "title": "$t(entity.track, {\"count\": 2})"
         },
         "albumArtistList": {
@@ -434,13 +345,10 @@
         },
         "albumDetail": {
             "moreFromArtist": "$t(entity.artist, {\"count\": 1}) sanatçısından daha fazla",
-            "moreFromGeneric": "{{item}} tarafından daha fazla",
-            "released": "yayınlandı"
+            "moreFromGeneric": "{{item}} tarafından daha fazla"
         },
         "albumList": {
-            "title": "$t(entity.album, {\"count\": 2})",
-            "genreAlbums": "\"{{genre}}\" $t(entity.album, {\"count\": 2})",
-            "artistAlbums": "{{artist}} albümleri"
+            "title": "$t(entity.album, {\"count\": 2})"
         },
         "appMenu": {
             "collapseSidebar": "kenar çubuğunu daralt",
@@ -448,11 +356,9 @@
             "goBack": "geri dön",
             "goForward": "i̇leriye git",
             "manageServers": "sunucuları yönet",
-            "openBrowserDevtools": "tarayıcı geliştirici araçlarını aç",
             "quit": "$t(common.quit)",
             "selectServer": "sunucu seç",
             "settings": "$t(common.setting, {\"count\": 2})",
-            "version": "{{version}} sürümü",
             "privateModeOff": "gizli modu kapat",
             "privateModeOn": "gizli modu aç"
         }
@@ -467,15 +373,9 @@
         "play": "çal",
         "playbackFetchCancel": "bu biraz zaman alıyor... iptal etmek için bildirimi kapatın",
         "playbackFetchInProgress": "şarkılar yükleniyor…",
-        "playbackFetchNoResults": "hiçbir şarkı bulunamadı",
         "playbackSpeed": "oynatma hızı",
         "playRandom": "rastgele çal",
-        "playSimilarSongs": "benzer şarkılar çal",
         "previous": "önceki",
-        "queue_clear": "sırayı temizle",
-        "queue_moveToBottom": "seçileni üste taşı",
-        "queue_moveToTop": "seçileni alta taşı",
-        "queue_remove": "seçileni kaldır",
         "repeat": "birini tekrarla",
         "repeat_all": "tümünü tekrarla",
         "repeat_off": "tekrarlama devre dışı",
@@ -737,8 +637,6 @@
             "codec": "$t(common.codec)",
             "comment": "yorum",
             "dateAdded": "tarih eklendi",
-            "discNumber": "disk",
-            "favorite": "favori",
             "genre": "$t(entity.genre, {\"count\": 1})",
             "lastPlayed": "son çalınan",
             "path": "yol",
@@ -747,19 +645,14 @@
             "releaseYear": "yıl",
             "size": "$t(common.size)",
             "songCount": "$t(entity.track, {\"count\": 2})",
-            "title": "başlık",
-            "trackNumber": "parça"
+            "title": "başlık"
         },
         "config": {
             "general": {
                 "autoFitColumns": "sütunları otomatik sığdır",
-                "followCurrentSong": "güncel şarkıyı takip et",
                 "displayType": "görüntüleme türü",
                 "gap": "$t(common.gap)",
-                "itemGap": "öğe boşluğu (px)",
-                "itemSize": "öğe boyutu (px)",
-                "size": "$t(common.size)",
-                "tableColumns": "tablo sütunları"
+                "size": "$t(common.size)"
             },
             "label": {
                 "actions": "$t(common.action_other)",

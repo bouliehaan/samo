@@ -4,7 +4,7 @@ import {
 } from '../../services/audio-playback';
 import { getPlaybackQueue, setPlaybackQueue } from '../../state/playback-queue-store';
 import { getAndroidPlaybackState, setAndroidPlaybackState } from '../../state/playback-store';
-import { buildAbsProgressContextFromPlayable } from '../../utils/abs-progress-math';
+import { buildPlaybackProgressContextFromPlayable } from '../../utils/playback-progress-math';
 import { reducePlaybackStateFromEvent } from '../../utils/playback-reduce';
 import {
     getResumePositionSeconds,
@@ -134,7 +134,7 @@ export const syncPlaybackFromNativeEvent = (
         // for the new item so the JS poll writes progress against the
         // right episode/file — otherwise the previous track's context
         // keeps accumulating against whatever is playing now.
-        ctx.absContextRef.current = buildAbsProgressContextFromPlayable(
+        ctx.progressContextRef.current = buildPlaybackProgressContextFromPlayable(
             item,
             ctx.serverConnectionsRef.current,
         );

@@ -5,6 +5,7 @@ import {
 } from '@samo/core/mobile';
 import {
     ensureSamoStreamToken,
+    findServerAuthenticationForSource,
     getSamoAudiobookStreamUrl,
     getSamoBearerToken,
     getSamoPodcastEpisodeStreamUrl,
@@ -282,15 +283,20 @@ const enqueueMusicCollectionDownload = async (
     return { enqueued, skipped };
 };
 
+/**
+ * The connection a download's source belongs to.
+ *
+ * This used to compare `type:url` against the sourceId, which silently stopped
+ * matching whenever the connection's key was not its address — a server that
+ * issues an identity, or one being reached on its remote endpoint rather than
+ * its local one. A miss here is not loud: the download is enqueued with no
+ * credentials and simply fails to transfer later.
+ */
 const findSamoAuth = (
     authentication: ServerAuthenticationResult | null,
     sourceId: string,
-): ServerAuthenticationResult | undefined => {
-    return authentication &&
-        `${authentication.type}:${authentication.url}` === sourceId
-        ? authentication
-        : undefined;
-};
+): ServerAuthenticationResult | undefined =>
+    findServerAuthenticationForSource(authentication, { id: sourceId });
 
 const buildPodcastCollection = (detail: MobileMediaDetail): DownloadCollectionInfo => ({
     artworkImageId: detail.artworkImageId,

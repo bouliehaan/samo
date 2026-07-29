@@ -3,7 +3,7 @@ import isElectron from 'is-electron';
 
 import { toast } from '/@/shared/components/toast/toast';
 
-const ipc = isElectron() ? window.api.ipc : null;
+const localSettings = isElectron() ? window.api.localSettings : null;
 const shouldRestartOnClose = process.env.NODE_ENV !== 'development';
 
 export const openRestartRequiredToast = (message?: string) => {
@@ -17,7 +17,7 @@ export const openRestartRequiredToast = (message?: string) => {
             }),
         onClose: () => {
             if (shouldRestartOnClose) {
-                ipc?.send('app-restart');
+                localSettings?.restart();
             }
         },
         title: t('common.restartRequired', {

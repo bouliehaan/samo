@@ -51,4 +51,42 @@ export const settingsStyles = StyleSheet.create({
         marginTop: spacing.lg,
         textTransform: 'uppercase',
     },
+    // A settings row that hosts a text field: the field IS the row, so it drops
+    // the horizontal flex and the icon gutter the tappable rows carry.
+    settingsFieldRow: {
+        backgroundColor: colors.surface,
+        borderRadius: 14,
+        marginTop: spacing.sm,
+        paddingHorizontal: spacing.md,
+        paddingVertical: 12,
+    },
+    settingsFieldLabel: {
+        color: colors.muted,
+        fontSize: 11,
+        fontWeight: '800',
+        letterSpacing: 0.4,
+        marginBottom: 2,
+        textTransform: 'uppercase',
+    },
+    settingsFieldInput: {
+        color: colors.text,
+        fontFamily: fonts.mono,
+        fontSize: 14,
+        paddingVertical: 6,
+    },
+    settingsHelpText: {
+        color: colors.muted,
+        fontSize: 12,
+        lineHeight: 18,
+        marginTop: spacing.sm,
+        paddingHorizontal: 2,
+    },
+    // The live "where are we talking to the server" readout. Deliberately a
+    // statement of fact rather than a warning colour — being offline is a
+    // normal state for this app, not an error.
+    settingsStatusDot: {
+        borderRadius: 5,
+        height: 10,
+        width: 10,
+    },
 });

@@ -170,9 +170,6 @@ const PlaylistRowButton = memo(
                         case LibraryItem.ARTIST:
                             modalProps.artistId = sourceIds;
                             break;
-                        case LibraryItem.FOLDER:
-                            modalProps.folderId = sourceIds;
-                            break;
                         case LibraryItem.GENRE:
                             modalProps.genreId = sourceIds;
                             break;

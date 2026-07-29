@@ -8,6 +8,7 @@ import { AddServerScreen } from '../screens/AddServerScreen';
 import { DownloadsScreen } from '../screens/DownloadsScreen';
 import { InitialSyncScreen } from '../screens/InitialSyncScreen';
 import { ManageServersScreen } from '../screens/ManageServersScreen';
+import { NetworkSettingsScreen } from '../screens/NetworkSettingsScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
 import { usePresenceTransition } from '../hooks/use-presence-transition';
 import { useReducedMotionPreference } from '../hooks/use-reduced-motion-preference';
@@ -21,11 +22,7 @@ import {
     setUsername,
     useAuthSessionSelector,
 } from '../state/auth-session';
-import {
-    setArtworkCacheLimit,
-    setDownloadsOfflineMode,
-    useDownloadsSelector,
-} from '../state/downloads-state';
+import { setArtworkCacheLimit, useDownloadsSelector } from '../state/downloads-state';
 import { durations, travel } from '../theme/motion';
 import { styles } from '../theme/styles';
 import { addDefaultHttpScheme, DEFAULT_SERVER_URL } from '../utils/auth-url';
@@ -34,6 +31,8 @@ import { addDefaultHttpScheme, DEFAULT_SERVER_URL } from '../utils/auth-url';
 // they are plain module functions — stable forever, no useCallback.
 const handleOpenManageServers = () => setActiveUtilityScreen('manage-servers');
 const handleOpenDownloads = () => setActiveUtilityScreen('downloads');
+const handleOpenNetwork = () => setActiveUtilityScreen('network');
+const handleBackToSettings = () => setActiveUtilityScreen('settings');
 const handleInitialSyncComplete = () => setActiveUtilityScreen(null);
 const handleConnect = () => void connectServer();
 const normalizeServerUrlDraft = () =>
@@ -60,7 +59,6 @@ export const UtilityScreenHost = memo(function UtilityScreenHost() {
     const serverUrl = useAuthSessionSelector((state) => state.serverUrl);
     const username = useAuthSessionSelector((state) => state.username);
     const artworkCacheLimitBytes = useDownloadsSelector((state) => state.artworkCacheLimitBytes);
-    const isOfflineMode = useDownloadsSelector((state) => state.isOfflineMode);
     const scrollBottomInset = useScrollContentBottomInset();
 
     const canConnect = canConnectWith({ password, serverUrl, username });
@@ -106,12 +104,11 @@ export const UtilityScreenHost = memo(function UtilityScreenHost() {
             <SettingsScreen
                 artworkCacheLimitBytes={artworkCacheLimitBytes}
                 catalogSources={catalogSources}
-                isOfflineMode={isOfflineMode}
                 onOpenDownloads={handleOpenDownloads}
                 onOpenManageServers={handleOpenManageServers}
+                onOpenNetwork={handleOpenNetwork}
                 onSetArtworkCacheLimit={setArtworkCacheLimit}
                 onSyncWithServer={syncWithServer}
-                onToggleOfflineMode={setDownloadsOfflineMode}
                 serverCount={serverConnection ? 1 : 0}
             />
         ) : screen === 'manage-servers' ? (
@@ -121,6 +118,11 @@ export const UtilityScreenHost = memo(function UtilityScreenHost() {
                 onDisconnect={disconnectServer}
                 serverConnection={serverConnection}
                 serverHealthByKey={serverHealthByKey}
+            />
+        ) : screen === 'network' ? (
+            <NetworkSettingsScreen
+                onBack={handleBackToSettings}
+                serverConnection={serverConnection}
             />
         ) : screen === 'downloads' ? (
             <DownloadsScreen serverConnection={serverConnection} />

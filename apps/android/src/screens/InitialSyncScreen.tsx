@@ -87,8 +87,13 @@ export const InitialSyncScreen = ({
         }
     }, [hasProgress, progressValue]);
 
+    // scaleX rather than a percentage width: this bar animates for a solid
+    // eight seconds, and a percentage width re-runs Yoga against the parent on
+    // every frame of it — ~480 layout passes on the exact screen where the JS
+    // thread is already busy pulling the initial catalog down. See motion.ts
+    // rule 1; the fill is full-width and anchored left in the style below.
     const progressStyle = useAnimatedStyle(() => ({
-        width: `${progressValue.value * 100}%`,
+        transform: [{ scaleX: progressValue.value }],
     }));
 
     return (
@@ -151,7 +156,13 @@ export const InitialSyncScreen = ({
                                 width: '100%',
                             }}>
                                 <Reanimated.View style={[
-                                    { height: '100%', backgroundColor: colors.accent, borderRadius: 3 },
+                                    {
+                                        backgroundColor: colors.accent,
+                                        borderRadius: 3,
+                                        height: '100%',
+                                        transformOrigin: 'left center',
+                                        width: '100%',
+                                    },
                                     progressStyle
                                 ]} />
                             </View>

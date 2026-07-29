@@ -5,33 +5,27 @@ import { type MobileHomeItem } from '@samo/core/mobile';
 import { useAppNavigationSelector } from '../state/app-navigation';
 import { useAppSessionSelector } from '../state/app-session';
 import { useAuthSessionSelector } from '../state/auth-session';
-import { useDownloadsSelector } from '../state/downloads-state';
-import { getDownloadedCollectionKey } from '../utils/download-keys';
 import { isEligibleRecentlyPlayedSurfaceItem, getRecentContentItemKey, type AndroidRecentContentSourceItem } from '../services/recent-content';
 import { resolveItemArtworkUrl } from '../utils/home-display';
 
+/**
+ * Recently played, as shown on Home.
+ *
+ * Offline no longer scrubs this down to downloaded items. Every one of them
+ * opens from the on-device mirror with no network, and a history that empties
+ * itself when the Wi-Fi drops is a worse answer than one that shows what you
+ * were listening to and declines to play the parts that aren't here.
+ */
 export const useVisibleRecentItems = () => {
     const homeContentState = useAppNavigationSelector((state) => state.homeContentState);
     const recentContentItems = useAppSessionSelector((state) => state.recentContentItems);
     const serverConnection = useAuthSessionSelector((state) => state.serverConnection);
-    const isOfflineMode = useDownloadsSelector((state) => state.isOfflineMode);
-    // Guarded: stable null while online, so download churn skips this hook.
-    const downloadedCollectionKeys = useDownloadsSelector((state) =>
-        state.isOfflineMode ? state.downloadedCollectionKeys : null,
-    );
 
     return useMemo(() => {
-        const withoutArtists = recentContentItems.filter((entry) =>
+        const filtered = recentContentItems.filter((entry) =>
             isEligibleRecentlyPlayedSurfaceItem(entry.item, { directSong: entry.directSong }),
         );
-        const filtered = isOfflineMode && downloadedCollectionKeys
-            ? withoutArtists.filter((entry) =>
-                  downloadedCollectionKeys.has(
-                      getDownloadedCollectionKey(entry.item.source?.id, entry.item.id),
-                  ),
-              )
-            : withoutArtists;
-        
+
         const freshByKey = new Map<string, AndroidRecentContentSourceItem>();
         if (homeContentState.status === 'loaded') {
             for (const section of homeContentState.content.sections) {
@@ -66,11 +60,5 @@ export const useVisibleRecentItems = () => {
             }
             return merged === entry.item ? entry : { ...entry, item: merged };
         });
-    }, [
-        recentContentItems,
-        isOfflineMode,
-        downloadedCollectionKeys,
-        serverConnection,
-        homeContentState,
-    ]);
+    }, [recentContentItems, serverConnection, homeContentState]);
 };

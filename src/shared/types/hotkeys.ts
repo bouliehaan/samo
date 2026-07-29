@@ -39,3 +39,11 @@ export enum BindingActions {
     ZOOM_IN = 'zoomIn',
     ZOOM_OUT = 'zoomOut',
 }
+
+export type HotkeyBinding = {
+    allowGlobal: boolean;
+    hotkey: string;
+    isGlobal: boolean;
+};
+
+export type HotkeyBindings = Record<BindingActions, HotkeyBinding>;

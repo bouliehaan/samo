@@ -4,62 +4,12 @@ import isElectron from 'is-electron';
 import i18n from '/@/i18n/i18n';
 import { SamoController } from '/@/renderer/api/samo/samo-controller';
 import { mergeMusicFolderId } from '/@/renderer/api/utils-music-folder';
-import {
-    getActiveMusicServer,
-    getServerById,
-    useAuthStore,
-    useSettingsStore,
-} from '/@/renderer/store';
-import { toast } from '/@/shared/components/toast/toast';
+import { getServerById, useSettingsStore } from '/@/renderer/store';
 import {
     AuthenticationResponse,
     ControllerEndpoint,
-    InternalControllerEndpoint,
     ServerType,
 } from '/@/shared/types/domain-types';
-
-type ApiController = Partial<Record<ServerType, Partial<InternalControllerEndpoint>>>;
-
-const endpoints: ApiController = {
-    [ServerType.SAMO]: SamoController as Partial<InternalControllerEndpoint>,
-};
-
-const apiController = <K extends keyof ControllerEndpoint>(
-    endpoint: K,
-    type?: ServerType,
-): NonNullable<InternalControllerEndpoint[K]> => {
-    const authState = useAuthStore.getState();
-    const serverType = type || getActiveMusicServer(authState)?.type;
-
-    if (!serverType) {
-        toast.error({
-            message: i18n.t('error.serverNotSelectedError', {
-                postProcess: 'sentenceCase',
-            }) as string,
-            title: i18n.t('error.apiRouteError', { postProcess: 'sentenceCase' }) as string,
-        });
-        throw new Error(`No server selected`);
-    }
-
-    const controllerFn = endpoints?.[serverType]?.[endpoint];
-
-    if (typeof controllerFn !== 'function') {
-        toast.error({
-            message: `Endpoint ${endpoint} is not implemented for ${serverType}`,
-            title: i18n.t('error.apiRouteError', { postProcess: 'sentenceCase' }) as string,
-        });
-
-        throw new Error(
-            i18n.t('error.endpointNotImplementedError', {
-                endpoint,
-                postProcess: 'sentenceCase',
-                serverType,
-            }) as string,
-        );
-    }
-
-    return controllerFn as NonNullable<InternalControllerEndpoint[K]>;
-};
 
 const getPathReplaceSettings = () => {
     const { pathReplace, pathReplaceWith } = useSettingsStore.getState().general;
@@ -85,7 +35,6 @@ const MUSIC_FOLDER_QUERY_ENDPOINTS = new Set<keyof ControllerEndpoint>([
     'getAlbumListCount',
     'getArtistList',
     'getArtistListCount',
-    'getFolder',
     'getGenreList',
     'getRandomSongList',
     'getSimilarSongs',
@@ -117,11 +66,10 @@ const enrichEndpointArgs = <T extends { apiClientProps: { serverId: string }; qu
     };
 };
 
-export interface GeneralController extends Omit<Required<ControllerEndpoint>, 'authenticate'> {
+export interface GeneralController extends Omit<ControllerEndpoint, 'authenticate'> {
     authenticate: (
         url: string,
         body: { legacy?: boolean; password: string; username: string },
-        type: ServerType,
     ) => Promise<AuthenticationResponse>;
 }
 
@@ -135,32 +83,29 @@ export const controller = new Proxy({} as GeneralController, {
             return async (
                 url: string,
                 body: { legacy?: boolean; password: string; username: string },
-                type: ServerType,
             ) => {
-                if (type === ServerType.SAMO) {
-                    const result = isElectron()
-                        ? await window.api.samo.authenticate({
-                              deviceLabel: 'Samo desktop',
-                              password: body.password,
-                              url,
-                              username: body.username,
-                          })
-                        : await authenticateServerConnection({
-                              deviceLabel: 'Samo desktop',
-                              password: body.password,
-                              type,
-                              url,
-                              username: body.username,
-                          });
+                const result = isElectron()
+                    ? await window.api.samo.authenticate({
+                          deviceLabel: 'Samo desktop',
+                          password: body.password,
+                          url,
+                          username: body.username,
+                      })
+                    : await authenticateServerConnection({
+                          deviceLabel: 'Samo desktop',
+                          password: body.password,
+                          type: ServerType.SAMO,
+                          url,
+                          username: body.username,
+                      });
 
-                    return {
-                        credential: result.credential,
-                        isAdmin: result.isAdmin,
-                        userId: result.userId ?? null,
-                        username: result.username,
-                    };
-                }
-                return apiController('authenticate', type)(url, body);
+                return {
+                    credential: result.credential,
+                    isAdmin: result.isAdmin,
+                    serverId: result.serverId,
+                    userId: result.userId ?? null,
+                    username: result.username,
+                };
             };
         }
 
@@ -185,7 +130,7 @@ export const controller = new Proxy({} as GeneralController, {
                 throw new Error(apiRouteError(endpoint));
             }
 
-            const fn = apiController(endpoint, server.type) as EndpointHandler | undefined;
+            const fn = SamoController[endpoint] as EndpointHandler | undefined;
             const enriched = enrichEndpointArgs(endpoint, args, server);
 
             if (endpoint === 'getAlbumArtistInfo') {

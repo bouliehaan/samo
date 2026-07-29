@@ -37,6 +37,21 @@ type HorizontalShelfHandle = {
     scrollToOffset: (params: { animated?: boolean; offset: number }) => void;
 };
 
+/**
+ * A column's identity is its FIRST item's key.
+ *
+ * This used to be `column.map(getContentItemKey).join('|')` — an array
+ * allocation, a per-item callback and a string join, run for every column on
+ * every windowing pass of every shelf on Home. Items are already unique, so the
+ * head of the column identifies it just as well as the whole of it does, and
+ * any change to a column's contents necessarily changes which items sit in it.
+ *
+ * Module scope, so it is one stable function rather than a fresh closure handed
+ * to FlashList on each render.
+ */
+const getHomeColumnKey = (column: AndroidRecentContentSourceItem[], index: number): string =>
+    column[0] ? getContentItemKey(column[0]) : `home-column-${index}`;
+
 /** TL → TR → BL → BR per 2-row band, then continue columns to the right. */
 const chunkHomeSectionItems = (
     items: AndroidRecentContentSourceItem[],
@@ -80,6 +95,12 @@ export const HomeDisplayRow = memo(({
     const itemLength = getHomeRowItemLength(section.variant);
     const rowHeight = getHomeSectionRowHeight(section.variant, rowCount);
     const drawDistance = itemLength * 4;
+    // Memoised because it is a STYLE PROP: spreading it inline built a new
+    // object on every render of every shelf, and a style object that is never
+    // referentially equal defeats the shallow compare on the way down to the
+    // native view — so each shelf re-sent its style across on renders where the
+    // height had not moved in the first place. It only depends on rowHeight.
+    const listStyle = useMemo(() => ({ ...styles.homeRowList, height: rowHeight }), [rowHeight]);
     const columns = useMemo(
         () => (rowCount > 1 ? chunkHomeSectionItems(section.items, rowCount) : []),
         [rowCount, section.items],
@@ -172,14 +193,14 @@ export const HomeDisplayRow = memo(({
                     data={columns}
                     drawDistance={drawDistance}
                     horizontal
-                    keyExtractor={(column) => column.map(getContentItemKey).join('|')}
+                    keyExtractor={getHomeColumnKey}
                     maintainVisibleContentPosition={FLASH_LIST_MAINTAIN_POSITION_DISABLED}
                     onMomentumScrollEnd={rememberShelfOffset}
                     onScrollEndDrag={rememberShelfOffset}
                     ref={setShelfRef}
                     renderItem={renderColumn}
                     showsHorizontalScrollIndicator={false}
-                    style={{ ...styles.homeRowList, height: rowHeight }}
+                    style={listStyle}
                 />
             ) : (
                 <FlashList
@@ -193,7 +214,7 @@ export const HomeDisplayRow = memo(({
                     ref={setShelfRef}
                     renderItem={renderItem}
                     showsHorizontalScrollIndicator={false}
-                    style={{ ...styles.homeRowList, height: rowHeight }}
+                    style={listStyle}
                 />
             )}
         </View>

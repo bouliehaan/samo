@@ -909,7 +909,10 @@ const ProgressBar = ({ active }: { active: boolean }) => {
         }
     }, [active, progress]);
 
-    const style = useAnimatedStyle(() => ({ width: `${progress.value * 100}%` }));
+    // scaleX, not a percentage width — nine seconds of animation is ~540 frames,
+    // and a percentage width re-runs Yoga against the parent on every one of
+    // them. See motion.ts rule 1; the fill below is full-width and left-anchored.
+    const style = useAnimatedStyle(() => ({ transform: [{ scaleX: progress.value }] }));
 
     return (
         <View
@@ -923,7 +926,16 @@ const ProgressBar = ({ active }: { active: boolean }) => {
             }}
         >
             <Reanimated.View
-                style={[{ backgroundColor: colors.accent, borderRadius: 3, height: '100%' }, style]}
+                style={[
+                    {
+                        backgroundColor: colors.accent,
+                        borderRadius: 3,
+                        height: '100%',
+                        transformOrigin: 'left center',
+                        width: '100%',
+                    },
+                    style,
+                ]}
             />
         </View>
     );

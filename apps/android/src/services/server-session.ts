@@ -1,4 +1,5 @@
 import {
+    reconcileServerAuthentication,
     type ServerAuthenticationResult,
     ServerConnectionHealthStatus,
     ServerType,
@@ -16,11 +17,21 @@ import {
     setServerUrl,
     setUsername,
 } from '../state/auth-session';
+import { whenNetworkHydrated } from '../state/network-state';
+import { isOfflineNow, setServerReachability } from '../state/network-state';
 import { addDefaultHttpScheme, DEFAULT_SERVER_URL, hasServerUrlTarget } from '../utils/auth-url';
+import { cancelCatalogArtworkPrefetch } from './artwork-prefetch';
+import { refreshActiveEndpoint } from './endpoint-selection';
 import { loadHomeForConnection } from './home-flow';
+import {
+    ensureEndpointProfileForConnection,
+    forgetEndpointProfile,
+    loadEndpointProfiles,
+} from './server-endpoints';
 import { syncCatalogAuthMirror, triggerCatalogSyncNow } from './headless-catalog-sync';
 import {
     getPersistedServerAuthKey,
+    loadPersistedServerAuth,
     loadPersistedServerAuthsWithMeta,
     savePersistedServerAuths,
 } from './persisted-server';
@@ -90,6 +101,13 @@ export const restoreServersOnce = (): void => {
     restoreStarted = true;
 
     const restoreServers = async () => {
+        // Both are fast local reads, and both have to land BEFORE anything
+        // decides to touch the network: without the offline preference a
+        // forced-offline launch still fires a full boot's worth of requests,
+        // and without the endpoint profile the first request goes to whichever
+        // address happened to be saved rather than the one that works here.
+        await Promise.all([whenNetworkHydrated(), loadEndpointProfiles()]);
+
         const persisted = await loadPersistedServerAuthsWithMeta();
         const persistedAuth = persisted.authentication ?? null;
 
@@ -124,11 +142,31 @@ export const restoreServersOnce = (): void => {
         setServerHealthByKey(createCheckingServerHealthMap(persistedAuth));
         setBootResolved(true);
 
-        const serverHealth = await checkAndroidServerConnection(persistedAuth);
+        // WHICH address before WHETHER the session is valid. Health-checking
+        // the saved address first would report a perfectly good server as
+        // unreachable whenever the device has moved networks since the last
+        // launch — the exact case dual addresses exist to handle — and would do
+        // it slowly, since the wrong address times out rather than refusing.
+        await refreshActiveEndpoint({ force: true });
+
+        // Offline: there is nothing to verify against, and the saved session is
+        // the right thing to keep. This used to run the check anyway and then
+        // paint "Saved server session needs attention" over a launch whose only
+        // problem was being in a tunnel.
+        if (isOfflineNow()) {
+            void loadHomeForConnection(getAuthSession().serverConnection);
+            return;
+        }
+
+        // Re-read: endpoint selection may have moved the connection onto the
+        // server's other address, and health-checking the one we just left
+        // would undo it.
+        const activeAuth = getAuthSession().serverConnection ?? persistedAuth;
+        const serverHealth = await checkAndroidServerConnection(activeAuth);
 
         const isAuthorized = serverHealth.authentication !== null;
         const healthStatus =
-            serverHealth.statuses[getPersistedServerAuthKey(persistedAuth)]?.status;
+            serverHealth.statuses[getPersistedServerAuthKey(activeAuth)]?.status;
 
         // A genuinely expired/revoked session (401) is the one case where we
         // must NOT keep the user on a home page backed by dead credentials —
@@ -152,13 +190,19 @@ export const restoreServersOnce = (): void => {
         // resolved artwork token and remounts the whole Home page (the
         // cold-boot "deload then reload" flash). Only a genuinely changed
         // credential swaps in.
-        const nextConnection = isSameAuthentication(persistedAuth, serverHealth.authentication)
-            ? persistedAuth
+        const nextConnection = isSameAuthentication(activeAuth, serverHealth.authentication)
+            ? activeAuth
             : serverHealth.authentication;
         setServerConnection(nextConnection);
         setServerHealthByKey(serverHealth.statuses);
 
-        if (healthStatus !== ServerConnectionHealthStatus.HEALTHY) {
+        // An unreachable server is now a NETWORK fact, reported as one — the
+        // app drops into offline mode and says so in the status chip. It is not
+        // an auth error, and dressing it up as "your saved session needs
+        // attention" sent people to re-login over a dropped Wi-Fi.
+        if (healthStatus === ServerConnectionHealthStatus.UNREACHABLE) {
+            setServerReachability('unreachable');
+        } else if (healthStatus !== ServerConnectionHealthStatus.HEALTHY) {
             setAuthState({
                 message: `Saved server session needs attention.`,
                 status: 'error',
@@ -201,7 +245,15 @@ export const connectServer = async (): Promise<void> => {
     setAuthState(nextAuthState);
 
     if (nextAuthState.status === 'connected') {
-        const nextConnection = nextAuthState.result;
+        // Carry the existing key forward when this is a server the device
+        // already knows. Without it, the first login after a server starts
+        // issuing identities would re-key the connection and strand the
+        // catalog mirror, downloads and progress already on disk.
+        const previousConnection = await loadPersistedServerAuth();
+        const nextConnection = reconcileServerAuthentication(
+            nextAuthState.result,
+            previousConnection,
+        );
         const nextConnectionKey = getPersistedServerAuthKey(nextConnection);
 
         setServerConnection(nextConnection);
@@ -209,6 +261,12 @@ export const connectServer = async (): Promise<void> => {
             ...current,
             [nextConnectionKey]: createConnectedServerHealthStatus(nextConnection),
         }));
+        // A successful login is proof of reachability — record it so the app
+        // doesn't sit in offline mode until the next probe round, and file the
+        // address that worked into its local/remote slot so network settings
+        // opens pre-filled rather than empty.
+        setServerReachability('reachable');
+        await ensureEndpointProfileForConnection(nextConnection);
         closeMediaDetail();
         setPassword('');
         setServerUrl(DEFAULT_SERVER_URL);
@@ -232,6 +290,15 @@ export const disconnectServer = async (
 ): Promise<void> => {
     const removedConnectionKey = getPersistedServerAuthKey(authentication);
 
+    // Stop warming cover art for a server the user is leaving. A full-library
+    // warm runs for minutes, so without this a disconnect kept downloading from
+    // the old host — and kept holding its credentials to do it.
+    cancelCatalogArtworkPrefetch();
+    // The addresses go with the server. Leaving them behind would mean the next
+    // connection to a DIFFERENT server at the same connection key inherited
+    // somebody else's endpoints to probe.
+    await forgetEndpointProfile(authentication);
+    setServerReachability('unknown', null);
     setServerConnection(null);
     setServerHealthByKey((current) => {
         const nextHealthByKey = { ...current };

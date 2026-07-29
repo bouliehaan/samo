@@ -1,4 +1,5 @@
-import { useSyncExternalStore } from 'react';
+
+import { useStoreSelector } from './use-store-selector';
 import { type MobilePlayableAudio } from '@samo/core/mobile';
 
 import { type AndroidCastState, type AndroidRepeatMode } from '../services/audio-playback';
@@ -195,12 +196,7 @@ const setRepeatMode = (
  */
 export const useAppSessionSelector = <Selected>(
     selector: (state: AppSessionState) => Selected,
-): Selected =>
-    useSyncExternalStore(
-        subscribeAppSession,
-        () => selector(appSessionState),
-        () => selector(appSessionState),
-    );
+): Selected => useStoreSelector(subscribeAppSession, () => appSessionState, selector);
 
 // The singleton setters are also exported directly so hooks that only WRITE a
 // field can dispatch without subscribing to the whole store; the getter lets

@@ -1,4 +1,5 @@
-import { useSyncExternalStore } from 'react';
+
+import { useStoreSelector } from './use-store-selector';
 import { ServerType, type ServerAuthenticationResult } from '@samo/core/server';
 
 import { type AndroidAuthState } from '../services/server-auth';
@@ -126,9 +127,9 @@ const authSessionReducer = (
 };
 
 // Single app-wide auth/server store. Previously a per-call `useReducer`, which
-// silently gave each consumer its own copy: `use-android-abs-progress-sync`
-// read `serverConnection` from a second instance that login never populated,
-// so its pending-progress flush ran with an empty server list and never synced.
+// silently gave each consumer its own copy: the progress-sync hook read
+// `serverConnection` from a second instance that login never populated, so its
+// pending-progress flush ran with an empty server list and never synced.
 // A module-level store (mirroring `playback-store.ts`) keeps every consumer on
 // the same state with no change to the hook's API.
 let authSessionState: AuthSessionState = initialAuthSessionState;
@@ -196,12 +197,7 @@ const patchAuthSession = (patch: Partial<AuthSessionState>) =>
  */
 export const useAuthSessionSelector = <Selected>(
     selector: (state: AuthSessionState) => Selected,
-): Selected =>
-    useSyncExternalStore(
-        subscribeAuthSession,
-        () => selector(authSessionState),
-        () => selector(authSessionState),
-    );
+): Selected => useStoreSelector(subscribeAuthSession, () => authSessionState, selector);
 
 // Module-level exports so event handlers can read/write auth state at call
 // time without subscribing (same pattern as playback-store).

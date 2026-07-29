@@ -3,33 +3,22 @@
         "addToFavorites": "додати до $t(entity.favorite, {\"count\": 2})",
         "addOrRemoveFromSelection": "додати або видалити з вибору",
         "selectRangeOfItems": "вибрати діапазон елементів",
-        "addToPlaylist": "додати до $t(entity.playlist, {\"count\": 1})",
         "clearQueue": "очистити чергу",
         "createPlaylist": "створити $t(entity.playlist, {\"count\": 1})",
         "createRadioStation": "створити $t(entity.radioStation, {\"count\": 1})",
         "deletePlaylist": "видалити $t(entity.playlist, {\"count\": 1})",
-        "deleteRadioStation": "видалити $t(entity.radioStation, {\"count\": 1})",
         "selectAll": "вибрати все",
-        "deselectAll": "скасувати вибір усього",
-        "downloadStarted": "почато завантаження {{count}} елементів",
         "editPlaylist": "редагувати $t(entity.playlist, {\"count\": 1})",
-        "goToPage": "перейти на сторінку",
-        "moveToNext": "перейти до наступного",
-        "moveToBottom": "перемістити вниз",
-        "moveToTop": "перемістити вгору",
         "moveUp": "перемістити вище",
         "moveDown": "перемістити нижче",
         "holdToMoveToTop": "утримуйте, щоб перемістити вгору",
         "holdToMoveToBottom": "утримувати, щоб перемістити вниз",
-        "moveItems": "перемістити елементи",
         "shuffle": "перемішати",
         "shuffleAll": "все випадково",
         "shuffleSelected": "вибране випадково",
-        "refresh": "$t(common.refresh)",
         "removeFromFavorites": "видалити з $t(entity.favorite, {\"count\": 2})",
         "removeFromPlaylist": "видалити з $t(entity.playlist, {\"count\": 1})",
         "removeFromQueue": "видалити з черги",
-        "toggleSmartPlaylistEditor": "перемикати редактор $t(entity.smartPlaylist)",
         "viewPlaylists": "показати $t(entity.playlist, {\"count\": 2})",
         "viewMore": "переглянути більше",
         "openApplicationDirectory": "відкрити каталог додатків",
@@ -235,30 +224,19 @@
         "authenticationFailed": "аутентифікація не вдалася",
         "badValue": "недійсний параметр \"{{value}}\". це значення більше не існує",
         "credentialsRequired": "необхідні дані для входу",
-        "endpointNotImplementedError": "кінцева точка {{endpoint}} не реалізована для {{serverType}}",
         "genericError": "сталася помилка",
         "invalidServer": "недійсний сервер",
-        "localFontAccessDenied": "відмова в доступі до локальних шрифтів",
-        "loginRateError": "занадто багато спроб входу, спробуйте ще раз через кілька секунд",
-        "mpvRequired": "необхідний MPV",
-        "multipleServerSaveQueueError": "у черзі відтворення є одна або кілька пісень, які не належать до поточного сервера. це не підтримується",
-        "networkError": "сталася мережева помилка",
         "noNetwork": "сервер недоступний",
         "noNetworkDescription": "не вдалося підключитися до цього сервера",
-        "notificationDenied": "дозвіл на сповіщення було відхилено. це налаштування не має впливу",
         "openError": "не вдалося відкрити файл",
         "playbackError": "сталася помилка під час спроби відтворити медіафайл",
         "remoteDisableError": "сталася помилка під час спроби $t(common.disable) віддаленого сервера",
         "remoteEnableError": "сталася помилка під час спроби $t(common.enable) віддаленого сервера",
         "remotePortError": "сталася помилка під час спроби налаштувати порт віддаленого сервера",
         "remotePortWarning": "перезапустіть сервер щоб застосувати новий порт",
-        "saveQueueFailed": "не вдалося зберегти чергу",
         "serverNotSelectedError": "не вибрано жодного сервера",
         "serverRequired": "потрібен сервер",
-        "sessionExpiredError": "ваша сесія закінчилася",
-        "systemFontError": "сталася помилка під час спроби отримати системні шрифти",
         "settingsSyncError": "виявлено розбіжності між налаштуваннями в рендерері та основним процесом. перезапустіть програму, щоб застосувати зміни",
-        "invalidJson": "недійсний JSON",
         "playbackPausedDueToError": "відтворення було призупинено через помилку"
     },
     "filter": {
@@ -266,13 +244,8 @@
         "albumArtist": "$t(entity.albumArtist, {\"count\": 1})",
         "albumCount": "кількість $t(entity.album, {\"count\": 2})",
         "artist": "$t(entity.artist, {\"count\": 1})",
-        "biography": "біографія",
-        "bitrate": "бітрейт",
         "bpm": "уд/хв",
-        "channels": "$t(common.channel, {\"count\": 2})",
         "comment": "коментар",
-        "dateAdded": "дата додавання",
-        "disc": "диск",
         "duration": "тривалість",
         "favorited": "улюблене",
         "fromYear": "з року",
@@ -280,28 +253,17 @@
         "id": "id",
         "isCompilation": "є компіляцією",
         "isFavorited": "є улюбленим",
-        "isPublic": "є публічним",
-        "isRated": "є оціненим",
-        "isRecentlyPlayed": "нещодавно відтворено",
         "lastPlayed": "останнє відтворене",
-        "mostPlayed": "найбільш відтворювані",
         "name": "назва",
-        "note": "примітка",
-        "owner": "$t(common.owner)",
-        "path": "шлях",
         "playCount": "кількість відтворень",
         "random": "випадково",
         "recentlyAdded": "нещодавно додано",
         "recentlyPlayed": "нещодавно відтворено",
-        "recentlyUpdated": "нещодавно оновлено",
         "releaseDate": "дата випуску",
         "releaseYear": "рік випуску",
-        "search": "шукати",
         "songCount": "кількість пісень",
         "sortName": "сортування за назвою",
-        "title": "назва",
         "toYear": "до року",
-        "trackNumber": "трек",
         "explicitStatus": "$t(common.explicitStatus)",
         "matchAnd": "і",
         "matchOr": "або"
@@ -311,27 +273,6 @@
         "secondShort": "сек.",
         "hourShort": "год",
         "dayShort": "дн."
-    },
-    "filterOperator": {
-        "after": "є після",
-        "afterDate": "після (дата)",
-        "before": "є перед",
-        "beforeDate": "є перед (дата)",
-        "contains": "містить",
-        "endsWith": "закінчується на",
-        "inPlaylist": "є в",
-        "inTheLast": "є в останньому",
-        "inTheRange": "є в межах",
-        "inTheRangeDate": "є в межах (дата)",
-        "is": "є",
-        "isNot": "не є",
-        "isGreaterThan": "більше ніж",
-        "isLessThan": "менше ніж",
-        "matchesRegex": "відповідає регулярному виразу",
-        "notContains": "не містить",
-        "notInPlaylist": "немає в",
-        "notInTheLast": "не є в останньому",
-        "startsWith": "починається з"
     },
     "form": {
         "addServer": {
@@ -373,15 +314,11 @@
             "title": "створити $t(entity.playlist, {\"count\": 1})"
         },
         "createRadioStation": {
-            "success": "радіостанція створена успішно",
-            "title": "створити радіостанцію",
             "input_homepageUrl": "адреса домашньої сторінки",
             "input_name": "назва",
             "input_streamUrl": "URL-адреса потоку"
         },
         "deletePlaylist": {
-            "input_confirm": "введіть ім'я $t(entity.playlist, {\"count\": 1}) для підтвердження",
-            "success": "$t(entity.playlist, {\"count\": 1}) успішно видалено",
             "title": "видалити $t(entity.playlist, {\"count\": 1})"
         },
         "editPlaylist": {
@@ -398,41 +335,14 @@
             "input_name": "$t(common.name)",
             "title": "шукати тексти пісень"
         },
-        "queryEditor": {
-            "title": "редактор запитів",
-            "input_optionMatchAll": "збіг за всіма",
-            "input_optionMatchAny": "збіг за будь-яким",
-            "addRuleGroup": "додати групу правил",
-            "removeRuleGroup": "видалити групу правил",
-            "resetToDefault": "скинути до заводських налаштувань",
-            "clearFilters": "очистити фільтри"
-        },
-        "saveQueue": {
-            "success": "черга відтворення збережена на сервері"
-        },
-        "shareItem": {
-            "allowDownloading": "дозволити завантаження",
-            "description": "опис",
-            "setExpiration": "встановити термін дії",
-            "success": "посилання для спільного використання скопійовано в буфер обміну (натисніть тут, щоб відкрити)",
-            "expireInvalid": "термін дії повинен бути в майбутньому",
-            "createFailed": "не вдалося створити спільний доступ (чи ввімкнено спільний доступ?)",
-            "copyToClipboard": "Скопіювати до буфера обміну: Ctrl+C, Enter",
-            "successMustClick": "посилання успішно створено, натисніть сюди, щоб відкрити"
-        },
         "shuffleAll": {
             "title": "відтворити випадково",
             "input_genre": "$t(entity.genre, {\"count\": 1})",
             "input_limit": "скільки пісень?",
             "input_minYear": "від року",
-            "input_maxYear": "до року",
-            "input_played": "відтворити фільтр",
-            "input_played_optionAll": "всі треки",
-            "input_played_optionUnplayed": "тільки не відтворені треки",
-            "input_played_optionPlayed": "тільки відтворені треки"
+            "input_maxYear": "до року"
         },
         "updateServer": {
-            "success": "сервер успішно оновлено",
             "title": "оновити сервер"
         },
         "privateMode": {
@@ -454,7 +364,6 @@
             "favoriteSongs": "улюблені пісні",
             "groupingTypeAll": "всі типи випуску",
             "groupingTypePrimary": "основні типи випуску",
-            "recentReleases": "останні випуски",
             "viewDiscography": "переглянути дискографію",
             "relatedArtists": "подібні $t(entity.artist, {\"count\": 2})",
             "topSongs": "найкращі пісні",
@@ -470,12 +379,9 @@
         },
         "albumDetail": {
             "moreFromArtist": "більше від цього $t(entity.artist, {\"count\": 1})",
-            "moreFromGeneric": "більше від {{item}}",
-            "released": "видано"
+            "moreFromGeneric": "більше від {{item}}"
         },
         "albumList": {
-            "artistAlbums": "альбоми виконавця {{artist}}",
-            "genreAlbums": "\"{{genre}}\" $t(entity.album, {\"count\": 2})",
             "title": "$t(entity.album, {\"count\": 2})"
         },
         "radioList": {
@@ -495,73 +401,45 @@
         },
         "appMenu": {
             "collapseSidebar": "згорнути бічну панель",
-            "commandPalette": "відкрити палітру команд",
             "expandSidebar": "розгорнути бічну панель",
             "goBack": "повернутися назад",
             "goForward": "перейти вперед",
             "manageServers": "управління серверами",
             "privateModeOff": "вимкнути приватний режим",
             "privateModeOn": "увімкнути приватний режим",
-            "openBrowserDevtools": "відкрити інструменти розробника",
             "quit": "$t(common.quit)",
             "selectServer": "вибрати сервер",
             "selectMusicFolder": "вибрати папку з музикою",
             "noMusicFolder": "не вибрано папку з музикою",
             "multipleMusicFolders": "Вибрано {{count}} папок з музикою",
-            "settings": "$t(common.setting, {\"count\": 2})",
-            "version": "версія {{version}}"
+            "settings": "$t(common.setting, {\"count\": 2})"
         },
         "manageServers": {
             "title": "управління серверами",
-            "serverDetails": "інформація про сервер",
             "url": "URL-адреса",
             "username": "Ім'я користувача",
             "editServerDetailsTooltip": "редагувати дані сервера",
             "removeServer": "видалити сервер"
         },
         "contextMenu": {
-            "addFavorite": "$t(action.addToFavorites)",
-            "addLast": "$t(player.addLast)",
-            "addNext": "$t(player.addNext)",
-            "addToFavorites": "$t(action.addToFavorites)",
             "addToPlaylist": "$t(action.addToPlaylist)",
-            "createPlaylist": "$t(action.createPlaylist)",
-            "deletePlaylist": "$t(action.deletePlaylist)",
-            "deselectAll": "$t(action.deselectAll)",
             "download": "завантажити",
             "moveItems": "$t(action.moveItems)",
             "moveToNext": "$t(action.moveToNext)",
             "moveToBottom": "$t(action.moveToBottom)",
             "moveToTop": "$t(action.moveToTop)",
-            "numberSelected": "{{count}} вибрано",
-            "play": "$t(player.play)",
-            "playSimilarSongs": "$t(player.playSimilarSongs)",
-            "removeFromFavorites": "$t(action.removeFromFavorites)",
-            "removeFromPlaylist": "$t(action.removeFromPlaylist)",
-            "removeFromQueue": "$t(action.removeFromQueue)",
-            "playShuffled": "$t(player.shuffle)",
-            "shareItem": "поділитися елементом",
             "goTo": "перейти до",
             "goToAlbum": "перейти до $t(entity.album, {\"count\": 1})",
-            "goToAlbumArtist": "перейти до $t(entity.albumArtist, {\"count\": 1})",
             "showDetails": "отримати інформацію"
         },
         "fullscreenPlayer": {
             "config": {
-                "dynamicBackground": "динамічний фон",
-                "dynamicImageBlur": "розмір розмиття зображення",
-                "dynamicIsImage": "включити фонове зображення",
                 "followCurrentLyric": "слідкувати за поточним рядком",
                 "lyricAlignment": "вирівнювання тексту",
-                "lyricOffset": "затримка тексту (мс)",
                 "lyricGap": "розмір між рядками",
                 "lyricSize": "розмір тексту",
-                "opacity": "непрозорість",
-                "showLyricMatch": "показувати збіг тексту пісень",
-                "showLyricProvider": "показувати джерело тексту пісень",
                 "synchronized": "синхронізовано",
-                "unsynchronized": "несинхронізовано",
-                "useImageAspectRatio": "використовувати співвідношення сторін зображення"
+                "unsynchronized": "несинхронізовано"
             },
             "lyrics": "текст пісні",
             "related": "пов'язані",
@@ -570,12 +448,7 @@
             "noLyrics": "текст пісні не знайдено"
         },
         "genreList": {
-            "showAlbums": "показати $t(entity.genre, {\"count\": 1}) $t(entity.album, {\"count\": 2})",
-            "showTracks": "показати $t(entity.genre, {\"count\": 1}) $t(entity.track, {\"count\": 2})",
             "title": "$t(entity.genre, {\"count\": 2})"
-        },
-        "folderList": {
-            "title": "$t(entity.folder, {\"count\": 2})"
         },
         "globalSearch": {
             "commands": {
@@ -584,13 +457,6 @@
                 "serverCommands": "команди сервера"
             },
             "title": "команди"
-        },
-        "home": {
-            "explore": "дослідити з вашої бібліотеки",
-            "genres": "$t(entity.genre, {\"count\": 2})",
-            "mostPlayed": "найбільш відтворені",
-            "newlyAdded": "нещодавно додані релізи",
-            "recentlyPlayed": "нещодавно відтворені"
         }
     }
 }

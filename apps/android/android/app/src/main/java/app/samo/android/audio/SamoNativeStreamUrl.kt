@@ -227,6 +227,35 @@ internal object SamoNativeStreamUrl {
         url.startsWith("file:", ignoreCase = true) || url.startsWith("content:", ignoreCase = true)
 
     /**
+     * Move a Samo URL onto a different origin, keeping its path and query.
+     *
+     * The Kotlin twin of `finalizeSamoMediaUrl`. A URL minted while the app was
+     * on the LAN names the LAN address, and stays that way in whatever outlived
+     * the trip home — a queued download, a mirrored queue item. Once the app is
+     * reaching the same server on its remote address, that URL is unreachable
+     * while the resource behind it is perfectly available; re-pointing it costs
+     * one parse. Returns null when there is nothing to do, so callers can keep
+     * their original string.
+     */
+    fun rehomeUrl(url: String?, serverUrl: String?): String? {
+        if (url.isNullOrBlank() || serverUrl.isNullOrBlank()) return null
+        return try {
+            val target = URL(serverUrl.trimEnd('/'))
+            val current = URL(url)
+            if (current.protocol == target.protocol && current.authority == target.authority) {
+                return null
+            }
+            val suffix = buildString {
+                append(current.path)
+                current.query?.let { append("?").append(it) }
+            }
+            "${serverUrl.trimEnd('/')}$suffix"
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /**
      * Cache-only token refresh for a Samo media URL — safe on the main thread
      * (never touches the network). Returns the URL with the cached token
      * substituted, or null when there's nothing to do (non-Samo URL, missing

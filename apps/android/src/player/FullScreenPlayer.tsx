@@ -1,7 +1,7 @@
 import { buildAudioQualityBadgeItems } from '@samo/core/audio-quality';
 import { type MobilePlayableAudio, type MobileHomeItem, LONG_FORM_RELATIVE_SKIP_SECONDS } from '@samo/core/mobile';
 import { type ServerAuthenticationResult } from '@samo/core/server';
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type ComponentProps, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Animated, Pressable, Text, View } from 'react-native';
 import { GestureDetector } from 'react-native-gesture-handler';
 import Reanimated, {
@@ -34,7 +34,8 @@ import {
     loadArtistHomeItemById,
     loadArtistHomeItemByName,
 } from '../services/catalog/catalog-reads';
-import { getPlayerPositionMsForAbsProgress } from '../utils/abs-progress-math';
+import { useAndroidPlaybackPositionMs } from '../state/playback-store';
+import { getPlayerPositionMsForPlaybackProgress } from '../utils/playback-progress-math';
 import { type AndroidPlaybackState } from '../types/playback';
 import {
     formatPlaybackTime,
@@ -75,6 +76,9 @@ const CAST_ICON_INACTIVE_TINT = 'rgba(245, 245, 245, 0.72)';
 
 /** Marquee (ticker) for single-line player text (title + subtitle lines) that
  *  may overflow the player width; static when the text fits. */
+/** Overflow below this is measurement noise, not a title that needs scrolling. */
+const MARQUEE_MIN_OVERFLOW = 1;
+
 const PlayerMarqueeText = memo(({
     children,
     style,
@@ -89,11 +93,21 @@ const PlayerMarqueeText = memo(({
 
     const startScroll = useCallback(() => {
         const overflow = textWidth.current - containerWidth.current;
-        if (overflow <= 0) {
+        // STOP AND PARK FIRST, unconditionally.
+        //
+        // The early return used to sit above this, so a title that fits left
+        // the PREVIOUS track's loop running: skip from a long title to a short
+        // one and the new text calmly walked itself off the edge of the screen
+        // and stayed there, because nothing ever reset the offset.
+        animRef.current?.stop();
+        animRef.current = null;
+        translateX.setValue(0);
+        // A sub-pixel difference is not an overflow; scrolling one would just
+        // twitch. Also covers the pass where only one of the two onLayouts has
+        // reported and the other width is still 0.
+        if (containerWidth.current <= 0 || overflow <= MARQUEE_MIN_OVERFLOW) {
             return;
         }
-        animRef.current?.stop();
-        translateX.setValue(0);
         animRef.current = Animated.loop(
             Animated.sequence([
                 Animated.delay(1200),
@@ -113,6 +127,14 @@ const PlayerMarqueeText = memo(({
         animRef.current.start();
     }, [translateX]);
 
+    // A new title restarts the ticker from the top. `onLayout` alone cannot be
+    // trusted for this: two different titles can measure the SAME width, and
+    // then no layout event fires at all and the incoming track inherits the
+    // outgoing one's scroll position mid-travel.
+    useEffect(() => {
+        startScroll();
+    }, [children, startScroll]);
+
     useEffect(() => {
         return () => {
             animRef.current?.stop();
@@ -127,21 +149,100 @@ const PlayerMarqueeText = memo(({
             }}
             style={styles.fullPlayerMarqueeContainer}
         >
-            <Animated.Text
-                numberOfLines={1}
-                onLayout={(e) => {
-                    textWidth.current = e.nativeEvent.layout.width;
-                    startScroll();
-                }}
-                style={[style, { transform: [{ translateX }] }]}
-            >
-                {children}
-            </Animated.Text>
+            {/* The text is measured inside a track far wider than the player,
+                NOT inside the clipping container — see fullPlayerMarqueeTrack.
+                `numberOfLines` is only a wrap guard here: against the track's
+                width there is nothing to ellipsize, it just pins one line. */}
+            <View style={styles.fullPlayerMarqueeTrack}>
+                <Animated.Text
+                    numberOfLines={1}
+                    onLayout={(e) => {
+                        textWidth.current = e.nativeEvent.layout.width;
+                        startScroll();
+                    }}
+                    style={[style, styles.fullPlayerMarqueeText, { transform: [{ translateX }] }]}
+                >
+                    {children}
+                </Animated.Text>
+            </View>
         </View>
     );
 });
 
 PlayerMarqueeText.displayName = 'PlayerMarqueeText';
+
+/**
+ * The seek bar and its time row — the only part of the player that has to
+ * redraw as the playhead moves, and therefore the only part that subscribes to
+ * it.
+ *
+ * The playhead used to arrive as a prop on FullScreenPlayer, which meant the
+ * native engine's 1Hz tick re-rendered this entire 900-line component — every
+ * control, the artwork, the marquee, the queue sheet — once a second for the
+ * whole duration of a track, to move one bar and re-stamp one label. Everything
+ * else up there renders from state that changes when the TRACK changes.
+ *
+ * Subscribing here instead confines the per-second work to these two leaves.
+ * Note how little it actually feeds: `formatPlaybackTime` for the elapsed
+ * label, and a baseline for the bar — which interpolates itself on the UI
+ * thread between ticks and only needs the number to correct its drift. That
+ * was already true before; the cost was simply being paid at the wrong level
+ * of the tree.
+ */
+const PlayerProgressBlock = memo(({
+    activeItem,
+    durationLabel,
+    durationMs,
+    externalGestures,
+    isLive,
+    isPlaying,
+    onSeek,
+    segments,
+    sessionKey,
+}: {
+    activeItem: MobilePlayableAudio | null;
+    durationLabel: string;
+    durationMs?: number;
+    externalGestures?: ComponentProps<typeof SegmentedSeekBar>['externalGestures'];
+    isLive: boolean;
+    isPlaying: boolean;
+    onSeek: (positionMs: number) => void;
+    segments?: ComponentProps<typeof SegmentedSeekBar>['segments'];
+    sessionKey?: string;
+}) => {
+    const filePositionMs = useAndroidPlaybackPositionMs();
+    // Audiobook file positions are per-file; the bar, the label and the chapter
+    // markers are all book-absolute. Same fold the parent used to do.
+    const positionMs = activeItem
+        ? getDisplayPositionMs(activeItem, filePositionMs)
+        : filePositionMs;
+
+    return (
+        <View style={styles.fullPlayerProgress}>
+            <SegmentedSeekBar
+                durationMs={durationMs}
+                externalGestures={externalGestures}
+                isLive={isLive}
+                isPlaying={isPlaying}
+                onSeek={onSeek}
+                positionMs={positionMs}
+                segments={segments}
+                sessionKey={sessionKey}
+                tint={colors.accent}
+            />
+            <View style={styles.fullPlayerTimeRow}>
+                <Text style={styles.fullPlayerTime}>
+                    {isLive ? '' : formatPlaybackTime(positionMs)}
+                </Text>
+                <Text style={[styles.fullPlayerTime, styles.fullPlayerTimeRight]}>
+                    {durationLabel}
+                </Text>
+            </View>
+        </View>
+    );
+});
+
+PlayerProgressBlock.displayName = 'PlayerProgressBlock';
 
 export const FullScreenPlayer = memo(({
     artworkImageId,
@@ -508,6 +609,11 @@ export const FullScreenPlayer = memo(({
             />
         </Pressable>
     );
+    // CHAPTER-GRANULAR, not per-second: `playbackState` is the chrome snapshot,
+    // whose position only turns over when the active chapter does. The one
+    // consumer left down here is the queue sheet's chapter highlight, which is
+    // exactly that granularity — it has no second hand to move. Anything that
+    // draws a moving playhead subscribes in PlayerProgressBlock instead.
     const filePositionMs =
         playbackState.status !== 'idle' ? (playbackState.positionMs ?? 0) : 0;
     const positionMs = activeItem
@@ -521,7 +627,7 @@ export const FullScreenPlayer = memo(({
 
         if (activeItem.source === 'audiobook' || activeItem.source === 'podcast') {
             onSeek(
-                getPlayerPositionMsForAbsProgress(
+                getPlayerPositionMsForPlaybackProgress(
                     timelinePositionMs / 1000,
                     activeItem,
                 ),
@@ -695,35 +801,27 @@ export const FullScreenPlayer = memo(({
                     ) : null}
                 </View>
 
-                <View style={styles.fullPlayerProgress}>
-                    <SegmentedSeekBar
-                        durationMs={durationMs}
-                        externalGestures={seekExternalGestures}
-                        isLive={isLive}
-                        isPlaying={playbackState.status === 'playing'}
-                        onSeek={handleTimelineSeek}
-                        positionMs={positionMs}
-                        segments={timelineSegments}
-                        sessionKey={
-                            activeItem && playbackState.status !== 'idle'
-                                ? `${playbackState.sessionId}:${activeItem.id}`
-                                : undefined
-                        }
-                        tint={colors.accent}
-                    />
-                    <View style={styles.fullPlayerTimeRow}>
-                        <Text style={styles.fullPlayerTime}>
-                            {isLive ? '' : formatPlaybackTime(positionMs)}
-                        </Text>
-                        <Text style={[styles.fullPlayerTime, styles.fullPlayerTimeRight]}>
-                            {activeItem
-                                ? getDurationLabel(playbackState)
-                                : displayItem.source === 'radio'
-                                  ? 'RADIO'
-                                  : formatPlaybackTime(durationMs)}
-                        </Text>
-                    </View>
-                </View>
+                <PlayerProgressBlock
+                    activeItem={activeItem}
+                    durationLabel={
+                        activeItem
+                            ? getDurationLabel(playbackState)
+                            : displayItem.source === 'radio'
+                              ? 'RADIO'
+                              : formatPlaybackTime(durationMs)
+                    }
+                    durationMs={durationMs}
+                    externalGestures={seekExternalGestures}
+                    isLive={isLive}
+                    isPlaying={playbackState.status === 'playing'}
+                    onSeek={handleTimelineSeek}
+                    segments={timelineSegments}
+                    sessionKey={
+                        activeItem && playbackState.status !== 'idle'
+                            ? `${playbackState.sessionId}:${activeItem.id}`
+                            : undefined
+                    }
+                />
 
                 <View style={styles.fullPlayerControls}>
                     <View

@@ -1,21 +1,21 @@
 import { type ServerAuthenticationResult } from '@samo/core/server';
 import { FlashList } from '@shopify/flash-list';
-import { type ComponentProps, memo, type ReactElement, useCallback, useMemo } from 'react';
+import { memo, type ReactElement, useCallback, useMemo } from 'react';
 import {
-    Pressable,
     type RefreshControlProps,
     type ScrollViewProps,
     Text,
     View,
 } from 'react-native';
-import { GestureDetector } from 'react-native-gesture-handler';
 import Reanimated from 'react-native-reanimated';
 
 import { ArtworkImage } from '../../components/ArtworkImage';
+import { PressableScale } from '../../components/PressableScale';
 import { useMediaContextMenu } from '../../contexts/media-context-menu';
 import { useScrollContentBottomInset } from '../../hooks/use-scroll-content-bottom-inset';
 import { type AndroidRecentContentSourceItem } from '../../services/recent-content';
 import { HOME_PRIMARY_TILE } from '../../theme/layout';
+import { presses } from '../../theme/motion';
 import { styles } from '../../theme/styles';
 import { type SearchPullScrollProps } from '../../components/search-pull/useSearchPull';
 import { getContentItemKey } from '../../utils/content-item';
@@ -45,7 +45,8 @@ const HomeFilterGridTile = memo(
         const contextMenu = useMediaContextMenu();
 
         return (
-            <Pressable
+            <PressableScale
+                {...presses.tile}
                 key={getContentItemKey(item)}
                 // Long-press parity with HomeMediaTile — this wiring was verified
                 // on-device (episode menu from the podcast pill grid) and then lost
@@ -53,11 +54,7 @@ const HomeFilterGridTile = memo(
                 onLongPress={() => contextMenu.openForItem(item)}
                 onPress={() => onSelectItem(item)}
                 onPressIn={() => onPrefetchItem?.(item)}
-                style={({ pressed }) => [styles.homeFilterGridTile, pressed && styles.tilePressed]}
-                // Long enough that a scroll-start doesn't flash the tile, short
-                // enough that a deliberate press visibly responds — instant-
-                // feedback tenet.
-                unstable_pressDelay={60}
+                style={styles.homeFilterGridTile}
             >
                 <ArtworkImage
                     artworkImageId={item.artworkImageId}
@@ -88,7 +85,7 @@ const HomeFilterGridTile = memo(
                         </Text>
                     </View>
                 ) : null}
-            </Pressable>
+            </PressableScale>
         );
     },
 );
@@ -120,7 +117,6 @@ export const HomeFilterGrid = memo(
     ({
         ListFooterComponent,
         ListHeaderComponent,
-        gesture,
         items,
         onPrefetchItem,
         onSelectItem,
@@ -133,9 +129,6 @@ export const HomeFilterGrid = memo(
     }: {
         ListFooterComponent?: ReactElement | null;
         ListHeaderComponent?: ReactElement | null;
-        /** The pull-down search gesture — wraps the list so an over-pull at the top
-         *  summons search (see useSearchPull). */
-        gesture?: ComponentProps<typeof GestureDetector>['gesture'];
         items: AndroidRecentContentSourceItem[];
         onPrefetchItem?: (item: AndroidRecentContentSourceItem) => void;
         onSelectItem: (item: AndroidRecentContentSourceItem) => void;
@@ -197,21 +190,11 @@ export const HomeFilterGrid = memo(
                 {...scrollProps}
             />
         );
-        // `collapsable={false}` host view, for the same reason HomeContent's
-        // section list needs one: GestureDetector binds to the native view its
-        // child resolves to, and a FlashList ref is the list instance rather than a
-        // view — so without a real view in between, the pull-down pan is silently
-        // never attached. Android would collapse a plain layout-only View away, so
-        // the flag is what guarantees one survives to hold the handler.
-        return gesture ? (
-            <GestureDetector gesture={gesture}>
-                <View collapsable={false} style={styles.homeSceneRoot}>
-                    {list}
-                </View>
-            </GestureDetector>
-        ) : (
-            list
-        );
+        // The pull pan no longer lives in the page (see SearchPullGestureHost),
+        // so there is nothing left here to attach and no host view to force into
+        // existence for it. `renderScrollComponent` still binds the scroller's
+        // own native gesture to FlashList's real inner scroll view.
+        return list;
     },
 );
 

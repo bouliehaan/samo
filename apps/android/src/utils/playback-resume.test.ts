@@ -10,13 +10,13 @@ import {
 } from './playback-resume';
 
 // vitest hoists vi.hoisted + vi.mock above the imports above, so these apply.
-const { getNativeResumeProgressMock, loadAbsCurrentProgressMock } = vi.hoisted(() => ({
+const { getNativeResumeProgressMock, loadCurrentPlaybackProgressMock } = vi.hoisted(() => ({
     getNativeResumeProgressMock: vi.fn(),
-    loadAbsCurrentProgressMock: vi.fn(),
+    loadCurrentPlaybackProgressMock: vi.fn(),
 }));
 
-vi.mock('../services/abs-progress', () => ({
-    loadAbsCurrentProgress: loadAbsCurrentProgressMock,
+vi.mock('../services/playback-progress', () => ({
+    loadCurrentPlaybackProgress: loadCurrentPlaybackProgressMock,
 }));
 
 vi.mock('./native-resume', () => ({
@@ -150,7 +150,7 @@ describe('getResumePositionSeconds', () => {
 
 describe('refreshPlayableResumeFromServer', () => {
     beforeEach(() => {
-        loadAbsCurrentProgressMock.mockReset();
+        loadCurrentPlaybackProgressMock.mockReset();
         getNativeResumeProgressMock.mockReset();
         getNativeResumeProgressMock.mockResolvedValue(null);
     });
@@ -161,7 +161,7 @@ describe('refreshPlayableResumeFromServer', () => {
     // never loaded → every book resumed at 0 (and looked like "no cross-device
     // sync" even though the native writer had saved progress).
     it('loads + applies server resume for a per-file audiobook id', async () => {
-        loadAbsCurrentProgressMock.mockResolvedValue({
+        loadCurrentPlaybackProgressMock.mockResolvedValue({
             currentTimeSeconds: 1234,
             isFinished: false,
         });
@@ -176,12 +176,12 @@ describe('refreshPlayableResumeFromServer', () => {
         const result = await refreshPlayableResumeFromServer(item, null);
 
         // Keyed on the BOOK id, not the per-file id.
-        expect(loadAbsCurrentProgressMock).toHaveBeenCalledWith(expect.anything(), 'book-7');
+        expect(loadCurrentPlaybackProgressMock).toHaveBeenCalledWith(expect.anything(), 'book-7');
         expect(result.initialPositionSeconds).toBe(1234);
     });
 
     it('leaves the item untouched when the server has no progress and no cache', async () => {
-        loadAbsCurrentProgressMock.mockResolvedValue(null);
+        loadCurrentPlaybackProgressMock.mockResolvedValue(null);
 
         const item = baseItem({
             contentSourceId: 'samo:https://samo',
@@ -199,7 +199,7 @@ describe('refreshPlayableResumeFromServer', () => {
     // what then overwrote the good server position. Repro: scrub to 42 min →
     // switch to radio → switch back during a momentary LAN drop → reset to 0.
     it('falls back to the native resume cache when the server read fails', async () => {
-        loadAbsCurrentProgressMock.mockResolvedValue(null);
+        loadCurrentPlaybackProgressMock.mockResolvedValue(null);
         getNativeResumeProgressMock.mockResolvedValue({
             completed: false,
             progressSeconds: 2526,
@@ -218,7 +218,7 @@ describe('refreshPlayableResumeFromServer', () => {
     });
 
     it('prefers the server position over the cache when the server answers', async () => {
-        loadAbsCurrentProgressMock.mockResolvedValue({
+        loadCurrentPlaybackProgressMock.mockResolvedValue({
             currentTimeSeconds: 1234,
             isFinished: false,
         });

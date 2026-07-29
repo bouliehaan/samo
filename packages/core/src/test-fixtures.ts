@@ -11,7 +11,7 @@ export const testServerAuthentication = (
     const type = overrides.type ?? ServerType.SAMO;
 
     return {
-        capabilities: getDefaultServerCapabilities(type),
+        capabilities: getDefaultServerCapabilities(),
         credential: 'test-token',
         details: 'test server',
         kind: ServerAuthenticationKind.SAMO_TOKEN,

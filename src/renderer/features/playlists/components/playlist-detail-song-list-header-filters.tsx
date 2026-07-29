@@ -48,10 +48,6 @@ import { useLocalStorage } from '/@/shared/hooks/use-local-storage';
 import { LibraryItem, Song, SongListSort, SortOrder } from '/@/shared/types/domain-types';
 import { ItemListKey } from '/@/shared/types/types';
 
-interface PlaylistDetailSongListHeaderFiltersProps {
-    isSmartPlaylist?: boolean;
-}
-
 const PlaylistSongListFiltersModal = () => {
     const { t } = useTranslation();
     const { isSidebarOpen, setIsSidebarOpen } = useListContext();
@@ -114,9 +110,7 @@ const PlaylistSongListFiltersModal = () => {
     );
 };
 
-export const PlaylistDetailSongListHeaderFilters = ({
-    isSmartPlaylist,
-}: PlaylistDetailSongListHeaderFiltersProps) => {
+export const PlaylistDetailSongListHeaderFilters = () => {
     const { t } = useTranslation();
     const { listData, listKey: listKeyFromContext, mode, setMode } = useListContext();
     const { playlistId } = useParams() as { playlistId: string };
@@ -158,7 +152,6 @@ export const PlaylistDetailSongListHeaderFilters = ({
             playlistTarget === PlaylistTarget.ALBUM ? PlaylistTarget.TRACK : PlaylistTarget.ALBUM,
         );
     }, [playlistTarget, setPlaylistBehavior]);
-    const isViewEditMode = !isSmartPlaylist;
     const isEditMode = mode === 'edit';
 
     const [collapsed, setCollapsed] = useLocalStorage<boolean>({
@@ -201,7 +194,7 @@ export const PlaylistDetailSongListHeaderFilters = ({
                 <Divider orientation="vertical" />
                 <PlaylistSongListFiltersModal />
                 <ListRefreshButton disabled={isEditMode} listKey={listKey} />
-                {canEditPlaylist && !isSmartPlaylist && detailQuery.data ? (
+                {canEditPlaylist && detailQuery.data ? (
                     <Button
                         leftSection={<Icon icon="edit" />}
                         onClick={() => openUpdatePlaylistModal({ playlist: detailQuery.data })}
@@ -214,18 +207,16 @@ export const PlaylistDetailSongListHeaderFilters = ({
                 <MoreButton onClick={handleMore} />
             </Group>
             <Group gap="sm" wrap="nowrap">
-                {isViewEditMode && <SaveAndReplaceButton mode={mode} songIds={tracks} />}
-                {isViewEditMode && (
-                    <Button
-                        onClick={() => setMode?.(mode === 'edit' ? 'view' : 'edit')}
-                        uppercase
-                        variant={mode === 'edit' ? 'state-error' : 'subtle'}
-                    >
-                        {mode === 'edit'
-                            ? t('common.cancel', { postProcess: 'titleCase' })
-                            : t('common.edit', { postProcess: 'titleCase' })}
-                    </Button>
-                )}
+                <SaveAndReplaceButton mode={mode} songIds={tracks} />
+                <Button
+                    onClick={() => setMode?.(mode === 'edit' ? 'view' : 'edit')}
+                    uppercase
+                    variant={mode === 'edit' ? 'state-error' : 'subtle'}
+                >
+                    {mode === 'edit'
+                        ? t('common.cancel', { postProcess: 'titleCase' })
+                        : t('common.edit', { postProcess: 'titleCase' })}
+                </Button>
                 <Tooltip
                     label={t(`common.${collapsed ? 'expand' : 'collapse'}`, {
                         postProcess: 'titleCase',

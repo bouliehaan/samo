@@ -23,7 +23,6 @@
             "viewAllTracks": "mostra totes les $t(entity.track, {\"count\": 2})",
             "about": "Sobre {{artist}}",
             "appearsOn": "apareix a",
-            "recentReleases": "Llançaments recents",
             "viewDiscography": "Mosta la discografia",
             "topSongs": "millors cançons",
             "topSongsFrom": "les millors cançons de {{title}}",
@@ -40,13 +39,10 @@
         },
         "albumDetail": {
             "moreFromArtist": "més d'aquest $t(entity.artist, {\"count\": 1})",
-            "moreFromGeneric": "més de {{item}}",
-            "released": "publicat"
+            "moreFromGeneric": "més de {{item}}"
         },
         "albumList": {
-            "title": "$t(entity.album, {\"count\": 2})",
-            "artistAlbums": "àlbums de {{artist}}",
-            "genreAlbums": "\"{{genre}}\" $t(entity.album, {\"count\": 2})"
+            "title": "$t(entity.album, {\"count\": 2})"
         },
         "appMenu": {
             "quit": "$t(common.quit)",
@@ -57,87 +53,49 @@
             "expandSidebar": "expandeix la barra lateral",
             "manageServers": "gestionar servidors",
             "selectServer": "seleccionar servidor",
-            "version": "versió {{version}}",
-            "openBrowserDevtools": "obre les eines de desenvolupament del navegador",
             "privateModeOff": "desactiva el mode privat",
             "privateModeOn": "activa el mode privat",
-            "commandPalette": "obre la paleta d'ordres",
             "selectMusicFolder": "selecciona una carpeta de música",
             "noMusicFolder": "no s'ha seleccionat cap carpeta de música",
             "multipleMusicFolders": "{{count}} carpetes de música seleccionades"
         },
         "contextMenu": {
-            "addFavorite": "$t(action.addToFavorites)",
-            "addLast": "$t(player.addLast)",
-            "addNext": "$t(player.addNext)",
-            "addToFavorites": "$t(action.addToFavorites)",
             "addToPlaylist": "$t(action.addToPlaylist)",
-            "createPlaylist": "$t(action.createPlaylist)",
-            "deletePlaylist": "$t(action.deletePlaylist)",
-            "deselectAll": "$t(action.deselectAll)",
             "moveToNext": "$t(action.moveToNext)",
             "moveToBottom": "$t(action.moveToBottom)",
             "moveToTop": "$t(action.moveToTop)",
-            "play": "$t(player.play)",
-            "playSimilarSongs": "$t(player.playSimilarSongs)",
-            "removeFromFavorites": "$t(action.removeFromFavorites)",
-            "removeFromPlaylist": "$t(action.removeFromPlaylist)",
-            "removeFromQueue": "$t(action.removeFromQueue)",
-            "playShuffled": "$t(player.shuffle)",
             "download": "descarregar",
             "showDetails": "informació",
-            "numberSelected": "{{count}} seleccionat",
-            "shareItem": "comparteix l'element",
-            "goToAlbumArtist": "Ves a $t(entity.albumArtist, {\"count\": 1})",
             "goToAlbum": "ves a $t(entity.album, {\"count\": 1})",
             "moveItems": "$t(action.moveItems)",
             "goTo": "ves a"
         },
         "genreList": {
-            "title": "$t(entity.genre, {\"count\": 2})",
-            "showAlbums": "mostra $t(entity.album, {\"count\": 2}) de $t(entity.genre, {\"count\": 1})",
-            "showTracks": "mostra $t(entity.track, {\"count\": 2}) de $t(entity.genre, {\"count\": 1})"
+            "title": "$t(entity.genre, {\"count\": 2})"
         },
         "home": {
-            "title": "$t(common.home)",
-            "explore": "explora la teva biblioteca",
-            "newlyAdded": "afegits recentment",
-            "mostPlayed": "els més reproduïts",
-            "recentlyPlayed": "reproduït recentment",
-            "recentlyReleased": "estrenat fa poc",
-            "genres": "$t(entity.genre, {\"count\": 2})"
+            "title": "$t(common.home)"
         },
         "playlistList": {
             "title": "$t(entity.playlist, {\"count\": 2})"
         },
         "trackList": {
-            "title": "$t(entity.track, {\"count\": 2})",
-            "artistTracks": "pistes de {{artist}}",
-            "genreTracks": "$t(entity.track, {\"count\": 2}) \"{{genre}}\""
+            "title": "$t(entity.track, {\"count\": 2})"
         },
         "manageServers": {
             "username": "nom d'usuari",
             "title": "gestionar servidors",
-            "serverDetails": "detalls del servidor",
             "editServerDetailsTooltip": "editar els detalls del servidor",
             "removeServer": "eliminar el servidor",
             "url": "URL"
         },
         "fullscreenPlayer": {
             "config": {
-                "opacity": "opacitat",
                 "synchronized": "sincronitzat",
                 "unsynchronized": "no sincronitzat",
-                "useImageAspectRatio": "utilitza la relació d'aspecte de la imatge",
-                "dynamicBackground": "fons dinàmic",
-                "dynamicIsImage": "activar la imatge de fons",
                 "followCurrentLyric": "seguir la lletra actual",
                 "lyricAlignment": "alineació de la lletra",
                 "lyricSize": "tamany de la lletra",
-                "dynamicImageBlur": "mida del desenfocament de la imatge",
-                "lyricOffset": "demora de la lletra (ms)",
-                "showLyricMatch": "mosta coincidències de lletres",
-                "showLyricProvider": "mostra el proveïdor de la lletra",
                 "lyricGap": "espera entre lletres"
             },
             "lyrics": "lletres",
@@ -150,25 +108,13 @@
             "advanced": "avançat",
             "generalTab": "general",
             "hotkeysTab": "tecles d'accés ràpid",
-            "playbackTab": "reproducció",
-            "windowTab": "finestra",
-            "analytics": "analítiques",
             "updates": "actualitza",
             "cache": "memòria cau",
             "application": "aplicació",
-            "queryBuilder": "constructor de consultes",
             "theme": "tema",
-            "controls": "controls",
-            "sidebar": "barra lateral",
             "remote": "remot",
             "exportImport": "importa/exporta",
-            "scrobble": "scrobble",
-            "audio": "àudio",
             "lyrics": "lletra",
-            "transcoding": "transcodificació",
-            "discord": "discord",
-            "logger": "registres",
-            "playerFilters": "filtres de reproducció",
             "lyricsDisplay": "mostra la lletra"
         },
         "globalSearch": {
@@ -184,14 +130,8 @@
             "copiedPath": "ruta copiada correctament",
             "openFile": "mostra la pista al gestor d'arxius"
         },
-        "playlist": {
-            "reorder": "el reordenament només s'activa quan s'ordena per id"
-        },
         "favorites": {
             "title": "$t(entity.favorite, {\"count\": 2})"
-        },
-        "folderList": {
-            "title": "$t(entity.folder, {\"count\": 2})"
         },
         "radioList": {
             "title": "emissores de ràdio"
@@ -415,9 +355,7 @@
             "input_public": "públic"
         },
         "deletePlaylist": {
-            "success": "$t(entity.playlist, {\"count\": 1}) s'ha eliminat amb èxit",
-            "title": "elimina la $t(entity.playlist, {\"count\": 1})",
-            "input_confirm": "escriviu el nom de la $t(entity.playlist, {\"count\": 1}) per confirmar"
+            "title": "elimina la $t(entity.playlist, {\"count\": 1})"
         },
         "editPlaylist": {
             "success": "$t(entity.playlist, {\"count\": 1}) s'ha actualitzat amb èxit",
@@ -446,28 +384,8 @@
             "input_remoteUrl": "url públic",
             "input_remoteUrlPlaceholder": "opcional: url públic per característiques externes"
         },
-        "shareItem": {
-            "description": "descripció",
-            "allowDownloading": "permetre descàrrega",
-            "setExpiration": "estableix expiració",
-            "success": "s'ha copiat l'enllaç de compartició al porta-retalls (o feu clic aquí per obrir-lo)",
-            "expireInvalid": "la data d'expiració ha de ser al futur",
-            "createFailed": "no s'ha pogut crear el recurs compartit (està habilitat, l'ús compartit?)",
-            "copyToClipboard": "Copiar al porta-retalls: Ctrl+C, Enter",
-            "successMustClick": "Compartició creada correctament. Feu clic aquí per obrir-la."
-        },
         "updateServer": {
-            "success": "s'ha actualitzat el servidor amb èxit",
             "title": "actualitzar el servidor"
-        },
-        "queryEditor": {
-            "title": "editor de consultes",
-            "input_optionMatchAll": "coincidències totals",
-            "input_optionMatchAny": "coincidències parcials",
-            "addRuleGroup": "afegeix el grup de regles",
-            "removeRuleGroup": "elimina el grup de regles",
-            "resetToDefault": "reestableix als valors predeterminats",
-            "clearFilters": "neteja els filtres"
         },
         "privateMode": {
             "enabled": "mode privat actiu; l'estat de reproducció ara està ocult d'integracions externes",
@@ -483,21 +401,12 @@
             "input_genre": "$t(entity.genre, {\"count\": 1})",
             "input_limit": "quantes cançons?",
             "input_minYear": "de l'any",
-            "input_maxYear": "fins a l'any",
-            "input_played": "reprodueix el filtre",
-            "input_played_optionAll": "totes les pistes",
-            "input_played_optionUnplayed": "només les pistes sense reproduir",
-            "input_played_optionPlayed": "només les pistes reproduïdes"
+            "input_maxYear": "fins a l'any"
         },
         "createRadioStation": {
-            "success": "emissora de ràdio creada amb èxit",
-            "title": "crea una emissora de ràdio",
             "input_homepageUrl": "URL de la pàgina d'inici",
             "input_name": "nom",
             "input_streamUrl": "URL de transmissió"
-        },
-        "saveQueue": {
-            "success": "cua de reproducció desada al servidor"
         },
         "lyricsExport": {
             "export": "exporta la lletra",
@@ -507,38 +416,27 @@
     },
     "action": {
         "addToFavorites": "afegeix a $t(entity.favorite, {\"count\": 2})",
-        "addToPlaylist": "afegeix a $t(entity.playlist, {\"count\": 1})",
         "createPlaylist": "crea $t(entity.playlist, {\"count\": 1})",
         "deletePlaylist": "elimina la $t(entity.playlist, {\"count\": 1})",
         "editPlaylist": "edita $t(entity.playlist, {\"count\": 1})",
-        "refresh": "$t(common.refresh)",
         "removeFromFavorites": "elimina dels $t(entity.favorite, {\"count\": 2})",
         "removeFromPlaylist": "elimina de $t(entity.playlist, {\"count\": 1})",
         "clearQueue": "buida la cua",
         "removeFromQueue": "treure de la cua",
-        "goToPage": "anar a la pàgina",
         "openIn": {
             "lastfm": "Obrir a Last.fm",
             "musicbrainz": "Obrir a MusicBrainz"
         },
-        "deselectAll": "deselecciona-ho tot",
         "viewPlaylists": "veure $t(entity.playlist, {\"count\": 2})",
-        "moveToNext": "passar al següent",
-        "moveToBottom": "anar al final",
-        "moveToTop": "anar al principi",
-        "toggleSmartPlaylistEditor": "canvia l'editor $t(entity.smartPlaylist)",
-        "downloadStarted": "s'ha iniciat la descàrrega de {{count}} elements",
         "moveUp": "mou amunt",
         "moveDown": "mou avall",
         "holdToMoveToTop": "mantingueu premut per moure al capdamunt",
         "holdToMoveToBottom": "mantingueu premut per moure al capdavall",
-        "moveItems": "mou elements",
         "shuffle": "mescla",
         "shuffleAll": "mescla-ho tot",
         "shuffleSelected": "mescla els seleccionats",
         "viewMore": "mostra'n més",
         "createRadioStation": "crea $t(entity.radioStation, {\"count\": 1})",
-        "deleteRadioStation": "elimina $t(entity.radioStation, {\"count\": 1})",
         "addOrRemoveFromSelection": "afegeix o elimina de la selecció",
         "selectRangeOfItems": "selecciona un interval d'elements",
         "selectAll": "selecciona-ho tot",
@@ -920,10 +818,7 @@
             "bitrate": "taxa de bits",
             "bpm": "bpm",
             "dateAdded": "data d'addició",
-            "discNumber": "disc",
-            "trackNumber": "pista",
             "comment": "comentari",
-            "favorite": "preferit",
             "lastPlayed": "última reproducció",
             "path": "ruta",
             "title": "títol",
@@ -936,12 +831,7 @@
                 "gap": "$t(common.gap)",
                 "size": "$t(common.size)",
                 "autoFitColumns": "ajusta les columnes automàticament",
-                "followCurrentSong": "segueix la cançó actual",
                 "displayType": "tipus de visualització",
-                "itemGap": "espai entre elements (px)",
-                "itemSize": "mida dels elements (px)",
-                "tableColumns": "columnes de la taula",
-                "advancedSettings": "opcions avançades",
                 "autosize": "dimensions automàtiques",
                 "moveUp": "mou amunt",
                 "moveDown": "mou avall",
@@ -1016,38 +906,22 @@
         "album": "$t(entity.album, {\"count\": 1})",
         "albumArtist": "$t(entity.albumArtist, {\"count\": 1})",
         "artist": "$t(entity.artist, {\"count\": 1})",
-        "biography": "biografia",
-        "bitrate": "taxa de bits",
         "bpm": "bpm",
-        "channels": "$t(common.channel, {\"count\": 2})",
         "comment": "comentari",
-        "disc": "disc",
         "duration": "durada",
         "genre": "$t(entity.genre, {\"count\": 1})",
         "id": "identificador",
         "name": "nom",
-        "note": "nota",
-        "owner": "$t(common.owner)",
         "random": "aleatori",
-        "search": "cercar",
-        "title": "títol",
         "playCount": "compte de reproduccions",
         "releaseDate": "data de llançament",
-        "mostPlayed": "els més reproduïts",
-        "dateAdded": "data d'addició",
-        "trackNumber": "pista",
         "recentlyAdded": "afegit recentment",
         "recentlyPlayed": "reproduït recentment",
-        "recentlyUpdated": "actualitzat recentment",
         "albumCount": "nombre de $t(entity.album, {\"count\": 2})",
         "favorited": "preferits",
         "isCompilation": "és una compilació",
         "isFavorited": "és un preferit",
-        "isPublic": "és públic",
-        "isRated": "està qualificat",
-        "isRecentlyPlayed": "s'ha reproduït fa poc",
         "lastPlayed": "última reproducció",
-        "path": "ruta",
         "songCount": "nombre de cançons",
         "explicitStatus": "$t(common.explicitStatus)",
         "sortName": "ordena per nom",
@@ -1059,12 +933,9 @@
         "repeat": "repetició d'una pista",
         "skip": "saltar",
         "stop": "parar",
-        "queue_clear": "buidar la cua",
         "viewQueue": "veure la cua",
         "playbackFetchInProgress": "carregant cançons…",
-        "playbackFetchNoResults": "no s'han trobat cançons",
         "playbackSpeed": "velocitat de reproducció",
-        "playSimilarSongs": "reproduir cançons similars",
         "repeat_off": "repetició desactivada",
         "repeat_all": "repetició",
         "shuffle": "reprodueix (mesclat)",
@@ -1078,9 +949,6 @@
         "playbackFetchCancel": "està trigant bastant... tanqueu la notificació per cancel·lar",
         "playRandom": "reproducció a l'atzar",
         "previous": "anterior",
-        "queue_moveToBottom": "mou la selecció a l'inici",
-        "queue_moveToTop": "mou la selecció al final",
-        "queue_remove": "elimina la selecció",
         "skip_back": "salta enrere",
         "skip_forward": "salta endavant",
         "toggleFullscreenPlayer": "activa el reproductor de pantalla completa",
@@ -1090,8 +958,6 @@
         "addNextShuffled": "a continuació (mesclat)",
         "holdToShuffle": "mantén premut per mesclar",
         "lyrics": "lletra",
-        "restoreQueueFromServer": "restaura la cua del servidor",
-        "saveQueueToServer": "desa la cua al servidor",
         "artistRadio": "ràdio de l'artista",
         "trackRadio": "ràdio de la pista",
         "sleepTimer": "temporitzador d'adormir",
@@ -1099,8 +965,6 @@
         "sleepTimer_minutes": "{{count}} min",
         "sleepTimer_hours": "{{count}} h",
         "sleepTimer_custom": "personalitzat",
-        "sleepTimer_off": "apagat",
-        "sleepTimer_timeRemaining": "queden {{time}}",
         "sleepTimer_setCustom": "configura el temporitzador",
         "sleepTimer_cancel": "cancel·la el temporitzador",
         "albumRadio": "ràdio d'àlbums"
@@ -1109,13 +973,9 @@
         "credentialsRequired": "credencials requerides",
         "genericError": "s'ha produït un error",
         "invalidServer": "servidor no vàlid",
-        "localFontAccessDenied": "accés denegat als tipus de lletra locals",
-        "networkError": "s'ha produït un error de xarxa",
         "openError": "no s'ha pogut obrir el fitxer",
         "remotePortError": "s'ha produït un error en intentar configurar el port del servidor remot",
         "serverNotSelectedError": "no s'ha seleccionat cap servidor",
-        "sessionExpiredError": "la sessió ha caducat",
-        "systemFontError": "s'ha produït un error en intentar obtenir els tipus de lletra del sistema",
         "remoteEnableError": "s'ha produït un error en intentar $t(common.enable) el servidor remot",
         "remotePortWarning": "reiniciar el servidor per aplicar el nou port",
         "serverRequired": "servidor requerit",
@@ -1123,18 +983,11 @@
         "audioDeviceFetchError": "hi ha hagut un error en obtenir els dispositius d'àudio",
         "authenticationFailed": "autenticació fallida",
         "badValue": "l'opció \"{{value}}\"és invàlida. aquest valor ja no existeix",
-        "loginRateError": "massa intents d'inici de sessió, intenteu-ho de nou d'aquí uns segons",
-        "mpvRequired": "Cal l'MPV",
-        "notificationDenied": "s'han negat els permisos per enviar notificacions. aquesta opció no té cap efecte",
         "playbackError": "hi ha hagut un error en intentar reproduir el mitjà",
         "remoteDisableError": "hi ha hagut un error en intentar $t(common.disable) el servidor remot",
-        "endpointNotImplementedError": "el punt final {{endpoint}} no està implementat per {{serverType}}",
-        "multipleServerSaveQueueError": "la cua de reproducció té una o més cançons que no són del servidor actual, cosa que no és compatible",
-        "saveQueueFailed": "error en desar la cua",
         "settingsSyncError": "hi ha discrepàncies entre la configuració del renderitzador i el procés principal. reinicieu l'aplicació per aplicar els canvis",
         "noNetwork": "servidor no disponible",
         "noNetworkDescription": "no s'ha pogut connectar amb el servidor",
-        "invalidJson": "JSON invàlid",
         "serverLockSingleServer": "només es permet un servidor quan el servidor està bloquejat",
         "playbackPausedDueToError": "la reproducció s'ha pausat a causa d'un error"
     },
@@ -1166,31 +1019,6 @@
         "error_readingFile": "hi ha hagut un error en llegir el fitxer: {{errorMessage}}",
         "mainText": "deixeu anar un fitxer aquí"
     },
-    "filterOperator": {
-        "after": "és posterior",
-        "afterDate": "és posterior a (data)",
-        "before": "és anterior",
-        "beforeDate": "és anterior a (data)",
-        "contains": "conté",
-        "endsWith": "acaba en",
-        "inPlaylist": "és a",
-        "inTheLast": "és a l'últim",
-        "inTheRange": "és entre",
-        "inTheRangeDate": "és entre (data)",
-        "is": "és",
-        "isNot": "no és",
-        "isGreaterThan": "és més gran que",
-        "isLessThan": "és més petit que",
-        "matchesRegex": "coincideix amb l'expressió regular",
-        "notContains": "no conté",
-        "notInPlaylist": "no és a",
-        "notInTheLast": "no és a l'últim",
-        "startsWith": "comença amb"
-    },
-    "queryBuilder": {
-        "standardTags": "etiquetes estàndard",
-        "customTags": "etiquetes personalitzades"
-    },
     "datetime": {
         "minuteShort": "min",
         "secondShort": "s",
@@ -1208,7 +1036,6 @@
         "blendTime": "duració de la mescla",
         "presets": "opcions predeterminades",
         "selectPreset": "selecciona una opció predeterminada",
-        "applyPreset": "aplica l'opció predeterminada",
         "saveAsPreset": "desa com a opció predeterminada",
         "updatePreset": "actualitza l'opció predeterminada",
         "copyConfiguration": "copia la configuració",
@@ -1260,8 +1087,6 @@
         "frequencyScale": "Escala de freqüència",
         "sensitivity": "Sensibilitat",
         "weightingFilter": "Filtre de pes",
-        "minimumDecibels": "Decibels mínims",
-        "maximumDecibels": "Decibels màxims",
         "linearAmplitude": "Amplitud lineal",
         "linearBoost": "Augment lineal",
         "peakBehavior": "Comportament del pic",

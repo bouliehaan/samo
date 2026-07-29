@@ -1,7 +1,17 @@
 {
     "extends": "expo/tsconfig.base",
     "compilerOptions": {
-        "baseUrl": ".",
+        // Declared explicitly because TypeScript 6 no longer auto-includes the
+        // hoisted `@types/*` from the workspace root, and this app was only
+        // getting Node's types by accident of pnpm's linking — a `pnpm add` that
+        // relinked `apps/android/node_modules` silently took them away and broke
+        // six call sites. Both are real compile-time needs: `react-native-udp`'s
+        // UdpSocket extends Node's EventEmitter (`.on`/`.once`), and the sleep
+        // timer holds a `NodeJS.Timeout`.
+        "types": ["node", "react"],
+        // No "baseUrl" — deprecated in TypeScript 6, removed in 7. These path
+        // targets were already written relative to this file, which is exactly
+        // how "paths" resolves without it, so dropping it changes nothing.
         "paths": {
             "@samo/core": ["../../packages/core/src/index.ts"],
             "@samo/core/*": ["../../packages/core/src/*"]

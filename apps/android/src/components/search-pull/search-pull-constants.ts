@@ -68,6 +68,33 @@ export const SEARCH_PULL_SKIP_VELOCITY = 2000;
  * would have made that worse; they move together or not at all.
  */
 export const SEARCH_PULL_SKIP_AT = 0.5;
+/**
+ * UPWARD speed (px/s, as a positive magnitude) that throws the surface away
+ * from wherever it had reached.
+ *
+ * Comfortably above the few hundred px/s of drift a hand leaves on an ordinary
+ * release — so backing the surface out slowly still resolves on position, the
+ * way it should — and well under what a deliberate flick produces. It does not
+ * need the altitude of `SEARCH_PULL_SKIP_VELOCITY`, because that one is
+ * guarding against handing the user a screen they did not ask for, and this one
+ * is only ever taking something away that they asked to be rid of. Getting a
+ * dismissal slightly too eagerly costs a re-pull; missing one strands the bar.
+ */
+export const SEARCH_PULL_DISMISS_VELOCITY = 900;
+/**
+ * Smallest change in IME fraction (0–1) worth crossing threads for.
+ *
+ * The pan drives the keyboard by posting a fraction from a UI-thread worklet to
+ * JS, which then calls back into a native module — two thread handoffs, and the
+ * only per-frame `runOnJS` left in the app. Sending a value the IME will round
+ * to the same pixel buys nothing and costs that round trip inside the gesture's
+ * own frame.
+ *
+ * 0.002 is about one pixel of a full-height keyboard, so nothing droppable here
+ * is visible. It also collapses the whole of stage one — where the fraction is
+ * pinned at a constant 0 — from sixty posts a second to exactly one.
+ */
+export const IME_FRACTION_EPSILON = 0.002;
 /** The pan only starts driving the reveal after this much downward travel, so a
  *  flat tap or a horizontal swipe on a carousel never nudges it open. */
 export const SEARCH_PULL_ACTIVATE_DY = 6;

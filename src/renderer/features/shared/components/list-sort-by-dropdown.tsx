@@ -2,7 +2,6 @@ import { Dispatch, SetStateAction } from 'react';
 
 import i18n from '/@/i18n/i18n';
 import { useSortByFilter } from '/@/renderer/features/shared/hooks/use-sort-by-filter';
-import { useCurrentServer } from '/@/renderer/store';
 import { Button } from '/@/shared/components/button/button';
 import { DropdownMenu } from '/@/shared/components/dropdown-menu/dropdown-menu';
 import {
@@ -12,7 +11,6 @@ import {
     LibraryItem,
     PlaylistListSort,
     RadioListSort,
-    ServerType,
     SongListSort,
     SortOrder,
 } from '/@/shared/types/domain-types';
@@ -36,12 +34,9 @@ export const ListSortByDropdown = ({
     onChange,
     target,
 }: ListSortByDropdownProps) => {
-    const server = useCurrentServer();
-
     const { setSortBy, sortBy } = useSortByFilter(defaultSortByValue, listKey);
 
-    const availableFilters =
-        (itemType && server && FILTERS[itemType]?.[server.type]) || false || [];
+    const availableFilters = (itemType && FILTERS[itemType]) || false || [];
 
     const sortByLabel = availableFilters.find((f) => f.value === sortBy)?.name || '—';
 
@@ -94,10 +89,7 @@ export const ListSortByDropdownControlled = ({
     sortBy,
     target,
 }: ListSortByDropdownControlledProps) => {
-    const server = useCurrentServer();
-
-    const availableFilters =
-        filters || (itemType && server && FILTERS[itemType]?.[server.type]) || [];
+    const availableFilters = filters || (itemType && FILTERS[itemType]) || [];
 
     const sortByLabel = availableFilters.find((f) => f.value === sortBy)?.name || '—';
 
@@ -283,210 +275,172 @@ export const CLIENT_SIDE_ALBUM_FILTERS = [
     },
 ];
 
-const ALBUM_LIST_FILTERS: Partial<
-    Record<ServerType, Array<{ defaultOrder: SortOrder; name: string; value: string }>>
-> = {
-    [ServerType.SAMO]: [
-        {
-            defaultOrder: SortOrder.ASC,
-            name: i18n.t('filter.albumArtist', { postProcess: 'titleCase' }),
-            value: AlbumListSort.ALBUM_ARTIST,
-        },
-        {
-            defaultOrder: SortOrder.ASC,
-            name: i18n.t('filter.id', { postProcess: 'titleCase' }),
-            value: AlbumListSort.ID,
-        },
-        {
-            defaultOrder: SortOrder.ASC,
-            name: i18n.t('filter.name', { postProcess: 'titleCase' }),
-            value: AlbumListSort.NAME,
-        },
-        {
-            defaultOrder: SortOrder.DESC,
-            name: i18n.t('filter.playCount', { postProcess: 'titleCase' }),
-            value: AlbumListSort.PLAY_COUNT,
-        },
-        {
-            defaultOrder: SortOrder.ASC,
-            name: i18n.t('filter.random', { postProcess: 'titleCase' }),
-            value: AlbumListSort.RANDOM,
-        },
-        {
-            defaultOrder: SortOrder.DESC,
-            name: i18n.t('filter.recentlyAdded', { postProcess: 'titleCase' }),
-            value: AlbumListSort.RECENTLY_ADDED,
-        },
-        {
-            defaultOrder: SortOrder.DESC,
-            name: i18n.t('filter.releaseDate', { postProcess: 'titleCase' }),
-            value: AlbumListSort.RELEASE_DATE,
-        },
-    ],
-};
+const ALBUM_LIST_FILTERS: Array<{ defaultOrder: SortOrder; name: string; value: string }> = [
+    {
+        defaultOrder: SortOrder.ASC,
+        name: i18n.t('filter.albumArtist', { postProcess: 'titleCase' }),
+        value: AlbumListSort.ALBUM_ARTIST,
+    },
+    {
+        defaultOrder: SortOrder.ASC,
+        name: i18n.t('filter.id', { postProcess: 'titleCase' }),
+        value: AlbumListSort.ID,
+    },
+    {
+        defaultOrder: SortOrder.ASC,
+        name: i18n.t('filter.name', { postProcess: 'titleCase' }),
+        value: AlbumListSort.NAME,
+    },
+    {
+        defaultOrder: SortOrder.DESC,
+        name: i18n.t('filter.playCount', { postProcess: 'titleCase' }),
+        value: AlbumListSort.PLAY_COUNT,
+    },
+    {
+        defaultOrder: SortOrder.ASC,
+        name: i18n.t('filter.random', { postProcess: 'titleCase' }),
+        value: AlbumListSort.RANDOM,
+    },
+    {
+        defaultOrder: SortOrder.DESC,
+        name: i18n.t('filter.recentlyAdded', { postProcess: 'titleCase' }),
+        value: AlbumListSort.RECENTLY_ADDED,
+    },
+    {
+        defaultOrder: SortOrder.DESC,
+        name: i18n.t('filter.releaseDate', { postProcess: 'titleCase' }),
+        value: AlbumListSort.RELEASE_DATE,
+    },
+];
 
-const SONG_LIST_FILTERS: Partial<
-    Record<ServerType, Array<{ defaultOrder: SortOrder; name: string; value: string }>>
-> = {
-    [ServerType.SAMO]: [
-        {
-            defaultOrder: SortOrder.ASC,
-            name: i18n.t('filter.album', { postProcess: 'titleCase' }),
-            value: SongListSort.ALBUM,
-        },
-        {
-            defaultOrder: SortOrder.ASC,
-            name: i18n.t('filter.albumArtist', { postProcess: 'titleCase' }),
-            value: SongListSort.ALBUM_ARTIST,
-        },
-        {
-            defaultOrder: SortOrder.ASC,
-            name: i18n.t('filter.artist', { postProcess: 'titleCase' }),
-            value: SongListSort.ARTIST,
-        },
-        {
-            defaultOrder: SortOrder.ASC,
-            name: i18n.t('filter.duration', { postProcess: 'titleCase' }),
-            value: SongListSort.DURATION,
-        },
-        {
-            defaultOrder: SortOrder.ASC,
-            name: i18n.t('filter.playCount', { postProcess: 'titleCase' }),
-            value: SongListSort.PLAY_COUNT,
-        },
-        {
-            defaultOrder: SortOrder.ASC,
-            name: i18n.t('filter.name', { postProcess: 'titleCase' }),
-            value: SongListSort.NAME,
-        },
-        {
-            defaultOrder: SortOrder.ASC,
-            name: i18n.t('filter.random', { postProcess: 'titleCase' }),
-            value: SongListSort.RANDOM,
-        },
-        {
-            defaultOrder: SortOrder.ASC,
-            name: i18n.t('filter.recentlyAdded', { postProcess: 'titleCase' }),
-            value: SongListSort.RECENTLY_ADDED,
-        },
-        {
-            defaultOrder: SortOrder.ASC,
-            name: i18n.t('filter.recentlyPlayed', { postProcess: 'titleCase' }),
-            value: SongListSort.RECENTLY_PLAYED,
-        },
-        {
-            defaultOrder: SortOrder.ASC,
-            name: i18n.t('filter.releaseDate', { postProcess: 'titleCase' }),
-            value: SongListSort.RELEASE_DATE,
-        },
-    ],
-};
+const SONG_LIST_FILTERS: Array<{ defaultOrder: SortOrder; name: string; value: string }> = [
+    {
+        defaultOrder: SortOrder.ASC,
+        name: i18n.t('filter.album', { postProcess: 'titleCase' }),
+        value: SongListSort.ALBUM,
+    },
+    {
+        defaultOrder: SortOrder.ASC,
+        name: i18n.t('filter.albumArtist', { postProcess: 'titleCase' }),
+        value: SongListSort.ALBUM_ARTIST,
+    },
+    {
+        defaultOrder: SortOrder.ASC,
+        name: i18n.t('filter.artist', { postProcess: 'titleCase' }),
+        value: SongListSort.ARTIST,
+    },
+    {
+        defaultOrder: SortOrder.ASC,
+        name: i18n.t('filter.duration', { postProcess: 'titleCase' }),
+        value: SongListSort.DURATION,
+    },
+    {
+        defaultOrder: SortOrder.ASC,
+        name: i18n.t('filter.playCount', { postProcess: 'titleCase' }),
+        value: SongListSort.PLAY_COUNT,
+    },
+    {
+        defaultOrder: SortOrder.ASC,
+        name: i18n.t('filter.name', { postProcess: 'titleCase' }),
+        value: SongListSort.NAME,
+    },
+    {
+        defaultOrder: SortOrder.ASC,
+        name: i18n.t('filter.random', { postProcess: 'titleCase' }),
+        value: SongListSort.RANDOM,
+    },
+    {
+        defaultOrder: SortOrder.ASC,
+        name: i18n.t('filter.recentlyAdded', { postProcess: 'titleCase' }),
+        value: SongListSort.RECENTLY_ADDED,
+    },
+    {
+        defaultOrder: SortOrder.ASC,
+        name: i18n.t('filter.recentlyPlayed', { postProcess: 'titleCase' }),
+        value: SongListSort.RECENTLY_PLAYED,
+    },
+    {
+        defaultOrder: SortOrder.ASC,
+        name: i18n.t('filter.releaseDate', { postProcess: 'titleCase' }),
+        value: SongListSort.RELEASE_DATE,
+    },
+];
 
-const FOLDER_LIST_FILTERS: Partial<
-    Record<ServerType, Array<{ defaultOrder: SortOrder; name: string; value: string }>>
-> = {
-    [ServerType.SAMO]: [
-        {
-            defaultOrder: SortOrder.ASC,
-            name: i18n.t('filter.id', { postProcess: 'titleCase' }),
-            value: SongListSort.ID,
-        },
-        ...(SONG_LIST_FILTERS[ServerType.SAMO] || []),
-    ],
-};
+const ARTIST_LIST_FILTERS: Array<{ defaultOrder: SortOrder; name: string; value: string }> = [
+    {
+        defaultOrder: SortOrder.ASC,
+        name: i18n.t('filter.album', { postProcess: 'titleCase' }),
+        value: ArtistListSort.ALBUM,
+    },
+    {
+        defaultOrder: SortOrder.DESC,
+        name: i18n.t('filter.duration', { postProcess: 'titleCase' }),
+        value: ArtistListSort.DURATION,
+    },
+    {
+        defaultOrder: SortOrder.ASC,
+        name: i18n.t('filter.name', { postProcess: 'titleCase' }),
+        value: ArtistListSort.NAME,
+    },
+    {
+        defaultOrder: SortOrder.ASC,
+        name: i18n.t('filter.random', { postProcess: 'titleCase' }),
+        value: ArtistListSort.RANDOM,
+    },
+    {
+        defaultOrder: SortOrder.DESC,
+        name: i18n.t('filter.recentlyAdded', { postProcess: 'titleCase' }),
+        value: ArtistListSort.RECENTLY_ADDED,
+    },
+];
 
-const ARTIST_LIST_FILTERS: Partial<
-    Record<ServerType, Array<{ defaultOrder: SortOrder; name: string; value: string }>>
-> = {
-    [ServerType.SAMO]: [
-        {
-            defaultOrder: SortOrder.ASC,
-            name: i18n.t('filter.album', { postProcess: 'titleCase' }),
-            value: ArtistListSort.ALBUM,
-        },
-        {
-            defaultOrder: SortOrder.DESC,
-            name: i18n.t('filter.duration', { postProcess: 'titleCase' }),
-            value: ArtistListSort.DURATION,
-        },
-        {
-            defaultOrder: SortOrder.ASC,
-            name: i18n.t('filter.name', { postProcess: 'titleCase' }),
-            value: ArtistListSort.NAME,
-        },
-        {
-            defaultOrder: SortOrder.ASC,
-            name: i18n.t('filter.random', { postProcess: 'titleCase' }),
-            value: ArtistListSort.RANDOM,
-        },
-        {
-            defaultOrder: SortOrder.DESC,
-            name: i18n.t('filter.recentlyAdded', { postProcess: 'titleCase' }),
-            value: ArtistListSort.RECENTLY_ADDED,
-        },
-    ],
-};
+const GENRE_LIST_FILTERS: Array<{ defaultOrder: SortOrder; name: string; value: string }> = [
+    {
+        defaultOrder: SortOrder.ASC,
+        name: i18n.t('filter.name', { postProcess: 'titleCase' }),
+        value: GenreListSort.NAME,
+    },
+];
 
-const GENRE_LIST_FILTERS: Partial<
-    Record<ServerType, Array<{ defaultOrder: SortOrder; name: string; value: string }>>
-> = {
-    [ServerType.SAMO]: [
-        {
-            defaultOrder: SortOrder.ASC,
-            name: i18n.t('filter.name', { postProcess: 'titleCase' }),
-            value: GenreListSort.NAME,
-        },
-    ],
-};
+const PLAYLIST_LIST_FILTERS: Array<{ defaultOrder: SortOrder; name: string; value: string }> = [
+    {
+        defaultOrder: SortOrder.DESC,
+        name: i18n.t('filter.duration', { postProcess: 'titleCase' }),
+        value: PlaylistListSort.DURATION,
+    },
+    {
+        defaultOrder: SortOrder.ASC,
+        name: i18n.t('filter.name', { postProcess: 'titleCase' }),
+        value: PlaylistListSort.NAME,
+    },
+    {
+        defaultOrder: SortOrder.DESC,
+        name: i18n.t('filter.songCount', { postProcess: 'titleCase' }),
+        value: PlaylistListSort.SONG_COUNT,
+    },
+];
 
-const PLAYLIST_LIST_FILTERS: Partial<
-    Record<ServerType, Array<{ defaultOrder: SortOrder; name: string; value: string }>>
-> = {
-    [ServerType.SAMO]: [
-        {
-            defaultOrder: SortOrder.DESC,
-            name: i18n.t('filter.duration', { postProcess: 'titleCase' }),
-            value: PlaylistListSort.DURATION,
-        },
-        {
-            defaultOrder: SortOrder.ASC,
-            name: i18n.t('filter.name', { postProcess: 'titleCase' }),
-            value: PlaylistListSort.NAME,
-        },
-        {
-            defaultOrder: SortOrder.DESC,
-            name: i18n.t('filter.songCount', { postProcess: 'titleCase' }),
-            value: PlaylistListSort.SONG_COUNT,
-        },
-    ],
-};
-
-const RADIO_LIST_FILTERS: Partial<
-    Record<ServerType, Array<{ defaultOrder: SortOrder; name: string; value: string }>>
-> = {
-    [ServerType.SAMO]: [
-        {
-            defaultOrder: SortOrder.ASC,
-            name: i18n.t('filter.id', { postProcess: 'titleCase' }),
-            value: RadioListSort.ID,
-        },
-        {
-            defaultOrder: SortOrder.ASC,
-            name: i18n.t('filter.name', { postProcess: 'titleCase' }),
-            value: RadioListSort.NAME,
-        },
-    ],
-};
+const RADIO_LIST_FILTERS: Array<{ defaultOrder: SortOrder; name: string; value: string }> = [
+    {
+        defaultOrder: SortOrder.ASC,
+        name: i18n.t('filter.id', { postProcess: 'titleCase' }),
+        value: RadioListSort.ID,
+    },
+    {
+        defaultOrder: SortOrder.ASC,
+        name: i18n.t('filter.name', { postProcess: 'titleCase' }),
+        value: RadioListSort.NAME,
+    },
+];
 
 /** Samo list pages sort client-side today — these are the shared sort options. */
 const ALBUM_ARTIST_LIST_FILTERS = ARTIST_LIST_FILTERS;
-const PLAYLIST_SONG_LIST_FILTERS = { [ServerType.SAMO]: CLIENT_SIDE_SONG_FILTERS };
+const PLAYLIST_SONG_LIST_FILTERS = CLIENT_SIDE_SONG_FILTERS;
 
 const FILTERS: Partial<Record<LibraryItem, any>> = {
     [LibraryItem.ALBUM]: ALBUM_LIST_FILTERS,
     [LibraryItem.ALBUM_ARTIST]: ALBUM_ARTIST_LIST_FILTERS,
     [LibraryItem.ARTIST]: ARTIST_LIST_FILTERS,
-    [LibraryItem.FOLDER]: FOLDER_LIST_FILTERS,
     [LibraryItem.GENRE]: GENRE_LIST_FILTERS,
     [LibraryItem.PLAYLIST]: PLAYLIST_LIST_FILTERS,
     [LibraryItem.PLAYLIST_SONG]: PLAYLIST_SONG_LIST_FILTERS,

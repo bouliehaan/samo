@@ -54,11 +54,8 @@ export const RadioScreen = memo(({
     const recentItems = useVisibleRecentItems();
     const contextMenu = useMediaContextMenu();
     const bottomInset = useScrollContentBottomInset();
-    const {
-        gesture: searchPullGesture,
-        nativeGesture: searchPullNativeGesture,
-        scrollProps: searchPullScrollProps,
-    } = useSearchPull('radio');
+    const { nativeGesture: searchPullNativeGesture, scrollProps: searchPullScrollProps } =
+        useSearchPull('radio');
     // Own the playback subscription rather than receiving the now-playing id from
     // App — keeps the (5s) radio-metadata re-render local to this screen.
     const activePlaybackItem = useAndroidPlaybackState(selectActiveAndroidPlaybackItem);
@@ -138,8 +135,6 @@ export const RadioScreen = memo(({
     // just like every other page, so it can't be a separate bare View.
     return (
         <View style={styles.tabSceneFill}>
-            <GestureDetector gesture={searchPullGesture}>
-            <View collapsable={false} style={styles.tabSceneFill}>
             <GestureDetector gesture={searchPullNativeGesture}>
             <Reanimated.ScrollView
                 contentContainerStyle={[
@@ -209,8 +204,6 @@ export const RadioScreen = memo(({
                     </View>
                 )}
             </Reanimated.ScrollView>
-            </GestureDetector>
-            </View>
             </GestureDetector>
             <LibrarySortMenu
                 activeSort={activeSort}

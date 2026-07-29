@@ -144,7 +144,7 @@ export const shellStyles = StyleSheet.create({
         backgroundColor: 'rgba(0, 0, 0, 0.26)',
     },
     tabScene: {
-        ...StyleSheet.absoluteFillObject,
+        ...StyleSheet.absoluteFill,
         backgroundColor: colors.background,
     },
     /** Active scene layers above the one fading out (TabSceneContainer). */
@@ -155,14 +155,40 @@ export const shellStyles = StyleSheet.create({
     tabSceneFill: {
         flex: 1,
     },
+    /** Holds the ONE app-level search-pull pan, wrapping the tab scenes (see
+     *  SearchPullGestureHost). A real, non-collapsible view: the detector needs
+     *  a native view to attach its handler to, and it must sit ABOVE the frozen
+     *  scenes so nothing can tear the pan down. Same box as tabSceneHost. */
+    searchPullGestureHost: {
+        flex: 1,
+        position: 'relative',
+    },
+    /**
+     * The two blur targets (see theme/chrome-blur-targets). Deliberately inert:
+     * same box as `appContent`, no background, no clipping, no z-index — they
+     * exist to record a RenderNode, not to lay anything out. Anything visual
+     * here would change what the panes sample.
+     */
+    chromeBlurTarget: {
+        flex: 1,
+        position: 'relative',
+    },
     /** overflow visible on purpose — see appContent. */
     tabSceneHost: {
         flex: 1,
         position: 'relative',
     },
+    /** Applied once a full-screen overlay above the tab host has finished
+     *  fading in, so HWUI skips drawing the entire covered scene stack instead
+     *  of repainting Home behind an opaque page. Alpha rather than `display`
+     *  so layout — and the scenes' scroll offsets — survive untouched.
+     *  See the covered-scene note in TabScenes. */
+    tabSceneHostCovered: {
+        opacity: 0,
+    },
     /** Full-screen layer above the always-mounted tab host (detail, settings, view-all). */
     navOverlay: {
-        ...StyleSheet.absoluteFillObject,
+        ...StyleSheet.absoluteFill,
         backgroundColor: colors.background,
         zIndex: 2,
     },

@@ -16,9 +16,7 @@ import {
     useSettingsStore,
 } from '/@/renderer/store';
 import { shuffleInPlace } from '/@/renderer/utils/shuffle';
-import { hasFeature } from '/@/shared/api/utils';
 import { Played, Song, SongListSort, SortOrder } from '/@/shared/types/domain-types';
-import { ServerFeature } from '/@/shared/types/features-types';
 import { Play, PlayerStatus } from '/@/shared/types/types';
 import { LogCategory, logFn } from '/@/shared/utils/logger';
 import { logMsg } from '/@/shared/utils/logger-message';
@@ -30,8 +28,6 @@ export const useAutoDJ = () => {
     const player = usePlayer();
     const settings = useAutoDJSettings();
     const isFetching = useIsPlayerFetching();
-
-    const hasSimilarSongsMusicFolder = hasFeature(server, ServerFeature.SIMILAR_SONGS_MUSIC_FOLDER);
 
     useEffect(() => {
         const unsubscribe = usePlayerStoreBase.subscribe(
@@ -74,10 +70,10 @@ export const useAutoDJ = () => {
                     let uniqueSimilarSongs: Song[] = [];
 
                     const hasMusicFolder = server?.musicFolderId && server.musicFolderId.length > 0;
-                    const trySimilarSongs =
-                        !hasMusicFolder || (hasMusicFolder && hasSimilarSongsMusicFolder);
+                    // Samo's similar-songs endpoint can't be scoped to a music folder,
+                    // so skip it entirely when one is selected and fall back to genre.
+                    const trySimilarSongs = !hasMusicFolder;
 
-                    // Skip similar songs fetch if a music folder is selected and does not support musicFolderId on similar songs
                     if (trySimilarSongs) {
                         // First, try to fetch similar songs based on the current song
                         const similarSongs = await queryClient.fetchQuery({
@@ -237,7 +233,6 @@ export const useAutoDJ = () => {
 
         return () => unsubscribe();
     }, [
-        hasSimilarSongsMusicFolder,
         isFetching,
         player,
         queryClient,

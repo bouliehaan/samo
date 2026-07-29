@@ -1,16 +1,19 @@
 import { getItemQualityProfile } from '@samo/core/mobile';
 import { type ReactNode } from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 
 import { useDownloadedTrackKeys } from '../contexts/downloaded-keys';
 import { useMediaContextMenu } from '../contexts/media-context-menu';
 import { getDownloadedTrackKey } from '../utils/download-keys';
 import { type LibraryDisplayItem } from '../types/library-display';
 import { getLibraryItemSubtitle } from '../utils/library-display';
+import { PressableScale } from './PressableScale';
 import { QualitySpec } from './QualityBadge';
 import { TrackDownloadedGlyph } from './Glyphs';
 import { MediaArtwork } from './MediaArtwork';
+import { presses } from '../theme/motion';
 import { styles } from '../theme/styles';
+import { colors, radii } from '../theme/tokens';
 
 export const LibraryListRow = ({
     displayItem,
@@ -30,11 +33,14 @@ export const LibraryListRow = ({
     const itemBadgeProfile = getItemQualityProfile(item);
 
     return (
-        <Pressable
+        <PressableScale
+            {...presses.row}
             accessibilityRole="button"
+            highlight={colors.panel}
+            highlightRadius={radii.sm}
             onLongPress={() => contextMenu.openForItem(item)}
             onPress={onPress}
-            style={({ pressed }) => [styles.libraryRow, pressed && styles.libraryRowPressed]}
+            style={styles.libraryRow}
         >
             <View>
                 <MediaArtwork
@@ -75,6 +81,6 @@ export const LibraryListRow = ({
             {rightAccessory ? (
                 <View style={styles.libraryRowAccessory}>{rightAccessory}</View>
             ) : null}
-        </Pressable>
+        </PressableScale>
     );
 };

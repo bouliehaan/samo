@@ -122,9 +122,6 @@ export const libraryStyles = StyleSheet.create({
         padding: 6,
         position: 'relative',
     },
-    libraryRowPressed: {
-        backgroundColor: colors.panel,
-    },
     libraryRowAccessory: {
         alignItems: 'center',
         height: 38,

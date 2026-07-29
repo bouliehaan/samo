@@ -8,7 +8,6 @@ import { toast } from '/@/shared/components/toast/toast';
 
 const mpvPlayer = isElectron() ? window.api.mpvPlayer : null;
 const mpvPlayerListener = isElectron() ? window.api.mpvPlayerListener : null;
-const ipc = isElectron() ? window.api.ipc : null;
 
 export const useMainPlayerListener = () => {
     const isRadioActive = useIsRadioActive();
@@ -48,89 +47,80 @@ export const useMainPlayerListener = () => {
             return;
         }
 
-        mpvPlayerListener.rendererPlayPause(() => {
-            if (!isRadioActive) {
-                mediaTogglePlayPause();
-            }
-        });
+        const unsubscribers = [
+            mpvPlayerListener.rendererPlayPause(() => {
+                if (!isRadioActive) {
+                    mediaTogglePlayPause();
+                }
+            }),
 
-        mpvPlayerListener.rendererNext(() => {
-            if (!isRadioActive) {
-                mediaNext();
-            }
-        });
+            mpvPlayerListener.rendererNext(() => {
+                if (!isRadioActive) {
+                    mediaNext();
+                }
+            }),
 
-        mpvPlayerListener.rendererPrevious(() => {
-            if (!isRadioActive) {
-                mediaPrevious();
-            }
-        });
+            mpvPlayerListener.rendererPrevious(() => {
+                if (!isRadioActive) {
+                    mediaPrevious();
+                }
+            }),
 
-        mpvPlayerListener.rendererPlay(() => {
-            if (!isRadioActive) {
-                mediaPlay();
-            }
-        });
+            mpvPlayerListener.rendererPlay(() => {
+                if (!isRadioActive) {
+                    mediaPlay();
+                }
+            }),
 
-        mpvPlayerListener.rendererPause(() => {
-            if (!isRadioActive) {
-                mediaPause();
-            }
-        });
+            mpvPlayerListener.rendererPause(() => {
+                if (!isRadioActive) {
+                    mediaPause();
+                }
+            }),
 
-        mpvPlayerListener.rendererStop(() => {
-            if (!isRadioActive) {
-                mediaStop({ reset: false });
-            }
-        });
+            mpvPlayerListener.rendererStop(() => {
+                if (!isRadioActive) {
+                    mediaStop({ reset: false });
+                }
+            }),
 
-        mpvPlayerListener.rendererSkipForward(() => {
-            mediaSkipForward();
-        });
+            mpvPlayerListener.rendererSkipForward(() => {
+                mediaSkipForward();
+            }),
 
-        mpvPlayerListener.rendererSkipBackward(() => {
-            mediaSkipBackward();
-        });
+            mpvPlayerListener.rendererSkipBackward(() => {
+                mediaSkipBackward();
+            }),
 
-        mpvPlayerListener.rendererToggleShuffle(() => {
-            toggleShuffle();
-        });
+            mpvPlayerListener.rendererToggleShuffle(() => {
+                toggleShuffle();
+            }),
 
-        mpvPlayerListener.rendererToggleRepeat(() => {
-            toggleRepeat();
-        });
+            mpvPlayerListener.rendererToggleRepeat(() => {
+                toggleRepeat();
+            }),
 
-        mpvPlayerListener.rendererVolumeMute(() => {
-            mediaToggleMute();
-        });
+            mpvPlayerListener.rendererVolumeMute(() => {
+                mediaToggleMute();
+            }),
 
-        mpvPlayerListener.rendererVolumeUp(() => {
-            increaseVolume(volumeWheelStep);
-        });
+            mpvPlayerListener.rendererVolumeUp(() => {
+                increaseVolume(volumeWheelStep);
+            }),
 
-        mpvPlayerListener.rendererVolumeDown(() => {
-            decreaseVolume(volumeWheelStep);
-        });
+            mpvPlayerListener.rendererVolumeDown(() => {
+                decreaseVolume(volumeWheelStep);
+            }),
 
-        mpvPlayerListener.rendererError((_event: any, message: string) => {
-            handleMpvError(message);
-        });
+            mpvPlayerListener.rendererError((_event: any, message: string) => {
+                handleMpvError(message);
+            }),
+        ];
 
         return () => {
-            ipc?.removeAllListeners('renderer-player-play-pause');
-            ipc?.removeAllListeners('renderer-player-next');
-            ipc?.removeAllListeners('renderer-player-previous');
-            ipc?.removeAllListeners('renderer-player-play');
-            ipc?.removeAllListeners('renderer-player-pause');
-            ipc?.removeAllListeners('renderer-player-stop');
-            ipc?.removeAllListeners('renderer-player-skip-forward');
-            ipc?.removeAllListeners('renderer-player-skip-backward');
-            ipc?.removeAllListeners('renderer-player-toggle-shuffle');
-            ipc?.removeAllListeners('renderer-player-toggle-repeat');
-            ipc?.removeAllListeners('renderer-player-volume-mute');
-            ipc?.removeAllListeners('renderer-player-volume-up');
-            ipc?.removeAllListeners('renderer-player-volume-down');
-            ipc?.removeAllListeners('renderer-player-error');
+            for (const unsubscribe of unsubscribers) {
+                unsubscribe();
+            }
         };
     }, [
         decreaseVolume,

@@ -49,6 +49,71 @@ let persistTimer: ReturnType<typeof setTimeout> | null = null;
 let pruneTimer: ReturnType<typeof setTimeout> | null = null;
 const inFlightDownloads = new Map<string, Promise<string | null>>();
 
+/**
+ * Running total of every tracked file's bytes.
+ *
+ * The bulk warm checks the cache size every 25 downloads to know when to stop,
+ * and that check used to SUM THE WHOLE INDEX each time — O(n) on the JS thread,
+ * repeated thousands of times across a full-library warm, on a structure that
+ * grows as the warm proceeds. Maintaining the total at the four points that can
+ * move it makes the check O(1).
+ *
+ * Every mutation of `loadedIndex`'s entries must go through the helpers below,
+ * or this drifts and the size cap silently stops meaning anything.
+ */
+let totalCachedBytes = 0;
+
+/** Fires whenever the synchronous index becomes available or an entry lands, so
+ *  views that resolved to a remote URL before the index loaded can re-peek. */
+const indexListeners = new Set<() => void>();
+
+const notifyIndexListeners = (): void => {
+    indexListeners.forEach((listener) => {
+        try {
+            listener();
+        } catch {
+            // a view listener must never break the cache
+        }
+    });
+};
+
+/**
+ * Subscribe to "the local index changed".
+ *
+ * `warmArtworkCache()` is fire-and-forget at module load, so during boot —
+ * exactly when the most tiles mount — `peekArtworkLocalUri` answers null for
+ * everything. `ArtworkImage` pins that answer for the lifetime of the cover, so
+ * a whole first screen of already-cached art was fetched over the network
+ * instead. Views take this to learn that the index has arrived and re-peek once.
+ */
+export const subscribeArtworkIndex = (listener: () => void): (() => void) => {
+    indexListeners.add(listener);
+    return () => {
+        indexListeners.delete(listener);
+    };
+};
+
+/** True once the synchronous peek can give a trustworthy answer. */
+export const isArtworkIndexLoaded = (): boolean => loadedIndex !== null;
+
+const setIndexEntry = (index: ArtworkIndex, name: string, entry: ArtworkEntry): void => {
+    const existing = index.get(name);
+    if (existing) {
+        totalCachedBytes -= existing.bytes;
+    }
+    index.set(name, entry);
+    totalCachedBytes += entry.bytes;
+};
+
+const deleteIndexEntry = (index: ArtworkIndex, name: string): void => {
+    const existing = index.get(name);
+    if (!existing) {
+        return;
+    }
+    totalCachedBytes -= existing.bytes;
+    index.delete(name);
+};
+
 /** Stable, collision-resistant filename for a URL (two independent hashes). */
 const hashUrl = (url: string): string => {
     let h1 = 5381;
@@ -83,13 +148,14 @@ const isCurrentPersistedIndex = (value: unknown): value is PersistedIndex => {
 const loadIndex = async (): Promise<ArtworkIndex> => {
     await ensureDir();
     const index: ArtworkIndex = new Map();
+    totalCachedBytes = 0;
     try {
         const raw = await FileSystem.readAsStringAsync(INDEX_FILE);
         const parsed = safeParseJson<unknown>(raw);
         if (isCurrentPersistedIndex(parsed)) {
             for (const [name, entry] of Object.entries(parsed.entries)) {
                 if (entry && typeof entry.bytes === 'number') {
-                    index.set(name, {
+                    setIndexEntry(index, name, {
                         bytes: entry.bytes,
                         lastAccess: typeof entry.lastAccess === 'number' ? entry.lastAccess : 0,
                         url: entry.url,
@@ -114,6 +180,9 @@ const loadIndex = async (): Promise<ArtworkIndex> => {
         // No persisted index yet (or unreadable) — start empty.
     }
     loadedIndex = index;
+    // Views that mounted during boot pinned a null peek; tell them the index is
+    // here so they can resolve to the local file instead of the network.
+    notifyIndexListeners();
     return index;
 };
 
@@ -172,26 +241,17 @@ const schedulePersist = (): void => {
     }, PERSIST_DEBOUNCE_MS);
 };
 
-const totalBytes = (index: ArtworkIndex): number => {
-    let total = 0;
-    for (const entry of index.values()) {
-        total += entry.bytes;
-    }
-    return total;
-};
-
 /** Evicts least-recently-used art until the cache fits under the current cap. */
 export const pruneArtworkCacheToLimit = async (): Promise<void> => {
     const index = await getIndex();
-    let total = totalBytes(index);
-    if (total <= limitBytes) {
+    if (totalCachedBytes <= limitBytes) {
         return;
     }
     const entries = [...index.entries()].sort(
         (left, right) => left[1].lastAccess - right[1].lastAccess,
     );
-    for (const [name, entry] of entries) {
-        if (total <= limitBytes) {
+    for (const [name] of entries) {
+        if (totalCachedBytes <= limitBytes) {
             break;
         }
         try {
@@ -199,8 +259,7 @@ export const pruneArtworkCacheToLimit = async (): Promise<void> => {
         } catch {
             // ignore — still drop it from the index so accounting stays honest
         }
-        index.delete(name);
-        total -= entry.bytes;
+        deleteIndexEntry(index, name);
     }
     schedulePersist();
 };
@@ -240,13 +299,16 @@ const downloadArtwork = async (
             return null;
         }
         const index = await getIndex();
-        index.set(name, {
+        setIndexEntry(index, name, {
             bytes: info.size,
             lastAccess: Date.now(),
             url: canonicalArtworkKey(remoteUrl),
         });
         schedulePersist();
         schedulePrune();
+        // A cover that just landed is a cover a mounted tile may still be
+        // waiting on over the network.
+        notifyIndexListeners();
         return fileUri;
     } catch {
         return null;
@@ -279,7 +341,10 @@ export const getArtworkLocalUri = async (
             schedulePersist();
             return fileUri;
         }
-        index.delete(name);
+        // The file vanished under us (an external clear, a failed write). Drop
+        // the entry through the accounting helper so the running total does not
+        // keep charging for bytes that are not on disk.
+        deleteIndexEntry(index, name);
     }
 
     const pending = inFlightDownloads.get(name);
@@ -295,8 +360,8 @@ export const getArtworkLocalUri = async (
 
 /** Total bytes currently held in the managed cover-art cache. */
 export const getArtworkCacheSizeBytes = async (): Promise<number> => {
-    const index = await getIndex();
-    return totalBytes(index);
+    await getIndex();
+    return totalCachedBytes;
 };
 
 export interface ArtworkPrefetchEntry {
@@ -382,8 +447,10 @@ export const clearArtworkCache = async (): Promise<void> => {
     }
     const empty: ArtworkIndex = new Map();
     loadedIndex = empty;
+    totalCachedBytes = 0;
     indexPromise = Promise.resolve(empty);
     inFlightDownloads.clear();
     await ensureDir();
     schedulePersist();
+    notifyIndexListeners();
 };

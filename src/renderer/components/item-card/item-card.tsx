@@ -1168,10 +1168,7 @@ export const getDataRows = (type?: 'compact' | 'default' | 'poster'): DataRow[] 
                         <Fragment key={artist.id}>
                             <Link
                                 onClick={() =>
-                                    recordRecentArtist(artist, {
-                                        serverId: data._serverId,
-                                        serverType: data._serverType,
-                                    })
+                                    recordRecentArtist(artist, { serverId: data._serverId })
                                 }
                                 state={{ item: artist }}
                                 to={generatePath(AppRoute.LIBRARY_ALBUM_ARTISTS_DETAIL, {

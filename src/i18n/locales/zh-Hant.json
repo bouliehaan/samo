@@ -120,63 +120,36 @@
         "grouping": "分組"
     },
     "error": {
-        "endpointNotImplementedError": "{{serverType}} 尚未實現端點 {{endpoint}}",
         "apiRouteError": "請求失敗：無法路由",
         "audioDeviceFetchError": "無法取得音訊設備",
         "authenticationFailed": "驗證失敗",
         "credentialsRequired": "需要憑證",
         "genericError": "發生了錯誤",
         "invalidServer": "無效的伺服器",
-        "localFontAccessDenied": "無法取得本地字體",
-        "loginRateError": "登入請求嘗試次數過多，請稍後再試",
         "remoteDisableError": "$t(common.disable)遠端伺服器時出現錯誤",
         "remoteEnableError": "$t(common.enable)遠端伺服器時出現錯誤",
         "remotePortError": "設定遠端伺服器連接埠時發生錯誤",
         "remotePortWarning": "重啟伺服器使新連接埠生效",
         "serverRequired": "需要伺服器",
-        "sessionExpiredError": "工作階段已過期",
-        "systemFontError": "嘗試取得系統字體時出現錯誤",
         "serverNotSelectedError": "未選擇伺服器",
-        "mpvRequired": "需要 MPV",
         "playbackError": "無法播放媒體",
         "badValue": "無效選項「{{value}}」。該值不再存在",
-        "networkError": "發生網路錯誤",
-        "notificationDenied": "通知權限被拒絕。此設定無效",
         "openError": "無法開啟檔案",
-        "multipleServerSaveQueueError": "播放佇列中包含不是來自目前伺服器的歌曲，此操作不受支援",
-        "saveQueueFailed": "儲存播放佇列失敗",
         "settingsSyncError": "偵測到渲染器與主程式之間的設定不一致，請重新啟動應用程式以套用變更",
         "noNetwork": "伺服器無法連線",
         "noNetworkDescription": "無法連接到此伺服器",
-        "invalidJson": "無效的 JSON",
         "serverLockSingleServer": "當伺服器鎖定時只允許一個伺服器",
         "playbackPausedDueToError": "發生錯誤，已停止播放"
     },
     "page": {
         "contextMenu": {
-            "removeFromFavorites": "$t(action.removeFromFavorites)",
-            "addToFavorites": "$t(action.addToFavorites)",
             "addToPlaylist": "$t(action.addToPlaylist)",
-            "removeFromPlaylist": "$t(action.removeFromPlaylist)",
-            "removeFromQueue": "$t(action.removeFromQueue)",
-            "addFavorite": "$t(action.addToFavorites)",
-            "addLast": "$t(player.addLast)",
-            "addNext": "$t(player.addNext)",
-            "createPlaylist": "$t(action.createPlaylist)",
-            "deletePlaylist": "$t(action.deletePlaylist)",
-            "deselectAll": "$t(action.deselectAll)",
             "moveToBottom": "$t(action.moveToBottom)",
             "moveToTop": "$t(action.moveToTop)",
-            "numberSelected": "已選取 {{count}}",
-            "play": "$t(player.play)",
             "download": "下載",
             "moveToNext": "$t(action.moveToNext)",
-            "playSimilarSongs": "$t(player.playSimilarSongs)",
-            "playShuffled": "$t(player.shuffle)",
-            "shareItem": "分享項目",
             "showDetails": "取得資訊",
             "goToAlbum": "前往 $t(entity.album, {\"count\": 1})",
-            "goToAlbumArtist": "前往 $t(entity.albumArtist, {\"count\": 1})",
             "moveItems": "$t(action.moveItems)",
             "goTo": "前往"
         },
@@ -189,16 +162,9 @@
             }
         },
         "home": {
-            "explore": "從媒體庫中搜尋",
-            "recentlyPlayed": "最近播放",
-            "title": "$t(common.home)",
-            "mostPlayed": "最多播放",
-            "newlyAdded": "最近新增的發行",
-            "recentlyReleased": "最近發佈",
-            "genres": "$t(entity.genre, {\"count\": 2})"
+            "title": "$t(common.home)"
         },
         "appMenu": {
-            "openBrowserDevtools": "開啟瀏覽器開發者工具",
             "collapseSidebar": "折疊側邊欄",
             "expandSidebar": "展開側邊欄",
             "goBack": "返回",
@@ -206,31 +172,21 @@
             "quit": "$t(common.quit)",
             "selectServer": "選擇伺服器",
             "settings": "$t(common.setting, {\"count\": 2})",
-            "version": "版本 {{version}}",
             "manageServers": "管理伺服器",
             "privateModeOff": "關閉私人模式",
             "privateModeOn": "開啟私人模式",
             "selectMusicFolder": "選擇媒體庫",
             "noMusicFolder": "未選取任何媒體庫",
-            "multipleMusicFolders": "已選取 {{count}} 個媒體庫",
-            "commandPalette": "開啟命令面板"
+            "multipleMusicFolders": "已選取 {{count}} 個媒體庫"
         },
         "fullscreenPlayer": {
             "config": {
-                "showLyricProvider": "顯示歌詞提供者",
-                "useImageAspectRatio": "使用圖片縱橫比",
-                "dynamicBackground": "動態背景",
                 "followCurrentLyric": "跟隨目前歌詞",
                 "lyricAlignment": "歌詞對齊",
                 "lyricGap": "歌詞間距",
                 "lyricSize": "歌詞字體大小",
                 "synchronized": "已同步",
                 "unsynchronized": "未同步",
-                "opacity": "透明度",
-                "showLyricMatch": "顯示匹配的歌詞",
-                "dynamicImageBlur": "圖片模糊大小",
-                "dynamicIsImage": "啟用背景圖片",
-                "lyricOffset": "歌詞偏移時間 (ms)",
                 "lyricOpacityNonActive": "非活躍歌詞的不透明度",
                 "lyricScaleNonActive": "非活躍歌詞的比例"
             },
@@ -245,27 +201,15 @@
         },
         "setting": {
             "hotkeysTab": "快捷鍵",
-            "playbackTab": "播放",
-            "windowTab": "視窗",
             "generalTab": "一般",
             "advanced": "進階",
-            "analytics": "分析",
             "updates": "更新",
             "cache": "快取",
             "application": "應用程式",
             "theme": "主題",
-            "controls": "控制面板",
-            "sidebar": "側邊攔",
             "remote": "遠端控制",
             "exportImport": "匯入/匯出",
-            "scrobble": "記錄播放資訊",
-            "audio": "音訊",
             "lyrics": "歌詞",
-            "transcoding": "轉碼",
-            "discord": "Discord",
-            "queryBuilder": "查詢建構器",
-            "playerFilters": "播放過濾器",
-            "logger": "日誌記錄器",
             "lyricsDisplay": "歌詞顯示"
         },
         "albumArtistList": {
@@ -273,18 +217,13 @@
         },
         "albumDetail": {
             "moreFromArtist": "更多來自 $t(entity.artist, {\"count\": 1}) 的作品",
-            "moreFromGeneric": "更多{{item}}作品",
-            "released": "發行"
+            "moreFromGeneric": "更多{{item}}作品"
         },
         "albumList": {
-            "title": "$t(entity.album, {\"count\": 2})",
-            "artistAlbums": "{{artist}} 的專輯",
-            "genreAlbums": "\"{{genre}}\" $t(entity.album, {\"count\": 2})"
+            "title": "$t(entity.album, {\"count\": 2})"
         },
         "genreList": {
-            "title": "$t(entity.genre, {\"count\": 2})",
-            "showAlbums": "顯示 $t(entity.genre, {\"count\": 1}) $t(entity.album, {\"count\": 2})",
-            "showTracks": "顯示 $t(entity.genre, {\"count\": 1}) $t(entity.track, {\"count\": 2})"
+            "title": "$t(entity.genre, {\"count\": 2})"
         },
         "sidebar": {
             "albumArtists": "$t(entity.albumArtist, {\"count\": 2})",
@@ -305,14 +244,11 @@
             "collections": "收藏"
         },
         "trackList": {
-            "title": "$t(entity.track, {\"count\": 2})",
-            "artistTracks": "{{artist}} 的歌曲",
-            "genreTracks": "\"{{genre}}\" $t(entity.track, {\"count\": 2})"
+            "title": "$t(entity.track, {\"count\": 2})"
         },
         "albumArtistDetail": {
             "about": "關於{{artist}}",
             "appearsOn": "出現在",
-            "recentReleases": "最近發行",
             "viewDiscography": "查看音樂作品",
             "relatedArtists": "關聯$t(entity.artist, {\"count\": 2})",
             "topSongs": "熱門歌曲",
@@ -328,7 +264,6 @@
         },
         "manageServers": {
             "title": "管理伺服器",
-            "serverDetails": "伺服器詳細資訊",
             "url": "URL",
             "username": "使用者名稱",
             "editServerDetailsTooltip": "編輯伺服器詳細資訊",
@@ -339,14 +274,8 @@
             "copiedPath": "成功複製路徑",
             "openFile": "在檔案管理器中顯示曲目"
         },
-        "playlist": {
-            "reorder": "僅當按 ID 排序時才啟用重新排序"
-        },
         "favorites": {
             "title": "$t(entity.favorite, {\"count\": 2})"
-        },
-        "folderList": {
-            "title": "$t(entity.folder, {\"count\": 2})"
         },
         "radioList": {
             "title": "電台"
@@ -372,12 +301,9 @@
         "favorite": "收藏",
         "mute": "靜音",
         "muted": "已靜音",
-        "playbackFetchNoResults": "未找到歌曲",
         "playbackSpeed": "播放速度",
         "playRandom": "隨機播放",
         "previous": "上一首",
-        "queue_clear": "清空播放佇列",
-        "queue_remove": "移除所選",
         "repeat": "循環",
         "repeat_all": "全部循環",
         "repeat_off": "不循環",
@@ -393,16 +319,11 @@
         "next": "下一首",
         "play": "播放",
         "playbackFetchCancel": "請稍等…關閉通知以取消",
-        "queue_moveToBottom": "使所選置頂",
-        "queue_moveToTop": "使所選置底",
-        "playSimilarSongs": "播放相似歌曲",
         "viewQueue": "檢視佇列",
         "addLastShuffled": "新增至尾端 (隨機)",
         "addNextShuffled": "新增至下一首 (隨機)",
         "holdToShuffle": "按住以隨機",
         "lyrics": "歌詞",
-        "restoreQueueFromServer": "從伺服器還原播放佇列",
-        "saveQueueToServer": "將播放佇列儲存至伺服器",
         "artistRadio": "藝人電台",
         "trackRadio": "曲目電台",
         "sleepTimer": "睡眠定時器",
@@ -410,8 +331,6 @@
         "sleepTimer_minutes": "{{count}} 分鐘",
         "sleepTimer_hours": "{{count}} 小時",
         "sleepTimer_custom": "自訂",
-        "sleepTimer_off": "關閉",
-        "sleepTimer_timeRemaining": "剩餘 {{time}}",
         "sleepTimer_setCustom": "設定定時器",
         "sleepTimer_cancel": "取消定時器",
         "albumRadio": "專輯電台"
@@ -793,12 +712,7 @@
                 "displayType": "顯示風格",
                 "gap": "$t(common.gap)",
                 "size": "$t(common.size)",
-                "tableColumns": "列",
                 "autoFitColumns": "自動調整列寬",
-                "followCurrentSong": "跟隨目前歌曲",
-                "itemGap": "項目間隔 (px)",
-                "itemSize": "項目大小 (px)",
-                "advancedSettings": "進階設定",
                 "autosize": "自動調整大小",
                 "moveUp": "往上",
                 "moveDown": "往下",
@@ -875,8 +789,6 @@
             "channels": "$t(common.channel, {\"count\": 2})",
             "comment": "評論",
             "dateAdded": "新增日期",
-            "discNumber": "光碟",
-            "favorite": "收藏",
             "lastPlayed": "最後播放",
             "path": "路徑",
             "playCount": "播放次數",
@@ -886,7 +798,6 @@
             "bpm": "bpm",
             "songCount": "$t(entity.track, {\"count\": 2})",
             "title": "標題",
-            "trackNumber": "曲目編號",
             "size": "$t(common.size)",
             "codec": "$t(common.codec)",
             "owner": "擁有者",
@@ -899,19 +810,11 @@
         "clearQueue": "清空播放佇列",
         "createPlaylist": "建立$t(entity.playlist, {\"count\": 1})",
         "deletePlaylist": "刪除$t(entity.playlist, {\"count\": 1})",
-        "addToPlaylist": "新增到$t(entity.playlist, {\"count\": 1})",
-        "deselectAll": "取消全選",
         "editPlaylist": "編輯 $t(entity.playlist, {\"count\": 1})",
-        "goToPage": "前往頁面",
-        "moveToBottom": "移至底部",
-        "moveToTop": "移至頂部",
-        "refresh": "$t(common.refresh)",
         "removeFromFavorites": "從$t(entity.favorite, {\"count\": 2})移除",
         "removeFromPlaylist": "從$t(entity.playlist, {\"count\": 1})移除",
         "removeFromQueue": "從播放佇列中移除",
-        "toggleSmartPlaylistEditor": "切換$t(entity.smartPlaylist)編輯器",
         "viewPlaylists": "查看$t(entity.playlist, {\"count\": 2})",
-        "moveToNext": "移至下一項",
         "openIn": {
             "lastfm": "在Last.fm開啟",
             "musicbrainz": "在MusicBrainz開啟",
@@ -919,8 +822,6 @@
             "listenbrainz": "在 ListenBrainz 中開啟",
             "qobuz": "在 Qobuz 中開啟"
         },
-        "downloadStarted": "已開始下載 {{count}} 項內容",
-        "moveItems": "移動項目",
         "shuffle": "隨機播放",
         "shuffleAll": "全部隨機播放",
         "shuffleSelected": "隨機播放選取項目",
@@ -930,7 +831,6 @@
         "holdToMoveToTop": "按住以移動至頂部",
         "holdToMoveToBottom": "按住以移動至底部",
         "createRadioStation": "建立 $t(entity.radioStation, {\"count\": 1})",
-        "deleteRadioStation": "刪除 $t(entity.radioStation, {\"count\": 1})",
         "openApplicationDirectory": "開啟應用程式目錄",
         "addOrRemoveFromSelection": "新增或移除選取項目",
         "selectAll": "全選",
@@ -962,32 +862,19 @@
     "filter": {
         "albumCount": "$t(entity.album, {\"count\": 2})數",
         "artist": "$t(entity.artist, {\"count\": 1})",
-        "biography": "個人簡介",
-        "bitrate": "位元率",
         "bpm": "bpm",
-        "channels": "$t(common.channel, {\"count\": 2})",
         "comment": "評論",
-        "dateAdded": "已新增日期",
-        "disc": "光碟",
         "duration": "時長",
         "id": "id",
         "fromYear": "從年份",
         "genre": "$t(entity.genre, {\"count\": 1})",
         "isCompilation": "為合輯",
         "isFavorited": "已收藏",
-        "isPublic": "已公開",
-        "isRated": "已評分",
         "name": "名稱",
-        "note": "注釋",
-        "isRecentlyPlayed": "最近播放過",
         "lastPlayed": "上次播放過",
-        "mostPlayed": "播放最多",
-        "owner": "$t(common.owner)",
-        "path": "路徑",
         "playCount": "播放次數",
         "random": "隨機",
         "recentlyPlayed": "最近播放",
-        "recentlyUpdated": "最近更新",
         "releaseDate": "發布日期",
         "songCount": "曲目數",
         "album": "$t(entity.album, {\"count\": 1})",
@@ -995,10 +882,7 @@
         "favorited": "已收藏",
         "recentlyAdded": "最近新增",
         "releaseYear": "發布年份",
-        "search": "搜尋",
-        "title": "標題",
         "toYear": "從年份",
-        "trackNumber": "曲目",
         "explicitStatus": "$t(common.explicitStatus)",
         "sortName": "排序名稱",
         "matchAnd": "和",
@@ -1044,37 +928,15 @@
             "title": "搜尋歌詞",
             "input_artist": "$t(entity.artist, {\"count\": 1})"
         },
-        "queryEditor": {
-            "input_optionMatchAll": "匹配全部",
-            "input_optionMatchAny": "匹配任何",
-            "title": "查詢編輯器",
-            "addRuleGroup": "新增規則群組",
-            "removeRuleGroup": "移除規則群組",
-            "resetToDefault": "恢復為預設值",
-            "clearFilters": "清除篩選"
-        },
         "updateServer": {
-            "success": "伺服器已更新成功",
             "title": "更新伺服器"
         },
         "deletePlaylist": {
-            "input_confirm": "輸入$t(entity.playlist, {\"count\": 1})的名稱進行確認",
-            "title": "刪除$t(entity.playlist, {\"count\": 1})",
-            "success": "$t(entity.playlist, {\"count\": 1})已成功刪除"
+            "title": "刪除$t(entity.playlist, {\"count\": 1})"
         },
         "editPlaylist": {
             "title": "編輯$t(entity.playlist, {\"count\": 1})",
             "success": "$t(entity.playlist, {\"count\": 1}) 更新成功"
-        },
-        "shareItem": {
-            "allowDownloading": "允許下載",
-            "description": "描述",
-            "setExpiration": "設定過期時間",
-            "success": "分享連結已複製到剪貼簿（或點擊此處開啟）",
-            "expireInvalid": "到期日必須是未來",
-            "createFailed": "無法建立分享（分享是否啟用？）",
-            "copyToClipboard": "複製到剪貼簿：Ctrl+C, Enter",
-            "successMustClick": "分享建立成功，點擊此處開啟"
         },
         "privateMode": {
             "enabled": "已啟用私人模式，播放狀態將對外部整合隱藏",
@@ -1090,21 +952,12 @@
             "input_genre": "$t(entity.genre, {\"count\": 1})",
             "input_limit": "多少曲目？",
             "input_minYear": "起始年份",
-            "input_maxYear": "結束年份",
-            "input_played": "播放過濾器",
-            "input_played_optionAll": "所有曲目",
-            "input_played_optionUnplayed": "僅未播放的曲目",
-            "input_played_optionPlayed": "僅播放過的曲目"
+            "input_maxYear": "結束年份"
         },
         "createRadioStation": {
-            "success": "電台建立成功",
-            "title": "建立電台",
             "input_homepageUrl": "首頁連結",
             "input_name": "名稱",
             "input_streamUrl": "串流網址"
-        },
-        "saveQueue": {
-            "success": "已將播放佇列儲存至伺服器"
         },
         "lyricsExport": {
             "export": "匯出歌詞",
@@ -1143,31 +996,6 @@
         "error_readingFile": "讀取檔案時發生問題：{{errorMessage}}",
         "mainText": "將檔案拖放到此處"
     },
-    "queryBuilder": {
-        "standardTags": "標準標籤",
-        "customTags": "自訂標籤"
-    },
-    "filterOperator": {
-        "after": "在…之後",
-        "afterDate": "晚於 (日期)",
-        "before": "在…之前",
-        "beforeDate": "早於 (日期)",
-        "contains": "包含",
-        "endsWith": "以…結尾",
-        "inPlaylist": "在…之中",
-        "inTheRange": "在範圍內",
-        "inTheRangeDate": "在（日期）範圍內",
-        "is": "是",
-        "isNot": "不是",
-        "isGreaterThan": "大於",
-        "isLessThan": "小於",
-        "matchesRegex": "符合正規表達式",
-        "notContains": "不包含",
-        "notInPlaylist": "不在…之中",
-        "startsWith": "以…開頭",
-        "inTheLast": "在最後",
-        "notInTheLast": "不在最後"
-    },
     "datetime": {
         "minuteShort": "分",
         "secondShort": "秒",
@@ -1185,7 +1013,6 @@
         "blendTime": "過渡時間",
         "presets": "預設",
         "selectPreset": "選擇預設",
-        "applyPreset": "套用預設",
         "saveAsPreset": "儲存為預設",
         "updatePreset": "更新預設",
         "copyConfiguration": "複製設定",
@@ -1236,8 +1063,6 @@
         "frequencyScale": "頻率量表",
         "sensitivity": "靈敏度",
         "weightingFilter": "權重濾波器",
-        "minimumDecibels": "最小分貝",
-        "maximumDecibels": "最大分貝",
         "linearAmplitude": "線性振幅",
         "linearBoost": "線性增益",
         "peakBehavior": "峰值行為",
@@ -1324,10 +1149,6 @@
         },
         "systemAudioCaptureFailed": "無法開始擷取：{{message}}",
         "systemAudioNoAudioTrack": "沒有回傳任何音軌。確保在提示時啟用音訊擷取。",
-        "systemAudioConsentAllow": "允許",
-        "systemAudioConsentBody": "此視覺化器需要存取系統音訊才能運作",
-        "systemAudioConsentDecline": "拒絕",
-        "systemAudioConsentTitle": "允許存取系統音訊？",
         "systemAudioExclusiveModeNotSupported": "啟用音訊獨佔模式時，視覺化不可用。 在MPV設定中停用音訊獨佔模式，然後再試一次。"
     }
 }

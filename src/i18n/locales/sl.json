@@ -1,21 +1,13 @@
 {
     "action": {
         "addToFavorites": "dodaj na $t(entity.favorite, {\"count\": 2})",
-        "addToPlaylist": "dodaj na $t(entity.playlist, {\"count\": 1})",
         "clearQueue": "počisti čakalno vrsto",
         "createPlaylist": "ustvari $t(entity.playlist, {\"count\": 1})",
         "deletePlaylist": "izbriši $t(entity.playlist, {\"count\": 1})",
-        "deselectAll": "odizberi vse",
         "editPlaylist": "uredi $t(entity.playlist, {\"count\": 1})",
-        "goToPage": "pojdi na stran",
-        "moveToNext": "pojdi na naslednjo",
-        "moveToBottom": "pojdi na dno",
-        "moveToTop": "pojdi na vrh",
-        "refresh": "$t(common.refresh)",
         "removeFromFavorites": "odstrani iz $t(entity.favorite, {\"count\": 2})",
         "removeFromPlaylist": "odstrani iz $t(entity.playlist, {\"count\": 1})",
         "removeFromQueue": "odstrani iz čakalne vrste",
-        "toggleSmartPlaylistEditor": "preklopi urejevalnik $t(entity.smartPlaylist)",
         "viewPlaylists": "poglej $t(entity.playlist, {\"count\": 2})",
         "openIn": {
             "lastfm": "Odpri v Last.fm",
@@ -202,13 +194,8 @@
         "authenticationFailed": "napaka pri avtentikaciji",
         "badValue": "neveljavna možnost \"{{value}}\". ta vrednost ne obstaja več",
         "credentialsRequired": "zahtevana prijava",
-        "endpointNotImplementedError": "{{serverType}} ne implementira končne točke {{endpoint}}",
         "genericError": "prišlo je do napake",
         "invalidServer": "neveljaven strežnik",
-        "localFontAccessDenied": "dostop do lokalnih pisav je bil zavrnjen",
-        "loginRateError": "preveč poskusov prijave, prosimo, poskusite čez nekaj sekund",
-        "mpvRequired": "obvezen MPV",
-        "networkError": "prišlo je do mrežne napake",
         "openError": "datoteke ni mogoče odpreti",
         "playbackError": "prišlo je do napake pri poskusu predvajanja skladbe",
         "remoteDisableError": "oddaljenega strežnika ni bilo mogoče $t(common.disable)ti",
@@ -216,22 +203,15 @@
         "remotePortError": "pri nastavljanju vrat oddaljenega strežnika je prišlo do napake",
         "remotePortWarning": "ponovno zaženite strežnik da aplicirate spremembo strežniških vrat",
         "serverNotSelectedError": "izbran ni bil noben strežnik",
-        "serverRequired": "strežnik zahtevan",
-        "sessionExpiredError": "vaša seja se je iztekla",
-        "systemFontError": "napaka pri pridobivanju sistemskih pisav"
+        "serverRequired": "strežnik zahtevan"
     },
     "filter": {
         "album": "$t(entity.album, {\"count\": 1})",
         "albumArtist": "$t(entity.albumArtist, {\"count\": 1})",
         "albumCount": "število $t(entity.album, {\"count\": 2})",
         "artist": "$t(entity.artist, {\"count\": 1})",
-        "biography": "biografija",
-        "bitrate": "bitna hitrost",
         "bpm": "bpm",
-        "channels": "$t(common.channel_other)",
         "comment": "komentar",
-        "dateAdded": "dodano",
-        "disc": "disk",
         "duration": "trajanje",
         "favorited": "priljubljeno",
         "fromYear": "od leta",
@@ -239,27 +219,16 @@
         "id": "identifikator",
         "isCompilation": "je kompilacija",
         "isFavorited": "je dodan med priljubljene",
-        "isPublic": "je javno",
-        "isRated": "je ocenjen",
-        "isRecentlyPlayed": "je bil nedavno predvajan",
         "lastPlayed": "zadnje predvajano",
-        "mostPlayed": "najpogosteje predvajano",
         "name": "ime",
-        "note": "opomba",
-        "owner": "$t(common.owner)",
-        "path": "pot",
         "playCount": "število predvajanj",
         "random": "naključno",
         "recentlyAdded": "nedavno dodano",
         "recentlyPlayed": "nedavno predvajano",
-        "recentlyUpdated": "nedavno posodobljeno",
         "releaseDate": "datum izida",
         "releaseYear": "leto izida",
-        "search": "išči",
         "songCount": "število pesmi",
-        "title": "naslov",
-        "toYear": "do leta",
-        "trackNumber": "skladba"
+        "toYear": "do leta"
     },
     "form": {
         "addServer": {
@@ -290,8 +259,6 @@
             "title": "ustvari $t(entity.playlist, {\"count\": 1})"
         },
         "deletePlaylist": {
-            "input_confirm": "vpišite ime $t(entity.playlist, {\"count\": 1}) za potrditev",
-            "success": "$t(entity.playlist, {\"count\": 1}) uspešno izbrisan",
             "title": "izbriši $t(entity.playlist, {\"count\": 1})"
         },
         "editPlaylist": {
@@ -303,21 +270,7 @@
             "input_name": "$t(common.name)",
             "title": "iskanje po besedilu"
         },
-        "queryEditor": {
-            "title": "urejevalnik poizvedb",
-            "input_optionMatchAll": "ujemanje vseh",
-            "input_optionMatchAny": "ujemanje z najmanj enim"
-        },
-        "shareItem": {
-            "allowDownloading": "dovoli prenašanje",
-            "description": "opis",
-            "setExpiration": "nastavi datum poteka veljavnosti",
-            "success": "deli povezavo v odložišču (ali klikni tukaj za odpiranje)",
-            "expireInvalid": "datum poteka veljavnosti mora biti v prihodnosti",
-            "createFailed": "deljenje ni uspelo (je deljenje omogočeno?)"
-        },
         "updateServer": {
-            "success": "strežnik uspešno posodobljen",
             "title": "posodobi strežnik"
         }
     },
@@ -325,7 +278,6 @@
         "albumArtistDetail": {
             "about": "O {{artist}}",
             "appearsOn": "se pojavi na",
-            "recentReleases": "zadnje izdaje",
             "viewDiscography": "poglej diskografijo",
             "relatedArtists": "sorodni $t(entity.artist, {\"count\": 2})",
             "topSongs": "najboljše skladbe",
@@ -338,12 +290,9 @@
         },
         "albumDetail": {
             "moreFromArtist": "več od $t(entity.artist, {\"count\": 1})",
-            "moreFromGeneric": "več iz {{item}}",
-            "released": "izdano"
+            "moreFromGeneric": "več iz {{item}}"
         },
         "albumList": {
-            "artistAlbums": "albumi izvajalca {{artist}}",
-            "genreAlbums": "\"{{genre}}\" $t(entity.album, {\"count\": 2})",
             "title": "$t(entity.album, {\"count\": 2})"
         },
         "appMenu": {
@@ -352,59 +301,33 @@
             "goBack": "nazaj",
             "goForward": "naprej",
             "manageServers": "urejanje strežnikov",
-            "openBrowserDevtools": "odpri orodja za razvijalce brskalnika",
             "quit": "$t(common.quit)",
             "selectServer": "izberi strežnik",
-            "settings": "$t(common.setting, {\"count\": 2})",
-            "version": "verzija {{version}}"
+            "settings": "$t(common.setting, {\"count\": 2})"
         },
         "manageServers": {
             "title": "urejanje strežnikov",
-            "serverDetails": "podrobosti o strežniku",
             "url": "URL",
             "username": "uporabniško ime",
             "editServerDetailsTooltip": "urejanje podrobnosti strežnika",
             "removeServer": "odstrani strežnik"
         },
         "contextMenu": {
-            "addFavorite": "$t(action.addToFavorites)",
-            "addLast": "$t(player.addLast)",
-            "addNext": "$t(player.addNext)",
-            "addToFavorites": "$t(action.addToFavorites)",
             "addToPlaylist": "$t(action.addToPlaylist)",
-            "createPlaylist": "$t(action.createPlaylist)",
-            "deletePlaylist": "$t(action.deletePlaylist)",
-            "deselectAll": "$t(action.deselectAll)",
             "download": "prenesi",
             "moveToNext": "$t(action.moveToNext)",
             "moveToBottom": "$t(action.moveToBottom)",
             "moveToTop": "$t(action.moveToTop)",
-            "numberSelected": "{{count}} izbranih",
-            "play": "$t(player.play)",
-            "playSimilarSongs": "$t(player.playSimilarSongs)",
-            "removeFromFavorites": "$t(action.removeFromFavorites)",
-            "removeFromPlaylist": "$t(action.removeFromPlaylist)",
-            "removeFromQueue": "$t(action.removeFromQueue)",
-            "playShuffled": "$t(player.shuffle)",
-            "shareItem": "deli",
             "showDetails": "pridobi informacije"
         },
         "fullscreenPlayer": {
             "config": {
-                "dynamicBackground": "dinamično ozadje",
-                "dynamicImageBlur": "velikost zameglitve slike",
-                "dynamicIsImage": "omogoči sliko v ozadju",
                 "followCurrentLyric": "sledi besedilu",
                 "lyricAlignment": "poravnava besedila",
-                "lyricOffset": "zamik besedila (ms)",
                 "lyricGap": "razmik besedila",
                 "lyricSize": "velikost besedila",
-                "opacity": "prosojnost",
-                "showLyricMatch": "prikaži ujemanje besedila",
-                "showLyricProvider": "pokaži ponudnika besedila",
                 "synchronized": "sinhronizirano",
-                "unsynchronized": "nesinhronizirano",
-                "useImageAspectRatio": "uporabi razmerje stranic slike"
+                "unsynchronized": "nesinhronizirano"
             },
             "lyrics": "besedilo",
             "related": "sorodno",
@@ -413,8 +336,6 @@
             "noLyrics": "ni bilo najdenih besedil"
         },
         "genreList": {
-            "showAlbums": "prikaži $t(entity.genre, {\"count\": 1}) $t(entity.album, {\"count\": 2})",
-            "showTracks": "prikaži $t(entity.genre, {\"count\": 1}) $t(entity.track, {\"count\": 2})",
             "title": "$t(entity.genre, {\"count\": 2})"
         },
         "globalSearch": {
@@ -426,10 +347,6 @@
             "title": "ukazi"
         },
         "home": {
-            "explore": "razišči knjižnico",
-            "mostPlayed": "najpogosteje predvajano",
-            "newlyAdded": "zadnje dodane izdaje",
-            "recentlyPlayed": "nedavno predvajano",
             "title": "$t(common.home)"
         },
         "itemDetail": {
@@ -437,18 +354,13 @@
             "copiedPath": "kopiranje poti uspešno",
             "openFile": "prikaži skladbo v upravitelju datotek"
         },
-        "playlist": {
-            "reorder": "preurejanje je omogočeno samo pri razvrščanju po identifikatorju"
-        },
         "playlistList": {
             "title": "$t(entity.playlist, {\"count\": 2})"
         },
         "setting": {
             "advanced": "napredno",
             "generalTab": "splošno",
-            "hotkeysTab": "blžnjice",
-            "playbackTab": "predvajanje",
-            "windowTab": "okno"
+            "hotkeysTab": "blžnjice"
         },
         "sidebar": {
             "albumArtists": "$t(entity.albumArtist, {\"count\": 2})",
@@ -466,8 +378,6 @@
             "tracks": "$t(entity.track, {\"count\": 2})"
         },
         "trackList": {
-            "artistTracks": "skladbe po {{artist}}",
-            "genreTracks": "\"{{genre}}\" $t(entity.track, {\"count\": 2})",
             "title": "$t(entity.track, {\"count\": 2})"
         }
     },
@@ -481,15 +391,9 @@
         "play": "predvajaj",
         "playbackFetchCancel": "akcija traja dlje časa... zaprite obvestilo za preklic",
         "playbackFetchInProgress": "nalaganje pesmi…",
-        "playbackFetchNoResults": "nobena pesem ni bila najdena",
         "playbackSpeed": "hitrost predvajanja",
         "playRandom": "predvajaj naključno",
-        "playSimilarSongs": "predvajaj sorodne pesmi",
         "previous": "prejšnje",
-        "queue_clear": "počisti čakalno vrsto",
-        "queue_moveToBottom": "premakni izbrano na vrh",
-        "queue_moveToTop": "premakni izbrano na dno",
-        "queue_remove": "odstrani izbrano",
         "repeat": "ponovi",
         "repeat_all": "ponovi vse",
         "repeat_off": "ne ponavljaj",

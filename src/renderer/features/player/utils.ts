@@ -2,7 +2,6 @@ import { QueryClient } from '@tanstack/react-query';
 
 import { api } from '/@/renderer/api';
 import { queryKeys } from '/@/renderer/api/query-keys';
-import { folderQueries } from '/@/renderer/features/folders/api/folder-api';
 import { PlayerFilter, useSettingsStore } from '/@/renderer/store';
 import { sortSongList } from '/@/shared/api/utils';
 import {
@@ -164,60 +163,6 @@ export const getSongsByQuery = async (args: {
         startIndex: 0,
         ...args.query,
     });
-
-export const getSongsByFolder = async (args: {
-    id: string[];
-    orderByIds?: boolean;
-    query?: Partial<SongListQuery>;
-    queryClient: QueryClient;
-    serverId: string;
-}) => {
-    const { id, queryClient, serverId } = args;
-
-    const collectSongsFromFolder = async (folderId: string): Promise<Song[]> => {
-        const folderSongs: Song[] = [];
-        const folder = await queryClient.fetchQuery({
-            ...folderQueries.folder({
-                query: {
-                    id: folderId,
-                    sortBy: SongListSort.ID,
-                    sortOrder: SortOrder.ASC,
-                },
-                serverId,
-            }),
-            gcTime: 0,
-            staleTime: 0,
-        });
-
-        if (folder.children?.songs) {
-            folderSongs.push(...folder.children.songs);
-        }
-
-        if (folder.children?.folders) {
-            for (const subFolder of folder.children.folders) {
-                const subFolderSongs = await collectSongsFromFolder(subFolder.id);
-                folderSongs.push(...subFolderSongs);
-            }
-        }
-
-        return folderSongs;
-    };
-
-    const data: SongListResponse = {
-        items: [],
-        startIndex: 0,
-        totalRecordCount: 0,
-    };
-
-    // Process folders sequentially to maintain order
-    for (const folderId of id) {
-        const folderSongs = await collectSongsFromFolder(folderId);
-        data.items.push(...folderSongs);
-        data.totalRecordCount = (data.totalRecordCount || 0) + folderSongs.length;
-    }
-
-    return data;
-};
 
 export const getSongById = async (args: {
     id: string;

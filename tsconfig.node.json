@@ -12,24 +12,35 @@
   ],
   "compilerOptions": {
     "composite": true,
-    "types": ["electron-vite/node"],
+    // "vite/client" is here for `src/shared`, which this project compiles too:
+    // shared components may import their own stylesheet for side effects, and
+    // from TypeScript 6 an untyped side-effect import is an error (TS2882)
+    // rather than being silently ignored. The web project already gets these
+    // ambient declarations via src/renderer/env.d.ts; this is the same
+    // declarations, pulled in through config so it needs no new .d.ts file —
+    // .gitignore excludes `src/**/*.d.ts`, so one added here would be invisible
+    // to a fresh clone and CI.
+    "types": ["electron-vite/node", "vite/client"],
     "esModuleInterop": true,
-    "baseUrl": ".",
+    // No "baseUrl": it is deprecated in TypeScript 6 and stops working in 7.
+    // Since TS 4.1 "paths" entries resolve relative to the tsconfig itself, and
+    // baseUrl here was "." — the tsconfig's own directory — so prefixing each
+    // target with "./" resolves to exactly what it did before.
     "paths": {
       "/@/main/*": [
-        "src/main/*"
+        "./src/main/*"
       ],
       "/@/preload/*": [
-        "src/preload/*"
+        "./src/preload/*"
       ],
       "/@/shared/*": [
-        "src/shared/*"
+        "./src/shared/*"
       ],
       "@samo/core": [
-        "packages/core/src/index.ts"
+        "./packages/core/src/index.ts"
       ],
       "@samo/core/*": [
-        "packages/core/src/*"
+        "./packages/core/src/*"
       ],
     }
   }

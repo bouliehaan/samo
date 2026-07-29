@@ -23,6 +23,7 @@ import {
     useAppNavigationSelector,
 } from '../../state/app-navigation';
 import { subscribeTabReselected } from '../../state/tab-reselect';
+import { getPullScrollY } from './search-pull-registry';
 import { REDUCED_MOTION_SPRING } from '../../theme/layout';
 import {
     SEARCH_PULL_MOUNT_AT,
@@ -46,6 +47,14 @@ interface SearchPullContextValue {
      * out, and drag it in again without anything switching underneath.
      */
     pull: SharedValue<number>;
+    /** The ACTIVE page's scroll offset, written by whichever page is showing (see
+     *  `useSearchPull`) and read by the one app-level pan at touch-down. The pan
+     *  lives above the tab scenes now, so it cannot reach into a page for this —
+     *  and must not, since every page but one is frozen. */
+    activeScrollY: SharedValue<number>;
+    /** Which page owns `activeScrollY` right now, so a frozen page's stray scroll
+     *  event can't overwrite the visible page's offset. */
+    activePullTab: SharedValue<string>;
     reducedMotion: boolean;
     /** Whether the full-search overlay should be MOUNTED yet. Flips true early in
      *  the pull so its one render lands during the slack of stage one rather than
@@ -93,6 +102,8 @@ export const useSearchPullContext = (): SearchPullContextValue => {
 
 export const SearchPullProvider = ({ children }: { children: ReactNode }) => {
     const pull = useSharedValue(0);
+    const activeScrollY = useSharedValue(0);
+    const activePullTab = useSharedValue<string>('home');
     const reducedMotion = useReducedMotionPreference();
     const [isSearchMounted, setIsSearchMounted] = useState(false);
 
@@ -164,6 +175,20 @@ export const SearchPullProvider = ({ children }: { children: ReactNode }) => {
     const isSearchOverlayOpen = useAppNavigationSelector((state) => state.isSearchOverlayOpen);
     const viewAllRoute = useAppNavigationSelector((state) => state.viewAllRoute);
 
+    /*
+     * Hand the pan the newly-visible page's offset on a tab switch.
+     *
+     * A page that has been frozen emits no scroll event to announce where it is,
+     * so without this the pan would keep judging "am I at the top?" against the
+     * page the user just left — and a tab whose list happened to be scrolled
+     * would either summon search mid-list or refuse to summon it at all.
+     * Reading `.value` off the UI thread is a plain synchronous read from JS.
+     */
+    useEffect(() => {
+        activePullTab.value = activeTab;
+        activeScrollY.value = getPullScrollY(activeTab)?.value ?? 0;
+    }, [activeTab, activePullTab, activeScrollY]);
+
     const isFirstRun = useRef(true);
     const wasSearchOpen = useRef(false);
     useEffect(() => {
@@ -205,6 +230,8 @@ export const SearchPullProvider = ({ children }: { children: ReactNode }) => {
 
     const value = useMemo<SearchPullContextValue>(
         () => ({
+            activePullTab,
+            activeScrollY,
             commitFullSearch,
             didSkipPeek,
             dismissSearchState,
@@ -215,6 +242,8 @@ export const SearchPullProvider = ({ children }: { children: ReactNode }) => {
             retract,
         }),
         [
+            activePullTab,
+            activeScrollY,
             commitFullSearch,
             didSkipPeek,
             dismissSearchState,

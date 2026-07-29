@@ -38,14 +38,6 @@ import { ServerType, toServerType } from '/@/shared/types/types';
 
 const localSettings = isElectron() ? window.api.localSettings : null;
 
-const SERVER_ICONS: Record<ServerType, string> = {
-    [ServerType.SAMO]: SamoIcon,
-};
-
-const SERVER_NAMES: Record<ServerType, string> = {
-    [ServerType.SAMO]: 'Samo',
-};
-
 const normalizeUrl = (url: string) => url.replace(/\/$/, '');
 
 const LoginRoute = () => {
@@ -134,29 +126,26 @@ const LoginRoute = () => {
 
         try {
             setIsLoading(true);
-            const data: AuthenticationResponse | undefined = await authFunction(
-                serverUrl,
-                {
-                    legacy: legacyAuth,
-                    password: values.password,
-                    username: values.username,
-                },
-                serverType as ServerType,
-            );
+            const data: AuthenticationResponse | undefined = await authFunction(serverUrl, {
+                legacy: legacyAuth,
+                password: values.password,
+                username: values.username,
+            });
 
             const normalizedUrl = normalizeUrl(serverUrl);
             const normalizedRemoteURL = normalizeUrl(remoteUrl);
             const existingServer = serverLock
                 ? Object.values(serverList).find((s) => normalizeUrl(s.url) === normalizedUrl)
                 : undefined;
-            const serverId = existingServer?.id ?? nanoid();
+            const recordId = existingServer?.id ?? nanoid();
 
             const serverItem: ServerListItemWithCredential = {
                 credential: data.credential,
-                id: serverId,
+                id: recordId,
                 isAdmin: data.isAdmin,
                 name: serverName,
                 remoteUrl: normalizedRemoteURL,
+                serverId: data.serverId,
                 type: serverType as ServerType,
                 url: normalizedUrl,
                 userId: data.userId,
@@ -164,7 +153,7 @@ const LoginRoute = () => {
             };
 
             if (localSettings && values.password) {
-                const saved = await localSettings.passwordSet(values.password, serverId);
+                const saved = await localSettings.passwordSet(values.password, recordId);
                 serverItem.savePassword = saved;
 
                 if (!saved) {
@@ -182,6 +171,7 @@ const LoginRoute = () => {
                     credential: data.credential,
                     isAdmin: data.isAdmin,
                     savePassword: serverItem.savePassword,
+                    serverId: data.serverId,
                     userId: data.userId,
                     username: data.username,
                 };
@@ -205,8 +195,8 @@ const LoginRoute = () => {
     });
 
     const isSubmitDisabled = !form.values.username || !form.values.password;
-    const serverIcon = SERVER_ICONS[serverType as ServerType];
-    const serverDisplayName = SERVER_NAMES[serverType as ServerType];
+    const serverIcon = SamoIcon;
+    const serverDisplayName = 'Samo';
 
     return (
         <AnimatedPage>

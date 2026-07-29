@@ -283,11 +283,7 @@ export const PlaylistDetailSongListEdit = ({ data }: { data: PlaylistSongListRes
 };
 
 const PlaylistDetailTrackView = ({ data }: { data: PlaylistSongListResponse }) => {
-    const { isSmartPlaylist, mode } = useListContext();
-
-    if (isSmartPlaylist) {
-        return <PlaylistDetailTrackViewContent data={data} />;
-    }
+    const { mode } = useListContext();
 
     if (mode === 'edit') {
         return <PlaylistDetailSongListEdit data={data} />;

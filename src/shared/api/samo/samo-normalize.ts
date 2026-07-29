@@ -32,7 +32,6 @@ import {
     type Playlist,
     type RelatedArtist,
     type ServerListItemWithCredential,
-    ServerType,
     type Song,
 } from '/@/shared/types/domain-types';
 
@@ -181,7 +180,6 @@ const toGenres = (
     return names.map((name) => ({
         _itemType: LibraryItem.GENRE,
         _serverId: server?.id || 'unknown',
-        _serverType: ServerType.SAMO,
         albumCount: null,
         id: name,
         imageId: null,
@@ -233,7 +231,6 @@ export const normalizeSamoMusicTrack = (
     return {
         _itemType: LibraryItem.SONG,
         _serverId: server?.id || 'unknown',
-        _serverType: ServerType.SAMO,
         album: track.albumTitle ?? options?.albumName ?? null,
         albumArtistName: artistName,
         albumArtists: artists,
@@ -305,7 +302,6 @@ export const normalizeSamoMusicAlbum = (
     return {
         _itemType: LibraryItem.ALBUM,
         _serverId: server?.id || 'unknown',
-        _serverType: ServerType.SAMO,
         albumArtistName,
         albumArtists: buildArtistList(albumArtistRefs, albumArtistName),
         artists: buildArtistList(trackArtistRefs ?? albumArtistRefs, albumArtistName),
@@ -358,7 +354,6 @@ export const normalizeSamoMusicArtist = (
             : null;
     const base = {
         _serverId: server?.id || 'unknown',
-        _serverType: ServerType.SAMO,
         albumCount: artist.albumCount ?? 0,
         biography: artist.biography ?? null,
         duration: null,
@@ -391,7 +386,6 @@ export const normalizeSamoMusicPlaylist = (
     return {
         _itemType: LibraryItem.PLAYLIST,
         _serverId: server?.id || 'unknown',
-        _serverType: ServerType.SAMO,
         createdAt: playlist.createdAt ?? null,
         description: playlist.description ?? null,
         duration: playlist.duration ? playlist.duration * 1000 : null,
@@ -464,7 +458,6 @@ export const normalizeSamoAudiobookAsAlbum = (
     return {
         _itemType: LibraryItem.ALBUM,
         _serverId: server?.id || 'unknown',
-        _serverType: ServerType.SAMO,
         albumArtistName: authorName,
         albumArtists: authorArtists,
         artists: authorArtists,
@@ -510,7 +503,6 @@ export const normalizeSamoPodcastAsPlaylist = (
     return {
         _itemType: LibraryItem.PLAYLIST,
         _serverId: server?.id || 'unknown',
-        _serverType: ServerType.SAMO,
         createdAt: podcast.addedAt ?? null,
         description: inner?.description ?? null,
         duration: null,
@@ -541,7 +533,6 @@ export const normalizeSamoPodcastEpisodeAsSong = (
     return {
         _itemType: LibraryItem.SONG,
         _serverId: server?.id || 'unknown',
-        _serverType: ServerType.SAMO,
         album: podcast?.title ?? episode.podcastTitle ?? null,
         albumArtistName: episode.podcastTitle ?? 'Podcast',
         albumArtists: [],

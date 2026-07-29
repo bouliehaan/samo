@@ -7,26 +7,28 @@ import com.facebook.react.bridge.ReadableMap
 import com.facebook.react.bridge.ReadableType
 import com.facebook.react.bridge.WritableMap
 
+// RN 0.86 made every `code` parameter on Promise nullable; overriding with a
+// non-null `String` no longer matches the interface.
 internal object SamoNoOpPromise : Promise {
   override fun resolve(value: Any?) = Unit
 
-  override fun reject(code: String, message: String?) = Unit
+  override fun reject(code: String?, message: String?) = Unit
 
   override fun reject(message: String) = Unit
 
-  override fun reject(code: String, throwable: Throwable?) = Unit
+  override fun reject(code: String?, throwable: Throwable?) = Unit
 
-  override fun reject(code: String, message: String?, throwable: Throwable?) = Unit
+  override fun reject(code: String?, message: String?, throwable: Throwable?) = Unit
 
   override fun reject(throwable: Throwable) = Unit
 
   override fun reject(throwable: Throwable, userInfo: WritableMap) = Unit
 
-  override fun reject(code: String, userInfo: WritableMap) = Unit
+  override fun reject(code: String?, userInfo: WritableMap) = Unit
 
-  override fun reject(code: String, throwable: Throwable?, userInfo: WritableMap) = Unit
+  override fun reject(code: String?, throwable: Throwable?, userInfo: WritableMap) = Unit
 
-  override fun reject(code: String, message: String?, userInfo: WritableMap) = Unit
+  override fun reject(code: String?, message: String?, userInfo: WritableMap) = Unit
 
   override fun reject(
     code: String?,

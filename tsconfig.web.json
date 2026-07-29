@@ -4,7 +4,6 @@
     "src/renderer/env.d.ts",
     "src/renderer/**/*",
     "src/renderer/**/*.tsx",
-    "src/preload/*.d.ts",
     "src/i18n/**/*",
     "src/shared/**/*",
     "src/remote/**/*",
@@ -14,25 +13,28 @@
   "compilerOptions": {
     "composite": true,
     "jsx": "react-jsx",
-    "baseUrl": ".",
+    // No "baseUrl": it is deprecated in TypeScript 6 and stops working in 7.
+    // Since TS 4.1 "paths" entries resolve relative to the tsconfig itself, and
+    // baseUrl here was "." — the tsconfig's own directory — so prefixing each
+    // target with "./" resolves to exactly what it did before.
     "paths": {
       "/@/renderer/*": [
-        "src/renderer/*"
+        "./src/renderer/*"
       ],
       "/@/shared/*": [
-        "src/shared/*"
+        "./src/shared/*"
       ],
       "/@/i18n/*": [
-        "src/i18n/*"
+        "./src/i18n/*"
       ],
       "/@/remote/*": [
-        "src/remote/*"
+        "./src/remote/*"
       ],
       "@samo/core": [
-        "packages/core/src/index.ts"
+        "./packages/core/src/index.ts"
       ],
       "@samo/core/*": [
-        "packages/core/src/*"
+        "./packages/core/src/*"
       ]
     }
   },

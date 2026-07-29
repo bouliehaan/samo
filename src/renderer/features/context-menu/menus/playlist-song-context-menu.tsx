@@ -8,7 +8,6 @@ import { PlayAction } from '/@/renderer/features/context-menu/actions/play-actio
 import { PlayTrackRadioAction } from '/@/renderer/features/context-menu/actions/play-track-radio-action';
 import { RemoveFromPlaylistAction } from '/@/renderer/features/context-menu/actions/remove-from-playlist-action';
 import { SetFavoriteAction } from '/@/renderer/features/context-menu/actions/set-favorite-action';
-import { ShareAction } from '/@/renderer/features/context-menu/actions/share-action';
 import { ShowInFileExplorerAction } from '/@/renderer/features/context-menu/actions/show-in-file-explorer-action';
 import { ContextMenuPreview } from '/@/renderer/features/context-menu/components/context-menu-preview';
 import { ContextMenu } from '/@/shared/components/context-menu/context-menu';
@@ -39,7 +38,6 @@ export const PlaylistSongContextMenu = ({ items, type }: PlaylistSongContextMenu
             <SetFavoriteAction ids={ids} items={items} itemType={type} />
             <ContextMenu.Divider />
             <DownloadAction ids={ids} />
-            <ShareAction ids={ids} itemType={type} />
             <ContextMenu.Divider />
             <GoToAction items={items} />
             <ShowInFileExplorerAction items={items} />

@@ -9,17 +9,10 @@ import {
 } from 'react-native';
 
 import { type MobileContentSource } from '@samo/core/mobile';
-import {
-    clearSamoStreamTokenCache,
-    ensureSamoStreamToken,
-    findServerAuthenticationForSource,
-    getCachedSamoStreamToken,
-    ServerType,
-    type ServerAuthenticationResult,
-} from '@samo/core/server';
+import { type ServerAuthenticationResult } from '@samo/core/server';
 
 import { useServerConnections } from '../contexts/server-connections';
-import { peekArtworkLocalUri } from '../services/artwork-cache';
+import { peekArtworkLocalUri, subscribeArtworkIndex } from '../services/artwork-cache';
 import { canonicalArtworkKey } from '../utils/artwork-canonical';
 import { styles } from '../theme/styles';
 import { colors } from '../theme/tokens';
@@ -73,7 +66,6 @@ export const ArtworkImage = ({
     uri?: string;
 }) => {
     const [errored, setErrored] = useState(false);
-    const [streamTokenRevision, setStreamTokenRevision] = useState(0);
     const contextConnections = useServerConnections();
     const resolvedConnections = serverConnection ?? contextConnections;
     const resolvedSource = useMemo((): ImageSource | string | undefined => {
@@ -92,20 +84,15 @@ export const ArtworkImage = ({
         }
 
         return uri;
-    }, [
-        artworkImageId,
-        contentSource,
-        resolvedConnections,
-        source,
-        streamTokenRevision,
-        uri,
-    ]);
+    }, [artworkImageId, contentSource, resolvedConnections, source, uri]);
     const remoteUri =
         typeof resolvedSource === 'string' ? resolvedSource : resolvedSource?.uri;
 
-    // Stable image identity (stream token stripped). Drives the recycling key,
-    // the cache-peek pin, and the expo-image cacheKey so a rotated token never
-    // resets the native view, re-decodes, or re-downloads the same cover.
+    // Stable image identity. Drives the recycling key, the cache-peek pin, and
+    // the expo-image cacheKey so the same cover is one entry everywhere. It
+    // still strips `stream_token` — display URLs no longer carry one, but the
+    // managed cache on disk was keyed this way and older entries (and the
+    // header-less playback paths) can still present a tokenised URL here.
     const canonicalKey = useMemo(
         () => (remoteUri ? canonicalArtworkKey(remoteUri) : undefined),
         [remoteUri],
@@ -117,35 +104,55 @@ export const ArtworkImage = ({
     // the remote source via expo-image's native memory-disk pipeline. We never
     // kick a per-tile download here, so a tile-dense screen (Home) can't flood
     // the bridge. Pin the choice once per cover so the image never swaps mid-view.
-    const pinnedRef = useRef<{ key: string | undefined; uri: string | null }>({
+    //
+    // `indexEpoch` is the ONE thing allowed to re-run that peek for an unchanged
+    // cover, and only while the pin says MISS. The index loads asynchronously at
+    // boot, so during the exact window when the most tiles mount, the peek can
+    // only answer null — and pinning that answer meant a whole first screen of
+    // already-cached art was fetched over the network for the lifetime of those
+    // views. Re-peeking a miss costs a Map lookup and can only ever improve the
+    // answer; a HIT is never re-peeked, so the pin still does its real job of
+    // never swapping a visible image out from under the viewer.
+    const [indexEpoch, setIndexEpoch] = useState(0);
+    const pinnedRef = useRef<{ epoch: number; key: string | undefined; uri: string | null }>({
+        epoch: -1,
         key: undefined,
         uri: null,
     });
-    if (pinnedRef.current.key !== canonicalKey) {
+    if (
+        pinnedRef.current.key !== canonicalKey ||
+        (pinnedRef.current.uri === null && pinnedRef.current.epoch !== indexEpoch)
+    ) {
         pinnedRef.current = {
+            epoch: indexEpoch,
             key: canonicalKey,
             uri: remoteUri ? peekArtworkLocalUri(remoteUri) : null,
         };
     }
     const pinnedLocalUri = pinnedRef.current.uri;
     const [localFailed, setLocalFailed] = useState(false);
-    // One forced token re-mint per cover identity — recovers from a stale-token
-    // 401 (server rotated the token but our cache still held the old one) without
-    // flip-flopping into an infinite retry.
-    const remoteRetriedRef = useRef(false);
+
+    // Only subscribe while this tile is actually waiting on the cache. A hit has
+    // nothing left to learn, so a warm-cache screen registers no listeners at
+    // all and the notification costs nothing.
+    useEffect(() => {
+        if (pinnedLocalUri !== null || !remoteUri) {
+            return;
+        }
+        return subscribeArtworkIndex(() => setIndexEpoch((current) => current + 1));
+    }, [pinnedLocalUri, remoteUri]);
 
     // A genuinely new cover (canonical identity changed) clears BOTH latches so
     // the fresh image gets a clean attempt.
     useEffect(() => {
         setErrored(false);
         setLocalFailed(false);
-        remoteRetriedRef.current = false;
     }, [canonicalKey]);
 
-    // A stream-token refresh changes the remote URL but NOT the canonical key.
-    // Clear only the REMOTE latch so a load that failed on a stale token retries
-    // with the fresh one — without touching localFailed, which would flip-flop a
-    // genuinely-missing local file on every rotation.
+    // The remote URL can change without the canonical key moving (a re-auth
+    // re-homes it, say). Clear only the REMOTE latch so a load that failed
+    // against the old URL retries against the new one — without touching
+    // localFailed, which would flip-flop a genuinely-missing local file.
     useEffect(() => {
         setErrored(false);
     }, [remoteUri]);
@@ -168,30 +175,6 @@ export const ArtworkImage = ({
             typeof resolvedSource === 'string' ? { uri: resolvedSource } : resolvedSource;
         return canonicalKey ? { ...base, cacheKey: canonicalKey } : base;
     }, [canonicalKey, pinnedLocalUri, resolvedSource, useLocal]);
-
-    useEffect(() => {
-        if (!contentSource || !resolvedConnections) {
-            return;
-        }
-
-        const auth = findServerAuthenticationForSource(resolvedConnections, contentSource);
-        if (!auth || getCachedSamoStreamToken(auth)) {
-            return;
-        }
-
-        let cancelled = false;
-        void ensureSamoStreamToken(auth)
-            .then(() => {
-                if (!cancelled) {
-                    setStreamTokenRevision((current) => current + 1);
-                }
-            })
-            .catch(() => undefined);
-
-        return () => {
-            cancelled = true;
-        };
-    }, [contentSource, canonicalKey, resolvedConnections]);
 
     // The letter fallback is reserved for art that has genuinely FAILED or that
     // does not exist. While a cover that DOES exist is still resolving (the
@@ -238,26 +221,23 @@ export const ArtworkImage = ({
                     setLocalFailed(true);
                     return;
                 }
-                // A remote failure on a Samo cover is usually a STALE stream token:
-                // the server rotated it but our cache still held the old one, so
-                // the re-mint effect (which only fires when NO token is cached)
-                // never ran and the URL keeps 401-ing. Force ONE re-mint + retry
-                // before giving up to the letter — this is the "mini sometimes
-                // loses its artwork" fix.
-                if (contentSource && resolvedConnections && !remoteRetriedRef.current) {
-                    const auth = findServerAuthenticationForSource(
-                        resolvedConnections,
-                        contentSource,
-                    );
-                    if (auth) {
-                        remoteRetriedRef.current = true;
-                        clearSamoStreamTokenCache(auth);
-                        void ensureSamoStreamToken(auth)
-                            .then(() => setStreamTokenRevision((current) => current + 1))
-                            .catch(() => setErrored(true));
-                        return;
-                    }
-                }
+                /*
+                 * A remote failure now means what it says: this cover did not
+                 * load. Show the letter.
+                 *
+                 * This used to read every failure as a stale stream token and
+                 * respond by calling `clearSamoStreamTokenCache` — wiping the
+                 * PROCESS-WIDE token cache and re-minting — before retrying. An
+                 * image loader reports no status code, so a 404 for a cover that
+                 * genuinely does not exist was indistinguishable from a 401, and
+                 * a handful of art-less items on one grid could invalidate the
+                 * app's credentials repeatedly and storm the mint endpoint.
+                 *
+                 * The premise is gone anyway: display URLs no longer carry a
+                 * stream token (see samo-artwork-url), they carry the bearer,
+                 * which only a real re-auth can change. A leaf view has no
+                 * business invalidating an app-wide auth cache on a guess.
+                 */
                 setErrored(true);
             }}
             onLoad={onLoad}

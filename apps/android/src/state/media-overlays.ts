@@ -1,4 +1,5 @@
-import { useSyncExternalStore } from 'react';
+
+import { useStoreSelector } from './use-store-selector';
 import { type MobileMediaTrack } from '@samo/core/mobile';
 
 import { type MediaContextMenuTarget } from '../contexts/media-context-menu';
@@ -172,9 +173,4 @@ export {
  */
 export const useMediaOverlaysSelector = <Selected>(
     selector: (state: MediaOverlaysState) => Selected,
-): Selected =>
-    useSyncExternalStore(
-        subscribeMediaOverlays,
-        () => selector(mediaOverlaysState),
-        () => selector(mediaOverlaysState),
-    );
+): Selected => useStoreSelector(subscribeMediaOverlays, () => mediaOverlaysState, selector);

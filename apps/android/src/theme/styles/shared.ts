@@ -358,6 +358,19 @@ export const sharedStyles = StyleSheet.create({
         right: 0,
         top: 0,
     },
+    /** The one layer every sheet and menu is drawn into (SheetPortalHost).
+     *  zIndex 12000 clears the whole stack — status-bar scrim 9500, tab bar and
+     *  player dock 10000, search 11000/11100 — because a sheet is the topmost
+     *  thing in the app while it is open. This number is what replaced giving
+     *  each sheet its own Android window to climb out of the tree with. */
+    sheetLayer: {
+        bottom: 0,
+        left: 0,
+        position: 'absolute',
+        right: 0,
+        top: 0,
+        zIndex: 12000,
+    },
     /** Full-bleed tap-to-dismiss target behind any sheet (see MotionSheet).
      *  Absolute rather than flex:1 so it fills the scrim WITHOUT participating
      *  in its layout — the sheet stays wherever the backdrop's justifyContent

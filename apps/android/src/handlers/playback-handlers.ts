@@ -9,7 +9,7 @@ import {
 } from '@samo/core/mobile';
 import { ensureSamoStreamToken } from '@samo/core/server';
 
-import { loadAbsCurrentProgressBounded } from '../services/abs-progress';
+import { loadCurrentPlaybackProgressBounded } from '../services/playback-progress';
 import { loadCatalogMediaDetail } from '../services/catalog/catalog-reads';
 import {
     getLocalDownloadForTrack,
@@ -61,7 +61,7 @@ export const handlePlayMediaTrack = async (
     options?: { isCurrentRequest?: () => boolean },
 ): Promise<void> => {
     const isCurrentRequest = () => options?.isCurrentRequest?.() !== false;
-    const { absContextRef, handlePlayItem } = getPlaybackBridge();
+    const { progressContextRef, handlePlayItem } = getPlaybackBridge();
     const serverConnection = getAuthSession().serverConnection;
     const containerRecentItem = recentContentItemFromMediaDetail(detail);
     if (containerRecentItem) {
@@ -185,7 +185,7 @@ export const handlePlayMediaTrack = async (
     // Samo podcast tap was the remaining "tap looks dead on a slow server"
     // path in this handler.
     const trackToPlay = track;
-    const absAuth = serverConnection ?? undefined;
+    const progressAuth = serverConnection ?? undefined;
 
     // Podcast offline path: the ABS /play endpoint that normally builds the
     // streaming URL fails offline, so synthesize a MobilePlayableAudio
@@ -200,17 +200,17 @@ export const handlePlayMediaTrack = async (
                 trackToPlay,
                 localDownload.localUri,
                 localDownload.sourceUrl,
-                absAuth,
+                progressAuth,
             );
-            if (absAuth && trackToPlay.itemId) {
-                absContextRef.current = {
-                    authentication: absAuth,
+            if (progressAuth && trackToPlay.itemId) {
+                progressContextRef.current = {
+                    authentication: progressAuth,
                     durationSeconds: trackToPlay.durationSeconds ?? 0,
                     episodeId: trackToPlay.episodeId,
                     itemId: trackToPlay.itemId,
                 };
             } else {
-                absContextRef.current = null;
+                progressContextRef.current = null;
             }
             if (!isCurrentRequest()) return;
             await handlePlayItem(playable, [playable], 0, { shuffled: false });
@@ -239,19 +239,19 @@ export const handlePlayMediaTrack = async (
                         detail,
                         file,
                         initialPositionSeconds,
-                        absAuth,
+                        progressAuth,
                         timelineDurationSeconds,
                     ),
             );
-            if (absAuth && trackToPlay.itemId) {
-                absContextRef.current = {
-                    authentication: absAuth,
+            if (progressAuth && trackToPlay.itemId) {
+                progressContextRef.current = {
+                    authentication: progressAuth,
                     durationSeconds: timelineDurationSeconds ?? 0,
                     episodeId: undefined,
                     itemId: trackToPlay.itemId,
                 };
             } else {
-                absContextRef.current = null;
+                progressContextRef.current = null;
             }
             if (!isCurrentRequest()) return;
             await handlePlayItem(items[startIndex]!, items, startIndex, { shuffled: false });
@@ -268,12 +268,12 @@ export const handlePlayMediaTrack = async (
         if (!isCurrentRequest()) return;
 
         if (
-            absAuth &&
+            progressAuth &&
             (playable.source === 'audiobook' || playable.source === 'podcast') &&
             trackToPlay.itemId
         ) {
-            absContextRef.current = {
-                authentication: absAuth,
+            progressContextRef.current = {
+                authentication: progressAuth,
                 // Book-global for audiobooks (a multi-file item's own
                 // durationSeconds is just the current file); podcasts stream
                 // whole, so the two are the same there.
@@ -283,7 +283,7 @@ export const handlePlayMediaTrack = async (
                 itemId: trackToPlay.itemId,
             };
         } else {
-            absContextRef.current = null;
+            progressContextRef.current = null;
         }
 
         if (!isCurrentRequest()) return;
@@ -377,7 +377,7 @@ export const handleStartAudiobook = async (
     // Bounded: a user is mid-tap. The unbounded read gave a sick server
     // 30s to answer before the book would start; 4s then falling back to
     // the item's own resume data matches playQueuedItem's budget.
-    const progress = await loadAbsCurrentProgressBounded(auth, detail.id);
+    const progress = await loadCurrentPlaybackProgressBounded(auth, detail.id);
     if (!isCurrentRequest()) return;
     let resumeSeconds = progress?.currentTimeSeconds ?? 0;
     // Flaky LAN: the bounded server read can transiently fail (null), which

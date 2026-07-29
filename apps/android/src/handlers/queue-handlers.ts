@@ -13,7 +13,7 @@ import {
     getRecentContentItemKey,
 } from '../services/recent-content';
 import { getAuthSession } from '../state/auth-session';
-import { getDownloadsSnapshot } from '../state/downloads-state';
+import { isOfflineNow } from '../state/network-state';
 import { setContextMenuFeedback } from '../state/media-overlays';
 import { getPlaybackQueue, setPlaybackQueue } from '../state/playback-queue-store';
 import { getAndroidPlaybackState } from '../state/playback-store';
@@ -110,7 +110,7 @@ export const loadDetailForContextAction = async (
         }
     }
 
-    if (!detail && getDownloadsSnapshot().isOfflineMode) {
+    if (!detail && isOfflineNow()) {
         const downloadedDetail = await buildDownloadedMusicDetail(item);
         if (downloadedDetail) {
             detail = downloadedDetail;

@@ -40,7 +40,8 @@ export const useAndroidBackHandling = (): void => {
             if (
                 state.activeUtilityScreen === 'add-server' ||
                 state.activeUtilityScreen === 'downloads' ||
-                state.activeUtilityScreen === 'manage-servers'
+                state.activeUtilityScreen === 'manage-servers' ||
+                state.activeUtilityScreen === 'network'
             ) {
                 setActiveUtilityScreen('settings');
                 return true;

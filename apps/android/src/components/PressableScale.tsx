@@ -1,83 +1,304 @@
-import { type ReactNode } from 'react';
+import { type ReactNode, useCallback, useMemo, useRef } from 'react';
 import {
     type AccessibilityRole,
-    type GestureResponderEvent,
-    Pressable,
+    type AccessibilityState,
+    StyleSheet,
     type StyleProp,
     type ViewStyle,
 } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Reanimated, {
+    runOnJS,
+    type SharedValue,
     useAnimatedStyle,
     useSharedValue,
+    withDelay,
+    withSequence,
     withSpring,
     withTiming,
 } from 'react-native-reanimated';
 
-const AnimatedPressable = Reanimated.createAnimatedComponent(Pressable);
-
-const PRESS_IN = { duration: 90 } as const;
-const PRESS_OUT = { damping: 15, mass: 0.5, stiffness: 320 } as const;
-// Wait a beat before reacting so a thumb that's actually starting a scroll
-// (the gesture gets claimed by the list) never triggers the press animation.
-const PRESS_DELAY_MS = 110;
+import { springs, timings } from '../theme/motion';
 
 /**
- * A Pressable that physically responds to touch — it sinks slightly and dims on
- * press, then springs back on release. This is the tactile "it's a real object
- * in your hand" feel; use it for tiles, cards, and primary buttons.
+ * The press-in delay, in ms — the window in which a touch is still allowed to
+ * turn out to be the start of a scroll.
+ *
+ * This is deliberately NOT `Pressable`'s `unstable_pressDelay`. That one is a
+ * JS `setTimeout`: it fires only once the JS thread gets around to it, so its
+ * real cost is `delay + however long JS is busy`, and on a screen that is
+ * windowing a list or decoding artwork that is routinely hundreds of ms. The
+ * delay below is a Reanimated `withDelay` on the UI thread, so it is exactly
+ * this many ms, every single time, no matter what JS is doing. Being
+ * deterministic is what lets it be this short — the old JS delays had to be
+ * 60-110ms to cover their own jitter.
+ */
+const PRESS_IN_DELAY_MS = 40;
+
+/**
+ * Finger travel, in dp, that reclassifies a touch as a scroll and retracts the
+ * press state. Android's own `ViewConfiguration` touch slop is 8dp — the exact
+ * distance at which a scroll container decides it is scrolling — so matching it
+ * means the tile lets go on the same frame the list starts moving.
+ *
+ * This only ever cancels the VISUAL. Whether the tap itself still counts is
+ * left to the gesture handler and the scroll container, exactly as before.
+ */
+const SCROLL_SLOP_DP = 8;
+const SCROLL_SLOP_SQUARED = SCROLL_SLOP_DP * SCROLL_SLOP_DP;
+
+/** Matches RN's `Pressable` default, so long-press timing is unchanged. */
+const LONG_PRESS_MS = 500;
+
+/**
+ * Tap ceiling. Comfortably past `LONG_PRESS_MS` so the tap failing and the long
+ * press activating can never land on the same frame and race for the visual.
+ */
+const TAP_MAX_DURATION_MS = 1200;
+
+const DISABLED_ACCESSIBILITY_STATE = { disabled: true } as const;
+
+export interface PressableScaleProps {
+    accessibilityHint?: string;
+    accessibilityLabel?: string;
+    accessibilityRole?: AccessibilityRole;
+    accessibilityState?: AccessibilityState;
+    children?: ReactNode;
+    /**
+     * Set on fixed chrome — anything that cannot scroll under the finger
+     * (transport controls, tab bar, sheet buttons). Skips the scroll-safety
+     * delay and the drag-to-cancel, so the response lands on the first frame
+     * after touch-down.
+     */
+    chrome?: boolean;
+    disabled?: boolean;
+    /** Resting → pressed opacity multiplier (default 0.9). */
+    dimTo?: number;
+    /**
+     * Renders a fill of this colour that fades in under the content instead of
+     * (or alongside) the sink — the row-highlight look. An overlay's opacity is
+     * animated rather than the row's `backgroundColor` so the 60fps contract in
+     * theme/motion.ts still holds.
+     */
+    highlight?: string;
+    /** Radius for the `highlight` fill, so it doesn't square off a rounded row. */
+    highlightRadius?: number;
+    hitSlop?: number;
+    onLongPress?: () => void;
+    onPress?: () => void;
+    /** Fired at touch-down on the JS thread. For prefetch — never for visuals. */
+    onPressIn?: () => void;
+    /**
+     * Drive an externally-owned 0→1 press progress instead of a private one, so
+     * a caller can fold the press into an animation of its own (the tab bar
+     * multiplies it into the active-tab lift). Pair it with `scaleTo`/`dimTo` of
+     * 1 when the caller wants to render the whole response itself.
+     */
+    pressProgress?: SharedValue<number>;
+    /** Resting → pressed scale (default 0.96). Pass 1 to only dim/highlight. */
+    scaleTo?: number;
+    style?: StyleProp<ViewStyle>;
+}
+
+/**
+ * The app's one press surface — it sinks and dims under the finger, then
+ * springs back on release.
+ *
+ * WHY THIS IS NOT A `Pressable`
+ *
+ * `Pressable` routes every press through the JS thread twice over. The touch
+ * has to reach a JS callback before anything can start, and the usual way of
+ * showing the state — `style={({ pressed }) => ...}` — is a `setState`, so the
+ * "animation" is really a React render, a Yoga pass and a mount, queued behind
+ * whatever else JS is doing. On an idle screen that is invisible. On a screen
+ * that is windowing a FlashList, decoding artwork or deriving a catalog sync
+ * it is tens to hundreds of ms, and it VARIES — which is what a delayed
+ * animation actually feels like from the outside: not slow, but unpredictable.
+ *
+ * Here the entire press lifecycle is worklets on the UI thread. Touch-down
+ * starts the sink without JS being involved at all, so it lands on the next
+ * frame whether or not JS is busy, and it costs no render — the shared value
+ * feeds `useAnimatedStyle` directly (tenet 2 in theme/motion.ts). The JS thread
+ * is only reached for the ACTION, after the surface has already answered.
  */
 export const PressableScale = ({
     accessibilityHint,
     accessibilityLabel,
     accessibilityRole,
+    accessibilityState,
     children,
+    chrome,
     disabled,
+    dimTo = 0.9,
+    highlight,
+    highlightRadius,
     hitSlop,
     onLongPress,
     onPress,
     onPressIn,
+    pressProgress,
     scaleTo = 0.96,
     style,
-}: {
-    accessibilityHint?: string;
-    accessibilityLabel?: string;
-    accessibilityRole?: AccessibilityRole;
-    children: ReactNode;
-    disabled?: boolean;
-    hitSlop?: number;
-    onLongPress?: (event: GestureResponderEvent) => void;
-    onPress?: (event: GestureResponderEvent) => void;
-    onPressIn?: (event: GestureResponderEvent) => void;
-    /** Resting → pressed scale (default 0.96). */
-    scaleTo?: number;
-    style?: StyleProp<ViewStyle>;
-}) => {
-    const pressed = useSharedValue(0);
+}: PressableScaleProps) => {
+    const ownPressProgress = useSharedValue(0);
+    const pressed = pressProgress ?? ownPressProgress;
+    const startX = useSharedValue(0);
+    const startY = useSharedValue(0);
+    /** The touch became a drag — the press state has already been retracted. */
+    const abandoned = useSharedValue(false);
+    /** The long press fired, so release must not also fire a press. */
+    const longPressed = useSharedValue(false);
+
+    // The gesture is built once and kept across renders — a recycled FlashList
+    // cell must not tear down and re-attach handlers on every pass. Callbacks
+    // are read through a ref so a fresh closure per render never invalidates it.
+    const latest = useRef({ onLongPress, onPress, onPressIn });
+    latest.current = { onLongPress, onPress, onPressIn };
+
+    const invokePress = useCallback(() => latest.current.onPress?.(), []);
+    const invokeLongPress = useCallback(() => latest.current.onLongPress?.(), []);
+    const invokePressIn = useCallback(() => latest.current.onPressIn?.(), []);
+
+    const hasLongPress = onLongPress != null;
+
+    const gesture = useMemo(() => {
+        const scrollSafe = chrome !== true;
+        // RNGH takes hit slop per handler rather than on the composition. The
+        // sign convention matches RN's (positive grows the target), as does the
+        // Android limit that growth past the parent's bounds has no effect.
+        const slop = hitSlop ?? 0;
+
+        const tap = Gesture.Tap()
+            .enabled(disabled !== true)
+            .hitSlop(slop)
+            .maxDuration(TAP_MAX_DURATION_MS)
+            .onTouchesDown((event) => {
+                'worklet';
+                const touch = event.allTouches[0];
+                if (touch) {
+                    startX.value = touch.absoluteX;
+                    startY.value = touch.absoluteY;
+                }
+                abandoned.value = false;
+                longPressed.value = false;
+                // The whole point: this line runs on the UI thread, on the
+                // frame the finger lands, with no JS round trip in front of it.
+                pressed.value = scrollSafe
+                    ? withDelay(PRESS_IN_DELAY_MS, withTiming(1, timings.press))
+                    : withTiming(1, timings.press);
+                runOnJS(invokePressIn)();
+            })
+            .onTouchesMove((event) => {
+                'worklet';
+                if (!scrollSafe || abandoned.value) {
+                    return;
+                }
+                const touch = event.allTouches[0];
+                if (!touch) {
+                    return;
+                }
+                const dx = touch.absoluteX - startX.value;
+                const dy = touch.absoluteY - startY.value;
+                if (dx * dx + dy * dy < SCROLL_SLOP_SQUARED) {
+                    return;
+                }
+                // A scroll, not a press. Retracting also cancels a press-in
+                // still sitting in its delay, so a flick never flashes a tile.
+                abandoned.value = true;
+                pressed.value = withSpring(0, springs.release);
+            })
+            .onEnd(() => {
+                'worklet';
+                if (longPressed.value) {
+                    return;
+                }
+                runOnJS(invokePress)();
+            })
+            .onFinalize((_event, success) => {
+                'worklet';
+                if (longPressed.value) {
+                    return;
+                }
+                if (success && !abandoned.value && pressed.value < 0.01) {
+                    // Lifted inside the scroll-safety window, so the sink never
+                    // became visible. Play it anyway — a tap that draws no
+                    // response at all reads as a dropped tap.
+                    pressed.value = withSequence(
+                        withTiming(1, timings.press),
+                        withSpring(0, springs.release),
+                    );
+                    return;
+                }
+                pressed.value = withSpring(0, springs.release);
+            });
+
+        const longPress = Gesture.LongPress()
+            .enabled(disabled !== true && hasLongPress)
+            .hitSlop(slop)
+            .minDuration(LONG_PRESS_MS)
+            .onStart(() => {
+                'worklet';
+                longPressed.value = true;
+                // Hand the surface back as the menu takes over, rather than
+                // holding it sunk under a scrim for as long as the finger stays.
+                pressed.value = withSpring(0, springs.release);
+                runOnJS(invokeLongPress)();
+            });
+
+        return Gesture.Simultaneous(longPress, tap);
+    }, [
+        abandoned,
+        chrome,
+        disabled,
+        hasLongPress,
+        hitSlop,
+        invokeLongPress,
+        invokePress,
+        invokePressIn,
+        longPressed,
+        pressed,
+        startX,
+        startY,
+    ]);
+
     const animatedStyle = useAnimatedStyle(() => ({
-        opacity: 1 - pressed.value * 0.1,
+        opacity: 1 - pressed.value * (1 - dimTo),
         transform: [{ scale: 1 - pressed.value * (1 - scaleTo) }],
     }));
 
+    const highlightStyle = useAnimatedStyle(() => ({ opacity: pressed.value }));
+
     return (
-        <AnimatedPressable
-            accessibilityHint={accessibilityHint}
-            accessibilityLabel={accessibilityLabel}
-            accessibilityRole={accessibilityRole}
-            disabled={disabled}
-            hitSlop={hitSlop}
-            onLongPress={onLongPress}
-            onPress={onPress}
-            onPressIn={(event) => {
-                pressed.value = withTiming(1, PRESS_IN);
-                onPressIn?.(event);
-            }}
-            onPressOut={() => {
-                pressed.value = withSpring(0, PRESS_OUT);
-            }}
-            style={[style, animatedStyle]}
-            unstable_pressDelay={PRESS_DELAY_MS}
-        >
-            {children}
-        </AnimatedPressable>
+        <GestureDetector gesture={gesture}>
+            <Reanimated.View
+                accessibilityHint={accessibilityHint}
+                accessibilityLabel={accessibilityLabel}
+                accessibilityRole={accessibilityRole}
+                accessibilityState={
+                    disabled
+                        ? { ...accessibilityState, ...DISABLED_ACCESSIBILITY_STATE }
+                        : accessibilityState
+                }
+                accessible
+                // TalkBack activates through the accessibility API, which never
+                // reaches a gesture handler — without this the app would be
+                // unusable with a screen reader.
+                onAccessibilityTap={invokePress}
+                style={[style, animatedStyle]}
+            >
+                {highlight ? (
+                    <Reanimated.View
+                        pointerEvents="none"
+                        style={[
+                            StyleSheet.absoluteFill,
+                            { backgroundColor: highlight },
+                            highlightRadius == null ? null : { borderRadius: highlightRadius },
+                            highlightStyle,
+                        ]}
+                    />
+                ) : null}
+                {children}
+            </Reanimated.View>
+        </GestureDetector>
     );
 };

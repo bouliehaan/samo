@@ -72,6 +72,9 @@ export enum MobileHomeItemType {
 export enum MobileHomeSectionId {
     AUDIOBOOKS = 'audiobooks',
     DISCOVER = 'discover',
+    /** Everything on this device. Client-built, never returned by a server —
+     *  it exists so an offline Home can lead with what is actually playable. */
+    DOWNLOADED = 'downloaded',
     EXPLO = 'explo',
     FAVORITE_ALBUMS = 'favorite-albums',
     FAVORITE_ARTISTS = 'favorite-artists',

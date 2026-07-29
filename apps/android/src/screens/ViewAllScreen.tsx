@@ -20,6 +20,7 @@ import {
     getRecentContentItemKey,
 } from '../services/recent-content';
 import { type CollectionItemSortMode } from '../utils/collection-sort';
+import { chromeGlassScrollProps } from '../state/chrome-glass';
 import { VIEW_ALL_ROW_HEIGHT } from '../theme/layout';
 import { styles } from '../theme/styles';
 import { type ViewAllRoute } from '../types/view-all';
@@ -193,6 +194,7 @@ export const ViewAllScreen = memo(({
                     )
                 ) : (
                     <FlashList
+                        {...chromeGlassScrollProps}
                         contentContainerStyle={[
                             styles.viewAllListContent,
                             { paddingBottom: bottomInset },

@@ -32,6 +32,9 @@ export interface SamoLoginUser {
 }
 
 export interface SamoLoginResponse {
+    /** Stable, server-issued identity. Absent on servers older than the
+     *  identity migration — callers fall back to keying by URL. */
+    serverId?: string;
     token?: string;
     tokenMeta?: {
         createdAt?: string;
@@ -793,8 +796,7 @@ export const withSamoStreamToken = (url: string, streamToken: string | undefined
     return target.toString();
 };
 
-export const getSamoCapabilities = (): ServerCapabilities =>
-    getDefaultServerCapabilities(ServerType.SAMO);
+export const getSamoCapabilities = (): ServerCapabilities => getDefaultServerCapabilities();
 
 // ---------------------------------------------------------------------------
 // Bearer-token-authenticated GET helper
@@ -915,6 +917,7 @@ export const authenticateSamo = async ({
         details: `Samo Server: ${formatServerCapabilities(capabilities)}`,
         isAdmin: login.user?.role === 'admin',
         kind: 'samo-token' as ServerAuthenticationKind,
+        serverId: login.serverId,
         title: `Samo: ${login.user?.displayName ?? resolvedUsername}`,
         type: ServerType.SAMO,
         url: baseUrl,
@@ -2128,26 +2131,45 @@ const resolveSamoImageUrl = (
     return undefined;
 };
 
+/**
+ * Re-home a Samo media URL onto the connected origin, and attach a stream token
+ * IF one was supplied.
+ *
+ * These are two separate jobs and only one of them is optional. Re-homing is
+ * always required — list responses ship absolute image URLs pointed at whatever
+ * hostname or loopback address the server saw at scan time, and a device that
+ * connected over a tunnel or a different LAN address cannot reach those. The
+ * stream token is only needed by consumers that cannot send an Authorization
+ * header.
+ *
+ * This used to bail out at the top whenever `streamToken` was undefined, which
+ * silently skipped the re-homing too. So exactly when no token was cached — at
+ * boot before the first mint, during the five-minute refresh lead window, or
+ * after a failed mint — every scan-time URL went to the image loader
+ * unmodified, pointed at a host the device has no route to. That is a blank
+ * cover with no error worth the name, and it looked like a caching problem.
+ *
+ * An existing `stream_token` is stripped when we are not setting one, so the
+ * result is determined by what the CALLER asked for rather than by whatever
+ * happened to be embedded in the stored URL.
+ */
 const appendSamoStreamTokenToUrl = (
     authentication: Pick<ServerAuthenticationResult, 'url'>,
     url: string,
     streamToken?: string,
 ): string => {
-    if (!streamToken) {
-        return url;
-    }
-
-    // Hot path: the URL came from our own builder with this exact token
-    // already embedded, so the parse-and-reserialize below would hand back the
-    // identical string. Home finalizes hundreds of artwork URLs per derive and
-    // each `new URL()` measured ~0.11ms on device — this early-out is worth
-    // real frames. Guarded on the origin so it only ever short-circuits URLs
-    // this module produced (those are already normalized).
+    // Hot path: the URL is already homed on the connected origin AND already in
+    // the token state the caller asked for, so the parse-and-reserialize below
+    // would hand back the identical string. Home finalizes hundreds of artwork
+    // URLs per derive and each `new URL()` measured ~0.11ms on device — this
+    // early-out is worth real frames.
     try {
         const origin = getSamoApiOrigin(normalizeBaseUrl(authentication.url));
         if (
             url.startsWith(origin) &&
-            url.includes(`stream_token=${encodeQueryComponent(streamToken)}`)
+            (streamToken
+                ? url.includes(`stream_token=${encodeQueryComponent(streamToken)}`)
+                : !url.includes('stream_token='))
         ) {
             return url;
         }
@@ -2180,7 +2202,11 @@ const appendSamoStreamTokenToUrl = (
             return url;
         }
 
-        target.searchParams.set('stream_token', streamToken);
+        if (streamToken) {
+            target.searchParams.set('stream_token', streamToken);
+        } else {
+            target.searchParams.delete('stream_token');
+        }
         return target.toString();
     } catch {
         return url;

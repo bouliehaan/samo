@@ -10,6 +10,36 @@ export type SamoFetchInit = {
 /** Default per-request timeout for Samo REST calls. */
 export const DEFAULT_SAMO_REQUEST_TIMEOUT_MS = 30_000;
 
+/**
+ * An HTTP error response, carrying the status so callers can CLASSIFY it.
+ *
+ * `requestJson` used to throw a plain Error whose only record of the status was
+ * the text "Request failed (401)". That left every caller with two bad options:
+ * treat all failures alike, or match on a message. Both were live bugs —
+ * `ensureSamoStreamToken` retried a 401 exactly as if it were a dropped
+ * connection, hammering the mint endpoint on a session that could not possibly
+ * succeed, and nothing anywhere could tell "your credentials are gone" from
+ * "the Wi-Fi blipped".
+ *
+ * The message is byte-identical to what it replaced, so anything that only
+ * surfaces `error.message` is unaffected.
+ */
+export class SamoHttpError extends Error {
+    readonly status: number;
+
+    constructor(status: number, message: string) {
+        super(message);
+        this.name = 'SamoHttpError';
+        this.status = status;
+    }
+}
+
+/** True for a status that says the CREDENTIALS are the problem, so retrying the
+ *  same request cannot help. Kept next to the error it classifies so the two
+ *  can never drift apart. */
+export const isSamoAuthFailure = (error: unknown): boolean =>
+    error instanceof SamoHttpError && (error.status === 401 || error.status === 403);
+
 export interface SamoFetchResponse {
     arrayBuffer?: () => Promise<ArrayBuffer>;
     headers?: { get: (name: string) => null | string };
@@ -135,7 +165,8 @@ export const requestJson = async <T>(
     if (!response.ok) {
         const bodyText = response.text ? await response.text() : '';
         const detail = bodyText.trim().slice(0, 200);
-        throw new Error(
+        throw new SamoHttpError(
+            response.status,
             detail
                 ? `Request failed (${response.status}): ${detail}`
                 : `Request failed (${response.status})`,

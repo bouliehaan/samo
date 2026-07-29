@@ -68,10 +68,7 @@ export const GoToAction = ({ items }: GoToActionProps) => {
                       : undefined;
 
             if (artist) {
-                recordRecentArtist(artist, {
-                    serverId: firstItem._serverId,
-                    serverType: firstItem._serverType,
-                });
+                recordRecentArtist(artist, { serverId: firstItem._serverId });
             }
             navigate(generatePath(AppRoute.LIBRARY_ALBUM_ARTISTS_DETAIL, { albumArtistId }));
         },

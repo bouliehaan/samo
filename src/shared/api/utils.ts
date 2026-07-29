@@ -1,9 +1,6 @@
 import isElectron from 'is-electron';
 import orderBy from 'lodash/orderBy';
 import shuffle from 'lodash/shuffle';
-import semverCoerce from 'semver/functions/coerce';
-import semverGte from 'semver/functions/gte';
-import { z } from 'zod';
 
 import {
     Album,
@@ -14,91 +11,10 @@ import {
     InternetRadioStation,
     LibraryItem,
     RadioListSort,
-    ServerListItem,
     Song,
     SongListSort,
     SortOrder,
 } from '/@/shared/types/domain-types';
-import { ServerFeature } from '/@/shared/types/features-types';
-
-// Since ts-rest client returns a strict response type, we need to add the headers to the body object
-export const resultWithHeaders = <ItemType extends z.ZodTypeAny>(itemSchema: ItemType) => {
-    return z.object({
-        data: itemSchema,
-        headers: z.instanceof(Headers),
-    });
-};
-
-export const hasFeature = (server: null | ServerListItem, feature: ServerFeature): boolean => {
-    if (!server || !server.features) {
-        return false;
-    }
-
-    return (server.features[feature]?.length || 0) > 0;
-};
-
-export const hasFeatureWithVersion = (
-    server: null | ServerListItem,
-    feature: ServerFeature,
-    version: number,
-): boolean => {
-    if (!server || !server.features) {
-        return false;
-    }
-
-    return (server.features[feature] ?? []).includes(version);
-};
-
-export type VersionInfo = ReadonlyArray<
-    [string, Partial<Record<ServerFeature, readonly number[]>>]
->;
-
-/**
- * Returns the available server features given the version string.
- * @param versionInfo a list, in DECREASING VERSION order, of the features supported by the server.
- *  The first version match will automatically consider the rest matched.
- * @example
- * ```
- * // The CORRECT way to order
- * const VERSION_INFO: VersionInfo = [
- *   ['0.49.3', { [ServerFeature.SHARING_ALBUM_SONG]: [1] }],
- *   ['0.48.0', { [ServerFeature.PLAYLISTS_SMART]: [1] }],
- * ];
- * // INCORRECT way to order
- * const VERSION_INFO: VersionInfo = [
- *   ['0.48.0', { [ServerFeature.PLAYLISTS_SMART]: [1] }],
- *   ['0.49.3', { [ServerFeature.SHARING_ALBUM_SONG]: [1] }],
- * ];
- *  ```
- * @param version the version string (SemVer)
- * @returns a Record containing the matched features (if any) and their versions
- */
-export const getFeatures = (
-    versionInfo: VersionInfo,
-    version: string,
-): Partial<Record<ServerFeature, number[]>> => {
-    const cleanVersion = semverCoerce(version);
-    const features: Partial<Record<ServerFeature, number[]>> = {};
-    let matched = cleanVersion === null;
-
-    for (const [version, supportedFeatures] of versionInfo) {
-        if (!matched) {
-            matched = semverGte(cleanVersion!, version);
-        }
-
-        if (matched) {
-            for (const [feature, feat] of Object.entries(supportedFeatures)) {
-                if (feature in features) {
-                    features[feature].push(...feat);
-                } else {
-                    features[feature] = [...feat];
-                }
-            }
-        }
-    }
-
-    return features;
-};
 
 export const getClientType = (): string => {
     if (isElectron()) {
@@ -307,11 +223,6 @@ export const sortSongsByFetchedOrder = (
     fetchedIds: string[],
     itemType: LibraryItem,
 ): Song[] => {
-    // For folders, songs are already in the correct order
-    if (itemType === LibraryItem.FOLDER) {
-        return songs;
-    }
-
     // Group songs by the fetched ID they belong to
     const songsByFetchedId = new Map<string, Song[]>();
 

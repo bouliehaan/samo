@@ -2,7 +2,6 @@ import { type ServerAuthenticationResult } from './server-auth';
 import { formatServerCapabilities } from './server-capabilities';
 import { getFetch, normalizeBaseUrl, type SamoFetch } from './server-http';
 import { getSamoBearerToken, getSamoCapabilities, getSamoSetupStatus } from './server-samo';
-import { ServerType } from './server-types';
 
 export enum ServerConnectionHealthStatus {
     ERROR = 'error',
@@ -112,11 +111,7 @@ const checkServerHealth = async (
     authentication: ServerAuthenticationResult,
     fetcher: SamoFetch,
 ) => {
-    if (authentication.type === ServerType.SAMO) {
-        return checkSamoHealth(authentication, fetcher);
-    }
-
-    return null;
+    return checkSamoHealth(authentication, fetcher);
 };
 
 export const checkServerConnectionHealth = async ({

@@ -2,7 +2,24 @@
     "compilerOptions": {
         "composite": true,
         "isolatedModules": true,
-        "lib": ["ES2022"],
+        // "WebWorker" is deliberate, and is NOT a stand-in for "DOM".
+        //
+        // This package is shared by the Electron main + renderer processes AND
+        // by React Native, so it may only use APIs all three actually have:
+        // fetch/Response/RequestInit, AbortController/AbortSignal, URL, Blob,
+        // FormData, timers, console. Until TypeScript 6 those resolved by
+        // accident — tsc auto-included the hoisted `@types/*` in the workspace —
+        // and TS 6 stopped doing that, surfacing 60 "Cannot find name" errors
+        // for globals this package had always been using.
+        //
+        // "DOM" would fix them and would be wrong: it also declares `window`,
+        // `document`, `localStorage` and the whole element tree, which do not
+        // exist in React Native. Typing those as available is precisely the
+        // mistake a shared core must not let anyone make. "WebWorker" declares
+        // every platform global above and none of the document ones, so the
+        // compiler now enforces the constraint the bare "ES2022" was only
+        // expressing by omission.
+        "lib": ["ES2022", "WebWorker"],
         "module": "ESNext",
         "moduleDetection": "force",
         "moduleResolution": "bundler",

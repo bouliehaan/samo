@@ -1,6 +1,5 @@
 import { SAMO_MOBILE_TABS, type SamoMobileTabId } from '@samo/core/navigation';
-import { memo, useEffect, useState } from 'react';
-import { Pressable } from 'react-native';
+import { memo, useEffect, useMemo, useState } from 'react';
 import Reanimated, {
     runOnJS,
     type SharedValue,
@@ -8,14 +7,14 @@ import Reanimated, {
     useAnimatedStyle,
     useSharedValue,
     withSpring,
-    withTiming,
 } from 'react-native-reanimated';
 
 import { useReducedMotionPreference } from '../hooks/use-reduced-motion-preference';
 import { pressTab, useAppNavigationSelector } from '../state/app-navigation';
-import { springs, timings } from '../theme/motion';
+import { springs } from '../theme/motion';
 import { styles } from '../theme/styles';
 import { TabIcon } from './Glyphs';
+import { PressableScale } from './PressableScale';
 
 /** Pressed-state icon scale — small, because the icon is only 24dp. */
 const PRESS_SCALE = 0.86;
@@ -46,6 +45,7 @@ const TabBarButton = memo(function TabBarButton({
 }) {
     const pressed = useSharedValue(0);
     const active = useSharedValue(isActive ? 1 : 0);
+    const selectedState = useMemo(() => ({ selected: isActive }), [isActive]);
 
     useEffect(() => {
         active.value = reducedMotion
@@ -68,27 +68,30 @@ const TabBarButton = memo(function TabBarButton({
     });
 
     return (
-        <Pressable
+        <PressableScale
             // Icon-only bar: the label lives on for screen readers.
             accessibilityLabel={label}
             accessibilityRole="button"
-            accessibilityState={{ selected: isActive }}
+            accessibilityState={selectedState}
+            // The bar is fixed chrome, so the sink starts on touch-down with no
+            // scroll-safety window in front of it.
+            chrome
+            // The wrapper renders no response of its own — the icon below folds
+            // this same progress into the active-state lift, so both live in one
+            // transform instead of fighting over scale.
+            dimTo={1}
             // onPressIn (touch-down) for the snappiest possible switch;
             // onPress would dispatch the same navigation a second time on
             // release.
-            onPressIn={() => {
-                pressed.value = withTiming(1, timings.press);
-                pressTab(id);
-            }}
-            onPressOut={() => {
-                pressed.value = withSpring(0, springs.release);
-            }}
+            onPressIn={() => pressTab(id)}
+            pressProgress={pressed}
+            scaleTo={1}
             style={[styles.tabButton, isActive && styles.tabButtonActive]}
         >
             <Reanimated.View style={iconStyle}>
                 <TabIcon active={isActive} id={id} />
             </Reanimated.View>
-        </Pressable>
+        </PressableScale>
     );
 });
 

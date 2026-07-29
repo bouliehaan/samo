@@ -8,7 +8,6 @@ import {
 import {
     finalizeSamoMediaUrl,
     findServerAuthenticationForSource,
-    getCachedSamoStreamToken,
     getSamoBearerToken,
     getSamoAudiobookStreamUrl,
     getSamoMetadataImageUrl,
@@ -100,6 +99,33 @@ export const prefetchArtworkSource = (source: SamoArtworkImageSource | undefined
     void getArtworkLocalUri(uri, typeof source === 'string' ? undefined : source.headers);
 };
 
+/*
+ * THE DISPLAY PATH DOES NOT USE STREAM TOKENS.
+ *
+ * Every /api/v1 route on the server runs through `requireUser`, and its
+ * `authenticateRequest` tries the Authorization bearer FIRST, falling back to
+ * the `stream_token` query param only when the bearer is absent or invalid.
+ * Cover routes included. So for any consumer that can send headers — expo-image
+ * here, and expo-file-system's `downloadAsync` in the managed artwork cache —
+ * the token in the URL was never doing any work.
+ *
+ * It was doing HARM. Stream tokens live in a process-local map on the server
+ * (`internal/users/streamtokens.go`) with no persistence, so every server
+ * restart revokes every outstanding token while this client is still holding
+ * one it believes has half an hour left. Every cover URL built from it then
+ * 401s at once — and because an image loader reports no status code, the only
+ * available reading of that failure was "the token must be stale", which is how
+ * a single missing cover came to invalidate the token cache for the whole app.
+ *
+ * A rotating credential in the URL also churned identity: it sat in the
+ * memoization key here, so a token rotation cleared the entire resolved-artwork
+ * cache and forced a full Home re-derive, twice per token cycle, for nothing.
+ *
+ * The token stays where it is genuinely load-bearing: `preparePlaybackItemForNative`
+ * below, because the MediaSession/notification bitmap loader and the cast
+ * receiver cannot send our headers.
+ */
+
 /** Internal: the URL half of the fallback path. Everything outside this module
  *  goes through `resolveSamoItemArtworkSourceForDisplay`, which is memoized —
  *  keep it that way, this one rebuilds from scratch on every call. */
@@ -117,11 +143,9 @@ const resolveSamoArtworkUrlForDisplay = (
         return artworkUrl;
     }
 
-    return finalizeSamoMediaUrl(
-        auth,
-        artworkUrl,
-        getCachedSamoStreamToken(auth),
-    );
+    // No token, but still finalized: this is what re-homes a scan-time
+    // loopback/hostname URL onto the origin the device actually connected with.
+    return finalizeSamoMediaUrl(auth, artworkUrl);
 };
 
 const resolveSamoArtworkImageSourceForDisplay = (
@@ -164,8 +188,8 @@ const resolveSamoArtworkImageSourceForDisplay = (
  * function of the item's ids and the current tokens, so it is computed once
  * and reused until the credentials rotate.
  *
- * Bounded: cleared wholesale when the credential key changes (a rotated stream
- * token invalidates every URL anyway) and when it outgrows the cap, so it can
+ * Bounded: cleared wholesale when the credential key changes (a re-auth rebuilds
+ * every URL's authorization anyway) and when it outgrows the cap, so it can
  * never grow into a leak on a large library.
  */
 const RESOLVED_ARTWORK_CACHE_LIMIT = 4096;
@@ -185,10 +209,10 @@ const getResolvedArtworkCache = (credentialKey: string): Map<string, SamoArtwork
 };
 
 /**
- * Bumped whenever the credentials behind every resolved URL change (a rotated
- * stream token, a re-auth). Callers that cache a DERIVED value — an item with
- * its artwork backfilled, say — stamp it with this and recompute when it moves,
- * instead of each keeping its own idea of when a URL went stale.
+ * Bumped whenever the credentials behind every resolved URL change — which now
+ * means a re-auth and nothing else. Callers that cache a DERIVED value — an item
+ * with its artwork backfilled, say — stamp it with this and recompute when it
+ * moves, instead of each keeping its own idea of when a URL went stale.
  */
 export const getArtworkResolutionGeneration = (): number => resolvedArtworkGeneration;
 
@@ -212,16 +236,21 @@ export const resolveSamoItemArtworkSourceForDisplay = (
         return item.artworkUrl;
     }
 
-    const streamToken = getCachedSamoStreamToken(auth);
     const bearer = getSamoBearerToken(auth);
-    const cache = getResolvedArtworkCache(`${auth.url}|${streamToken ?? ''}|${bearer ?? ''}`);
+    // The credential key no longer carries a stream token, so it only moves on
+    // a genuine re-auth. It used to flip every time the cached token entered its
+    // refresh lead window and again when the new one landed, and each flip threw
+    // away all 4096 entries and bumped the generation Home keys its display
+    // derive off — a full re-derive of every shelf, twice per token cycle,
+    // caused entirely by a query param the display path did not need.
+    const cache = getResolvedArtworkCache(`${auth.url}|${bearer ?? ''}`);
     const cacheKey = `${source.id ?? ''}|${item.artworkImageId ?? ''}|${item.artworkUrl ?? ''}`;
     const cached = cache.get(cacheKey);
     if (cached !== undefined || cache.has(cacheKey)) {
         return cached;
     }
 
-    const resolved = resolveArtworkSourceUncached(item, auth, streamToken, bearer, serverConnection);
+    const resolved = resolveArtworkSourceUncached(item, auth, bearer, serverConnection);
     cache.set(cacheKey, resolved);
     return resolved;
 };
@@ -233,15 +262,15 @@ const resolveArtworkSourceUncached = (
         source?: Pick<MobileContentSource, 'id' | 'type' | 'url'>;
     },
     auth: ServerAuthenticationResult,
-    streamToken: string | undefined,
     bearer: string | undefined,
     serverConnection: ServerAuthenticationResult | null,
 ): SamoArtworkImageSource | undefined => {
     if (item.artworkImageId) {
-        // Built straight from the id: the builder already embeds the stream
-        // token, and the route is by construction `/api/v1/…`, so there is
-        // nothing to re-finalize and nothing to parse back out to classify.
-        const url = getSamoMetadataImageUrl(auth, item.artworkImageId, streamToken);
+        // Built straight from the id, so the route is by construction
+        // `/api/v1/…` and already homed on the connected origin — nothing to
+        // re-finalize and nothing to parse back out to classify. The bearer is
+        // what authenticates it.
+        const url = getSamoMetadataImageUrl(auth, item.artworkImageId);
         if (url) {
             return bearer ? { headers: { Authorization: `Bearer ${bearer}` }, uri: url } : url;
         }
@@ -269,6 +298,44 @@ export const resolvePlaybackArtworkSourceForDisplay = (
         },
         serverConnection,
     );
+};
+
+/**
+ * The artwork URL for a HEADER-LESS consumer — the MediaSession/notification
+ * bitmap loader, ExoPlayer, the cast receiver. None of them can send our bearer,
+ * so this is the one artwork path that still embeds a stream token.
+ *
+ * It builds on the display resolver rather than duplicating it: that already
+ * re-homes the URL onto the connected origin and picks the right cover for the
+ * item, and the only thing left to add is the credential this consumer needs.
+ * Keeping it a separate, explicitly-named function is the point — the token is
+ * now something a caller has to ASK for, so no future edit can quietly put one
+ * back on the display path (where it authenticates nothing and only churns
+ * cache identity), and no future edit can quietly take one off here (where its
+ * absence is a grey lock screen).
+ */
+export const resolveNativeArtworkUrl = (
+    item: Pick<
+        MobilePlayableAudio,
+        'artworkImageId' | 'artworkUrl' | 'contentSourceId' | 'id'
+    > | null | undefined,
+    serverConnection: ServerAuthenticationResult | null,
+    streamToken: string | undefined,
+): string | undefined => {
+    const resolved = artworkSourceUri(
+        resolvePlaybackArtworkSourceForDisplay(item, serverConnection),
+    );
+    if (!resolved || !streamToken || !item) {
+        return resolved;
+    }
+    const contentSource = getContentSourceFromPlaybackItem(item, serverConnection);
+    const auth = contentSource
+        ? findServerAuthenticationForSource(serverConnection, contentSource)
+        : undefined;
+    if (!auth || !isSamoApiMediaUrl(resolved)) {
+        return resolved;
+    }
+    return finalizeSamoMediaUrl(auth, resolved, streamToken) ?? resolved;
 };
 
 /**
@@ -309,8 +376,7 @@ export const preparePlaybackItemForNative = async (
     // screen than the problem it was meant to fix. Native gets the remote URL;
     // it re-mints and re-freshens that URL on its own timer.
     const resolvedArtworkUrl =
-        artworkSourceUri(resolvePlaybackArtworkSourceForDisplay(item, serverConnection)) ??
-        item.artworkUrl;
+        resolveNativeArtworkUrl(item, serverConnection, streamToken) ?? item.artworkUrl;
 
     let nextUrl = item.url;
     let nextCastUrl = item.castUrl;

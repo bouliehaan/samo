@@ -7,7 +7,6 @@ import type {
     AlbumRadioQuery,
     ArtistListQuery,
     ArtistRadioQuery,
-    FolderQuery,
     GenreListQuery,
     LyricSearchQuery,
     LyricsQuery,
@@ -241,15 +240,6 @@ export const queryKeys: Record<
             return [serverId, 'artists', 'list'] as const;
         },
         root: (serverId: string) => [serverId, 'artists'] as const,
-    },
-    folders: {
-        folder: (serverId: string, query?: FolderQuery) => {
-            if (query) {
-                return [serverId, 'folders', 'folder', query] as const;
-            }
-
-            return [serverId, 'folders', 'folder'] as const;
-        },
     },
     genres: {
         count: (serverId: string, query?: GenreListQuery) => {

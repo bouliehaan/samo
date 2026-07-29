@@ -31,7 +31,7 @@ const UpdateAvailableDialog = lazy(() =>
     })),
 );
 
-const ipc = isElectron() ? window.api.ipc : null;
+const localSettings = isElectron() ? window.api.localSettings : null;
 
 export const App = () => {
     return <ThemedApp />;
@@ -153,9 +153,7 @@ const GlobalShortcutsEffect = () => {
     const { bindings } = useHotkeySettings();
 
     useEffect(() => {
-        if (isElectron()) {
-            ipc?.send('set-global-shortcuts', bindings);
-        }
+        localSettings?.setGlobalShortcuts(bindings);
     }, [bindings]);
 
     return null;

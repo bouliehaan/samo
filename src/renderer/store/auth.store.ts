@@ -327,7 +327,6 @@ export const useCurrentServer = () =>
         }
 
         return {
-            features: currentServer.features,
             id: currentServer.id,
             isAdmin: currentServer.isAdmin,
             musicFolderId: currentServer.musicFolderId,
@@ -336,11 +335,11 @@ export const useCurrentServer = () =>
             preferRemoteUrl: currentServer.preferRemoteUrl,
             remoteUrl: currentServer.remoteUrl,
             savePassword: currentServer.savePassword,
+            serverId: currentServer.serverId,
             type: currentServer.type,
             url: currentServer.url,
             userId: currentServer.userId,
             username: currentServer.username,
-            version: currentServer.version,
         };
     }, shallow) as ServerListItem;
 

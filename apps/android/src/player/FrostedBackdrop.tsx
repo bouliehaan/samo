@@ -130,24 +130,24 @@ export const FrostedBackdrop = memo(({ artworkUrl }: { artworkUrl?: string }) =>
     }, [artworkUrl, fadeProgress]);
 
     return (
-        <View pointerEvents="none" style={StyleSheet.absoluteFillObject}>
+        <View pointerEvents="none" style={StyleSheet.absoluteFill}>
             <LinearGradient
                 colors={ramps.previous}
                 end={{ x: 0.82, y: 1 }}
                 pointerEvents="none"
                 start={{ x: 0.18, y: 0 }}
-                style={StyleSheet.absoluteFillObject}
+                style={StyleSheet.absoluteFill}
             />
             <Animated.View
                 pointerEvents="none"
-                style={[StyleSheet.absoluteFillObject, { opacity: fadeProgress }]}
+                style={[StyleSheet.absoluteFill, { opacity: fadeProgress }]}
             >
                 <LinearGradient
                     colors={ramps.current}
                     end={{ x: 0.82, y: 1 }}
                     pointerEvents="none"
                     start={{ x: 0.18, y: 0 }}
-                    style={StyleSheet.absoluteFillObject}
+                    style={StyleSheet.absoluteFill}
                 />
             </Animated.View>
             <LinearGradient
@@ -156,7 +156,7 @@ export const FrostedBackdrop = memo(({ artworkUrl }: { artworkUrl?: string }) =>
                 locations={FROSTED_GLASS_SHEEN_LOCATIONS as unknown as number[]}
                 pointerEvents="none"
                 start={{ x: 0.05, y: 0 }}
-                style={StyleSheet.absoluteFillObject}
+                style={StyleSheet.absoluteFill}
             />
             <LinearGradient
                 colors={FROSTED_GLASS_DEPTH as unknown as string[]}
@@ -164,10 +164,10 @@ export const FrostedBackdrop = memo(({ artworkUrl }: { artworkUrl?: string }) =>
                 locations={FROSTED_GLASS_DEPTH_LOCATIONS as unknown as number[]}
                 pointerEvents="none"
                 start={{ x: 0.5, y: 0.5 }}
-                style={StyleSheet.absoluteFillObject}
+                style={StyleSheet.absoluteFill}
             />
-            <View pointerEvents="none" style={[StyleSheet.absoluteFillObject, styles.fullPlayerDither]}>
-                <Image resizeMode="repeat" source={ditherTexture} style={StyleSheet.absoluteFillObject} />
+            <View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.fullPlayerDither]}>
+                <Image resizeMode="repeat" source={ditherTexture} style={StyleSheet.absoluteFill} />
             </View>
         </View>
     );

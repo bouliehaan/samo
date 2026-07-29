@@ -5,27 +5,27 @@ import { usePlayerStatus, useSettingsStore, useWindowSettings } from '/@/rendere
 import { PlayerStatus } from '/@/shared/types/types';
 import { logFn } from '/@/shared/utils/logger';
 
-const ipc = isElectron() ? window.api.ipc : null;
+const utils = isElectron() ? window.api.utils : null;
 
 export const usePowerSaveBlocker = () => {
     const status = usePlayerStatus();
     const { preventSleepOnPlayback } = useWindowSettings();
 
     const startPowerSaveBlocker = useCallback(async () => {
-        if (!ipc) return;
+        if (!utils) return;
 
         try {
-            await ipc.invoke('power-save-blocker-start');
+            await utils.powerSaveBlockerStart();
         } catch (error) {
             logFn.error('Failed to start power save blocker', { meta: { error: error } });
         }
     }, []);
 
     const stopPowerSaveBlocker = useCallback(async () => {
-        if (!ipc) return;
+        if (!utils) return;
 
         try {
-            await ipc.invoke('power-save-blocker-stop');
+            await utils.powerSaveBlockerStop();
         } catch (error) {
             logFn.error('Failed to stop power save blocker', { meta: { error: error } });
         }

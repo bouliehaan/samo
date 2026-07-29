@@ -32,7 +32,7 @@ import { useDebouncedValue } from '/@/shared/hooks/use-debounced-value';
 import { useFocusWithin } from '/@/shared/hooks/use-focus-within';
 import { useHotkeys } from '/@/shared/hooks/use-hotkeys';
 import { useMergedRef } from '/@/shared/hooks/use-merged-ref';
-import { Folder, LibraryItem, QueueSong, Song } from '/@/shared/types/domain-types';
+import { LibraryItem, QueueSong, Song } from '/@/shared/types/domain-types';
 import { DragTarget } from '/@/shared/types/drag-and-drop';
 import { ItemListKey, Play } from '/@/shared/types/types';
 
@@ -273,45 +273,6 @@ const EmptyQueueDropZone = () => {
                                     Play.NOW,
                                 );
                             }
-                            break;
-                        }
-                        case DragTarget.FOLDER: {
-                            const items = args.source.item;
-
-                            const { folders, songs } = (items || []).reduce<{
-                                folders: Folder[];
-                                songs: Song[];
-                            }>(
-                                (acc, item) => {
-                                    if ((item as unknown as Song)._itemType === LibraryItem.SONG) {
-                                        acc.songs.push(item as unknown as Song);
-                                    } else if (
-                                        (item as unknown as Folder)._itemType === LibraryItem.FOLDER
-                                    ) {
-                                        acc.folders.push(item as unknown as Folder);
-                                    }
-                                    return acc;
-                                },
-                                { folders: [], songs: [] },
-                            );
-
-                            const folderIds = folders.map((folder) => folder.id);
-
-                            // Handle folders: fetch and add to queue
-                            if (folderIds.length > 0) {
-                                playerContext.addToQueueByFetch(
-                                    sourceServerId,
-                                    folderIds,
-                                    LibraryItem.FOLDER,
-                                    Play.NOW,
-                                );
-                            }
-
-                            // Handle songs: add directly to queue
-                            if (songs.length > 0) {
-                                playerContext.addToQueueByData(songs, Play.NOW);
-                            }
-
                             break;
                         }
                         case DragTarget.GENRE: {

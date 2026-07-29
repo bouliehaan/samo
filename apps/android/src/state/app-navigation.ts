@@ -1,4 +1,6 @@
-import { startTransition, useSyncExternalStore } from 'react';
+import { startTransition } from 'react';
+
+import { useStoreSelector } from './use-store-selector';
 import { SAMO_MOBILE_TABS, type SamoMobileTabId } from '@samo/core/navigation';
 
 import { emitTabReselected } from './tab-reselect';
@@ -488,11 +490,6 @@ export {
 
 export const useAppNavigationSelector = <Selected>(
     selector: (state: AppNavigationState) => Selected,
-): Selected =>
-    useSyncExternalStore(
-        subscribeAppNavigation,
-        () => selector(appNavigationState),
-        () => selector(appNavigationState),
-    );
+): Selected => useStoreSelector(subscribeAppNavigation, getAppNavigationState, selector);
 
 export { SAMO_MOBILE_TABS };

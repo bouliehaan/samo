@@ -89,16 +89,15 @@ import {
 import { getContentSourceFromPlaybackItem } from '../utils/content-source';
 import { getPersistedServerAuthKey } from '../services/persisted-server';
 import { useServerConnections } from '../contexts/server-connections';
-import { getPlayerPositionMsForAbsProgress } from '../utils/abs-progress-math';
+import { getPlayerPositionMsForPlaybackProgress } from '../utils/playback-progress-math';
 import {
-    artworkSourceUri,
     isSamoMediaUrlMissingStreamToken,
-    resolvePlaybackArtworkSourceForDisplay,
+    resolveNativeArtworkUrl,
 } from '../utils/samo-artwork-url';
 import {
     getAndroidPlaybackState,
     subscribeAndroidPlaybackState,
-    useAndroidPlaybackState,
+    useFullPlayerPlaybackState,
     useMiniPlayerPlaybackState,
 } from '../state/playback-store';
 import { type AndroidPlaybackState } from '../types/playback';
@@ -197,12 +196,25 @@ export const NowPlayingMetadataSync = memo(() => {
             }
 
             const display = getPlaybackDisplayMetadata(state);
+            const contentSourceForToken = getContentSourceFromPlaybackItem(
+                state.item,
+                serverConnectionRef.current,
+            );
+            const authForToken = contentSourceForToken
+                ? findServerAuthenticationForSource(
+                      serverConnectionRef.current,
+                      contentSourceForToken,
+                  )
+                : undefined;
+            // The NATIVE artwork resolver, not the display one: this URL is
+            // fetched by the notification's bitmap loader, which cannot send our
+            // bearer header and so needs the stream token embedded. The display
+            // resolver deliberately stops emitting one.
             const resolvedArtworkUrl =
-                artworkSourceUri(
-                    resolvePlaybackArtworkSourceForDisplay(
-                        state.item,
-                        serverConnectionRef.current,
-                    ),
+                resolveNativeArtworkUrl(
+                    state.item,
+                    serverConnectionRef.current,
+                    authForToken ? getCachedSamoStreamToken(authForToken) : undefined,
                 ) ?? state.item.artworkUrl;
             // Never push a Samo artwork URL the notification's header-less
             // fetch can only 401 on — that overwrites native's fresh artwork
@@ -213,28 +225,19 @@ export const NowPlayingMetadataSync = memo(() => {
             // item was built with. In both cases omit the field (native keeps
             // its own artwork, freshened at each transition) and mint in the
             // background so the NEXT push carries a live token again.
-            const contentSource = getContentSourceFromPlaybackItem(
-                state.item,
-                serverConnectionRef.current,
-            );
-            const auth = contentSource
-                ? findServerAuthenticationForSource(
-                      serverConnectionRef.current,
-                      contentSource,
-                  )
-                : undefined;
-            const isSamoApiArtworkUrl = Boolean(
-                resolvedArtworkUrl && resolvedArtworkUrl.includes('/api/v1/'),
-            );
-            const hasLiveToken = auth ? Boolean(getCachedSamoStreamToken(auth)) : false;
             let artworkUrl = resolvedArtworkUrl;
-            if (
-                isSamoMediaUrlMissingStreamToken(resolvedArtworkUrl) ||
-                (isSamoApiArtworkUrl && !hasLiveToken)
-            ) {
+            if (isSamoMediaUrlMissingStreamToken(resolvedArtworkUrl)) {
+                // A Samo /api/v1 artwork URL with no stream token is one the
+                // notification's header-less fetch can only 401 on, and pushing
+                // it would overwrite native's own fresh artwork with a grey
+                // tile. Omit the field (native keeps what it has, re-derived at
+                // each transition) and mint in the background so the next push
+                // carries a token again. Reached when the JS token cache went
+                // cold during a long native-driven session — nothing on this
+                // side mints while native is driving.
                 artworkUrl = undefined;
-                if (auth) {
-                    void ensureSamoStreamToken(auth)
+                if (authForToken) {
+                    void ensureSamoStreamToken(authForToken)
                         .then(() => syncMetadata())
                         .catch(() => undefined);
                 }
@@ -274,12 +277,30 @@ export const NowPlayingMetadataSync = memo(() => {
 
 NowPlayingMetadataSync.displayName = 'NowPlayingMetadataSync';
 
+/**
+ * One subscription, and deliberately the CHROME one whether the player is open
+ * or closed.
+ *
+ * This used to hold both, and pick the live state when visible:
+ *
+ *     const full = useAndroidPlaybackState();          // whole state, 1Hz
+ *     const mini = useMiniPlayerPlaybackState();
+ *     const playbackState = props.visible ? full : mini;
+ *
+ * The ternary is not a gate — a hook cannot be un-subscribed by not using its
+ * result. Holding the live subscription re-rendered this component every second
+ * that audio played, including all the time the full player was CLOSED and
+ * nothing it produced was on screen. Open, it re-rendered the largest component
+ * in the app once a second to move a progress bar that already animates itself
+ * on the UI thread.
+ *
+ * The playhead now reaches the two leaves that draw it directly, so the shell
+ * renders on real changes only: track, status, chapter, duration.
+ */
 export const ConnectedFullScreenPlayer = memo((
     props: Omit<ComponentProps<typeof FullScreenPlayer>, 'playbackState'>,
 ) => {
-    const fullPlaybackState = useAndroidPlaybackState();
-    const miniPlaybackState = useMiniPlayerPlaybackState();
-    const playbackState = props.visible ? fullPlaybackState : miniPlaybackState;
+    const playbackState = useFullPlayerPlaybackState();
     return <FullScreenPlayer {...props} playbackState={playbackState} />;
 });
 

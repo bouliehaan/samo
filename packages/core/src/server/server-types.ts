@@ -1,32 +1,8 @@
-export enum ServerFeature {
-    ALBUM_YES_NO_RATING_FILTER = 'albumYesNoRatingFilter',
-    ARTIST_IMAGE_UPLOAD = 'artistImageUpload',
-    BFR = 'bfr',
-    INTERNET_RADIO_IMAGE_UPLOAD = 'internetRadioImageUpload',
-    LYRICS_MULTIPLE_STRUCTURED = 'lyricsMultipleStructured',
-    LYRICS_SINGLE_STRUCTURED = 'lyricsSingleStructured',
-    MUSIC_FOLDER_MULTISELECT = 'musicFolderMultiselect',
-    OS_FORM_POST = 'osFormPost',
-    OS_TRANSCODE_DECISION = 'osTranscodeDecision',
-    PLAYLIST_IMAGE_UPLOAD = 'playlistImageUpload',
-    PLAYLISTS_SMART = 'playlistsSmart',
-    PUBLIC_PLAYLIST = 'publicPlaylist',
-    SERVER_PLAY_QUEUE = 'serverPlayQueue',
-    SHARING_ALBUM_SONG = 'sharingAlbumSong',
-    SIMILAR_SONGS_MUSIC_FOLDER = 'similarSongsMusicFolder',
-    TAGS = 'tags',
-    TRACK_ALBUM_ARTIST_SEARCH = 'trackAlbumArtistSearch',
-    TRACK_YES_NO_RATING_FILTER = 'trackYesNoRatingFilter',
-}
-
 export enum ServerType {
     SAMO = 'samo',
 }
 
-export type ServerFeatures = Partial<Record<ServerFeature, number[]>>;
-
 export interface ServerListItemCore {
-    features?: ServerFeatures;
     id: string;
     isAdmin?: boolean;
     musicFolderId?: string[];
@@ -35,11 +11,13 @@ export interface ServerListItemCore {
     preferRemoteUrl?: boolean;
     remoteUrl?: string;
     savePassword?: boolean;
+    /** Stable identity issued by the server. Lets the client verify that an
+     *  address it is about to use really is this server. */
+    serverId?: string;
     type: ServerType;
     url: string;
     userId: null | string;
     username: string;
-    version?: string;
 }
 
 export type ServerListItemWithCredentialCore = ServerListItemCore & {

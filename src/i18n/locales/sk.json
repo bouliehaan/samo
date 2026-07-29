@@ -1,21 +1,13 @@
 {
     "action": {
         "addToFavorites": "pridať do $t(entity.favorite, {\"count\": 2})",
-        "addToPlaylist": "pridať do $t(entity.playlist, {\"count\": 1})",
         "clearQueue": "vymazať frontu",
         "createPlaylist": "vytvoriť $t(entity.playlist, {\"count\": 1})",
         "deletePlaylist": "odstrániť $t(entity.playlist, {\"count\": 1})",
-        "deselectAll": "odznačiť všetko",
         "editPlaylist": "upraviť $t(entity.playlist, {\"count\": 1})",
-        "goToPage": "ísť na stránku",
-        "moveToNext": "prejsť na ďalší",
-        "moveToBottom": "presunúť sa na spodok",
-        "moveToTop": "presunúť sa navrch",
-        "refresh": "$t(common.refresh)",
         "removeFromFavorites": "odstrániť z $t(entity.favorite, {\"count\": 2})",
         "removeFromPlaylist": "odstrániť z $t(entity.playlist, {\"count\": 1})",
         "removeFromQueue": "odstrániť z fronty",
-        "toggleSmartPlaylistEditor": "prepnúť $t(entity.smartPlaylist) editor",
         "viewPlaylists": "zobraziť $t(entity.playlist, {\"count\": 2})",
         "openIn": {
             "lastfm": "Otvoriť v Last.fm",
@@ -130,13 +122,8 @@
         "albumArtist": "$t(entity.albumArtist, {\"count\": 1})",
         "albumCount": "$t(entity.album, {\"count\": 2}) počet",
         "artist": "$t(entity.artist, {\"count\": 1})",
-        "biography": "životopis",
-        "bitrate": "bitrate",
         "bpm": "bpm",
-        "channels": "$t(common.channel_other)",
         "comment": "komentár",
-        "dateAdded": "dátum pridania",
-        "disc": "disk",
         "duration": "dĺžka",
         "favorited": "obľúbené",
         "fromYear": "od roku",
@@ -144,26 +131,15 @@
         "id": "id",
         "isCompilation": "je kompilácia",
         "isFavorited": "je obľúbený",
-        "isPublic": "je verejný",
-        "isRated": "je hodnotený",
-        "isRecentlyPlayed": "je nedávno hraný",
         "lastPlayed": "posledne hraný",
-        "mostPlayed": "najhranejší",
-        "note": "poznámka",
-        "owner": "$t(common.owner)",
-        "path": "cesta",
         "playCount": "počet prehraní",
         "random": "náhodne",
         "recentlyAdded": "nedávno pridané",
         "recentlyPlayed": "nedávno hrané",
-        "recentlyUpdated": "nedávno aktualizované",
         "releaseDate": "dátum vydania",
         "releaseYear": "rok vydania",
-        "search": "vyhľadať",
         "songCount": "počet skladieb",
-        "title": "názov",
-        "toYear": "do roku",
-        "trackNumber": "stopa"
+        "toYear": "do roku"
     },
     "form": {
         "addServer": {
@@ -194,8 +170,6 @@
             "title": "vytvoriť $t(entity.playlist, {\"count\": 1})"
         },
         "deletePlaylist": {
-            "input_confirm": "pre potvrdenie zadajte názov $t(entity.playlist, {\"count\": 1})",
-            "success": "$t(entity.playlist, {\"count\": 1}) bol úspešne odstránený",
             "title": "odstrániť $t(entity.playlist, {\"count\": 1})"
         },
         "editPlaylist": {
@@ -207,21 +181,7 @@
             "input_name": "$t(common.name)",
             "title": "vyhľadať text skladby"
         },
-        "queryEditor": {
-            "title": "editor dopytov",
-            "input_optionMatchAll": "zhoda na všetkých",
-            "input_optionMatchAny": "zhoda na ľubovoľnom"
-        },
-        "shareItem": {
-            "allowDownloading": "povoliť sťahovanie",
-            "description": "popis",
-            "setExpiration": "nastaviť vypršanie platnosti",
-            "success": "zdieľať link skopírovaný do schránky (alebo klinutím otvoriť tu)",
-            "expireInvalid": "vypršanie platnosti musí byť v budúcnosti",
-            "createFailed": "nepodarilo sa nazdielať (je zdieľanie povolené)"
-        },
         "updateServer": {
-            "success": "server bol úspešne aktualizovaný",
             "title": "aktualizovať server"
         },
         "privateMode": {
@@ -290,14 +250,8 @@
         "authenticationFailed": "overenie zlyhalo",
         "badValue": "neplatná možnosť \"{{value}}\". táto hodnota už neexistuje",
         "credentialsRequired": "vyžadujú sa prihlasovacie údaje",
-        "endpointNotImplementedError": "koncový bod {{endpoint}} nie je implementovaný v {{serverType}}",
         "genericError": "vyskyla sa chyba",
         "invalidServer": "neplatný server",
-        "localFontAccessDenied": "prístup k lokálnym fontom bol odmietnutý",
-        "loginRateError": "príliš veľa pokusov o prihlásenie, skúste to znova o pár sekúnd",
-        "mpvRequired": "vyžaduje sa MPV",
-        "networkError": "vyskytla sa chyba siete",
-        "notificationDenied": "povolenia na oznámenia boli odmietnuté. toto nastavenie nemá žiadny účinok",
         "openError": "súbor nebolo možné otvoriť",
         "playbackError": "pri prehrávaní média sa vyskytla chyba",
         "remoteDisableError": "pri pokuse o $t(common.disable) vzdialeného severa sa vyskytla chyba",
@@ -305,15 +259,12 @@
         "remotePortError": "pri nastavovaní portu vzdialeného servera sa vyskytla chyba",
         "remotePortWarning": "pre použitie nového portu reštartujte server",
         "serverNotSelectedError": "nebol vybraný žiadny server",
-        "serverRequired": "vyžaduje sa server",
-        "sessionExpiredError": "vaša relácia vypršala",
-        "systemFontError": "pri pokuse o získanie systémových fontov sa vyskytla chyba"
+        "serverRequired": "vyžaduje sa server"
     },
     "page": {
         "albumArtistDetail": {
             "about": "O {{artist}}",
             "appearsOn": "vyskytuje sa na",
-            "recentReleases": "posledné vydania",
             "viewDiscography": "zobraziť diskografiu",
             "relatedArtists": "súvisiaci s $t(entity.artist, {\"count\": 2})",
             "topSongs": "top skladby",
@@ -326,12 +277,9 @@
         },
         "albumDetail": {
             "moreFromArtist": "viac od $t(entity.artist, {\"count\": 1})",
-            "moreFromGeneric": "viac z {{item}}",
-            "released": "vydané"
+            "moreFromGeneric": "viac z {{item}}"
         },
         "albumList": {
-            "artistAlbums": "albumy {{artist}}",
-            "genreAlbums": "\"{{genre}}\" $t(entity.album, {\"count\": 2})",
             "title": "$t(entity.album, {\"count\": 2})"
         },
         "appMenu": {
@@ -342,61 +290,34 @@
             "manageServers": "spravovať servery",
             "privateModeOff": "vypnúť súkromný režim",
             "privateModeOn": "zapnúť súkromný režim",
-            "openBrowserDevtools": "otvoriť vývojárske nástroje prehliadača",
             "quit": "$t(common.quit)",
             "selectServer": "vybrať server",
-            "settings": "$t(common.setting, {\"count\": 2})",
-            "version": "verzia {{version}}"
+            "settings": "$t(common.setting, {\"count\": 2})"
         },
         "manageServers": {
             "title": "spravovať servery",
-            "serverDetails": "podrobnosti servera",
             "url": "URL",
             "username": "užívateľské meno",
             "editServerDetailsTooltip": "zmeniť podrobnosti servera",
             "removeServer": "odstrániť server"
         },
         "contextMenu": {
-            "addFavorite": "$t(action.addToFavorites)",
-            "addLast": "$t(player.addLast)",
-            "addNext": "$t(player.addNext)",
-            "addToFavorites": "$t(action.addToFavorites)",
             "addToPlaylist": "$t(action.addToPlaylist)",
-            "createPlaylist": "$t(action.createPlaylist)",
-            "deletePlaylist": "$t(action.deletePlaylist)",
-            "deselectAll": "$t(action.deselectAll)",
             "download": "stiahnuť",
             "moveToNext": "$t(action.moveToNext)",
             "moveToBottom": "$t(action.moveToBottom)",
             "moveToTop": "$t(action.moveToTop)",
-            "numberSelected": "{{count}} vybrané",
-            "play": "$t(player.play)",
-            "playSimilarSongs": "$t(player.playSimilarSongs)",
-            "removeFromFavorites": "$t(action.removeFromFavorites)",
-            "removeFromPlaylist": "$t(action.removeFromPlaylist)",
-            "removeFromQueue": "$t(action.removeFromQueue)",
-            "playShuffled": "$t(player.shuffle)",
-            "shareItem": "zdieľať položku",
             "showDetails": "získať informácie",
-            "goToAlbum": "choď na $t(entity.album, {\"count\": 1})",
-            "goToAlbumArtist": "choď na $t(entity.albumArtist, {\"count\": 1})"
+            "goToAlbum": "choď na $t(entity.album, {\"count\": 1})"
         },
         "fullscreenPlayer": {
             "config": {
-                "dynamicBackground": "dynamické pozadie",
-                "dynamicImageBlur": "veľkosť rozostrenia obrázku",
-                "dynamicIsImage": "povoliť obrázok pozadia",
                 "followCurrentLyric": "nasleduj aktuálny text skladby",
                 "lyricAlignment": "zarovnanie textov skladieb",
-                "lyricOffset": "posunutie textov skladieb (ms)",
                 "lyricGap": "medzera textov skladieb",
                 "lyricSize": "veľkosť textov skladieb",
-                "opacity": "opacita",
-                "showLyricMatch": "zobraziť zhodu textu skladby",
-                "showLyricProvider": "zobraziť poskytovateľa textov skladieb",
                 "synchronized": "synchronizované",
-                "unsynchronized": "nesynchronizované",
-                "useImageAspectRatio": "použiť pomer strán obrázka"
+                "unsynchronized": "nesynchronizované"
             },
             "lyrics": "texty skladieb",
             "related": "súvisiace",
@@ -405,8 +326,6 @@
             "noLyrics": "nenašli sa žiadne texty"
         },
         "genreList": {
-            "showAlbums": "zobraziť $t(entity.genre, {\"count\": 1}) $t(entity.album, {\"count\": 2})",
-            "showTracks": "zobraziť $t(entity.genre, {\"count\": 1}) $t(entity.track, {\"count\": 2})",
             "title": "$t(entity.genre, {\"count\": 2})"
         },
         "globalSearch": {
@@ -418,10 +337,6 @@
             "title": "príkazy"
         },
         "home": {
-            "explore": "preskúmať tvoju knižnicu",
-            "mostPlayed": "najhranejší",
-            "newlyAdded": "novopridané vydania",
-            "recentlyPlayed": "nedávno hrané",
             "title": "$t(common.home)"
         },
         "itemDetail": {
@@ -429,18 +344,13 @@
             "copiedPath": "cesta úspešne skopírovaná",
             "openFile": "zobraziť stopu v správcovi súborov"
         },
-        "playlist": {
-            "reorder": "zmena poradia povolená len pri zoradení podľa id"
-        },
         "playlistList": {
             "title": "$t(entity.playlist, {\"count\": 2})"
         },
         "setting": {
             "advanced": "pokročilé",
             "generalTab": "všeobecné",
-            "hotkeysTab": "klávesové skratky",
-            "playbackTab": "prehrávanie",
-            "windowTab": "okno"
+            "hotkeysTab": "klávesové skratky"
         },
         "sidebar": {
             "albumArtists": "$t(entity.albumArtist, {\"count\": 2})",
@@ -458,8 +368,6 @@
             "tracks": "$t(entity.track, {\"count\": 2})"
         },
         "trackList": {
-            "artistTracks": "skladby {{artist}}",
-            "genreTracks": "\"{{genre}}\" $t(entity.track, {\"count\": 2})",
             "title": "$t(entity.track, {\"count\": 2})"
         }
     },
@@ -473,15 +381,9 @@
         "play": "prehrať",
         "playbackFetchCancel": "toto chvíľu trvá... ak to chcete zrušiť, zavrite notifikáciu",
         "playbackFetchInProgress": "načítanie skladieb…",
-        "playbackFetchNoResults": "neboli nájdené žiadne skladby",
         "playbackSpeed": "rýchlosť prehrávania",
         "playRandom": "prehrávať náhodne",
-        "playSimilarSongs": "prehrávať podobné skladby",
         "previous": "predchádzajúce",
-        "queue_clear": "vymazať frontu",
-        "queue_moveToBottom": "presunúť vybrané navrch",
-        "queue_moveToTop": "presunúť vybrané naspodok",
-        "queue_remove": "odstrániť vybrané",
         "repeat": "opakovať",
         "repeat_all": "opakovať všetky",
         "repeat_off": "opakovanie vypnuté",
@@ -739,8 +641,6 @@
             "codec": "$t(common.codec)",
             "comment": "komentár",
             "dateAdded": "dátum pridania",
-            "discNumber": "disk",
-            "favorite": "obľúbené",
             "genre": "$t(entity.genre, {\"count\": 1})",
             "lastPlayed": "posledne hraný",
             "path": "cesta",
@@ -749,19 +649,14 @@
             "releaseYear": "rok",
             "size": "$t(common.size)",
             "songCount": "$t(entity.track, {\"count\": 2})",
-            "title": "názov",
-            "trackNumber": "skladba"
+            "title": "názov"
         },
         "config": {
             "general": {
                 "autoFitColumns": "automatická šírka stĺpcov",
-                "followCurrentSong": "nasledovať aktuálnu skladbu",
                 "displayType": "typ zobrazenia",
                 "gap": "$t(common.gap)",
-                "itemGap": "medzera položky (px)",
-                "itemSize": "veľkosť položky (px)",
-                "size": "$t(common.size)",
-                "tableColumns": "stĺpce tabuľky"
+                "size": "$t(common.size)"
             },
             "label": {
                 "actions": "$t(common.action_other)",

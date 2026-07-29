@@ -32,7 +32,12 @@ import {
     handleToggleFavoriteForItem,
     handleToggleFavoriteForTrack,
 } from '../handlers/favorites-handlers';
-import { handleOpenBookInfo, handleOpenStreamInfo } from '../handlers/info-handlers';
+import {
+    handleOpenBookInfo,
+    handleOpenEpisodeInfo,
+    handleOpenStreamInfo,
+} from '../handlers/info-handlers';
+import { recentContentItemFromMediaDetail } from '../services/recent-content';
 import {
     handleGoToAlbumForTrack,
     handleGoToArtistForTrack,
@@ -215,6 +220,43 @@ export function useAndroidContextMenu(): AndroidContextMenuSurface {
                 label: isFavorited ? 'Remove from Favorites' : 'Add to Favorites',
                 onPress: () => void handleToggleFavoriteForTrack(track, source?.id),
             });
+            // Show notes. Podcasts only — a music track has no equivalent, and an
+            // episode row is exactly where the blurb was unreachable: the row
+            // truncates the title to one line and shows no description at all.
+            const episodeDetail =
+                contextMenuTarget.detail?.type === MobileMediaDetailType.PODCAST
+                    ? contextMenuTarget.detail
+                    : null;
+            if (episodeDetail) {
+                menuActions.push({
+                    icon: <BookInfoGlyph color={colors.text} />,
+                    id: 'episode-info',
+                    label: 'Episode Information',
+                    onPress: () => {
+                        const showItem = recentContentItemFromMediaDetail(episodeDetail);
+                        if (!showItem) {
+                            return;
+                        }
+                        handleOpenEpisodeInfo(
+                            {
+                                ...showItem,
+                                // Prefer the EPISODE's own art; many feeds ship
+                                // per-episode covers and falling back to the
+                                // show's would quietly show the wrong picture.
+                                artworkImageId: track.artworkImageId ?? showItem.artworkImageId,
+                                artworkUrl: track.artworkUrl ?? showItem.artworkUrl,
+                            },
+                            {
+                                description: track.description,
+                                durationSeconds: track.durationSeconds,
+                                publishedAt: track.publishedAt,
+                                subtitle: track.subtitle,
+                                title: track.title,
+                            },
+                        );
+                    },
+                });
+            }
             if (canQueueTrack) {
                 menuActions.push({
                     icon: <QueueAddGlyph color={colors.text} />,

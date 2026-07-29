@@ -78,7 +78,7 @@ export const searchStyles = StyleSheet.create({
      * styles) — no card, no sheet, results right there under the pills.
      */
     searchOverlay: {
-        ...StyleSheet.absoluteFillObject,
+        ...StyleSheet.absoluteFill,
         // DELIBERATELY translucent — the page ghosting through the dim is a
         // feature Jacob explicitly approved ("that was so good"), not a bug.
         // The one real bug here was the recycled FlashList scattering result

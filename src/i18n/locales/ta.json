@@ -2,21 +2,13 @@
     "action": {
         "addToFavorites": "$t(entity.favorite, {\"count\": 2}) இல் சேர்க்கவும்",
         "clearQueue": "தெளிவான வரிசை",
-        "goToPage": "பக்கத்திற்குச் செல்லுங்கள்",
-        "moveToBottom": "கீழே செல்லுங்கள்",
-        "moveToTop": "மேலே செல்லுங்கள்",
-        "refresh": "$t(common.refresh)",
         "removeFromFavorites": "$t(entity.favorite, {\"count\": 2})இலிருந்து அகற்று",
         "removeFromPlaylist": "$t(entity.playlist, {\"count\": 1}) இலிருந்து அகற்று",
         "removeFromQueue": "வரிசையிலிருந்து அகற்று",
-        "toggleSmartPlaylistEditor": "மாற்று $t(entity.smartPlaylist) ஆசிரியர்",
         "viewPlaylists": "$t(entity.playlist, {\"count\": 2}) காண்க",
-        "addToPlaylist": "$t(entity.playlist, {\"count\": 1})இல் சேர்க்கவும்",
         "createPlaylist": "$t(entity.playlist, {\"count\": 1})ஐ உருவாக்கவும்",
         "deletePlaylist": "$t(entity.playlist, {\"count\": 1})ஐ நீக்கு",
-        "deselectAll": "அனைத்தையும் தேர்வு செய்யுங்கள்",
         "editPlaylist": "திருத்து $t(entity.playlist, {\"count\": 1})",
-        "moveToNext": "அடுத்து செல்லுங்கள்",
         "openIn": {
             "lastfm": "Last.fm இல் திறந்திருக்கும்",
             "musicbrainz": "மியூசிக் பிரைன்ச் திறந்திருக்கும்"
@@ -24,14 +16,11 @@
         "addOrRemoveFromSelection": "தேர்வில் இருந்து சேர்க்கவும் அல்லது நீக்கவும்",
         "selectRangeOfItems": "உருப்படிகளின் வரம்பைத் தேர்ந்தெடுக்கவும்",
         "createRadioStation": "$t(entity.radioStation, {\"count\": 1}) உருவாக்கவும்",
-        "deleteRadioStation": "$t(entity.radioStation, {\"count\": 1}) நீக்கு",
         "selectAll": "அனைத்தையும் தெரிவுசெய்",
-        "downloadStarted": "{{count}} உருப்படிகளின் பதிவிறக்கம் தொடங்கியது",
         "moveUp": "மேலே செல்ல",
         "moveDown": "கீழே நகர",
         "holdToMoveToTop": "மேலே செல்ல அழுத்திப் பிடிக்கவும்",
         "holdToMoveToBottom": "கீழே நகர்த்த பிடிக்கவும்",
-        "moveItems": "பொருட்களை நகர்த்த",
         "shuffle": "கலக்கு",
         "shuffleAll": "அனைத்தையும் கலக்கவும்",
         "shuffleSelected": "கலக்கு தேர்ந்தெடுக்கப்பட்டது",
@@ -201,7 +190,6 @@
         "radioStationWithCount_other": "{{count}} வானொலி நிலையங்கள்"
     },
     "error": {
-        "mpvRequired": "MPV தேவை",
         "remotePortError": "தொலை சேவையக துறைமுகத்தை அமைக்க முயற்சிக்கும்போது பிழை ஏற்பட்டது",
         "remotePortWarning": "புதிய துறைமுகத்தைப் பயன்படுத்த சேவையகத்தை மறுதொடக்கம் செய்யுங்கள்",
         "serverNotSelectedError": "சேவையகம் எதுவும் தேர்ந்தெடுக்கப்படவில்லை",
@@ -211,24 +199,14 @@
         "audioDeviceFetchError": "ஆடியோ சாதனங்களைப் பெற முயற்சிக்கும்போது பிழை ஏற்பட்டது",
         "authenticationFailed": "ஏற்பு தோல்வியடைந்தது",
         "credentialsRequired": "நற்சான்றிதழ்கள் தேவை",
-        "endpointNotImplementedError": "Endpoint {{endpoint}} {{serverType}} க்கு செயல்படுத்தப்படவில்லை",
         "genericError": "பிழை ஏற்பட்டது",
         "invalidServer": "தவறான சேவையகம்",
-        "localFontAccessDenied": "உள்ளக எழுத்துருக்களுக்கு மறுக்கப்பட்டது",
-        "loginRateError": "பல உள்நுழைவு முயற்சிகள், தயவுசெய்து சில நொடிகளில் மீண்டும் முயற்சிக்கவும்",
-        "networkError": "பிணைய பிழை ஏற்பட்டது",
         "openError": "கோப்பைத் திறக்க முடியவில்லை",
         "playbackError": "ஊடகங்களை விளையாட முயற்சிக்கும்போது பிழை ஏற்பட்டது",
         "remoteDisableError": "தொலைநிலை சேவையகத்தை $t(common.disable) முயற்சிக்கும்போது பிழை ஏற்பட்டது",
-        "sessionExpiredError": "உங்கள் அமர்வு காலாவதியானது",
-        "systemFontError": "கணினி எழுத்துருக்களைப் பெற முயற்சிக்கும்போது பிழை ஏற்பட்டது",
         "badValue": "தவறான விருப்பம் \"{{value}}\". இந்த மதிப்பு இனி இல்லை",
-        "notificationDenied": "அறிவிப்புகளுக்கான அனுமதிகள் மறுக்கப்பட்டன. இந்த அமைப்பு எந்த விளைவையும் ஏற்படுத்தாது",
-        "invalidJson": "தவறான சாதொபொகு",
-        "multipleServerSaveQueueError": "நாடக வரிசையில் ஒன்று அல்லது அதற்கு மேற்பட்ட பாடல்கள் உள்ளன, அவை தற்போதைய சேவையகத்திலிருந்து இல்லை. இது ஆதரிக்கப்படவில்லை",
         "noNetwork": "சர்வர் கிடைக்கவில்லை",
         "noNetworkDescription": "இந்த சேவையகத்துடன் இணைக்க முடியவில்லை",
-        "saveQueueFailed": "வரிசையைச் சேமிக்க முடியவில்லை",
         "serverLockSingleServer": "சேவையகம் பூட்டப்பட்டிருக்கும் போது ஒரு சேவையகம் மட்டுமே அனுமதிக்கப்படும்",
         "settingsSyncError": "ரெண்டரரில் உள்ள அமைப்புகளுக்கும் முக்கிய செயல்முறைக்கும் இடையே முரண்பாடுகள் கண்டறியப்பட்டன. மாற்றங்களைப் பயன்படுத்த பயன்பாட்டை மறுதொடக்கம் செய்யுங்கள்"
     },
@@ -236,17 +214,11 @@
         "albumArtist": "$t(entity.albumArtist, {\"count\": 1})",
         "albumCount": "$t(entity.album, {\"count\": 2}) எண்ணிக்கை",
         "artist": "$t(entity.artist, {\"count\": 1})",
-        "biography": "சுயசரிதை",
-        "bitrate": "பிட்ரேட்",
         "bpm": "பிபிஎம்",
-        "channels": "$t(common.channel, {\"count\": 2})",
         "comment": "கருத்து",
-        "path": "பாதை",
         "playCount": "விளையாட்டு எண்ணிக்கை",
         "random": "சீரற்ற",
         "album": "$t(entity.album, {\"count\": 1})",
-        "dateAdded": "தேதி சேர்க்கப்பட்டது",
-        "disc": "வட்டு",
         "duration": "காலம்",
         "favorited": "பிடித்தது",
         "fromYear": "ஆண்டு முதல்",
@@ -254,24 +226,14 @@
         "id": "ஐடி",
         "isCompilation": "தொகுப்பு",
         "isFavorited": "பிடித்தது",
-        "isPublic": "பொது",
-        "isRated": "மதிப்பிடப்படுகிறது",
-        "isRecentlyPlayed": "அண்மைக் காலத்தில் விளையாடியது",
         "lastPlayed": "கடைசியாக விளையாடியது",
-        "mostPlayed": "அதிகம் விளையாடியது",
         "name": "பெயர்",
-        "note": "குறிப்பு",
-        "owner": "$t(common.owner)",
         "recentlyAdded": "அண்மைக் காலத்தில் சேர்க்கப்பட்டது",
         "recentlyPlayed": "அண்மைக் காலத்தில் விளையாடியது",
-        "recentlyUpdated": "அண்மைக் காலத்தில் புதுப்பிக்கப்பட்டது",
         "releaseDate": "வெளியீட்டு தேதி",
         "releaseYear": "வெளியீட்டு ஆண்டு",
-        "search": "தேடல்",
         "songCount": "பாடல் எண்ணிக்கை",
-        "title": "தலைப்பு",
         "toYear": "ஆண்டு",
-        "trackNumber": "மின்தடம்",
         "matchAnd": "மற்றும்",
         "matchOr": "அல்லது",
         "sortName": "வரிசை பெயர்",
@@ -297,8 +259,6 @@
             "input_remoteUrlPlaceholder": "விருப்பத்தேர்வு: வெளிப்புற அம்சங்களுக்கான பொது முகவரி"
         },
         "deletePlaylist": {
-            "input_confirm": "உறுதிப்படுத்த $t(entity.playlist, {\"count\": 1}) பெயரைத் தட்டச்சு செய்க",
-            "success": "$t(entity.playlist, {\"count\": 1}) வெற்றிகரமாக நீக்கப்பட்டது",
             "title": "$t(entity.playlist, {\"count\": 1})ஐ நீக்கு"
         },
         "editPlaylist": {
@@ -309,25 +269,6 @@
             "input_artist": "$t(entity.artist, {\"count\": 1})",
             "input_name": "$t(common.name)",
             "title": "பாடல் தேடல்"
-        },
-        "queryEditor": {
-            "input_optionMatchAll": "அனைத்தையும் பொருத்துங்கள்",
-            "input_optionMatchAny": "எந்த பொருத்தவும்",
-            "title": "வினவல் ஆசிரியர்",
-            "addRuleGroup": "விதி குழுவைச் சேர்க்கவும்",
-            "removeRuleGroup": "விதி குழுவை அகற்று",
-            "resetToDefault": "இயல்புநிலைக்கு மீட்டமைக்கவும்",
-            "clearFilters": "தெளிவான வடிகட்டிகள்"
-        },
-        "shareItem": {
-            "description": "விவரம்",
-            "setExpiration": "காலாவதியை அமைக்கவும்",
-            "expireInvalid": "காலாவதி எதிர்காலத்தில் இருக்க வேண்டும்",
-            "allowDownloading": "பதிவிறக்க அனுமதிக்கவும்",
-            "success": "இடைநிலைப்பலகைக்கு நகலெடுக்கப்பட்ட இணைப்பைப் பகிரவும் (அல்லது திறக்க இங்கே சொடுக்கு செய்க)",
-            "createFailed": "பங்கை உருவாக்கத் தவறிவிட்டது (பகிர்வு இயக்கப்பட்டதா?)",
-            "copyToClipboard": "இடைநிலைப்பலகைக்கு நகலெடு: Ctrl+C, உள்ளிடவும்",
-            "successMustClick": "பகிர்வு வெற்றிகரமாக உருவாக்கப்பட்டது. திறக்க இங்கே சொடுக்கு செய்யவும்"
         },
         "createPlaylist": {
             "success": "$t(entity.playlist, {\"count\": 1}) வெற்றிகரமாக உருவாக்கப்பட்டது",
@@ -346,7 +287,6 @@
             "searchOrCreate": "$t(entity.playlist, {\"count\": 2}) தேடவும் அல்லது புதிய ஒன்றை உருவாக்க தட்டச்சு செய்யவும்"
         },
         "updateServer": {
-            "success": "சேவையகம் வெற்றிகரமாக புதுப்பிக்கப்பட்டது",
             "title": "புதுப்பிப்பு சேவையகம்"
         },
         "largeFetchConfirmation": {
@@ -354,8 +294,6 @@
             "description": "இந்தச் செயல் தற்போதைய வடிகட்டப்பட்ட காட்சியில் உள்ள அனைத்து உருப்படிகளையும் சேர்க்கும்"
         },
         "createRadioStation": {
-            "success": "வானொலி நிலையம் வெற்றிகரமாக உருவாக்கப்பட்டது",
-            "title": "வானொலி நிலையத்தை உருவாக்குங்கள்",
             "input_homepageUrl": "முகப்பு முகவரி",
             "input_name": "பெயர்",
             "input_streamUrl": "ச்ட்ரீம் முகவரி"
@@ -365,19 +303,12 @@
             "input_synced": "ஒத்திசைக்கப்பட்ட பாடல் வரிகளை ஏற்றுமதி செய்யவும்",
             "input_offset": "$t(setting.lyricOffset)"
         },
-        "saveQueue": {
-            "success": "சேவையகத்தில் விளையாடும் வரிசை சேமிக்கப்பட்டது"
-        },
         "shuffleAll": {
             "title": "சீரற்ற விளையாட",
             "input_genre": "$t(entity.genre, {\"count\": 1})",
             "input_limit": "எத்தனை பாடல்கள்?",
             "input_minYear": "ஆண்டு முதல்",
-            "input_maxYear": "ஆண்டுக்கு",
-            "input_played": "விளையாடு வடிகட்டி",
-            "input_played_optionAll": "அனைத்து தடங்கள்",
-            "input_played_optionUnplayed": "இயக்கப்படாத தடங்கள் மட்டுமே",
-            "input_played_optionPlayed": "டிராக்குகளை மட்டுமே இயக்கியது"
+            "input_maxYear": "ஆண்டுக்கு"
         },
         "privateMode": {
             "enabled": "தனிப்பட்ட பயன்முறை இயக்கப்பட்டது, பின்னணி நிலை இப்போது வெளிப்புற ஒருங்கிணைப்புகளிலிருந்து மறைக்கப்பட்டுள்ளது",
@@ -389,7 +320,6 @@
         "albumArtistDetail": {
             "about": "{{artist}} பற்றி",
             "appearsOn": "தோன்றும்",
-            "recentReleases": "அண்மைக் கால வெளியீடுகள்",
             "viewDiscography": "டிச்கோகிராஃபி காண்க",
             "topSongs": "சிறந்த பாடல்கள்",
             "viewAllTracks": "அனைத்தையும் காண்க $t(entity.track, {\"count\": 2})",
@@ -409,12 +339,9 @@
             "expandSidebar": "பக்கப்பட்டியை விரிவாக்குங்கள்",
             "goForward": "முன்னோக்கிச் செல்லுங்கள்",
             "manageServers": "சேவையகங்களை நிர்வகிக்கவும்",
-            "openBrowserDevtools": "திறந்த உலாவி தேவ்டூல்கள்",
             "quit": "$t(common.quit)",
             "selectServer": "சேவையகத்தைத் தேர்ந்தெடுக்கவும்",
             "settings": "$t(common.setting, {\"count\": 2})",
-            "version": "பதிப்பு {{version}}",
-            "commandPalette": "கட்டளை தட்டு திறக்க",
             "privateModeOff": "தனிப்பட்ட பயன்முறையை அணைக்கவும்",
             "privateModeOn": "தனிப்பட்ட பயன்முறையை இயக்கவும்",
             "selectMusicFolder": "இசை கோப்புறையைத் தேர்ந்தெடுக்கவும்",
@@ -424,54 +351,29 @@
         "manageServers": {
             "url": "முகவரி",
             "title": "சேவையகங்களை நிர்வகிக்கவும்",
-            "serverDetails": "சேவையக விவரங்கள்",
             "username": "பயனர்பெயர்",
             "editServerDetailsTooltip": "சேவையக விவரங்களைத் திருத்தவும்",
             "removeServer": "சேவையகத்தை அகற்று"
         },
         "contextMenu": {
-            "addNext": "$t(player.addNext)",
-            "deletePlaylist": "$t(action.deletePlaylist)",
-            "deselectAll": "$t(action.deselectAll)",
             "download": "பதிவிறக்கம்",
             "moveToBottom": "$t(action.moveToBottom)",
             "moveToTop": "$t(action.moveToTop)",
-            "numberSelected": "{{count}} தேர்ந்தெடுக்கப்பட்டது",
-            "playSimilarSongs": "$t(player.playSimilarSongs)",
-            "removeFromFavorites": "$t(action.removeFromFavorites)",
-            "removeFromPlaylist": "$t(action.removeFromPlaylist)",
-            "removeFromQueue": "$t(action.removeFromQueue)",
-            "playShuffled": "$t(player.shuffle)",
-            "addFavorite": "$t(action.addToFavorites)",
-            "addLast": "$t(player.addLast)",
             "moveToNext": "$t(action.moveToNext)",
-            "play": "$t(player.play)",
-            "shareItem": "உருப்படியைப் பகிரவும்",
             "showDetails": "தகவலைப் பெறுங்கள்",
-            "addToFavorites": "$t(action.addToFavorites)",
             "addToPlaylist": "$t(action.addToPlaylist)",
-            "createPlaylist": "$t(action.createPlaylist)",
             "moveItems": "$t(action.moveItems)",
             "goTo": "செல்",
-            "goToAlbum": "$t(entity.album, {\"count\": 1}) க்குச் செல்",
-            "goToAlbumArtist": "$t(entity.albumArtist, {\"count\": 1}) க்குச் செல்"
+            "goToAlbum": "$t(entity.album, {\"count\": 1}) க்குச் செல்"
         },
         "fullscreenPlayer": {
             "config": {
                 "followCurrentLyric": "தற்போதைய பாடலைப் பின்பற்றுங்கள்",
                 "lyricAlignment": "பாடல் சீரமைப்பு",
-                "lyricOffset": "பாடல் ஆஃப்செட் (எம்.எச்)",
                 "synchronized": "ஒத்திசைக்கப்பட்டது",
-                "dynamicBackground": "மாறும் பின்னணி",
-                "dynamicImageBlur": "பட மங்கலான அளவு",
-                "dynamicIsImage": "பின்னணி படத்தை இயக்கவும்",
                 "lyricGap": "பாடல் இடைவெளி",
                 "lyricSize": "பாடல் அளவு",
-                "opacity": "ஒளிபுகாநிலை",
-                "showLyricMatch": "பாடல் போட்டியைக் காட்டு",
-                "showLyricProvider": "பாடல் வழங்குநரைக் காட்டு",
-                "unsynchronized": "ஒத்திசைக்கப்படாதது",
-                "useImageAspectRatio": "பட விகித விகிதத்தைப் பயன்படுத்தவும்"
+                "unsynchronized": "ஒத்திசைக்கப்படாதது"
             },
             "upNext": "அடுத்து",
             "visualizer": "காட்சிப்படுத்தல்",
@@ -480,8 +382,6 @@
             "related": "தொடர்புடைய"
         },
         "genreList": {
-            "showAlbums": "காட்டு $t(entity.genre, {\"count\": 1}) $t(entity.album, {\"count\": 2})",
-            "showTracks": "காட்டு $t(entity.genre, {\"count\": 1}) $t(entity.track, {\"count\": 2})",
             "title": "$t(entity.genre, {\"count\": 2})"
         },
         "globalSearch": {
@@ -493,21 +393,12 @@
             "title": "கட்டளைகள்"
         },
         "home": {
-            "explore": "உங்கள் நூலகத்திலிருந்து ஆராயுங்கள்",
-            "mostPlayed": "அதிகம் விளையாடியது",
-            "newlyAdded": "புதிதாக சேர்க்கப்பட்ட வெளியீடுகள்",
-            "recentlyPlayed": "அண்மைக் காலத்தில் விளையாடியது",
-            "title": "$t(common.home)",
-            "genres": "$t(entity.genre, {\"count\": 2})",
-            "recentlyReleased": "அண்மைக் காலத்தில் வெளியானது"
+            "title": "$t(common.home)"
         },
         "itemDetail": {
             "copyPath": "இடைநிலைப்பலகைக்கு பாதையை நகலெடுக்கவும்",
             "copiedPath": "பாதை வெற்றிகரமாக நகலெடுக்கப்பட்டது",
             "openFile": "கோப்பு மேலாளரில் தடத்தைக் காட்டு"
-        },
-        "playlist": {
-            "reorder": "ஐடியால் வரிசைப்படுத்தும்போது மட்டுமே மறுசீரமைப்பு இயக்கப்பட்டது"
         },
         "playlistList": {
             "title": "$t(entity.playlist, {\"count\": 2})"
@@ -516,26 +407,14 @@
             "advanced": "மேம்பட்ட",
             "generalTab": "பொது",
             "hotkeysTab": "ஆட்கீச்",
-            "playbackTab": "பின்னணி",
-            "windowTab": "சாளரம்",
-            "analytics": "பகுப்பாய்வு",
             "updates": "புதுப்பிப்பு",
             "cache": "தற்காலிக சேமிப்பு",
             "application": "விண்ணப்பம்",
-            "queryBuilder": "வினவல் கட்டுபவர்",
             "theme": "கருப்பொருள்",
-            "controls": "கட்டுப்பாடுகள்",
-            "sidebar": "பக்கப்பட்டி",
             "remote": "தொலைவில்",
             "exportImport": "இறக்குமதி/ஏற்றுமதி",
-            "scrobble": "சுருள்",
-            "audio": "ஆடியோ",
             "lyrics": "பாடல் வரிகள்",
-            "lyricsDisplay": "பாடல் வரிகள் காட்சி",
-            "transcoding": "டிரான்ச்கோடிங்",
-            "discord": "முரண்பாடு",
-            "logger": "மரம் வெட்டுபவர்",
-            "playerFilters": "பிளேயர் வடிப்பான்கள்"
+            "lyricsDisplay": "பாடல் வரிகள் காட்சி"
         },
         "sidebar": {
             "folders": "$t(entity.folder, {\"count\": 2})",
@@ -556,21 +435,16 @@
             "radio": "$t(entity.radioStation, {\"count\": 2})"
         },
         "trackList": {
-            "title": "$t(entity.track, {\"count\": 2})",
-            "genreTracks": "\"{{genre}}\" $t(entity.track, {\"count\": 2})",
-            "artistTracks": "{{artist}}"
+            "title": "$t(entity.track, {\"count\": 2})"
         },
         "albumArtistList": {
             "title": "$t(entity.albumArtist, {\"count\": 2})"
         },
         "albumDetail": {
             "moreFromArtist": "இந்த $t(entity.artist, {\"count\": 1}) இலிருந்து மேலும்",
-            "moreFromGeneric": "{{item}} இலிருந்து மேலும்",
-            "released": "வெளியிடப்பட்டது"
+            "moreFromGeneric": "{{item}} இலிருந்து மேலும்"
         },
         "albumList": {
-            "artistAlbums": "ஆல்பங்கள் {{artist}}",
-            "genreAlbums": "\"{{genre}}\" $t(entity.album, {\"count\": 2})",
             "title": "$t(entity.album, {\"count\": 2})"
         },
         "radioList": {
@@ -588,9 +462,6 @@
             "paused": "(இடைநிறுத்தப்பட்டது) ",
             "privateMode": "(தனிப்பட்ட முறை)"
         },
-        "folderList": {
-            "title": "$t(entity.folder, {\"count\": 2})"
-        },
         "collections": {
             "overrideExisting": "ஏற்கனவே உள்ளதை மேலெழுதவும்",
             "saveAsCollection": "சேகரிப்பாக சேமிக்கவும்"
@@ -604,10 +475,7 @@
         "muted": "முடக்கிய",
         "next": "அடுத்தது",
         "play": "விளையாடுங்கள்",
-        "playSimilarSongs": "ஒத்த பாடல்களை வாசிக்கவும்",
         "previous": "முந்தைய",
-        "queue_clear": "தெளிவான வரிசை",
-        "queue_remove": "தேர்ந்தெடுக்கப்பட்டதை அகற்று",
         "repeat": "மீண்டும்",
         "repeat_all": "அனைத்தையும் மீண்டும் செய்யவும்",
         "repeat_off": "முடக்கப்பட்டதை மீண்டும் செய்யவும்",
@@ -616,11 +484,8 @@
         "skip": "தவிர்",
         "playbackFetchCancel": "இது சிறிது நேரம் ஆகும்… ரத்து செய்ய அறிவிப்பை மூடு",
         "playbackFetchInProgress": "பாடல்களை ஏற்றுகிறது…",
-        "playbackFetchNoResults": "பாடல்கள் எதுவும் கிடைக்கவில்லை",
         "playbackSpeed": "பிளேபேக் விரைவு",
         "playRandom": "சீரற்ற முறையில் விளையாடுங்கள்",
-        "queue_moveToBottom": "மேலே தேர்ந்தெடுக்கப்பட்ட நகர்த்து",
-        "queue_moveToTop": "தேர்ந்தெடுக்கப்பட்டதை கீழே நகர்த்தவும்",
         "skip_back": "பின்னோக்கி தவிர்க்கவும்",
         "skip_forward": "முன்னோக்கி தவிர்க்கவும்",
         "stop": "நிறுத்து",
@@ -634,16 +499,12 @@
         "artistRadio": "கலைஞர் வானொலி",
         "holdToShuffle": "கலக்க பிடி",
         "lyrics": "பாடல் வரிகள்",
-        "restoreQueueFromServer": "சேவையகத்திலிருந்து வரிசையை மீட்டமை",
-        "saveQueueToServer": "சேவையகத்தில் வரிசையைச் சேமிக்கவும்",
         "trackRadio": "டிராக் ரேடியோ",
         "sleepTimer": "தூக்க நேரம்",
         "sleepTimer_endOfSong": "தற்போதைய பாடலின் முடிவு",
         "sleepTimer_minutes": "{{count}} மணித்துளி",
         "sleepTimer_hours": "{{count}} மணி",
         "sleepTimer_custom": "தனிப்பயன்",
-        "sleepTimer_off": "அணை",
-        "sleepTimer_timeRemaining": "{{time}} மீதமுள்ளது",
         "sleepTimer_setCustom": "டைமரை அமைக்கவும்",
         "sleepTimer_cancel": "நேரங்குறிகருவி ரத்து"
     },
@@ -1042,14 +903,9 @@
             },
             "general": {
                 "autoFitColumns": "ஆட்டோ பொருத்தம் நெடுவரிசைகள்",
-                "followCurrentSong": "தற்போதைய பாடலைப் பின்தொடரவும்",
                 "displayType": "காட்சி வகை",
                 "gap": "$t(common.gap)",
-                "itemGap": "உருப்படி இடைவெளி (பிஎக்ச்)",
-                "itemSize": "உருப்படி அளவு (பிஎக்ச்)",
                 "size": "$t(common.size)",
-                "tableColumns": "அட்டவணை நெடுவரிசைகள்",
-                "advancedSettings": "மேம்பட்ட அமைப்புகள்",
                 "autosize": "தானியங்கு அளவு",
                 "moveUp": "மேலே செல்ல",
                 "moveDown": "கீழே நகர",
@@ -1085,8 +941,6 @@
             "codec": "$t(common.codec)",
             "comment": "கருத்து",
             "dateAdded": "தேதி சேர்க்கப்பட்டது",
-            "discNumber": "வட்டு",
-            "favorite": "பிடித்த",
             "genre": "$t(entity.genre, {\"count\": 1})",
             "lastPlayed": "கடைசியாக விளையாடியது",
             "path": "பாதை",
@@ -1096,7 +950,6 @@
             "size": "$t(common.size)",
             "songCount": "$t(entity.track, {\"count\": 2})",
             "title": "தலைப்பு",
-            "trackNumber": "மின்தடம்",
             "bitDepth": "$t(common.bitDepth)",
             "sampleRate": "$t(common.sampleRate)",
             "owner": "உரிமையாளர்"
@@ -1107,31 +960,6 @@
         "secondShort": "கள்",
         "hourShort": "ம",
         "dayShort": "டி"
-    },
-    "filterOperator": {
-        "after": "பிறகு உள்ளது",
-        "afterDate": "பிறகு (தேதி)",
-        "before": "முன்பு உள்ளது",
-        "beforeDate": "முன் (தேதி)",
-        "contains": "கொண்டுள்ளது",
-        "endsWith": "உடன் முடிகிறது",
-        "inPlaylist": "உள்ளது",
-        "inTheLast": "கடைசியில் உள்ளது",
-        "inTheRange": "வரம்பில் உள்ளது",
-        "inTheRangeDate": "வரம்பில் உள்ளது (தேதி)",
-        "is": "உள்ளது",
-        "isNot": "இல்லை",
-        "isGreaterThan": "விட அதிகமாக உள்ளது",
-        "isLessThan": "விட குறைவாக உள்ளது",
-        "matchesRegex": "ரெசெக்சுடன் பொருந்துகிறது",
-        "notContains": "கொண்டிருக்கவில்லை",
-        "notInPlaylist": "உள்ளே இல்லை",
-        "notInTheLast": "கடைசியில் இல்லை",
-        "startsWith": "உடன் தொடங்குகிறது"
-    },
-    "queryBuilder": {
-        "standardTags": "நிலையான குறிச்சொற்கள்",
-        "customTags": "விருப்ப குறிச்சொற்கள்"
     },
     "releaseType": {
         "primary": {
@@ -1172,7 +1000,6 @@
         "blendTime": "கலப்பு நேரம்",
         "presets": "முன்னமைவுகள்",
         "selectPreset": "முன்னமைவைத் தேர்ந்தெடுக்கவும்",
-        "applyPreset": "முன்னமைவைப் பயன்படுத்தவும்",
         "saveAsPreset": "முன்னமைவாக சேமிக்கவும்",
         "updatePreset": "முன்னமைவைப் புதுப்பிக்கவும்",
         "copyConfiguration": "நகல் கட்டமைப்பு",
@@ -1226,8 +1053,6 @@
         "frequencyScale": "அதிர்வெண் அளவுகோல்",
         "sensitivity": "உணர்திறன்",
         "weightingFilter": "எடை வடிகட்டி",
-        "minimumDecibels": "குறைந்தபட்ச டெசிபல்கள்",
-        "maximumDecibels": "அதிகபட்ச டெசிபல்கள்",
         "linearAmplitude": "நேரியல் அலைவீச்சு",
         "linearBoost": "லீனியர் பூச்ட்",
         "peakBehavior": "உச்ச நடத்தை",

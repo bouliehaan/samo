@@ -1,6 +1,7 @@
 import { NativeModules } from 'react-native';
 
 import {
+    getServerConnectionKey,
     type ServerAuthenticationResult,
 } from '@samo/core/server';
 
@@ -28,6 +29,7 @@ interface SamoAuthMirrorBridge {
             type: string;
             url: string;
             credential: string;
+            connectionKey?: string;
             ndCredential?: string;
         }>,
     ): Promise<void>;
@@ -103,6 +105,11 @@ export const syncCatalogAuthMirror = async (
             type: auth.type as string,
             url: auth.url,
             credential: auth.credential,
+            // The key the Kotlin sync files every mirrored row under. It has to
+            // travel with the connection: the worker cannot derive it from the
+            // address any more, because the address is now whichever of the
+            // server's endpoints we happen to be reaching it on.
+            connectionKey: getServerConnectionKey(auth),
         }));
     try {
         await bridge.save(samo);

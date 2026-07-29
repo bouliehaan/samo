@@ -3,6 +3,7 @@ export type AndroidUtilityScreen =
     | 'downloads'
     | 'initial-sync'
     | 'manage-servers'
+    | 'network'
     | 'server-discovery'
     | 'settings'
     | 'view-all';

@@ -19,7 +19,6 @@ export enum AppRoute {
     LIBRARY_ARTISTS_DETAIL_FAVORITE_SONGS = '/library/artists/:artistId/favorite-songs',
     LIBRARY_ARTISTS_DETAIL_SONGS = '/library/artists/:artistId/songs',
     LIBRARY_ARTISTS_DETAIL_TOP_SONGS = '/library/artists/:artistId/top-songs',
-    LIBRARY_FOLDERS = '/library/folders',
     LIBRARY_GENRES = '/library/genres',
     LIBRARY_GENRES_DETAIL = '/library/genres/:genreId',
     LIBRARY_SONGS = '/library/songs',

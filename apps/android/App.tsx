@@ -1,3 +1,4 @@
+import { BlurTargetView } from 'expo-blur';
 import { useFonts } from 'expo-font';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
@@ -23,7 +24,10 @@ import { BottomChromeBackdrop } from './src/components/BottomChromeBackdrop';
 import { ErrorBoundary } from './src/components/ErrorBoundary';
 import { SearchOverlayHost } from './src/components/SearchOverlayHost';
 import { SearchPullProvider } from './src/components/search-pull/SearchPullContext';
+import { SearchPullScrim } from './src/components/search-pull/SearchPullScrim';
+import { SearchPullGestureHost } from './src/components/search-pull/SearchPullGestureHost';
 import { SearchPullSurface } from './src/components/search-pull/SearchPullSurface';
+import { SheetPortalHost } from './src/components/SheetPortalHost';
 import { StatusBarScrim } from './src/components/StatusBarScrim';
 import { TabBar } from './src/components/TabBar';
 import { TabScenes } from './src/components/TabScenes';
@@ -55,6 +59,10 @@ import {
     startLibraryRelevantLoad,
 } from './src/services/library-flow';
 import { loadLocalFavorites } from './src/services/local-favorites';
+import {
+    installNetworkBootstrap,
+    refreshNetworkOnForeground,
+} from './src/services/network-bootstrap';
 import { loadPersistedRecentContentItems } from './src/services/recent-content';
 import { restoreServersOnce } from './src/services/server-session';
 import {
@@ -68,8 +76,12 @@ import {
     setRecentContentItems,
 } from './src/state/app-session';
 import { getAuthSession, useAuthSessionSelector } from './src/state/auth-session';
-import { useDownloadsSelector } from './src/state/downloads-state';
 import { hydrateHiddenHome } from './src/state/hidden-home';
+import { isOfflineNow, useNetworkSelector } from './src/state/network-state';
+import {
+    DOCK_BLUR_TARGET,
+    SEARCH_TRAY_BLUR_TARGET,
+} from './src/theme/chrome-blur-targets';
 import { styles } from './src/theme/styles';
 import { fonts } from './src/theme/tokens';
 import {
@@ -113,12 +125,17 @@ const flushPostSyncRefresh = () => {
     if (!auth) {
         return;
     }
-    mirrorDirty = false;
     InteractionManager.runAfterInteractions(() => {
         void (async () => {
             try {
                 await refreshHomeFromMirror({ authoritative: true });
                 refreshLibraryFromMirror();
+                // Cleared only once the derive has actually landed. Clearing it
+                // up front meant a flush interrupted partway — a throw, or the
+                // process being killed while the prefetch walked the library —
+                // left the latch saying "nothing to do" about work that had not
+                // been done, and the next foreground skipped it.
+                mirrorDirty = false;
                 await traceAsync('catalog.prefetchArtwork', () => prefetchCatalogArtwork(auth));
             } catch (error) {
                 console.error('[catalog] post-sync derive/prefetch failed', error);
@@ -152,7 +169,7 @@ export default function App() {
     // (connect/disconnect, offline toggle, home load edge); everything
     // high-churn lives behind the hosts below.
     const serverConnection = useAuthSessionSelector((state) => state.serverConnection);
-    const isOfflineMode = useDownloadsSelector((state) => state.isOfflineMode);
+    const isOffline = useNetworkSelector((state) => state.isOffline);
     const isHomeLoaded = useAppNavigationSelector(
         (state) => state.homeContentState.status === 'loaded',
     );
@@ -176,8 +193,11 @@ export default function App() {
         opacity: worldDimOpacity(playerProgress.value),
     }));
 
-    // Boot-time saved-session restore (idempotent module latch).
+    // Boot-time saved-session restore (idempotent module latch). Connectivity
+    // is wired FIRST so the restore can consult it rather than discovering a
+    // dead network one 30-second timeout at a time.
     useEffect(() => {
+        installNetworkBootstrap();
         restoreServersOnce();
     }, []);
 
@@ -237,6 +257,12 @@ export default function App() {
             if (next !== 'active') {
                 return;
             }
+            // Connectivity first: the system does not replay the callbacks it
+            // fired while the process was frozen, so everything below would
+            // otherwise act on whatever was true before the phone went to
+            // sleep — including which of the server's addresses to use.
+            void refreshNetworkOnForeground();
+
             // Re-mint the stream token BEFORE anything renders artwork. After
             // hours of native-driven playback nothing in the frozen JS world
             // has minted, so the cache is expired and every cover URL the
@@ -245,7 +271,7 @@ export default function App() {
             // no-op while the cached token is live, so this costs nothing on
             // ordinary foregrounds.
             const auth = getAuthSession().serverConnection;
-            if (auth?.type === ServerType.SAMO) {
+            if (auth?.type === ServerType.SAMO && !isOfflineNow()) {
                 void ensureSamoStreamToken(auth).catch(() => undefined);
             }
             if (mirrorDirty) {
@@ -265,8 +291,11 @@ export default function App() {
     }, [serverConnection]);
 
     // Library loads follow the Home load edge (the mirror is warm by then).
+    // Offline is NOT a reason to skip them — every one of these reads is served
+    // by the on-device mirror. Clearing the Library when the Wi-Fi dropped is
+    // what made offline mode look like it deleted the app's contents.
     useEffect(() => {
-        if (isOfflineMode || !serverConnection) {
+        if (!serverConnection) {
             resetLibraryContent();
             return;
         }
@@ -283,17 +312,17 @@ export default function App() {
         return () => {
             clearTimeout(timeout);
         };
-    }, [isHomeLoaded, isOfflineMode, serverConnection]);
+    }, [isHomeLoaded, serverConnection]);
 
     useEffect(() => {
-        if (!serverConnection) {
+        if (!serverConnection || isOffline) {
             return;
         }
 
         if (serverConnection.type === ServerType.SAMO) {
             void ensureSamoStreamToken(serverConnection).catch(() => undefined);
         }
-    }, [serverConnection]);
+    }, [isOffline, serverConnection]);
 
     // Warm the first visible covers into memory + disk so round-tripping
     // through detail pages does not refetch art the home screen just showed.
@@ -421,22 +450,18 @@ export default function App() {
                     <ServerConnectionsContext.Provider value={serverConnection}>
                         <MediaContextMenuContext.Provider value={mediaContextMenuApi}>
                             <View style={styles.safeArea}>
-                                {/* translucent + transparent draws the app UNDER the
-                                status bar on every Android version. app.json's
-                                edgeToEdgeEnabled is prebuild-only — this bare
-                                workflow never applies it, so older devices (no
-                                OS-enforced edge-to-edge) showed an opaque bar
-                                that visually cut the Home glass off. Per-screen
-                                STATUS_BAR_INSET paddings are the matching
-                                clearance below. The bar must stay VISIBLE:
-                                `hidden` removes the clock/battery and collapses
-                                STATUS_BAR_INSET to 0, shoving every screen's
-                                header into the display cutout. */}
-                                <StatusBar
-                                    backgroundColor="transparent"
-                                    style="light"
-                                    translucent
-                                />
+                                {/* The app draws UNDER the status bar. SDK 57
+                                dropped `translucent`/`backgroundColor` from
+                                expo-status-bar because Android is now always
+                                edge-to-edge, and `edgeToEdgeEnabled=true` in
+                                gradle.properties is what carries it — the two
+                                props were doing that job by hand on older
+                                versions. Per-screen STATUS_BAR_INSET paddings
+                                are the matching clearance below. The bar must
+                                stay VISIBLE: `hidden` removes the clock/battery
+                                and collapses STATUS_BAR_INSET to 0, shoving
+                                every screen's header into the display cutout. */}
+                                <StatusBar style="light" />
                                 <NowPlayingMetadataSync />
                                 {/* Gives the app worklet-level access to the real IME
                                 position (useReanimatedKeyboardAnimation), so the
@@ -450,25 +475,89 @@ export default function App() {
                                         <View style={styles.root}>
                                             <SearchPullProvider>
                                                 <View style={styles.appContent}>
-                                                    <TabScenes />
-                                                    <UtilityScreenHost />
-                                                    <MediaDetailOverlayHost />
-                                                    <ViewAllOverlayHost />
-                                                    {/* Status-bar legibility veil over the
-                                            edge-to-edge pages/overlays. zIndex
-                                            9500: above every scrolling surface,
-                                            below the search overlay (11000);
-                                            the player + tab bar are LATER
-                                            SIBLINGS of appContent, so they
-                                            paint over it by tree order. */}
-                                                    <StatusBarScrim />
-                                                    {/* The pull-down search surface (10550/
-                                            10600) sits above the page + scrim and
-                                            below the full search overlay, so a
-                                            commit paints over the peek bar on the
-                                            same field row. */}
+                                                    {/* The ONE pull-down search pan, above the
+                                            tab scenes where <Freeze> cannot tear
+                                            it down. It wraps ONLY the scenes:
+                                            the overlays below are later
+                                            siblings, so a pull can never be
+                                            claimed out from under a detail page,
+                                            View All or a utility screen — and
+                                            TabScenes already drops its own
+                                            pointerEvents when one of those is
+                                            covering it, which disables the pan
+                                            with no extra gate. */}
+                                                    {/*
+                                            THE TWO BLUR TARGETS — the content
+                                            each glass pane samples.
+
+                                            A BlurTarget records its ordinary
+                                            draw pass into a RenderNode, so a
+                                            BlurView can reference it instead of
+                                            redrawing this entire hierarchy into
+                                            a software bitmap on every frame.
+                                            That redraw was the app's single
+                                            largest per-frame cost — see
+                                            state/chrome-glass.
+
+                                            THE NESTING IS LOAD-BEARING and the
+                                            rule behind it is simple: a pane may
+                                            never be inside the target it names.
+                                            The tray is above the search results
+                                            and the dock is above everything, so
+                                            they want different content, and the
+                                            only arrangement that gives both of
+                                            them exactly what they had before is
+                                            one target inside the other:
+
+                                              dock target
+                                                └ tray target
+                                                    └ pages, overlays, scrims
+                                                └ full-search results
+                                              (tray pane — outside the tray
+                                               target, inside the dock's)
+                                              (dock pane — outside both, in the
+                                               root below)
+
+                                            zIndex ordering is untouched: every
+                                            layer keeps the value it had, and
+                                            the targets themselves are inert
+                                            containers at the default level. */}
+                                                    <BlurTargetView
+                                                        ref={DOCK_BLUR_TARGET}
+                                                        style={styles.chromeBlurTarget}
+                                                    >
+                                                        <BlurTargetView
+                                                            ref={SEARCH_TRAY_BLUR_TARGET}
+                                                            style={styles.chromeBlurTarget}
+                                                        >
+                                                            <SearchPullGestureHost>
+                                                                <TabScenes />
+                                                            </SearchPullGestureHost>
+                                                            <UtilityScreenHost />
+                                                            <MediaDetailOverlayHost />
+                                                            <ViewAllOverlayHost />
+                                                            {/* Status-bar legibility veil over
+                                                    the edge-to-edge pages/overlays.
+                                                    zIndex 9500: above every scrolling
+                                                    surface, below the search overlay
+                                                    (11000); the player + tab bar are
+                                                    LATER SIBLINGS of appContent, so
+                                                    they paint over it by tree order. */}
+                                                            <StatusBarScrim />
+                                                            {/* The dim behind the search tray
+                                                    (10550). PAGE-side, so it lives in
+                                                    the target the tray samples — the
+                                                    glass has to show a dimmed page,
+                                                    not an undimmed one. */}
+                                                            <SearchPullScrim />
+                                                        </BlurTargetView>
+                                                        <SearchOverlayHost />
+                                                    </BlurTargetView>
+                                                    {/* The pull-down search tray (11100) sits
+                                            above the page, the scrim AND the full
+                                            search overlay, so a commit paints
+                                            under the bar you just pulled down. */}
                                                     <SearchPullSurface />
-                                                    <SearchOverlayHost />
                                                 </View>
                                             </SearchPullProvider>
                                             {/* World dim — fades in over the page + tab bar as the
@@ -492,6 +581,16 @@ export default function App() {
                                                 sinkStyle={tabBarAnimatedStyle}
                                             />
                                             <PlayerDock playerProgress={playerProgress} />
+                                            {/* Every sheet and menu in the app, drawn here
+                                        rather than each opening its own Android window
+                                        (which cost ~380ms per sheet). Last child of the
+                                        root and zIndex 12000, so it clears the tab bar
+                                        and dock; inside the providers above, because
+                                        sheets are DECLARED at their call sites but
+                                        MOUNT here, and that is where their context is
+                                        resolved. Inside KeyboardProvider too, so a
+                                        sheet with a text field still tracks the IME. */}
+                                            <SheetPortalHost />
                                         </View>
                                     </KeyboardAvoidingView>
                                 </KeyboardProvider>

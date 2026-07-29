@@ -7,7 +7,6 @@ import {
     PlayerType,
 } from '@samo/core/playback';
 import { ServerType } from '@samo/core/server';
-import { AppRoute } from '@ts-rest/core';
 import { TFunction } from 'i18next';
 import { ReactNode } from 'react';
 
@@ -20,7 +19,6 @@ import {
     QueueSong,
     Song,
 } from '/@/shared/types/domain-types';
-import { ServerFeatures } from '/@/shared/types/features-types';
 
 export { Play, PlayerQueueType, PlayerRepeat, PlayerShuffle, PlayerStatus, PlayerType };
 export { ServerType } from '@samo/core/server';
@@ -32,7 +30,6 @@ export enum ItemListKey {
     ALBUM_ARTIST_SONG = 'albumArtistSong',
     ALBUM_DETAIL = 'albumDetail',
     ARTIST = LibraryItem.ARTIST,
-    FOLDER = LibraryItem.FOLDER,
     FULL_SCREEN = 'fullScreen',
     GENRE = LibraryItem.GENRE,
     GENRE_ALBUM = 'genreAlbum',
@@ -66,7 +63,9 @@ export enum Platform {
 }
 
 export type CardRoute = {
-    route: AppRoute | string;
+    /** An AppRoute path. Typed as `string` because `shared/` must not import
+     *  from `renderer/`, where the AppRoute enum lives. */
+    route: string;
     slugs?: RouteSlug[];
 };
 
@@ -204,23 +203,8 @@ export type PlayQueueAddOptions = {
     query?: Record<string, any>;
 };
 
-export type QueryBuilderGroup = {
-    group: QueryBuilderGroup[];
-    rules: QueryBuilderRule[];
-    type: 'all' | 'any';
-    uniqueId: string;
-};
-
-export type QueryBuilderRule = {
-    field?: null | string;
-    operator?: null | string;
-    uniqueId: string;
-    value?: any | Date | null | number | string | undefined;
-};
-
 export type ServerListItem = {
     credential: string;
-    features?: ServerFeatures;
     id: string;
     name: string;
     preferRemoteUrl?: boolean;

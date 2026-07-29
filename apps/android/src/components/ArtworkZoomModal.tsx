@@ -185,7 +185,7 @@ export const ArtworkZoomModal = memo(({
                 <Pressable
                     accessibilityLabel="Close artwork"
                     onPress={close}
-                    style={StyleSheet.absoluteFillObject}
+                    style={StyleSheet.absoluteFill}
                 />
                 <GestureDetector gesture={zoomGesture}>
                     <Reanimated.View style={[styles.artworkZoomImageFrame, zoomStyle]}>

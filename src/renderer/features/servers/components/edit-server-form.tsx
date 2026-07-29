@@ -108,15 +108,11 @@ export const EditServerForm = ({ isUpdate, onCancel, password, server }: EditSer
                     });
                 }
 
-                data = await authFunction(
-                    values.url,
-                    {
-                        legacy: values.legacyAuth,
-                        password: values.password,
-                        username: values.username,
-                    },
-                    values.type,
-                );
+                data = await authFunction(values.url, {
+                    legacy: values.legacyAuth,
+                    password: values.password,
+                    username: values.username,
+                });
 
                 if (!data) {
                     return toast.error({

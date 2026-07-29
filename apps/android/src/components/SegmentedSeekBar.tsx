@@ -95,14 +95,31 @@ const SeekSegmentFill = memo(({
     segmentStartMs: number;
     tint: string;
 }) => {
+    // scaleX, NOT width — and this is the hottest animated style in the app,
+    // so the distinction is worth the paragraph.
+    //
+    // The fill used to animate a PERCENTAGE width. Width is a layout prop, and
+    // a percentage width is the expensive kind: resolving it re-runs Yoga
+    // against the parent on every single frame. That happened 60 times a
+    // second for as long as the player was open, multiplied by the number of
+    // segments — and a chaptered audiobook draws one of these per chapter, so
+    // a 40-chapter book was running 2,400 layout passes a second to move a
+    // progress bar. It is motion.ts rule 1, broken in the one place that
+    // animates continuously rather than for 200ms.
+    //
+    // A full-width fill scaled about its left edge paints identically and
+    // costs nothing: the texture is already uploaded and the frame is a matrix
+    // multiply on the compositor. The only visible difference is that the
+    // leading cap's 3px radius compresses horizontally with the scale, which
+    // on a 6px-tall bar is sub-pixel and invisible.
     const animatedStyle = useAnimatedStyle(() => {
         if (segmentDurationMs <= 0) {
-            return { width: '0%' as const };
+            return { transform: [{ scaleX: 0 }] };
         }
         const progress =
             (displayPositionMsSv.value - segmentStartMs) / segmentDurationMs;
         const clamped = progress < 0 ? 0 : progress > 1 ? 1 : progress;
-        return { width: `${clamped * 100}%` as const };
+        return { transform: [{ scaleX: clamped }] };
     }, [segmentDurationMs, segmentStartMs]);
 
     return (
@@ -399,15 +416,24 @@ export const SegmentedSeekBar = memo(({
         return interpolated;
     }, [durationMs, isLive, isPlaying]);
 
+    // translateX, not `left` — same rule as the fill above. `left` on an
+    // absolutely-positioned view is still a layout prop, so the thumb was
+    // dirtying layout on every frame it moved; a transform never leaves the
+    // compositor. The static `left: 0` lives in the stylesheet and the
+    // half-width centring folds into the translate.
+    //
+    // Both branches return the same style keys on purpose: a useAnimatedStyle
+    // whose shape changes between frames leaves the dropped props stuck at
+    // their last value instead of resetting.
     const thumbAnimatedStyle = useAnimatedStyle(() => {
         if (isLive || !durationMs || durationMs <= 0 || trackWidth <= 0) {
-            return { left: -SEEK_THUMB_WIDTH, opacity: 0 };
+            return { opacity: 0, transform: [{ translateX: -SEEK_THUMB_WIDTH }] };
         }
         const progress = displayPositionMsSv.value / durationMs;
         const clamped = progress < 0 ? 0 : progress > 1 ? 1 : progress;
         return {
-            left: clamped * trackWidth - SEEK_THUMB_WIDTH / 2,
             opacity: 1,
+            transform: [{ translateX: clamped * trackWidth - SEEK_THUMB_WIDTH / 2 }],
         };
     }, [durationMs, isLive, trackWidth]);
 

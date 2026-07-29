@@ -1,6 +1,7 @@
 import { ipcRenderer, IpcRendererEvent } from 'electron';
 
 import { disableAutoUpdates, isLinux, isMacOS, isWindows } from '../main/utils';
+import { subscribe } from './subscribe';
 
 const openItem = async (path: string) => {
     return ipcRenderer.invoke('open-item', path);
@@ -31,28 +32,30 @@ const checkForUpdates = (): Promise<{ updateAvailable: boolean; version?: string
     return ipcRenderer.invoke('app-check-for-updates');
 };
 
-const rendererOpenSettings = (cb: (event: IpcRendererEvent) => void) => {
-    ipcRenderer.on('renderer-open-settings', cb);
+const rendererOpenSettings = (cb: (event: IpcRendererEvent) => void) =>
+    subscribe('renderer-open-settings', cb);
+
+const rendererOpenCommandPalette = (cb: (event: IpcRendererEvent) => void) =>
+    subscribe('renderer-open-command-palette', cb);
+
+const rendererOpenManageServers = (cb: (event: IpcRendererEvent) => void) =>
+    subscribe('renderer-open-manage-servers', cb);
+
+const rendererTogglePrivateMode = (cb: (event: IpcRendererEvent) => void) =>
+    subscribe('renderer-toggle-private-mode', cb);
+
+const rendererToggleSidebar = (cb: (event: IpcRendererEvent) => void) =>
+    subscribe('renderer-toggle-sidebar', cb);
+
+const rendererOpenReleaseNotes = (cb: (event: IpcRendererEvent) => void) =>
+    subscribe('renderer-open-release-notes', cb);
+
+const powerSaveBlockerStart = (): Promise<number> => {
+    return ipcRenderer.invoke('power-save-blocker-start');
 };
 
-const rendererOpenCommandPalette = (cb: (event: IpcRendererEvent) => void) => {
-    ipcRenderer.on('renderer-open-command-palette', cb);
-};
-
-const rendererOpenManageServers = (cb: (event: IpcRendererEvent) => void) => {
-    ipcRenderer.on('renderer-open-manage-servers', cb);
-};
-
-const rendererTogglePrivateMode = (cb: (event: IpcRendererEvent) => void) => {
-    ipcRenderer.on('renderer-toggle-private-mode', cb);
-};
-
-const rendererToggleSidebar = (cb: (event: IpcRendererEvent) => void) => {
-    ipcRenderer.on('renderer-toggle-sidebar', cb);
-};
-
-const rendererOpenReleaseNotes = (cb: (event: IpcRendererEvent) => void) => {
-    ipcRenderer.on('renderer-open-release-notes', cb);
+const powerSaveBlockerStop = (): Promise<boolean> => {
+    return ipcRenderer.invoke('power-save-blocker-stop');
 };
 
 const onUpdateAvailable = (cb: (event: IpcRendererEvent, version: string) => void) => {
@@ -82,6 +85,8 @@ export const utils = {
     openApplicationDirectory,
     openItem,
     playerErrorListener,
+    powerSaveBlockerStart,
+    powerSaveBlockerStop,
     rendererOpenCommandPalette,
     rendererOpenManageServers,
     rendererOpenReleaseNotes,

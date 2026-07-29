@@ -60,17 +60,59 @@ export const beginImeControl = async (): Promise<boolean> => {
     return startImeControl();
 };
 
+/*
+ * SESSION GENERATION — the guard against a grant that arrives too late.
+ *
+ * `controlWindowInsetsAnimation` takes the system on the order of 740ms to
+ * honour, and a search pull can easily be started, released and finished well
+ * inside that. When it is, the sequence runs:
+ *
+ *   start()  ...gesture ends... finish()  ...THEN the grant lands...
+ *
+ * and that last step hands a live controller to a gesture that no longer
+ * exists. `finish()` had nothing to release when it ran, so nothing releases it
+ * afterwards either: the keyboard is left under our thumb with no finger
+ * driving it, and the IME visibly moves on its own a beat after the user put
+ * the surface away. That is the flash — it is not the dismissal misbehaving,
+ * it is the PREVIOUS request landing on top of it.
+ *
+ * Every `finish` bumps the generation, so a `start` that resolves after it can
+ * see it has been superseded and hand the controller straight back — settling
+ * the IME to whatever that finish asked for, which is the outcome the user's
+ * gesture actually chose.
+ */
+let sessionGeneration = 0;
+/** What the most recent `finish` asked the IME to settle to, so a late grant
+ *  resolves to the same place rather than guessing. */
+let lastFinishShown = false;
+
 /**
  * Ask for control of the IME. Resolves true once the system has handed it over —
  * which is ASYNCHRONOUS, so the first frames of a gesture may land before control
  * exists. `setImeFraction` is a no-op until then rather than an error, so the
  * caller can just keep pushing frames.
+ *
+ * Resolves FALSE when the grant arrived after the gesture had already finished:
+ * the session is released here and the caller never sees it, so there is no such
+ * thing as a controller nobody is driving.
  */
 export const startImeControl = async (): Promise<boolean> => {
     if (!isAndroid || !native) {
         return false;
     }
-    return native.start().catch(() => false);
+    const generation = ++sessionGeneration;
+    const granted = await native.start().catch(() => false);
+    if (!granted) {
+        return false;
+    }
+    if (generation !== sessionGeneration) {
+        // Superseded while we waited. Give it back at the position the gesture
+        // that superseded us asked for, so the keyboard lands where the user
+        // left it instead of wherever this stale session happened to open.
+        native.finish(lastFinishShown);
+        return false;
+    }
+    return true;
 };
 
 /** 0 = fully hidden, 1 = fully shown. Safe to call every frame. */
@@ -78,7 +120,15 @@ export const setImeFraction = (fraction: number): void => {
     native?.setFraction(fraction);
 };
 
-/** Release the IME, letting it settle to `shown` from wherever it was left. */
+/**
+ * Release the IME, letting it settle to `shown` from wherever it was left.
+ *
+ * Also invalidates any request still in flight — see the generation note above.
+ * This is why it is safe to call on every terminal path of the gesture,
+ * including the ones where control was asked for but never arrived.
+ */
 export const finishImeControl = (shown: boolean): void => {
+    sessionGeneration += 1;
+    lastFinishShown = shown;
     native?.finish(shown);
 };

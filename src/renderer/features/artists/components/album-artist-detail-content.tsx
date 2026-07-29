@@ -1067,7 +1067,6 @@ const AlbumArtistMetadataSimilarArtists = ({
             (relatedArtist: RelatedArtist): AlbumArtist => ({
                 _itemType: LibraryItem.ALBUM_ARTIST,
                 _serverId: serverId || '',
-                _serverType: server?.type || '',
                 albumCount: null,
                 biography: null,
                 duration: null,
@@ -1084,7 +1083,7 @@ const AlbumArtistMetadataSimilarArtists = ({
                 userFavorite: relatedArtist.userFavorite,
             }),
         );
-    }, [relatedArtists, server?.type, serverId]);
+    }, [relatedArtists, serverId]);
 
     const carouselTitle = useMemo(
         () => (

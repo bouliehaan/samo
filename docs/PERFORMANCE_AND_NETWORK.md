@@ -31,6 +31,37 @@ Android services (home-content, media-detail, search-content)
   retry can fix — a 401 or 404 fails immediately rather than after several
   pointless attempts
 
+## Which address, and whether to use one at all
+
+A server usually has two addresses — a LAN one and a public one — and the app
+may have neither. Both questions have exactly one owner each.
+
+**Where to reach the server** (`services/endpoint-selection.ts`): the two
+configured addresses are probed **concurrently** (`selectServerEndpoint`), and
+the first one in the caller's preferred order that answers wins. Concurrency is
+the point: an address that is not on the current network drops packets rather
+than refusing, so probing serially would make every off-network launch wait out
+a full timeout before even trying the address that works. Order comes from
+`services/endpoint-order.ts` — a pinned Wi-Fi name if there is one, else the
+address that worked last time, with cellular ruling out the LAN address
+outright. The winner is applied by swapping `serverConnection.url`; everything
+identifying the server (`connectionKey`) is deliberately independent of its
+address, so the catalog mirror, downloads and progress are the same whichever
+way the device is reaching it. That key is pushed through `SamoAuthMirror` so
+the Kotlin sync files rows under the same id JS reads them back by.
+
+**Whether to use the network at all** (`state/network-state.ts`): one store
+owns device connectivity (from `SamoNetworkStatusModule`), server reachability,
+and the user's preference, and derives a single `isOffline` from the three
+(`state/offline-policy.ts`). Services read `isOfflineNow()`, components read
+`useNetworkSelector`. Offline short-circuits every network path — health check,
+Home's live shelves, the server leg of search, detail fallback, token mints,
+artwork warms — so nothing waits on a dead radio.
+
+Offline does **not** reduce what the app shows. The whole catalog is mirrored
+on-device, so Home and Library keep browsing from the mirror; downloads move to
+the top of Home, and only playback of something not on the device refuses.
+
 ## Where the time goes
 
 The JS thread is the scarce resource. A 2s heartbeat in `App.tsx` logs whenever
@@ -80,6 +111,9 @@ exactly that reason.
 | Topic | Path |
 |-------|------|
 | HTTP timeout + error classification | `packages/core/src/server/server-http.ts` |
+| Endpoint probing | `packages/core/src/server/server-endpoint.ts` |
+| Which address to use | `apps/android/src/services/endpoint-selection.ts` |
+| Offline truth | `apps/android/src/state/network-state.ts` |
 | Detail loaders | `packages/core/src/mobile/mobile-media-detail.ts` |
 | Home loaders | `packages/core/src/mobile/mobile-home.ts` |
 | Jank breadcrumbs | `apps/android/src/services/jank-trace.ts` |

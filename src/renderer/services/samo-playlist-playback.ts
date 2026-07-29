@@ -3,15 +3,15 @@ import { patchSamoPlayback } from '@samo/core/server';
 import { samoFetch } from '/@/renderer/api/samo/samo-fetch';
 import { queryClient } from '/@/renderer/lib/react-query';
 import { getServerById } from '/@/renderer/store';
-import { Playlist, ServerType } from '/@/shared/types/domain-types';
+import { Playlist } from '/@/shared/types/domain-types';
 
 export const touchSamoPlaylistLastPlayed = (playlist: Playlist): void => {
-    if (playlist._serverType !== ServerType.SAMO || !playlist._serverId) {
+    if (!playlist._serverId) {
         return;
     }
 
     const server = getServerById(playlist._serverId);
-    if (!server || server.type !== ServerType.SAMO) {
+    if (!server) {
         return;
     }
 

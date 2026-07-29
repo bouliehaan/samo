@@ -1,5 +1,5 @@
 import { SAMO_MOBILE_TABS, type SamoMobileTabId } from '@samo/core/navigation';
-import { memo, useCallback, useEffect, useState } from 'react';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { View } from 'react-native';
 
 import { handleAddRadioStation } from '../handlers/info-handlers';
@@ -25,12 +25,19 @@ import {
 } from '../state/app-navigation';
 import { subscribeTabReselected } from '../state/tab-reselect';
 import { useAuthSessionSelector } from '../state/auth-session';
+import { durations } from '../theme/motion';
 import { styles } from '../theme/styles';
 import { getTabTitle } from '../utils/tab-title';
 import { ErrorBoundary } from './ErrorBoundary';
 import { TabSceneContainer } from './TabSceneContainer';
 
 const handleOpenManageServers = () => setActiveUtilityScreen('manage-servers');
+
+/** How long after an overlay starts covering the tab scenes before they are
+ *  provably invisible: its full cross-fade, plus the same slack
+ *  TabSceneContainer and usePresenceTransition leave past a last animated
+ *  frame. */
+const COVERED_BY_OVERLAY_MS = durations.screenEnter + 30;
 
 const HomeTabScene = memo(function HomeTabScene() {
     const serverConnection = useAuthSessionSelector((state) => state.serverConnection);
@@ -146,6 +153,24 @@ export const TabScenes = memo(function TabScenes() {
     const reducedMotion = useReducedMotionPreference();
     const activeTab = useAppNavigationSelector((state) => state.activeTab);
     const visitedTabs = useAppNavigationSelector((state) => state.visitedTabs);
+
+    // The tab we just came from, held THAWED instead of refreezing straight
+    // away. Freezing is what makes a background tab free, but unfreezing costs
+    // a full re-render of the scene — measured at 62-140ms, paid on the
+    // critical path of every single switch, which is most of why switching felt
+    // slow. Bouncing between two tabs is the overwhelmingly common pattern, and
+    // the return trip now skips the thaw entirely. Exactly ONE extra scene is
+    // ever left live, so the "idle tabs cost nothing" property still holds for
+    // the other three.
+    const previousTabRef = useRef<SamoMobileTabId | null>(null);
+    const [warmTab, setWarmTab] = useState<SamoMobileTabId | null>(null);
+    useEffect(() => {
+        const cameFrom = previousTabRef.current;
+        previousTabRef.current = activeTab;
+        if (cameFrom !== null && cameFrom !== activeTab) {
+            setWarmTab(cameFrom);
+        }
+    }, [activeTab]);
     // Any overlay above the tab scenes swallows their pointer events.
     const isCovered = useAppNavigationSelector(
         (state) =>
@@ -154,8 +179,46 @@ export const TabScenes = memo(function TabScenes() {
             (state.activeUtilityScreen === 'view-all' && state.viewAllRoute !== null),
     );
 
+    // ...and it also stops them being DRAWN. A covered tab scene is not a cheap
+    // thing to leave painting: the active tab stays fully mounted and opaque
+    // behind every full-screen overlay, so Android measures, lays out and draws
+    // the whole of Home — its shelves, tiles and ~180 text views — on every
+    // frame of a screen the user cannot see. Traced on a V60 release build,
+    // flinging a 100-track playlist drew 272 ReactTextViews per frame; only ~92
+    // of those belonged to the list in front. Two thirds of the text drawing,
+    // and the traversal that carries it, was going to Home underneath.
+    //
+    // TabSceneContainer already does exactly this for a tab scene covered by
+    // another tab scene ("it stops a full-screen opaque layer from drawing
+    // behind the active one") — this is the same rule applied to overlays,
+    // which is the case that was missing.
+    //
+    // Opacity, not `display: 'none'`: GONE would re-run layout on the way back
+    // and Android resets a ScrollView's offset when it does, so returning from
+    // a detail page would lose Home's scroll position. Alpha 0 lets HWUI skip
+    // the subtree's draw while leaving layout — and therefore scroll state —
+    // exactly as it was.
+    //
+    // DELAYED, because the overlay CROSS-FADES in over `screenEnter`: the tab
+    // scenes are genuinely visible through that fade, and blanking them on the
+    // covering render would make the overlay rise out of black instead of out
+    // of the page behind it. Hide only once the overlay is provably opaque;
+    // un-hide immediately on uncover so the exit fade has something to reveal.
+    const [isCoveredOpaque, setIsCoveredOpaque] = useState(false);
+    useEffect(() => {
+        if (!isCovered) {
+            setIsCoveredOpaque(false);
+            return;
+        }
+        const timer = setTimeout(() => setIsCoveredOpaque(true), COVERED_BY_OVERLAY_MS);
+        return () => clearTimeout(timer);
+    }, [isCovered]);
+
     return (
-        <View pointerEvents={isCovered ? 'none' : 'auto'} style={styles.tabSceneHost}>
+        <View
+            pointerEvents={isCovered ? 'none' : 'auto'}
+            style={[styles.tabSceneHost, isCoveredOpaque ? styles.tabSceneHostCovered : null]}
+        >
             {SAMO_MOBILE_TABS.map((tab) => {
                 const isSceneActive = tab.id === activeTab;
                 const isSceneMounted = visitedTabs.has(tab.id);
@@ -169,6 +232,7 @@ export const TabScenes = memo(function TabScenes() {
                 return (
                     <TabSceneContainer
                         isActive={isSceneActive}
+                        keepWarm={tab.id === warmTab}
                         key={tab.id}
                         reducedMotion={reducedMotion}
                     >

@@ -1,5 +1,4 @@
 import { useQuery } from '@tanstack/react-query';
-import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useLocation, useParams } from 'react-router';
 
@@ -10,8 +9,6 @@ import { usePlayer } from '/@/renderer/features/player/context/player-context';
 import { playlistsQueries } from '/@/renderer/features/playlists/api/playlists-api';
 import { PlaylistDetailSongListHeaderFilters } from '/@/renderer/features/playlists/components/playlist-detail-song-list-header-filters';
 import { openUpdatePlaylistModal } from '/@/renderer/features/playlists/components/update-playlist-modal';
-import { useDeletePlaylistImage } from '/@/renderer/features/playlists/mutations/delete-playlist-image-mutation';
-import { useUploadPlaylistImage } from '/@/renderer/features/playlists/mutations/upload-playlist-image-mutation';
 import { FilterBar } from '/@/renderer/features/shared/components/filter-bar';
 import {
     LibraryHeader,
@@ -23,85 +20,17 @@ import { AppRoute } from '/@/renderer/router/routes';
 import { recordRecentPlaylist, useCurrentServer, usePermissions } from '/@/renderer/store';
 import { formatDurationString } from '/@/renderer/utils';
 import { replaceURLWithHTMLLinks } from '/@/renderer/utils/linkify';
-import { hasFeature } from '/@/shared/api/utils';
-import { ActionIcon } from '/@/shared/components/action-icon/action-icon';
 import { Button } from '/@/shared/components/button/button';
-import { FileButton } from '/@/shared/components/file-button/file-button';
 import { Group } from '/@/shared/components/group/group';
 import { Icon } from '/@/shared/components/icon/icon';
 import { Spoiler } from '/@/shared/components/spoiler/spoiler';
 import { Stack } from '/@/shared/components/stack/stack';
 import { Text } from '/@/shared/components/text/text';
 import { useLocalStorage } from '/@/shared/hooks/use-local-storage';
-import { LibraryItem, Playlist, Song } from '/@/shared/types/domain-types';
-import { ServerFeature } from '/@/shared/types/features-types';
+import { LibraryItem, Song } from '/@/shared/types/domain-types';
 import { Play } from '/@/shared/types/types';
 
-interface PlaylistDetailSongListHeaderProps {
-    isSmartPlaylist?: boolean;
-    onConvertToSmart?: () => void;
-    onDelete?: () => void;
-    onToggleQueryBuilder?: () => void;
-}
-
-function ImageUploadOverlay({
-    data,
-    onUploadFile,
-}: {
-    data?: Playlist;
-    onUploadFile: (file: File) => Promise<void>;
-}) {
-    const deletePlaylistImageMutation = useDeletePlaylistImage({});
-    const server = useCurrentServer();
-
-    if (!data) return null;
-    if (!hasFeature(server, ServerFeature.PLAYLIST_IMAGE_UPLOAD)) return null;
-
-    return (
-        <Group gap="xs">
-            <FileButton
-                accept="image/*"
-                onChange={async (file) => {
-                    if (!file) return;
-                    await onUploadFile(file);
-                }}
-            >
-                {(props) => (
-                    <ActionIcon
-                        icon="uploadImage"
-                        iconProps={{ size: 'lg' }}
-                        radius="xl"
-                        size="xs"
-                        variant="default"
-                        {...props}
-                    />
-                )}
-            </FileButton>
-            <ActionIcon
-                disabled={!data?.uploadedImage}
-                icon="delete"
-                iconProps={{ size: 'lg' }}
-                onClick={(e) => {
-                    e.stopPropagation();
-                    if (!data?._serverId) return;
-                    deletePlaylistImageMutation.mutate({
-                        apiClientProps: {
-                            serverId: data._serverId,
-                        },
-                        query: { id: data.id },
-                    });
-                }}
-                radius="xl"
-                size="xs"
-                variant="default"
-            />
-        </Group>
-    );
-}
-
-export const PlaylistDetailSongListHeader = ({
-    isSmartPlaylist,
-}: PlaylistDetailSongListHeaderProps) => {
+export const PlaylistDetailSongListHeader = () => {
     const { t } = useTranslation();
     const { playlistId } = useParams() as { playlistId: string };
     const { itemCount, listData } = useListContext();
@@ -127,7 +56,6 @@ export const PlaylistDetailSongListHeader = ({
     });
 
     const player = usePlayer();
-    const uploadPlaylistImageMutation = useUploadPlaylistImage({});
 
     const handlePlay = (type?: Play) => {
         const playlistServerId = detailQuery?.data?._serverId ?? server?.id;
@@ -145,27 +73,6 @@ export const PlaylistDetailSongListHeader = ({
             recordRecentPlaylist(detailQuery.data);
         }
     };
-
-    const canUploadPlaylistImage =
-        hasFeature(server, ServerFeature.PLAYLIST_IMAGE_UPLOAD) &&
-        Boolean(detailQuery?.data?._serverId);
-
-    const handlePlaylistImageUpload = useCallback(
-        async (file: File) => {
-            const playlist = detailQuery?.data;
-            if (!playlist?._serverId) return;
-
-            const buffer = await file.arrayBuffer();
-            uploadPlaylistImageMutation.mutate({
-                apiClientProps: {
-                    serverId: playlist._serverId,
-                },
-                body: { image: new Uint8Array(buffer) },
-                query: { id: playlist.id },
-            });
-        },
-        [detailQuery?.data, uploadPlaylistImageMutation],
-    );
 
     const imageUrl = useItemImageUrl({
         id: detailQuery?.data?.imageId || undefined,
@@ -197,11 +104,6 @@ export const PlaylistDetailSongListHeader = ({
                             songs={listData as Song[]}
                         />
                         <LibraryHeaderBar.Title>{detailQuery?.data?.name}</LibraryHeaderBar.Title>
-                        {isSmartPlaylist && (
-                            <LibraryHeaderBar.Badge>
-                                {t('entity.smartPlaylist')}
-                            </LibraryHeaderBar.Badge>
-                        )}
                         {!!playlistDuration && (
                             <LibraryHeaderBar.Badge>
                                 {formatDurationString(playlistDuration)}
@@ -218,12 +120,6 @@ export const PlaylistDetailSongListHeader = ({
             ) : (
                 <LibraryHeader
                     compact
-                    imageOverlay={
-                        <ImageUploadOverlay
-                            data={detailQuery?.data}
-                            onUploadFile={handlePlaylistImageUpload}
-                        />
-                    }
                     imageUrl={imageUrl}
                     item={{
                         imageId: detailQuery?.data?.imageId,
@@ -231,7 +127,6 @@ export const PlaylistDetailSongListHeader = ({
                         route: AppRoute.PLAYLISTS,
                         type: LibraryItem.PLAYLIST,
                     }}
-                    onImageFileDrop={canUploadPlaylistImage ? handlePlaylistImageUpload : undefined}
                     title={detailQuery?.data?.name || ''}
                     topRight={<ListSearchInput />}
                 >
@@ -257,7 +152,7 @@ export const PlaylistDetailSongListHeader = ({
                             </Spoiler>
                         ) : null}
                         <Group gap="sm">
-                            {canEditPlaylist && !isSmartPlaylist && detailQuery?.data ? (
+                            {canEditPlaylist && detailQuery?.data ? (
                                 <Button
                                     leftSection={<Icon icon="edit" />}
                                     onClick={() =>
@@ -277,7 +172,7 @@ export const PlaylistDetailSongListHeader = ({
                 </LibraryHeader>
             )}
             <FilterBar>
-                <PlaylistDetailSongListHeaderFilters isSmartPlaylist={isSmartPlaylist} />
+                <PlaylistDetailSongListHeaderFilters />
             </FilterBar>
         </Stack>
     );

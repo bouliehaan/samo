@@ -1,13 +1,15 @@
 import { Image as ExpoImage } from 'expo-image';
 
 import { getAuthSession } from '../state/auth-session';
+import { isOfflineNow } from '../state/network-state';
 import { getPlaybackBridge } from '../state/playback-bridge';
 import { getAndroidPlaybackState } from '../state/playback-store';
 import {
-    getAbsProgressSeconds,
-    getPlayerPositionMsForAbsProgress,
-} from '../utils/abs-progress-math';
-import { loadAbsCurrentProgress } from './abs-progress';
+    getPlaybackProgressSeconds,
+    getPlayerPositionMsForPlaybackProgress,
+} from '../utils/playback-progress-math';
+import { refreshActiveEndpoint } from './endpoint-selection';
+import { loadCurrentPlaybackProgress } from './playback-progress';
 import { triggerCatalogSyncNow } from './headless-catalog-sync';
 import { loadHomeForConnection } from './home-flow';
 
@@ -16,6 +18,15 @@ export const syncWithServer = async (): Promise<{ message?: string; ok: boolean 
     const serverConnection = getAuthSession().serverConnection;
     if (!serverConnection) {
         return { message: 'No servers connected', ok: false };
+    }
+    if (isOfflineNow()) {
+        // One retry first — a user tapping "sync" is usually a user who thinks
+        // the server is back, and they are often right. Only report offline if
+        // the probe agrees with us.
+        await refreshActiveEndpoint({ force: true });
+        if (isOfflineNow()) {
+            return { message: 'Offline — nothing to sync with', ok: false };
+        }
     }
     try {
         // Three coordinated calls per sync. Loading home content first so
@@ -42,17 +53,17 @@ export const syncWithServer = async (): Promise<{ message?: string; ok: boolean 
         // If there's a currently-active audiobook context, re-read its
         // progress from the server in case another client moved ahead.
         const bridge = getPlaybackBridge();
-        const absCtx = bridge.absContextRef.current;
-        if (absCtx) {
+        const progressCtx = bridge.progressContextRef.current;
+        if (progressCtx) {
             const playbackState = getAndroidPlaybackState();
-            const fresh = await loadAbsCurrentProgress(
-                absCtx.authentication,
-                absCtx.itemId,
-                absCtx.episodeId,
+            const fresh = await loadCurrentPlaybackProgress(
+                progressCtx.authentication,
+                progressCtx.itemId,
+                progressCtx.episodeId,
             );
             const currentPosMs =
                 playbackState.status !== 'idle'
-                    ? getAbsProgressSeconds(absCtx, playbackState.positionMs, playbackState.item) *
+                    ? getPlaybackProgressSeconds(progressCtx, playbackState.positionMs, playbackState.item) *
                       1000
                     : 0;
             if (fresh && fresh.currentTimeSeconds * 1000 > currentPosMs + 5_000) {
@@ -60,7 +71,7 @@ export const syncWithServer = async (): Promise<{ message?: string; ok: boolean 
                 // 5-second buffer keeps us from interrupting playback when
                 // local and server values trivially differ.
                 await bridge.seekPlayback(
-                    getPlayerPositionMsForAbsProgress(
+                    getPlayerPositionMsForPlaybackProgress(
                         fresh.currentTimeSeconds,
                         playbackState.status !== 'idle' ? playbackState.item : undefined,
                     ),

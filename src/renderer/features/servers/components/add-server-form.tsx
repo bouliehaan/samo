@@ -21,7 +21,6 @@ import { Group } from '/@/shared/components/group/group';
 import { ModalButton } from '/@/shared/components/modal/model-shared';
 import { Paper } from '/@/shared/components/paper/paper';
 import { PasswordInput } from '/@/shared/components/password-input/password-input';
-import { SegmentedControl } from '/@/shared/components/segmented-control/segmented-control';
 import { Stack } from '/@/shared/components/stack/stack';
 import { TextInput } from '/@/shared/components/text-input/text-input';
 import { Text } from '/@/shared/components/text/text';
@@ -29,29 +28,14 @@ import { toast } from '/@/shared/components/toast/toast';
 import { useFocusTrap } from '/@/shared/hooks/use-focus-trap';
 import { useForm } from '/@/shared/hooks/use-form';
 import { AuthenticationResponse, ServerListItemWithCredential } from '/@/shared/types/domain-types';
-import { DiscoveredServerItem, ServerType, toServerType } from '/@/shared/types/types';
+import { DiscoveredServerItem, ServerType } from '/@/shared/types/types';
 
 const autodiscover = isElectron() ? window.api.autodiscover : null;
 const localSettings = isElectron() ? window.api.localSettings : null;
 
 interface AddServerFormProps {
-    initialServerType?: ServerType;
     onCancel: (() => void) | null;
     onSubmitSuccess?: (server: ServerListItemWithCredential) => void;
-}
-
-interface ServerDetails {
-    icon: string;
-    name: string;
-}
-
-function ServerIconWithLabel({ icon, label }: { icon: string; label: string }) {
-    return (
-        <Stack align="center" justify="center">
-            <img height="50" src={icon} width="50" />
-            <Text>{label}</Text>
-        </Stack>
-    );
 }
 
 function useAutodiscovery() {
@@ -73,26 +57,7 @@ function useAutodiscovery() {
     return { isDone, servers };
 }
 
-const SERVER_TYPES: Record<ServerType, ServerDetails> = {
-    [ServerType.SAMO]: {
-        icon: SamoIcon,
-        name: 'Samo',
-    },
-};
-
-const ALL_SERVERS = Object.keys(SERVER_TYPES).map((serverType) => {
-    const info = SERVER_TYPES[serverType];
-    return {
-        label: <ServerIconWithLabel icon={info.icon} label={info.name} />,
-        value: serverType,
-    };
-});
-
-export const AddServerForm = ({
-    initialServerType: preferredInitialServerType,
-    onCancel,
-    onSubmitSuccess,
-}: AddServerFormProps) => {
+export const AddServerForm = ({ onCancel, onSubmitSuccess }: AddServerFormProps) => {
     const { t } = useTranslation();
     const queryClient = useQueryClient();
     const focusTrapRef = useFocusTrap(true);
@@ -102,24 +67,17 @@ export const AddServerForm = ({
     const serverList = useServerList();
     const { servers: discovered } = useAutodiscovery();
     const configuredServerUrl = localSettings ? localSettings.env.SERVER_URL : window.SERVER_URL;
-    const initialServerType =
-        preferredInitialServerType ??
-        (localSettings ? localSettings.env.SERVER_TYPE : toServerType(window.SERVER_TYPE)) ??
-        ServerType.SAMO;
-
     const serverLock = isServerLock();
 
     const form = useForm({
         initialValues: {
             legacyAuth: isLegacyAuth(),
-            name:
-                (localSettings ? localSettings.env.SERVER_NAME : window.SERVER_NAME) ||
-                SERVER_TYPES[initialServerType].name,
+            name: (localSettings ? localSettings.env.SERVER_NAME : window.SERVER_NAME) || 'Samo',
             password: '',
             preferInstantMix: undefined,
             preferRemoteUrl: false,
             remoteUrl: '',
-            type: initialServerType,
+            type: ServerType.SAMO,
             // Default to https:// rather than http://: samo-server itself never
             // terminates TLS, so a bare LAN box only ever needs http (and a LAN
             // server is normally reached via autodiscovery below, not typed by
@@ -208,21 +166,6 @@ export const AddServerForm = ({
 
     const isSubmitDisabled = !form.values.name || !form.values.url || !form.values.username;
 
-    const handleServerTypeChange = (type: string) => {
-        const nextType = type as ServerType;
-        const currentTypeName = SERVER_TYPES[form.values.type].name;
-        const shouldUseTypeName =
-            !form.values.name ||
-            form.values.name === 'My Server' ||
-            form.values.name === currentTypeName;
-
-        form.setFieldValue('type', nextType);
-
-        if (shouldUseTypeName) {
-            form.setFieldValue('name', SERVER_TYPES[nextType].name);
-        }
-    };
-
     const fillServerDetails = (server: DiscoveredServerItem) => {
         form.setValues({ ...server });
     };
@@ -245,15 +188,11 @@ export const AddServerForm = ({
 
         try {
             setIsLoading(true);
-            const data: AuthenticationResponse | undefined = await authFunction(
-                values.url,
-                {
-                    legacy: values.legacyAuth,
-                    password: values.password,
-                    username: values.username,
-                },
-                values.type as ServerType,
-            );
+            const data: AuthenticationResponse | undefined = await authFunction(values.url, {
+                legacy: values.legacyAuth,
+                password: values.password,
+                username: values.username,
+            });
 
             if (!data) {
                 return toast.error({
@@ -266,6 +205,7 @@ export const AddServerForm = ({
                 id: nanoid(),
                 isAdmin: data.isAdmin,
                 name: values.name,
+                serverId: data.serverId,
                 type: values.type as ServerType,
                 url: normalizeBaseUrl(values.url),
                 userId: data.userId,
@@ -326,15 +266,13 @@ export const AddServerForm = ({
                 {discovered.map((server) => (
                     <Paper key={server.url} p="10px">
                         <Group>
-                            <img height="32" src={SERVER_TYPES[server.type].icon} width="32" />
+                            <img height="32" src={SamoIcon} width="32" />
                             <div
                                 onClick={() => fillServerDetails(server)}
                                 style={{ cursor: 'pointer' }}
                             >
                                 <Text fw={700}>{server.name}</Text>
-                                <Text>
-                                    {SERVER_TYPES[server.type].name} server at {server.url}
-                                </Text>
+                                <Text>Samo server at {server.url}</Text>
                             </div>
                         </Group>
                     </Paper>
@@ -342,14 +280,6 @@ export const AddServerForm = ({
             </Stack>
             <form onSubmit={handleSubmit}>
                 <Stack m={5} ref={focusTrapRef}>
-                    <SegmentedControl
-                        data={ALL_SERVERS}
-                        disabled={serverLock}
-                        onChange={handleServerTypeChange}
-                        p="md"
-                        value={form.values.type}
-                        withItemsBorders={false}
-                    />
                     <Group grow>
                         <TextInput
                             disabled={serverLock}

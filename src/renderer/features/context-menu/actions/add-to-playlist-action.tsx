@@ -11,7 +11,6 @@ import {
     getAlbumSongsById,
     getGenreSongsById,
     getPlaylistSongsById,
-    getSongsByFolder,
 } from '/@/renderer/features/player/utils';
 import { playlistsQueries } from '/@/renderer/features/playlists/api/playlists-api';
 import { useRecentPlaylists } from '/@/renderer/features/playlists/hooks/use-recent-playlists';
@@ -145,25 +144,6 @@ export const AddToPlaylistAction = ({ items, itemType }: AddToPlaylistActionProp
         [queryClient, serverId],
     );
 
-    const getSongsByFolderLocal = useCallback(
-        async (folderId: string) => {
-            if (!server) return null;
-
-            const songsResponse = await getSongsByFolder({
-                id: [folderId],
-                queryClient,
-                serverId: server.id,
-            });
-
-            return {
-                items: songsResponse.items.map((song) => song.id),
-                startIndex: 0,
-                totalRecordCount: songsResponse.items.length,
-            };
-        },
-        [queryClient, server],
-    );
-
     const handleAddToPlaylist = useCallback(
         async (playlistId: string) => {
             if (items.length === 0 || !serverId) return;
@@ -193,11 +173,6 @@ export const AddToPlaylistAction = ({ items, itemType }: AddToPlaylistActionProp
                     for (const id of items) {
                         const songs = await getSongsByPlaylist(id);
                         allSongIds.push(...(songs?.items?.map((song) => song.id) || []));
-                    }
-                } else if (itemType === LibraryItem.FOLDER) {
-                    for (const id of items) {
-                        const songs = await getSongsByFolderLocal(id);
-                        allSongIds.push(...(songs?.items || []));
                     }
                 }
 
@@ -294,7 +269,6 @@ export const AddToPlaylistAction = ({ items, itemType }: AddToPlaylistActionProp
             addToPlaylistMutation,
             getSongsByAlbum,
             getSongsByArtist,
-            getSongsByFolderLocal,
             getSongsByGenre,
             getSongsByPlaylist,
             itemType,
@@ -310,7 +284,6 @@ export const AddToPlaylistAction = ({ items, itemType }: AddToPlaylistActionProp
         const modalProps: {
             albumId?: string[];
             artistId?: string[];
-            folderId?: string[];
             genreId?: string[];
             initialSelectedIds?: string[];
             playlistId?: string[];
@@ -324,9 +297,6 @@ export const AddToPlaylistAction = ({ items, itemType }: AddToPlaylistActionProp
             case LibraryItem.ALBUM_ARTIST:
             case LibraryItem.ARTIST:
                 modalProps.artistId = items;
-                break;
-            case LibraryItem.FOLDER:
-                modalProps.folderId = items;
                 break;
             case LibraryItem.GENRE:
                 modalProps.genreId = items;

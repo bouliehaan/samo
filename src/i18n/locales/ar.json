@@ -1,21 +1,13 @@
 {
     "action": {
         "addToFavorites": "إضافة الى $t(entity.favorite, {\"count\": 2})",
-        "addToPlaylist": "إضافة الى $t(entity.playlist, {\"count\": 1})",
         "clearQueue": "مسح قائمة الإنتظار",
         "createPlaylist": "إنشاء $t(entity.playlist, {\"count\": 1})",
         "deletePlaylist": "حذف $t(entity.playlist, {\"count\": 1})",
-        "deselectAll": "إلغاء تحديد الكل",
         "editPlaylist": "تعديل $t(entity.playlist, {\"count\": 1})",
-        "goToPage": "اذهب الى صفحة",
-        "moveToNext": "الذهاب الى التالي",
-        "moveToBottom": "الذهاب الى الأسفل",
-        "moveToTop": "الذهاب الى الأعلى",
-        "refresh": "$t(common.refresh)",
         "removeFromFavorites": "حذف من $t(entity.favorite, {\"count\": 2})",
         "removeFromPlaylist": "حذف من $t(entity.playlist, {\"count\": 1})",
         "removeFromQueue": "حذف من قائمة الإنتظار",
-        "toggleSmartPlaylistEditor": "تشغيل / إطفاء وضع التعديل لـ $t(entity.smartPlaylist)",
         "viewPlaylists": "إظهار $t(entity.playlist, {\"count\": 2})",
         "openIn": {
             "lastfm": "فتح في Last.fm",
@@ -25,7 +17,6 @@
         "selectRangeOfItems": "اختر مجموعة من العناصر",
         "goToCurrent": "الانتقال إلى العنصر الحالي",
         "createRadioStation": "يخلق $t(entity.radioStation, {\"count\": 1})",
-        "deleteRadioStation": "يمسح $t(entity.radioStation, {\"count\": 1})",
         "selectAll": "تحديد الكل"
     },
     "common": {

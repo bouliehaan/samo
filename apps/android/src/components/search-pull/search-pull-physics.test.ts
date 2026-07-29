@@ -14,6 +14,7 @@ const PEEK_AT = 0.28;
 const FLING = 1200;
 const SKIP = 2000;
 const SKIP_AT = 0.5;
+const DISMISS = 900;
 
 const reveal = (translationY: number) => pullReveal(translationY, PEEK, SPAN);
 const travel = (revealValue: number) => revealTravel(revealValue, PEEK, SPAN);
@@ -21,6 +22,7 @@ const travel = (revealValue: number) => revealTravel(revealValue, PEEK, SPAN);
 const release = (revealValue: number, velocityY = 0) =>
     resolvePullRelease({
         commitAt: COMMIT_AT,
+        dismissVelocity: DISMISS,
         flingVelocity: FLING,
         peekAt: PEEK_AT,
         reveal: revealValue,
@@ -88,6 +90,26 @@ describe('resolvePullRelease', () => {
     it('rests the bar for a stage-one release', () => {
         expect(release(1)).toBe('peek');
         expect(release(PEEK_AT)).toBe('peek');
+    });
+
+    it('throws the surface away on an upward fling, from ANY position', () => {
+        // The reported bug: half-open it, then swipe it briskly away, and the
+        // bar stayed seated. Every rule read downward velocity only, so an
+        // upward throw fell through to `reveal >= peekAt` (0.28) and rested.
+        expect(release(0.6, -DISMISS)).toBe('retract');
+        expect(release(1.4, -2500)).toBe('retract');
+        // Including from most of the way into search: a throw is not ambiguous,
+        // so it outranks even the commit position.
+        expect(release(1.9, -2500)).toBe('retract');
+        expect(release(2, -DISMISS)).toBe('retract');
+    });
+
+    it('still resolves a SLOW back-out on position, not on direction', () => {
+        // Drifting upward as the finger leaves is not a throw. Below the
+        // dismissal speed the position rules stand, so backing the surface out
+        // gently still rests it where the user could see it.
+        expect(release(1.2, -300)).toBe('peek');
+        expect(release(0.9, -(DISMISS - 1))).toBe('peek');
     });
 
     it('rests the bar on a gentle downward flick even below the bar', () => {

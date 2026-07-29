@@ -9,6 +9,7 @@ import { type ServerAuthenticationResult } from '@samo/core/server';
 import { setHomeContentState } from '../state/app-navigation';
 import { setRecentContentItems } from '../state/app-session';
 import { getAuthSession } from '../state/auth-session';
+import { isOfflineNow } from '../state/network-state';
 import {
     collectFreshAlbumItems,
     reconcileRecentContentItemsIfChanged,
@@ -90,6 +91,15 @@ export const loadHomeForConnection = async (
         }
         return current.status === 'loaded' ? current : { status: 'loading' };
     });
+
+    // Offline stops here, with Home fully painted from the mirror above. The
+    // live shelves are the ONLY network-fed part of this page, and attempting
+    // them offline bought nothing but four requests timing out — which is
+    // exactly the "the app hangs when I lose signal" symptom, since the radio
+    // shelf's dedupe key kept the failure in flight behind every retry.
+    if (isOfflineNow()) {
+        return;
+    }
 
     // Live sections — the one network trip on the Home path. Failures
     // degrade to the last-known live sections (or none) instead of

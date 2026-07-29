@@ -594,7 +594,9 @@ const fetchAllPages = async <T>(
     return all;
 };
 
-export const SamoController: Partial<InternalControllerEndpoint> = {
+// Typed as the complete contract (not Partial) so a missing endpoint is a
+// compile error here rather than a runtime "not implemented" toast.
+export const SamoController: InternalControllerEndpoint = {
     addToPlaylist: async ({ apiClientProps, body, query }) => {
         const server = apiClientProps.server;
         if (!server) throw new Error('No server');
@@ -1047,7 +1049,6 @@ export const SamoController: Partial<InternalControllerEndpoint> = {
             items: items.map((genre) => ({
                 _itemType: LibraryItem.GENRE,
                 _serverId: server.id,
-                _serverType: ServerType.SAMO,
                 albumCount: null,
                 id: genre.id ?? genre.name ?? '',
                 imageId: null,
@@ -1226,11 +1227,6 @@ export const SamoController: Partial<InternalControllerEndpoint> = {
     },
 
     getRoles: async () => ['admin', 'user'],
-
-    getServerInfo: async () => ({
-        features: {},
-        version: 'samo',
-    }),
 
     getSimilarSongs: async () => [],
 
@@ -1428,10 +1424,6 @@ export const SamoController: Partial<InternalControllerEndpoint> = {
             trackIds: body.songId,
         });
         return null;
-    },
-
-    savePlayQueue: async () => {
-        // Samo has no server play queue surface yet.
     },
 
     scrobble: async ({ apiClientProps, query }) => {

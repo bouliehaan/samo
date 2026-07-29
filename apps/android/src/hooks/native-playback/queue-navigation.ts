@@ -7,7 +7,7 @@ import {
 } from '../../services/audio-playback';
 import { getPlaybackQueue, setPlaybackQueue } from '../../state/playback-queue-store';
 import { getAndroidPlaybackState, setAndroidPlaybackState } from '../../state/playback-store';
-import { buildAbsProgressContextFromPlayable } from '../../utils/abs-progress-math';
+import { buildPlaybackProgressContextFromPlayable } from '../../utils/playback-progress-math';
 import { withResumePosition } from '../../utils/playback-resume';
 import { getPlaybackItemDurationMs } from '../../utils/playback-time';
 import { type NativePlaybackContext } from './context';
@@ -67,7 +67,7 @@ export const playQueueIndexNatively = async (
         target.source === 'music' ? 0 : Math.max(0, target.initialPositionSeconds ?? 0) * 1000;
     ctx.playbackSnapshotRef.current = { item: target, sessionId };
     ctx.pendingItemSessionRef.current = sessionId;
-    ctx.absContextRef.current = buildAbsProgressContextFromPlayable(
+    ctx.progressContextRef.current = buildPlaybackProgressContextFromPlayable(
         target,
         ctx.serverConnectionsRef.current,
     );

@@ -1,16 +1,9 @@
 {
     "action": {
         "createPlaylist": "buat $t(entity.playlist, {\"count\": 1})",
-        "toggleSmartPlaylistEditor": "ubah editor $t(entity.smartPlaylist)",
-        "goToPage": "pergi ke halaman",
-        "moveToTop": "pindah ke atas",
-        "addToPlaylist": "tambahkan ke $t(entity.playlist, {\"count\": 1})",
         "removeFromFavorites": "hapus dari $t(entity.favorite, {\"count\": 2})",
         "removeFromPlaylist": "hapus dari $t(entity.playlist, {\"count\": 1})",
-        "deselectAll": "batalkan pilih semua",
         "editPlaylist": "ubah $t(entity.playlist, {\"count\": 1})",
-        "moveToNext": "pindah ke berikutnya",
-        "refresh": "$t(common.refresh)",
         "removeFromQueue": "hapus dari antrean",
         "viewPlaylists": "lihat $t(entity.playlist, {\"count\": 2})",
         "openIn": {
@@ -20,18 +13,14 @@
         "addToFavorites": "tambahkan ke $t(entity.favorite, {\"count\": 2})",
         "clearQueue": "kosongkan antrian",
         "deletePlaylist": "hapus $t(entity.playlist, {\"count\": 1})",
-        "moveToBottom": "pindah ke bawah",
         "addOrRemoveFromSelection": "tambahkan atau hapus dari pilihan",
         "selectRangeOfItems": "pilih rentang item",
         "createRadioStation": "buat $t(entity.radioStation, {\"count\": 1})",
-        "deleteRadioStation": "hapus $t(entity.radioStation, {\"count\": 1})",
         "selectAll": "pilih semua",
-        "downloadStarted": "memulai unduhan {{count}} item",
         "moveUp": "pindahkan ke atas",
         "moveDown": "pindahkan ke bawah",
         "holdToMoveToTop": "tahan untuk memindahkan ke paling atas",
         "holdToMoveToBottom": "tahan untuk memindahkan ke paling bawah",
-        "moveItems": "pindahkan item",
         "shuffle": "acak",
         "shuffleAll": "acak semua",
         "shuffleSelected": "acak yang dipilih",
@@ -183,13 +172,8 @@
         "audioDeviceFetchError": "terjadi kesalahan saat mencoba mengambil perangkat audio",
         "authenticationFailed": "autentikasi gagal",
         "credentialsRequired": "kredensial diperlukan",
-        "endpointNotImplementedError": "endpoint {{endpoint}} tidak diimplementasikan untuk {{serverType}}",
         "genericError": "terjadi kesalahan",
         "invalidServer": "server tidak valid",
-        "localFontAccessDenied": "akses ke font lokal ditolak",
-        "loginRateError": "terlalu banyak percobaan login, coba beberapa detik lagi",
-        "mpvRequired": "MPV diperlukan",
-        "networkError": "terjadi kesalahan jaringan",
         "openError": "Tidak dapat membuka file",
         "playbackError": "terjadi kesalahan saat mencoba memutar media",
         "remoteDisableError": "terjadi kesalahan saat mencoba $t(common.disable) server jarak jauh",
@@ -198,16 +182,10 @@
         "remotePortWarning": "restart server untuk menerapkan port baru",
         "serverNotSelectedError": "tidak ada server yang dipilih",
         "serverRequired": "server diperlukan",
-        "sessionExpiredError": "sesi Anda telah kedaluwarsa",
-        "systemFontError": "terjadi kesalahan saat mencoba mendapatkan font sistem",
         "badValue": "opsi tidak valid \"{{value}}\". nilai ini sudah tidak ada",
-        "multipleServerSaveQueueError": "antrean putar memiliki satu atau lebih lagu yang bukan dari server saat ini. ini tidak didukung",
         "noNetwork": "server tidak tersedia",
         "noNetworkDescription": "tidak dapat terhubung ke server ini",
-        "notificationDenied": "izin untuk notifikasi ditolak. pengaturan ini tidak berpengaruh",
-        "saveQueueFailed": "gagal menyimpan antrean",
         "settingsSyncError": "ditemukan ketidaksesuaian antara pengaturan di perender dan proses utama. mulai ulang aplikasi untuk menerapkan perubahan",
-        "invalidJson": "JSON tidak valid",
         "serverLockSingleServer": "hanya satu server yang diizinkan ketika server dikunci"
     },
     "filter": {
@@ -215,41 +193,25 @@
         "albumArtist": "$t(entity.albumArtist, {\"count\": 1})",
         "albumCount": "Hitung $t(entity.album, {\"count\": 2})",
         "artist": "$t(entity.artist, {\"count\": 1})",
-        "biography": "biografi",
-        "bitrate": "bitrate",
         "bpm": "lpm",
-        "channels": "$t(common.channel, {\"count\": 2})",
         "comment": "komentar",
-        "dateAdded": "tanggal ditambahkan",
-        "disc": "disk",
         "duration": "durasi",
         "favorited": "favorit",
         "genre": "$t(entity.genre, {\"count\": 1})",
         "id": "id",
         "isCompilation": "apakah ini kompilasi",
         "isFavorited": "apakah ini favorit",
-        "isPublic": "apakah ini publik",
-        "isRated": "apakah ini terklasifikasi",
-        "isRecentlyPlayed": "baru saja diputar",
         "lastPlayed": "terakhir diputar",
-        "mostPlayed": "paling sering diputar",
         "name": "nama",
-        "note": "catatan",
-        "owner": "$t(common.owner)",
         "playCount": "jumlah putar",
         "random": "acak",
         "recentlyAdded": "baru saja ditambahkan",
         "recentlyPlayed": "baru saja diputar",
-        "recentlyUpdated": "baru saja diperbarui",
         "releaseDate": "tanggal rilis",
         "releaseYear": "tahun rilis",
-        "search": "cari",
         "songCount": "jumlah lagu",
         "toYear": "hingga tahun",
-        "trackNumber": "nomor pista",
         "fromYear": "dari tahun",
-        "title": "judul",
-        "path": "path(jalur)",
         "sortName": "nama pengurutan",
         "explicitStatus": "$t(common.explicitStatus)",
         "matchAnd": "dan",
@@ -291,8 +253,6 @@
             "title": "buat $t(entity.playlist, {\"count\": 1})"
         },
         "deletePlaylist": {
-            "input_confirm": "ketik nama $t(entity.playlist, {\"count\": 1}) untuk mengonfirmasi",
-            "success": "$t(entity.playlist, {\"count\": 1}) berhasil dihapus",
             "title": "hapus $t(entity.playlist, {\"count\": 1})"
         },
         "editPlaylist": {
@@ -304,27 +264,7 @@
             "input_name": "$t(common.name)",
             "title": "cari lirik"
         },
-        "queryEditor": {
-            "input_optionMatchAll": "cocokkan semua",
-            "input_optionMatchAny": "cocokkan salah satu",
-            "title": "editor kueri",
-            "addRuleGroup": "tambahkan grup aturan",
-            "removeRuleGroup": "hapus grup aturan",
-            "resetToDefault": "reset ke default",
-            "clearFilters": "hapus filter"
-        },
-        "shareItem": {
-            "allowDownloading": "Izinkan unduhan",
-            "description": "Deskripsi",
-            "setExpiration": "Atur masa berlaku",
-            "success": "Tautan berbagi berhasil disalin ke papan klip (atau klik di sini untuk membuka)",
-            "expireInvalid": "Masa berlaku harus di masa depan",
-            "createFailed": "Tidak dapat membuat sumber daya berbagi (Apakah berbagi diaktifkan?)",
-            "copyToClipboard": "Salin ke clipboard: Ctrl+C, Enter",
-            "successMustClick": "berbagi berhasil dibuat. klik di sini untuk membuka"
-        },
         "updateServer": {
-            "success": "Server berhasil diperbarui",
             "title": "perbarui server"
         },
         "largeFetchConfirmation": {
@@ -332,8 +272,6 @@
             "description": "Tindakan ini akan menambahkan semua item dalam tampilan terfilter saat ini"
         },
         "createRadioStation": {
-            "success": "stasiun radio berhasil dibuat",
-            "title": "buat stasiun radio",
             "input_homepageUrl": "url beranda",
             "input_name": "nama",
             "input_streamUrl": "url streaming"
@@ -343,19 +281,12 @@
             "input_synced": "ekspor lirik tersinkron",
             "input_offset": "$t(setting.lyricOffset)"
         },
-        "saveQueue": {
-            "success": "antrean putar disimpan ke server"
-        },
         "shuffleAll": {
             "title": "putar acak",
             "input_genre": "$t(entity.genre, {\"count\": 1})",
             "input_limit": "berapa banyak lagu?",
             "input_minYear": "dari tahun",
-            "input_maxYear": "hingga tahun",
-            "input_played": "filter pemutaran",
-            "input_played_optionAll": "semua trek",
-            "input_played_optionUnplayed": "hanya trek yang belum diputar",
-            "input_played_optionPlayed": "hanya trek yang sudah diputar"
+            "input_maxYear": "hingga tahun"
         },
         "privateMode": {
             "enabled": "mode pribadi diaktifkan, status pemutaran kini disembunyikan dari integrasi eksternal",
@@ -366,7 +297,6 @@
     "page": {
         "albumArtistDetail": {
             "about": "Tentang {{artist}}",
-            "recentReleases": "Rilis terbaru",
             "viewDiscography": "Lihat diskografi",
             "relatedArtists": "$t(entity.artist, {\"count\": 2}) serupa",
             "topSongs": "Lagu terbaik",
@@ -386,12 +316,9 @@
         },
         "albumDetail": {
             "moreFromArtist": "lebih banyak dari $t(entity.artist, {\"count\": 1}) ini",
-            "moreFromGeneric": "lebih banyak dari {{item}}",
-            "released": "dirilis"
+            "moreFromGeneric": "lebih banyak dari {{item}}"
         },
         "albumList": {
-            "artistAlbums": "album dari {{artist}}",
-            "genreAlbums": "\"{{genre}}\" $t(entity.album, {\"count\": 2})",
             "title": "$t(entity.album, {\"count\": 2})"
         },
         "appMenu": {
@@ -400,12 +327,9 @@
             "goBack": "kembali",
             "goForward": "maju",
             "manageServers": "kelola server",
-            "openBrowserDevtools": "buka alat pengembang browser",
             "quit": "$t(common.quit)",
             "selectServer": "pilih server",
             "settings": "$t(common.setting, {\"count\": 2})",
-            "version": "versi {{version}}",
-            "commandPalette": "buka palet perintah",
             "privateModeOff": "matikan mode pribadi",
             "privateModeOn": "nyalakan mode pribadi",
             "selectMusicFolder": "pilih folder musik",
@@ -414,54 +338,29 @@
         },
         "manageServers": {
             "title": "kelola server",
-            "serverDetails": "detail server",
             "url": "URL",
             "username": "nama pengguna",
             "editServerDetailsTooltip": "edit detail server",
             "removeServer": "hapus server"
         },
         "contextMenu": {
-            "addFavorite": "$t(action.addToFavorites)",
-            "addLast": "$t(player.addLast)",
-            "addNext": "$t(player.addNext)",
-            "addToFavorites": "$t(action.addToFavorites)",
             "addToPlaylist": "$t(action.addToPlaylist)",
-            "createPlaylist": "$t(action.createPlaylist)",
-            "deletePlaylist": "$t(action.deletePlaylist)",
-            "deselectAll": "$t(action.deselectAll)",
             "download": "unduh",
             "moveToNext": "$t(action.moveToNext)",
             "moveToBottom": "$t(action.moveToBottom)",
-            "numberSelected": "{{count}} terpilih",
-            "playSimilarSongs": "$t(player.playSimilarSongs)",
-            "removeFromFavorites": "$t(action.removeFromFavorites)",
-            "removeFromPlaylist": "$t(action.removeFromPlaylist)",
-            "removeFromQueue": "$t(action.removeFromQueue)",
-            "playShuffled": "$t(player.shuffle)",
-            "shareItem": "Bagikan item",
             "showDetails": "Lihat detail",
             "moveToTop": "$t(action.moveToTop)",
-            "play": "$t(player.play)",
             "moveItems": "$t(action.moveItems)",
             "goTo": "buka ke",
-            "goToAlbum": "buka ke $t(entity.album, {\"count\": 1})",
-            "goToAlbumArtist": "buka ke $t(entity.albumArtist, {\"count\": 1})"
+            "goToAlbum": "buka ke $t(entity.album, {\"count\": 1})"
         },
         "fullscreenPlayer": {
             "config": {
-                "dynamicBackground": "latar belakang dinamis",
-                "dynamicImageBlur": "ukuran blur gambar",
-                "dynamicIsImage": "aktifkan gambar latar belakang",
                 "followCurrentLyric": "ikuti lirik saat ini",
                 "lyricAlignment": "penyelarasan lirik",
                 "lyricSize": "ukuran lirik",
-                "opacity": "opasitas",
-                "showLyricMatch": "tampilkan kecocokan lirik",
-                "showLyricProvider": "tampilkan penyedia lirik",
                 "synchronized": "sinkronisasi",
                 "unsynchronized": "tidak sinkronisasi",
-                "useImageAspectRatio": "gunakan rasio aspek gambar",
-                "lyricOffset": "offset lirik (ms)",
                 "lyricGap": "jarak lirik"
             },
             "lyrics": "lirik",
@@ -471,8 +370,6 @@
             "visualizer": "visualisasi"
         },
         "genreList": {
-            "showAlbums": "Tampilkan $t(entity.genre, {\"count\": 1}) $t(entity.album, {\"count\": 2})",
-            "showTracks": "Tampilkan $t(entity.genre, {\"count\": 1}) $t(entity.track, {\"count\": 2})",
             "title": "$t(entity.genre, {\"count\": 2})"
         },
         "globalSearch": {
@@ -484,21 +381,12 @@
             "title": "perintah"
         },
         "home": {
-            "explore": "jelajahi dari pustaka Anda",
-            "mostPlayed": "paling banyak diputar",
-            "newlyAdded": "rilis baru ditambahkan",
-            "recentlyPlayed": "baru saja diputar",
-            "title": "$t(common.home)",
-            "genres": "$t(entity.genre, {\"count\": 2})",
-            "recentlyReleased": "baru dirilis"
+            "title": "$t(common.home)"
         },
         "itemDetail": {
             "copyPath": "Salin jalur ke papan klip",
             "copiedPath": "Jalur berhasil disalin",
             "openFile": "Tampilkan lagu di pengelola file"
-        },
-        "playlist": {
-            "reorder": "pengurutan ulang hanya diaktifkan saat mengurutkan berdasarkan id"
         },
         "playlistList": {
             "title": "$t(entity.playlist, {\"count\": 2})"
@@ -507,26 +395,14 @@
             "advanced": "Lanjutan",
             "generalTab": "umum",
             "hotkeysTab": "tombol pintasan",
-            "playbackTab": "pemutaran",
-            "windowTab": "jendela",
-            "analytics": "analitik",
             "updates": "perbarui",
             "cache": "cache",
             "application": "aplikasi",
-            "queryBuilder": "pembuat kueri",
             "theme": "tema",
-            "controls": "kontrol",
-            "sidebar": "bilah samping",
             "remote": "jarak jauh",
             "exportImport": "impor/ekspor",
-            "scrobble": "scrobble",
-            "audio": "audio",
             "lyrics": "lirik",
-            "lyricsDisplay": "tampilan lirik",
-            "transcoding": "transcoding",
-            "discord": "discord",
-            "logger": "logger",
-            "playerFilters": "filter pemutar"
+            "lyricsDisplay": "tampilan lirik"
         },
         "sidebar": {
             "albumArtists": "$t(entity.albumArtist, {\"count\": 2})",
@@ -547,8 +423,6 @@
             "myLibrary": "pustaka saya"
         },
         "trackList": {
-            "artistTracks": "lagu oleh {{artist}}",
-            "genreTracks": "\"{{genre}}\" $t(entity.track, {\"count\": 2})",
             "title": "$t(entity.track, {\"count\": 2})"
         },
         "radioList": {
@@ -560,9 +434,6 @@
         "windowBar": {
             "paused": "(Dijeda) ",
             "privateMode": "(Mode pribadi)"
-        },
-        "folderList": {
-            "title": "$t(entity.folder, {\"count\": 2})"
         },
         "collections": {
             "overrideExisting": "timpa yang ada",
@@ -583,15 +454,9 @@
         "play": "putar",
         "playbackFetchCancel": "ini memerlukan waktu... tutup pemberitahuan untuk membatalkan",
         "playbackFetchInProgress": "memuat lagu…",
-        "playbackFetchNoResults": "tidak ada lagu ditemukan",
         "playbackSpeed": "kecepatan pemutaran",
         "playRandom": "putar acak",
-        "playSimilarSongs": "putar lagu serupa",
         "previous": "sebelumnya",
-        "queue_clear": "bersihkan antrean",
-        "queue_moveToBottom": "pindahkan yang terpilih ke bawah",
-        "queue_moveToTop": "pindahkan yang terpilih ke atas",
-        "queue_remove": "hapus yang terpilih",
         "repeat": "ulang",
         "repeat_all": "ulang semua",
         "repeat_off": "ulang dimatikan",
@@ -611,8 +476,6 @@
         "artistRadio": "radio artis",
         "holdToShuffle": "tahan untuk mengacak",
         "lyrics": "lirik",
-        "restoreQueueFromServer": "pulihkan antrean dari server",
-        "saveQueueToServer": "simpan antrean ke server",
         "trackRadio": "radio trek",
         "albumRadio": "radio album",
         "sleepTimer": "pengatur waktu tidur",
@@ -620,8 +483,6 @@
         "sleepTimer_minutes": "{{count}} menit",
         "sleepTimer_hours": "{{count}} jam",
         "sleepTimer_custom": "kustom",
-        "sleepTimer_off": "mati",
-        "sleepTimer_timeRemaining": "{{time}} tersisa",
         "sleepTimer_setCustom": "atur pengatur waktu",
         "sleepTimer_cancel": "batalkan pengatur waktu"
     },
@@ -992,8 +853,6 @@
             "codec": "$t(common.codec)",
             "comment": "komentar",
             "dateAdded": "tanggal ditambahkan",
-            "discNumber": "nomor disk",
-            "favorite": "favorit",
             "genre": "$t(entity.genre, {\"count\": 1})",
             "lastPlayed": "terakhir diputar",
             "path": "jalur",
@@ -1003,7 +862,6 @@
             "size": "$t(common.size)",
             "songCount": "$t(entity.track, {\"count\": 2})",
             "title": "judul",
-            "trackNumber": "pista",
             "bitDepth": "$t(common.bitDepth)",
             "sampleRate": "$t(common.sampleRate)",
             "owner": "pemilik"
@@ -1011,14 +869,9 @@
         "config": {
             "general": {
                 "autoFitColumns": "sesuaikan kolom otomatis",
-                "followCurrentSong": "ikuti lagu saat ini",
                 "displayType": "tipe tampilan",
                 "gap": "$t(common.gap)",
-                "itemGap": "jarak antar elemen (px)",
-                "itemSize": "ukuran elemen (px)",
                 "size": "$t(common.size)",
-                "tableColumns": "kolom tabel",
-                "advancedSettings": "pengaturan lanjutan",
                 "autosize": "ukuran otomatis",
                 "moveUp": "pindahkan ke atas",
                 "moveDown": "pindahkan ke bawah",
@@ -1092,31 +945,6 @@
         "hourShort": "h",
         "dayShort": "d"
     },
-    "filterOperator": {
-        "after": "setelah",
-        "afterDate": "setelah (tanggal)",
-        "before": "sebelum",
-        "beforeDate": "sebelum (tanggal)",
-        "contains": "berisi",
-        "endsWith": "diakhiri dengan",
-        "inPlaylist": "berada di",
-        "inTheLast": "dalam kurun terakhir",
-        "inTheRange": "berada dalam rentang",
-        "inTheRangeDate": "berada dalam rentang (tanggal)",
-        "is": "adalah",
-        "isNot": "bukan",
-        "isGreaterThan": "lebih besar dari",
-        "isLessThan": "lebih kecil dari",
-        "matchesRegex": "cocok dengan regex",
-        "notContains": "tidak berisi",
-        "notInPlaylist": "tidak berada di",
-        "notInTheLast": "tidak dalam kurun terakhir",
-        "startsWith": "diawali dengan"
-    },
-    "queryBuilder": {
-        "standardTags": "tag standar",
-        "customTags": "tag kustom"
-    },
     "releaseType": {
         "primary": {
             "album": "$t(entity.album, {\"count\": 1})",
@@ -1156,7 +984,6 @@
         "blendTime": "Waktu Pencampuran",
         "presets": "Preset",
         "selectPreset": "Pilih Preset",
-        "applyPreset": "Terapkan Preset",
         "saveAsPreset": "Simpan sebagai Preset",
         "updatePreset": "Perbarui Preset",
         "copyConfiguration": "Salin Konfigurasi",
@@ -1210,8 +1037,6 @@
         "frequencyScale": "Skala Frekuensi",
         "sensitivity": "Sensitivitas",
         "weightingFilter": "Filter Pembobotan",
-        "minimumDecibels": "Desibel Minimum",
-        "maximumDecibels": "Desibel Maksimum",
         "linearAmplitude": "Amplitudo Linear",
         "linearBoost": "Peningkatan Linear",
         "peakBehavior": "Perilaku Puncak",

@@ -61,15 +61,6 @@ export const createSettingsMigrate =
             return {};
         }
 
-        if (version <= 12) {
-            state.general.sidebarItems.push({
-                disabled: false,
-                id: 'Folders',
-                label: i18n.t('page.sidebar.folders'),
-                route: AppRoute.LIBRARY_FOLDERS,
-            });
-        }
-
         if (version <= 13) {
             state.general.homeItems.push({
                 disabled: false,
@@ -295,7 +286,6 @@ export const createSettingsMigrate =
             // Add ALBUM_GROUP column to the song table config
             const listKeysToUpdate: ItemListKey[] = [
                 ItemListKey.SONG,
-                ItemListKey.FOLDER,
                 ItemListKey.PLAYLIST_SONG,
                 ItemListKey.ALBUM_ARTIST_SONG,
                 ItemListKey.GENRE_SONG,
@@ -397,6 +387,16 @@ export const createSettingsMigrate =
             if (state.general.accent === '#e8d5b0') {
                 state.general.accent = initialState.general.accent;
             }
+        }
+
+        if (version <= 37) {
+            // Folder browsing was never implemented against Samo — the page only
+            // ever rendered its error boundary. Drop the stale sidebar entry so
+            // existing installs don't keep a dead nav destination.
+            state.general.sidebarItems = state.general.sidebarItems.filter(
+                (item) => item.id !== 'Folders',
+            );
+            delete (state.lists as Record<string, unknown>)['folder'];
         }
 
         return persistedState;

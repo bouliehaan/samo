@@ -183,7 +183,6 @@ function SetupWizard({ onExit }: { onExit: () => void }) {
     if (step === 'addAnother') {
         return (
             <AddServerForm
-                initialServerType={ServerType.SAMO}
                 key={formKey}
                 onCancel={handleBackToPrompt}
                 onSubmitSuccess={handleSubmitSuccess}

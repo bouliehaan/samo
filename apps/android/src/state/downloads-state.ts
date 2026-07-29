@@ -1,4 +1,5 @@
-import { useSyncExternalStore } from 'react';
+
+import { useStoreSelector } from './use-store-selector';
 
 import {
     DEFAULT_ARTWORK_CACHE_LIMIT_BYTES,
@@ -11,22 +12,22 @@ import {
 } from '../services/artwork-cache-settings';
 import { subscribeDownloads } from '../services/download-manager';
 import {
-    loadOfflineModePreference,
-    saveOfflineModePreference,
-} from '../services/offline-mode';
-import {
     buildDownloadedCollectionSnapshot,
     EMPTY_DOWNLOADED_COLLECTION_SNAPSHOT,
     type DownloadedCollectionSnapshot,
     type DownloadedCollectionSummary,
 } from '../utils/downloaded-collections';
 
+// Offline mode used to live here as `isOfflineMode`, which put a network fact
+// inside the downloads store and left it as the only thing that knew about it.
+// It now belongs to `state/network-state.ts`, which owns connectivity, server
+// reachability and the user's preference together and derives ONE answer from
+// the three.
 export type DownloadsState = {
     artworkCacheLimitBytes: number;
     downloadedCollectionKeys: Set<string>;
     downloadedCollections: DownloadedCollectionSummary[];
     downloadedTrackKeys: Set<string>;
-    isOfflineMode: boolean;
 };
 
 const initialDownloadsState: DownloadsState = {
@@ -34,13 +35,11 @@ const initialDownloadsState: DownloadsState = {
     downloadedCollectionKeys: new Set(),
     downloadedCollections: [],
     downloadedTrackKeys: new Set(),
-    isOfflineMode: false,
 };
 
 type DownloadsAction =
     | { type: 'apply-snapshot'; snapshot: DownloadedCollectionSnapshot }
-    | { type: 'set-artwork-cache-limit'; bytes: number }
-    | { type: 'set-offline-mode'; isOfflineMode: boolean };
+    | { type: 'set-artwork-cache-limit'; bytes: number };
 
 const downloadsReducer = (state: DownloadsState, action: DownloadsAction): DownloadsState => {
     switch (action.type) {
@@ -53,8 +52,6 @@ const downloadsReducer = (state: DownloadsState, action: DownloadsAction): Downl
             };
         case 'set-artwork-cache-limit':
             return { ...state, artworkCacheLimitBytes: action.bytes };
-        case 'set-offline-mode':
-            return { ...state, isOfflineMode: action.isOfflineMode };
         default:
             return state;
     }
@@ -98,17 +95,6 @@ let downloadedCollectionSnapshotCache: DownloadedCollectionSnapshot =
     EMPTY_DOWNLOADED_COLLECTION_SNAPSHOT;
 
 // Module-level setters — stable identity, no useCallback needed.
-// Persistence lives in the setter (not at call sites) so no toggle path can
-// forget it; the boot load below dispatches directly and skips the re-save.
-const setIsOfflineMode = (isOfflineMode: boolean | ((current: boolean) => boolean)) => {
-    const resolved =
-        typeof isOfflineMode === 'function'
-            ? isOfflineMode(downloadsState.isOfflineMode)
-            : isOfflineMode;
-    dispatchDownloads({ type: 'set-offline-mode', isOfflineMode: resolved });
-    void saveOfflineModePreference(resolved);
-};
-
 const setArtworkCacheLimit = (bytes: number) => {
     const next = Math.max(0, Math.round(bytes));
     dispatchDownloads({ type: 'set-artwork-cache-limit', bytes: next });
@@ -131,10 +117,6 @@ const bootDownloadsStore = () => {
     // without flicker. (The catalog itself is Kotlin-owned now — its reader
     // warms at native engine init, no JS warm needed.)
     warmArtworkCache();
-
-    void loadOfflineModePreference().then((next) => {
-        dispatchDownloads({ type: 'set-offline-mode', isOfflineMode: next });
-    });
 
     void loadArtworkCacheLimitBytes().then((bytes) => {
         // Apply the persisted cap to the cache on launch (this also evicts
@@ -162,7 +144,7 @@ bootDownloadsStore();
 // subscribing (module-store getter, same pattern as playback-store), and for
 // components that only WRITE and shouldn't subscribe at all.
 export const getDownloadsSnapshot = () => downloadsState;
-export { setArtworkCacheLimit, setIsOfflineMode as setDownloadsOfflineMode };
+export { setArtworkCacheLimit };
 
 /**
  * Subscribe to a single slice of the downloads state. Consumers that only need
@@ -171,9 +153,4 @@ export { setArtworkCacheLimit, setIsOfflineMode as setDownloadsOfflineMode };
  */
 export const useDownloadsSelector = <Selected>(
     selector: (state: DownloadsState) => Selected,
-): Selected =>
-    useSyncExternalStore(
-        subscribeDownloadsStore,
-        () => selector(downloadsState),
-        () => selector(downloadsState),
-    );
+): Selected => useStoreSelector(subscribeDownloadsStore, () => downloadsState, selector);

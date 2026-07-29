@@ -1,5 +1,7 @@
 import { ipcRenderer, IpcRendererEvent } from 'electron';
 
+import { subscribe } from './subscribe';
+
 import { QueueSong } from '/@/shared/types/domain-types';
 import { PlayerStatus } from '/@/shared/types/types';
 
@@ -8,21 +10,16 @@ const requestFavorite = (
         event: IpcRendererEvent,
         data: { favorite: boolean; id: string; serverId: string },
     ) => void,
-) => {
-    ipcRenderer.on('request-favorite', cb);
-};
+) => subscribe('request-favorite', cb);
 
-const requestPosition = (cb: (event: IpcRendererEvent, data: { position: number }) => void) => {
-    ipcRenderer.on('request-position', cb);
-};
+const requestPosition = (cb: (event: IpcRendererEvent, data: { position: number }) => void) =>
+    subscribe('request-position', cb);
 
-const requestSeek = (cb: (event: IpcRendererEvent, data: { offset: number }) => void) => {
-    ipcRenderer.on('request-seek', cb);
-};
+const requestSeek = (cb: (event: IpcRendererEvent, data: { offset: number }) => void) =>
+    subscribe('request-seek', cb);
 
-const requestVolume = (cb: (event: IpcRendererEvent, data: { volume: number }) => void) => {
-    ipcRenderer.on('request-volume', cb);
-};
+const requestVolume = (cb: (event: IpcRendererEvent, data: { volume: number }) => void) =>
+    subscribe('request-volume', cb);
 
 const setRemoteEnabled = (enabled: boolean): Promise<null | string> => {
     const result = ipcRenderer.invoke('remote-enable', enabled);

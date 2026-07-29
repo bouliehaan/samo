@@ -172,6 +172,40 @@ describe('Samo URL building', () => {
             'https://cdn.example/art/cover.jpg',
         );
     });
+
+    it('re-homes a scan-time URL even with NO stream token', () => {
+        // The display path passes no token (the bearer header authenticates it),
+        // and this used to bail out at the top whenever the token was undefined
+        // — silently skipping the re-homing too, so a scan-time address went
+        // straight to the image loader and the cover came back blank.
+        expect(
+            finalizeSamoMediaUrl(
+                auth,
+                'http://192.168.1.10:6969/api/v1/media/images/cover_a/image',
+            ),
+        ).toBe('https://music.example/api/v1/media/images/cover_a/image');
+    });
+
+    it('strips an embedded token when none is requested', () => {
+        // Keeps the result a function of what the CALLER asked for rather than
+        // of whatever happened to be baked into the stored URL, so the display
+        // path cannot leak a token it deliberately stopped using.
+        expect(
+            finalizeSamoMediaUrl(auth, getSamoMetadataImageUrl(auth, 'cover_a', 'smt_old')),
+        ).toBe(getSamoMetadataImageUrl(auth, 'cover_a'));
+    });
+
+    it('returns an already-clean URL of ours untouched when no token is requested', () => {
+        const url = getSamoMetadataImageUrl(auth, 'cover_a');
+
+        expect(finalizeSamoMediaUrl(auth, url)).toBe(url);
+    });
+
+    it('still leaves a foreign non-API URL alone with no token', () => {
+        expect(finalizeSamoMediaUrl(auth, 'https://cdn.example/art/cover.jpg')).toBe(
+            'https://cdn.example/art/cover.jpg',
+        );
+    });
 });
 
 const jsonFetch = (data: unknown, capture?: (url: string) => void): SamoFetch => {

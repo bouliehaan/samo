@@ -1,12 +1,14 @@
 import { type ServerAuthenticationResult } from '@samo/core/server';
 import { memo } from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 
 import { ArtworkImage } from '../../components/ArtworkImage';
 import { ChevronRightGlyph } from '../../components/Glyphs';
+import { PressableScale } from '../../components/PressableScale';
 import { useMediaContextMenu } from '../../contexts/media-context-menu';
 import { type AndroidRecentContentSourceItem } from '../../services/recent-content';
+import { presses } from '../../theme/motion';
 import { styles } from '../../theme/styles';
 import { colors } from '../../theme/tokens';
 import { androidTrimCaptionFont, getHomeItemSubtitle } from './shared';
@@ -54,14 +56,14 @@ export const HomeExploreHero = memo(({
     const subtitle = getHomeItemSubtitle(item, 'explo');
 
     return (
-        <Pressable
+        <PressableScale
+            {...presses.hero}
             accessibilityLabel={`Open ${item.title}`}
             accessibilityRole="button"
             onLongPress={() => contextMenu.openForItem(item, { allowRemoveFromHome: true })}
             onPress={() => onSelectItem(item)}
             onPressIn={() => onPrefetchItem?.(item)}
-            style={({ pressed }) => [styles.exploreHero, pressed && styles.exploreHeroPressed]}
-            unstable_pressDelay={60}
+            style={styles.exploreHero}
         >
             <ArtworkImage
                 artworkImageId={item.artworkImageId}
@@ -113,7 +115,7 @@ export const HomeExploreHero = memo(({
                 </View>
                 <ChevronRightGlyph color={colors.faint} />
             </View>
-        </Pressable>
+        </PressableScale>
     );
 });
 

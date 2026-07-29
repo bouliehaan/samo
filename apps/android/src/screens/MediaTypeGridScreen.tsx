@@ -17,7 +17,7 @@ import { startMediaTypeCollectionLoad } from '../services/library-flow';
 import { useServerAudiobookProgress } from '../services/server-progress';
 import { useAppNavigationSelector } from '../state/app-navigation';
 import { useAuthSessionSelector } from '../state/auth-session';
-import { useDownloadsSelector } from '../state/downloads-state';
+import { useNetworkSelector } from '../state/network-state';
 import { PAGE_TOP_INSET } from '../theme/layout';
 import { styles } from '../theme/styles';
 import { type HomeDisplaySection } from '../types/home';
@@ -62,7 +62,6 @@ export const MediaTypeGridScreen = memo(function MediaTypeGridScreen({
     const recentItems = useVisibleRecentItems();
     const serverConnection = useAuthSessionSelector((state) => state.serverConnection);
     const isTransitioning = useTransitioningMount();
-    const isOfflineMode = useDownloadsSelector((state) => state.isOfflineMode);
 
     // THE catalog for this tab: the complete collection of its type from the
     // on-device mirror. The shelves below still come from Home content, but the
@@ -73,28 +72,30 @@ export const MediaTypeGridScreen = memo(function MediaTypeGridScreen({
         return collection.status === 'loaded' ? collection.items : NO_COLLECTION_ITEMS;
     });
 
-    // Offline is deliberately excluded: the Home sections are already filtered
-    // to downloaded items, and they stay the grid's only source so an offline
-    // tab can't list covers that won't play. Re-runs on the connect / back-
-    // online edges; freshness after that is the sync's post-derive.
+    // Runs offline too. This read is served entirely by the on-device mirror —
+    // it was gated on being online only because offline used to mean "hide
+    // everything you haven't downloaded", which left this tab blank on a dropped
+    // Wi-Fi even though every row it needed was already on disk.
     useEffect(() => {
-        if (!serverConnection || isOfflineMode) {
+        if (!serverConnection) {
             return;
         }
         startMediaTypeCollectionLoad(mediaType);
-    }, [isOfflineMode, mediaType, serverConnection]);
+    }, [mediaType, serverConnection]);
     // The pull-down search surface, same as Home — mediaType IS the tab id, so
     // this page's re-tap glides only its own list to the top.
     const {
-        gesture: searchPullGesture,
         renderScrollComponent: searchPullRenderScrollComponent,
         scrollProps: searchPullScrollProps,
     } = useSearchPull(mediaType);
     // The mirror carries no listening progress, so Continue Listening for
     // books runs on the server's own audiobooks listing (progress embedded).
+    // The one network read on this screen, hence the offline gate — without it
+    // the shelf spends 30s waiting on a server that isn't there.
+    const isOffline = useNetworkSelector((state) => state.isOffline);
     const serverAudiobooks = useServerAudiobookProgress(
         serverConnection,
-        mediaType === 'audiobooks',
+        mediaType === 'audiobooks' && !isOffline,
     );
 
     // Audiobooks sort — default to recents, toggleable to A-Z.
@@ -349,7 +350,6 @@ export const MediaTypeGridScreen = memo(function MediaTypeGridScreen({
     return (
         <HomeFilterGrid
             ListHeaderComponent={listHeader}
-            gesture={searchPullGesture}
             renderScrollComponent={searchPullRenderScrollComponent}
             items={sortedGridItems}
             onPrefetchItem={prefetchMediaDetailCache}

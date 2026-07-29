@@ -69,7 +69,6 @@ export const HomeContent = ({
     const bottomInset = useScrollContentBottomInset();
     const isTransitioning = useTransitioningMount();
     const {
-        gesture: searchPullGesture,
         nativeGesture: searchPullNativeGesture,
         renderScrollComponent: searchPullRenderScrollComponent,
         scrollProps: searchPullScrollProps,
@@ -208,24 +207,20 @@ export const HomeContent = ({
     // Every Home scroll container gets the pull-down search gesture wrapped
     // around it; the search surface itself lives at the app shell (see
     // useSearchPull / SearchPullSurface).
+    // Only the SCROLLER's own native gesture is wired here now. The pull pan
+    // itself lives in the app shell (see SearchPullGestureHost) — it cannot live
+    // in a page, because a frozen page takes its gesture relations down with it.
     const renderScrollScene = (children: ReactNode) => (
-        <GestureDetector gesture={searchPullGesture}>
-            <View collapsable={false} style={styles.homeSceneRoot}>
-                <GestureDetector gesture={searchPullNativeGesture}>
-                    <Reanimated.ScrollView
-                        {...searchPullScrollProps}
-                        contentContainerStyle={[
-                            styles.homeListContent,
-                            { paddingBottom: bottomInset },
-                        ]}
-                        refreshControl={refreshControl}
-                        showsVerticalScrollIndicator={false}
-                        style={styles.homeSceneRoot}
-                    >
-                        {children}
-                    </Reanimated.ScrollView>
-                </GestureDetector>
-            </View>
+        <GestureDetector gesture={searchPullNativeGesture}>
+            <Reanimated.ScrollView
+                {...searchPullScrollProps}
+                contentContainerStyle={[styles.homeListContent, { paddingBottom: bottomInset }]}
+                refreshControl={refreshControl}
+                showsVerticalScrollIndicator={false}
+                style={styles.homeSceneRoot}
+            >
+                {children}
+            </Reanimated.ScrollView>
         </GestureDetector>
     );
 
@@ -313,7 +308,6 @@ export const HomeContent = ({
             <HomeFilterGrid
                 ListFooterComponent={warnings}
                 ListHeaderComponent={pillsRow}
-                gesture={searchPullGesture}
                 renderScrollComponent={searchPullRenderScrollComponent}
                 scrollProps={searchPullScrollProps}
                 items={filteredGridItems}
@@ -344,43 +338,32 @@ export const HomeContent = ({
     // (plus drawDistance) mount — a heavy Home used to mount every horizontal
     // carousel at once inside a ScrollView. Item types keep recycling pools
     // homogeneous (a 2-row band never recycles into a single-row shelf).
+    // No wrapper GestureDetector here any more: `renderScrollComponent` binds the
+    // scroller's native gesture to FlashList's ACTUAL inner scroll view, which is
+    // the only thing this page still owns. (FlashList is a composite component
+    // whose ref is the list INSTANCE, not a view, so it never could hold a
+    // handler itself — which is why the pull needed a `collapsable={false}` host
+    // view back when the pan lived here.)
     return (
-        <GestureDetector gesture={searchPullGesture}>
-            {/* The `collapsable={false}` host view is REQUIRED, and its absence is
-            why the pull was dead on this path while working on the ScrollView
-            one above (renderScrollScene has always had it).
-
-            GestureDetector attaches its handler to the native view its child
-            resolves to. FlashList is a composite component whose ref is the
-            list INSTANCE — the thing that owns scrollToOffset — not a view, so
-            there is no tag to attach to and the pan is silently never wired.
-            Nothing errors; the gesture simply never fires. And because Android
-            collapses plain layout-only Views out of the hierarchy at mount, an
-            ordinary <View> here would be optimised away and leave the detector
-            in the same position — `collapsable={false}` is what forces a real
-            view to exist to hold the handler. */}
-            <View collapsable={false} style={styles.homeSceneRoot}>
-                <ReanimatedFlashList
-                    ListFooterComponent={warnings}
-                    ListHeaderComponent={pillsRow}
-                    {...searchPullScrollProps}
-                    contentContainerStyle={[styles.homeListContent, { paddingBottom: bottomInset }]}
-                    data={filteredSections}
-                    drawDistance={HOME_SECTION_DRAW_DISTANCE}
-                    getItemType={(section) =>
-                        section.pending
-                            ? `pending:${section.variant}`
-                            : `${section.variant}:${section.rowCount ?? 1}`
-                    }
-                    keyExtractor={(section) => section.key}
-                    maintainVisibleContentPosition={FLASH_LIST_MAINTAIN_POSITION_DISABLED}
-                    refreshControl={refreshControl}
-                    renderItem={renderSection}
-                    renderScrollComponent={searchPullRenderScrollComponent}
-                    showsVerticalScrollIndicator={false}
-                    style={styles.homeSceneRoot}
-                />
-            </View>
-        </GestureDetector>
+        <ReanimatedFlashList
+            ListFooterComponent={warnings}
+            ListHeaderComponent={pillsRow}
+            {...searchPullScrollProps}
+            contentContainerStyle={[styles.homeListContent, { paddingBottom: bottomInset }]}
+            data={filteredSections}
+            drawDistance={HOME_SECTION_DRAW_DISTANCE}
+            getItemType={(section) =>
+                section.pending
+                    ? `pending:${section.variant}`
+                    : `${section.variant}:${section.rowCount ?? 1}`
+            }
+            keyExtractor={(section) => section.key}
+            maintainVisibleContentPosition={FLASH_LIST_MAINTAIN_POSITION_DISABLED}
+            refreshControl={refreshControl}
+            renderItem={renderSection}
+            renderScrollComponent={searchPullRenderScrollComponent}
+            showsVerticalScrollIndicator={false}
+            style={styles.homeSceneRoot}
+        />
     );
 };

@@ -2,7 +2,7 @@ import type { MobilePlayableAudio } from '@samo/core/mobile';
 import { type ServerAuthenticationResult } from '@samo/core/server';
 import { type MutableRefObject } from 'react';
 
-import type { AbsProgressContext } from '../../services/abs-progress';
+import type { PlaybackProgressContext } from '../../services/playback-progress';
 
 export type PlaybackSnapshot = { item: MobilePlayableAudio; sessionId: string };
 
@@ -24,12 +24,12 @@ export type AndroidPlayItemOptions = {
  * playQueuedItem used to cascade into audio-event resubscribes with a window
  * where native events were dropped).
  *
- * Ref-shaped fields on purpose: `absContextRef` and `playbackSnapshotRef` are
+ * Ref-shaped fields on purpose: `progressContextRef` and `playbackSnapshotRef` are
  * part of the hook's public controller API, and the private ones read
  * identically at every call site.
  */
 export type NativePlaybackContext = {
-    absContextRef: MutableRefObject<AbsProgressContext | null>;
+    progressContextRef: MutableRefObject<PlaybackProgressContext | null>;
     castConnectedRef: MutableRefObject<boolean>;
     /** Session an ended-event advance already ran for (dedupes double 'ended'). */
     lastAdvancedFromSessionRef: MutableRefObject<null | string>;
@@ -60,7 +60,7 @@ export type NativePlaybackContext = {
 };
 
 export const createNativePlaybackContext = (): NativePlaybackContext => ({
-    absContextRef: { current: null },
+    progressContextRef: { current: null },
     castConnectedRef: { current: false },
     lastAdvancedFromSessionRef: { current: null },
     lastPlayedItemRef: { current: null },

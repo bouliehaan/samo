@@ -13,7 +13,6 @@ import {
     getAlbumSongsById,
     getGenreSongsById,
     getPlaylistSongsById,
-    getSongsByFolder,
 } from '/@/renderer/features/player/utils';
 import { playlistsQueries } from '/@/renderer/features/playlists/api/playlists-api';
 import { songsQueries } from '/@/renderer/features/songs/api/songs-api';
@@ -986,17 +985,6 @@ export async function fetchSongsByItemType(
                 serverId,
             });
             songs.push(...artistSongsResponse.items);
-            break;
-        }
-
-        case LibraryItem.FOLDER: {
-            const folderSongsResponse = await getSongsByFolder({
-                id: args.id,
-                query: args.params,
-                queryClient,
-                serverId,
-            });
-            songs.push(...folderSongsResponse.items);
             break;
         }
 

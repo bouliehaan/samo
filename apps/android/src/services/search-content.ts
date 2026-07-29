@@ -9,6 +9,7 @@ import {
 import { type ServerAuthenticationResult } from '@samo/core/server';
 
 import { searchLocal } from './catalog/catalog-reads';
+import { isOfflineNow } from '../state/network-state';
 
 export type AndroidSearchState =
     | { message: string; query: string; status: 'error' }
@@ -132,6 +133,20 @@ export const runAndroidSearch = async (
         if (local) {
             onResult({ query: trimmedQuery, results: local, status: 'loaded' });
         }
+    }
+
+    // Offline: the local index is the whole answer. Asking anyway would make
+    // every keystroke's search wait out a request that cannot succeed, and then
+    // report "search failed" over results that were already on screen.
+    if (isOfflineNow()) {
+        if (!local) {
+            onResult({
+                message: 'Search is limited to this device while offline.',
+                query: trimmedQuery,
+                status: 'error',
+            });
+        }
+        return;
     }
 
     // 2. Authoritative search across EVERY server (Samo + any others). Samo's

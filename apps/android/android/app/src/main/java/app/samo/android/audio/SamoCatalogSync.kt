@@ -773,9 +773,17 @@ internal object SamoCatalogSync {
             .put("type", conn.type)
             .put("url", conn.url)
 
-    /** Matches `getServerConnectionKey` in core/server-session.ts. */
-    private fun connectionKey(conn: SamoAuthMirror.Connection): String =
-        "${conn.type}:${conn.url.trimEnd('/')}"
+    /**
+     * The sourceId this engine writes under, which MUST equal what
+     * `getServerConnectionKey` (core/server-session.ts) returns for the same
+     * connection — JS reads every row back by that key.
+     *
+     * It is now pushed through the mirror rather than re-derived here. Deriving
+     * it from the address was only ever correct while a server had exactly one
+     * address; a server reachable both on the LAN and through a tunnel would
+     * have had half its catalog filed under a key nothing reads.
+     */
+    private fun connectionKey(conn: SamoAuthMirror.Connection): String = conn.key
 
     private fun parseCursor(raw: String?): JSONObject? {
         if (raw.isNullOrBlank()) return null

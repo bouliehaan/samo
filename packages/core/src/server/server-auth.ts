@@ -18,10 +18,16 @@ export interface ServerAuthenticationInput {
 
 export interface ServerAuthenticationResult {
     capabilities: ServerCapabilities;
+    /** The key this connection's local state is stored under. Pinned once and
+     *  carried forward verbatim — see getServerConnectionKey. */
+    connectionKey?: string;
     credential: string;
     details: string;
     isAdmin?: boolean;
     kind: ServerAuthenticationKind;
+    /** Stable identity issued by the server. Preferred over `url` when keying
+     *  local state, so the server's address can change without orphaning it. */
+    serverId?: string;
     serverVersion?: string;
     title: string;
     type: ServerType;
@@ -38,9 +44,5 @@ export const getServerAuthenticationErrorMessage = (error: unknown) => {
 export const authenticateServerConnection = async (
     input: ServerAuthenticationInput,
 ): Promise<ServerAuthenticationResult> => {
-    if (input.type === ServerType.SAMO) {
-        return authenticateSamo(input);
-    }
-
-    throw new Error(`Authentication is not supported for server type "${input.type}"`);
+    return authenticateSamo(input);
 };

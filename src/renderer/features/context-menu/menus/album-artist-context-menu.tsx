@@ -8,7 +8,6 @@ import { PlayAction } from '/@/renderer/features/context-menu/actions/play-actio
 import { PlayArtistRadioAction } from '/@/renderer/features/context-menu/actions/play-artist-radio-action';
 import { RemoveFromHomeAction } from '/@/renderer/features/context-menu/actions/remove-from-home-action';
 import { SetFavoriteAction } from '/@/renderer/features/context-menu/actions/set-favorite-action';
-import { ShareAction } from '/@/renderer/features/context-menu/actions/share-action';
 import { ContextMenuPreview } from '/@/renderer/features/context-menu/components/context-menu-preview';
 import { recordRecentArtist } from '/@/renderer/store/play-history.store';
 import { ContextMenu } from '/@/shared/components/context-menu/context-menu';
@@ -46,7 +45,6 @@ export const AlbumArtistContextMenu = ({
             <SetFavoriteAction ids={ids} itemType={LibraryItem.ALBUM_ARTIST} />
             <ContextMenu.Divider />
             <DownloadAction ids={ids} />
-            <ShareAction ids={ids} itemType={LibraryItem.ALBUM_ARTIST} />
             <ContextMenu.Divider />
             <GoToAction items={items} />
             <ContextMenu.Divider />

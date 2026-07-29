@@ -145,12 +145,22 @@ export const applyNativeCatalogSyncEvent = (event: NativeCatalogSyncEvent): void
 };
 
 /** Re-read the table via the native bridge (e.g. on foreground, after a
- *  background worker ran with no React context to emit into). */
-export const refreshCatalogSyncStateFromDb = async (): Promise<void> => {
+ *  background worker ran with no React context to emit into).
+ *
+ *  Returns the resulting snapshot so the caller can act on what the table says
+ *  without paying a second bridge round-trip. That matters because this read is
+ *  now the ONLY way the JS side learns that a background sync finished — the
+ *  device event it used to rely on is not emitted when there is no live React
+ *  instance to emit into. */
+export const refreshCatalogSyncStateFromDb = async (): Promise<CatalogSyncState[]> => {
     try {
         await loadFromNative();
         notifyListeners();
     } catch {
         // Best-effort refresh; live events still keep the cache moving.
     }
+    return snapshot();
 };
+
+/** The last-known sync state per source, without touching the bridge. */
+export const getCatalogSyncStates = (): CatalogSyncState[] => snapshot();

@@ -1,19 +1,12 @@
 {
     "action": {
         "editPlaylist": "pas $t(entity.playlist, {\"count\": 1}) aan",
-        "goToPage": "ga naar pagina",
-        "moveToTop": "verplaats naar begin",
         "addToFavorites": "toevoegen aan $t(entity.favorite, {\"count\": 2})",
-        "addToPlaylist": "toevoegen aan $t(entity.playlist, {\"count\": 1})",
         "createPlaylist": "maak $t(entity.playlist, {\"count\": 1})",
         "removeFromPlaylist": "verwijder uit $t(entity.playlist, {\"count\": 1})",
         "viewPlaylists": "bekijk $t(entity.playlist, {\"count\": 2})",
-        "refresh": "$t(common.refresh)",
         "deletePlaylist": "verwijder $t(entity.playlist, {\"count\": 1})",
         "removeFromQueue": "verwijder uit wachtrij",
-        "deselectAll": "deselecteer alles",
-        "moveToBottom": "verplaats naar einde",
-        "toggleSmartPlaylistEditor": "editor $t(entity.smartPlaylist) schakelen",
         "removeFromFavorites": "verwijder uit $t(entity.favorite, {\"count\": 2})",
         "clearQueue": "verwijder lijst",
         "openIn": {
@@ -23,9 +16,6 @@
             "qobuz": "Openen in Qobuz",
             "spotify": "Openen in Spotify"
         },
-        "moveToNext": "ga naar volgende",
-        "downloadStarted": "begonnen met downloaden van {{count}} items",
-        "moveItems": "verplaats items",
         "shuffle": "shuffle",
         "shuffleAll": "shuffle alles",
         "shuffleSelected": "shuffle geselecteerde",
@@ -33,7 +23,6 @@
         "addOrRemoveFromSelection": "toevoegen aan of verwijderen uit selectie",
         "selectRangeOfItems": "selecteer een reeks van nummers",
         "createRadioStation": "maak $t(entity.radioStation, {\"count\": 1})",
-        "deleteRadioStation": "verwijder $t(entity.radioStation, {\"count\": 1})",
         "selectAll": "selecteer alles",
         "moveUp": "verplaats omhoog",
         "moveDown": "verplaats omlaag",
@@ -167,45 +156,29 @@
         "newVersionAvailable": "een nieuwe versie is beschikbaar"
     },
     "filter": {
-        "mostPlayed": "meest gespeeld",
         "comment": "commentaar",
         "playCount": "aantal keer afgespeeld",
-        "recentlyUpdated": "recentelijk geüpdate",
-        "channels": "$t(common.channel, {\"count\": 2})",
         "isCompilation": "is compilatie",
         "recentlyPlayed": "recentelijk afgespeeld",
-        "isRated": "is rated",
-        "owner": "$t(common.owner)",
-        "bitrate": "bitrate",
         "genre": "$t(entity.genre, {\"count\": 1})",
         "recentlyAdded": "recentelijk toegevoegd",
-        "note": "notitie",
         "name": "naam",
-        "dateAdded": "datum toegevoegd",
         "albumCount": "$t(entity.album, {\"count\": 2}) totaal",
-        "path": "pad",
         "favorited": "favoriet",
         "albumArtist": "$t(entity.albumArtist, {\"count\": 1})",
-        "isRecentlyPlayed": "is recentelijk afgespeeld",
         "isFavorited": "is favoriet",
         "bpm": "bpm",
         "id": "id",
-        "disc": "disk",
-        "biography": "biografie",
         "artist": "$t(entity.artist, {\"count\": 1})",
         "duration": "duratie",
-        "isPublic": "is publiek",
         "random": "willekeurig",
         "lastPlayed": "laatst gespeeld",
         "fromYear": "van jaar",
         "album": "$t(entity.album, {\"count\": 1})",
-        "title": "titel",
-        "search": "zoeken",
         "releaseDate": "releasedatum",
         "releaseYear": "release jaar",
         "songCount": "aantal nummers",
         "toYear": "tot jaar",
-        "trackNumber": "track",
         "explicitStatus": "$t(common.explicitStatus)",
         "sortName": "sorteernaam",
         "matchAnd": "en",
@@ -214,39 +187,21 @@
     "page": {
         "contextMenu": {
             "addToPlaylist": "$t(action.addToPlaylist)",
-            "addToFavorites": "$t(action.addToFavorites)",
             "moveToTop": "$t(action.moveToTop)",
-            "deletePlaylist": "$t(action.deletePlaylist)",
             "moveToBottom": "$t(action.moveToBottom)",
-            "createPlaylist": "$t(action.createPlaylist)",
-            "removeFromPlaylist": "$t(action.removeFromPlaylist)",
-            "removeFromFavorites": "$t(action.removeFromFavorites)",
-            "addNext": "$t(player.addNext)",
-            "deselectAll": "$t(action.deselectAll)",
-            "addLast": "$t(player.addLast)",
-            "addFavorite": "$t(action.addToFavorites)",
-            "play": "$t(player.play)",
-            "numberSelected": "{{count}} geselecteerd",
-            "removeFromQueue": "$t(action.removeFromQueue)",
             "download": "download",
-            "shareItem": "deel item",
             "goToAlbum": "ga naar $t(entity.album, {\"count\": 1})",
-            "goToAlbumArtist": "ga naar $t(entity.albumArtist, {\"count\": 1})",
             "showDetails": "haal info op",
             "moveItems": "$t(action.moveItems)",
             "moveToNext": "$t(action.moveToNext)",
-            "playSimilarSongs": "$t(player.playSimilarSongs)",
-            "playShuffled": "$t(player.shuffle)",
             "goTo": "ga naar"
         },
         "appMenu": {
             "selectServer": "selecteer server",
-            "version": "versie {{version}}",
             "settings": "$t(common.setting, {\"count\": 2})",
             "manageServers": "beheer servers",
             "expandSidebar": "zijbalk uitklappen",
             "collapseSidebar": "zijbalk inklappen",
-            "openBrowserDevtools": "open browser devtools",
             "quit": "$t(common.quit)",
             "goBack": "terug",
             "goForward": "vooruit",
@@ -254,30 +209,20 @@
             "privateModeOn": "schakel private modus in",
             "selectMusicFolder": "selecteer muziekfolder",
             "noMusicFolder": "geen muziekfolder geselecteerd",
-            "multipleMusicFolders": "{{count}} muziekfolders geselecteerd",
-            "commandPalette": "open opdrachtvenster"
+            "multipleMusicFolders": "{{count}} muziekfolders geselecteerd"
         },
         "albumDetail": {
             "moreFromArtist": "meer van deze $t(entity.artist, {\"count\": 1})",
-            "moreFromGeneric": "meer van {{item}}",
-            "released": "uitgebracht"
+            "moreFromGeneric": "meer van {{item}}"
         },
         "fullscreenPlayer": {
             "config": {
-                "dynamicBackground": "dynamische achtergrond",
                 "followCurrentLyric": "volg de actuele songtekst",
-                "opacity": "opaciteit",
                 "lyricSize": "tekstgrootte",
                 "lyricAlignment": "songtekst uitlijning",
                 "lyricGap": "tekstkloof",
-                "dynamicImageBlur": "blur grootte van afbeelding",
-                "dynamicIsImage": "schakel achtergrondafbeelding in",
-                "showLyricMatch": "toon liedtekst match",
                 "synchronized": "gesynchronizeerd",
-                "unsynchronized": "niet gesynchronizeerd",
-                "useImageAspectRatio": "gebruik aspect ratio van de afbeelding",
-                "lyricOffset": "songtekst-vertraging (ms)",
-                "showLyricProvider": "toon songtekstaanbieder"
+                "unsynchronized": "niet gesynchronizeerd"
             },
             "lyrics": "liedtekst",
             "related": "gerelateerd",
@@ -289,9 +234,7 @@
             "title": "$t(entity.albumArtist, {\"count\": 2})"
         },
         "albumList": {
-            "title": "$t(entity.album, {\"count\": 2})",
-            "artistAlbums": "albums van {{artist}}",
-            "genreAlbums": "\"{{genre}}\" $t(entity.album, {\"count\": 2})"
+            "title": "$t(entity.album, {\"count\": 2})"
         },
         "albumArtistDetail": {
             "about": "Over {{artist}}",
@@ -302,7 +245,6 @@
             "topSongsFrom": "top nummers van {{title}}",
             "viewAll": "bekijk alle",
             "viewAllTracks": "bekijk alle $t(entity.track, {\"count\": 2})",
-            "recentReleases": "recente uitgaven",
             "groupingTypeAll": "alle soorten publicaties",
             "groupingTypePrimary": "primaire publicatiesoorten",
             "favoriteSongs": "favoriete nummers",
@@ -312,15 +254,12 @@
         },
         "manageServers": {
             "title": "beheer servers",
-            "serverDetails": "server details",
             "url": "URL",
             "username": "gebruikersnaam",
             "editServerDetailsTooltip": "bewerk server details",
             "removeServer": "verwijder server"
         },
         "genreList": {
-            "showAlbums": "toon $t(entity.genre, {\"count\": 1}) $t(entity.album, {\"count\": 2})",
-            "showTracks": "toon $t(entity.genre, {\"count\": 1}) $t(entity.track, {\"count\": 2})",
             "title": "$t(entity.genre, {\"count\": 2})"
         },
         "globalSearch": {
@@ -332,13 +271,7 @@
             "title": "commandos"
         },
         "home": {
-            "explore": "ontdek van uw biblitheek",
-            "mostPlayed": "meest gespeeld",
-            "newlyAdded": "nieuw toegevoegde uitgaven",
-            "recentlyPlayed": "recent afgespeeld",
-            "recentlyReleased": "recent uitgekomen",
-            "title": "$t(common.home)",
-            "genres": "$t(entity.genre, {\"count\": 2})"
+            "title": "$t(common.home)"
         },
         "favorites": {
             "title": "$t(entity.favorite, {\"count\": 2})"
@@ -348,36 +281,21 @@
             "copiedPath": "pad succesvol gekopieerd",
             "openFile": "toon nummer in bestandsbeheerder"
         },
-        "playlist": {
-            "reorder": "herschikken is alleen ingeschakeld wanneer er op ID wordt gestorteerd"
-        },
         "playlistList": {
             "title": "$t(entity.playlist, {\"count\": 2})"
         },
         "setting": {
             "advanced": "geavanceerd",
-            "analytics": "analyses",
             "generalTab": "algemeen",
             "hotkeysTab": "sneltoetsen",
-            "playbackTab": "weergave",
-            "windowTab": "venster",
             "updates": "update",
             "cache": "cache",
             "application": "applicatie",
-            "queryBuilder": "querybouwer",
             "theme": "thema",
-            "controls": "besturing",
-            "sidebar": "zijbalk",
             "remote": "afstand",
             "exportImport": "importeren/exporteren",
-            "scrobble": "scrobble",
-            "audio": "geluid",
             "lyrics": "songtekst",
-            "transcoding": "transcoderen",
-            "discord": "discord",
-            "lyricsDisplay": "songtekstweergave",
-            "logger": "logger",
-            "playerFilters": "spelerfilters"
+            "lyricsDisplay": "songtekstweergave"
         },
         "sidebar": {
             "albumArtists": "$t(entity.albumArtist, {\"count\": 2})",
@@ -398,15 +316,10 @@
             "collections": "verzamelingen"
         },
         "trackList": {
-            "artistTracks": "nummers van {{artist}}",
-            "genreTracks": "\"{{genre}}\" $t(entity.track, {\"count\": 2})",
             "title": "$t(entity.track, {\"count\": 2})"
         },
         "radioList": {
             "title": "radiostations"
-        },
-        "folderList": {
-            "title": "$t(entity.folder, {\"count\": 2})"
         },
         "windowBar": {
             "paused": "(Gepauzeerd) ",
@@ -424,34 +337,23 @@
     },
     "error": {
         "remotePortWarning": "herstart de server om de nieuwe poort in te stellen",
-        "systemFontError": "er is iets fout gegaan tijdens het verkrijgen van systeem fonts",
         "playbackError": "er is iets fout gegaan bij het afspelen van de media",
-        "endpointNotImplementedError": "endpoint {{endpoint}} is niet geïmplementeerd voor {{serverType}}",
         "remotePortError": "er is iets fout gegaan tijdens het selecteren van de remote server",
         "serverRequired": "server vereist",
         "authenticationFailed": "authenticatie mislukt",
         "apiRouteError": "verzoek kan niet doorgestuurd worden",
         "genericError": "er is iets fout gegaan",
         "credentialsRequired": "inloggegevens vereist",
-        "sessionExpiredError": "jouw sessie is verlopen",
         "remoteEnableError": "er is iets fout gegaan tijdens het $t(common.enable) van de remote server",
-        "localFontAccessDenied": "toegang geweigerd tot lokale fonts",
         "serverNotSelectedError": "geen server geselecteerd",
         "remoteDisableError": "er is iets fout gegaan tijdens het $t(common.disable) van de remote server",
-        "mpvRequired": "MPV vereist",
         "audioDeviceFetchError": "er is iets mis gegaan met het ophalen van de audioapparaten",
         "invalidServer": "ongeldige server",
-        "loginRateError": "te veel login pogingen, probeer het opnieuw in een paar seconde",
         "badValue": "ongeldige optie \"{{value}}\". Deze waarde bestaat niet langer",
-        "networkError": "een netwerkfout heeft zich voorgedaan",
-        "notificationDenied": "toestemming voor meldingen werd afgewezen. Deze instelling heeft geen effect",
         "openError": "kon het bestand niet openen",
-        "multipleServerSaveQueueError": "De afspeellijst bevat een of meer nummers die niet afkomstig zijn van de huidige server. Dit wordt niet ondersteund",
         "noNetwork": "server niet beschikbaar",
         "noNetworkDescription": "kan geen verbinding maken met deze server",
-        "saveQueueFailed": "kan wachtrij niet opslaan",
         "settingsSyncError": "Er zijn verschillen gevonden tussen de instellingen in de renderer en het hoofdproces. Start de applicatie opnieuw op om de wijzigingen toe te passen",
-        "invalidJson": "ongeldige JSON",
         "serverLockSingleServer": "slechts één server is toegestaan als server op slot is gezet",
         "playbackPausedDueToError": "afspelen gepauzeerd vanwege een fout"
     },
@@ -504,8 +406,6 @@
             "bitrate": "bitsnelheid",
             "comment": "opmerking",
             "dateAdded": "datum toegevoegd",
-            "favorite": "favoriet",
-            "discNumber": "disc",
             "bpm": "bpm",
             "album": "album",
             "lastPlayed": "laatst gespeeld",
@@ -514,7 +414,6 @@
             "releaseDate": "uitgavedatum",
             "releaseYear": "jaar",
             "title": "titel",
-            "trackNumber": "nummer",
             "owner": "eigenaar",
             "albumCount": "$t(entity.album, {\"count\": 2})",
             "artist": "$t(entity.artist, {\"count\": 1})",
@@ -564,7 +463,6 @@
                 "albumGroup": "albumgroep"
             },
             "general": {
-                "advancedSettings": "geavanceerde instellingen",
                 "autoFitColumns": "kolommen automatisch passend maken",
                 "autosize": "automatische afmetingen",
                 "moveUp": "omhoog verplaatsen",
@@ -574,15 +472,11 @@
                 "alignLeft": "links uitlijnen",
                 "alignCenter": "centreren",
                 "alignRight": "rechts uitlijnen",
-                "followCurrentSong": "huidige nummer volgen",
                 "displayType": "weergavesoort",
-                "itemGap": "ruimte tussen items (px)",
-                "itemSize": "grootte item (px)",
                 "itemsPerRow": "items per rij",
                 "size_default": "standaard",
                 "size_compact": "compact",
                 "size_large": "groot",
-                "tableColumns": "kolommen",
                 "pagination": "paginering",
                 "pagination_itemsPerPage": "items per pagina",
                 "pagination_infinite": "oneindig",
@@ -992,9 +886,7 @@
             "input_remoteUrlPlaceholder": "optioneel: publieke url voor externe mogelijkheden"
         },
         "deletePlaylist": {
-            "title": "verwijder $t(entity.playlist, {\"count\": 1})",
-            "success": "$t(entity.playlist, {\"count\": 1}) succesvol verwijdert",
-            "input_confirm": "Typ de naam van $t(entity.playlist, {\"count\": 1}) om te bevestigen"
+            "title": "verwijder $t(entity.playlist, {\"count\": 1})"
         },
         "createPlaylist": {
             "input_description": "$t(common.description)",
@@ -1012,15 +904,6 @@
             "create": "maak $t(entity.playlist, {\"count\": 1}) {{playlist}}",
             "searchOrCreate": "zoek $t(entity.playlist, {\"count\": 2}) of typ om een nieuwe te maken"
         },
-        "queryEditor": {
-            "input_optionMatchAll": "alles matchen",
-            "input_optionMatchAny": "elke match",
-            "title": "zoekopdrachtbewerker",
-            "addRuleGroup": "rolgroep toevoegen",
-            "removeRuleGroup": "rolgroep verwijderen",
-            "resetToDefault": "terugzetten naar standaard",
-            "clearFilters": "filters wissen"
-        },
         "lyricSearch": {
             "input_name": "$t(common.name)",
             "input_artist": "$t(entity.artist, {\"count\": 1})",
@@ -1031,18 +914,7 @@
             "success": "$t(entity.playlist, {\"count\": 1}) succesvol geüpdatet"
         },
         "updateServer": {
-            "title": "update server",
-            "success": "server succesvol geüpdatet"
-        },
-        "shareItem": {
-            "allowDownloading": "sta downloaden toe",
-            "description": "beschrijving",
-            "setExpiration": "stel vervaldatum in",
-            "success": "deel link gekopiëerd naar klembord (of klik hier om te openen)",
-            "expireInvalid": "vervaldatum moet in de toekomst zijn",
-            "createFailed": "kon share niet aanmaken (is delen aangezet?)",
-            "copyToClipboard": "Kopieer naar klembord: Ctrl+C, Enter",
-            "successMustClick": "gedeelde bron succesvol aangemaakt. klik hier om te openen"
+            "title": "update server"
         },
         "privateMode": {
             "enabled": "private modus ingeschakeld, afspeelstatus is nu verborgen voor externe integraties",
@@ -1058,15 +930,9 @@
             "input_genre": "$t(entity.genre, {\"count\": 1})",
             "input_limit": "hoeveel nummers?",
             "input_minYear": "van jaar",
-            "input_maxYear": "naar jaar",
-            "input_played": "speel filter",
-            "input_played_optionAll": "alle nummers",
-            "input_played_optionUnplayed": "alleen ongespeelde nummers",
-            "input_played_optionPlayed": "alleen gespeelde nummers"
+            "input_maxYear": "naar jaar"
         },
         "createRadioStation": {
-            "success": "radiostation succesvol aangemaakt",
-            "title": "radiostation aanmaken",
             "input_homepageUrl": "thuispagina-url",
             "input_name": "naam",
             "input_streamUrl": "stream-url"
@@ -1075,9 +941,6 @@
             "export": "exporteer songtekst",
             "input_synced": "exporteer gesynchroniseerde songtekst",
             "input_offset": "$t(setting.lyricOffset)"
-        },
-        "saveQueue": {
-            "success": "wachtrij opgeslagen op server"
         }
     },
     "player": {
@@ -1092,23 +955,15 @@
         "play": "afspelen",
         "playbackFetchCancel": "dit duurt even... sluit de notificatie om te annuleren",
         "playbackFetchInProgress": "nummers laden…",
-        "playbackFetchNoResults": "geen nummers gevonden",
         "playbackSpeed": "weergavesnelheid",
         "playRandom": "willekeurig afspelen",
-        "playSimilarSongs": "vergelijkbare nummers afspelen",
         "previous": "vorige",
-        "queue_clear": "wachtrij wissen",
-        "queue_moveToBottom": "verplaats geselecteerde naar boven",
-        "queue_moveToTop": "verplaats geselecteerde naar beneden",
         "artistRadio": "artiestenradio",
         "holdToShuffle": "vasthouden om willekeurig af te spelen",
         "lyrics": "songtekst",
-        "queue_remove": "verwijder geselecteerde",
         "repeat": "herhalen",
         "repeat_all": "alles herhalen",
         "repeat_off": "herhalen uitgeschakeld",
-        "restoreQueueFromServer": "herstel wachtrij van server",
-        "saveQueueToServer": "sla wachtrij op server op",
         "shuffle": "afspelen (willekeurig)",
         "shuffle_off": "willekeurig afspelen uitgeschakeld",
         "skip": "overslaan",
@@ -1125,8 +980,6 @@
         "sleepTimer_minutes": "{{count}} min",
         "sleepTimer_hours": "{{count}} uur",
         "sleepTimer_custom": "afwijkend",
-        "sleepTimer_off": "uit",
-        "sleepTimer_timeRemaining": "{{time}} resterend",
         "sleepTimer_setCustom": "timer instellen",
         "sleepTimer_cancel": "timer annuleren",
         "albumRadio": "albumradio"
@@ -1136,31 +989,6 @@
         "secondShort": "s",
         "hourShort": "h",
         "dayShort": "d"
-    },
-    "filterOperator": {
-        "afterDate": "is na (datum)",
-        "before": "is voor",
-        "beforeDate": "is vóór (datum)",
-        "contains": "bevat",
-        "endsWith": "eindigt met",
-        "inPlaylist": "is in",
-        "inTheLast": "is in de laatste",
-        "inTheRange": "ligt binnen het bereik",
-        "inTheRangeDate": "ligt binnen het bereik (datum)",
-        "is": "is",
-        "isNot": "is niet",
-        "isGreaterThan": "is groter dan",
-        "isLessThan": "is minder dan",
-        "matchesRegex": "komt overeen met regex",
-        "notContains": "bevat geen",
-        "notInPlaylist": "is niet in",
-        "notInTheLast": "is niet in de laatste",
-        "startsWith": "begint met",
-        "after": "is na"
-    },
-    "queryBuilder": {
-        "standardTags": "standaard tags",
-        "customTags": "aangepaste tags"
     },
     "releaseType": {
         "primary": {
@@ -1201,7 +1029,6 @@
         "blendTime": "Mengtijd",
         "presets": "Voorinstellingen",
         "selectPreset": "Kies Voorinstelling",
-        "applyPreset": "Voorinstelling Toepassen",
         "saveAsPreset": "Opslaan als Voorinstelling",
         "updatePreset": "Voorinstelling Bijwerken",
         "copyConfiguration": "Kopieer Configuratie",
@@ -1255,8 +1082,6 @@
         "frequencyScale": "Frequentieschaal",
         "sensitivity": "Gevoeligheid",
         "weightingFilter": "Gewichtsfilter",
-        "minimumDecibels": "Minimum aantal decibel",
-        "maximumDecibels": "Maximum aantal decibel",
         "linearAmplitude": "Lineaire Amplitude",
         "linearBoost": "Lineaire Versterking",
         "peakBehavior": "Piekgedrag",

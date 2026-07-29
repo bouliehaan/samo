@@ -33,7 +33,7 @@ export const PlaybackEngine = memo(function PlaybackEngine() {
     const activePlaybackItem = useAndroidPlaybackState(selectActiveAndroidPlaybackItem);
 
     const {
-        absContextRef,
+        progressContextRef,
         handlePlayItem,
         playbackSnapshotRef,
         playQueuedItem,
@@ -63,7 +63,7 @@ export const PlaybackEngine = memo(function PlaybackEngine() {
     // idempotent module write) so the bridge is live before the first frame
     // can take a tap; re-assigned as the underlying callbacks refresh.
     registerPlaybackBridge({
-        absContextRef,
+        progressContextRef,
         cycleRepeatMode: handleCycleRepeatMode,
         handlePlayItem,
         navigatePlayback: handleNavigatePlayback,

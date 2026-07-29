@@ -14,9 +14,8 @@ import {
     PlayTooltip,
 } from '/@/renderer/features/shared/components/play-button-group';
 import { usePlayButtonBehavior } from '/@/renderer/store';
-import { Icon } from '/@/shared/components/icon/icon';
 import { Skeleton } from '/@/shared/components/skeleton/skeleton';
-import { Folder, LibraryItem } from '/@/shared/types/domain-types';
+import { LibraryItem } from '/@/shared/types/domain-types';
 import { Play } from '/@/shared/types/types';
 
 const ImageColumnBase = (props: ItemTableListInnerColumn) => {
@@ -26,9 +25,6 @@ const ImageColumnBase = (props: ItemTableListInnerColumn) => {
     const playButtonBehavior = usePlayButtonBehavior();
     const internalState = (props as any).internalState;
     const [isHovered, setIsHovered] = useState(false);
-
-    const isFolder = (rowItem as unknown as Folder)?._itemType === LibraryItem.FOLDER;
-    const shouldShowFolderIcon = isFolder && !item?.imageId && !item?.imageUrl;
 
     const handlePlay = (playType: Play, event: React.MouseEvent<HTMLButtonElement>) => {
         if (!item) {
@@ -118,14 +114,6 @@ const ImageColumnBase = (props: ItemTableListInnerColumn) => {
                         </div>
                     )}
                 </div>
-            </TableColumnContainer>
-        );
-    }
-
-    if (shouldShowFolderIcon) {
-        return (
-            <TableColumnContainer {...props}>
-                <Icon className={styles.folderIcon} icon="folder" size="2xl" />
             </TableColumnContainer>
         );
     }

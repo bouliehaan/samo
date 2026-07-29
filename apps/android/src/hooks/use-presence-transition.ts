@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { type SharedValue, useSharedValue, withTiming } from 'react-native-reanimated';
 
+import { beginChromeGlassMotion, endChromeGlassMotion } from '../state/chrome-glass';
 import { durations, easings } from '../theme/motion';
 import { useReducedMotionPreference } from './use-reduced-motion-preference';
 
@@ -53,20 +54,23 @@ export function usePresenceTransition(
     const config = useRef({ enterMs, exitMs, reducedMotion });
     config.current = { enterMs, exitMs, reducedMotion };
 
-    useEffect(() => {
-        const { enterMs: enter, exitMs: exit, reducedMotion: reduced } = config.current;
+    // Held for the length of every enter and exit: a full-screen overlay
+    // cross-fading is a full-screen redraw per frame, and a live backdrop blur
+    // re-rasterises the whole view tree in software on top of each one. See
+    // state/chrome-glass.
+    // Distinct per transition instance — see useChoreography.
+    const glassMotionKey = `presence:${useId()}`;
+    useEffect(() => () => endChromeGlassMotion(glassMotionKey), [glassMotionKey]);
 
+    // PASS 1 — the mount gate. Opening ONLY raises the gate; it deliberately
+    // does not touch `progress`. See pass 2 for why.
+    useEffect(() => {
         if (visible) {
-            // Mount first, animate second. Both happen in this one effect pass,
-            // so the subtree is committed and laid out before progress leaves
-            // 0 — the entrance never spends its opening frames waiting on Yoga.
             setIsMounted(true);
-            progress.value = withTiming(1, {
-                duration: reduced ? 0 : enter,
-                easing: easings.emphasized,
-            });
             return;
         }
+
+        const { exitMs: exit, reducedMotion: reduced } = config.current;
 
         progress.value = withTiming(0, {
             duration: reduced ? 0 : exit,
@@ -78,11 +82,63 @@ export function usePresenceTransition(
             return;
         }
 
+        beginChromeGlassMotion(glassMotionKey);
         // Slack past the last animated frame so the unmount can never land on
         // a surface still mid-fade (same guard as TabSceneContainer's rest).
         const timer = setTimeout(() => setIsMounted(false), exit + UNMOUNT_SLACK_MS);
-        return () => clearTimeout(timer);
-    }, [progress, visible]);
+        const glassTimer = setTimeout(
+            () => endChromeGlassMotion(glassMotionKey),
+            exit + UNMOUNT_SLACK_MS,
+        );
+        return () => {
+            clearTimeout(timer);
+            clearTimeout(glassTimer);
+            endChromeGlassMotion(glassMotionKey);
+        };
+    }, [glassMotionKey, progress, visible]);
+
+    // PASS 2 — the entrance, and it MUST be its own pass.
+    //
+    // `setIsMounted(true)` only SCHEDULES a render; it does not commit one.
+    // Starting `withTiming(1)` alongside it — which is what this hook used to
+    // do — hands the UI thread a clock that begins ticking immediately, while
+    // the subtree it is supposed to be revealing does not exist until React
+    // has rendered, laid out, and mounted it one or more frames later. The
+    // entrance then spends its opening frames animating nothing, and whatever
+    // is left of the 200ms when the views finally appear is all the user sees:
+    // a heavy surface (a detail page with fifty rows) can be most of the way
+    // through its own fade — or past the end of it — before it has anything to
+    // fade. That is the "the animation just didn't play" bug, and it is worst
+    // on exactly the surfaces that most need the polish.
+    //
+    // Keying this effect on `isMounted` inverts it correctly: the gate opens,
+    // React commits the subtree at progress 0 (mounted, invisible, laid out),
+    // and only THEN does the clock start. This is motion.ts rule 4 — pay the
+    // mount cost BEFORE the animation, never during — enforced structurally
+    // rather than by convention.
+    //
+    // A re-show DURING an exit (isMounted never dropped) re-runs this on the
+    // `visible` dep alone and starts the entrance on the same frame, which is
+    // right: nothing needs mounting, so there is nothing to wait for.
+    useEffect(() => {
+        if (!visible || !isMounted) {
+            return;
+        }
+        const { enterMs: enter, reducedMotion: reduced } = config.current;
+        progress.value = withTiming(1, {
+            duration: reduced ? 0 : enter,
+            easing: easings.emphasized,
+        });
+        if (reduced) {
+            return;
+        }
+        beginChromeGlassMotion(glassMotionKey);
+        const glassTimer = setTimeout(() => endChromeGlassMotion(glassMotionKey), enter);
+        return () => {
+            clearTimeout(glassTimer);
+            endChromeGlassMotion(glassMotionKey);
+        };
+    }, [glassMotionKey, isMounted, progress, visible]);
 
     return { isMounted, progress };
 }

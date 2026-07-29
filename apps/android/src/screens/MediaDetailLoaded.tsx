@@ -59,6 +59,7 @@ const renderSkeletonRow = () => <SkeletonTrackRow />;
  */
 export const MediaDetailLoaded = memo(function MediaDetailLoaded({
     detail,
+    entranceKey,
     fallbackArtworkImageId,
     fallbackArtworkUrl,
     isAwaitingDetail = false,
@@ -70,6 +71,24 @@ export const MediaDetailLoaded = memo(function MediaDetailLoaded({
     serverConnection,
 }: {
     detail: MobileMediaDetail;
+    /**
+     * What the entrance choreography treats as "a different page" — the
+     * navigation's cache key, NOT `detail.id`.
+     *
+     * These come apart during loading. The surface deliberately renders this
+     * same component against a placeholder detail first, so the hero image
+     * stays mounted across the swap — but that placeholder carries a synthetic
+     * `__loading__:` id, so keying the clock on `detail.id` saw the arrival of
+     * the real payload as a navigation to a different album. The clock snapped
+     * back to 0 and replayed: the page assembled, blanked to nothing, and
+     * assembled a second time. That double-take is what read as a flash on
+     * every detail page, and it got worse the slower the fetch was.
+     *
+     * The navigation key survives loading → loaded untouched (the store sets it
+     * once, on open) and changes on a real navigation, which is exactly the
+     * question the clock is asking.
+     */
+    entranceKey?: string | null;
     fallbackArtworkImageId?: string;
     fallbackArtworkUrl?: string;
     /** Render the real list+hero shell against a placeholder detail while the
@@ -124,7 +143,7 @@ export const MediaDetailLoaded = memo(function MediaDetailLoaded({
     // after the clock reaches 1 (i.e. everything the user scrolls to) evaluate
     // to "already at rest" and never animate. Recycled rows do not re-play the
     // entrance, which is the usual way a staggered list turns into a mess.
-    const entranceClock = useChoreography(detail.id);
+    const entranceClock = useChoreography(entranceKey ?? detail.id);
 
     const isMusic =
         detail.type === MobileMediaDetailType.ALBUM ||
@@ -494,6 +513,7 @@ export const MediaDetailLoaded = memo(function MediaDetailLoaded({
                         </>
                     }
                     maintainVisibleContentPosition={FLASH_LIST_MAINTAIN_POSITION_DISABLED}
+                    {...collapsedHeader.scrollMotionProps}
                     onScroll={collapsedHeader.scrollHandler}
                     renderItem={isAwaitingDetail ? renderSkeletonRow : renderTrackItem}
                     scrollEventThrottle={16}
@@ -547,6 +567,7 @@ export const MediaDetailLoaded = memo(function MediaDetailLoaded({
                             </View>
                         </>
                     }
+                    {...collapsedHeader.scrollMotionProps}
                     onScroll={collapsedHeader.scrollHandler}
                     renderItem={isAwaitingDetail ? renderSkeletonRow : renderTrackItem}
                     scrollEventThrottle={16}
@@ -561,6 +582,7 @@ export const MediaDetailLoaded = memo(function MediaDetailLoaded({
         <View style={styles.mediaDetailScreen}>
             <Reanimated.ScrollView
                 contentContainerStyle={[styles.mediaDetailContent, { paddingBottom: bottomInset }]}
+                {...collapsedHeader.scrollMotionProps}
                 onScroll={collapsedHeader.scrollHandler}
                 scrollEventThrottle={16}
                 showsVerticalScrollIndicator={false}

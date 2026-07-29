@@ -10,7 +10,6 @@ interface ListContextProps {
     displayMode?: ListDisplayMode;
     id?: string;
     isSidebarOpen?: boolean;
-    isSmartPlaylist?: boolean;
     itemCount?: number;
     listData?: unknown[];
     listKey?: ItemListKey;

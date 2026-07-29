@@ -11,7 +11,21 @@ def projectRoot = rootDir.getAbsoluteFile().getParentFile().getAbsolutePath()
 react {
     entryFile = file(["node", "-e", "require('expo/scripts/resolveAppEntry')", projectRoot, "android", "absolute"].execute(null, rootDir).text.trim())
     reactNativeDir = new File(["node", "--print", "require.resolve('react-native/package.json')"].execute(null, rootDir).text.trim()).getParentFile().getAbsoluteFile()
-    hermesCommand = new File(["node", "--print", "require.resolve('react-native/package.json')"].execute(null, rootDir).text.trim()).getParentFile().getAbsolutePath() + "/sdks/hermesc/%OS-BIN%/hermesc"
+    // hermesc moved OUT of react-native in 0.86 — it now ships as its own npm
+    // package, `hermes-compiler`. The old hardcoded
+    // `react-native/sdks/hermesc/%OS-BIN%/hermesc` path no longer exists, and
+    // because it was set explicitly it beat the Gradle plugin's own lookup and
+    // failed the RELEASE build at `createBundleReleaseJsAndAssets` ("A problem
+    // occurred starting process ... hermesc"). Debug never hits this — only a
+    // release bundle is compiled to Hermes bytecode.
+    //
+    // Resolved through node rather than deleted so the plugin can fall back:
+    // the plugin's own fallback looks for `node_modules/hermes-compiler/...`
+    // RELATIVE TO THE GRADLE PROJECT ROOT, and pnpm hoists the package to the
+    // workspace root, several levels up, where that lookup cannot see it.
+    // `require.resolve` finds it wherever the linker actually put it — the same
+    // idiom the react-native and @expo/cli lines above already use.
+    hermesCommand = new File(["node", "--print", "require.resolve('hermes-compiler/package.json')"].execute(null, rootDir).text.trim()).getParentFile().getAbsolutePath() + "/hermesc/%OS-BIN%/hermesc"
     codegenDir = new File(["node", "--print", "require.resolve('@react-native/codegen/package.json', { paths: [require.resolve('react-native/package.json')] })"].execute(null, rootDir).text.trim()).getParentFile().getAbsoluteFile()
 
     enableBundleCompression = (findProperty('android.enableBundleCompression') ?: false).toBoolean()

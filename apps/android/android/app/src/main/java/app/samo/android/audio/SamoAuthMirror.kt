@@ -36,7 +36,24 @@ internal object SamoAuthMirror {
         val url: String,
         val credential: String,
         val ndCredential: String?,
-    )
+        /**
+         * The key JS files this connection's local state under, pushed verbatim.
+         *
+         * The sync used to derive its own key as `type:url`, which agreed with
+         * JS only by coincidence — and stopped agreeing the moment a server was
+         * reachable at more than one address. Every row this engine writes is
+         * read back by JS under ITS key, so the key has to travel with the
+         * connection rather than be re-derived from a field that can change.
+         * Null for a mirror written by an older build; see [key].
+         */
+        val connectionKey: String?,
+    ) {
+        /** The sourceId every mirror row is written under. Falls back to the
+         *  address-derived form only for a mirror that predates the field —
+         *  which is exactly what JS pins for those same connections. */
+        val key: String get() = connectionKey?.takeIf { it.isNotBlank() }
+            ?: "$type:${url.trimEnd('/')}"
+    }
 
     /**
      * Load the mirrored connections from disk. Returns an empty list when the
@@ -57,7 +74,8 @@ internal object SamoAuthMirror {
                 val credential = obj.optString("credential")
                     ?: return@mapNotNull null
                 val nd = obj.optString("ndCredential").takeIf { it.isNotBlank() }
-                Connection(type, url, credential, nd)
+                val connectionKey = obj.optString("connectionKey").takeIf { it.isNotBlank() }
+                Connection(type, url, credential, nd, connectionKey)
             }
         } catch (error: JSONException) {
             Log.w(TAG, "auth mirror is malformed", error)
@@ -97,6 +115,9 @@ internal object SamoAuthMirror {
             item.getString("credential")?.let { obj.put("credential", it) }
             if (item.hasKey("ndCredential") && !item.isNull("ndCredential")) {
                 item.getString("ndCredential")?.let { obj.put("ndCredential", it) }
+            }
+            if (item.hasKey("connectionKey") && !item.isNull("connectionKey")) {
+                item.getString("connectionKey")?.let { obj.put("connectionKey", it) }
             }
             array.put(obj)
         }

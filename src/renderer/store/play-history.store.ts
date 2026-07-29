@@ -12,7 +12,6 @@ import {
     Playlist,
     RelatedAlbumArtist,
     RelatedArtist,
-    ServerType,
     Song,
 } from '/@/shared/types/domain-types';
 
@@ -197,7 +196,7 @@ export const recordRecentAlbum = (album: Album) => {
 
 export const recordRecentArtist = (
     artist: AlbumArtist | RelatedAlbumArtist | RelatedArtist,
-    fallback?: { serverId?: string; serverType?: ServerType },
+    fallback?: { serverId?: string },
 ) => {
     const serverId = '_serverId' in artist ? artist._serverId : fallback?.serverId;
     if (!serverId) return;

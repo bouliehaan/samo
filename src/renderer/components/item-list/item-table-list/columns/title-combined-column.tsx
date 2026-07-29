@@ -21,15 +21,8 @@ import {
 } from '/@/renderer/features/shared/components/play-button-group';
 import { recordRecentArtist, recordRecentPlaylist, usePlayButtonBehavior } from '/@/renderer/store';
 import { ExplicitIndicator } from '/@/shared/components/explicit-indicator/explicit-indicator';
-import { Icon } from '/@/shared/components/icon/icon';
 import { Text } from '/@/shared/components/text/text';
-import {
-    AlbumArtist,
-    Folder,
-    LibraryItem,
-    Playlist,
-    QueueSong,
-} from '/@/shared/types/domain-types';
+import { AlbumArtist, LibraryItem, Playlist, QueueSong } from '/@/shared/types/domain-types';
 import { Play } from '/@/shared/types/types';
 
 export const DefaultTitleCombinedColumn = (props: ItemTableListInnerColumn) => {
@@ -357,44 +350,6 @@ export const QueueSongTitleCombinedColumn = (props: ItemTableListInnerColumn) =>
         );
     }
 
-    if ((rowItem as unknown as Folder)?._itemType === LibraryItem.FOLDER) {
-        const rowHeight = props.getRowHeight(props.rowIndex, props);
-        const path = getTitlePath(props.itemType, (rowItem as any).id as string);
-
-        const item = rowItem as any;
-        const textStyles = isActive ? { color: 'var(--theme-colors-primary)' } : {};
-
-        const titleLinkProps = path
-            ? {
-                  component: Link,
-                  isLink: true,
-                  state: { item },
-                  to: path,
-              }
-            : {};
-
-        const title = (rowItem as unknown as Folder)?.name;
-
-        return (
-            <TableColumnContainer
-                className={styles.titleCombined}
-                containerStyle={{ '--row-height': `${rowHeight}px` } as CSSProperties}
-                {...props}
-            >
-                <Icon className={styles.folderIcon} icon="folder" size="2xl" />
-                <Text
-                    className={styles.title}
-                    isNoSelect
-                    size="md"
-                    {...titleLinkProps}
-                    style={textStyles}
-                >
-                    {title}
-                </Text>
-            </TableColumnContainer>
-        );
-    }
-
     if (row === null) {
         return <ColumnNullFallback {...props} />;
     }
@@ -406,7 +361,6 @@ const TitleCombinedColumnBase = (props: ItemTableListInnerColumn) => {
     const { itemType } = props;
 
     switch (itemType) {
-        case LibraryItem.FOLDER:
         case LibraryItem.PLAYLIST_SONG:
         case LibraryItem.QUEUE_SONG:
         case LibraryItem.SONG:

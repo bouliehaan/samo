@@ -18,6 +18,7 @@ import {
     selectActiveAndroidPlaybackItem,
     useAndroidPlaybackState,
 } from '../state/playback-store';
+import { beginChromeGlassMotion, endChromeGlassMotion } from '../state/chrome-glass';
 import { REDUCED_MOTION_SPRING } from '../theme/layout';
 import { styles } from '../theme/styles';
 import { getContentSourceFromPlaybackItem } from '../utils/content-source';
@@ -62,6 +63,10 @@ const handlePlayerPlayQueueIndex = (index: number) => {
     })();
 };
 
+/** Window the chrome glass stays frozen for a player open/close. Comfortably
+ *  past both springs' visual settle; see the effect below. */
+const PLAYER_GLASS_HOLD_MS = 460;
+
 /**
  * The player chrome: mini player, fullscreen player, and the output picker.
  * Subscribes to the session/queue/navigation slices the players render from,
@@ -89,17 +94,27 @@ export const PlayerDock = memo(function PlayerDock({
     useEffect(() => {
         const openSpring = reducedMotion ? REDUCED_MOTION_SPRING : PLAYER_OPEN_SPRING;
         const closeSpring = reducedMotion ? REDUCED_MOTION_SPRING : PLAYER_CLOSE_SPRING;
+        // The card lifting off the desk moves the whole screen — the world dim,
+        // the tab bar sink and the dock glass itself all travel with it. Freeze
+        // the glass for the length of it (state/chrome-glass); OPEN is the
+        // slower of the two springs at ωn ≈ 16.1 rad/s, ζ ≈ 0.74, so it is
+        // visually settled inside this window.
+        beginChromeGlassMotion('player');
+        const settle = setTimeout(() => endChromeGlassMotion('player'), PLAYER_GLASS_HOLD_MS);
         if (isFullPlayerOpen) {
             playerProgress.value = withSpring(1, openSpring);
-            return;
-        }
-        // Gesture dismiss already animates playerProgress to 0 and calls onClose
-        // from the spring onFinish callback — avoid restarting the close motion.
-        if (playerProgress.value > 0.001) {
+        } else if (playerProgress.value > 0.001) {
+            // Gesture dismiss already animates playerProgress to 0 and calls
+            // onClose from the spring onFinish callback — avoid restarting the
+            // close motion.
             playerProgress.value = reducedMotion
                 ? withTiming(0, { duration: 0 })
                 : withSpring(0, closeSpring);
         }
+        return () => {
+            clearTimeout(settle);
+            endChromeGlassMotion('player');
+        };
     }, [isFullPlayerOpen, playerProgress, reducedMotion]);
 
     useEffect(() => {

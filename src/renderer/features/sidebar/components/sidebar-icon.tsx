@@ -5,8 +5,6 @@ import {
     RiBookOpenLine,
     RiFlag2Fill,
     RiFlag2Line,
-    RiFolder3Fill,
-    RiFolder3Line,
     RiHeartFill,
     RiHeartLine,
     RiHome6Fill,
@@ -61,9 +59,6 @@ export const SidebarIcon = ({ active, route, size }: SidebarIconProps) => {
             case AppRoute.LIBRARY_ARTISTS:
                 if (isActive) return <RiUserVoiceFill size={size} />;
                 return <RiUserVoiceLine size={size} />;
-            case AppRoute.LIBRARY_FOLDERS:
-                if (isActive) return <RiFolder3Fill size={size} />;
-                return <RiFolder3Line size={size} />;
             case AppRoute.LIBRARY_GENRES:
                 if (isActive) return <RiFlag2Fill size={size} />;
                 return <RiFlag2Line size={size} />;

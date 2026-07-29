@@ -4,11 +4,11 @@ import { contextBridge } from 'electron';
 import { autodiscover } from './autodiscover';
 import { browser } from './browser';
 import { cast } from './cast';
-import { ipc } from './ipc';
 import { localSettings } from './local-settings';
 import { lyrics } from './lyrics';
 import { mpris } from './mpris';
 import { mpvPlayer, mpvPlayerListener } from './mpv-player';
+import { playerState } from './player-state';
 import { remote } from './remote';
 import { samo } from './samo';
 import { utils } from './utils';
@@ -18,12 +18,12 @@ const api = {
     autodiscover,
     browser,
     cast,
-    ipc,
     localSettings,
     lyrics,
     mpris,
     mpvPlayer,
     mpvPlayerListener,
+    playerState,
     remote,
     samo,
     utils,

@@ -5,7 +5,22 @@ import { ArtworkImage } from './ArtworkImage';
 import { MotionSheet } from './MotionSheet';
 import { styles } from '../theme/styles';
 import { colors } from '../theme/tokens';
-import { type BookInfoState } from '../types/book-info';
+import { type BookInfoEpisode, type BookInfoState } from '../types/book-info';
+import { formatPlaybackReleaseDate, formatPlaybackTime } from '../utils/playback-time';
+
+/** An episode's stat line, in the same shape a detail's `metadataLines` take so
+ *  the sheet below renders both without branching. */
+const buildEpisodeMetadataLines = (episode: BookInfoEpisode): string[] => {
+    const lines: string[] = [];
+    const released = formatPlaybackReleaseDate(episode.publishedAt);
+    if (released) {
+        lines.push(released);
+    }
+    if (episode.durationSeconds && episode.durationSeconds > 0) {
+        lines.push(formatPlaybackTime(episode.durationSeconds * 1000));
+    }
+    return lines;
+};
 
 export const BookInformationModal = ({
     onClose,
@@ -28,15 +43,25 @@ export const BookInformationModal = ({
 
     const variant = shown.variant;
     const fallbackItem = shown.item;
-    const detail = shown.status === 'loaded' ? shown.detail : null;
-    const title = detail?.title ?? fallbackItem.title;
-    const subtitle = detail?.subtitle ?? fallbackItem.subtitle;
+    // The episode variant is its own shape — it carries the episode inline
+    // instead of a fetched detail, so both are narrowed before either is read.
+    const episode = shown.status === 'loaded' && shown.variant === 'episode' ? shown.episode : null;
+    const detail = shown.status === 'loaded' && shown.variant !== 'episode' ? shown.detail : null;
+    const title = episode?.title ?? detail?.title ?? fallbackItem.title;
+    const subtitle = episode?.subtitle ?? detail?.subtitle ?? fallbackItem.subtitle;
+    // An episode's artwork is the show's unless it ships its own; either way the
+    // row that opened this already resolved it onto `item`.
     const artworkUrl = detail?.artworkUrl ?? fallbackItem.artworkUrl;
     const artworkImageId = detail?.artworkImageId ?? fallbackItem.artworkImageId;
     const contentSource = detail?.source ?? fallbackItem.source;
-    const metadataLines = detail?.metadataLines ?? [];
-    const description = detail?.biography;
-    const eyebrow = variant === 'audiobook' ? 'About the book' : 'About the podcast';
+    const metadataLines = episode ? buildEpisodeMetadataLines(episode) : (detail?.metadataLines ?? []);
+    const description = episode?.description ?? detail?.biography;
+    const eyebrow =
+        variant === 'audiobook'
+            ? 'About the book'
+            : variant === 'episode'
+              ? 'About this episode'
+              : 'About the podcast';
 
     return (
         <MotionSheet

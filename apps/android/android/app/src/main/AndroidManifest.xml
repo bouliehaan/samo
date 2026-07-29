@@ -4,6 +4,13 @@
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
   <uses-permission android:name="android.permission.INTERNET"/>
   <uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>
+  <!-- Reading the connected Wi-Fi network's NAME has required location permission
+       since Android 8.1; without it the platform hands back "<unknown ssid>".
+       It is used for one thing: letting you pin "when I'm on this Wi-Fi, use the
+       local server address". Requested only when you tap to set that, never at
+       launch, and endpoint selection falls back to probing both addresses when
+       it is absent — so declining costs nothing but a little latency. -->
+  <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
   <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE"/>
   <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS"/>
   <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>

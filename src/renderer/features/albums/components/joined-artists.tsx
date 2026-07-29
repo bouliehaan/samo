@@ -28,7 +28,7 @@ const JoinedArtistsComponent = ({
 }: JoinedArtistsProps) => {
     const server = useCurrentServer();
     const recordArtistClick = (artist: AlbumArtist | RelatedAlbumArtist | RelatedArtist) => {
-        recordRecentArtist(artist, { serverId: server?.id, serverType: server?.type });
+        recordRecentArtist(artist, { serverId: server?.id });
     };
 
     const parts: (

@@ -7,7 +7,6 @@ import styles from './server-selector.module.css';
 import { sharedQueries } from '/@/renderer/features/shared/api/shared-api';
 import { ServerSelectorItems } from '/@/renderer/features/sidebar/components/server-selector-items';
 import { useCurrentServer } from '/@/renderer/store';
-import { hasFeature } from '/@/shared/api/utils';
 import { Box } from '/@/shared/components/box/box';
 import { DropdownMenu } from '/@/shared/components/dropdown-menu/dropdown-menu';
 import { Group } from '/@/shared/components/group/group';
@@ -15,7 +14,6 @@ import { Icon } from '/@/shared/components/icon/icon';
 import { ScrollArea } from '/@/shared/components/scroll-area/scroll-area';
 import { Stack } from '/@/shared/components/stack/stack';
 import { Text } from '/@/shared/components/text/text';
-import { ServerFeature } from '/@/shared/types/features-types';
 
 export const ServerSelector = () => {
     const { t } = useTranslation();
@@ -31,8 +29,6 @@ export const ServerSelector = () => {
         return null;
     }
 
-    const supportsMultiSelect = hasFeature(currentServer, ServerFeature.MUSIC_FOLDER_MULTISELECT);
-
     const selectedMusicFolders =
         musicFolders?.items.filter((folder) => currentServer.musicFolderId?.includes(folder.id)) ||
         [];
@@ -42,7 +38,7 @@ export const ServerSelector = () => {
             return t('page.appMenu.noMusicFolder', { postProcess: 'sentenceCase' });
         }
 
-        if (supportsMultiSelect && selectedMusicFolders.length > 1) {
+        if (selectedMusicFolders.length > 1) {
             return t('page.appMenu.multipleMusicFolders', {
                 count: selectedMusicFolders.length,
                 postProcess: 'sentenceCase',

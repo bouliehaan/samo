@@ -85,6 +85,7 @@ export const MediaDetailContent = memo(({
             {unifiedDetail ? (
                 <MediaDetailLoaded
                     detail={unifiedDetail}
+                    entranceKey={mediaDetailKey}
                     fallbackArtworkImageId={openingArtworkImageIdRef.current}
                     fallbackArtworkUrl={openingArtworkUrlRef.current}
                     isAwaitingDetail={mediaDetailState.status !== 'loaded'}

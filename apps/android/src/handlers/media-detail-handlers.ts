@@ -38,7 +38,7 @@ import {
     setViewAllRoute,
 } from '../state/app-navigation';
 import { getAuthSession } from '../state/auth-session';
-import { getDownloadsSnapshot } from '../state/downloads-state';
+import { isOfflineNow } from '../state/network-state';
 import { setContextMenuTarget } from '../state/media-overlays';
 import { getPlaybackBridge } from '../state/playback-bridge';
 import { getAndroidPlaybackState } from '../state/playback-store';
@@ -171,7 +171,10 @@ export const loadDetailWithCache = async (
         }
     }
 
-    if (!cached && getDownloadsSnapshot().isOfflineMode) {
+    // Layer 2: synthesise a detail from what is downloaded. Only worth trying
+    // when there is no network to ask instead, and it is the last thing between
+    // the user and an error page for a mirror that hasn't reached this item.
+    if (!cached && isOfflineNow()) {
         const downloadedDetail = await buildDownloadedMusicDetail(item);
         if (!isCurrentRequest()) {
             return { cached: false };
@@ -210,7 +213,18 @@ export const loadDetailWithCache = async (
     }
 
     // Nothing local (fresh install mid-first-sync, or a non-mirrored
-    // source): the network is the only option.
+    // source): the network is the only option — and offline, there isn't one.
+    // Say so immediately instead of opening a page that spins for 30 seconds
+    // and then fails.
+    if (isOfflineNow()) {
+        setMediaDetailState({
+            itemTitle: item.title,
+            message: 'Not available offline.',
+            status: 'error',
+        });
+        return { cached: false };
+    }
+
     void (async () => {
         const next = await dedupeInFlight(buildMediaDetailLoadKey(cacheKey), () =>
             loadAndroidMediaDetail(serverConnection, item),

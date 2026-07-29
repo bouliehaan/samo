@@ -1,9 +1,10 @@
 import { getItemQualityProfile, MobileHomeItemType } from '@samo/core/mobile';
 import { type ServerAuthenticationResult } from '@samo/core/server';
 import { memo } from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 
 import { ArtworkImage } from '../../components/ArtworkImage';
+import { PressableScale } from '../../components/PressableScale';
 import { TrackDownloadedGlyph } from '../../components/Glyphs';
 import { QualityBadge } from '../../components/QualityBadge';
 import {
@@ -12,6 +13,7 @@ import {
 } from '../../contexts/downloaded-keys';
 import { useMediaContextMenu } from '../../contexts/media-context-menu';
 import { type AndroidRecentContentSourceItem } from '../../services/recent-content';
+import { presses } from '../../theme/motion';
 import { styles } from '../../theme/styles';
 import { type HomeDisplaySection } from '../../types/home';
 import { type LibraryMediaType } from '../../types/library-display';
@@ -120,16 +122,13 @@ export const HomeMediaTile = memo(({
     ];
 
     return (
-        <Pressable
+        <PressableScale
+            {...presses.tile}
             accessibilityRole="button"
             onLongPress={() => contextMenu.openForItem(item, { allowRemoveFromHome })}
             onPress={() => onSelectItem(item)}
             onPressIn={() => onPrefetchItem?.(item)}
-            style={({ pressed }) => [tileStyle, pressed && styles.tilePressed]}
-            // Long enough that a scroll-start doesn't flash the tile, short
-            // enough that a deliberate press visibly responds — instant-
-            // feedback tenet.
-            unstable_pressDelay={60}
+            style={tileStyle}
         >
             <ArtworkImage
                 artworkImageId={item.artworkImageId}
@@ -204,7 +203,7 @@ export const HomeMediaTile = memo(({
                 </View>
                 <QualityBadge tile profile={tileBadgeProfile} />
             </View>
-        </Pressable>
+        </PressableScale>
     );
 });
 

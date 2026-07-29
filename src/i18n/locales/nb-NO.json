@@ -5,34 +5,23 @@
             "musicbrainz": "Åpne i MusicBrainz",
             "spotify": "Åpne i Spotify"
         },
-        "moveToBottom": "flytt til bunnen",
         "deletePlaylist": "slett $t(entity.playlist, {\"count\": 1})",
-        "deselectAll": "avmarker alle",
         "editPlaylist": "rediger $t(entity.playlist, {\"count\": 1})",
         "addToFavorites": "legg til $t(entity.favorite, {\"count\": 2})",
-        "addToPlaylist": "legg til $t(entity.playlist, {\"count\": 1})",
         "clearQueue": "tøm kø",
         "createPlaylist": "opprett $t(entity.playlist, {\"count\": 1})",
-        "goToPage": "gå til side",
-        "moveToTop": "flytt til toppen",
-        "refresh": "$t(common.refresh)",
         "removeFromFavorites": "fjern fra $t(entity.favorite, {\"count\": 2})",
-        "moveToNext": "flytt til neste",
         "removeFromQueue": "fjern fra kø",
         "removeFromPlaylist": "fjern fra $t(entity.playlist, {\"count\": 1})",
         "viewPlaylists": "vise $t(entity.playlist, {\"count\": 2})",
-        "toggleSmartPlaylistEditor": "bytt $t(entity.smartPlaylist) editor",
         "selectAll": "marker alle",
-        "downloadStarted": "startet nedlasting av {{count}} elementer",
         "selectRangeOfItems": "velg en rekke elementer",
         "addOrRemoveFromSelection": "legge til eller fjerne fra utvalg",
         "moveUp": "flytt opp",
         "moveDown": "flytt ned",
         "createRadioStation": "opprett $t(entity.radioStation, {\"count\": 1})",
-        "deleteRadioStation": "slett $t(entity.radioStation, {\"count\": 1})",
         "holdToMoveToTop": "hold nede for å gå til toppen",
         "holdToMoveToBottom": "hold nede for å gå til bunnen",
-        "moveItems": "flytt elementer",
         "shuffle": "tilfeldig avspilling",
         "shuffleAll": "tilfelding avspilling av alt",
         "shuffleSelected": "tilfelding avspilling av utvalgte",
@@ -204,33 +193,22 @@
     },
     "error": {
         "apiRouteError": "kan ikke behandle forespørselen",
-        "mpvRequired": "MPV er påkrevd",
         "authenticationFailed": "autentisering feilet",
-        "endpointNotImplementedError": "endepunkt {{endpoint}} er ikke implementert for {{serverType}}",
         "credentialsRequired": "innloggingsdetaljer er påkrevd",
         "genericError": "en feil har oppstått",
         "invalidServer": "ugyldig tjener",
         "playbackError": "et problem oppstod ved avspilling av media",
-        "localFontAccessDenied": "ingen tilgang til lokale skrifttyper",
-        "loginRateError": "for mange innloggingsforsøk, vennligst prøv igjen om noen få sekunder",
         "audioDeviceFetchError": "en feil oppstod ved innhenting av lydenheter",
-        "networkError": "det har oppstått et nettverksproblem",
         "openError": "kunne ikke åpne fil",
         "serverNotSelectedError": "ingen tjener er valgt",
         "remotePortError": "et problem oppstod med å sette serverport",
-        "systemFontError": "et problem oppstod med innlasting av systemskrifttyper",
         "serverRequired": "tjener er påkrevd",
-        "sessionExpiredError": "sesjonen din har utløpt",
         "remotePortWarning": "ta omstart av serveren for å aktivere ny port",
         "remoteDisableError": "en problem oppstod ved å $t(common.disable) serveren",
         "remoteEnableError": "et problem oppstod ved å $t(common.enable) serveren",
-        "notificationDenied": "tillatelser for varsler ble avvist. Denne innstillingen har ingen effekt",
         "badValue": "ugyldig alternativ \"{{value}}\". Denne verdien eksisterer ikke lenger",
         "noNetwork": "tjener utilgjengelig",
         "noNetworkDescription": "kunne ikke koble til tjeneren",
-        "invalidJson": "ugyldig JSON",
-        "saveQueueFailed": "kunne ikke lagre kø",
-        "multipleServerSaveQueueError": "Spillekøen har en eller flere sanger som ikke finnes på gjeldene tjener. Dette er ikke støttet",
         "serverLockSingleServer": "kun én tjener er tillatt når tjener er låst",
         "settingsSyncError": "avvik ble funnet mellom innstillinger i avspilleren og hovedprosessen. ta en omstart av applikasjonen for å aktivere endringene",
         "playbackPausedDueToError": "avspilling ble paused på grunn av en feil"
@@ -239,41 +217,25 @@
         "bpm": "bpm",
         "id": "id",
         "name": "navn",
-        "bitrate": "bithastighet",
         "albumArtist": "$t(entity.albumArtist, {\"count\": 1})",
         "artist": "$t(entity.artist, {\"count\": 1})",
-        "biography": "biografi",
         "album": "$t(entity.album, {\"count\": 1})",
         "duration": "lengde",
         "favorited": "merket som favoritt",
         "comment": "kommentar",
-        "dateAdded": "lagt til dato",
-        "disc": "skive",
-        "isPublic": "er offentlig",
-        "isRecentlyPlayed": "er avspilt nylig",
-        "mostPlayed": "mest avspilt",
-        "owner": "$t(common.owner)",
-        "path": "sti",
         "lastPlayed": "sist avspilt",
         "recentlyPlayed": "nylig avspilt",
         "playCount": "antall avspillinger",
-        "recentlyUpdated": "nylig oppdatert",
         "random": "vilkårlig",
-        "search": "søk",
         "songCount": "antall sanger",
-        "title": "tittel",
         "toYear": "til år",
         "releaseDate": "utgivelsesdato",
         "releaseYear": "utgivelsesår",
-        "note": "notat",
-        "isRated": "er vurdert",
         "fromYear": "fra år",
         "isCompilation": "er samling",
         "isFavorited": "er merket som favoritt",
         "recentlyAdded": "nylig lagt til",
-        "channels": "$t(common.channel, {\"count\": 2})",
         "genre": "$t(entity.genre, {\"count\": 1})",
-        "trackNumber": "spor",
         "albumCount": "$t(entity.album, {\"count\": 2}) opptelling",
         "matchAnd": "og",
         "matchOr": "eller",
@@ -320,50 +282,23 @@
             "searchOrCreate": "søk $t(entity.playlist, {\"count\": 2}) eller skriv for å opprette en"
         },
         "deletePlaylist": {
-            "title": "slett $t(entity.playlist, {\"count\": 1})",
-            "success": "$t(entity.playlist, {\"count\": 1}) er slettet",
-            "input_confirm": "skrive inn navnet på $t(entity.playlist, {\"count\": 1}) for å bekrefte"
+            "title": "slett $t(entity.playlist, {\"count\": 1})"
         },
         "editPlaylist": {
             "title": "rediger $t(entity.playlist, {\"count\": 1})",
             "success": "$t(entity.playlist, {\"count\": 1}) er oppdatert"
         },
-        "shareItem": {
-            "allowDownloading": "tillat nedlasting",
-            "description": "beskrivelse",
-            "createFailed": "opprettelse av delt ressurs feilet (er deling aktivert?)",
-            "setExpiration": "angi utløpstid",
-            "success": "del lenke som er kopiert til utklippstavlen (eller klikk her for å åpne)",
-            "expireInvalid": "utløpstid må være et fremtidig tidspunkt",
-            "copyToClipboard": "Kopier til kopitavle: Ctrl+C, Enter",
-            "successMustClick": "opprettet deling. trykk her for å åpne"
-        },
         "updateServer": {
-            "success": "vellykket oppdatering av serveren",
             "title": "oppdater server"
-        },
-        "queryEditor": {
-            "input_optionMatchAll": "match alle",
-            "input_optionMatchAny": "matche hvilken som helst",
-            "title": "redigeringsverktøy for spørringer",
-            "addRuleGroup": "legg til regelgruppe",
-            "removeRuleGroup": "fjern regelgruppe",
-            "resetToDefault": "tilbakestill til standard",
-            "clearFilters": "tøm filter"
         },
         "largeFetchConfirmation": {
             "title": "legg til elementer i køen",
             "description": "Denne handlingen vil legge alle elementene til den gjeldende filtervisningen"
         },
         "createRadioStation": {
-            "success": "vellykket opprettelse av radiostasjon",
-            "title": "opprett radiostasjon",
             "input_homepageUrl": "hjemmesidelenke",
             "input_name": "navn",
             "input_streamUrl": "strømmelenke"
-        },
-        "saveQueue": {
-            "success": "lagre spillekø på tjener"
         },
         "lyricsExport": {
             "export": "eksporter sangtekster",
@@ -375,11 +310,7 @@
             "input_genre": "$t(entity.genre, {\"count\": 1})",
             "input_limit": "hvor mange sanger?",
             "input_minYear": "fra år",
-            "input_maxYear": "til år",
-            "input_played": "avspillingsfilter",
-            "input_played_optionAll": "alle sanger",
-            "input_played_optionUnplayed": "bare uavspilte sanger",
-            "input_played_optionPlayed": "bare avspilte sanger"
+            "input_maxYear": "til år"
         }
     },
     "page": {
@@ -387,10 +318,8 @@
             "collapseSidebar": "slå sammen sidefelt",
             "quit": "$t(common.quit)",
             "selectServer": "velg server",
-            "version": "versjon {{version}}",
             "manageServers": "administrere servere",
             "goBack": "gå tilbake",
-            "openBrowserDevtools": "åpne utviklingsverktøy i nettleser",
             "settings": "$t(common.setting, {\"count\": 2})",
             "expandSidebar": "utvid sidefelt",
             "goForward": "gå fremover"
@@ -400,28 +329,12 @@
             "showDetails": "hent info",
             "moveToTop": "$t(action.moveToTop)",
             "moveToBottom": "$t(action.moveToBottom)",
-            "numberSelected": "{{count}} valgt",
-            "addLast": "$t(player.addLast)",
-            "addNext": "$t(player.addNext)",
-            "createPlaylist": "$t(action.createPlaylist)",
-            "play": "$t(player.play)",
-            "removeFromFavorites": "$t(action.removeFromFavorites)",
             "download": "last ned",
-            "playSimilarSongs": "$t(player.playSimilarSongs)",
-            "removeFromPlaylist": "$t(action.removeFromPlaylist)",
-            "removeFromQueue": "$t(action.removeFromQueue)",
-            "addToFavorites": "$t(action.addToFavorites)",
-            "moveToNext": "$t(action.moveToNext)",
-            "playShuffled": "$t(player.shuffle)",
-            "shareItem": "del element",
-            "addFavorite": "$t(action.addToFavorites)",
-            "deletePlaylist": "$t(action.deletePlaylist)",
-            "deselectAll": "$t(action.deselectAll)"
+            "moveToNext": "$t(action.moveToNext)"
         },
         "albumArtistDetail": {
             "topSongs": "beste sanger",
             "viewDiscography": "se diskografi",
-            "recentReleases": "nylige utgivelser",
             "topSongsFrom": "beste sanger fra {{title}}",
             "viewAllTracks": "se alle $t(entity.track, {\"count\": 2})",
             "viewAll": "se alle",
@@ -430,8 +343,6 @@
             "relatedArtists": "relatert $t(entity.artist, {\"count\": 2})"
         },
         "albumList": {
-            "artistAlbums": "album av {{artist}}",
-            "genreAlbums": "\"{{genre}}\" $t(entity.album, {\"count\": 2})",
             "title": "$t(entity.album, {\"count\": 2})"
         },
         "albumArtistList": {
@@ -439,24 +350,15 @@
         },
         "albumDetail": {
             "moreFromArtist": "mer fra denne $t(entity.artist, {\"count\": 1})",
-            "moreFromGeneric": "mer fra {{item}}",
-            "released": "utgitt"
+            "moreFromGeneric": "mer fra {{item}}"
         },
         "fullscreenPlayer": {
             "config": {
-                "dynamicIsImage": "aktiver bakgrunnsbilde",
                 "lyricGap": "sangtekstavstand",
-                "dynamicImageBlur": "bilduskarphetstørrelse",
                 "lyricAlignment": "sangtekstjustering",
-                "lyricOffset": "sangtekstforskyvning (ms)",
                 "lyricSize": "sangtekststørrelse",
-                "opacity": "absorpsjon",
-                "showLyricMatch": "vis sangteksttreff",
-                "showLyricProvider": "vis sangteksttilbyder",
                 "synchronized": "synkronisert",
                 "unsynchronized": "usynkronisert",
-                "dynamicBackground": "dynamisk bakgrunn",
-                "useImageAspectRatio": "bruk sideforhold til bildet",
                 "followCurrentLyric": "følg sangtekst"
             },
             "noLyrics": "fant ikke sangtekst",
@@ -466,9 +368,7 @@
             "related": "relatert"
         },
         "genreList": {
-            "title": "$t(entity.genre, {\"count\": 2})",
-            "showAlbums": "vis $t(entity.genre, {\"count\": 1}) $t(entity.album, {\"count\": 2})",
-            "showTracks": "vis $t(entity.genre, {\"count\": 1}) $t(entity.track, {\"count\": 2})"
+            "title": "$t(entity.genre, {\"count\": 2})"
         },
         "globalSearch": {
             "title": "kommandoer",
@@ -479,10 +379,6 @@
             }
         },
         "home": {
-            "recentlyPlayed": "nylig avspilt",
-            "explore": "utforsk biblioteket ditt",
-            "mostPlayed": "mest spilt",
-            "newlyAdded": "utgivelser nylig lagt til",
             "title": "$t(common.home)"
         },
         "manageServers": {
@@ -490,8 +386,7 @@
             "url": "lenke",
             "username": "brukernavn",
             "editServerDetailsTooltip": "rediger serverdetaljer",
-            "removeServer": "fjern server",
-            "serverDetails": "serverdetaljer"
+            "removeServer": "fjern server"
         },
         "itemDetail": {
             "openFile": "vis spor i filbhehandleren",
@@ -499,9 +394,7 @@
             "copyPath": "kopier stien til utklippstavlen"
         },
         "trackList": {
-            "genreTracks": "\"{{genre}}\" $t(entity.track, {\"count\": 2})",
-            "title": "$t(entity.track, {\"count\": 2})",
-            "artistTracks": "spor fra {{artist}}"
+            "title": "$t(entity.track, {\"count\": 2})"
         },
         "sidebar": {
             "albumArtists": "$t(entity.albumArtist, {\"count\": 2})",
@@ -522,21 +415,14 @@
             "generalTab": "generelt",
             "advanced": "avansert",
             "hotkeysTab": "hurtigtaster",
-            "playbackTab": "avspilling",
-            "windowTab": "vindu",
             "theme": "tema"
         },
         "playlistList": {
             "title": "$t(entity.playlist, {\"count\": 2})"
-        },
-        "playlist": {
-            "reorder": "omorganisering kun mulig ved sortering på id"
         }
     },
     "player": {
         "addLast": "legg til sist",
-        "queue_remove": "fjern valgte",
-        "queue_moveToBottom": "flytt valgte til toppen",
         "addNext": "legg til som neste",
         "favorite": "favoritt",
         "mute": "skru av lyden",
@@ -545,16 +431,12 @@
         "repeat_all": "gjenta alle",
         "playbackFetchCancel": "dette kommer til å ta en stund... lukk denne meldingen for å avbryte",
         "playRandom": "spill vilkårlig",
-        "queue_clear": "tøm kø",
         "repeat_off": "gjentakelse er deaktivert",
         "playbackFetchInProgress": "laster sanger…",
         "repeat": "gjenta",
         "play": "spill",
         "previous": "forrige",
-        "queue_moveToTop": "flytt valgte til bunnen",
-        "playbackFetchNoResults": "ingen sanger funnet",
         "playbackSpeed": "avspillingshastighet",
-        "playSimilarSongs": "spill lignende sanger",
         "skip": "hopp over",
         "shuffle": "spill i tilfeldig rekkefølge",
         "shuffle_off": "tilfeldig rekkefølge skrudd av",
@@ -595,8 +477,6 @@
             "general": {
                 "autoFitColumns": "automatisk kolonnetilpasning",
                 "displayType": "visningstype",
-                "followCurrentSong": "følg gjeldende sang",
-                "advancedSettings": "avanserte innstillinger",
                 "moveUp": "flytt opp",
                 "moveDown": "flytt ned",
                 "pinToLeft": "fest til venstre",
@@ -613,37 +493,13 @@
             "album": "album",
             "albumArtist": "albumartist",
             "dateAdded": "dato lagt til",
-            "discNumber": "skive",
-            "favorite": "favoritt",
             "lastPlayed": "sist avspilt",
             "path": "sti",
             "playCount": "avspillinger",
             "releaseDate": "utgivelsesdato",
             "title": "tittel",
-            "trackNumber": "spor",
             "owner": "eier"
         }
-    },
-    "filterOperator": {
-        "after": "er etter",
-        "afterDate": "er etter (date)",
-        "before": "er før",
-        "beforeDate": "er før (date)",
-        "contains": "inneholder",
-        "endsWith": "ender med",
-        "inPlaylist": "er inne i",
-        "inTheLast": "er inne i de siste",
-        "inTheRange": "er innenfor området",
-        "isGreaterThan": "er større enn",
-        "isLessThan": "er mindre enn",
-        "matchesRegex": "samsvarer med regex",
-        "notContains": "inneholder ikke",
-        "notInPlaylist": "er ikke med i",
-        "notInTheLast": "er ikke med i de siste",
-        "startsWith": "starter med",
-        "inTheRangeDate": "er innenfor området (date)",
-        "is": "er",
-        "isNot": "er ikke"
     },
     "datetime": {
         "minuteShort": "m",

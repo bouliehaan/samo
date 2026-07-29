@@ -426,7 +426,39 @@ export const playerStyles = StyleSheet.create({
     },
     /** Overflow-clipping wrapper for the marquee subtitle. */
     fullPlayerMarqueeContainer: {
+        flexDirection: 'row',
         overflow: 'hidden',
+    },
+    /**
+     * The track the text is actually MEASURED in, and the whole reason the
+     * ticker works.
+     *
+     * Android does not size a text node by its content — it sizes it by the
+     * space it is offered. Yoga measures the node with a MeasureMode of AtMost
+     * and the parent's inner width, and RN's measureText clamps its result to
+     * that bound (`numberOfLines={1}` also ellipsizes the line to fit). Put the
+     * text straight in the clipping container above and it therefore measures
+     * EXACTLY the container's width on every title, however long: overflow
+     * comes back as zero and the ticker never starts. `flexDirection: row` and
+     * `flexShrink: 0` do not help — they govern how a box is resized after
+     * measurement, not the width the measurement was handed.
+     *
+     * So hand it a width no title will reach. The bound is then never the
+     * binding constraint, the node reports its true intrinsic width, and the
+     * difference against the container is a real overflow to scroll. The track
+     * spills far past the container and is clipped by it, which is exactly the
+     * window the marquee scrolls text through.
+     */
+    fullPlayerMarqueeTrack: {
+        flexDirection: 'row',
+        flexShrink: 0,
+        // ~285 characters at the 24pt title size — an order of magnitude past
+        // the longest real audiobook or podcast title. Cheap: the view is
+        // clipped, so nothing off-window is ever drawn.
+        width: 4000,
+    },
+    fullPlayerMarqueeText: {
+        flexShrink: 0,
     },
     fullPlayerSleepLabel: {
         color: colors.accent,
@@ -499,7 +531,7 @@ export const playerStyles = StyleSheet.create({
         width: MINI_PLAYER_ARTWORK_SIZE,
     },
     miniPlayerArtworkSlot: {
-        ...StyleSheet.absoluteFillObject,
+        ...StyleSheet.absoluteFill,
     },
     miniPlayerArtworkFallback: {
         alignItems: 'center',
@@ -639,7 +671,7 @@ export const playerStyles = StyleSheet.create({
         paddingLeft: spacing.lg,
     },
     queueRowRemoveUnderlay: {
-        ...StyleSheet.absoluteFillObject,
+        ...StyleSheet.absoluteFill,
         alignItems: 'flex-end',
         backgroundColor: '#58251f',
         justifyContent: 'center',
@@ -822,6 +854,12 @@ export const playerStyles = StyleSheet.create({
     seekSegmentFill: {
         borderRadius: 999,
         height: '100%',
+        // Full width, then scaled about its LEFT edge by the animated style —
+        // see SeekSegmentFill for why progress is a transform and not a width.
+        // Without the origin the fill would grow from its centre, spilling out
+        // of both ends of the segment instead of filling it left-to-right.
+        transformOrigin: 'left center',
+        width: '100%',
     },
     seekSegmentLive: {
         flex: 1,
@@ -834,6 +872,9 @@ export const playerStyles = StyleSheet.create({
     seekThumb: {
         borderRadius: 999,
         bottom: -3,
+        // Anchored at 0 and moved with translateX, so the thumb never dirties
+        // layout as it travels. See thumbAnimatedStyle in SegmentedSeekBar.
+        left: 0,
         position: 'absolute',
         top: -3,
         width: 5,

@@ -3,7 +3,6 @@
         "repeat_all": "ponavljaj sve",
         "stop": "zaustavi",
         "repeat": "ponavljaj jednu",
-        "queue_remove": "ukloni izabrane",
         "playRandom": "slučajna reprodukcija",
         "skip": "preskoči",
         "previous": "prethodna",
@@ -12,7 +11,6 @@
         "favorite": "omiljeno",
         "next": "sledeća",
         "shuffle": "mešaj",
-        "playbackFetchNoResults": "nema pronađenih pesama",
         "playbackFetchInProgress": "učitavanje pesama…",
         "addNext": "dodaj sledeći",
         "playbackSpeed": "brzina reprodukcije",
@@ -20,11 +18,8 @@
         "play": "pusti",
         "repeat_off": "ponavljanje isključeno",
         "pause": "pauziraj",
-        "queue_clear": "isprazni red",
         "muted": "isključeno",
         "unfavorite": "ukloni iz omiljenih",
-        "queue_moveToTop": "pomeri izabrane na dno",
-        "queue_moveToBottom": "pomeri izabrane na vrh",
         "shuffle_off": "mešanje isključeno",
         "addLast": "dodaj poslednji",
         "mute": "isključi ton",
@@ -187,20 +182,13 @@
     },
     "action": {
         "editPlaylist": "izmeni $t(entity.playlist, {\"count\": 1})",
-        "goToPage": "idi na stranu",
-        "moveToTop": "idi na vrh",
         "clearQueue": "očisti listu",
         "addToFavorites": "dodaj u $t(entity.favorite, {\"count\": 2})",
-        "addToPlaylist": "dodaj u $t(entity.playlist, {\"count\": 1})",
         "createPlaylist": "napravi $t(entity.playlist, {\"count\": 1})",
         "removeFromPlaylist": "ukloni iz $t(entity.playlist, {\"count\": 1})",
         "viewPlaylists": "vidi $t(entity.playlist, {\"count\": 2})",
-        "refresh": "$t(common.refresh)",
         "deletePlaylist": "obriši $t(entity.playlist, {\"count\": 1})",
         "removeFromQueue": "ukloni iz liste",
-        "deselectAll": "deselektuj sve",
-        "moveToBottom": "idi na dno",
-        "toggleSmartPlaylistEditor": "pokreni $t(entity.smartPlaylist) editor",
         "removeFromFavorites": "ukloni iz $t(entity.favorite, {\"count\": 2})",
         "openIn": {
             "lastfm": "Otvori u Last.fm",
@@ -299,7 +287,6 @@
             "general": {
                 "displayType": "tip prikaza",
                 "gap": "$t(common.gap)",
-                "tableColumns": "tabela kolona",
                 "autoFitColumns": "automatski uklopi kolone",
                 "size": "$t(common.size)"
             },
@@ -334,7 +321,6 @@
         "column": {
             "comment": "komentar",
             "album": "album",
-            "favorite": "favorit",
             "playCount": "puštanja",
             "albumCount": "$t(entity.album, {\"count\": 2})",
             "releaseYear": "godina",
@@ -347,76 +333,52 @@
             "dateAdded": "datum dodavanja",
             "artist": "$t(entity.artist, {\"count\": 1})",
             "songCount": "$t(entity.track, {\"count\": 2})",
-            "trackNumber": "pesma",
             "genre": "$t(entity.genre, {\"count\": 1})",
             "albumArtist": "album artist",
             "path": "putanja",
-            "discNumber": "disk",
             "channels": "$t(common.channel_other)",
             "size": "$t(common.size)"
         }
     },
     "error": {
         "remotePortWarning": "ponovo pokrenite server kako biste primenili novi port",
-        "systemFontError": "došlo je do greške prilikom pokušaja dobijanja sistema fontova",
         "playbackError": "došlo je do greške prilikom pokušaja reprodukcije medija",
-        "endpointNotImplementedError": "krajnja tačka {{endpoint}} nije implementirana za {{serverType}}",
         "remotePortError": "došlo je do greške prilikom postavljanja porta udaljenog servera",
         "serverRequired": "potreban je server",
         "authenticationFailed": "neuspešna autentikacija",
         "apiRouteError": "nije moguće usmeriti zahtev",
         "genericError": "došlo je do greške",
         "credentialsRequired": "potrebni su pristupni podaci",
-        "sessionExpiredError": "vaša sesija je istekla",
         "remoteEnableError": "došlo je do greške prilikom pokušaja omogućavanja udaljenog servera",
-        "localFontAccessDenied": "pristup lokalnim fontovima odbijen",
         "serverNotSelectedError": "nije izabran nijedan server",
         "remoteDisableError": "došlo je do greške prilikom pokušaja onemogućavanja udaljenog servera",
-        "mpvRequired": "MPV je obavezan",
         "audioDeviceFetchError": "došlo je do greške prilikom pokušaja dobijanja audio uređaja",
-        "invalidServer": "neispravan server",
-        "loginRateError": "previše pokušaja prijave, molimo pokušajte ponovo za nekoliko sekundi"
+        "invalidServer": "neispravan server"
     },
     "filter": {
-        "mostPlayed": "najviše puštana",
         "comment": "komentar",
         "playCount": "broj slušanja",
-        "recentlyUpdated": "skorije ažurirana",
-        "channels": "$t(common.channel_other)",
         "isCompilation": "je kompilacija",
         "recentlyPlayed": "skorije puštana",
-        "isRated": "je ocenjena",
-        "owner": "$t(common.owner)",
-        "title": "naziv",
-        "search": "pretraga",
-        "bitrate": "bitrejt",
         "genre": "$t(entity.genre, {\"count\": 1})",
         "recentlyAdded": "skorije dodata",
-        "note": "notacija",
         "name": "ime",
-        "dateAdded": "datum dodavanja",
         "releaseDate": "datum izdavanja",
         "albumCount": "$t(entity.album, {\"count\": 2}) albuma",
-        "path": "putanja",
         "favorited": "favoriti",
         "albumArtist": "$t(entity.albumArtist, {\"count\": 1})",
-        "isRecentlyPlayed": "je skorije puštana",
         "isFavorited": "je favorit",
         "bpm": "bpm",
         "releaseYear": "godina izdavanja",
         "id": "id",
-        "disc": "disk",
-        "biography": "biografija",
         "songCount": "broj pesama",
         "artist": "$t(entity.artist, {\"count\": 1})",
         "duration": "trajanje",
-        "isPublic": "je javna",
         "random": "nasumično",
         "lastPlayed": "zadnje puštana",
         "toYear": "do godine",
         "fromYear": "iz godine",
-        "album": "$t(entity.album, {\"count\": 1})",
-        "trackNumber": "pesma"
+        "album": "$t(entity.album, {\"count\": 1})"
     },
     "page": {
         "sidebar": {
@@ -434,16 +396,11 @@
         },
         "fullscreenPlayer": {
             "config": {
-                "showLyricMatch": "prikaži poklapanje teksta",
-                "dynamicBackground": "dinamička pozadina",
                 "synchronized": "s sinhronizacijom",
                 "followCurrentLyric": "prati trenutni tekst pesme",
-                "opacity": "providnost",
                 "lyricSize": "veličina teksta pesme",
-                "showLyricProvider": "prikaži pružatelja teksta pesme",
                 "unsynchronized": "bez sinhronizacije",
                 "lyricAlignment": "poravnanje teksta pesme",
-                "useImageAspectRatio": "koristi odnos stranica slike",
                 "lyricGap": "razmak između stihova"
             },
             "upNext": "sledi",
@@ -452,49 +409,29 @@
         },
         "appMenu": {
             "selectServer": "izaberi server",
-            "version": "verzija {{version}}",
             "settings": "$t(common.setting, {\"count\": 2})",
             "manageServers": "upravljaj serverima",
             "expandSidebar": "proširi bočnu traku",
             "collapseSidebar": "skloni bočnu traku",
-            "openBrowserDevtools": "otvori alatke za razvoj pretraživača",
             "quit": "$t(common.quit)",
             "goBack": "idi nazad",
             "goForward": "idi napred"
         },
         "contextMenu": {
             "addToPlaylist": "$t(action.addToPlaylist)",
-            "addToFavorites": "$t(action.addToFavorites)",
             "moveToTop": "$t(action.moveToTop)",
-            "deletePlaylist": "$t(action.deletePlaylist)",
-            "moveToBottom": "$t(action.moveToBottom)",
-            "createPlaylist": "$t(action.createPlaylist)",
-            "removeFromPlaylist": "$t(action.removeFromPlaylist)",
-            "removeFromFavorites": "$t(action.removeFromFavorites)",
-            "addNext": "$t(player.addNext)",
-            "deselectAll": "$t(action.deselectAll)",
-            "addLast": "$t(player.addLast)",
-            "addFavorite": "$t(action.addToFavorites)",
-            "play": "$t(player.play)",
-            "numberSelected": "{{count}} izabrano",
-            "removeFromQueue": "$t(action.removeFromQueue)"
+            "moveToBottom": "$t(action.moveToBottom)"
         },
         "home": {
-            "mostPlayed": "najviše puštano",
-            "newlyAdded": "nedavno dodate pesme",
-            "title": "$t(common.home)",
-            "explore": "istraži iz tvoje biblioteke",
-            "recentlyPlayed": "nedavno puštane pesme"
+            "title": "$t(common.home)"
         },
         "albumDetail": {
             "moreFromArtist": "još od ovog $t(entity.artist, {\"count\": 1})",
             "moreFromGeneric": "još od {{item}}"
         },
         "setting": {
-            "playbackTab": "reprodukcija",
             "generalTab": "opšte",
-            "hotkeysTab": "prečice",
-            "windowTab": "prozor"
+            "hotkeysTab": "prečice"
         },
         "albumArtistList": {
             "title": "$t(entity.albumArtist, {\"count\": 2})"
@@ -522,9 +459,7 @@
     },
     "form": {
         "deletePlaylist": {
-            "title": "obriši $t(entity.playlist, {\"count\": 1})",
-            "success": "$t(entity.playlist, {\"count\": 1}) uspešno obrisan",
-            "input_confirm": "unesite ime $t(entity.playlist, {\"count\": 1}) za potvrdu"
+            "title": "obriši $t(entity.playlist, {\"count\": 1})"
         },
         "createPlaylist": {
             "input_description": "$t(common.description)",
@@ -554,12 +489,7 @@
             "input_playlists": "$t(entity.playlist, {\"count\": 2})"
         },
         "updateServer": {
-            "title": "ažuriraj server",
-            "success": "server uspešno ažuriran"
-        },
-        "queryEditor": {
-            "input_optionMatchAll": "pronađi sve",
-            "input_optionMatchAny": "pronađi bilo koji"
+            "title": "ažuriraj server"
         },
         "lyricSearch": {
             "input_name": "$t(common.name)",

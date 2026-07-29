@@ -110,6 +110,19 @@ export interface PullReleaseInput {
     skipAt: number;
     /** Downward velocity that carries the release on to the next stage. */
     flingVelocity: number;
+    /**
+     * UPWARD speed (a positive magnitude; compared against a negative
+     * `velocityY`) at or past which the release throws the surface away from
+     * wherever it had got to.
+     *
+     * Velocity is barred from deciding COMMIT for a good reason — see below —
+     * and it is tempting to apply that symmetrically. It would be wrong.
+     * Committing on speed hands you a screen you never asked for, so it needs a
+     * position you actually saw. Throwing something UP and off the top of the
+     * display is not ambiguous and cannot mean anything else, so it is allowed
+     * to win from any position, including from most of the way into search.
+     */
+    dismissVelocity: number;
 }
 
 /**
@@ -130,9 +143,29 @@ export const resolvePullRelease = ({
     flingVelocity,
     skipAt,
     skipVelocity,
+    dismissVelocity,
 }: PullReleaseInput): PullRelease => {
     'worklet';
     if (reveal <= 0) {
+        return 'retract';
+    }
+    /*
+     * A THROW UPWARD WINS FROM ANYWHERE, and it is checked first.
+     *
+     * Every other rule here reads only DOWNWARD velocity, so there was no rule
+     * at all for putting the surface away with a flick — an upward throw fell
+     * all the way through to `reveal >= peekAt` below, and peekAt is 0.28. So
+     * half-opening the surface and then swiping it briskly away left the bar
+     * SEATED: the gesture that most obviously means "get rid of this" was read
+     * as "rest it here", and the harder it was thrown the more certainly,
+     * because the finger never got near reveal 0 before release.
+     *
+     * Position cannot answer this on its own. Where the surface happens to be
+     * at the instant of release is a poor description of a throw — the whole
+     * character of the gesture is in its direction and speed, and the user has
+     * already stopped looking at the position by then.
+     */
+    if (velocityY <= -dismissVelocity) {
         return 'retract';
     }
     /*

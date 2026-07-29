@@ -28,7 +28,7 @@ import { DownCaretGlyph } from '../components/Glyphs';
 import { syncAndroidNativePlaybackQueue } from '../services/audio-playback';
 import { triggerImpact } from '../services/haptics';
 import { getPlaybackQueue, setPlaybackQueue } from '../state/playback-queue-store';
-import { getPlayerPositionMsForAbsProgress } from '../utils/abs-progress-math';
+import { getPlayerPositionMsForPlaybackProgress } from '../utils/playback-progress-math';
 import { findActiveChapterIndex } from '../utils/playback-time';
 import { moveQueueUpNextItem, removeQueueItemAt } from '../utils/queue-edits';
 import {
@@ -492,7 +492,7 @@ export const QueueSheetOverlay = memo(({
                         isActive={row.index === activeChapterIndex}
                         onPress={() =>
                             onChapterSeek?.(
-                                getPlayerPositionMsForAbsProgress(row.chapter.startSeconds, {
+                                getPlayerPositionMsForPlaybackProgress(row.chapter.startSeconds, {
                                     progressOffsetSeconds,
                                 }),
                             )
@@ -546,7 +546,7 @@ export const QueueSheetOverlay = memo(({
                 <Pressable
                     accessibilityLabel="Close queue"
                     onPress={onClose}
-                    style={StyleSheet.absoluteFillObject}
+                    style={StyleSheet.absoluteFill}
                 />
             </Reanimated.View>
             <Reanimated.View

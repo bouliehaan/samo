@@ -1,11 +1,9 @@
 import { ensureSamoStreamToken, ServerType } from '@samo/core/server';
 import isElectron from 'is-electron';
-import isEqual from 'lodash/isEqual';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router';
 
 import { api } from '/@/renderer/api';
-import { controller } from '/@/renderer/api/controller';
 import { samoFetch } from '/@/renderer/api/samo/samo-fetch';
 import { AppRoute } from '/@/renderer/router/routes';
 import {
@@ -73,45 +71,6 @@ export const useServerAuthenticated = () => {
         navigateRef.current = navigate;
     }, [navigate]);
 
-    const refreshServerInfo = useCallback(
-        async (serverWithAuth: NonNullable<ReturnType<typeof getServerById>>) => {
-            try {
-                const serverInfo = await controller.getServerInfo({
-                    apiClientProps: {
-                        serverId: serverWithAuth.id,
-                    },
-                });
-
-                if (serverInfo && serverInfo.id === serverWithAuth.id) {
-                    const { features, version } = serverInfo;
-                    const currentServer = getServerById(serverWithAuth.id);
-
-                    if (
-                        currentServer &&
-                        (version !== currentServer.version ||
-                            !isEqual(features, currentServer.features))
-                    ) {
-                        updateServer(serverWithAuth.id, {
-                            features,
-                            version,
-                        });
-                    }
-                }
-            } catch (serverInfoError) {
-                logFn.warn(logMsg[LogCategory.SYSTEM].serverAuthenticationSuccess, {
-                    category: LogCategory.SYSTEM,
-                    meta: {
-                        action: 'server_info_fetch_failed',
-                        error: (serverInfoError as Error).message,
-                        serverId: serverWithAuth.id,
-                        serverName: serverWithAuth.name,
-                    },
-                });
-            }
-        },
-        [updateServer],
-    );
-
     const authenticateServer = useCallback(
         async (serverWithAuth: NonNullable<ReturnType<typeof getServerById>>, retryAttempt = 0) => {
             try {
@@ -155,7 +114,6 @@ export const useServerAuthenticated = () => {
                         isAdmin: userInfo.isAdmin,
                     });
 
-                    void refreshServerInfo(serverWithAuth);
                     prefetchSamoStreamToken(serverWithAuth);
 
                     logFn.info(logMsg[LogCategory.SYSTEM].serverAuthenticationSuccess, {
@@ -201,15 +159,11 @@ export const useServerAuthenticated = () => {
                             });
 
                             // Authenticate using the API controller
-                            const authData = await api.controller.authenticate(
-                                serverWithAuth.url,
-                                {
-                                    legacy: false,
-                                    password,
-                                    username: serverWithAuth.username,
-                                },
-                                serverWithAuth.type,
-                            );
+                            const authData = await api.controller.authenticate(serverWithAuth.url, {
+                                legacy: false,
+                                password,
+                                username: serverWithAuth.username,
+                            });
 
                             if (!authData) {
                                 throw new Error('Authentication failed: No data returned');
@@ -225,7 +179,6 @@ export const useServerAuthenticated = () => {
 
                             updateServer(serverWithAuth.id, updatedServer);
 
-                            void refreshServerInfo(serverWithAuth);
                             prefetchSamoStreamToken({
                                 ...serverWithAuth,
                                 ...updatedServer,
@@ -341,7 +294,7 @@ export const useServerAuthenticated = () => {
                 setReady(AuthState.INVALID);
             }
         },
-        [updateServer, refreshServerInfo, clearActiveServer],
+        [updateServer, clearActiveServer],
     );
 
     useEffect(() => {

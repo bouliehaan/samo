@@ -22,7 +22,6 @@ import { LogCategory, logFn } from '/@/shared/utils/logger';
 
 const mpvPlayer = isElectron() ? window.api.mpvPlayer : null;
 const mpvPlayerListener = isElectron() ? window.api.mpvPlayerListener : null;
-const ipc = isElectron() ? window.api.ipc : null;
 
 const DIRECT_STREAM_CONFIG: TranscodingConfig = {
     enabled: false,
@@ -279,7 +278,7 @@ export const MpvPlayer = () => {
     }, [syncQueue]);
 
     useEffect(() => {
-        if (!mpvPlayer || !mpvPlayerListener || !ipc) {
+        if (!mpvPlayer || !mpvPlayerListener) {
             return;
         }
 
@@ -337,14 +336,16 @@ export const MpvPlayer = () => {
             });
         };
 
-        mpvPlayerListener.rendererCurrentTime(handleCurrentTime);
-        mpvPlayerListener.rendererAutoNext(handleAutoNext);
-        mpvPlayerListener.rendererPlayerFallback(handleFallback);
+        const unsubscribers = [
+            mpvPlayerListener.rendererCurrentTime(handleCurrentTime),
+            mpvPlayerListener.rendererAutoNext(handleAutoNext),
+            mpvPlayerListener.rendererPlayerFallback(handleFallback),
+        ];
 
         return () => {
-            ipc.removeListener('renderer-player-current-time', handleCurrentTime);
-            ipc.removeListener('renderer-player-auto-next', handleAutoNext);
-            ipc.removeListener('renderer-player-fallback', handleFallback);
+            for (const unsubscribe of unsubscribers) {
+                unsubscribe();
+            }
         };
     }, [setTimestamp]);
 

@@ -8,7 +8,6 @@ import { QueryHookArgs } from '/@/renderer/lib/react-query';
 import {
     AlbumRadioQuery,
     ArtistRadioQuery,
-    GetQueueQuery,
     ListCountQuery,
     RandomSongListQuery,
     SimilarSongsQuery,
@@ -44,16 +43,6 @@ export const songsQueries = {
             },
             queryKey: queryKeys.songs.artistRadio(args.serverId, args.query),
             ...args.options,
-        });
-    },
-    getQueue: (args: QueryHookArgs<GetQueueQuery>) => {
-        return queryOptions({
-            queryFn: ({ signal }) => {
-                return api.controller.getPlayQueue({
-                    apiClientProps: { serverId: args.serverId, signal },
-                });
-            },
-            queryKey: queryKeys.player.fetch({ type: 'queue' }),
         });
     },
     list: (args: QueryHookArgs<SongListQuery>, imageSize?: number) => {

@@ -2,7 +2,6 @@ import { useCallback, useEffect, useState } from 'react';
 import {
     ActivityIndicator,
     Pressable,
-    Switch,
     Text,
     View,
 } from 'react-native';
@@ -28,6 +27,7 @@ import {
     updatePodcastPrewarmCount,
 } from '../services/podcast-cache-settings';
 import { useAuthSessionSelector } from '../state/auth-session';
+import { useNetworkSelector } from '../state/network-state';
 import { styles } from '../theme/styles';
 import { colors } from '../theme/tokens';
 
@@ -46,12 +46,11 @@ export interface CatalogSourceSummary {
 interface SettingsScreenProps {
     artworkCacheLimitBytes: number;
     catalogSources: CatalogSourceSummary[];
-    isOfflineMode: boolean;
     onOpenDownloads: () => void;
     onOpenManageServers: () => void;
+    onOpenNetwork: () => void;
     onSetArtworkCacheLimit: (bytes: number) => void;
     onSyncWithServer: () => Promise<{ message?: string; ok: boolean }>;
-    onToggleOfflineMode: (next: boolean) => void;
     serverCount: number;
 }
 
@@ -187,12 +186,11 @@ const CatalogSyncProgress = ({ state }: { state: CatalogSyncState | undefined })
 export const SettingsScreen = ({
     artworkCacheLimitBytes,
     catalogSources,
-    isOfflineMode,
     onOpenDownloads,
     onOpenManageServers,
+    onOpenNetwork,
     onSetArtworkCacheLimit,
     onSyncWithServer,
-    onToggleOfflineMode,
     serverCount,
 }: SettingsScreenProps) => {
     const [syncStatus, setSyncStatus] = useState<SyncStatus>({ kind: 'idle' });
@@ -233,6 +231,16 @@ export const SettingsScreen = ({
     };
 
     const serverConnection = useAuthSessionSelector((state) => state.serverConnection);
+    const isOffline = useNetworkSelector((state) => state.isOffline);
+    const offlinePreference = useNetworkSelector((state) => state.offlinePreference);
+    const activeEndpointOrigin = useNetworkSelector((state) => state.activeEndpointOrigin);
+    const networkSubtitle = isOffline
+        ? offlinePreference === 'forced'
+            ? 'Offline mode is on'
+            : 'Offline — playing from this device'
+        : activeEndpointOrigin === 'remote'
+          ? 'Connected on the public address'
+          : 'Connected on the local address';
     const [podcastCache, setPodcastCache] = useState<PodcastCacheState | null>(null);
 
     const refreshPodcastCache = useCallback(async () => {
@@ -443,26 +451,17 @@ export const SettingsScreen = ({
                     </Text>
                 </View>
             </Pressable>
-            <View style={styles.settingsRow}>
-                <CheckGlyph color={isOfflineMode ? colors.accent : colors.text} size={16} />
+            <Pressable
+                accessibilityRole="button"
+                onPress={onOpenNetwork}
+                style={styles.settingsRow}
+            >
+                <RadioWaveGlyph color={isOffline ? colors.muted : colors.accent} />
                 <View style={styles.settingsRowText}>
-                    <Text style={styles.settingsRowTitle}>Offline mode</Text>
-                    <Text style={styles.settingsRowSubtitle}>
-                        {isOfflineMode
-                            ? 'Only downloaded items are shown'
-                            : 'Show everything available'}
-                    </Text>
+                    <Text style={styles.settingsRowTitle}>Network</Text>
+                    <Text style={styles.settingsRowSubtitle}>{networkSubtitle}</Text>
                 </View>
-                <Switch
-                    onValueChange={onToggleOfflineMode}
-                    thumbColor={isOfflineMode ? colors.accent : '#ffffff'}
-                    trackColor={{
-                        false: 'rgba(255, 255, 255, 0.18)',
-                        true: 'rgba(207, 216, 227, 0.45)',
-                    }}
-                    value={isOfflineMode}
-                />
-            </View>
+            </Pressable>
         </View>
     );
 };

@@ -1,4 +1,3 @@
-import { ServerType } from './server-types';
 
 export enum ServerContentCapability {
     ALBUMS = 'albums',
@@ -55,33 +54,23 @@ const parseCapabilityList = (value: unknown, fallback: ServerContentCapability[]
     return capabilities;
 };
 
-export const getDefaultServerCapabilities = (type: ServerType): ServerCapabilities => {
-    if (type === ServerType.SAMO) {
-        return {
-            content: [
-                ...MUSIC_CAPABILITIES,
-                ServerContentCapability.AUDIOBOOKS,
-                ServerContentCapability.PODCASTS,
-            ],
-            search: [
-                ...MUSIC_CAPABILITIES,
-                ServerContentCapability.AUDIOBOOKS,
-                ServerContentCapability.PODCASTS,
-            ],
-        };
-    }
-
+export const getDefaultServerCapabilities = (): ServerCapabilities => {
     return {
-        content: [],
-        search: [],
+        content: [
+            ...MUSIC_CAPABILITIES,
+            ServerContentCapability.AUDIOBOOKS,
+            ServerContentCapability.PODCASTS,
+        ],
+        search: [
+            ...MUSIC_CAPABILITIES,
+            ServerContentCapability.AUDIOBOOKS,
+            ServerContentCapability.PODCASTS,
+        ],
     };
 };
 
-export const normalizeServerCapabilities = (
-    capabilities: unknown,
-    type: ServerType,
-): ServerCapabilities => {
-    const fallback = getDefaultServerCapabilities(type);
+export const normalizeServerCapabilities = (capabilities: unknown): ServerCapabilities => {
+    const fallback = getDefaultServerCapabilities();
     const value = isRecord(capabilities) ? capabilities : {};
 
     return {

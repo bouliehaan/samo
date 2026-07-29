@@ -10,11 +10,9 @@ import { ServerList } from '/@/renderer/features/servers/components/server-list'
 import { sharedQueries } from '/@/renderer/features/shared/api/shared-api';
 import { AppRoute } from '/@/renderer/router/routes';
 import { useAuthStoreActions, useCurrentServer, useServerList } from '/@/renderer/store';
-import { hasFeature } from '/@/shared/api/utils';
 import { DropdownMenu } from '/@/shared/components/dropdown-menu/dropdown-menu';
 import { Icon } from '/@/shared/components/icon/icon';
 import { ServerListItemWithCredential } from '/@/shared/types/domain-types';
-import { ServerFeature } from '/@/shared/types/features-types';
 
 export const ServerSelectorItems = () => {
     const { t } = useTranslation();
@@ -35,34 +33,16 @@ export const ServerSelectorItems = () => {
         setMusicFolderId(undefined);
     };
 
-    const supportsMultiSelect = hasFeature(currentServer, ServerFeature.MUSIC_FOLDER_MULTISELECT);
-
     const queryClient = useQueryClient();
 
     const handleToggleMusicFolder = (musicFolderId: string) => {
-        if (supportsMultiSelect) {
-            const currentIds = currentServer.musicFolderId || [];
-            const isSelected = currentIds.includes(musicFolderId);
+        const currentIds = currentServer.musicFolderId || [];
 
-            if (isSelected) {
-                // Remove from selection
-                const newIds = currentIds.filter((id) => id !== musicFolderId);
-                setMusicFolderId(newIds.length > 0 ? newIds : undefined);
-            } else {
-                // Add to selection
-                setMusicFolderId([...currentIds, musicFolderId]);
-            }
+        if (currentIds.includes(musicFolderId)) {
+            const newIds = currentIds.filter((id) => id !== musicFolderId);
+            setMusicFolderId(newIds.length > 0 ? newIds : undefined);
         } else {
-            const currentId = Array.isArray(currentServer.musicFolderId)
-                ? currentServer.musicFolderId[0]
-                : currentServer.musicFolderId;
-            const isSelected = currentId === musicFolderId;
-
-            if (isSelected) {
-                setMusicFolderId(undefined);
-            } else {
-                setMusicFolderId([musicFolderId]);
-            }
+            setMusicFolderId([...currentIds, musicFolderId]);
         }
 
         queryClient.removeQueries();
@@ -134,11 +114,8 @@ export const ServerSelectorItems = () => {
                         {t('common.none', { postProcess: 'titleCase' })}
                     </DropdownMenu.Item>
                     {musicFolders.items.map((folder) => {
-                        const isSelected = supportsMultiSelect
-                            ? currentServer.musicFolderId?.includes(folder.id) || false
-                            : (Array.isArray(currentServer.musicFolderId)
-                                  ? currentServer.musicFolderId[0]
-                                  : currentServer.musicFolderId) === folder.id;
+                        const isSelected =
+                            currentServer.musicFolderId?.includes(folder.id) || false;
                         return (
                             <DropdownMenu.Item
                                 isSelected={isSelected}
