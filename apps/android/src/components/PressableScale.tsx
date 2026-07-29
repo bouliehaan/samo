@@ -171,6 +171,26 @@ export const PressableScale = ({
         const tap = Gesture.Tap()
             .enabled(disabled !== true)
             .hitSlop(slop)
+            // WITHOUT THIS A DRAG IS STILL A TAP. Gesture Handler's native tap
+            // only rejects on distance when one of maxDeltaX/maxDeltaY/maxDist
+            // is set — all three default to a sentinel its `shouldFail()` skips
+            // — so with only a duration bound, ANY lift inside
+            // TAP_MAX_DURATION_MS counted as a tap no matter how far the finger
+            // had travelled. Putting a finger down on a tile, scrolling, and
+            // lifting therefore opened the tile. The `abandoned` tracking below
+            // caught the same movement but only drove the SINK, so the surface
+            // correctly un-pressed itself and then fired anyway.
+            //
+            // Worst exactly where it was reported — the podcast and audiobook
+            // grids — not because they use a different component (they are the
+            // same PressableScale, same preset) but because a dense grid has no
+            // dead space: every scroll necessarily begins on a tile, where a
+            // shelf-and-header page gives the finger somewhere harmless to land.
+            //
+            // Same 8dp as the worklet slop, and the same value as Android's own
+            // `ViewConfiguration` touch slop, so a press that drifts under the
+            // platform's own definition of "still a tap" still registers.
+            .maxDistance(SCROLL_SLOP_DP)
             .maxDuration(TAP_MAX_DURATION_MS)
             .onTouchesDown((event) => {
                 'worklet';
@@ -210,6 +230,15 @@ export const PressableScale = ({
             .onEnd(() => {
                 'worklet';
                 if (longPressed.value) {
+                    return;
+                }
+                // Belt to maxDistance's braces. The native handler measures in
+                // px converted from dp, this worklet measures absolute
+                // coordinates, and the two can disagree by a hair right on the
+                // boundary — but only one of them is allowed to decide the tile
+                // opens. If this surface already judged the touch a scroll, it
+                // does not fire, whatever the handler concluded.
+                if (abandoned.value) {
                     return;
                 }
                 runOnJS(invokePress)();
