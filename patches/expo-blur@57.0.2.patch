@@ -1,8 +1,8 @@
 diff --git a/android/src/main/java/expo/modules/blur/BlurModule.kt b/android/src/main/java/expo/modules/blur/BlurModule.kt
-index 837b7fe81001e2da88f6200ede58f8b8602f2a2a..10a4495fd5bbbf186ae92fe08d13da56258a2fa8 100644
+index 837b7fe81001e2da88f6200ede58f8b8602f2a2a..84704bf260e86458d8fc258aa7d8c55bebb90657 100644
 --- a/android/src/main/java/expo/modules/blur/BlurModule.kt
 +++ b/android/src/main/java/expo/modules/blur/BlurModule.kt
-@@ -28,6 +28,21 @@ class BlurModule : Module() {
+@@ -28,6 +28,16 @@ class BlurModule : Module() {
          view.applyBlurReduction(blurReductionFactor)
        }
  
@@ -16,16 +16,11 @@ index 837b7fe81001e2da88f6200ede58f8b8602f2a2a..10a4495fd5bbbf186ae92fe08d13da56
 +        view.setBrightness(brightness)
 +      }
 +
-+      // SAMO: park the per-frame capture without unmounting the pane.
-+      Prop("blurAutoUpdate") { view: ExpoBlurView, blurAutoUpdate: Boolean ->
-+        view.setBlurAutoUpdate(blurAutoUpdate)
-+      }
-+
        Prop("blurMethod") { view: ExpoBlurView, blurMethod: BlurMethod ->
          view.setBlurMethod(blurMethod)
        }
 diff --git a/android/src/main/java/expo/modules/blur/ExpoBlurView.kt b/android/src/main/java/expo/modules/blur/ExpoBlurView.kt
-index 71344c8df533c25facea5fe7f5ed91528d15c1ed..2b0056431acf105a94663a9b371be1317959d53c 100644
+index 71344c8df533c25facea5fe7f5ed91528d15c1ed..826179ec7b5b7e8973ec538d2e71ef946e2fb345 100644
 --- a/android/src/main/java/expo/modules/blur/ExpoBlurView.kt
 +++ b/android/src/main/java/expo/modules/blur/ExpoBlurView.kt
 @@ -3,6 +3,9 @@ package expo.modules.blur
@@ -52,7 +47,7 @@ index 71344c8df533c25facea5fe7f5ed91528d15c1ed..2b0056431acf105a94663a9b371be131
  private enum class BlurViewConfiguration {
    // BlurView is yet to be configured.
    UNCONFIGURED,
-@@ -31,11 +41,88 @@ class ExpoBlurView(context: Context, appContext: AppContext) : ExpoView(context,
+@@ -31,11 +41,70 @@ class ExpoBlurView(context: Context, appContext: AppContext) : ExpoView(context,
    private var blurTargetId: Int? = null
    private var blurTarget: ExpoBlurTargetView? = null
  
@@ -73,14 +68,6 @@ index 71344c8df533c25facea5fe7f5ed91528d15c1ed..2b0056431acf105a94663a9b371be131
 +  // else is caught by the transform.
 +  private var saturation = 1f
 +  private var brightness = 1f
-+
-+  // SAMO: whether this pane keeps re-capturing its target every frame. A
-+  // BlurView's capture runs in an OnPreDrawListener, so a live pane costs a
-+  // full redraw of its target on every frame the app produces — even when the
-+  // pane is parked off-screen or sitting behind an opaque scrim. Turning it off
-+  // leaves the view in place drawing its LAST captured frame, which is exactly
-+  // what a frozen pane should look like.
-+  private var blurAutoUpdate = true
 +
    private val blurView = BlurView(context).also {
      it.layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
@@ -128,20 +115,10 @@ index 71344c8df533c25facea5fe7f5ed91528d15c1ed..2b0056431acf105a94663a9b371be131
 +    )
 +  }
 +
-+  fun setBlurAutoUpdate(enabled: Boolean) {
-+    if (enabled == blurAutoUpdate) {
-+      return
-+    }
-+    blurAutoUpdate = enabled
-+    if (blurConfiguration == BlurViewConfiguration.DIMEZIS) {
-+      blurView.setBlurAutoUpdate(enabled)
-+    }
-+  }
-+
    fun setBlurTargetId(blurTargetId: Int?) {
      if (blurTargetId == this.blurTargetId) {
        return
-@@ -159,10 +246,25 @@ class ExpoBlurView(context: Context, appContext: AppContext) : ExpoView(context,
+@@ -159,10 +228,22 @@ class ExpoBlurView(context: Context, appContext: AppContext) : ExpoView(context,
      val dimezisBlurTarget = blurTarget?.blurTargetView
        ?: throw BlurViewConfigurationException("The BlurView targeting blur target with id: $blurTargetId couldn't find the target")
  
@@ -162,14 +139,11 @@ index 71344c8df533c25facea5fe7f5ed91528d15c1ed..2b0056431acf105a94663a9b371be131
 +    // The controller was just rebuilt, so re-hang the colour transform.
 +    applyColorTransform()
 +
-+    // Replay the parked/live state onto the freshly configured view.
-+    blurView.setBlurAutoUpdate(blurAutoUpdate)
-+
      blurConfiguration = BlurViewConfiguration.DIMEZIS
    }
  
 diff --git a/build/BlurView.js b/build/BlurView.js
-index 427247c40ebd497523feb22db4ee085de825d07f..23af34ad5a0a4481ccdb64cfb0210986f96c03e2 100644
+index 427247c40ebd497523feb22db4ee085de825d07f..a7229922b96c0b99f1a71a5bb2454620d357a02f 100644
 --- a/build/BlurView.js
 +++ b/build/BlurView.js
 @@ -54,8 +54,8 @@ export default class BlurView extends React.Component {
@@ -178,16 +152,16 @@ index 427247c40ebd497523feb22db4ee085de825d07f..23af34ad5a0a4481ccdb64cfb0210986
      render() {
 -        const { tint = 'default', intensity = 50, blurReductionFactor = 4, style, children, ...props } = this.props;
 -        return (_jsxs(View, { ...props, style: [styles.container, style], children: [_jsx(NativeBlurView, { blurTargetId: this.state.blurTargetId, ref: this.blurViewRef, tint: tint, intensity: intensity, blurReductionFactor: blurReductionFactor, blurMethod: this._getBlurMethod(), style: StyleSheet.absoluteFill }), children] }));
-+        const { tint = 'default', intensity = 50, blurReductionFactor = 4, saturation = 1, brightness = 1, blurAutoUpdate = true, style, children, ...props } = this.props;
-+        return (_jsxs(View, { ...props, style: [styles.container, style], children: [_jsx(NativeBlurView, { blurTargetId: this.state.blurTargetId, ref: this.blurViewRef, tint: tint, intensity: intensity, blurReductionFactor: blurReductionFactor, saturation: saturation, brightness: brightness, blurAutoUpdate: blurAutoUpdate, blurMethod: this._getBlurMethod(), style: StyleSheet.absoluteFill }), children] }));
++        const { tint = 'default', intensity = 50, blurReductionFactor = 4, saturation = 1, brightness = 1, style, children, ...props } = this.props;
++        return (_jsxs(View, { ...props, style: [styles.container, style], children: [_jsx(NativeBlurView, { blurTargetId: this.state.blurTargetId, ref: this.blurViewRef, tint: tint, intensity: intensity, blurReductionFactor: blurReductionFactor, saturation: saturation, brightness: brightness, blurMethod: this._getBlurMethod(), style: StyleSheet.absoluteFill }), children] }));
      }
  }
  const styles = StyleSheet.create({
 diff --git a/build/BlurView.types.d.ts b/build/BlurView.types.d.ts
-index 0b48f682f4a32dd1751b71480ddd723ea3cad1e9..038ec32175a93c5ed314fe5e57f61c9ed23c4bfb 100644
+index 0b48f682f4a32dd1751b71480ddd723ea3cad1e9..55e0b5e3565de67c2965f137527d35fc59061de7 100644
 --- a/build/BlurView.types.d.ts
 +++ b/build/BlurView.types.d.ts
-@@ -63,6 +63,25 @@ export type BlurViewProps = {
+@@ -63,6 +63,18 @@ export type BlurViewProps = {
       * @platform android
       */
      blurMethod?: BlurMethod;
@@ -203,45 +177,36 @@ index 0b48f682f4a32dd1751b71480ddd723ea3cad1e9..038ec32175a93c5ed314fe5e57f61c9e
 +     * @platform android
 +     */
 +    brightness?: number;
-+    /**
-+     * Whether the pane keeps re-capturing its target every frame. `false` parks
-+     * the capture and leaves the last captured frame on screen.
-+     * @default true
-+     * @platform android
-+     */
-+    blurAutoUpdate?: boolean;
  } & ViewProps;
  export type BlurTargetViewProps = {
      ref?: RefObject<View | null>;
 diff --git a/src/BlurView.tsx b/src/BlurView.tsx
-index b37ba3365db10ffb931040ae4080a2840dbf939e..3961fb06fd4a5bd098b71c6b19a2a119739d4e93 100644
+index b37ba3365db10ffb931040ae4080a2840dbf939e..855bccec01bb38a4a7737f6eb65eaeae520e1adb 100644
 --- a/src/BlurView.tsx
 +++ b/src/BlurView.tsx
-@@ -80,6 +80,9 @@ export default class BlurView extends React.Component<BlurViewProps, BlurViewSta
+@@ -80,6 +80,8 @@ export default class BlurView extends React.Component<BlurViewProps, BlurViewSta
        tint = 'default',
        intensity = 50,
        blurReductionFactor = 4,
 +      saturation = 1,
 +      brightness = 1,
-+      blurAutoUpdate = true,
        style,
        children,
        ...props
-@@ -92,6 +95,9 @@ export default class BlurView extends React.Component<BlurViewProps, BlurViewSta
+@@ -92,6 +94,8 @@ export default class BlurView extends React.Component<BlurViewProps, BlurViewSta
            tint={tint}
            intensity={intensity}
            blurReductionFactor={blurReductionFactor}
 +          saturation={saturation}
 +          brightness={brightness}
-+          blurAutoUpdate={blurAutoUpdate}
            blurMethod={this._getBlurMethod()}
            style={StyleSheet.absoluteFill}
          />
 diff --git a/src/BlurView.types.ts b/src/BlurView.types.ts
-index b80d44aac0da6fc2829f3bccd87b0a8efea2d79b..8279584094f4011bb9255ae3758a62e82b4cd2fb 100644
+index b80d44aac0da6fc2829f3bccd87b0a8efea2d79b..f85bb236ce739ff3d4f06c856a0e22c3dd7613ae 100644
 --- a/src/BlurView.types.ts
 +++ b/src/BlurView.types.ts
-@@ -68,6 +68,23 @@ export type BlurViewProps = {
+@@ -68,6 +68,16 @@ export type BlurViewProps = {
     * @platform android
     */
    blurMethod?: BlurMethod;
@@ -255,13 +220,6 @@ index b80d44aac0da6fc2829f3bccd87b0a8efea2d79b..8279584094f4011bb9255ae3758a62e8
 +   * @platform android
 +   */
 +  brightness?: number;
-+  /**
-+   * Whether the pane keeps re-capturing its target every frame. `false` parks
-+   * the capture and leaves the last captured frame on screen.
-+   * @default true
-+   * @platform android
-+   */
-+  blurAutoUpdate?: boolean;
  } & ViewProps;
  
  export type BlurTargetViewProps = {

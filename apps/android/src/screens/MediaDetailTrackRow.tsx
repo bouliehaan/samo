@@ -9,7 +9,7 @@ import { memo } from 'react';
 import { Text, View } from 'react-native';
 
 import { ArtworkImage } from '../components/ArtworkImage';
-import { CheckGlyph, MoreGlyph, TrackDownloadedGlyph } from '../components/Glyphs';
+import { CheckGlyph, TrackDownloadedGlyph } from '../components/Glyphs';
 import { PressableScale } from '../components/PressableScale';
 import { useDownloadedTrackKeys } from '../contexts/downloaded-keys';
 import { useMediaContextMenu } from '../contexts/media-context-menu';
@@ -70,7 +70,6 @@ export const MediaDetailTrackRow = memo(function MediaDetailTrackRow({
         qualityItems.map((item) => item.label),
         isMusic,
     );
-    const hasOverflowActions = track.playback?.source === 'music';
     const isDownloadedTrack = downloadedTrackKeys.has(
         getDownloadedTrackKey(detail.source.id, track.id),
     );
@@ -81,6 +80,13 @@ export const MediaDetailTrackRow = memo(function MediaDetailTrackRow({
             accessibilityRole="button"
             highlight={colors.panel}
             highlightRadius={radii.sm}
+            // Press-and-hold IS the row's overflow menu. There used to be a ⋮
+            // button here as well, calling this exact same function — so every
+            // rendered row carried a second PressableScale (its own
+            // GestureDetector, animated view and useAnimatedStyle mapper) plus
+            // the glyph's views, to duplicate a gesture the row already had.
+            // Tracing put that button at ~41% of a row's cost, which a long
+            // playlist pays on every frame of every scroll.
             onLongPress={() => contextMenu.openForTrack(track, detail)}
             onPress={() => {
                 if (isManageMode) {
@@ -155,22 +161,6 @@ export const MediaDetailTrackRow = memo(function MediaDetailTrackRow({
                     </View>
                 ) : null}
             </View>
-            {hasOverflowActions ? (
-                <PressableScale
-                    {...presses.control}
-                    accessibilityLabel={`More options for ${track.title}`}
-                    accessibilityRole="button"
-                    // Nested inside the row's own gesture: the deeper handler
-                    // wins arbitration, so the row does not also fire. `chrome`
-                    // because a 38dp target has no room to spend a scroll-safety
-                    // window before it answers.
-                    chrome
-                    onPress={() => contextMenu.openForTrack(track, detail)}
-                    style={styles.trackMenuButton}
-                >
-                    <MoreGlyph color={colors.muted} />
-                </PressableScale>
-            ) : null}
         </PressableScale>
     );
 

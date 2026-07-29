@@ -5,7 +5,6 @@ import { runOnJS, useSharedValue, withSpring } from 'react-native-reanimated';
 
 import { triggerImpact } from '../../services/haptics';
 import { beginImeControl, finishImeControl, setImeFraction } from '../../services/ime-control';
-import { beginChromeGlassMotion, endChromeGlassMotion } from '../../state/chrome-glass';
 import { styles } from '../../theme/styles';
 import { REDUCED_MOTION_SPRING } from '../../theme/layout';
 import { useSearchPullContext } from './SearchPullContext';
@@ -50,10 +49,6 @@ import { getPullNativeGestures, setPullRegistryListener } from './search-pull-re
  * `Gesture.Native()` (which must wrap its own scroller) and its scroll offset.
  * Both arrive here through `search-pull-registry`.
  */
-/** Tail added to the glass freeze so it spans the release spring, not just the
- *  finger. See the `onFinalize` note below for where the number comes from. */
-const GLASS_PULL_SETTLE_MS = 380;
-
 export const SearchPullGestureHost = ({ children }: { children: ReactNode }) => {
     const { activeScrollY, commitFullSearch, pull, reducedMotion } = useSearchPullContext();
 
@@ -144,20 +139,6 @@ export const SearchPullGestureHost = ({ children }: { children: ReactNode }) => 
                     if (event.numberOfTouches > 1) {
                         return;
                     }
-                    /*
-                     * TOUCH-DOWN IS THE EARLIEST HONEST SIGNAL THAT THE WORLD IS
-                     * ABOUT TO MOVE, and this detector wraps every tab scene, so
-                     * one line here covers every touch the app's pages ever see.
-                     *
-                     * It has to be the touch and not the activation: the chrome
-                     * glass freeze has to be in place BEFORE the first animated
-                     * frame, and a prop that only starts crossing to native once
-                     * the pan activates would land several frames into the very
-                     * motion it is meant to protect. Freezing for a tap that
-                     * turns out to be nothing costs nothing — it just means the
-                     * glass re-samples 220ms later than it would have.
-                     */
-                    runOnJS(beginChromeGlassMotion)('pull');
                     const touch = event.allTouches[0];
                     touchStartX.value = touch ? touch.absoluteX : 0;
                     touchStartY.value = touch ? touch.absoluteY : 0;
@@ -371,20 +352,6 @@ export const SearchPullGestureHost = ({ children }: { children: ReactNode }) => 
                         runOnJS(finishImeControl)(false);
                         hasRequestedIme.value = false;
                     }
-                    /*
-                     * Terminal for EVERY path the touch can take, which is what
-                     * the glass hold needs — a pan that fails itself (an ordinary
-                     * scroll) gets no onEnd, and releasing there would strand the
-                     * freeze on the app's most common gesture.
-                     *
-                     * The settle covers the RELEASE SPRING, which outlives this
-                     * callback: OPEN/SETTLE are critically damped at ωn ≈ 15.5 and
-                     * ≈ 17.8 rad/s, so they are visually done by ~260ms. Thawing at
-                     * the default 220 would put the glass live in the middle of the
-                     * throw, which is the one frame of the whole gesture the eye is
-                     * actually following.
-                     */
-                    runOnJS(endChromeGlassMotion)('pull', GLASS_PULL_SETTLE_MS);
                     isSpringingBack.value = false;
                     hasActivated.value = false;
                     lastImeFraction.value = -1;

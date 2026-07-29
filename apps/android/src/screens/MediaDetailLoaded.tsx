@@ -513,7 +513,6 @@ export const MediaDetailLoaded = memo(function MediaDetailLoaded({
                         </>
                     }
                     maintainVisibleContentPosition={FLASH_LIST_MAINTAIN_POSITION_DISABLED}
-                    {...collapsedHeader.scrollMotionProps}
                     onScroll={collapsedHeader.scrollHandler}
                     renderItem={isAwaitingDetail ? renderSkeletonRow : renderTrackItem}
                     scrollEventThrottle={16}
@@ -567,7 +566,6 @@ export const MediaDetailLoaded = memo(function MediaDetailLoaded({
                             </View>
                         </>
                     }
-                    {...collapsedHeader.scrollMotionProps}
                     onScroll={collapsedHeader.scrollHandler}
                     renderItem={isAwaitingDetail ? renderSkeletonRow : renderTrackItem}
                     scrollEventThrottle={16}
@@ -582,7 +580,6 @@ export const MediaDetailLoaded = memo(function MediaDetailLoaded({
         <View style={styles.mediaDetailScreen}>
             <Reanimated.ScrollView
                 contentContainerStyle={[styles.mediaDetailContent, { paddingBottom: bottomInset }]}
-                {...collapsedHeader.scrollMotionProps}
                 onScroll={collapsedHeader.scrollHandler}
                 scrollEventThrottle={16}
                 showsVerticalScrollIndicator={false}

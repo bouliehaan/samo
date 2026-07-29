@@ -19,7 +19,6 @@ import {
     type AndroidRecentContentSourceItem,
     getRecentContentItemKey,
 } from '../services/recent-content';
-import { chromeGlassScrollProps } from '../state/chrome-glass';
 import { VIEW_ALL_ROW_HEIGHT } from '../theme/layout';
 import { presses } from '../theme/motion';
 import { styles } from '../theme/styles';
@@ -159,7 +158,6 @@ export const CollectionBrowseGrid = memo(({
                 )
             ) : (
                 <FlashList
-                    {...chromeGlassScrollProps}
                     contentContainerStyle={[
                         styles.libraryBrowseListContent,
                         { paddingBottom: bottomInset },

@@ -38,7 +38,6 @@ import {
     Alert,
     Animated,
     type ImageStyle,
-    InteractionManager,
     Keyboard,
     type LayoutChangeEvent,
     Pressable,

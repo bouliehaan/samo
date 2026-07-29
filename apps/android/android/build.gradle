@@ -1,6 +1,21 @@
 // Top-level build file where you can add configuration options common to all sub-projects/modules.
 
 buildscript {
+  ext {
+    // Android 12. Expo's root-project plugin defaults this to 24 (Android 7),
+    // and everything below 31 was costing the app real complexity for devices
+    // that could never have run its UI well anyway:
+    //
+    // Below 31 there is no RenderEffect and no RenderNode snapshotting, so
+    // expo-blur falls back to BlurView's software path — which redraws the
+    // sampled view tree into a CPU bitmap on every frame, per pane. The whole
+    // freeze-the-glass-during-motion state machine (state/chrome-glass, and the
+    // scroll/gesture/transition plumbing that fed it across a dozen files)
+    // existed solely to make that survivable. On 31+ the capture is a hardware
+    // display-list recording and the machinery was already inert, so raising
+    // the floor deleted all of it rather than leaving two paths to reason about.
+    minSdkVersion = 31
+  }
   repositories {
     google()
     mavenCentral()

@@ -1,7 +1,6 @@
-import { useEffect, useId } from 'react';
+import { useEffect } from 'react';
 import { type SharedValue, useSharedValue, withTiming } from 'react-native-reanimated';
 
-import { beginChromeGlassMotion, endChromeGlassMotion } from '../state/chrome-glass';
 import { CHOREOGRAPHY_EASING, CHOREOGRAPHY_MS } from '../theme/choreography';
 import { useReducedMotionPreference } from './use-reduced-motion-preference';
 
@@ -23,31 +22,12 @@ import { useReducedMotionPreference } from './use-reduced-motion-preference';
 export function useChoreography(key?: number | string): SharedValue<number> {
     const reducedMotion = useReducedMotionPreference();
     const clock = useSharedValue(0);
-    // Distinct per clock instance, so two overlapping entrances cannot release
-    // each other's glass hold.
-    const glassKey = `choreography:${useId()}`;
 
     useEffect(() => {
         if (reducedMotion) {
             clock.value = 1;
             return;
         }
-        /*
-         * Hold the chrome glass for the length of the assembly.
-         *
-         * This is the single most expensive moment in the app for it: a detail
-         * entrance animates the hero AND every mounted row off one clock, so
-         * every frame of it redraws the largest view tree the app ever has —
-         * and a live `dimezisBlurView` charges a full software redraw of that
-         * tree, twice, on top of each of those frames (state/chrome-glass).
-         *
-         * Released here rather than on the timing's completion callback, for
-         * the same reason TabSceneContainer rests on a timeout: `runOnJS` lands
-         * asynchronously, so a stale completion could release a hold a NEWER
-         * entrance had just taken. The cleanup cancels this synchronously on
-         * re-key, and `endChromeGlassMotion` is keyed and idempotent besides.
-         */
-        beginChromeGlassMotion(glassKey);
         // Snap to 0 before running, so a re-key mid-flight restarts cleanly
         // rather than easing from wherever the last one had reached.
         clock.value = 0;
@@ -55,12 +35,7 @@ export function useChoreography(key?: number | string): SharedValue<number> {
             duration: CHOREOGRAPHY_MS,
             easing: CHOREOGRAPHY_EASING,
         });
-        const done = setTimeout(() => endChromeGlassMotion(glassKey), CHOREOGRAPHY_MS);
-        return () => {
-            clearTimeout(done);
-            endChromeGlassMotion(glassKey);
-        };
-    }, [clock, glassKey, key, reducedMotion]);
+    }, [clock, key, reducedMotion]);
 
     return clock;
 }

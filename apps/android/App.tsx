@@ -5,7 +5,6 @@ import { useEffect } from 'react';
 import {
     AppState,
     Image,
-    InteractionManager,
     KeyboardAvoidingView,
     PermissionsAndroid,
     Platform,
@@ -115,33 +114,47 @@ setAppNavigationOptions({
 // coalesces that burst into a single mirror refresh instead of one per source.
 const POST_SYNC_COALESCE_MS = 450;
 
-// The actual post-sync work, deferred past any in-flight gesture/animation so
-// it never lands in the middle of a tap or the player-open spring. Re-derives
-// Home + Library from the freshly-synced mirror and warms cover art. The FTS
-// index is no longer rebuilt here — Kotlin (SamoCatalogSearch) reconciles it
-// inside the sync itself, before the 'synced' event that triggers this.
+// How long the post-sync derive may wait for an idle frame before it runs
+// anyway. A device that never goes idle must still get its mirror refresh.
+const POST_SYNC_IDLE_TIMEOUT_MS = 3000;
+
+// The actual post-sync work, deferred so it never lands in the middle of a tap
+// or the player-open spring. Re-derives Home + Library from the freshly-synced
+// mirror and warms cover art. The FTS index is no longer rebuilt here — Kotlin
+// (SamoCatalogSearch) reconciles it inside the sync itself, before the 'synced'
+// event that triggers this.
+//
+// `requestIdleCallback` rather than `InteractionManager.runAfterInteractions`,
+// which React Native deprecated and warns about at runtime. It is also the
+// better fit: this work wants the JS thread to actually be FREE, which is a
+// stronger condition than every interaction handle having been released.
 const flushPostSyncRefresh = () => {
     const auth = getAuthSession().serverConnection;
     if (!auth) {
         return;
     }
-    InteractionManager.runAfterInteractions(() => {
-        void (async () => {
-            try {
-                await refreshHomeFromMirror({ authoritative: true });
-                refreshLibraryFromMirror();
-                // Cleared only once the derive has actually landed. Clearing it
-                // up front meant a flush interrupted partway — a throw, or the
-                // process being killed while the prefetch walked the library —
-                // left the latch saying "nothing to do" about work that had not
-                // been done, and the next foreground skipped it.
-                mirrorDirty = false;
-                await traceAsync('catalog.prefetchArtwork', () => prefetchCatalogArtwork(auth));
-            } catch (error) {
-                console.error('[catalog] post-sync derive/prefetch failed', error);
-            }
-        })();
-    });
+    requestIdleCallback(
+        () => {
+            void (async () => {
+                try {
+                    await refreshHomeFromMirror({ authoritative: true });
+                    refreshLibraryFromMirror();
+                    // Cleared only once the derive has actually landed. Clearing
+                    // it up front meant a flush interrupted partway — a throw, or
+                    // the process being killed while the prefetch walked the
+                    // library — left the latch saying "nothing to do" about work
+                    // that had not been done, and the next foreground skipped it.
+                    mirrorDirty = false;
+                    await traceAsync('catalog.prefetchArtwork', () =>
+                        prefetchCatalogArtwork(auth),
+                    );
+                } catch (error) {
+                    console.error('[catalog] post-sync derive/prefetch failed', error);
+                }
+            })();
+        },
+        { timeout: POST_SYNC_IDLE_TIMEOUT_MS },
+    );
 };
 
 // Debounce token + dirty latch for the post-sync mirror refresh. The dirty
@@ -330,9 +343,10 @@ export default function App() {
     // re-walk; a full refresh or connect does.
     useEffect(() => {
         if (homeLoadedAt === 0) return;
-        // Defer past in-flight gestures/animations so the prefetch loop
-        // never lands on a tap or transition frame.
-        const handle = InteractionManager.runAfterInteractions(() => {
+        // Defer until the JS thread is idle so the prefetch loop never lands on
+        // a tap or transition frame. Cancelled on re-run, so a rapid sequence of
+        // Home loads only ever warms the newest one's covers.
+        const handle = requestIdleCallback(() => {
             const homeContentState = getAppNavigation().homeContentState;
             if (homeContentState.status !== 'loaded') return;
             const sources: Array<string | { headers: Record<string, string>; uri: string }> = [];
@@ -355,7 +369,7 @@ export default function App() {
                 prefetchArtworkSource(source);
             }
         });
-        return () => handle.cancel();
+        return () => cancelIdleCallback(handle);
     }, [homeLoadedAt, serverConnection]);
 
     // Recents persisted before this server session may be missing artwork
@@ -496,8 +510,9 @@ export default function App() {
                                             redrawing this entire hierarchy into
                                             a software bitmap on every frame.
                                             That redraw was the app's single
-                                            largest per-frame cost — see
-                                            state/chrome-glass.
+                                            largest per-frame cost, back when
+                                            minSdk allowed devices without
+                                            RenderNode snapshotting at all.
 
                                             THE NESTING IS LOAD-BEARING and the
                                             rule behind it is simple: a pane may

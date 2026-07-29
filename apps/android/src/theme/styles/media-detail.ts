@@ -576,14 +576,6 @@ export const mediaDetailStyles = StyleSheet.create({
         flexShrink: 1,
         minWidth: 0,
     },
-    trackMenuButton: {
-        alignItems: 'center',
-        borderRadius: 999,
-        height: 38,
-        justifyContent: 'center',
-        opacity: 0.68,
-        width: 38,
-    },
     trackRow: {
         alignItems: 'center',
         flexDirection: 'row',

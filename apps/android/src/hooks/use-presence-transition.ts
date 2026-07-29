@@ -1,7 +1,6 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { type SharedValue, useSharedValue, withTiming } from 'react-native-reanimated';
 
-import { beginChromeGlassMotion, endChromeGlassMotion } from '../state/chrome-glass';
 import { durations, easings } from '../theme/motion';
 import { useReducedMotionPreference } from './use-reduced-motion-preference';
 
@@ -54,14 +53,6 @@ export function usePresenceTransition(
     const config = useRef({ enterMs, exitMs, reducedMotion });
     config.current = { enterMs, exitMs, reducedMotion };
 
-    // Held for the length of every enter and exit: a full-screen overlay
-    // cross-fading is a full-screen redraw per frame, and a live backdrop blur
-    // re-rasterises the whole view tree in software on top of each one. See
-    // state/chrome-glass.
-    // Distinct per transition instance — see useChoreography.
-    const glassMotionKey = `presence:${useId()}`;
-    useEffect(() => () => endChromeGlassMotion(glassMotionKey), [glassMotionKey]);
-
     // PASS 1 — the mount gate. Opening ONLY raises the gate; it deliberately
     // does not touch `progress`. See pass 2 for why.
     useEffect(() => {
@@ -82,20 +73,11 @@ export function usePresenceTransition(
             return;
         }
 
-        beginChromeGlassMotion(glassMotionKey);
         // Slack past the last animated frame so the unmount can never land on
         // a surface still mid-fade (same guard as TabSceneContainer's rest).
         const timer = setTimeout(() => setIsMounted(false), exit + UNMOUNT_SLACK_MS);
-        const glassTimer = setTimeout(
-            () => endChromeGlassMotion(glassMotionKey),
-            exit + UNMOUNT_SLACK_MS,
-        );
-        return () => {
-            clearTimeout(timer);
-            clearTimeout(glassTimer);
-            endChromeGlassMotion(glassMotionKey);
-        };
-    }, [glassMotionKey, progress, visible]);
+        return () => clearTimeout(timer);
+    }, [progress, visible]);
 
     // PASS 2 — the entrance, and it MUST be its own pass.
     //
@@ -129,16 +111,7 @@ export function usePresenceTransition(
             duration: reduced ? 0 : enter,
             easing: easings.emphasized,
         });
-        if (reduced) {
-            return;
-        }
-        beginChromeGlassMotion(glassMotionKey);
-        const glassTimer = setTimeout(() => endChromeGlassMotion(glassMotionKey), enter);
-        return () => {
-            clearTimeout(glassTimer);
-            endChromeGlassMotion(glassMotionKey);
-        };
-    }, [glassMotionKey, isMounted, progress, visible]);
+    }, [isMounted, progress, visible]);
 
     return { isMounted, progress };
 }

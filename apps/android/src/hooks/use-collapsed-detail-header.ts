@@ -9,7 +9,6 @@ import {
     useSharedValue,
 } from 'react-native-reanimated';
 
-import { chromeGlassScrollProps } from '../state/chrome-glass';
 import { spacing } from '../theme/tokens';
 
 /**
@@ -17,13 +16,7 @@ import { spacing } from '../theme/tokens';
  * the UI thread and derives the backdrop/content fade styles plus a JS-side
  * interactivity flag. The reveal point follows the hero action bar's measured
  * position so the bar appears exactly as the hero controls scroll away.
- *
- * It also carries `scrollMotionProps`, because this hook is the one thing every
- * detail list (playlist, album, audiobook, podcast, artist) has in common —
- * they do NOT go through `useSearchPull`, which is where every tab page picks
- * the same props up. Spread it alongside `scrollHandler` or the chrome glass
- * keeps re-sampling the whole view tree through the scroll (state/chrome-glass).
- */
+ * */
 export const useCollapsedDetailHeader = () => {
     const detailScrollY = useSharedValue(0);
     const scrollHandler = useAnimatedScrollHandler({
@@ -76,6 +69,5 @@ export const useCollapsedDetailHeader = () => {
         isInteractive,
         onHeroActionsBarLayout,
         scrollHandler,
-        scrollMotionProps: chromeGlassScrollProps,
     };
 };

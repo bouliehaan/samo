@@ -5,7 +5,6 @@ import Reanimated, { type useAnimatedStyle } from 'react-native-reanimated';
 import chromeFinishBare from '../../assets/chrome-finish-bare.png';
 import chromeFinishMini from '../../assets/chrome-finish-mini.png';
 import { useIsMiniPlayerVisible } from '../hooks/use-scroll-content-bottom-inset';
-import { useChromeGlassLive } from '../state/chrome-glass';
 import { DOCK_BLUR_TARGET } from '../theme/chrome-blur-targets';
 import { styles } from '../theme/styles';
 import { chromeGlass } from '../theme/tokens';
@@ -66,10 +65,6 @@ export const BottomChromeBackdrop = ({
     sinkStyle: ReturnType<typeof useAnimatedStyle>;
 }) => {
     const hasMiniPlayer = useIsMiniPlayerVisible();
-    // The glass re-samples only while the app is still. See state/chrome-glass
-    // for why a live backdrop blur is the one cost that scales with the whole
-    // view tree and is charged inside the callback that gates the frame.
-    const isGlassLive = useChromeGlassLive();
     return (
         // pointerEvents "auto" ON PURPOSE: the pane is physical glass, so it
         // must swallow any touch that lands on it and doesn't hit a control
@@ -89,7 +84,6 @@ export const BottomChromeBackdrop = ({
         >
             <BlurView
                 {...chromeGlass}
-                blurAutoUpdate={isGlassLive}
                 blurTarget={DOCK_BLUR_TARGET}
                 blurMethod="dimezisBlurView"
                 style={StyleSheet.absoluteFill}

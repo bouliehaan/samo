@@ -5,7 +5,6 @@ import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Reanimated, { useAnimatedScrollHandler, useSharedValue } from 'react-native-reanimated';
 
 import { useScrollEdgeHaptics } from '../../hooks/use-scroll-edge-haptics';
-import { chromeGlassScrollProps } from '../../state/chrome-glass';
 import { subscribeTabReselected } from '../../state/tab-reselect';
 import { useSearchPullContext } from './SearchPullContext';
 import { registerPullScroller } from './search-pull-registry';
@@ -164,12 +163,6 @@ export const useSearchPull = (tabId: SamoMobileTabId) => {
             nativeGesture,
             renderScrollComponent,
             scrollProps: {
-                // Freeze the chrome glass for the duration of the scroll. These
-                // are the four ordinary lifecycle callbacks — one call each per
-                // gesture, never per frame — and every tab page already routes
-                // its scroller through here, so the app's whole list surface is
-                // covered in one place. See state/chrome-glass.
-                ...chromeGlassScrollProps,
                 onScroll: scrollHandler,
                 // Kill the Android stretch glow so only OUR surface answers an
                 // over-pull at the top.

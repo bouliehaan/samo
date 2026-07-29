@@ -28,7 +28,6 @@ import {
     useAppNavigationSelector,
 } from '../../state/app-navigation';
 import { finishImeControl, registerImeTarget } from '../../services/ime-control';
-import { CHROME_GLASS_IS_HARDWARE } from '../../state/chrome-glass';
 import { SEARCH_TRAY_BLUR_TARGET } from '../../theme/chrome-blur-targets';
 import { chromeGlass, colors } from '../../theme/tokens';
 import { styles } from '../../theme/styles';
@@ -304,7 +303,6 @@ export const SearchPullSurface = memo(function SearchPullSurface() {
                 >
                     <BlurView
                         {...chromeGlass}
-                        blurAutoUpdate={CHROME_GLASS_IS_HARDWARE || isTrayOnScreen}
                         blurTarget={SEARCH_TRAY_BLUR_TARGET}
                         blurMethod="dimezisBlurView"
                         style={StyleSheet.absoluteFill}
