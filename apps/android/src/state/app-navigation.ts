@@ -455,7 +455,16 @@ const pressTab = (tabId: SamoMobileTabId): void => {
         setIsSearchOverlayOpen(false);
     }
     setActiveTab((current) => (current === tabId ? current : tabId));
-    if (isBareTabReselect) {
+    // HOME IS NOT JUST A RE-TAP CASE. Arriving at Home is supposed to mean a
+    // fresh feed at the top, however you got there — the pull-to-refresh gesture
+    // belongs to search on this app, so this press is the ONLY way to ask for
+    // one. Gating it on `isBareTabReselect` meant it only ever fired when you
+    // were already sitting on Home with nothing open; pressing Home from
+    // another tab — the ordinary way to go home — refreshed nothing.
+    //
+    // Every other tab keeps re-tap-only semantics: switching to a library tab
+    // should leave you where you were in it.
+    if (isBareTabReselect || tabId === 'home') {
         emitTabReselected(tabId);
     }
 };

@@ -23,7 +23,7 @@ import {
     setActiveUtilityScreen,
     useAppNavigationSelector,
 } from '../state/app-navigation';
-import { subscribeTabReselected } from '../state/tab-reselect';
+import { useTabReselect } from '../state/tab-reselect';
 import { useAuthSessionSelector } from '../state/auth-session';
 import { durations } from '../theme/motion';
 import { styles } from '../theme/styles';
@@ -43,10 +43,18 @@ const HomeTabScene = memo(function HomeTabScene() {
     const serverConnection = useAuthSessionSelector((state) => state.serverConnection);
     const [isRefreshingHome, setIsRefreshingHome] = useState(false);
 
+    // Now that EVERY Home press refreshes, not just a re-tap on a settled page,
+    // this can be asked for far more often than before — bouncing between tabs
+    // would otherwise stack a catalog sync and a live re-fetch per press. A ref
+    // rather than `isRefreshingHome`: that is render state, so two presses in
+    // the same frame would both read it as false.
+    const refreshInFlight = useRef(false);
+
     const handleRefreshHome = useCallback(async (): Promise<void> => {
-        if (!serverConnection) {
+        if (!serverConnection || refreshInFlight.current) {
             return;
         }
+        refreshInFlight.current = true;
         setIsRefreshingHome(true);
         // Keep the on-device library mirror fresh, but OFF the spinner's critical
         // path — the Kotlin engine runs the delta in the background and the
@@ -64,24 +72,23 @@ const HomeTabScene = memo(function HomeTabScene() {
         } catch {
             // swallow — pull-to-refresh never throws into the UI
         } finally {
+            refreshInFlight.current = false;
             setIsRefreshingHome(false);
         }
     }, [serverConnection]);
 
-    // Home tab re-tap is now the ONLY way to refresh: the pull-down gesture
+    // Pressing the Home tab is the ONLY way to refresh: the pull-down gesture
     // belongs to search (see useSearchPull), so Home's RefreshControl is
-    // display-only. The re-tap glides the page to the top and fires the refresh;
+    // display-only. The press glides the page to the top and fires the refresh;
     // the spinner still shows via the isRefreshingHome → RefreshControl wiring.
-    // The reselect signal now carries every tab's id — ignore all but Home's.
-    useEffect(
-        () =>
-            subscribeTabReselected((tabId) => {
-                if (tabId === 'home') {
-                    void handleRefreshHome();
-                }
-            }),
-        [handleRefreshHome],
-    );
+    //
+    // Via the catch-up hook rather than a bare subscription: this scene is
+    // frozen whenever Home is in the background, which tears its effects down —
+    // so the press that brings you BACK to Home, the most important one, was
+    // landing while nothing was listening. See state/tab-reselect.
+    useTabReselect('home', () => {
+        void handleRefreshHome();
+    });
 
     return (
         <HomeScreen

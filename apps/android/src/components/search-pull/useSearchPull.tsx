@@ -5,7 +5,7 @@ import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Reanimated, { useAnimatedScrollHandler, useSharedValue } from 'react-native-reanimated';
 
 import { useScrollEdgeHaptics } from '../../hooks/use-scroll-edge-haptics';
-import { subscribeTabReselected } from '../../state/tab-reselect';
+import { useTabReselect } from '../../state/tab-reselect';
 import { useSearchPullContext } from './SearchPullContext';
 import { registerPullScroller } from './search-pull-registry';
 
@@ -49,6 +49,10 @@ export const useSearchPull = (tabId: SamoMobileTabId) => {
     const { activePullTab, activeScrollY } = useSearchPullContext();
 
     const scrollableRef = useRef<DrawerScrollable | null>(null);
+
+    /** A scroll-to-top asked for before the list existed. See scrollToTop. */
+
+    const pendingScrollToTopRef = useRef(false);
     // Scroll offset, written on the UI thread. The app-level pan reads it (via
     // the registry) to know whether a drag began at the top — the only place a
     // pull may reveal search.
@@ -85,15 +89,45 @@ export const useSearchPull = (tabId: SamoMobileTabId) => {
                 if (activePullTab.value === tabId) {
                     activeScrollY.value = 0;
                 }
+
+                // Flush a scroll-to-top that arrived while there was nothing to
+                // scroll. Not animated: this is a page the user is arriving at,
+                // so it should already BE at the top rather than be seen
+                // travelling there.
+                if (pendingScrollToTopRef.current) {
+                    pendingScrollToTopRef.current = false;
+                    node.scrollToOffset?.({ animated: false, offset: 0 });
+                    node.scrollTo?.({ animated: false, y: 0 });
+                }
+            } else {
+                // Detaching cancels nothing: the request belongs to the page, and
+                // the next list to attach is the one that should answer it.
             }
         },
         [activePullTab, activeScrollY, scrollY, tabId],
     );
 
+    /**
+     * Glide this page's list back to the top.
+     *
+     * DEFERRED WHEN THERE IS NO LIST YET, which is the normal case for the press
+     * that matters. Pressing a tab emits the signal synchronously inside
+     * `pressTab`, before React has re-rendered — so a page arriving from the
+     * background has not re-attached its scrollable at that instant, and this
+     * used to silently no-op through the optional chaining. That is why pressing
+     * Home from another tab left you wherever you had been scrolled.
+     *
+     * The ref callback below is the exact moment the list becomes addressable,
+     * so a pending request is flushed there instead.
+     */
     const scrollToTop = useCallback(() => {
         const scrollable = scrollableRef.current;
-        scrollable?.scrollToOffset?.({ animated: true, offset: 0 });
-        scrollable?.scrollTo?.({ animated: true, y: 0 });
+        if (!scrollable) {
+            pendingScrollToTopRef.current = true;
+            return;
+        }
+        scrollable.scrollToOffset?.({ animated: true, offset: 0 });
+        scrollable.scrollTo?.({ animated: true, y: 0 });
     }, []);
 
     const reportScrollEdge = useScrollEdgeHaptics();
@@ -147,16 +181,10 @@ export const useSearchPull = (tabId: SamoMobileTabId) => {
         [nativeGesture],
     );
 
-    // Re-tap the active tab → glide this list back to the top.
-    useEffect(
-        () =>
-            subscribeTabReselected((reselectedTabId) => {
-                if (reselectedTabId === tabId) {
-                    scrollToTop();
-                }
-            }),
-        [scrollToTop, tabId],
-    );
+    // Reselecting this tab → glide its list back to the top. Via the catch-up
+    // hook, so a press that landed while this page was frozen is answered on
+    // thaw rather than lost — see state/tab-reselect.
+    useTabReselect(tabId, scrollToTop);
 
     return useMemo(
         () => ({
