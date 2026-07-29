@@ -723,15 +723,37 @@ const listAllSamoPlaylistTracks = async (
     id: string,
 ): Promise<SamoMusicTrack[]> => {
     const pageSize = 500;
+    // Pages go out CONCURRENTLY, a window at a time. A thousand-track playlist
+    // is three pages, and fetching them one after another made the wait the SUM
+    // of three slow round trips with nothing on screen for any of it — the whole
+    // page is gated on the last one landing. Requesting a window at once makes
+    // it roughly the slowest single page instead.
+    const windowSize = 4;
     const collected: SamoMusicTrack[] = [];
-    for (let offset = 0; offset < 50_000; offset += pageSize) {
-        const response = await listSamoMusicPlaylistTracks(fetcher, authentication, id, {
-            limit: pageSize,
-            offset,
-        });
-        const batch = samoItemsOf(response);
-        collected.push(...batch);
-        if (batch.length < pageSize) {
+    for (let start = 0; start < 50_000; start += pageSize * windowSize) {
+        const offsets: number[] = [];
+        for (let i = 0; i < windowSize; i += 1) {
+            offsets.push(start + i * pageSize);
+        }
+        const pages = await Promise.all(
+            offsets.map(async (offset) =>
+                samoItemsOf(
+                    await listSamoMusicPlaylistTracks(fetcher, authentication, id, {
+                        limit: pageSize,
+                        offset,
+                    }),
+                ),
+            ),
+        );
+        let reachedEnd = false;
+        for (const batch of pages) {
+            collected.push(...batch);
+            if (batch.length < pageSize) {
+                reachedEnd = true;
+                break;
+            }
+        }
+        if (reachedEnd) {
             break;
         }
     }

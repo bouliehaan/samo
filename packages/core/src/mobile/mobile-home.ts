@@ -107,6 +107,11 @@ export interface MobileHomeContentInput {
 }
 
 export interface MobileHomeItem {
+    /** Show notes, when the item is a podcast episode. Carried on the item so
+     *  Episode Information works from the feed, not just from a show's page. */
+    description?: string;
+    /** Episode publish time (ms), for the same reason as `description`. */
+    publishedAt?: number;
     /**
      * Server-reported "added at" timestamp in epoch milliseconds. Used to
      * sort the cross-source "Recently Added" hero row chronologically rather
@@ -655,10 +660,12 @@ const samoPodcastEpisodeToHomeItem = (
         artworkUrl,
         completionState: samoCompletionState(episodeProgress),
         containerId: episode.podcastId,
+        description: episode.description ?? undefined,
         durationSeconds: episode.durationSeconds ?? episode.duration,
         id: episode.id,
         playback: playback ?? undefined,
         progressSeconds: episodeProgress?.progressSeconds,
+        publishedAt: publishedMs,
         source,
         subtitle: subtitle || showTitle,
         title,

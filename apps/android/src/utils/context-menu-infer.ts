@@ -42,8 +42,14 @@ export const synthesizeTrackFromPodcastEpisodeItem = (
 ): MobileMediaTrack => ({
     artworkImageId: item.artworkImageId,
     artworkUrl: item.artworkUrl,
+    // The show notes and the publish date are the whole point of Episode
+    // Information. Leaving them off the synthesized track is why the sheet
+    // opened from a Podcast Feed tile came up with the title and nothing else,
+    // while the very same sheet opened from a show's own row was complete.
+    description: item.description,
     durationSeconds: item.durationSeconds,
     episodeId: item.id,
+    publishedAt: item.publishedAt,
     id: item.id,
     itemId: item.containerId,
     playback: item.playback,
