@@ -25,32 +25,54 @@ index 837b7fe81001e2da88f6200ede58f8b8602f2a2a..10a4495fd5bbbf186ae92fe08d13da56
          view.setBlurMethod(blurMethod)
        }
 diff --git a/android/src/main/java/expo/modules/blur/ExpoBlurView.kt b/android/src/main/java/expo/modules/blur/ExpoBlurView.kt
-index 71344c8df533c25facea5fe7f5ed91528d15c1ed..3bdbee8002d76b6a105fe4c27ec62b20f963307b 100644
+index 71344c8df533c25facea5fe7f5ed91528d15c1ed..2b0056431acf105a94663a9b371be1317959d53c 100644
 --- a/android/src/main/java/expo/modules/blur/ExpoBlurView.kt
 +++ b/android/src/main/java/expo/modules/blur/ExpoBlurView.kt
-@@ -10,6 +10,11 @@ import expo.modules.blur.enums.TintStyle
+@@ -3,6 +3,9 @@ package expo.modules.blur
+ import android.annotation.SuppressLint
+ import android.content.Context
+ import android.graphics.Color
++import android.graphics.ColorMatrix
++import android.graphics.ColorMatrixColorFilter
++import android.graphics.RenderEffect
+ import android.os.Build
+ import eightbitlab.com.blurview.BlurView
+ import expo.modules.blur.enums.BlurMethod
+@@ -10,6 +13,13 @@ import expo.modules.blur.enums.TintStyle
  import expo.modules.kotlin.AppContext
  import expo.modules.kotlin.views.ExpoView
  
-+// SAMO: the defaults BlurView 3.x's one-argument `setupWith(target)` applies.
-+// Mirrored here because the four-argument overload used below has no defaults.
++// SAMO: the snapshot downscale BlurView 3.x's one-argument `setupWith(target)`
++// applies. Mirrored here because the overload used below has no defaults.
 +private const val DEFAULT_SCALE_FACTOR = 4f
-+private const val DEFAULT_APPLY_NOISE = true
++
++// SAMO: deliberately NOT the library default (true) — see configureBlurView.
++private const val APPLY_NOISE = false
 +
  private enum class BlurViewConfiguration {
    // BlurView is yet to be configured.
    UNCONFIGURED,
-@@ -31,11 +36,47 @@ class ExpoBlurView(context: Context, appContext: AppContext) : ExpoView(context,
+@@ -31,11 +41,88 @@ class ExpoBlurView(context: Context, appContext: AppContext) : ExpoView(context,
    private var blurTargetId: Int? = null
    private var blurTarget: ExpoBlurTargetView? = null
  
-+  // SAMO: the saturating/dimming blur algorithm, and the two values driving it.
-+  // Held here rather than read back off the algorithm so a prop that arrives
-+  // before the BlurView is configured is not lost — configureBlurView() replays
-+  // them onto whatever algorithm instance it ends up installing.
++  // SAMO: chroma boost and multiplicative dim, applied to the blurred output.
++  //
++  // These are applied as a RenderEffect ON THE BLURVIEW ITSELF, not through a
++  // custom BlurAlgorithm, and that is load-bearing: BlurView 3.x's
++  // `setupWith(target, algorithm, scaleFactor, applyNoise)` only forwards the
++  // algorithm on the SOFTWARE path. When `BlurTarget.canUseHardwareRendering`
++  // (i.e. API >= 31) it builds a RenderNodeBlurController and DISCARDS the
++  // algorithm entirely — so a custom algorithm silently does nothing on every
++  // modern device, which is exactly how the dock lost its dim and started
++  // reading as light grey glass instead of black.
++  //
++  // A View-level RenderEffect composes over whatever the controller drew, so it
++  // works on both paths. The BlurView's only child is the blur itself; the
++  // smoke tint and the finish are React-side SIBLINGS of this view, so nothing
++  // else is caught by the transform.
 +  private var saturation = 1f
 +  private var brightness = 1f
-+  private var blurAlgorithm: SaturatingRenderEffectBlur? = null
 +
 +  // SAMO: whether this pane keeps re-capturing its target every frame. A
 +  // BlurView's capture runs in an OnPreDrawListener, so a live pane costs a
@@ -67,12 +89,43 @@ index 71344c8df533c25facea5fe7f5ed91528d15c1ed..3bdbee8002d76b6a105fe4c27ec62b20
  
 +  fun setSaturation(value: Float) {
 +    saturation = value
-+    blurAlgorithm?.saturation = value
++    applyColorTransform()
 +  }
 +
 +  fun setBrightness(value: Float) {
 +    brightness = value
-+    blurAlgorithm?.brightness = value
++    applyColorTransform()
++  }
++
++  /**
++   * Folds [saturation] and [brightness] into ONE ColorMatrix and hangs it on the
++   * BlurView as a RenderEffect. Uniform RGB scaling commutes with the saturation
++   * mix, so the order of the two is irrelevant.
++   *
++   * A multiplicative dim inside the effect darkens the backdrop while PRESERVING
++   * its contrast and chroma ratios — unlike piling alpha onto the React-side
++   * smoke tint, which veils the very content it is supposed to show through.
++   * That is what lets the dock read as near-black smoked glass and still look
++   * alive when bright artwork moves underneath it.
++   *
++   * RenderEffect is API 31+. Below that the blur is the RenderScript software
++   * path and simply goes untinted, which is what the pre-upgrade build did too.
++   */
++  private fun applyColorTransform() {
++    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
++      return
++    }
++    if (saturation == 1f && brightness == 1f) {
++      blurView.setRenderEffect(null)
++      return
++    }
++    val matrix = ColorMatrix().apply { setSaturation(saturation) }
++    if (brightness != 1f) {
++      matrix.postConcat(ColorMatrix().apply { setScale(brightness, brightness, brightness, 1f) })
++    }
++    blurView.setRenderEffect(
++      RenderEffect.createColorFilterEffect(ColorMatrixColorFilter(matrix))
++    )
 +  }
 +
 +  fun setBlurAutoUpdate(enabled: Boolean) {
@@ -88,163 +141,33 @@ index 71344c8df533c25facea5fe7f5ed91528d15c1ed..3bdbee8002d76b6a105fe4c27ec62b20
    fun setBlurTargetId(blurTargetId: Int?) {
      if (blurTargetId == this.blurTargetId) {
        return
-@@ -159,10 +200,38 @@ class ExpoBlurView(context: Context, appContext: AppContext) : ExpoView(context,
+@@ -159,10 +246,25 @@ class ExpoBlurView(context: Context, appContext: AppContext) : ExpoView(context,
      val dimezisBlurTarget = blurTarget?.blurTargetView
        ?: throw BlurViewConfigurationException("The BlurView targeting blur target with id: $blurTargetId couldn't find the target")
  
 -    blurView.setupWith(dimezisBlurTarget)
-+    // SAMO: install the saturating algorithm so the tint/dim happens inside the
-+    // blur's own RenderEffect chain (see SaturatingRenderEffectBlur). Only
-+    // available on API 31+; below that fall back to the library default, which
-+    // simply means no chroma boost rather than no blur.
-+    val algorithm = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-+      SaturatingRenderEffectBlur().also {
-+        it.saturation = saturation
-+        it.brightness = brightness
-+        blurAlgorithm = it
-+      }
-+    } else {
-+      blurAlgorithm = null
-+      null
-+    }
-+
-+    // BlurView 3.x takes the scale factor and the noise flag as setupWith
-+    // arguments rather than off the algorithm, and returns a FACADE — the
-+    // chained setters live there, not on BlurView. These two literals are the
-+    // exact defaults the one-arg `setupWith(target)` upstream calls, so the
-+    // material is unchanged; only the algorithm differs.
-+    val facade = if (algorithm != null) {
-+      blurView.setupWith(dimezisBlurTarget, algorithm, DEFAULT_SCALE_FACTOR, DEFAULT_APPLY_NOISE)
-+    } else {
-+      blurView.setupWith(dimezisBlurTarget)
-+    }
-+    facade
++    // SAMO: `applyNoise` is FALSE. It is new in BlurView 3.x and defaults on;
++    // 2.0.6 — what this app's material was designed against — had no noise at
++    // all. Samo already lays its own pre-dithered film grain over the glass as
++    // part of the finish PNG, so the library's grain is both a second helping
++    // and a lightening one, which is part of why the dock started reading grey.
++    // setupWith returns a FACADE; the chained setters live there, not on
++    // BlurView. No algorithm is passed: on API 31+ BlurView discards it (see
++    // applyColorTransform), and below 31 this class's RenderEffect-based
++    // transform is unavailable anyway.
++    blurView.setupWith(dimezisBlurTarget, DEFAULT_SCALE_FACTOR, APPLY_NOISE)
        .setFrameClearDrawable(decorView.background)
        .setBlurRadius(blurRadius / blurReduction)
  
++    // The controller was just rebuilt, so re-hang the colour transform.
++    applyColorTransform()
++
 +    // Replay the parked/live state onto the freshly configured view.
 +    blurView.setBlurAutoUpdate(blurAutoUpdate)
 +
      blurConfiguration = BlurViewConfiguration.DIMEZIS
    }
  
-diff --git a/android/src/main/java/expo/modules/blur/SaturatingRenderEffectBlur.kt b/android/src/main/java/expo/modules/blur/SaturatingRenderEffectBlur.kt
-new file mode 100644
-index 0000000000000000000000000000000000000000..38aed697803fda2b08c6ec779592d88fbd5b7803
---- /dev/null
-+++ b/android/src/main/java/expo/modules/blur/SaturatingRenderEffectBlur.kt
-@@ -0,0 +1,111 @@
-+package expo.modules.blur
-+
-+import android.graphics.Bitmap
-+import android.graphics.Canvas
-+import android.graphics.ColorMatrix
-+import android.graphics.ColorMatrixColorFilter
-+import android.graphics.RenderEffect
-+import android.graphics.RenderNode
-+import android.graphics.Shader
-+import android.os.Build
-+import androidx.annotation.RequiresApi
-+import eightbitlab.com.blurview.BlurAlgorithm
-+
-+/**
-+ * Twin of the library's RenderEffectBlur that chains a saturation
-+ * ColorMatrix into the SAME RenderEffect as the blur, so the blurred
-+ * backdrop can be chroma-boosted inside the blur's own pipeline.
-+ *
-+ * Why this exists: compositing saturation at the React layer
-+ * (mixBlendMode overlays, filter-style wrappers) forces an offscreen
-+ * layer around the BlurView, which breaks its snapshot draw — the blur
-+ * renders at a fraction of the view with a hard edge, or not at all.
-+ * The only reliable place for a color transform is the RenderNode the
-+ * blur already renders through.
-+ */
-+@RequiresApi(Build.VERSION_CODES.S)
-+class SaturatingRenderEffectBlur : BlurAlgorithm {
-+  private val node = RenderNode("SaturatingBlurViewNode")
-+  private var height = 0
-+  private var width = 0
-+  private var lastBlurRadius = 1f
-+
-+  var saturation: Float = 1f
-+    set(value) {
-+      if (field != value) {
-+        field = value
-+        if (width > 0 && height > 0) {
-+          applyEffect(lastBlurRadius)
-+        }
-+      }
-+    }
-+
-+  // Uniform RGB scale (1 = unchanged) folded into the same ColorMatrix as the
-+  // saturation boost. A multiplicative dim inside the blur darkens the
-+  // backdrop while PRESERVING its contrast and chroma ratios — unlike piling
-+  // alpha onto the React-layer smoke tint, which veils the content it is
-+  // supposed to show through. This is what lets the dock read as near-black
-+  // smoked glass yet stay visibly alive when bright artwork moves beneath it.
-+  var brightness: Float = 1f
-+    set(value) {
-+      if (field != value) {
-+        field = value
-+        if (width > 0 && height > 0) {
-+          applyEffect(lastBlurRadius)
-+        }
-+      }
-+    }
-+
-+  override fun blur(bitmap: Bitmap, blurRadius: Float): Bitmap {
-+    lastBlurRadius = blurRadius
-+    if (bitmap.height != height || bitmap.width != width) {
-+      height = bitmap.height
-+      width = bitmap.width
-+      node.setPosition(0, 0, width, height)
-+    }
-+    val canvas = node.beginRecording()
-+    canvas.drawBitmap(bitmap, 0f, 0f, null)
-+    node.endRecording()
-+    applyEffect(blurRadius)
-+    // The bitmap itself stays unblurred; rendering happens via the RenderNode.
-+    return bitmap
-+  }
-+
-+  private fun applyEffect(blurRadius: Float) {
-+    val blur = RenderEffect.createBlurEffect(blurRadius, blurRadius, Shader.TileMode.MIRROR)
-+    val effect = if (saturation == 1f && brightness == 1f) {
-+      blur
-+    } else {
-+      // One matrix for both: uniform scaling commutes with the saturation
-+      // mix, so the order here is irrelevant.
-+      val matrix = ColorMatrix().apply { setSaturation(saturation) }
-+      if (brightness != 1f) {
-+        matrix.postConcat(ColorMatrix().apply { setScale(brightness, brightness, brightness, 1f) })
-+      }
-+      RenderEffect.createChainEffect(
-+        RenderEffect.createColorFilterEffect(ColorMatrixColorFilter(matrix)),
-+        blur
-+      )
-+    }
-+    node.setRenderEffect(effect)
-+  }
-+
-+  override fun destroy() {
-+    node.discardDisplayList()
-+  }
-+
-+  override fun canModifyBitmap(): Boolean = true
-+
-+  override fun getSupportedBitmapConfig(): Bitmap.Config = Bitmap.Config.ARGB_8888
-+
-+  override fun render(canvas: Canvas, bitmap: Bitmap) {
-+    if (canvas.isHardwareAccelerated) {
-+      canvas.drawRenderNode(node)
-+    } else {
-+      // The upstream class falls back to RenderScript here, but expo-blur
-+      // never supplies the Context that fallback needs. Drawing the
-+      // unblurred snapshot beats crashing on a software canvas.
-+      canvas.drawBitmap(bitmap, 0f, 0f, null)
-+    }
-+  }
-+}
 diff --git a/build/BlurView.js b/build/BlurView.js
 index 427247c40ebd497523feb22db4ee085de825d07f..23af34ad5a0a4481ccdb64cfb0210986f96c03e2 100644
 --- a/build/BlurView.js

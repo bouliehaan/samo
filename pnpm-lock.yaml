@@ -10,7 +10,7 @@ overrides:
 
 patchedDependencies:
   expo-blur@57.0.2:
-    hash: 52c76923ec90fc8a672b41c3caf686ac62129b7e74bdb4fe69e9a60130da6bfc
+    hash: 5a900b77685cbfcbc8241b0dfa257de1bd72f67ab87a792e954e921ee8cb2b80
     path: patches/expo-blur@57.0.2.patch
   react-native-image-colors@2.6.0:
     hash: a0b0e3a09749fa9524ce1b13755ecead321188fc955e2f82130808560df43d3a
@@ -350,7 +350,7 @@ importers:
         version: 57.0.8(@babel/core@7.29.0)(@expo/dom-webview@57.0.1)(react-dom@19.2.4(react@19.2.3))(react-native-worklets@0.10.0(@babel/core@7.29.0)(@react-native/metro-config@0.86.0(@babel/core@7.29.0))(react-native@0.86.0(@babel/core@7.29.0)(@react-native/metro-config@0.86.0(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3))(react@19.2.3))(react-native@0.86.0(@babel/core@7.29.0)(@react-native/metro-config@0.86.0(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3))(react@19.2.3)(typescript@6.0.3)
       expo-blur:
         specifier: ~57.0.2
-        version: 57.0.2(patch_hash=52c76923ec90fc8a672b41c3caf686ac62129b7e74bdb4fe69e9a60130da6bfc)(expo@57.0.8)(react-native@0.86.0(@babel/core@7.29.0)(@react-native/metro-config@0.86.0(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3))(react@19.2.3)
+        version: 57.0.2(patch_hash=5a900b77685cbfcbc8241b0dfa257de1bd72f67ab87a792e954e921ee8cb2b80)(expo@57.0.8)(react-native@0.86.0(@babel/core@7.29.0)(@react-native/metro-config@0.86.0(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3))(react@19.2.3)
       expo-file-system:
         specifier: ~57.0.1
         version: 57.0.1(expo@57.0.8)(react-native@0.86.0(@babel/core@7.29.0)(@react-native/metro-config@0.86.0(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3))
@@ -9976,9 +9976,7 @@ snapshots:
       metro-runtime: 0.84.4
     transitivePeerDependencies:
       - '@babel/core'
-      - bufferutil
       - supports-color
-      - utf-8-validate
 
   '@react-native/normalize-colors@0.86.0': {}
 
@@ -12084,7 +12082,7 @@ snapshots:
       - supports-color
       - typescript
 
-  expo-blur@57.0.2(patch_hash=52c76923ec90fc8a672b41c3caf686ac62129b7e74bdb4fe69e9a60130da6bfc)(expo@57.0.8)(react-native@0.86.0(@babel/core@7.29.0)(@react-native/metro-config@0.86.0(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3))(react@19.2.3):
+  expo-blur@57.0.2(patch_hash=5a900b77685cbfcbc8241b0dfa257de1bd72f67ab87a792e954e921ee8cb2b80)(expo@57.0.8)(react-native@0.86.0(@babel/core@7.29.0)(@react-native/metro-config@0.86.0(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3))(react@19.2.3):
     dependencies:
       expo: 57.0.8(@babel/core@7.29.0)(@expo/dom-webview@57.0.1)(react-dom@19.2.4(react@19.2.3))(react-native-worklets@0.10.0(@babel/core@7.29.0)(@react-native/metro-config@0.86.0(@babel/core@7.29.0))(react-native@0.86.0(@babel/core@7.29.0)(@react-native/metro-config@0.86.0(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3))(react@19.2.3))(react-native@0.86.0(@babel/core@7.29.0)(@react-native/metro-config@0.86.0(@babel/core@7.29.0))(@types/react@19.2.14)(react@19.2.3))(react@19.2.3)(typescript@6.0.3)
       react: 19.2.3
