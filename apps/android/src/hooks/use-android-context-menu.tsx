@@ -1,4 +1,8 @@
-import { MobileMediaDetailType, type MobileContentSource } from '@samo/core/mobile';
+import {
+    MobileHomeItemType,
+    MobileMediaDetailType,
+    type MobileContentSource,
+} from '@samo/core/mobile';
 import { ServerType } from '@samo/core/server';
 import { useMemo } from 'react';
 
@@ -227,24 +231,36 @@ export function useAndroidContextMenu(): AndroidContextMenuSurface {
                 contextMenuTarget.detail?.type === MobileMediaDetailType.PODCAST
                     ? contextMenuTarget.detail
                     : null;
-            if (episodeDetail) {
+            // An episode is an episode wherever it is long-pressed. This used to
+            // require `episodeDetail` — i.e. the menu had to have been opened
+            // INSIDE the show's own detail page, the only place the parent show
+            // is in hand — so the same episode on Home, in search or in the
+            // queue offered no show notes at all. The track itself carries
+            // everything the sheet renders, so fall back to it and let the show
+            // supply only what it can add.
+            const isEpisodeTrack = episodeDetail != null || track.playback?.source === 'podcast';
+            if (isEpisodeTrack) {
                 menuActions.push({
                     icon: <BookInfoGlyph color={colors.text} />,
                     id: 'episode-info',
                     label: 'Episode Information',
                     onPress: () => {
-                        const showItem = recentContentItemFromMediaDetail(episodeDetail);
-                        if (!showItem) {
-                            return;
-                        }
+                        const showItem = episodeDetail
+                            ? recentContentItemFromMediaDetail(episodeDetail)
+                            : null;
                         handleOpenEpisodeInfo(
                             {
-                                ...showItem,
+                                ...(showItem ?? {
+                                    id: track.id,
+                                    source,
+                                    title: track.title,
+                                    type: MobileHomeItemType.PODCAST_EPISODE,
+                                }),
                                 // Prefer the EPISODE's own art; many feeds ship
                                 // per-episode covers and falling back to the
                                 // show's would quietly show the wrong picture.
-                                artworkImageId: track.artworkImageId ?? showItem.artworkImageId,
-                                artworkUrl: track.artworkUrl ?? showItem.artworkUrl,
+                                artworkImageId: track.artworkImageId ?? showItem?.artworkImageId,
+                                artworkUrl: track.artworkUrl ?? showItem?.artworkUrl,
                             },
                             {
                                 description: track.description,

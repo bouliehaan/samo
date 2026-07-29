@@ -48,6 +48,12 @@ const SKELETON_TRACK_PLACEHOLDERS: MobileMediaTrack[] = Array.from(
 const ReanimatedFlashList = Reanimated.createAnimatedComponent(FlashList) as typeof FlashList;
 const FLASH_LIST_MAINTAIN_POSITION_DISABLED = { disabled: true };
 
+/** Rows committed on the first paint of a detail page; the rest follow once the
+ *  JS thread is idle. Comfortably more than one screenful. */
+const FIRST_PAINT_TRACK_WINDOW = 60;
+/** Backstop so a device that never idles still gets the complete list. */
+const FULL_LIST_REVEAL_TIMEOUT_MS = 600;
+
 const renderSkeletonRow = () => <SkeletonTrackRow />;
 
 /**
@@ -209,9 +215,29 @@ export const MediaDetailLoaded = memo(function MediaDetailLoaded({
         playlistSort,
         playlistSortAsc,
     ]);
+    // FIRST PAINT DOES NOT WAIT FOR THE WHOLE LIST. A 1000+ track playlist
+    // committed every row in one go, which showed up as a multi-second
+    // "JS thread blocked ... render/GC" stall with nothing but the shell on
+    // screen. The window covers well over a screenful, so the page is complete
+    // as far as the eye is concerned, and the rest is appended once the thread
+    // is free — with a timeout so a busy device still gets the full list.
+    const [isListFullyRevealed, setIsListFullyRevealed] = useState(false);
+    useEffect(() => {
+        setIsListFullyRevealed(false);
+        const handle = requestIdleCallback(() => setIsListFullyRevealed(true), {
+            timeout: FULL_LIST_REVEAL_TIMEOUT_MS,
+        });
+        return () => cancelIdleCallback(handle);
+    }, [detail.id]);
+
     const displayTracks = useMemo(() => {
-        return isTransitioning ? fullDisplayTracks.slice(0, 20) : fullDisplayTracks;
-    }, [fullDisplayTracks, isTransitioning]);
+        if (isTransitioning) {
+            return fullDisplayTracks.slice(0, 20);
+        }
+        return isListFullyRevealed
+            ? fullDisplayTracks
+            : fullDisplayTracks.slice(0, FIRST_PAINT_TRACK_WINDOW);
+    }, [fullDisplayTracks, isListFullyRevealed, isTransitioning]);
 
     const playableDisplayTracks = useMemo(
         () => fullDisplayTracks.filter((track) => track.playback),
