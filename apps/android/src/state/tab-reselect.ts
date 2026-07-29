@@ -35,22 +35,69 @@ import { useEffect, useRef } from 'react';
  */
 type Listener = (tabId: SamoMobileTabId) => void;
 
-const listeners = new Set<Listener>();
-const counters = new Map<SamoMobileTabId, number>();
+/** One independent signal: its own subscribers and its own per-tab counter. */
+type Channel = {
+    counters: Map<SamoMobileTabId, number>;
+    listeners: Set<Listener>;
+};
 
-const readCounter = (tabId: SamoMobileTabId): number => counters.get(tabId) ?? 0;
+const createChannel = (): Channel => ({ counters: new Map(), listeners: new Set() });
 
-export const subscribeTabReselected = (listener: Listener): (() => void) => {
-    listeners.add(listener);
+/** "Go to this tab's rest state" — scroll to top, park the search drawer. */
+const reselectChannel = createChannel();
+/**
+ * "Refresh this tab." SEPARATE from reselect on purpose: pressing Home means
+ * the smallest thing it can — arrive, then go to the top, and only re-fetch
+ * once you are already at the top and press again. One channel could not
+ * express that, because scroll-to-top and refresh have to fire on different
+ * presses.
+ */
+const refreshChannel = createChannel();
+
+const readCounterOn = (channel: Channel, tabId: SamoMobileTabId): number =>
+    channel.counters.get(tabId) ?? 0;
+
+const emitOn = (channel: Channel, tabId: SamoMobileTabId): void => {
+    channel.counters.set(tabId, readCounterOn(channel, tabId) + 1);
+    channel.listeners.forEach((listener) => listener(tabId));
+};
+
+const subscribeOn = (channel: Channel, listener: Listener): (() => void) => {
+    channel.listeners.add(listener);
     return () => {
-        listeners.delete(listener);
+        channel.listeners.delete(listener);
     };
 };
 
-export const emitTabReselected = (tabId: SamoMobileTabId): void => {
-    counters.set(tabId, readCounter(tabId) + 1);
-    listeners.forEach((listener) => listener(tabId));
+const useChannel = (channel: Channel, tabId: SamoMobileTabId, handler: () => void): void => {
+    const latest = useRef(handler);
+    latest.current = handler;
+    const seen = useRef(readCounterOn(channel, tabId));
+
+    useEffect(() => {
+        if (readCounterOn(channel, tabId) !== seen.current) {
+            seen.current = readCounterOn(channel, tabId);
+            latest.current();
+        }
+        return subscribeOn(channel, (signalledTabId) => {
+            if (signalledTabId !== tabId) {
+                return;
+            }
+            seen.current = readCounterOn(channel, tabId);
+            latest.current();
+        });
+    }, [channel, tabId]);
 };
+
+export const subscribeTabReselected = (listener: Listener): (() => void) =>
+    subscribeOn(reselectChannel, listener);
+
+export const emitTabReselected = (tabId: SamoMobileTabId): void =>
+    emitOn(reselectChannel, tabId);
+
+/** "This tab wants fresh data." Only Home currently raises it. */
+export const emitTabRefreshRequested = (tabId: SamoMobileTabId): void =>
+    emitOn(refreshChannel, tabId);
 
 /**
  * Run `handler` whenever `tabId` is reselected — including a press that landed
@@ -60,23 +107,10 @@ export const emitTabReselected = (tabId: SamoMobileTabId): void => {
  * re-subscribing on every render.
  */
 export const useTabReselect = (tabId: SamoMobileTabId, handler: () => void): void => {
-    const latest = useRef(handler);
-    latest.current = handler;
-    // Seeded with the CURRENT count, so mounting a page for the first time is
-    // never mistaken for a press it missed.
-    const seen = useRef(readCounter(tabId));
+    useChannel(reselectChannel, tabId, handler);
+};
 
-    useEffect(() => {
-        if (readCounter(tabId) !== seen.current) {
-            seen.current = readCounter(tabId);
-            latest.current();
-        }
-        return subscribeTabReselected((reselectedTabId) => {
-            if (reselectedTabId !== tabId) {
-                return;
-            }
-            seen.current = readCounter(tabId);
-            latest.current();
-        });
-    }, [tabId]);
+/** Twin of {@link useTabReselect} on the refresh channel. */
+export const useTabRefresh = (tabId: SamoMobileTabId, handler: () => void): void => {
+    useChannel(refreshChannel, tabId, handler);
 };

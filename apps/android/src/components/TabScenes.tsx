@@ -23,7 +23,7 @@ import {
     setActiveUtilityScreen,
     useAppNavigationSelector,
 } from '../state/app-navigation';
-import { useTabReselect } from '../state/tab-reselect';
+import { useTabRefresh } from '../state/tab-reselect';
 import { useAuthSessionSelector } from '../state/auth-session';
 import { durations } from '../theme/motion';
 import { styles } from '../theme/styles';
@@ -43,11 +43,9 @@ const HomeTabScene = memo(function HomeTabScene() {
     const serverConnection = useAuthSessionSelector((state) => state.serverConnection);
     const [isRefreshingHome, setIsRefreshingHome] = useState(false);
 
-    // Now that EVERY Home press refreshes, not just a re-tap on a settled page,
-    // this can be asked for far more often than before — bouncing between tabs
-    // would otherwise stack a catalog sync and a live re-fetch per press. A ref
-    // rather than `isRefreshingHome`: that is render state, so two presses in
-    // the same frame would both read it as false.
+    // A ref rather than `isRefreshingHome`: that is render state, so two presses
+    // in the same frame would both read it as false and stack a catalog sync and
+    // a live re-fetch.
     const refreshInFlight = useRef(false);
 
     const handleRefreshHome = useCallback(async (): Promise<void> => {
@@ -79,14 +77,14 @@ const HomeTabScene = memo(function HomeTabScene() {
 
     // Pressing the Home tab is the ONLY way to refresh: the pull-down gesture
     // belongs to search (see useSearchPull), so Home's RefreshControl is
-    // display-only. The press glides the page to the top and fires the refresh;
-    // the spinner still shows via the isRefreshingHome → RefreshControl wiring.
+    // display-only. This listens on the REFRESH channel, which `pressTab` raises
+    // only when you press Home while already at the top of Home — arriving, and
+    // scrolling to the top, are the other two tiers and neither spins.
     //
     // Via the catch-up hook rather than a bare subscription: this scene is
     // frozen whenever Home is in the background, which tears its effects down —
-    // so the press that brings you BACK to Home, the most important one, was
-    // landing while nothing was listening. See state/tab-reselect.
-    useTabReselect('home', () => {
+    // so a signal landing then would otherwise be lost. See state/tab-reselect.
+    useTabRefresh('home', () => {
         void handleRefreshHome();
     });
 

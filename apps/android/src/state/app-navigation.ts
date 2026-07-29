@@ -3,7 +3,12 @@ import { startTransition } from 'react';
 import { useStoreSelector } from './use-store-selector';
 import { SAMO_MOBILE_TABS, type SamoMobileTabId } from '@samo/core/navigation';
 
-import { emitTabReselected } from './tab-reselect';
+import { getPullScrollY } from '../components/search-pull/search-pull-registry';
+import { emitTabRefreshRequested, emitTabReselected } from './tab-reselect';
+
+/** Scroll offset (px) still counted as "at the top" when deciding whether a
+ *  Home press means refresh. A hair of slack for rubber-banding and rounding. */
+const HOME_REFRESH_SCROLL_EPSILON = 5;
 
 import { type AndroidUtilityScreen } from '../types/app-navigation';
 import { type ViewAllRoute } from '../types/view-all';
@@ -466,6 +471,17 @@ const pressTab = (tabId: SamoMobileTabId): void => {
     // should leave you where you were in it.
     if (isBareTabReselect || tabId === 'home') {
         emitTabReselected(tabId);
+    }
+    // A press means the SMALLEST thing it can. Off Home it means "go home"; on
+    // Home but scrolled it means "take me to the top" (the reselect above);
+    // only pressing again once you are ALREADY at the top means "refresh". So
+    // the spinner never appears just for navigating, and asking for fresh data
+    // stays a deliberate second press.
+    if (tabId === 'home' && isBareTabReselect) {
+        const homeScrollY = getPullScrollY('home')?.value ?? 0;
+        if (homeScrollY <= HOME_REFRESH_SCROLL_EPSILON) {
+            emitTabRefreshRequested(tabId);
+        }
     }
 };
 

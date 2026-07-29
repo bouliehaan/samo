@@ -180,6 +180,43 @@ export const loadCatalogMediaDetail = async (
     }
 
     try {
+        // Playlists and podcasts read their tracks the way albums do: one
+        // `catalog_track` row per entry, hydrated individually. They used to
+        // have no mirror path at all and fell through to the network, which is
+        // why a big playlist took a minute to open while an album was instant.
+        //
+        // An empty result deliberately falls through rather than rendering an
+        // empty page: it means the sync has not written rows for this container
+        // yet, and the network is the correct answer until it has.
+        if (
+            detailType === MobileMediaDetailType.PLAYLIST ||
+            detailType === MobileMediaDetailType.PODCAST
+        ) {
+            const auth = findServerAuthenticationForSource(serverConnection, source);
+            if (!auth) {
+                return null;
+            }
+            const containerType =
+                detailType === MobileMediaDetailType.PLAYLIST ? 'playlist' : 'podcast';
+            const tracks = hydrateCatalogTracks(
+                await getTracks(source.id, containerType, item.id),
+                auth,
+            );
+            if (tracks.length === 0) {
+                return null;
+            }
+            return {
+                artworkImageId: item.artworkImageId,
+                artworkUrl: item.artworkUrl,
+                id: item.id,
+                source,
+                subtitle: item.subtitle,
+                title: item.title,
+                tracks,
+                type: detailType,
+            };
+        }
+
         if (detailType === MobileMediaDetailType.ALBUM) {
             const auth = findServerAuthenticationForSource(serverConnection, source);
             if (!auth) {
