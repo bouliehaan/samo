@@ -34,6 +34,13 @@ import { type AndroidSearchState } from '../services/search-content';
  * open action tell "navigate to a new entity" (push) from "update the current
  * entity" (replace the top, e.g. loading → loaded) and de-dupes re-opens.
  */
+/**
+ * How many detail frames the back-stack keeps. See the note at `open-media-detail`
+ * — each frame is a fully loaded detail, so this is a memory bound, not a
+ * navigation preference.
+ */
+const MEDIA_DETAIL_STACK_LIMIT = 10;
+
 export type MediaDetailFrame = {
     key: string;
     state: AndroidMediaDetailState;
@@ -225,15 +232,29 @@ export const appNavigationReducer = (
                 state.mediaDetailState.status === 'loaded' &&
                 state.mediaDetailKey !== null &&
                 state.mediaDetailKey !== action.key;
+            const pushed = shouldPush
+                ? [
+                      ...state.mediaDetailStack,
+                      { key: state.mediaDetailKey as string, state: state.mediaDetailState },
+                  ]
+                : state.mediaDetailStack;
             return {
                 ...state,
                 mediaDetailKey: action.key,
-                mediaDetailStack: shouldPush
-                    ? [
-                          ...state.mediaDetailStack,
-                          { key: state.mediaDetailKey as string, state: state.mediaDetailState },
-                      ]
-                    : state.mediaDetailStack,
+                // BOUNDED, because a frame is not a breadcrumb — it is a whole
+                // loaded detail, every track object included. Album → artist →
+                // album → artist drills without limit, and only CLOSING the
+                // detail clears the stack; pressing a tab leaves it standing. So
+                // an afternoon of browsing retained every page it passed through.
+                //
+                // Dropping from the BOTTOM keeps back working the way anyone
+                // actually uses it (the last few pages), and the oldest frame is
+                // the one whose "back" nobody is going to press. Ten deep is far
+                // past any real journey and costs a bounded amount of heap.
+                mediaDetailStack:
+                    pushed.length > MEDIA_DETAIL_STACK_LIMIT
+                        ? pushed.slice(pushed.length - MEDIA_DETAIL_STACK_LIMIT)
+                        : pushed,
                 mediaDetailState: action.mediaDetailState,
             };
         }

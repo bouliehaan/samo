@@ -64,3 +64,41 @@ describe('pressTab', () => {
         expect(state.activeTab).toBe('podcasts');
     });
 });
+
+/**
+ * The back-stack is a MEMORY bound, not a navigation preference. Each frame
+ * holds a whole loaded detail — every track object with it — and only closing
+ * the detail clears the stack, so drilling album → artist → album with the tab
+ * bar rather than the back button retained every page passed through.
+ */
+describe('media detail back-stack', () => {
+    beforeEach(resetNavigation);
+
+    const loaded = (id: string) =>
+        ({ detail: { id, title: id, tracks: [] }, status: 'loaded' }) as never;
+
+    it('keeps the most recent frames and drops the oldest past the cap', () => {
+        // 24 distinct entities, each opened as a LOADED detail so every open
+        // pushes the previous one.
+        for (let index = 0; index < 24; index += 1) {
+            openMediaDetail(`key-${index}`, loaded(`key-${index}`));
+        }
+
+        const state = getAppNavigation();
+        expect(state.mediaDetailStack.length).toBe(10);
+        // The newest frame on the stack is the entity opened immediately before
+        // the current one, and the oldest survivor is 10 back from it.
+        expect(state.mediaDetailKey).toBe('key-23');
+        expect(state.mediaDetailStack[state.mediaDetailStack.length - 1]?.key).toBe('key-22');
+        expect(state.mediaDetailStack[0]?.key).toBe('key-13');
+    });
+
+    it('leaves a shallow stack untouched', () => {
+        openMediaDetail('a', loaded('a'));
+        openMediaDetail('b', loaded('b'));
+        openMediaDetail('c', loaded('c'));
+
+        const state = getAppNavigation();
+        expect(state.mediaDetailStack.map((frame) => frame.key)).toEqual(['a', 'b']);
+    });
+});

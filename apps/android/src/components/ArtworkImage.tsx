@@ -58,10 +58,24 @@ export const ArtworkImage = ({
     fallbackStyle?: StyleProp<ViewStyle>;
     /**
      * Paint the cached file on the very first frame instead of one frame of
-     * blank. FOR SINGLE, LARGE, FRESHLY-MOUNTED IMAGES ONLY — never for a tile
-     * in a list or grid. See the `placeholder` note further down for what it
-     * costs; the short version is that it doubles the decode and the second
-     * decode is at FULL SOURCE RESOLUTION.
+     * blank.
+     *
+     * THE ONLY LEGITIMATE USE IS A LARGE IMAGE THAT MOUNTS ALONE, ONCE, AND IS
+     * IMMEDIATELY REPLACED — which in this app means exactly the two media-detail
+     * heroes, where the skeleton swaps to real content and a blank frame is
+     * visible. It is currently set nowhere else, ON PURPOSE.
+     *
+     * The cost (detailed at `placeholder` below) is a second, parallel decode of
+     * the same file at FULL SOURCE RESOLUTION in 32-bit. It scales with the
+     * SOURCE, not with the view, so a 58dp mini-player thumb pays exactly as much
+     * as a full-screen hero — which is why it was wrong on the player surfaces
+     * and got removed from them. And anything long-lived keeps that oversized
+     * bitmap alive, and hands it to Glide's bitmap pool on release, where one
+     * such bitmap can evict the entire pool.
+     *
+     * Before adding it anywhere: is the image large, freshly mounted, short-lived
+     * on screen in placeholder form, and does a blank first frame actually read
+     * as a bug? If any answer is no, leave it off.
      */
     instantPlaceholder?: boolean;
     letter: string;

@@ -761,7 +761,6 @@ export const FullScreenPlayer = memo(({
                             artworkImageId={artworkImageId}
                             contentSource={contentSource}
                             fallbackStyle={styles.fullPlayerArtworkFallback}
-                            instantPlaceholder
                             letter={displayTitle.slice(0, 1)}
                             serverConnection={serverConnection}
                             style={styles.fullPlayerArtwork}
