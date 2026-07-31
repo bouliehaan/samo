@@ -157,6 +157,7 @@ export const MiniPlayer = memo(({
                                 artworkImageId={artworkImageId}
                                 contentSource={contentSource}
                                 fallbackStyle={styles.miniPlayerArtworkFallback}
+                                instantPlaceholder
                                 letter={title.slice(0, 1)}
                                 serverConnection={serverConnection}
                                 style={styles.miniPlayerArtwork}

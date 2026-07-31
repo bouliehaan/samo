@@ -27,8 +27,9 @@ export const ArtworkImage = ({
     artworkImageId,
     blurRadius,
     contentSource,
-    decodeFormat,
+    decodeFormat = 'rgb',
     fallbackStyle,
+    instantPlaceholder = false,
     letter,
     onLoad,
     serverConnection,
@@ -39,12 +40,15 @@ export const ArtworkImage = ({
 }: {
     artworkImageId?: string;
     /**
-     * Android decode color space. `'rgb'` decodes to 16-bit RGB_565 (no alpha),
-     * halving the decoded bitmap's memory + GPU-upload bytes versus the default
-     * 32-bit `'argb'`. Opaque cover art shows no visible difference at tile size,
-     * so dense recycling grids pass `'rgb'` to double how many covers stay in the
-     * memory cache before eviction (fewer re-decodes / less blank-on-scroll-back),
-     * while large heroes keep `'argb'` where gradient banding could surface.
+     * Android decode color space. Defaults to `'rgb'` (16-bit RGB_565, no alpha),
+     * halving the decoded bitmap's memory + GPU-upload bytes versus 32-bit
+     * `'argb'`. Opaque cover art shows no visible difference at tile size, so
+     * this halves memory for every tile. Large heroes or blurred backdrop washes
+     * should pass `'argb'` where gradient banding or alpha compositing matters.
+     *
+     * When a `blurRadius` is set and no explicit format is given, the component
+     * automatically upgrades to `'argb'` — blurred layers composite with the
+     * background and banding is visible at low-frequency gradients.
      */
     decodeFormat?: 'argb' | 'rgb';
     /** Blur the decoded cover (for artwork used as a backdrop wash, not as a
@@ -52,6 +56,14 @@ export const ArtworkImage = ({
     blurRadius?: number;
     contentSource?: Pick<MobileContentSource, 'id' | 'type' | 'url'>;
     fallbackStyle?: StyleProp<ViewStyle>;
+    /**
+     * Paint the cached file on the very first frame instead of one frame of
+     * blank. FOR SINGLE, LARGE, FRESHLY-MOUNTED IMAGES ONLY — never for a tile
+     * in a list or grid. See the `placeholder` note further down for what it
+     * costs; the short version is that it doubles the decode and the second
+     * decode is at FULL SOURCE RESOLUTION.
+     */
+    instantPlaceholder?: boolean;
     letter: string;
     onLoad?: () => void;
     serverConnection?: ServerAuthenticationResult | null;
@@ -213,7 +225,7 @@ export const ArtworkImage = ({
             blurRadius={blurRadius}
             cachePolicy={useLocal ? 'memory' : 'memory-disk'}
             contentFit="cover"
-            decodeFormat={decodeFormat}
+            decodeFormat={blurRadius && decodeFormat === 'rgb' ? 'argb' : decodeFormat}
             onError={() => {
                 // A managed-cache file that went missing/corrupt falls back to
                 // the remote source.
@@ -248,9 +260,35 @@ export const ArtworkImage = ({
             // the detail hero is a brand-new view, so it pays the mount cost. With
             // the same cached file handed in as the placeholder, the new view shows
             // the cover immediately instead of blank, then resolves the identical
-            // source underneath (no visible change). Only set when we actually have
-            // a local file, so an uncached tile still falls through to its letter.
-            placeholder={pinnedLocalUri ? { uri: pinnedLocalUri } : undefined}
+            // source underneath (no visible change).
+            //
+            // OPT-IN, AND IT MUST STAY OPT-IN. THIS IS THE MOST EXPENSIVE PROP ON
+            // THE COMPONENT.
+            //
+            // `placeholder` is not a cheap poster frame. expo-image compiles it
+            // into a Glide `thumbnail()` request — a SECOND, parallel load of the
+            // same file (ExpoImageViewWrapper.rerenderIfNeeded) — and that request
+            // is built with `PlaceholderDownsampleStrategy`, whose
+            // `getScaleFactor()` returns a hard `1f`. It never downsamples. Nor
+            // does it inherit the `.format()` below, because Glide applies parent
+            // options after an explicitly-supplied thumbnail builder, so the
+            // placeholder decodes as 32-bit ARGB_8888.
+            //
+            // So the tile that asks for a tidy 500x500 RGB_565 cover (0.5MB) also
+            // decodes the SAME file at whatever the server stored — 1200px, 3000px
+            // — in 32-bit. A 1500px cover is 9MB, per tile, in parallel with the
+            // real one. It was set unconditionally here, so every tile on every
+            // grid, shelf, browse page and track list in the app paid it: decode
+            // threads saturated, the bitmap pool thrashed, and dense pages scrolled
+            // at ~15fps. The blank frame it fixes is a MOUNT artifact, and only a
+            // single large image that mounts on its own is ever big enough or
+            // still enough for anyone to see it.
+            //
+            // Also gated on having a local file, so an uncached tile still falls
+            // through to its letter.
+            placeholder={
+                instantPlaceholder && pinnedLocalUri ? { uri: pinnedLocalUri } : undefined
+            }
             placeholderContentFit="cover"
             // A crossfade needs the SAME native view to persist across source
             // changes. recyclingKey forces a fresh view (list tiles use it so a

@@ -47,7 +47,6 @@ const HomeFilterGridTile = memo(
         return (
             <PressableScale
                 {...presses.tile}
-                key={getContentItemKey(item)}
                 // Long-press parity with HomeMediaTile — this wiring was verified
                 // on-device (episode menu from the podcast pill grid) and then lost
                 // in the June-20 tree churn; keep it with the tile.
@@ -59,7 +58,6 @@ const HomeFilterGridTile = memo(
                 <ArtworkImage
                     artworkImageId={item.artworkImageId}
                     contentSource={item.source}
-                    decodeFormat="rgb"
                     fallbackStyle={[
                         styles.homeFilterGridArtworkFallback,
                         isPodcast && styles.homeFilterGridArtworkPodcast,
@@ -152,11 +150,32 @@ export const HomeFilterGrid = memo(
         const renderRow = useCallback(
             ({ item: row }: { item: HomeGridRow }) => (
                 <View style={styles.homeFilterGridRow}>
-                    {row.items.map((item) => (
+                    {row.items.map((item, column) => (
                         <HomeFilterGridTile
                             isPodcast={isPodcast}
                             item={item}
-                            key={getContentItemKey(item)}
+                            // COLUMN POSITION, NOT CONTENT — and this is the
+                            // difference between recycling a cell and rebuilding
+                            // it.
+                            //
+                            // FlashList v2 keeps the ViewHolder mounted and re-runs
+                            // `renderItem` inside it (ViewHolder.children is a
+                            // useMemo on `item`), so what React does next is
+                            // decided entirely by the keys in this array. Keyed by
+                            // content, a recycled row hands React two keys it has
+                            // never seen: it unmounts both tiles and mounts two
+                            // fresh ones. That tears down and rebuilds a
+                            // GestureDetector with three native handlers, the
+                            // Reanimated press styles, and — the expensive part —
+                            // the ExpoImage view, which drops its decoded bitmap
+                            // and restarts the Glide load from scratch. Every row,
+                            // every time one scrolls past.
+                            //
+                            // Keyed by column, the same two tile instances survive
+                            // and simply receive a new `item` prop, which is the
+                            // entire point of a recycling list. Rows are a fixed
+                            // two-up grid, so position is a stable identity.
+                            key={column}
                             onPrefetchItem={onPrefetchItem}
                             onSelectItem={onSelectItem}
                             serverConnection={serverConnection}
@@ -178,7 +197,18 @@ export const HomeFilterGrid = memo(
                 ListHeaderComponent={ListHeaderComponent}
                 contentContainerStyle={[styles.homeListContent, { paddingBottom: bottomInset }]}
                 data={rows}
-                drawDistance={HOME_PRIMARY_TILE * 6}
+                // READ THIS AS A BUFFER OF `drawDistance * 2`, NOT AS ONE.
+                // FlashList doubles the number and then splits it 70/30 in favour
+                // of the scroll direction (EngagedIndicesTracker), so this is
+                // ~490dp of rows pre-rendered ahead and ~210dp behind — a bit over
+                // two rows ahead, which is what a fling needs.
+                //
+                // It was `HOME_PRIMARY_TILE * 6`, which reads like six tiles but is
+                // 2088dp of buffer against an 855dp viewport: nearly 12 rows of
+                // tiles mounted at once, every one of them decoding cover art, to
+                // cover 3.6 rows of screen. Buffer is not free headroom — it is a
+                // straight multiplier on every per-tile cost in this list.
+                drawDistance={HOME_PRIMARY_TILE * 2}
                 keyExtractor={(row) => row.key}
                 maintainVisibleContentPosition={FLASH_LIST_MAINTAIN_POSITION_DISABLED}
                 ref={scrollRef}

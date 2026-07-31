@@ -71,6 +71,10 @@ export const DetailHeroArtwork = ({
             artworkImageId={artworkImageId}
             contentSource={contentSource}
             fallbackStyle={round ? styles.detailArtworkFallback : styles.albumHeroArtworkFallback}
+            // The hero this prop exists for: one big image, mounted fresh behind
+            // the skeleton it replaces, where a single blank frame is the visible
+            // "artwork flashes in after the skeleton" bug.
+            instantPlaceholder
             letter={letter}
             serverConnection={serverConnection}
             style={style}

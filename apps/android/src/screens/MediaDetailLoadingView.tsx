@@ -150,6 +150,7 @@ export const MediaDetailLoadingView = ({
                                     artworkImageId={artworkImageId}
                                     contentSource={contentSource}
                                     fallbackStyle={styles.detailArtworkFallback}
+                                    instantPlaceholder
                                     letter={title.slice(0, 1)}
                                     style={[styles.detailArtwork, styles.detailArtworkRound]}
                                     serverConnection={serverConnection}
@@ -166,6 +167,7 @@ export const MediaDetailLoadingView = ({
                                         artworkImageId={artworkImageId}
                                         contentSource={contentSource}
                                         fallbackStyle={styles.albumHeroArtworkFallback}
+                                        instantPlaceholder
                                         letter={title.slice(0, 1)}
                                         serverConnection={serverConnection}
                                         style={styles.albumHeroArtwork}

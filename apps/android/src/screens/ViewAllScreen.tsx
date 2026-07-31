@@ -48,7 +48,6 @@ const ViewAllTile = memo(({ item, onOpenContextMenu, onSelectItem }: ViewAllTile
             <ArtworkImage
                 artworkImageId={item.artworkImageId}
                 contentSource={item.source}
-                decodeFormat="rgb"
                 fallbackStyle={[
                     styles.viewAllTileArtworkFallback,
                     isArtist && styles.libraryArtworkRound,
@@ -198,7 +197,11 @@ export const ViewAllScreen = memo(({
                             { paddingBottom: bottomInset },
                         ]}
                         data={rows}
-                        drawDistance={VIEW_ALL_ROW_HEIGHT * 8}
+                        // FlashList buffers `drawDistance * 2`, split 70/30 toward
+                        // the scroll direction, so this is ~2.8 rows ahead and ~1.2
+                        // behind. `* 8` meant 3376dp of buffer against an 855dp
+                        // viewport — twenty rows of covers mounted to show four.
+                        drawDistance={VIEW_ALL_ROW_HEIGHT * 2}
                         keyExtractor={keyExtractor}
                         maintainVisibleContentPosition={FLASH_LIST_MAINTAIN_POSITION_DISABLED}
                         ref={listRef}

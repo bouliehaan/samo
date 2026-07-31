@@ -48,7 +48,6 @@ const BrowseTile = memo(({ item, onOpenContextMenu, onSelectItem }: BrowseTilePr
             <ArtworkImage
                 artworkImageId={item.artworkImageId}
                 contentSource={item.source}
-                decodeFormat="rgb"
                 fallbackStyle={[
                     styles.viewAllTileArtworkFallback,
                     isArtist && styles.libraryArtworkRound,
@@ -163,7 +162,10 @@ export const CollectionBrowseGrid = memo(({
                         { paddingBottom: bottomInset },
                     ]}
                     data={rows}
-                    drawDistance={VIEW_ALL_ROW_HEIGHT * 8}
+                    // FlashList buffers `drawDistance * 2`, split 70/30 toward the
+                    // scroll direction — ~2.8 rows ahead, ~1.2 behind. See the note
+                    // in ViewAllScreen for what `* 8` was costing.
+                    drawDistance={VIEW_ALL_ROW_HEIGHT * 2}
                     keyExtractor={keyExtractor}
                     maintainVisibleContentPosition={FLASH_LIST_MAINTAIN_POSITION_DISABLED}
                     ref={listRef}

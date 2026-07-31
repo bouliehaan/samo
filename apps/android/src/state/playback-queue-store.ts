@@ -1,5 +1,6 @@
-import { useSyncExternalStore } from 'react';
 import { type MobilePlayableAudio } from '@samo/core/mobile';
+
+import { useStoreSelector } from './use-store-selector';
 
 export type AndroidPlaybackQueue = {
     index: number;
@@ -43,6 +44,8 @@ export const subscribePlaybackQueue = (listener: () => void): (() => void) => {
     };
 };
 
+const identity = (state: AndroidPlaybackQueue | null) => state;
+
 /** Subscribe a component to the live playback queue (re-renders on every change). */
 export const usePlaybackQueue = (): AndroidPlaybackQueue | null =>
-    useSyncExternalStore(subscribePlaybackQueue, getPlaybackQueue, getPlaybackQueue);
+    useStoreSelector(subscribePlaybackQueue, getPlaybackQueue, identity);

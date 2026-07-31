@@ -2,7 +2,7 @@ import { buildAudioQualityBadgeItems } from '@samo/core/audio-quality';
 import { type MobilePlayableAudio, type MobileHomeItem, LONG_FORM_RELATIVE_SKIP_SECONDS } from '@samo/core/mobile';
 import { type ServerAuthenticationResult } from '@samo/core/server';
 import { type ComponentProps, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Animated, Pressable, Text, View } from 'react-native';
+import { ActivityIndicator, Animated, Easing, Pressable, Text, View } from 'react-native';
 import { GestureDetector } from 'react-native-gesture-handler';
 import Reanimated, {
     interpolate,
@@ -75,9 +75,16 @@ const CAST_ICON_ACTIVE_TINT = 'rgba(207, 216, 227, 0.85)';
 const CAST_ICON_INACTIVE_TINT = 'rgba(245, 245, 245, 0.72)';
 
 /** Marquee (ticker) for single-line player text (title + subtitle lines) that
- *  may overflow the player width; static when the text fits. */
+ *  may overflow the player width; static when the text fits.
+ *
+ *  Banner-style: two copies of the text scroll continuously in one direction
+ *  with a spacer gap between them. When the first copy exits the left edge,
+ *  the second copy is exactly where the first started — seamless infinite loop,
+ *  matching Spotify / Apple Music tickers. */
 /** Overflow below this is measurement noise, not a title that needs scrolling. */
 const MARQUEE_MIN_OVERFLOW = 1;
+/** Pixels of empty space between the two copies in the banner loop. */
+const MARQUEE_GAP = 64;
 
 const PlayerMarqueeText = memo(({
     children,
@@ -90,8 +97,9 @@ const PlayerMarqueeText = memo(({
     const containerWidth = useRef(0);
     const textWidth = useRef(0);
     const animRef = useRef<Animated.CompositeAnimation | null>(null);
+    const [needsScroll, setNeedsScroll] = useState(false);
 
-    const startScroll = useCallback(() => {
+    const measure = useCallback(() => {
         const overflow = textWidth.current - containerWidth.current;
         // STOP AND PARK FIRST, unconditionally.
         //
@@ -105,35 +113,49 @@ const PlayerMarqueeText = memo(({
         // A sub-pixel difference is not an overflow; scrolling one would just
         // twitch. Also covers the pass where only one of the two onLayouts has
         // reported and the other width is still 0.
-        if (containerWidth.current <= 0 || overflow <= MARQUEE_MIN_OVERFLOW) {
+        setNeedsScroll(containerWidth.current > 0 && overflow > MARQUEE_MIN_OVERFLOW);
+    }, [translateX]);
+
+    // Start the banner animation AFTER the second copy has mounted. The native
+    // driver bakes the animation graph at `.start()` time — views that mount
+    // later are not picked up, so the second copy must be in the tree first.
+    useEffect(() => {
+        if (!needsScroll) {
             return;
         }
-        animRef.current = Animated.loop(
+        const loopDistance = textWidth.current + MARQUEE_GAP;
+        const anim = Animated.loop(
             Animated.sequence([
                 Animated.delay(1200),
                 Animated.timing(translateX, {
-                    duration: Math.max(3000, overflow * 20),
-                    toValue: -overflow,
+                    duration: Math.max(3000, loopDistance * 20),
+                    easing: Easing.linear,
+                    toValue: -loopDistance,
                     useNativeDriver: true,
                 }),
-                Animated.delay(1000),
+                // Reset instantly (0ms) — the second copy is now pixel-aligned
+                // with the original start, so the jump is invisible.
                 Animated.timing(translateX, {
-                    duration: 300,
+                    duration: 0,
                     toValue: 0,
                     useNativeDriver: true,
                 }),
             ]),
         );
-        animRef.current.start();
-    }, [translateX]);
+        animRef.current = anim;
+        anim.start();
+        return () => {
+            anim.stop();
+        };
+    }, [needsScroll, translateX, children]);
 
     // A new title restarts the ticker from the top. `onLayout` alone cannot be
     // trusted for this: two different titles can measure the SAME width, and
     // then no layout event fires at all and the incoming track inherits the
     // outgoing one's scroll position mid-travel.
     useEffect(() => {
-        startScroll();
-    }, [children, startScroll]);
+        measure();
+    }, [children, measure]);
 
     useEffect(() => {
         return () => {
@@ -145,7 +167,7 @@ const PlayerMarqueeText = memo(({
         <View
             onLayout={(e) => {
                 containerWidth.current = e.nativeEvent.layout.width;
-                startScroll();
+                measure();
             }}
             style={styles.fullPlayerMarqueeContainer}
         >
@@ -158,12 +180,27 @@ const PlayerMarqueeText = memo(({
                     numberOfLines={1}
                     onLayout={(e) => {
                         textWidth.current = e.nativeEvent.layout.width;
-                        startScroll();
+                        measure();
                     }}
                     style={[style, styles.fullPlayerMarqueeText, { transform: [{ translateX }] }]}
                 >
                     {children}
                 </Animated.Text>
+                {/* Second copy for the banner loop — sits to the right of the
+                    first with a gap, so when the first scrolls off-screen the
+                    second is seamlessly in position. Hidden when text fits. */}
+                {needsScroll ? (
+                    <Animated.Text
+                        numberOfLines={1}
+                        style={[
+                            style,
+                            styles.fullPlayerMarqueeText,
+                            { marginLeft: MARQUEE_GAP, transform: [{ translateX }] },
+                        ]}
+                    >
+                        {children}
+                    </Animated.Text>
+                ) : null}
             </View>
         </View>
     );
@@ -724,6 +761,7 @@ export const FullScreenPlayer = memo(({
                             artworkImageId={artworkImageId}
                             contentSource={contentSource}
                             fallbackStyle={styles.fullPlayerArtworkFallback}
+                            instantPlaceholder
                             letter={displayTitle.slice(0, 1)}
                             serverConnection={serverConnection}
                             style={styles.fullPlayerArtwork}

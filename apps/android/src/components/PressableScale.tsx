@@ -58,6 +58,44 @@ const TAP_MAX_DURATION_MS = 1200;
 
 const DISABLED_ACCESSIBILITY_STATE = { disabled: true } as const;
 
+/**
+ * The row-highlight fill, and the `useAnimatedStyle` that drives it, in their own
+ * component SO THAT BOTH ONLY EXIST WHEN A CALLER ASKED FOR A HIGHLIGHT.
+ *
+ * This used to be a second `useAnimatedStyle` in the body below, called
+ * unconditionally as hooks must be, and rendered only when `highlight` was set.
+ * Rows set it; tiles do not — and tiles are what the app is mostly made of. So
+ * every tile on every grid, shelf and browse page carried a live Reanimated
+ * mapper and view descriptor attached to no view, allocated and torn down on
+ * every mount, driving an opacity nobody could see.
+ *
+ * Splitting it out is safe because `highlight` is a fixed property of a call site
+ * (`presses.row` vs `presses.tile`), never something that toggles at runtime — so
+ * this component's presence never changes across renders and no hook order moves.
+ */
+const PressHighlight = ({
+    color,
+    pressed,
+    radius,
+}: {
+    color: string;
+    pressed: SharedValue<number>;
+    radius?: number;
+}) => {
+    const highlightStyle = useAnimatedStyle(() => ({ opacity: pressed.value }));
+    return (
+        <Reanimated.View
+            pointerEvents="none"
+            style={[
+                StyleSheet.absoluteFill,
+                { backgroundColor: color },
+                radius == null ? null : { borderRadius: radius },
+                highlightStyle,
+            ]}
+        />
+    );
+};
+
 export interface PressableScaleProps {
     accessibilityHint?: string;
     accessibilityLabel?: string;
@@ -295,8 +333,6 @@ export const PressableScale = ({
         transform: [{ scale: 1 - pressed.value * (1 - scaleTo) }],
     }));
 
-    const highlightStyle = useAnimatedStyle(() => ({ opacity: pressed.value }));
-
     return (
         <GestureDetector gesture={gesture}>
             <Reanimated.View
@@ -316,14 +352,10 @@ export const PressableScale = ({
                 style={[style, animatedStyle]}
             >
                 {highlight ? (
-                    <Reanimated.View
-                        pointerEvents="none"
-                        style={[
-                            StyleSheet.absoluteFill,
-                            { backgroundColor: highlight },
-                            highlightRadius == null ? null : { borderRadius: highlightRadius },
-                            highlightStyle,
-                        ]}
+                    <PressHighlight
+                        color={highlight}
+                        pressed={pressed}
+                        radius={highlightRadius}
                     />
                 ) : null}
                 {children}

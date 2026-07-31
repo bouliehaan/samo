@@ -157,7 +157,27 @@ const renderTabSceneContent = (tabId: SamoMobileTabId) =>
 export const TabScenes = memo(function TabScenes() {
     const reducedMotion = useReducedMotionPreference();
     const activeTab = useAppNavigationSelector((state) => state.activeTab);
-    const visitedTabs = useAppNavigationSelector((state) => state.visitedTabs);
+
+    // ── Mounted-tab recency window ──────────────────────────────────────
+    //
+    // Only the 3 most-recently-active tabs keep their content rendered
+    // (native views + bitmaps alive). Tabs that fall outside the window
+    // are fully unmounted — their ExpoImage views release decoded bitmaps
+    // and Android reclaims the native heap. This caps the bitmap footprint
+    // at ≈3 tabs' worth instead of growing monotonically with every visit.
+    //
+    // Updated synchronously during render (via ref, not effect) so the new
+    // active tab is always in the list on the same frame it becomes active.
+    // The ref mutation is safe: it is idempotent and pure (same activeTab
+    // sequence → same result), and produces no observable side effects.
+    const mountedTabsRef = useRef<SamoMobileTabId[]>([activeTab]);
+    if (mountedTabsRef.current[0] !== activeTab) {
+        mountedTabsRef.current = [
+            activeTab,
+            ...mountedTabsRef.current.filter((id) => id !== activeTab),
+        ].slice(0, 3);
+    }
+    const mountedTabs = mountedTabsRef.current;
 
     // The tab we just came from, held THAWED instead of refreezing straight
     // away. Freezing is what makes a background tab free, but unfreezing costs
@@ -226,7 +246,7 @@ export const TabScenes = memo(function TabScenes() {
         >
             {SAMO_MOBILE_TABS.map((tab) => {
                 const isSceneActive = tab.id === activeTab;
-                const isSceneMounted = visitedTabs.has(tab.id);
+                const isSceneMounted = mountedTabs.includes(tab.id);
 
                 // Every tab owns its own scroll host — the FlashList tabs so a
                 // same-orientation VirtualizedList isn't nested in a ScrollView

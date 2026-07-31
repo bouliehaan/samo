@@ -1,6 +1,6 @@
 import { getItemQualityProfile, MobileHomeItemType } from '@samo/core/mobile';
 import { type ServerAuthenticationResult } from '@samo/core/server';
-import { memo } from 'react';
+import { memo, useMemo } from 'react';
 import { Text, View } from 'react-native';
 
 import { ArtworkImage } from '../../components/ArtworkImage';
@@ -82,44 +82,61 @@ export const HomeMediaTile = memo(({
     // item happens to carry an isHiRes flag from an older path.
     const tileBadgeProfile =
         item.type === MobileHomeItemType.PLAYLIST ? undefined : getItemQualityProfile(item);
-    const tileStyle = [
-        styles.mediaTile,
-        isAlbum && styles.mediaTileAlbum,
-        isArtist && styles.mediaTileArtist,
-        isRecent && styles.mediaTileCompact,
-        isRadioSection && styles.mediaTileGrid,
-        isWide && styles.mediaTileWide,
-        isContinue && styles.mediaTileContinue,
-        isBook && styles.mediaTileBook,
-        isPlaylist && styles.mediaTilePlaylist,
-        isPodcast && styles.mediaTilePodcast,
-    ];
-    const artworkStyle = [
-        styles.mediaArtwork,
-        isAlbum && styles.mediaArtworkAlbum,
-        isArtist && styles.mediaArtworkArtist,
-        isRecent && styles.mediaArtworkCompact,
-        isRadioSection && styles.mediaArtworkGrid,
-        isWide && styles.mediaArtworkWide,
-        isBook && styles.mediaArtworkBook,
-        isPlaylist && styles.mediaArtworkPlaylist,
-        isPodcast && styles.mediaArtworkPodcast,
-        isRadio && styles.mediaArtworkRadio,
-        isArtistItem && styles.libraryArtworkRound,
-    ];
-    const fallbackStyle = [
-        styles.mediaArtworkFallback,
-        isAlbum && styles.mediaArtworkAlbum,
-        isArtist && styles.mediaArtworkArtist,
-        isRecent && styles.mediaArtworkCompact,
-        isRadioSection && styles.mediaArtworkGrid,
-        isWide && styles.mediaArtworkWide,
-        isBook && styles.mediaArtworkBook,
-        isPlaylist && styles.mediaArtworkPlaylist,
-        isPodcast && styles.mediaArtworkPodcast,
-        isRadio && styles.mediaArtworkRadio,
-        isArtistItem && styles.libraryArtworkRound,
-    ];
+    // THE STYLE ARRAYS ARE MEMOISED BECAUSE THIS TILE IS RECYCLED, NOT REMOUNTED.
+    //
+    // A FlashList cell scrolling past hands the same tile instance a new `item`,
+    // and everything these three arrays actually depend on — the shelf's variant
+    // and the item's kind — is the same for every item in a shelf. Rebuilt inline
+    // they were a fresh array identity on every recycle, so React Native re-
+    // flattened and re-diffed ~33 style entries per tile against a result that
+    // had not changed. Memoised, the recycle sends no style update at all.
+    const tileStyle = useMemo(
+        () => [
+            styles.mediaTile,
+            isAlbum && styles.mediaTileAlbum,
+            isArtist && styles.mediaTileArtist,
+            isRecent && styles.mediaTileCompact,
+            isRadioSection && styles.mediaTileGrid,
+            isWide && styles.mediaTileWide,
+            isContinue && styles.mediaTileContinue,
+            isBook && styles.mediaTileBook,
+            isPlaylist && styles.mediaTilePlaylist,
+            isPodcast && styles.mediaTilePodcast,
+        ],
+        [isAlbum, isArtist, isBook, isContinue, isPlaylist, isPodcast, isRadioSection, isRecent, isWide],
+    );
+    const artworkStyle = useMemo(
+        () => [
+            styles.mediaArtwork,
+            isAlbum && styles.mediaArtworkAlbum,
+            isArtist && styles.mediaArtworkArtist,
+            isRecent && styles.mediaArtworkCompact,
+            isRadioSection && styles.mediaArtworkGrid,
+            isWide && styles.mediaArtworkWide,
+            isBook && styles.mediaArtworkBook,
+            isPlaylist && styles.mediaArtworkPlaylist,
+            isPodcast && styles.mediaArtworkPodcast,
+            isRadio && styles.mediaArtworkRadio,
+            isArtistItem && styles.libraryArtworkRound,
+        ],
+        [isAlbum, isArtist, isArtistItem, isBook, isPlaylist, isPodcast, isRadio, isRadioSection, isRecent, isWide],
+    );
+    const fallbackStyle = useMemo(
+        () => [
+            styles.mediaArtworkFallback,
+            isAlbum && styles.mediaArtworkAlbum,
+            isArtist && styles.mediaArtworkArtist,
+            isRecent && styles.mediaArtworkCompact,
+            isRadioSection && styles.mediaArtworkGrid,
+            isWide && styles.mediaArtworkWide,
+            isBook && styles.mediaArtworkBook,
+            isPlaylist && styles.mediaArtworkPlaylist,
+            isPodcast && styles.mediaArtworkPodcast,
+            isRadio && styles.mediaArtworkRadio,
+            isArtistItem && styles.libraryArtworkRound,
+        ],
+        [isAlbum, isArtist, isArtistItem, isBook, isPlaylist, isPodcast, isRadio, isRadioSection, isRecent, isWide],
+    );
 
     return (
         <PressableScale
@@ -133,7 +150,6 @@ export const HomeMediaTile = memo(({
             <ArtworkImage
                 artworkImageId={item.artworkImageId}
                 contentSource={item.source}
-                decodeFormat="rgb"
                 fallbackStyle={fallbackStyle}
                 letter={item.title.slice(0, 1)}
                 serverConnection={serverConnection}

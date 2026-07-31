@@ -18,6 +18,8 @@ import { safeParseJson } from '../utils/json';
 const ARTWORK_DIR = `${FileSystem.documentDirectory ?? ''}samo-artwork/`;
 const INDEX_FILE = `${ARTWORK_DIR}index.json`;
 const PERSIST_DEBOUNCE_MS = 12_000;
+/** See scheduleAccessPersist — lastAccess-only writes ride a far slower timer. */
+const ACCESS_PERSIST_DEBOUNCE_MS = 5 * 60_000;
 const PRUNE_DEBOUNCE_MS = 6_000;
 // Bump when the on-disk filename scheme changes. v2 hashes the CANONICAL
 // (token-stripped) URL; v1 filenames were hashed from token-bearing URLs and so
@@ -46,6 +48,7 @@ let indexPromise: Promise<ArtworkIndex> | null = null;
 let loadedIndex: ArtworkIndex | null = null;
 let limitBytes = DEFAULT_ARTWORK_CACHE_LIMIT_BYTES;
 let persistTimer: ReturnType<typeof setTimeout> | null = null;
+let accessPersistTimer: ReturnType<typeof setTimeout> | null = null;
 let pruneTimer: ReturnType<typeof setTimeout> | null = null;
 const inFlightDownloads = new Map<string, Promise<string | null>>();
 
@@ -235,10 +238,38 @@ const schedulePersist = (): void => {
     if (persistTimer) {
         return;
     }
+    // A structural write supersedes a pending access-only one — it persists
+    // the same lastAccess values on its way past.
+    if (accessPersistTimer) {
+        clearTimeout(accessPersistTimer);
+        accessPersistTimer = null;
+    }
     persistTimer = setTimeout(() => {
         persistTimer = null;
         void persistIndex();
     }, PERSIST_DEBOUNCE_MS);
+};
+
+/**
+ * Persist scheduled for a `lastAccess` bump ALONE, on a much longer timer.
+ *
+ * Every cache HIT touches lastAccess, and routing that through schedulePersist
+ * meant a full rewrite of the index every 12s for as long as the user kept
+ * browsing — on a real 5,213-cover cache that is a 780KB serialize-and-write,
+ * on the JS thread, growing with the cache, to record nothing but access times.
+ *
+ * The only thing lastAccess feeds is LRU eviction order, which tolerates being
+ * coarse: the cost of losing the last few minutes of access times to a process
+ * kill is that eviction picks a slightly different victim from a 5GB cache.
+ */
+const scheduleAccessPersist = (): void => {
+    if (persistTimer || accessPersistTimer) {
+        return;
+    }
+    accessPersistTimer = setTimeout(() => {
+        accessPersistTimer = null;
+        void persistIndex();
+    }, ACCESS_PERSIST_DEBOUNCE_MS);
 };
 
 /** Evicts least-recently-used art until the cache fits under the current cap. */
@@ -338,7 +369,9 @@ export const getArtworkLocalUri = async (
         const info = await FileSystem.getInfoAsync(fileUri);
         if (info.exists) {
             existing.lastAccess = Date.now();
-            schedulePersist();
+            // Access-only: nothing was added or removed, so this must not drag
+            // the whole index through a rewrite on the fast timer.
+            scheduleAccessPersist();
             return fileUri;
         }
         // The file vanished under us (an external clear, a failed write). Drop

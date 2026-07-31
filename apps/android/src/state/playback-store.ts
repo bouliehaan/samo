@@ -1,8 +1,8 @@
-import { useSyncExternalStore } from 'react';
 import { type MobilePlayableAudio } from '@samo/core/mobile';
 
 import { type AndroidPlaybackState } from '../types/playback';
 import { getActiveTimelineSegment } from '../utils/playback-time';
+import { useStoreSelector } from './use-store-selector';
 
 type PlaybackListener = () => void;
 type PlaybackUpdater = (current: AndroidPlaybackState) => AndroidPlaybackState;
@@ -45,14 +45,17 @@ export const selectActiveAndroidPlaybackItem = (
     state: AndroidPlaybackState,
 ): MobilePlayableAudio | null => (state.status === 'idle' ? null : state.item);
 
+const identity = <Selected,>(state: AndroidPlaybackState) => state as Selected;
+
+/**
+ * Takes an arbitrary caller-supplied selector, which is exactly the case
+ * `useStoreSelector`'s __DEV__ check exists to police — and this is the hottest
+ * store in the app, ticking once a second for the entire time audio plays. A
+ * selector that allocates here re-renders its component every second forever.
+ */
 export const useAndroidPlaybackState = <Selected = AndroidPlaybackState>(
-    selector: (state: AndroidPlaybackState) => Selected = (state) => state as Selected,
-) =>
-    useSyncExternalStore(
-        subscribeAndroidPlaybackState,
-        () => selector(playbackState),
-        () => selector(playbackState),
-    );
+    selector: (state: AndroidPlaybackState) => Selected = identity,
+) => useStoreSelector(subscribeAndroidPlaybackState, getAndroidPlaybackState, selector);
 
 const CHROME_IDLE_STATE: AndroidPlaybackState = { status: 'idle' };
 
@@ -80,9 +83,7 @@ let chromeSnapshotChapterStart = -1;
  * Must keep referential equality between calls: useSyncExternalStore compares
  * with Object.is and would otherwise loop.
  */
-const getPlaybackChromeSnapshot = (): AndroidPlaybackState => {
-    const state = playbackState;
-
+const selectPlaybackChromeSnapshot = (state: AndroidPlaybackState): AndroidPlaybackState => {
     if (state.status === 'idle') {
         chromeSnapshot = CHROME_IDLE_STATE;
         chromeSnapshotChapterStart = -1;
@@ -137,10 +138,10 @@ const getPlaybackChromeSnapshot = (): AndroidPlaybackState => {
  * Skips re-renders on plain position ticks that don't cross a boundary.
  */
 export const useMiniPlayerPlaybackState = () =>
-    useSyncExternalStore(
+    useStoreSelector(
         subscribeAndroidPlaybackState,
-        getPlaybackChromeSnapshot,
-        getPlaybackChromeSnapshot,
+        getAndroidPlaybackState,
+        selectPlaybackChromeSnapshot,
     );
 
 /**
@@ -150,8 +151,8 @@ export const useMiniPlayerPlaybackState = () =>
  */
 export const useFullPlayerPlaybackState = useMiniPlayerPlaybackState;
 
-const getPlaybackPositionMs = (): number =>
-    playbackState.status === 'idle' ? 0 : (playbackState.positionMs ?? 0);
+const selectPlaybackPositionMs = (state: AndroidPlaybackState): number =>
+    state.status === 'idle' ? 0 : (state.positionMs ?? 0);
 
 /**
  * The live playhead, on its own, for the few leaves that actually draw it.
@@ -162,8 +163,8 @@ const getPlaybackPositionMs = (): number =>
  * hatch that lets the chrome snapshot above stay still.
  */
 export const useAndroidPlaybackPositionMs = (): number =>
-    useSyncExternalStore(
+    useStoreSelector(
         subscribeAndroidPlaybackState,
-        getPlaybackPositionMs,
-        getPlaybackPositionMs,
+        getAndroidPlaybackState,
+        selectPlaybackPositionMs,
     );

@@ -94,7 +94,12 @@ export const HomeDisplayRow = memo(({
     const rowCount = section.rowCount ?? 1;
     const itemLength = getHomeRowItemLength(section.variant);
     const rowHeight = getHomeSectionRowHeight(section.variant, rowCount);
-    const drawDistance = itemLength * 4;
+    // FlashList buffers `drawDistance * 2`, split 70/30 toward the scroll
+    // direction — so two item widths here is ~2.8 tiles pre-rendered ahead of the
+    // finger and ~1.2 behind, on a shelf that shows about two. At the previous
+    // `* 4` every shelf on the page held ten mounted tiles to show two, and Home
+    // stacks several shelves.
+    const drawDistance = itemLength * 2;
     // Memoised because it is a STYLE PROP: spreading it inline built a new
     // object on every render of every shelf, and a style object that is never
     // referentially equal defeats the shallow compare on the way down to the
@@ -147,11 +152,17 @@ export const HomeDisplayRow = memo(({
     const renderColumn = useCallback(
         ({ item: column }: { item: AndroidRecentContentSourceItem[] }) => (
             <View style={styles.homeMultiRowColumn}>
-                {column.map((item) => (
+                {column.map((item, row) => (
                     <HomeMediaTile
                         allowRemoveFromHome={allowRemoveFromHome}
                         item={item}
-                        key={getContentItemKey(item)}
+                        // ROW POSITION, NOT CONTENT. A column is a recycled
+                        // FlashList cell: content keys make React unmount both
+                        // tiles and mount fresh ones every time one scrolls past,
+                        // taking their gesture handlers, press styles and decoded
+                        // cover bitmaps with them. Position keeps the instances and
+                        // just swaps `item` — see the note in HomeFilterGrid.
+                        key={row}
                         onPrefetchItem={onPrefetchItem}
                         onSelectItem={onSelectItem}
                         sectionVariant={section.variant}

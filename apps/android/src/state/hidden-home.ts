@@ -1,6 +1,7 @@
-import { useMemo, useSyncExternalStore } from 'react';
+import { useMemo } from 'react';
 
 import { fsGetItem, fsSetItem } from '../services/fs-storage';
+import { useStoreSelector } from './use-store-selector';
 
 // Per-device list of content keys the user has hidden from the Home feed.
 // Home is assembled from the on-device mirror + live server sections, so there's
@@ -82,9 +83,13 @@ const subscribe = (listener: () => void): (() => void) => {
 };
 
 const getSnapshot = () => snapshot;
+const identity = (state: string[]) => state;
 
 /** Reactive Set of hidden content keys for filtering Home shelves. */
 export const useHiddenHomeKeys = (): ReadonlySet<string> => {
-    const keys = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+    // The Set is derived in the component, not in the selector: building it in
+    // the selector would return a fresh reference on every notification and
+    // re-render every Home shelf on unrelated store writes.
+    const keys = useStoreSelector(subscribe, getSnapshot, identity);
     return useMemo(() => new Set(keys), [keys]);
 };
