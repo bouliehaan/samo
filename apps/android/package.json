@@ -1,6 +1,6 @@
 {
     "name": "@samo/android",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "private": true,
     "expo": {
         "autolinking": {
@@ -16,7 +16,7 @@
         "android": "NODE_ENV=development JAVA_HOME=\"/Applications/Android Studio.app/Contents/jbr/Contents/Home\" expo run:android",
         "android:emu": "NODE_ENV=development JAVA_HOME=\"/Applications/Android Studio.app/Contents/jbr/Contents/Home\" expo run:android -- -PreactNativeArchitectures=x86_64",
         "android:build": "cd android && NODE_ENV=development JAVA_HOME=\"/Applications/Android Studio.app/Contents/jbr/Contents/Home\" ./gradlew app:assembleDebug -PreactNativeArchitectures=arm64-v8a -x lint -x test",
-        "android:release": "cd android && JAVA_HOME=\"/Applications/Android Studio.app/Contents/jbr/Contents/Home\" ./gradlew app:assembleRelease -PreactNativeArchitectures=armeabi-v7a,arm64-v8a,x86,x86_64 -x lint -x test",
+        "android:release": "cd android && JAVA_HOME=\"/Applications/Android Studio.app/Contents/jbr/Contents/Home\" ./gradlew verifyReleaseSigning app:assembleRelease -PreactNativeArchitectures=armeabi-v7a,arm64-v8a,x86,x86_64 -x lint -x test",
         "android:metro": "expo start --android",
         "ios": "expo run:ios",
         "start": "expo start --dev-client",
