@@ -97,10 +97,25 @@ config.resolver.resolveRequest = (context, moduleName, platform) => {
     return result;
 };
 
+// Worklets BUNDLE MODE. Emits each worklet as a real module the UI runtime
+// loads from the app's own precompiled bytecode, instead of shipping it as a
+// source string that Hermes `eval`s and then permanently retains a ~1.3MB
+// compiler arena for. See apps/android/babel.config.js for the full mechanism
+// and the measurements — this is the Metro half of the same switch.
+//
+// It must be applied LAST. The helper captures whatever `resolver.resolveRequest`
+// is already installed and calls it as the inner resolver, so wrapping after the
+// React-alias + workspace-dedupe hook above keeps both of those intact; wrapping
+// before would drop them. It also sets `serializer.createModuleIdFactory` (worklet
+// modules must keep their hash as their module id, since that is how the UI
+// runtime requires them) and forces `transformer.inlineRequires`.
+const { getBundleModeMetroConfig } = require('react-native-worklets/bundleMode');
+
 // Bump whenever resolver config changes so Metro discards its stale cache.
 // 2026-05-16: bumped a second time after adding the workspace-root dedupe
 // hook above — the bundle's module identity is keyed by filePath, so the
 // dedupe materially changes module assignments.
-config.cacheVersion = 'single-react-v9-samo-core-ts';
+// 2026-07-31: bumped for bundle mode — module ids are reassigned wholesale.
+config.cacheVersion = 'single-react-v10-worklets-bundle-mode';
 
-module.exports = config;
+module.exports = getBundleModeMetroConfig(config);

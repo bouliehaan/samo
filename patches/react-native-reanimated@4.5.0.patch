@@ -1,0 +1,55 @@
+diff --git a/android/src/main/java/com/swmansion/reanimated/NativeProxy.kt b/android/src/main/java/com/swmansion/reanimated/NativeProxy.kt
+index 48e37714232d5ccf74d99d61cb2fac56314087aa..6607a6b2a862f7bc9ecb9b822b4113a0f6c1dbf7 100644
+--- a/android/src/main/java/com/swmansion/reanimated/NativeProxy.kt
++++ b/android/src/main/java/com/swmansion/reanimated/NativeProxy.kt
+@@ -245,6 +245,15 @@ open class NativeProxy {
+             }.apply { isAccessible = true }
+     }
+ 
++    // Reaching updatePropsSynchronously directly also skips the mounted-view check
++    // that RN's own synchronous-update entry point does first. See the call site.
++    private val getViewExistsMethod by lazy {
++        mountingManager.javaClass.methods
++            .first {
++                it.name.startsWith("getViewExists") && it.parameterTypes.size == 1
++            }.apply { isAccessible = true }
++    }
++
+     @DoNotStrip
+     fun synchronouslyUpdateUIProps(
+         intBuffer: IntArray,
+@@ -252,10 +261,30 @@ open class NativeProxy {
+     ) {
+         SynchronousPropsBufferParser.parse(intBuffer, doubleBuffer) { viewTag, props ->
+             if (BuildConfig.IS_REACT_NATIVE_86_OR_NEWER) {
+-                try {
+-                    updatePropsSynchronouslyMethod.invoke(mountingManager, viewTag, props)
+-                } catch (e: Exception) {
+-                    Log.w("Reanimated", "synchronouslyUpdateUIProps failed for tag $viewTag", e)
++                // A tag whose surface is not registered (not mounted yet, or already
++                // gone) has no SurfaceMountingManager, and updatePropsSynchronously
++                // reports that by THROWING RetryableMountingLayerException. RN's own
++                // synchronouslyUpdateViewOnUIThread tests getViewExists() before it
++                // touches the mounting layer for exactly this reason; going straight
++                // to updatePropsSynchronously to dodge the props-cache seeding skips
++                // that test too, so the miss costs an exception instead of a branch.
++                //
++                // That is not rare here. react-native-svg dispatches a layout event
++                // from inside RenderableView.draw, which flushes this queue on every
++                // SVG draw, so the throw fired ~192 times in a 30s boot and ~4400 in
++                // one session — each building a ~114-frame stack trace and writing it
++                // to logcat, on the UI thread, mid-draw.
++                //
++                // Restoring the check loses nothing: the catch below already dropped
++                // these updates. We cannot fall back to RN's queueing path instead,
++                // because that is the cache-seeding API this workaround exists to
++                // avoid (upstream #9681).
++                if (getViewExistsMethod.invoke(mountingManager, viewTag) == true) {
++                    try {
++                        updatePropsSynchronouslyMethod.invoke(mountingManager, viewTag, props)
++                    } catch (e: Exception) {
++                        Log.w("Reanimated", "synchronouslyUpdateUIProps failed for tag $viewTag", e)
++                    }
+                 }
+             } else {
+                 mFabricUIManager.synchronouslyUpdateViewOnUIThread(viewTag, props)

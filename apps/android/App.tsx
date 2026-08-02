@@ -52,6 +52,7 @@ import { resumeDownloadsOnForeground } from './src/services/download-manager';
 import { refreshHomeFromMirror } from './src/services/home-flow';
 import { loadHomeLayoutHint } from './src/services/home-layout-hint';
 import { formatJankBreadcrumb, traceAsync } from './src/services/jank-trace';
+import { installMemoryReport } from './src/services/mem-report';
 import {
     refreshLibraryFromMirror,
     resetLibraryContent,
@@ -213,6 +214,10 @@ export default function App() {
         installNetworkBootstrap();
         restoreServersOnce();
     }, []);
+
+    // TEMPORARY DIAGNOSTIC — remove with services/mem-report.ts once the
+    // retained-heap investigation is closed.
+    useEffect(() => installMemoryReport(), []);
 
     // JS event-loop health probe: a 2s heartbeat that logs whenever it fires
     // late. "Tabs do nothing for 30 seconds while a song plays" is invisible

@@ -5,6 +5,7 @@ import { useOverlayScrollbars } from 'overlayscrollbars-react';
 import React, {
     CSSProperties,
     memo,
+    ReactElement,
     ReactNode,
     Ref,
     RefObject,
@@ -17,13 +18,15 @@ import React, {
     useState,
 } from 'react';
 import AutoSizer from 'react-virtualized-auto-sizer';
-import {
-    FixedSizeList,
-    ListChildComponentProps,
-    ListOnItemsRenderedProps,
-    ListOnScrollProps,
-} from 'react-window';
+import { List, ListImperativeAPI, RowComponentProps } from 'react-window-v2';
 
+import {
+    type GridScrollDirection,
+    itemRangeForRows,
+    resolveInitialScrollOffset,
+    resolveScrollDirection,
+    rowForIndex,
+} from './item-grid-list-scroll';
 import styles from './item-grid-list.module.css';
 
 import {
@@ -62,11 +65,10 @@ interface VirtualizedGridListProps {
     internalState: ItemListStateActions;
     itemCount: number;
     itemType: LibraryItem;
+    listRef: RefObject<ListImperativeAPI | null>;
     onRangeChanged?: ItemGridListProps['onRangeChanged'];
     onScroll?: ItemGridListProps['onScroll'];
     onScrollEnd?: ItemGridListProps['onScrollEnd'];
-    outerRef: RefObject<any>;
-    ref: RefObject<FixedSizeList<GridItemProps> | null>;
     rows?: ItemCardProps['rows'];
     size?: 'compact' | 'default' | 'large';
     tableMetaRef: RefObject<null | {
@@ -79,6 +81,7 @@ interface VirtualizedGridListProps {
 
 const VirtualizedGridList = React.memo(
     ({
+        _tableMetaVersion,
         controls,
         currentPage,
         dataVersion,
@@ -93,11 +96,10 @@ const VirtualizedGridList = React.memo(
         internalState,
         itemCount,
         itemType,
+        listRef,
         onRangeChanged,
         onScroll,
         onScrollEnd,
-        outerRef,
-        ref,
         rows,
         size,
         tableMetaRef,
@@ -143,10 +145,36 @@ const VirtualizedGridList = React.memo(
             size,
         ]);
 
-        const handleOnScroll = useCallback(
-            ({ scrollDirection, scrollOffset }: ListOnScrollProps) => {
-                onScroll?.(scrollOffset, scrollDirection === 'forward' ? 'down' : 'up');
+        // react-window v2 has no `onScroll` prop and no `scrollDirection` — the
+        // list is driven through its own DOM element, which is what
+        // `listRef.current.element` returns. Direction is derived from
+        // successive offsets by `resolveScrollDirection`.
+        const lastScrollOffsetRef = useRef(0);
+        const lastScrollDirectionRef = useRef<GridScrollDirection>('down');
 
+        useEffect(() => {
+            const element = listRef.current?.element;
+            if (!element) {
+                return;
+            }
+
+            const handleScroll = () => {
+                const scrollOffset = element.scrollTop;
+                const scrollDirection = resolveScrollDirection(
+                    lastScrollOffsetRef.current,
+                    scrollOffset,
+                    lastScrollDirectionRef.current,
+                );
+                lastScrollOffsetRef.current = scrollOffset;
+                lastScrollDirectionRef.current = scrollDirection;
+
+                onScroll?.(scrollOffset, scrollDirection);
+
+                // Swallow the restore itself. Applying a saved offset fires a
+                // scroll event, and without this the list would immediately
+                // report a "scroll end" at the restored position and persist it
+                // back — harmless, but it also fired onScrollEnd for a scroll
+                // the user never performed.
                 if (isInitialScrollRef.current) {
                     if (initialScrollOffsetRef.current === null) {
                         initialScrollOffsetRef.current = scrollOffset;
@@ -162,12 +190,18 @@ const VirtualizedGridList = React.memo(
                 }
 
                 scrollEndTimeoutRef.current = setTimeout(() => {
-                    onScrollEnd?.(scrollOffset, scrollDirection === 'forward' ? 'down' : 'up');
+                    onScrollEnd?.(scrollOffset, scrollDirection);
                     scrollEndTimeoutRef.current = null;
                 }, 150);
-            },
-            [onScroll, onScrollEnd],
-        );
+            };
+
+            element.addEventListener('scroll', handleScroll, { passive: true });
+            return () => {
+                element.removeEventListener('scroll', handleScroll);
+            };
+            // `_tableMetaVersion` is in the deps because the list only mounts
+            // once tableMeta exists — before that there is no element to bind to.
+        }, [listRef, onScroll, onScrollEnd, _tableMetaVersion]);
 
         useEffect(() => {
             return () => {
@@ -177,15 +211,17 @@ const VirtualizedGridList = React.memo(
             };
         }, []);
 
-        const handleOnItemsRendered = useCallback(
-            (items: ListOnItemsRenderedProps) => {
-                const columnCount = tableMetaRef.current?.columnCount || 0;
-                onRangeChanged?.({
-                    startIndex: items.visibleStartIndex * columnCount,
-                    stopIndex: items.visibleStopIndex * columnCount,
-                });
+        const handleRowsRendered = useCallback(
+            (visibleRows: { startIndex: number; stopIndex: number }) => {
+                onRangeChanged?.(
+                    itemRangeForRows(
+                        visibleRows,
+                        tableMetaRef.current?.columnCount || 0,
+                        itemCount,
+                    ),
+                );
             },
-            [onRangeChanged, tableMetaRef],
+            [onRangeChanged, tableMetaRef, itemCount],
         );
 
         useEffect(() => {
@@ -193,55 +229,58 @@ const VirtualizedGridList = React.memo(
             initialScrollOffsetRef.current = null;
         }, [initialTop]);
 
+        // v1 took `initialScrollOffset` as a prop; v2 has no equivalent, so the
+        // saved position is applied straight to the scroll container. This runs
+        // in a layout effect so the restore happens before paint — as an effect
+        // the user would see the top of the list for a frame, then a jump.
+        const restoredForRef = useRef<GridInitialTopKey | null>(null);
+        const restoreKey: GridInitialTopKey = initialTop
+            ? `${initialTop.type}:${initialTop.to}:${currentPage ?? ''}`
+            : null;
+
+        useLayoutEffect(() => {
+            const element = listRef.current?.element;
+            if (!element || !tableMeta || restoredForRef.current === restoreKey) {
+                return;
+            }
+
+            restoredForRef.current = restoreKey;
+
+            const offset = resolveInitialScrollOffset({
+                columnCount: tableMeta.columnCount,
+                currentPage,
+                initialTop,
+                itemHeight: tableMeta.itemHeight,
+            });
+
+            element.scrollTo({ behavior: 'auto', top: offset });
+            lastScrollOffsetRef.current = offset;
+        }, [listRef, tableMeta, restoreKey, currentPage, initialTop]);
+
         if (!tableMeta) {
             return null;
         }
 
-        const calculateInitialScrollOffset = (): number => {
-            // When page changes, always start at top (ignore initialTop)
-            if (currentPage !== undefined) {
-                if (currentPage === 0 && initialTop) {
-                    if (initialTop.type === 'offset') {
-                        return initialTop.to;
-                    }
-                    const columnCount = tableMeta?.columnCount || 1;
-                    const itemHeight = tableMeta?.itemHeight || 0;
-                    const rowIndex = Math.floor(initialTop.to / columnCount);
-                    return rowIndex * itemHeight;
-                }
-                return 0;
-            }
-
-            if (!initialTop) return 0;
-
-            if (initialTop.type === 'offset') {
-                return initialTop.to;
-            }
-
-            const columnCount = tableMeta?.columnCount || 1;
-            const itemHeight = tableMeta?.itemHeight || 0;
-            const rowIndex = Math.floor(initialTop.to / columnCount);
-            return rowIndex * itemHeight;
-        };
-
         return (
-            <FixedSizeList
-                height={height}
-                initialScrollOffset={calculateInitialScrollOffset()}
-                itemCount={tableMeta.rowCount || 0}
-                itemData={itemData}
-                itemSize={tableMeta.itemHeight || 0}
-                onItemsRendered={handleOnItemsRendered}
-                onScroll={handleOnScroll}
-                outerRef={outerRef}
-                ref={ref}
-                width={width}
-            >
-                {ListComponent}
-            </FixedSizeList>
+            <List
+                listRef={listRef}
+                onRowsRendered={handleRowsRendered}
+                rowComponent={
+                    RowComponent as (props: RowComponentProps<GridItemProps>) => ReactElement
+                }
+                rowCount={tableMeta.rowCount || 0}
+                // A number today. v2 also accepts `(index, rowProps) => number`
+                // and the `useDynamicRowHeight` hook here, which is the path to
+                // variable-height rows — v1 could not do either.
+                rowHeight={tableMeta.itemHeight || 0}
+                rowProps={itemData}
+                style={{ height, width }}
+            />
         );
     },
 );
+
+type GridInitialTopKey = null | string;
 
 VirtualizedGridList.displayName = 'VirtualizedGridList';
 
@@ -386,8 +425,7 @@ const BaseItemGridList = ({
     size = 'default',
 }: ItemGridListProps) => {
     const rootRef = useRef(null);
-    const outerRef = useRef(null);
-    const listRef = useRef<FixedSizeList<GridItemProps>>(null);
+    const listRef = useRef<ListImperativeAPI | null>(null);
     const { ref: containerRef, width: containerWidth } = useElementSize();
     const { focused, ref: containerFocusRef } = useFocusWithin();
     const handleRef = useRef<ItemListHandle | null>(null);
@@ -438,22 +476,30 @@ const BaseItemGridList = ({
 
     const [tableMetaVersion, setTableMetaVersion] = useState(0);
     const isOverlayScrollbarsInitialized = useRef(false);
+    const viewportRef = useRef<HTMLElement | null>(null);
 
     useEffect(() => {
         const { current: root } = rootRef;
-        const { current: outer } = outerRef;
+        // Under v1 this was react-window's `outerRef`. v2 exposes the same
+        // element — its root IS the scroll container (`overflow: auto`) — via
+        // the imperative API instead of a ref prop.
+        const viewport = listRef.current?.element;
 
-        if (!tableMetaRef.current || !root || !outer || isOverlayScrollbarsInitialized.current) {
+        if (!tableMetaRef.current || !root || !viewport || isOverlayScrollbarsInitialized.current) {
             return;
         }
 
         initialize({
             elements: {
-                viewport: outer,
+                viewport,
             },
             target: root,
         });
 
+        // Held separately because the unmount cleanup below still needs this
+        // element to decide whether destroying is safe, and by then React has
+        // already cleared `listRef`.
+        viewportRef.current = viewport;
         isOverlayScrollbarsInitialized.current = true;
     }, [initialize, tableMetaVersion]);
 
@@ -462,7 +508,7 @@ const BaseItemGridList = ({
             try {
                 const instance = osInstance();
                 const { current: root } = rootRef;
-                const { current: outer } = outerRef;
+                const { current: outer } = viewportRef;
 
                 // Check if instance exists and elements are still connected to the DOM
                 if (instance) {
@@ -519,7 +565,7 @@ const BaseItemGridList = ({
             options?: { align?: 'bottom' | 'center' | 'top'; behavior?: 'auto' | 'smooth' },
         ) => {
             if (!listRef.current || !tableMetaRef.current) return;
-            const row = Math.floor(index / tableMetaRef.current.columnCount);
+            const row = rowForIndex(index, tableMetaRef.current.columnCount);
 
             // Map alignment options to react-window's alignment
             let alignment: 'auto' | 'center' | 'end' | 'smart' | 'start' = 'smart';
@@ -531,15 +577,25 @@ const BaseItemGridList = ({
                 alignment = 'end';
             }
 
-            listRef.current.scrollToItem(row, alignment);
+            listRef.current.scrollToRow({
+                align: alignment,
+                behavior: options?.behavior,
+                index: row,
+            });
         },
         [],
     );
 
-    const scrollToOffset = useCallback((offset: number) => {
-        if (!listRef.current) return;
-        listRef.current.scrollTo(offset);
-    }, []);
+    // v1 had `scrollTo(offset)`; v2's imperative API is row-based only, so a raw
+    // pixel offset goes straight to the scroll container.
+    const scrollToOffset = useCallback(
+        (offset: number, options?: { behavior?: 'auto' | 'smooth' }) => {
+            const element = listRef.current?.element;
+            if (!element) return;
+            element.scrollTo({ behavior: options?.behavior ?? 'auto', top: offset });
+        },
+        [],
+    );
 
     // Handle keyboard navigation
     const handleKeyDown = useCallback(
@@ -814,11 +870,10 @@ const BaseItemGridList = ({
                         internalState={internalState}
                         itemCount={resolvedItemCount}
                         itemType={itemType}
+                        listRef={listRef}
                         onRangeChanged={onRangeChanged}
                         onScroll={onScroll ?? (() => {})}
                         onScrollEnd={onScrollEnd ?? (() => {})}
-                        outerRef={outerRef}
-                        ref={listRef}
                         rows={rows}
                         size={size}
                         tableMetaRef={tableMetaRef}
@@ -830,8 +885,9 @@ const BaseItemGridList = ({
     );
 };
 
-const ListComponent = memo((props: ListChildComponentProps<GridItemProps>) => {
-    const { index, style } = props;
+// v2 spreads `rowProps` directly onto the row component alongside `index` and
+// `style`, where v1 nested everything under a single `data` prop.
+const RowComponent = memo((props: RowComponentProps<GridItemProps>) => {
     const {
         columns,
         controls,
@@ -839,11 +895,13 @@ const ListComponent = memo((props: ListChildComponentProps<GridItemProps>) => {
         enableMultiSelect,
         gap,
         getItem,
+        index,
         itemCount,
         itemType,
         rows,
         size,
-    } = props.data;
+        style,
+    } = props;
 
     const items: ReactNode[] = [];
     const startIndex = index * columns;
@@ -870,10 +928,10 @@ const ListComponent = memo((props: ListChildComponentProps<GridItemProps>) => {
                         controls={controls}
                         data={item}
                         enableDrag={enableDrag}
-                        enableExpansion={props.data.enableExpansion}
+                        enableExpansion={props.enableExpansion}
                         enableMultiSelect={enableMultiSelect}
                         imageAsLink={!enableMultiSelect}
-                        internalState={props.data.internalState}
+                        internalState={props.internalState}
                         itemType={itemType}
                         rows={rows}
                         type={size === 'compact' ? 'compact' : 'poster'}

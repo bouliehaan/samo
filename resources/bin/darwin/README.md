@@ -11,25 +11,25 @@ Bundled release assets:
 - Intel: `mpv-v0.41.0-macos-15-intel.zip`
   - SHA-256: `41003617ab4f7784394b5ddea7ce51b3e0838e8cfc8166ad1a378b2eda3b583c`
 
-Layout:
+Layout — one directory per packaged architecture, named to match electron-builder's `${arch}` macro:
 
-- `resources/bin/darwin/mpv`: Apple Silicon primary binary.
-- `resources/bin/darwin/lib`: dynamic libraries used by the Apple Silicon binary.
-- `resources/bin/darwin/x64/mpv`: Intel backup binary.
+- `resources/bin/darwin/arm64/mpv`: Apple Silicon binary.
+- `resources/bin/darwin/arm64/lib`: dynamic libraries used by the Apple Silicon binary.
+- `resources/bin/darwin/x64/mpv`: Intel binary.
 - `resources/bin/darwin/x64/lib`: dynamic libraries used by the Intel binary.
 
-The packaged paths mirror that layout under Electron resources:
+`electron-builder.yml` packs `resources/bin/darwin/${arch}` into `bin`, so each build carries **only** its own architecture and both resolve to the same packaged paths:
 
 - `process.resourcesPath/bin/mpv`
 - `process.resourcesPath/bin/lib`
-- `process.resourcesPath/bin/x64/mpv`
-- `process.resourcesPath/bin/x64/lib`
+
+Neither tree is a fallback for the other. The previous layout put arm64 at the darwin root and nested x64 beneath it as an "Intel backup", and shipped both into both DMGs — so every Apple Silicon build carried a 112 MB Intel mpv it could never execute. If you add an architecture, add a sibling directory named exactly as electron-builder spells that arch.
 
 Do not blindly copy `/opt/homebrew/bin/mpv` into this directory. Homebrew MPV builds are commonly dynamically linked against `/opt/homebrew` or `/usr/local` libraries that will not exist on a user's machine. Use a portable/self-contained MPV build, then verify it with:
 
 ```sh
 pnpm run check:mpv:mac
-otool -L resources/bin/darwin/mpv
+otool -L resources/bin/darwin/arm64/mpv
 otool -L resources/bin/darwin/x64/mpv
 ```
 

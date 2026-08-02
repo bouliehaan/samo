@@ -24,23 +24,25 @@ const LINUX_MPV_CANDIDATES = ['/usr/bin/mpv', '/usr/local/bin/mpv', '/snap/bin/m
 
 const getConfiguredMpvBinaryPath = () => store.get('mpv_path') as string | undefined;
 
+/**
+ * The bundled mpv always matches the build's own architecture.
+ *
+ * electron-builder packs `resources/bin/darwin/${arch}` into `bin`, so an
+ * arm64 build has an arm64 mpv here and an x64 build (including one running
+ * under Rosetta) has an x64 one. There is deliberately no cross-arch fallback:
+ * the previous layout shipped BOTH binaries in BOTH builds purely so this
+ * function could fall back to the other one, which cost every DMG an extra
+ * ~100 MB to guard against a case the packaging now makes impossible.
+ */
 const getBundledMacOSMpvBinaryPath = () => join(process.resourcesPath, 'bin', 'mpv');
-const getBundledMacOSX64MpvBinaryPath = () => join(process.resourcesPath, 'bin', 'x64', 'mpv');
 
-const getPackagedMacOSMpvCandidates = (): MpvBinaryCandidate[] => {
-    const appleSiliconMpv = {
+const getPackagedMacOSMpvCandidates = (): MpvBinaryCandidate[] => [
+    {
         canRepairPermissions: true,
         path: getBundledMacOSMpvBinaryPath(),
-        source: 'bundled Apple Silicon app resource',
-    };
-    const intelMpv = {
-        canRepairPermissions: true,
-        path: getBundledMacOSX64MpvBinaryPath(),
-        source: 'bundled Intel app resource',
-    };
-
-    return process.arch === 'x64' ? [intelMpv, appleSiliconMpv] : [appleSiliconMpv, intelMpv];
-};
+        source: 'bundled app resource',
+    },
+];
 
 const isExecutableName = (value: string) => !/[\\/]/.test(value);
 
@@ -149,7 +151,7 @@ export const resolveMpvBinaryPath = (
         }
 
         throw new Error(
-            `MPV unavailable: packaged macOS builds require bundled MPV at ${getBundledMacOSMpvBinaryPath()} with optional Intel backup at ${getBundledMacOSX64MpvBinaryPath()}. Populate resources/bin/darwin before building release artifacts.`,
+            `MPV unavailable: packaged macOS builds require bundled MPV at ${getBundledMacOSMpvBinaryPath()}. Populate resources/bin/darwin/${process.arch} before building release artifacts.`,
         );
     }
 

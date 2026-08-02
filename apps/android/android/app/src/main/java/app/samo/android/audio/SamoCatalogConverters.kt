@@ -78,6 +78,19 @@ internal object SamoCatalogConverters {
         val id = album.optString("id").nullIfBlank() ?: return null
         val title = album.optString("title").nullIfBlank() ?: return null
 
+        // The album detail page is rebuilt from this row (the sync stores no
+        // album detail bundle), so everything its header shows has to ride in
+        // the payload: the release year on its own line, and genres + label as
+        // the credits line under the artist. The subtitle fallback below is a
+        // different job — it only borrows the year as display text when the
+        // album has no artist to name.
+        //
+        // Genres stay an ARRAY here, not a joined string: the joining is a
+        // display decision (see buildAlbumMetadataLines), and baking it into
+        // stored rows would mean a full library re-sync to restyle a line.
+        val releaseYear = album.optInt("releaseYear").takeIf { it > 0 }
+        val genres = album.optJSONArray("genres")?.takeIf { it.length() > 0 }
+        val recordLabel = album.optString("recordLabel").nullIfBlank()
         val displayArtist =
             album.optString("displayArtist").nullIfBlank()
                 ?: formatSamoArtists(
@@ -86,7 +99,7 @@ internal object SamoCatalogConverters {
                         album.optJSONArray("albumArtistNames"),
                     ),
                 )
-                ?: album.optInt("releaseYear").takeIf { it > 0 }?.toString()
+                ?: releaseYear?.toString()
         val playback = album.optJSONObject("playback")
         val artworkImageId = pickSamoImageId(album.optJSONArray("images"))
         val artworkUrl =
@@ -105,14 +118,17 @@ internal object SamoCatalogConverters {
             .putNotNull("addedAt", toEpochMs(album.optString("addedAt").nullIfBlank()))
             .putNotNull("artworkImageId", artworkImageId)
             .putNotNull("artworkUrl", artworkUrl)
+            .putNotNull("genres", genres)
             .put("id", id)
             .putNotNull("lastPlayedAt", playback?.let { toEpochMs(it.optString("lastPlayedAt").nullIfBlank()) })
             .putNotNull("playCount", playback?.optLongOrNull("playCount"))
             .putNotNull("qualityProfile", quality)
+            .putNotNull("recordLabel", recordLabel)
             .put("source", source)
             .putNotNull("subtitle", displayArtist)
             .put("title", title)
             .put("type", "album")
+            .putNotNull("year", releaseYear)
             .also { if (hiRes) it.put("isHiRes", true) }
             .also { if (hiddenFromRecentlyAdded) it.put("hiddenFromRecentlyAdded", true) }
 
@@ -436,6 +452,108 @@ internal object SamoCatalogConverters {
             artistId = primaryArtistId,
             album = albumTitle,
             albumId = albumId,
+            durationSeconds = durationSeconds,
+            artworkImageId = artworkImageId,
+            payload = payload.toString(),
+            syncedAt = syncedAt,
+        )
+    }
+
+    /**
+     * Playlist track → TrackBinding. Playlist tracks are regular SamoMusicTrack
+     * objects, so the conversion mirrors [musicTrackToAlbumTrack] with two
+     * differences: containerType is "playlist" and position is the array index
+     * (playlists have user-defined ordering, not disc/track numbers).
+     */
+    fun playlistTrackToTrackBinding(
+        sourceId: String,
+        playlistId: String,
+        position: Int,
+        track: JSONObject,
+        syncedAt: Long,
+    ): TrackBinding? {
+        val id = track.optString("id").nullIfBlank() ?: return null
+        val title = track.optString("title").nullIfBlank() ?: return null
+
+        val artists = formatSamoArtists(
+            samoArtistRefsFromParallelArrays(
+                track.optJSONArray("albumArtistIds") ?: track.optJSONArray("artistIds"),
+                track.optJSONArray("albumArtistNames") ?: track.optJSONArray("artistNames"),
+            ),
+        ) ?: track.optString("displayArtist").nullIfBlank()
+        val albumTitle = track.optString("albumTitle").nullIfBlank()
+        val albumId = track.optString("albumId").nullIfBlank()
+        val durationSeconds = track.optLongOrNull("durationSeconds")
+        val artworkImageId = pickSamoImageId(track.optJSONArray("images"))
+        val primaryArtistId = (track.optJSONArray("artistIds") ?: track.optJSONArray("albumArtistIds"))
+            ?.let { if (it.length() > 0) it.optString(0).nullIfBlank() else null }
+
+        val payload = JSONObject()
+            .put("\u0024samoRawTrack", 1)
+            .put("track", track)
+
+        return TrackBinding(
+            sourceId = sourceId,
+            containerType = "playlist",
+            containerId = playlistId,
+            trackId = id,
+            position = position.toLong(),
+            discNo = null,
+            trackNo = null,
+            title = title,
+            subtitle = artists,
+            artist = artists,
+            artistId = primaryArtistId,
+            album = albumTitle,
+            albumId = albumId,
+            durationSeconds = durationSeconds,
+            artworkImageId = artworkImageId,
+            payload = payload.toString(),
+            syncedAt = syncedAt,
+        )
+    }
+
+    /**
+     * Podcast episode → TrackBinding. Episodes are SamoPodcastEpisode objects,
+     * not SamoMusicTrack, but we wrap the raw JSON in the same `$samoRawTrack`
+     * envelope so the JS-side `hydrateCatalogTrack` path works unchanged.
+     * Position is the array index (episodes arrive newest-first from the API).
+     */
+    fun podcastEpisodeToTrackBinding(
+        sourceId: String,
+        podcastId: String,
+        position: Int,
+        episode: JSONObject,
+        syncedAt: Long,
+    ): TrackBinding? {
+        val id = episode.optString("id").nullIfBlank() ?: return null
+        val title = (episode.optString("title").nullIfBlank()
+            ?: episode.optString("name").nullIfBlank())
+            ?: return null
+
+        val subtitle = episode.optString("subtitle").nullIfBlank()
+        val durationSeconds = episode.optLongOrNull("durationSeconds")
+            ?: episode.optLongOrNull("duration")
+        val artworkImageId = pickSamoImageId(episode.optJSONArray("images"))
+
+        val payload = JSONObject()
+            .put("\u0024samoRawTrack", 1)
+            .put("track", episode)
+
+        return TrackBinding(
+            sourceId = sourceId,
+            containerType = "podcast",
+            containerId = podcastId,
+            trackId = id,
+            position = position.toLong(),
+            discNo = null,
+            trackNo = null,
+            title = title,
+            subtitle = subtitle,
+            artist = null,
+            artistId = null,
+            album = null,
+            albumId = null,
             durationSeconds = durationSeconds,
             artworkImageId = artworkImageId,
             payload = payload.toString(),

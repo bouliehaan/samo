@@ -4,17 +4,23 @@ import { execFileSync } from 'node:child_process';
 import { accessSync, constants, existsSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 
+// One directory per packaged architecture, matching the `${arch}` macro in
+// electron-builder.yml's mac extraResources. The trees used to be "primary"
+// (arm64, at the darwin root) and "backup" (x64, nested) because BOTH were
+// shipped in BOTH DMGs so the app could fall back across architectures. Each
+// build now carries only its own, so neither is a backup for the other and
+// both must be complete in their own right.
 const bundles = [
     {
         arch: 'arm64',
-        executableDir: resolve('resources/bin/darwin'),
-        label: 'Apple Silicon primary',
-        mpvPath: resolve('resources/bin/darwin/mpv'),
+        executableDir: resolve('resources/bin/darwin/arm64'),
+        label: 'Apple Silicon',
+        mpvPath: resolve('resources/bin/darwin/arm64/mpv'),
     },
     {
         arch: 'x86_64',
         executableDir: resolve('resources/bin/darwin/x64'),
-        label: 'Intel backup',
+        label: 'Intel',
         mpvPath: resolve('resources/bin/darwin/x64/mpv'),
     },
 ];
@@ -43,7 +49,7 @@ const walkFiles = (directory) => {
 
 const checkExecutable = ({ label, mpvPath }) => {
     if (!existsSync(mpvPath)) {
-        fail(`Missing ${mpvPath}. Populate resources/bin/darwin before mac release builds.`);
+        fail(`Missing ${mpvPath}. Populate ${dirname(mpvPath)} before mac release builds.`);
     }
 
     const stats = statSync(mpvPath);

@@ -74,18 +74,32 @@ import { useSleepTimer } from './use-sleep-timer';
 const CAST_ICON_ACTIVE_TINT = 'rgba(207, 216, 227, 0.85)';
 const CAST_ICON_INACTIVE_TINT = 'rgba(245, 245, 245, 0.72)';
 
-/** Marquee (ticker) for single-line player text (title + subtitle lines) that
- *  may overflow the player width; static when the text fits.
- *
- *  Banner-style: two copies of the text scroll continuously in one direction
- *  with a spacer gap between them. When the first copy exits the left edge,
- *  the second copy is exactly where the first started — seamless infinite loop,
- *  matching Spotify / Apple Music tickers. */
 /** Overflow below this is measurement noise, not a title that needs scrolling. */
 const MARQUEE_MIN_OVERFLOW = 1;
 /** Pixels of empty space between the two copies in the banner loop. */
 const MARQUEE_GAP = 64;
+/**
+ * Travel speed. This is the number that decides whether the ticker reads or
+ * just moves: past roughly 35px/s the eye has to chase the line instead of
+ * reading it, and the old 50px/s sat well over that.
+ */
+const MARQUEE_PIXELS_PER_SECOND = 28;
+/** Beat of stillness at the top of every cycle, so the start of the title is
+ *  legible before anything moves. */
+const MARQUEE_DWELL_MS = 1600;
 
+/**
+ * Marquee (ticker) for single-line player text (title + subtitle lines) that
+ * may overflow the player width; static when the text fits.
+ *
+ * Banner-style: two copies of the text scroll continuously in one direction
+ * with a spacer gap between them. When the first copy exits the left edge, the
+ * second copy is exactly where the first started — seamless infinite loop,
+ * matching Spotify / Apple Music tickers.
+ *
+ * Identity is the text: mount one per string (see the `key` at both call
+ * sites) and a new track gets a ticker that starts from the beginning.
+ */
 const PlayerMarqueeText = memo(({
     children,
     style,
@@ -96,39 +110,50 @@ const PlayerMarqueeText = memo(({
     const translateX = useRef(new Animated.Value(0)).current;
     const containerWidth = useRef(0);
     const textWidth = useRef(0);
-    const animRef = useRef<Animated.CompositeAnimation | null>(null);
-    const [needsScroll, setNeedsScroll] = useState(false);
+    // One full banner cycle in px, or 0 when the text fits and renders static.
+    const [loopDistance, setLoopDistance] = useState(0);
 
     const measure = useCallback(() => {
         const overflow = textWidth.current - containerWidth.current;
-        // STOP AND PARK FIRST, unconditionally.
-        //
-        // The early return used to sit above this, so a title that fits left
-        // the PREVIOUS track's loop running: skip from a long title to a short
-        // one and the new text calmly walked itself off the edge of the screen
-        // and stayed there, because nothing ever reset the offset.
-        animRef.current?.stop();
-        animRef.current = null;
-        translateX.setValue(0);
         // A sub-pixel difference is not an overflow; scrolling one would just
         // twitch. Also covers the pass where only one of the two onLayouts has
         // reported and the other width is still 0.
-        setNeedsScroll(containerWidth.current > 0 && overflow > MARQUEE_MIN_OVERFLOW);
-    }, [translateX]);
+        const next =
+            containerWidth.current > 0 && overflow > MARQUEE_MIN_OVERFLOW
+                ? textWidth.current + MARQUEE_GAP
+                : 0;
+        // Bail out when the measurement is unchanged, or the ticker stutters:
+        // `onLayout` fires several times over a player's life (mount, the
+        // second copy landing, the shell's open transition) and every state
+        // change here tears the running loop down and rebuilds it.
+        setLoopDistance((prev) => (prev === next ? prev : next));
+    }, []);
 
-    // Start the banner animation AFTER the second copy has mounted. The native
-    // driver bakes the animation graph at `.start()` time — views that mount
-    // later are not picked up, so the second copy must be in the tree first.
+    // This effect OWNS the animation. It is the only thing that starts one and
+    // its cleanup is the only thing that stops one.
+    //
+    // Stopping from measure() instead is what stranded the ticker for good:
+    // measure() killed the loop on every layout event, but the restart was
+    // gated behind a *change* of state, so a second overflowing title — same
+    // overflow verdict, same state, no re-render — parked the text at zero and
+    // never started it again. Only a track whose title FIT, clearing the flag,
+    // could revive it. Keeping start and stop in one place makes that
+    // unrepresentable.
+    //
+    // The start also has to land after the second copy has mounted: the native
+    // driver bakes the animation graph at `.start()` time and does not pick up
+    // views that mount later. Reading `loopDistance` from state (not a ref)
+    // gives that for free — the value that mounts the copy is the value that
+    // starts the loop, one commit later.
     useEffect(() => {
-        if (!needsScroll) {
+        if (loopDistance <= 0) {
             return;
         }
-        const loopDistance = textWidth.current + MARQUEE_GAP;
         const anim = Animated.loop(
             Animated.sequence([
-                Animated.delay(1200),
+                Animated.delay(MARQUEE_DWELL_MS),
                 Animated.timing(translateX, {
-                    duration: Math.max(3000, loopDistance * 20),
+                    duration: (loopDistance / MARQUEE_PIXELS_PER_SECOND) * 1000,
                     easing: Easing.linear,
                     toValue: -loopDistance,
                     useNativeDriver: true,
@@ -142,26 +167,14 @@ const PlayerMarqueeText = memo(({
                 }),
             ]),
         );
-        animRef.current = anim;
         anim.start();
         return () => {
             anim.stop();
+            // Park. Without this a title that stops needing to scroll keeps the
+            // offset it died at and sits half off the edge of the screen.
+            translateX.setValue(0);
         };
-    }, [needsScroll, translateX, children]);
-
-    // A new title restarts the ticker from the top. `onLayout` alone cannot be
-    // trusted for this: two different titles can measure the SAME width, and
-    // then no layout event fires at all and the incoming track inherits the
-    // outgoing one's scroll position mid-travel.
-    useEffect(() => {
-        measure();
-    }, [children, measure]);
-
-    useEffect(() => {
-        return () => {
-            animRef.current?.stop();
-        };
-    }, []);
+    }, [loopDistance, translateX]);
 
     return (
         <View
@@ -189,7 +202,7 @@ const PlayerMarqueeText = memo(({
                 {/* Second copy for the banner loop — sits to the right of the
                     first with a gap, so when the first scrolls off-screen the
                     second is seamlessly in position. Hidden when text fits. */}
-                {needsScroll ? (
+                {loopDistance > 0 ? (
                     <Animated.Text
                         numberOfLines={1}
                         style={[
@@ -789,8 +802,15 @@ export const FullScreenPlayer = memo(({
                         Music): the old 2-row wrap crowded the metadata block,
                         and a title too long for even two rows was silently
                         unreadable. The ticker only runs when the text
-                        overflows, so short titles render static. */}
-                    <PlayerMarqueeText style={styles.fullPlayerTitle}>
+                        overflows, so short titles render static.
+
+                        Keyed by the text, like the subtitle lines below, so a
+                        new track restarts the ticker from the beginning of the
+                        title. Layout alone cannot carry that: two titles can
+                        measure the SAME width, no layout event fires, and the
+                        incoming track picks up the outgoing one's scroll
+                        position mid-travel. */}
+                    <PlayerMarqueeText key={displayTitle} style={styles.fullPlayerTitle}>
                         {displayTitle}
                     </PlayerMarqueeText>
                     {display.lines.slice(1).map((line, index) => (

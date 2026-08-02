@@ -1,4 +1,5 @@
 import {
+    buildAlbumMetadataLines,
     getMobileContentSource,
     isSamoRawDetailBundle,
     isSamoRawTrackEnvelope,
@@ -222,23 +223,38 @@ export const loadCatalogMediaDetail = async (
             if (!auth) {
                 return null;
             }
-            const tracks = hydrateCatalogTracks(
-                await getTracks(source.id, 'album', item.id),
-                auth,
-            );
+            // Header metadata (year, genres, label) is read from the stored
+            // album ROW rather than the tapped tile, because a tile is not a
+            // dependable carrier of it: search hits and persisted recents
+            // narrow their item down to id/title/subtitle/artwork, so an album
+            // reached from search would lose what the same album shows when
+            // reached from a shelf. Issued alongside the track query, not after
+            // it — both run on the native executor, so the row costs no extra
+            // wall-clock — with the tile as the fallback for a cold row.
+            const [trackRows, albumRow] = await Promise.all([
+                getTracks(source.id, 'album', item.id),
+                loadCatalogAlbumItem(source.id, item.id),
+            ]);
+            const tracks = hydrateCatalogTracks(trackRows, auth);
             if (tracks.length === 0) {
                 return null;
             }
+            const album = albumRow ?? (item as MobileHomeItem);
+            // Identity fields stay with the tile on purpose: it holds the very
+            // artwork the user is looking at, so taking those from the row
+            // would risk swapping the image mid-transition for no gain.
             return {
                 artworkImageId: item.artworkImageId,
                 artworkUrl: item.artworkUrl,
                 id: item.id,
+                metadataLines: buildAlbumMetadataLines(album.genres, album.recordLabel),
                 qualityProfile: item.qualityProfile,
                 source,
                 subtitle: item.subtitle,
                 title: item.title,
                 tracks,
                 type: MobileMediaDetailType.ALBUM,
+                year: album.year,
             };
         }
 

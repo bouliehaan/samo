@@ -48,8 +48,32 @@ import { PlayerRepeat, PlayerStatus, PlayerType, TitleTheme } from '/@/shared/ty
 
 protocol.registerSchemesAsPrivileged([{ privileges: { bypassCSP: true }, scheme: 'samo' }]);
 
-process.on('uncaughtException', (error: any) => {
-    console.error('Error in main process', error);
+// The main process's ONLY crash diagnostics. Both handlers log and do nothing
+// else — deliberately.
+//
+// These used to be duplicated in features/core/player, where they also called
+// `cleanupMpv(true)`. Because both are process-global, a stray rejection in any
+// unrelated subsystem killed the audio engine mid-playback. Teardown now lives
+// entirely in that module's playback lifecycle (before-quit / SIGINT / SIGTERM,
+// with a synchronous `exit` safety net), and nothing here touches mpv.
+//
+// `console.error` was replaced with `createLog` so these actually reach the
+// electron-log file. A crash that only prints to a devtools console nobody has
+// open is a crash that gets reported as "it just stopped working".
+//
+// Note that registering `uncaughtException` at all suppresses Electron's
+// default crash-and-die behaviour, so the process keeps running afterwards in
+// a state we cannot reason about. That is pre-existing behaviour and is left
+// alone here rather than changed blind; it is worth revisiting separately.
+process.on('uncaughtException', (error: unknown) => {
+    createLog({ message: `[SYSTEM] Uncaught exception in main process: ${error}`, type: 'error' });
+});
+
+process.on('unhandledRejection', (reason: unknown) => {
+    createLog({
+        message: `[SYSTEM] Unhandled rejection in main process: ${reason}`,
+        type: 'error',
+    });
 });
 
 if (store.get('ignore_ssl')) {

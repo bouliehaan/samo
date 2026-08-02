@@ -24,6 +24,10 @@ class SamoCatalogSyncWorker(
                 Log.i(TAG, "catalog sync (source=$source) — no Samo connections, skipping")
                 return Result.success()
             }
+            // Before syncing, not after: the rebuild wants the catalog quiet,
+            // and this worker already holds a foreground notification, so a
+            // long VACUUM here is visible work rather than a mystery stall.
+            SamoCatalogWriter.rebuildForPageSizeIfNeeded(applicationContext)
             val summary = SamoCatalogSync.runAll(applicationContext, connection)
             Log.i(
                 TAG,

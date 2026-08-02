@@ -2,6 +2,9 @@ name: Test
 
 on: [push, pull_request]
 
+# The `lint` job name is load-bearing: publish-pr.yml blocks on a check named
+# exactly `lint` before it will build release artifacts. Renaming it silently
+# turns that gate off.
 jobs:
     lint:
         runs-on: ubuntu-latest
@@ -20,3 +23,53 @@ jobs:
 
             - name: Lint Files
               run: pnpm run lint
+
+    # This workflow was called "Test" and ran only `pnpm run lint` — typecheck
+    # plus eslint plus stylelint, and no tests at all. 37 test files existed and
+    # not one of them gated a merge, which is how two failing pagination tests
+    # sat on `development` unnoticed. Tests that do not run are decoration.
+    test:
+        runs-on: ubuntu-latest
+
+        steps:
+            - name: Check out Git repository
+              uses: actions/checkout@v6
+
+            - name: Install Node.js and PNPM
+              uses: pnpm/action-setup@v4
+              with:
+                  version: 10
+
+            - name: Install dependencies
+              run: pnpm install
+
+            - name: Run tests
+              run: pnpm test
+
+    # The Android client had no CI whatsoever — no typecheck, no lint, no tests
+    # — despite being ~50k lines of the product. These three are fast and need
+    # no Android SDK; a gradle build is a separate, much slower job and is a
+    # deliberate omission rather than an oversight.
+    android:
+        runs-on: ubuntu-latest
+
+        steps:
+            - name: Check out Git repository
+              uses: actions/checkout@v6
+
+            - name: Install Node.js and PNPM
+              uses: pnpm/action-setup@v4
+              with:
+                  version: 10
+
+            - name: Install dependencies
+              run: pnpm install
+
+            - name: Typecheck
+              run: pnpm -C apps/android run typecheck
+
+            - name: Lint
+              run: pnpm -C apps/android run lint
+
+            - name: Run tests
+              run: pnpm -C apps/android run test

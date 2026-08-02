@@ -35,6 +35,13 @@ export const NodeMpvErrorCode = {
     9: 'Unsupported protocol',
 };
 
+/**
+ * A value mpv will accept for a property. node-mpv's own signature is
+ * `value: any`, so nothing upstream constrains this — spelling it out here keeps
+ * the renderer→main IPC payloads honest instead of inheriting that `any`.
+ */
+export type MpvPropertyValue = boolean | number | string;
+
 export type NodeMpvError = {
     errcode?: number;
     message?: string;
@@ -56,18 +63,46 @@ export const setCurrentPlayerData = (data: null | PlayerData) => {
     currentPlayerData = data;
 };
 
+/**
+ * The mpv error code carried by a caught value, or `undefined` if it is not an
+ * mpv error. Callers branch on specific codes (3 = IPC command invalid, which
+ * is the normal answer to asking for `time-pos` while idle), so this must not
+ * throw on a string, a null, or a plain Error.
+ */
+export const getMpvErrorCode = (err: unknown): number | undefined => {
+    if (typeof err !== 'object' || err === null || !('errcode' in err)) {
+        return undefined;
+    }
+
+    const { errcode } = err as NodeMpvError;
+    return typeof errcode === 'number' ? errcode : undefined;
+};
+
+/**
+ * Accepts `unknown` because that is what a `catch` binding actually is.
+ *
+ * Every call site in this feature used to write `catch (err: any)` purely to
+ * get past this parameter being `Error | NodeMpvError` — 26 of them, in the
+ * audio path, each one switching off type checking for the whole block rather
+ * than for the one value that genuinely is not known. Widening the parameter
+ * and narrowing HERE means the callers can use a plain `catch (err)`, keep
+ * `unknown`, and still lose nothing: a thrown string, a rejected non-Error, and
+ * a real NodeMpvError all still render.
+ */
 export const mpvLog = (
     data: {
         action: string;
         toast?: 'info' | 'success' | 'warning';
         type?: 'debug' | 'info' | 'success' | 'verbose' | 'warning';
     },
-    err?: Error | NodeMpvError,
+    err?: unknown,
 ) => {
     const { action, toast, type = 'info' } = data;
 
     if (err) {
-        const errcode = 'errcode' in err ? err.errcode : undefined;
+        const mpvError =
+            typeof err === 'object' && err !== null ? (err as NodeMpvError) : undefined;
+        const errcode = getMpvErrorCode(err);
         const codeDescription =
             typeof errcode === 'number'
                 ? `mpv errorcode ${errcode} - ${
@@ -75,7 +110,7 @@ export const mpvLog = (
                       'Unknown MPV error'
                   }`
                 : undefined;
-        const detail = codeDescription ?? err.message ?? String(err);
+        const detail = codeDescription ?? mpvError?.message ?? String(err);
         const message = `[AUDIO PLAYER] ${action} - ${detail}`;
 
         sendToastToRenderer({ message, type: 'error' });
@@ -106,14 +141,40 @@ const DEFAULT_MPV_PARAMETERS = (extraParameters?: string[]) => {
     return parameters;
 };
 
-const getMpvChildProcess = (instance: MpvAPI) => {
-    const mpvProcess =
-        (instance as any).process ||
-        (instance as any).mpvProcess ||
-        (instance as any)._mpvProcess ||
-        (instance as any).mpvPlayer;
+/**
+ * The mpv child process. node-mpv owns it but does not expose it on its public
+ * type, and the property name has moved between versions — so all four known
+ * spellings are probed rather than pinning to one and silently losing the
+ * handle on an upgrade.
+ *
+ * Losing it means an orphaned mpv process outliving the app, which is why the
+ * reach into internals is worth it. Narrowed to exactly the members used.
+ */
+export type MpvChildProcess = {
+    exitCode?: null | number;
+    kill: (signal?: NodeJS.Signals | number) => boolean;
+    once: (
+        event: 'exit',
+        listener: (code: null | number, signal: NodeJS.Signals | null) => void,
+    ) => void;
+    pid?: number;
+    signalCode?: NodeJS.Signals | null;
+};
 
-    return mpvProcess && typeof mpvProcess.kill === 'function' ? mpvProcess : null;
+export const getMpvChildProcess = (instance: MpvAPI): MpvChildProcess | null => {
+    const internals = instance as unknown as Record<string, unknown>;
+    const candidate =
+        internals.process ?? internals.mpvProcess ?? internals._mpvProcess ?? internals.mpvPlayer;
+
+    if (
+        typeof candidate === 'object' &&
+        candidate !== null &&
+        typeof (candidate as MpvChildProcess).kill === 'function'
+    ) {
+        return candidate as MpvChildProcess;
+    }
+
+    return null;
 };
 
 const getMpvChildPid = (instance: MpvAPI | null | undefined) => {
@@ -164,7 +225,7 @@ const wait = (timeout: number) =>
         setTimeout(resolve, timeout);
     });
 
-const hasMpvChildProcessExited = (mpvProcess: any) => {
+const hasMpvChildProcessExited = (mpvProcess: MpvChildProcess | null | undefined) => {
     return mpvProcess?.exitCode != null || mpvProcess?.signalCode != null;
 };
 
@@ -258,7 +319,11 @@ export const quit = async (instance?: MpvAPI | null) => {
         await terminateMpvProcess(mpv, 'after quit', { waitBeforeSignal: true });
         if (!isWindows()) {
             try {
-                const currentSocket = (mpv as any).options?.socket;
+                // node-mpv keeps the IPC socket path on its options bag, which
+                // is not on the public type. Removing the socket file is
+                // best-effort cleanup, hence the surrounding try/catch.
+                const currentSocket = (mpv as unknown as { options?: { socket?: string } }).options
+                    ?.socket;
                 if (currentSocket) {
                     await rm(currentSocket);
                 }
@@ -283,7 +348,7 @@ export const runMpvLifecycle = async <T>(task: () => Promise<T>): Promise<T> => 
 export const createMpv = async (data: {
     binaryPath?: string;
     extraParameters?: string[];
-    properties?: Record<string, any>;
+    properties?: Record<string, MpvPropertyValue>;
 }): Promise<MpvAPI> => {
     const { binaryPath, extraParameters, properties } = data;
 
@@ -390,7 +455,7 @@ export const shutdownMpvInstance = async (
         }
 
         await quit(instance);
-    } catch (error: any | NodeMpvError) {
+    } catch (error) {
         mpvLog({ action: `Failed to clean up MPV ${reason}` }, error);
         await terminateMpvProcess(instance, `after ${reason} cleanup failure`);
     }

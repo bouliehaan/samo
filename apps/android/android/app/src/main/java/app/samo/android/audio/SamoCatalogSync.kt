@@ -36,17 +36,30 @@ internal object SamoCatalogSync {
     // the canonical JS mapper, so they carry full playback). v3 wrote slim
     // track payloads without playback; the version bump forces one full
     // re-enumerate that rewrites every row under the new scheme.
-    private const val SYNC_LOGIC_VERSION = 4
+    //
+    // v5: album payloads carry `year`, `genres` and `recordLabel`. Albums have
+    // no detail bundle — their detail page is rebuilt from the item row — so
+    // rows written under v4 can never show a release year or a credits line,
+    // and a delta only rewrites albums the server reports as changed. One
+    // forced re-enumerate backfills the whole library.
+    private const val SYNC_LOGIC_VERSION = 5
 
     /** Concurrent detail fetches per batch (network-bound; writes stay serial). */
     private const val DETAIL_FETCH_CONCURRENCY = 4
 
     /**
-     * PRAGMA user_version latch for detail-bundle shape migrations. Version 1:
-     * playlist tracks + podcast episodes are paginated to exhaustion (bundles
-     * written earlier are truncated at 500 and get one forced re-crawl).
+     * PRAGMA user_version latch for detail-bundle shape migrations.
+     *
+     * Version 1: playlist tracks + podcast episodes are paginated to exhaustion
+     * (bundles written earlier are truncated at 500 and get one forced
+     * re-crawl).
+     *
+     * Version 2: bundles are PROJECTED before storage (see slimDetailBundle) —
+     * fanned-out child arrays and never-read `embeddedTags` no longer ride
+     * along. Rows written under v1 still carry both, so every detail kind gets
+     * one forced re-crawl to rewrite it lean.
      */
-    private const val DETAIL_BUNDLE_SCHEMA_VERSION = 1
+    private const val DETAIL_BUNDLE_SCHEMA_VERSION = 2
 
     /**
      * Concurrent page fetches for the /music/tracks walk — the single
@@ -233,6 +246,13 @@ internal object SamoCatalogSync {
                     SamoCatalogWriter.pruneSource(db, sourceId, syncedAt)
                 }
             }
+        }
+
+        // Unconditional, unlike the watermark prune above: detail rows grow as
+        // the user BROWSES, not as the library changes, so a mirror that never
+        // takes a full sync again still needs its detail cache bounded.
+        SamoCatalogWriter.withTransactionImmediate(context) { db ->
+            SamoCatalogWriter.pruneDetailsToByteLimit(db, sourceId)
         }
 
         // The cursor advances ONLY on a clean run. A run with errors keeps the
@@ -520,7 +540,15 @@ internal object SamoCatalogSync {
         SamoCatalogWriter.withTransactionImmediate(context) { db ->
             if (db.version < DETAIL_BUNDLE_SCHEMA_VERSION) {
                 detailBackfillPending = true
-                for (kind in listOf("playlist", "podcast")) {
+                // Deliberately NOT "artist". The v2 projection pays off in
+                // proportion to what a kind stores that the read path never
+                // reads, and on a real 78MB detail table that was podcasts
+                // (42MB), playlists (5MB) and audiobooks (1MB, all of it
+                // embeddedTags) — ~105 entities between them. Artists are 2,136
+                // rows of ~13KB with no audio-file blobs to shed; re-crawling
+                // them would cost 2,136 network round-trips to save almost
+                // nothing. They get rewritten lean by ordinary delta syncs.
+                for (kind in listOf("audiobook", "playlist", "podcast")) {
                     SamoCatalogWriter.getItemIdsByType(db, sourceId, kind).forEach {
                         crawlTargets.add(DetailTarget(kind, it))
                     }
@@ -566,6 +594,12 @@ internal object SamoCatalogSync {
                         SamoCatalogWriter.deleteTracksByTrackIds(db, sourceId, removed, listOf("album"))
                     } else {
                         SamoCatalogWriter.deleteDetailsByEntityIds(db, sourceId, variant.catalogType, removed)
+                        // Playlists and podcasts now store per-row tracks in
+                        // catalog_track (mirroring the album pattern) — clean
+                        // those up when the container disappears.
+                        if (variant.catalogType == "playlist" || variant.catalogType == "podcast") {
+                            SamoCatalogWriter.deleteTracksByContainerIds(db, sourceId, variant.catalogType, removed)
+                        }
                     }
                 }
             }
@@ -595,6 +629,12 @@ internal object SamoCatalogSync {
     /**
      * Fetch raw detail bundles with bounded concurrency and store them under
      * the `$samoRawDetail` envelope the JS read-time mapper understands.
+     *
+     * For playlists and podcasts the bundle's child array (tracks / episodes)
+     * is ALSO fanned out into individual `catalog_track` rows so the JS
+     * read-side can hydrate them one-by-one instead of deserialising the
+     * entire multi-megabyte detail blob — the same pattern albums use.
+     *
      * Writes are serialized per batch so transactions never overlap.
      */
     private fun crawlDetails(
@@ -623,23 +663,76 @@ internal object SamoCatalogSync {
                         }
                     }
                 }
-                val fetched = pool.invokeAll(tasks).mapNotNull { future ->
+
+                // Collect detail bindings AND per-row track bindings from each
+                // fetched bundle in a single pass so both land in one txn.
+                val detailBindings = mutableListOf<SamoCatalogWriter.DetailBinding>()
+                val trackBindings = mutableListOf<SamoCatalogConverters.TrackBinding>()
+                // Containers whose child tracks were re-crawled — their old
+                // rows must be purged before the upsert so that tracks removed
+                // from the container don't linger as orphans.
+                val reCrawledPlaylists = mutableListOf<String>()
+                val reCrawledPodcasts = mutableListOf<String>()
+
+                for (future in pool.invokeAll(tasks)) {
                     val (target, bundle) = future.get()
-                    bundle?.let {
+                    if (bundle == null) continue
+
+                    // Fan out child items into per-row catalog_track entries.
+                    // MUST run before the bundle is slimmed for storage — the
+                    // fan-out is what makes the child arrays redundant there.
+                    val children = bundle.optJSONObject("children")
+                    when (target.kind) {
+                        "playlist" -> {
+                            val tracks = children?.optJSONArray("tracks")
+                            if (tracks != null) {
+                                reCrawledPlaylists.add(target.id)
+                                for (i in 0 until tracks.length()) {
+                                    val track = tracks.optJSONObject(i) ?: continue
+                                    SamoCatalogConverters.playlistTrackToTrackBinding(
+                                        sourceId, target.id, i, track, syncedAt,
+                                    )?.let { trackBindings.add(it) }
+                                }
+                            }
+                        }
+                        "podcast" -> {
+                            val episodes = children?.optJSONArray("episodes")
+                            if (episodes != null) {
+                                reCrawledPodcasts.add(target.id)
+                                for (i in 0 until episodes.length()) {
+                                    val episode = episodes.optJSONObject(i) ?: continue
+                                    SamoCatalogConverters.podcastEpisodeToTrackBinding(
+                                        sourceId, target.id, i, episode, syncedAt,
+                                    )?.let { trackBindings.add(it) }
+                                }
+                            }
+                        }
+                    }
+
+                    detailBindings.add(
                         SamoCatalogWriter.DetailBinding(
                             sourceId = sourceId,
                             type = target.kind,
                             entityId = target.id,
-                            payload = it.toString(),
+                            payload = slimDetailBundle(target.kind, bundle).toString(),
                             syncedAt = syncedAt,
-                        )
-                    }
+                        ),
+                    )
                 }
-                if (fetched.isNotEmpty()) {
+
+                if (detailBindings.isNotEmpty() || trackBindings.isNotEmpty()) {
                     SamoCatalogWriter.withTransactionImmediate(context) { db ->
-                        SamoCatalogWriter.upsertDetails(db, fetched)
+                        // Purge stale child rows before writing the fresh set.
+                        if (reCrawledPlaylists.isNotEmpty()) {
+                            SamoCatalogWriter.deleteTracksByContainerIds(db, sourceId, "playlist", reCrawledPlaylists)
+                        }
+                        if (reCrawledPodcasts.isNotEmpty()) {
+                            SamoCatalogWriter.deleteTracksByContainerIds(db, sourceId, "podcast", reCrawledPodcasts)
+                        }
+                        SamoCatalogWriter.upsertDetails(db, detailBindings)
+                        SamoCatalogWriter.upsertTracks(db, trackBindings)
                     }
-                    stored += fetched.size.toLong()
+                    stored += detailBindings.size.toLong()
                     onProgress(stored)
                 }
             }
@@ -716,6 +809,66 @@ internal object SamoCatalogSync {
             .put("kind", target.kind)
             .put("entity", entity)
             .put("children", children)
+    }
+
+    /**
+     * Project a fetched bundle down to what the read path actually consumes,
+     * before it is persisted. The bundle we STORE is not the bundle we FETCH:
+     * the fetch has to be exhaustive (the fan-out above needs every child), but
+     * the row only has to carry what `mapSamoMediaDetailFromRawBundle` reads.
+     *
+     * Two things are dropped, both measured against a real 167MB catalog whose
+     * `catalog_detail` table was 78MB across 2,241 rows:
+     *
+     *  - `children.tracks` / `children.episodes` for playlists and podcasts
+     *    (44MB of that 78MB). These are now fanned out into `catalog_track`,
+     *    and catalog-reads resolves BOTH kinds from those per-row entries —
+     *    it returns before it ever calls getDetail. Storing the array again
+     *    inline was a second, unread copy of the same data, and it was what
+     *    made a podcast detail row reach 7.9MB.
+     *
+     *  - `embeddedTags` on any audio file. This is the raw ID3/Vorbis dump,
+     *    and its `metadata_block_picture` key is the file's cover art as
+     *    base64 — ~59KB per file, the SAME cover repeated once per episode.
+     *    `embeddedTags` appears exactly once in the whole repo (a type
+     *    declaration in server-samo.ts); nothing has ever read it. Cover art
+     *    already has a real home in services/artwork-cache.
+     *
+     * Mutates and returns the given bundle — the caller is done with it.
+     */
+    internal fun slimDetailBundle(kind: String, bundle: JSONObject): JSONObject {
+        when (kind) {
+            "playlist" -> bundle.optJSONObject("children")?.remove("tracks")
+            "podcast" -> bundle.optJSONObject("children")?.remove("episodes")
+        }
+        stripEmbeddedTags(bundle.opt("entity"))
+        stripEmbeddedTags(bundle.opt("children"))
+        return bundle
+    }
+
+    /**
+     * Recursively drop every `embeddedTags` object under `node`. Walks rather
+     * than targeting a fixed path because the field rides on audio files that
+     * appear at several depths — `entity.audioFiles[]` for an audiobook,
+     * `children.episodes[].audioFiles[]` for a podcast (before those episodes
+     * are dropped), `entity.media.audioFiles[]` for some server shapes.
+     */
+    internal fun stripEmbeddedTags(node: Any?) {
+        when (node) {
+            is JSONObject -> {
+                node.remove("embeddedTags")
+                // Snapshot the key set: the recursion below mutates nested
+                // objects, and org.json's keys() iterates the live map.
+                for (key in node.keys().asSequence().toList()) {
+                    stripEmbeddedTags(node.opt(key))
+                }
+            }
+            is JSONArray -> {
+                for (i in 0 until node.length()) {
+                    stripEmbeddedTags(node.opt(i))
+                }
+            }
+        }
     }
 
     // -----------------------------------------------------------------------

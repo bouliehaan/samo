@@ -200,9 +200,7 @@ describe('selectServerEndpoint', () => {
     // The caller's cue to go offline. Returning an address anyway would send
     // every surface in the app off to time out against it, one at a time.
     it('returns null when nothing answers', async () => {
-        expect(
-            await selectServerEndpoint(fetcherFor({}), { options: [local, remote] }),
-        ).toBeNull();
+        expect(await selectServerEndpoint(fetcherFor({}), { options: [local, remote] })).toBeNull();
     });
 
     it('returns null when there is nothing configured to probe', async () => {

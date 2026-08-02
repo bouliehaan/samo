@@ -14,11 +14,22 @@ jobs:
         if: github.event_name == 'pull_request'
         runs-on: ubuntu-latest
         steps:
-            - name: Wait for Test workflow to complete
+            - name: Wait for lint to complete
               uses: lewagon/wait-on-check-action@v1.4.1
               with:
                   ref: ${{ github.event.pull_request.head.sha }}
                   check-name: 'lint'
+                  repo-token: ${{ secrets.GITHUB_TOKEN }}
+                  wait-interval: 10
+                  allowed-conclusions: success
+
+            # Release artifacts used to be gated on lint alone, so a PR with a
+            # red test suite still produced downloadable builds.
+            - name: Wait for tests to complete
+              uses: lewagon/wait-on-check-action@v1.4.1
+              with:
+                  ref: ${{ github.event.pull_request.head.sha }}
+                  check-name: 'test'
                   repo-token: ${{ secrets.GITHUB_TOKEN }}
                   wait-interval: 10
                   allowed-conclusions: success

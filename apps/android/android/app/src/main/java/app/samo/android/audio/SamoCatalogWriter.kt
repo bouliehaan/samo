@@ -37,6 +37,15 @@ internal object SamoCatalogWriter {
     private const val DB_NAME = "samo-catalog.db"
     private const val BUSY_TIMEOUT_MS = 5_000L
 
+    /**
+     * Ceiling on stored detail payloads per source. Details are a browse-time
+     * cache with no natural bound; see [pruneDetailsToByteLimit].
+     */
+    private const val DETAIL_CACHE_MAX_BYTES = 24L * 1024L * 1024L
+
+    /** Page size the catalog should be on; see [rebuildForPageSizeIfNeeded]. */
+    private const val TARGET_PAGE_SIZE = 4096L
+
     @Volatile private var writer: SQLiteDatabase? = null
     private val openLock = Any()
 
@@ -502,6 +511,30 @@ internal object SamoCatalogWriter {
         }
     }
 
+    /**
+     * Delete all track rows for removed playlists/podcasts. Unlike albums
+     * (which are reconciled by track_id against the server manifest), playlist
+     * and podcast tracks are children of their container — when the container
+     * is gone, every child goes with it.
+     */
+    fun deleteTracksByContainerIds(
+        db: SQLiteDatabase,
+        sourceId: String,
+        containerType: String,
+        containerIds: List<String>,
+    ) {
+        if (containerIds.isEmpty()) return
+        for (batch in containerIds.chunked(DELETE_CHUNK)) {
+            val placeholders = batch.joinToString(",") { "?" }
+            db.execSQL(
+                "DELETE FROM catalog_track " +
+                    "WHERE source_id = ? AND container_type = ? " +
+                    "AND container_id IN ($placeholders)",
+                arrayOf(sourceId, containerType, *batch.toTypedArray()),
+            )
+        }
+    }
+
     fun pruneSource(db: SQLiteDatabase, sourceId: String, syncedAt: Long) {
         val args = arrayOf<Any>(sourceId, syncedAt)
         db.execSQL("DELETE FROM catalog_item WHERE source_id = ? AND synced_at < ?", args)
@@ -509,6 +542,117 @@ internal object SamoCatalogWriter {
         db.execSQL("DELETE FROM catalog_detail WHERE source_id = ? AND synced_at < ?", args)
         // catalog_search: JS-owned (fts5 lives only in expo-sqlite's build);
         // its indexer sweeps rows whose entity vanished from the mirror.
+    }
+
+    /**
+     * One-time rebuild onto 4KB pages.
+     *
+     * The catalog was created with SQLite's legacy 1KB page size (the AOSP
+     * default the original expo-sqlite connection brought with it). On a real
+     * 167MB catalog that is 163,308 pages where 4KB gives 43,780 — 3.7× the
+     * pages to walk for identical data, and every multi-KB payload spills into
+     * a longer chain of overflow pages, which SQLite must follow one at a time
+     * because each points to the next. Measured ~2× on the hot queries.
+     *
+     * page_size can only change through a VACUUM on a non-WAL file, so this
+     * flips the journal, rebuilds, and flips back. Entirely fail-soft: any step
+     * can lose a race with the reader connection, and the only consequence is
+     * that the file stays on 1KB pages and the next sync tries again.
+     */
+    fun rebuildForPageSizeIfNeeded(context: Context) {
+        val db = try {
+            ensureOpen(context)
+        } catch (error: Exception) {
+            Log.w(TAG, "page-size rebuild: cannot open catalog", error)
+            return
+        }
+
+        val current = try {
+            db.rawQuery("PRAGMA page_size", null).use { c ->
+                if (c.moveToFirst()) c.getLong(0) else TARGET_PAGE_SIZE
+            }
+        } catch (error: Exception) {
+            Log.w(TAG, "page-size rebuild: cannot read page_size", error)
+            return
+        }
+        if (current >= TARGET_PAGE_SIZE) return
+
+        // VACUUM materialises a full copy before swapping it in. Refusing to
+        // start beats filling the user's disk and failing mid-rebuild.
+        val dbFile = File(File(context.filesDir, "SQLite"), DB_NAME)
+        val needed = dbFile.length() * 2
+        val free = dbFile.parentFile?.usableSpace ?: 0L
+        if (free < needed) {
+            Log.w(TAG, "page-size rebuild: need ${needed / 1_048_576}MB free, have ${free / 1_048_576}MB — skipping")
+            return
+        }
+
+        val startedAt = System.currentTimeMillis()
+        try {
+            db.rawQuery("PRAGMA journal_mode = DELETE", null).use { it.moveToFirst() }
+            db.rawQuery("PRAGMA page_size = $TARGET_PAGE_SIZE", null).use { it.moveToFirst() }
+            db.execSQL("VACUUM")
+            Log.i(
+                TAG,
+                "page-size rebuild: ${current}B → ${TARGET_PAGE_SIZE}B in " +
+                    "${System.currentTimeMillis() - startedAt}ms",
+            )
+        } catch (error: Exception) {
+            Log.w(TAG, "page-size rebuild failed — staying on ${current}B pages", error)
+        } finally {
+            // Always try to get back to WAL, including after a failed VACUUM:
+            // leaving the catalog in DELETE mode would put the reader back to
+            // blocking on the writer, which is the stall WAL was adopted to fix.
+            try {
+                db.rawQuery("PRAGMA journal_mode = WAL", null).use { it.moveToFirst() }
+            } catch (error: Exception) {
+                Log.w(TAG, "page-size rebuild: could not restore WAL", error)
+            }
+        }
+    }
+
+    /**
+     * Evict least-recently-synced `catalog_detail` rows until the source's
+     * detail payloads fit under [DETAIL_CACHE_MAX_BYTES].
+     *
+     * The watermark prune above only removes rows the LAST FULL SYNC did not
+     * refresh, which is not a bound: details accumulate as the user browses,
+     * and a delta sync refreshes the rows it touches rather than dropping any.
+     * A real catalog reached 2,241 rows / 78MB this way. A detail row is pure
+     * cache — anything evicted here is re-crawled on demand — so the only cost
+     * of being wrong is one refetch.
+     *
+     * Accumulates in Kotlin rather than a windowed DELETE so this does not
+     * depend on the bundled SQLite's window-function support.
+     */
+    fun pruneDetailsToByteLimit(db: SQLiteDatabase, sourceId: String) {
+        val doomed = ArrayList<String>()
+        var running = 0L
+        db.rawQuery(
+            """
+            SELECT cache_key, LENGTH(payload)
+            FROM catalog_detail
+            WHERE source_id = ?
+            ORDER BY synced_at DESC, cache_key ASC
+            """.trimIndent(),
+            arrayOf(sourceId),
+        ).use { cursor ->
+            while (cursor.moveToNext()) {
+                running += cursor.getLong(1)
+                if (running > DETAIL_CACHE_MAX_BYTES) {
+                    doomed.add(cursor.getString(0))
+                }
+            }
+        }
+        if (doomed.isEmpty()) return
+        for (batch in doomed.chunked(DELETE_CHUNK)) {
+            val placeholders = batch.joinToString(",") { "?" }
+            db.execSQL(
+                "DELETE FROM catalog_detail WHERE source_id = ? AND cache_key IN ($placeholders)",
+                arrayOf(sourceId, *batch.toTypedArray()),
+            )
+        }
+        Log.i(TAG, "detail cache over budget — evicted ${doomed.size} row(s) for $sourceId")
     }
 
     // -----------------------------------------------------------------------

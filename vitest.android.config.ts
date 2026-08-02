@@ -2,9 +2,9 @@ import { defineConfig } from 'vitest/config';
 
 import { samoCoreAliases } from './vite.samo-core-aliases';
 
-// Throwaway config so the pure Android reducer tests can run under the same
-// @samo/core aliases as the core suite. Not wired into CI; used for local
-// regression runs of apps/android pure-logic tests.
+// Runs the pure Android reducer/logic tests under the same @samo/core aliases
+// as the core suite. Reached via `pnpm -C apps/android run test`, which the
+// `android` job in .github/workflows/test.yml runs on every push and PR.
 export default defineConfig({
     resolve: {
         alias: [...samoCoreAliases],

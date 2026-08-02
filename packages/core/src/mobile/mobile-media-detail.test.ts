@@ -4,7 +4,9 @@ import { type SamoFetch } from '../server/server-http';
 import { type SamoMusicPlaylist, type SamoMusicTrack } from '../server/server-samo';
 import { testServerAuthentication } from '../test-fixtures';
 import {
+    buildAlbumMetadataLines,
     loadMobileMediaDetail,
+    mapSamoArtistDetail,
     mapSamoPlaylistDetail,
     MobileMediaDetailType,
 } from './mobile-media-detail';
@@ -62,11 +64,75 @@ describe('mapSamoPlaylistDetail artwork', () => {
     });
 });
 
+describe('album items carry the release year', () => {
+    // Regression: the year lived only on the album DETAIL view model, but the
+    // Android mirror stores no album detail row — it rebuilds an album's page
+    // from the item payload plus the stored track rows. So every mirrored album
+    // opened with no year at all, which is most of them. The year belongs on
+    // the ITEM, and the artist page's album tiles are one of the taps that
+    // carries it into the detail page.
+    it('puts the year on the artist page album tiles as a field, not only as display text', () => {
+        const detail = mapSamoArtistDetail(auth, undefined, { id: 'art1', name: 'Talk Talk' }, [
+            {
+                albumArtistNames: ['Talk Talk'],
+                id: 'alb1',
+                releaseYear: 1988,
+                title: 'Spirit of Eden',
+            },
+            { id: 'alb2', title: 'Undated' },
+        ]);
+
+        expect(detail.items?.[0]?.year).toBe(1988);
+        // The tile subtitle renders the year because an artist page needn't
+        // repeat its own artist — but a formatted string is display text, not
+        // data. The tap that opens the album detail needs the number.
+        expect(detail.items?.[0]?.subtitle).toBe('1988');
+        expect(detail.items?.[1]?.year).toBeUndefined();
+    });
+});
+
+describe('buildAlbumMetadataLines', () => {
+    // The hero stacks metadataLines as centered rows under the cover, on top of
+    // the eyebrow, title, year, artist and format badge it already draws. Genre
+    // and label therefore have to share ONE row, or an album header becomes a
+    // column of text.
+    it('joins genres and label into a single credits line', () => {
+        expect(buildAlbumMetadataLines(['Art Rock'], 'Parlophone')).toEqual([
+            'Art Rock · Parlophone',
+        ]);
+    });
+
+    it('keeps the label visible when the server reports a pile of genres', () => {
+        // The row truncates at one line, so an uncapped genre list would push
+        // the label off the end — losing the very field this line exists for.
+        expect(
+            buildAlbumMetadataLines(
+                ['Alternative Rock', 'Post-Punk', 'New Wave', 'Art Rock'],
+                'Parlophone',
+            ),
+        ).toEqual(['Alternative Rock, Post-Punk · Parlophone']);
+    });
+
+    it('renders whichever half is present on its own', () => {
+        expect(buildAlbumMetadataLines(['Jazz'], undefined)).toEqual(['Jazz']);
+        expect(buildAlbumMetadataLines(undefined, 'Blue Note')).toEqual(['Blue Note']);
+    });
+
+    it('stays undefined when the album has neither, so the hero draws no empty row', () => {
+        expect(buildAlbumMetadataLines(undefined, undefined)).toBeUndefined();
+        expect(buildAlbumMetadataLines([], '   ')).toBeUndefined();
+    });
+});
+
 describe('large playlist / podcast pagination', () => {
     // Regression: the loaders used a single limit=500 request, so any playlist
     // (or show) past 500 entries was silently TRUNCATED — the UI presented 500
-    // tracks as if that were the whole list. The loaders must paginate to
-    // exhaustion, stopping on the first short page.
+    // tracks as if that were the whole list.
+    //
+    // The fix must paginate to exhaustion WITHOUT over-fetching. An earlier
+    // attempt fired a fixed window of four concurrent pages, which cost a
+    // 40-track playlist four requests where it needed one. The offsets asserted
+    // below are the real contract: exactly the pages the list requires.
     const jsonResponse = (payload: unknown) => ({
         json: () => Promise.resolve(payload),
         ok: true,
@@ -78,6 +144,9 @@ describe('large playlist / podcast pagination', () => {
         entityPayload: unknown,
         totalCount: number,
         requestedOffsets: number[],
+        // Servers that answer without a `total` must still be paginated
+        // correctly — the loader falls back to fetching until a short page.
+        omitTotal = false,
     ): SamoFetch => {
         return (url) => {
             const parsed = new URL(url);
@@ -92,7 +161,9 @@ describe('large playlist / podcast pagination', () => {
                         title: `Entry ${offset + index}`,
                     }),
                 );
-                return Promise.resolve(jsonResponse({ items, total: totalCount }));
+                return Promise.resolve(
+                    jsonResponse(omitTotal ? { items } : { items, total: totalCount }),
+                );
             }
             if (parsed.pathname.includes('/stream-token')) {
                 // Token mint is best-effort in the loaders (.catch → undefined).
@@ -149,5 +220,34 @@ describe('large playlist / podcast pagination', () => {
 
         expect(detail.tracks).toHaveLength(40);
         expect(offsets).toEqual([0]);
+    });
+
+    it('requests not one page more than the reported total needs', async () => {
+        // The guarantee that matters on mobile: no speculative page ever goes
+        // out. An exactly-full first page must NOT trigger a second request
+        // when `total` says 500 is all there is.
+        const offsets: number[] = [];
+        const detail = await loadMobileMediaDetail({
+            authentication: auth,
+            fetch: buildFetch('/tracks', { id: 'pl3', name: 'Exactly Full' }, 500, offsets),
+            id: 'pl3',
+            type: MobileMediaDetailType.PLAYLIST,
+        });
+
+        expect(detail.tracks).toHaveLength(500);
+        expect(offsets).toEqual([0]);
+    });
+
+    it('paginates sequentially when the server sends no total', async () => {
+        const offsets: number[] = [];
+        const detail = await loadMobileMediaDetail({
+            authentication: auth,
+            fetch: buildFetch('/tracks', { id: 'pl4', name: 'No Total' }, 1234, offsets, true),
+            id: 'pl4',
+            type: MobileMediaDetailType.PLAYLIST,
+        });
+
+        expect(detail.tracks).toHaveLength(1234);
+        expect(offsets).toEqual([0, 500, 1000]);
     });
 });

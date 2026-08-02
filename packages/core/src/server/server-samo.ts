@@ -2385,3 +2385,24 @@ export const samoItemsOf = <T>(value: SamoPaginatedResponse<T> | T[] | undefined
     if (Array.isArray(value)) return value;
     return value?.items ?? [];
 };
+
+/**
+ * The `total` the server sent alongside a page, or `undefined` when the
+ * response carried no count (a bare array, or an envelope that omitted it).
+ *
+ * `samoItemsOf` throws this field away, and for a long time it was the only
+ * accessor anyone used — so every paginator in the codebase had to discover the
+ * length of a list by fetching until it saw a short page. That is one wasted
+ * round trip per list at best, and it pushed callers into inventing their own
+ * guesses: playlist tracks fired a fixed window of four concurrent pages (three
+ * of them wasted on any playlist under 1500 tracks) while podcast episodes went
+ * strictly serial. Two different wrong answers to a question the server had
+ * already answered in the first response.
+ */
+export const samoTotalOf = <T>(
+    value: SamoPaginatedResponse<T> | T[] | undefined,
+): number | undefined => {
+    if (Array.isArray(value)) return value.length;
+    const total = value?.total;
+    return typeof total === 'number' && Number.isFinite(total) && total >= 0 ? total : undefined;
+};

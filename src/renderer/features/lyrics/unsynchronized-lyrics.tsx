@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { FixedSizeList as List } from 'react-window';
+import { List, RowComponentProps } from 'react-window-v2';
 
 import styles from './unsynchronized-lyrics.module.css';
 
@@ -12,6 +12,36 @@ export interface UnsynchronizedLyricsProps extends Omit<FullLyricsMetadata, 'lyr
     settingsKey?: string;
     translatedLyrics?: null | string;
 }
+
+type LyricRowProps = {
+    alignment: 'center' | 'left' | 'right';
+    fontSize: number;
+    lines: string[];
+    translatedLines: string[];
+};
+
+const LyricRow = ({
+    alignment,
+    fontSize,
+    index,
+    lines,
+    style,
+    translatedLines,
+}: RowComponentProps<LyricRowProps>) => {
+    const translatedLine = translatedLines[index] || '';
+
+    return (
+        <div style={style}>
+            <LyricLine
+                alignment={alignment}
+                className="lyric-line unsynchronized"
+                fontSize={fontSize}
+                id={`lyric-${index}`}
+                text={lines[index] + (translatedLine ? `_BREAK_${translatedLine}` : '')}
+            />
+        </div>
+    );
+};
 
 export const UnsynchronizedLyrics = ({
     lyrics,
@@ -42,45 +72,15 @@ export const UnsynchronizedLyrics = ({
     const useVirtualization = lines.length > 100;
     const itemHeight = settings.gapUnsync + settings.fontSizeUnsync + 4;
 
-    const headerItems: { text: string; type: string }[] = [];
-
-    const renderItem = ({
-        index,
-        style: itemStyle,
-    }: {
-        index: number;
-        style: React.CSSProperties;
-    }) => {
-        if (index < headerItems.length) {
-            const item = headerItems[index];
-            return (
-                <div style={itemStyle}>
-                    <LyricLine
-                        alignment={settings.alignment}
-                        className="lyric-credit"
-                        fontSize={settings.fontSizeUnsync}
-                        text={item.text}
-                    />
-                </div>
-            );
-        }
-
-        const lineIdx = index - headerItems.length;
-        const text = lines[lineIdx];
-        const translatedLine = translatedLines[lineIdx] || '';
-
-        return (
-            <div style={itemStyle}>
-                <LyricLine
-                    alignment={settings.alignment}
-                    className="lyric-line unsynchronized"
-                    fontSize={settings.fontSizeUnsync}
-                    id={`lyric-${lineIdx}`}
-                    text={text + (translatedLine ? `_BREAK_${translatedLine}` : '')}
-                />
-            </div>
-        );
-    };
+    const rowProps: LyricRowProps = useMemo(
+        () => ({
+            alignment: settings.alignment,
+            fontSize: settings.fontSizeUnsync,
+            lines,
+            translatedLines,
+        }),
+        [settings.alignment, settings.fontSizeUnsync, lines, translatedLines],
+    );
 
     if (useVirtualization) {
         return (
@@ -88,14 +88,18 @@ export const UnsynchronizedLyrics = ({
                 className={styles.container}
                 style={{ gap: `${settings.gapUnsync}px`, height: '100%' }}
             >
+                {/*
+                 * v2 sizes itself to its container, which also fixes a latent
+                 * bug: under v1 this passed a hardcoded `height={600}`, so long
+                 * lyrics were clipped to 600px regardless of how tall the pane
+                 * actually was.
+                 */}
                 <List
-                    height={600}
-                    itemCount={lines.length + headerItems.length}
-                    itemSize={itemHeight}
-                    width="100%"
-                >
-                    {renderItem}
-                </List>
+                    rowComponent={LyricRow}
+                    rowCount={lines.length}
+                    rowHeight={itemHeight}
+                    rowProps={rowProps}
+                />
             </div>
         );
     }

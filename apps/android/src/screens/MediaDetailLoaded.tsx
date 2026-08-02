@@ -31,6 +31,7 @@ import {
     getPlaylistTrackItemType,
     getPlaylistTrackSearchText,
     PLAYLIST_TRACK_DRAW_DISTANCE,
+    type PlaylistTrackSort,
 } from '../utils/media-detail';
 import { isHiFiTrack } from '../utils/media-quality';
 import { ArtistDetailSections } from './ArtistDetailSections';
@@ -123,8 +124,15 @@ export const MediaDetailLoaded = memo(function MediaDetailLoaded({
     // re-sort by title/artist is the user-facing affordance the user
     // asked for. Album tracks keep their server order untouched.
     const [playlistFilter, setPlaylistFilter] = useState<'all' | 'hifi'>('all');
-    const [playlistSort, setPlaylistSort] = useState<'artist' | 'order' | 'title'>('order');
-    const [playlistSortAsc, setPlaylistSortAsc] = useState(true);
+    const [playlistSort, setPlaylistSort] = useState<PlaylistTrackSort>('order');
+    // Every sort opens in its natural direction: "Order Added" descending, so
+    // the tracks you just added are the ones you land on, and Title/Artist
+    // A→Z. Picking a sort re-seats the arrow to that sort's default.
+    const [playlistSortAsc, setPlaylistSortAsc] = useState(false);
+    const changePlaylistSort = useCallback((next: PlaylistTrackSort) => {
+        setPlaylistSort(next);
+        setPlaylistSortAsc(next !== 'order');
+    }, []);
     const [playlistSearchVisible, setPlaylistSearchVisible] = useState(false);
     const [playlistSearchQuery, setPlaylistSearchQuery] = useState('');
     // The input echoes keystrokes urgently; the (potentially large) filter +
@@ -196,9 +204,9 @@ export const MediaDetailLoaded = memo(function MediaDetailLoaded({
             );
         }
         if (playlistSort === 'order') {
-            // "Order Added" descending = newest at top, which for server
-            // playlists is whatever order the entries arrived in. Ascending
-            // flips that — playlist start at the bottom.
+            // Server playlists arrive oldest-entry-first, so ascending is that
+            // order untouched. Descending — the default — flips it so the most
+            // recently added tracks sit at the top.
             return playlistSortAsc ? filtered : [...filtered].reverse();
         }
         const sorted = [...filtered].sort((left, right) => {
@@ -526,7 +534,7 @@ export const MediaDetailLoaded = memo(function MediaDetailLoaded({
                                     <PlaylistTrackControls
                                         filter={playlistFilter}
                                         onFilterChange={setPlaylistFilter}
-                                        onSortChange={setPlaylistSort}
+                                        onSortChange={changePlaylistSort}
                                         onToggleSortDirection={() =>
                                             setPlaylistSortAsc((value) => !value)
                                         }

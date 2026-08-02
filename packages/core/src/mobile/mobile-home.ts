@@ -202,6 +202,23 @@ export interface MobileHomeItem {
     subtitle?: string;
     title: string;
     type: MobileHomeItemType;
+    /**
+     * Album genres and label. Here for the same reason as `year`: the mirror
+     * has no album detail row to hold them, and the detail page's credits line
+     * is rebuilt from this item. Stored structured rather than pre-joined so
+     * the display format is a display decision — changing it must not require
+     * a library re-sync.
+     */
+    genres?: string[];
+    recordLabel?: string;
+    /**
+     * Album release year. Carried on the ITEM, not just the detail, because the
+     * mirror stores no album detail row — an album's detail page is rebuilt
+     * from this item plus its stored track rows, so a year that only lived on
+     * the detail view model was lost on every mirrored album open. Undefined
+     * for types without a release year (and for albums the server doesn't date).
+     */
+    year?: number;
 }
 
 /**
@@ -359,15 +376,18 @@ const samoAlbumToHomeItem = (
         addedAt: toEpochMs(album.addedAt),
         artworkImageId: pickSamoImageId(album.images),
         artworkUrl: resolveSamoAlbumArtworkUrl(authentication, album, streamToken),
+        genres: album.genres,
         hiddenFromRecentlyAdded: album.hiddenFromRecentlyAdded || undefined,
         id: album.id,
         lastPlayedAt: toEpochMs(album.playback?.lastPlayedAt),
         playCount: album.playback?.playCount,
         qualityProfile: samoAlbumQualityProfile(album),
+        recordLabel: album.recordLabel,
         source,
         subtitle,
         title: album.title,
         type: MobileHomeItemType.ALBUM,
+        year: album.releaseYear,
     };
 };
 

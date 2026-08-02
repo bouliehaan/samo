@@ -6,6 +6,16 @@ directories:
     buildResources: assets
 files:
     - 'out/**/*'
+    # Renderer and remote sourcemaps are ~43 MB and were shipping inside the
+    # asar, where the only thing that could read them is devtools opened against
+    # a production build. They are still generated into out/ for local
+    # debugging — this drops them from the package, not from the build.
+    #
+    # main/preload maps are deliberately NOT excluded: src/main/index.ts installs
+    # `source-map-support` under NODE_ENV=production, so those maps are what turn
+    # a user's crash log into a readable stack trace.
+    - '!out/renderer/**/*.map'
+    - '!out/remote/**/*.map'
     - 'package.json'
 extraResources:
     - from: assets
@@ -38,7 +48,12 @@ nsis:
 
 mac:
     extraResources:
-        - from: resources/bin/darwin
+        # `${arch}` expands to the arch being packaged, so each build carries
+        # ONLY its own mpv. This used to be `from: resources/bin/darwin` with
+        # `filter: ['**/*']`, which shipped both trees into both builds — every
+        # Apple Silicon DMG dragged along a 112 MB Intel mpv it can never
+        # execute, and every Intel DMG an 88 MB arm64 one.
+        - from: resources/bin/darwin/${arch}
           to: bin
           filter:
               - '**/*'

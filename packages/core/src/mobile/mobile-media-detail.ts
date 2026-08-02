@@ -39,6 +39,7 @@ import {
     resolveSamoPodcastArtworkUrl,
     resolveSamoPodcastEpisodeArtworkUrl,
     samoItemsOf,
+    samoTotalOf,
     samoPlaylistHasCoverGrid,
 } from '../server/server-samo';
 import { ensureSamoStreamToken } from '../server/server-samo-stream-token';
@@ -534,6 +535,36 @@ export const loadSamoSyncManifest = async (
     return fetchSamoSyncManifest(fetcher, authentication);
 };
 
+/**
+ * An album's credits as the hero's ONE supporting line: genres, then label,
+ * separated by a middle dot ("Art Rock, Post-Rock · Parlophone").
+ *
+ * Deliberately one entry, not three. The hero stacks `metadataLines` as
+ * centered rows under the cover, and an album already spends rows on the type
+ * eyebrow, title, year, artist and format badge — pushing genre and label as
+ * their own rows turned the header into a column of text. The release year is
+ * NOT included: it has its own, more prominent line above the artist, which is
+ * the whole reason `MobileMediaDetail.year` exists.
+ *
+ * Shared by the network loader and the mirror read path so both transports
+ * render a byte-identical line — the same rule the raw-payload mappers follow.
+ */
+export const buildAlbumMetadataLines = (
+    genres: string[] | undefined,
+    recordLabel: string | undefined,
+): string[] | undefined => {
+    // Capped at two genres. The line renders on one row, and servers routinely
+    // report four or five near-synonyms ("Alternative Rock, Post-Punk, New
+    // Wave, Art Rock") — left whole, they push the label off the end, so the
+    // tail genres would silently cost the user the label entirely. Two genres
+    // characterise an album; the rest are noise competing for the same row.
+    const genreText = genres?.filter(Boolean).slice(0, 2).join(', ');
+    const credits = [genreText || undefined, recordLabel?.trim() || undefined].filter(
+        (part): part is string => Boolean(part),
+    );
+    return credits.length > 0 ? [credits.join(' · ')] : undefined;
+};
+
 const loadSamoAlbumDetail = async (
     authentication: ServerAuthenticationResult,
     fetcher: SamoFetch,
@@ -566,17 +597,12 @@ const loadSamoAlbumDetail = async (
         ),
     );
 
-    const metadataLines: string[] = [];
-    if (album.releaseYear) metadataLines.push(String(album.releaseYear));
-    if (album.genres && album.genres.length > 0) metadataLines.push(album.genres.join(', '));
-    if (album.recordLabel) metadataLines.push(album.recordLabel);
-
     return {
         artworkUrl,
         artworkImageId,
         discCount: album.discCount,
         id: album.id,
-        metadataLines: metadataLines.length > 0 ? metadataLines : undefined,
+        metadataLines: buildAlbumMetadataLines(album.genres, album.recordLabel),
         qualityProfile: samoAlbumQualityProfile(album),
         source: getMobileContentSource(authentication),
         subtitle: album.displayArtist ?? album.albumArtistNames?.filter(Boolean).join(', '),
@@ -640,6 +666,7 @@ export const mapSamoArtistDetail = (
                 subtitle: album.releaseYear ? String(album.releaseYear) : undefined,
                 title: album.title,
                 type: MobileHomeItemType.ALBUM,
+                year: album.releaseYear,
             },
         ];
     };
@@ -712,53 +739,75 @@ export const mapSamoArtistDetail = (
 };
 
 /**
- * Every track of a playlist, paginated to exhaustion. A single limit=500 page
- * silently truncated larger playlists — the UI then showed 500 tracks as if
- * that were the whole list. Stops on the first short/empty page; the 50k
- * ceiling is a runaway guard, not a product limit.
+ * Collect every item of a paginated list.
+ *
+ * The first page is always fetched on its own, because its envelope carries the
+ * `total`. Once that is known the exact remaining offsets are requested
+ * CONCURRENTLY — one round trip of latency plus one burst, with not a single
+ * wasted request. A 40-track playlist costs one request; a 1234-track playlist
+ * costs one request then two in parallel.
+ *
+ * Servers that omit `total` fall back to the old sequential
+ * fetch-until-short-page. That path is correct but slow, and it is the reason
+ * the `total` is worth reading in the first place — see `samoTotalOf`.
+ *
+ * `hardCeiling` is a runaway guard against a server that reports a nonsense
+ * total or never returns a short page. It is not a product limit.
+ */
+const collectSamoPages = async <T>(
+    pageSize: number,
+    hardCeiling: number,
+    fetchPage: (offset: number) => Promise<SamoPaginatedResponse<T> | T[] | undefined>,
+): Promise<T[]> => {
+    const firstResponse = await fetchPage(0);
+    const firstPage = samoItemsOf(firstResponse);
+
+    // A short first page is the whole list no matter what the envelope claims.
+    if (firstPage.length < pageSize) {
+        return firstPage;
+    }
+
+    const total = samoTotalOf(firstResponse);
+
+    if (total === undefined) {
+        const collected = [...firstPage];
+        for (let offset = pageSize; offset < hardCeiling; offset += pageSize) {
+            const batch = samoItemsOf(await fetchPage(offset));
+            collected.push(...batch);
+            if (batch.length < pageSize) {
+                break;
+            }
+        }
+        return collected;
+    }
+
+    const remainingOffsets: number[] = [];
+    for (let offset = pageSize; offset < Math.min(total, hardCeiling); offset += pageSize) {
+        remainingOffsets.push(offset);
+    }
+
+    const remainingPages = await Promise.all(
+        remainingOffsets.map(async (offset) => samoItemsOf(await fetchPage(offset))),
+    );
+
+    return remainingPages.reduce<T[]>((collected, batch) => {
+        collected.push(...batch);
+        return collected;
+    }, firstPage);
+};
+
+/**
+ * Every track of a playlist. A single limit=500 page silently truncated larger
+ * playlists — the UI then showed 500 tracks as if that were the whole list.
  */
 const listAllSamoPlaylistTracks = async (
     authentication: ServerAuthenticationResult,
     fetcher: SamoFetch,
     id: string,
-): Promise<SamoMusicTrack[]> => {
-    const pageSize = 500;
-    // Pages go out CONCURRENTLY, a window at a time. A thousand-track playlist
-    // is three pages, and fetching them one after another made the wait the SUM
-    // of three slow round trips with nothing on screen for any of it — the whole
-    // page is gated on the last one landing. Requesting a window at once makes
-    // it roughly the slowest single page instead.
-    const windowSize = 4;
-    const collected: SamoMusicTrack[] = [];
-    for (let start = 0; start < 50_000; start += pageSize * windowSize) {
-        const offsets: number[] = [];
-        for (let i = 0; i < windowSize; i += 1) {
-            offsets.push(start + i * pageSize);
-        }
-        const pages = await Promise.all(
-            offsets.map(async (offset) =>
-                samoItemsOf(
-                    await listSamoMusicPlaylistTracks(fetcher, authentication, id, {
-                        limit: pageSize,
-                        offset,
-                    }),
-                ),
-            ),
-        );
-        let reachedEnd = false;
-        for (const batch of pages) {
-            collected.push(...batch);
-            if (batch.length < pageSize) {
-                reachedEnd = true;
-                break;
-            }
-        }
-        if (reachedEnd) {
-            break;
-        }
-    }
-    return collected;
-};
+): Promise<SamoMusicTrack[]> =>
+    collectSamoPages(500, 50_000, (offset) =>
+        listSamoMusicPlaylistTracks(fetcher, authentication, id, { limit: 500, offset }),
+    );
 
 const loadSamoPlaylistDetail = async (
     authentication: ServerAuthenticationResult,
@@ -971,22 +1020,10 @@ const listAllSamoPodcastEpisodes = async (
     authentication: ServerAuthenticationResult,
     fetcher: SamoFetch,
     showId: string,
-): Promise<SamoPodcastEpisode[]> => {
-    const pageSize = 500;
-    const collected: SamoPodcastEpisode[] = [];
-    for (let offset = 0; offset < 50_000; offset += pageSize) {
-        const response = await listSamoPodcastEpisodes(fetcher, authentication, showId, {
-            limit: pageSize,
-            offset,
-        });
-        const batch = samoItemsOf(response);
-        collected.push(...batch);
-        if (batch.length < pageSize) {
-            break;
-        }
-    }
-    return collected;
-};
+): Promise<SamoPodcastEpisode[]> =>
+    collectSamoPages(500, 50_000, (offset) =>
+        listSamoPodcastEpisodes(fetcher, authentication, showId, { limit: 500, offset }),
+    );
 
 const loadSamoPodcastDetail = async (
     authentication: ServerAuthenticationResult,
