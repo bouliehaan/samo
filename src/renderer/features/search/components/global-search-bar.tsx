@@ -44,7 +44,6 @@ import {
     useLongFormMediaServer,
     usePlayButtonBehavior,
 } from '/@/renderer/store';
-import { useAudiobookActions } from '/@/renderer/store/audiobook.store';
 import {
     useFavoriteAudiobookIds,
     useFavoritePodcastIds,
@@ -458,7 +457,6 @@ export const GlobalSearchBar = ({ className }: GlobalSearchBarProps) => {
     const musicServerId = musicServer?.id;
     const longFormMediaServer = useLongFormMediaServer();
     const longFormServerId = longFormMediaServer?.id;
-    const audiobookActions = useAudiobookActions();
     const podcastActions = usePodcastActions();
     const radioControls = useRadioControls();
     const setFavorite = useSetFavorite();
@@ -565,12 +563,15 @@ export const GlobalSearchBar = ({ className }: GlobalSearchBarProps) => {
 
     const handleAudiobookSelect = useCallback(
         (item: LongFormLibraryItem) => {
-            if (!longFormMediaServer) return;
-            recordRecentAudiobook(item, longFormMediaServer.id);
-            audiobookActions.play(longFormMediaServer, item);
+            if (longFormMediaServer) {
+                recordRecentAudiobook(item, longFormMediaServer.id);
+            }
+            // Matches the podcast-show result below: a search hit opens the
+            // thing, it does not start playing it.
+            navigate(generatePath(AppRoute.AUDIOBOOKS_DETAIL, { itemId: item.id }));
             closeDropdown();
         },
-        [audiobookActions, closeDropdown, longFormMediaServer],
+        [closeDropdown, longFormMediaServer, navigate],
     );
 
     const handlePodcastShowSelect = useCallback(

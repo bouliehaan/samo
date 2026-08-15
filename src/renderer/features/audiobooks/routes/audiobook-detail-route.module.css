@@ -1,0 +1,7 @@
+.content {
+    padding: var(--theme-spacing-xl) 0 6rem;
+}
+
+.empty-state {
+    padding: 2rem;
+}

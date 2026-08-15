@@ -10,7 +10,6 @@ import {
     fetchSamoDiscoveryHomeTracks,
     fetchSamoExploPlaylist,
 } from '/@/renderer/api/samo/samo-controller';
-import { listSamoAudiobookLibraryItems } from '/@/renderer/api/samo/samo-long-form';
 import {
     GridCarousel,
     useGridCarouselContainerQuery,
@@ -19,6 +18,7 @@ import itemCardControlsStyles from '/@/renderer/components/item-card/item-card-c
 import { ItemImage } from '/@/renderer/components/item-image/item-image';
 import { AlbumInfiniteCarousel } from '/@/renderer/features/albums/components/album-infinite-carousel';
 import { ContextMenuController } from '/@/renderer/features/context-menu/context-menu-controller';
+import { longFormQueries } from '/@/renderer/features/long-form/api/long-form-queries';
 import { LongFormCoverImage } from '/@/renderer/features/player/components/long-form-cover-image';
 import { usePlayer } from '/@/renderer/features/player/context/player-context';
 import { PlayButton } from '/@/renderer/features/shared/components/play-button';
@@ -1082,12 +1082,7 @@ export const HomeFavoriteAudiobooks = ({
     const favoritesActions = useLibraryFavoritesActions();
     const hiddenKeys = useHiddenHomeKeys();
 
-    const samoItemsQuery = useQuery({
-        enabled: Boolean(server),
-        queryFn: () => listSamoAudiobookLibraryItems(server!),
-        queryKey: ['samo', 'home', 'audiobooks', server?.id],
-        staleTime: 1000 * 60 * 5,
-    });
+    const samoItemsQuery = useQuery(longFormQueries.audiobooks(server));
 
     const items = useMemo(() => {
         const allItems = (samoItemsQuery.data ?? []).filter(

@@ -1,0 +1,102 @@
+.container {
+    flex: 1;
+    min-height: 0;
+}
+
+.row {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    width: 100%;
+    height: 100%;
+    padding: var(--theme-spacing-sm) var(--theme-spacing-sm);
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+    background: transparent;
+    border: 0;
+
+    /*
+     * Was a hardcoded rgba(255,255,255,0.06) — invisible on a light theme.
+     * Mixing against the theme foreground keeps the divider legible in both.
+     */
+    border-bottom: 1px solid color-mix(in srgb, var(--theme-colors-foreground) 8%, transparent);
+    border-radius: var(--theme-radius-sm);
+}
+
+.row:hover,
+.row:focus-visible {
+    outline: none;
+    background: color-mix(in srgb, var(--theme-colors-foreground) 6%, transparent);
+}
+
+.row[aria-current='true'] .title {
+    color: var(--theme-colors-primary-filled);
+}
+
+.header {
+    display: flex;
+    gap: var(--theme-spacing-xs);
+    align-items: baseline;
+    justify-content: space-between;
+}
+
+.title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: var(--theme-font-size-sm);
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.played {
+    flex-shrink: 0;
+    font-size: var(--theme-font-size-xs);
+    color: var(--theme-colors-primary-filled);
+}
+
+.meta {
+    display: flex;
+    gap: var(--theme-spacing-xs);
+    font-size: var(--theme-font-size-xs);
+    color: var(--theme-colors-foreground-muted);
+}
+
+.description {
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-line-clamp: 2;
+    font-size: var(--theme-font-size-xs);
+    line-height: 1.35;
+    color: var(--theme-colors-foreground-muted);
+    -webkit-box-orient: vertical;
+}
+
+.progress-track {
+    display: block;
+    width: 100%;
+    height: 3px;
+    margin-top: auto;
+    overflow: hidden;
+    background: color-mix(in srgb, var(--theme-colors-foreground) 10%, transparent);
+    border-radius: 999px;
+}
+
+.progress-bar,
+.progress-bar-done {
+    display: block;
+    height: 100%;
+    border-radius: 999px;
+}
+
+/*
+ * In-progress used to be a hardcoded rgba(202,160,79,0.85) — a fixed gold that
+ * ignored the user's accent entirely. Both states now derive from the theme.
+ */
+.progress-bar {
+    background: color-mix(in srgb, var(--theme-colors-primary-filled) 70%, transparent);
+}
+
+.progress-bar-done {
+    background: var(--theme-colors-primary-filled);
+}

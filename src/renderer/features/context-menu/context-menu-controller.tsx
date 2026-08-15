@@ -3,6 +3,7 @@ import { useEffect, useRef } from 'react';
 import { createCallable } from 'react-call';
 import { generatePath, useNavigate, useParams } from 'react-router';
 
+import { isSamoBackedLibraryItem } from '/@/renderer/api/samo/samo-long-form';
 import { RemoveFromHomeAction } from '/@/renderer/features/context-menu/actions/remove-from-home-action';
 import { AlbumArtistContextMenu } from '/@/renderer/features/context-menu/menus/album-artist-context-menu';
 import { AlbumContextMenu } from '/@/renderer/features/context-menu/menus/album-context-menu';
@@ -13,6 +14,7 @@ import { PlaylistSongContextMenu } from '/@/renderer/features/context-menu/menus
 import { QueueContextMenu } from '/@/renderer/features/context-menu/menus/queue-context-menu';
 import { RecentItemContextMenu } from '/@/renderer/features/context-menu/menus/recent-item-context-menu';
 import { SongContextMenu } from '/@/renderer/features/context-menu/menus/song-context-menu';
+import { openLinkRssFeedModal } from '/@/renderer/features/podcasts/components/link-rss-feed-modal';
 import { useRadioControls } from '/@/renderer/features/radio/hooks/use-radio-player';
 import { AppRoute } from '/@/renderer/router/routes';
 import { useAudiobookActions } from '/@/renderer/store/audiobook.store';
@@ -203,7 +205,12 @@ const AudiobookContextMenu = ({ homeItemKey, items, server }: AudiobookContextMe
             <ContextMenu.Item leftIcon="mediaPlay" onSelect={() => play(server, item)}>
                 Play
             </ContextMenu.Item>
-            <ContextMenu.Item leftIcon="info" onSelect={() => navigate(AppRoute.AUDIOBOOKS)}>
+            <ContextMenu.Item
+                leftIcon="info"
+                onSelect={() =>
+                    navigate(generatePath(AppRoute.AUDIOBOOKS_DETAIL, { itemId: item.id }))
+                }
+            >
                 More info
             </ContextMenu.Item>
             <ContextMenu.Divider />
@@ -225,9 +232,17 @@ const AudiobookContextMenu = ({ homeItemKey, items, server }: AudiobookContextMe
 
 const PodcastContextMenu = ({ homeItemKey, items, server }: PodcastContextMenuProps) => {
     const navigate = useNavigate();
+    const queryClient = useQueryClient();
     const { toggle } = useLibraryFavoritesActions();
     const item = items[0];
     if (!item) return null;
+
+    // Only offered for a locally-imported show that has no feed attached yet —
+    // a show that already syncs from RSS has nothing to fix.
+    const canLinkRss =
+        isSamoBackedLibraryItem(item) &&
+        Boolean(item.samoPath && !item.samoPath.startsWith('samo://')) &&
+        !item.samoRssFeed;
 
     return (
         <ContextMenu.Content>
@@ -256,6 +271,21 @@ const PodcastContextMenu = ({ homeItemKey, items, server }: PodcastContextMenuPr
             >
                 Favorite
             </ContextMenu.Item>
+            {canLinkRss ? (
+                <ContextMenu.Item
+                    leftIcon="externalLink"
+                    onSelect={() =>
+                        openLinkRssFeedModal({
+                            queryClient,
+                            server,
+                            showId: item.id,
+                            title: 'Link RSS feed',
+                        })
+                    }
+                >
+                    Link RSS feed
+                </ContextMenu.Item>
+            ) : null}
             {homeItemKey ? (
                 <>
                     <ContextMenu.Divider />

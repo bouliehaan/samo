@@ -3,10 +3,7 @@ import { useMemo } from 'react';
 
 import { api } from '/@/renderer/api';
 import { queryKeys } from '/@/renderer/api/query-keys';
-import {
-    listSamoAudiobookLibraryItems,
-    listSamoPodcastLibraryItems,
-} from '/@/renderer/api/samo/samo-long-form';
+import { longFormQueries } from '/@/renderer/features/long-form/api/long-form-queries';
 import { playlistsQueries } from '/@/renderer/features/playlists/api/playlists-api';
 import { searchQueries } from '/@/renderer/features/search/api/search-api';
 import {
@@ -33,8 +30,6 @@ const SHORT_QUERY_THRESHOLD = 3;
 const ENTITY_TYPE_BUMP = 50;
 
 const MUSIC_SEARCH_STALE_TIME_MS = 1000 * 60;
-const ABS_LIBRARY_STALE_TIME_MS = 1000 * 60 * 5;
-const ABS_LIBRARY_GC_TIME_MS = 1000 * 60 * 30;
 
 export type RankedAlbum = { album: Album; kind: 'album'; score: number };
 
@@ -379,25 +374,23 @@ export const useUnifiedSearch = (rawQuery: string): UnifiedSearchState => {
         staleTime: 1000 * 60 * 5,
     });
 
-    const samoLongFormItemsQuery = useQuery({
+    // Audiobooks share the library-wide cache entry with Home, the sidebar and
+    // the Audiobooks page — search adds no fetch of its own for them. Only the
+    // episode-bearing podcast list is search-specific, because search ranks
+    // individual episode titles and nothing else needs that N+1.
+    const samoAudiobooksQuery = useQuery({
+        ...longFormQueries.audiobooks(longFormMediaServer),
         enabled: enabled && Boolean(longFormMediaServer),
-        gcTime: ABS_LIBRARY_GC_TIME_MS,
-        queryFn: async () => {
-            const [audiobooks, podcasts] = await Promise.all([
-                listSamoAudiobookLibraryItems(longFormMediaServer!),
-                // Search ranks individual episode titles, so it needs each show's
-                // episodes (opt-in — the library grid/sidebar skip this N+1).
-                listSamoPodcastLibraryItems(longFormMediaServer!, { includeEpisodes: true }),
-            ]);
-            return [...audiobooks, ...podcasts];
-        },
-        queryKey: ['samo', 'search-long-form', longFormMediaServer?.id],
-        staleTime: ABS_LIBRARY_STALE_TIME_MS,
+    });
+
+    const samoPodcastsQuery = useQuery({
+        ...longFormQueries.podcastsWithEpisodes(longFormMediaServer),
+        enabled: enabled && Boolean(longFormMediaServer),
     });
 
     const longFormItems = useMemo(
-        () => samoLongFormItemsQuery.data ?? [],
-        [samoLongFormItemsQuery.data],
+        () => [...(samoAudiobooksQuery.data ?? []), ...(samoPodcastsQuery.data ?? [])],
+        [samoAudiobooksQuery.data, samoPodcastsQuery.data],
     );
 
     const hasMusicServer = Boolean(musicServer?.id);
@@ -408,17 +401,21 @@ export const useUnifiedSearch = (rawQuery: string): UnifiedSearchState => {
         ((hasMusicServer && musicSearchQuery.isPending) ||
             (hasMusicServer && playlistsQuery.isPending) ||
             (hasMusicServer && radioStationsQuery.isPending) ||
-            (hasLongFormServer && samoLongFormItemsQuery.isPending));
+            (hasLongFormServer && (samoAudiobooksQuery.isPending || samoPodcastsQuery.isPending)));
 
     const sourceErrors = useMemo<UnifiedSearchSourceErrors>(
         () => ({
-            longForm: getErrorMessage(samoLongFormItemsQuery.error) ?? undefined,
+            longForm:
+                getErrorMessage(samoAudiobooksQuery.error) ??
+                getErrorMessage(samoPodcastsQuery.error) ??
+                undefined,
             music: getErrorMessage(musicSearchQuery.error),
             playlists: getErrorMessage(playlistsQuery.error),
             radio: getErrorMessage(radioStationsQuery.error),
         }),
         [
-            samoLongFormItemsQuery.error,
+            samoAudiobooksQuery.error,
+            samoPodcastsQuery.error,
             musicSearchQuery.error,
             playlistsQuery.error,
             radioStationsQuery.error,

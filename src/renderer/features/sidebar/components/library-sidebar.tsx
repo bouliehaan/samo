@@ -5,14 +5,11 @@ import { generatePath, useLocation, useNavigate } from 'react-router';
 
 import styles from './library-sidebar.module.css';
 
-import {
-    listSamoAudiobookLibraryItems,
-    listSamoPodcastLibraryItems,
-} from '/@/renderer/api/samo/samo-long-form';
 import { ItemImage } from '/@/renderer/components/item-image/item-image';
 import { albumQueries } from '/@/renderer/features/albums/api/album-api';
 import { artistsQueries } from '/@/renderer/features/artists/api/artists-api';
 import { ContextMenuController } from '/@/renderer/features/context-menu/context-menu-controller';
+import { longFormQueries } from '/@/renderer/features/long-form/api/long-form-queries';
 import { LongFormCoverImage } from '/@/renderer/features/player/components/long-form-cover-image';
 import { usePlayer } from '/@/renderer/features/player/context/player-context';
 import { playlistsQueries } from '/@/renderer/features/playlists/api/playlists-api';
@@ -29,7 +26,6 @@ import {
     playHistoryKey,
     RecentItem,
     recordRecentItem,
-    useAudiobookActions,
     useAudiobookItem,
     useCurrentServerWithCredential,
     useLongFormMediaServer,
@@ -137,7 +133,7 @@ const getRecentRouteTarget = (item: RecentItem) => {
                 albumArtistId: item.itemId,
             });
         case 'audiobook':
-            return AppRoute.AUDIOBOOKS;
+            return generatePath(AppRoute.AUDIOBOOKS_DETAIL, { itemId: item.itemId });
         case 'playlist':
             return generatePath(AppRoute.PLAYLISTS_DETAIL_SONGS, { playlistId: item.itemId });
         case 'podcast':
@@ -395,7 +391,6 @@ export const LibrarySidebar = () => {
     const recentItems = useRecentItems();
     const radioControls = useRadioControls();
     const { currentStreamUrl, isPlaying: isRadioPlaying } = useRadioPlayer();
-    const audiobookActions = useAudiobookActions();
     const currentSong = usePlayerSong();
     const player = usePlayer();
     const playerStatus = usePlayerStatus();
@@ -480,17 +475,13 @@ export const LibrarySidebar = () => {
     });
 
     const samoAudiobooksQuery = useQuery({
+        ...longFormQueries.audiobooks(longFormServer),
         enabled: shouldLoadLongFormView && isSamoLongForm && activeFilter === 'audiobooks',
-        queryFn: () => listSamoAudiobookLibraryItems(longFormServer!),
-        queryKey: ['samo', 'sidebar', 'audiobooks', longFormServerId],
-        staleTime: 1000 * 60 * 5,
     });
 
     const samoPodcastsQuery = useQuery({
+        ...longFormQueries.podcasts(longFormServer),
         enabled: shouldLoadLongFormView && isSamoLongForm && activeFilter === 'podcasts',
-        queryFn: () => listSamoPodcastLibraryItems(longFormServer!),
-        queryKey: ['samo', 'sidebar', 'podcasts', longFormServerId],
-        staleTime: 1000 * 60 * 5,
     });
 
     const samoAudiobookEntries = useMemo(
@@ -668,22 +659,15 @@ export const LibrarySidebar = () => {
                     }
                     return;
                 case 'audiobook':
-                    if (longFormServer && item.rawAbsItem) {
-                        audiobookActions.play(longFormServer, item.rawAbsItem);
-                    } else {
-                        navigate(AppRoute.AUDIOBOOKS);
-                    }
+                    // Opens the book rather than committing to playback — the
+                    // same as every other media type here. An audiobook is the
+                    // one kind you most often want to look at (chapters, where
+                    // you left off) before pressing play.
+                    navigate(generatePath(AppRoute.AUDIOBOOKS_DETAIL, { itemId: item.itemId }));
+                    recordRecentItem({ ...item, selectedAt: Date.now() });
             }
         },
-        [
-            audiobookActions,
-            longFormServer,
-            currentStreamUrl,
-            isRadioPlaying,
-            navigate,
-            player,
-            radioControls,
-        ],
+        [currentStreamUrl, isRadioPlaying, navigate, player, radioControls],
     );
 
     const recentItemsByKey = useMemo(

@@ -19,7 +19,15 @@ export {
 } from '/@/renderer/store/audiobook-chapters';
 
 export interface AudiobookActions extends AbsPlaybackBaseActions {
-    play: (server: ServerListItemWithCredential, item: LongFormLibraryItem) => Promise<void>;
+    /**
+     * `startSeconds` starts the book at an explicit point instead of the saved
+     * progress — how "play this chapter" works from the detail page.
+     */
+    play: (
+        server: ServerListItemWithCredential,
+        item: LongFormLibraryItem,
+        startSeconds?: number,
+    ) => Promise<void>;
     seekToNextChapter: () => void;
     seekToPreviousChapter: () => void;
     setDuration: (seconds: number) => void;
@@ -109,11 +117,15 @@ const { selectors, store: useAudiobookStore } = createAbsPlaybackStore<
     rememberSession: ({ item, position, server }) =>
         rememberAudiobookPlaybackSession(server, item, position),
     requiresEpisode: false,
-    resolvePlaySession: async (_server, item) => {
+    resolvePlaySession: async (_server, item, startSeconds) => {
         const server = _server as ServerListItemWithCredential;
         const libraryItem = item as LongFormLibraryItem;
 
-        return resolveSamoAudiobookPlaySession(server, libraryItem) as any;
+        return resolveSamoAudiobookPlaySession(
+            server,
+            libraryItem,
+            startSeconds as number | undefined,
+        ) as any;
     },
     resumeField: 'resumeByItemId',
     resumeInitial: { resumeByItemId: {} },

@@ -29,7 +29,10 @@
             "musicbrainz": "Open in MusicBrainz",
             "qobuz": "Open in Qobuz",
             "spotify": "Open in Spotify"
-        }
+        },
+        "linkRssFeed": "link RSS feed",
+        "rssFeedHelp": "link an RSS feed to fix episode release dates and receive new episodes while keeping your downloaded files",
+        "rssFeedLinked": "RSS feed linked. Episode dates will update from the feed"
     },
     "common": {
         "countSelected": "{{count}} selected",
@@ -153,7 +156,13 @@
         "gridRows": "grid rows",
         "tableColumns": "table columns",
         "itemsMore": "{{count}} more",
-        "newVersionAvailable": "a new version is available"
+        "newVersionAvailable": "a new version is available",
+        "noResults": "no matching results",
+        "played": "played",
+        "searchAudiobooks": "search audiobooks",
+        "searchPodcasts": "search podcasts",
+        "showLess": "show less",
+        "showMore": "show more"
     },
     "entity": {
         "album_one": "album",
@@ -194,7 +203,24 @@
         "song_one": "song",
         "song_other": "songs",
         "trackWithCount_one": "{{count}} track",
-        "trackWithCount_other": "{{count}} tracks"
+        "trackWithCount_other": "{{count}} tracks",
+        "audiobook_one": "audiobook",
+        "audiobook_other": "audiobooks",
+        "audiobookWithCount_one": "{{count}} audiobook",
+        "audiobookWithCount_other": "{{count}} audiobooks",
+        "chapterNumber": "chapter {{number}}",
+        "chapterWithCount_one": "{{count}} chapter",
+        "chapterWithCount_other": "{{count}} chapters",
+        "episode_one": "episode",
+        "episode_other": "episodes",
+        "episodeWithCount_one": "{{count}} episode",
+        "episodeWithCount_other": "{{count}} episodes",
+        "narratedBy": "narrated by {{name}}",
+        "podcast_one": "podcast",
+        "podcast_other": "podcasts",
+        "podcastWithCount_one": "{{count}} podcast",
+        "podcastWithCount_other": "{{count}} podcasts",
+        "untitledEpisode": "untitled episode"
     },
     "error": {
         "apiRouteError": "unable to route request",
@@ -217,7 +243,15 @@
         "serverLockSingleServer": "only one server is allowed when server is locked",
         "serverNotSelectedError": "no server selected",
         "serverRequired": "server required",
-        "settingsSyncError": "discrepancies were found between the settings in the renderer and the main process. restart the application to apply the changes"
+        "settingsSyncError": "discrepancies were found between the settings in the renderer and the main process. restart the application to apply the changes",
+        "audiobookNotFound": "audiobook not found",
+        "noAudiobooksFound": "no audiobooks found",
+        "noEpisodesAvailable": "no episodes available",
+        "noPodcastsFound": "no podcasts found",
+        "noServerForAudiobooks": "add a Samo server to browse audiobooks",
+        "noServerForPodcasts": "add a Samo server to browse podcasts",
+        "podcastNotFound": "podcast not found",
+        "rssFeedLinkFailed": "failed to link RSS feed"
     },
     "filter": {
         "album": "$t(entity.album, {\"count\": 1})",
@@ -488,6 +522,12 @@
         },
         "trackList": {
             "title": "$t(entity.track, {\"count\": 2})"
+        },
+        "audiobookList": {
+            "title": "$t(entity.audiobook, {\"count\": 2})"
+        },
+        "podcastList": {
+            "title": "$t(entity.podcast, {\"count\": 2})"
         }
     },
     "player": {

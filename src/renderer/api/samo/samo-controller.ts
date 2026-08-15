@@ -1574,8 +1574,11 @@ export const samoExtras = {
     getCatalogOverview: async (server: { credential: string; url: string }) =>
         getSamoCatalogOverview(browserFetch, samoAuthentication(server)),
 
-    getPodcastEpisodes: async (server: ServerListItemWithCredentialCore, showId: string) =>
-        listSamoPodcastEpisodes(browserFetch, samoAuthentication(server), showId, { limit: 500 }),
+    getPodcastEpisodes: async (
+        server: ServerListItemWithCredentialCore,
+        showId: string,
+        input?: { limit?: number; offset?: number },
+    ) => listSamoPodcastEpisodes(browserFetch, samoAuthentication(server), showId, input),
 
     getPodcastShow: async (server: ServerListItemWithCredentialCore, id: string) =>
         getSamoPodcastShow(browserFetch, samoAuthentication(server), id),

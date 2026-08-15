@@ -22,6 +22,9 @@ const SongListRoute = lazy(() => import('/@/renderer/features/songs/routes/song-
 const AudiobooksRoute = lazy(
     () => import('/@/renderer/features/audiobooks/routes/audiobooks-route'),
 );
+const AudiobookDetailRoute = lazy(
+    () => import('/@/renderer/features/audiobooks/routes/audiobook-detail-route'),
+);
 const PodcastsRoute = lazy(() => import('/@/renderer/features/podcasts/routes/podcasts-route'));
 const PodcastDetailRoute = lazy(
     () => import('/@/renderer/features/podcasts/routes/podcast-detail-route'),
@@ -262,6 +265,10 @@ export const AppRouter = () => {
                                         <Route
                                             element={<AudiobooksRoute />}
                                             path={AppRoute.AUDIOBOOKS}
+                                        />
+                                        <Route
+                                            element={<AudiobookDetailRoute />}
+                                            path={AppRoute.AUDIOBOOKS_DETAIL}
                                         />
                                         <Route
                                             element={<PodcastsRoute />}

@@ -1,0 +1,52 @@
+.card {
+    display: flex;
+    flex-direction: column;
+    gap: var(--theme-spacing-xs);
+    width: 100%;
+    cursor: pointer;
+    background: transparent;
+    border: 0;
+    border-radius: var(--theme-radius-md);
+}
+
+.card:focus-visible {
+    outline: 2px solid var(--theme-colors-primary-filled);
+    outline-offset: 4px;
+}
+
+.cover-wrap {
+    position: relative;
+}
+
+.cover {
+    aspect-ratio: 1 / 1;
+    overflow: hidden;
+    background: var(--theme-colors-surface);
+    border-radius: var(--theme-radius-md);
+}
+
+.favorite {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    background: transparent;
+    opacity: 0;
+}
+
+/*
+ * Hover-reveals the affordance without hiding the state: an item that IS a
+ * favorite keeps its filled heart on screen, otherwise the grid would give no
+ * way to see what you have favorited without hovering every tile.
+ */
+.card:hover .favorite,
+.card:focus-within .favorite,
+.favorite-active {
+    opacity: 1;
+}
+
+.meta {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}

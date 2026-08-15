@@ -1,0 +1,11 @@
+.container {
+    flex: 1;
+    min-height: 0;
+}
+
+.row {
+    display: grid;
+    gap: 20px;
+    align-content: start;
+    padding-bottom: 20px;
+}

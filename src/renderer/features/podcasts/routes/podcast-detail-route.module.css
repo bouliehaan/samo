@@ -1,0 +1,19 @@
+.content {
+    padding: var(--theme-spacing-xl) 0 6rem;
+}
+
+/*
+ * The episode list virtualizes, so it needs a bounded height to measure
+ * against rather than growing with the episode count.
+ */
+.episode-list {
+    height: min(70dvh, 720px);
+}
+
+.empty-state {
+    padding: 2rem;
+}
+
+.item-type {
+    color: var(--theme-colors-foreground-muted);
+}

@@ -1,12 +1,12 @@
 import { buildMobilePodcastFeedEpisodes } from '@samo/core/mobile';
 import {
+    collectSamoPages,
     ensureSamoStreamToken,
     getCachedSamoStreamToken,
     getSamoAudiobookStreamUrl,
     getSamoPodcastEpisodeStreamUrl,
     listSamoAllPodcastEpisodes,
     listSamoAudiobooks,
-    listSamoPodcastEpisodes,
     listSamoPodcasts,
     resolveSamoAudiobookArtworkUrl,
     resolveSamoPodcastArtworkUrl,
@@ -26,6 +26,7 @@ import {
 import { samoExtras } from '/@/renderer/api/samo/samo-controller';
 import { samoFetch } from '/@/renderer/api/samo/samo-fetch';
 import { useLongFormMediaServer } from '/@/renderer/store';
+import { clampPosition } from '/@/renderer/store/audiobook-resume-math';
 import {
     LongFormChapter,
     LongFormLibraryItem,
@@ -191,13 +192,28 @@ export const samoPodcastToLibraryItem = (
     };
 };
 
+/**
+ * Page size for long-form library listings. The ceilings below are runaway
+ * guards against a server reporting a nonsense total — not product limits.
+ * Every one of these lists used to be a single `limit: 500` request, which
+ * silently truncated: library item 501 simply did not exist as far as the app
+ * was concerned, with no error and no indication anything was missing.
+ */
+const LONG_FORM_PAGE_SIZE = 500;
+const LONG_FORM_LIBRARY_CEILING = 50_000;
+const PODCAST_EPISODE_CEILING = 20_000;
+
 export const listSamoAudiobookLibraryItems = async (
     server: ServerListItemWithCredential,
 ): Promise<SamoBackedLibraryItem[]> => {
     const auth = samoAuth(server);
     const streamToken = await ensureStreamToken(server);
-    const response = await listSamoAudiobooks(browserFetch, auth, { limit: 500 });
-    return samoItemsOf(response).map((audiobook) =>
+    const audiobooks = await collectSamoPages(
+        LONG_FORM_PAGE_SIZE,
+        LONG_FORM_LIBRARY_CEILING,
+        (offset) => listSamoAudiobooks(browserFetch, auth, { limit: LONG_FORM_PAGE_SIZE, offset }),
+    );
+    return audiobooks.map((audiobook) =>
         samoAudiobookToLibraryItem(
             audiobook,
             resolveSamoAudiobookArtworkUrl(auth, audiobook, streamToken),
@@ -205,14 +221,24 @@ export const listSamoAudiobookLibraryItems = async (
     );
 };
 
+/** Every episode of one show, across as many pages as the show has. */
+const listAllSamoPodcastEpisodes = async (
+    server: ServerListItemWithCredential,
+    showId: string,
+): Promise<SamoPodcastEpisode[]> =>
+    collectSamoPages(LONG_FORM_PAGE_SIZE, PODCAST_EPISODE_CEILING, (offset) =>
+        samoExtras.getPodcastEpisodes(server, showId, { limit: LONG_FORM_PAGE_SIZE, offset }),
+    );
+
 export const listSamoPodcastLibraryItems = async (
     server: ServerListItemWithCredential,
     options?: { includeEpisodes?: boolean },
 ): Promise<SamoBackedLibraryItem[]> => {
     const auth = samoAuth(server);
     const streamToken = await ensureStreamToken(server);
-    const response = await listSamoPodcasts(browserFetch, auth, { limit: 500 });
-    const shows = samoItemsOf(response);
+    const shows = await collectSamoPages(LONG_FORM_PAGE_SIZE, LONG_FORM_LIBRARY_CEILING, (offset) =>
+        listSamoPodcasts(browserFetch, auth, { limit: LONG_FORM_PAGE_SIZE, offset }),
+    );
 
     // The Podcasts grid and sidebar only render show summaries (cover, title,
     // author, episode count). Fetching every show's full episode list here was
@@ -233,16 +259,13 @@ export const listSamoPodcastLibraryItems = async (
     }
 
     return Promise.all(
-        shows.map(async (show) => {
-            const episodesResponse = await listSamoPodcastEpisodes(browserFetch, auth, show.id, {
-                limit: 500,
-            });
-            return samoPodcastToLibraryItem(
+        shows.map(async (show) =>
+            samoPodcastToLibraryItem(
                 show,
-                samoItemsOf(episodesResponse),
+                await listAllSamoPodcastEpisodes(server, show.id),
                 resolveSamoPodcastArtworkUrl(auth, show, streamToken),
-            );
-        }),
+            ),
+        ),
     );
 };
 
@@ -275,26 +298,62 @@ export const loadSamoPodcastLibraryItem = async (
 ): Promise<SamoBackedLibraryItem> => {
     const auth = samoAuth(server);
     const streamToken = await ensureStreamToken(server);
-    const [show, episodesResponse] = await Promise.all([
+    const [show, episodes] = await Promise.all([
         samoExtras.getPodcastShow(server, showId),
-        samoExtras.getPodcastEpisodes(server, showId),
+        listAllSamoPodcastEpisodes(server, showId),
     ]);
     return samoPodcastToLibraryItem(
         show,
-        samoItemsOf(episodesResponse),
+        episodes,
         resolveSamoPodcastArtworkUrl(auth, show, streamToken),
+    );
+};
+
+/**
+ * One audiobook, by id. The list endpoint already carries chapters, but a
+ * detail page opened straight from a deep link, the sidebar or search has no
+ * list in hand — and refetching the whole library to render one book would be
+ * absurd.
+ */
+export const loadSamoAudiobookLibraryItem = async (
+    server: ServerListItemWithCredential,
+    audiobookId: string,
+): Promise<SamoBackedLibraryItem> => {
+    const auth = samoAuth(server);
+    const streamToken = await ensureStreamToken(server);
+    const audiobook = await samoExtras.getAudiobook(server, audiobookId);
+    return samoAudiobookToLibraryItem(
+        audiobook,
+        resolveSamoAudiobookArtworkUrl(auth, audiobook, streamToken),
     );
 };
 
 export const resolveSamoAudiobookPlaySession = async (
     server: ServerListItemWithCredential,
     item: LongFormLibraryItem,
+    /**
+     * Explicit start point, in book-global seconds — used when the listener
+     * picked a chapter rather than pressing Play. Without it the session starts
+     * from the listener's saved server-side progress.
+     *
+     * This is resolved here, in the same request that picks which file to
+     * stream, so a chapter deep in the book opens the right file immediately.
+     * Starting playback and then seeking would load the wrong file first and
+     * race the seek against the load.
+     */
+    startSeconds?: number,
 ) => {
     const auth = samoAuth(server);
     const streamToken = await ensureStreamToken(server);
     const audiobook = await samoExtras.getAudiobook(server, item.id);
-    const progressSeconds = audiobook.progress?.progressSeconds ?? 0;
     const duration = audiobook.durationSeconds ?? item.media?.duration ?? 0;
+    const savedProgress = audiobook.progress?.progressSeconds ?? 0;
+    // An explicitly chosen chapter is never "near the end, so restart" — it is
+    // exactly where the listener asked to be, so it is only clamped in range.
+    const progressSeconds =
+        typeof startSeconds === 'number' && Number.isFinite(startSeconds)
+            ? clampPosition(startSeconds, duration)
+            : savedProgress;
     const chapters = toAbsChapters(audiobook.chapters);
 
     // File-aware playback: the server now serves each file WHOLE, so start at the
