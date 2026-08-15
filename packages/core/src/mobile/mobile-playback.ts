@@ -1,5 +1,5 @@
 import { type AudioDeliveryKind } from '../audio-quality';
-import { type PlaybackSource } from '../playback';
+import { type PlaybackSource, resolveLongFormResumeSeconds } from '../playback';
 import { type ServerAuthenticationResult } from '../server/server-auth';
 import { type SamoFetch } from '../server/server-http';
 import {
@@ -624,10 +624,18 @@ export const buildSamoAudiobookPlayback = (
         timelineSegments?: MobilePlaybackSegment[];
     },
 ): MobilePlayableAudio | null => {
-    const bookStart = Math.max(
-        0,
-        Math.floor(options?.startSeconds ?? audiobook.progress?.progressSeconds ?? 0),
-    );
+    // An explicit `startSeconds` is the caller pointing at a chapter or a
+    // scrub target — it is not a resume and is never second-guessed. Only the
+    // fall-through to the book's own saved progress is a resume, and a FINISHED
+    // book resumes at the top (same rule as a finished podcast episode).
+    const bookStart =
+        options?.startSeconds !== undefined
+            ? Math.max(0, Math.floor(options.startSeconds))
+            : resolveLongFormResumeSeconds({
+                  completed: audiobook.progress?.completed,
+                  durationSeconds: audiobook.durationSeconds,
+                  progressSeconds: audiobook.progress?.progressSeconds,
+              });
     // Single source of truth: build the multi-file queue and return the file
     // that contains the resume point. The whole-file/local-seek model means even
     // a one-file book plays through this path (it just yields a one-item queue).
@@ -721,12 +729,17 @@ export const buildSamoPodcastEpisodePlayback = (
     if (!resolvedShowId) return null;
 
     const audioFile = episode.audioFiles?.[0];
-    const resumeSeconds = Math.max(
-        0,
-        Math.floor(
-            episode.progress?.progressSeconds ?? episode.playback?.progressSeconds ?? 0,
-        ),
-    );
+    // A FINISHED episode starts over. The server keeps `progressSeconds` parked
+    // at the end alongside `completed`, so seeding the resume from the position
+    // alone dropped every re-listen at the outro — and since the server-side
+    // refresh at play time only declines to MOVE the resume it found, this
+    // build-time value was the one that stuck. See resolveLongFormResumeSeconds.
+    const resumeSeconds = resolveLongFormResumeSeconds({
+        completed: episode.progress?.completed ?? episode.playback?.completed,
+        durationSeconds: episode.durationSeconds ?? episode.duration,
+        progressSeconds:
+            episode.progress?.progressSeconds ?? episode.playback?.progressSeconds,
+    });
     const quality = samoQualityForFile(audioFile, 'android-direct', false);
 
     const publishedAtMs = episode.publishedAt

@@ -287,6 +287,20 @@ export const parseSamoInternetRadioStationId = (playbackId: string): string | un
     return match?.[1];
 };
 
+/**
+ * The station id behind a PROGRAMMED radio playback id.
+ *
+ * Samo has two kinds of station and they are separate catalogs: an internet
+ * station is a URL samo relays, a programmed one is a schedule samo streams
+ * itself. Their ids collide freely, so anything resolving a station by id has
+ * to know which of the two it is holding — which is exactly what the two
+ * distinct playback-id shapes carry.
+ */
+export const parseSamoProgrammedRadioStationId = (playbackId: string): string | undefined => {
+    const match = playbackId.match(/(?:^|:)radio-programmed:([^:]+)$/);
+    return match?.[1];
+};
+
 export const enrichSamoRadioPlaybackItem = (
     item: MobilePlayableAudio,
     station: SamoInternetRadioStation,

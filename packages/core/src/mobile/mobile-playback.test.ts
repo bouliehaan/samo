@@ -6,6 +6,7 @@ import { testServerAuthentication } from '../test-fixtures';
 import {
     applySamoPodcastStreamResume,
     buildSamoAudiobookFileQueue,
+    buildSamoAudiobookPlayback,
     buildSamoPodcastEpisodePlayback,
     CHROMECAST_MAX_LOSSLESS_SAMPLE_RATE_HZ,
     mimeFromAudioFileExt,
@@ -266,5 +267,116 @@ describe('buildSamoPodcastEpisodePlayback source routing', () => {
         expect(refreshed.url).toBe(baseEpisode.enclosureUrl);
         expect(refreshed.initialPositionSeconds).toBe(120);
         expect(refreshed.serverStreamUrl).toContain('stream_token=tok-2');
+    });
+});
+
+describe('a finished podcast episode starts over', () => {
+    const auth = testServerAuthentication({
+        type: ServerType.SAMO,
+        url: 'https://samo.example.com',
+    });
+    const baseEpisode = {
+        durationSeconds: 1800,
+        enclosureUrl: 'https://cdn.example.net/shows/ep-1.mp3',
+        id: 'episode-1',
+        podcastId: 'show-1',
+        title: 'Episode One',
+    };
+
+    // The server parks `progressSeconds` at the end and sets `completed`, and
+    // the server-side refresh at play time only ever declines to MOVE a resume
+    // — so this build-time value is the one that decides where a re-listen
+    // starts. Seeding it from the position alone dropped every replay of a
+    // favourite episode at the outro.
+    it('ignores the end-parked position once the episode is completed', () => {
+        const playback = buildSamoPodcastEpisodePlayback(
+            auth,
+            { ...baseEpisode, progress: { completed: true, progressSeconds: 1798 } },
+            'show-1',
+        );
+
+        expect(playback?.initialPositionSeconds).toBe(0);
+    });
+
+    it('still resumes an episode stopped in the middle', () => {
+        const playback = buildSamoPodcastEpisodePlayback(
+            auth,
+            { ...baseEpisode, progress: { progressSeconds: 600 } },
+            'show-1',
+        );
+
+        expect(playback?.initialPositionSeconds).toBe(600);
+    });
+
+    it('restarts one played to the end even with no completed flag', () => {
+        // The app was killed during the outro, or the listen finished on a
+        // client that never asserts the flag. Position alone has to carry it.
+        const playback = buildSamoPodcastEpisodePlayback(
+            auth,
+            { ...baseEpisode, progress: { progressSeconds: 1795 } },
+            'show-1',
+        );
+
+        expect(playback?.initialPositionSeconds).toBe(0);
+    });
+
+    it('keeps resuming right up to the edge of the near-end window', () => {
+        // 1800s * 2% = a 36s window, so 1763s in still resumes and 1765s does not.
+        expect(
+            buildSamoPodcastEpisodePlayback(
+                auth,
+                { ...baseEpisode, progress: { progressSeconds: 1763 } },
+                'show-1',
+            )?.initialPositionSeconds,
+        ).toBe(1763);
+        expect(
+            buildSamoPodcastEpisodePlayback(
+                auth,
+                { ...baseEpisode, progress: { progressSeconds: 1765 } },
+                'show-1',
+            )?.initialPositionSeconds,
+        ).toBe(0);
+    });
+});
+
+describe('a finished audiobook starts over', () => {
+    // Converged with the podcast rule (and with desktop's normalizeResumePosition)
+    // so "finished" means one thing everywhere.
+    it('ignores the end-parked position once the book is completed', () => {
+        const playback = buildSamoAudiobookPlayback(samoAuth(), {
+            ...threeFileBook(),
+            progress: { completed: true, progressSeconds: 1618 },
+        });
+
+        // Back to file 1 at zero, not parked in file 3 at the last sentence.
+        expect(playback?.progressOffsetSeconds).toBe(0);
+        expect(playback?.initialPositionSeconds).toBe(0);
+    });
+
+    it('still resumes a book stopped in the middle', () => {
+        const playback = buildSamoAudiobookPlayback(samoAuth(), {
+            ...threeFileBook(),
+            progress: { progressSeconds: 700 },
+        });
+
+        // Book-second 700 lives in file 2, 100s past its start.
+        expect(playback?.progressOffsetSeconds).toBe(600);
+        expect(playback?.initialPositionSeconds).toBe(100);
+    });
+
+    it('never second-guesses an explicit start position', () => {
+        // A chapter tap or a scrub is the caller pointing somewhere. Even a
+        // deliberate jump into the last seconds of the book must land there —
+        // the near-end rule is only ever about an implicit RESUME.
+        const playback = buildSamoAudiobookPlayback(
+            samoAuth(),
+            { ...threeFileBook(), progress: { completed: true, progressSeconds: 1618 } },
+            undefined,
+            undefined,
+            { startSeconds: 1615 },
+        );
+
+        expect(playback?.progressOffsetSeconds).toBe(1140);
+        expect(playback?.initialPositionSeconds).toBe(475);
     });
 });

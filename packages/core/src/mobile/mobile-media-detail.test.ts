@@ -1,13 +1,19 @@
 import { describe, expect, it } from 'vitest';
 
 import { type SamoFetch } from '../server/server-http';
-import { type SamoMusicPlaylist, type SamoMusicTrack } from '../server/server-samo';
+import {
+    type SamoMusicPlaylist,
+    type SamoMusicTrack,
+    type SamoPodcastEpisode,
+} from '../server/server-samo';
 import { testServerAuthentication } from '../test-fixtures';
 import {
     buildAlbumMetadataLines,
     loadMobileMediaDetail,
     mapSamoArtistDetail,
+    mapSamoMediaTrackFromRaw,
     mapSamoPlaylistDetail,
+    mapSamoPodcastEpisodeTrackFromRaw,
     MobileMediaDetailType,
 } from './mobile-media-detail';
 
@@ -249,5 +255,62 @@ describe('large playlist / podcast pagination', () => {
 
         expect(detail.tracks).toHaveLength(1234);
         expect(offsets).toEqual([0, 500, 1000]);
+    });
+});
+
+describe('podcast episodes stored in the catalog mirror', () => {
+    // Regression: the Android sync stores playlist tracks AND podcast episodes
+    // in the same `$samoRawTrack` envelope — only the row's container_type
+    // separates them — and the read path hydrated every row through the MUSIC
+    // mapper. An episode came out as `source: 'music'` with no artwork and a
+    // `/music/tracks/<episodeId>/stream` URL that can never serve it, so every
+    // show the sync had crawled played nothing and showed no cover.
+    const episode: SamoPodcastEpisode = {
+        durationSeconds: 3120,
+        enclosureUrl: 'https://cdn.example/ep7.mp3',
+        id: 'ep7',
+        title: 'The One About Bees',
+    };
+    const envelope = { $samoRawTrack: 1 as const, track: episode };
+
+    it('maps an episode row to a podcast playable on the episode stream route', () => {
+        const track = mapSamoPodcastEpisodeTrackFromRaw(
+            auth,
+            undefined,
+            envelope,
+            'show1',
+            'https://music.example/api/v1/podcasts/shows/show1/cover',
+        );
+
+        expect(track?.playback?.source).toBe('podcast');
+        expect(track?.playback?.id).toBe('samo:https://music.example:podcast:show1:ep7');
+        // The show/episode ids the progress sync keys on.
+        expect(track?.episodeId).toBe('ep7');
+        expect(track?.itemId).toBe('show1');
+    });
+
+    it("falls an episode with no art of its own back to the show's cover", () => {
+        const track = mapSamoPodcastEpisodeTrackFromRaw(
+            auth,
+            undefined,
+            envelope,
+            'show1',
+            'https://music.example/api/v1/podcasts/shows/show1/cover',
+        );
+
+        expect(track?.artworkUrl).toBe('https://music.example/api/v1/podcasts/shows/show1/cover');
+        expect(track?.playback?.artworkUrl).toBe(
+            'https://music.example/api/v1/podcasts/shows/show1/cover',
+        );
+    });
+
+    it('is exactly what the music mapper gets wrong on the same row', () => {
+        // Pins the failure mode itself: reading the SAME envelope as music is
+        // silent — a plausible-looking track with a URL that cannot work.
+        const asMusic = mapSamoMediaTrackFromRaw(auth, undefined, envelope);
+
+        expect(asMusic?.playback?.source).toBe('music');
+        expect(asMusic?.playback?.url).toBe('https://music.example/api/v1/music/tracks/ep7/stream');
+        expect(asMusic?.artworkUrl).toBeUndefined();
     });
 });

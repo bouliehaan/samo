@@ -39,9 +39,9 @@ import {
     resolveSamoPodcastArtworkUrl,
     resolveSamoPodcastEpisodeArtworkUrl,
     samoItemsOf,
-    samoTotalOf,
     samoPlaylistHasCoverGrid,
 } from '../server/server-samo';
+import { collectSamoPages } from '../server/server-samo-pagination';
 import { ensureSamoStreamToken } from '../server/server-samo-stream-token';
 import { ServerType } from '../server/server-types';
 import {
@@ -739,64 +739,6 @@ export const mapSamoArtistDetail = (
 };
 
 /**
- * Collect every item of a paginated list.
- *
- * The first page is always fetched on its own, because its envelope carries the
- * `total`. Once that is known the exact remaining offsets are requested
- * CONCURRENTLY — one round trip of latency plus one burst, with not a single
- * wasted request. A 40-track playlist costs one request; a 1234-track playlist
- * costs one request then two in parallel.
- *
- * Servers that omit `total` fall back to the old sequential
- * fetch-until-short-page. That path is correct but slow, and it is the reason
- * the `total` is worth reading in the first place — see `samoTotalOf`.
- *
- * `hardCeiling` is a runaway guard against a server that reports a nonsense
- * total or never returns a short page. It is not a product limit.
- */
-const collectSamoPages = async <T>(
-    pageSize: number,
-    hardCeiling: number,
-    fetchPage: (offset: number) => Promise<SamoPaginatedResponse<T> | T[] | undefined>,
-): Promise<T[]> => {
-    const firstResponse = await fetchPage(0);
-    const firstPage = samoItemsOf(firstResponse);
-
-    // A short first page is the whole list no matter what the envelope claims.
-    if (firstPage.length < pageSize) {
-        return firstPage;
-    }
-
-    const total = samoTotalOf(firstResponse);
-
-    if (total === undefined) {
-        const collected = [...firstPage];
-        for (let offset = pageSize; offset < hardCeiling; offset += pageSize) {
-            const batch = samoItemsOf(await fetchPage(offset));
-            collected.push(...batch);
-            if (batch.length < pageSize) {
-                break;
-            }
-        }
-        return collected;
-    }
-
-    const remainingOffsets: number[] = [];
-    for (let offset = pageSize; offset < Math.min(total, hardCeiling); offset += pageSize) {
-        remainingOffsets.push(offset);
-    }
-
-    const remainingPages = await Promise.all(
-        remainingOffsets.map(async (offset) => samoItemsOf(await fetchPage(offset))),
-    );
-
-    return remainingPages.reduce<T[]>((collected, batch) => {
-        collected.push(...batch);
-        return collected;
-    }, firstPage);
-};
-
-/**
  * Every track of a playlist. A single limit=500 page silently truncated larger
  * playlists — the UI then showed 500 tracks as if that were the whole list.
  */
@@ -1038,6 +980,56 @@ const loadSamoPodcastDetail = async (
     return mapSamoPodcastDetail(authentication, streamToken, podcast, episodes);
 };
 
+/**
+ * ONE podcast episode → the track view model, with a PODCAST playable.
+ *
+ * Shared by every reader of an episode: the network detail load below and the
+ * Android catalog mirror, which stores episodes as `catalog_track` rows. That
+ * sharing is the point. The mirror used to hydrate its episode rows through
+ * `samoTrackToMediaTrack` — the MUSIC mapper — because both kinds are stored in
+ * the same `$samoRawTrack` envelope. A podcast episode run through it comes out
+ * as a music track: `source: 'music'`, no artwork (an episode has no
+ * `images`/`albumId` to resolve one from, and the music mapper knows nothing of
+ * the show's cover), and a stream URL of `/api/v1/music/tracks/<episodeId>` —
+ * a route that cannot serve a podcast episode. That is a coverless player
+ * spinning on a stream that will never open, for every show the sync had
+ * already crawled.
+ */
+export const samoPodcastEpisodeToMediaTrack = (
+    authentication: ServerAuthenticationResult,
+    episode: SamoPodcastEpisode,
+    showId: string,
+    showArtworkUrl: string | undefined,
+    streamToken: string | undefined,
+): MobileMediaTrack | null => {
+    if (!episode.id) return null;
+    // An episode carries its own art only when the feed gives it one; otherwise
+    // it inherits the show's cover, which is the only artwork most feeds have.
+    const artworkUrl =
+        resolveSamoPodcastEpisodeArtworkUrl(authentication, episode, streamToken) ??
+        showArtworkUrl;
+    const playback = buildSamoPodcastEpisodePlayback(
+        authentication,
+        episode,
+        showId,
+        artworkUrl,
+        streamToken,
+    );
+    return {
+        artworkUrl,
+        description: episode.description,
+        durationSeconds: episode.durationSeconds ?? episode.duration,
+        episodeId: episode.id,
+        id: episode.id,
+        itemId: showId,
+        playback: playback ?? undefined,
+        publishedAt: episode.publishedAt ? Date.parse(episode.publishedAt) : undefined,
+        subtitle: episode.subtitle,
+        title: episode.title ?? episode.name ?? 'Untitled episode',
+        trackNumber: episode.episodeNumber,
+    };
+};
+
 /** Pure mapping twin of {@link loadSamoPodcastDetail} — see mapSamoArtistDetail. */
 export const mapSamoPodcastDetail = (
     authentication: ServerAuthenticationResult,
@@ -1052,31 +1044,14 @@ export const mapSamoPodcastDetail = (
     const episodes = samoItemsOf(episodesResponse);
 
     const tracks: MobileMediaTrack[] = episodes.flatMap((episode) => {
-        if (!episode.id) return [];
-        const playback = buildSamoPodcastEpisodePlayback(
+        const track = samoPodcastEpisodeToMediaTrack(
             authentication,
             episode,
             podcast.id,
-            resolveSamoPodcastEpisodeArtworkUrl(authentication, episode, streamToken) ?? showArtwork,
+            showArtwork,
             streamToken,
         );
-        const episodeTitle = episode.title ?? episode.name ?? 'Untitled episode';
-        return [
-            {
-                artworkUrl: resolveSamoPodcastEpisodeArtworkUrl(authentication, episode, streamToken)
-                    ?? showArtwork,
-                description: episode.description,
-                durationSeconds: episode.durationSeconds ?? episode.duration,
-                episodeId: episode.id,
-                id: episode.id,
-                itemId: podcast.id,
-                playback: playback ?? undefined,
-                publishedAt: episode.publishedAt ? Date.parse(episode.publishedAt) : undefined,
-                subtitle: episode.subtitle,
-                title: episodeTitle,
-                trackNumber: episode.episodeNumber,
-            },
-        ];
+        return track ? [track] : [];
     });
 
     const feed = podcast.feed?.poll
@@ -1180,6 +1155,36 @@ export const mapSamoMediaTrackFromRaw = (
             authentication,
             envelope.track as SamoMusicTrack,
             undefined,
+            streamToken,
+        );
+    } catch {
+        return null;
+    }
+};
+
+/**
+ * The PODCAST-EPISODE reading of the same envelope.
+ *
+ * `$samoRawTrack` is a storage envelope, not a type: the Android sync wraps
+ * album/playlist tracks AND podcast episodes in it, and only the row's
+ * `container_type` says which. So the envelope alone can never pick a mapper —
+ * the caller has to, and a podcast container must call this one.
+ * {@link mapSamoMediaTrackFromRaw} would read the episode as a music track and
+ * build it a `/music/tracks/…` stream URL and no artwork.
+ */
+export const mapSamoPodcastEpisodeTrackFromRaw = (
+    authentication: ServerAuthenticationResult,
+    streamToken: string | undefined,
+    envelope: SamoRawTrackEnvelope,
+    showId: string,
+    showArtworkUrl: string | undefined,
+): MobileMediaTrack | null => {
+    try {
+        return samoPodcastEpisodeToMediaTrack(
+            authentication,
+            envelope.track as SamoPodcastEpisode,
+            showId,
+            showArtworkUrl,
             streamToken,
         );
     } catch {

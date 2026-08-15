@@ -807,7 +807,7 @@ interface SamoRequestOptions {
     signal?: AbortSignal;
 }
 
-const samoGet = async <T>(
+export const samoGet = async <T>(
     fetcher: SamoFetch,
     authentication: Pick<ServerAuthenticationResult, 'credential' | 'url'>,
     path: string,
@@ -820,7 +820,7 @@ const samoGet = async <T>(
     });
 };
 
-const samoSend = async <T>(
+export const samoSend = async <T>(
     fetcher: SamoFetch,
     authentication: Pick<ServerAuthenticationResult, 'credential' | 'url'>,
     method: 'DELETE' | 'PATCH' | 'POST' | 'PUT',
