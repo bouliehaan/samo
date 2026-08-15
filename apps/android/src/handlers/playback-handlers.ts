@@ -7,6 +7,7 @@ import {
     type MobileMediaTrack,
     type MobileSearchItem,
 } from '@samo/core/mobile';
+import { resolveLongFormResumeSeconds } from '@samo/core/playback';
 import { ensureSamoStreamToken } from '@samo/core/server';
 
 import { loadCurrentPlaybackProgressBounded } from '../services/playback-progress';
@@ -379,15 +380,25 @@ export const handleStartAudiobook = async (
     // the item's own resume data matches playQueuedItem's budget.
     const progress = await loadCurrentPlaybackProgressBounded(auth, detail.id);
     if (!isCurrentRequest()) return;
-    let resumeSeconds = progress?.currentTimeSeconds ?? 0;
+    // `detail.durationSeconds` is the BOOK-GLOBAL timeline the saved position is
+    // measured against — the per-chapter durations below are not.
+    let resumeSeconds = resolveLongFormResumeSeconds({
+        completed: progress?.isFinished,
+        durationSeconds: detail.durationSeconds,
+        progressSeconds: progress?.currentTimeSeconds,
+    });
     // Flaky LAN: the bounded server read can transiently fail (null), which
     // would seed the queue at 0 and lose the spot. Fall back to the native
     // local resume cache, same as refreshPlayableResumeFromServer does.
     if (resumeSeconds <= 0 && !progress) {
         const cached = await getNativeResumeProgress('audiobook', detail.id);
         if (!isCurrentRequest()) return;
-        if (cached && cached.progressSeconds > 0 && !cached.completed) {
-            resumeSeconds = Math.floor(cached.progressSeconds);
+        if (cached) {
+            resumeSeconds = resolveLongFormResumeSeconds({
+                completed: cached.completed,
+                durationSeconds: detail.durationSeconds,
+                progressSeconds: cached.progressSeconds,
+            });
         }
     }
     const chapterIndex =

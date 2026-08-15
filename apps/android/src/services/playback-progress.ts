@@ -26,11 +26,10 @@ const samoTargetForContext = (
         ? { id: ctx.episodeId, kind: 'podcast-episode' }
         : { id: ctx.itemId, kind: 'audiobook' };
 
-const isFinishedProgress = (progress: LoadedPlaybackProgress): boolean =>
-    progress.isFinished ||
-    (progress.durationSeconds
-        ? progress.currentTimeSeconds / progress.durationSeconds >= 0.96
-        : false);
+// There was a second, never-called definition of "finished" here — a 96%-of-
+// duration test. It is gone: `resolveLongFormResumeSeconds` in
+// @samo/core/playback is the ONE rule, it is shared with desktop, and a rival
+// threshold sitting next to the reader is how the two drift apart.
 
 /**
  * Read the server's current progress for an audiobook or podcast episode.

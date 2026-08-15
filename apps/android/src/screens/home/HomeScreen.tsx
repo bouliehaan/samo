@@ -9,10 +9,8 @@ import { type HomeFilter, type HomeScreenProps } from '../../types/home';
 import { HomeContent } from './HomeContent';
 
 export const HomeScreen = memo(({
-    isRefreshing,
     onManageServers,
     onPrefetchItem,
-    onRefresh,
     onSelectItem,
     onViewAll,
     serverConnection,
@@ -44,10 +42,8 @@ export const HomeScreen = memo(({
         <HomeContent
             activeFilter={homeFilter}
             homeContentState={visibleHomeContentState}
-            isRefreshing={isRefreshing}
             onFilterChange={setHomeFilter}
             onPrefetchItem={onPrefetchItem}
-            onRefresh={onRefresh}
             onSelectItem={onSelectItem}
             onViewAll={onViewAll}
             recentItems={visibleRecentItems}

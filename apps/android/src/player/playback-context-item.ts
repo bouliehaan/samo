@@ -3,6 +3,7 @@ import {
     MobileHomeItemType,
     MobileSearchItemType,
     parsePodcastPlaybackShowId,
+    parseSamoAudiobookIdFromPlaybackId,
     type MobileHomeItem,
     type MobilePlayableAudio,
     type MobileSearchItem,
@@ -69,9 +70,16 @@ export const buildPlaybackContextItem = (
     }
 
     if (item.source === 'audiobook' || item.source === 'podcast') {
+        // A book plays one file at a time, so the queue's id is
+        // `…:audiobook:<bookId>:file:<mediaFileId>` — and every action this
+        // menu offers (favourite, book info, chapters, send it to the stereo)
+        // addresses the BOOK. Keeping the trailing file segment made the item
+        // an id the server has never heard of.
         const ownerId =
             parsePodcastPlaybackShowId(item.id) ??
-            (item.source === 'podcast' ? innerId.split(':')[0] : innerId);
+            (item.source === 'podcast'
+                ? innerId.split(':')[0]
+                : (parseSamoAudiobookIdFromPlaybackId(item.id) ?? innerId));
         const homeItem: MobileHomeItem = {
             artworkUrl: item.artworkUrl,
             id: ownerId,

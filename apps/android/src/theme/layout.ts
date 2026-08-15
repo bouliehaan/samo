@@ -40,6 +40,17 @@ export const PAGE_TOP_INSET = STATUS_BAR_INSET + 8;
 export const HOME_SCENE_TOP_INSET = PAGE_TOP_INSET;
 
 /**
+ * The Home refresh sweep (see HomeRefreshIndicator). It is seated in the gutter
+ * PAGE_TOP_INSET opens above the first row, so it must stay thinner than that
+ * 8px — the whole point of the placement is that it occupies space nothing else
+ * wants. The segment width is shared with the component because the sweep's
+ * travel is computed from it; two copies of the number would drift and leave the
+ * bar entering or leaving mid-screen.
+ */
+export const HOME_REFRESH_BAR_HEIGHT = 2.5;
+export const HOME_REFRESH_SEGMENT_WIDTH = Math.round(SCREEN_WIDTH * 0.38);
+
+/**
  * Search field geometry, shared by the floating pull-down surface
  * (SearchPullSurface) and the full-search overlay so both land the field on the
  * identical row — opening search reads as the pulled bar coming alive. The

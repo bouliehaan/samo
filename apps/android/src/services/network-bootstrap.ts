@@ -4,6 +4,7 @@ import {
     startEndpointRecoveryWatch,
 } from './endpoint-selection';
 import { installNetworkStatusBridge, refreshNetworkStatus } from './network-status';
+import { refreshSamoRadioDevices } from './samo-radio';
 import { loadEndpointProfiles } from './server-endpoints';
 import { getNetworkSnapshot, subscribeNetworkState } from '../state/network-state';
 
@@ -51,11 +52,17 @@ export const installNetworkBootstrap = (): void => {
             // A full-library cover warm walking the network is the single most
             // obvious thing an offline app should not be doing.
             cancelCatalogArtworkPrefetch();
+            // The server's own audio outputs are only reachable through the
+            // server, so they go away with it — no control panel, and no "Send
+            // to samo-radio" in menus that could only fail on tap.
+            void refreshSamoRadioDevices();
             return;
         }
 
-        // Back online: confirm which address before anything starts using it.
-        void refreshActiveEndpoint({ force: true });
+        // Back online: confirm which address before anything starts using it —
+        // including the samo-radio re-read, which would otherwise go to the
+        // address that just stopped working.
+        void refreshActiveEndpoint({ force: true }).then(() => refreshSamoRadioDevices());
     });
 };
 

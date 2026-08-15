@@ -23,6 +23,7 @@ import {
     loadPersistedRecentContentItems,
     savePersistedRecentContentItems,
 } from './recent-content';
+import { refreshSamoRadioDevices } from './samo-radio';
 import { mergeServerRecentlyPlayedIntoRecents } from './recent-content-sync';
 
 // Server-curated Home sections (Discover / Podcast Feed / Explo / Radio) are
@@ -69,6 +70,16 @@ export const loadHomeForConnection = async (
     authentication: null | ServerAuthenticationResult,
 ): Promise<void> => {
     const requestId = (homeLoadRequestId += 1);
+
+    // Whether this server has a samo-radio, answered once per connection
+    // change. It rides along here because this is the one call every
+    // connect/restore/disconnect path already makes, and because the answer is
+    // needed before anything asks for it: the long-press menu offers "Send to
+    // samo-radio" from the store, and a menu that grew the row a beat after
+    // opening — or only after the user had visited the Radio tab — would be
+    // worse than either always or never having it. One tiny GET, and a
+    // disconnect (null) clears it.
+    void refreshSamoRadioDevices();
 
     if (!authentication) {
         setHomeContentState({ status: 'idle' });

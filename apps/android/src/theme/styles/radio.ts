@@ -4,6 +4,108 @@ import { colors, fonts, spacing } from '../tokens';
 
 /** Radio tab: station grid, hero, add-station sheet. */
 export const radioStyles = StyleSheet.create({
+    // samo-radio: the server's own audio output, remoted onto the phone. It
+    // sits above the station grid because it is a status readout first — you
+    // look at it to see what the stereo is doing — and controls second.
+    samoRadioPanel: {
+        backgroundColor: colors.surface,
+        borderColor: 'rgba(255,255,255,0.08)',
+        borderWidth: 1,
+        gap: 6,
+        marginBottom: spacing.md,
+        // No horizontal margin: radioScrollContent already pads to
+        // HOME_EDGE_PADDING, and adding it again inset the panel twice as far
+        // as every station tile below it.
+        padding: spacing.md,
+    },
+    samoRadioHead: {
+        alignItems: 'center',
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+    },
+    samoRadioEyebrow: {
+        color: colors.accent,
+        fontFamily: fonts.mono,
+        fontSize: 12,
+        letterSpacing: 1,
+    },
+    samoRadioStatus: {
+        color: colors.muted,
+        fontFamily: fonts.mono,
+        fontSize: 11,
+        letterSpacing: 1,
+    },
+    samoRadioTitle: {
+        color: colors.text,
+        fontSize: 17,
+        fontWeight: '700',
+    },
+    samoRadioSubtitle: {
+        color: colors.muted,
+        fontSize: 13,
+    },
+    samoRadioMeta: {
+        color: colors.muted,
+        fontFamily: fonts.mono,
+        fontSize: 12,
+    },
+    samoRadioControls: {
+        alignItems: 'center',
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 8,
+        marginTop: 8,
+    },
+    samoRadioButton: {
+        borderColor: 'rgba(255,255,255,0.16)',
+        borderWidth: 1,
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+    },
+    samoRadioButtonPrimary: {
+        backgroundColor: colors.accent,
+        borderColor: colors.accent,
+    },
+    samoRadioButtonText: {
+        color: colors.text,
+        fontFamily: fonts.mono,
+        fontSize: 12,
+        letterSpacing: 1,
+    },
+    samoRadioButtonTextPrimary: {
+        color: colors.background,
+    },
+    samoRadioVolume: {
+        color: colors.text,
+        fontFamily: fonts.mono,
+        fontSize: 13,
+        minWidth: 46,
+        textAlign: 'center',
+    },
+    samoRadioChannelRow: {
+        gap: 8,
+        paddingVertical: 8,
+    },
+    samoRadioChannelChip: {
+        borderColor: 'rgba(255,255,255,0.16)',
+        borderWidth: 1,
+        maxWidth: 200,
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+    },
+    samoRadioChannelChipActive: {
+        borderColor: colors.accent,
+    },
+    samoRadioChannelText: {
+        color: colors.text,
+        fontFamily: fonts.mono,
+        fontSize: 12,
+    },
+    samoRadioError: {
+        color: '#ff9a8a',
+        fontSize: 12,
+        marginTop: 6,
+    },
     addRadioActions: {
         gap: spacing.sm,
         marginTop: spacing.sm,

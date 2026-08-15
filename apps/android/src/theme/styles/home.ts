@@ -12,10 +12,13 @@ import {
     HOME_ROUNDED_OFFSET,
     HOME_SEARCH_DRAWER_PADDING,
     HOME_SEARCH_DRAWER_REST_GAP,
+    HOME_REFRESH_BAR_HEIGHT,
+    HOME_REFRESH_SEGMENT_WIDTH,
     HOME_SEARCH_FIELD_HEIGHT,
     HOME_TILE_GAP,
     SCROLL_CONTENT_BOTTOM_INSET,
     HOME_SCENE_TOP_INSET,
+    STATUS_BAR_INSET,
 } from '../layout';
 import { colors, fonts, radii, spacing } from '../tokens';
 
@@ -247,6 +250,37 @@ export const homeStyles = StyleSheet.create({
         color: colors.text,
         fontSize: 13,
         fontWeight: '800',
+    },
+    /**
+     * The refresh sweep (see HomeRefreshIndicator), living in the gutter between
+     * the status bar and the first row — the 8px `PAGE_TOP_INSET` adds on top of
+     * `STATUS_BAR_INSET`. That band is empty in every Home state, which is the
+     * whole reason it is here: anything centred lower lands on the filter pills.
+     *
+     * Absolute, so it floats ABOVE the list instead of displacing it, and
+     * `overflow: hidden` so the travelling segment is clipped into a sweep at
+     * both edges rather than sliding in off-screen as a rectangle.
+     */
+    homeRefreshBar: {
+        height: HOME_REFRESH_BAR_HEIGHT,
+        left: 0,
+        overflow: 'hidden',
+        position: 'absolute',
+        right: 0,
+        top: STATUS_BAR_INSET + 3,
+    },
+    homeRefreshBarSegment: {
+        backgroundColor: colors.accent,
+        borderRadius: radii.pill,
+        height: '100%',
+        width: HOME_REFRESH_SEGMENT_WIDTH,
+    },
+    homeRefreshBarStatic: {
+        backgroundColor: colors.accent,
+        borderRadius: radii.pill,
+        height: '100%',
+        opacity: 0.7,
+        width: '100%',
     },
     homeFilterPillTextActive: {
         color: colors.background,

@@ -18,6 +18,7 @@ import Reanimated from 'react-native-reanimated';
 import { LibrarySortMenu } from '../components/LibrarySortMenu';
 import { MediaArtwork } from '../components/MediaArtwork';
 import { useSearchPull } from '../components/search-pull/useSearchPull';
+import { SamoRadioPanel } from '../components/SamoRadioPanel';
 import { SkeletonTileGrid } from '../components/Skeleton';
 import { PlusGlyph } from '../components/Glyphs';
 import { useMediaContextMenu } from '../contexts/media-context-menu';
@@ -148,6 +149,7 @@ export const RadioScreen = memo(({
                 <View style={styles.pageControlsRow}>
                     {radioHeaderActions}
                 </View>
+                <SamoRadioPanel />
                 {sortedStations.length === 0 ? (
                     <Text style={[styles.mutedText, styles.radioEmptyText]}>
                         {!radioManageConnections

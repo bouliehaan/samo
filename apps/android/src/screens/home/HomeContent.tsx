@@ -1,7 +1,7 @@
 import { type ServerAuthenticationResult } from '@samo/core/server';
 import { FlashList } from '@shopify/flash-list';
 import { type ReactNode, useCallback, useDeferredValue, useMemo, useRef } from 'react';
-import { Pressable, RefreshControl, ScrollView, Text, View } from 'react-native';
+import { Pressable, ScrollView, Text, View } from 'react-native';
 import { GestureDetector } from 'react-native-gesture-handler';
 import Reanimated from 'react-native-reanimated';
 
@@ -17,9 +17,8 @@ import {
     type AndroidRecentContentSourceItem,
 } from '../../services/recent-content';
 import { useHiddenHomeKeys } from '../../state/hidden-home';
-import { STATUS_BAR_INSET } from '../../theme/layout';
 import { styles } from '../../theme/styles';
-import { colors, spacing } from '../../theme/tokens';
+import { spacing } from '../../theme/tokens';
 import { type HomeDisplaySection, type HomeFilter } from '../../types/home';
 import { getContentItemKey } from '../../utils/content-item';
 import {
@@ -46,10 +45,8 @@ const ReanimatedFlashList = Reanimated.createAnimatedComponent(FlashList) as typ
 export const HomeContent = ({
     activeFilter,
     homeContentState,
-    isRefreshing,
     onFilterChange,
     onPrefetchItem,
-    onRefresh,
     onSelectItem,
     onViewAll,
     recentItems,
@@ -57,10 +54,8 @@ export const HomeContent = ({
 }: {
     activeFilter: HomeFilter;
     homeContentState: AndroidHomeContentState;
-    isRefreshing?: boolean;
     onFilterChange: (filter: HomeFilter) => void;
     onPrefetchItem?: (item: AndroidRecentContentSourceItem) => void;
-    onRefresh?: () => void;
     onSelectItem: (item: AndroidRecentContentSourceItem) => void;
     onViewAll?: (section: HomeDisplaySection) => void;
     recentItems: AndroidRecentContentItem[];
@@ -184,26 +179,18 @@ export const HomeContent = ({
     // Home owns its own scroll container (rendered in App's non-ScrollView tab
     // path) so the podcasts/audiobooks grid can be a real virtualized
     // FlashList instead of a non-virtualized items.map of every tile.
-    // Pull-to-refresh is DISPLAY ONLY on Home. `enabled={false}` stops Android's
-    // SwipeRefreshLayout from claiming the gesture, because "drag down at the
-    // top" already belongs to the search pull (see useSearchPull) — two native
-    // gestures on one finger is what made a pull read as down, snap back up, then
-    // come down again. The spinner still shows, driven by `refreshing`: the
-    // refresh itself is fired by re-tapping the Home tab (see TabScenes), which
-    // is the same action without the contested gesture.
-    const refreshControl = onRefresh ? (
-        <RefreshControl
-            colors={[colors.accent]}
-            enabled={false}
-            onRefresh={onRefresh}
-            progressBackgroundColor={colors.surface}
-            // The scroll container starts at physical y=0 now (edge-to-edge);
-            // without this the spinner would pop out under the status bar.
-            progressViewOffset={STATUS_BAR_INSET}
-            refreshing={isRefreshing ?? false}
-            tintColor={colors.accent}
-        />
-    ) : undefined;
+    //
+    // NO `RefreshControl` ANYWHERE IN HERE, and it must not come back. Home has
+    // no pull-to-refresh gesture — "drag down at the top" belongs to the search
+    // pull (see useSearchPull), and two native gestures on one finger is what
+    // made a pull read as down, snap back up, then come down again. What was
+    // left was an `enabled={false}` RefreshControl kept purely to draw a
+    // spinner, and Android's SwipeRefreshLayout draws that circle BENEATH the
+    // scroll content at a fixed offset that lands on the filter-pill row — so
+    // the one piece of feedback the feature had came up behind a pill. The
+    // refresh is fired by pressing the Home tab (see TabScenes) and shown by
+    // HomeRefreshIndicator, which floats above the page instead of under it.
+    //
     // Every Home scroll container gets the pull-down search gesture wrapped
     // around it; the search surface itself lives at the app shell (see
     // useSearchPull / SearchPullSurface).
@@ -215,7 +202,6 @@ export const HomeContent = ({
             <Reanimated.ScrollView
                 {...searchPullScrollProps}
                 contentContainerStyle={[styles.homeListContent, { paddingBottom: bottomInset }]}
-                refreshControl={refreshControl}
                 showsVerticalScrollIndicator={false}
                 style={styles.homeSceneRoot}
             >
@@ -313,7 +299,6 @@ export const HomeContent = ({
                 items={filteredGridItems}
                 onPrefetchItem={stablePrefetchItem}
                 onSelectItem={stableSelectItem}
-                refreshControl={refreshControl}
                 serverConnection={serverConnection}
                 variant={deferredFilter === 'podcasts' ? 'podcast' : 'book'}
             />
@@ -359,7 +344,6 @@ export const HomeContent = ({
             }
             keyExtractor={(section) => section.key}
             maintainVisibleContentPosition={FLASH_LIST_MAINTAIN_POSITION_DISABLED}
-            refreshControl={refreshControl}
             renderItem={renderSection}
             renderScrollComponent={searchPullRenderScrollComponent}
             showsVerticalScrollIndicator={false}

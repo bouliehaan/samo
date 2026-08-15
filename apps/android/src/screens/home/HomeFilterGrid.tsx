@@ -2,7 +2,6 @@ import { type ServerAuthenticationResult } from '@samo/core/server';
 import { FlashList } from '@shopify/flash-list';
 import { memo, type ReactElement, useCallback, useMemo } from 'react';
 import {
-    type RefreshControlProps,
     type ScrollViewProps,
     Text,
     View,
@@ -118,7 +117,6 @@ export const HomeFilterGrid = memo(
         items,
         onPrefetchItem,
         onSelectItem,
-        refreshControl,
         renderScrollComponent,
         scrollProps,
         scrollRef,
@@ -130,7 +128,6 @@ export const HomeFilterGrid = memo(
         items: AndroidRecentContentSourceItem[];
         onPrefetchItem?: (item: AndroidRecentContentSourceItem) => void;
         onSelectItem: (item: AndroidRecentContentSourceItem) => void;
-        refreshControl?: ReactElement<RefreshControlProps>;
         /** The pull-down search's inner scroll component, which binds the native
          *  scroll gesture so the pan runs alongside it (see useSearchPull). */
         renderScrollComponent?: (props: ScrollViewProps) => ReactElement;
@@ -212,7 +209,6 @@ export const HomeFilterGrid = memo(
                 keyExtractor={(row) => row.key}
                 maintainVisibleContentPosition={FLASH_LIST_MAINTAIN_POSITION_DISABLED}
                 ref={scrollRef}
-                refreshControl={refreshControl}
                 renderItem={renderRow}
                 renderScrollComponent={renderScrollComponent}
                 showsVerticalScrollIndicator={false}

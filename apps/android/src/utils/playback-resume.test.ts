@@ -239,3 +239,145 @@ describe('refreshPlayableResumeFromServer', () => {
         expect(getNativeResumeProgressMock).not.toHaveBeenCalled();
     });
 });
+
+describe('replaying a finished podcast episode', () => {
+    beforeEach(() => {
+        loadCurrentPlaybackProgressMock.mockReset();
+        getNativeResumeProgressMock.mockReset();
+        getNativeResumeProgressMock.mockResolvedValue(null);
+    });
+
+    const finishedEpisode = () =>
+        baseItem({
+            contentSourceId: 'samo:https://samo',
+            durationSeconds: 1800,
+            // Built from a mirror row synced before the listen ended, so it
+            // still carries the outro as its start position.
+            initialPositionSeconds: 1798,
+            id: 'samo:https://samo:podcast:show-1:episode-1',
+            source: 'podcast',
+            url: 'https://samo/api/v1/podcasts/episodes/episode-1/stream',
+        });
+
+    // THE regression: the refresh only ever declined to MOVE a resume it did
+    // not like, and returned the item untouched — leaving the build-time outro
+    // position in place. Nothing downstream reconsiders it, so a favourite
+    // episode replayed from its last few seconds every time.
+    it('clears the stale build-time resume when the server says finished', async () => {
+        loadCurrentPlaybackProgressMock.mockResolvedValue({
+            currentTimeSeconds: 0,
+            isFinished: true,
+        });
+
+        const result = await refreshPlayableResumeFromServer(finishedEpisode(), null);
+
+        expect(loadCurrentPlaybackProgressMock).toHaveBeenCalledWith(
+            expect.anything(),
+            'show-1',
+            'episode-1',
+        );
+        expect(result.initialPositionSeconds).toBeUndefined();
+    });
+
+    it('clears it when only the local cache knows the episode finished', async () => {
+        loadCurrentPlaybackProgressMock.mockResolvedValue(null);
+        getNativeResumeProgressMock.mockResolvedValue({
+            completed: true,
+            progressSeconds: 1798,
+        });
+
+        const result = await refreshPlayableResumeFromServer(finishedEpisode(), null);
+
+        expect(result.initialPositionSeconds).toBeUndefined();
+    });
+
+    it('keeps the resume when neither source can answer at all', async () => {
+        // Silence is not "finished" — a LAN blip must not throw away a real
+        // position the item already carries.
+        loadCurrentPlaybackProgressMock.mockResolvedValue(null);
+        getNativeResumeProgressMock.mockResolvedValue(null);
+
+        const result = await refreshPlayableResumeFromServer(finishedEpisode(), null);
+
+        expect(result.initialPositionSeconds).toBe(1798);
+    });
+
+    it('still applies a real mid-episode server position', async () => {
+        loadCurrentPlaybackProgressMock.mockResolvedValue({
+            currentTimeSeconds: 640,
+            isFinished: false,
+        });
+
+        const result = await refreshPlayableResumeFromServer(finishedEpisode(), null);
+
+        expect(result.initialPositionSeconds).toBe(640);
+    });
+});
+
+describe('replaying a finished audiobook', () => {
+    beforeEach(() => {
+        loadCurrentPlaybackProgressMock.mockReset();
+        getNativeResumeProgressMock.mockReset();
+        getNativeResumeProgressMock.mockResolvedValue(null);
+    });
+
+    // A multi-file queue item's `durationSeconds` is only the CURRENT FILE's
+    // length; the saved position is book-global. Measuring the near-end test
+    // against the file would read almost every mid-book position as "past the
+    // end" and restart the whole book — so it has to use the timeline.
+    const midBookFile = () =>
+        baseItem({
+            contentSourceId: 'samo:https://samo',
+            durationSeconds: 1800,
+            id: 'samo:https://samo:audiobook:book-7:file:mf-3',
+            progressOffsetSeconds: 3600,
+            source: 'audiobook',
+            timelineDurationSeconds: 40 * 3600,
+        });
+
+    it('resumes a book-global position that overruns the current file length', async () => {
+        loadCurrentPlaybackProgressMock.mockResolvedValue({
+            currentTimeSeconds: 4200,
+            isFinished: false,
+        });
+
+        const result = await refreshPlayableResumeFromServer(midBookFile(), null);
+
+        expect(result.initialPositionSeconds).toBe(4200);
+    });
+
+    it('clears a stale resume when the server says the book is finished', async () => {
+        loadCurrentPlaybackProgressMock.mockResolvedValue({
+            currentTimeSeconds: 0,
+            isFinished: true,
+        });
+
+        const item = { ...midBookFile(), initialPositionSeconds: 143_900 };
+        const result = await refreshPlayableResumeFromServer(item, null);
+
+        expect(result.initialPositionSeconds).toBeUndefined();
+    });
+
+    it('restarts a book left inside the last two minutes with no completed flag', async () => {
+        // 40h book, so the near-end window is capped at the 120s ceiling.
+        loadCurrentPlaybackProgressMock.mockResolvedValue({
+            currentTimeSeconds: 40 * 3600 - 30,
+            isFinished: false,
+        });
+
+        const result = await refreshPlayableResumeFromServer(midBookFile(), null);
+
+        expect(result.initialPositionSeconds).toBeUndefined();
+    });
+
+    it('keeps resuming just outside that window', async () => {
+        loadCurrentPlaybackProgressMock.mockResolvedValue({
+            currentTimeSeconds: 40 * 3600 - 200,
+            isFinished: false,
+        });
+
+        const result = await refreshPlayableResumeFromServer(midBookFile(), null);
+
+        expect(result.initialPositionSeconds).toBe(40 * 3600 - 200);
+    });
+});

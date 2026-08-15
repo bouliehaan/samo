@@ -29,6 +29,7 @@ import { durations } from '../theme/motion';
 import { styles } from '../theme/styles';
 import { getTabTitle } from '../utils/tab-title';
 import { ErrorBoundary } from './ErrorBoundary';
+import { HomeRefreshIndicator } from './HomeRefreshIndicator';
 import { TabSceneContainer } from './TabSceneContainer';
 
 const handleOpenManageServers = () => setActiveUtilityScreen('manage-servers');
@@ -38,6 +39,11 @@ const handleOpenManageServers = () => setActiveUtilityScreen('manage-servers');
  *  TabSceneContainer and usePresenceTransition leave past a last animated
  *  frame. */
 const COVERED_BY_OVERLAY_MS = durations.screenEnter + 30;
+
+/** How long a Home refresh stays visible AT MINIMUM, measured from the press.
+ *  Long enough to be read as an answer rather than seen as a flicker; short
+ *  enough that a double-press is never left waiting on it. */
+const MIN_REFRESH_VISIBLE_MS = 650;
 
 const HomeTabScene = memo(function HomeTabScene() {
     const serverConnection = useAuthSessionSelector((state) => state.serverConnection);
@@ -52,34 +58,58 @@ const HomeTabScene = memo(function HomeTabScene() {
         if (!serverConnection || refreshInFlight.current) {
             return;
         }
+        const startedAt = Date.now();
         refreshInFlight.current = true;
         setIsRefreshingHome(true);
-        // Keep the on-device library mirror fresh, but OFF the spinner's critical
-        // path — the Kotlin engine runs the delta in the background and the
-        // sync-completed bridge handles the artwork prefetch afterwards.
+        // Keep the on-device library mirror fresh, but OFF the indicator's
+        // critical path — the Kotlin engine runs the delta in the background and
+        // the sync-completed bridge handles the artwork prefetch afterwards.
         void triggerCatalogSyncNow();
         try {
-            // The spinner waits ONLY on the live-section re-fetch (discover /
+            // The indicator waits ONLY on the live-section re-fetch (discover /
             // podcast feed / radio) — the library sections re-derive from the
             // mirror when the sync above completes. Capped so a slow network
-            // releases the spinner instead of hanging it.
+            // releases the indicator instead of hanging it.
             await Promise.race([
                 loadHomeForConnection(serverConnection),
                 new Promise<void>((resolve) => setTimeout(resolve, 10000)),
             ]);
         } catch {
-            // swallow — pull-to-refresh never throws into the UI
+            // swallow — a refresh never throws into the UI
         } finally {
+            // HELD FOR A MINIMUM BEAT, and this is half the fix.
+            //
+            // A refresh against a healthy server on the same LAN comes back in
+            // well under 100ms, and a successful one usually returns the exact
+            // same shelves in the same order. Bound strictly to the fetch, the
+            // indicator was a sub-frame flicker on top of a page that did not
+            // change — so the press looked like it had done nothing, and looked
+            // like it had done nothing INTERMITTENTLY, because you only ever
+            // caught the spinner when the network happened to be slow. That is
+            // the whole reported symptom: "sometimes it does, a lot of the time
+            // it doesn't at all."
+            //
+            // So the answer outlives the work. The floor is measured from the
+            // press, not added to the fetch, so a refresh that legitimately
+            // takes a second is not made slower by it.
+            const elapsed = Date.now() - startedAt;
+            if (elapsed < MIN_REFRESH_VISIBLE_MS) {
+                await new Promise<void>((resolve) =>
+                    setTimeout(resolve, MIN_REFRESH_VISIBLE_MS - elapsed),
+                );
+            }
             refreshInFlight.current = false;
             setIsRefreshingHome(false);
         }
     }, [serverConnection]);
 
     // Pressing the Home tab is the ONLY way to refresh: the pull-down gesture
-    // belongs to search (see useSearchPull), so Home's RefreshControl is
-    // display-only. This listens on the REFRESH channel, which `pressTab` raises
-    // only when you press Home while already at the top of Home — arriving, and
-    // scrolling to the top, are the other two tiers and neither spins.
+    // belongs to search (see useSearchPull), so Home has no refresh gesture at
+    // all and this press carries the whole affordance — which is why it owes the
+    // user a visible answer (see HomeRefreshIndicator). This listens on the
+    // REFRESH channel, which `pressTab` raises only when you press Home while
+    // already at the top of Home — arriving, and scrolling to the top, are the
+    // other two tiers and neither shows the bar.
     //
     // Via the catch-up hook rather than a bare subscription: this scene is
     // frozen whenever Home is in the background, which tears its effects down —
@@ -89,15 +119,21 @@ const HomeTabScene = memo(function HomeTabScene() {
     });
 
     return (
-        <HomeScreen
-            isRefreshing={isRefreshingHome}
-            onManageServers={handleOpenManageServers}
-            onPrefetchItem={prefetchMediaDetailCache}
-            onRefresh={serverConnection ? handleRefreshHome : undefined}
-            onSelectItem={handleSelectMediaItem}
-            onViewAll={handleOpenViewAll}
-            serverConnection={serverConnection}
-        />
+        <View style={styles.tabSceneFill}>
+            <HomeScreen
+                onManageServers={handleOpenManageServers}
+                onPrefetchItem={prefetchMediaDetailCache}
+                onSelectItem={handleSelectMediaItem}
+                onViewAll={handleOpenViewAll}
+                serverConnection={serverConnection}
+            />
+            {/* A SIBLING of the page, not a child of its scroll content: the
+                bar has to sit above the list and stay put while it is up.
+                Inside the scroller it would ride the content and be occluded
+                by it — which is exactly how the RefreshControl it replaces
+                failed. */}
+            <HomeRefreshIndicator active={isRefreshingHome} />
+        </View>
     );
 });
 

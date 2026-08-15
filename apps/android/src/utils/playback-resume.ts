@@ -5,6 +5,7 @@ import {
     parsePodcastPlaybackShowId,
     parseSamoAudiobookIdFromPlaybackId,
 } from '@samo/core/mobile';
+import { resolveLongFormResumeSeconds } from '@samo/core/playback';
 import {
     ensureSamoStreamToken,
     findServerAuthenticationForSource,
@@ -107,6 +108,24 @@ export const withResumePosition = (
 };
 
 /**
+ * Drop a resume position the item was BUILT with, for when a fresher source
+ * says there is nothing to resume to.
+ *
+ * `withResumePosition(item, 0)` cannot express this — it returns the item
+ * untouched, because "no position to apply" and "start from the top" are the
+ * same argument to it. That ambiguity is what let a finished episode keep its
+ * end-of-file start position: nothing downstream ever looked at the resume
+ * again, it just honored `initialPositionSeconds`.
+ */
+export const withoutResumePosition = (item: MobilePlayableAudio): MobilePlayableAudio => {
+    if (item.initialPositionSeconds === undefined) {
+        return item;
+    }
+    const { initialPositionSeconds: _finished, ...rest } = item;
+    return rest;
+};
+
+/**
  * Merge a session-prepared playable back into its durable queue slot WITHOUT
  * the session's transient start position.
  *
@@ -159,34 +178,56 @@ export const refreshPlayableResumeFromServer = async (
         }
 
         const progress = await loadCurrentPlaybackProgress(authentication, showId, episodeId);
-        if (progress?.currentTimeSeconds && progress.currentTimeSeconds > 0 && !progress.isFinished) {
-            const streamToken = await ensureSamoStreamToken(authentication, samoFetch).catch(
-                () => undefined,
-            );
-            return applySamoPodcastStreamResume(
-                item,
-                progress.currentTimeSeconds,
-                authentication,
-                streamToken,
-            );
-        }
-        // Server read failed (null) — fall back to the native local resume cache
-        // so a transient LAN outage can't restart the episode at 0.
-        if (!progress) {
-            const cached = await getNativeResumeProgress('podcast-episode', episodeId);
-            if (cached && cached.progressSeconds > 0 && !cached.completed) {
+        if (progress) {
+            const resumeSeconds = resolveLongFormResumeSeconds({
+                completed: progress.isFinished,
+                durationSeconds: progress.durationSeconds ?? item.durationSeconds,
+                progressSeconds: progress.currentTimeSeconds,
+            });
+            if (resumeSeconds > 0) {
                 const streamToken = await ensureSamoStreamToken(authentication, samoFetch).catch(
                     () => undefined,
                 );
                 return applySamoPodcastStreamResume(
                     item,
-                    Math.floor(cached.progressSeconds),
+                    resumeSeconds,
                     authentication,
                     streamToken,
                 );
             }
+            // The server says there is nothing to resume to — most often
+            // because the episode is FINISHED. Clearing is the point: this
+            // used to fall through and return the item untouched, which left
+            // whatever build-time resume the episode was constructed with in
+            // place (a mirror row synced before the listen ended still carries
+            // the outro position), so a finished episode replayed at its end.
+            return withoutResumePosition(item);
         }
-        return item;
+        // Server read failed (null) — fall back to the native local resume cache
+        // so a transient LAN outage can't restart the episode at 0.
+        const cached = await getNativeResumeProgress('podcast-episode', episodeId);
+        const cachedResumeSeconds = cached
+            ? resolveLongFormResumeSeconds({
+                  completed: cached.completed,
+                  durationSeconds: item.durationSeconds,
+                  progressSeconds: cached.progressSeconds,
+              })
+            : 0;
+        if (cachedResumeSeconds > 0) {
+            const streamToken = await ensureSamoStreamToken(authentication, samoFetch).catch(
+                () => undefined,
+            );
+            return applySamoPodcastStreamResume(
+                item,
+                cachedResumeSeconds,
+                authentication,
+                streamToken,
+            );
+        }
+        // A cache entry that says "finished" is as authoritative as the server
+        // saying it; no entry at all is silence, and silence must not throw
+        // away a resume the item already carries.
+        return cached ? withoutResumePosition(item) : item;
     }
 
     // Audiobook queue ids are the per-file form `…:audiobook:<bookId>:file:<mediaFileId>`
@@ -199,22 +240,42 @@ export const refreshPlayableResumeFromServer = async (
         return item;
     }
 
+    // A book's saved position is BOOK-GLOBAL, so the near-end test has to
+    // measure it against the whole timeline. `durationSeconds` on a multi-file
+    // queue item is only the CURRENT FILE's length — comparing an 18-hour
+    // position against a 40-minute file would read as "past the end" and
+    // restart the entire book. See MobilePlayableAudio.timelineDurationSeconds.
+    const bookDurationSeconds = item.timelineDurationSeconds ?? item.durationSeconds;
+
     const progress = await loadCurrentPlaybackProgress(authentication, itemId);
-    if (progress?.currentTimeSeconds && progress.currentTimeSeconds > 0 && !progress.isFinished) {
-        return withResumePosition(item, progress.currentTimeSeconds);
+    if (progress) {
+        const resumeSeconds = resolveLongFormResumeSeconds({
+            completed: progress.isFinished,
+            durationSeconds: progress.durationSeconds ?? bookDurationSeconds,
+            progressSeconds: progress.currentTimeSeconds,
+        });
+        return resumeSeconds > 0
+            ? withResumePosition(item, resumeSeconds)
+            : withoutResumePosition(item);
     }
     // Server read failed (null) — fall back to the native local resume cache so a
     // transient LAN outage can't restart the book at 0 (which then overwrote the
-    // good server position). A genuinely-finished book returns a non-null
-    // progress with isFinished, so it stays at 0 and never hits this fallback.
-    if (!progress) {
-        const cached = await getNativeResumeProgress('audiobook', itemId);
-        if (cached && cached.progressSeconds > 0 && !cached.completed) {
-            return withResumePosition(item, Math.floor(cached.progressSeconds));
-        }
+    // good server position).
+    const cached = await getNativeResumeProgress('audiobook', itemId);
+    const cachedResumeSeconds = cached
+        ? resolveLongFormResumeSeconds({
+              completed: cached.completed,
+              durationSeconds: bookDurationSeconds,
+              progressSeconds: cached.progressSeconds,
+          })
+        : 0;
+    if (cachedResumeSeconds > 0) {
+        return withResumePosition(item, cachedResumeSeconds);
     }
-
-    return item;
+    // Same asymmetry as the episode path above: a cache entry that says
+    // "finished" clears a stale resume, but no entry at all is silence and must
+    // leave the item's own resume alone.
+    return cached ? withoutResumePosition(item) : item;
 };
 
 export const shouldAutoRecoverPlayback = (source: MobilePlayableAudio['source'] | undefined) =>

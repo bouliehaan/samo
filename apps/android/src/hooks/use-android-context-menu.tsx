@@ -8,6 +8,7 @@ import { useMemo } from 'react';
 
 import {
     BookInfoGlyph,
+    CastGlyph,
     ChaptersGlyph,
     ClearGlyph,
     DiscGlyph,
@@ -60,6 +61,12 @@ import {
     handleAddRadioToQueue,
     handleAddTrackToQueue,
 } from '../handlers/queue-handlers';
+import {
+    canSendItemToSamoRadio,
+    canSendTrackToSamoRadio,
+    handleSendItemToSamoRadio,
+    handleSendTrackToSamoRadio,
+} from '../handlers/samo-radio-handlers';
 import { triggerImpact } from '../services/haptics';
 import { useAppSessionSelector } from '../state/app-session';
 import { useAuthSessionSelector } from '../state/auth-session';
@@ -73,6 +80,7 @@ import {
     selectActiveAndroidPlaybackItem,
     useAndroidPlaybackState,
 } from '../state/playback-store';
+import { type SamoRadioTarget, useSamoRadioSelector } from '../state/samo-radio';
 import { colors } from '../theme/tokens';
 import { getContentItemKey } from '../utils/content-item';
 import { getContentSourceFromPlaybackItem } from '../utils/content-source';
@@ -190,6 +198,11 @@ export function useAndroidContextMenu(): AndroidContextMenuSurface {
     const serverConnection = useAuthSessionSelector((state) => state.serverConnection);
     const activePlaybackItem = useAndroidPlaybackState(selectActiveAndroidPlaybackItem);
     const canAppendToQueue = canAppendToPlaybackQueue(activePlaybackItem);
+    // Identity only, and only of devices the server can reach right now — so
+    // this is empty (and samo-radio absent from every menu) unless there is
+    // really something to play to, and a device's moving playhead does not
+    // rebuild the action list underneath an open sheet.
+    const samoRadioTargets = useSamoRadioSelector((state) => state.targets);
 
     const actions = useMemo<MediaContextMenuAction[]>(() => {
         if (!contextMenuTarget) {
@@ -197,6 +210,24 @@ export function useAndroidContextMenu(): AndroidContextMenuSurface {
         }
 
         const menuActions: MediaContextMenuAction[] = [];
+
+        // One row per device: samo-radio devices are the server's own sockets,
+        // so there is normally exactly one, and a nested picker to choose from
+        // a list of one would be a sheet in front of a sheet. With several, the
+        // name IS the choice and no extra step is needed either.
+        const pushSamoRadioActions = (send: (device: SamoRadioTarget) => void): void => {
+            samoRadioTargets.forEach((device) => {
+                menuActions.push({
+                    icon: <CastGlyph color={colors.text} size={20} />,
+                    id: `samo-radio:${device.id}`,
+                    label:
+                        samoRadioTargets.length === 1
+                            ? 'Send to samo-radio'
+                            : `Send to ${device.name}`,
+                    onPress: () => send(device),
+                });
+            });
+        };
 
         if (contextMenuTarget.kind === 'song') {
             const { source, track } = contextMenuTarget;
@@ -280,6 +311,12 @@ export function useAndroidContextMenu(): AndroidContextMenuSurface {
                     label: 'Add to Queue',
                     onPress: () => handleAddTrackToQueue(track),
                 });
+            }
+            // Next to Add to Queue: both answer "not now / not here", and a
+            // live station is as sendable as a track — the device plays it,
+            // the phone's own queue is what cannot hold one.
+            if (canSendTrackToSamoRadio(track)) {
+                pushSamoRadioActions((device) => void handleSendTrackToSamoRadio(track, device));
             }
             if (track.playback?.source === 'music' && source) {
                 menuActions.push({
@@ -376,6 +413,11 @@ export function useAndroidContextMenu(): AndroidContextMenuSurface {
                     onPress: () => void handleAddCollectionToQueue(item),
                 });
             }
+            if (canSendItemToSamoRadio(item, 'audiobook')) {
+                pushSamoRadioActions(
+                    (device) => void handleSendItemToSamoRadio(item, 'audiobook', device),
+                );
+            }
             menuActions.push({
                 icon: <BookInfoGlyph color={colors.text} />,
                 id: 'book-info',
@@ -427,6 +469,15 @@ export function useAndroidContextMenu(): AndroidContextMenuSurface {
                     onPress: () => handleAddRadioToQueue(item),
                 });
             }
+            // Unlike the queue action above, this one has no "only while
+            // something else is playing" condition: tuning the stereo to a
+            // station is what a station is FOR, and it says nothing about what
+            // the phone happens to be doing.
+            if (canSendItemToSamoRadio(item, 'radio')) {
+                pushSamoRadioActions(
+                    (device) => void handleSendItemToSamoRadio(item, 'radio', device),
+                );
+            }
             menuActions.push({
                 icon: <BookInfoGlyph color={colors.text} />,
                 id: 'stream-info',
@@ -438,6 +489,7 @@ export function useAndroidContextMenu(): AndroidContextMenuSurface {
             contextMenuTarget.kind === 'playlist'
         ) {
             const auth = findAuthForSource(item.source?.id);
+            const collectionKind = contextMenuTarget.kind;
             if (canAppendToQueue && !suppressQueue) {
                 menuActions.push({
                     icon: <QueueAddGlyph color={colors.text} />,
@@ -445,6 +497,11 @@ export function useAndroidContextMenu(): AndroidContextMenuSurface {
                     label: 'Add to Queue',
                     onPress: () => void handleAddCollectionToQueue(item),
                 });
+            }
+            if (canSendItemToSamoRadio(item, collectionKind)) {
+                pushSamoRadioActions(
+                    (device) => void handleSendItemToSamoRadio(item, collectionKind, device),
+                );
             }
             if (auth) {
                 menuActions.push({
@@ -515,7 +572,10 @@ export function useAndroidContextMenu(): AndroidContextMenuSurface {
         }
 
         return menuActions;
-    }, [canAppendToQueue, contextMenuTarget, favoritedKeys]);
+        // `serverConnection` is not read directly here, but the samo-radio
+        // predicates resolve an item against the live session — a menu built
+        // for the previous server must not survive a reconnect.
+    }, [canAppendToQueue, contextMenuTarget, favoritedKeys, samoRadioTargets, serverConnection]);
 
     const eyebrow = contextMenuTarget
         ? contextMenuTarget.kind === 'song'

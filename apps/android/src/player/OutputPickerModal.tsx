@@ -11,15 +11,25 @@ import {
     View,
 } from 'react-native';
 
+import { type SamoRadioDevice, describeSamoRadioDevice } from '@samo/core/server';
+
 import { CastGlyph, CheckGlyph } from '../components/Glyphs';
 import {
     type AndroidCastState,
     type AndroidMediaOutputRoute,
     type AndroidMediaOutputState,
     getAndroidOutputRoutes,
+    pauseAndroidAudio,
     selectAndroidOutputRoute,
     subscribeToAndroidOutputRouteEvents,
 } from '../services/audio-playback';
+import {
+    refreshSamoRadioDevices,
+    samoRadioSendPayloadForQueue,
+    sendToSamoRadio,
+} from '../services/samo-radio';
+import { getPlaybackQueue } from '../state/playback-queue-store';
+import { useSamoRadioSelector } from '../state/samo-radio';
 import { QUEUE_CLOSE_DISTANCE } from '../theme/layout';
 import { styles } from '../theme/styles';
 import { colors } from '../theme/tokens';
@@ -69,6 +79,26 @@ export const OutputPickerModal = memo(({
     const [isLoading, setIsLoading] = useState(false);
     const [selectingRouteId, setSelectingRouteId] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
+    // Shared with the Radio tab's panel and every long-press menu, and already
+    // narrowed to devices the server can reach — an unpaired or unreachable one
+    // is not an output, and offering it here would only fail on tap.
+    const samoRadioDevices = useSamoRadioSelector((state) => state.devices);
+    const [sendingDeviceId, setSendingDeviceId] = useState<string | null>(null);
+
+    // samo-radio devices are a server round trip, not a native route scan, so
+    // this re-reads once per open instead of joining the Chromecast poll. The
+    // list already in the store renders immediately; this only corrects it.
+    useEffect(() => {
+        if (!visible) {
+            return;
+        }
+        const controller = new AbortController();
+        void refreshSamoRadioDevices(controller.signal);
+        return () => {
+            controller.abort();
+            setSendingDeviceId(null);
+        };
+    }, [visible]);
 
     useEffect(() => {
         if (!visible) {
@@ -186,6 +216,90 @@ export const OutputPickerModal = memo(({
         [onClose, selectingRouteId],
     );
 
+    // Sending is a hand-off, not a route switch: the queue goes to the server's
+    // audio output and the phone pauses. Pause rather than stop so the queue and
+    // position survive — taking it back is one tap on the dock.
+    const handleSendToSamoRadio = useCallback(
+        async (device: SamoRadioDevice) => {
+            if (sendingDeviceId) {
+                return;
+            }
+            // Index and items are derived together: dropping an entry the
+            // device cannot play renumbers the rest, so reusing the queue's own
+            // index here would start it on the wrong track.
+            const { items, startIndex } = samoRadioSendPayloadForQueue(getPlaybackQueue());
+            if (items.length === 0) {
+                setError('Nothing playing that samo-radio can pick up.');
+                return;
+            }
+
+            setSendingDeviceId(device.id);
+            setError(null);
+            try {
+                await sendToSamoRadio({ deviceId: device.id, items, startIndex });
+                await pauseAndroidAudio().catch(() => undefined);
+                onClose();
+            } catch (sendError) {
+                setError(
+                    sendError instanceof Error
+                        ? sendError.message
+                        : `Could not send to ${device.name}.`,
+                );
+            } finally {
+                setSendingDeviceId(null);
+            }
+        },
+        [onClose, sendingDeviceId],
+    );
+
+    const renderSamoRadioDevice = (device: SamoRadioDevice) => {
+        const isSending = sendingDeviceId === device.id;
+
+        return (
+            <Pressable
+                accessibilityLabel={`Play to ${device.name}`}
+                accessibilityRole="button"
+                disabled={Boolean(sendingDeviceId)}
+                key={device.id}
+                onPress={(event) => {
+                    event.stopPropagation();
+                    void handleSendToSamoRadio(device);
+                }}
+                style={({ pressed }) => [
+                    styles.outputPickerRow,
+                    pressed && styles.outputPickerRowPressed,
+                    Boolean(sendingDeviceId) && !isSending && styles.outputPickerRowDisabled,
+                ]}
+            >
+                <View style={styles.outputPickerIcon}>
+                    {/* Not "AUX": that glyph already means the phone's own
+                        headphone jack in the list above, and two rows reading
+                        AUX is exactly the ambiguity this sheet exists to
+                        resolve. The style has no textTransform, so the
+                        wordmark stays lowercase. */}
+                    <Text
+                        adjustsFontSizeToFit
+                        numberOfLines={1}
+                        style={styles.outputPickerIconLabel}
+                    >
+                        samo
+                    </Text>
+                </View>
+                <View style={styles.outputPickerRowBody}>
+                    <Text numberOfLines={1} style={styles.outputPickerTitle}>
+                        {device.name}
+                    </Text>
+                    <Text numberOfLines={1} style={styles.outputPickerSubtitle}>
+                        {describeSamoRadioDevice(device)}
+                    </Text>
+                </View>
+                <View style={styles.outputPickerState}>
+                    {isSending ? <ActivityIndicator color={colors.accent} size="small" /> : null}
+                </View>
+            </Pressable>
+        );
+    };
+
     const renderRoute = (route: AndroidMediaOutputRoute) => {
         const isSelecting = selectingRouteId === route.id;
         const isDisabled = Boolean(selectingRouteId) || route.isAvailable === false;
@@ -280,6 +394,14 @@ export const OutputPickerModal = memo(({
                                         Phone and Bluetooth
                                     </Text>
                                     {localRoutes.map(renderRoute)}
+                                </>
+                            ) : null}
+                            {samoRadioDevices.length > 0 ? (
+                                <>
+                                    <Text style={styles.outputPickerSectionLabel}>
+                                        samo-radio
+                                    </Text>
+                                    {samoRadioDevices.map(renderSamoRadioDevice)}
                                 </>
                             ) : null}
                             <Text style={styles.outputPickerSectionLabel}>Chromecast</Text>

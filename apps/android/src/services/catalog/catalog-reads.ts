@@ -5,6 +5,7 @@ import {
     isSamoRawTrackEnvelope,
     mapSamoMediaDetailFromRawBundle,
     mapSamoMediaTrackFromRaw,
+    mapSamoPodcastEpisodeTrackFromRaw,
     MobileHomeItemType,
     MobileHomeSectionId,
     MobileMediaDetailType,
@@ -21,6 +22,7 @@ import {
     findServerAuthenticationForSource,
     getCachedSamoStreamToken,
     getSamoMusicTrackStreamUrl,
+    getSamoPodcastCoverUrl,
     getServerConnectionKey,
     type ServerAuthenticationResult,
 } from '@samo/core/server';
@@ -126,6 +128,10 @@ const synthesizeMusicPlayback = (
  * Three eras of rows coexist: `$samoRawTrack` envelopes (Kotlin v4+) hydrate
  * through the canonical core mapper; legacy rows that already carry playback
  * pass through; legacy rows without playback get a synthesized one.
+ *
+ * MUSIC ROWS ONLY — album and playlist containers. A podcast container's rows
+ * are episodes wearing the same envelope and belong to
+ * {@link hydrateCatalogPodcastEpisodes}.
  */
 export const hydrateCatalogTrack = (
     payload: unknown,
@@ -158,6 +164,51 @@ const hydrateCatalogTracks = (
     payloads
         .map((payload) => hydrateCatalogTrack(payload, authentication))
         .filter((track): track is MobileMediaTrack => track !== null);
+
+/**
+ * Podcast episode rows. Stored in `catalog_track` under the SAME
+ * `$samoRawTrack` envelope as music tracks — only the row's `container_type`
+ * distinguishes them — so a podcast container MUST hydrate here and never
+ * through {@link hydrateCatalogTracks}.
+ *
+ * Reading an episode as a music track is silent and total: the music mapper
+ * finds no `images`/`albumId` to resolve art from and knows nothing of the
+ * show's cover, so the player has no artwork, and it builds
+ * `/api/v1/music/tracks/<episodeId>/stream` — a route that cannot serve an
+ * episode, so the stream never opens and the play button spins forever. It
+ * looked like a per-show outage because it was: only shows the sync had
+ * already crawled had rows to be mis-read, and the rest still fell through to
+ * the network.
+ *
+ * A row that ISN'T an envelope is dropped rather than guessed at. Zero tracks
+ * makes the caller fall through to the network, which is the right answer for
+ * a container this mirror can't serve faithfully.
+ */
+const hydrateCatalogPodcastEpisodes = (
+    payloads: unknown[],
+    authentication: ServerAuthenticationResult,
+    showId: string,
+    showArtworkUrl: string | undefined,
+): MobileMediaTrack[] => {
+    const streamToken = getCachedSamoStreamToken(authentication);
+    const tracks: MobileMediaTrack[] = [];
+    for (const payload of payloads) {
+        if (!isSamoRawTrackEnvelope(payload)) {
+            continue;
+        }
+        const track = mapSamoPodcastEpisodeTrackFromRaw(
+            authentication,
+            streamToken,
+            payload,
+            showId,
+            showArtworkUrl,
+        );
+        if (track) {
+            tracks.push(track);
+        }
+    }
+    return tracks;
+};
 
 /**
  * Instant detail for a Samo item straight from the catalog. Albums are
@@ -197,12 +248,25 @@ export const loadCatalogMediaDetail = async (
             if (!auth) {
                 return null;
             }
-            const containerType =
-                detailType === MobileMediaDetailType.PLAYLIST ? 'playlist' : 'podcast';
-            const tracks = hydrateCatalogTracks(
-                await getTracks(source.id, containerType, item.id),
-                auth,
+            const isPlaylist = detailType === MobileMediaDetailType.PLAYLIST;
+            const rows = await getTracks(
+                source.id,
+                isPlaylist ? 'playlist' : 'podcast',
+                item.id,
             );
+            // Playlist rows ARE music tracks; podcast rows are episodes and
+            // need the episode mapper — the envelope is identical, only the
+            // container says which. The show's own cover is threaded in as the
+            // per-episode fallback, since most feeds give episodes no art of
+            // their own and the mirror row has no other way to reach it.
+            const tracks = isPlaylist
+                ? hydrateCatalogTracks(rows, auth)
+                : hydrateCatalogPodcastEpisodes(
+                      rows,
+                      auth,
+                      item.id,
+                      item.artworkUrl ?? getSamoPodcastCoverUrl(auth, item.id),
+                  );
             if (tracks.length === 0) {
                 return null;
             }

@@ -35,10 +35,8 @@ export interface HomeDisplaySection {
 }
 
 export interface HomeScreenProps {
-    isRefreshing?: boolean;
     onManageServers: () => void;
     onPrefetchItem?: (item: AndroidRecentContentSourceItem) => void;
-    onRefresh?: () => void;
     onSelectItem: (item: AndroidRecentContentSourceItem) => void;
     onViewAll: (section: HomeDisplaySection) => void;
     serverConnection: ServerAuthenticationResult | null;
