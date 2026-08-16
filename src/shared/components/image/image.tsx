@@ -79,7 +79,7 @@ export function BaseImage({
     const { className: containerPropsClassName, ...restContainerProps } = imageContainerProps || {};
 
     const rawImageRequest = useMemo(() => {
-        if (src && isSamoApiMediaUrl(src) && src.includes('stream_token=') && !imageRequest) {
+        if (src && isSamoApiMediaUrl(src) && !imageRequest) {
             return undefined;
         }
 
@@ -108,10 +108,20 @@ export function BaseImage({
         (!enableViewport || isInSessionCache || inViewport || hasLoadedInInstance),
     );
 
+    // Samo media URLs go straight into <img>. They no longer carry a stream
+    // token — the main process attaches the bearer to these requests — and a
+    // plain <img> is what lets Chromium's disk cache serve the same cover on
+    // the next launch instead of re-fetching it into a per-session blob.
+    // `directImageFailed` still falls back to the header-carrying fetch below,
+    // which covers the window before the credential is registered.
+    // The request URL is preferred over a raw `src`: it is the fully resolved
+    // form, re-homed onto the connected origin and carrying the `width` for the
+    // slot. A caller that passes both (long-form covers do) would otherwise
+    // render the unresolved `src` and quietly fetch a full-size original.
     const samoDirectSrc = useMemo(() => {
-        const candidates = [src, effectiveImageRequest?.url];
+        const candidates = [effectiveImageRequest?.url, src];
         for (const candidate of candidates) {
-            if (candidate && isSamoApiMediaUrl(candidate) && candidate.includes('stream_token=')) {
+            if (candidate && isSamoApiMediaUrl(candidate)) {
                 return candidate;
             }
         }

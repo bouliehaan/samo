@@ -24,6 +24,7 @@ import {
     recordRecentPodcast,
     useCurrentServer,
     useCurrentServerId,
+    useImageRes,
 } from '/@/renderer/store';
 import { usePodcastActions } from '/@/renderer/store/podcast.store';
 import { formatDateRelative } from '/@/renderer/utils/format';
@@ -49,7 +50,7 @@ const formatPublishedDate = (publishedAt?: string) => {
     }).format(parsed);
 };
 
-const getEpisodeProgressFraction = (entry: SamoPodcastFeedEntry) => {
+export const getFeedEntryProgressFraction = (entry: SamoPodcastFeedEntry) => {
     const progress = entry.episode.progress ?? entry.episode.playback;
     if (progress?.completed) {
         return 1;
@@ -76,16 +77,17 @@ const getFeedSubtitle = (entry: SamoPodcastFeedEntry) => {
     return [showTitle, releaseDate].filter(Boolean).join(' · ');
 };
 
-const PodcastFeedCard = ({
+export const PodcastFeedCard = ({
     entry,
     onPlay,
 }: {
     entry: SamoPodcastFeedEntry;
     onPlay: () => void;
 }) => {
+    const imageRes = useImageRes();
     const title = entry.episode.title ?? entry.episode.name ?? 'Untitled episode';
     const showId = entry.episode.podcastId ?? entry.episode.id;
-    const progressFraction = getEpisodeProgressFraction(entry);
+    const progressFraction = getFeedEntryProgressFraction(entry);
     const isCompleted = entry.episode.progress?.completed ?? entry.episode.playback?.completed;
 
     return (
@@ -108,6 +110,7 @@ const PodcastFeedCard = ({
                     fallbackIcon="microphone"
                     imageUrl={entry.artworkUrl}
                     itemId={showId}
+                    width={imageRes.itemCard}
                 />
                 <div
                     className={clsx(
@@ -162,11 +165,13 @@ const PodcastFeedCard = ({
     );
 };
 
-export const HomePodcastFeedSection = ({
-    containerQuery,
-}: {
-    containerQuery?: ReturnType<typeof useGridCarouselContainerQuery>;
-}) => {
+/**
+ * The newest episodes across every subscribed show, plus the play action.
+ *
+ * Shared by Home's shelf and the Podcasts page, which builds three shelves out
+ * of it — under one query key, so the second surface to mount is free.
+ */
+export const usePodcastFeed = () => {
     const serverId = useCurrentServerId();
     const server = useCurrentServer();
     const samoServer = useMemo(
@@ -211,6 +216,16 @@ export const HomePodcastFeedSection = ({
         [playPodcast, samoServer],
     );
 
+    return { entries, isPending: feedQuery.isPending, playEntry, samoServer };
+};
+
+export const HomePodcastFeedSection = ({
+    containerQuery,
+}: {
+    containerQuery?: ReturnType<typeof useGridCarouselContainerQuery>;
+}) => {
+    const { entries, isPending, playEntry, samoServer } = usePodcastFeed();
+
     const cards = useMemo(
         () =>
             entries.map((entry) => ({
@@ -224,7 +239,7 @@ export const HomePodcastFeedSection = ({
         return null;
     }
 
-    if (feedQuery.isPending) {
+    if (isPending) {
         return (
             <section>
                 <HomeSectionTitle title="Podcast Feed" to={AppRoute.PODCASTS} />

@@ -24,7 +24,9 @@ import { isOfflineNow } from '../state/network-state';
 import {
     getSamoRadioDevices,
     patchSamoRadioDeviceState,
+    samoRadioReachFor,
     setSamoRadioDevices,
+    setSamoRadioReach,
     setSamoRadioStations,
 } from '../state/samo-radio';
 import { getContentSourceFromPlaybackItem } from '../utils/content-source';
@@ -60,18 +62,30 @@ const connection = () => {
  * A failed request is NOT an empty device list. The phone talks to Samo over
  * whatever network it happens to be on, so one timed-out poll would otherwise
  * blank the control panel and strip "Send to samo-radio" out of every menu
- * mid-listen. The last good snapshot stands until a request actually succeeds.
+ * mid-listen. The last good snapshot stands until a request actually succeeds
+ * — and the failure is RECORDED (`setSamoRadioReach`) rather than swallowed,
+ * so the surfaces that end up with nothing to draw can say why instead of
+ * looking like a feature that does not exist.
  */
 export const refreshSamoRadioDevices = async (
     signal?: AbortSignal,
 ): Promise<SamoRadioDevice[]> => {
     const authentication = connection();
+    const offline = isOfflineNow();
     // Offline is the same answer as "no samo-radio here", and arrived at
     // without a request: every command, and every send, goes through the
     // server. Surfaces disappear rather than offering controls that cannot
     // reach anything.
-    if (!authentication || isOfflineNow()) {
+    if (!authentication || offline) {
         setSamoRadioDevices([]);
+        // Offline is a known reason to have nothing; a server that has no
+        // samo-radio to begin with is not a failure at all, and saying so
+        // would put an error on a tab that is simply not equipped.
+        setSamoRadioReach(
+            offline
+                ? samoRadioReachFor(false, 'This device is offline.')
+                : { status: 'unknown' },
+        );
         return [];
     }
     try {
@@ -81,10 +95,36 @@ export const refreshSamoRadioDevices = async (
         }
         const connected = devices.filter(isSamoRadioDeviceConnected);
         setSamoRadioDevices(connected);
+        setSamoRadioReach(samoRadioReachFor(true));
         return connected;
-    } catch {
+    } catch (error) {
+        // An abort is this app changing its mind (tab switch, unmount), not
+        // the server failing to answer — it proves nothing either way.
+        if (!signal?.aborted) {
+            setSamoRadioReach(samoRadioReachFor(false, describeReachFailure(error)));
+        }
         return getSamoRadioDevices();
     }
+};
+
+/**
+ * A fetch failure, in words that name the actual problem.
+ *
+ * React Native's fetch reports every transport failure — DNS, refused, routed
+ * into a tunnel that cannot see the LAN — as the same bare "Network request
+ * failed", which tells the reader nothing they did not already know from the
+ * blank screen. Where the message is that empty, it is replaced with the one
+ * fact that is always true and always actionable: this phone, on this network,
+ * could not open a connection to the address the server is configured at.
+ */
+export const describeReachFailure = (error: unknown): string => {
+    const raw = (
+        error instanceof Error ? error.message : typeof error === 'string' ? error : ''
+    ).trim();
+    if (!raw || /network request failed/i.test(raw) || /\btimeout\b/i.test(raw)) {
+        return "This phone can't open a connection to the server's address from the network it's on.";
+    }
+    return raw;
 };
 
 /**

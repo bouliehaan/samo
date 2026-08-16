@@ -1,0 +1,51 @@
+.card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    min-width: 0;
+    cursor: pointer;
+}
+
+.art {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 1;
+    overflow: hidden;
+    background: rgb(255 255 255 / 4%);
+    border-radius: var(--theme-radius-md);
+}
+
+.card:hover .overlay,
+.card:focus-visible .overlay {
+    opacity: 1;
+}
+
+.overlay {
+    opacity: 0;
+    transition: opacity 0.14s ease;
+}
+
+.title {
+    min-width: 0;
+}
+
+.subtitle {
+    color: var(--theme-colors-foreground-muted);
+}
+
+.progress-track {
+    display: block;
+    width: 100%;
+    height: 3px;
+    margin-top: 0.15rem;
+    overflow: hidden;
+    background: rgb(255 255 255 / 8%);
+    border-radius: 999px;
+}
+
+.progress-bar {
+    display: block;
+    height: 100%;
+    background: rgb(202 160 79 / 85%);
+    border-radius: 999px;
+}

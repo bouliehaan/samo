@@ -63,7 +63,7 @@ describe('orderServerEndpointOptions', () => {
         ).toBe('local');
     });
 
-    it('ignores the pin when the Wi-Fi name is unreadable', () => {
+    it('ignores the pin when the Wi-Fi name is unreadable and the transport is unknown', () => {
         expect(
             orderServerEndpointOptions({
                 homeSsid: 'Home',
@@ -71,6 +71,49 @@ describe('orderServerEndpointOptions', () => {
                 localUrl: LOCAL,
                 remoteUrl: REMOTE,
                 ssid: null,
+            })[0]?.kind,
+        ).toBe('remote');
+    });
+
+    // Reading the Wi-Fi name needs location permission on Android and is often
+    // unavailable, so this is the ORDINARY case, not an edge case. History must
+    // not win here: it is self-reinforcing, so one round that settled on remote
+    // would otherwise keep the app remote on every network forever — streaming
+    // over the internet while sitting next to the server.
+    it('prefers the local address on Wi-Fi even when the name is unreadable and remote worked last', () => {
+        expect(
+            orderServerEndpointOptions({
+                homeSsid: 'Home',
+                lastUsedKind: 'remote',
+                localUrl: LOCAL,
+                remoteUrl: REMOTE,
+                ssid: null,
+                transport: 'wifi',
+            })[0]?.kind,
+        ).toBe('local');
+    });
+
+    it('prefers the local address on ethernet', () => {
+        expect(
+            orderServerEndpointOptions({
+                lastUsedKind: 'remote',
+                localUrl: LOCAL,
+                remoteUrl: REMOTE,
+                transport: 'ethernet',
+            })[0]?.kind,
+        ).toBe('local');
+    });
+
+    // A readable name still outranks the transport: this is a foreign Wi-Fi and
+    // the LAN address provably is not on it.
+    it('still puts remote first on a Wi-Fi whose name does not match the pin', () => {
+        expect(
+            orderServerEndpointOptions({
+                homeSsid: 'Home',
+                localUrl: LOCAL,
+                remoteUrl: REMOTE,
+                ssid: 'Cafe',
+                transport: 'wifi',
             })[0]?.kind,
         ).toBe('remote');
     });

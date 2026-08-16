@@ -113,6 +113,7 @@ const resolveItemImageRequest = (
     if (imageUrl && isSamoApiMediaUrl(imageUrl)) {
         const server = getServerById(serverId);
         if (server?.type === ServerType.SAMO && hasConfiguredServerUrl(server)) {
+            const width = size ?? sizeByType;
             return buildSamoAuthenticatedImageRequest(
                 {
                     credential: server.credential,
@@ -120,7 +121,11 @@ const resolveItemImageRequest = (
                     url: server.url,
                 },
                 imageUrl,
-                ['samo', server.id, 'url', imageUrl].join(':'),
+                // The width belongs in the cache key: the same cover at two
+                // sizes is two different resources, and sharing a key would
+                // let a sidebar thumbnail satisfy a full-size header.
+                ['samo', server.id, 'url', imageUrl, width ?? ''].join(':'),
+                width,
             );
         }
     }

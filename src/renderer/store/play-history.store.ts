@@ -17,6 +17,40 @@ import {
 
 const RECENT_ITEM_LIMIT = 80;
 
+/** Bumped when artwork URLs stopped carrying a stream token. */
+const PERSIST_VERSION_STREAM_TOKEN_STRIPPED = PERSIST_VERSION_INITIAL + 1;
+
+/**
+ * Recents persist an artwork URL snapshot, so anything embedded in that URL
+ * outlives the session that produced it. A stream token must not be: the server
+ * keeps tokens in a process-local map with a 30 minute TTL and drops them on
+ * restart, so a persisted one is dead long before the entry stops being shown —
+ * and Continue Listening is the first thing on Home. Stripping it also keeps
+ * the URL identical to the one the rest of the app builds, so all of them share
+ * a single cache entry. The bearer authenticates these requests instead.
+ */
+const withoutStreamToken = (url: null | string | undefined): null | string | undefined => {
+    if (!url || !url.includes('stream_token=')) {
+        return url;
+    }
+
+    const [base, query] = url.split('?');
+    const kept = (query ?? '')
+        .split('&')
+        .filter((part) => part && !part.startsWith('stream_token='))
+        .join('&');
+
+    return kept ? `${base}?${kept}` : base;
+};
+
+const withCleanArtwork = <T extends RecentItem>(item: T): T =>
+    item.artwork && 'imageUrl' in item.artwork && item.artwork.imageUrl?.includes('stream_token=')
+        ? {
+              ...item,
+              artwork: { ...item.artwork, imageUrl: withoutStreamToken(item.artwork.imageUrl) },
+          }
+        : item;
+
 export type PlayHistoryEntryType = RecentItemType;
 
 export interface PlayHistoryRef {
@@ -126,11 +160,11 @@ export const usePlayHistoryStore = create<PlayHistoryState>()(
 
                     const selectedAt = entry.selectedAt ?? Date.now();
                     const key = getRecentItemKey(entry);
-                    const nextEntry: RecentItem = {
+                    const nextEntry: RecentItem = withCleanArtwork({
                         ...entry,
                         key,
                         selectedAt,
-                    };
+                    });
 
                     set((state) => ({
                         items: compactItems([
@@ -154,10 +188,20 @@ export const usePlayHistoryStore = create<PlayHistoryState>()(
             items: [],
         }),
         {
-            migrate: identityPersistMigrate<Pick<PlayHistoryState, 'items'>>,
+            // Entries written before artwork went token-free still carry a dead
+            // token, and they are shown until 80 newer items push them out —
+            // so they are rewritten on load rather than left to expire.
+            migrate: (persisted, version) => {
+                const state = identityPersistMigrate<Pick<PlayHistoryState, 'items'>>(
+                    persisted,
+                    version,
+                );
+
+                return { items: (state?.items ?? []).map(withCleanArtwork) };
+            },
             name: 'recent-items-store',
             partialize: (state) => ({ items: state.items }),
-            version: PERSIST_VERSION_INITIAL,
+            version: PERSIST_VERSION_STREAM_TOKEN_STRIPPED,
         },
     ),
 );

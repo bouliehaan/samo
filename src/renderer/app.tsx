@@ -9,7 +9,7 @@ import '@mantine/notifications/styles.css';
 import isElectron from 'is-electron';
 import { lazy, memo, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 
-import i18n from '/@/i18n/i18n';
+import { changeLanguage } from '/@/i18n/i18n';
 import { WebAudioContext } from '/@/renderer/features/player/context/webaudio-context';
 import { useCheckForUpdates } from '/@/renderer/hooks/use-check-for-updates';
 import { useLyricsPrefetch } from '/@/renderer/hooks/use-lyrics-prefetch';
@@ -164,7 +164,9 @@ const LanguageEffect = () => {
 
     useEffect(() => {
         if (language) {
-            i18n.changeLanguage(language);
+            // Non-English tables are fetched on demand, so this resolves a
+            // chunk before switching rather than switching straight away.
+            void changeLanguage(language);
         }
     }, [language]);
 

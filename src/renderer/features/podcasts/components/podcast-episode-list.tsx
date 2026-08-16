@@ -1,5 +1,5 @@
 import formatDuration from 'format-duration';
-import { ReactElement, useMemo } from 'react';
+import { MouseEvent, ReactElement, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import AutoSizer from 'react-virtualized-auto-sizer';
 import { List, RowComponentProps } from 'react-window-v2';
@@ -7,6 +7,7 @@ import { List, RowComponentProps } from 'react-window-v2';
 import styles from './podcast-episode-list.module.css';
 
 import { getEpisodeProgressFraction } from '/@/renderer/features/podcasts/utils/episode-progress';
+import { virtualListStyle } from '/@/renderer/utils/virtual-list-style';
 import { LongFormPodcastEpisode } from '/@/shared/api/long-form-types';
 import { Text } from '/@/shared/components/text/text';
 
@@ -34,6 +35,7 @@ const formatEpisodeDuration = (episode: LongFormPodcastEpisode) => {
 interface RowData {
     activeEpisodeId?: string;
     episodes: LongFormPodcastEpisode[];
+    onContextMenu?: (episode: LongFormPodcastEpisode, event: MouseEvent<HTMLButtonElement>) => void;
     onPlay: (episode: LongFormPodcastEpisode) => void;
     playedLabel: string;
     untitledLabel: string;
@@ -43,6 +45,7 @@ const EpisodeRow = ({
     activeEpisodeId,
     episodes,
     index,
+    onContextMenu,
     onPlay,
     playedLabel,
     style,
@@ -62,6 +65,7 @@ const EpisodeRow = ({
                 aria-current={isActive ? 'true' : undefined}
                 className={styles.row}
                 onClick={() => onPlay(episode)}
+                onContextMenu={(event) => onContextMenu?.(episode, event)}
                 type="button"
             >
                 <span className={styles.header}>
@@ -98,6 +102,7 @@ const EpisodeRow = ({
 interface PodcastEpisodeListProps {
     activeEpisodeId?: string;
     episodes: LongFormPodcastEpisode[];
+    onContextMenu?: (episode: LongFormPodcastEpisode, event: MouseEvent<HTMLButtonElement>) => void;
     onPlay: (episode: LongFormPodcastEpisode) => void;
 }
 
@@ -109,6 +114,7 @@ interface PodcastEpisodeListProps {
 export const PodcastEpisodeList = ({
     activeEpisodeId,
     episodes,
+    onContextMenu,
     onPlay,
 }: PodcastEpisodeListProps) => {
     const { t } = useTranslation();
@@ -117,11 +123,12 @@ export const PodcastEpisodeList = ({
         () => ({
             activeEpisodeId,
             episodes,
+            onContextMenu,
             onPlay,
             playedLabel: t('common.played', { postProcess: 'sentenceCase' }),
             untitledLabel: t('entity.untitledEpisode', { postProcess: 'sentenceCase' }),
         }),
-        [activeEpisodeId, episodes, onPlay, t],
+        [activeEpisodeId, episodes, onContextMenu, onPlay, t],
     );
 
     if (!episodes.length) {
@@ -144,7 +151,7 @@ export const PodcastEpisodeList = ({
                             rowCount={episodes.length}
                             rowHeight={ROW_HEIGHT}
                             rowProps={rowProps}
-                            style={{ height, width }}
+                            style={virtualListStyle(height, width)}
                         />
                     )
                 }

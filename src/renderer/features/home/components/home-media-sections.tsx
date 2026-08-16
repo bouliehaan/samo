@@ -28,6 +28,7 @@ import {
     recordRecentArtist,
     recordRecentPlaylist,
     useCurrentServerId,
+    useImageRes,
     useLongFormMediaServer,
     usePlayHistoryStore,
 } from '/@/renderer/store';
@@ -1096,6 +1097,8 @@ export const HomeFavoriteAudiobooks = ({
         return [...favoriteItems, ...nonFavoriteItems].slice(0, 24);
     }, [samoItemsQuery.data, favoriteAudiobookIds, hiddenKeys, server?.id]);
 
+    const imageRes = useImageRes();
+
     if (!server || !items.length) {
         return null;
     }
@@ -1136,6 +1139,7 @@ export const HomeFavoriteAudiobooks = ({
                             fallbackIcon="metadata"
                             imageUrl={item.media?.metadata?.imageUrl}
                             itemId={item.id}
+                            width={imageRes.itemCard}
                         />
                         <span className={styles.playlistControls}>
                             <PlayButton

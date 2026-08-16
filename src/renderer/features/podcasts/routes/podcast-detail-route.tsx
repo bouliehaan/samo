@@ -92,6 +92,18 @@ const PodcastDetailRoute = () => {
         [item, server],
     );
 
+    const handleEpisodeContextMenu = useCallback(
+        (episode: LongFormPodcastEpisode, event: React.MouseEvent<HTMLButtonElement>) => {
+            if (!server || !item) return;
+            event.preventDefault();
+            ContextMenuController.call({
+                cmd: { episodes: [episode], item, server, type: 'podcast-episode' },
+                event,
+            });
+        },
+        [item, server],
+    );
+
     if (!server) {
         return (
             <AnimatedPage>
@@ -203,6 +215,7 @@ const PodcastDetailRoute = () => {
                             <PodcastEpisodeList
                                 activeEpisodeId={activeEpisode?.id}
                                 episodes={episodes}
+                                onContextMenu={handleEpisodeContextMenu}
                                 onPlay={handlePlayEpisode}
                             />
                         </div>

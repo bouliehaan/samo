@@ -30,9 +30,22 @@ const request = (payload: {
     statusText: string;
 }> => ipcRenderer.invoke('samo-request', payload);
 
+/**
+ * Register a server's bearer with the main process so plain `<img>` requests to
+ * it authenticate by header. Artwork URLs then need no `stream_token`, which is
+ * what makes them stable enough for the HTTP cache to survive a relaunch.
+ */
+const registerMediaCredential = (payload: { credential: string; url: string }): void =>
+    ipcRenderer.send('samo-register-media-credential', payload);
+
+const clearMediaCredential = (payload: { url: string }): void =>
+    ipcRenderer.send('samo-clear-media-credential', payload);
+
 export const samo = {
     authenticate,
+    clearMediaCredential,
     getUserInfo,
+    registerMediaCredential,
     request,
 };
 

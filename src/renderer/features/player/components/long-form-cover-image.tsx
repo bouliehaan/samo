@@ -15,12 +15,17 @@ interface LongFormCoverImageProps {
     fallbackIcon: 'metadata' | 'microphone';
     imageUrl?: string;
     itemId: string;
+    /**
+     * Rendered width of the slot. Without it the server has no way to know a
+     * 1400px cover is headed for a 178px card, and sends the whole thing.
+     */
+    width?: number;
 }
 
 /**
  * Cover-art image for Samo long-form media (audiobooks + podcasts).
- * Authenticated Samo artwork URLs are loaded through an image request so the
- * stream token never leaks into the DOM; falls back to an icon when no art.
+ * Artwork is authenticated by the bearer the main process attaches, so the URL
+ * itself stays clean and cacheable; falls back to an icon when there is no art.
  */
 export const LongFormCoverImage = ({
     alt,
@@ -28,6 +33,7 @@ export const LongFormCoverImage = ({
     fallbackIcon,
     imageUrl,
     itemId,
+    width,
 }: LongFormCoverImageProps) => {
     const server = useLongFormMediaServer();
 
@@ -43,9 +49,10 @@ export const LongFormCoverImage = ({
                 url: server.url,
             },
             imageUrl,
-            ['samo', server.id, 'long-form-cover', itemId].join(':'),
+            ['samo', server.id, 'long-form-cover', itemId, width ?? ''].join(':'),
+            width,
         );
-    }, [imageUrl, itemId, server]);
+    }, [imageUrl, itemId, server, width]);
 
     if (imageUrl || samoImageRequest) {
         return (

@@ -1,8 +1,36 @@
+/*
+ * The page scrolls; the grid inside it does not stretch to fit.
+ *
+ * The grid is virtualized, which means it needs a definite height to measure
+ * against — it cannot be "as tall as its contents". So it gets a generous fixed
+ * block (below) and the shelves above it ride in the page's own scroll.
+ */
 .page {
     display: flex;
     flex-direction: column;
     gap: var(--theme-spacing-lg);
-    height: 100%;
     min-height: 0;
-    padding: 2rem 2rem 0;
+    padding: 2rem 2rem 3rem;
+    overflow-y: auto;
+}
+
+.header {
+    display: flex;
+    flex-direction: column;
+    gap: var(--theme-spacing-md);
+    min-width: 0;
+}
+
+.search {
+    max-width: 32rem;
+}
+
+/*
+ * Tall enough to be the main event rather than a letterbox under the shelves,
+ * and capped so it cannot push its own scrollbar off the bottom of the window.
+ */
+.grid {
+    flex: 0 0 auto;
+    height: clamp(30rem, 72vh, 64rem);
+    min-height: 0;
 }

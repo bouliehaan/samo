@@ -6,6 +6,7 @@ import { GetInfoAction } from '/@/renderer/features/context-menu/actions/get-inf
 import { GoToAction } from '/@/renderer/features/context-menu/actions/go-to-action';
 import { PlayAction } from '/@/renderer/features/context-menu/actions/play-action';
 import { PlayArtistRadioAction } from '/@/renderer/features/context-menu/actions/play-artist-radio-action';
+import { PlayOnSamoRadioAction } from '/@/renderer/features/context-menu/actions/play-on-samo-radio-action';
 import { SetFavoriteAction } from '/@/renderer/features/context-menu/actions/set-favorite-action';
 import { ContextMenuPreview } from '/@/renderer/features/context-menu/components/context-menu-preview';
 import { recordRecentArtist } from '/@/renderer/store/play-history.store';
@@ -33,6 +34,7 @@ export const ArtistContextMenu = ({ items, type }: ArtistContextMenuProps) => {
                 onPlay={() => items.forEach((a) => recordRecentArtist(a as unknown as AlbumArtist))}
             />
             <PlayArtistRadioAction artist={items[0]} disabled={items.length > 1} />
+            <PlayOnSamoRadioAction ids={ids} itemType={LibraryItem.ARTIST} />
             <ContextMenu.Divider />
             <AddToPlaylistAction items={ids} itemType={LibraryItem.ARTIST} />
             <ContextMenu.Divider />

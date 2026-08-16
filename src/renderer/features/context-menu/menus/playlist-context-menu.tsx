@@ -5,6 +5,7 @@ import { DeletePlaylistAction } from '/@/renderer/features/context-menu/actions/
 import { EditPlaylistAction } from '/@/renderer/features/context-menu/actions/edit-playlist-action';
 import { GetInfoAction } from '/@/renderer/features/context-menu/actions/get-info-action';
 import { PlayAction } from '/@/renderer/features/context-menu/actions/play-action';
+import { PlayOnSamoRadioAction } from '/@/renderer/features/context-menu/actions/play-on-samo-radio-action';
 import { RemoveFromHomeAction } from '/@/renderer/features/context-menu/actions/remove-from-home-action';
 import { SetFavoriteAction } from '/@/renderer/features/context-menu/actions/set-favorite-action';
 import { ContextMenuPreview } from '/@/renderer/features/context-menu/components/context-menu-preview';
@@ -47,6 +48,7 @@ export const PlaylistContextMenu = ({ homeItemKey, items, type }: PlaylistContex
                 itemType={LibraryItem.PLAYLIST}
                 onPlay={() => items.forEach(recordRecentPlaylist)}
             />
+            <PlayOnSamoRadioAction ids={ids} itemType={LibraryItem.PLAYLIST} />
             <ContextMenu.Divider />
             <AddToPlaylistAction items={ids} itemType={LibraryItem.PLAYLIST} />
             <ContextMenu.Divider />

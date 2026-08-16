@@ -4,6 +4,7 @@ import { Suspense, useEffect, useMemo } from 'react';
 import { useListContext } from '/@/renderer/context/list-context';
 import { radioQueries } from '/@/renderer/features/radio/api/radio-api';
 import { RadioListItems } from '/@/renderer/features/radio/components/radio-list-items';
+import { SamoRadioPanel } from '/@/renderer/features/samo-radio/components/samo-radio-panel';
 import { GridPageSkeleton } from '/@/renderer/features/shared/components/page-skeletons/page-skeletons';
 import { useSearchTermFilter } from '/@/renderer/features/shared/hooks/use-search-term-filter';
 import { useSortByFilter } from '/@/renderer/features/shared/hooks/use-sort-by-filter';
@@ -55,7 +56,13 @@ export const RadioListContent = () => {
     return (
         <Suspense fallback={<GridPageSkeleton />}>
             <ScrollArea>
-                <Stack p="md">
+                <Stack gap="xl" p="md">
+                    {/* Samo's own outputs sit above the stations, because they
+                        are the thing on this page you act on rather than browse
+                        — and because "what is the stereo playing" is the
+                        question you came here with. It draws nothing when there
+                        is no device. */}
+                    <SamoRadioPanel />
                     <RadioListItems data={filteredAndSortedRadioStations} />
                 </Stack>
             </ScrollArea>

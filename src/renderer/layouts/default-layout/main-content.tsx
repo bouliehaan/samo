@@ -1,7 +1,7 @@
 import clsx from 'clsx';
 import { motion } from 'motion/react';
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
-import { Outlet, useNavigate } from 'react-router';
+import { useNavigate } from 'react-router';
 import { shallow } from 'zustand/shallow';
 
 import samoLogoUrl from '../../../../build/samologo.svg?url';
@@ -9,6 +9,7 @@ import styles from './main-content.module.css';
 
 import { ExpandedListContainer } from '/@/renderer/components/item-list/expanded-list-container';
 import { ExpandedListItem } from '/@/renderer/components/item-list/expanded-list-item';
+import { SectionPills } from '/@/renderer/features/navigation/components/section-pills';
 import { GlobalSearchBar } from '/@/renderer/features/search/components/global-search-bar';
 import { RouteFallback } from '/@/renderer/features/shared/components/page-skeletons/route-fallback';
 import { AppMenu } from '/@/renderer/features/titlebar/components/app-menu';
@@ -16,6 +17,7 @@ import { FullScreenOverlay } from '/@/renderer/layouts/default-layout/full-scree
 import { FullScreenVisualizerOverlay } from '/@/renderer/layouts/default-layout/full-screen-visualizer-overlay';
 import { LeftSidebar } from '/@/renderer/layouts/default-layout/left-sidebar';
 import { RightSidebar } from '/@/renderer/layouts/default-layout/right-sidebar';
+import { SectionOutlet } from '/@/renderer/layouts/default-layout/section-outlet';
 import {
     useAppStore,
     useAppStoreActions,
@@ -24,9 +26,11 @@ import {
     useSideQueueLayout,
     useSideQueueType,
 } from '/@/renderer/store';
+import { useWindowBarStyle } from '/@/renderer/store/settings.store';
 import { constrainRightSidebarWidth, constrainSidebarWidth } from '/@/renderer/utils';
 import { DropdownMenu } from '/@/shared/components/dropdown-menu/dropdown-menu';
 import { Icon } from '/@/shared/components/icon/icon';
+import { Platform } from '/@/shared/types/types';
 
 const MINIMUM_SIDEBAR_WIDTH = 260;
 
@@ -42,6 +46,7 @@ export const MainContent = ({ shell }: { shell?: boolean }) => {
         shallow,
     );
     const { setSideBar } = useAppStoreActions();
+    const windowBarStyle = useWindowBarStyle();
     const sideQueueType = useSideQueueType();
     const sideQueueLayout = useSideQueueLayout();
     const isFullScreenPlayerExpanded = useFullScreenPlayerStore((state) => state.expanded);
@@ -199,6 +204,7 @@ export const MainContent = ({ shell }: { shell?: boolean }) => {
         <motion.div
             className={clsx(styles.mainContentContainer, {
                 [styles.fullScreenPlayerExpanded]: isFullScreenPlayerExpanded,
+                [styles.macosChrome]: windowBarStyle === Platform.MACOS,
                 [styles.rightExpanded]: rightExpanded && sideQueueType === 'sideQueue',
                 [styles.shell]: shell,
                 [styles.sidebarCollapsed]: collapsed,
@@ -217,6 +223,7 @@ export const MainContent = ({ shell }: { shell?: boolean }) => {
                     <FullScreenOverlay />
                     <div className={styles.chromeRow}>
                         <GlobalSearchBar className={styles.globalChrome} />
+                        <SectionPills />
                         <ShellChromeControls />
                     </div>
                     <LeftSidebar isResizing={isResizing} startResizing={startResizing} />
@@ -249,7 +256,7 @@ function MainContentBody() {
         <div className={styles.mainContentBody}>
             <div className={styles.mainContentBodyScroll}>
                 <Suspense fallback={<RouteFallback />}>
-                    <Outlet />
+                    <SectionOutlet />
                 </Suspense>
             </div>
             <GlobalExpandedPanel />

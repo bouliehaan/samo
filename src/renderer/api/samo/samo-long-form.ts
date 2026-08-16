@@ -207,17 +207,13 @@ export const listSamoAudiobookLibraryItems = async (
     server: ServerListItemWithCredential,
 ): Promise<SamoBackedLibraryItem[]> => {
     const auth = samoAuth(server);
-    const streamToken = await ensureStreamToken(server);
     const audiobooks = await collectSamoPages(
         LONG_FORM_PAGE_SIZE,
         LONG_FORM_LIBRARY_CEILING,
         (offset) => listSamoAudiobooks(browserFetch, auth, { limit: LONG_FORM_PAGE_SIZE, offset }),
     );
     return audiobooks.map((audiobook) =>
-        samoAudiobookToLibraryItem(
-            audiobook,
-            resolveSamoAudiobookArtworkUrl(auth, audiobook, streamToken),
-        ),
+        samoAudiobookToLibraryItem(audiobook, resolveSamoAudiobookArtworkUrl(auth, audiobook)),
     );
 };
 
@@ -235,7 +231,6 @@ export const listSamoPodcastLibraryItems = async (
     options?: { includeEpisodes?: boolean },
 ): Promise<SamoBackedLibraryItem[]> => {
     const auth = samoAuth(server);
-    const streamToken = await ensureStreamToken(server);
     const shows = await collectSamoPages(LONG_FORM_PAGE_SIZE, LONG_FORM_LIBRARY_CEILING, (offset) =>
         listSamoPodcasts(browserFetch, auth, { limit: LONG_FORM_PAGE_SIZE, offset }),
     );
@@ -250,11 +245,7 @@ export const listSamoPodcastLibraryItems = async (
     // titles (unified search) opt back into the per-show fetch.
     if (!options?.includeEpisodes) {
         return shows.map((show) =>
-            samoPodcastToLibraryItem(
-                show,
-                [],
-                resolveSamoPodcastArtworkUrl(auth, show, streamToken),
-            ),
+            samoPodcastToLibraryItem(show, [], resolveSamoPodcastArtworkUrl(auth, show)),
         );
     }
 
@@ -263,7 +254,7 @@ export const listSamoPodcastLibraryItems = async (
             samoPodcastToLibraryItem(
                 show,
                 await listAllSamoPodcastEpisodes(server, show.id),
-                resolveSamoPodcastArtworkUrl(auth, show, streamToken),
+                resolveSamoPodcastArtworkUrl(auth, show),
             ),
         ),
     );
@@ -279,7 +270,6 @@ export const fetchSamoHomePodcastFeed = async (
     signal?: AbortSignal,
 ): Promise<SamoPodcastFeedEntry[]> => {
     const auth = samoAuth(server);
-    const streamToken = await ensureStreamToken(server);
     const response = await listSamoAllPodcastEpisodes(browserFetch, auth, {
         limit: 300,
         signal,
@@ -287,7 +277,7 @@ export const fetchSamoHomePodcastFeed = async (
     const episodes = buildMobilePodcastFeedEpisodes(samoItemsOf(response));
 
     return episodes.map((episode) => ({
-        artworkUrl: resolveSamoPodcastEpisodeArtworkUrl(auth, episode, streamToken),
+        artworkUrl: resolveSamoPodcastEpisodeArtworkUrl(auth, episode),
         episode,
     }));
 };
@@ -297,16 +287,11 @@ export const loadSamoPodcastLibraryItem = async (
     showId: string,
 ): Promise<SamoBackedLibraryItem> => {
     const auth = samoAuth(server);
-    const streamToken = await ensureStreamToken(server);
     const [show, episodes] = await Promise.all([
         samoExtras.getPodcastShow(server, showId),
         listAllSamoPodcastEpisodes(server, showId),
     ]);
-    return samoPodcastToLibraryItem(
-        show,
-        episodes,
-        resolveSamoPodcastArtworkUrl(auth, show, streamToken),
-    );
+    return samoPodcastToLibraryItem(show, episodes, resolveSamoPodcastArtworkUrl(auth, show));
 };
 
 /**
@@ -320,12 +305,8 @@ export const loadSamoAudiobookLibraryItem = async (
     audiobookId: string,
 ): Promise<SamoBackedLibraryItem> => {
     const auth = samoAuth(server);
-    const streamToken = await ensureStreamToken(server);
     const audiobook = await samoExtras.getAudiobook(server, audiobookId);
-    return samoAudiobookToLibraryItem(
-        audiobook,
-        resolveSamoAudiobookArtworkUrl(auth, audiobook, streamToken),
-    );
+    return samoAudiobookToLibraryItem(audiobook, resolveSamoAudiobookArtworkUrl(auth, audiobook));
 };
 
 export const resolveSamoAudiobookPlaySession = async (
@@ -370,9 +351,12 @@ export const resolveSamoAudiobookPlaySession = async (
     return {
         contentUrl,
         duration,
+        // Artwork stays token-free even here, where the stream URL above needs a
+        // token: mpv fetches the audio in its own process, but the cover goes to
+        // an <img> that the main process authenticates by header.
         item: samoAudiobookToLibraryItem(
             audiobook,
-            resolveSamoAudiobookArtworkUrl(auth, audiobook, streamToken),
+            resolveSamoAudiobookArtworkUrl(auth, audiobook),
         ),
         patch: {
             audiobookFiles: files,

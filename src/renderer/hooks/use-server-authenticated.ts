@@ -20,12 +20,34 @@ import { logMsg } from '/@/shared/utils/logger-message';
 
 const localSettings = isElectron() ? window.api.localSettings : null;
 
+const samoBridge = isElectron() ? window.api.samo : null;
+
+/**
+ * Hand the bearer to the main process so `<img>` requests authenticate by
+ * header. Artwork URLs then carry no `stream_token`, so the same cover keeps
+ * the same URL across relaunches and stays in the HTTP cache.
+ */
+const registerSamoMediaCredential = (
+    server: Pick<NonNullable<ReturnType<typeof getServerById>>, 'credential' | 'type' | 'url'>,
+) => {
+    if (server.type !== ServerType.SAMO || !server.credential || !samoBridge) {
+        return;
+    }
+
+    samoBridge.registerMediaCredential({
+        credential: server.credential,
+        url: server.url,
+    });
+};
+
 const prefetchSamoStreamToken = (
     server: Pick<NonNullable<ReturnType<typeof getServerById>>, 'credential' | 'type' | 'url'>,
 ) => {
     if (server.type !== ServerType.SAMO) {
         return;
     }
+
+    registerSamoMediaCredential(server);
 
     void ensureSamoStreamToken(
         {
@@ -324,6 +346,13 @@ export const useServerAuthenticated = () => {
                   serverWithAuth.url,
               ].join(':')
             : undefined;
+
+        // Before anything can request artwork — the main process must already
+        // know how to authenticate a token-free image URL by the time the first
+        // one is rendered, or it 401s and an <img> has no retry.
+        if (serverWithAuth) {
+            registerSamoMediaCredential(serverWithAuth);
+        }
 
         if (priorServerId.current !== serverId || priorAuthSignature.current !== authSignature) {
             priorServerId.current = serverId;

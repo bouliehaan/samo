@@ -10,11 +10,25 @@ import { normalizeBaseUrl, type ServerEndpointOption } from '@samo/core/server';
  * sitting there.
  *
  * The Wi-Fi name, when the user has pinned one and the platform will tell us
- * what we are on, is a definitive answer and outranks everything. Failing that,
- * the address that worked last time is the best available guess — networks
- * change far less often than the app checks. Cellular is the one case that can
- * be reasoned about with no history at all: a LAN address cannot possibly be
- * reachable over it.
+ * what we are on, is a definitive answer and outranks everything.
+ *
+ * Failing that, the TRANSPORT decides, because it bounds what is even possible:
+ * a LAN address cannot be reachable over cellular, and it is the only kind that
+ * can be reachable over Wi-Fi or Ethernet. Reading the Wi-Fi name needs location
+ * permission on Android and is frequently unavailable, so "on Wi-Fi, name
+ * unknown" is the ordinary case rather than the edge case, and it has to be
+ * handled by something better than history.
+ *
+ * History (`lastUsedKind`) is the last resort, for a transport we cannot
+ * classify. It deliberately does NOT outrank the transport: it is self-
+ * reinforcing, so one round that settled on the remote address would otherwise
+ * keep the app on the remote address on every network forever — streaming from
+ * across the internet while sitting next to the server.
+ *
+ * Ordering local first on a foreign Wi-Fi costs one probe timeout before the
+ * remote answer (already sitting there, since probes run concurrently) is
+ * accepted. That is the right side of the trade: nothing on screen is waiting on
+ * this, and the alternative is being permanently wrong about the network.
  *
  * Kept apart from the selection service (and free of every import that touches
  * the network, the stores or the platform) because it is the part with real
@@ -37,6 +51,9 @@ export const orderServerEndpointOptions = (options: {
         }
         if (options.transport === 'cellular') {
             return false;
+        }
+        if (options.transport === 'wifi' || options.transport === 'ethernet') {
+            return true;
         }
         if (options.lastUsedKind) {
             return options.lastUsedKind === 'local';

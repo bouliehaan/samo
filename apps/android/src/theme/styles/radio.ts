@@ -40,47 +40,136 @@ export const radioStyles = StyleSheet.create({
         fontSize: 17,
         fontWeight: '700',
     },
-    samoRadioSubtitle: {
-        color: colors.muted,
-        fontSize: 13,
-    },
+    /** Subtitle, clock and queue position on one line — see `describeMeta`. */
     samoRadioMeta: {
         color: colors.muted,
         fontFamily: fonts.mono,
         fontSize: 12,
     },
-    samoRadioControls: {
+    /** Transport left, the two openers pushed right by the spacer between.
+     *  The negative inset is optical, not layout: a 40dp round button carries
+     *  ~10dp of empty space around its glyph, so without pulling the row out
+     *  the first and last glyphs sit visibly inboard of the title and status
+     *  above them. Taps still land on the full button. */
+    samoRadioTransport: {
         alignItems: 'center',
         flexDirection: 'row',
-        flexWrap: 'wrap',
-        gap: 8,
-        marginTop: 8,
+        gap: 2,
+        marginHorizontal: -9,
+        marginTop: 2,
     },
-    samoRadioButton: {
-        borderColor: 'rgba(255,255,255,0.16)',
+    samoRadioTransportSpacer: {
+        flex: 1,
+    },
+    /** The "can't reach the server" card. Deliberately the same surface, inset
+     *  and bottom margin as `samoRadioPanel`: it stands in the slot the
+     *  controls would have occupied, so the absence reads as explained rather
+     *  than as the feature having quietly vanished. */
+    samoRadioUnreachable: {
+        backgroundColor: colors.surface,
+        borderColor: 'rgba(255,255,255,0.08)',
         borderWidth: 1,
-        paddingHorizontal: 12,
-        paddingVertical: 8,
+        gap: 6,
+        marginBottom: spacing.md,
+        padding: spacing.md,
     },
-    samoRadioButtonPrimary: {
-        backgroundColor: colors.accent,
-        borderColor: colors.accent,
-    },
-    samoRadioButtonText: {
+    samoRadioUnreachableTitle: {
         color: colors.text,
+        fontSize: 15,
+        fontWeight: '700',
+    },
+    /** The transport error itself, in the mono face every machine-reported
+     *  string on this tab uses. */
+    samoRadioUnreachableBody: {
+        color: colors.muted,
         fontFamily: fonts.mono,
         fontSize: 12,
-        letterSpacing: 1,
+        lineHeight: 17,
     },
-    samoRadioButtonTextPrimary: {
-        color: colors.background,
+    samoRadioUnreachableHint: {
+        color: colors.faint,
+        fontSize: 12,
+        lineHeight: 17,
+        marginTop: 2,
     },
-    samoRadioVolume: {
-        color: colors.text,
+    samoRadioUnreachableRetry: {
+        alignItems: 'center',
+        alignSelf: 'flex-start',
+        borderColor: colors.accentLine,
+        borderRadius: 999,
+        borderWidth: 1,
+        justifyContent: 'center',
+        marginTop: spacing.sm,
+        minHeight: 32,
+        paddingHorizontal: 14,
+    },
+    samoRadioUnreachableRetryText: {
+        color: colors.accent,
         fontFamily: fonts.mono,
-        fontSize: 13,
-        minWidth: 46,
-        textAlign: 'center',
+        fontSize: 12,
+        letterSpacing: 0.5,
+    },
+    /** Borderless, like the player's own transport: the filled play button is
+     *  the only weight in the row, so the eye lands on it first. */
+    samoRadioIconButton: {
+        alignItems: 'center',
+        borderRadius: 999,
+        height: 40,
+        justifyContent: 'center',
+        width: 40,
+    },
+    samoRadioIconButtonPrimary: {
+        backgroundColor: colors.accent,
+        height: 44,
+        width: 44,
+    },
+    samoRadioVolumeRow: {
+        alignItems: 'center',
+        flexDirection: 'row',
+        gap: 10,
+    },
+    /** Tall enough to catch a thumb; the track it centres is 4px. */
+    samoRadioVolumeTrackWrap: {
+        flex: 1,
+        height: 24,
+        justifyContent: 'center',
+    },
+    samoRadioVolumeTrack: {
+        backgroundColor: 'rgba(255,255,255,0.16)',
+        borderRadius: 999,
+        height: 4,
+        overflow: 'hidden',
+    },
+    samoRadioVolumeFill: {
+        backgroundColor: colors.accent,
+        borderRadius: 999,
+        height: '100%',
+        // Laid out full width and scaled about its LEFT edge, so the level is a
+        // transform rather than a width — a width would re-run layout on every
+        // frame of a drag. Without the origin it would grow from the centre.
+        transformOrigin: 'left center',
+        width: '100%',
+    },
+    samoRadioVolumeThumb: {
+        backgroundColor: colors.accent,
+        borderRadius: 999,
+        height: 12,
+        // Anchored at 0 and moved with translateX — same rule as the fill.
+        left: 0,
+        position: 'absolute',
+        top: 6,
+        width: 12,
+    },
+    samoRadioVolumeValue: {
+        color: colors.muted,
+        fontFamily: fonts.mono,
+        fontSize: 12,
+        minWidth: 38,
+        textAlign: 'right',
+    },
+    samoRadioMenuHeader: {
+        paddingHorizontal: 16,
+        paddingTop: 16,
     },
     samoRadioChannelRow: {
         gap: 8,

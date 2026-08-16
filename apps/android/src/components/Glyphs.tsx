@@ -537,6 +537,87 @@ export const RadioWaveGlyph = ({ color }: { color: string }) => {
     );
 };
 
+export const SpeakerGlyph = ({
+    color,
+    size = 18,
+}: {
+    color: string;
+    size?: number;
+}) => {
+    // Cone filled, wave stroked — at 18px a fully stroked cone closes up into a
+    // blob, and the wave is what makes the shape read as sound rather than a
+    // flag.
+    return (
+        <Svg height={size} viewBox="0 0 24 24" width={size}>
+            <SvgPath d="M4 9.5h3.4L12 5.7v12.6L7.4 14.5H4z" fill={color} />
+            <SvgPath
+                d="M15.6 9.4a3.6 3.6 0 0 1 0 5.2"
+                fill="none"
+                stroke={color}
+                strokeLinecap="round"
+                strokeWidth={1.8}
+            />
+            <SvgPath
+                d="M18.4 7a7.2 7.2 0 0 1 0 10"
+                fill="none"
+                stroke={color}
+                strokeLinecap="round"
+                strokeWidth={1.8}
+            />
+        </Svg>
+    );
+};
+
+export const PowerGlyph = ({ color, size = 20 }: { color: string; size?: number }) => {
+    return (
+        <Svg height={size} viewBox="0 0 24 24" width={size}>
+            <SvgPath
+                d="M12 4.2v6.6M8 7.4a5.8 5.8 0 1 0 8 0"
+                fill="none"
+                stroke={color}
+                strokeLinecap="round"
+                strokeWidth={1.8}
+            />
+        </Svg>
+    );
+};
+
+/**
+ * Two arrows passing in opposite directions — "swap this for something else".
+ * Used for the channel's step-off-the-whole-medium command, where the point is
+ * not the next item but a different kind of thing entirely.
+ */
+export const MediaKindGlyph = ({ color, size = 20 }: { color: string; size?: number }) => {
+    return (
+        <Svg height={size} viewBox="0 0 24 24" width={size}>
+            <SvgPath
+                d="M4 9h13m-3-3 3 3-3 3M20 15H7m3 3-3-3 3-3"
+                fill="none"
+                stroke={color}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={1.8}
+            />
+        </Svg>
+    );
+};
+
+/** U-turn arrow — hand the output back to whatever it was tuned to. */
+export const StationReturnGlyph = ({ color, size = 20 }: { color: string; size?: number }) => {
+    return (
+        <Svg height={size} viewBox="0 0 24 24" width={size}>
+            <SvgPath
+                d="M8 8h7a4.5 4.5 0 0 1 0 9h-3M11 5 8 8l3 3"
+                fill="none"
+                stroke={color}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={1.8}
+            />
+        </Svg>
+    );
+};
+
 export const CheckGlyph = ({ color, size = 14 }: { color: string; size?: number }) => {
     // Unicode check rendered as Text — cheap and renders consistently. The
     // tight lineHeight + textAlign keeps it centered inside its box rather

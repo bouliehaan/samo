@@ -4,6 +4,7 @@ import {
     type SamoStreamTokenResponse,
     finalizeSamoMediaUrl,
     getSamoBearerToken,
+    isSamoApiMediaUrl,
     mintSamoStreamToken,
 } from './server-samo';
 import { ServerType } from './server-types';
@@ -181,7 +182,21 @@ export const ensureSamoStreamToken = async (
     }
 };
 
-/** Build a fetchable image request for Samo `/api/v1/...` media URLs. */
+/**
+ * Build a fetchable image request for Samo `/api/v1/...` media URLs.
+ *
+ * The URL is re-homed onto the connected origin but carries NO stream token.
+ * The bearer header authenticates every media route on its own, and a token in
+ * the URL is actively harmful to the display path: tokens are process-local and
+ * re-minted on a 30 minute TTL (and on every server restart), so embedding one
+ * gives the same unchanged cover a brand new URL every few minutes. That evicts
+ * it from Chromium's disk cache — a cache the server explicitly asks for with
+ * `Cache-Control: public, max-age=31536000, immutable` — and turns each launch
+ * into a full re-download of the library's artwork.
+ *
+ * On desktop the main process injects this same bearer for plain `<img>`
+ * requests (`samo-media-auth.ts`), so a token-free URL renders directly.
+ */
 export const buildSamoAuthenticatedImageRequest = (
     authentication: Pick<
         ServerAuthenticationResult,
@@ -189,16 +204,39 @@ export const buildSamoAuthenticatedImageRequest = (
     >,
     url: string,
     cacheKey: string,
+    width?: number,
 ): { cacheKey: string; headers?: Record<string, string>; url: string } => {
-    const streamToken = getCachedSamoStreamToken(authentication);
     const bearer = getSamoBearerToken(authentication);
-    const finalizedUrl = finalizeSamoMediaUrl(authentication, url, streamToken) ?? url;
+    const finalizedUrl = finalizeSamoMediaUrl(authentication, url) ?? url;
 
     return {
         cacheKey,
         headers: bearer ? { Authorization: `Bearer ${bearer}` } : undefined,
-        url: finalizedUrl,
+        url: withSamoImageWidth(finalizedUrl, width),
     };
+};
+
+/**
+ * Ask the server for artwork sized for the slot it will be drawn into.
+ *
+ * Covers are stored at whatever resolution they arrived in — routinely 1400px,
+ * sometimes 3000px — and most of them are rendered into 48-300px boxes. Without
+ * this the client downloads and decodes the full original every time: one
+ * measured cover was 1.48 MB for a 48px sidebar row.
+ *
+ * The server treats the width as advisory, snapping it to a fixed ladder and
+ * falling back to the original whenever it cannot do better (a format it has no
+ * decoder for, art already smaller than the request). So this is safe to send
+ * to any Samo server: one too old to know the parameter simply ignores it.
+ */
+export const withSamoImageWidth = (url: string, width?: number): string => {
+    if (!url || !width || !Number.isFinite(width) || width <= 0) {
+        return url;
+    }
+    if (!isSamoApiMediaUrl(url) || url.includes('width=')) {
+        return url;
+    }
+    return `${url}${url.includes('?') ? '&' : '?'}width=${Math.round(width)}`;
 };
 
 /**

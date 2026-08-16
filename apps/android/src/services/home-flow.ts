@@ -23,7 +23,8 @@ import {
     loadPersistedRecentContentItems,
     savePersistedRecentContentItems,
 } from './recent-content';
-import { refreshSamoRadioDevices } from './samo-radio';
+import { describeReachFailure, refreshSamoRadioDevices } from './samo-radio';
+import { samoRadioReachFor, setSamoRadioReach } from '../state/samo-radio';
 import { mergeServerRecentlyPlayedIntoRecents } from './recent-content-sync';
 
 // Server-curated Home sections (Discover / Podcast Feed / Explo / Radio) are
@@ -64,6 +65,64 @@ export const refreshHomeFromMirror = async (options?: {
                 : content,
         status: 'loaded',
     }));
+};
+
+/**
+ * Load the Radio shelf and fold it into Home.
+ *
+ * Split out from the other live sections, and separately retryable, because
+ * radio is the only Home section with no mirror behind it: when it fails there
+ * is nothing to fall back on and the tab is simply empty. So the outcome is
+ * recorded (`setSamoRadioReach`) for the Radio tab to explain itself with, and
+ * the same call is exposed for a retry — the network underneath a phone
+ * changes constantly (a VPN comes up, Wi-Fi drops to cellular), and asking
+ * again should not require reconnecting the whole server.
+ *
+ * An EMPTY result is left to stand as the last-known list, exactly as before:
+ * a server that momentarily lists no stations should not blank a shelf that
+ * was populated a second ago.
+ */
+export const loadHomeRadioSection = async (
+    authentication: ServerAuthenticationResult,
+    requestId: number = homeLoadRequestId,
+): Promise<void> => {
+    await dedupeInFlight(buildHomeLoadKey([authentication]) + '-radio', async () => {
+        const radio = await loadMobileRadioForServers({ authentication });
+        if (requestId !== homeLoadRequestId) {
+            return;
+        }
+        // Reachability is recorded even when the shelf keeps its old contents,
+        // because it answers a question the contents cannot: whether what is
+        // on screen is current or a leftover from the last time this phone
+        // could see the server.
+        setSamoRadioReach(
+            radio.error
+                ? samoRadioReachFor(false, describeReachFailure(radio.error))
+                : samoRadioReachFor(true),
+        );
+        if (radio.items.length === 0) {
+            return;
+        }
+        lastHomeLiveSections = {
+            ...(lastHomeLiveSections ?? {
+                discover: [],
+                explo: [],
+                podcastFeed: [],
+                radio: [],
+            }),
+            radio: radio.items,
+        };
+        const assembled = await buildCatalogHomeContent(authentication, lastHomeLiveSections);
+        if (assembled) {
+            setHomeContentState((current) => ({
+                content:
+                    current.status === 'loaded'
+                        ? reconcileHomeContent(current.content, assembled)
+                        : assembled,
+                status: 'loaded',
+            }));
+        }
+    });
 };
 
 export const loadHomeForConnection = async (
@@ -138,39 +197,7 @@ export const loadHomeForConnection = async (
         },
     );
 
-    void dedupeInFlight(
-        buildHomeLoadKey(authentication ? [authentication] : []) + '-radio',
-        async () => {
-            const radio = await loadMobileRadioForServers({
-                authentication: authentication ?? null,
-            }).catch(() => []);
-            if (requestId !== homeLoadRequestId || radio.length === 0) {
-                return;
-            }
-            lastHomeLiveSections = {
-                ...(lastHomeLiveSections ?? {
-                    discover: [],
-                    explo: [],
-                    podcastFeed: [],
-                    radio: [],
-                }),
-                radio,
-            };
-            const assembled = await buildCatalogHomeContent(
-                authentication,
-                lastHomeLiveSections,
-            );
-            if (assembled) {
-                setHomeContentState((current) => ({
-                    content:
-                        current.status === 'loaded'
-                            ? reconcileHomeContent(current.content, assembled)
-                            : assembled,
-                    status: 'loaded',
-                }));
-            }
-        },
-    );
+    void loadHomeRadioSection(authentication, requestId);
     if (requestId !== homeLoadRequestId) {
         return;
     }

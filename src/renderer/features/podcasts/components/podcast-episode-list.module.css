@@ -1,5 +1,14 @@
+/*
+ * AutoSizer measures THIS element, so it has to have a real height whatever it
+ * is dropped into. `flex: 1` alone was inert here: the detail page gives the
+ * list a fixed-height block, not a flex column, so the element collapsed to the
+ * height of its content — and its only content is AutoSizer's deliberately
+ * zero-sized measuring div. AutoSizer then read zero and rendered nothing, so a
+ * show with episodes showed an empty page.
+ */
 .container {
     flex: 1;
+    height: 100%;
     min-height: 0;
 }
 

@@ -11,6 +11,7 @@ import { PlayerConfig } from '/@/renderer/features/player/components/player-conf
 import { CustomPlayerbarSlider } from '/@/renderer/features/player/components/playerbar-slider';
 import { SleepTimerButton } from '/@/renderer/features/player/components/sleep-timer-button';
 import { usePlayer } from '/@/renderer/features/player/context/player-context';
+import { SamoRadioRemotePopover } from '/@/renderer/features/samo-radio/components/samo-radio-remote-popover';
 import { useCreateFavorite } from '/@/renderer/features/shared/mutations/create-favorite-mutation';
 import { useDeleteFavorite } from '/@/renderer/features/shared/mutations/delete-favorite-mutation';
 import {
@@ -87,6 +88,10 @@ export const RightControls = () => {
                 {isElectron() && (source === 'music' || source == null) ? (
                     <OutputPickerPopover />
                 ) : null}
+                {/* Not gated on the playback source: the stereo plays whether
+                    or not this app is, so its remote is available whatever is
+                    (or is not) coming out of these speakers. */}
+                <SamoRadioRemotePopover />
                 <AudiobookChapterListButton />
                 <SleepTimerButton />
                 <PlayerConfig />

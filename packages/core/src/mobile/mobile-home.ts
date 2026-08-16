@@ -990,6 +990,28 @@ export const loadMobilePodcastFeedForServers = async ({
 };
 
 /**
+ * The outcome of a radio load, with "the server said nothing" kept distinct
+ * from "the server said nothing back".
+ *
+ * Radio is the only browse type with no on-device mirror behind it, so it is
+ * the first surface to go blank when the server cannot be reached — and an
+ * empty `items` alone cannot tell a client which of the two happened. Callers
+ * that only had the array rendered a dead network as "this server has no
+ * stations", which is a different sentence with a different fix.
+ */
+export interface MobileRadioLoadResult {
+    /**
+     * Why nothing could be read, set ONLY when no request reached the server.
+     *
+     * A partial answer leaves this absent: one endpoint failing while the
+     * other returns is a reachable server with a bad route, and the items that
+     * did arrive are worth showing without an alarm over them.
+     */
+    error?: string;
+    items: MobileHomeItem[];
+}
+
+/**
  * Radio stations (internet + programmed) for the Home Radio section. Radio is
  * the one browse type the on-device mirror does not hold (the sync manifest
  * carries no radio ids to reconcile against), so clients fetch it live along
@@ -1001,11 +1023,13 @@ export const loadMobileRadioForServers = async ({
 }: {
     authentication: ServerAuthenticationResult | null;
     fetch?: SamoFetch;
-}): Promise<MobileHomeItem[]> => {
+}): Promise<MobileRadioLoadResult> => {
     const request = getFetch(fetcher);
 
+    // Not a radio-capable server at all. That is an answer, not a failure —
+    // there is nothing here to be unable to reach.
     if (!authentication || authentication.type !== ServerType.SAMO) {
-        return [];
+        return { items: [] };
     }
 
     const items: MobileHomeItem[] = [];
@@ -1038,11 +1062,20 @@ export const loadMobileRadioForServers = async ({
                 if (item) items.push(item);
             }
         }
-    } catch {
-        // Radio is best-effort; the rest of Home should still render.
+        // Both station endpoints down is the server being out of reach, not
+        // two coincidental route failures — report it as such.
+        if (internetResult.status === 'rejected' && programmedResult.status === 'rejected') {
+            return { error: getErrorMessage(programmedResult.reason), items };
+        }
+    } catch (error) {
+        // Not the station requests — those are settled above and never throw
+        // here. This is the surrounding setup giving out, which leaves the
+        // same result: nothing was read, and the caller should not be told the
+        // server has no stations.
+        return { error: getErrorMessage(error), items };
     }
 
-    return items;
+    return { items };
 };
 
 /**

@@ -11,7 +11,7 @@ import {
     resolveSamoPlaylistArtworkUrl,
     samoPlaylistHasCoverGrid,
 } from './server-samo';
-import { buildSamoAuthenticatedImageRequest } from './server-samo-stream-token';
+import { buildSamoAuthenticatedImageRequest, withSamoImageWidth } from './server-samo-stream-token';
 import { ServerType } from './server-types';
 
 const auth = {
@@ -39,7 +39,7 @@ describe('Samo artwork URLs', () => {
         expect(samoPlaylistHasCoverGrid({ images: undefined })).toBe(false);
     });
 
-    it('keeps bearer auth on image requests even when a stream token is in the URL', () => {
+    it('authenticates image requests with the bearer and strips any stream token from the URL', () => {
         const request = buildSamoAuthenticatedImageRequest(
             auth,
             'https://music.example/api/v1/media/images/cover_a/image?stream_token=old',
@@ -47,6 +47,11 @@ describe('Samo artwork URLs', () => {
         );
 
         expect(request.headers).toEqual({ Authorization: 'Bearer bearer-token' });
+        // The token is what churns cache identity: it is re-minted on a 30 min
+        // TTL and dropped on every server restart, so leaving it on the URL
+        // gives unchanged artwork a new URL — and a cold cache — several times
+        // an hour. The bearer above authenticates the request on its own.
+        expect(request.url).not.toContain('stream_token');
     });
 });
 
@@ -271,5 +276,52 @@ describe('findSamoExploPlaylist', () => {
         });
 
         expect(await findSamoExploPlaylist(fetcher, auth)).toBeUndefined();
+    });
+});
+
+describe('withSamoImageWidth', () => {
+    it('asks for a width on Samo media URLs', () => {
+        expect(
+            withSamoImageWidth('https://music.example/api/v1/media/images/cover_a/image', 300),
+        ).toBe('https://music.example/api/v1/media/images/cover_a/image?width=300');
+    });
+
+    it('appends to a URL that already has a query', () => {
+        expect(
+            withSamoImageWidth('https://music.example/api/v1/media/images/cover_a/image?x=1', 300),
+        ).toBe('https://music.example/api/v1/media/images/cover_a/image?x=1&width=300');
+    });
+
+    it('leaves non-Samo URLs alone', () => {
+        // Podcast art is routinely a third-party CDN URL that knows nothing
+        // about this parameter; adding one would only break its cache key.
+        const remote = 'https://cdn.example/artwork/3000x3000.jpg';
+        expect(withSamoImageWidth(remote, 300)).toBe(remote);
+    });
+
+    it('is a no-op without a usable width', () => {
+        const url = 'https://music.example/api/v1/media/images/cover_a/image';
+        for (const width of [undefined, 0, -10, Number.NaN]) {
+            expect(withSamoImageWidth(url, width)).toBe(url);
+        }
+    });
+
+    it('does not stack widths when called twice', () => {
+        const once = withSamoImageWidth(
+            'https://music.example/api/v1/media/images/cover_a/image',
+            300,
+        );
+        expect(withSamoImageWidth(once, 512)).toBe(once);
+    });
+
+    it('carries the width through the authenticated image request builder', () => {
+        const request = buildSamoAuthenticatedImageRequest(
+            auth,
+            'https://music.example/api/v1/media/images/cover_a/image',
+            'cache-key',
+            128,
+        );
+        expect(request.url).toContain('width=128');
+        expect(request.headers).toEqual({ Authorization: 'Bearer bearer-token' });
     });
 });

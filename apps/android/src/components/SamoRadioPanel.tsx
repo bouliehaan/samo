@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useRef, useState } from 'react';
+import { memo, type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import {
     ActivityIndicator,
     AppState,
@@ -17,6 +17,18 @@ import {
     samoRadioTransportKind,
 } from '@samo/core/server';
 
+import {
+    MediaKindGlyph,
+    MoreGlyph,
+    PlayPauseGlyph,
+    PowerGlyph,
+    RadioWaveGlyph,
+    StationReturnGlyph,
+    TrackSkipGlyph,
+} from './Glyphs';
+import { MotionSheet } from './MotionSheet';
+import { PressableScale } from './PressableScale';
+import { SamoRadioVolumeSlider } from './SamoRadioVolumeSlider';
 import { triggerImpact } from '../services/haptics';
 import {
     controlSamoRadio,
@@ -27,11 +39,11 @@ import {
     tuneSamoRadio,
 } from '../services/samo-radio';
 import { useAppNavigationSelector } from '../state/app-navigation';
+import { presses } from '../theme/motion';
 import { patchSamoRadioDeviceState, useSamoRadioSelector } from '../state/samo-radio';
 import { styles } from '../theme/styles';
 import { colors } from '../theme/tokens';
 
-const VOLUME_STEP = 0.05;
 const POLL_INTERVAL_MS = 5000;
 
 /**
@@ -77,6 +89,65 @@ const describeNowPlaying = (state: SamoRadioState): { subtitle: string; title: s
 };
 
 /**
+ * One line under the title: who it is by, how far in, where in the queue.
+ *
+ * Each of these used to own a line of its own, which on a channel meant the
+ * station's name printed twice — once as the title, once as the subtitle — with
+ * a clock underneath. Joined into one line, and with the subtitle dropped when
+ * it only repeats the title, the readout is three lines instead of five and
+ * says strictly more per line.
+ */
+const describeMeta = (state: SamoRadioState, title: string, subtitle: string): string => {
+    const parts: string[] = [];
+    if (subtitle && subtitle !== title) {
+        parts.push(subtitle);
+    }
+    if (state.item) {
+        parts.push(
+            `${formatClock(state.positionSeconds)}${
+                state.durationSeconds ? ` / ${formatClock(state.durationSeconds)}` : ''
+            }`,
+        );
+        if (state.queue && state.queue.length > 1) {
+            parts.push(`${state.queueIndex + 1} of ${state.queue.length}`);
+        }
+    }
+    return parts.join('  ·  ');
+};
+
+/**
+ * A transport control on the panel.
+ *
+ * Same shape as the player's own `PlayerIconButton` — borderless glyph, one
+ * filled primary — at the smaller size a card inside a scroll page can carry.
+ * `chrome` because the row is fixed furniture within the card: nothing under
+ * the thumb here is going to turn into a scroll, so the press starts sinking on
+ * the frame the finger lands rather than after the scroll-safety window.
+ */
+const SamoRadioIconButton = ({
+    accessibilityLabel,
+    children,
+    onPress,
+    primary,
+}: {
+    accessibilityLabel: string;
+    children: ReactNode;
+    onPress: () => void;
+    primary?: boolean;
+}) => (
+    <PressableScale
+        {...presses.control}
+        accessibilityLabel={accessibilityLabel}
+        accessibilityRole="button"
+        chrome
+        onPress={onPress}
+        style={[styles.samoRadioIconButton, primary && styles.samoRadioIconButtonPrimary]}
+    >
+        {children}
+    </PressableScale>
+);
+
+/**
  * One device's status and controls.
  *
  * Per-device rather than one shared block so a command sent to the kitchen does
@@ -95,11 +166,8 @@ const SamoRadioDeviceCard = memo(
     }) => {
         const [busyCommand, setBusyCommand] = useState<string | null>(null);
         const [isTuneOpen, setIsTuneOpen] = useState(false);
+        const [isMenuOpen, setIsMenuOpen] = useState(false);
         const [error, setError] = useState<string | null>(null);
-        // Optimistic volume: the readout must move on tap, not on the next poll.
-        // It is cleared when the volume command settles rather than by the
-        // poller, so a refresh landing mid-tap cannot snap the number back.
-        const [pendingVolume, setPendingVolume] = useState<number | null>(null);
         const mountedRef = useRef(true);
         const settleTimerRef = useRef<null | ReturnType<typeof setTimeout>>(null);
 
@@ -143,9 +211,6 @@ const SamoRadioDeviceCard = memo(
                 } finally {
                     if (mountedRef.current) {
                         setBusyCommand(null);
-                        if (action === 'volume') {
-                            setPendingVolume(null);
-                        }
                     }
                 }
             },
@@ -174,19 +239,15 @@ const SamoRadioDeviceCard = memo(
             [device.id, runCommand, transport],
         );
 
-        const nudgeVolume = useCallback(
-            (delta: number) => {
-                if (!state || busyCommand) {
-                    return;
-                }
-                const base = pendingVolume ?? state.volume ?? 0;
-                const next = Math.min(1, Math.max(0, Number((base + delta).toFixed(2))));
-                setPendingVolume(next);
+        const commitVolume = useCallback(
+            (next: number) => {
                 triggerImpact('light');
                 void runCommand('volume', () => setSamoRadioVolume(device.id, next));
             },
-            [busyCommand, device.id, pendingVolume, runCommand, state],
+            [device.id, runCommand],
         );
+
+        const closeMenu = useCallback(() => setIsMenuOpen(false), []);
 
         // Only devices Samo can reach are ever in the store, so a card without
         // a state snapshot is one that dropped off between a poll and this
@@ -197,10 +258,42 @@ const SamoRadioDeviceCard = memo(
         }
 
         const now = describeNowPlaying(state);
-        const volume = Math.round((pendingVolume ?? state.volume ?? 0) * 100);
+        const meta = describeMeta(state, now.title, now.subtitle);
         const isPaused = state.status === 'paused';
         const onChannel = transport === 'channel';
         const canStep = transport !== 'none';
+        const isTogglingPlayback = busyCommand === 'pause' || busyCommand === 'resume';
+
+        // Everything a stereo does but rarely: the two off switches, and the
+        // step off the whole medium. They were six shouting mono buttons that
+        // wrapped onto three lines and buried play/pause among them; here they
+        // are words in a sheet, which has room to say what they actually do.
+        const menuActions: { glyph: ReactNode; id: SamoRadioCommand; label: string }[] = [];
+        if (onChannel) {
+            // One item is not always the problem: sometimes it is the medium —
+            // "not talk right now, put music on". The station steps off the
+            // whole kind rather than to the next episode of the same thing.
+            menuActions.push({
+                glyph: <MediaKindGlyph color={colors.text} />,
+                id: 'next-kind',
+                label: 'Skip this kind of thing',
+            });
+        }
+        // Stop hands the output back to its station; standby is the real off
+        // switch. Different intentions, both needed on a device whose job is to
+        // always be on air.
+        menuActions.push(
+            {
+                glyph: <StationReturnGlyph color={colors.text} />,
+                id: 'stop',
+                label: 'Back to its station',
+            },
+            {
+                glyph: <PowerGlyph color={colors.text} />,
+                id: 'standby',
+                label: 'Standby',
+            },
+        );
 
         return (
             <View style={styles.samoRadioPanel}>
@@ -212,143 +305,118 @@ const SamoRadioDeviceCard = memo(
                 <Text numberOfLines={1} style={styles.samoRadioTitle}>
                     {now.title}
                 </Text>
-                {now.subtitle ? (
-                    <Text numberOfLines={1} style={styles.samoRadioSubtitle}>
-                        {now.subtitle}
-                    </Text>
-                ) : null}
-                {state.item ? (
-                    <Text style={styles.samoRadioMeta}>
-                        {formatClock(state.positionSeconds)}
-                        {state.durationSeconds ? ` / ${formatClock(state.durationSeconds)}` : ''}
-                        {state.queue && state.queue.length > 1
-                            ? `  ·  ${state.queueIndex + 1} of ${state.queue.length}`
-                            : ''}
+                {meta ? (
+                    <Text numberOfLines={1} style={styles.samoRadioMeta}>
+                        {meta}
                     </Text>
                 ) : null}
 
-                <View style={styles.samoRadioControls}>
+                <View style={styles.samoRadioTransport}>
                     {/* On a channel these move the STATION on — everyone
-                        listening hears it — so they are worded as the station's
-                        programming rather than as your queue. An internet
-                        station is somebody else's stream with nothing to skip
-                        to, and the device refuses: no buttons there. */}
+                        listening hears it. An internet station is somebody
+                        else's stream with nothing to skip to, and the device
+                        refuses: no buttons there. */}
                     {canStep ? (
-                        <Pressable
+                        <SamoRadioIconButton
                             accessibilityLabel={
                                 onChannel ? 'Back to the previous programme' : 'Previous'
                             }
-                            accessibilityRole="button"
                             onPress={() => sendCommand('previous')}
-                            style={styles.samoRadioButton}
                         >
-                            <Text style={styles.samoRadioButtonText}>
-                                {onChannel ? 'BACK' : 'PREV'}
-                            </Text>
-                        </Pressable>
+                            <TrackSkipGlyph color={colors.text} direction={-1} size={19} />
+                        </SamoRadioIconButton>
                     ) : null}
-                    <Pressable
+                    <SamoRadioIconButton
                         accessibilityLabel={isPaused ? 'Resume' : 'Pause'}
-                        accessibilityRole="button"
                         onPress={() => sendCommand(isPaused ? 'resume' : 'pause')}
-                        style={[styles.samoRadioButton, styles.samoRadioButtonPrimary]}
+                        primary
                     >
-                        {busyCommand === 'pause' || busyCommand === 'resume' ? (
+                        {isTogglingPlayback ? (
                             <ActivityIndicator color={colors.background} size="small" />
                         ) : (
-                            <Text
-                                style={[
-                                    styles.samoRadioButtonText,
-                                    styles.samoRadioButtonTextPrimary,
-                                ]}
-                            >
-                                {isPaused ? 'PLAY' : 'PAUSE'}
-                            </Text>
+                            <PlayPauseGlyph
+                                color={colors.background}
+                                isPlaying={!isPaused}
+                                size={18}
+                            />
                         )}
-                    </Pressable>
+                    </SamoRadioIconButton>
                     {canStep ? (
-                        <Pressable
+                        <SamoRadioIconButton
                             accessibilityLabel={
                                 onChannel ? 'Skip what the station is playing' : 'Next'
                             }
-                            accessibilityRole="button"
                             onPress={() => sendCommand('next')}
-                            style={styles.samoRadioButton}
                         >
-                            <Text style={styles.samoRadioButtonText}>
-                                {onChannel ? 'SKIP' : 'NEXT'}
-                            </Text>
-                        </Pressable>
+                            <TrackSkipGlyph color={colors.text} direction={1} size={19} />
+                        </SamoRadioIconButton>
                     ) : null}
-                    {/* One item is not always the problem: sometimes it is the
-                        medium — "not talk right now, put music on". The station
-                        steps off the whole kind rather than to the next episode
-                        of the same thing. */}
-                    {onChannel ? (
-                        <Pressable
-                            accessibilityLabel="Skip to a different kind of media"
-                            accessibilityRole="button"
-                            onPress={() => sendCommand('next-kind')}
-                            style={styles.samoRadioButton}
-                        >
-                            <Text style={styles.samoRadioButtonText}>NEXT MEDIA TYPE</Text>
-                        </Pressable>
-                    ) : null}
-                    {/* Stop hands the aux back to its station; standby is
-                        the real off switch. Different intentions, both
-                        needed on a device whose job is to always be on air. */}
-                    <Pressable
-                        accessibilityLabel="Back to station"
-                        accessibilityRole="button"
-                        onPress={() => sendCommand('stop')}
-                        style={styles.samoRadioButton}
-                    >
-                        <Text style={styles.samoRadioButtonText}>STATION</Text>
-                    </Pressable>
-                    <Pressable
-                        accessibilityLabel="Standby"
-                        accessibilityRole="button"
-                        onPress={() => sendCommand('standby')}
-                        style={styles.samoRadioButton}
-                    >
-                        <Text style={styles.samoRadioButtonText}>OFF</Text>
-                    </Pressable>
-                </View>
-
-                <View style={styles.samoRadioControls}>
-                    <Pressable
-                        accessibilityLabel="Volume down"
-                        accessibilityRole="button"
-                        onPress={() => nudgeVolume(-VOLUME_STEP)}
-                        style={styles.samoRadioButton}
-                    >
-                        <Text style={styles.samoRadioButtonText}>VOL −</Text>
-                    </Pressable>
-                    <Text style={styles.samoRadioVolume}>{volume}%</Text>
-                    <Pressable
-                        accessibilityLabel="Volume up"
-                        accessibilityRole="button"
-                        onPress={() => nudgeVolume(VOLUME_STEP)}
-                        style={styles.samoRadioButton}
-                    >
-                        <Text style={styles.samoRadioButtonText}>VOL +</Text>
-                    </Pressable>
+                    <View style={styles.samoRadioTransportSpacer} />
                     {stations.length > 0 ? (
-                        <Pressable
-                            accessibilityLabel="Tune to a channel"
-                            accessibilityRole="button"
+                        <SamoRadioIconButton
+                            accessibilityLabel={isTuneOpen ? 'Close the station list' : 'Tune'}
                             onPress={() => {
                                 triggerImpact('light');
                                 setIsTuneOpen((open) => !open);
                             }}
-                            style={styles.samoRadioButton}
                         >
-                            <Text style={styles.samoRadioButtonText}>
-                                {isTuneOpen ? 'CLOSE' : 'TUNE'}
-                            </Text>
-                        </Pressable>
+                            <RadioWaveGlyph color={isTuneOpen ? colors.accent : colors.text} />
+                        </SamoRadioIconButton>
                     ) : null}
+                    <SamoRadioIconButton
+                        accessibilityLabel="More controls"
+                        onPress={() => {
+                            triggerImpact('light');
+                            setIsMenuOpen(true);
+                        }}
+                    >
+                        <MoreGlyph color={colors.text} />
+                    </SamoRadioIconButton>
                 </View>
+
+                <SamoRadioVolumeSlider onCommit={commitVolume} volume={state.volume ?? 0} />
+
+                <MotionSheet
+                    backdropStyle={styles.mediaContextBackdrop}
+                    onRequestClose={closeMenu}
+                    sheetStyle={styles.mediaContextSheet}
+                    variant="bottom"
+                    visible={isMenuOpen}
+                >
+                    <View style={styles.samoRadioMenuHeader}>
+                        <Text style={styles.mediaContextEyebrow}>{device.name}</Text>
+                        <Text numberOfLines={1} style={styles.mediaContextTitle}>
+                            {now.title}
+                        </Text>
+                    </View>
+                    <View style={styles.mediaContextDivider} />
+                    <View style={styles.mediaContextActions}>
+                        {menuActions.map((action, index) => (
+                            <Pressable
+                                accessibilityRole="button"
+                                android_ripple={{
+                                    borderless: false,
+                                    color: 'rgba(255, 255, 255, 0.06)',
+                                }}
+                                key={action.id}
+                                onPress={() => {
+                                    closeMenu();
+                                    sendCommand(action.id);
+                                }}
+                                style={[
+                                    styles.mediaContextActionRow,
+                                    index === menuActions.length - 1 &&
+                                        styles.mediaContextActionRowLast,
+                                ]}
+                            >
+                                <View style={styles.mediaContextActionIcon}>{action.glyph}</View>
+                                <Text numberOfLines={1} style={styles.mediaContextActionLabel}>
+                                    {action.label}
+                                </Text>
+                            </Pressable>
+                        ))}
+                    </View>
+                </MotionSheet>
 
                 {isTuneOpen && stations.length > 0 ? (
                     <ScrollView

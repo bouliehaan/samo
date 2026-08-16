@@ -2,7 +2,7 @@ import { MobileHomeSectionId } from '@samo/core/mobile';
 import { type ServerAuthenticationResult } from '@samo/core/server';
 import { File } from 'expo-file-system';
 import { Image as ExpoImage } from 'expo-image';
-import { memo, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
     ActivityIndicator,
     Modal,
@@ -24,12 +24,15 @@ import { PlusGlyph } from '../components/Glyphs';
 import { useMediaContextMenu } from '../contexts/media-context-menu';
 import { useScrollContentBottomInset } from '../hooks/use-scroll-content-bottom-inset';
 import { triggerImpact } from '../services/haptics';
+import { loadHomeRadioSection } from '../services/home-flow';
 import { getPersistedServerAuthKey } from '../services/persisted-server';
 import {
     type AddAndroidRadioStationInput,
     type AddAndroidRadioStationResult,
     canAddAndroidRadioStation,
 } from '../services/radio-stations';
+import { refreshSamoRadioDevices, refreshSamoRadioStations } from '../services/samo-radio';
+import { selectSamoRadioReach, useSamoRadioSelector } from '../state/samo-radio';
 import { PAGE_TOP_INSET } from '../theme/layout';
 import { styles } from '../theme/styles';
 import { colors } from '../theme/tokens';
@@ -65,6 +68,11 @@ export const RadioScreen = memo(({
     const [activeSort, setActiveSort] = useState<LibrarySort>('recents');
     const [isSortMenuOpen, setIsSortMenuOpen] = useState(false);
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+    // Whether the server answered the last time anything asked it for radio.
+    // Every surface on this tab is live-only, so this is the difference
+    // between "your server has no stations" and "we never got to ask".
+    const reach = useSamoRadioSelector(selectSamoRadioReach);
+    const [isRetrying, setIsRetrying] = useState(false);
     const radioManageConnections = useMemo(
         () => (serverConnection && canAddAndroidRadioStation(serverConnection) ? serverConnection : null),
         [serverConnection],
@@ -79,6 +87,20 @@ export const RadioScreen = memo(({
             ? [...stations].sort((left, right) => left.title.localeCompare(right.title))
             : sortHomeItemsByRecents(stations, recentItems);
     }, [activeSort, recentItems, stations]);
+    // Re-ask all three radio reads at once. They fail together (one server,
+    // one connection), so they are worth retrying together — and the poll on
+    // its own is not enough, because it only covers devices, not the station
+    // shelf that Home owns.
+    const handleRetry = useCallback(() => {
+        triggerImpact('light');
+        setIsRetrying(true);
+        void Promise.all([
+            refreshSamoRadioDevices(),
+            refreshSamoRadioStations().catch(() => []),
+            serverConnection ? loadHomeRadioSection(serverConnection) : Promise.resolve(),
+        ]).finally(() => setIsRetrying(false));
+    }, [serverConnection]);
+
     const activeSortLabel =
         LIBRARY_SORTS.find((sort) => sort.id === activeSort)?.label ?? 'Recents';
     const activeSortShortLabel = activeSort === 'name' ? 'Name' : 'Recent';
@@ -150,13 +172,19 @@ export const RadioScreen = memo(({
                     {radioHeaderActions}
                 </View>
                 <SamoRadioPanel />
-                {sortedStations.length === 0 ? (
-                    <Text style={[styles.mutedText, styles.radioEmptyText]}>
-                        {!radioManageConnections
-                            ? 'Connect a Samo server to add radio stations from Android.'
-                            : 'No server-backed radio stations returned.'}
-                    </Text>
-                ) : (
+                {/* Sits in the control panel's slot, because when the server
+                    is out of reach the panel itself renders nothing — this is
+                    the thing that says so, rather than leaving the controls to
+                    silently not exist. */}
+                {reach.status === 'unreachable' ? (
+                    <SamoRadioUnreachableNotice
+                        isRetrying={isRetrying}
+                        message={reach.message}
+                        onRetry={handleRetry}
+                        serverTitle={serverConnection?.title}
+                    />
+                ) : null}
+                {sortedStations.length > 0 ? (
                     <View style={styles.radioGrid}>
                         {sortedStations.map((station) => {
                             const isPlaying =
@@ -204,6 +232,15 @@ export const RadioScreen = memo(({
                             );
                         })}
                     </View>
+                ) : reach.status === 'unreachable' ? null : (
+                    // Only claim the server returned nothing when it actually
+                    // answered. When it didn't, the notice above already says
+                    // so and this copy would contradict it.
+                    <Text style={[styles.mutedText, styles.radioEmptyText]}>
+                        {!radioManageConnections
+                            ? 'Connect a Samo server to add radio stations from Android.'
+                            : 'No server-backed radio stations returned.'}
+                    </Text>
                 )}
             </Reanimated.ScrollView>
             </GestureDetector>
@@ -227,6 +264,62 @@ export const RadioScreen = memo(({
 });
 
 RadioScreen.displayName = 'RadioScreen';
+
+/**
+ * "We couldn't reach the server", where the controls would have been.
+ *
+ * Radio is the only tab with no on-device mirror behind it, so a server it
+ * cannot reach leaves it completely bare — and bare used to be indistinguishable
+ * from a server with nothing on it. This is deliberately shaped like the panel
+ * it stands in for: same surface, same inset, so the eye lands on it in the
+ * place the controls normally occupy.
+ *
+ * It names the address rather than saying "check your connection", because the
+ * usual cause is a reachability problem the phone does not consider an outage
+ * at all — a LAN-addressed server with a full-tunnel VPN in the way. Wi-Fi is
+ * up, every other tab reads fine from the mirror, and only the address itself
+ * is unroutable.
+ */
+const SamoRadioUnreachableNotice = ({
+    isRetrying,
+    message,
+    onRetry,
+    serverTitle,
+}: {
+    isRetrying: boolean;
+    message: string;
+    onRetry: () => void;
+    serverTitle?: string;
+}) => (
+    <View style={styles.samoRadioUnreachable}>
+        <Text style={styles.samoRadioUnreachableTitle}>
+            {serverTitle ? `Can't reach ${serverTitle}` : "Can't reach the server"}
+        </Text>
+        <Text style={styles.samoRadioUnreachableBody}>{message}</Text>
+        <Text style={styles.samoRadioUnreachableHint}>
+            {'Stations and the samo-radio controls both live on the server, so ' +
+                "there's nothing to show until it answers. A VPN without local " +
+                'network access will do this on a server addressed by LAN IP.'}
+        </Text>
+        <Pressable
+            accessibilityLabel="Try reaching the server again"
+            accessibilityRole="button"
+            android_ripple={{ borderless: false, color: 'rgba(255, 255, 255, 0.08)' }}
+            disabled={isRetrying}
+            onPress={onRetry}
+            style={[
+                styles.samoRadioUnreachableRetry,
+                isRetrying && styles.disabledButton,
+            ]}
+        >
+            {isRetrying ? (
+                <ActivityIndicator color={colors.accent} size="small" />
+            ) : (
+                <Text style={styles.samoRadioUnreachableRetryText}>Try again</Text>
+            )}
+        </Pressable>
+    </View>
+);
 
 const AddRadioStationModal = ({
     onClose,

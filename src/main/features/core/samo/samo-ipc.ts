@@ -8,6 +8,8 @@ import {
 } from '@samo/core/server';
 import { ipcMain, net } from 'electron';
 
+import { clearSamoMediaCredential, registerSamoMediaCredential } from './samo-media-auth';
+
 // Route ALL desktop Samo traffic through Electron's `net.fetch` (Chromium's
 // network stack), NOT Node's global `fetch` (undici). The renderer already
 // proxies every Samo call here via IPC, so this one client governs auth,
@@ -49,6 +51,19 @@ const withFetchDiagnostics = async <T>(operation: () => Promise<T>): Promise<T> 
 };
 
 export const registerSamoIpcHandlers = () => {
+    // Lets the renderer hand artwork URLs to plain <img> tags with no
+    // `stream_token` on them — see `samo-media-auth.ts` for why that matters.
+    ipcMain.on(
+        'samo-register-media-credential',
+        (_event, data: { credential: string; url: string }) => {
+            registerSamoMediaCredential(data.url, data.credential);
+        },
+    );
+
+    ipcMain.on('samo-clear-media-credential', (_event, data: { url: string }) => {
+        clearSamoMediaCredential(data.url);
+    });
+
     ipcMain.handle(
         'samo-authenticate',
         async (

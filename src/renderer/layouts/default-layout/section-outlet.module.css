@@ -1,0 +1,22 @@
+/*
+ * Panes are stacked and pinned, never collapsed.
+ *
+ * `display: none` looks like the obvious way to hide one, and it undoes the
+ * entire point: a collapsed pane has zero geometry, so the virtualized grids
+ * inside it measure zero, render no rows, and throw away every cover they had
+ * decoded — which is exactly the rebuild this component exists to avoid.
+ * Measured that way, a hidden pane went from 63 images to 0.
+ *
+ * `visibility: hidden` keeps the geometry (so AutoSizer still measures, rows
+ * stay mounted, bitmaps stay decoded) while skipping paint entirely.
+ */
+.pane {
+    position: absolute;
+    inset: 0;
+    min-height: 0;
+}
+
+.hidden {
+    visibility: hidden;
+    pointer-events: none;
+}

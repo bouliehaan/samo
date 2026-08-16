@@ -17,6 +17,12 @@ export const useLongFormCoverRequest = (
     coverUrl: string | undefined,
     cacheScope: string,
     itemId: string,
+    /**
+     * Rendered width of the slot, so the server can send art sized for it
+     * instead of a 1400px original for a 178px card. Omit only where the
+     * full-resolution image is genuinely wanted (the full-screen player).
+     */
+    width?: number,
 ) =>
     useMemo(() => {
         if (!server || !coverUrl) {
@@ -30,6 +36,9 @@ export const useLongFormCoverRequest = (
                 url: server.url,
             },
             coverUrl,
-            ['samo', server.id, cacheScope, itemId].join(':'),
+            // Width is part of the identity: the same cover at two sizes is
+            // two resources and must not share a cache entry.
+            ['samo', server.id, cacheScope, itemId, width ?? ''].join(':'),
+            width,
         );
-    }, [cacheScope, coverUrl, itemId, server]);
+    }, [cacheScope, coverUrl, itemId, server, width]);

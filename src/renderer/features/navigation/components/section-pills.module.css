@@ -1,0 +1,65 @@
+/*
+ * Deliberately the same pill as the left rail's filter chips — borderless,
+ * same alphas, same weight. They are two rows of the same kind of control a
+ * few inches apart, and any difference between them reads as an accident
+ * rather than a distinction. Only the size differs: these sit next to a 48px
+ * search field rather than in a narrow column.
+ */
+.pills {
+    display: flex;
+    flex: 0 0 auto;
+    gap: 0.38rem;
+    align-items: center;
+    min-width: 0;
+
+    /* Part of the window chrome, so it must opt out of the drag region the
+       header sets — otherwise a click reads as the start of a window drag. */
+    -webkit-app-region: no-drag;
+}
+
+.pill {
+    flex: 0 0 auto;
+    height: 2.15rem;
+    padding: 0 0.85rem;
+    font-size: 0.8438rem;
+    font-weight: 650;
+    line-height: 1;
+    color: rgb(255 255 255 / 92%);
+    cursor: default;
+    background: rgb(255 255 255 / 8%);
+    border: 0;
+    border-radius: 9999px;
+    transition:
+        color 0.12s ease,
+        background 0.12s ease;
+}
+
+.pill:hover {
+    background: rgb(255 255 255 / 14%);
+}
+
+.pill:focus-visible {
+    outline: 2px solid alpha(var(--theme-colors-primary-filled), 0.72);
+    outline-offset: 2px;
+}
+
+.pill-active {
+    color: #121212;
+    background: rgb(255 255 255 / 94%);
+}
+
+.pill-active:hover {
+    background: rgb(255 255 255 / 94%);
+}
+
+@media only screen and (width < 1100px) {
+    .pills {
+        gap: 0.3rem;
+    }
+
+    .pill {
+        height: 1.95rem;
+        padding: 0 0.7rem;
+        font-size: 0.8125rem;
+    }
+}

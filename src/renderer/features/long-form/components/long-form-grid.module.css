@@ -1,5 +1,13 @@
+/*
+ * AutoSizer measures THIS element, so it needs a real height whatever it is
+ * dropped into — `flex: 1` is inert unless the parent happens to be a flex
+ * column, and the element's only content is AutoSizer's deliberately
+ * zero-sized measuring div, so without a height it collapses and the grid
+ * renders nothing.
+ */
 .container {
     flex: 1;
+    height: 100%;
     min-height: 0;
 }
 

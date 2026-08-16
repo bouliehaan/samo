@@ -5,6 +5,7 @@ import { List, RowComponentProps } from 'react-window-v2';
 import { LongFormCard, LongFormMediaKind } from './long-form-card';
 import styles from './long-form-grid.module.css';
 
+import { virtualListStyle } from '/@/renderer/utils/virtual-list-style';
 import { LongFormLibraryItem } from '/@/shared/api/long-form-types';
 import { ServerListItemWithCredential } from '/@/shared/types/domain-types';
 
@@ -105,7 +106,7 @@ export const LongFormGrid = ({ describe, items, kind, onOpen, server }: LongForm
                             rowCount={rowCount}
                             rowHeight={rowHeight}
                             rowProps={{ columnCount, describe, items, kind, onOpen, server }}
-                            style={{ height, width }}
+                            style={virtualListStyle(height, width)}
                         />
                     );
                 }}

@@ -56,6 +56,7 @@ import {
     type SamoPaginatedResponse,
     type ServerListItemWithCredentialCore,
     updateSamoMusicPlaylist,
+    withSamoImageWidth,
 } from '@samo/core/server';
 import isElectron from 'is-electron';
 
@@ -118,6 +119,17 @@ const samoAuthentication = (server: { credential: string; url: string }) => ({
  * (e.g. `album-1`) and resolve through cover routes using `itemType`.
  */
 const resolveSamoImageUrlFromQueryId = (
+    auth: { credential: string; url: string },
+    id: string | undefined,
+    streamToken: string | undefined,
+    itemType: LibraryItem | undefined,
+    width?: number,
+): string | undefined => {
+    const sized = (url: string | undefined) => withSamoImageWidth(url ?? '', width) || url;
+    return sized(resolveSamoImageUrlForId(auth, id, streamToken, itemType));
+};
+
+const resolveSamoImageUrlForId = (
     auth: { credential: string; url: string },
     id: string | undefined,
     streamToken: string | undefined,
@@ -1066,7 +1078,13 @@ export const SamoController: InternalControllerEndpoint = {
         if (!server?.url?.trim()) return null;
         const auth = samoAuthentication(server);
         const streamToken = getCachedSamoStreamToken(auth);
-        const url = resolveSamoImageUrlFromQueryId(auth, query.id, streamToken, query.itemType);
+        const url = resolveSamoImageUrlFromQueryId(
+            auth,
+            query.id,
+            streamToken,
+            query.itemType,
+            query.size,
+        );
         if (!url) return null;
 
         return buildSamoAuthenticatedImageRequest(
@@ -1080,8 +1098,13 @@ export const SamoController: InternalControllerEndpoint = {
         const server = apiClientProps.server;
         if (!server?.url?.trim()) return null;
         const auth = samoAuthentication(server);
-        const streamToken = getCachedSamoStreamToken(auth);
-        return resolveSamoImageUrlFromQueryId(auth, query.id, streamToken, query.itemType) ?? null;
+        // No stream token: this URL goes straight into an <img>, which the main
+        // process authenticates by header. A token here would change on every
+        // mint and evict the whole artwork cache with it.
+        return (
+            resolveSamoImageUrlFromQueryId(auth, query.id, undefined, query.itemType, query.size) ??
+            null
+        );
     },
 
     getInternetRadioStations: async ({ apiClientProps }) => {

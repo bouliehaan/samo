@@ -1,3 +1,4 @@
+import { describeSamoRadioDevice } from '@samo/core/server';
 import clsx from 'clsx';
 import { t } from 'i18next';
 import isElectron from 'is-electron';
@@ -5,6 +6,12 @@ import { memo, useCallback, useEffect, useState } from 'react';
 
 import styles from './output-picker-modal.module.css';
 
+import {
+    getSamoRadioServer,
+    sendToSamoRadioDevice,
+} from '/@/renderer/features/samo-radio/api/samo-radio-api';
+import { useSamoRadioPolling } from '/@/renderer/features/samo-radio/hooks/use-samo-radio-polling';
+import { samoRadioQueueForSend } from '/@/renderer/features/samo-radio/utils/samo-radio-refs';
 import {
     type AudioDeviceOption,
     useAudioDevices,
@@ -17,7 +24,8 @@ import {
     stopDesktopCastSession,
 } from '/@/renderer/services/chromecast/desktop-cast-service';
 import { useDesktopCastState } from '/@/renderer/store/cast.store';
-import { usePlayerStatus } from '/@/renderer/store/player.store';
+import { getPlayerData, getQueue, usePlayerStatus } from '/@/renderer/store/player.store';
+import { useSamoRadioDevices } from '/@/renderer/store/samo-radio.store';
 import {
     usePlaybackSettings,
     usePlaybackType,
@@ -73,9 +81,12 @@ const OutputPickerContent = memo(
         const playerStatus = usePlayerStatus();
         const { setSettings } = useSettingsStoreActions();
         const audioDevices = useAudioDevices(playbackType, opened);
+        const samoRadioDevices = useSamoRadioDevices();
         const [isLoading, setIsLoading] = useState(false);
         const [error, setError] = useState<null | string>(null);
         const [selectingId, setSelectingId] = useState<null | string>(null);
+
+        useSamoRadioPolling({ active: opened });
 
         const isPlaying = playerStatus === PlayerStatus.PLAYING;
         const selectedLocalDeviceId =
@@ -192,6 +203,46 @@ const OutputPickerContent = memo(
                         connectError instanceof Error
                             ? connectError.message
                             : 'Could not connect to Chromecast.',
+                    );
+                } finally {
+                    setSelectingId(null);
+                }
+            },
+            [onClose],
+        );
+
+        /**
+         * Hand the current queue to a samo-radio device.
+         *
+         * This is a send, not a switch: the queue starts playing out of the
+         * stereo's own socket and this computer keeps whatever it was doing.
+         * That is why the row does not become "selected" the way a cast target
+         * does — nothing about this app's output has changed.
+         */
+        const handleSendToSamoRadio = useCallback(
+            async (deviceId: string) => {
+                const server = getSamoRadioServer();
+                const { items, startIndex } = samoRadioQueueForSend(
+                    getQueue().items,
+                    getPlayerData().index,
+                    server?.id,
+                );
+
+                if (items.length === 0) {
+                    setError('Nothing in the queue that this server can play.');
+                    return;
+                }
+
+                setSelectingId(deviceId);
+                setError(null);
+                try {
+                    await sendToSamoRadioDevice({ deviceId, items, startIndex });
+                    onClose();
+                } catch (sendError) {
+                    setError(
+                        sendError instanceof Error
+                            ? sendError.message
+                            : 'Could not reach that samo-radio device.',
                     );
                 } finally {
                     setSelectingId(null);
@@ -344,6 +395,45 @@ const OutputPickerContent = memo(
                             : 'Speakers and headphones'}
                     </Text>
                     {localDevices.map(renderLocalRow)}
+
+                    {samoRadioDevices.length > 0 ? (
+                        <>
+                            <Text className={styles.sectionLabel} mt="sm" size="sm">
+                                Samo Radio
+                            </Text>
+                            {samoRadioDevices.map((device) => {
+                                const isSending = selectingId === device.id;
+
+                                return (
+                                    <button
+                                        className={clsx(
+                                            styles.row,
+                                            Boolean(selectingId) &&
+                                                !isSending &&
+                                                styles.rowDisabled,
+                                        )}
+                                        disabled={Boolean(selectingId)}
+                                        key={device.id}
+                                        onClick={() => void handleSendToSamoRadio(device.id)}
+                                        type="button"
+                                    >
+                                        <span className={styles.icon}>
+                                            <Icon icon="radio" size="lg" />
+                                        </span>
+                                        <span className={styles.body}>
+                                            <Text fw={600}>{device.name}</Text>
+                                            <Text className={styles.subtitle} size="sm">
+                                                {describeSamoRadioDevice(device)}
+                                            </Text>
+                                        </span>
+                                        <span className={styles.state}>
+                                            {isSending ? <Spinner size={16} /> : null}
+                                        </span>
+                                    </button>
+                                );
+                            })}
+                        </>
+                    ) : null}
 
                     <Text className={styles.sectionLabel} mt="sm" size="sm">
                         Chromecast

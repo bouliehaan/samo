@@ -147,3 +147,13 @@ export const useAudiobookStreamOffset = () =>
 export const useAudiobookError = selectors.useError;
 export const useAudiobookServer = selectors.useServer;
 export const useAudiobookActions = selectors.useActions;
+
+/**
+ * Every book this machine has a saved playhead for, keyed by item id.
+ *
+ * The server's audiobooks LISTING carries a duration but no per-user position
+ * (only the per-book detail route overlays that), so "what am I part-way
+ * through" has to come from here. It is this machine's own record, which is
+ * exactly what it claims to be.
+ */
+export const useAudiobookResumePositions = () => useAudiobookStore((state) => state.resumeByItemId);

@@ -28,6 +28,7 @@ import {
     recordRecentItem,
     useAudiobookItem,
     useCurrentServerWithCredential,
+    useImageRes,
     useLongFormMediaServer,
     usePermissions,
     usePlaybackSource,
@@ -1161,6 +1162,8 @@ const LibrarySidebarRow = ({ item }: { item: LibrarySidebarItem }) => (
 );
 
 const LibraryArtwork = ({ item }: { item: LibrarySidebarItem }): ReactNode => {
+    const imageRes = useImageRes();
+
     if (item.artwork.kind === 'icon') {
         return (
             <Icon
@@ -1176,6 +1179,7 @@ const LibraryArtwork = ({ item }: { item: LibrarySidebarItem }): ReactNode => {
                 fallbackIcon={item.artwork.fallbackIcon}
                 imageUrl={item.artwork.imageUrl}
                 itemId={item.artwork.itemId}
+                width={imageRes.table}
             />
         );
     }

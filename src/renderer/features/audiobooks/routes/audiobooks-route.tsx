@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { generatePath, useNavigate } from 'react-router';
 
 import { useLongFormMediaServer } from '/@/renderer/api/samo/samo-long-form';
+import { AudiobookSections } from '/@/renderer/features/audiobooks/components/audiobook-sections';
 import { longFormQueries } from '/@/renderer/features/long-form/api/long-form-queries';
 import { LongFormLibraryPage } from '/@/renderer/features/long-form/components/long-form-library-page';
 import { PageErrorBoundary } from '/@/renderer/features/shared/components/page-error-boundary';
@@ -60,16 +61,24 @@ const AudiobooksRoute = () => {
         [t],
     );
 
+    const items = itemsQuery.data ?? [];
+
     return (
         <LongFormLibraryPage
             describe={describe}
             emptyLabel={t('error.noAudiobooksFound', { postProcess: 'sentenceCase' })}
+            gridLabel="All Books"
             isLoading={itemsQuery.isLoading}
-            items={itemsQuery.data ?? []}
+            items={items}
             kind="audiobook"
             noServerLabel={t('error.noServerForAudiobooks', { postProcess: 'sentenceCase' })}
             onOpen={handleOpen}
             searchPlaceholder={t('common.searchAudiobooks', { postProcess: 'sentenceCase' })}
+            sections={
+                server ? (
+                    <AudiobookSections items={items} onOpen={handleOpen} server={server} />
+                ) : null
+            }
             server={server}
             title={t('page.audiobookList.title', { postProcess: 'titleCase' })}
             toSearchText={audiobookSearchText}

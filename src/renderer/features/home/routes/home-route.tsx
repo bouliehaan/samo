@@ -3,53 +3,34 @@ import { useTranslation } from 'react-i18next';
 
 import { useGridCarouselContainerQuery } from '/@/renderer/components/grid-carousel/grid-carousel-v2';
 import { NativeScrollArea } from '/@/renderer/components/native-scroll-area/native-scroll-area';
-import { AlbumInfiniteCarousel } from '/@/renderer/features/albums/components/album-infinite-carousel';
+import { HomeContinueListening } from '/@/renderer/features/home/components/home-continue-listening';
 import {
-    HomeAlbumsSection,
-    HomeDiscoverSection,
-    HomeExploSection,
-    HomeFavoriteArtists,
     HomeFavoriteAudiobooks,
     HomeFavoritePlaylists,
-    HomeFavoriteTracks,
-    HomeRediscoverySection,
 } from '/@/renderer/features/home/components/home-media-sections';
 import { HomePodcastFeedSection } from '/@/renderer/features/home/components/home-podcast-feed';
 import { HomeRadioStations } from '/@/renderer/features/home/components/home-radio-stations';
-import { HomeSectionTitle } from '/@/renderer/features/home/components/home-section-title';
 import { AnimatedPage } from '/@/renderer/features/shared/components/animated-page';
 import { LibraryContainer } from '/@/renderer/features/shared/components/library-container';
 import { LibraryHeaderBar } from '/@/renderer/features/shared/components/library-header-bar';
 import { PageErrorBoundary } from '/@/renderer/features/shared/components/page-error-boundary';
 import { HomePageSkeleton } from '/@/renderer/features/shared/components/page-skeletons/page-skeletons';
-import { AppRoute } from '/@/renderer/router/routes';
 import { useWindowSettings } from '/@/renderer/store';
-import { useHiddenHomeIdsByType } from '/@/renderer/store/hidden-home-items.store';
 import { Stack } from '/@/shared/components/stack/stack';
-import { AlbumListSort, SortOrder } from '/@/shared/types/domain-types';
 import { Platform } from '/@/shared/types/types';
 
-const HomeRecentlyAddedAlbums = ({
-    containerQuery,
-}: {
-    containerQuery?: ReturnType<typeof useGridCarouselContainerQuery>;
-}) => {
-    const hiddenAlbumIds = useHiddenHomeIdsByType('album');
-    return (
-        <AlbumInfiniteCarousel
-            containerQuery={containerQuery}
-            enableRefresh
-            enableRemoveFromHome
-            excludeIds={hiddenAlbumIds}
-            queryKey={['home', 'album', 'recently-added'] as const}
-            rowCount={1}
-            sortBy={AlbumListSort.RECENTLY_ADDED}
-            sortOrder={SortOrder.DESC}
-            title={<HomeSectionTitle title="Recently Added" to={AppRoute.LIBRARY_ALBUMS} />}
-        />
-    );
-};
-
+/**
+ * Where you left off, across every kind of media.
+ *
+ * The library-browse shelves moved to Music when the section pills arrived —
+ * albums, artists, explore, discover, rediscover. What stays is the part that
+ * is about you rather than about the library: what you were listening to, your
+ * playlists, the shows with new episodes, the stations you keep coming back to.
+ *
+ * Playlists appear here AND on Music on purpose. They are both a thing you
+ * reach for by name and a thing you browse, and Home without them is not a
+ * page about what you listen to.
+ */
 const HomeRoute = () => {
     const { t } = useTranslation();
     const scrollAreaRef = useRef<HTMLDivElement>(null);
@@ -76,21 +57,15 @@ const HomeRoute = () => {
                     <Stack
                         gap="2xl"
                         mb="5rem"
-                        pt={windowBarStyle === Platform.WEB ? '5rem' : '3rem'}
+                        pt={windowBarStyle === Platform.WEB ? '3rem' : '1rem'}
                         px="2rem"
                         ref={containerQuery.ref}
                     >
-                        <HomeRadioStations />
-                        <HomeExploSection />
+                        <HomeContinueListening containerQuery={containerQuery} />
                         <HomeFavoritePlaylists containerQuery={containerQuery} />
-                        <HomeFavoriteAudiobooks containerQuery={containerQuery} />
+                        <HomeRadioStations />
                         <HomePodcastFeedSection containerQuery={containerQuery} />
-                        <HomeRecentlyAddedAlbums containerQuery={containerQuery} />
-                        <HomeFavoriteArtists containerQuery={containerQuery} />
-                        <HomeAlbumsSection containerQuery={containerQuery} />
-                        <HomeFavoriteTracks />
-                        <HomeDiscoverSection />
-                        <HomeRediscoverySection />
+                        <HomeFavoriteAudiobooks containerQuery={containerQuery} />
                     </Stack>
                 </LibraryContainer>
             </NativeScrollArea>

@@ -4,6 +4,7 @@ import { createCallable } from 'react-call';
 import { generatePath, useNavigate, useParams } from 'react-router';
 
 import { isSamoBackedLibraryItem } from '/@/renderer/api/samo/samo-long-form';
+import { PlayOnSamoRadioAction } from '/@/renderer/features/context-menu/actions/play-on-samo-radio-action';
 import { RemoveFromHomeAction } from '/@/renderer/features/context-menu/actions/remove-from-home-action';
 import { AlbumArtistContextMenu } from '/@/renderer/features/context-menu/menus/album-artist-context-menu';
 import { AlbumContextMenu } from '/@/renderer/features/context-menu/menus/album-context-menu';
@@ -20,7 +21,8 @@ import { AppRoute } from '/@/renderer/router/routes';
 import { useAudiobookActions } from '/@/renderer/store/audiobook.store';
 import { useLibraryFavoritesActions } from '/@/renderer/store/library-favorites.store';
 import { recordRecentPodcast } from '/@/renderer/store/play-history.store';
-import { LongFormLibraryItem } from '/@/shared/api/long-form-types';
+import { usePodcastActions } from '/@/renderer/store/podcast.store';
+import { LongFormLibraryItem, LongFormPodcastEpisode } from '/@/shared/api/long-form-types';
 import { ContextMenu } from '/@/shared/components/context-menu/context-menu';
 import {
     Album,
@@ -100,6 +102,7 @@ export const ContextMenuController = createCallable<ContextMenuControllerProps, 
                 {cmd.type === LibraryItem.SONG && <SongContextMenu {...cmd} />}
                 {cmd.type === 'audiobook' && <AudiobookContextMenu {...cmd} />}
                 {cmd.type === 'podcast' && <PodcastContextMenu {...cmd} />}
+                {cmd.type === 'podcast-episode' && <PodcastEpisodeContextMenu {...cmd} />}
                 {cmd.type === 'radio' && <RadioContextMenu {...cmd} />}
                 {cmd.type === 'recent' && <RecentItemContextMenu {...cmd} />}
             </ContextMenu>
@@ -116,6 +119,7 @@ export type ContextMenuCommand =
     | PlaylistContextMenuProps
     | PlaylistSongContextMenuProps
     | PodcastContextMenuProps
+    | PodcastEpisodeContextMenuProps
     | QueueSongContextMenuProps
     | RadioContextMenuProps
     | RecentItemContextMenuProps
@@ -168,6 +172,13 @@ type PodcastContextMenuProps = {
     type: 'podcast';
 };
 
+type PodcastEpisodeContextMenuProps = {
+    episodes: LongFormPodcastEpisode[];
+    item: LongFormLibraryItem;
+    server: ServerListItemWithCredential;
+    type: 'podcast-episode';
+};
+
 type QueueSongContextMenuProps = {
     items: QueueSong[];
     type: LibraryItem.QUEUE_SONG;
@@ -205,6 +216,7 @@ const AudiobookContextMenu = ({ homeItemKey, items, server }: AudiobookContextMe
             <ContextMenu.Item leftIcon="mediaPlay" onSelect={() => play(server, item)}>
                 Play
             </ContextMenu.Item>
+            <PlayOnSamoRadioAction ids={[item.id]} sendAs="audiobook" />
             <ContextMenu.Item
                 leftIcon="info"
                 onSelect={() =>
@@ -296,6 +308,32 @@ const PodcastContextMenu = ({ homeItemKey, items, server }: PodcastContextMenuPr
     );
 };
 
+/**
+ * One podcast episode.
+ *
+ * Episodes had no menu at all until samo-radio needed one: an episode is a
+ * single id the server can hand straight to a device, and there was nowhere to
+ * ask for that. Play is here too so the menu is never a list of one thing that
+ * sometimes is not there.
+ */
+const PodcastEpisodeContextMenu = ({ episodes, item, server }: PodcastEpisodeContextMenuProps) => {
+    const { play } = usePodcastActions();
+    const episode = episodes[0];
+    if (!episode) return null;
+
+    return (
+        <ContextMenu.Content>
+            <ContextMenu.Item
+                leftIcon="mediaPlay"
+                onSelect={() => void play(server, item, episode)}
+            >
+                Play
+            </ContextMenu.Item>
+            <PlayOnSamoRadioAction ids={episodes.map((entry) => entry.id)} sendAs="episode" />
+        </ContextMenu.Content>
+    );
+};
+
 const RadioContextMenu = ({ homeItemKey, items, serverId }: RadioContextMenuProps) => {
     const { play } = useRadioControls();
     const { toggle } = useLibraryFavoritesActions();
@@ -317,6 +355,7 @@ const RadioContextMenu = ({ homeItemKey, items, serverId }: RadioContextMenuProp
             >
                 Play
             </ContextMenu.Item>
+            <PlayOnSamoRadioAction ids={[station.id]} sendAs="station" />
             <ContextMenu.Divider />
             <ContextMenu.Item
                 leftIcon="favorite"

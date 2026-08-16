@@ -43,6 +43,7 @@ import {
 } from '/@/renderer/components/item-list/helpers/item-list-state';
 import { useListHotkeys } from '/@/renderer/components/item-list/helpers/use-list-hotkeys';
 import { ItemControls, ItemListHandle } from '/@/renderer/components/item-list/types';
+import { virtualListStyle } from '/@/renderer/utils/virtual-list-style';
 import { animationProps } from '/@/shared/components/animations/animation-props';
 import { useElementSize } from '/@/shared/hooks/use-element-size';
 import { useFocusWithin } from '/@/shared/hooks/use-focus-within';
@@ -274,7 +275,7 @@ const VirtualizedGridList = React.memo(
                 // variable-height rows — v1 could not do either.
                 rowHeight={tableMeta.itemHeight || 0}
                 rowProps={itemData}
-                style={{ height, width }}
+                style={virtualListStyle(height, width)}
             />
         );
     },

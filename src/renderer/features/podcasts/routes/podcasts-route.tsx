@@ -6,6 +6,7 @@ import { generatePath, useNavigate } from 'react-router';
 import { useLongFormMediaServer } from '/@/renderer/api/samo/samo-long-form';
 import { longFormQueries } from '/@/renderer/features/long-form/api/long-form-queries';
 import { LongFormLibraryPage } from '/@/renderer/features/long-form/components/long-form-library-page';
+import { PodcastSections } from '/@/renderer/features/podcasts/components/podcast-sections';
 import { PageErrorBoundary } from '/@/renderer/features/shared/components/page-error-boundary';
 import { AppRoute } from '/@/renderer/router/routes';
 import { recordRecentPodcast } from '/@/renderer/store';
@@ -58,16 +59,24 @@ const PodcastsRoute = () => {
         [t],
     );
 
+    const items = itemsQuery.data ?? [];
+
     return (
         <LongFormLibraryPage
             describe={describe}
             emptyLabel={t('error.noPodcastsFound', { postProcess: 'sentenceCase' })}
+            gridLabel="All Shows"
             isLoading={itemsQuery.isLoading}
-            items={itemsQuery.data ?? []}
+            items={items}
             kind="podcast"
             noServerLabel={t('error.noServerForPodcasts', { postProcess: 'sentenceCase' })}
             onOpen={handleOpen}
             searchPlaceholder={t('common.searchPodcasts', { postProcess: 'sentenceCase' })}
+            sections={
+                server ? (
+                    <PodcastSections items={items} onOpen={handleOpen} server={server} />
+                ) : null
+            }
             server={server}
             title={t('page.podcastList.title', { postProcess: 'titleCase' })}
             toSearchText={podcastSearchText}

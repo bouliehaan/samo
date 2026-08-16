@@ -20,6 +20,7 @@ import {
     RecentItem,
     recordRecentItem,
     useAudiobookActions,
+    useImageRes,
     useLongFormMediaServer,
     useRecentItems,
 } from '/@/renderer/store';
@@ -170,6 +171,8 @@ const ContinueListeningCard = ({ item, onClick }: { item: RecentItem; onClick: (
 );
 
 const RecentArtwork = ({ item }: { item: RecentItem }) => {
+    const imageRes = useImageRes();
+
     if (item.artwork.kind === 'abs') {
         return (
             <LongFormCoverImage
@@ -177,6 +180,7 @@ const RecentArtwork = ({ item }: { item: RecentItem }) => {
                 fallbackIcon={item.artwork.fallbackIcon}
                 imageUrl={item.artwork.imageUrl ?? item.rawAbsItem?.media?.metadata?.imageUrl}
                 itemId={item.artwork.itemId}
+                width={imageRes.itemCard}
             />
         );
     }

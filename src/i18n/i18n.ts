@@ -2,64 +2,10 @@ import { PostProcessorModule, TOptions } from 'i18next';
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
 
-import ar from './locales/ar.json';
-import ca from './locales/ca.json';
-import cs from './locales/cs.json';
-import de from './locales/de.json';
 import en from './locales/en.json';
-import es from './locales/es.json';
-import eu from './locales/eu.json';
-import fa from './locales/fa.json';
-import fi from './locales/fi.json';
-import fr from './locales/fr.json';
-import hu from './locales/hu.json';
-import id from './locales/id.json';
-import it from './locales/it.json';
-import ja from './locales/ja.json';
-import ko from './locales/ko.json';
-import nbNO from './locales/nb-NO.json';
-import nl from './locales/nl.json';
-import pl from './locales/pl.json';
-import ptBr from './locales/pt-BR.json';
-import pt from './locales/pt.json';
-import ru from './locales/ru.json';
-import sl from './locales/sl.json';
-import sr from './locales/sr.json';
-import sv from './locales/sv.json';
-import ta from './locales/ta.json';
-import tr from './locales/tr.json';
-import zhHans from './locales/zh-Hans.json';
-import zhHant from './locales/zh-Hant.json';
 
 const resources = {
-    ar: { translation: ar },
-    ca: { translation: ca },
-    cs: { translation: cs },
-    de: { translation: de },
     en: { translation: en },
-    es: { translation: es },
-    eu: { translation: eu },
-    fa: { translation: fa },
-    fi: { translation: fi },
-    fr: { translation: fr },
-    hu: { translation: hu },
-    id: { translation: id },
-    it: { translation: it },
-    ja: { translation: ja },
-    ko: { translation: ko },
-    'nb-NO': { translation: nbNO },
-    nl: { translation: nl },
-    pl: { translation: pl },
-    pt: { translation: pt },
-    'pt-BR': { translation: ptBr },
-    ru: { translation: ru },
-    sl: { translation: sl },
-    sr: { translation: sr },
-    sv: { translation: sv },
-    ta: { translation: ta },
-    tr: { translation: tr },
-    'zh-Hans': { translation: zhHans },
-    'zh-Hant': { translation: zhHant },
 };
 
 export const languages = [
@@ -243,5 +189,42 @@ i18n.use(lowerCasePostProcessor)
         },
         resources,
     });
+
+/**
+ * Every locale except the fallback is fetched on demand.
+ *
+ * Importing all 28 statically put ~936 KB of translation tables — a quarter of
+ * the renderer's entry chunk — on the critical path of every cold start, to
+ * hand 27 of them to a user who reads one. `import.meta.glob` gives Vite a
+ * chunk per locale instead, so the bundle carries English and the rest arrive
+ * only if someone actually switches.
+ */
+const localeLoaders = import.meta.glob<{ default: Record<string, unknown> }>('./locales/*.json');
+
+const loadedLanguages = new Set(['en']);
+
+export const loadLanguage = async (language: string): Promise<void> => {
+    if (loadedLanguages.has(language)) {
+        return;
+    }
+
+    const loader = localeLoaders[`./locales/${language}.json`];
+
+    if (!loader) {
+        return;
+    }
+
+    const module = await loader();
+    i18n.addResourceBundle(language, 'translation', module.default, true, true);
+    // Only after the bundle lands — marking it loaded first would let a
+    // concurrent caller skip the wait and render raw keys.
+    loadedLanguages.add(language);
+};
+
+/** Fetch a language's table if needed, then switch to it. */
+export const changeLanguage = async (language: string): Promise<void> => {
+    await loadLanguage(language);
+    await i18n.changeLanguage(language);
+};
 
 export default i18n;
