@@ -7,13 +7,23 @@
 #   ./scripts/commit.sh                          # no message: just push what is committed
 #
 # The trunk here is `development`, not `main`. That is inherited from the
-# feishin fork — origin/HEAD points at it and every commit lives there. `main`
-# is a 2026-06-28 snapshot kept deliberately behind until the fork is done with
-# upstream; do not push to it by reflex.
+# feishin fork — origin/HEAD points at it and every commit lives there, and
+# there are extra worktrees under ../claude/samo on their own branches, so this
+# refuses to run anywhere else.
+#
+# `main` used to be a 2026-06-28 fork snapshot held deliberately behind. It is
+# not any more: releases are cut from it, so it has to be development's
+# published face rather than a branch with a life of its own. Once development
+# is pushed and verified, main is fast-forwarded to match.
+#
+# Fast-forward ONLY. If main ever holds a commit development lacks, someone
+# committed to it directly, and a script standing on a finished push is the
+# wrong place to reconcile that — it says so and stops.
 
 set -euo pipefail
 
 BRANCH="development"
+RELEASE_BRANCH="main"
 SKIP_GATES=0
 
 for arg in "$@"; do
@@ -133,9 +143,51 @@ git push origin "$BRANCH"
 git fetch --quiet origin "$BRANCH"
 read -r BEHIND STILL_AHEAD <<<"$(git rev-list --left-right --count "origin/$BRANCH...HEAD")"
 
-if [ "$BEHIND" -eq 0 ] && [ "$STILL_AHEAD" -eq 0 ] && [ -z "$(git status --porcelain)" ]; then
-  echo "==> Done. origin/$BRANCH == $(git rev-parse --short HEAD), tree clean."
-else
+if [ "$BEHIND" -ne 0 ] || [ "$STILL_AHEAD" -ne 0 ] || [ -n "$(git status --porcelain)" ]; then
   echo "Error: still out of sync (behind $BEHIND, ahead $STILL_AHEAD)." >&2
   exit 1
 fi
+
+# ----------------------------------------------------------- release branch
+#
+# Only ever mirrors a development that has just been verified above, and pushes
+# HEAD straight at the remote ref rather than checking main out — the branch
+# guard at the top exists precisely so work cannot happen on the wrong branch,
+# and this must not be the thing that leaves you standing on one.
+
+git fetch --quiet origin "$RELEASE_BRANCH"
+
+if ! git rev-parse --verify --quiet "origin/$RELEASE_BRANCH" >/dev/null; then
+  echo "Error: origin/$RELEASE_BRANCH does not exist." >&2
+  echo "       origin/$BRANCH is pushed and correct; create $RELEASE_BRANCH by hand." >&2
+  exit 1
+fi
+
+RELEASE_AHEAD="$(git rev-list --count "origin/$RELEASE_BRANCH..HEAD")"
+
+if ! git merge-base --is-ancestor "origin/$RELEASE_BRANCH" HEAD; then
+  # Divergence, not lag. Anything done here would either lose those commits or
+  # invent a merge nobody asked for.
+  DIVERGED="$(git rev-list --count "HEAD..origin/$RELEASE_BRANCH")"
+  echo "Error: origin/$RELEASE_BRANCH has $DIVERGED commit(s) $BRANCH does not." >&2
+  echo "       origin/$BRANCH is pushed and correct — this is only about the release branch." >&2
+  echo "       Inspect: git log --oneline $BRANCH..origin/$RELEASE_BRANCH" >&2
+  exit 1
+fi
+
+if [ "$RELEASE_AHEAD" -eq 0 ]; then
+  echo "==> origin/$RELEASE_BRANCH already level."
+else
+  echo "==> Fast-forwarding origin/$RELEASE_BRANCH ($RELEASE_AHEAD commit(s))..."
+  git push origin "HEAD:$RELEASE_BRANCH"
+fi
+
+# ------------------------------------------------------------------- verify
+
+git fetch --quiet origin "$RELEASE_BRANCH"
+if [ "$(git rev-parse "origin/$RELEASE_BRANCH")" != "$(git rev-parse HEAD)" ]; then
+  echo "Error: origin/$RELEASE_BRANCH did not end up level with $BRANCH." >&2
+  exit 1
+fi
+
+echo "==> Done. origin/$BRANCH and origin/$RELEASE_BRANCH == $(git rev-parse --short HEAD), tree clean."
