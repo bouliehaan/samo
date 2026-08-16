@@ -63,8 +63,55 @@ DIRTY="$(git status --porcelain)"
 git fetch --quiet origin "$BRANCH"
 AHEAD="$(git rev-list --count "origin/$BRANCH..HEAD")"
 
+# ----------------------------------------------------------- release branch
+#
+# Pushes HEAD straight at the remote ref rather than checking main out: the
+# branch guard above exists precisely so work cannot happen on the wrong
+# branch, and this must not be the thing that leaves you standing on one.
+#
+# Fast-forward ONLY. If main ever holds a commit development lacks, someone
+# committed to it directly, and a script standing on a finished push is the
+# wrong place to reconcile that.
+sync_release_branch() {
+  git fetch --quiet origin "$RELEASE_BRANCH"
+
+  if ! git rev-parse --verify --quiet "origin/$RELEASE_BRANCH" >/dev/null; then
+    echo "Error: origin/$RELEASE_BRANCH does not exist." >&2
+    echo "       origin/$BRANCH is correct; create $RELEASE_BRANCH by hand." >&2
+    return 1
+  fi
+
+  if ! git merge-base --is-ancestor "origin/$RELEASE_BRANCH" HEAD; then
+    local diverged
+    diverged="$(git rev-list --count "HEAD..origin/$RELEASE_BRANCH")"
+    echo "Error: origin/$RELEASE_BRANCH has $diverged commit(s) $BRANCH does not." >&2
+    echo "       origin/$BRANCH is pushed and correct — this is only the release branch." >&2
+    echo "       Inspect: git log --oneline $BRANCH..origin/$RELEASE_BRANCH" >&2
+    return 1
+  fi
+
+  local behind
+  behind="$(git rev-list --count "origin/$RELEASE_BRANCH..HEAD")"
+  if [ "$behind" -eq 0 ]; then
+    echo "==> origin/$RELEASE_BRANCH already level."
+  else
+    echo "==> Fast-forwarding origin/$RELEASE_BRANCH ($behind commit(s))..."
+    git push origin "HEAD:$RELEASE_BRANCH"
+  fi
+
+  git fetch --quiet origin "$RELEASE_BRANCH"
+  if [ "$(git rev-parse "origin/$RELEASE_BRANCH")" != "$(git rev-parse HEAD)" ]; then
+    echo "Error: origin/$RELEASE_BRANCH did not end up level with $BRANCH." >&2
+    return 1
+  fi
+}
+
 if [ -z "$DIRTY" ] && [ "$AHEAD" -eq 0 ]; then
-  echo "Nothing to do — tree is clean and origin/$BRANCH is up to date."
+  # Nothing to commit does NOT mean nothing to do. A previous run can have
+  # pushed development and then failed before mirroring, and an early exit here
+  # would leave the release branch lagging with no way to notice.
+  sync_release_branch
+  echo "Nothing to commit — tree is clean and origin/$BRANCH is up to date."
   exit 0
 fi
 
@@ -148,46 +195,7 @@ if [ "$BEHIND" -ne 0 ] || [ "$STILL_AHEAD" -ne 0 ] || [ -n "$(git status --porce
   exit 1
 fi
 
-# ----------------------------------------------------------- release branch
-#
-# Only ever mirrors a development that has just been verified above, and pushes
-# HEAD straight at the remote ref rather than checking main out — the branch
-# guard at the top exists precisely so work cannot happen on the wrong branch,
-# and this must not be the thing that leaves you standing on one.
-
-git fetch --quiet origin "$RELEASE_BRANCH"
-
-if ! git rev-parse --verify --quiet "origin/$RELEASE_BRANCH" >/dev/null; then
-  echo "Error: origin/$RELEASE_BRANCH does not exist." >&2
-  echo "       origin/$BRANCH is pushed and correct; create $RELEASE_BRANCH by hand." >&2
-  exit 1
-fi
-
-RELEASE_AHEAD="$(git rev-list --count "origin/$RELEASE_BRANCH..HEAD")"
-
-if ! git merge-base --is-ancestor "origin/$RELEASE_BRANCH" HEAD; then
-  # Divergence, not lag. Anything done here would either lose those commits or
-  # invent a merge nobody asked for.
-  DIVERGED="$(git rev-list --count "HEAD..origin/$RELEASE_BRANCH")"
-  echo "Error: origin/$RELEASE_BRANCH has $DIVERGED commit(s) $BRANCH does not." >&2
-  echo "       origin/$BRANCH is pushed and correct — this is only about the release branch." >&2
-  echo "       Inspect: git log --oneline $BRANCH..origin/$RELEASE_BRANCH" >&2
-  exit 1
-fi
-
-if [ "$RELEASE_AHEAD" -eq 0 ]; then
-  echo "==> origin/$RELEASE_BRANCH already level."
-else
-  echo "==> Fast-forwarding origin/$RELEASE_BRANCH ($RELEASE_AHEAD commit(s))..."
-  git push origin "HEAD:$RELEASE_BRANCH"
-fi
-
-# ------------------------------------------------------------------- verify
-
-git fetch --quiet origin "$RELEASE_BRANCH"
-if [ "$(git rev-parse "origin/$RELEASE_BRANCH")" != "$(git rev-parse HEAD)" ]; then
-  echo "Error: origin/$RELEASE_BRANCH did not end up level with $BRANCH." >&2
-  exit 1
-fi
+# Only ever mirrors a development that has just been verified above.
+sync_release_branch
 
 echo "==> Done. origin/$BRANCH and origin/$RELEASE_BRANCH == $(git rev-parse --short HEAD), tree clean."
