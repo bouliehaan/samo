@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { samoRadioQueueForSend, samoRadioRefFromPlayable } from './samo-radio-queue';
+import {
+    samoRadioQueueForSend,
+    samoRadioRefFromPlayable,
+    samoRadioStationRefFromPlayable,
+} from './samo-radio-queue';
 
 // Real playback ids, in the grammar the item builders actually emit
 // (`${type}:${url}:${kind}:${id}`). Hand-written shapes would let this file go
@@ -75,6 +79,51 @@ describe('samoRadioRefFromPlayable', () => {
     it('returns null when there is no resolvable catalog id', () => {
         expect(samoRadioRefFromPlayable({ id: 'file:///sdcard/x.mp3', source: 'music' })).toBeNull();
         expect(samoRadioRefFromPlayable({ id: `${SERVER}:music:t1`, source: 'radio' })).toBeNull();
+    });
+
+    // A channel is a broadcast, not a queue item: the server rejects a channel
+    // id in a queue, and passing one through as an internet station id would
+    // tune the stereo to a different station or to nothing.
+    it('refuses to send a channel as a queue item', () => {
+        expect(
+            samoRadioRefFromPlayable({
+                id: `${SERVER}:channel:jake`,
+                radioChannelId: 'jake',
+                source: 'radio',
+            }),
+        ).toBeNull();
+        // Rehydrated from the native mirror: the field is gone, the id is not.
+        expect(
+            samoRadioRefFromPlayable({ id: `${SERVER}:channel:jake`, source: 'radio' }),
+        ).toBeNull();
+    });
+});
+
+describe('samoRadioStationRefFromPlayable', () => {
+    it('turns a channel into something the device is tuned to', () => {
+        expect(
+            samoRadioStationRefFromPlayable({
+                id: `${SERVER}:channel:jake`,
+                radioChannelId: 'jake',
+                radioStationName: 'Jake',
+                source: 'radio',
+            }),
+        ).toEqual({ id: 'jake', kind: 'channel', name: 'Jake' });
+    });
+
+    it('leaves everything else to the queue path', () => {
+        // An internet station resolves as an ordinary queue item, so tuning is
+        // not its route — offering both would be two ways to do one thing.
+        expect(
+            samoRadioStationRefFromPlayable({
+                id: `${SERVER}:internet-radio:station_3`,
+                radioStationId: 'station_3',
+                source: 'radio',
+            }),
+        ).toBeNull();
+        expect(
+            samoRadioStationRefFromPlayable({ id: `${SERVER}:music:track_1`, source: 'music' }),
+        ).toBeNull();
     });
 });
 

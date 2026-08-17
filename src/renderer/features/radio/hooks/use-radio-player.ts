@@ -1,10 +1,17 @@
+import { samoChannelNowPlayingLine } from '@samo/core/mobile';
+import {
+    getSamoChannelNowPlaying,
+    parseSamoChannelIdFromStreamUrl,
+    ServerType,
+} from '@samo/core/server';
 import IcecastMetadataStats from 'icecast-metadata-stats';
 import isElectron from 'is-electron';
 import React, { useEffect } from 'react';
 import { createWithEqualityFn } from 'zustand/traditional';
 
+import { samoFetch } from '/@/renderer/api/samo/samo-fetch';
 import { usePlayerEvents } from '/@/renderer/features/player/audio-player/hooks/use-player-events';
-import { usePlayerStoreBase } from '/@/renderer/store';
+import { useCurrentServerWithCredential, usePlayerStoreBase } from '/@/renderer/store';
 import { useLastPlaybackSessionStore } from '/@/renderer/store/last-playback-session.store';
 import { recordRecentItem } from '/@/renderer/store/play-history.store';
 import { usePlaybackOwnerStore } from '/@/renderer/store/playback-owner.store';
@@ -12,6 +19,9 @@ import { LibraryItem } from '/@/shared/types/domain-types';
 import { PlayerStatus } from '/@/shared/types/types';
 
 const streamMetadataReader = isElectron() ? window.api.mpvPlayer : null;
+
+/** How often to ask a channel what it is airing. Matches the ICY poll. */
+const CHANNEL_METADATA_POLL_MS = 5000;
 
 export type RadioCurrentStationArt = {
     id: string;
@@ -109,7 +119,9 @@ export const useRadioStore = createWithEqualityFn<RadioStore>((set, get) => ({
                         mediaType: 'radio',
                         radioStreamUrl: newStreamUrl,
                         serverId: nextStationArt.serverId,
-                        subtitle: 'Radio • Internet station',
+                        subtitle: parseSamoChannelIdFromStreamUrl(newStreamUrl)
+                            ? 'Radio • Samo channel'
+                            : 'Radio • Internet station',
                         title: newStationName ?? 'Radio station',
                     });
                     useLastPlaybackSessionStore.getState().actions.setSession({
@@ -250,11 +262,50 @@ export const useRadioMetadata = () => {
     const currentStreamUrl = useRadioStore((state) => state.currentStreamUrl);
     const isPlaying = useRadioStore((state) => state.isPlaying);
     const setMetadata = useRadioStore((state) => state.actions.setMetadata);
+    const server = useCurrentServerWithCredential();
 
     useEffect(() => {
         if (!currentStreamUrl || !isPlaying) {
             setMetadata(null);
             return;
+        }
+
+        // A Samo channel is a raw encoder pipe with no ICY frames in it — the
+        // only place its now-playing exists is the server, which is also what
+        // makes every listener's agree. Reading it here rather than sniffing
+        // the stream is the difference between a channel that says what is on
+        // and one that shows its own name forever.
+        const channelId = parseSamoChannelIdFromStreamUrl(currentStreamUrl);
+        const auth =
+            server?.type === ServerType.SAMO && server.url && server.credential
+                ? { credential: server.credential, type: ServerType.SAMO as const, url: server.url }
+                : null;
+
+        if (channelId && auth) {
+            let stopped = false;
+
+            const pollChannel = async () => {
+                try {
+                    const now = await getSamoChannelNowPlaying(samoFetch, auth, channelId);
+                    if (stopped) return;
+                    const line = samoChannelNowPlayingLine(now.current);
+                    setMetadata(
+                        line ? { artist: line.artist ?? null, title: line.title ?? null } : null,
+                    );
+                } catch {
+                    // A failed poll says nothing about the audio, which is
+                    // still arriving — leave the last line up.
+                }
+            };
+
+            void pollChannel();
+            const interval = window.setInterval(pollChannel, CHANNEL_METADATA_POLL_MS);
+
+            return () => {
+                stopped = true;
+                window.clearInterval(interval);
+                setMetadata(null);
+            };
         }
 
         // Radio audio is intentionally Web-engine playback. In Electron, use the
@@ -332,7 +383,7 @@ export const useRadioMetadata = () => {
 
             setMetadata(null);
         };
-    }, [currentStreamUrl, isPlaying, setMetadata]);
+    }, [currentStreamUrl, isPlaying, server, setMetadata]);
 };
 
 const RadioAudioInstanceHookInner = () => {

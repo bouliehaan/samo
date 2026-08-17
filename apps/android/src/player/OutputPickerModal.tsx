@@ -26,7 +26,9 @@ import {
 import {
     refreshSamoRadioDevices,
     samoRadioSendPayloadForQueue,
+    samoRadioStationRefForPlayable,
     sendToSamoRadio,
+    tuneSamoRadio,
 } from '../services/samo-radio';
 import { getPlaybackQueue } from '../state/playback-queue-store';
 import { useSamoRadioSelector } from '../state/samo-radio';
@@ -224,11 +226,19 @@ export const OutputPickerModal = memo(({
             if (sendingDeviceId) {
                 return;
             }
+            const queue = getPlaybackQueue();
+            // A station is tuned, not sent: a live broadcast has no copy to
+            // hand over and no position to resume from, so the device joins it
+            // where it already is. Read off the CURRENT item rather than the
+            // queue, because that is the whole of what is playing.
+            const station = samoRadioStationRefForPlayable(
+                queue?.items[Math.max(0, queue.index ?? 0)],
+            );
             // Index and items are derived together: dropping an entry the
             // device cannot play renumbers the rest, so reusing the queue's own
             // index here would start it on the wrong track.
-            const { items, startIndex } = samoRadioSendPayloadForQueue(getPlaybackQueue());
-            if (items.length === 0) {
+            const { items, startIndex } = samoRadioSendPayloadForQueue(queue);
+            if (!station && items.length === 0) {
                 setError('Nothing playing that samo-radio can pick up.');
                 return;
             }
@@ -236,7 +246,11 @@ export const OutputPickerModal = memo(({
             setSendingDeviceId(device.id);
             setError(null);
             try {
-                await sendToSamoRadio({ deviceId: device.id, items, startIndex });
+                if (station) {
+                    await tuneSamoRadio(device.id, station);
+                } else {
+                    await sendToSamoRadio({ deviceId: device.id, items, startIndex });
+                }
                 await pauseAndroidAudio().catch(() => undefined);
                 onClose();
             } catch (sendError) {

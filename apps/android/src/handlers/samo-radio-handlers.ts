@@ -1,12 +1,14 @@
 import { type MobileMediaTrack } from '@samo/core/mobile';
-import { type SamoRadioItemRef } from '@samo/core/server';
+import { type SamoRadioItemRef, type SamoRadioStationRef } from '@samo/core/server';
 
 import {
     isSamoRadioResolvableSource,
     samoRadioRefForCatalogItem,
     samoRadioRefForPlayable,
     samoRadioSendPayloadForQueue,
+    samoRadioStationRefForPlayable,
     sendToSamoRadio,
+    tuneSamoRadio,
 } from '../services/samo-radio';
 import { type AndroidRecentContentSourceItem } from '../services/recent-content';
 import { type MediaContextMenuKind } from '../contexts/media-context-menu';
@@ -50,7 +52,8 @@ export const canSendItemToSamoRadio = (
     kind: SamoRadioSendableKind,
 ): boolean =>
     kind === 'radio'
-        ? samoRadioRefForPlayable(item.playback) !== null
+        ? samoRadioRefForPlayable(item.playback) !== null ||
+          samoRadioStationRefForPlayable(item.playback) !== null
         : isSamoRadioResolvableSource(item.source);
 
 const deviceLabel = (device: SamoRadioTarget): string => device.name || 'samo-radio';
@@ -68,6 +71,29 @@ const dispatchToDevice = async (
         // The response IS the device's new state — folding it in means the
         // Radio tab's panel is already correct when the user gets there,
         // instead of showing the previous programme until the next poll.
+        patchSamoRadioDeviceState(device.id, state);
+        setContextMenuFeedback(`Playing on ${deviceLabel(device)}`);
+    } catch (error) {
+        setContextMenuFeedback(
+            error instanceof Error ? error.message : `Could not reach ${deviceLabel(device)}.`,
+        );
+    }
+};
+
+/**
+ * Tune the device to a station instead of handing it a queue.
+ *
+ * A Samo channel has no copy to send and no position to start from: the device
+ * joins the broadcast where it already is. Same feedback as a send, because
+ * from the user's side it is the same gesture and the same outcome — that thing
+ * is now playing over there.
+ */
+const tuneDeviceToStation = async (
+    station: SamoRadioStationRef,
+    device: SamoRadioTarget,
+): Promise<void> => {
+    try {
+        const state = await tuneSamoRadio(device.id, station);
         patchSamoRadioDeviceState(device.id, state);
         setContextMenuFeedback(`Playing on ${deviceLabel(device)}`);
     } catch (error) {
@@ -107,10 +133,15 @@ export const handleSendItemToSamoRadio = async (
     }
 
     if (kind === 'radio') {
-        // Strictly from the tile's own playback: internet and programmed
-        // stations are separate catalogs with freely-colliding ids, and only
-        // the playback id says which one this is. Guessing would tune the
+        // Strictly from the tile's own playback: internet, programmed and
+        // channel stations are separate catalogs with freely-colliding ids, and
+        // only the playback id says which one this is. Guessing would tune the
         // stereo to a different station.
+        const station = samoRadioStationRefForPlayable(item.playback);
+        if (station) {
+            await tuneDeviceToStation(station, device);
+            return;
+        }
         const ref = samoRadioRefForPlayable(item.playback);
         await dispatchToDevice(ref ? [ref] : [], device);
         return;

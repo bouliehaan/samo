@@ -302,14 +302,24 @@ export interface MobileMediaTrack {
     trackNumber?: number;
 }
 
-const isPlaylistOwnedByUser = (
+/**
+ * Mirrors the server's playlist write rule (playlists.assertOwner plus the
+ * admin override on Update/Delete): an ownerless row is writable by anyone
+ * signed in, the owner writes their own, and an admin writes any non-system
+ * playlist. The admin clause is what makes server-managed rows editable —
+ * filesystem .m3u imports and playlists migrated from older servers are owned
+ * by the internal bootstrap account no human can authenticate as, so without it
+ * every surface showed them and none could change them.
+ */
+export const isPlaylistOwnedByUser = (
     authentication: ServerAuthenticationResult,
     ownerId?: string,
     ): boolean => {
     const userId = authentication.userId?.trim();
     if (authentication.type === ServerType.SAMO) {
         if (!ownerId) return true;
-        return Boolean(userId && ownerId === userId);
+        if (userId && ownerId === userId) return true;
+        return authentication.isAdmin === true;
     }
     return false;
 };

@@ -1,30 +1,20 @@
+import { parseIcyStreamTitle } from '@samo/core/mobile';
 import http from 'node:http';
 import https from 'node:https';
 
-const parseIcyStreamTitle = (
-    raw: string,
-): null | { artist: null | string; title: null | string } => {
-    const streamTitleMatch =
-        raw.match(/StreamTitle='([^']*)'/i) || raw.match(/StreamTitle="([^"]*)"/i);
-    const streamTitle = streamTitleMatch?.[1]?.trim();
+/**
+ * The shared parser's answer in the shape this reader has always returned.
+ *
+ * The parsing itself lives in core because the phone reads the same
+ * announcements off ExoPlayer, and a station that says `Elvis Presley -
+ * Kentucky Rain` has to split the same way on both — one of them getting the
+ * artist and the other showing the whole line is exactly the kind of drift two
+ * copies of a regex produce.
+ */
+const icyNowPlaying = (raw: string): null | { artist: null | string; title: null | string } => {
+    const announced = parseIcyStreamTitle(raw);
 
-    if (!streamTitle) {
-        return null;
-    }
-
-    const splitMatch = streamTitle.match(/^(.*?)\s*[-–—]\s*(.+)$/);
-
-    if (splitMatch) {
-        return {
-            artist: splitMatch[1].trim() || null,
-            title: splitMatch[2].trim() || null,
-        };
-    }
-
-    return {
-        artist: null,
-        title: streamTitle,
-    };
+    return announced ? { artist: announced.artist ?? null, title: announced.title ?? null } : null;
 };
 
 export const fetchIcyMetadata = (
@@ -136,7 +126,7 @@ export const fetchIcyMetadata = (
 
                                 response.destroy();
 
-                                const parsedMetadata = parseIcyStreamTitle(rawMetadata);
+                                const parsedMetadata = icyNowPlaying(rawMetadata);
 
                                 finish(
                                     parsedMetadata ||

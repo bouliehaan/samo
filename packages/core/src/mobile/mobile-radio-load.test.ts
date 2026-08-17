@@ -18,6 +18,7 @@ import { loadMobileRadioForServers } from './mobile-home';
 
 const auth = testServerAuthentication({ url: 'https://music.example.com' });
 
+const CHANNELS_PATH = '/channels';
 const INTERNET_PATH = '/internet-radio/stations';
 const PROGRAMMED_PATH = '/radio/stations';
 
@@ -38,10 +39,11 @@ const fakeFetch = (routes: Record<string, () => Promise<unknown>>): SamoFetch =>
 const unreachable = () => Promise.reject(new Error('Network request failed'));
 
 describe('loadMobileRadioForServers', () => {
-    it('reports an error when neither station endpoint can be reached', async () => {
+    it('reports an error when no station endpoint can be reached', async () => {
         const result = await loadMobileRadioForServers({
             authentication: auth,
             fetch: fakeFetch({
+                [CHANNELS_PATH]: unreachable,
                 [INTERNET_PATH]: unreachable,
                 [PROGRAMMED_PATH]: unreachable,
             }),
@@ -55,6 +57,7 @@ describe('loadMobileRadioForServers', () => {
         const result = await loadMobileRadioForServers({
             authentication: auth,
             fetch: fakeFetch({
+                [CHANNELS_PATH]: async () => ({ items: [] }),
                 [INTERNET_PATH]: async () => ({ items: [] }),
                 [PROGRAMMED_PATH]: async () => ({ items: [] }),
             }),
@@ -70,6 +73,7 @@ describe('loadMobileRadioForServers', () => {
         const result = await loadMobileRadioForServers({
             authentication: auth,
             fetch: fakeFetch({
+                [CHANNELS_PATH]: unreachable,
                 [INTERNET_PATH]: async () => ({
                     items: [
                         {
@@ -86,6 +90,68 @@ describe('loadMobileRadioForServers', () => {
 
         expect(result.error).toBeUndefined();
         expect(result.items.map((item) => item.title)).toEqual(['Radio Paradise']);
+    });
+
+    it('lists a Samo channel as a station, ahead of the relayed ones', async () => {
+        const result = await loadMobileRadioForServers({
+            authentication: auth,
+            fetch: fakeFetch({
+                [CHANNELS_PATH]: async () => ({
+                    items: [
+                        {
+                            coverId: 'cover_jake01',
+                            enabled: true,
+                            id: 'jake',
+                            name: 'Jake',
+                            nowPlaying: { artist: 'Miles Davis', title: 'So What' },
+                        },
+                    ],
+                }),
+                [INTERNET_PATH]: async () => ({
+                    items: [
+                        {
+                            enabled: true,
+                            id: 'st-1',
+                            name: 'Radio Paradise',
+                            streamUrl: 'https://stream.example.com/rp',
+                        },
+                    ],
+                }),
+                [PROGRAMMED_PATH]: async () => ({ items: [] }),
+            }),
+        });
+
+        // Channels lead: a handful of stations somebody built, against a
+        // directory of everything else.
+        expect(result.items.map((item) => item.title)).toEqual(['Jake', 'Radio Paradise']);
+
+        const channel = result.items[0];
+        // Playable from the list without a second call — the tile IS the tuner.
+        expect(channel.playback?.url).toContain('/api/v1/channels/jake/stream');
+        expect(channel.playback?.isLive).toBe(true);
+        expect(channel.playback?.radioChannelId).toBe('jake');
+        // And it says what is on rather than what it is.
+        expect(channel.subtitle).toBe('Miles Davis — So What');
+        // Artwork rides along on the tile AND on the thing that plays, so the
+        // shelf and the player show the same station.
+        expect(channel.artworkUrl).toContain('/api/v1/media/covers/cover_jake01/image');
+        expect(channel.artworkImageId).toBe('cover_jake01');
+        expect(channel.playback?.artworkUrl).toBe(channel.artworkUrl);
+    });
+
+    it('names a silent channel for what it is rather than leaving it blank', async () => {
+        const result = await loadMobileRadioForServers({
+            authentication: auth,
+            fetch: fakeFetch({
+                [CHANNELS_PATH]: async () => ({
+                    items: [{ enabled: true, id: 'jake', name: 'Jake' }],
+                }),
+                [INTERNET_PATH]: async () => ({ items: [] }),
+                [PROGRAMMED_PATH]: async () => ({ items: [] }),
+            }),
+        });
+
+        expect(result.items.map((item) => item.subtitle)).toEqual(['Samo channel']);
     });
 
     it('is silent when there is no radio-capable server at all', async () => {

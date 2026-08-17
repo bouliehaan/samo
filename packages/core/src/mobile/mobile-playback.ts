@@ -14,11 +14,17 @@ import {
     pickSamoImageId,
     pickSamoCatalogImageId,
 } from '../server/server-samo';
+import {
+    type SamoChannel,
+    type SamoChannelNowPlaying,
+    getSamoChannelStreamUrl,
+} from '../server/server-samo-channels';
 import { ensureSamoStreamToken } from '../server/server-samo-stream-token';
 import { getServerConnectionKey } from '../server/server-session';
 import { ServerType } from '../server/server-types';
 
 import {
+    resolveSamoChannelPlaybackDisplay,
     resolveSamoInternetRadioPlaybackDisplay,
 } from './mobile-radio-metadata';
 
@@ -74,6 +80,14 @@ export interface MobilePlayableAudio {
     httpHeaders?: Record<string, string>;
     id: string;
     isLive?: boolean;
+    /**
+     * Samo channel id, when the station being listened to is one of Samo's own
+     * programmed broadcasts rather than a relayed internet stream. Separate
+     * from [radioStationId] because the two are different catalogs with
+     * different now-playing endpoints, and an id from one means nothing to the
+     * other.
+     */
+    radioChannelId?: string;
     /** Samo internet-radio station id for metadata refresh while playing. */
     radioStationId?: string;
     /** Station display name when [title] is ICY track metadata. */
@@ -822,6 +836,64 @@ export const buildSamoInternetRadioPlayback = (
         subtitle: display.playerSubtitle,
         title: display.playerTitle,
         url: streamUrl,
+    };
+};
+
+/** The playback id for a channel — see {@link parseSamoChannelPlaybackId}. */
+export const buildSamoChannelPlaybackId = (
+    authentication: ServerAuthenticationResult,
+    channelId: string,
+): string => `${getServerConnectionKey(authentication)}:channel:${channelId}`;
+
+/**
+ * Tune in to one of Samo's own channels.
+ *
+ * Everything a station needs and nothing a track has: no duration, no resume
+ * position, no progress reporting. `isLive` is what tells the player to draw a
+ * broadcast rather than a scrubber — a channel has no beginning to seek back
+ * to, and offering one would be a lie the transport can't honour.
+ *
+ * The now-playing line is not in the stream, so `nowPlaying` is what the caller
+ * has already fetched (if anything); the player keeps it current afterwards by
+ * polling `/channels/{id}/now`.
+ */
+export const buildSamoChannelPlayback = (
+    authentication: ServerAuthenticationResult,
+    channel: SamoChannel,
+    options?: {
+        artworkUrl?: string;
+        nowPlaying?: SamoChannelNowPlaying | null;
+        streamToken?: string;
+    },
+): MobilePlayableAudio | null => {
+    if (!channel.id || !channel.name) {
+        return null;
+    }
+
+    const display = resolveSamoChannelPlaybackDisplay(channel, options?.nowPlaying);
+
+    return {
+        artworkImageId: pickSamoCatalogImageId(channel.coverId),
+        artworkUrl: options?.artworkUrl,
+        artist: display.playerArtist,
+        contentSourceId: getServerConnectionKey(authentication),
+        id: buildSamoChannelPlaybackId(authentication, channel.id),
+        isLive: true,
+        quality: {
+            bitRate: channel.bitrateKbps ?? null,
+            container: channel.codec ?? null,
+            deliveryKind: 'android-direct',
+            losslessRequired: false,
+            serverTranscodeRequested: false,
+        },
+        radioChannelId: channel.id,
+        radioStationName: display.stationName,
+        source: 'radio',
+        subtitle: display.playerSubtitle,
+        title: display.playerTitle,
+        url: getSamoChannelStreamUrl(authentication, channel.id, {
+            streamToken: options?.streamToken,
+        }),
     };
 };
 

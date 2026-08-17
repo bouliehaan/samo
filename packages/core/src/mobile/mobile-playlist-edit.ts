@@ -21,18 +21,9 @@ export interface MobilePlaylistMeta {
 export const isMobilePlaylistDetailEditable = (detail: MobileMediaDetail): boolean =>
     detail.type === MobileMediaDetailType.PLAYLIST && detail.playlistMeta?.editable === true;
 
-export const isPlaylistOwnedByUser = (
-    authentication: ServerAuthenticationResult,
-    ownerId?: string,
-    ): boolean => {
-    const userId = authentication.userId?.trim();
-    if (authentication.type === ServerType.SAMO) {
-        if (!ownerId) return true;
-        return Boolean(userId && ownerId === userId);
-    }
-
-    return false;
-};
+// Single definition lives next to the detail loader that applies it; this file
+// only re-exports so both halves of the playlist surface cannot drift apart.
+export { isPlaylistOwnedByUser } from './mobile-media-detail';
 
 export interface UpdateMobilePlaylistMetadataInput {
     authentication: ServerAuthenticationResult;

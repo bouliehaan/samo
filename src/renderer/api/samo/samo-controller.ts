@@ -31,6 +31,7 @@ import {
     listSamoAudiobookBookmarks,
     listSamoAudiobooks,
     listSamoBookmarks,
+    listSamoChannels,
     listSamoInternetRadioStations,
     listSamoMusicAlbums,
     listSamoMusicAlbumTracks,
@@ -1111,10 +1112,28 @@ export const SamoController: InternalControllerEndpoint = {
         const server = apiClientProps.server;
         if (!server) throw new Error('No server');
         const auth = samoAuthentication(server);
-        const response = await listSamoInternetRadioStations(browserFetch, auth, { limit: 500 });
-        return samoItemsOf(response).map((station) =>
-            samoNormalize.internetRadioStation(station, server),
-        );
+        // Samo's own channels and the relayed internet stations are one list to
+        // a listener — both are things you tune to — so they arrive together.
+        // Channels lead: there are a handful of them against a directory of
+        // everything else, and they are the ones somebody set up on purpose.
+        //
+        // Settled rather than awaited as a pair: a server with channels
+        // disabled must still show its internet stations, and vice versa.
+        const [channels, stations] = await Promise.allSettled([
+            listSamoChannels(browserFetch, auth),
+            listSamoInternetRadioStations(browserFetch, auth, { limit: 500 }),
+        ]);
+        if (channels.status === 'rejected' && stations.status === 'rejected') {
+            throw stations.reason;
+        }
+        return [
+            ...(channels.status === 'fulfilled' ? channels.value : []).map((channel) =>
+                samoNormalize.channelAsStation(channel, server),
+            ),
+            ...samoItemsOf(stations.status === 'fulfilled' ? stations.value : undefined).map(
+                (station) => samoNormalize.internetRadioStation(station, server),
+            ),
+        ];
     },
 
     getMusicFolderList: async ({ apiClientProps }) => {

@@ -263,6 +263,11 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer:1.10.1")
     implementation("androidx.media3:media3-exoplayer-hls:1.10.1")
     implementation("androidx.media3:media3-datasource:1.10.1")
+    // Explicit so IcyInfo is on the compile classpath: a radio station's
+    // now-playing rides in ICY frames interleaved with the audio, and the
+    // player holding the socket is the only thing that can read them (also
+    // pulled transitively by media3-exoplayer; pinned to avoid version skew).
+    implementation("androidx.media3:media3-extractor:1.10.1")
     // OkHttp-backed ExoPlayer data source. The platform DefaultHttpDataSource
     // uses java.net.HttpURLConnection, which shares one process-global keep-
     // alive pool with no stale-socket detection: a pooled socket silently

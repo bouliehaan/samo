@@ -482,6 +482,28 @@ export const subscribeToAndroidOutputRouteEvents = (
     return eventEmitter?.addListener('SamoAudioOutputRoutes', listener) ?? { remove: () => {} };
 };
 
+export interface AndroidStreamMetadataEvent {
+    /** The item this announcement belongs to — a late event for the station
+     *  you just left must not retitle the one you are on now. */
+    mediaId?: string;
+    /** The ICY stream title, verbatim. Empty when the station went quiet. */
+    title?: string;
+}
+
+/**
+ * Fires when the station being played announces a track (ICY), and only then.
+ *
+ * This is what a radio listener's "now playing" is made of. The announcement
+ * is interleaved with the audio, so the player holding the stream is the only
+ * thing that can read it — the server's copy is a periodic probe that is
+ * usually describing a song that has already finished.
+ */
+export const subscribeToAndroidStreamMetadata = (
+    listener: (event: AndroidStreamMetadataEvent) => void,
+) => {
+    return eventEmitter?.addListener('SamoAudioStreamMetadata', listener) ?? { remove: () => {} };
+};
+
 export interface AndroidNavigationRequestEvent {
     /** -1 for previous, +1 for next. */
     direction: number;

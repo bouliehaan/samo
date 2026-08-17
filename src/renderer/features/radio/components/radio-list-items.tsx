@@ -57,6 +57,17 @@ const RadioListItem = ({ station }: RadioListItemProps) => {
 
     const isCurrentStation = currentStreamUrl === station.streamUrl;
     const stationIsPlaying = isCurrentStation && isPlaying;
+    // A channel is programmed on the server, not configured here: there is no
+    // upstream address to show or edit, and deleting one from a station list
+    // would be deleting a station somebody built.
+    const isChannel = station.kind === 'channel';
+    // What it is airing beats what it is: a station that says "Miles Davis —
+    // So What" is doing the job a list of names cannot.
+    const detailLine = isChannel
+        ? [station.nowPlaying?.artist, station.nowPlaying?.title].filter(Boolean).join(' — ') ||
+          station.description?.trim() ||
+          'Samo channel'
+        : station.streamUrl;
 
     const handleClick = () => {
         if (stationIsPlaying) {
@@ -164,7 +175,7 @@ const RadioListItem = ({ station }: RadioListItemProps) => {
                                     {station.name}
                                 </Text>
                                 <Text className={styles['meta-line']} isMuted size="sm">
-                                    {station.streamUrl}
+                                    {detailLine}
                                 </Text>
                                 {station.homepageUrl ? (
                                     <Text className={styles['meta-line']} isMuted size="sm">
@@ -187,7 +198,7 @@ const RadioListItem = ({ station }: RadioListItemProps) => {
                             }}
                             variant="subtle"
                         />
-                        {permissions.radio.edit && (
+                        {permissions.radio.edit && !isChannel && (
                             <ActionIcon
                                 icon="edit"
                                 onClick={handleEditClick}
@@ -198,7 +209,7 @@ const RadioListItem = ({ station }: RadioListItemProps) => {
                                 variant="subtle"
                             />
                         )}
-                        {permissions.radio.delete && (
+                        {permissions.radio.delete && !isChannel && (
                             <ActionIcon
                                 icon="delete"
                                 iconProps={{ color: 'error' }}

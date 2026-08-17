@@ -314,3 +314,37 @@ describe('podcast episodes stored in the catalog mirror', () => {
         expect(asMusic?.artworkUrl).toBeUndefined();
     });
 });
+
+describe('mapSamoPlaylistDetail editability', () => {
+    const owned = (
+        overrides: Partial<Parameters<typeof testServerAuthentication>[0]>,
+        ownerId?: string,
+        system?: boolean,
+    ) =>
+        mapSamoPlaylistDetail(
+            testServerAuthentication({ url: 'https://music.example', ...overrides }),
+            undefined,
+            { id: 'pl1', name: 'Cool Christmas', ownerId, system },
+            [],
+        ).playlistMeta?.editable;
+
+    it('lets the owner edit their own playlist', () => {
+        expect(owned({ userId: 'user-1' }, 'user-1')).toBe(true);
+    });
+
+    it('keeps a non-admin out of somebody else’s playlist', () => {
+        expect(owned({ userId: 'user-1' }, 'user-2')).toBe(false);
+    });
+
+    // Server-managed rows (.m3u imports, migrations) are owned by the internal
+    // bootstrap account no human authenticates as. The server lets an admin
+    // write them; before this the app hid every edit affordance and the add-to-
+    // playlist call came back 403 "playlist owner required".
+    it('lets an admin edit a server-owned playlist', () => {
+        expect(owned({ isAdmin: true, userId: 'user-1' }, 'user-server')).toBe(true);
+    });
+
+    it('still refuses a system playlist, admin or not', () => {
+        expect(owned({ isAdmin: true, userId: 'user-1' }, 'user-server', true)).toBe(false);
+    });
+});

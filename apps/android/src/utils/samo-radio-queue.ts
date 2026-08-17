@@ -2,11 +2,12 @@ import {
     type MobilePlayableAudio,
     parsePodcastPlaybackEpisodeId,
     parseSamoAudiobookIdFromPlaybackId,
+    parseSamoChannelPlaybackId,
     parseSamoInternetRadioStationId,
     parseSamoMusicTrackIdFromPlaybackId,
     parseSamoProgrammedRadioStationId,
 } from '@samo/core/mobile';
-import { type SamoRadioItemRef } from '@samo/core/server';
+import { type SamoRadioItemRef, type SamoRadioStationRef } from '@samo/core/server';
 
 /**
  * Turning the playback queue into something samo-radio can be asked to play.
@@ -19,7 +20,35 @@ import { type SamoRadioItemRef } from '@samo/core/server';
 
 /** The minimum of a queue entry this mapping needs. */
 export type SamoRadioQueueEntry = Pick<MobilePlayableAudio, 'id' | 'source'> & {
+    radioChannelId?: string;
     radioStationId?: string;
+    radioStationName?: string;
+};
+
+/**
+ * A channel the device should be TUNED to, rather than an item to queue.
+ *
+ * A Samo channel is a broadcast: there is no copy of it to hand a device and no
+ * position in it to start from, so the device joins it where it already is.
+ * That is a different call from a queue send (`/play` with `mode: channel`),
+ * which is why this returns a station ref and not an item ref — the two are not
+ * interchangeable and the server rejects a channel id in a queue.
+ *
+ * Returns null for everything else, including internet stations: those the
+ * server can resolve as ordinary queue items, so they take the normal path.
+ */
+export const samoRadioStationRefFromPlayable = (
+    item: SamoRadioQueueEntry,
+): SamoRadioStationRef | null => {
+    if (item.source !== 'radio') {
+        return null;
+    }
+
+    const channelId = item.radioChannelId ?? parseSamoChannelPlaybackId(item.id);
+
+    return channelId
+        ? { id: channelId, kind: 'channel', name: item.radioStationName }
+        : null;
 };
 
 /**
@@ -54,6 +83,13 @@ export const samoRadioRefFromPlayable = (item: SamoRadioQueueEntry): SamoRadioIt
             return episodeId ? { id: episodeId, type: 'episode' } : null;
         }
         case 'radio': {
+            // A channel is not a queue item at all — see
+            // `samoRadioStationRefFromPlayable`. Bailing here rather than
+            // falling through is what stops a channel id being sent as an
+            // internet station's: same shape, different catalog, wrong station.
+            if (item.radioChannelId ?? parseSamoChannelPlaybackId(item.id)) {
+                return null;
+            }
             // Programmed stations are a different catalog from internet ones —
             // samo streams the first itself and relays the second — so they
             // resolve under a different type on the server. Checked first

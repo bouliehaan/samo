@@ -355,7 +355,14 @@ const RadioContextMenu = ({ homeItemKey, items, serverId }: RadioContextMenuProp
             >
                 Play
             </ContextMenu.Item>
-            <PlayOnSamoRadioAction ids={[station.id]} sendAs="station" />
+            {station.kind === 'channel' ? (
+                <PlayOnSamoRadioAction
+                    ids={[]}
+                    tuneTo={{ id: station.id, kind: 'channel', name: station.name }}
+                />
+            ) : (
+                <PlayOnSamoRadioAction ids={[station.id]} sendAs="station" />
+            )}
             <ContextMenu.Divider />
             <ContextMenu.Item
                 leftIcon="favorite"

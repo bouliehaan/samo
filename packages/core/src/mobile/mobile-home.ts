@@ -35,6 +35,11 @@ import {
     samoItemsOf,
     samoPlaylistHasCoverGrid,
 } from '../server/server-samo';
+import {
+    type SamoChannel,
+    listSamoChannels,
+    resolveSamoChannelArtworkUrl,
+} from '../server/server-samo-channels';
 import { ensureSamoStreamToken, getCachedSamoStreamToken } from '../server/server-samo-stream-token';
 import { ServerType } from '../server/server-types';
 import {
@@ -42,6 +47,7 @@ import {
     type MobileContentSource,
 } from './mobile-content-source';
 import {
+    buildSamoChannelPlayback,
     buildSamoInternetRadioPlayback,
     buildSamoPodcastEpisodePlayback,
     type MobilePlayableAudio,
@@ -50,6 +56,8 @@ import {
     formatRadioNowPlayingLine,
     formatRadioStreamFormat,
     formatRadioTagsLine,
+    SAMO_CHANNEL_LABEL,
+    samoChannelNowPlayingLine,
 } from './mobile-radio-metadata';
 
 /** Cached formatter – avoids re-creating Intl.DateTimeFormat per episode. */
@@ -784,6 +792,42 @@ const samoInternetRadioToHomeItem = (
     };
 };
 
+/**
+ * A Samo channel as a station on the Radio shelf.
+ *
+ * It sits alongside the internet stations because that is what it is to a
+ * listener: a thing you tune to and leave on. The only thing marking it out is
+ * the subtitle, which names it rather than describing a stream — there is no
+ * bitrate line worth reading on a station that has no alternative to compare
+ * against, and no tags, because a channel is one of a handful rather than one
+ * of a directory.
+ */
+const samoChannelToHomeItem = (
+    authentication: ServerAuthenticationResult,
+    channel: SamoChannel,
+    streamToken: string | undefined,
+    source: MobileContentSource,
+): MobileHomeItem | null => {
+    const artworkUrl = resolveSamoChannelArtworkUrl(authentication, channel, streamToken);
+    const playback = buildSamoChannelPlayback(authentication, channel, { artworkUrl, streamToken });
+
+    if (!playback) return null;
+
+    const nowPlayingText = formatRadioNowPlayingLine(samoChannelNowPlayingLine(channel.nowPlaying));
+
+    return {
+        artworkImageId: pickSamoCatalogImageId(channel.coverId),
+        artworkUrl,
+        id: channel.id,
+        nowPlayingText,
+        playback,
+        source,
+        subtitle: nowPlayingText ?? channel.description?.trim() ?? SAMO_CHANNEL_LABEL,
+        title: channel.name,
+        type: MobileHomeItemType.RADIO,
+    };
+};
+
 const samoProgrammedRadioToHomeItem = (
     authentication: ServerAuthenticationResult,
     station: SamoProgrammedRadioStation,
@@ -1036,10 +1080,20 @@ export const loadMobileRadioForServers = async ({
     try {
         const source = getMobileContentSource(authentication);
         const streamToken = await resolveSamoStreamToken(authentication, request);
-        const [internetResult, programmedResult] = await Promise.allSettled([
+        const [channelResult, internetResult, programmedResult] = await Promise.allSettled([
+            listSamoChannels(request, authentication),
             listSamoInternetRadioStations(request, authentication, { limit: 100 }),
             listSamoProgrammedRadioStations(request, authentication, { limit: 100 }),
         ]);
+        // Channels lead: they are this server's own stations, there are a
+        // handful of them against a directory of everything else, and they are
+        // the ones somebody set up on purpose.
+        if (channelResult.status === 'fulfilled') {
+            for (const channel of channelResult.value) {
+                const item = samoChannelToHomeItem(authentication, channel, streamToken, source);
+                if (item) items.push(item);
+            }
+        }
         if (programmedResult.status === 'fulfilled') {
             for (const station of samoItemsOf(programmedResult.value)) {
                 const item = samoProgrammedRadioToHomeItem(
@@ -1062,9 +1116,13 @@ export const loadMobileRadioForServers = async ({
                 if (item) items.push(item);
             }
         }
-        // Both station endpoints down is the server being out of reach, not
-        // two coincidental route failures — report it as such.
-        if (internetResult.status === 'rejected' && programmedResult.status === 'rejected') {
+        // Every station endpoint down is the server being out of reach, not
+        // three coincidental route failures — report it as such.
+        if (
+            channelResult.status === 'rejected' &&
+            internetResult.status === 'rejected' &&
+            programmedResult.status === 'rejected'
+        ) {
             return { error: getErrorMessage(programmedResult.reason), items };
         }
     } catch (error) {
@@ -1344,6 +1402,7 @@ const loadSamoHomeContent = async (
     const [
         podcastFeedResult,
         podcastsResult,
+        channelResult,
         internetRadioResult,
         programmedRadioResult,
     ] = await Promise.allSettled([
@@ -1351,6 +1410,12 @@ const loadSamoHomeContent = async (
         listSamoPodcasts(fetcher, authentication, { limit }).then((body) =>
             samoItemsOf(body).flatMap((podcast) => {
                 const item = samoPodcastToHomeItem(authentication, podcast, streamToken, source);
+                return item ? [item] : [];
+            }),
+        ),
+        listSamoChannels(fetcher, authentication).then((channels) =>
+            channels.flatMap((channel) => {
+                const item = samoChannelToHomeItem(authentication, channel, streamToken, source);
                 return item ? [item] : [];
             }),
         ),
@@ -1399,10 +1464,12 @@ const loadSamoHomeContent = async (
     pushError(exploResult, MobileHomeSectionId.EXPLO);
     pushError(audiobooksResult, MobileHomeSectionId.AUDIOBOOKS);
     pushError(podcastsResult, MobileHomeSectionId.PODCASTS);
+    pushError(channelResult, MobileHomeSectionId.RADIO);
     pushError(internetRadioResult, MobileHomeSectionId.RADIO);
     pushError(programmedRadioResult, MobileHomeSectionId.RADIO);
 
     const radioItems = [
+        ...settledOrEmpty(channelResult),
         ...settledOrEmpty(programmedRadioResult),
         ...settledOrEmpty(internetRadioResult),
     ];

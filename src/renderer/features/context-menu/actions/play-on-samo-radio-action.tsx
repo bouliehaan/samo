@@ -1,4 +1,4 @@
-import { type SamoRadioItemRef } from '@samo/core/server';
+import { type SamoRadioItemRef, type SamoRadioStationRef } from '@samo/core/server';
 import { useQueryClient } from '@tanstack/react-query';
 import { useCallback } from 'react';
 
@@ -7,6 +7,7 @@ import { fetchSongsByItemType } from '/@/renderer/features/player/context/player
 import {
     getSamoRadioServer,
     sendToSamoRadioDevice,
+    tuneSamoRadio,
 } from '/@/renderer/features/samo-radio/api/samo-radio-api';
 import { useSamoRadioPolling } from '/@/renderer/features/samo-radio/hooks/use-samo-radio-polling';
 import { samoRadioQueueForSend } from '/@/renderer/features/samo-radio/utils/samo-radio-refs';
@@ -47,6 +48,14 @@ interface PlayOnSamoRadioActionProps {
     sendAs?: SamoRadioItemRef['type'];
     /** Songs, when the caller already has them — skips the fetch entirely. */
     songs?: Song[];
+    /**
+     * A station the device should be TUNED to rather than handed a queue.
+     *
+     * A live broadcast has no copy to send and no position to start from, so
+     * the device joins it where it already is — a different call to the server
+     * (`mode: channel`), which is why it cannot ride in on `ids`.
+     */
+    tuneTo?: SamoRadioStationRef;
 }
 
 export const PlayOnSamoRadioAction = ({
@@ -54,6 +63,7 @@ export const PlayOnSamoRadioAction = ({
     itemType,
     sendAs,
     songs,
+    tuneTo,
 }: PlayOnSamoRadioActionProps) => {
     const targets = useSamoRadioTargets();
     const queryClient = useQueryClient();
@@ -82,6 +92,12 @@ export const PlayOnSamoRadioAction = ({
                       : null);
 
             try {
+                if (tuneTo) {
+                    await tuneSamoRadio(deviceId, tuneTo);
+                    toast.success({ message: `Playing on ${deviceName}.` });
+                    return;
+                }
+
                 let items: SamoRadioItemRef[];
                 let startIndex = 0;
 
@@ -127,10 +143,10 @@ export const PlayOnSamoRadioAction = ({
                 });
             }
         },
-        [ids, itemType, queryClient, sendAs, songs],
+        [ids, itemType, queryClient, sendAs, songs, tuneTo],
     );
 
-    if (targets.length === 0 || ids.length === 0) {
+    if (targets.length === 0 || (ids.length === 0 && !tuneTo)) {
         return null;
     }
 

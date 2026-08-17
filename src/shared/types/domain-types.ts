@@ -750,11 +750,26 @@ export type GetInternetRadioStationsArgs = BaseEndpointArgs;
 export type GetInternetRadioStationsResponse = InternetRadioStation[];
 
 export type InternetRadioStation = {
+    /** The station's own blurb — a channel's reason for existing, mostly. */
+    description?: null | string;
     homepageUrl: null | string;
     id: string;
     imageId?: null | string;
     imageUrl?: null | string;
+    /**
+     * Which kind of station this is. `channel` is one of Samo's own 24/7
+     * broadcasts; absent or `internet` is a stream from the outside world that
+     * Samo only relays.
+     *
+     * It exists because the two differ in what you can DO with them: a channel
+     * has no upstream URL to show, nothing to edit here (it is programmed on
+     * the server), and its now-playing comes from Samo rather than from ICY
+     * frames in the stream.
+     */
+    kind?: 'channel' | 'internet';
     name: string;
+    /** What the station is airing, when the server reported it with the list. */
+    nowPlaying?: null | { artist?: string; title?: string };
     streamUrl: string;
     uploadedImage?: null | string;
 };

@@ -127,32 +127,6 @@ export interface SamoRadioStationRef {
     name?: string;
 }
 
-/**
- * A Samo channel — the programmed 24/7 stations a device tunes to.
- *
- * It lives here rather than with the rest of the catalog types because tuning a
- * samo-radio device is the only thing a client currently does with channels;
- * move it out when something else needs them.
- */
-export interface SamoChannel {
-    description?: string;
-    enabled: boolean;
-    id: string;
-    name: string;
-}
-
-export const listSamoChannels = async (
-    fetcher: SamoFetch,
-    authentication: Auth,
-    options?: { signal?: AbortSignal },
-): Promise<SamoChannel[]> => {
-    const response = await samoGet<{ items?: SamoChannel[] }>(fetcher, authentication, '/channels', {
-        signal: options?.signal,
-    });
-
-    return (response?.items ?? []).filter((channel) => channel.enabled);
-};
-
 type Auth = Pick<ServerAuthenticationResult, 'credential' | 'url'>;
 
 const devicePath = (deviceId: string, suffix = ''): string =>

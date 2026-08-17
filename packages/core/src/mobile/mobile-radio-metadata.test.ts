@@ -1,15 +1,18 @@
 import { describe, expect, it } from 'vitest';
 
 import { testServerAuthentication } from '../test-fixtures';
-import { buildSamoInternetRadioPlayback } from './mobile-playback';
+import { buildSamoChannelPlaybackId, buildSamoInternetRadioPlayback } from './mobile-playback';
 import {
-    enrichSamoRadioPlaybackItem,
+    applyRadioNowPlayingToPlayback,
     formatRadioNowPlayingLine,
     formatRadioStreamFormat,
     formatRadioTagsLine,
     getRadioPlaybackMetadataLines,
     isRedundantRadioStationLabel,
+    parseIcyStreamTitle,
+    parseSamoChannelPlaybackId,
     parseSamoInternetRadioStationId,
+    resolveSamoChannelPlaybackDisplay,
     resolveSamoInternetRadioPlaybackDisplay,
 } from './mobile-radio-metadata';
 
@@ -26,6 +29,16 @@ describe('formatRadioNowPlayingLine', () => {
         expect(formatRadioNowPlayingLine({ raw: 'Artist - Track Name' })).toBe(
             'Artist - Track Name',
         );
+    });
+
+    // Punctuation is not a song. `- - -` is the conventional "no metadata"
+    // placeholder and reaches us already split into an artist and a title.
+    it('says nothing when the station announced a placeholder', () => {
+        expect(formatRadioNowPlayingLine({ artist: '-', title: '-' })).toBeUndefined();
+        expect(formatRadioNowPlayingLine({ raw: '- - -' })).toBeUndefined();
+        expect(formatRadioNowPlayingLine({ title: '...' })).toBeUndefined();
+        // A title that is mostly punctuation is still a title.
+        expect(formatRadioNowPlayingLine({ title: '---1---' })).toBe('---1---');
     });
 });
 
@@ -82,7 +95,11 @@ describe('getRadioPlaybackMetadataLines', () => {
 });
 
 describe('resolveSamoInternetRadioPlaybackDisplay', () => {
-    it('uses track title when now playing is present', () => {
+    // The station record's `nowPlaying` is a probe samo-server ran up to ten
+    // minutes ago, so it describes a song that has usually finished. A
+    // listener holding the stream reads the real one out of the audio; seeding
+    // from the snapshot only puts a wrong title up until that lands.
+    it('starts on the station rather than on the server’s probe', () => {
         const display = resolveSamoInternetRadioPlaybackDisplay({
             id: 'station-1',
             name: 'KEXP',
@@ -90,8 +107,8 @@ describe('resolveSamoInternetRadioPlaybackDisplay', () => {
             streamUrl: 'https://example.com/stream',
         });
 
-        expect(display.playerTitle).toBe('Song');
-        expect(display.playerSubtitle).toBe('Band · KEXP');
+        expect(display.playerTitle).toBe('KEXP');
+        expect(display.playerSubtitle).toBe('Internet radio');
     });
 
     it('drops description that only repeats the station name', () => {
@@ -133,31 +150,158 @@ describe('parseSamoInternetRadioStationId', () => {
     });
 });
 
-describe('enrichSamoRadioPlaybackItem', () => {
-    it('updates playable title and subtitle from station snapshot', () => {
-        const base =
-            buildSamoInternetRadioPlayback(
-                authentication,
-                {
-                    id: 'station-1',
-                    name: 'KEXP',
-                    nowPlaying: { title: 'Live Set' },
-                    streamUrl: 'https://example.com/stream',
-                },
-                undefined,
-            ) ??
-            (() => {
-                throw new Error('expected playback');
-            })();
+describe('resolveSamoChannelPlaybackDisplay', () => {
+    const jake = { description: "Jake's own station", name: 'Jake' };
 
-        const enriched = enrichSamoRadioPlaybackItem(base, {
-            id: 'station-1',
-            name: 'KEXP',
-            nowPlaying: { artist: 'Guest', title: 'Live Set' },
-            streamUrl: 'https://example.com/stream',
+    it('shows what is airing, from the list payload or a fresh poll', () => {
+        expect(
+            resolveSamoChannelPlaybackDisplay({
+                ...jake,
+                nowPlaying: { artist: 'Miles Davis', title: 'So What' },
+            }).playerTitle,
+        ).toBe('So What');
+
+        // A live poll overrides whatever the list happened to carry — the list
+        // may be minutes old by the time somebody tunes in.
+        expect(
+            resolveSamoChannelPlaybackDisplay(
+                { ...jake, nowPlaying: { title: 'So What' } },
+                { title: 'Blue in Green' },
+            ).playerTitle,
+        ).toBe('Blue in Green');
+    });
+
+    it('names itself a channel when it is not announcing anything', () => {
+        // Never "Internet radio": a station nobody can find anywhere else must
+        // not be labelled as somebody's stream off the web.
+        expect(resolveSamoChannelPlaybackDisplay({ name: 'Jake' }).playerSubtitle).toBe(
+            'Samo channel',
+        );
+        expect(resolveSamoChannelPlaybackDisplay(jake).playerSubtitle).toBe("Jake's own station");
+    });
+});
+
+describe('parseSamoChannelPlaybackId', () => {
+    it('reads the channel id back out of a playback id', () => {
+        expect(parseSamoChannelPlaybackId(buildSamoChannelPlaybackId(authentication, 'jake'))).toBe(
+            'jake',
+        );
+    });
+
+    it('does not mistake an internet station for a channel', () => {
+        // The two catalogs have freely colliding ids, so a false positive here
+        // tunes the stereo to a different station.
+        expect(parseSamoChannelPlaybackId('samo:https://x:internet-radio:jake')).toBeUndefined();
+    });
+});
+
+describe('parseIcyStreamTitle', () => {
+    it('splits the artist off the song', () => {
+        expect(parseIcyStreamTitle("StreamTitle='Elvis Presley - Kentucky Rain';")).toEqual({
+            artist: 'Elvis Presley',
+            raw: 'Elvis Presley - Kentucky Rain',
+            title: 'Kentucky Rain',
         });
+    });
 
-        expect(enriched.title).toBe('Live Set');
-        expect(enriched.subtitle).toBe('Guest · KEXP');
+    // ExoPlayer unwraps the frame for us and hands over the title alone, while
+    // a socket reader sees the whole blob. Same announcement either way.
+    it('takes the bare title a player already unwrapped', () => {
+        expect(parseIcyStreamTitle('Elvis Presley - Kentucky Rain')?.title).toBe('Kentucky Rain');
+        expect(parseIcyStreamTitle('StreamTitle="Miles Davis — So What";')?.artist).toBe(
+            'Miles Davis',
+        );
+    });
+
+    it('keeps a title that came without an artist', () => {
+        expect(parseIcyStreamTitle('The Breakfast Show')).toEqual({
+            raw: 'The Breakfast Show',
+            title: 'The Breakfast Show',
+        });
+        expect(parseIcyStreamTitle('- Kentucky Rain')).toEqual({
+            artist: undefined,
+            raw: '- Kentucky Rain',
+            title: 'Kentucky Rain',
+        });
+    });
+
+    // The SiriusXM relay announces this while it waits for the channel it has
+    // just tuned. It is the placeholder, not a song by an artist called `-`.
+    it('says nothing for a placeholder announcement', () => {
+        expect(parseIcyStreamTitle("StreamTitle='- - -';")).toBeUndefined();
+        expect(parseIcyStreamTitle("StreamTitle='';")).toBeUndefined();
+        expect(parseIcyStreamTitle('')).toBeUndefined();
+        expect(parseIcyStreamTitle(undefined)).toBeUndefined();
+    });
+});
+
+describe('applyRadioNowPlayingToPlayback', () => {
+    const station =
+        buildSamoInternetRadioPlayback(
+            authentication,
+            {
+                codec: 'aac',
+                id: 'station-1',
+                name: 'Elvis Radio',
+                // The probe's placeholder, exactly as the server stores it —
+                // and never a seed for what the player shows.
+                nowPlaying: { artist: '-', raw: '- - -', title: '-' },
+                streamUrl: 'https://example.com/stream',
+            },
+            undefined,
+        ) ??
+        (() => {
+            throw new Error('expected playback');
+        })();
+
+    it('starts on the station, not on the server’s probe', () => {
+        expect(station.title).toBe('Elvis Radio');
+        expect(station.subtitle).toBe('AAC');
+    });
+
+    it('states what the stream announced', () => {
+        const playing = applyRadioNowPlayingToPlayback(
+            station,
+            parseIcyStreamTitle('Elvis Presley - Kentucky Rain'),
+        );
+
+        expect(playing.title).toBe('Kentucky Rain');
+        expect(playing.artist).toBe('Elvis Presley');
+        expect(playing.subtitle).toBe('Elvis Presley · Elvis Radio');
+        expect(getRadioPlaybackMetadataLines(playing)).toEqual([
+            'Elvis Radio',
+            'Elvis Presley — Kentucky Rain',
+            'AAC',
+        ]);
+    });
+
+    it('keeps a title that arrived without an artist', () => {
+        // Regression: an ABSENT artist used to disqualify the whole track, so a
+        // station announcing a title alone — plain ICY, or anything spoken-word,
+        // which has no artist to report — showed its own name forever.
+        const playing = applyRadioNowPlayingToPlayback(
+            station,
+            parseIcyStreamTitle('The Breakfast Show'),
+        );
+
+        expect(playing.title).toBe('The Breakfast Show');
+        expect(playing.subtitle).toBe('Elvis Radio');
+    });
+
+    it('lets the station name itself again when it goes quiet', () => {
+        const playing = applyRadioNowPlayingToPlayback(
+            station,
+            parseIcyStreamTitle('Elvis Presley - Kentucky Rain'),
+        );
+
+        expect(applyRadioNowPlayingToPlayback(playing, undefined).title).toBe('Elvis Radio');
+    });
+
+    it('returns the same item when nothing moved', () => {
+        // The playback store writes on identity, so an unchanged line must not
+        // become a state update (and a re-render) every announcement.
+        const playing = applyRadioNowPlayingToPlayback(station, { title: 'Kentucky Rain' });
+
+        expect(applyRadioNowPlayingToPlayback(playing, { title: 'Kentucky Rain' })).toBe(playing);
     });
 });

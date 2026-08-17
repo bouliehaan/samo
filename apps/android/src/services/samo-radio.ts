@@ -30,7 +30,10 @@ import {
     setSamoRadioStations,
 } from '../state/samo-radio';
 import { getContentSourceFromPlaybackItem } from '../utils/content-source';
-import { samoRadioQueueForSend } from '../utils/samo-radio-queue';
+import {
+    samoRadioQueueForSend,
+    samoRadioStationRefFromPlayable,
+} from '../utils/samo-radio-queue';
 
 /**
  * samo-radio from the phone's side.
@@ -275,6 +278,30 @@ export const samoRadioRefForPlayable = (
         return null;
     }
     return samoRadioSendPayloadForQueue({ index: 0, items: [playable] }).items[0] ?? null;
+};
+
+/**
+ * The station a playable says the device should be tuned to, if it is one.
+ *
+ * Same ownership gate as {@link samoRadioRefForPlayable}, for the same reason:
+ * a channel id from a server the phone has since left names nothing here.
+ */
+export const samoRadioStationRefForPlayable = (
+    playable: MobilePlayableAudio | undefined,
+): SamoRadioStationRef | null => {
+    const authentication = connection();
+    if (!playable || !authentication) {
+        return null;
+    }
+    if (
+        !findServerAuthenticationForSource(
+            authentication,
+            getContentSourceFromPlaybackItem(playable, authentication),
+        )
+    ) {
+        return null;
+    }
+    return samoRadioStationRefFromPlayable(playable);
 };
 
 /**

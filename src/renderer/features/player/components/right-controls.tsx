@@ -17,20 +17,17 @@ import { useDeleteFavorite } from '/@/renderer/features/shared/mutations/delete-
 import {
     useAppStoreActions,
     useAutoDJSettings,
-    useFullScreenPlayerStore,
     useHotkeySettings,
     usePlaybackSettings,
     usePlayerData,
     usePlayerSong,
     usePlayerVolumeState,
-    useSetFullScreenPlayerStore,
     useSettingsStoreActions,
     useSidebarRightExpanded,
     useSideQueueType,
     useVolumeWheelStep,
     useVolumeWidth,
 } from '/@/renderer/store';
-import { useFullScreenPlayerStoreActions } from '/@/renderer/store/full-screen-player.store';
 import { usePlaybackSource } from '/@/renderer/store/playback-owner.store';
 import { getQueueSongQualityProfile } from '/@/renderer/utils/quality-profile';
 import { ActionIcon } from '/@/shared/components/action-icon/action-icon';
@@ -76,6 +73,11 @@ export const RightControls = () => {
         playbackType,
         transcodeEnabled: transcode.enabled,
     });
+
+    // The playerbar no longer carries a favorite button, but the favorite hotkeys are still
+    // user-configurable in settings, so their bindings live here instead.
+    useFavoriteHotkeys();
+
     return (
         <Flex align="flex-end" direction="column" h="100%" px="1rem" py="0.5rem">
             <Group h="calc(100% / 3)">
@@ -95,8 +97,6 @@ export const RightControls = () => {
                 <AudiobookChapterListButton />
                 <SleepTimerButton />
                 <PlayerConfig />
-                <LyricsButton />
-                <FavoriteButton />
                 <QueueButton />
                 <VolumeButton />
             </Group>
@@ -199,41 +199,7 @@ const QueueButton = () => {
     );
 };
 
-const LyricsButton = () => {
-    const setFullScreenPlayerStore = useSetFullScreenPlayerStore();
-    const activeTab = useFullScreenPlayerStore((state) => state.activeTab);
-
-    const { setStore } = useFullScreenPlayerStoreActions();
-    const { expanded: isFullScreenPlayerExpanded } = useFullScreenPlayerStore();
-
-    const expandFullScreenPlayer = () => {
-        setFullScreenPlayerStore({ expanded: !isFullScreenPlayerExpanded });
-    };
-
-    return (
-        <ActionIcon
-            icon="microphone"
-            iconProps={{
-                color: activeTab === 'lyrics' && isFullScreenPlayerExpanded ? 'primary' : undefined,
-                size: 'lg',
-            }}
-            onClick={(e) => {
-                e.stopPropagation();
-                if (!isFullScreenPlayerExpanded) setStore({ activeTab: 'lyrics' });
-                expandFullScreenPlayer();
-            }}
-            role="button"
-            size="sm"
-            tooltip={{
-                label: t('player.lyrics', { postProcess: 'titleCase' }),
-                openDelay: 0,
-            }}
-            variant="subtle"
-        />
-    );
-};
-
-const FavoriteButton = () => {
+const useFavoriteHotkeys = () => {
     const currentSong = usePlayerSong();
     const { bindings } = useHotkeySettings();
 
@@ -294,28 +260,6 @@ const FavoriteButton = () => {
             () => handleToggleFavorite(currentSong),
         ],
     ]);
-
-    return (
-        <ActionIcon
-            icon="favorite"
-            iconProps={{
-                fill: currentSong?.userFavorite ? 'primary' : undefined,
-                size: 'lg',
-            }}
-            onClick={(e) => {
-                e.stopPropagation();
-                handleToggleFavorite(currentSong);
-            }}
-            size="sm"
-            tooltip={{
-                label: currentSong?.userFavorite
-                    ? t('player.unfavorite', { postProcess: 'titleCase' })
-                    : t('player.favorite', { postProcess: 'titleCase' }),
-                openDelay: 0,
-            }}
-            variant="subtle"
-        />
-    );
 };
 
 const useFavoritePreviousSongHotkeys = ({

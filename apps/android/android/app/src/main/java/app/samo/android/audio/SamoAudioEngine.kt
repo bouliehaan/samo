@@ -21,6 +21,7 @@ import android.media.AudioFormat as PlatformAudioFormat
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
+import androidx.media3.common.Metadata
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
@@ -28,6 +29,7 @@ import androidx.media3.common.TrackSelectionParameters
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.audio.AudioSink
+import androidx.media3.extractor.metadata.icy.IcyInfo
 import androidx.mediarouter.media.MediaRouteSelector
 import androidx.mediarouter.media.MediaRouter
 import com.facebook.react.bridge.Arguments
@@ -342,6 +344,9 @@ internal class SamoAudioEngine(
   /** Queue mirror for advancing on the main thread while JS is suspended in background. */
   private var nativePlaybackQueue: SamoNativePlaybackQueue? = null
   private var playerListenersInstalledOn: ExoPlayer? = null
+  /** Last ICY line forwarded to JS, so an unchanged announcement stays silent. */
+  private var lastAnnouncedStreamTitle: String? = null
+  private var lastAnnouncedStreamMediaId: String? = null
   override var resumeLocalPlaybackAfterCastDisconnect = false
   private var selectedLocalOutputDeviceId: Int? = null
   private var noisyHandlingRestore: Runnable? = null
@@ -1239,8 +1244,44 @@ internal class SamoAudioEngine(
         emitState(getCurrentStatus(player))
       }
 
+      /**
+       * What a radio station is announcing, straight off the stream we are
+       * already playing.
+       *
+       * A station's ICY frames are interleaved with its audio, so the client
+       * holding the socket is the only thing that knows what is on RIGHT NOW —
+       * which is why this arrives here rather than from the server, whose
+       * record of a station is a probe it ran up to ten minutes ago. ExoPlayer
+       * asks for the metadata and unwraps it for us; all this does is forward
+       * the line, and only when it changes, since an unchanged announcement
+       * repeats for every metadata frame the encoder emits.
+       */
+      override fun onMetadata(metadata: Metadata) {
+        if (isCastActive()) return
+        val announced = (0 until metadata.length())
+          .asSequence()
+          .map { metadata.get(it) }
+          .filterIsInstance<IcyInfo>()
+          .lastOrNull() ?: return
+        val mediaId = player.currentMediaItem?.mediaId ?: return
+        val title = announced.title?.trim().orEmpty()
+        if (title == lastAnnouncedStreamTitle && mediaId == lastAnnouncedStreamMediaId) return
+        lastAnnouncedStreamTitle = title
+        lastAnnouncedStreamMediaId = mediaId
+        val event = Arguments.createMap().apply {
+          putString("mediaId", mediaId)
+          putString("title", title)
+        }
+        emit("SamoAudioStreamMetadata", event)
+      }
+
       override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
         if (isCastActive()) return
+        // A new item is a new stream: whatever the last one was announcing
+        // says nothing about this one, and without clearing it a station that
+        // re-announces the same line after a re-tune would be deduped away.
+        lastAnnouncedStreamTitle = null
+        lastAnnouncedStreamMediaId = null
         Log.i(
           "SamoAudio",
           "transition reason=$reason index=${player.currentMediaItemIndex} " +

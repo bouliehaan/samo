@@ -1,14 +1,17 @@
 import {
+    getSamoChannelStreamUrl,
     pickSamoCatalogImageId,
     pickSamoImageId,
     resolveSamoAlbumArtworkUrl,
     resolveSamoArtistArtworkUrl,
     resolveSamoAudiobookArtworkUrl,
+    resolveSamoChannelArtworkUrl,
     resolveSamoPlaylistArtworkUrl,
     resolveSamoPodcastArtworkUrl,
     resolveSamoStationArtworkUrl,
     type SamoArtistRef,
     type SamoAudiobook,
+    type SamoChannel,
     type SamoInternetRadioStation,
     type SamoMusicAlbum,
     type SamoMusicArtist,
@@ -413,12 +416,49 @@ export const normalizeSamoInternetRadioStation = (
     const auth = toAuthBundle(server);
     const imageUrl = auth ? toStoredImageUrl(resolveSamoStationArtworkUrl(auth, station)) : null;
     return {
+        description: station.description ?? null,
         homepageUrl: station.homepageUrl ?? null,
         id: station.id,
         imageId: station.coverId ?? null,
         imageUrl,
+        kind: 'internet',
         name: station.name,
+        nowPlaying:
+            station.nowPlaying?.title || station.nowPlaying?.artist
+                ? { artist: station.nowPlaying.artist, title: station.nowPlaying.title }
+                : null,
         streamUrl: station.streamUrl ?? '',
+    };
+};
+
+/**
+ * A Samo channel, as a station in the radio list.
+ *
+ * `streamUrl` is deliberately built WITHOUT a stream token. It is the station's
+ * identity here — compared to decide which row is playing, written into recents
+ * and into the restored session — and a token embedded in it would rot: within
+ * the hour it is a URL that 401s, and every comparison against a freshly minted
+ * one fails. The token is added where the audio is actually opened
+ * (`resolveRadioPlaybackUrl`), which is the only place it means anything.
+ */
+export const normalizeSamoChannelAsStation = (
+    channel: SamoChannel,
+    server?: null | ServerListItemWithCredential,
+): InternetRadioStation => {
+    const auth = toAuthBundle(server);
+    return {
+        description: channel.description ?? null,
+        homepageUrl: null,
+        id: channel.id,
+        imageId: pickSamoCatalogImageId(channel.coverId) ?? null,
+        imageUrl: auth ? toStoredImageUrl(resolveSamoChannelArtworkUrl(auth, channel)) : null,
+        kind: 'channel',
+        name: channel.name,
+        nowPlaying:
+            channel.nowPlaying?.title || channel.nowPlaying?.artist
+                ? { artist: channel.nowPlaying.artist, title: channel.nowPlaying.title }
+                : null,
+        streamUrl: auth ? getSamoChannelStreamUrl(auth, channel.id) : '',
     };
 };
 
@@ -582,6 +622,7 @@ export const samoNormalize = {
     album: normalizeSamoMusicAlbum,
     albumArtist: normalizeSamoMusicArtist,
     audiobookAsAlbum: normalizeSamoAudiobookAsAlbum,
+    channelAsStation: normalizeSamoChannelAsStation,
     internetRadioStation: normalizeSamoInternetRadioStation,
     playlist: normalizeSamoMusicPlaylist,
     podcastAsPlaylist: normalizeSamoPodcastAsPlaylist,
