@@ -9,9 +9,7 @@ import {
     useState,
 } from 'react';
 import {
-    runOnJS,
     type SharedValue,
-    useAnimatedReaction,
     useSharedValue,
     withSpring,
 } from 'react-native-reanimated';
@@ -26,7 +24,6 @@ import { subscribeTabReselected } from '../../state/tab-reselect';
 import { getPullScrollY } from './search-pull-registry';
 import { REDUCED_MOTION_SPRING } from '../../theme/layout';
 import {
-    SEARCH_PULL_MOUNT_AT,
     SEARCH_PULL_OPEN_SPRING,
     SEARCH_PULL_SETTLE_SPRING,
 } from './search-pull-constants';
@@ -55,10 +52,29 @@ interface SearchPullContextValue {
     /** Which page owns `activeScrollY` right now, so a frozen page's stray scroll
      *  event can't overwrite the visible page's offset. */
     activePullTab: SharedValue<string>;
+    /**
+     * True while a PAN currently holds an IME control session.
+     *
+     * Exists so the surface's keyboard teardown can tell "the keyboard is no
+     * longer wanted" from "a finger is actively dragging it back down". They look
+     * identical from JS — both are `isKeyboardWanted === false` — and treating
+     * them the same is what killed the keyboard mid-gesture: the effect called
+     * `finishImeControl` the moment a drag dipped under the seat, destroying the
+     * session the still-running pan owned, and the pan had no way to know it was
+     * now driving a dead controller.
+     *
+     * A shared value rather than React state ON PURPOSE. It is written from a
+     * gesture worklet, and the reader only ever needs its value at the instant an
+     * effect runs — a synchronous `.value` read from JS. Routing it through
+     * `setState` would put a render and a Fabric commit in the middle of the
+     * gesture to communicate something no one renders.
+     */
+    isPanDrivingIme: SharedValue<boolean>;
     reducedMotion: boolean;
-    /** Whether the full-search overlay should be MOUNTED yet. Flips true early in
-     *  the pull so its one render lands during the slack of stage one rather than
-     *  at the threshold; the overlay's visibility is driven off `pull`. */
+    /** Whether the full-search overlay is MOUNTED. Latched true once at idle after
+     *  boot and never cleared, so no pull ever pays to build the tree; the
+     *  overlay's visibility is driven off `pull`. See the provider for the frame
+     *  measurements behind that. */
     isSearchMounted: boolean;
     /** Open search from a TAP on the resting bar — animates `pull` the rest of
      *  the way itself, since no finger is driving it. */
@@ -104,19 +120,38 @@ export const SearchPullProvider = ({ children }: { children: ReactNode }) => {
     const pull = useSharedValue(0);
     const activeScrollY = useSharedValue(0);
     const activePullTab = useSharedValue<string>('home');
+    const isPanDrivingIme = useSharedValue(false);
     const reducedMotion = useReducedMotionPreference();
     const [isSearchMounted, setIsSearchMounted] = useState(false);
 
-    // Mount the overlay early and unmount it once the surface is fully parked, so
-    // the render never happens at a moment the finger can feel.
-    useAnimatedReaction(
-        () => pull.value > SEARCH_PULL_MOUNT_AT,
-        (mounted, previous) => {
-            if (mounted !== previous) {
-                runOnJS(setIsSearchMounted)(mounted);
-            }
-        },
-    );
+    /*
+     * THE OVERLAY IS MOUNTED ONCE, AT IDLE, AND NEVER UNMOUNTED.
+     *
+     * It used to mount from a `pull > SEARCH_PULL_MOUNT_AT` reaction — "early in
+     * the drag, during the slack of stage one, so the render lands while the bar
+     * is still sliding". The render was never the problem. REANIMATED SETTING UP
+     * THE NEW TREE'S ANIMATED STYLES WAS: measured on the V60, the frame four
+     * after that threshold spends **30.81ms in the Choreographer animation phase**
+     * against a 0.3ms baseline, with another 5.98ms recording the new draw, and
+     * the frame behind it then starts 24.23ms late. Two dropped frames, right in
+     * the middle of the gesture, every single pull.
+     *
+     * This is why it was worst on the FIRST pull and came back "if you're
+     * persistent": the worklets are coldest the first time, and unmounting on the
+     * way back to 0 meant every pull re-paid a fresh setup.
+     *
+     * It was previously "ruled out" by moving the mount to the pan's touch-down
+     * and seeing no change in p50 or janky-percent. Both are the wrong
+     * instruments — a single 30ms frame cannot move a median, and it is the only
+     * frame that matters here. Look at the frame SERIES.
+     *
+     * Idle rather than eager so it never lands on the boot path, and monotonic so
+     * a pull can never re-pay it.
+     */
+    useEffect(() => {
+        const handle = requestIdleCallback(() => setIsSearchMounted(true), { timeout: 4000 });
+        return () => cancelIdleCallback(handle);
+    }, []);
 
     /*
      * The state half of going away. `pull` and `isSearchOverlayOpen` are two
@@ -235,6 +270,7 @@ export const SearchPullProvider = ({ children }: { children: ReactNode }) => {
             commitFullSearch,
             didSkipPeek,
             dismissSearchState,
+            isPanDrivingIme,
             isSearchMounted,
             openFullSearch,
             pull,
@@ -247,6 +283,7 @@ export const SearchPullProvider = ({ children }: { children: ReactNode }) => {
             commitFullSearch,
             didSkipPeek,
             dismissSearchState,
+            isPanDrivingIme,
             isSearchMounted,
             openFullSearch,
             pull,

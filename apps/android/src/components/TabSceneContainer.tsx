@@ -59,10 +59,49 @@ export const TabSceneContainer = memo(
         keepWarm: boolean;
         reducedMotion: boolean;
     }) => {
+        /*
+         * A SCENE ALWAYS STARTS PARKED AND AT ZERO — including one that mounts
+         * already ACTIVE, which is the case these two lines used to special-case
+         * and get wrong.
+         *
+         * `useState(!isActive)` and `new Animated.Value(isActive ? 1 : 0)` meant a
+         * tab being visited for the FIRST time mounted un-frozen at full opacity.
+         * Pass 2 then ran `timing(progress, {toValue: 1})` from 1 to 1 — a no-op —
+         * so a first visit got NO ENTRANCE AT ALL while every subsequent switch
+         * got the 170ms dissolve. And with nothing animating, the tree-build had
+         * nothing to hide behind: measured on the V60, mounting the Podcasts scene
+         * costs ONE frame of 41.61ms — 11.34ms of Reanimated setting up the new
+         * subtree's mappers plus 15.02ms recording its display lists — and the
+         * frame after it starts 13.40ms late. The user sees a hitch and then a
+         * pop.
+         *
+         * Only `progress` changes — `resting` still starts at `!isActive`. Starting
+         * it at 0 lets pass 2's existing dissolve have somewhere to come from, so a
+         * first visit gets the same 170ms entrance as every other switch instead of
+         * a bare pop.
+         *
+         * THIS IS A LOOKS CHANGE, NOT A PERFORMANCE FIX, and the distinction was
+         * expensive to learn. Forcing a mounting-active scene to start FROZEN was
+         * also tried, to route the tree-build through pass 1's thaw and get it
+         * ahead of the animation. Measured over the FULL frame window, all three
+         * arrangements are the same: worst frame 75.87ms (plain) / 72.02ms (frozen)
+         * / 110.77ms (this one), anim peak 46/35/41ms, and **13 over-budget frames
+         * in every case**. Single runs cannot separate them — the worst-frame
+         * number alone swings by 40ms run to run.
+         *
+         * So the ~26ms of mount is still there and this does not touch it. If you
+         * come to fix it for real, average several runs before believing any
+         * comparison, and read the whole window — an earlier pass "measured" a
+         * regression here purely by comparing one run's first spike against
+         * another's overall worst.
+         *
+         * This also gives the app's cold start an entrance fade, because Home
+         * mounts active too. That is deliberate.
+         */
         const [resting, setResting] = useState(!isActive);
         const progressRef = useRef<Animated.Value | null>(null);
         if (progressRef.current === null) {
-            progressRef.current = new Animated.Value(isActive ? 1 : 0);
+            progressRef.current = new Animated.Value(0);
         }
         const progress = progressRef.current;
         const dropRef = useRef<Animated.CompositeAnimation | null>(null);

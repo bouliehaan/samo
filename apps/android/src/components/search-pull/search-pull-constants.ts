@@ -136,17 +136,30 @@ export const SEARCH_PULL_OVERSHOOT_DIP = 6;
 
 /**
  * The open/peek spring. Critically damped (ζ = 1: damping = 2·√(stiffness·mass))
- * — the fastest a spring can land WITHOUT overshooting. No bounce, no wobble,
- * no "boing": the bar arrives and stops.
+ * — the fastest a spring can land WITHOUT oscillating. No bounce, no wobble, no
+ * "boing": the bar arrives and stops.
  *
- * Release velocity is deliberately NOT injected into this one at the call site.
- * Targeting the rest line, any real downward velocity would carry the surface
- * past it and back — a bounce by another name.
+ * ω₀ = √240 = 15.5 rad/s BEFORE, which is where the mush came from. A critically
+ * damped spring approaches asymptotically, so 1% of travel takes ~6.6/ω₀ — 430ms,
+ * of which the last ~150ms is invisible sub-pixel crawl that still charges a full
+ * blur + composite to every frame it occupies. Every release in the whole surface
+ * ran on that. ω₀ = √520 = 22.8 puts the same landing at ~290ms, which is where
+ * Android's own shade settles.
+ *
+ * `overshootClamping` IS WHAT LETS THE RELEASE KEEP ITS VELOCITY. The old comment
+ * here said velocity must not be injected because it would carry the surface past
+ * the rest line and back — true of a bare critically damped spring, and the
+ * reason the call sites threw the finger's momentum away and re-accelerated from
+ * a dead stop. That discontinuity at the instant of release is the single
+ * loudest "this is not a native surface" tell there is. Clamping resolves it
+ * properly: the spring takes the momentum, travels continuously, and STOPS at the
+ * target instead of passing it. Landing hard on a detent is what a detent does.
  */
 export const SEARCH_PULL_OPEN_SPRING: WithSpringConfig = {
-    damping: 31,
+    damping: 45.6,
     mass: 1,
-    stiffness: 240,
+    overshootClamping: true,
+    stiffness: 520,
 };
 
 /**
@@ -159,12 +172,69 @@ export const SEARCH_PULL_OPEN_SPRING: WithSpringConfig = {
 export const SEARCH_PULL_MOUNT_AT = 0.35;
 
 /**
+ * Reveal below which a live IME control session is HANDED BACK mid-gesture, so
+ * the next crossing back down starts a fresh one.
+ *
+ * Below `SEARCH_PULL_MOUNT_AT`, and the gap between them is the point: it is a
+ * hysteresis band, so a thumb hovering around the arming threshold cannot
+ * finish/request/finish the session once a frame. The system takes 135–265ms to
+ * grant control; thrashing it guarantees a gesture drives a controller that no
+ * longer exists.
+ *
+ * Without a release at all — which is how this started — `hasRequestedIme`
+ * latched for the whole gesture. Drag down past the seat, back up, and down
+ * again and the second descent silently drove a dead controller: the flag said a
+ * session was held, so nothing re-requested, and every `setFraction` went
+ * nowhere. The keyboard simply stopped answering from the second crossing on.
+ */
+export const SEARCH_PULL_IME_RELEASE_AT = 0.2;
+
+/**
  * The retract spring: critically damped too, so putting search away is quick and
- * quiet. This one DOES take the release velocity — it targets 0, which sits off
- * the top of the screen, so any overshoot happens out of sight.
+ * quiet. This one takes the release velocity and is deliberately NOT clamped — it
+ * targets 0, which sits off the top of the screen, so any overshoot happens out
+ * of sight and clamping would only cut the throw short where nobody can see it.
  */
 export const SEARCH_PULL_SETTLE_SPRING: WithSpringConfig = {
-    damping: 32,
-    mass: 0.9,
-    stiffness: 285,
+    damping: 47.3,
+    mass: 1,
+    stiffness: 560,
 };
+
+/**
+ * How far the full-search panel settles DOWN into place across stage two.
+ *
+ * A SETTLE, NOT A DRAG, and the difference is the whole tuning of this value.
+ *
+ * This was briefly `SEARCH_PULL_COMMIT_SPAN` — 150, so the panel tracked the
+ * thumb at exactly 1:1 and the hand-off at the seat was continuous in the
+ * arithmetic sense: stage one moves the tray at ~0.97:1, stage two picked the
+ * motion straight up at 1.0:1, and something was moving at finger speed from the
+ * first pixel of the drag to the last.
+ *
+ * IT LOOKED WRONG ANYWAY, and the reason is worth keeping. What travels in stage
+ * two is a list of rows, and a list of rows moving 150px vertically is
+ * indistinguishable from a scroll — because that is what a scroll IS. Continuity
+ * of velocity was the wrong thing to optimise: it bought a smooth derivative and
+ * paid for it with a false affordance, which reads as the content having been
+ * dragged rather than the screen having arrived. The eye does not measure
+ * velocity; it recognises gestures.
+ *
+ * At this distance the same motion reads as the panel seating itself. Set it to 0
+ * for a pure dissolve with no travel at all — nothing else depends on it being
+ * non-zero.
+ */
+export const SEARCH_PULL_ARRIVAL_TRAVEL = 0;
+
+/**
+ * Reveal by which the arriving panel has finished fading and is fully opaque.
+ *
+ * Short, and short for two reasons. The panel is a real translucent slab that
+ * SLIDES in now, so the fade is only there to keep its edge from popping into
+ * existence at the seat — the motion is what sells the arrival, not the
+ * dissolve. And a full-screen view at fractional alpha forces Android to
+ * composite the whole thing through an offscreen layer on every frame it is not
+ * at 0 or 1; ending the fade here leaves ~70% of stage two at alpha 1, where that
+ * layer is not allocated at all.
+ */
+export const SEARCH_PULL_ARRIVAL_OPAQUE_AT = 1.35;

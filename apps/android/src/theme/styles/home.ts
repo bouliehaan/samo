@@ -161,7 +161,12 @@ export const homeStyles = StyleSheet.create({
      * washed and lifeless rather than simply darker.
      */
     searchPullScrim: {
-        backgroundColor: '#000000',
+        // Transparent at rest and ANIMATED AS A COLOUR by SearchPullScrim — the
+        // dim is this slab's own alpha, never a view opacity, so a full-screen
+        // offscreen layer is never allocated for it. Leaving the old solid
+        // '#000000' here would also black the whole display for any frame that
+        // rendered before the animated style landed.
+        backgroundColor: 'transparent',
         bottom: 0,
         left: 0,
         position: 'absolute',

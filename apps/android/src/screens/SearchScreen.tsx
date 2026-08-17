@@ -13,6 +13,10 @@ import Reanimated, { Extrapolation, interpolate, useAnimatedStyle } from 'react-
 import samoLogo from '../../assets/samo-logo.png';
 import { ClearGlyph, SearchGlyph } from '../components/Glyphs';
 import { useSearchPullContext } from '../components/search-pull/SearchPullContext';
+import {
+    SEARCH_PULL_ARRIVAL_OPAQUE_AT,
+    SEARCH_PULL_ARRIVAL_TRAVEL,
+} from '../components/search-pull/search-pull-constants';
 import { LibraryListRow } from '../components/LibraryListRow';
 import { WarningList } from '../components/WarningList';
 import {
@@ -292,9 +296,34 @@ export const SearchOverlay = memo(
          * between them. Not an entrance animation played at you once a decision was
          * made elsewhere — the second half of one continuous gesture, which is why
          * easing the drag back takes it away again.
+         *
+         * IT SETTLES, by `SEARCH_PULL_ARRIVAL_TRAVEL`, and the smallness of that
+         * distance is deliberate — see the constant. A full 1:1 slide was tried
+         * and is wrong: rows moving that far vertically read as a scroll, because
+         * a scroll is exactly what that looks like, and the panel then seems to
+         * have been dragged rather than to have arrived.
+         *
+         * Down, emphatically not up. A panel rising to meet a downward drag would
+         * reverse direction under the thumb at the moment the bar seated, which is
+         * a worse discontinuity than any it could fix.
          */
         const arrivalStyle = useAnimatedStyle(() => ({
-            opacity: interpolate(pull.value, [1, 2], [0, 1], Extrapolation.CLAMP),
+            opacity: interpolate(
+                pull.value,
+                [1, SEARCH_PULL_ARRIVAL_OPAQUE_AT],
+                [0, 1],
+                Extrapolation.CLAMP,
+            ),
+            transform: [
+                {
+                    translateY: interpolate(
+                        pull.value,
+                        [1, 2],
+                        [-SEARCH_PULL_ARRIVAL_TRAVEL, 0],
+                        Extrapolation.CLAMP,
+                    ),
+                },
+            ],
         }));
         const homeContentState = useVisibleHomeContentState();
         const recentItems = useVisibleRecentItems();

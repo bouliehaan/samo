@@ -2,8 +2,7 @@ import { memo, useMemo, useState } from 'react';
 import { Pressable } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Reanimated, {
-    Extrapolation,
-    interpolate,
+    interpolateColor,
     runOnJS,
     useAnimatedReaction,
     useAnimatedStyle,
@@ -27,7 +26,12 @@ import {
     SEARCH_PULL_SKIP_AT,
     SEARCH_PULL_SKIP_VELOCITY,
 } from './search-pull-constants';
-import { pullReveal, resolvePullRelease, revealTravel } from './search-pull-physics';
+import {
+    pullReveal,
+    resolvePullRelease,
+    revealTravel,
+    revealVelocity,
+} from './search-pull-physics';
 
 /** Past this reveal the scrim becomes tappable. High enough that a mid-drag
  *  reveal never steals the pull's own finger. */
@@ -51,11 +55,24 @@ export const SearchPullScrim = memo(function SearchPullScrim() {
         useSearchPullContext();
     const [isOpen, setIsOpen] = useState(false);
 
-    // The page keeps darkening through stage two, so the screen is visibly still
-    // responding to the finger after the bar has stopped moving — the reveal is
-    // never "done" until search is.
+    /*
+     * The page keeps darkening through stage two, so the screen is visibly still
+     * responding to the finger after the bar has stopped moving.
+     *
+     * ANIMATED AS A COLOUR, NOT AS AN OPACITY, and the difference is a whole
+     * offscreen layer per frame. This is a full-screen `View` with a child, so
+     * `hasOverlappingRendering()` is true, and any alpha strictly between 0 and 1
+     * makes Android `saveLayer()` the entire display, draw into it, then composite
+     * it back — for every frame of a gesture where it is by definition never at 0
+     * or 1. Fading a solid slab's own colour instead is a plain rect draw with an
+     * alpha channel: same pixels, no layer, no readback.
+     */
     const scrimStyle = useAnimatedStyle(() => ({
-        opacity: interpolate(pull.value, [0, 1, 2], [0, 0.55, 0.88], Extrapolation.CLAMP),
+        backgroundColor: interpolateColor(
+            pull.value,
+            [0, 1, 2],
+            ['rgba(0, 0, 0, 0)', 'rgba(0, 0, 0, 0.55)', 'rgba(0, 0, 0, 0.88)'],
+        ),
     }));
 
     // Below the threshold the scrim stays untouchable so the page underneath —
@@ -150,8 +167,17 @@ export const SearchPullScrim = memo(function SearchPullScrim() {
                  * happening at that moment — is a visible stall in the middle of a
                  * throw.
                  */
+                // Same rule as the page pan: the hand's momentum carries into
+                // whichever spring answers, and the open spring clamps rather than
+                // bouncing through its rest line. See search-pull-constants.
+                const releaseVelocity = revealVelocity(
+                    success ? event.velocityY : 0,
+                    releaseReveal,
+                    SEARCH_PULL_PEEK_DISTANCE,
+                    SEARCH_PULL_COMMIT_SPAN,
+                );
                 if (decision === 'commit') {
-                    pull.value = withSpring(2, openSpring);
+                    pull.value = withSpring(2, { ...openSpring, velocity: releaseVelocity });
                     // `true`: no IME session is driven from this pan, so the
                     // keyboard has to come up the ordinary way, as it does for a
                     // tap on the resting bar.
@@ -159,16 +185,16 @@ export const SearchPullScrim = memo(function SearchPullScrim() {
                     return;
                 }
                 if (decision === 'retract') {
-                    // The one release that takes the throw velocity — it targets 0,
-                    // off the top of the screen, so any overshoot is out of sight.
+                    // Targets 0, off the top of the screen, so this spring stays
+                    // unclamped — any overshoot is out of sight.
                     pull.value = withSpring(0, {
                         ...settleSpring,
-                        velocity: success ? event.velocityY / SEARCH_PULL_PEEK_DISTANCE : 0,
+                        velocity: releaseVelocity,
                     });
                     runOnJS(dismissSearchState)();
                     return;
                 }
-                pull.value = withSpring(1, openSpring);
+                pull.value = withSpring(1, { ...openSpring, velocity: releaseVelocity });
             });
     }, [commitFullSearch, dismissSearchState, dragBase, pull, reducedMotion]);
 

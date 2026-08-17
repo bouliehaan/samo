@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import { pullReveal, resolvePullRelease, revealTravel, rubberBand } from './search-pull-physics';
+import {
+    pullReveal,
+    resolvePullRelease,
+    revealTravel,
+    revealVelocity,
+    rubberBand,
+} from './search-pull-physics';
 
 // Mirrors of the shipped values in `search-pull-constants.ts`. They are copied
 // rather than imported ON PURPOSE: that module reaches into `theme/layout` for
@@ -258,5 +264,47 @@ describe('tuning relationships', () => {
         // deliberate rather than as distance to guess at.
         const travelToCommit = PEEK + SPAN * (COMMIT_AT - 1);
         expect(travelToCommit).toBeLessThanOrEqual(240);
+    });
+});
+
+describe('revealVelocity', () => {
+    const speed = (velocityY: number, revealValue: number) =>
+        revealVelocity(velocityY, revealValue, PEEK, SPAN);
+
+    it('gears a throw by the stage it was released in', () => {
+        // One reveal unit is PEEK px of finger in stage one and SPAN px in stage
+        // two, so the same hand speed is a different number on each side of the
+        // seat. Every release site used to divide by PEEK unconditionally.
+        expect(speed(1400, 0.6)).toBeCloseTo(1400 / PEEK, 6);
+        expect(speed(1400, 1.4)).toBeCloseTo(1400 / SPAN, 6);
+    });
+
+    it('switches gearing exactly at the seat, not around it', () => {
+        expect(speed(300, 0.999)).toBeCloseTo(300 / PEEK, 6);
+        expect(speed(300, 1)).toBeCloseTo(300 / SPAN, 6);
+    });
+
+    it('keeps the sign, because an upward throw is a real direction', () => {
+        expect(speed(-1100, 0.5)).toBeLessThan(0);
+        expect(speed(-1100, 1.5)).toBeLessThan(0);
+    });
+
+    it('is a no-op on a still hand', () => {
+        expect(speed(0, 0.4)).toBe(0);
+        expect(speed(0, 1.8)).toBe(0);
+    });
+
+    it('refuses to divide by a collapsed stage', () => {
+        expect(revealVelocity(900, 0.5, 0, SPAN)).toBe(0);
+        expect(revealVelocity(900, 1.5, PEEK, 0)).toBe(0);
+    });
+
+    it('converts a real thumb throw into a spring velocity of a sane order', () => {
+        // A brisk-but-ordinary 1200px/s release should read as single-digit
+        // reveal units per second — the scale `pull` actually lives on. Getting
+        // this wrong by the stage ratio is silent: the spring still lands, just
+        // with the wrong amount of the user's momentum in it.
+        expect(Math.abs(speed(1200, 0.8))).toBeGreaterThan(1);
+        expect(Math.abs(speed(1200, 0.8))).toBeLessThan(20);
     });
 });

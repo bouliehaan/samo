@@ -15,6 +15,7 @@ import {
     SEARCH_PULL_COMMIT_SPAN,
     SEARCH_PULL_FAIL_DX,
     SEARCH_PULL_FLING_VELOCITY,
+    SEARCH_PULL_IME_RELEASE_AT,
     SEARCH_PULL_MOUNT_AT,
     SEARCH_PULL_OPEN_SPRING,
     SEARCH_PULL_PEEK_AT,
@@ -24,7 +25,7 @@ import {
     SEARCH_PULL_SKIP_AT,
     SEARCH_PULL_SKIP_VELOCITY,
 } from './search-pull-constants';
-import { pullReveal, resolvePullRelease } from './search-pull-physics';
+import { pullReveal, resolvePullRelease, revealVelocity } from './search-pull-physics';
 import { getPullNativeGestures, setPullRegistryListener } from './search-pull-registry';
 
 /**
@@ -50,7 +51,8 @@ import { getPullNativeGestures, setPullRegistryListener } from './search-pull-re
  * Both arrive here through `search-pull-registry`.
  */
 export const SearchPullGestureHost = ({ children }: { children: ReactNode }) => {
-    const { activeScrollY, commitFullSearch, pull, reducedMotion } = useSearchPullContext();
+    const { activeScrollY, commitFullSearch, isPanDrivingIme, pull, reducedMotion } =
+        useSearchPullContext();
 
     /*
      * PER-GESTURE STATE MUST BE SHARED VALUES. Do not "simplify" these into a
@@ -75,7 +77,6 @@ export const SearchPullGestureHost = ({ children }: { children: ReactNode }) => 
     const hasSeated = useSharedValue(false);
     /** Last IME fraction actually pushed across to JS. -1 = none this gesture. */
     const lastImeFraction = useSharedValue(-1);
-    const isSpringingBack = useSharedValue(false);
     const startedAtTop = useSharedValue(false);
     const touchStartX = useSharedValue(0);
     const touchStartY = useSharedValue(0);
@@ -108,6 +109,26 @@ export const SearchPullGestureHost = ({ children }: { children: ReactNode }) => 
     const gesture = useMemo(() => {
         const openSpring = reducedMotion ? REDUCED_MOTION_SPRING : SEARCH_PULL_OPEN_SPRING;
         const settleSpring = reducedMotion ? REDUCED_MOTION_SPRING : SEARCH_PULL_SETTLE_SPRING;
+
+        /**
+         * Hand the IME session back and forget it, so the next crossing arms a
+         * fresh one. Safe to call when no session is held.
+         *
+         * `isPanDrivingIme` drops here rather than only at the end of the gesture:
+         * the instant this pan stops holding a session, the surface's own teardown
+         * is allowed to run again — it is only barred while a pan genuinely owns
+         * the keyboard.
+         */
+        const releaseIme = () => {
+            'worklet';
+            if (!hasRequestedIme.value) {
+                return;
+            }
+            hasRequestedIme.value = false;
+            isPanDrivingIme.value = false;
+            lastImeFraction.value = -1;
+            runOnJS(finishImeControl)(false);
+        };
 
         return (
             Gesture.Pan()
@@ -150,7 +171,6 @@ export const SearchPullGestureHost = ({ children }: { children: ReactNode }) => 
                     // false made the first frame of a dismissing touch read as a
                     // fresh upward seat crossing, re-arming the IME on the way out.
                     hasSeated.value = pull.value >= 1;
-                    isSpringingBack.value = false;
                     hasActivated.value = false;
                     hasRequestedIme.value = false;
                     lastImeFraction.value = -1;
@@ -190,17 +210,52 @@ export const SearchPullGestureHost = ({ children }: { children: ReactNode }) => 
                 .onChange((event) => {
                     'worklet';
                     if (!startedAtTop.value || event.translationY <= 0) {
-                        // Spring away ONCE rather than slamming `pull` to 0 every
-                        // frame — a restart every frame reads the spring's own
-                        // current value as the new origin and never settles.
-                        if (!isSpringingBack.value && pull.value !== 0) {
-                            isSpringingBack.value = true;
-                            pull.value = withSpring(0, settleSpring);
-                        }
+                        /*
+                         * PARKED, AND PARKED BY THE FINGER — not by a spring.
+                         *
+                         * This used to fire `withSpring(0)` here, which is an
+                         * animation competing with a thumb that is still on the
+                         * glass. Drag up past the origin and the surface stopped
+                         * obeying you and glided off on its own clock; drag back
+                         * down and it jumped to wherever the drag said it should
+                         * be, from wherever the spring had got to. That is the
+                         * whole of the "it isn't 1:1" feeling, and it is worst in
+                         * exactly the gesture that exposes it — holding on and
+                         * working up and down.
+                         *
+                         * `pullReveal` already returns 0 for any non-positive
+                         * translation, so tracking the finger here IS parking it.
+                         * No spring can settle wrong because there is no spring,
+                         * and coming back down resumes at the same rate it left.
+                         * Springs belong to the release, where no finger is left
+                         * to argue with them.
+                         */
+                        pull.value = 0;
                         hasSeated.value = false;
+                        // Dragged back above the origin WITHOUT lifting. The
+                        // gesture is still live, so nothing else will hand the
+                        // session back — see releaseIme.
+                        releaseIme();
                         return;
                     }
-                    isSpringingBack.value = false;
+                    pull.value = pullReveal(
+                        event.translationY,
+                        SEARCH_PULL_PEEK_DISTANCE,
+                        SEARCH_PULL_COMMIT_SPAN,
+                    );
+                    /*
+                     * THE SESSION IS RELEASED AND RE-TAKEN WITHIN ONE GESTURE.
+                     *
+                     * `hasRequestedIme` used to latch for the whole pan, so a drag
+                     * that went down, back up, and down again never re-requested —
+                     * the second descent drove a controller that had been torn
+                     * down in the meantime, and the keyboard stopped answering
+                     * from that crossing on. Resolved on the FRESH reveal, below,
+                     * so a frame cannot both release and re-request.
+                     */
+                    if (hasRequestedIme.value && pull.value < SEARCH_PULL_IME_RELEASE_AT) {
+                        releaseIme();
+                    }
                     /*
                      * Request IME control as soon as the pull is meaningfully
                      * underway — NOT at the seat. The system takes ~740ms to hand
@@ -209,13 +264,9 @@ export const SearchPullGestureHost = ({ children }: { children: ReactNode }) => 
                      */
                     if (!hasRequestedIme.value && pull.value > SEARCH_PULL_MOUNT_AT) {
                         hasRequestedIme.value = true;
+                        isPanDrivingIme.value = true;
                         runOnJS(beginImeControl)();
                     }
-                    pull.value = pullReveal(
-                        event.translationY,
-                        SEARCH_PULL_PEEK_DISTANCE,
-                        SEARCH_PULL_COMMIT_SPAN,
-                    );
                     /*
                      * THE ONLY HAPTIC DURING A DRAG, and it is a detent: at reveal
                      * 1 the bar reaches its rest line and stops. It fires in BOTH
@@ -226,13 +277,11 @@ export const SearchPullGestureHost = ({ children }: { children: ReactNode }) => 
                     if (isSeated !== hasSeated.value) {
                         hasSeated.value = isSeated;
                         runOnJS(triggerImpact)('light');
-                        // Re-arm on every upward crossing, never when already fully
-                        // open: the system reclaims the IME freely, and latching to
-                        // the first crossing left a dead controller being driven.
-                        if (isSeated && pull.value < 1.9 && !hasRequestedIme.value) {
-                            hasRequestedIme.value = true;
-                            runOnJS(beginImeControl)();
-                        }
+                        // No re-arm here any more. It used to try to catch a dead
+                        // session at the seat and could never fire, because the
+                        // flag it tested was latched true for the whole gesture.
+                        // The release/request pair above is the real mechanism, and
+                        // it runs on every frame rather than only on a crossing.
                     }
                     /*
                      * THE KEYBOARD IS PART OF THE GESTURE. Reveal 1 = keyboard
@@ -317,13 +366,38 @@ export const SearchPullGestureHost = ({ children }: { children: ReactNode }) => 
                     if (hadImeSession) {
                         runOnJS(finishImeControl)(decision === 'commit');
                         hasRequestedIme.value = false;
+                        isPanDrivingIme.value = false;
                     }
+                    /*
+                     * THE FINGER'S MOMENTUM SURVIVES THE RELEASE, on every one of
+                     * the three outcomes.
+                     *
+                     * Only `retract` used to take it; peek and commit both started
+                     * their spring from a dead stop, so letting go mid-throw made
+                     * the surface halt for a frame and then re-accelerate under its
+                     * own power. That velocity step at the exact instant the hand
+                     * leaves the glass is the loudest tell that a surface is being
+                     * animated at you rather than moved by you — and it fired on
+                     * the two outcomes that happen most.
+                     *
+                     * The reason it was left out is real and is handled in the
+                     * spring instead: momentum into a rest line overshoots, so
+                     * `SEARCH_PULL_OPEN_SPRING` clamps. Cancelled gestures
+                     * contribute nothing — `success` false is the system taking the
+                     * touch back, and there is no throw to honour in that.
+                     */
+                    const releaseVelocity = revealVelocity(
+                        success ? event.velocityY : 0,
+                        releaseReveal,
+                        SEARCH_PULL_PEEK_DISTANCE,
+                        SEARCH_PULL_COMMIT_SPAN,
+                    );
                     if (decision === 'retract') {
-                        // The one release that takes the throw velocity: it targets
-                        // 0, off the top of the screen, so overshoot is out of sight.
+                        // Targets 0, off the top of the screen, so this is the one
+                        // spring left unclamped — overshoot is out of sight.
                         pull.value = withSpring(0, {
                             ...settleSpring,
-                            velocity: success ? event.velocityY / SEARCH_PULL_PEEK_DISTANCE : 0,
+                            velocity: releaseVelocity,
                         });
                         return;
                     }
@@ -331,13 +405,16 @@ export const SearchPullGestureHost = ({ children }: { children: ReactNode }) => 
                         // Finish the motion the finger started: carry reveal the rest
                         // of the way to 2, which IS full search. The landing tick
                         // lives in SearchPullSurface, on the reveal crossing.
-                        pull.value = withSpring(2, openSpring);
+                        pull.value = withSpring(2, {
+                            ...openSpring,
+                            velocity: releaseVelocity,
+                        });
                         runOnJS(commitFullSearch)(!hadImeSession);
                         return;
                     }
-                    // Settle onto the seat. No velocity injected: the spring targets
-                    // the rest line, so momentum would push it past and back.
-                    pull.value = withSpring(1, openSpring);
+                    // Settle onto the seat, riding whatever speed the hand left
+                    // behind. The spring clamps rather than bouncing through it.
+                    pull.value = withSpring(1, { ...openSpring, velocity: releaseVelocity });
                 })
                 .onFinalize(() => {
                     'worklet';
@@ -348,11 +425,8 @@ export const SearchPullGestureHost = ({ children }: { children: ReactNode }) => 
                      * controller we take and don't give back leaves the keyboard
                      * under our thumb with nothing driving it.
                      */
-                    if (hasRequestedIme.value) {
-                        runOnJS(finishImeControl)(false);
-                        hasRequestedIme.value = false;
-                    }
-                    isSpringingBack.value = false;
+                    releaseIme();
+                    isPanDrivingIme.value = false;
                     hasActivated.value = false;
                     lastImeFraction.value = -1;
                 })
@@ -366,7 +440,7 @@ export const SearchPullGestureHost = ({ children }: { children: ReactNode }) => 
         hasActivated,
         hasRequestedIme,
         hasSeated,
-        isSpringingBack,
+        isPanDrivingIme,
         lastImeFraction,
         pull,
         reducedMotion,

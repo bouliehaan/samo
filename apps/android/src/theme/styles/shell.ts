@@ -58,8 +58,23 @@ export const shellStyles = StyleSheet.create({
         marginBottom: spacing.xs,
         minHeight: 36,
     },
+    /**
+     * NO BACKGROUND HERE — and it is not an oversight.
+     *
+     * This painted `colors.background` across the whole display every frame, and
+     * every one of those pixels was thrown away: `tabScene` is an absolute-fill
+     * child with the SAME opaque `colors.background`, so it covers this
+     * completely, and `gestureRoot` sits underneath with the same colour again as
+     * the launch backstop. Three identical full-screen opaque paints, of which
+     * only two can ever be seen, on a 1080x2460 display.
+     *
+     * Measured on the V60: every animated frame in the app is GPU-bound (11.7ms
+     * of a 15ms frame during a search pull, 12.3ms during an ordinary Home
+     * scroll), and `debug.hwui.overdraw` showed the ENTIRE screen — empty gaps
+     * included — at Android's top "4 or more" band. Fill rate at that depth is
+     * the app's frame budget.
+     */
     root: {
-        backgroundColor: colors.background,
         flex: 1,
         flexDirection: 'column',
         position: 'relative',

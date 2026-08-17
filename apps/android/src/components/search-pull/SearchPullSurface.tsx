@@ -59,7 +59,7 @@ const SURFACE_LANDED_AT = 1.94;
  * as this bar coming alive on the same field row rather than a screen swap.
  */
 export const SearchPullSurface = memo(function SearchPullSurface() {
-    const { didSkipPeek, openFullSearch, pull } = useSearchPullContext();
+    const { didSkipPeek, isPanDrivingIme, openFullSearch, pull } = useSearchPullContext();
     const [isOpen, setIsOpen] = useState(false);
     const isCommitted = useAppNavigationSelector((state) => state.isSearchOverlayOpen);
     // True from the instant the drag crosses the seat into stage two — NOT from
@@ -192,6 +192,24 @@ export const SearchPullSurface = memo(function SearchPullSurface() {
             }
             return;
         }
+        if (isPanDrivingIme.value) {
+            /*
+             * A FINGER IS STILL ON THE GLASS AND OWNS THE KEYBOARD. Leave it alone.
+             *
+             * `isKeyboardWanted` going false does not distinguish "the user is
+             * done" from "the drag dipped back under the seat on its way to
+             * somewhere else", and this branch treated them identically: it
+             * finished the IME session and blurred the field mid-gesture. Blurring
+             * makes the system CANCEL a live control session, so the pan carried on
+             * pushing fractions into a controller that no longer existed and the
+             * keyboard went dead until the finger lifted — reproducibly, from the
+             * second time you crossed the seat in one drag.
+             *
+             * The pan releases its own session on every terminal path, and on a
+             * mid-gesture retreat too, so nothing leaks by deferring to it.
+             */
+            return;
+        }
         if (!wasKeyboardUp.current) {
             /*
              * Nothing to tear down. This branch also runs at rest and on every
@@ -216,7 +234,7 @@ export const SearchPullSurface = memo(function SearchPullSurface() {
          */
         finishImeControl(false);
         inputRef.current?.blur();
-    }, [didSkipPeek, isCommitted, isKeyboardWanted]);
+    }, [didSkipPeek, isCommitted, isKeyboardWanted, isPanDrivingIme]);
 
     // The bar is ONE object. It slides down from behind the top edge already
     // assembled — field, magnifier, label and samo-S are just parts of it, not

@@ -90,6 +90,36 @@ export const revealTravel = (reveal: number, peekDistance: number, commitSpan: n
     return peekDistance + Math.min(reveal - 1, 1) * commitSpan;
 };
 
+/**
+ * Release velocity in px/s → the same velocity on the REVEAL scale, ready to hand
+ * to a spring that animates `pull`.
+ *
+ * Needed because the two stages have different gearing: one reveal unit is
+ * `peekDistance` px of finger in stage one and `commitSpan` px in stage two, so a
+ * single divisor would misreport the throw by that ratio on one side of the seat
+ * or the other. Every release site used to divide by `peekDistance` unconditionally
+ * — including the ones resolving from deep inside stage two.
+ *
+ * This exists at all because a spring that starts from ZERO velocity when the
+ * finger was still moving is the thing that makes a surface feel simulated rather
+ * than physical. The hand lets go at 900px/s and the object it was pushing stops
+ * dead and then re-accelerates; no real object does that, and no native surface
+ * does either.
+ */
+export const revealVelocity = (
+    velocityY: number,
+    reveal: number,
+    peekDistance: number,
+    commitSpan: number,
+): number => {
+    'worklet';
+    const scale = reveal >= 1 ? commitSpan : peekDistance;
+    if (scale <= 0) {
+        return 0;
+    }
+    return velocityY / scale;
+};
+
 export type PullRelease = 'commit' | 'peek' | 'retract';
 
 export interface PullReleaseInput {
