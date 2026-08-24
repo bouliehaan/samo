@@ -1284,6 +1284,56 @@ export const getSamoMusicPlaylist = async (
  * isn't configured on this server. Shared by both clients' home screens so
  * "how do we recognize the Explo playlist" lives in exactly one place.
  */
+/** One track's outcome from a keep request; see keepSamoExploTracks. */
+export interface SamoExploKeepResult {
+    error?: string;
+    /**
+     * Catalog id of the COPY in the library, which is a different track from
+     * the drop-folder original. Anything that has to outlive the week — adding
+     * the song to a playlist above all — must reference this one: the
+     * original's file is deleted by the next rotation and a playlist pointing
+     * at it silently loses the entry. Absent if the scan had not caught up yet.
+     */
+    libraryTrackId?: string;
+    /**
+     * The copy was unnecessary because the file was already at the destination.
+     * A success, not a no-op: libraryTrackId is still populated, so adding the
+     * song to a playlist uses the existing library track.
+     */
+    alreadyInLibrary?: boolean;
+    path?: string;
+    title?: string;
+    trackId: string;
+}
+
+export interface SamoExploKeepResponse {
+    alreadyInLibrary: number;
+    failed: number;
+    kept: number;
+    results: SamoExploKeepResult[];
+}
+
+/**
+ * Copies explo drops into the music library proper.
+ *
+ * The drop folder is emptied by every weekly rotation, so this is how a track
+ * survives the week. The server copies rather than moves — the original stays
+ * in Explore until rotation collects it — and writes samo's identified
+ * metadata into the copy, so the kept file is correct in any player rather
+ * than carrying whatever the original sharer typed.
+ *
+ * Admin only, and per-track: one unkeepable track does not fail the batch.
+ */
+export const keepSamoExploTracks = async (
+    fetcher: SamoFetch,
+    authentication: Pick<ServerAuthenticationResult, 'credential' | 'url'>,
+    trackIds: string[],
+): Promise<SamoExploKeepResponse> => {
+    return samoSend<SamoExploKeepResponse>(fetcher, authentication, 'POST', '/explo/keep', {
+        trackIds,
+    });
+};
+
 export const findSamoExploPlaylist = async (
     fetcher: SamoFetch,
     authentication: Pick<ServerAuthenticationResult, 'credential' | 'url'>,
@@ -2024,11 +2074,23 @@ export const getSamoMusicAlbumCoverUrl = (
     streamToken?: string,
 ) => buildStreamUrl(authentication, `/music/albums/${encodeSamoId(albumId)}/cover`, { streamToken });
 
+/**
+ * The playlist cover route, optionally stamped with a version.
+ *
+ * Built through `getSamoApiUrl` rather than `buildStreamUrl` because the stamp
+ * is peculiar to this one route — no other media URL has bytes that change
+ * behind a fixed address — and does not belong in the shared stream options.
+ */
 export const getSamoMusicPlaylistCoverUrl = (
     authentication: Pick<ServerAuthenticationResult, 'url'>,
     playlistId: string,
     streamToken?: string,
-) => buildStreamUrl(authentication, `/music/playlists/${encodeSamoId(playlistId)}/cover`, { streamToken });
+    version?: string,
+) =>
+    getSamoApiUrl(authentication, `/music/playlists/${encodeSamoId(playlistId)}/cover`, {
+        stream_token: streamToken,
+        v: version,
+    });
 
 export const getSamoMusicArtistCoverUrl = (
     authentication: Pick<ServerAuthenticationResult, 'url'>,
@@ -2328,19 +2390,59 @@ export const samoPlaylistHasCoverGrid = (
     playlist: Pick<SamoMusicPlaylist, 'images'>,
 ): boolean => (playlist.images?.length ?? 0) > 1;
 
+/**
+ * Cache-busting stamp for a playlist's cover URL.
+ *
+ * `/music/playlists/{id}/cover` is a FIXED address whose bytes are not fixed.
+ * The server composites the 2x2 grid from the playlist's first four track
+ * covers at request time, then serves it as
+ * `Cache-Control: public, max-age=31536000, immutable`. So adding a track
+ * changes the image behind a URL every client has been promised will never
+ * change, and the old grid stays on screen until somebody clears an HTTP cache
+ * by hand — which was the last thing on the desktop still relying on a
+ * full cache wipe at every sync.
+ *
+ * `updatedAt` moves on every write to the playlist — tracks, order, name,
+ * an uploaded cover — so folding it into the URL gives a changed playlist a new
+ * address and leaves an unchanged one on the bytes it already has. A server too
+ * old to send `updatedAt` behaves exactly as before: no stamp, no bust.
+ */
+export const samoPlaylistCoverVersion = (
+    playlist: Pick<SamoMusicPlaylist, 'updatedAt'>,
+): string | undefined => {
+    const updatedAt = playlist.updatedAt?.trim();
+    if (!updatedAt) {
+        return undefined;
+    }
+
+    // Epoch millis: short, and identical for two spellings of the same instant,
+    // so a server that changes how it formats timestamps does not invalidate
+    // every cover at once. A value neither side can parse yields NO stamp
+    // rather than a raw-string one — SamoCatalogConverters.toEpochMs is the
+    // Kotlin twin of this and can only return null there, and the two must
+    // produce the same URL for the same playlist or the mirror-backed surfaces
+    // and the network-backed ones would cache the same grid twice.
+    const parsed = Date.parse(updatedAt);
+    return Number.isFinite(parsed) ? String(parsed) : undefined;
+};
+
 export const resolveSamoPlaylistArtworkUrl = (
     authentication: Pick<ServerAuthenticationResult, 'url'>,
-    playlist: Pick<SamoMusicPlaylist, 'id' | 'images'>,
+    playlist: Pick<SamoMusicPlaylist, 'id' | 'images' | 'updatedAt'>,
     streamToken?: string,
 ): string | undefined => {
+    const version = samoPlaylistCoverVersion(playlist);
+
     if (samoPlaylistHasCoverGrid(playlist) && playlist.id) {
         return finalizeSamoCoverUrl(
             authentication,
-            getSamoMusicPlaylistCoverUrl(authentication, playlist.id, streamToken),
+            getSamoMusicPlaylistCoverUrl(authentication, playlist.id, streamToken, version),
             streamToken,
         );
     }
 
+    // No stamp on this branch: a metadata image id names its own bytes, so the
+    // id changes when the art does and `immutable` is the truth there.
     const fromImage = resolveSamoImageUrl(authentication, pickImage(playlist.images), streamToken);
     if (fromImage) {
         return finalizeSamoCoverUrl(authentication, fromImage, streamToken);
@@ -2348,7 +2450,7 @@ export const resolveSamoPlaylistArtworkUrl = (
     if (playlist.id) {
         return finalizeSamoCoverUrl(
             authentication,
-            getSamoMusicPlaylistCoverUrl(authentication, playlist.id, streamToken),
+            getSamoMusicPlaylistCoverUrl(authentication, playlist.id, streamToken, version),
             streamToken,
         );
     }

@@ -234,10 +234,21 @@ internal object SamoCatalogConverters {
         // JS mapper fix in packages/core (samoPlaylistHasCoverGrid).
         val hasCoverGrid = images != null && images.length() > 1
         val artworkImageId = if (hasCoverGrid) null else pickSamoImageId(images)
+        // The grid is composited from the playlist's first four track covers at
+        // request time and served `immutable, max-age=1y` behind a FIXED URL, so
+        // adding a track changes the image at an address every cache has been
+        // told will never change. `updatedAt` moves on every write to the
+        // playlist, so stamping it gives a changed grid a new address and leaves
+        // an unchanged one on the bytes it already has. Kotlin twin of
+        // samoPlaylistCoverVersion in packages/core — the two must agree, or the
+        // mirror-backed surfaces and the network-backed ones would cache the
+        // same grid under two URLs.
+        val coverVersion = toEpochMs(playlist.optString("updatedAt").nullIfBlank())?.toString()
         val playlistCoverUrl = SamoNativeStreamUrl.buildStreamUrl(
             serverUrl,
             "/music/playlists/${encode(id)}/cover",
             streamToken.orEmpty(),
+            if (coverVersion != null) mapOf("v" to coverVersion) else emptyMap(),
         )
         val artworkUrl =
             if (hasCoverGrid) {

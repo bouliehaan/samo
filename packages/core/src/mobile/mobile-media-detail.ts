@@ -249,6 +249,14 @@ export interface MobileMediaDetail {
         editable: boolean;
         ownerId?: string;
         public?: boolean;
+        /**
+         * The server-managed explo "Explore" queue. Distinct from `editable`
+         * being false: a playlist someone else owns is also uneditable, but
+         * only this one is a rotating drop folder whose tracks disappear on
+         * the next weekly run — which is what makes "Keep in Library" mean
+         * something here and nowhere else.
+         */
+        system?: boolean;
     };
     source: MobileContentSource;
     subtitle?: string;
@@ -806,6 +814,7 @@ export const mapSamoPlaylistDetail = (
                 !playlist.system && isPlaylistOwnedByUser(authentication, playlist.ownerId),
             ownerId: playlist.ownerId,
             public: playlist.public,
+            system: playlist.system === true,
         },
         source: getMobileContentSource(authentication),
         subtitle:
@@ -1370,11 +1379,16 @@ export const addMobileTracksToPlaylist = async ({
 
     if (authentication.type === ServerType.SAMO) {
         // Samo's playlist update API replaces the trackIds list wholesale, so
-        // load the current track set and append. Single round-trip in/out.
-        const current = await listSamoMusicPlaylistTracks(request, authentication, playlistId, {
-            limit: 500,
-        });
-        const existingIds = samoItemsOf(current)
+        // load the current track set and append.
+        //
+        // Exhaustively, and that matters more here than on a read path: the
+        // merged list below is PATCHed back as the playlist's entire contents.
+        // Reading one limit=500 page did not truncate the VIEW of a larger
+        // playlist, it truncated the playlist — adding a song to a 600-track
+        // playlist wrote back 501 ids and deleted the other 99.
+        const existingIds = (
+            await listAllSamoPlaylistTracks(authentication, request, playlistId)
+        )
             .map((track) => track.id)
             .filter(Boolean) as string[];
         const merged = [...existingIds];

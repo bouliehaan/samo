@@ -2,11 +2,13 @@ import { type ServerAuthenticationResult } from '../server/server-auth';
 import { getFetch, type SamoFetch } from '../server/server-http';
 import {
     deleteSamoMusicPlaylist,
+    keepSamoExploTracks,
     listSamoMusicPlaylistTracks,
-    samoItemsOf,
+    type SamoExploKeepResponse,
     updateSamoMusicPlaylist,
     uploadSamoMusicPlaylistCover,
 } from '../server/server-samo';
+import { collectSamoPages } from '../server/server-samo-pagination';
 import { ServerType } from '../server/server-types';
 import type { MobileMediaDetail } from './mobile-media-detail';
 import { MobileMediaDetailType } from './mobile-media-detail';
@@ -16,6 +18,7 @@ export interface MobilePlaylistMeta {
     editable: boolean;
     ownerId?: string;
     public?: boolean;
+    system?: boolean;
 }
 
 export const isMobilePlaylistDetailEditable = (detail: MobileMediaDetail): boolean =>
@@ -132,7 +135,22 @@ export const deleteMobilePlaylist = async ({
     throw new Error('Deleting playlists is only available for Samo servers.');
 };
 
-/** Loads current Samo track ids when the caller only has a partial track list. */
+/**
+ * The playlist's CURRENT track ids, in playlist order, straight from the
+ * server.
+ *
+ * Every membership edit is a read-modify-write, because Samo's playlist API
+ * takes the whole `trackIds` list rather than a delta. That makes the list this
+ * returns the base of a destructive write, so it has to be both complete and
+ * fresh:
+ *
+ *  - Complete: a single limit=500 page silently truncated anything larger, and
+ *    PATCHing that back is not a read of 500 tracks — it is a DELETE of every
+ *    track past 500. Paginated to exhaustion, same as the detail loader.
+ *  - Fresh: the caller's own track list may be the on-device mirror, which is
+ *    only as current as the last sync. Rebuilding the playlist from a stale
+ *    snapshot would silently undo whatever was added elsewhere in the meantime.
+ */
 export const listMobilePlaylistTrackIds = async (
     authentication: ServerAuthenticationResult,
     playlistId: string,
@@ -143,10 +161,82 @@ export const listMobilePlaylistTrackIds = async (
     }
 
     const request = getFetch(fetch);
-    const page = await listSamoMusicPlaylistTracks(request, authentication, playlistId, {
-        limit: 500,
+    const tracks = await collectSamoPages(500, 50_000, (offset) =>
+        listSamoMusicPlaylistTracks(request, authentication, playlistId, { limit: 500, offset }),
+    );
+    return tracks.map((track) => track.id).filter(Boolean) as string[];
+};
+
+export interface RemoveMobileTracksFromPlaylistInput {
+    authentication: ServerAuthenticationResult;
+    fetch?: SamoFetch;
+    playlistId: string;
+    songIds: string[];
+}
+
+/**
+ * Drop tracks from a playlist, leaving the rest in their existing order.
+ *
+ * Reads the server's current membership first rather than subtracting from a
+ * list the caller already holds — see {@link listMobilePlaylistTrackIds} for
+ * why that distinction is the difference between an edit and a data loss.
+ *
+ * Matching by track id is exact here, not a heuristic: the server dedupes
+ * `trackIds` on every write, so a playlist cannot hold the same track twice and
+ * an id identifies at most one entry.
+ *
+ * Removing something that is already gone is a no-op, not an error — the
+ * requested end state is the state the playlist is already in, and the write is
+ * skipped entirely.
+ */
+export const removeMobileTracksFromPlaylist = async ({
+    authentication,
+    fetch: fetcher,
+    playlistId,
+    songIds,
+}: RemoveMobileTracksFromPlaylistInput): Promise<void> => {
+    const removals = new Set(songIds.filter(Boolean));
+
+    if (removals.size === 0) {
+        throw new Error('No tracks were selected.');
+    }
+
+    if (authentication.type !== ServerType.SAMO) {
+        throw new Error('Editing playlists is only available for Samo servers.');
+    }
+
+    const request = getFetch(fetcher);
+    const current = await listMobilePlaylistTrackIds(authentication, playlistId, request);
+    const remaining = current.filter((id) => !removals.has(id));
+
+    if (remaining.length === current.length) {
+        return;
+    }
+
+    await updateSamoMusicPlaylist(request, authentication, playlistId, {
+        trackIds: remaining,
     });
-    return samoItemsOf(page)
-        .map((track) => track.id)
-        .filter(Boolean) as string[];
+};
+
+/**
+ * True for the server-managed explo "Explore" queue.
+ *
+ * Its tracks live in a drop folder that the weekly run empties, so they are
+ * the only tracks in the app that vanish on their own — which is what makes
+ * "Keep in Library" meaningful here and pointless everywhere else.
+ */
+export const isMobileExploPlaylistDetail = (detail: MobileMediaDetail): boolean =>
+    detail.type === MobileMediaDetailType.PLAYLIST && detail.playlistMeta?.system === true;
+
+/**
+ * Copies explo drops into the music library proper. The server owns the files,
+ * writes samo's identified metadata into each copy, and leaves the original in
+ * Explore for the weekly rotation to collect.
+ */
+export const keepMobileExploTracks = async (input: {
+    authentication: ServerAuthenticationResult;
+    fetch?: SamoFetch;
+    trackIds: string[];
+}): Promise<SamoExploKeepResponse> => {
+    return keepSamoExploTracks(getFetch(input.fetch), input.authentication, input.trackIds);
 };

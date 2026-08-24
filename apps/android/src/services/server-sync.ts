@@ -8,6 +8,7 @@ import {
     getPlaybackProgressSeconds,
     getPlayerPositionMsForPlaybackProgress,
 } from '../utils/playback-progress-math';
+import { topUpDownloadedPlaylists } from './downloaded-playlist-topup';
 import { refreshActiveEndpoint } from './endpoint-selection';
 import { loadCurrentPlaybackProgress } from './playback-progress';
 import { triggerCatalogSyncNow } from './headless-catalog-sync';
@@ -50,6 +51,10 @@ export const syncWithServer = async (): Promise<{ message?: string; ok: boolean 
         // panel via SamoCatalogSyncState events, and the post-sync artwork
         // prefetch fires from the sync-completed bridge.
         void triggerCatalogSyncNow();
+        // Downloaded playlists gain whatever they have been given since they
+        // were downloaded. Anyone can have edited them from another client, so
+        // an explicit sync is the natural moment to notice.
+        void topUpDownloadedPlaylists();
         // If there's a currently-active audiobook context, re-read its
         // progress from the server in case another client moved ahead.
         const bridge = getPlaybackBridge();

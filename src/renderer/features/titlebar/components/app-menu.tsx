@@ -8,6 +8,7 @@ import { Link, useNavigate } from 'react-router';
 import { isServerLock } from '/@/renderer/features/action-required/utils/window-properties';
 import { ServerList } from '/@/renderer/features/servers/components/server-list';
 import { openSettingsModal } from '/@/renderer/features/settings/utils/open-settings-modal';
+import { emitAllItemListRefresh } from '/@/renderer/features/shared/components/list-refresh-button';
 import { useAppStore, useAppStoreActions } from '/@/renderer/store';
 import { DropdownMenu, MenuItemProps } from '/@/shared/components/dropdown-menu/dropdown-menu';
 import { Icon } from '/@/shared/components/icon/icon';
@@ -125,8 +126,26 @@ export const AppMenu = () => {
             requestAnimationFrame(() => {
                 void (async () => {
                     try {
+                        // Data only. This used to follow the invalidation with
+                        // `browser.clearCache()`, which empties Chromium's whole
+                        // HTTP cache — every cover the app has ever painted, and
+                        // the sections the outlet keeps mounted repaint by
+                        // re-downloading and re-decoding originals. That single
+                        // call was most of what made a desktop sync take so much
+                        // longer than the phone's, which deliberately keeps its
+                        // artwork on disk for exactly this reason.
+                        //
+                        // Nothing here needs it: every artwork URL now names the
+                        // bytes behind it. Metadata images are addressed by an id
+                        // that changes with the art, and the one URL that did not
+                        // — the composited playlist grid — carries the playlist's
+                        // updatedAt (samoPlaylistCoverVersion). Settings → Cache
+                        // still clears the lot by hand.
                         await queryClient.invalidateQueries();
-                        await browser?.clearCache();
+                        // The lists on screen hold their rows outside the
+                        // queries that fetched them, so invalidation alone
+                        // cannot move them. Say it directly.
+                        emitAllItemListRefresh();
 
                         toast.hide(syncingId);
                         toast.show({

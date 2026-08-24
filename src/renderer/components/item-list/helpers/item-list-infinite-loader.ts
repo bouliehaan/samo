@@ -9,6 +9,7 @@ import throttle from 'lodash/throttle';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { queryKeys } from '/@/renderer/api/query-keys';
+import { watchListQueryInvalidation } from '/@/renderer/components/item-list/helpers/list-query-invalidation';
 import { useListContext } from '/@/renderer/context/list-context';
 import { eventEmitter } from '/@/renderer/events/event-emitter';
 import { UserFavoriteEventPayload } from '/@/renderer/events/events';
@@ -109,7 +110,7 @@ export const useItemListInfiniteLoader = ({
     );
 
     const fetchPage = useCallback(
-        async (pageNumber: number) => {
+        async (pageNumber: number, options?: { force?: boolean }) => {
             const startIndex = pageNumber * itemsPerPage;
             const queryParams = {
                 limit: itemsPerPage,
@@ -127,6 +128,9 @@ export const useItemListInfiniteLoader = ({
                     return result;
                 },
                 queryKey: queryKeys[getListQueryKeyName(itemType)].list(serverId, queryParams),
+                // A forced fetch is answering an invalidation, so it has to
+                // reach the server even if this page was loaded moments ago.
+                ...(options?.force ? { staleTime: 0 } : {}),
             });
 
             // Update the query data with the fetched page
@@ -155,6 +159,57 @@ export const useItemListInfiniteLoader = ({
             lastFetchedPageRef.current = Math.max(lastFetchedPageRef.current, pageNumber);
         },
         [itemsPerPage, query, queryClient, serverId, dataQueryKey, listQueryFn, itemType],
+    );
+
+    // The rows this list paints live in `dataQueryKey`, a cache entry written
+    // only by setQueryData with no fetcher behind it. react-query has no way to
+    // refresh it, so `invalidateQueries()` slides straight past — which is why
+    // "sync with server", and every mutation that invalidates a list, left the
+    // visible list showing exactly what it had loaded. A playlist's track count
+    // never moved until the page was built again from nothing.
+    //
+    // So watch the page queries the rows actually came from. When one of them is
+    // invalidated, refetch the pages already held and merge them in place:
+    // nothing is cleared first, so rows update under the cursor with no blank
+    // frame and no scroll jump.
+    const listKeyPrefix = useMemo(
+        () => queryKeys[getListQueryKeyName(itemType)].list(serverId) as readonly unknown[],
+        [itemType, serverId],
+    );
+
+    const isRefreshingRef = useRef<boolean>(false);
+
+    const refetchLoadedPages = useCallback(async () => {
+        const current = queryClient.getQueryData<InfiniteLoaderCacheData>(dataQueryKey);
+        const pages = Object.keys(current?.pagesLoaded ?? {})
+            .map(Number)
+            .filter((page) => Number.isInteger(page))
+            .sort((a, b) => a - b);
+
+        if (pages.length === 0) {
+            const visibleRange = currentVisibleRangeRef.current;
+            pages.push(visibleRange ? Math.floor(visibleRange.startIndex / itemsPerPage) : 0);
+        }
+
+        for (const page of pages) {
+            await fetchPage(page, { force: true });
+        }
+    }, [dataQueryKey, fetchPage, itemsPerPage, queryClient]);
+
+    const refetchLoadedPagesRef = useRef(refetchLoadedPages);
+    refetchLoadedPagesRef.current = refetchLoadedPages;
+
+    useEffect(
+        () =>
+            watchListQueryInvalidation(queryClient, listKeyPrefix, () => {
+                // Stand down while a manual refresh or a filter change is
+                // already refetching — those paths do this same work.
+                if (isRefreshingRef.current || isRefetchingRef.current) {
+                    return;
+                }
+                void refetchLoadedPagesRef.current();
+            }),
+        [listKeyPrefix, queryClient],
     );
 
     // Reset the loaded pages and refetch current page when the query changes
@@ -296,55 +351,34 @@ export const useItemListInfiniteLoader = ({
     );
 
     const refreshMutation = useMutation({
-        mutationFn: async (force?: boolean) => {
-            // Invalidate all queries to ensure fresh data
-            queryClient.invalidateQueries();
-
-            // Reset the infinite list data
-            const currentData = queryClient.getQueryData<{
-                dataMap: Map<number, unknown>;
-                pagesLoaded: Record<string, boolean>;
-            }>(dataQueryKey);
-
-            if (force || currentData) {
-                // Reset data to initial state and clear all loaded pages
-                await queryClient.setQueryData(dataQueryKey, (oldData: any) => {
-                    if (!oldData) return getInitialData();
-                    return {
-                        ...oldData,
-                        dataMap: new Map(),
-                        idToIndexMap: new Map(),
-                        pagesLoaded: {},
-                        version: (oldData?.version ?? 0) + 1,
-                    };
+        mutationFn: async () => {
+            // Guard the invalidation subscription above: it and this are the
+            // same work, and running both would fetch every page twice.
+            isRefreshingRef.current = true;
+            try {
+                // This list's queries only. It used to be a bare
+                // invalidateQueries(), so pressing refresh on one grid
+                // refetched every mounted query in the app.
+                await queryClient.invalidateQueries({
+                    exact: false,
+                    queryKey: listKeyPrefix,
                 });
-                lastFetchedPageRef.current = -1;
+                await queryClient.invalidateQueries({ queryKey: listCountQuery.queryKey });
+
+                // Refetch in place rather than emptying dataMap first. Clearing
+                // it blanked the whole list for as long as the round trip took,
+                // and the rows that come back are the same rows.
+                await refetchLoadedPages();
+            } finally {
+                isRefreshingRef.current = false;
             }
 
-            // Add a delay to make the refresh visually clear
-            // await new Promise((resolve) => setTimeout(resolve, 150));
-
-            // Determine which page to refetch based on current visible range
-            let pageToFetch = 0;
-            if (currentVisibleRangeRef.current) {
-                // Calculate the page from the current visible range
-                pageToFetch = Math.floor(currentVisibleRangeRef.current.startIndex / itemsPerPage);
-            } else if (lastFetchedPageRef.current >= 0) {
-                // Fallback to last fetched page if no visible range is tracked
-                pageToFetch = lastFetchedPageRef.current;
+            // Adjacent pages, if the visible range is close enough to a boundary
+            // to want them.
+            const visibleRange = currentVisibleRangeRef.current;
+            if (visibleRange) {
+                await onRangeChangedBase(visibleRange);
             }
-
-            // Refetch the current page
-            await fetchPage(pageToFetch);
-
-            // Trigger range changed to ensure adjacent pages are prefetched if needed
-            const startIndex = pageToFetch * itemsPerPage;
-            const stopIndex = Math.min((pageToFetch + 1) * itemsPerPage, totalItemCount);
-
-            await onRangeChangedBase({
-                startIndex,
-                stopIndex,
-            });
         },
         mutationKey: getListRefreshMutationKey(eventKey),
     });
@@ -352,10 +386,7 @@ export const useItemListInfiniteLoader = ({
     const refreshMutationRef = useRef(refreshMutation);
     refreshMutationRef.current = refreshMutation;
 
-    const refresh = useCallback(
-        async (force?: boolean) => refreshMutationRef.current.mutateAsync(force),
-        [],
-    );
+    const refresh = useCallback(async () => refreshMutationRef.current.mutateAsync(), []);
 
     const updateItems = useCallback(
         (indexes: number[], value: object) => {
@@ -386,7 +417,7 @@ export const useItemListInfiniteLoader = ({
                 return;
             }
 
-            refreshMutationRef.current.mutate(true);
+            refreshMutationRef.current.mutate();
         };
 
         eventEmitter.on('ITEM_LIST_REFRESH', handleRefresh);

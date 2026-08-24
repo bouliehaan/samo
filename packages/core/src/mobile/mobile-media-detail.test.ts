@@ -11,6 +11,7 @@ import {
     buildAlbumMetadataLines,
     loadMobileMediaDetail,
     mapSamoArtistDetail,
+    mapSamoMediaDetailFromRawBundle,
     mapSamoMediaTrackFromRaw,
     mapSamoPlaylistDetail,
     mapSamoPodcastEpisodeTrackFromRaw,
@@ -346,5 +347,45 @@ describe('mapSamoPlaylistDetail editability', () => {
 
     it('still refuses a system playlist, admin or not', () => {
         expect(owned({ isAdmin: true, userId: 'user-1' }, 'user-server', true)).toBe(false);
+    });
+});
+
+describe('stored playlist bundles keep their editability', () => {
+    // The Android mirror does not store a playlist detail the way it fetched
+    // it: SamoCatalogSync.slimDetailBundle strips `children.tracks` before the
+    // row is written, because the tracks are fanned out into `catalog_track`
+    // and storing them twice was 44MB of duplicate JSON.
+    //
+    // What survives that strip is what decides whether the playlist page offers
+    // any editing at all. Ownership lives on the ENTITY, not the tracks, so a
+    // stripped bundle must still map to a real `playlistMeta` — the read path
+    // reads this row for no other reason.
+    const storedBundle = (ownerId: string, system?: boolean) =>
+        ({
+            $samoRawDetail: 1,
+            children: {},
+            entity: { id: 'pl1', name: 'Road Trip', ownerId, system },
+            kind: 'playlist',
+        }) as const;
+
+    it('still reports the owner as able to edit after the tracks are stripped', () => {
+        const detail = mapSamoMediaDetailFromRawBundle(
+            testServerAuthentication({ url: 'https://music.example', userId: 'user-1' }),
+            undefined,
+            storedBundle('user-1'),
+        );
+
+        expect(detail?.tracks).toEqual([]);
+        expect(detail?.playlistMeta?.editable).toBe(true);
+    });
+
+    it('still refuses a server-managed playlist after the tracks are stripped', () => {
+        const detail = mapSamoMediaDetailFromRawBundle(
+            testServerAuthentication({ url: 'https://music.example', userId: 'user-1' }),
+            undefined,
+            storedBundle('user-1', true),
+        );
+
+        expect(detail?.playlistMeta?.editable).toBe(false);
     });
 });

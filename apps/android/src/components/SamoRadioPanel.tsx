@@ -197,9 +197,16 @@ const SamoRadioDeviceCard = memo(
                 setError(null);
                 try {
                     const next = await run();
-                    if (mountedRef.current) {
-                        onState(device.id, next);
-                    }
+                    // Unconditional, unlike the two setState calls below.
+                    //
+                    // This response IS the device's new state and it belongs to
+                    // a module-scope store that outlives this card. Gating it on
+                    // the card still being mounted threw away the answer to a
+                    // command whenever the panel went away mid-flight — a
+                    // screen lock drops Wi-Fi, the offline path empties the
+                    // device list, every card unmounts, and a level the user
+                    // had just committed was lost with it.
+                    onState(device.id, next);
                 } catch (commandError) {
                     if (mountedRef.current) {
                         setError(

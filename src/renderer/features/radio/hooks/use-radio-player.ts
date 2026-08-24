@@ -83,66 +83,82 @@ export const useRadioStore = createWithEqualityFn<RadioStore>((set, get) => ({
                 return;
             }
 
-            set((state) => {
-                const newStreamUrl = streamUrl ?? state.currentStreamUrl;
-                const newStationName = stationName ?? state.stationName;
+            const newStreamUrl = desiredStreamUrl;
+            if (!newStreamUrl) {
+                return;
+            }
 
-                if (!newStreamUrl) {
-                    return state;
-                }
+            const newStationName = stationName ?? currentState.stationName;
+            const streamUrlExplicit = streamUrl !== undefined;
+            const isSwitchingStation =
+                streamUrlExplicit && streamUrl !== currentState.currentStreamUrl;
+            const nextStationArt = isSwitchingStation
+                ? (stationArt ?? null)
+                : currentState.currentStationArt;
+            const nextMetadata = isSwitchingStation ? null : currentState.metadata;
 
-                const streamUrlExplicit = streamUrl !== undefined;
-                const isSwitchingStation =
-                    streamUrlExplicit && streamUrl !== state.currentStreamUrl;
-
-                let nextStationArt = state.currentStationArt;
-                if (isSwitchingStation) {
-                    nextStationArt = stationArt ?? null;
-                }
-
-                usePlaybackOwnerStore.getState().claim('radio', {
-                    engine: 'web',
-                    mediaKey: newStreamUrl,
-                    replace: isSwitchingStation,
-                });
-                usePlayerStoreBase.getState().mediaPlay();
-                if (nextStationArt?.id && nextStationArt.serverId) {
-                    recordRecentItem({
-                        artwork: {
-                            imageId: nextStationArt.imageId,
-                            imageItemType: LibraryItem.RADIO_STATION,
-                            imageUrl: nextStationArt.imageUrl,
-                            kind: 'music',
-                            serverId: nextStationArt.serverId,
-                        },
-                        itemId: nextStationArt.id,
-                        mediaType: 'radio',
-                        radioStreamUrl: newStreamUrl,
-                        serverId: nextStationArt.serverId,
-                        subtitle: parseSamoChannelIdFromStreamUrl(newStreamUrl)
-                            ? 'Radio • Samo channel'
-                            : 'Radio • Internet station',
-                        title: newStationName ?? 'Radio station',
-                    });
-                    useLastPlaybackSessionStore.getState().actions.setSession({
-                        metadata: isSwitchingStation ? null : state.metadata,
-                        serverId: nextStationArt.serverId,
-                        source: 'radio',
-                        stationArt: nextStationArt,
-                        stationId: nextStationArt.id,
-                        stationName: newStationName,
-                        streamUrl: newStreamUrl,
-                    });
-                }
-
-                return {
-                    currentStationArt: nextStationArt,
-                    currentStreamUrl: newStreamUrl,
-                    isPlaying: true,
-                    metadata: isSwitchingStation ? null : state.metadata,
-                    stationName: newStationName,
-                };
+            // COMMIT FIRST, then act. This ordering is the guard above.
+            //
+            // All of this used to run INSIDE the `set()` updater, which zustand
+            // does not commit until the updater returns. `mediaPlay()` below
+            // flips the transport PAUSED→PLAYING and notifies its subscribers
+            // synchronously, and one of them — `useRadioAudioInstance` — answers
+            // that by calling this very function again. From in there, `get()`
+            // still saw `isPlaying: false`, so the guard could never recognise
+            // its own effect and the whole pipeline ran a second time: a second
+            // session claimed, a second sweep of every <audio>, recents and the
+            // restored session rewritten with the OUTGOING station, and every
+            // isPlaying-keyed effect driven twice — including the metadata poll,
+            // which opens a real second connection to the stream. On SiriusXM
+            // two concurrent connections are indistinguishable from account
+            // sharing, which is why one press must mean one stream.
+            //
+            // Committed first, the re-entrant call reads `isPlaying: true` with
+            // the same URL and returns at the guard, as it was always meant to.
+            // A zustand updater has to be pure for that to be true.
+            set({
+                currentStationArt: nextStationArt,
+                currentStreamUrl: newStreamUrl,
+                isPlaying: true,
+                metadata: nextMetadata,
+                stationName: newStationName,
             });
+
+            usePlaybackOwnerStore.getState().claim('radio', {
+                engine: 'web',
+                mediaKey: newStreamUrl,
+                replace: isSwitchingStation,
+            });
+            usePlayerStoreBase.getState().mediaPlay();
+
+            if (nextStationArt?.id && nextStationArt.serverId) {
+                recordRecentItem({
+                    artwork: {
+                        imageId: nextStationArt.imageId,
+                        imageItemType: LibraryItem.RADIO_STATION,
+                        imageUrl: nextStationArt.imageUrl,
+                        kind: 'music',
+                        serverId: nextStationArt.serverId,
+                    },
+                    itemId: nextStationArt.id,
+                    mediaType: 'radio',
+                    radioStreamUrl: newStreamUrl,
+                    serverId: nextStationArt.serverId,
+                    subtitle: parseSamoChannelIdFromStreamUrl(newStreamUrl)
+                        ? 'Radio • Samo channel'
+                        : 'Radio • Internet station',
+                    title: newStationName ?? 'Radio station',
+                });
+                useLastPlaybackSessionStore.getState().actions.setSession({
+                    metadata: nextMetadata,
+                    serverId: nextStationArt.serverId,
+                    source: 'radio',
+                    stationArt: nextStationArt,
+                    stationId: nextStationArt.id,
+                    stationName: newStationName,
+                    streamUrl: newStreamUrl,
+                });
+            }
         },
         setCurrentStreamUrl: (currentStreamUrl) => set({ currentStreamUrl }),
         setIsPlaying: (isPlaying) => set({ isPlaying }),
@@ -313,8 +329,26 @@ export const useRadioMetadata = () => {
         // the playerbar while the stream itself stays in the Web engine.
         if (streamMetadataReader?.getStreamMetadata) {
             let stopped = false;
+            // At most ONE metadata connection at a time.
+            //
+            // This reader opens a real GET of the AUDIO stream and reads until
+            // it sees a non-empty ICY block; its 12s timeout is an IDLE timer
+            // that a continuously streaming socket never trips. So a poll that
+            // has not answered yet is a socket still pulling audio, and firing
+            // the next one on schedule stacks listeners on the station for as
+            // long as it stays quiet.
+            //
+            // That matters far beyond wasted bytes on SiriusXM, where several
+            // simultaneous pulls are indistinguishable from account sharing.
+            // One in flight, always.
+            let inFlight = false;
 
             const pollMetadata = async () => {
+                if (inFlight) {
+                    return;
+                }
+                inFlight = true;
+
                 try {
                     const metadata = await streamMetadataReader.getStreamMetadata(currentStreamUrl);
 
@@ -325,6 +359,8 @@ export const useRadioMetadata = () => {
                     if (!stopped) {
                         setMetadata(null);
                     }
+                } finally {
+                    inFlight = false;
                 }
             };
 

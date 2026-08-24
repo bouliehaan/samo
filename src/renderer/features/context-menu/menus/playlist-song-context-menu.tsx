@@ -4,6 +4,7 @@ import { AddToPlaylistAction } from '/@/renderer/features/context-menu/actions/a
 import { DownloadAction } from '/@/renderer/features/context-menu/actions/download-action';
 import { GetInfoAction } from '/@/renderer/features/context-menu/actions/get-info-action';
 import { GoToAction } from '/@/renderer/features/context-menu/actions/go-to-action';
+import { KeepInLibraryAction } from '/@/renderer/features/context-menu/actions/keep-in-library-action';
 import { PlayAction } from '/@/renderer/features/context-menu/actions/play-action';
 import { PlayOnSamoRadioAction } from '/@/renderer/features/context-menu/actions/play-on-samo-radio-action';
 import { PlayTrackRadioAction } from '/@/renderer/features/context-menu/actions/play-track-radio-action';
@@ -34,6 +35,7 @@ export const PlaylistSongContextMenu = ({ items, type }: PlaylistSongContextMenu
             <PlayOnSamoRadioAction ids={ids} itemType={LibraryItem.SONG} songs={items} />
             <ContextMenu.Divider />
             <RemoveFromPlaylistAction items={items} />
+            <KeepInLibraryAction items={items} />
             <ContextMenu.Divider />
             <AddToPlaylistAction items={ids} itemType={type} />
             <ContextMenu.Divider />

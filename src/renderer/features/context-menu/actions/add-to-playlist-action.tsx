@@ -3,9 +3,11 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import Fuse from 'fuse.js';
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useParams } from 'react-router';
 
 import { api } from '/@/renderer/api';
 import { queryKeys } from '/@/renderer/api/query-keys';
+import { keepExploTracks } from '/@/renderer/api/samo/samo-controller';
 import {
     getAlbumArtistSongsById,
     getAlbumSongsById,
@@ -15,7 +17,7 @@ import {
 import { playlistsQueries } from '/@/renderer/features/playlists/api/playlists-api';
 import { useRecentPlaylists } from '/@/renderer/features/playlists/hooks/use-recent-playlists';
 import { useAddToPlaylist } from '/@/renderer/features/playlists/mutations/add-to-playlist-mutation';
-import { useCurrentServer, useCurrentServerId } from '/@/renderer/store';
+import { getServerById, useCurrentServer, useCurrentServerId } from '/@/renderer/store';
 import { Checkbox } from '/@/shared/components/checkbox/checkbox';
 import { ContextMenu } from '/@/shared/components/context-menu/context-menu';
 import { Icon } from '/@/shared/components/icon/icon';
@@ -42,6 +44,18 @@ export const AddToPlaylistAction = ({ items, itemType }: AddToPlaylistActionProp
         key: 'playlist-skip-duplicate',
     });
     const addToPlaylistMutation = useAddToPlaylist({});
+
+    // Are these tracks coming out of the Explore queue? Their files live in
+    // samo's explo drop folder, which the weekly run empties — so storing one
+    // of those ids in a playlist leaves an entry that disappears along with the
+    // file. Detected the same way KeepInLibraryAction does: the route's
+    // playlist, and whether the server calls it system-managed.
+    const { playlistId: sourcePlaylistId } = useParams() as { playlistId?: string };
+    const sourceDetailQuery = useQuery({
+        ...playlistsQueries.detail({ query: { id: sourcePlaylistId ?? '' }, serverId }),
+        enabled: Boolean(sourcePlaylistId && serverId && itemType === LibraryItem.PLAYLIST_SONG),
+    });
+    const isFromExplore = Boolean(sourceDetailQuery.data?.isSystem);
 
     const playlistsQuery = useQuery(
         playlistsQueries.list({
@@ -187,6 +201,31 @@ export const AddToPlaylistAction = ({ items, itemType }: AddToPlaylistActionProp
                     return;
                 }
 
+                // Copy out of the drop folder first and add the library copy
+                // instead, so the entry survives the next rotation. Keeping a
+                // track already in the library is a no-op on the server — it
+                // reports the existing copy rather than duplicating it — so
+                // doing this twice to the same song is safe.
+                if (isFromExplore && allSongIds.length > 0) {
+                    const currentServer = getServerById(serverId);
+                    if (currentServer) {
+                        const kept = await keepExploTracks(currentServer, allSongIds);
+                        const libraryIds = kept.results
+                            .map((result) => result.libraryTrackId)
+                            .filter((id): id is string => Boolean(id));
+
+                        if (libraryIds.length === 0) {
+                            toast.error({
+                                message:
+                                    kept.results.find((result) => result.error)?.error ??
+                                    'Saved to your library, but not indexed yet — try again shortly.',
+                            });
+                            return;
+                        }
+                        allSongIds = libraryIds;
+                    }
+                }
+
                 let songsToAdd: string[] = allSongIds;
 
                 if (skipDuplicates) {
@@ -271,6 +310,7 @@ export const AddToPlaylistAction = ({ items, itemType }: AddToPlaylistActionProp
             getSongsByArtist,
             getSongsByGenre,
             getSongsByPlaylist,
+            isFromExplore,
             itemType,
             items,
             queryClient,

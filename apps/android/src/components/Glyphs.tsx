@@ -342,7 +342,13 @@ export const HeartGlyph = ({ color, filled }: { color: string; filled?: boolean 
     );
 };
 
-export const PlaylistAddGlyph = ({ color }: { color: string }) => {
+/**
+ * A list with a sign beside it. The add and remove glyphs are the same drawing
+ * to within one stroke, so they share it — the pair has to stay visually
+ * identical apart from that stroke, and two copies of the geometry is how that
+ * quietly stops being true.
+ */
+const PlaylistSignGlyph = ({ color, sign }: { color: string; sign: 'minus' | 'plus' }) => {
     return (
         <View style={{ height: 18, justifyContent: 'space-between', width: 20 }}>
             <View style={{ backgroundColor: color, borderRadius: 1, height: 2, width: 14 }} />
@@ -360,21 +366,31 @@ export const PlaylistAddGlyph = ({ color }: { color: string }) => {
                             width: 10,
                         }}
                     />
-                    <View
-                        style={{
-                            backgroundColor: color,
-                            height: 10,
-                            left: 4,
-                            position: 'absolute',
-                            top: 0,
-                            width: 2,
-                        }}
-                    />
+                    {sign === 'plus' ? (
+                        <View
+                            style={{
+                                backgroundColor: color,
+                                height: 10,
+                                left: 4,
+                                position: 'absolute',
+                                top: 0,
+                                width: 2,
+                            }}
+                        />
+                    ) : null}
                 </View>
             </View>
         </View>
     );
 };
+
+export const PlaylistAddGlyph = ({ color }: { color: string }) => (
+    <PlaylistSignGlyph color={color} sign="plus" />
+);
+
+export const PlaylistRemoveGlyph = ({ color }: { color: string }) => (
+    <PlaylistSignGlyph color={color} sign="minus" />
+);
 
 export const PlusGlyph = ({ color, size = 20 }: { color: string; size?: number }) => {
     const stroke = Math.max(2, Math.round(size * 0.12));

@@ -249,11 +249,21 @@ export const loadCatalogMediaDetail = async (
                 return null;
             }
             const isPlaylist = detailType === MobileMediaDetailType.PLAYLIST;
-            const rows = await getTracks(
-                source.id,
-                isPlaylist ? 'playlist' : 'podcast',
-                item.id,
-            );
+            // The playlist's own stored row rides alongside its track rows.
+            // The tracks are enough to RENDER the page, which is why this
+            // branch used to return without ever asking for the row — but the
+            // row is the only thing that carries who owns the playlist and
+            // whether the server manages it, and that is what decides whether
+            // the page may be edited at all. Without it every playlist reached
+            // through the mirror (i.e. every synced playlist — the fast path)
+            // came back with no `playlistMeta`, so `editable` read as false and
+            // the edit affordances silently vanished the moment a playlist
+            // finished syncing. Issued alongside the track query, not after it,
+            // exactly as the album branch below reads its album row.
+            const [rows, playlistRow] = await Promise.all([
+                getTracks(source.id, isPlaylist ? 'playlist' : 'podcast', item.id),
+                isPlaylist ? getDetail(source.id, 'playlist', item.id) : null,
+            ]);
             // Playlist rows ARE music tracks; podcast rows are episodes and
             // need the episode mapper — the envelope is identical, only the
             // container says which. The show's own cover is threaded in as the
@@ -270,10 +280,23 @@ export const loadCatalogMediaDetail = async (
             if (tracks.length === 0) {
                 return null;
             }
+            // Mapped through the shared core mapper rather than read field by
+            // field, so ownership/system rules have exactly one definition.
+            // Only the metadata is taken from it: its own `tracks` are empty by
+            // construction (the sync strips `children.tracks` from the stored
+            // bundle precisely because they live in the rows above), and the
+            // identity fields stay with the tile for the same reason the album
+            // branch keeps them — the tile holds the artwork already on screen.
+            const playlistDetail =
+                isPlaylist && playlistRow
+                    ? hydrateDetailPayload(playlistRow, source, serverConnection)
+                    : null;
             return {
                 artworkImageId: item.artworkImageId,
                 artworkUrl: item.artworkUrl,
                 id: item.id,
+                metadataLines: playlistDetail?.metadataLines,
+                playlistMeta: playlistDetail?.playlistMeta,
                 source,
                 subtitle: item.subtitle,
                 title: item.title,

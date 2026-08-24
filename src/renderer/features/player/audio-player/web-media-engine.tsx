@@ -281,7 +281,15 @@ export function WebMediaEngine({
             isTransitioning={false}
             onEndedPlayer1={mode === 'radio' ? handleRadioEnded : handleEnded}
             onEndedPlayer2={() => {}}
-            onErrorPause={mode === 'radio' ? () => {} : handleError}
+            // Radio used to swallow this. `handleError` is the ONLY caller of
+            // `onError`, so a no-op here made `RadioWebPlayer`'s `onStreamError`
+            // — the stream-token refresh — unreachable, and a radio stream that
+            // failed to open went silent with no toast and no recovery.
+            //
+            // The engine only reaches here after MAX_NETWORK_RETRIES, so this
+            // cannot toast-storm, and radio passes `releaseOnError={() => {}}`,
+            // so for radio this is exactly "refresh the token, and say so".
+            onErrorPause={handleError}
             onProgressPlayer1={onProgress ? handleProgress : () => {}}
             onProgressPlayer2={() => {}}
             onStartedPlayer1={handleStarted}

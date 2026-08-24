@@ -1,4 +1,6 @@
 import {
+    isMobileExploPlaylistDetail,
+    isMobilePlaylistDetailEditable,
     MobileHomeItemType,
     MobileMediaDetailType,
     type MobileContentSource,
@@ -16,6 +18,7 @@ import {
     HeartGlyph,
     PersonGlyph,
     PlaylistAddGlyph,
+    PlaylistRemoveGlyph,
     QueueAddGlyph,
     TrashGlyph,
 } from '../components/Glyphs';
@@ -50,10 +53,12 @@ import {
 } from '../handlers/media-detail-handlers';
 import {
     handleDeletePlaylistForItem,
+    handleKeepExploTracks,
     handleOpenAddToPlaylistForCollection,
     handleOpenAddToPlaylistForSong,
     handleOpenCreatePlaylistForCollection,
     handleOpenCreatePlaylistForSong,
+    handleRemoveTrackFromPlaylist,
 } from '../handlers/playlist-handlers';
 import {
     canAppendToPlaybackQueue,
@@ -323,7 +328,12 @@ export function useAndroidContextMenu(): AndroidContextMenuSurface {
                     icon: <PlaylistAddGlyph color={colors.text} />,
                     id: 'playlist',
                     label: 'Add to Playlist',
-                    onPress: () => handleOpenAddToPlaylistForSong(track, source.id),
+                    onPress: () =>
+                        handleOpenAddToPlaylistForSong(
+                            track,
+                            source.id,
+                            Boolean(detail && isMobileExploPlaylistDetail(detail)),
+                        ),
                 });
                 menuActions.push({
                     icon: <PlaylistAddGlyph color={colors.text} />,
@@ -379,6 +389,42 @@ export function useAndroidContextMenu(): AndroidContextMenuSurface {
                         hideFromHome(homeKey);
                         setContextMenuTarget(null);
                     },
+                });
+            }
+
+            // Last, and the only destructive entry a song menu ever has — the
+            // same place the collection menu puts Delete Playlist. Sitting it
+            // below the navigational actions is deliberate: nothing lands on it
+            // while reaching for Go to Album.
+            //
+            // The detail the menu was opened against IS the qualifier. It is
+            // set only by the detail-page rows (a long-press on Home, in search
+            // or in the queue has no containing playlist to remove from), and
+            // `isMobilePlaylistDetailEditable` narrows that to a playlist this
+            // user is actually allowed to write — not somebody else's, and not
+            // a server-managed one, both of which would 403 on commit.
+            // Explore only: these tracks sit in a drop folder the weekly run
+            // empties, so this is the one place in the app where a track
+            // disappears unless you act. Everywhere else it is already in the
+            // library and the action would be a no-op.
+            if (detail && isMobileExploPlaylistDetail(detail)) {
+                const exploDetail = detail;
+                menuActions.push({
+                    icon: <DownloadGlyph color={colors.text} />,
+                    id: 'keep-in-library',
+                    label: 'Keep in Library',
+                    onPress: () => void handleKeepExploTracks([track], exploDetail),
+                });
+            }
+
+            if (detail && isMobilePlaylistDetailEditable(detail)) {
+                const playlistDetail = detail;
+                menuActions.push({
+                    destructive: true,
+                    icon: <PlaylistRemoveGlyph color={DESTRUCTIVE_TINT} />,
+                    id: 'remove-from-playlist',
+                    label: 'Remove from Playlist',
+                    onPress: () => handleRemoveTrackFromPlaylist(track, playlistDetail),
                 });
             }
 

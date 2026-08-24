@@ -15,6 +15,7 @@ import { ContextMenuController } from '/@/renderer/features/context-menu/context
 import { playlistsQueries } from '/@/renderer/features/playlists/api/playlists-api';
 import { ClientSideSongFilters } from '/@/renderer/features/playlists/components/client-side-song-filters';
 import { openUpdatePlaylistModal } from '/@/renderer/features/playlists/components/update-playlist-modal';
+import { useCanModifyPlaylists } from '/@/renderer/features/playlists/hooks/use-playlist-permissions';
 import { usePlaylistSongListFilters } from '/@/renderer/features/playlists/hooks/use-playlist-song-list-filters';
 import { FilterButton } from '/@/renderer/features/shared/components/filter-button';
 import {
@@ -31,7 +32,6 @@ import { FILTER_KEYS } from '/@/renderer/features/shared/utils';
 import {
     PlaylistTarget,
     useCurrentServerId,
-    usePermissions,
     usePlaylistTarget,
     useSettingsStoreActions,
 } from '/@/renderer/store';
@@ -119,11 +119,7 @@ export const PlaylistDetailSongListHeaderFilters = () => {
     const serverId = useCurrentServerId();
 
     const detailQuery = useQuery(playlistsQueries.detail({ query: { id: playlistId }, serverId }));
-    const { userId, ...permissions } = usePermissions();
-    const canEditPublic = permissions.playlists.editPublic;
-    const includesNonOwnedPublic =
-        Boolean(detailQuery.data?.public) && detailQuery.data?.ownerId !== userId;
-    const canEditPlaylist = canEditPublic || !includesNonOwnedPublic;
+    const canModifyPlaylist = useCanModifyPlaylists([detailQuery.data]);
 
     const handleMore = (event: React.MouseEvent<HTMLButtonElement>) => {
         if (!detailQuery.data) return;
@@ -194,7 +190,7 @@ export const PlaylistDetailSongListHeaderFilters = () => {
                 <Divider orientation="vertical" />
                 <PlaylistSongListFiltersModal />
                 <ListRefreshButton disabled={isEditMode} listKey={listKey} />
-                {canEditPlaylist && detailQuery.data ? (
+                {canModifyPlaylist && detailQuery.data ? (
                     <Button
                         leftSection={<Icon icon="edit" />}
                         onClick={() => openUpdatePlaylistModal({ playlist: detailQuery.data })}
@@ -208,15 +204,22 @@ export const PlaylistDetailSongListHeaderFilters = () => {
             </Group>
             <Group gap="sm" wrap="nowrap">
                 <SaveAndReplaceButton mode={mode} songIds={tracks} />
-                <Button
-                    onClick={() => setMode?.(mode === 'edit' ? 'view' : 'edit')}
-                    uppercase
-                    variant={mode === 'edit' ? 'state-error' : 'subtle'}
-                >
-                    {mode === 'edit'
-                        ? t('common.cancel', { postProcess: 'titleCase' })
-                        : t('common.edit', { postProcess: 'titleCase' })}
-                </Button>
+                {/* Entering edit mode leads to a trackIds PATCH, which a
+                    server-managed playlist refuses — so don't open the door.
+                    Still rendered while already in edit mode, since `mode`
+                    outlives navigation and you must always be able to cancel
+                    out of it. */}
+                {canModifyPlaylist || isEditMode ? (
+                    <Button
+                        onClick={() => setMode?.(mode === 'edit' ? 'view' : 'edit')}
+                        uppercase
+                        variant={mode === 'edit' ? 'state-error' : 'subtle'}
+                    >
+                        {mode === 'edit'
+                            ? t('common.cancel', { postProcess: 'titleCase' })
+                            : t('common.edit', { postProcess: 'titleCase' })}
+                    </Button>
+                ) : null}
                 <Tooltip
                     label={t(`common.${collapsed ? 'expand' : 'collapse'}`, {
                         postProcess: 'titleCase',

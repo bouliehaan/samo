@@ -49,6 +49,7 @@ import {
     subscribeCatalogSyncCompleted,
 } from './src/services/catalog/catalog-sync-events';
 import { resumeDownloadsOnForeground } from './src/services/download-manager';
+import { topUpDownloadedPlaylists } from './src/services/downloaded-playlist-topup';
 import { refreshHomeFromMirror } from './src/services/home-flow';
 import { loadHomeLayoutHint } from './src/services/home-layout-hint';
 import { formatJankBreadcrumb, traceAsync } from './src/services/jank-trace';
@@ -149,6 +150,10 @@ const flushPostSyncRefresh = () => {
                     await traceAsync('catalog.prefetchArtwork', () =>
                         prefetchCatalogArtwork(auth),
                     );
+                    // A sync is also when a playlist edited on another client
+                    // shows up. If we hold that playlist offline, the tracks it
+                    // gained belong offline too.
+                    await topUpDownloadedPlaylists();
                 } catch (error) {
                     console.error('[catalog] post-sync derive/prefetch failed', error);
                 }

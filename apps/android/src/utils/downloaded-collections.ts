@@ -67,3 +67,33 @@ export const buildDownloadedCollectionSnapshot = (
 
     return { collections: summaries, keys, signature, trackKeys };
 };
+
+/**
+ * The playlists this device holds downloads for.
+ *
+ * A playlist counts as downloaded when ANY of its tracks completed — the same
+ * rule the downloaded tick in the UI uses. That also means a playlist whose
+ * download partly failed is in here, so topping it up retries the tracks that
+ * never landed rather than leaving them stranded forever.
+ */
+export const pickDownloadedPlaylistCollections = (
+    entries: DownloadEntry[],
+    options?: { playlistId?: string; sourceId?: string },
+): DownloadEntry['collection'][] => {
+    const byKey = new Map<string, DownloadEntry['collection']>();
+
+    for (const entry of entries) {
+        if (entry.status !== 'completed') continue;
+        const collection = entry.collection;
+        if (collection.type !== 'playlist') continue;
+        if (options?.playlistId && collection.id !== options.playlistId) continue;
+        if (options?.sourceId && collection.sourceId !== options.sourceId) continue;
+
+        const key = getDownloadedCollectionKey(collection.sourceId, collection.id);
+        if (!byKey.has(key)) {
+            byKey.set(key, collection);
+        }
+    }
+
+    return [...byKey.values()];
+};

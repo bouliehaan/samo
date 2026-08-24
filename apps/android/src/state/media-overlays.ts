@@ -18,6 +18,13 @@ export type PlaylistMenuRoot =
           sourceId: string;
       }
     | {
+          /**
+           * The song came from the Explore playlist, whose files the weekly
+           * rotation deletes. Adding that track's id to a playlist would leave
+           * an entry that vanishes with the file, so the add path copies it
+           * into the library first and stores the copy instead.
+           */
+          fromExplo?: boolean;
           kind: 'track';
           mode?: 'add' | 'create';
           sourceId: string;

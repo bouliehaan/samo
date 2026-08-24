@@ -9,6 +9,7 @@ import {
     getSamoMetadataImageUrl,
     getSamoMusicTrackStreamUrl,
     resolveSamoPlaylistArtworkUrl,
+    samoPlaylistCoverVersion,
     samoPlaylistHasCoverGrid,
 } from './server-samo';
 import { buildSamoAuthenticatedImageRequest, withSamoImageWidth } from './server-samo-stream-token';
@@ -28,6 +29,90 @@ describe('Samo artwork URLs', () => {
         });
 
         expect(url).toBe('https://music.example/api/v1/music/playlists/playlist%201/cover');
+    });
+
+    it('stamps the playlist cover URL with updatedAt as epoch millis', () => {
+        // The composited 2x2 grid is rebuilt from the playlist's first four
+        // track covers at request time, but served `immutable, max-age=1y` from
+        // a URL that never changes. Without the stamp, a playlist that gains a
+        // track keeps painting its old grid until an HTTP cache is cleared by
+        // hand.
+        const url = resolveSamoPlaylistArtworkUrl(auth, {
+            id: 'playlist 1',
+            images: [{ id: 'cover_a' }, { id: 'cover_b' }],
+            updatedAt: '2026-07-01T00:00:00Z',
+        });
+
+        expect(url).toBe(
+            'https://music.example/api/v1/music/playlists/playlist%201/cover?v=1782864000000',
+        );
+    });
+
+    it('gives a changed playlist a different cover URL and an unchanged one the same URL', () => {
+        const playlist = { id: 'pl', images: [{ id: 'a' }, { id: 'b' }] };
+        const before = resolveSamoPlaylistArtworkUrl(auth, {
+            ...playlist,
+            updatedAt: '2026-07-01T00:00:00Z',
+        });
+
+        expect(
+            resolveSamoPlaylistArtworkUrl(auth, {
+                ...playlist,
+                updatedAt: '2026-07-01T00:00:00Z',
+            }),
+        ).toBe(before);
+        expect(
+            resolveSamoPlaylistArtworkUrl(auth, {
+                ...playlist,
+                updatedAt: '2026-07-01T00:00:01Z',
+            }),
+        ).not.toBe(before);
+    });
+
+    it('reads two spellings of one instant as the same stamp', () => {
+        expect(samoPlaylistCoverVersion({ updatedAt: '2026-07-01T00:00:00Z' })).toBe(
+            samoPlaylistCoverVersion({ updatedAt: '2026-07-01T00:00:00+00:00' }),
+        );
+    });
+
+    it('leaves the URL unstamped when updatedAt is absent or unparseable', () => {
+        // Matches SamoCatalogConverters.toEpochMs, which can only return null
+        // for these. The Kotlin mirror mapper and this must build the SAME URL
+        // for the same playlist, or one grid would be cached under two of them.
+        expect(samoPlaylistCoverVersion({})).toBeUndefined();
+        expect(samoPlaylistCoverVersion({ updatedAt: '   ' })).toBeUndefined();
+        expect(samoPlaylistCoverVersion({ updatedAt: 'whenever' })).toBeUndefined();
+        expect(
+            resolveSamoPlaylistArtworkUrl(auth, {
+                id: 'pl',
+                images: [{ id: 'a' }, { id: 'b' }],
+                updatedAt: 'whenever',
+            }),
+        ).toBe('https://music.example/api/v1/music/playlists/pl/cover');
+    });
+
+    it('does not stamp a single-cover playlist, whose image id already names its bytes', () => {
+        const url = resolveSamoPlaylistArtworkUrl(auth, {
+            id: 'pl',
+            images: [{ id: 'cover_a' }],
+            updatedAt: '2026-07-01T00:00:00Z',
+        });
+
+        expect(url).not.toContain('v=');
+        expect(url).toContain('cover_a');
+    });
+
+    it('survives the width and stream-token passes that run over it afterwards', () => {
+        const stamped = resolveSamoPlaylistArtworkUrl(
+            auth,
+            { id: 'pl', images: [{ id: 'a' }, { id: 'b' }], updatedAt: '2026-07-01T00:00:00Z' },
+            'token-1',
+        );
+        const request = buildSamoAuthenticatedImageRequest(auth, stamped!, 'cache-key', 300);
+
+        expect(request.url).toContain('v=1782864000000');
+        expect(request.url).toContain('width=300');
+        expect(request.url).not.toContain('stream_token');
     });
 
     it('flags a multi-cover playlist as a grid and a 0/1-cover one as not', () => {

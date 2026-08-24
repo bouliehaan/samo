@@ -434,6 +434,83 @@ export const handleGoToAlbumForTrack = async (
     await handleSelectMediaItem(synthetic);
 };
 
+/**
+ * The Home-item type a detail was opened as. This is the inverse of
+ * `toDetailType`, and it exists because the caches are keyed by ITEM identity
+ * (`source:type:id`) while an edit or a reload only has the detail in hand.
+ */
+const detailItemType = (type: MobileMediaDetail['type']): MobileHomeItem['type'] | null => {
+    switch (type) {
+        case MobileMediaDetailType.ALBUM:
+            return MobileHomeItemType.ALBUM;
+        case MobileMediaDetailType.ARTIST:
+            return MobileHomeItemType.ARTIST;
+        case MobileMediaDetailType.AUDIOBOOK:
+            return MobileHomeItemType.AUDIOBOOK;
+        case MobileMediaDetailType.PLAYLIST:
+            return MobileHomeItemType.PLAYLIST;
+        case MobileMediaDetailType.PODCAST:
+            return MobileHomeItemType.PODCAST;
+        default:
+            return null;
+    }
+};
+
+/**
+ * Apply an edit to the media detail currently on screen, in every place a copy
+ * of it lives.
+ *
+ * A loaded detail is held twice — once as the live navigation state and once in
+ * the in-memory LRU that makes reopening it instant — and both are the SAME
+ * object reference. Writing only the navigation state would leave the cache
+ * holding the pre-edit copy, and since `loadDetailWithCache` prefers that cache
+ * over everything else, the edit would visibly undo itself the moment the user
+ * navigated away and came back.
+ *
+ * `detailId` is checked rather than assumed: the caller works from a detail it
+ * captured earlier (a context menu outlives the frame that opened it), and an
+ * edit must never land on whatever page happens to be open now.
+ *
+ * Returns the detail that was displaced, so a caller writing optimistically has
+ * something to put back, or null when nothing was applied.
+ */
+export const updateLoadedMediaDetail = (
+    detailId: string,
+    update: (detail: MobileMediaDetail) => MobileMediaDetail,
+): MobileMediaDetail | null => {
+    const mediaDetailState = getAppNavigation().mediaDetailState;
+    if (mediaDetailState.status !== 'loaded' || mediaDetailState.detail.id !== detailId) {
+        return null;
+    }
+
+    const previous = mediaDetailState.detail;
+    const next = update(previous);
+    if (next === previous) {
+        return null;
+    }
+
+    setMediaDetailState({ detail: next, status: 'loaded' });
+
+    // The cache is keyed by the ITEM identity the detail was opened under
+    // (`source:type:id`), which is why the key is rebuilt here from the detail
+    // rather than carried in — see reloadCurrentMediaDetail, which derives the
+    // same key the same way.
+    const itemType = detailItemType(previous.type);
+    if (!itemType) {
+        return previous;
+    }
+    const cacheKey = getRecentContentItemKey({
+        id: previous.id,
+        source: previous.source,
+        type: itemType,
+    });
+    if (mediaDetailCache.has(cacheKey)) {
+        rememberMediaDetail(mediaDetailCache, cacheKey, next);
+    }
+
+    return previous;
+};
+
 export const reloadCurrentMediaDetail = async (): Promise<void> => {
     const mediaDetailState = getAppNavigation().mediaDetailState;
     if (mediaDetailState.status !== 'loaded') {
@@ -442,18 +519,7 @@ export const reloadCurrentMediaDetail = async (): Promise<void> => {
     const serverConnection = getAuthSession().serverConnection;
 
     const detail = mediaDetailState.detail;
-    const itemType =
-        detail.type === MobileMediaDetailType.ALBUM
-            ? MobileHomeItemType.ALBUM
-            : detail.type === MobileMediaDetailType.PLAYLIST
-              ? MobileHomeItemType.PLAYLIST
-              : detail.type === MobileMediaDetailType.ARTIST
-                ? MobileHomeItemType.ARTIST
-                : detail.type === MobileMediaDetailType.PODCAST
-                  ? MobileHomeItemType.PODCAST
-                  : detail.type === MobileMediaDetailType.AUDIOBOOK
-                    ? MobileHomeItemType.AUDIOBOOK
-                    : null;
+    const itemType = detailItemType(detail.type);
 
     if (!itemType) {
         return;

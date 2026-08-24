@@ -1,3 +1,5 @@
+import type { SamoExploKeepResponse } from '@samo/core/server';
+
 import {
     authenticateSamo,
     buildSamoAuthenticatedImageRequest,
@@ -28,6 +30,7 @@ import {
     getSamoPodcastCoverUrl,
     getSamoPodcastEpisodeStreamUrl,
     getSamoPodcastShow,
+    keepSamoExploTracks,
     listSamoAudiobookBookmarks,
     listSamoAudiobooks,
     listSamoBookmarks,
@@ -549,6 +552,14 @@ export const fetchSamoUnplayedHomeTracks = async (
  * home section can render nothing. Once found, it's normalized like any other
  * playlist — it's an ordinary playlist once opened.
  */
+/** Copies explo drops into the library; see keepSamoExploTracks in core. */
+export const keepExploTracks = async (
+    server: ServerListItemWithCredentialCore,
+    trackIds: string[],
+): Promise<SamoExploKeepResponse> => {
+    return keepSamoExploTracks(browserFetch, samoAuthentication(server), trackIds);
+};
+
 export const fetchSamoExploPlaylist = async (
     server: ServerListItemWithCredentialCore,
     signal?: AbortSignal,

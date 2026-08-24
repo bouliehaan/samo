@@ -348,10 +348,30 @@ export const WebPlayerEngine = (props: WebPlayerEngineProps) => {
 
     useEffect(() => clearAllAudioElements, [clearAllAudioElements]);
 
+    // `ReactPlayerComponent` is a dependency, and it is the whole point of this
+    // effect rather than an incidental extra.
+    //
+    // This engine always commits TWICE: once while the dynamic import of
+    // react-player is still in flight, rendering nothing, and again once it
+    // resolves — and it is that SECOND commit that inserts the <audio> and
+    // starts it fetching. Without this dependency none of the others changed
+    // between those two commits, so React skipped the effect exactly when there
+    // was finally an element to register. The first commit had run it against
+    // two null refs and bailed.
+    //
+    // An element registered by nothing but `onReady` is unowned from the moment
+    // it starts streaming until `canplay` fires, which on a live stream is
+    // hundreds of milliseconds or more. Unmount it inside that window — which
+    // is precisely what `play()` does when it nulls `contentUrl` before
+    // resolving the next session — and it is stranded: react-player's unmount
+    // only does `removeAttribute('src')`, which per spec does NOT stop an
+    // element that already began loading, and once detached from the document
+    // neither the registry nor `stopAllAudioElements`'s DOM sweep can ever
+    // reach it again. That is a second stream nothing in the app can stop.
     useEffect(() => {
         registerPlayerAudioElement(player1Ref.current, 'web-player-1', src1);
         registerPlayerAudioElement(player2Ref.current, 'web-player-2', src2);
-    }, [registerPlayerAudioElement, src1, src2]);
+    }, [ReactPlayerComponent, registerPlayerAudioElement, src1, src2]);
 
     const handleOnReadyPlayer1 = useCallback(
         (player: ReactPlayer) => {

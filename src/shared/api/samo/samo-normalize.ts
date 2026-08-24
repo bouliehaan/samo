@@ -427,7 +427,21 @@ export const normalizeSamoInternetRadioStation = (
             station.nowPlaying?.title || station.nowPlaying?.artist
                 ? { artist: station.nowPlaying.artist, title: station.nowPlaying.title }
                 : null,
-        streamUrl: station.streamUrl ?? '',
+        // The RELAY, not the station's own address.
+        //
+        // `<audio crossorigin="anonymous">` — which the engine forces, because
+        // the element is fed into Web Audio and an un-CORSed one taints the
+        // graph into silence — makes this a CORS-mode fetch. Arbitrary stations
+        // send no `Access-Control-Allow-Origin`, and samo's own CSP is
+        // `media-src 'self'` besides, so the direct address cannot work here
+        // for any external station. samo-server's `/internet-radio/{id}/stream`
+        // exists for exactly this: it is public (an `<audio>` cannot send an
+        // Authorization header), it always relays rather than redirecting, and
+        // it passes ICY through so now-playing still arrives.
+        //
+        // Android has read it this way all along; desktop was the one client
+        // still opening the upstream directly.
+        streamUrl: station.publicStreamUrl ?? station.streamUrl ?? '',
     };
 };
 

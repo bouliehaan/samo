@@ -29,9 +29,16 @@ createRoot(document.getElementById('root')!).render(
     <PersistQueryClientProvider
         client={queryClient}
         persistOptions={{
-            buster: 'samo-v3',
+            buster: 'samo-v4',
             dehydrateOptions: {
-                shouldDehydrateQuery: (query) => query.state.status === 'success',
+                // The item-list loaders keep their rows in a cache entry that
+                // has no fetcher; every mount throws that entry away and
+                // refetches from the server regardless. Persisting it bought
+                // nothing and cost a full re-serialisation of every loaded row
+                // into IndexedDB on each page scrolled in.
+                shouldDehydrateQuery: (query) =>
+                    query.state.status === 'success' &&
+                    query.queryKey[1] !== 'item-list-infinite-loader',
             },
             hydrateOptions: {
                 defaultOptions: {

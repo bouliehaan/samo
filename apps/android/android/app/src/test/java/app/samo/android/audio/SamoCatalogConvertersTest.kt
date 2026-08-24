@@ -4,6 +4,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -87,6 +88,57 @@ class SamoCatalogConvertersTest {
 
         assertTrue(binding.artworkUrl!!.endsWith("/music/playlists/pl1/cover?stream_token=t"))
         assertNull(binding.artworkImageId)
+    }
+
+    // -------------------------------------------------------------------
+    // Cover version stamp. The grid is composited at request time but served
+    // `immutable, max-age=1y` from a FIXED URL, so a playlist that gains a
+    // track would keep painting its old grid until an HTTP cache was cleared
+    // by hand. `updatedAt` gives the new grid a new address. Twin of
+    // samoPlaylistCoverVersion in packages/core — the two must produce the
+    // SAME url, or a grid would be cached once per code path.
+    // -------------------------------------------------------------------
+
+    @Test
+    fun `grid url carries updatedAt as an epoch-millis stamp`() {
+        val playlist = playlistJson("cover_a", "cover_b").put("updatedAt", "2026-07-01T00:00:00Z")
+
+        val binding = convert(playlist)
+
+        assertEquals(
+            "https://music.samo.app/api/v1/music/playlists/pl1/cover?v=1782864000000&stream_token=t",
+            binding.artworkUrl,
+        )
+    }
+
+    @Test
+    fun `a later updatedAt is a different url`() {
+        val earlier = convert(playlistJson("cover_a", "cover_b").put("updatedAt", "2026-07-01T00:00:00Z"))
+        val later = convert(playlistJson("cover_a", "cover_b").put("updatedAt", "2026-07-01T00:00:01Z"))
+
+        assertNotEquals(earlier.artworkUrl, later.artworkUrl)
+    }
+
+    @Test
+    fun `an offset-form updatedAt stamps the same instant as the Z form`() {
+        val zulu = convert(playlistJson("cover_a", "cover_b").put("updatedAt", "2026-07-01T00:00:00Z"))
+        val offset = convert(
+            playlistJson("cover_a", "cover_b").put("updatedAt", "2026-07-01T00:00:00+00:00"),
+        )
+
+        assertEquals(zulu.artworkUrl, offset.artworkUrl)
+    }
+
+    @Test
+    fun `an unparseable or absent updatedAt leaves the url unstamped`() {
+        val unparseable = convert(playlistJson("cover_a", "cover_b").put("updatedAt", "whenever"))
+        val absent = convert(playlistJson("cover_a", "cover_b"))
+
+        assertEquals(
+            "https://music.samo.app/api/v1/music/playlists/pl1/cover?stream_token=t",
+            unparseable.artworkUrl,
+        )
+        assertEquals(absent.artworkUrl, unparseable.artworkUrl)
     }
 
     // -------------------------------------------------------------------

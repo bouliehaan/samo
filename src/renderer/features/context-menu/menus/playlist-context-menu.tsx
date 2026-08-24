@@ -9,7 +9,7 @@ import { PlayOnSamoRadioAction } from '/@/renderer/features/context-menu/actions
 import { RemoveFromHomeAction } from '/@/renderer/features/context-menu/actions/remove-from-home-action';
 import { SetFavoriteAction } from '/@/renderer/features/context-menu/actions/set-favorite-action';
 import { ContextMenuPreview } from '/@/renderer/features/context-menu/components/context-menu-preview';
-import { usePermissions } from '/@/renderer/store';
+import { useCanModifyPlaylists } from '/@/renderer/features/playlists/hooks/use-playlist-permissions';
 import { recordRecentPlaylist } from '/@/renderer/store/play-history.store';
 import { ContextMenu } from '/@/shared/components/context-menu/context-menu';
 import { LibraryItem, Playlist } from '/@/shared/types/domain-types';
@@ -26,18 +26,7 @@ export const PlaylistContextMenu = ({ homeItemKey, items, type }: PlaylistContex
         return { ids };
     }, [items]);
 
-    const { userId, ...permissions } = usePermissions();
-
-    const canEditPublic = permissions.playlists.editPublic;
-
-    const includesNonOwnedPublic = items.some((item) => item.public && item.ownerId !== userId);
-    // Server-managed playlists (the Samo "Explore" queue) are re-derived by
-    // the server every reconcile pass — edits/deletes are refused with a 403,
-    // so don't offer them.
-    const includesSystem = items.some((item) => item.isSystem);
-
-    const canEditPlaylist = !includesSystem && (canEditPublic || !includesNonOwnedPublic);
-    const canDeletePlaylist = !includesSystem && (canEditPublic || !includesNonOwnedPublic);
+    const canModifyPlaylist = useCanModifyPlaylists(items);
 
     return (
         <ContextMenu.Content
@@ -54,8 +43,8 @@ export const PlaylistContextMenu = ({ homeItemKey, items, type }: PlaylistContex
             <ContextMenu.Divider />
             <SetFavoriteAction ids={ids} items={items} itemType={LibraryItem.PLAYLIST} />
             <ContextMenu.Divider />
-            <EditPlaylistAction disabled={!canEditPlaylist} items={items} />
-            <DeletePlaylistAction disabled={!canDeletePlaylist} items={items} />
+            <EditPlaylistAction disabled={!canModifyPlaylist} items={items} />
+            <DeletePlaylistAction disabled={!canModifyPlaylist} items={items} />
             <ContextMenu.Divider />
             <GetInfoAction disabled={items.length === 0} items={items} />
             {homeItemKey ? (
