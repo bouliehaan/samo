@@ -625,12 +625,12 @@ export const SamoController: InternalControllerEndpoint = {
         const server = apiClientProps.server;
         if (!server) throw new Error('No server');
         const auth = samoAuthentication(server);
-        const current = await listSamoMusicPlaylistTracks(browserFetch, auth, query.id, {
-            limit: 500,
-        });
-        const existing = samoItemsOf(current)
-            .map((track) => track.id)
-            .filter(Boolean) as string[];
+        // Wholesale `trackIds` replace again — read every page or the append
+        // truncates the playlist to the first one.
+        const current = await fetchAllPages<SamoMusicTrack>((input) =>
+            listSamoMusicPlaylistTracks(browserFetch, auth, query.id, input),
+        );
+        const existing = current.map((track) => track.id).filter(Boolean) as string[];
         const merged = [...existing];
         for (const id of body.songId) {
             if (!merged.includes(id)) merged.push(id);
@@ -1457,14 +1457,19 @@ export const SamoController: InternalControllerEndpoint = {
         const server = apiClientProps.server;
         if (!server) throw new Error('No server');
         const auth = samoAuthentication(server);
-        const current = await listSamoMusicPlaylistTracks(browserFetch, auth, query.id, {
-            limit: 500,
-        });
-        const ids = samoItemsOf(current)
-            .map((track) => track.id)
-            .filter(Boolean) as string[];
+
+        // The PATCH replaces `trackIds` wholesale, so the read has to cover the
+        // whole playlist — a single capped page would silently drop every track
+        // past it.
+        const current = await fetchAllPages<SamoMusicTrack>((input) =>
+            listSamoMusicPlaylistTracks(browserFetch, auth, query.id, input),
+        );
+        const ids = current.map((track) => track.id).filter(Boolean) as string[];
+
         const removeSet = new Set(query.songId);
         const merged = ids.filter((id) => !removeSet.has(id));
+        if (merged.length === ids.length) return null;
+
         await updateSamoMusicPlaylist(browserFetch, auth, query.id, { trackIds: merged });
         return null;
     },

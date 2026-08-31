@@ -162,6 +162,17 @@ const rendererError = (cb: (event: IpcRendererEvent, data: string) => void) =>
 const rendererPlayerFallback = (cb: (event: IpcRendererEvent, data: boolean) => void) =>
     subscribe('renderer-player-fallback', cb);
 
+/**
+ * Turn mpv's spectrum feed on or off. Resolves to whether a feed is actually
+ * live — false on Windows, or if mpv is not running.
+ */
+const setVisualizerTap = (enabled: boolean): Promise<boolean> =>
+    ipcRenderer.invoke('player-visualizer-tap', enabled);
+
+/** One frame of per-band levels in dB, ~47 times a second while the tap is on. */
+const rendererVisualizerBands = (cb: (event: IpcRendererEvent, data: number[]) => void) =>
+    subscribe('renderer-visualizer-bands', cb);
+
 export const mpvPlayer = {
     autoNext,
     cleanup,
@@ -185,6 +196,7 @@ export const mpvPlayer = {
     setProperties,
     setQueue,
     setQueueNext,
+    setVisualizerTap,
     stop,
     updateMetadata,
     volume,
@@ -206,6 +218,7 @@ export const mpvPlayerListener = {
     rendererStop,
     rendererToggleRepeat,
     rendererToggleShuffle,
+    rendererVisualizerBands,
     rendererVolumeDown,
     rendererVolumeMute,
     rendererVolumeUp,

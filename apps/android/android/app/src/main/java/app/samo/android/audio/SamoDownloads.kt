@@ -19,6 +19,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicLong
 
@@ -69,6 +70,14 @@ internal object SamoDownloads {
     // with their entries still honestly Queued.
     private const val MAX_CONCURRENT_TRANSFERS = 3
     internal val transferSlots = Semaphore(MAX_CONCURRENT_TRANSFERS)
+
+    // Rows the automatic sweep will re-queue in one pass. A user who tapped
+    // "Retry all failed" gets everything at once because they asked for it and
+    // are watching; a sweep that fires unattended should not turn a thousand
+    // dead rows into a thousand WorkManager records and a thousand transfers
+    // queued behind a three-slot gate. The overflow is not lost — it is the
+    // front of the next sweep's queue, half an hour later.
+    private const val MAX_REQUEUES_PER_SWEEP = 50
 
     // Throttle for the byte transfer. Set by JS at the playback-state edges
     // (active → throttled, inactive → unthrottled) so a download can't starve
@@ -190,6 +199,21 @@ internal object SamoDownloads {
         // from mirror-hydrated URLs after a long session 401'd forever.
         val serverUrl: String? = null,
         val serverBearer: String? = null,
+        // Who retired this row. Only the user's own cancel sets it, so the
+        // recovery sweep can tell "I don't want this" from the cancellations
+        // errors used to produce — see [SamoDownloadRecovery].
+        val canceledByUser: Boolean = false,
+        // What the transfer concluded about the failure it ended on: false
+        // only for the HTTP answers that can never become a success. Failures
+        // the sweep must not chase are the ones that make it a nuisance.
+        val failureRecoverable: Boolean = true,
+        // Automatic attempts the sweep has already spent, and when this row
+        // last broke. Together they are the backoff: without the counter a
+        // dead server is retried every half hour forever, and without the
+        // stamp the first retry lands before the cause has had any chance to
+        // clear. Reset on completion and on a retry the user asked for.
+        val recoveryAttempts: Int = 0,
+        val lastFailureAt: Long? = null,
     ) {
         fun toJson(): JSONObject = JSONObject()
             .put("id", id)
@@ -210,6 +234,10 @@ internal object SamoDownloads {
                 errorMessage?.let { obj.put("errorMessage", it) }
                 serverUrl?.let { obj.put("serverUrl", it) }
                 serverBearer?.let { obj.put("serverBearer", it) }
+                if (canceledByUser) obj.put("canceledByUser", true)
+                if (!failureRecoverable) obj.put("failureRecoverable", false)
+                if (recoveryAttempts > 0) obj.put("recoveryAttempts", recoveryAttempts)
+                lastFailureAt?.let { obj.put("lastFailureAt", it) }
             }
 
         fun toMap(): WritableMap = Arguments.createMap().apply {
@@ -249,9 +277,30 @@ internal object SamoDownloads {
                 errorMessage = json.optStringOrNull("errorMessage"),
                 serverUrl = json.optStringOrNull("serverUrl"),
                 serverBearer = json.optStringOrNull("serverBearer"),
+                // Absent on every registry written before the sweep existed.
+                // Reading that as "not the user's doing" is deliberate: those
+                // are the stranded rows this whole mechanism is for, including
+                // the ones a system stop recorded as a cancellation back when
+                // the two were indistinguishable.
+                canceledByUser = json.optBoolean("canceledByUser", false),
+                failureRecoverable = json.optBoolean("failureRecoverable", true),
+                recoveryAttempts = json.optInt("recoveryAttempts", 0),
+                lastFailureAt = json.optLongOrNull("lastFailureAt"),
             )
         }
     }
+
+    /**
+     * Ids the USER retired — cancel, remove, clear-all. A worker that finds
+     * itself stopped mid-transfer consults this to tell "the user is done with
+     * this download" from "the system reclaimed its execution window": the two
+     * are indistinguishable from inside the transfer loop, and only the first
+     * may throw the downloaded bytes away. The registry row carries the same
+     * answer, but it is written on the registry's IO thread and read on the
+     * worker's with no lock between them; a concurrent set is the happens-before
+     * edge that makes the answer reliable rather than merely likely.
+     */
+    private val userRetired: MutableSet<String> = ConcurrentHashMap.newKeySet()
 
     private var registry: MutableList<Entry> = mutableListOf()
     // Read from arbitrary threads (every list()/snapshot() caller), written
@@ -297,6 +346,17 @@ internal object SamoDownloads {
                 scheduleNotify()
             }
             pumpQueueInternal(appContext)
+            // Heal what broke while we were gone, then keep healing on the
+            // clock. Inline rather than as a one-shot work request because we
+            // are already on the IO thread with the registry loaded, and the
+            // launch pass is the one that clears out rows stranded by an older
+            // build — those carry no failure stamp, so they are due at once.
+            try {
+                sweepRecoverableInternal(appContext)
+            } catch (error: Exception) {
+                Log.w(TAG, "launch download sweep failed: ${error.message}")
+            }
+            SamoDownloadRecoveryWorker.schedule(appContext)
         }
     }
 
@@ -319,7 +379,12 @@ internal object SamoDownloads {
                 id = input.id.ifBlank { buildEntryId() },
                 status = Status.Queued,
                 enqueuedAt = if (input.enqueuedAt > 0) input.enqueuedAt else System.currentTimeMillis(),
+                canceledByUser = false,
+                failureRecoverable = true,
+                recoveryAttempts = 0,
+                lastFailureAt = null,
             )
+            userRetired.remove(entry.id)
             registry.add(entry)
             schedulePersist(appContext)
             scheduleNotify()
@@ -335,18 +400,29 @@ internal object SamoDownloads {
             ensureLoaded(appContext)
             val index = registry.indexOfFirst { it.id == id }
             if (index < 0) return@runOnIo
-            // Cancel the work; the worker observes the cancellation flag and
-            // aborts the transfer, then SamoDownloads.markCanceled finalizes
-            // the row. Mark the row immediately so the UI updates without
-            // waiting for the worker callback.
-            WorkManager.getInstance(appContext).cancelUniqueWork(workName(id))
+            // Stamp the row FIRST, then cancel the work. The worker reads this
+            // row to decide whether the stop it just observed was the user
+            // retiring the entry (terminal, throw the partial away) or the
+            // system reclaiming its execution window (resume from the bytes we
+            // have). Cancelling first left that read racing the stamp, and a
+            // cancel misread as a system stop would resurrect the entry.
             val current = registry[index]
             if (current.status != Status.Completed) {
-                registry[index] = current.copy(status = Status.Canceled, progress = null)
+                userRetired.add(id)
+                // The sweep reads this to leave the row alone. Everything else
+                // that lands on Canceled is something going wrong, and going
+                // wrong is exactly what it is supposed to fix.
+                registry[index] = current.copy(
+                    status = Status.Canceled,
+                    progress = null,
+                    canceledByUser = true,
+                )
                 progressGate.remove(id)
+                deletePartialFor(appContext, current)
                 schedulePersist(appContext)
                 scheduleNotify()
             }
+            WorkManager.getInstance(appContext).cancelUniqueWork(workName(id))
         }
     }
 
@@ -357,10 +433,14 @@ internal object SamoDownloads {
             val index = registry.indexOfFirst { it.id == id }
             if (index < 0) return@runOnIo
             val target = registry[index]
-            WorkManager.getInstance(appContext).cancelUniqueWork(workName(id))
-            target.localUri?.let { deleteLocalFile(it) }
+            // Row first, work second — see cancel(). A worker that wakes to find
+            // its entry gone treats the stop as terminal.
+            userRetired.add(id)
             registry.removeAt(index)
             progressGate.remove(id)
+            WorkManager.getInstance(appContext).cancelUniqueWork(workName(id))
+            target.localUri?.let { deleteLocalFile(it) }
+            deletePartialFor(appContext, target)
             schedulePersist(appContext)
             scheduleNotify()
         }
@@ -372,12 +452,15 @@ internal object SamoDownloads {
             ensureLoaded(appContext)
             val snapshot = registry.toList()
             val workManager = WorkManager.getInstance(appContext)
+            // Rows first, work second — see cancel().
+            userRetired.addAll(snapshot.map { it.id })
+            registry.clear()
+            progressGate.clear()
             for (entry in snapshot) {
                 workManager.cancelUniqueWork(workName(entry.id))
                 entry.localUri?.let { deleteLocalFile(it) }
+                deletePartialFor(appContext, entry)
             }
-            registry.clear()
-            progressGate.clear()
             schedulePersist(appContext)
             scheduleNotify()
         }
@@ -389,10 +472,19 @@ internal object SamoDownloads {
             ensureLoaded(appContext)
             val index = registry.indexOfFirst { it.id == id }
             if (index < 0) return@runOnIo
+            userRetired.remove(id)
+            // A retry the user asked for resets the backoff outright. They can
+            // see something we can't — the server is back up, the Wi-Fi is
+            // fixed — so making them wait out a ladder the sweep built is both
+            // wrong and infuriating.
             registry[index] = registry[index].copy(
                 status = Status.Queued,
                 progress = null,
                 errorMessage = null,
+                canceledByUser = false,
+                failureRecoverable = true,
+                recoveryAttempts = 0,
+                lastFailureAt = null,
             )
             schedulePersist(appContext)
             scheduleNotify()
@@ -411,10 +503,15 @@ internal object SamoDownloads {
             for (i in registry.indices) {
                 val entry = registry[i]
                 if (entry.status == Status.Failed) {
+                    userRetired.remove(entry.id)
                     registry[i] = entry.copy(
                         status = Status.Queued,
                         progress = null,
                         errorMessage = null,
+                        canceledByUser = false,
+                        failureRecoverable = true,
+                        recoveryAttempts = 0,
+                        lastFailureAt = null,
                     )
                     changed = true
                     scheduleWork(appContext, entry.id)
@@ -425,6 +522,111 @@ internal object SamoDownloads {
                 scheduleNotify()
             }
         }
+    }
+
+    internal data class SweepResult(
+        val requeued: Int = 0,
+        val deferred: Int = 0,
+        val unrecoverable: Int = 0,
+        val heldBack: Int = 0,
+    )
+
+    /**
+     * Hands every broken-but-fixable download back to the queue. Driven by
+     * [SamoDownloadRecoveryWorker] on a schedule, and once inline at launch.
+     *
+     * This is the retry surface a failed transfer never had. [SamoDownloadWorker]
+     * correctly stops after three strikes — an unbounded backoff inside a job is
+     * how this stack grew zombie downloads — but stopping left the entry parked
+     * behind a button on a screen nobody opens, and the reasons it stopped are
+     * usually gone within the hour. Which rows qualify and when is
+     * [SamoDownloadRecovery]'s call; this performs it under the registry's own
+     * IO thread so it serializes against every other mutation.
+     *
+     * Blocking is deliberate: the only callers are background workers, and the
+     * count they get back is what they log.
+     */
+    internal fun sweepRecoverable(context: Context): SweepResult {
+        val appContext = context.applicationContext
+        val outcome = java.util.concurrent.atomic.AtomicReference(SweepResult())
+        val latch = java.util.concurrent.CountDownLatch(1)
+        ioExecutor.execute {
+            try {
+                outcome.set(sweepRecoverableInternal(appContext))
+            } catch (error: Exception) {
+                Log.w(TAG, "download sweep failed: ${error.message}")
+            } finally {
+                latch.countDown()
+            }
+        }
+        // Bounded, unlike list()'s wait: the persist and notify debouncers sleep
+        // on this same executor, so the queue ahead of us is never instant, and
+        // a worker has a hard execution budget it may not spend on a latch. A
+        // timeout only costs us the counters — the sweep still runs.
+        latch.await(30, java.util.concurrent.TimeUnit.SECONDS)
+        return outcome.get()
+    }
+
+    private fun sweepRecoverableInternal(appContext: Context): SweepResult {
+        ensureLoaded(appContext)
+        val now = System.currentTimeMillis()
+        var deferred = 0
+        var unrecoverable = 0
+        val due = mutableListOf<Int>()
+        for (i in registry.indices) {
+            val entry = registry[i]
+            when (
+                SamoDownloadRecovery.decide(
+                    status = entry.status,
+                    canceledByUser = entry.canceledByUser,
+                    failureRecoverable = entry.failureRecoverable,
+                    recoveryAttempts = entry.recoveryAttempts,
+                    lastFailureAt = entry.lastFailureAt,
+                    now = now,
+                )
+            ) {
+                is SamoDownloadRecovery.Decision.Requeue -> due.add(i)
+                is SamoDownloadRecovery.Decision.Wait -> deferred++
+                is SamoDownloadRecovery.Decision.Unrecoverable -> unrecoverable++
+                is SamoDownloadRecovery.Decision.Settled -> Unit
+            }
+        }
+        if (due.isEmpty()) {
+            return SweepResult(deferred = deferred, unrecoverable = unrecoverable)
+        }
+
+        // Longest-broken first, so the cap delays the rows that broke most
+        // recently rather than the ones that have already waited a day.
+        due.sortBy { registry[it].lastFailureAt ?: 0L }
+        val batch = due.take(MAX_REQUEUES_PER_SWEEP)
+        for (index in batch) {
+            val entry = registry[index]
+            userRetired.remove(entry.id)
+            registry[index] = entry.copy(
+                status = Status.Queued,
+                progress = null,
+                errorMessage = null,
+                // Stamped as of this attempt, not the original break: the next
+                // rung of the ladder is measured from when we last tried, which
+                // is the only thing that says anything about the next try.
+                recoveryAttempts = entry.recoveryAttempts + 1,
+                lastFailureAt = now,
+            )
+            scheduleWork(appContext, entry.id)
+        }
+        schedulePersist(appContext)
+        scheduleNotify()
+        Log.i(
+            TAG,
+            "download sweep re-queued ${batch.size} entr${if (batch.size == 1) "y" else "ies"}" +
+                (if (due.size > batch.size) " (${due.size - batch.size} held for the next pass)" else ""),
+        )
+        return SweepResult(
+            requeued = batch.size,
+            deferred = deferred,
+            unrecoverable = unrecoverable,
+            heldBack = due.size - batch.size,
+        )
     }
 
     fun setPlaybackThrottle(active: Boolean) {
@@ -546,6 +748,11 @@ internal object SamoDownloads {
                 localUri = localUri,
                 completedAt = System.currentTimeMillis(),
                 errorMessage = null,
+                // It worked. Whatever it took to get here must not be charged
+                // against the next time this row breaks.
+                failureRecoverable = true,
+                recoveryAttempts = 0,
+                lastFailureAt = null,
             )
             progressGate.remove(id)
             schedulePersist(appContext)
@@ -554,7 +761,14 @@ internal object SamoDownloads {
         }
     }
 
-    internal fun markFailed(context: Context, id: String, message: String) {
+    /**
+     * @param recoverable false only when the transfer proved this can never
+     *   succeed by being repeated (the 4xx answers that are the server saying
+     *   the resource is not there). Those keep their Retry button and are left
+     *   out of the automatic sweep; everything else — a dropped connection, a
+     *   sleeping server, a 5xx — is exactly what the sweep is for.
+     */
+    internal fun markFailed(context: Context, id: String, message: String, recoverable: Boolean = true) {
         val appContext = context.applicationContext
         runOnIo {
             ensureLoaded(appContext)
@@ -563,6 +777,8 @@ internal object SamoDownloads {
             registry[index] = registry[index].copy(
                 status = Status.Failed,
                 errorMessage = message,
+                failureRecoverable = recoverable,
+                lastFailureAt = System.currentTimeMillis(),
             )
             progressGate.remove(id)
             schedulePersist(appContext)
@@ -578,7 +794,15 @@ internal object SamoDownloads {
             val index = registry.indexOfFirst { it.id == id }
             if (index < 0) return@runOnIo
             if (registry[index].status != Status.Completed) {
-                registry[index] = registry[index].copy(status = Status.Canceled, progress = null)
+                // Reached only when the worker found the stop it observed was
+                // the user's — cancel/remove both stamp the row before they
+                // cancel the work, and a system stop routes to markInterrupted.
+                registry[index] = registry[index].copy(
+                    status = Status.Canceled,
+                    progress = null,
+                    canceledByUser = true,
+                )
+                deletePartialFor(appContext, registry[index])
                 schedulePersist(appContext)
                 scheduleNotify()
             }
@@ -586,6 +810,55 @@ internal object SamoDownloads {
             pumpQueueInternal(appContext)
         }
     }
+
+    /**
+     * Hands a stopped-but-not-canceled transfer back to the queue with its
+     * resume point intact.
+     *
+     * Every worker runs inside a JobScheduler job, and JobScheduler stops a job
+     * after roughly ten minutes regardless of what it is doing. Nothing about
+     * that stop is a failure and nothing about it is the user's doing, so the
+     * entry must keep both its `.part` file and its byte count and simply pick
+     * up where it left off — the only way a download bigger than one execution
+     * window ever completes. Unlike routine progress ticks this DOES hit disk:
+     * the resume point has to outlive the process, not just the worker.
+     */
+    internal fun markInterrupted(context: Context, id: String, written: Long, total: Long?) {
+        val appContext = context.applicationContext
+        runOnIo {
+            ensureLoaded(appContext)
+            val index = registry.indexOfFirst { it.id == id }
+            if (index < 0) return@runOnIo
+            val current = registry[index]
+            // A cancel that landed while the worker was unwinding wins outright.
+            // Never resurrect a row the user just retired.
+            if (current.status != Status.Downloading) return@runOnIo
+            val resolvedTotal = total?.takeIf { it > 0 } ?: current.totalBytes
+            registry[index] = current.copy(
+                status = Status.Queued,
+                bytesDownloaded = written,
+                totalBytes = resolvedTotal,
+                progress = if (resolvedTotal != null && resolvedTotal > 0) {
+                    written.toDouble() / resolvedTotal
+                } else {
+                    current.progress
+                },
+                errorMessage = null,
+            )
+            progressGate.remove(id)
+            Log.i(TAG, "transfer interrupted id=$id resumeAt=$written total=${resolvedTotal ?: -1}")
+            schedulePersist(appContext)
+            scheduleNotify()
+            // WorkManager reschedules an interrupted worker on its own; this is
+            // the belt for the paths where it doesn't (a retry the system
+            // dropped), and is a no-op while a work request already exists.
+            pumpQueueInternal(appContext)
+        }
+    }
+
+    /** See [userRetired]. True when the user retired this entry, so a stopped
+     *  worker must treat its interruption as terminal. */
+    internal fun isUserRetired(id: String): Boolean = userRetired.contains(id)
 
     internal fun findById(id: String): Entry? =
         synchronized(registry) { registry.firstOrNull { it.id == id } }
@@ -773,6 +1046,18 @@ internal object SamoDownloads {
 
     private fun downloadsRoot(context: Context): File =
         File(context.filesDir, "samo-downloads").also { it.mkdirs() }
+
+    /** Drops the resumable `.part` scratch file for an entry. Terminal paths
+     *  only — an interrupted transfer's partial is exactly what lets it
+     *  finish. */
+    private fun deletePartialFor(context: Context, entry: Entry) {
+        try {
+            val partial = File(localFileForEntry(context, entry).absolutePath + ".part")
+            if (partial.exists()) partial.delete()
+        } catch (error: Exception) {
+            Log.w(TAG, "could not delete partial: ${error.message}")
+        }
+    }
 
     private fun deleteLocalFile(uri: String) {
         if (uri.isBlank()) return

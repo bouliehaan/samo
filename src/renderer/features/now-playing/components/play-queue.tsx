@@ -16,8 +16,6 @@ import { useIsPlayerFetching, usePlayer } from '/@/renderer/features/player/cont
 import { searchLibraryItems } from '/@/renderer/features/shared/utils';
 import { useDragDrop } from '/@/renderer/hooks/use-drag-drop';
 import {
-    isShuffleEnabled,
-    mapShuffledToQueueIndex,
     subscribeCurrentTrack,
     subscribePlayerQueue,
     useFollowCurrentSong,
@@ -82,12 +80,7 @@ export const PlayQueue = forwardRef<ItemListHandle, QueueProps>(
 
             const handleAutoDJQueueAdded = () => {
                 if (followCurrentSong) {
-                    const state = usePlayerStore.getState();
-                    let index = state.player.index;
-
-                    if (isShuffleEnabled(state)) {
-                        index = mapShuffledToQueueIndex(index, state.queue.shuffled);
-                    }
+                    const index = usePlayerStore.getState().player.index;
 
                     if (index !== -1) {
                         // Use setTimeout to ensure the DOM has updated with the new queue items
@@ -106,12 +99,7 @@ export const PlayQueue = forwardRef<ItemListHandle, QueueProps>(
             setQueue();
 
             if (followCurrentSong) {
-                const state = usePlayerStore.getState();
-                let index = state.player.index;
-
-                if (isShuffleEnabled(state)) {
-                    index = mapShuffledToQueueIndex(index, state.queue.shuffled);
-                }
+                const index = usePlayerStore.getState().player.index;
 
                 if (index !== -1) {
                     setTimeout(() => {

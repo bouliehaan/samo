@@ -1,5 +1,5 @@
 import isElectron from 'is-electron';
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import styles from './sidebar-play-queue.module.css';
@@ -8,11 +8,11 @@ import { ItemListHandle } from '/@/renderer/components/item-list/types';
 import { Lyrics } from '/@/renderer/features/lyrics/lyrics';
 import { PlayQueue } from '/@/renderer/features/now-playing/components/play-queue';
 import { PlayQueueListControls } from '/@/renderer/features/now-playing/components/play-queue-list-controls';
+import { useIsVisualizerAvailable } from '/@/renderer/features/player/hooks/use-is-visualizer-available';
+import { VisualizerSurface } from '/@/renderer/features/visualizer/components/visualizer-surface';
 import {
     useCombinedLyricsAndVisualizer,
     useFullScreenPlayerStore,
-    usePlaybackSettings,
-    useSettingsStore,
     useSettingsStoreActions,
     useShowLyricsInSidebar,
     useShowVisualizerInSidebar,
@@ -25,18 +25,6 @@ import { Stack } from '/@/shared/components/stack/stack';
 import { ItemListKey, Platform } from '/@/shared/types/types';
 
 type SidebarPanelType = 'lyrics' | 'queue' | 'visualizer';
-
-const AudioMotionAnalyzerVisualizer = lazy(() =>
-    import('../../visualizer/components/audiomotionanalyzer/visualizer').then((module) => ({
-        default: module.Visualizer,
-    })),
-);
-
-const ButterchurnVisualizer = lazy(() =>
-    import('../../visualizer/components/butternchurn/visualizer').then((module) => ({
-        default: module.Visualizer,
-    })),
-);
 
 const SIDEBAR_QUEUE_ITEM_SIZE = 'default' as const;
 
@@ -118,10 +106,10 @@ export const SidebarPlayQueue = () => {
     const combinedLyricsAndVisualizer = useCombinedLyricsAndVisualizer();
     const showLyricsInSidebar = useShowLyricsInSidebar();
     const showVisualizerInSidebar = useShowVisualizerInSidebar();
+    const isVisualizerAvailable = useIsVisualizerAvailable();
     const sidebarPanelOrder = useSidebarPanelOrder();
-    const { webAudio } = usePlaybackSettings();
     const { windowBarStyle } = useWindowSettings();
-    const showVisualizer = showVisualizerInSidebar && webAudio;
+    const showVisualizer = showVisualizerInSidebar && isVisualizerAvailable;
     const showPanel = showLyricsInSidebar || showVisualizer;
 
     const shouldAddTopMargin = isElectron() && windowBarStyle === Platform.WEB;
@@ -392,18 +380,10 @@ const LyricsPanel = () => {
 };
 
 const VisualizerPanel = () => {
-    const visualizerType = useSettingsStore((store) => store.visualizer.type);
-
     return (
         <div className={styles.visualizerSection}>
             <PanelReorderControls panelType="visualizer" />
-            <Suspense fallback={<></>}>
-                {visualizerType === 'butterchurn' ? (
-                    <ButterchurnVisualizer />
-                ) : (
-                    <AudioMotionAnalyzerVisualizer />
-                )}
-            </Suspense>
+            <VisualizerSurface />
         </div>
     );
 };

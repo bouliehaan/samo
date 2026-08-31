@@ -664,16 +664,21 @@ export const CheckGlyph = ({ color, size = 14 }: { color: string; size?: number 
  * (or check, when complete) in the middle.
  */
 export const CircularDownloadGlyph = ({
-    completed,
+    completed = false,
     progress,
+    size = 30,
 }: {
     /** True when everything's saved and the user should see the "done" state. */
-    completed: boolean;
+    completed?: boolean;
     /** 0–1 fraction of how much is downloaded. */
     progress: number;
+    /** 30 is the detail hero's button; tiles use a badge-sized one. */
+    size?: number;
 }) => {
-    const SIZE = 30;
-    const STROKE = 2;
+    const SIZE = size;
+    // Proportional to the hero's 2-on-30, with a floor so the arc keeps a
+    // visible weight once the badge gets small.
+    const STROKE = Math.max(1.25, (SIZE * 2) / 30);
     const RADIUS = (SIZE - STROKE) / 2;
     const CIRC = 2 * Math.PI * RADIUS;
     const fraction = completed ? 1 : Math.min(1, Math.max(0, progress));
@@ -717,36 +722,43 @@ export const CircularDownloadGlyph = ({
                 ) : null}
             </Svg>
             {completed ? (
-                <CheckGlyph color={accent} size={14} />
+                <CheckGlyph color={accent} size={(SIZE * 14) / 30} />
             ) : (
-                <DownloadGlyph color={progress > 0 ? accent : colors.text} />
+                <DownloadGlyph
+                    color={progress > 0 ? accent : colors.text}
+                    size={(SIZE * 20) / 30}
+                />
             )}
         </View>
     );
 };
 
-export const DownloadGlyph = ({ color }: { color: string }) => {
+export const DownloadGlyph = ({ color, size = 20 }: { color: string; size?: number }) => {
     // Downward arrow over a small tray — universal "download" affordance.
+    // Every measurement is a ratio of the box so the same glyph can sit inside a
+    // menu row and inside a 16px progress ring without being redrawn.
     return (
-        <View style={{ alignItems: 'center', height: 20, justifyContent: 'center', width: 20 }}>
+        <View
+            style={{ alignItems: 'center', height: size, justifyContent: 'center', width: size }}
+        >
             <View
                 style={{
                     backgroundColor: color,
                     borderRadius: 1,
-                    height: 8,
-                    width: 2.4,
+                    height: size * 0.4,
+                    width: size * 0.12,
                 }}
             />
             <View
                 style={{
                     borderLeftColor: 'transparent',
-                    borderLeftWidth: 4,
+                    borderLeftWidth: size * 0.2,
                     borderRightColor: 'transparent',
-                    borderRightWidth: 4,
+                    borderRightWidth: size * 0.2,
                     borderTopColor: color,
-                    borderTopWidth: 5,
+                    borderTopWidth: size * 0.25,
                     height: 0,
-                    marginTop: -1,
+                    marginTop: size * -0.05,
                     width: 0,
                 }}
             />
@@ -754,9 +766,9 @@ export const DownloadGlyph = ({ color }: { color: string }) => {
                 style={{
                     backgroundColor: color,
                     borderRadius: 1,
-                    height: 2,
-                    marginTop: 2,
-                    width: 14,
+                    height: size * 0.1,
+                    marginTop: size * 0.1,
+                    width: size * 0.7,
                 }}
             />
         </View>

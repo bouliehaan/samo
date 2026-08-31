@@ -1,5 +1,5 @@
 import { type MobileMediaDetail, MobileMediaDetailType, type MobileMediaTrack } from '@samo/core/mobile';
-import { looksLikeUrl } from '../utils/playback-time';
+import { formatPlaybackReleaseDate, looksLikeUrl } from '../utils/playback-time';
 
 export const formatTrackDuration = (durationSeconds: number | undefined) => {
     if (!durationSeconds) {
@@ -12,6 +12,32 @@ export const formatTrackDuration = (durationSeconds: number | undefined) => {
         .padStart(2, '0');
 
     return `${minutes}:${seconds}`;
+};
+
+/**
+ * Episode length for a podcast row's subtext — "43 min", "1 hr 12 min". A feed
+ * is scanned for how long an episode is, not for its exact runtime, so the
+ * clock shape a music track gets ("72:04") reads wrong here and hides the hour
+ * boundary altogether.
+ */
+export const formatEpisodeLength = (durationSeconds: number | undefined) => {
+    if (!durationSeconds || !Number.isFinite(durationSeconds) || durationSeconds <= 0) {
+        return undefined;
+    }
+
+    const totalMinutes = Math.round(durationSeconds / 60);
+    if (totalMinutes < 1) {
+        return `${Math.round(durationSeconds)} sec`;
+    }
+
+    if (totalMinutes < 60) {
+        return `${totalMinutes} min`;
+    }
+
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+
+    return minutes > 0 ? `${hours} hr ${minutes} min` : `${hours} hr`;
 };
 
 export const formatTrackTimestamp = (seconds: number | undefined) => {
@@ -62,6 +88,7 @@ export const getTrackMetadataItems = (
     includeTimestamp: boolean,
 ) => {
     const items: string[] = [];
+    const isPodcastEpisode = detail.type === MobileMediaDetailType.PODCAST;
     const artist = normalizeTrackMetadataValue(track.artist);
     const album = normalizeTrackMetadataValue(track.album);
     const subtitle = normalizeTrackMetadataValue(track.subtitle);
@@ -88,6 +115,14 @@ export const getTrackMetadataItems = (
                 pushUniqueTrackMetadata(items, subtitle);
             }
         }
+    } else if (isPodcastEpisode) {
+        // A feed's `subtitle` is the episode's own show notes — long-form prose
+        // that fills this single clipped line on its own and pushes out the two
+        // facts you actually scan a feed for. The blurb is not lost: it is the
+        // body of press-and-hold -> Episode Information, which carries this
+        // same date and length above it.
+        pushUniqueTrackMetadata(items, formatPlaybackReleaseDate(track.publishedAt));
+        pushUniqueTrackMetadata(items, formatEpisodeLength(track.durationSeconds));
     } else {
         pushUniqueTrackMetadata(items, subtitle);
     }
@@ -96,7 +131,10 @@ export const getTrackMetadataItems = (
     if (includeTimestamp) {
         pushUniqueTrackMetadata(items, formatTrackTimestamp(track.startSeconds));
     }
-    pushUniqueTrackMetadata(items, formatTrackDuration(track.durationSeconds));
+    if (!isPodcastEpisode) {
+        // Episodes carry their length above, in the shape a feed reads in.
+        pushUniqueTrackMetadata(items, formatTrackDuration(track.durationSeconds));
+    }
 
     return items;
 };

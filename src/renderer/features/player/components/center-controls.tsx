@@ -165,13 +165,10 @@ const ShuffleButton = ({ disabled }: { disabled?: boolean }) => {
             isActive={shuffle !== PlayerShuffle.NONE}
             onClick={toggleShuffle}
             tooltip={{
-                label:
-                    shuffle === PlayerShuffle.NONE
-                        ? t('player.shuffle', {
-                              context: 'off',
-                              postProcess: 'sentenceCase',
-                          })
-                        : t('player.shuffle', { postProcess: 'sentenceCase' }),
+                label: t('player.shuffle', {
+                    context: shuffle === PlayerShuffle.NONE ? 'off' : 'on',
+                    postProcess: 'sentenceCase',
+                }),
                 openDelay: 0,
             }}
             variant="tertiary"

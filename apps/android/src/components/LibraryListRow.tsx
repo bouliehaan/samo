@@ -2,14 +2,13 @@ import { getItemQualityProfile } from '@samo/core/mobile';
 import { type ReactNode } from 'react';
 import { Text, View } from 'react-native';
 
-import { useDownloadedTrackKeys } from '../contexts/downloaded-keys';
 import { useMediaContextMenu } from '../contexts/media-context-menu';
-import { getDownloadedTrackKey } from '../utils/download-keys';
+import { useDownloadIndicator } from '../hooks/use-download-indicator';
 import { type LibraryDisplayItem } from '../types/library-display';
 import { getLibraryItemSubtitle } from '../utils/library-display';
 import { PressableScale } from './PressableScale';
 import { QualitySpec } from './QualityBadge';
-import { TrackDownloadedGlyph } from './Glyphs';
+import { DownloadIndicator } from './DownloadIndicator';
 import { MediaArtwork } from './MediaArtwork';
 import { presses } from '../theme/motion';
 import { styles } from '../theme/styles';
@@ -26,10 +25,7 @@ export const LibraryListRow = ({
 }) => {
     const { item, mediaType } = displayItem;
     const contextMenu = useMediaContextMenu();
-    const downloadedTrackKeys = useDownloadedTrackKeys();
-    const isDownloadedTrack =
-        mediaType === 'songs' &&
-        downloadedTrackKeys.has(getDownloadedTrackKey(item.source?.id, item.id));
+    const download = useDownloadIndicator(item);
     const itemBadgeProfile = getItemQualityProfile(item);
 
     return (
@@ -57,6 +53,10 @@ export const LibraryListRow = ({
                     {item.title}
                 </Text>
                 <View style={styles.qualityMetaRow}>
+                    <DownloadIndicator
+                        state={download}
+                        tickStyle={styles.mediaDownloadIndicator}
+                    />
                     <Text
                         numberOfLines={1}
                         style={[styles.libraryRowSubtitle, styles.qualityMetaSubtitle]}
@@ -66,18 +66,6 @@ export const LibraryListRow = ({
                     <QualitySpec profile={itemBadgeProfile} />
                 </View>
             </View>
-            {isDownloadedTrack ? (
-                <View
-                    style={[
-                        styles.libraryRowDownloadIndicator,
-                        rightAccessory
-                            ? styles.libraryRowDownloadIndicatorWithAccessory
-                            : null,
-                    ]}
-                >
-                    <TrackDownloadedGlyph />
-                </View>
-            ) : null}
             {rightAccessory ? (
                 <View style={styles.libraryRowAccessory}>{rightAccessory}</View>
             ) : null}

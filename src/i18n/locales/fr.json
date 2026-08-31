@@ -405,7 +405,7 @@
     },
     "setting": {
         "audioDevice_description": "sélectionnez le périphérique audio à utiliser pour la lecture",
-        "audioExclusiveMode_description": "activer le mode de sortie exclusif. Dans ce mode, le système est généralement verrouillé et seul mpv pourra émettre de l'audio. La capture audio du système de visualisation ne fonctionnera pas lorsque cette option est activée",
+        "audioExclusiveMode_description": "activer le mode de sortie exclusif. Dans ce mode, le système est généralement verrouillé et seul mpv pourra émettre de l'audio",
         "audioPlayer_description": "sélectionnez le lecteur audio à utiliser pour la lecture",
         "crossfadeDuration_description": "définit la durée du fondu enchaîné",
         "audioDevice": "périphérique audio",
@@ -1191,9 +1191,6 @@
         },
         "lumiBars": "Lumi Bars",
         "outlineBars": "Outline Bars",
-        "splitGradient": "Split Gradient",
-        "systemAudioNoAudioTrack": "Aucune piste audio n'a été renvoyée. Assurez-vous que la capture audio est activée lorsque vous y êtes invité.",
-        "systemAudioCaptureFailed": "Impossible de démarrer la capture : {{message}}",
-        "systemAudioExclusiveModeNotSupported": "Le visualiseur est indisponible lorsque le mode audio exclusif est activé. Désactivez ce mode dans les paramètres MPV et réessayez."
+        "splitGradient": "Split Gradient"
     }
 }

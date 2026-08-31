@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 
 import { AddToPlaylistAction } from '/@/renderer/features/context-menu/actions/add-to-playlist-action';
+import { AddToQueueAction } from '/@/renderer/features/context-menu/actions/add-to-queue-action';
 import { DeletePlaylistAction } from '/@/renderer/features/context-menu/actions/delete-playlist-action';
 import { EditPlaylistAction } from '/@/renderer/features/context-menu/actions/edit-playlist-action';
 import { GetInfoAction } from '/@/renderer/features/context-menu/actions/get-info-action';
@@ -37,6 +38,7 @@ export const PlaylistContextMenu = ({ homeItemKey, items, type }: PlaylistContex
                 itemType={LibraryItem.PLAYLIST}
                 onPlay={() => items.forEach(recordRecentPlaylist)}
             />
+            <AddToQueueAction ids={ids} itemType={LibraryItem.PLAYLIST} />
             <PlayOnSamoRadioAction ids={ids} itemType={LibraryItem.PLAYLIST} />
             <ContextMenu.Divider />
             <AddToPlaylistAction items={ids} itemType={LibraryItem.PLAYLIST} />

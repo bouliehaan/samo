@@ -40,7 +40,6 @@ export const store = new Store<any>({
         playbackType: 'local',
         should_prompt_accessibility: true,
         shown_accessibility_warning: false,
-        visualizer_system_audio_consent_granted: false,
         window_enable_tray: true,
         window_exit_to_tray: false,
         window_minimize_to_tray: false,

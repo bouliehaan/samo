@@ -20,6 +20,12 @@ import {
     setMpvState,
     shutdownMpvInstance,
 } from './mpv-lifecycle';
+import {
+    disposeVisualizerTap,
+    reattachVisualizerTapIfWanted,
+    startVisualizerTap,
+    stopVisualizerTap,
+} from './visualizer-tap';
 
 import { getMainWindow } from '/@/main/index';
 import { PlayerData } from '/@/shared/types/domain-types';
@@ -76,6 +82,7 @@ ipcMain.handle(
                 setMpvState(MpvState.STARTED);
                 mpvLog({ action: 'Restarted mpv', toast: 'success' });
                 setAudioPlayerFallback(false);
+                await reattachVisualizerTapIfWanted();
             });
         } catch (err) {
             mpvLog({ action: 'Failed to restart native MPV playback' }, err);
@@ -103,6 +110,7 @@ ipcMain.handle(
                 setMpvInstance(await createMpv(data));
                 setMpvState(MpvState.STARTED);
                 setAudioPlayerFallback(false);
+                await reattachVisualizerTapIfWanted();
             });
         } catch (err) {
             mpvLog({ action: 'Failed to initialize native MPV playback' }, err);
@@ -128,7 +136,17 @@ ipcMain.handle('player-is-running', async () => {
     return getMpvInstance()?.isRunning();
 });
 
+ipcMain.handle('player-visualizer-tap', async (_event, enabled: boolean) => {
+    if (enabled) {
+        return startVisualizerTap();
+    }
+
+    await stopVisualizerTap();
+    return false;
+});
+
 ipcMain.handle('player-clean-up', async () => {
+    disposeVisualizerTap();
     await runMpvLifecycle(async () => {
         await shutdownMpvInstance(getMpvInstance(), 'from renderer cleanup', {
             clearPlaylist: true,
@@ -439,6 +457,8 @@ ipcMain.handle('player-refresh-audio-devices', async (): Promise<AudioDevice[]> 
 });
 
 app.on('before-quit', async (event) => {
+    disposeVisualizerTap();
+
     switch (getMpvState()) {
         case MpvState.DONE:
             return;
@@ -485,11 +505,13 @@ process.on('exit', () => {
 
 // Handle signals that can terminate the process
 process.on('SIGINT', async () => {
+    disposeVisualizerTap();
     await cleanupMpv(true);
     process.exit(0);
 });
 
 process.on('SIGTERM', async () => {
+    disposeVisualizerTap();
     await cleanupMpv(true);
     process.exit(0);
 });

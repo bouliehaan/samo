@@ -1,16 +1,11 @@
-import { PlayerRepeat, PlayerShuffle } from '@samo/core/playback';
+import { PlayerRepeat } from '@samo/core/playback';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
-    addIndexesToShuffled,
-    adjustShuffledIndexesForInsertion,
     calculateNextIndex,
     calculateNextSong,
-    findShuffledPositionForQueueIndex,
-    generateShuffledIndexes,
-    isShuffleEnabled,
-    mapShuffledToQueueIndex,
-    regenerateShuffledIndexesIfNeeded,
+    restoreQueueOrder,
+    shuffleQueueAroundIndex,
 } from './player-queue-math';
 
 import { QueueSong } from '/@/shared/types/domain-types';
@@ -46,39 +41,6 @@ describe('calculateNextSong', () => {
     });
 });
 
-describe('isShuffleEnabled', () => {
-    it('is true only for track shuffle with a non-empty shuffled map', () => {
-        expect(
-            isShuffleEnabled({
-                player: { shuffle: PlayerShuffle.TRACK },
-                queue: { shuffled: [2, 0, 1] },
-            }),
-        ).toBe(true);
-        expect(
-            isShuffleEnabled({
-                player: { shuffle: PlayerShuffle.TRACK },
-                queue: { shuffled: [] },
-            }),
-        ).toBe(false);
-        expect(
-            isShuffleEnabled({
-                player: { shuffle: PlayerShuffle.NONE },
-                queue: { shuffled: [0, 1] },
-            }),
-        ).toBe(false);
-    });
-});
-
-describe('mapShuffledToQueueIndex', () => {
-    it('maps a shuffled position to the underlying queue index', () => {
-        expect(mapShuffledToQueueIndex(1, [2, 0, 1])).toBe(0);
-    });
-
-    it('falls back to the input index when out of range', () => {
-        expect(mapShuffledToQueueIndex(9, [2, 0, 1])).toBe(9);
-    });
-});
-
 describe('calculateNextIndex', () => {
     it('stays on the current index for repeat ONE', () => {
         expect(calculateNextIndex(1, 3, PlayerRepeat.ONE)).toEqual({
@@ -102,71 +64,69 @@ describe('calculateNextIndex', () => {
     });
 });
 
-describe('adjustShuffledIndexesForInsertion', () => {
-    it('shifts indexes at and after the insert position', () => {
-        expect(adjustShuffledIndexesForInsertion([0, 2, 1], 1, 2)).toEqual([0, 4, 3]);
-    });
-});
-
-describe('addIndexesToShuffled', () => {
+describe('shuffleQueueAroundIndex', () => {
     afterEach(() => {
         vi.restoreAllMocks();
     });
 
-    it('keeps the prefix through the current shuffled index and appends a reshuffled tail', () => {
+    it('moves the playing track to the head and keeps every other track', () => {
         vi.spyOn(Math, 'random').mockReturnValue(0.5);
 
-        const result = addIndexesToShuffled([2, 0, 1], 0, [3, 4]);
+        const result = shuffleQueueAroundIndex(['a', 'b', 'c', 'd'], 2);
 
-        expect(result[0]).toBe(2);
-        expect(result).toHaveLength(5);
-        expect(result).toEqual(expect.arrayContaining([0, 1, 3, 4]));
+        expect(result[0]).toBe('c');
+        expect([...result].sort()).toEqual(['a', 'b', 'c', 'd']);
+    });
+
+    it('shuffles everything when nothing is playing', () => {
+        vi.spyOn(Math, 'random').mockReturnValue(0.5);
+
+        const result = shuffleQueueAroundIndex(['a', 'b', 'c'], -1);
+
+        expect([...result].sort()).toEqual(['a', 'b', 'c']);
+    });
+
+    it('leaves a queue of one alone', () => {
+        expect(shuffleQueueAroundIndex(['a'], 0)).toEqual(['a']);
+        expect(shuffleQueueAroundIndex([], -1)).toEqual([]);
     });
 });
 
-describe('findShuffledPositionForQueueIndex', () => {
-    it('returns the shuffled slot for a queue index', () => {
-        expect(findShuffledPositionForQueueIndex(0, [2, 0, 1])).toBe(1);
+describe('restoreQueueOrder', () => {
+    it('puts the queue back into the snapshot order', () => {
+        expect(restoreQueueOrder(['c', 'a', 'b'], ['a', 'b', 'c'])).toEqual(['a', 'b', 'c']);
     });
 
-    it('returns undefined when the queue index is not in the shuffle map', () => {
-        expect(findShuffledPositionForQueueIndex(5, [2, 0, 1])).toBeUndefined();
-    });
-});
-
-describe('generateShuffledIndexes', () => {
-    it('returns a permutation of 0..length-1', () => {
-        vi.spyOn(Math, 'random').mockReturnValue(0.25);
-
-        const shuffled = generateShuffledIndexes(4);
-        expect(shuffled).toHaveLength(4);
-        expect([...shuffled].sort((a, b) => a - b)).toEqual([0, 1, 2, 3]);
-    });
-});
-
-describe('regenerateShuffledIndexesIfNeeded', () => {
-    it('rebuilds shuffled indexes when track shuffle is already active', () => {
-        vi.spyOn(Math, 'random').mockReturnValue(0.1);
-
-        const state = {
-            player: { shuffle: PlayerShuffle.TRACK },
-            queue: { default: ['a', 'b', 'c'], shuffled: [2, 0, 1] },
-        };
-
-        regenerateShuffledIndexesIfNeeded(state);
-
-        expect(state.queue.shuffled).toHaveLength(3);
-        expect([...state.queue.shuffled].sort((a, b) => a - b)).toEqual([0, 1, 2]);
+    it('drops tracks removed while shuffled', () => {
+        expect(restoreQueueOrder(['c', 'a'], ['a', 'b', 'c'])).toEqual(['a', 'c']);
     });
 
-    it('does nothing when shuffle is off or the shuffled map is empty', () => {
-        const state = {
-            player: { shuffle: PlayerShuffle.TRACK },
-            queue: { default: ['a', 'b', 'c'], shuffled: [] as number[] },
-        };
+    it('keeps a track queued next to the track it was queued behind', () => {
+        // "play next" behind `c` while shuffled — `x` should stay behind `c`,
+        // not get flung to the end when the original order comes back.
+        expect(restoreQueueOrder(['c', 'x', 'a', 'b'], ['a', 'b', 'c'])).toEqual([
+            'a',
+            'b',
+            'c',
+            'x',
+        ]);
+    });
 
-        regenerateShuffledIndexesIfNeeded(state);
+    it('appends tracks added to the end of a shuffled queue', () => {
+        expect(restoreQueueOrder(['b', 'a', 'c', 'x', 'y'], ['a', 'b', 'c'])).toEqual([
+            'a',
+            'b',
+            'c',
+            'x',
+            'y',
+        ]);
+    });
 
-        expect(state.queue.shuffled).toEqual([]);
+    it('keeps a track added at the head at the head', () => {
+        expect(restoreQueueOrder(['x', 'b', 'a'], ['a', 'b'])).toEqual(['x', 'a', 'b']);
+    });
+
+    it('returns the queue untouched when there is no snapshot', () => {
+        expect(restoreQueueOrder(['b', 'a'], null)).toEqual(['b', 'a']);
     });
 });

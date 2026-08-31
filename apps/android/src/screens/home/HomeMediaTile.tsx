@@ -4,25 +4,16 @@ import { memo, useMemo } from 'react';
 import { Text, View } from 'react-native';
 
 import { ArtworkImage } from '../../components/ArtworkImage';
+import { DownloadIndicator } from '../../components/DownloadIndicator';
 import { PressableScale } from '../../components/PressableScale';
-import { TrackDownloadedGlyph } from '../../components/Glyphs';
 import { QualityBadge } from '../../components/QualityBadge';
-import {
-    useDownloadedCollectionKeys,
-    useDownloadedTrackKeys,
-} from '../../contexts/downloaded-keys';
 import { useMediaContextMenu } from '../../contexts/media-context-menu';
+import { useDownloadIndicator } from '../../hooks/use-download-indicator';
 import { type AndroidRecentContentSourceItem } from '../../services/recent-content';
 import { presses } from '../../theme/motion';
 import { styles } from '../../theme/styles';
 import { type HomeDisplaySection } from '../../types/home';
-import { type LibraryMediaType } from '../../types/library-display';
-import {
-    getDownloadedCollectionKey,
-    getDownloadedTrackKey,
-} from '../../utils/download-keys';
 import { getContentItemProgress } from '../../utils/home-display';
-import { getLibraryMediaType } from '../../utils/library-display';
 import { androidTrimCaptionFont, getHomeItemSubtitle } from './shared';
 
 interface HomeMediaTileProps {
@@ -34,12 +25,6 @@ interface HomeMediaTileProps {
     serverConnection: ServerAuthenticationResult | null;
 }
 
-const isDownloadableCollectionMediaType = (mediaType: LibraryMediaType | undefined): boolean =>
-    mediaType === 'albums' ||
-    mediaType === 'audiobooks' ||
-    mediaType === 'playlists' ||
-    mediaType === 'podcasts';
-
 export const HomeMediaTile = memo(({
     allowRemoveFromHome,
     item,
@@ -49,8 +34,7 @@ export const HomeMediaTile = memo(({
     serverConnection,
 }: HomeMediaTileProps) => {
     const contextMenu = useMediaContextMenu();
-    const downloadedCollectionKeys = useDownloadedCollectionKeys();
-    const downloadedTrackKeys = useDownloadedTrackKeys();
+    const download = useDownloadIndicator(item);
 
     const isAlbum = sectionVariant === 'album';
     const isArtist = sectionVariant === 'artist';
@@ -64,19 +48,11 @@ export const HomeMediaTile = memo(({
     // (HomeExploreHero), not a carousel.
     const isWide = sectionVariant === 'wide' || isContinue;
     const isRadio = item.type === MobileHomeItemType.RADIO;
-    const mediaType = getLibraryMediaType(item);
     // An artist tile rendered inside a Recents/mixed row must still
     // be circular — never a square with a letter.
     const isArtistItem = item.type === MobileHomeItemType.ARTIST;
     const progress = getContentItemProgress(item);
     const subtitle = getHomeItemSubtitle(item, sectionVariant);
-    const isDownloadedTrack =
-        mediaType === 'songs' &&
-        downloadedTrackKeys.has(getDownloadedTrackKey(item.source?.id, item.id));
-    const isDownloadedCollection =
-        isDownloadableCollectionMediaType(mediaType) &&
-        downloadedCollectionKeys.has(getDownloadedCollectionKey(item.source?.id, item.id));
-    const isDownloaded = isDownloadedTrack || isDownloadedCollection;
     // Playlists are never a single quality, so per the UX rule we
     // suppress the format badge on playlist tiles even when the
     // item happens to carry an isHiRes flag from an older path.
@@ -176,18 +152,18 @@ export const HomeMediaTile = memo(({
                     >
                         {item.title}
                     </Text>
-                    {subtitle || isDownloaded ? (
+                    {subtitle || download.isVisible ? (
                         <View
                             style={[
                                 styles.mediaInfoRow,
                                 isArtist && styles.mediaInfoRowCentered,
                             ]}
                         >
-                            {isDownloaded ? (
-                                <View style={styles.mediaDownloadIndicator}>
-                                    <TrackDownloadedGlyph size={11} />
-                                </View>
-                            ) : null}
+                            <DownloadIndicator
+                                state={download}
+                                tickSize={11}
+                                tickStyle={styles.mediaDownloadIndicator}
+                            />
                             {subtitle ? (
                                 <Text
                                     numberOfLines={isWide ? 2 : 1}

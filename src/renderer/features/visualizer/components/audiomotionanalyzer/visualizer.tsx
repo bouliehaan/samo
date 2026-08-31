@@ -3,10 +3,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import styles from './visualizer.module.css';
 
 import { useWebAudio } from '/@/renderer/features/player/hooks/use-webaudio';
-import { getVisualizerAudioNodes } from '/@/renderer/features/player/utils/get-visualizer-audio-nodes';
 import { openVisualizerSettingsModal } from '/@/renderer/features/player/utils/open-visualizer-settings-modal';
 import { ComponentErrorBoundary } from '/@/renderer/features/shared/components/component-error-boundary';
-import { usePlaybackType, useSettingsStore } from '/@/renderer/store';
+import { useSettingsStore } from '/@/renderer/store';
 import {
     useFullScreenPlayerStore,
     useFullScreenPlayerStoreActions,
@@ -14,14 +13,13 @@ import {
 import { usePlayerStatus } from '/@/renderer/store/player.store';
 import { ActionIcon } from '/@/shared/components/action-icon/action-icon';
 import { Group } from '/@/shared/components/group/group';
-import { PlayerStatus, PlayerType } from '/@/shared/types/types';
+import { PlayerStatus } from '/@/shared/types/types';
 import { logFn } from '/@/shared/utils/logger';
 
 const VisualizerInner = () => {
     const { webAudio } = useWebAudio();
     const canvasRef = useRef<HTMLDivElement>(null);
     const visualizer = useSettingsStore((store) => store.visualizer);
-    const playbackType = usePlaybackType();
     const opacity = useSettingsStore((store) => store.visualizer.audiomotionanalyzer.opacity);
     const motionRef = useRef<any>(undefined);
     const resizeObserverRef = useRef<ResizeObserver | undefined>(undefined);
@@ -312,13 +310,9 @@ const VisualizerInner = () => {
 
     useEffect(() => {
         const { context } = webAudio || {};
-        const inputNodes = getVisualizerAudioNodes(webAudio, playbackType);
-        const shouldRunForWebPlayback = playbackType === PlayerType.WEB && isPlaying;
-        const shouldRunForMpvLoopback =
-            playbackType === PlayerType.LOCAL && isPlaying && inputNodes.length > 0;
-        const shouldRun = shouldRunForWebPlayback || shouldRunForMpvLoopback;
+        const inputNodes = webAudio?.gains ?? [];
 
-        if (!shouldRun || !context || inputNodes.length === 0) {
+        if (!isPlaying || !context || inputNodes.length === 0) {
             if (motionRef.current) {
                 destroyMotion();
             }
@@ -374,7 +368,6 @@ const VisualizerInner = () => {
         isPlaying,
         libraryLoaded,
         options,
-        playbackType,
         registerCustomGradients,
         resizeMotion,
         webAudio,

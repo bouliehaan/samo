@@ -39,59 +39,6 @@
     opacity: 0.55;
 }
 
-.overlay-controls {
-    position: absolute;
-    inset: 0;
-    z-index: 2;
-    opacity: 0;
-    transition: opacity 150ms ease;
-}
-
-.card-button:hover .overlay-controls,
-.card-button:focus-visible .overlay-controls,
-.overlay-controls:focus-within {
-    opacity: 1;
-}
-
-.overlay-btn {
-    all: unset;
-    position: absolute;
-    z-index: 3;
-    padding: var(--theme-spacing-sm);
-    cursor: pointer;
-    border-radius: var(--theme-radius-md);
-    transition: transform 100ms ease;
-
-    &:hover {
-        transform: scale(1.15);
-    }
-
-    &:active {
-        transform: scale(0.88);
-    }
-
-    svg {
-        display: block;
-        stroke: white;
-        stroke-width: 1.5px;
-    }
-}
-
-.overlay-heart {
-    top: 0;
-    left: 0;
-}
-
-.overlay-options {
-    right: 0;
-    bottom: 0;
-}
-
-.favorite-active svg {
-    fill: var(--theme-colors-primary-filled);
-    stroke: var(--theme-colors-primary-filled);
-}
-
 .art-circle {
     border-radius: 50%;
 }

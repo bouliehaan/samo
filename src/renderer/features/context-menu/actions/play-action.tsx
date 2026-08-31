@@ -1,81 +1,33 @@
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { usePlayer } from '/@/renderer/features/player/context/player-context';
-import { useCurrentServerId, usePlayButtonBehavior } from '/@/renderer/store';
+import {
+    type QueuePlayProps,
+    useQueuePlay,
+} from '/@/renderer/features/context-menu/actions/use-queue-play';
+import { usePlayButtonBehavior } from '/@/renderer/store';
 import { ContextMenu } from '/@/shared/components/context-menu/context-menu';
-import { LibraryItem, Song } from '/@/shared/types/domain-types';
 import { Play } from '/@/shared/types/types';
 
-interface PlayActionProps {
-    allowShuffle?: boolean;
-    ids: string[];
-    itemType: LibraryItem;
-    onPlay?: () => void;
-    songs?: Song[];
-}
-
-export const PlayAction = ({
-    allowShuffle = true,
-    ids,
-    itemType,
-    onPlay,
-    songs,
-}: PlayActionProps) => {
+/** Starting playback now. Queueing for later is {@link AddToQueueAction}. */
+export const PlayAction = ({ allowShuffle = true, ...props }: QueuePlayProps) => {
     const { t } = useTranslation();
-    const player = usePlayer();
-    const serverId = useCurrentServerId();
-
-    const handlePlay = useCallback(
-        (playType: Play) => {
-            if (ids.length === 0 || !serverId) return;
-
-            onPlay?.();
-
-            if (
-                itemType === LibraryItem.SONG ||
-                itemType === LibraryItem.PLAYLIST_SONG ||
-                itemType === LibraryItem.QUEUE_SONG
-            ) {
-                player.addToQueueByData(songs || [], playType);
-            } else {
-                player.addToQueueByFetch(serverId, ids, itemType, playType);
-            }
-        },
-        [ids, itemType, onPlay, player, serverId, songs],
-    );
+    const handlePlay = useQueuePlay(props);
+    const playButtonBehavior = usePlayButtonBehavior();
 
     const handlePlayNow = useCallback(() => {
         handlePlay(Play.NOW);
-    }, [handlePlay]);
-
-    const handlePlayNext = useCallback(() => {
-        handlePlay(Play.NEXT);
-    }, [handlePlay]);
-
-    const handlePlayLast = useCallback(() => {
-        handlePlay(Play.LAST);
     }, [handlePlay]);
 
     const handlePlayShuffled = useCallback(() => {
         handlePlay(Play.SHUFFLE);
     }, [handlePlay]);
 
-    const handlePlayNextShuffled = useCallback(() => {
-        handlePlay(Play.NEXT_SHUFFLE);
-    }, [handlePlay]);
-
-    const handlePlayLastShuffled = useCallback(() => {
-        handlePlay(Play.LAST_SHUFFLE);
-    }, [handlePlay]);
-
-    const playButtonBehavior = usePlayButtonBehavior();
-
     const defaultPlayAction = useCallback(() => {
         handlePlay(playButtonBehavior);
     }, [handlePlay, playButtonBehavior]);
 
-    if (ids.length === 0) return null;
+    if (props.ids.length === 0) return null;
 
     return (
         <ContextMenu.Submenu>
@@ -92,31 +44,10 @@ export const PlayAction = ({
                 <ContextMenu.Item leftIcon="mediaPlay" onSelect={handlePlayNow}>
                     {t('player.play', { postProcess: 'sentenceCase' })}
                 </ContextMenu.Item>
-                <ContextMenu.Item leftIcon="mediaPlayNext" onSelect={handlePlayNext}>
-                    {t('player.addNext', { postProcess: 'sentenceCase' })}
-                </ContextMenu.Item>
-                <ContextMenu.Item leftIcon="mediaPlayLast" onSelect={handlePlayLast}>
-                    {t('player.addLast', { postProcess: 'sentenceCase' })}
-                </ContextMenu.Item>
                 {allowShuffle ? (
-                    <>
-                        <ContextMenu.Divider />
-                        <ContextMenu.Item leftIcon="mediaShuffle" onSelect={handlePlayShuffled}>
-                            {t('player.shuffle', { postProcess: 'sentenceCase' })}
-                        </ContextMenu.Item>
-                        <ContextMenu.Item
-                            leftIcon="mediaPlayNext"
-                            onSelect={handlePlayNextShuffled}
-                        >
-                            {t('player.addNextShuffled', { postProcess: 'sentenceCase' })}
-                        </ContextMenu.Item>
-                        <ContextMenu.Item
-                            leftIcon="mediaPlayLast"
-                            onSelect={handlePlayLastShuffled}
-                        >
-                            {t('player.addLastShuffled', { postProcess: 'sentenceCase' })}
-                        </ContextMenu.Item>
-                    </>
+                    <ContextMenu.Item leftIcon="mediaShuffle" onSelect={handlePlayShuffled}>
+                        {t('player.shuffle', { postProcess: 'sentenceCase' })}
+                    </ContextMenu.Item>
                 ) : null}
             </ContextMenu.SubmenuContent>
         </ContextMenu.Submenu>

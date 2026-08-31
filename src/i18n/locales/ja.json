@@ -1144,8 +1144,6 @@
                 "d": "D",
                 "z": "Z"
             }
-        },
-        "systemAudioCaptureFailed": "キャプチャを開始できませんでした: {{message}}",
-        "systemAudioNoAudioTrack": "音声トラックが返されませんでした。プロンプトが表示されたら、音声キャプチャが有効になっていることを確認してください。"
+        }
     }
 }

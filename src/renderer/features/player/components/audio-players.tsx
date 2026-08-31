@@ -19,6 +19,7 @@ import { RestoreLastPlaybackSessionHook } from '/@/renderer/features/player/hook
 import { ScrobbleHook } from '/@/renderer/features/player/hooks/use-scrobble';
 import { UpdateCurrentSongHook } from '/@/renderer/features/player/hooks/use-update-current-song';
 import { useWebAudio } from '/@/renderer/features/player/hooks/use-webaudio';
+import { isMpvEngineActive } from '/@/renderer/features/player/utils/resolve-playback-engine';
 import { PodcastWebPlayer } from '/@/renderer/features/podcasts/components/podcast-web-player';
 import { RadioWebPlayer } from '/@/renderer/features/radio/components/radio-web-player';
 import {
@@ -26,7 +27,6 @@ import {
     RadioMetadataHook,
 } from '/@/renderer/features/radio/hooks/use-radio-player';
 import { RemoteHook } from '/@/renderer/features/remote/hooks/use-remote';
-import { VisualizerSystemAudioBridgeHook } from '/@/renderer/features/visualizer/components/visualizer-system-audio-bridge';
 import {
     updateQueueFavorites,
     useCurrentServerId,
@@ -37,7 +37,6 @@ import {
 import { usePlaybackSession } from '/@/renderer/store/playback-owner.store';
 import { toast } from '/@/shared/components/toast/toast';
 import { LibraryItem } from '/@/shared/types/domain-types';
-import { PlayerType } from '/@/shared/types/types';
 
 export const AudioPlayers = () => {
     const serverId = useCurrentServerId();
@@ -67,7 +66,6 @@ export const AudioPlayers = () => {
             <UpdateCurrentSongHook />
             <RadioAudioInstanceHook />
             <RadioMetadataHook />
-            <VisualizerSystemAudioBridgeHook />
             <AudioPlayersContent
                 audioContext={audioContext}
                 audioDeviceId={audioDeviceId}
@@ -184,14 +182,7 @@ const AudioPlayersContent = ({
         return <PodcastWebPlayer />;
     }
 
-    const musicEngine =
-        engine === 'none'
-            ? isElectron() && playbackType === PlayerType.LOCAL
-                ? 'mpv-native'
-                : 'web'
-            : engine;
-
-    if (source === 'music' && isElectron() && musicEngine === 'mpv-native') {
+    if (isMpvEngineActive({ engine, isDesktop: isElectron(), playbackType, source })) {
         return <MpvPlayer />;
     }
 

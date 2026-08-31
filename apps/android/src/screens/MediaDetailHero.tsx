@@ -41,6 +41,11 @@ import { styles } from '../theme/styles';
 import { colors } from '../theme/tokens';
 import { handleOpenDetailInfo } from '../handlers/info-handlers';
 import { triggerImpact } from '../services/haptics';
+import {
+    IDLE_DOWNLOAD_PROGRESS,
+    pickLatestEntryPerTrack,
+    summarizeDownloadEntries,
+} from '../utils/download-progress';
 import { getDetailTypeLabel } from '../utils/media-detail';
 import { detailHasHiRes } from '../utils/media-quality';
 
@@ -151,71 +156,21 @@ const DetailDownloadButton = memo(function DetailDownloadButton({
     }, [detail.tracks, detail.type]);
 
     const downloadAggregate = useMemo(() => {
-        const emptyAggregate = { completed: false, progress: 0 };
-        const startingProgress = 0.06;
-        if (collectionDownloads.length === 0) {
-            return isDownloadRequested
-                ? { completed: false, progress: startingProgress }
-                : emptyAggregate;
-        }
-        const latestByTrackId = new Map<string, DownloadEntry>();
-        for (const entry of collectionDownloads) {
-            const current = latestByTrackId.get(entry.trackId);
-            if (!current || entry.enqueuedAt > current.enqueuedAt) {
-                latestByTrackId.set(entry.trackId, entry);
-            }
-        }
-        const getEntryProgress = (entry: DownloadEntry | undefined) => {
-            if (!entry) return 0;
-            if (entry.status === 'completed') return 1;
-            if (entry.status === 'downloading') {
-                return Math.max(entry.progress ?? 0, startingProgress);
-            }
-            if (entry.status === 'queued') return startingProgress;
-            return 0;
-        };
+        const latestByTrackId = pickLatestEntryPerTrack(collectionDownloads);
+        // An audiobook's files are decided server-side, so there is no track
+        // list to divide by — its own entries are the whole truth.
         if (detail.type === MobileMediaDetailType.AUDIOBOOK) {
-            const entries = [...latestByTrackId.values()];
-            const completed =
-                entries.length > 0 && entries.every((entry) => entry.status === 'completed');
-            const hasActiveDownload = entries.some(
-                (entry) => entry.status === 'queued' || entry.status === 'downloading',
-            );
-            const isActive = completed || hasActiveDownload || isDownloadRequested;
-            const rawProgress =
-                entries.reduce((sum, entry) => sum + getEntryProgress(entry), 0) /
-                Math.max(entries.length, 1);
-            return {
-                completed,
-                progress: isActive
-                    ? Math.max(isDownloadRequested ? startingProgress : 0, rawProgress)
-                    : 0,
-            };
+            return summarizeDownloadEntries([...latestByTrackId.values()], {
+                requested: isDownloadRequested,
+            });
         }
         if (expectedDownloadTrackIds.length === 0) {
-            return emptyAggregate;
+            return IDLE_DOWNLOAD_PROGRESS;
         }
-        const expectedEntries = expectedDownloadTrackIds.map((trackId) =>
-            latestByTrackId.get(trackId),
+        return summarizeDownloadEntries(
+            expectedDownloadTrackIds.map((trackId) => latestByTrackId.get(trackId)),
+            { requested: isDownloadRequested },
         );
-        const completed = expectedEntries.every((entry) => entry?.status === 'completed');
-        const hasFullCollectionSet = expectedEntries.every(
-            (entry) =>
-                entry?.status === 'queued' ||
-                entry?.status === 'downloading' ||
-                entry?.status === 'completed',
-        );
-        const isActive = completed || hasFullCollectionSet || isDownloadRequested;
-        if (!isActive) {
-            return emptyAggregate;
-        }
-        const rawProgress =
-            expectedEntries.reduce((sum, entry) => sum + getEntryProgress(entry), 0) /
-            expectedDownloadTrackIds.length;
-        return {
-            completed,
-            progress: Math.max(isDownloadRequested ? startingProgress : 0, rawProgress),
-        };
     }, [collectionDownloads, detail.type, expectedDownloadTrackIds, isDownloadRequested]);
 
     const handleDownloadDetail = async () => {

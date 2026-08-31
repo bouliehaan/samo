@@ -21,8 +21,12 @@ export const RemoveFromPlaylistAction = ({ items }: RemoveFromPlaylistActionProp
     const { playlistId } = useParams() as { playlistId?: string };
     const removeFromPlaylistMutation = useRemoveFromPlaylist();
 
+    // Track ids, not `playlistItemId`. Samo playlists have no per-row id, so
+    // `playlistItemId` is only the row's position, synthesised for the table's
+    // row key — the API identifies membership by track id, and the server dedupes
+    // `trackIds` on write so one id is always exactly one row.
     const { ids } = useMemo(() => {
-        const ids = items.map((item) => item.playlistItemId).filter((id) => id !== undefined);
+        const ids = items.map((item) => item.id);
         return { ids };
     }, [items]);
 

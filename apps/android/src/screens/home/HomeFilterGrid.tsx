@@ -9,8 +9,10 @@ import {
 import Reanimated from 'react-native-reanimated';
 
 import { ArtworkImage } from '../../components/ArtworkImage';
+import { DownloadIndicator } from '../../components/DownloadIndicator';
 import { PressableScale } from '../../components/PressableScale';
 import { useMediaContextMenu } from '../../contexts/media-context-menu';
+import { useDownloadIndicator } from '../../hooks/use-download-indicator';
 import { useScrollContentBottomInset } from '../../hooks/use-scroll-content-bottom-inset';
 import { type AndroidRecentContentSourceItem } from '../../services/recent-content';
 import { HOME_PRIMARY_TILE } from '../../theme/layout';
@@ -42,6 +44,7 @@ const HomeFilterGridTile = memo(
     }) => {
         const subtitle = getHomeItemSubtitle(item, variant);
         const contextMenu = useMediaContextMenu();
+        const download = useDownloadIndicator(item);
 
         return (
             <PressableScale
@@ -72,14 +75,25 @@ const HomeFilterGridTile = memo(
                 <Text numberOfLines={2} style={styles.mediaTitle} {...androidTrimCaptionFont}>
                     {item.title}
                 </Text>
-                {subtitle ? (
+                {subtitle || download.isVisible ? (
                     <View style={styles.homeFilterGridSubtitleRow}>
-                        <Text
-                            numberOfLines={1}
-                            style={[styles.mediaSubtitle, androidTrimCaptionFont]}
-                        >
-                            {subtitle}
-                        </Text>
+                        <DownloadIndicator
+                            state={download}
+                            tickSize={11}
+                            tickStyle={styles.mediaDownloadIndicator}
+                        />
+                        {subtitle ? (
+                            <Text
+                                numberOfLines={1}
+                                style={[
+                                    styles.mediaSubtitle,
+                                    styles.mediaSubtitleInline,
+                                    androidTrimCaptionFont,
+                                ]}
+                            >
+                                {subtitle}
+                            </Text>
+                        ) : null}
                     </View>
                 ) : null}
             </PressableScale>

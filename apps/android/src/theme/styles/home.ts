@@ -229,6 +229,9 @@ export const homeStyles = StyleSheet.create({
         borderRadius: 26,
     },
     homeFilterGridSubtitleRow: {
+        alignItems: 'center',
+        flexDirection: 'row',
+        gap: 4,
         minHeight: HOME_MEDIA_SUBTITLE_ROW_HEIGHT,
         minWidth: 0,
     },

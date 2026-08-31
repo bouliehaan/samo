@@ -1,7 +1,7 @@
 import clsx from 'clsx';
 import formatDuration from 'format-duration';
 import { motion } from 'motion/react';
-import { CSSProperties, lazy, Suspense, useMemo } from 'react';
+import { CSSProperties, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import styles from './full-screen-player-queue.module.css';
@@ -10,7 +10,8 @@ import { Lyrics } from '/@/renderer/features/lyrics/lyrics';
 import { PlayQueue } from '/@/renderer/features/now-playing/components/play-queue';
 import { FullScreenSimilarSongs } from '/@/renderer/features/player/components/full-screen-similar-songs';
 import { usePlayer } from '/@/renderer/features/player/context/player-context';
-import { usePlaybackSettings, useSettingsStore } from '/@/renderer/store';
+import { useIsVisualizerAvailable } from '/@/renderer/features/player/hooks/use-is-visualizer-available';
+import { VisualizerSurface } from '/@/renderer/features/visualizer/components/visualizer-surface';
 import {
     getOrderedAudiobookChapters,
     useAudiobookActions,
@@ -28,38 +29,12 @@ import { Group } from '/@/shared/components/group/group';
 import { ScrollArea } from '/@/shared/components/scroll-area/scroll-area';
 import { ItemListKey } from '/@/shared/types/types';
 
-const AudioMotionAnalyzerVisualizer = lazy(() =>
-    import('../../visualizer/components/audiomotionanalyzer/visualizer').then((module) => ({
-        default: module.Visualizer,
-    })),
-);
-
-const ButterchurnVisualizer = lazy(() =>
-    import('../../visualizer/components/butternchurn/visualizer').then((module) => ({
-        default: module.Visualizer,
-    })),
-);
-
 const formatChapterTime = (seconds: number) => formatDuration(Math.max(0, seconds) * 1000 || 0);
 
-const FullScreenVisualizerPane = ({
-    visualizerType,
-    webAudio,
-}: {
-    visualizerType: string;
-    webAudio: boolean;
-}) => {
-    if (!webAudio) return null;
+const FullScreenVisualizerPane = ({ isAvailable }: { isAvailable: boolean }) => {
+    if (!isAvailable) return null;
 
-    return (
-        <Suspense fallback={<></>}>
-            {visualizerType === 'butterchurn' ? (
-                <ButterchurnVisualizer />
-            ) : (
-                <AudioMotionAnalyzerVisualizer />
-            )}
-        </Suspense>
-    );
+    return <VisualizerSurface />;
 };
 
 const FullScreenAudiobookChapters = () => {
@@ -122,8 +97,7 @@ export const FullScreenPlayerQueue = () => {
     const { t } = useTranslation();
     const { activeTab } = useFullScreenPlayerStore();
     const { setStore } = useFullScreenPlayerStoreActions();
-    const { webAudio } = usePlaybackSettings();
-    const visualizerType = useSettingsStore((store) => store.visualizer.type);
+    const isVisualizerAvailable = useIsVisualizerAvailable();
     const playbackSource = usePlaybackSource();
     const isMusicMode = playbackSource == null || playbackSource === 'music';
     const isAudiobookMode = playbackSource === 'audiobook';
@@ -149,7 +123,7 @@ export const FullScreenPlayerQueue = () => {
             },
         ];
 
-        if (webAudio) {
+        if (isVisualizerAvailable) {
             items.push({
                 active: activeTab === 'visualizer',
                 label: t('page.fullscreenPlayer.visualizer', { postProcess: 'titleCase' }),
@@ -158,7 +132,7 @@ export const FullScreenPlayerQueue = () => {
         }
 
         return items;
-    }, [activeTab, setStore, t, webAudio]);
+    }, [activeTab, isVisualizerAvailable, setStore, t]);
 
     const renderContent = () => {
         if (isAudiobookMode) {
@@ -166,7 +140,7 @@ export const FullScreenPlayerQueue = () => {
         }
 
         if (isPodcastMode || isRadioMode) {
-            return <FullScreenVisualizerPane visualizerType={visualizerType} webAudio={webAudio} />;
+            return <FullScreenVisualizerPane isAvailable={isVisualizerAvailable} />;
         }
 
         return activeTab === 'queue' ? (
@@ -183,8 +157,8 @@ export const FullScreenPlayerQueue = () => {
             </div>
         ) : activeTab === 'lyrics' ? (
             <Lyrics />
-        ) : activeTab === 'visualizer' && webAudio ? (
-            <FullScreenVisualizerPane visualizerType={visualizerType} webAudio={webAudio} />
+        ) : activeTab === 'visualizer' && isVisualizerAvailable ? (
+            <FullScreenVisualizerPane isAvailable={isVisualizerAvailable} />
         ) : null;
     };
 

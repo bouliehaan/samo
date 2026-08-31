@@ -94,12 +94,26 @@ export const viewAllStyles = StyleSheet.create({
         backgroundColor: colors.surface,
         justifyContent: 'center',
     },
+    viewAllTileMetaRow: {
+        alignItems: 'center',
+        flexDirection: 'row',
+        gap: 4,
+        minWidth: 0,
+        // The inset the subtitle used to carry itself, moved out to the row so
+        // the badge lines up with the title above it.
+        paddingLeft: 2,
+    },
     viewAllTileSubtitle: {
         color: colors.muted,
         fontSize: 12,
         fontFamily: fonts.mono,
         lineHeight: 16,
         paddingHorizontal: 2,
+    },
+    viewAllTileSubtitleInline: {
+        flexShrink: 1,
+        minWidth: 0,
+        paddingLeft: 0,
     },
     viewAllTileTitle: {
         color: colors.text,

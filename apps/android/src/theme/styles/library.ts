@@ -76,18 +76,9 @@ export const libraryStyles = StyleSheet.create({
     libraryFilterPillTextActive: {
         color: colors.background,
     },
-    libraryBrowseBody: {
-        flex: 1,
-        minHeight: 360,
-        position: 'relative',
-    },
     libraryBrowseChrome: {
         paddingHorizontal: HOME_EDGE_PADDING,
         paddingTop: PAGE_TOP_INSET,
-    },
-    libraryBrowseListContent: {
-        paddingBottom: SCROLL_CONTENT_BOTTOM_INSET,
-        paddingRight: 28,
     },
     libraryHeaderActions: {
         alignItems: 'center',
@@ -152,15 +143,6 @@ export const libraryStyles = StyleSheet.create({
     libraryRowText: {
         flex: 1,
         minWidth: 0,
-    },
-    libraryRowDownloadIndicator: {
-        bottom: 13,
-        opacity: 0.82,
-        position: 'absolute',
-        right: 8,
-    },
-    libraryRowDownloadIndicatorWithAccessory: {
-        right: 48,
     },
     libraryRowTitle: {
         color: colors.text,

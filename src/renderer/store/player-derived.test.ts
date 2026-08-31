@@ -30,18 +30,20 @@ describe('computePlayerData', () => {
                 shuffle: PlayerShuffle.NONE,
                 status: PlayerStatus.PAUSED,
             },
-            queue: { default: [], shuffled: [], songs: {} },
+            queue: { default: [], songs: {}, unshuffled: null },
         });
 
         expect(data.currentSong).toBeUndefined();
         expect(data.queueLength).toBe(0);
     });
 
-    it('maps shuffle position to queue index for current and next', () => {
+    it('reads current and next straight off the queue when shuffle is on', () => {
         const s0 = song('0', 'u0');
         const s1 = song('1', 'u1');
         const s2 = song('2', 'u2');
 
+        // Shuffle reorders the queue itself, so a shuffled queue is read no
+        // differently from an unshuffled one.
         const data = computePlayerData({
             player: {
                 index: 1,
@@ -51,15 +53,15 @@ describe('computePlayerData', () => {
                 status: PlayerStatus.PLAYING,
             },
             queue: {
-                default: ['u0', 'u1', 'u2'],
-                shuffled: [2, 0, 1],
+                default: ['u2', 'u0', 'u1'],
                 songs: { u0: s0, u1: s1, u2: s2 },
+                unshuffled: ['u0', 'u1', 'u2'],
             },
         });
 
         expect(data.currentSong?.id).toBe('0');
         expect(data.nextSong?.id).toBe('1');
-        expect(data.index).toBe(0);
+        expect(data.index).toBe(1);
     });
 });
 
@@ -77,8 +79,8 @@ describe('getQueueOrderFromState', () => {
             },
             queue: {
                 default: ['u1', 'u0'],
-                shuffled: [],
                 songs: { u0: s0, u1: s1 },
+                unshuffled: null,
             },
         });
 
@@ -104,8 +106,8 @@ describe('getQueueFromState', () => {
                 },
                 queue: {
                     default: ['u0', 'u1', 'u2'],
-                    shuffled: [],
                     songs: { u0: s0, u1: s1, u2: s2 },
+                    unshuffled: null,
                 },
             },
             'album',
@@ -130,8 +132,8 @@ describe('queue position helpers', () => {
             },
             queue: {
                 default: ['u0', 'u1'],
-                shuffled: [],
                 songs: { u0: song('0', 'u0'), u1: song('1', 'u1') },
+                unshuffled: null,
             },
         };
 
@@ -156,8 +158,8 @@ describe('playbackInputsEqual', () => {
             },
             queue: {
                 default: ['u0'],
-                shuffled: [],
                 songs: { u0: song('a', 'u0') },
+                unshuffled: null,
             },
         });
 
@@ -171,8 +173,8 @@ describe('playbackInputsEqual', () => {
             },
             queue: {
                 default: ['u1'],
-                shuffled: [],
                 songs: { u1: song('b', 'u1') },
+                unshuffled: null,
             },
         });
 
@@ -188,7 +190,7 @@ describe('playbackInputsEqual', () => {
                 shuffle: PlayerShuffle.NONE,
                 status: PlayerStatus.PLAYING,
             },
-            queue: { default: ['u0'], revision: 0, shuffled: [], songs: {} },
+            queue: { default: ['u0'], revision: 0, songs: {}, unshuffled: null },
         });
 
         const bumped = getPlaybackInputs({
@@ -199,7 +201,7 @@ describe('playbackInputsEqual', () => {
                 shuffle: PlayerShuffle.NONE,
                 status: PlayerStatus.PLAYING,
             },
-            queue: { default: ['u0'], revision: 1, shuffled: [], songs: {} },
+            queue: { default: ['u0'], revision: 1, songs: {}, unshuffled: null },
         });
 
         expect(playbackInputsEqual(base, bumped)).toBe(false);

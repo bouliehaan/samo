@@ -6,6 +6,7 @@ import { generatePath, useNavigate, useParams } from 'react-router';
 import { isSamoBackedLibraryItem } from '/@/renderer/api/samo/samo-long-form';
 import { PlayOnSamoRadioAction } from '/@/renderer/features/context-menu/actions/play-on-samo-radio-action';
 import { RemoveFromHomeAction } from '/@/renderer/features/context-menu/actions/remove-from-home-action';
+import { RemoveFromRecentsAction } from '/@/renderer/features/context-menu/actions/remove-from-recents-action';
 import { AlbumArtistContextMenu } from '/@/renderer/features/context-menu/menus/album-artist-context-menu';
 import { AlbumContextMenu } from '/@/renderer/features/context-menu/menus/album-context-menu';
 import { ArtistContextMenu } from '/@/renderer/features/context-menu/menus/artist-context-menu';
@@ -145,6 +146,7 @@ type ArtistContextMenuProps = {
 type AudiobookContextMenuProps = {
     homeItemKey?: string;
     items: LongFormLibraryItem[];
+    recentItemKey?: string;
     server: ServerListItemWithCredential;
     type: 'audiobook';
 };
@@ -168,6 +170,7 @@ type PlaylistSongContextMenuProps = {
 type PodcastContextMenuProps = {
     homeItemKey?: string;
     items: LongFormLibraryItem[];
+    recentItemKey?: string;
     server: ServerListItemWithCredential;
     type: 'podcast';
 };
@@ -204,7 +207,12 @@ type SongContextMenuProps = {
     type: LibraryItem.SONG;
 };
 
-const AudiobookContextMenu = ({ homeItemKey, items, server }: AudiobookContextMenuProps) => {
+const AudiobookContextMenu = ({
+    homeItemKey,
+    items,
+    recentItemKey,
+    server,
+}: AudiobookContextMenuProps) => {
     const navigate = useNavigate();
     const { play } = useAudiobookActions();
     const { toggle } = useLibraryFavoritesActions();
@@ -232,6 +240,12 @@ const AudiobookContextMenu = ({ homeItemKey, items, server }: AudiobookContextMe
             >
                 Favorite
             </ContextMenu.Item>
+            {recentItemKey ? (
+                <>
+                    <ContextMenu.Divider />
+                    <RemoveFromRecentsAction recentItemKey={recentItemKey} />
+                </>
+            ) : null}
             {homeItemKey ? (
                 <>
                     <ContextMenu.Divider />
@@ -242,7 +256,12 @@ const AudiobookContextMenu = ({ homeItemKey, items, server }: AudiobookContextMe
     );
 };
 
-const PodcastContextMenu = ({ homeItemKey, items, server }: PodcastContextMenuProps) => {
+const PodcastContextMenu = ({
+    homeItemKey,
+    items,
+    recentItemKey,
+    server,
+}: PodcastContextMenuProps) => {
     const navigate = useNavigate();
     const queryClient = useQueryClient();
     const { toggle } = useLibraryFavoritesActions();
@@ -297,6 +316,12 @@ const PodcastContextMenu = ({ homeItemKey, items, server }: PodcastContextMenuPr
                 >
                     Link RSS feed
                 </ContextMenu.Item>
+            ) : null}
+            {recentItemKey ? (
+                <>
+                    <ContextMenu.Divider />
+                    <RemoveFromRecentsAction recentItemKey={recentItemKey} />
+                </>
             ) : null}
             {homeItemKey ? (
                 <>

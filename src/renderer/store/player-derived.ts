@@ -1,8 +1,4 @@
-import {
-    calculateNextSong,
-    isShuffleEnabled,
-    mapShuffledToQueueIndex,
-} from '/@/renderer/store/player-queue-math';
+import { calculateNextSong } from '/@/renderer/store/player-queue-math';
 import { PlayerData, QueueData, QueueSong } from '/@/shared/types/domain-types';
 import { PlayerRepeat, PlayerShuffle, PlayerStatus } from '/@/shared/types/types';
 
@@ -44,7 +40,6 @@ export type PlaybackInputs = {
     repeat: PlayerRepeat;
     revision: number;
     shuffle: PlayerShuffle;
-    shuffledKey: string;
     status: PlayerStatus;
 };
 
@@ -56,54 +51,18 @@ const resolveCurrentQueueUniqueId = (state: PlayerSnapshotSlice): string => {
         return '';
     }
 
-    let queueIndex = index;
-    if (isShuffleEnabled(state)) {
-        queueIndex = mapShuffledToQueueIndex(index, state.queue.shuffled);
-    }
-
-    return queueItems[queueIndex]?._uniqueId ?? '';
+    return queueItems[index]?._uniqueId ?? '';
 };
 
 export function computePlayerData(state: PlayerSnapshotSlice): PlayerData {
     const queueItems = getQueueItemsFromState(state);
-    const index = state.player.index;
-
-    let queueIndex = index;
-    if (isShuffleEnabled(state)) {
-        queueIndex = mapShuffledToQueueIndex(index, state.queue.shuffled);
-    }
+    const queueIndex = state.player.index;
 
     const currentSong = queueItems[queueIndex];
     const repeat = state.player.repeat;
 
-    let previousSong: QueueSong | undefined;
-    if (isShuffleEnabled(state)) {
-        const previousShuffledIndex = index - 1;
-        if (previousShuffledIndex >= 0) {
-            const previousQueueIndex = state.queue.shuffled[previousShuffledIndex];
-            previousSong = queueItems[previousQueueIndex];
-        } else if (repeat === PlayerRepeat.ALL) {
-            const lastShuffledIndex = state.queue.shuffled.length - 1;
-            const lastQueueIndex = state.queue.shuffled[lastShuffledIndex];
-            previousSong = queueItems[lastQueueIndex];
-        }
-    } else {
-        previousSong = queueIndex > 0 ? queueItems[queueIndex - 1] : undefined;
-    }
-
-    let nextSong: QueueSong | undefined;
-    if (isShuffleEnabled(state) && repeat !== PlayerRepeat.ONE) {
-        const nextShuffledIndex = index + 1;
-        if (nextShuffledIndex < state.queue.shuffled.length) {
-            const nextQueueIndex = state.queue.shuffled[nextShuffledIndex];
-            nextSong = queueItems[nextQueueIndex];
-        } else if (repeat === PlayerRepeat.ALL) {
-            const firstQueueIndex = state.queue.shuffled[0];
-            nextSong = queueItems[firstQueueIndex];
-        }
-    } else {
-        nextSong = calculateNextSong(queueIndex, queueItems, repeat);
-    }
+    const previousSong = queueIndex > 0 ? queueItems[queueIndex - 1] : undefined;
+    const nextSong = calculateNextSong(queueIndex, queueItems, repeat);
 
     return {
         currentSong,
@@ -133,7 +92,6 @@ export function getPlaybackInputs(state: PlayerSnapshotSlice): PlaybackInputs {
         repeat: state.player.repeat,
         revision: state.queue.revision ?? 0,
         shuffle: state.player.shuffle,
-        shuffledKey: state.queue.shuffled.join(','),
         status: state.player.status,
     };
 }
@@ -170,16 +128,7 @@ export function getQueueItemsFromState(state: PlayerSnapshotSlice): QueueSong[] 
 }
 
 export function getQueueOrderFromState(state: PlayerSnapshotSlice): GroupedQueue {
-    const songs = state.queue.songs;
-    const defaultIds = state.queue.default;
-    const items: QueueSong[] = [];
-
-    for (const id of defaultIds) {
-        const song = songs[id];
-        if (song) {
-            items.push(song);
-        }
-    }
+    const items = getQueueItemsFromState(state);
 
     return {
         groups: [{ count: items.length, name: 'All' }],
@@ -205,7 +154,6 @@ export function playbackInputsEqual(a: PlaybackInputs, b: PlaybackInputs): boole
         a.shuffle === b.shuffle &&
         a.status === b.status &&
         a.defaultLen === b.defaultLen &&
-        a.shuffledKey === b.shuffledKey &&
         a.revision === b.revision
     );
 }

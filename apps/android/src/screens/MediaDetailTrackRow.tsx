@@ -9,15 +9,15 @@ import { memo } from 'react';
 import { Text, View } from 'react-native';
 
 import { ArtworkImage } from '../components/ArtworkImage';
-import { CheckGlyph, TrackDownloadedGlyph } from '../components/Glyphs';
+import { DownloadIndicator } from '../components/DownloadIndicator';
+import { CheckGlyph } from '../components/Glyphs';
 import { PressableScale } from '../components/PressableScale';
-import { useDownloadedTrackKeys } from '../contexts/downloaded-keys';
 import { useMediaContextMenu } from '../contexts/media-context-menu';
+import { useTrackDownloadIndicator } from '../hooks/use-download-indicator';
 import { getTrackMetadataItems } from '../player/track-metadata';
 import { presses } from '../theme/motion';
 import { styles } from '../theme/styles';
 import { colors, radii } from '../theme/tokens';
-import { getDownloadedTrackKey } from '../utils/download-keys';
 
 /**
  * One track/chapter/episode row. Memoized and self-subscribed to the
@@ -50,7 +50,7 @@ export const MediaDetailTrackRow = memo(function MediaDetailTrackRow({
     track: MobileMediaTrack;
 }) {
     const contextMenu = useMediaContextMenu();
-    const downloadedTrackKeys = useDownloadedTrackKeys();
+    const download = useTrackDownloadIndicator(detail.source.id, track.id);
 
     const isMusic =
         detail.type === MobileMediaDetailType.ALBUM ||
@@ -70,10 +70,6 @@ export const MediaDetailTrackRow = memo(function MediaDetailTrackRow({
         qualityItems.map((item) => item.label),
         isMusic,
     );
-    const isDownloadedTrack = downloadedTrackKeys.has(
-        getDownloadedTrackKey(detail.source.id, track.id),
-    );
-
     const row = (
         <PressableScale
             {...presses.row}
@@ -147,9 +143,9 @@ export const MediaDetailTrackRow = memo(function MediaDetailTrackRow({
                 <Text numberOfLines={1} style={styles.trackTitle}>
                     {track.title}
                 </Text>
-                {meta.length > 0 || isDownloadedTrack ? (
+                {meta.length > 0 || download.isVisible ? (
                     <View style={styles.trackMetadataLine}>
-                        {isDownloadedTrack ? <TrackDownloadedGlyph size={10} /> : null}
+                        <DownloadIndicator ringSize={14} state={download} tickSize={10} />
                         {meta.length > 0 ? (
                             <Text
                                 numberOfLines={1}

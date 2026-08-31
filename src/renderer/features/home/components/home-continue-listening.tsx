@@ -9,6 +9,7 @@ import {
     useGridCarouselContainerQuery,
 } from '/@/renderer/components/grid-carousel/grid-carousel-v2';
 import { ItemImage } from '/@/renderer/components/item-image/item-image';
+import { ContextMenuController } from '/@/renderer/features/context-menu/context-menu-controller';
 import { LongFormCoverImage } from '/@/renderer/features/player/components/long-form-cover-image';
 import { usePlayer } from '/@/renderer/features/player/context/player-context';
 import {
@@ -27,6 +28,7 @@ import {
 import { Center } from '/@/shared/components/center/center';
 import { type AppIconSelection, Icon } from '/@/shared/components/icon/icon';
 import { Text } from '/@/shared/components/text/text';
+import { LibraryItem } from '/@/shared/types/domain-types';
 import { Play } from '/@/shared/types/types';
 
 const MAX_CONTINUE_LISTENING_ITEMS = 24;
@@ -133,8 +135,66 @@ export const HomeContinueListening = ({
         }
     };
 
+    /**
+     * A recents entry only stores the whole domain object for the kinds that
+     * come with one — a song, and the raw item behind an audiobook or podcast.
+     * Those get the exact menu they'd get anywhere else, because right-clicking
+     * an audiobook here and in the Audiobooks shelf further down the same page
+     * should not be two different menus. Albums, artists, playlists and
+     * stations are stored as a reference only, so they fall back to the recents
+     * menu the sidebar uses for the same entries: open it, or forget it.
+     */
+    const openContextMenu = (item: RecentItem, event: React.MouseEvent) => {
+        event.preventDefault();
+        event.stopPropagation();
+
+        if (item.song) {
+            ContextMenuController.call({
+                cmd: {
+                    items: [item.song],
+                    recentItemKey: item.key,
+                    type: LibraryItem.SONG,
+                },
+                event,
+            });
+            return;
+        }
+
+        if (
+            item.rawAbsItem &&
+            longFormMediaServer &&
+            (item.mediaType === 'audiobook' || item.mediaType === 'podcast')
+        ) {
+            ContextMenuController.call({
+                cmd: {
+                    items: [item.rawAbsItem],
+                    recentItemKey: item.key,
+                    server: longFormMediaServer,
+                    type: item.mediaType,
+                },
+                event,
+            });
+            return;
+        }
+
+        ContextMenuController.call({
+            cmd: {
+                onOpen: () => openItem(item),
+                recentItemKey: item.key,
+                type: 'recent',
+            },
+            event,
+        });
+    };
+
     const cards = items.map((item) => ({
-        content: <ContinueListeningCard item={item} onClick={() => openItem(item)} />,
+        content: (
+            <ContinueListeningCard
+                item={item}
+                onClick={() => openItem(item)}
+                onContextMenu={(event) => openContextMenu(item, event)}
+            />
+        ),
         id: item.key,
     }));
 
@@ -151,8 +211,21 @@ export const HomeContinueListening = ({
     );
 };
 
-const ContinueListeningCard = ({ item, onClick }: { item: RecentItem; onClick: () => void }) => (
-    <button className={styles.cardButton} onClick={onClick} type="button">
+const ContinueListeningCard = ({
+    item,
+    onClick,
+    onContextMenu,
+}: {
+    item: RecentItem;
+    onClick: () => void;
+    onContextMenu: (event: React.MouseEvent) => void;
+}) => (
+    <button
+        className={styles.cardButton}
+        onClick={onClick}
+        onContextMenu={onContextMenu}
+        type="button"
+    >
         <div
             className={clsx(styles.artWrap, {
                 [styles.artCircle]:

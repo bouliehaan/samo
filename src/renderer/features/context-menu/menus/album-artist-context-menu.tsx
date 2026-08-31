@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 
 import { AddToPlaylistAction } from '/@/renderer/features/context-menu/actions/add-to-playlist-action';
+import { AddToQueueAction } from '/@/renderer/features/context-menu/actions/add-to-queue-action';
 import { DownloadAction } from '/@/renderer/features/context-menu/actions/download-action';
 import { GetInfoAction } from '/@/renderer/features/context-menu/actions/get-info-action';
 import { GoToAction } from '/@/renderer/features/context-menu/actions/go-to-action';
@@ -39,6 +40,7 @@ export const AlbumArtistContextMenu = ({
                 itemType={LibraryItem.ALBUM_ARTIST}
                 onPlay={() => items.forEach((a) => recordRecentArtist(a))}
             />
+            <AddToQueueAction ids={ids} itemType={LibraryItem.ALBUM_ARTIST} />
             <PlayArtistRadioAction artist={items[0]} disabled={items.length > 1} />
             <PlayOnSamoRadioAction ids={ids} itemType={LibraryItem.ALBUM_ARTIST} />
             <ContextMenu.Divider />

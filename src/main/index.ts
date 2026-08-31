@@ -3,7 +3,6 @@ import {
     app,
     BrowserWindow,
     BrowserWindowConstructorOptions,
-    desktopCapturer,
     globalShortcut,
     ipcMain,
     Menu,
@@ -18,7 +17,6 @@ import {
     Tray,
 } from 'electron';
 import electronLocalShortcut from 'electron-localshortcut';
-import log from 'electron-log/main';
 import { access, constants } from 'fs';
 import path, { join } from 'path';
 
@@ -583,27 +581,20 @@ async function createWindow(first = true): Promise<void> {
     menuBuilder = new MenuBuilder(mainWindow);
     rebuildMainMenu();
 
+    // Samo never captures the screen. Nothing in the renderer calls
+    // getDisplayMedia any more — this handler exists so that stays true even if
+    // something later does, or if injected content tries.
+    //
+    // It used to feed the mpv visualizer: mpv plays outside the renderer, so the
+    // only way to get samples for it was system audio. Electron's
+    // `audio: 'loopback'` is Windows-only, so on macOS that audio could only be
+    // obtained by attaching it to a live ScreenCaptureKit capture of the whole
+    // display — which is why Samo asked for Screen Recording, and why a
+    // full-screen capture ran for as long as the visualizer was open. The
+    // visualizer now reads the Web Audio graph and is simply unavailable under
+    // mpv. See use-is-visualizer-available.ts.
     mainWindow.webContents.session.setDisplayMediaRequestHandler((_request, callback) => {
-        if (!isMacOS()) {
-            callback({ audio: 'loopback' });
-            return;
-        }
-
-        desktopCapturer
-            .getSources({ thumbnailSize: { height: 0, width: 0 }, types: ['screen'] })
-            .then((sources) => {
-                const source = sources[0];
-                if (!source) {
-                    callback({});
-                    return;
-                }
-
-                callback({ audio: 'loopback', video: source });
-            })
-            .catch((err) => {
-                log.warn('desktopCapturer.getSources failed', err);
-                callback({});
-            });
+        callback({});
     });
 
     if (!disableAutoUpdates() && store.get('disable_auto_updates') !== true) {

@@ -1,31 +1,7 @@
-import { PlayerRepeat, PlayerShuffle } from '@samo/core/playback';
+import { PlayerRepeat } from '@samo/core/playback';
 
 import { shuffleInPlace } from '/@/renderer/utils/shuffle';
 import { QueueSong } from '/@/shared/types/domain-types';
-
-export function addIndexesToShuffled(
-    shuffled: number[],
-    currentShuffledIndex: number,
-    newIndexes: number[],
-): number[] {
-    const beforeCurrent = shuffled.slice(0, currentShuffledIndex + 1);
-    const afterCurrent = shuffled.slice(currentShuffledIndex + 1);
-    const toShuffle = [...afterCurrent, ...newIndexes];
-    return [...beforeCurrent, ...shuffleInPlace(toShuffle)];
-}
-
-export function adjustShuffledIndexesForInsertion(
-    shuffled: number[],
-    insertPosition: number,
-    insertCount: number,
-): number[] {
-    return shuffled.map((idx) => {
-        if (idx >= insertPosition) {
-            return idx + insertCount;
-        }
-        return idx;
-    });
-}
 
 export function calculateNextIndex(
     currentIndex: number,
@@ -73,38 +49,63 @@ export function calculateNextSong(
     return queueItems[currentIndex + 1];
 }
 
-export function findShuffledPositionForQueueIndex(
-    queueIndex: number,
-    shuffled: number[],
-): number | undefined {
-    const shuffledPosition = shuffled.findIndex((idx) => idx === queueIndex);
-    return shuffledPosition !== -1 ? shuffledPosition : undefined;
-}
-
-export function generateShuffledIndexes(length: number): number[] {
-    const indexes = Array.from({ length }, (_, i) => i);
-    return shuffleInPlace(indexes);
-}
-
-export function isShuffleEnabled(state: {
-    player: { shuffle: PlayerShuffle };
-    queue: { shuffled: number[] };
-}): boolean {
-    return state.player.shuffle === PlayerShuffle.TRACK && state.queue.shuffled.length > 0;
-}
-
-export function mapShuffledToQueueIndex(shuffledIndex: number, shuffled: number[]): number {
-    if (shuffledIndex >= 0 && shuffledIndex < shuffled.length) {
-        return shuffled[shuffledIndex];
+/**
+ * Puts the queue back into the order it held before shuffle was switched on.
+ *
+ * The snapshot is taken once, when shuffle goes on, and never maintained — so it
+ * can be stale in both directions. Tracks removed since are dropped, and tracks
+ * queued since (which the snapshot has never heard of) are put back beside the
+ * track they currently follow, so a "play next" done while shuffled does not get
+ * flung to the end of the queue when shuffle goes off.
+ */
+export function restoreQueueOrder(current: string[], snapshot: null | string[]): string[] {
+    if (!snapshot) {
+        return [...current];
     }
-    return shuffledIndex;
+
+    const inCurrent = new Set(current);
+    const restored = snapshot.filter((id) => inCurrent.has(id));
+    const placed = new Set(restored);
+
+    current.forEach((id, index) => {
+        if (placed.has(id)) {
+            return;
+        }
+
+        let insertAt = 0;
+        for (let before = index - 1; before >= 0; before--) {
+            const anchor = restored.indexOf(current[before]);
+            if (anchor !== -1) {
+                insertAt = anchor + 1;
+                break;
+            }
+        }
+
+        restored.splice(insertAt, 0, id);
+        placed.add(id);
+    });
+
+    return restored;
 }
 
-export function regenerateShuffledIndexesIfNeeded(state: {
-    player: { shuffle: PlayerShuffle };
-    queue: { default: string[]; shuffled: number[] };
-}): void {
-    if (isShuffleEnabled(state)) {
-        state.queue.shuffled = generateShuffledIndexes(state.queue.default.length);
+/**
+ * Shuffles the queue itself rather than shuffling how it is read back.
+ *
+ * The playing track moves to the head so it keeps playing uninterrupted and
+ * everything else lands behind it — the list the user is looking at is the order
+ * that will actually play. Callers set `player.index` to 0 alongside this.
+ */
+export function shuffleQueueAroundIndex(queue: string[], currentIndex: number): string[] {
+    if (queue.length <= 1) {
+        return [...queue];
     }
+
+    if (currentIndex < 0 || currentIndex >= queue.length) {
+        return shuffleInPlace([...queue]);
+    }
+
+    const current = queue[currentIndex];
+    const rest = queue.filter((_, index) => index !== currentIndex);
+
+    return [current, ...shuffleInPlace(rest)];
 }

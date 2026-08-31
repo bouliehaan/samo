@@ -36,11 +36,16 @@ export interface PlayerData {
 }
 
 export interface QueueData {
+    /** The play order. Shuffle reorders this list rather than being applied on read. */
     default: string[];
     /** Bumped when song records change without reordering; drives playback snapshot refresh. */
     revision?: number;
-    shuffled: number[];
     songs: Record<string, QueueSong>;
+    /**
+     * The order `default` held before shuffle was switched on, so switching it off
+     * puts the queue back. Null whenever shuffle is off.
+     */
+    unshuffled: null | string[];
 }
 
 export type QueueSong = Song & {

@@ -3,13 +3,11 @@ import { createRef, useCallback, useEffect, useRef, useState } from 'react';
 import styles from './visualizer.module.css';
 
 import { useWebAudio } from '/@/renderer/features/player/hooks/use-webaudio';
-import { getVisualizerAudioNodes } from '/@/renderer/features/player/utils/get-visualizer-audio-nodes';
 import { openVisualizerSettingsModal } from '/@/renderer/features/player/utils/open-visualizer-settings-modal';
 import { ComponentErrorBoundary } from '/@/renderer/features/shared/components/component-error-boundary';
 import {
     subscribeButterchurnPreset,
     useButterchurnSettings,
-    usePlaybackType,
     useSettingsStore,
     useSettingsStoreActions,
 } from '/@/renderer/store';
@@ -21,7 +19,7 @@ import { usePlayerStatus } from '/@/renderer/store/player.store';
 import { ActionIcon } from '/@/shared/components/action-icon/action-icon';
 import { Group } from '/@/shared/components/group/group';
 import { Text } from '/@/shared/components/text/text';
-import { PlayerStatus, PlayerType } from '/@/shared/types/types';
+import { PlayerStatus } from '/@/shared/types/types';
 import { logFn } from '/@/shared/utils/logger';
 
 // Ignore presets that are erroring out
@@ -59,14 +57,12 @@ const VisualizerInner = () => {
     const initialPresetLoadedRef = useRef(false);
     const butterchurnSettings = useButterchurnSettings();
     const opacity = useSettingsStore((store) => store.visualizer.butterchurn.opacity);
-    const playbackType = usePlaybackType();
     const { setSettings } = useSettingsStoreActions();
     const playerStatus = usePlayerStatus();
     const isPlaying = playerStatus === PlayerStatus.PLAYING;
     const [resumeInitGeneration, setResumeInitGeneration] = useState(0);
     const wasPlayingRef = useRef(false);
     const isFirstMountRef = useRef(true);
-    const prevPlaybackTypeRef = useRef(playbackType);
 
     useEffect(() => {
         let isMounted = true;
@@ -98,24 +94,19 @@ const VisualizerInner = () => {
     }, []);
 
     useEffect(() => {
-        const prevType = prevPlaybackTypeRef.current;
-
         if (isFirstMountRef.current) {
             isFirstMountRef.current = false;
             wasPlayingRef.current = isPlaying;
-            prevPlaybackTypeRef.current = playbackType;
             return;
         }
 
         const wasPlaying = wasPlayingRef.current;
         wasPlayingRef.current = isPlaying;
 
-        if (isPlaying && (!wasPlaying || prevType !== playbackType)) {
+        if (isPlaying && !wasPlaying) {
             setResumeInitGeneration((g) => g + 1);
         }
-
-        prevPlaybackTypeRef.current = playbackType;
-    }, [playbackType, isPlaying]);
+    }, [isPlaying]);
 
     const cleanupVisualizer = () => {
         if (animationFrameRef.current) {
@@ -147,20 +138,16 @@ const VisualizerInner = () => {
     // Initialize butterchurn instance
     useEffect(() => {
         const { context } = webAudio || {};
-        const inputNodes = getVisualizerAudioNodes(webAudio, playbackType);
+        const inputNodes = webAudio?.gains ?? [];
         const canvas = canvasRef.current;
         const container = containerRef.current;
-
-        const shouldRunForWebPlayback = playbackType === PlayerType.WEB && isPlaying;
-        const shouldRunForMpvLoopback =
-            playbackType === PlayerType.LOCAL && isPlaying && inputNodes.length > 0;
 
         const needsInitialization =
             context &&
             inputNodes.length > 0 &&
             canvas &&
             container &&
-            (shouldRunForWebPlayback || shouldRunForMpvLoopback) &&
+            isPlaying &&
             librariesLoaded &&
             (!isInitializedRef.current || !visualizerRef.current);
 
@@ -191,7 +178,7 @@ const VisualizerInner = () => {
         }
 
         async function initializeVisualizer(width: number, height: number) {
-            const nodes = getVisualizerAudioNodes(webAudio, playbackType);
+            const nodes = webAudio?.gains ?? [];
             if (!nodes.length || !canvas || !context || !librariesLoaded) return;
 
             canvas.width = width;
@@ -225,7 +212,7 @@ const VisualizerInner = () => {
             cleanupVisualizer();
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [webAudio, playbackType, librariesLoaded, resumeInitGeneration]);
+    }, [webAudio, librariesLoaded, resumeInitGeneration]);
 
     // Kill visualizer after 5 seconds of pause
     useEffect(() => {
@@ -253,7 +240,7 @@ const VisualizerInner = () => {
                 pauseTimerRef.current = undefined;
             }
         };
-    }, [isPlaying, playbackType]);
+    }, [isPlaying]);
 
     // Handle resize
     useEffect(() => {

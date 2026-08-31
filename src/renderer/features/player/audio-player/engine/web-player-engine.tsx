@@ -93,9 +93,12 @@ export const WebPlayerEngine = (props: WebPlayerEngineProps) => {
     const networkRetryTimeout2 = useRef<null | ReturnType<typeof setTimeout>>(null);
     const [ReactPlayerComponent, setReactPlayerComponent] = useState<any>(null);
     const [isLoading, setIsLoading] = useState(true);
+    const engineContainerRef = useRef<HTMLDivElement | null>(null);
+    const preservesPitchRef = useRef(preservesPitch);
 
     playbackSessionIdRef.current = playbackSession.id;
     playbackSessionSourceRef.current = playbackSession.source;
+    preservesPitchRef.current = preservesPitch;
     src1Ref.current = src1;
     src2Ref.current = src2;
 
@@ -348,6 +351,66 @@ export const WebPlayerEngine = (props: WebPlayerEngineProps) => {
 
     useEffect(() => clearAllAudioElements, [clearAllAudioElements]);
 
+    // Ownership begins when the element EXISTS, not when it can play.
+    //
+    // react-player lazy-loads its FilePlayer (`React.lazy` + `Suspense`), so the
+    // <audio> is inserted in a LATER commit than the one that mounted
+    // `<ReactPlayer>` — a commit in which none of the effect deps below change,
+    // so that effect does not re-run for it. Its only other registration path is
+    // `onReady`, which is `canplay`: on a live stream that is seconds after the
+    // element has already opened the socket.
+    //
+    // In that gap the element belongs to nobody. `ownedAudioElementsRef` is
+    // empty, so this component's unmount cleanup has nothing to stop; react-player's
+    // own unmount skips `stop()` because `isReady` is false and does no more than
+    // `removeAttribute('src')`, which per spec does NOT abort a load already in
+    // flight; and the moment it detaches, neither the registry nor
+    // `stopAllAudioElements`'s DOM sweep can ever reach it again. It streams until
+    // the renderer dies, while the engine that replaced it plays the same URL —
+    // the media playing twice with only one copy answering the transport.
+    //
+    // A MutationObserver on our own container closes the gap by construction: it
+    // fires on the insertion itself, before the element has begun fetching, for
+    // every <audio> react-player puts there no matter which commit created it.
+    useEffect(() => {
+        const container = engineContainerRef.current;
+        if (!container) return;
+
+        const adopt = (audio: HTMLAudioElement) => {
+            ownedAudioElementsRef.current.add(audio);
+            audio.preservesPitch = preservesPitchRef.current;
+            const isPlayer2 = Boolean(audio.closest('#web-player-2'));
+            registerAudioElement(audio, {
+                mediaKey: (isPlayer2 ? src2Ref.current : src1Ref.current) ?? null,
+                playerId: isPlayer2 ? 'web-player-2' : 'web-player-1',
+                sessionId: playbackSessionIdRef.current,
+                source: playbackSessionSourceRef.current,
+            });
+        };
+
+        const adoptWithin = (node: Node) => {
+            if (node instanceof HTMLAudioElement) {
+                adopt(node);
+                return;
+            }
+            if (node instanceof Element) {
+                node.querySelectorAll('audio').forEach(adopt);
+            }
+        };
+
+        container.querySelectorAll('audio').forEach(adopt);
+
+        const observer = new MutationObserver((records) => {
+            for (const record of records) {
+                record.addedNodes.forEach(adoptWithin);
+            }
+        });
+
+        observer.observe(container, { childList: true, subtree: true });
+
+        return () => observer.disconnect();
+    }, []);
+
     // `ReactPlayerComponent` is a dependency, and it is the whole point of this
     // effect rather than an incidental extra.
     //
@@ -402,11 +465,11 @@ export const WebPlayerEngine = (props: WebPlayerEngineProps) => {
     }, []);
 
     if (isLoading || !ReactPlayerComponent) {
-        return <div id="web-player-engine" style={{ display: 'none' }} />;
+        return <div id="web-player-engine" ref={engineContainerRef} style={{ display: 'none' }} />;
     }
 
     return (
-        <div id="web-player-engine" style={{ display: 'none' }}>
+        <div id="web-player-engine" ref={engineContainerRef} style={{ display: 'none' }}>
             <ReactPlayerComponent
                 config={{
                     file: { attributes: { crossOrigin: 'anonymous' }, forceAudio: true },

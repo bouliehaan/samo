@@ -8,7 +8,6 @@ import {
     usePlayerStoreBase,
 } from '/@/renderer/store/player.store';
 import { useTimestampStoreBase } from '/@/renderer/store/timestamp.store';
-import { PlayerShuffle } from '/@/shared/types/types';
 
 // How often to persist the current timestamp into the last-music-session while music is
 // playing. Matches the long-form cadence — long enough to avoid IDB churn, short
@@ -80,16 +79,7 @@ export const useRememberMusicSession = () => {
 const writeSessionFromStore = () => {
     const player = usePlayerStoreBase.getState();
     const queue = getQueue(undefined, player);
-    let index = player.player.index;
-    if (
-        player.player.shuffle === PlayerShuffle.TRACK &&
-        player.queue.shuffled.length > 0 &&
-        index >= 0 &&
-        index < player.queue.shuffled.length
-    ) {
-        index = player.queue.shuffled[index];
-    }
-    const song = queue.items[index];
+    const song = queue.items[player.player.index];
     if (!song?.id || !song?._serverId) return;
 
     const position = useTimestampStoreBase.getState().timestamp;

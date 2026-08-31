@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 
 import { AddToPlaylistAction } from '/@/renderer/features/context-menu/actions/add-to-playlist-action';
+import { AddToQueueAction } from '/@/renderer/features/context-menu/actions/add-to-queue-action';
 import { DownloadAction } from '/@/renderer/features/context-menu/actions/download-action';
 import { GetInfoAction } from '/@/renderer/features/context-menu/actions/get-info-action';
 import { GoToAction } from '/@/renderer/features/context-menu/actions/go-to-action';
@@ -31,6 +32,7 @@ export const PlaylistSongContextMenu = ({ items, type }: PlaylistSongContextMenu
             bottomStickyContent={<ContextMenuPreview items={items} itemType={type} />}
         >
             <PlayAction ids={ids} itemType={type} songs={items} />
+            <AddToQueueAction ids={ids} itemType={type} songs={items} />
             <PlayTrackRadioAction disabled={items.length > 1} song={items[0]} />
             <PlayOnSamoRadioAction ids={ids} itemType={LibraryItem.SONG} songs={items} />
             <ContextMenu.Divider />

@@ -15,6 +15,10 @@ import styles from './global-search-bar.module.css';
 
 import { ItemImage } from '/@/renderer/components/item-image/item-image';
 import { QualityBadge } from '/@/renderer/components/quality-badge/quality-badge';
+import {
+    type ContextMenuCommand,
+    ContextMenuController,
+} from '/@/renderer/features/context-menu/context-menu-controller';
 import { usePlayer } from '/@/renderer/features/player/context/player-context';
 import { useRadioControls } from '/@/renderer/features/radio/hooks/use-radio-player';
 import {
@@ -64,6 +68,7 @@ import {
     InternetRadioStation,
     LibraryItem,
     Playlist,
+    ServerListItemWithCredential,
     Song,
 } from '/@/shared/types/domain-types';
 
@@ -85,6 +90,7 @@ interface ResultRowProps {
         isFavorite: boolean;
         onToggle: () => void;
     };
+    onContextMenu: (event: React.MouseEvent) => void;
     onSelect: ResultClickHandler;
     qualityProfile?: import('@samo/core/audio-quality').QualityBadgeProfile;
     subtitle?: string;
@@ -101,6 +107,7 @@ const ResultRow = ({
     artVariant = 'square',
     fallbackIcon,
     favorite,
+    onContextMenu,
     onSelect,
     qualityProfile,
     subtitle,
@@ -114,6 +121,7 @@ const ResultRow = ({
             aria-selected={false}
             className={styles.row}
             onClick={onSelect}
+            onContextMenu={onContextMenu}
             onKeyDown={(event: KeyboardEvent<HTMLDivElement>) => {
                 if (event.key === 'Enter' || event.key === ' ') {
                     event.preventDefault();
@@ -236,6 +244,7 @@ interface RowFactoryDeps {
     audiobookFavoriteIds: Set<string>;
     deliveryKind: ReturnType<typeof usePlaybackDeliveryKind>;
     musicServerId?: null | string;
+    onContextMenu: (entry: RankedResult, event: React.MouseEvent) => void;
     onSelectAlbum: (album: Album) => void;
     onSelectArtist: (artist: AlbumArtist) => void;
     onSelectAudiobook: (item: LongFormLibraryItem) => void;
@@ -253,7 +262,61 @@ interface RowFactoryDeps {
     podcastFavoriteIds: Set<string>;
 }
 
+/**
+ * A search hit already carries its whole domain object, so the menu it opens is
+ * the same one the item gets in its own library view — the dropdown never has to
+ * fetch anything before it can answer a right-click. Long-form and radio hits are
+ * the exception: they need a server, which is the one thing a result does not
+ * carry, and without it there is no menu rather than a half-working one.
+ */
+const getContextMenuCommand = (
+    entry: RankedResult,
+    {
+        longFormMediaServer,
+        musicServerId,
+    }: {
+        longFormMediaServer: null | ServerListItemWithCredential;
+        musicServerId?: null | string;
+    },
+): ContextMenuCommand | null => {
+    switch (entry.kind) {
+        case 'album':
+            return { items: [entry.album], type: LibraryItem.ALBUM };
+        case 'artist':
+            return { items: [entry.artist], type: LibraryItem.ALBUM_ARTIST };
+        case 'audiobook':
+            return longFormMediaServer
+                ? { items: [entry.item], server: longFormMediaServer, type: 'audiobook' }
+                : null;
+        case 'episode':
+            return longFormMediaServer
+                ? {
+                      episodes: [entry.episode.episode],
+                      item: entry.episode.show,
+                      server: longFormMediaServer,
+                      type: 'podcast-episode',
+                  }
+                : null;
+        case 'playlist':
+            return { items: [entry.playlist], type: LibraryItem.PLAYLIST };
+        case 'podcastShow':
+            return longFormMediaServer
+                ? { items: [entry.item], server: longFormMediaServer, type: 'podcast' }
+                : null;
+        case 'radio':
+            return musicServerId
+                ? { items: [entry.station], serverId: musicServerId, type: 'radio' }
+                : null;
+        case 'song':
+            return { items: [entry.song], type: LibraryItem.SONG };
+        default:
+            return null;
+    }
+};
+
 const renderRow = (entry: RankedResult, deps: RowFactoryDeps): ReactNode => {
+    const onContextMenu = (event: React.MouseEvent) => deps.onContextMenu(entry, event);
+
     switch (entry.kind) {
         case 'album': {
             const { album } = entry as RankedAlbum;
@@ -269,6 +332,7 @@ const renderRow = (entry: RankedResult, deps: RowFactoryDeps): ReactNode => {
                         onToggle: () => deps.onToggleFavorite(album, LibraryItem.ALBUM),
                     }}
                     key={`album-${album.id}`}
+                    onContextMenu={onContextMenu}
                     onSelect={() => deps.onSelectAlbum(album)}
                     qualityProfile={getAlbumQualityProfile(album, undefined, deps.deliveryKind)}
                     subtitle={album.albumArtistName || undefined}
@@ -292,6 +356,7 @@ const renderRow = (entry: RankedResult, deps: RowFactoryDeps): ReactNode => {
                         onToggle: () => deps.onToggleFavorite(artist, LibraryItem.ALBUM_ARTIST),
                     }}
                     key={`artist-${artist.id}`}
+                    onContextMenu={onContextMenu}
                     onSelect={() => deps.onSelectArtist(artist)}
                     tag="Artist"
                     title={artist.name}
@@ -310,6 +375,7 @@ const renderRow = (entry: RankedResult, deps: RowFactoryDeps): ReactNode => {
                         onToggle: () => deps.onToggleAudiobookFavorite(item),
                     }}
                     key={`audiobook-${item.id}`}
+                    onContextMenu={onContextMenu}
                     onSelect={() => deps.onSelectAudiobook(item)}
                     subtitle={getAbsAuthor(item) || undefined}
                     tag="Audiobook"
@@ -325,6 +391,7 @@ const renderRow = (entry: RankedResult, deps: RowFactoryDeps): ReactNode => {
                     artItemType={LibraryItem.SONG}
                     fallbackIcon="microphone"
                     key={`episode-${episode.show.id}-${episode.episode.id}`}
+                    onContextMenu={onContextMenu}
                     onSelect={() => deps.onSelectEpisode(episode)}
                     subtitle={getEpisodeSubtitle(episode.show, episode.episode)}
                     tag="Episode"
@@ -342,6 +409,7 @@ const renderRow = (entry: RankedResult, deps: RowFactoryDeps): ReactNode => {
                     artServerId={playlist._serverId}
                     fallbackIcon="playlist"
                     key={`playlist-${playlist.id}`}
+                    onContextMenu={onContextMenu}
                     onSelect={() => deps.onSelectPlaylist(playlist)}
                     subtitle={playlist.owner ?? undefined}
                     tag="Playlist"
@@ -361,6 +429,7 @@ const renderRow = (entry: RankedResult, deps: RowFactoryDeps): ReactNode => {
                         onToggle: () => deps.onTogglePodcastFavorite(item),
                     }}
                     key={`podcast-${item.id}`}
+                    onContextMenu={onContextMenu}
                     onSelect={() => deps.onSelectPodcastShow(item)}
                     subtitle={getAbsAuthor(item) || undefined}
                     tag="Podcast"
@@ -378,6 +447,7 @@ const renderRow = (entry: RankedResult, deps: RowFactoryDeps): ReactNode => {
                     artServerId={deps.musicServerId ?? null}
                     fallbackIcon="radio"
                     key={`radio-${station.id}`}
+                    onContextMenu={onContextMenu}
                     onSelect={() => deps.onSelectRadio(station)}
                     tag="Radio"
                     title={station.name}
@@ -398,6 +468,7 @@ const renderRow = (entry: RankedResult, deps: RowFactoryDeps): ReactNode => {
                         onToggle: () => deps.onToggleFavorite(song, LibraryItem.SONG),
                     }}
                     key={`song-${song.id}`}
+                    onContextMenu={onContextMenu}
                     onSelect={() => deps.onSelectSong(song)}
                     qualityProfile={getSongQualityProfile(song, deps.deliveryKind)}
                     subtitle={song.artistName ?? song.album ?? undefined}
@@ -623,11 +694,30 @@ export const GlobalSearchBar = ({ className }: GlobalSearchBarProps) => {
         [longFormServerId, libraryFavoriteActions],
     );
 
+    /**
+     * The dropdown deliberately stays open behind the menu so the result list
+     * keeps its place; picking an action is a click outside the input wrapper,
+     * which the existing dismiss listener already treats as "done searching".
+     */
+    const handleContextMenu = useCallback(
+        (entry: RankedResult, event: React.MouseEvent) => {
+            event.preventDefault();
+            event.stopPropagation();
+
+            const cmd = getContextMenuCommand(entry, { longFormMediaServer, musicServerId });
+            if (!cmd) return;
+
+            ContextMenuController.call({ cmd, event });
+        },
+        [longFormMediaServer, musicServerId],
+    );
+
     const rowDeps: RowFactoryDeps = useMemo(
         () => ({
             audiobookFavoriteIds,
             deliveryKind,
             musicServerId: musicServerId ?? null,
+            onContextMenu: handleContextMenu,
             onSelectAlbum: handleAlbumSelect,
             onSelectArtist: handleArtistSelect,
             onSelectAudiobook: handleAudiobookSelect,
@@ -647,6 +737,7 @@ export const GlobalSearchBar = ({ className }: GlobalSearchBarProps) => {
             handleAlbumSelect,
             handleArtistSelect,
             handleAudiobookSelect,
+            handleContextMenu,
             handlePlaylistSelect,
             handlePodcastEpisodeSelect,
             handlePodcastShowSelect,

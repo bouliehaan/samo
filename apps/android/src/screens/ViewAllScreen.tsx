@@ -9,9 +9,11 @@ import { Pressable, Text, View } from 'react-native';
 
 import { AlphabetSidebar } from '../components/AlphabetSidebar';
 import { ArtworkImage } from '../components/ArtworkImage';
+import { DownloadIndicator } from '../components/DownloadIndicator';
 import { SkeletonTile } from '../components/Skeleton';
 import { QualityBadge } from '../components/QualityBadge';
 import { useMediaContextMenu } from '../contexts/media-context-menu';
+import { useDownloadIndicator } from '../hooks/use-download-indicator';
 import { type AlphabetRailRow, useAlphabetRail } from '../hooks/use-alphabet-rail';
 import { useScrollContentBottomInset } from '../hooks/use-scroll-content-bottom-inset';
 import { type AndroidFullCollectionState } from '../services/full-collection';
@@ -34,6 +36,7 @@ type ViewAllTileProps = {
 
 const ViewAllTile = memo(({ item, onOpenContextMenu, onSelectItem }: ViewAllTileProps) => {
     const isArtist = item.type === MobileHomeItemType.ARTIST;
+    const download = useDownloadIndicator(item);
     // Playlists are mixed format, so never show a collection-level badge.
     const tileBadgeProfile =
         item.type === MobileHomeItemType.PLAYLIST ? undefined : getItemQualityProfile(item);
@@ -64,10 +67,25 @@ const ViewAllTile = memo(({ item, onOpenContextMenu, onSelectItem }: ViewAllTile
                     <Text numberOfLines={1} style={styles.viewAllTileTitle}>
                         {item.title}
                     </Text>
-                    {item.subtitle ? (
-                        <Text numberOfLines={1} style={styles.viewAllTileSubtitle}>
-                            {item.subtitle}
-                        </Text>
+                    {item.subtitle || download.isVisible ? (
+                        <View style={styles.viewAllTileMetaRow}>
+                            <DownloadIndicator
+                                state={download}
+                                tickSize={11}
+                                tickStyle={styles.mediaDownloadIndicator}
+                            />
+                            {item.subtitle ? (
+                                <Text
+                                    numberOfLines={1}
+                                    style={[
+                                        styles.viewAllTileSubtitle,
+                                        styles.viewAllTileSubtitleInline,
+                                    ]}
+                                >
+                                    {item.subtitle}
+                                </Text>
+                            ) : null}
+                        </View>
                     ) : null}
                 </View>
                 <QualityBadge tile profile={tileBadgeProfile} />
