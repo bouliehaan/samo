@@ -11,6 +11,7 @@ import { lazy, memo, Suspense, useEffect, useMemo, useRef, useState } from 'reac
 
 import { changeLanguage } from '/@/i18n/i18n';
 import { WebAudioContext } from '/@/renderer/features/player/context/webaudio-context';
+import { useSamoCatalogEvents } from '/@/renderer/features/shared/hooks/use-samo-catalog-events';
 import { useCheckForUpdates } from '/@/renderer/hooks/use-check-for-updates';
 import { useLyricsPrefetch } from '/@/renderer/hooks/use-lyrics-prefetch';
 import { useNativeMenuSync } from '/@/renderer/hooks/use-native-menu-sync';
@@ -96,8 +97,14 @@ const AppEffects = () => (
         <LanguageEffect />
         <NativeMenuSyncEffect />
         <LyricsPrefetchEffect />
+        <CatalogEventsEffect />
     </>
 );
+
+const CatalogEventsEffect = () => {
+    useSamoCatalogEvents();
+    return null;
+};
 
 const CastPlaybackSyncEffect = () => {
     useCastPlaybackSync();

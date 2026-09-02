@@ -1,9 +1,13 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useState } from 'react';
 import { useParams } from 'react-router';
 
 import { keepExploTracks } from '/@/renderer/api/samo/samo-controller';
 import { playlistsQueries } from '/@/renderer/features/playlists/api/playlists-api';
+import {
+    invalidateLibraryQueries,
+    invalidatePlaylistQueries,
+} from '/@/renderer/features/playlists/mutations/playlist-invalidation';
 import { getServerById, useCurrentServerId } from '/@/renderer/store';
 import { ContextMenu } from '/@/shared/components/context-menu/context-menu';
 import { toast } from '/@/shared/components/toast/toast';
@@ -27,6 +31,7 @@ interface KeepInLibraryActionProps {
  */
 export const KeepInLibraryAction = ({ items }: KeepInLibraryActionProps) => {
     const serverId = useCurrentServerId();
+    const queryClient = useQueryClient();
     const { playlistId } = useParams() as { playlistId?: string };
     const [isKeeping, setIsKeeping] = useState(false);
 
@@ -56,6 +61,25 @@ export const KeepInLibraryAction = ({ items }: KeepInLibraryActionProps) => {
                 parts.push(`${response.alreadyInLibrary} already in library`);
             if (response.failed > 0) parts.push(`${response.failed} failed`);
 
+            // A kept track is a NEW row in the library — a new song, in an
+            // album, under an artist, changing the counts on all three. None of
+            // those reads knew to refetch, which is why a track kept here
+            // stayed invisible everywhere else until the app restarted: this
+            // action invalidated nothing at all.
+            //
+            // Gated on something actually landing. A run that only found tracks
+            // already in the library changed no rows, and throwing away the
+            // library cache to discover that costs a full refetch of every list
+            // on screen for nothing.
+            if (response.kept > 0) {
+                invalidateLibraryQueries(queryClient, serverId);
+                // The Explore playlist keeps its drops — the server leaves the
+                // original in place for rotation to collect — but what is shown
+                // against it comes from the same catalog projection the copy
+                // just changed.
+                invalidatePlaylistQueries(queryClient, serverId, playlistId);
+            }
+
             if (response.failed > 0) {
                 const first = response.results.find((result) => result.error);
                 toast.warn({
@@ -72,7 +96,7 @@ export const KeepInLibraryAction = ({ items }: KeepInLibraryActionProps) => {
         } finally {
             setIsKeeping(false);
         }
-    }, [items, serverId]);
+    }, [items, playlistId, queryClient, serverId]);
 
     if (!playlistId || !detailQuery.data?.isSystem || items.length === 0) return null;
 

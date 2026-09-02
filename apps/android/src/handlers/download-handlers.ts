@@ -6,7 +6,7 @@ import {
 } from '@samo/core/mobile';
 import { Alert } from 'react-native';
 
-import { loadCatalogMediaDetail } from '../services/catalog/catalog-reads';
+import { loadMirrorMediaDetailIfFresh } from '../services/media-detail-freshness';
 import {
     enqueueCollectionDownload,
     enqueueSingleMusicTrackDownload,
@@ -70,7 +70,11 @@ export const handleDownloadCollectionItem = async (
         const cacheKey = getRecentContentItemKey(item);
         let detail: MobileMediaDetail | undefined = mediaDetailCache.get(cacheKey);
         if (!detail) {
-            const fromMirror = await loadCatalogMediaDetail(item, serverConnection);
+            const fromMirror = await loadMirrorMediaDetailIfFresh(
+                item,
+                serverConnection,
+                cacheKey,
+            );
             if (fromMirror) {
                 detail = fromMirror;
                 rememberMediaDetail(mediaDetailCache, cacheKey, fromMirror);

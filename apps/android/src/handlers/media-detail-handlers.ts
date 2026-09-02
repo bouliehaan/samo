@@ -10,9 +10,14 @@ import {
 } from '@samo/core/mobile';
 import { startTransition } from 'react';
 
-import { loadCatalogMediaDetail } from '../services/catalog/catalog-reads';
 import { triggerImpact } from '../services/haptics';
 import { buildMediaDetailLoadKey, dedupeInFlight } from '../services/in-flight-requests';
+import {
+    clearMediaDetailStaleness,
+    isMediaDetailStale,
+    loadMirrorMediaDetailIfFresh,
+    markMediaDetailStale,
+} from '../services/media-detail-freshness';
 import {
     loadAndroidFullCollectionLocal,
     loadAndroidFullCollectionLocalFirstPage,
@@ -89,7 +94,7 @@ export const prefetchMediaDetailCache = (item: AndroidRecentContentSourceItem): 
         ]);
         return;
     }
-    void loadCatalogMediaDetail(item, serverConnection).then((fromMirror) => {
+    void loadMirrorMediaDetailIfFresh(item, serverConnection, cacheKey).then((fromMirror) => {
         if (!fromMirror) {
             return;
         }
@@ -145,6 +150,50 @@ const beginOpenMediaDetail = (item: AndroidRecentContentSourceItem): void => {
     }
 };
 
+/**
+ * Re-read a detail from the server and replace the provisional local copy.
+ *
+ * Runs behind a paint, not in front of one: the caller has already rendered
+ * whatever it had, so this is the confirmation, not the load. A failure is
+ * therefore silent and leaves the staleness flag set — the copy on screen is
+ * the user's own optimistic edit, which is a better thing to be looking at
+ * than an error page, and the next open tries again.
+ *
+ * The cache write is unconditional while the on-screen write is guarded: the
+ * user may have navigated on, but the answer is still the truth and the next
+ * open should get it for free.
+ */
+const revalidateStaleMediaDetail = async (
+    item: AndroidRecentContentSourceItem,
+    cacheKey: string,
+    isCurrentRequest: () => boolean,
+): Promise<void> => {
+    if (isOfflineNow()) {
+        return;
+    }
+    const serverConnection = getAuthSession().serverConnection;
+    const next = await dedupeInFlight(buildMediaDetailLoadKey(cacheKey), () =>
+        loadAndroidMediaDetail(serverConnection, item),
+    );
+    if (next.status !== 'loaded') {
+        return;
+    }
+    clearMediaDetailStaleness(cacheKey);
+    rememberMediaDetail(mediaDetailCache, cacheKey, next.detail);
+    if (!isCurrentRequest()) {
+        return;
+    }
+    const mediaDetailState = getAppNavigation().mediaDetailState;
+    if (
+        mediaDetailState.status === 'loaded' &&
+        mediaDetailState.detail.id === next.detail.id
+    ) {
+        startTransition(() => {
+            setMediaDetailState(next);
+        });
+    }
+};
+
 export const loadDetailWithCache = async (
     item: AndroidRecentContentSourceItem,
 ): Promise<{ cached: boolean }> => {
@@ -153,6 +202,7 @@ export const loadDetailWithCache = async (
     const isCurrentRequest = () => mediaDetailRequestId.current === requestId;
     const serverConnection = getAuthSession().serverConnection;
     const cacheKey = getRecentContentItemKey(item);
+    const stale = isMediaDetailStale(cacheKey);
 
     // Layer 1: in-memory cache — instant.
     let cached = mediaDetailCache.get(cacheKey);
@@ -160,8 +210,16 @@ export const loadDetailWithCache = async (
     // Layer 1.5: local SQLite catalog — instant, authoritative for Samo, and
     // works offline. The entire library is mirrored on-device, so this makes
     // *every* Samo detail open instant, not just recently-viewed ones.
+    //
+    // Refused while this item is stale: the mirror is only as current as the
+    // last sync, so for an item edited since then it holds exactly the
+    // pre-edit list. Falling through to the network is the point.
     if (!cached) {
-        const fromCatalog = await loadCatalogMediaDetail(item, serverConnection);
+        const fromCatalog = await loadMirrorMediaDetailIfFresh(
+            item,
+            serverConnection,
+            cacheKey,
+        );
         if (!isCurrentRequest()) {
             return { cached: false };
         }
@@ -209,6 +267,14 @@ export const loadDetailWithCache = async (
         // per-open network refresh. The old steady-state refetch here cost
         // a server round-trip on EVERY detail open just to re-confirm what
         // the mirror already knew.
+        //
+        // The ONE exception is an item with an unconfirmed edit outstanding.
+        // What just rendered is the optimistic copy, so the page is already
+        // right and this costs nothing visible — it exists so the copy stops
+        // being a guess, and so the next open is served a confirmed one.
+        if (stale) {
+            void revalidateStaleMediaDetail(item, cacheKey, isCurrentRequest);
+        }
         return { cached: true };
     }
 
@@ -233,6 +299,9 @@ export const loadDetailWithCache = async (
             return;
         }
         if (next.status === 'loaded') {
+            // Straight from the server, so whatever edit marked this item
+            // stale is now accounted for.
+            clearMediaDetailStaleness(cacheKey);
             rememberMediaDetail(mediaDetailCache, cacheKey, next.detail);
             prefetchDetailArtworkUrls(next.detail, serverConnection, [
                 {
@@ -511,6 +580,151 @@ export const updateLoadedMediaDetail = (
     return previous;
 };
 
+/**
+ * The item identity key a detail is cached under, or null for a detail type
+ * that has no Home-item counterpart (and so was never cached under one).
+ */
+const mediaDetailCacheKey = (target: {
+    id: string;
+    source?: { id: string };
+    type: MobileMediaDetail['type'];
+}): null | string => {
+    const itemType = detailItemType(target.type);
+    if (!itemType) {
+        return null;
+    }
+    return getRecentContentItemKey({ id: target.id, source: target.source, type: itemType });
+};
+
+/**
+ * Declare that a media detail has been changed on the server, so no local copy
+ * of it may be trusted again until one has been re-read.
+ *
+ * This is the other half of the three-layer read in `loadDetailWithCache`, and
+ * its absence was the whole of the "add a song to a playlist and the playlist
+ * never changes" bug: the LRU entry outlived the edit, `loadDetailWithCache`
+ * preferred it over everything else, and nothing but killing the process ever
+ * removed it. Removing a track LOOKED better only because that path happened
+ * to write its own result into the same LRU entry.
+ *
+ * Deliberately does not evict the LRU. A write that can predict its outcome
+ * (see `applyMediaDetailEdit`) has already spliced the change in, which makes
+ * that entry the most current copy on the device — evicting it would trade an
+ * instant correct page for a spinner. It is marked provisional instead, and
+ * confirmed by a network read the next time it is opened.
+ *
+ * When the edited detail is the page on screen, that read happens now rather
+ * than at the next open — there is nothing else for the user to be waiting on.
+ */
+export const invalidateMediaDetail = (target: {
+    id: string;
+    source?: { id: string };
+    type: MobileMediaDetail['type'];
+}): void => {
+    const cacheKey = mediaDetailCacheKey(target);
+    if (!cacheKey) {
+        return;
+    }
+    markMediaDetailStale(cacheKey);
+
+    const mediaDetailState = getAppNavigation().mediaDetailState;
+    if (mediaDetailState.status === 'loaded' && mediaDetailState.detail.id === target.id) {
+        void reloadCurrentMediaDetail();
+    }
+};
+
+/**
+ * Apply a predicted edit to a media detail wherever a copy of it is held —
+ * whether or not that detail is the page on screen.
+ *
+ * `updateLoadedMediaDetail` only reaches the OPEN detail, which is right for
+ * an edit made from the page itself but useless for the common case: adding a
+ * song to a playlist you are not currently looking at. That case still has a
+ * cached copy of the target, and leaving it untouched is what made "add" feel
+ * broken while "remove" felt fine.
+ *
+ * Returns true when a copy was found and updated, so the caller knows whether
+ * the change is already on screen or whether it has to be waited for.
+ */
+export const applyMediaDetailEdit = (
+    target: { id: string; source?: { id: string }; type: MobileMediaDetail['type'] },
+    update: (detail: MobileMediaDetail) => MobileMediaDetail,
+): boolean => {
+    const applied = updateLoadedMediaDetail(target.id, update) !== null;
+    if (applied) {
+        return true;
+    }
+
+    const cacheKey = mediaDetailCacheKey(target);
+    if (!cacheKey) {
+        return false;
+    }
+    const cached = mediaDetailCache.get(cacheKey);
+    if (!cached) {
+        return false;
+    }
+    const next = update(cached);
+    if (next === cached) {
+        return false;
+    }
+    rememberMediaDetail(mediaDetailCache, cacheKey, next);
+    return true;
+};
+
+/**
+ * Re-read the detail on screen from the mirror, after a sync has rewritten it.
+ *
+ * The post-sync hook refreshes Home and Library, and now drops the detail
+ * cache — but neither reaches the page the user is actually looking at, which
+ * keeps rendering the state it was opened with. So a playlist edited on
+ * another device updated everywhere EXCEPT the playlist you had open, which is
+ * the one place it would be noticed.
+ *
+ * Reads the mirror rather than the network: a sync has just finished writing
+ * it, which makes it both the freshest copy on the device and the one that
+ * still works with the Wi-Fi off. An item with an unconfirmed local edit
+ * outstanding is skipped — its own revalidation owns that, and the mirror
+ * cannot be assumed to have caught up with a write this device made moments
+ * ago.
+ */
+export const refreshOpenMediaDetailAfterSync = async (): Promise<void> => {
+    const mediaDetailState = getAppNavigation().mediaDetailState;
+    if (mediaDetailState.status !== 'loaded') {
+        return;
+    }
+    const detail = mediaDetailState.detail;
+    const itemType = detailItemType(detail.type);
+    if (!itemType) {
+        return;
+    }
+
+    const item: AndroidRecentContentSourceItem = {
+        artworkImageId: detail.artworkImageId,
+        artworkUrl: detail.artworkUrl,
+        id: detail.id,
+        source: detail.source,
+        title: detail.title,
+        type: itemType,
+    };
+    const cacheKey = getRecentContentItemKey(item);
+    const serverConnection = getAuthSession().serverConnection;
+    const fresh = await loadMirrorMediaDetailIfFresh(item, serverConnection, cacheKey);
+    if (!fresh) {
+        return;
+    }
+
+    rememberMediaDetail(mediaDetailCache, cacheKey, fresh);
+
+    // The user may have navigated in the time the read took.
+    const current = getAppNavigation().mediaDetailState;
+    if (current.status !== 'loaded' || current.detail.id !== fresh.id) {
+        return;
+    }
+    startTransition(() => {
+        setMediaDetailState({ detail: fresh, status: 'loaded' });
+    });
+};
+
 export const reloadCurrentMediaDetail = async (): Promise<void> => {
     const mediaDetailState = getAppNavigation().mediaDetailState;
     if (mediaDetailState.status !== 'loaded') {
@@ -534,9 +748,14 @@ export const reloadCurrentMediaDetail = async (): Promise<void> => {
         type: itemType,
     };
     const cacheKey = getRecentContentItemKey(item);
-    mediaDetailCache.delete(cacheKey);
+    // The cached copy is left in place rather than dropped up front. This
+    // reads past both local layers anyway, so the delete bought nothing — and
+    // when the network is what fails, it cost the optimistic copy the user is
+    // looking at, replacing a correct-looking page with the pre-edit one.
+    // A failure leaves the staleness flag set, so the next open retries.
     const next = await loadAndroidMediaDetail(serverConnection, item);
     if (next.status === 'loaded') {
+        clearMediaDetailStaleness(cacheKey);
         rememberMediaDetail(mediaDetailCache, cacheKey, next.detail);
         setMediaDetailState(next);
     }

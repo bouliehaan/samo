@@ -6,7 +6,7 @@ import {
 } from '@samo/core/mobile';
 
 import { syncAndroidNativePlaybackQueue } from '../services/audio-playback';
-import { loadCatalogMediaDetail } from '../services/catalog/catalog-reads';
+import { loadMirrorMediaDetailIfFresh } from '../services/media-detail-freshness';
 import { loadAndroidMediaDetail } from '../services/media-detail';
 import {
     type AndroidRecentContentSourceItem,
@@ -103,7 +103,11 @@ export const loadDetailForContextAction = async (
     let detail = mediaDetailCache.get(cacheKey);
 
     if (!detail) {
-        const fromMirror = await loadCatalogMediaDetail(item, serverConnection);
+        const fromMirror = await loadMirrorMediaDetailIfFresh(
+            item,
+            serverConnection,
+            cacheKey,
+        );
         if (fromMirror) {
             detail = fromMirror;
             rememberMediaDetail(mediaDetailCache, cacheKey, fromMirror);

@@ -91,6 +91,14 @@ const forget = (
     cache.delete(key);
 };
 
+/** Drop one entry and give its bytes back to the budget. */
+export const forgetOneMediaDetail = (
+    cache: Map<string, MobileMediaDetail>,
+    key: string,
+): void => {
+    forget(cache, accountingFor(cache), key);
+};
+
 export const rememberMediaDetail = (
     cache: Map<string, MobileMediaDetail>,
     key: string,
@@ -125,4 +133,19 @@ export const rememberMediaDetail = (
         if (oldestKey === undefined || oldestKey === key) break;
         forget(cache, books, oldestKey);
     }
+};
+
+/**
+ * Drop every entry, and the byte accounting with it.
+ *
+ * `cache.clear()` alone would not do: the byte budget is tracked in a side
+ * table keyed by this Map, so clearing the Map without it leaves the books
+ * claiming the freed bytes are still held — and the budget then evicts live
+ * entries forever after to pay off a debt that no longer exists.
+ */
+export const forgetAllMediaDetails = (cache: Map<string, MobileMediaDetail>): void => {
+    const books = accountingFor(cache);
+    books.sizes.clear();
+    books.total = 0;
+    cache.clear();
 };

@@ -10,11 +10,13 @@ export const createSamoFetch = (): SamoFetch => {
     if (isElectron()) {
         return getFetch(
             adaptNativeFetch(async (url, init) => {
-                let serializedHeaders: Record<string, string> | undefined;
+                // `getFetch` has already stamped X-Samo-Client into these —
+                // the id the server echoes on catalog-change events, so this
+                // window can tell its own writes from another device's.
+                const serializedHeaders: Record<string, string> = {};
                 if (init?.headers) {
-                    serializedHeaders = {};
                     new Headers(init.headers).forEach((value, key) => {
-                        serializedHeaders![key] = value;
+                        serializedHeaders[key] = value;
                     });
                 }
 

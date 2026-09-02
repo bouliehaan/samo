@@ -34,6 +34,7 @@ import {
     loadArtistHomeItemById,
     loadArtistHomeItemByName,
 } from '../services/catalog/catalog-reads';
+import { getPlaybackQueue } from '../state/playback-queue-store';
 import { useAndroidPlaybackPositionMs } from '../state/playback-store';
 import { getPlayerPositionMsForPlaybackProgress } from '../utils/playback-progress-math';
 import { type AndroidPlaybackState } from '../types/playback';
@@ -448,7 +449,15 @@ export const FullScreenPlayer = memo(({
         }
         const menuItem = buildPlaybackContextItem(item, serverConnection);
         if (menuItem) {
-            contextMenu.openForItem(menuItem, { suppressQueueAction: true });
+            // The queue stands in for the detail page the player doesn't
+            // have, so Explore's Keep in Library (and its copy-first playlist
+            // add) are still offered for the track you are actually listening
+            // to. Read at open time, not subscribed — the menu is built from
+            // this one snapshot.
+            contextMenu.openForItem(menuItem, {
+                fromExplo: getPlaybackQueue()?.isExploPlaylist === true,
+                suppressQueueAction: true,
+            });
         }
     }, [contextMenu, lastPlayedItem, playbackState, serverConnection]);
 

@@ -126,6 +126,7 @@ export const playQueuedItem = async (
 
     setPlaybackQueue({
         index: nextQueueIndex,
+        isExploPlaylist: playOptions?.isExploPlaylist,
         items: playableQueueItems,
         omitTrackRecentlyPlayed: playOptions?.omitTrackRecentlyPlayed,
         samoPlaylistId: playOptions?.samoPlaylistId,
@@ -246,6 +247,7 @@ export const playQueuedItem = async (
     if (queueItemsForSession !== playableQueueItems) {
         setPlaybackQueue({
             index: nextQueueIndex,
+            isExploPlaylist: playOptions?.isExploPlaylist,
             items: queueItemsForSession,
             omitTrackRecentlyPlayed: playOptions?.omitTrackRecentlyPlayed,
             samoPlaylistId: playOptions?.samoPlaylistId,

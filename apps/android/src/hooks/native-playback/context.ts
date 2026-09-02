@@ -9,6 +9,8 @@ export type PlaybackSnapshot = { item: MobilePlayableAudio; sessionId: string };
 export type AndroidPlayItemOptions = {
     /** Samo audiobook: open stream at this book-global second (skips server resume overlay). */
     bookStartSeconds?: number;
+    /** Started from the Explore drop playlist — see AndroidPlaybackQueue. */
+    isExploPlaylist?: boolean;
     omitTrackRecentlyPlayed?: boolean;
     /** Queue auto-advance / next file — do not overlay ABS saved book progress. */
     skipResumeRefresh?: boolean;

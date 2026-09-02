@@ -58,11 +58,20 @@ export const schedulePeriodicCatalogSync = async (): Promise<void> => {
 };
 
 /**
- * Fire a one-shot catalog sync on top of the periodic schedule. Routes
- * through the same WorkManager + Kotlin sync path so the sync-now button
- * and the periodic refresh exercise identical code.
+ * Window in which repeat trigger requests collapse into one.
+ *
+ * The native side enqueues with APPEND_OR_REPLACE, so a request that arrives
+ * while a sync is running is queued BEHIND it rather than discarded — which is
+ * the fix for edits being silently dropped, and also the reason a burst of them
+ * would otherwise chain one whole sync per edit. Adding five songs to a
+ * playlist is one thing to reconcile, not five.
  */
-export const triggerCatalogSyncNow = async (): Promise<void> => {
+const TRIGGER_COALESCE_MS = 3_000;
+
+let triggerWindowTimer: null | ReturnType<typeof setTimeout> = null;
+let triggerWindowHadRequests = false;
+
+const fireTriggerNow = async (): Promise<void> => {
     const bridge = getCatalogSyncBridge();
     if (!bridge) return;
     try {
@@ -71,6 +80,35 @@ export const triggerCatalogSyncNow = async (): Promise<void> => {
         // ignore — the JS-side syncSamoCatalog still runs as a foreground
         // fallback for now.
     }
+};
+
+/**
+ * Fire a one-shot catalog sync on top of the periodic schedule. Routes
+ * through the same WorkManager + Kotlin sync path so the sync-now button
+ * and the periodic refresh exercise identical code.
+ *
+ * Leading-edge: the first call in a quiet period goes straight through, so a
+ * single edit is never made to wait. Calls inside the window that follows are
+ * collapsed into one further trigger when it closes — which covers the case
+ * that actually matters, a run already in flight that cannot see the edit
+ * being made now.
+ */
+export const triggerCatalogSyncNow = async (): Promise<void> => {
+    if (triggerWindowTimer) {
+        triggerWindowHadRequests = true;
+        return;
+    }
+
+    triggerWindowHadRequests = false;
+    triggerWindowTimer = setTimeout(() => {
+        triggerWindowTimer = null;
+        if (triggerWindowHadRequests) {
+            triggerWindowHadRequests = false;
+            void fireTriggerNow();
+        }
+    }, TRIGGER_COALESCE_MS);
+
+    await fireTriggerNow();
 };
 
 /**

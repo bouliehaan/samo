@@ -1,6 +1,12 @@
-import { type MobileContentSource, type MobilePlayableAudio } from '@samo/core/mobile';
+import {
+    keepMobileExploTracks,
+    type MobileContentSource,
+    type MobilePlayableAudio,
+} from '@samo/core/mobile';
 import {
     findServerAuthenticationForSource,
+    getSamoChannelNowPlaying,
+    type SamoExploKeepResponse,
     type SamoRadioCommand,
     type SamoRadioDevice,
     type SamoRadioItemRef,
@@ -151,6 +157,53 @@ export const refreshSamoRadioDeviceState = async (deviceId: string): Promise<voi
     } catch {
         // Left to the next poll.
     }
+};
+
+/**
+ * The airing track on a channel, if it is an explo drop worth keeping.
+ *
+ * A channel programmed from the Explore queue is playing files out of a folder
+ * the weekly run empties, so hearing something you want is a deadline. Every
+ * other station — one whose music is the ordinary library, a Christmas
+ * rotation, a talk stream — has nothing to save, which is why the server
+ * answers this per airing rather than the panel guessing from what it can see.
+ *
+ * Deliberately not part of the device poll. The device reports what the channel
+ * TOLD it is on; whether that track sits in a drop folder is a question only
+ * Samo can answer, and it only changes when the song does.
+ */
+export const fetchSamoRadioKeepableTrackId = async (
+    channelId: string,
+    signal?: AbortSignal,
+): Promise<null | string> => {
+    const authentication = connection();
+    if (!authentication || isOfflineNow()) {
+        return null;
+    }
+    try {
+        const now = await getSamoChannelNowPlaying(fetch, authentication, channelId, { signal });
+        return now.keepableTrackId ?? null;
+    } catch {
+        // No answer is the same as no offer. A failed read here must never
+        // put a menu entry on screen that the keep would then refuse.
+        return null;
+    }
+};
+
+/**
+ * Copies the airing drop into the music library proper.
+ *
+ * The server owns the files: it remuxes samo's identified tags and cover art
+ * into the copy and leaves the original in Explore for rotation to collect.
+ */
+export const keepSamoRadioAiringTrack = async (
+    trackId: string,
+): Promise<SamoExploKeepResponse> => {
+    const authentication = connection();
+    if (!authentication) {
+        throw new Error('Connect to a Samo server first.');
+    }
+    return keepMobileExploTracks({ authentication, trackIds: [trackId] });
 };
 
 /**

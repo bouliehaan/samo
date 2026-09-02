@@ -104,21 +104,31 @@ export const sharedStyles = StyleSheet.create({
         backgroundColor: 'rgba(255, 255, 255, 0.07)',
         justifyContent: 'center',
     },
+    /** The add-to-playlist sheet. A FLEX child of contextMenuBackdrop, not an
+     *  absolutely-positioned one — which is what made its playlist list
+     *  unscrollable. Yoga lays an absolute child out with an UNDEFINED height
+     *  constraint when only `bottom` is pinned and no height is given, so
+     *  nothing inside can be shrunk to fit and `maxHeight` degrades from a
+     *  constraint into a crop: the list was measured at full content height
+     *  (contentSize === frame, so the scroller had nothing to scroll) and
+     *  every row past 62% was simply cut off. Bottom-anchored by the
+     *  backdrop's justifyContent instead, the cap is a real bound the list
+     *  shrinks into. Same shape as mediaContextSheet, which is why the
+     *  long-press menu has never had this. */
     contextMenu: {
         backgroundColor: 'rgba(18, 18, 18, 0.96)',
         borderColor: 'rgba(255, 255, 255, 0.1)',
         borderRadius: 12,
         borderWidth: 1,
-        bottom: 26,
-        left: spacing.lg,
+        marginBottom: 26,
+        marginHorizontal: spacing.lg,
         maxHeight: '62%',
         padding: spacing.md,
-        position: 'absolute',
-        right: spacing.lg,
     },
     contextMenuBackdrop: {
         backgroundColor: 'rgba(0, 0, 0, 0.42)',
         bottom: 0,
+        justifyContent: 'flex-end',
         left: 0,
         position: 'absolute',
         right: 0,
@@ -139,7 +149,11 @@ export const sharedStyles = StyleSheet.create({
         marginBottom: 4,
         textTransform: 'uppercase',
     },
+    /** Grow is off and shrink is on deliberately: the sheet hugs a short list,
+     *  and a long one shrinks into the 62% cap rather than overflowing it. */
     contextMenuList: {
+        flexGrow: 0,
+        flexShrink: 1,
         marginTop: spacing.sm,
     },
     contextMenuRow: {
@@ -365,6 +379,18 @@ export const sharedStyles = StyleSheet.create({
      *  each sheet its own Android window to climb out of the tree with. */
     sheetLayer: {
         bottom: 0,
+        // Paired with the zIndex, because Android has TWO stacking orders and
+        // the layer only had one of them. RN's `zIndex` reorders drawing and
+        // RN's own touch dispatch; native `elevation` reorders the framework's
+        // — including which sibling a ViewGroup offers a MotionEvent to first.
+        // The full player carries elevation 999 (its dock and queue sheet
+        // 1000/1001), so with no elevation here a sheet drawn over the open
+        // player still lost native touch dispatch to it: taps worked, because
+        // those are routed by zIndex, while any drag on a native scroller
+        // inside the sheet was dead — the add-to-playlist list would not
+        // scroll while the player was up. It has no background, so raising it
+        // costs no shadow.
+        elevation: 1200,
         left: 0,
         position: 'absolute',
         right: 0,

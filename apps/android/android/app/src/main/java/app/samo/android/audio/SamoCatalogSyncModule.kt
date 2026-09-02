@@ -104,16 +104,28 @@ class SamoCatalogSyncModule(
                 OneTimeWorkRequestBuilder<SamoCatalogSyncWorker>()
                     .setInputData(Data.Builder().putString(SamoCatalogSyncWorker.KEY_TRIGGER_SOURCE, "trigger-now").build())
                     .build()
-            // KEEP: a tap while a sync is already queued/running JOINS it.
-            // REPLACE actively CANCELLED the in-flight worker — and since the
-            // engine's HTTP + SQLite calls are blocking (they don't observe
-            // coroutine cancellation), the cancelled run's thread kept going
-            // as a zombie alongside the replacement, interleaving two writers
-            // on the sync-state row. Observed live on 2026-06-12 (WorkManager
-            // "was cancelled" followed by two overlapping run summaries).
+            // APPEND_OR_REPLACE: a request that arrives while a sync is
+            // already running is QUEUED BEHIND it rather than dropped.
+            //
+            // This used to be KEEP, on the belief that a tap during a run
+            // "joins" that run. It does not — KEEP discards the new request
+            // outright, and the run it deferred to had already fetched its
+            // delta window before the edit existed. So every edit made while a
+            // sync happened to be in flight waited out the next 30-minute
+            // periodic tick to reach the mirror, which is most of what made a
+            // playlist edit feel like it never arrived.
+            //
+            // Not REPLACE, which actively CANCELLED the in-flight worker — and
+            // since the engine's HTTP + SQLite calls are blocking (they don't
+            // observe coroutine cancellation), the cancelled run's thread kept
+            // going as a zombie alongside the replacement, interleaving two
+            // writers on the sync-state row. Observed live on 2026-06-12
+            // (WorkManager "was cancelled" followed by two overlapping run
+            // summaries). APPEND_OR_REPLACE lets the running one finish, so
+            // there is never a second writer.
             WorkManager.getInstance(reactContext).enqueueUniqueWork(
                 ONE_SHOT_WORK_NAME,
-                ExistingWorkPolicy.KEEP,
+                ExistingWorkPolicy.APPEND_OR_REPLACE,
                 request,
             )
             promise.resolve(null)

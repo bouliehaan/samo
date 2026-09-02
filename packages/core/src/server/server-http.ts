@@ -1,3 +1,5 @@
+import { getSamoClientId, SAMO_CLIENT_HEADER } from './server-client-id';
+
 export type SamoFetch = (url: string, init?: SamoFetchInit) => Promise<SamoFetchResponse>;
 
 export type SamoFetchInit = {
@@ -138,6 +140,28 @@ const withIdempotentRetry = (fetcher: SamoFetch): SamoFetch => {
     };
 };
 
+/**
+ * Stamp this client's id on every request.
+ *
+ * The server echoes it back on the catalog-change events a request causes, so
+ * the client that made the change can ignore its own notification — it applied
+ * that change locally already. Done here rather than at each call site because
+ * "every request" is the point: an unstamped write is one the origin cannot
+ * recognise, and it then refetches (or on the phone, re-syncs) for something
+ * already on screen.
+ *
+ * A caller's own headers win, so nothing that sets the header explicitly is
+ * overridden.
+ */
+const withClientId = (fetcher: SamoFetch): SamoFetch => {
+    return async (url, init) => {
+        return fetcher(url, {
+            ...init,
+            headers: { [SAMO_CLIENT_HEADER]: getSamoClientId(), ...(init?.headers ?? {}) },
+        });
+    };
+};
+
 export const getFetch = (
     fetcher?: SamoFetch,
     timeoutMs = DEFAULT_SAMO_REQUEST_TIMEOUT_MS,
@@ -149,7 +173,7 @@ export const getFetch = (
         throw new Error('Fetch is not available');
     }
 
-    return withIdempotentRetry(withRequestTimeout(resolvedFetch, timeoutMs));
+    return withClientId(withIdempotentRetry(withRequestTimeout(resolvedFetch, timeoutMs)));
 };
 
 export const normalizeBaseUrl = (url: string | null | undefined) =>

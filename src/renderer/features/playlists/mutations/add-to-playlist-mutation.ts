@@ -1,8 +1,8 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 
 import { api } from '/@/renderer/api';
-import { queryKeys } from '/@/renderer/api/query-keys';
 import { useRecentPlaylists } from '/@/renderer/features/playlists/hooks/use-recent-playlists';
+import { invalidatePlaylistQueries } from '/@/renderer/features/playlists/mutations/playlist-invalidation';
 import { MutationHookArgs } from '/@/renderer/lib/react-query';
 import { useCurrentServerId } from '/@/renderer/store';
 import { AddToPlaylistArgs, AddToPlaylistResponse } from '/@/shared/types/domain-types';
@@ -27,16 +27,7 @@ export const useAddToPlaylist = (args: MutationHookArgs) => {
 
             if (!serverId) return;
 
-            queryClient.invalidateQueries({
-                exact: false,
-                queryKey: queryKeys.playlists.list(serverId),
-            });
-            queryClient.invalidateQueries({
-                queryKey: queryKeys.playlists.detail(serverId, variables.query.id),
-            });
-            queryClient.invalidateQueries({
-                queryKey: queryKeys.playlists.songList(serverId, variables.query.id),
-            });
+            invalidatePlaylistQueries(queryClient, serverId, variables.query.id);
 
             addRecentPlaylist(variables.query.id);
 

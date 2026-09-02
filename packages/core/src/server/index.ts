@@ -1,5 +1,6 @@
 export * from './server-auth';
 export * from './server-capabilities';
+export * from './server-client-id';
 export * from './server-endpoint';
 export * from './server-health';
 export * from './server-http';

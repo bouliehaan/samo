@@ -5,6 +5,13 @@ import { useStoreSelector } from './use-store-selector';
 export type AndroidPlaybackQueue = {
     index: number;
     items: MobilePlayableAudio[];
+    /**
+     * The playlist this queue was started from is the server-managed Explore
+     * drop, whose files the weekly rotation deletes. Decided once, from the
+     * playlist detail at play time, because the surfaces that need it later —
+     * the fullscreen player above all — never see that detail.
+     */
+    isExploPlaylist?: boolean;
     /** Playlist queue: do not mark individual tracks as recently played on the server. */
     omitTrackRecentlyPlayed?: boolean;
     samoPlaylistId?: string;

@@ -127,6 +127,7 @@ export const mediaContextMenuApi: MediaContextMenuApi = {
             triggerImpact('medium');
             setContextMenuFeedback(null);
             setContextMenuTarget({
+                fromExplo: openOptions?.fromExplo,
                 kind: 'song',
                 removeFromHomeKey,
                 source: item.source,
@@ -236,6 +237,16 @@ export function useAndroidContextMenu(): AndroidContextMenuSurface {
 
         if (contextMenuTarget.kind === 'song') {
             const { source, track } = contextMenuTarget;
+            const detail = contextMenuTarget.detail;
+            // Explore-ness comes from whichever context the menu was opened in.
+            // A detail-page row hands over the containing playlist itself; the
+            // fullscreen player has no detail page to hand over, so it reports
+            // what its queue was started from. Without the second half, the
+            // Explore actions vanished the moment you opened the player over
+            // the very playlist you were listening to.
+            const isFromExplo =
+                (detail != null && isMobileExploPlaylistDetail(detail)) ||
+                contextMenuTarget.fromExplo === true;
             const favoriteKey = getFavoriteKeyForTrack(track, source?.id);
             const isFavorited = favoritedKeys.has(favoriteKey);
             // Anything with a sequential playable can be queued — music, podcast
@@ -264,9 +275,7 @@ export function useAndroidContextMenu(): AndroidContextMenuSurface {
             // episode row is exactly where the blurb was unreachable: the row
             // truncates the title to one line and shows no description at all.
             const episodeDetail =
-                contextMenuTarget.detail?.type === MobileMediaDetailType.PODCAST
-                    ? contextMenuTarget.detail
-                    : null;
+                detail?.type === MobileMediaDetailType.PODCAST ? detail : null;
             // An episode is an episode wherever it is long-pressed. This used to
             // require `episodeDetail` — i.e. the menu had to have been opened
             // INSIDE the show's own detail page, the only place the parent show
@@ -329,11 +338,7 @@ export function useAndroidContextMenu(): AndroidContextMenuSurface {
                     id: 'playlist',
                     label: 'Add to Playlist',
                     onPress: () =>
-                        handleOpenAddToPlaylistForSong(
-                            track,
-                            source.id,
-                            Boolean(detail && isMobileExploPlaylistDetail(detail)),
-                        ),
+                        handleOpenAddToPlaylistForSong(track, source.id, isFromExplo),
                 });
                 menuActions.push({
                     icon: <PlaylistAddGlyph color={colors.text} />,
@@ -359,7 +364,6 @@ export function useAndroidContextMenu(): AndroidContextMenuSurface {
                 });
             }
 
-            const detail = contextMenuTarget.detail;
             const downloadLabel =
                 detail?.type === MobileMediaDetailType.AUDIOBOOK
                     ? 'Download audiobook'
@@ -392,6 +396,19 @@ export function useAndroidContextMenu(): AndroidContextMenuSurface {
                 });
             }
 
+            // Explore only: these tracks sit in a drop folder the weekly run
+            // empties, so this is the one place in the app where a track
+            // disappears unless you act. Everywhere else it is already in the
+            // library and the action would be a no-op.
+            if (isFromExplo) {
+                menuActions.push({
+                    icon: <DownloadGlyph color={colors.text} />,
+                    id: 'keep-in-library',
+                    label: 'Keep in Library',
+                    onPress: () => void handleKeepExploTracks([track], source?.id),
+                });
+            }
+
             // Last, and the only destructive entry a song menu ever has — the
             // same place the collection menu puts Delete Playlist. Sitting it
             // below the navigational actions is deliberate: nothing lands on it
@@ -402,21 +419,10 @@ export function useAndroidContextMenu(): AndroidContextMenuSurface {
             // or in the queue has no containing playlist to remove from), and
             // `isMobilePlaylistDetailEditable` narrows that to a playlist this
             // user is actually allowed to write — not somebody else's, and not
-            // a server-managed one, both of which would 403 on commit.
-            // Explore only: these tracks sit in a drop folder the weekly run
-            // empties, so this is the one place in the app where a track
-            // disappears unless you act. Everywhere else it is already in the
-            // library and the action would be a no-op.
-            if (detail && isMobileExploPlaylistDetail(detail)) {
-                const exploDetail = detail;
-                menuActions.push({
-                    icon: <DownloadGlyph color={colors.text} />,
-                    id: 'keep-in-library',
-                    label: 'Keep in Library',
-                    onPress: () => void handleKeepExploTracks([track], exploDetail),
-                });
-            }
-
+            // a server-managed one, both of which would 403 on commit. The
+            // player's queue-origin fallback deliberately does NOT feed this
+            // one: removing a track from a playlist you are only listening to
+            // is not an action the player should be offering.
             if (detail && isMobilePlaylistDetailEditable(detail)) {
                 const playlistDetail = detail;
                 menuActions.push({

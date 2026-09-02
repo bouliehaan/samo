@@ -48,9 +48,12 @@ import {
     installCatalogSyncEventBridge,
     subscribeCatalogSyncCompleted,
 } from './src/services/catalog/catalog-sync-events';
+import { startCatalogChangeStream, stopCatalogChangeStream } from './src/services/catalog-change-stream';
 import { resumeDownloadsOnForeground } from './src/services/download-manager';
 import { topUpDownloadedPlaylists } from './src/services/downloaded-playlist-topup';
 import { refreshHomeFromMirror } from './src/services/home-flow';
+import { dropCachedMediaDetailsAfterSync } from './src/services/media-detail-freshness';
+import { refreshOpenMediaDetailAfterSync } from './src/handlers/media-detail-handlers';
 import { loadHomeLayoutHint } from './src/services/home-layout-hint';
 import { formatJankBreadcrumb, traceAsync } from './src/services/jank-trace';
 import { installMemoryReport } from './src/services/mem-report';
@@ -139,8 +142,22 @@ const flushPostSyncRefresh = () => {
         () => {
             void (async () => {
                 try {
+                    // Before the derives, not after: they read the mirror, and
+                    // so does every detail opened from here on. A sync is the
+                    // one moment the mirror is known to be ahead of the
+                    // in-memory details cached off it — including for edits
+                    // made on ANOTHER device, which nothing local can mark —
+                    // so the cheapest honest thing is to stop holding those
+                    // copies. Refilling one is a mirror read on the native
+                    // reader thread, not a network hop.
+                    dropCachedMediaDetailsAfterSync();
                     await refreshHomeFromMirror({ authoritative: true });
                     refreshLibraryFromMirror();
+                    // Home and Library are not the only mirror-backed surface
+                    // on screen. Without this, a playlist edited on another
+                    // device updated everywhere except the playlist page the
+                    // user had open — the one place they would notice.
+                    await refreshOpenMediaDetailAfterSync();
                     // Cleared only once the derive has actually landed. Clearing
                     // it up front meant a flush interrupted partway — a throw, or
                     // the process being killed while the prefetch walked the
@@ -311,6 +328,20 @@ export default function App() {
         if (serverConnection) {
             void refreshHomeFromMirror();
         }
+    }, [serverConnection]);
+
+    // Follow the server's catalog-change stream while the app is in front, so
+    // an edit made on the desktop reaches the phone in seconds instead of
+    // waiting out the next 30-minute periodic sync. Purely an accelerator: it
+    // pokes the SAME one-shot sync the app's own edits do, and closes itself
+    // whenever the app is backgrounded.
+    useEffect(() => {
+        if (!serverConnection || serverConnection.type !== ServerType.SAMO) {
+            stopCatalogChangeStream();
+            return;
+        }
+        startCatalogChangeStream(serverConnection);
+        return () => stopCatalogChangeStream();
     }, [serverConnection]);
 
     // Library loads follow the Home load edge (the mirror is warm by then).

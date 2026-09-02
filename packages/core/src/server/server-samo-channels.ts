@@ -69,6 +69,21 @@ export interface SamoChannelPlaybackItem extends SamoChannelAiring {
 export interface SamoChannelNowPlaying {
     channelId: string;
     current?: SamoChannelPlaybackItem;
+    /**
+     * The airing track when it is an explo drop the next weekly rotation will
+     * delete, and the id to hand to `keepSamoExploTracks`.
+     *
+     * One field rather than a flag beside an id, because the two can never
+     * disagree: present means "this can be kept, here is what to keep". Absent
+     * is the answer for nearly everything a station plays — music out of the
+     * ordinary library, a podcast, a relayed stream — and for a listener who
+     * is not an admin and whose keep would be refused anyway. A surface that
+     * offers keeping should draw the action off THIS and nothing else.
+     *
+     * Always absent on a server too old to report it, which is the same as
+     * "nothing to keep" and needs no version check.
+     */
+    keepableTrackId?: string;
     listenerCount?: number;
     startedAt?: string;
 }

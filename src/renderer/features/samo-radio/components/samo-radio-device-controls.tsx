@@ -5,13 +5,18 @@ import {
     type SamoRadioStationRef,
     samoRadioTransportKind,
 } from '@samo/core/server';
+import { useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
 
 import styles from './samo-radio-device-controls.module.css';
 
+import { invalidateLibraryQueries } from '/@/renderer/features/playlists/mutations/playlist-invalidation';
 import {
     commandSamoRadio,
+    fetchSamoRadioKeepableTrackId,
+    getSamoRadioServer,
+    keepSamoRadioAiringTrack,
     setSamoRadioVolume,
     tuneSamoRadio,
 } from '/@/renderer/features/samo-radio/api/samo-radio-api';
@@ -25,6 +30,7 @@ import { Icon } from '/@/shared/components/icon/icon';
 import { Slider } from '/@/shared/components/slider/slider';
 import { Spinner } from '/@/shared/components/spinner/spinner';
 import { Text } from '/@/shared/components/text/text';
+import { toast } from '/@/shared/components/toast/toast';
 
 /**
  * How long to wait before re-reading state after skipping on a channel.
@@ -90,9 +96,15 @@ interface SamoRadioDeviceControlsProps {
 export const SamoRadioDeviceControls = memo(
     ({ compact = false, device }: SamoRadioDeviceControlsProps) => {
         const stations = useSamoRadioStations();
+        const queryClient = useQueryClient();
         const [busyCommand, setBusyCommand] = useState<null | string>(null);
         const [isTuneOpen, setIsTuneOpen] = useState(false);
         const [error, setError] = useState<null | string>(null);
+        // The airing track when keeping it is possible AND permitted, straight
+        // from the server. Null covers every "no" there is, so nothing here has
+        // to know what an explo folder is.
+        const [keepableTrackId, setKeepableTrackId] = useState<null | string>(null);
+        const [isKeeping, setIsKeeping] = useState(false);
         // Optimistic volume: the slider must move under the cursor, not on the
         // next poll. It is cleared when the volume command settles rather than
         // by the poller, so a refresh landing mid-drag cannot snap it back.
@@ -186,6 +198,88 @@ export const SamoRadioDeviceControls = memo(
             },
             [device.id, runCommand],
         );
+
+        // What is airing, as an identity rather than a description. A channel
+        // reports its now-playing through the device, so a change in these two
+        // lines IS the signal that a new song started.
+        //
+        // Off `transport` rather than off `mode`, which is 'channel' for an
+        // internet station too: the two are separate catalogs behind separate
+        // id spaces, and a station id sent to the channels route names nothing.
+        const airingChannelId = transport === 'channel' ? (state?.channel?.id ?? null) : null;
+        const airingKey = airingChannelId
+            ? [airingChannelId, state?.channel?.title ?? '', state?.channel?.artist ?? ''].join(
+                  '\u0000',
+              )
+            : null;
+
+        // Whether the airing song can be kept, asked once per song.
+        //
+        // Not folded into the device poll on purpose. The device knows what the
+        // channel told it is on; whether that file sits in a drop folder the
+        // weekly run empties is a question only Samo can answer, and its answer
+        // changes exactly when the song does — asking on every tick would
+        // double this panel's request rate to re-learn the same thing about the
+        // same track.
+        //
+        // Cleared before each ask so the control can never offer to keep the
+        // song before last, and left cleared on failure: no answer has to mean
+        // no offer, or the button appears and the keep behind it refuses.
+        useEffect(() => {
+            setKeepableTrackId(null);
+            if (!airingChannelId) {
+                return;
+            }
+
+            const controller = new AbortController();
+            void fetchSamoRadioKeepableTrackId(airingChannelId, controller.signal).then(
+                (trackId) => {
+                    if (!controller.signal.aborted && mountedRef.current) {
+                        setKeepableTrackId(trackId);
+                    }
+                },
+            );
+
+            return () => controller.abort();
+        }, [airingChannelId, airingKey]);
+
+        const handleKeep = useCallback(async () => {
+            if (!keepableTrackId || isKeeping) {
+                return;
+            }
+
+            setIsKeeping(true);
+            try {
+                const response = await keepSamoRadioAiringTrack(keepableTrackId);
+                const failure = response.results.find((result) => result.error);
+
+                if (failure?.error) {
+                    toast.warn({ message: failure.error, title: 'Could not keep this track' });
+                } else if (response.alreadyInLibrary > 0) {
+                    // A success, not a no-op — the file was already where the
+                    // copy would have gone. Saying "kept" would suggest this
+                    // click did something it did not.
+                    toast.success({ message: 'Already in your library' });
+                } else {
+                    toast.success({ message: 'Kept in your library' });
+                    // The copy is a NEW track, in an album, under an artist,
+                    // changing the counts on all three. Nothing else on screen
+                    // knows to go looking for it.
+                    invalidateLibraryQueries(queryClient, getSamoRadioServer()?.id);
+                }
+            } catch (keepError) {
+                toast.error({
+                    message:
+                        keepError instanceof Error
+                            ? keepError.message
+                            : 'Could not keep this track.',
+                });
+            } finally {
+                if (mountedRef.current) {
+                    setIsKeeping(false);
+                }
+            }
+        }, [isKeeping, keepableTrackId, queryClient]);
 
         // Only devices Samo can reach are ever in the store, so a card without a
         // state snapshot is one that dropped off between a poll and this render
@@ -319,6 +413,23 @@ export const SamoRadioDeviceControls = memo(
                         Tune
                         <Icon icon={isTuneOpen ? 'arrowUpS' : 'arrowDownS'} size="sm" />
                     </button>
+                    {/* Beside Tune rather than beside the off switches: this is
+                        about what is playing, not about the device. It appears
+                        only while the station is airing an Explore drop — a
+                        file the weekly run deletes — so a station programmed
+                        from the ordinary library never shows it, and the row is
+                        the Tune / Stop / Standby it has always been. */}
+                    {keepableTrackId ? (
+                        <button
+                            className={styles.linkButton}
+                            disabled={isKeeping}
+                            onClick={() => void handleKeep()}
+                            type="button"
+                        >
+                            <Icon icon="download" size="sm" />
+                            {isKeeping ? 'Keeping…' : 'Keep in library'}
+                        </button>
+                    ) : null}
                     <span className={styles.secondarySpacer} />
                     {/* Stop hands the device back to its station; standby is the
                         real off switch. Both exist because "stop this podcast"

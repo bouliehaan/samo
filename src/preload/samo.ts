@@ -1,7 +1,7 @@
 import type { SamoIpcResult, SamoUserInfo } from '/@/shared/api/samo/samo-http-errors';
 import type { ServerAuthenticationResult } from '@samo/core/server';
 
-import { ipcRenderer } from 'electron';
+import { ipcRenderer, IpcRendererEvent } from 'electron';
 
 const authenticate = (payload: {
     deviceLabel?: string;
@@ -41,12 +41,37 @@ const registerMediaCredential = (payload: { credential: string; url: string }): 
 const clearMediaCredential = (payload: { url: string }): void =>
     ipcRenderer.send('samo-clear-media-credential', payload);
 
+/**
+ * Open samo's live catalog-change stream and call `callback` for each event.
+ *
+ * Separate from `request` because this response never ends: `request` buffers a
+ * whole body before replying, which for Server-Sent Events means never
+ * replying. The main process owns the connection and pushes frames over here.
+ *
+ * Returns an unsubscribe function that detaches the listener AND closes the
+ * upstream connection, so a signed-out renderer leaves nothing dialling.
+ */
+const subscribeCatalogEvents = (
+    payload: { credential: string; url: string },
+    callback: (event: { data: unknown; type: string }) => void,
+): (() => void) => {
+    const listener = (_event: IpcRendererEvent, value: { data: unknown; type: string }) =>
+        callback(value);
+    ipcRenderer.on('samo-catalog-event', listener);
+    ipcRenderer.send('samo-subscribe-catalog-events', payload);
+    return () => {
+        ipcRenderer.off('samo-catalog-event', listener);
+        ipcRenderer.send('samo-unsubscribe-catalog-events');
+    };
+};
+
 export const samo = {
     authenticate,
     clearMediaCredential,
     getUserInfo,
     registerMediaCredential,
     request,
+    subscribeCatalogEvents,
 };
 
 export type Samo = typeof samo;

@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 
 import { api } from '/@/renderer/api';
-import { queryKeys } from '/@/renderer/api/query-keys';
+import { invalidatePlaylistQueries } from '/@/renderer/features/playlists/mutations/playlist-invalidation';
 import { MutationHookArgs } from '/@/renderer/lib/react-query';
 import { SetPlaylistSongsArgs } from '/@/shared/types/domain-types';
 
@@ -21,18 +21,7 @@ export const useUpdatePlaylistTracks = (args: MutationHookArgs) => {
 
             if (!serverId) return;
 
-            queryClient.invalidateQueries({
-                queryKey: queryKeys.playlists.list(serverId),
-            });
-
-            if (body?.id) {
-                queryClient.invalidateQueries({
-                    queryKey: queryKeys.playlists.detail(serverId, body.id),
-                });
-                queryClient.invalidateQueries({
-                    queryKey: queryKeys.playlists.songList(serverId, body.id),
-                });
-            }
+            invalidatePlaylistQueries(queryClient, serverId, body?.id);
         },
         ...options,
     });

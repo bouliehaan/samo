@@ -1,14 +1,9 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 
 import { api } from '/@/renderer/api';
-import { queryKeys } from '/@/renderer/api/query-keys';
-import { infiniteLoaderDataQueryKey } from '/@/renderer/components/item-list/helpers/item-list-infinite-loader';
+import { invalidatePlaylistQueries } from '/@/renderer/features/playlists/mutations/playlist-invalidation';
 import { MutationHookArgs } from '/@/renderer/lib/react-query';
-import {
-    CreatePlaylistArgs,
-    CreatePlaylistResponse,
-    LibraryItem,
-} from '/@/shared/types/domain-types';
+import { CreatePlaylistArgs, CreatePlaylistResponse } from '/@/shared/types/domain-types';
 
 export const useCreatePlaylist = (args: MutationHookArgs) => {
     const { options } = args || {};
@@ -24,15 +19,7 @@ export const useCreatePlaylist = (args: MutationHookArgs) => {
         ...options,
         onSuccess: (data, variables, context) => {
             const { serverId } = variables.apiClientProps;
-            queryClient.invalidateQueries({
-                exact: false,
-                queryKey: queryKeys.playlists.root(serverId),
-            });
-
-            queryClient.invalidateQueries({
-                exact: false,
-                queryKey: infiniteLoaderDataQueryKey(serverId, LibraryItem.PLAYLIST),
-            });
+            invalidatePlaylistQueries(queryClient, serverId);
             options?.onSuccess?.(data, variables, context);
         },
     });

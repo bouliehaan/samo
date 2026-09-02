@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 
 import { api } from '/@/renderer/api';
-import { queryKeys } from '/@/renderer/api/query-keys';
+import { invalidatePlaylistQueries } from '/@/renderer/features/playlists/mutations/playlist-invalidation';
 import { MutationOptions } from '/@/renderer/lib/react-query';
 import { RemoveFromPlaylistArgs, RemoveFromPlaylistResponse } from '/@/shared/types/domain-types';
 
@@ -21,15 +21,7 @@ export const useRemoveFromPlaylist = (options?: MutationOptions) => {
 
             if (!serverId) return;
 
-            queryClient.invalidateQueries({
-                queryKey: queryKeys.playlists.list(serverId),
-            });
-            queryClient.invalidateQueries({
-                queryKey: queryKeys.playlists.detail(serverId, variables.query.id),
-            });
-            queryClient.invalidateQueries({
-                queryKey: queryKeys.playlists.songList(serverId, variables.query.id),
-            });
+            invalidatePlaylistQueries(queryClient, serverId, variables.query.id);
         },
         ...options,
     });

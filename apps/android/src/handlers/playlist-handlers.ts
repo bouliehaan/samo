@@ -3,7 +3,6 @@ import {
     createMobilePlaylist,
     deleteMobilePlaylist,
     getMobileContentSource,
-    isMobileExploPlaylistDetail,
     isMobilePlaylistDetailEditable,
     keepMobileExploTracks,
     loadMobileMediaDetail,
@@ -18,7 +17,11 @@ import { Alert } from 'react-native';
 
 import { topUpDownloadedPlaylists } from '../services/downloaded-playlist-topup';
 import { triggerCatalogSyncNow } from '../services/headless-catalog-sync';
-import { type AndroidRecentContentSourceItem } from '../services/recent-content';
+import { forgetMediaDetail } from '../services/media-detail-freshness';
+import {
+    type AndroidRecentContentSourceItem,
+    getRecentContentItemKey,
+} from '../services/recent-content';
 import { setHomeContentState } from '../state/app-navigation';
 import { getAuthSession } from '../state/auth-session';
 import {
@@ -29,7 +32,11 @@ import {
     setPlaylistMenuRootState,
 } from '../state/media-overlays';
 import { findAuthForSource } from './favorites-handlers';
-import { updateLoadedMediaDetail } from './media-detail-handlers';
+import {
+    applyMediaDetailEdit,
+    invalidateMediaDetail,
+    updateLoadedMediaDetail,
+} from './media-detail-handlers';
 
 /**
  * Long-press → Delete on a playlist row. Confirms, deletes on the server,
@@ -78,6 +85,19 @@ export const handleDeletePlaylistForItem = (item: AndroidRecentContentSourceItem
                                 ? { ...current, content: { ...current.content, sections } }
                                 : current;
                         });
+                        // The playlist no longer exists, so the cached detail
+                        // is not stale — it is wrong. Dropped rather than
+                        // marked for re-read: there is nothing to re-read,
+                        // and leaving it would let a stale tile reopen a
+                        // fully-rendered page for a playlist the server has
+                        // already forgotten.
+                        forgetMediaDetail(
+                            getRecentContentItemKey({
+                                id: item.id,
+                                source: item.source,
+                                type: MobileHomeItemType.PLAYLIST,
+                            }),
+                        );
                         void triggerCatalogSyncNow();
                     } catch (error) {
                         setContextMenuFeedback(
@@ -150,6 +170,13 @@ export const handleRemoveTrackFromPlaylist = (
                                 playlistId: detail.id,
                                 songIds: [track.id],
                             });
+                            // The splice above only reached the copies held in
+                            // memory. The mirror still lists the track and
+                            // will keep doing so until the sync lands, so the
+                            // detail is marked provisional — without this, one
+                            // LRU eviction is enough for the removed row to
+                            // come back.
+                            invalidateMediaDetail(detail);
                             void triggerCatalogSyncNow();
                         } catch (error) {
                             if (previous) {
@@ -410,6 +437,38 @@ export const handleAddToPlaylistFromRoot = async (playlist: MobileHomeItem): Pro
                 playlistId: playlist.id,
                 songIds,
             });
+            // Show the track in the playlist NOW, in whichever copy of that
+            // playlist's detail the device is holding — which is almost never
+            // the page on screen, because you add a song from somewhere else.
+            // That asymmetry is why adding used to look broken while removing
+            // looked fine: removing edits the page you are standing on, and
+            // the old helper could only reach that one.
+            //
+            // The server appends and dedupes by id, so appending here is the
+            // same list the next read returns, not an approximation of it.
+            const addedTrack = playlistMenuRoot.track;
+            applyMediaDetailEdit(
+                {
+                    id: playlist.id,
+                    source: playlist.source,
+                    type: MobileMediaDetailType.PLAYLIST,
+                },
+                (current) =>
+                    current.tracks.some((candidate) => candidate.id === songIds[0])
+                        ? current
+                        : {
+                              ...current,
+                              tracks: [
+                                  ...current.tracks,
+                                  { ...addedTrack, id: songIds[0] },
+                              ],
+                          },
+            );
+            invalidateMediaDetail({
+                id: playlist.id,
+                source: playlist.source,
+                type: MobileMediaDetailType.PLAYLIST,
+            });
             void triggerCatalogSyncNow();
             // If this playlist is held offline, the track just added belongs
             // offline too — a download taken before the add would otherwise
@@ -455,6 +514,16 @@ export const handleAddToPlaylistFromRoot = async (playlist: MobileHomeItem): Pro
             playlistId: playlist.id,
             songIds,
         });
+        // No optimistic splice here, unlike the single-track path above: what
+        // the playlist gains is a whole album's worth of tracks, deduped
+        // against members we do not have in hand, so a predicted list would be
+        // a guess. Marked provisional instead — the next open reads the
+        // server, and the page it lands on is exact.
+        invalidateMediaDetail({
+            id: playlist.id,
+            source: playlist.source,
+            type: MobileMediaDetailType.PLAYLIST,
+        });
         // Non-blocking background sync instead of a full Home reload — Home is
         // unchanged by adding tracks to an existing playlist; the track list
         // reconciles for the next time the playlist detail opens.
@@ -487,17 +556,19 @@ export const handleAddToPlaylistFromRoot = async (playlist: MobileHomeItem): Pro
  */
 export const handleKeepExploTracks = async (
     tracks: MobileMediaTrack[],
-    detail: MobileMediaDetail,
+    sourceId: string | undefined,
 ): Promise<void> => {
-    if (!isMobileExploPlaylistDetail(detail)) {
-        setContextMenuFeedback('Only Explore tracks can be kept.');
-        return;
-    }
     if (tracks.length === 0) {
         return;
     }
 
-    const auth = findAuthForSource(detail.source.id);
+    // Takes a source id rather than the containing playlist detail: the
+    // fullscreen player offers this too, and it has no detail — only the
+    // playlist id its queue was started from. Deciding a track IS an Explore
+    // drop belongs to the caller either way (the menu only offers the action
+    // inside Explore), and the server is the real arbiter: it reports back
+    // per-track how many were kept, skipped and failed.
+    const auth = findAuthForSource(sourceId);
     if (!auth) {
         setContextMenuFeedback('The server for this playlist is no longer connected.');
         return;

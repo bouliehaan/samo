@@ -124,6 +124,7 @@ export const advanceQueue = async (ctx: NativePlaybackContext): Promise<void> =>
 
     try {
         await playQueuedItem(ctx, nextItem, queue.items, nextIndex, {
+            isExploPlaylist: queue.isExploPlaylist,
             omitTrackRecentlyPlayed: queue.omitTrackRecentlyPlayed,
             samoPlaylistId: queue.samoPlaylistId,
             skipResumeRefresh: true,
@@ -133,6 +134,7 @@ export const advanceQueue = async (ctx: NativePlaybackContext): Promise<void> =>
         let sessionId = ctx.playbackSnapshotRef.current?.sessionId;
         if (state.status === 'error' && sessionId && state.sessionId === sessionId) {
             await playQueuedItem(ctx, nextItem, queue.items, nextIndex, {
+                isExploPlaylist: queue.isExploPlaylist,
                 omitTrackRecentlyPlayed: queue.omitTrackRecentlyPlayed,
                 samoPlaylistId: queue.samoPlaylistId,
                 skipResumeRefresh: true,

@@ -8,6 +8,7 @@ import {
 } from '@samo/core/server';
 import { ipcMain, net } from 'electron';
 
+import { subscribeSamoCatalogEvents, unsubscribeSamoCatalogEvents } from './samo-events';
 import { clearSamoMediaCredential, registerSamoMediaCredential } from './samo-media-auth';
 
 // Route ALL desktop Samo traffic through Electron's `net.fetch` (Chromium's
@@ -51,6 +52,25 @@ const withFetchDiagnostics = async <T>(operation: () => Promise<T>): Promise<T> 
 };
 
 export const registerSamoIpcHandlers = () => {
+    // Live catalog-change notifications. Sent on the window that asked for
+    // them, so a reload that destroys that window silently stops delivery
+    // rather than throwing on a dead webContents.
+    ipcMain.on(
+        'samo-subscribe-catalog-events',
+        (event, data: { credential: string; url: string }) => {
+            const sender = event.sender;
+            subscribeSamoCatalogEvents(data, (channel, payload) => {
+                if (!sender.isDestroyed()) {
+                    sender.send(channel, payload);
+                }
+            });
+        },
+    );
+
+    ipcMain.on('samo-unsubscribe-catalog-events', () => {
+        unsubscribeSamoCatalogEvents();
+    });
+
     // Lets the renderer hand artwork URLs to plain <img> tags with no
     // `stream_token` on them — see `samo-media-auth.ts` for why that matters.
     ipcMain.on(

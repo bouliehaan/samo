@@ -18,6 +18,7 @@ import {
 } from '@samo/core/server';
 
 import {
+    DownloadGlyph,
     MediaKindGlyph,
     MoreGlyph,
     PlayPauseGlyph,
@@ -30,8 +31,11 @@ import { MotionSheet } from './MotionSheet';
 import { PressableScale } from './PressableScale';
 import { SamoRadioVolumeSlider } from './SamoRadioVolumeSlider';
 import { triggerImpact } from '../services/haptics';
+import { triggerCatalogSyncNow } from '../services/headless-catalog-sync';
 import {
     controlSamoRadio,
+    fetchSamoRadioKeepableTrackId,
+    keepSamoRadioAiringTrack,
     refreshSamoRadioDeviceState,
     refreshSamoRadioDevices,
     refreshSamoRadioStations,
@@ -168,6 +172,14 @@ const SamoRadioDeviceCard = memo(
         const [isTuneOpen, setIsTuneOpen] = useState(false);
         const [isMenuOpen, setIsMenuOpen] = useState(false);
         const [error, setError] = useState<string | null>(null);
+        // The airing track when keeping it is possible AND permitted, straight
+        // from the server. Null covers every "no" there is, so nothing here has
+        // to know what an explo folder is.
+        const [keepableTrackId, setKeepableTrackId] = useState<string | null>(null);
+        const [isKeeping, setIsKeeping] = useState(false);
+        // What the keep did, shown inside the sheet rather than as a toast: the
+        // sheet is where the tap happened and it stays up to answer.
+        const [keepFeedback, setKeepFeedback] = useState<string | null>(null);
         const mountedRef = useRef(true);
         const settleTimerRef = useRef<null | ReturnType<typeof setTimeout>>(null);
 
@@ -254,6 +266,85 @@ const SamoRadioDeviceCard = memo(
             [device.id, runCommand],
         );
 
+        // What is airing, as an identity rather than a description. A channel
+        // reports its now-playing through the device, so a change in these two
+        // lines IS the signal that a new song started.
+        //
+        // Off `transport` rather than off `mode`, which is 'channel' for an
+        // internet station too: the two are separate catalogs behind separate
+        // id spaces, and a station id sent to the channels route names nothing.
+        const channelId = transport === 'channel' ? (state?.channel?.id ?? null) : null;
+        const airingKey = channelId
+            ? [channelId, state?.channel?.title ?? '', state?.channel?.artist ?? ''].join('\u0000')
+            : null;
+
+        // Whether the airing song can be kept, asked once per song.
+        //
+        // Not folded into the device poll on purpose. The device knows what the
+        // channel told it is on; whether that file sits in a drop folder the
+        // weekly run empties is a question only Samo can answer, and its answer
+        // changes exactly when the song does — asking on every five-second tick
+        // would double this screen's request rate to re-learn the same thing
+        // about the same track.
+        //
+        // Cleared before each ask so the sheet can never offer to keep the
+        // song before last, and left cleared on failure: no answer has to mean
+        // no offer, or the entry appears and the keep behind it refuses.
+        useEffect(() => {
+            setKeepableTrackId(null);
+            if (!channelId) {
+                return;
+            }
+            const controller = new AbortController();
+            void fetchSamoRadioKeepableTrackId(channelId, controller.signal).then((trackId) => {
+                if (!controller.signal.aborted && mountedRef.current) {
+                    setKeepableTrackId(trackId);
+                }
+            });
+            return () => controller.abort();
+        }, [airingKey, channelId]);
+
+        const handleKeep = useCallback(async () => {
+            if (!keepableTrackId || isKeeping) {
+                return;
+            }
+            triggerImpact('light');
+            setIsKeeping(true);
+            setKeepFeedback('Keeping…');
+            try {
+                const response = await keepSamoRadioAiringTrack(keepableTrackId);
+                const failure = response.results.find((result) => result.error);
+                if (!mountedRef.current) {
+                    return;
+                }
+                if (failure?.error) {
+                    setKeepFeedback(failure.error);
+                } else if (response.alreadyInLibrary > 0) {
+                    // A success, not a no-op — the file was already where the
+                    // copy would have gone. Saying "kept" would suggest this
+                    // tap did something it did not.
+                    setKeepFeedback('Already in your library');
+                } else {
+                    setKeepFeedback('Kept in your library');
+                    // The copy is a NEW track, album and artist. Nothing else
+                    // on the phone knows to go looking for it.
+                    void triggerCatalogSyncNow();
+                }
+            } catch (keepError) {
+                if (mountedRef.current) {
+                    setKeepFeedback(
+                        keepError instanceof Error
+                            ? keepError.message
+                            : 'Could not keep this track.',
+                    );
+                }
+            } finally {
+                if (mountedRef.current) {
+                    setIsKeeping(false);
+                }
+            }
+        }, [isKeeping, keepableTrackId]);
+
         const closeMenu = useCallback(() => setIsMenuOpen(false), []);
 
         // Only devices Samo can reach are ever in the store, so a card without
@@ -275,7 +366,31 @@ const SamoRadioDeviceCard = memo(
         // step off the whole medium. They were six shouting mono buttons that
         // wrapped onto three lines and buried play/pause among them; here they
         // are words in a sheet, which has room to say what they actually do.
-        const menuActions: { glyph: ReactNode; id: SamoRadioCommand; label: string }[] = [];
+        //
+        // Each row carries its own onPress rather than a command id, because
+        // not everything in here is a command to the device — and not
+        // everything dismisses the sheet.
+        const menuActions: { glyph: ReactNode; id: string; label: string; onPress: () => void }[] =
+            [];
+        // First, because it is the one thing in this sheet you came looking for
+        // and the only one with a deadline. A drop lives in a folder the weekly
+        // run empties, so a song heard once on the radio is gone by Tuesday
+        // unless it is copied out — which until now meant leaving the room,
+        // opening the app and searching for something you only half caught the
+        // name of. Absent for everything else a station plays: the server
+        // decides, so a channel programmed from the ordinary library — a
+        // Christmas rotation swapped in for the season — simply never shows it.
+        if (keepableTrackId) {
+            menuActions.push({
+                glyph: <DownloadGlyph color={colors.text} />,
+                id: 'keep-in-library',
+                // Deliberately does NOT close the sheet: the answer renders
+                // inside it, and closing first would write the result into
+                // something already gone and leave the tap looking inert.
+                label: isKeeping ? 'Keeping…' : 'Keep in Library',
+                onPress: () => void handleKeep(),
+            });
+        }
         if (onChannel) {
             // One item is not always the problem: sometimes it is the medium —
             // "not talk right now, put music on". The station steps off the
@@ -284,6 +399,10 @@ const SamoRadioDeviceCard = memo(
                 glyph: <MediaKindGlyph color={colors.text} />,
                 id: 'next-kind',
                 label: 'Skip this kind of thing',
+                onPress: () => {
+                    closeMenu();
+                    sendCommand('next-kind');
+                },
             });
         }
         // Stop hands the output back to its station; standby is the real off
@@ -294,11 +413,19 @@ const SamoRadioDeviceCard = memo(
                 glyph: <StationReturnGlyph color={colors.text} />,
                 id: 'stop',
                 label: 'Back to its station',
+                onPress: () => {
+                    closeMenu();
+                    sendCommand('stop');
+                },
             },
             {
                 glyph: <PowerGlyph color={colors.text} />,
                 id: 'standby',
                 label: 'Standby',
+                onPress: () => {
+                    closeMenu();
+                    sendCommand('standby');
+                },
             },
         );
 
@@ -374,6 +501,10 @@ const SamoRadioDeviceCard = memo(
                         accessibilityLabel="More controls"
                         onPress={() => {
                             triggerImpact('light');
+                            // Cleared on the way in rather than on the way out,
+                            // so last time's answer is gone before the sheet
+                            // draws and the closing animation stays clean.
+                            setKeepFeedback(null);
                             setIsMenuOpen(true);
                         }}
                     >
@@ -406,10 +537,7 @@ const SamoRadioDeviceCard = memo(
                                     color: 'rgba(255, 255, 255, 0.06)',
                                 }}
                                 key={action.id}
-                                onPress={() => {
-                                    closeMenu();
-                                    sendCommand(action.id);
-                                }}
+                                onPress={action.onPress}
                                 style={[
                                     styles.mediaContextActionRow,
                                     index === menuActions.length - 1 &&
@@ -423,6 +551,9 @@ const SamoRadioDeviceCard = memo(
                             </Pressable>
                         ))}
                     </View>
+                    {keepFeedback ? (
+                        <Text style={styles.mediaContextFeedback}>{keepFeedback}</Text>
+                    ) : null}
                 </MotionSheet>
 
                 {isTuneOpen && stations.length > 0 ? (

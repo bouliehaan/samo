@@ -1,5 +1,6 @@
 import {
     buildSamoAudiobookQueueFromFiles,
+    isMobileExploPlaylistDetail,
     type MobileHomeItem,
     MobileHomeItemType,
     type MobileMediaDetail,
@@ -11,7 +12,7 @@ import { resolveLongFormResumeSeconds } from '@samo/core/playback';
 import { ensureSamoStreamToken } from '@samo/core/server';
 
 import { loadCurrentPlaybackProgressBounded } from '../services/playback-progress';
-import { loadCatalogMediaDetail } from '../services/catalog/catalog-reads';
+import { loadMirrorMediaDetailIfFresh } from '../services/media-detail-freshness';
 import {
     getLocalDownloadForTrack,
     getOfflineAudiobookFiles,
@@ -49,6 +50,10 @@ const playlistPlaybackOptions = (
     detail: MobileMediaDetail,
     shuffled: boolean,
 ): AndroidPlayItemOptions => ({
+    // Asked here, of the detail, because this is the last place that HAS one:
+    // the queue outlives the page it was started from, and the fullscreen
+    // player's menu needs to know whether these tracks are Explore drops.
+    isExploPlaylist: isMobileExploPlaylistDetail(detail),
     omitTrackRecentlyPlayed: detail.type === MobileMediaDetailType.PLAYLIST,
     shuffled,
     ...(detail.type === MobileMediaDetailType.PLAYLIST ? { samoPlaylistId: detail.id } : {}),
@@ -320,7 +325,8 @@ export const handleStartAudiobook = async (
     let detail: MobileMediaDetail | undefined = mediaDetailCache.get(cacheKey);
 
     if (!detail) {
-        detail = (await loadCatalogMediaDetail(item, serverConnection)) ?? undefined;
+        detail =
+            (await loadMirrorMediaDetailIfFresh(item, serverConnection, cacheKey)) ?? undefined;
         if (detail) {
             rememberMediaDetail(mediaDetailCache, cacheKey, detail);
         }

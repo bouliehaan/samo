@@ -23,6 +23,13 @@ export interface MediaContextMenuOpenOptions {
     // True when opened from the Home screen, so the menu offers "Remove from
     // Home" (a non-destructive per-device hide). Off everywhere else.
     allowRemoveFromHome?: boolean;
+    // The item is being acted on from inside the Explore drop playlist, for
+    // surfaces with no detail page to say so — the fullscreen player, which
+    // reads it off the queue it is playing. Explore-only actions (Keep in
+    // Library, and the copy-first playlist add) are the reason it matters:
+    // without it they disappeared the moment you opened the player over the
+    // Explore playlist you were listening to.
+    fromExplo?: boolean;
     // True when the menu is opened from the detail page itself, so we should
     // skip the "Open Album/Playlist/Artist" action (you're already there).
     suppressOpenAction?: boolean;
@@ -37,6 +44,8 @@ export interface MediaContextMenuOpenOptions {
 export type MediaContextMenuTarget =
     | {
           detail?: MobileMediaDetail;
+          /** See MediaContextMenuOpenOptions.fromExplo. */
+          fromExplo?: boolean;
           kind: 'song';
           // Content key to hide when "Remove from Home" is chosen; only set when
           // the menu was opened from the Home screen.

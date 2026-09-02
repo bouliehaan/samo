@@ -1250,16 +1250,24 @@ export const SamoController: InternalControllerEndpoint = {
         const server = apiClientProps.server;
         if (!server) throw new Error('No server');
         const auth = samoAuthentication(server);
-        const response = await listSamoMusicPlaylistTracks(browserFetch, auth, query.id, {
-            limit: 500,
-        });
-        const items: Song[] = samoItemsOf(response).map((track, index) =>
+        // Paged to exhaustion, not one capped page — and on this endpoint that
+        // is a data-integrity requirement, not a completeness nicety. What this
+        // returns becomes the edit-mode list, and saving a reordering PATCHes
+        // that list back as the playlist's ENTIRE contents (Samo replaces
+        // `trackIds` wholesale). A single limit=500 page therefore did not
+        // truncate the view of a 600-track playlist, it truncated the playlist
+        // — every save deleted the last 100 tracks. `addToPlaylist` and
+        // `removeFromPlaylist` below already page for exactly this reason.
+        const tracks = await fetchAllPages<SamoMusicTrack>((input) =>
+            listSamoMusicPlaylistTracks(browserFetch, auth, query.id, input),
+        );
+        const items: Song[] = tracks.map((track, index) =>
             samoNormalize.song(track, server, { playlistIndex: index }),
         );
         return {
             items,
             startIndex: 0,
-            totalRecordCount: response.total ?? items.length,
+            totalRecordCount: items.length,
         };
     },
 
