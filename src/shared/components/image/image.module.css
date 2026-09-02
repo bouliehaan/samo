@@ -47,6 +47,25 @@
     border-radius: var(--theme-radius-md);
 }
 
+/*
+ * `Skeleton` wraps its shimmer in a container div, and `.image-container` is a
+ * flex row — so while the underlay is up it becomes a second flex item and the
+ * artwork it is meant to sit *behind* is squeezed into whatever is left. Two
+ * children both asking for `width: 100%` settle at half each, which is how a
+ * cover ends up a vertical sliver, and how a cover that never loads stays one
+ * for good (the unloader is squeezed by the same skeleton).
+ *
+ * Taking the wrapper out of flow is also what makes `.skeleton-underlay` on
+ * the shimmer itself mean anything: without this the container was the thing
+ * holding the layout, and the class name was the only part that was true.
+ */
+.skeleton-container {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+}
+
 .image-container {
     position: relative;
     display: flex;

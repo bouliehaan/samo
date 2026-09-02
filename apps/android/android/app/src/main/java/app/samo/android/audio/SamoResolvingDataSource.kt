@@ -52,7 +52,30 @@ internal object SamoResolvingDataSource {
             return dataSpec
         }
 
-        val connection = SamoAuthMirror.loadSamo(context).firstOrNull { uri.startsWith(it.url) }
+        val mirrored = SamoAuthMirror.loadSamo(context)
+        // Prefix match first: with several servers mirrored this is the only
+        // way to know which one a URI belongs to.
+        val connection =
+            mirrored.firstOrNull { uri.startsWith(it.url) }
+            // Fall back to the sole mirrored server when the prefix does not
+            // match.
+            //
+            // The prefix is host-coupled, and a queue URI outlives the address
+            // it was minted on: built on the LAN it names 192.168.x, and the
+            // moment the phone is on mobile data or a guest network the
+            // mirrored connection names the remote host instead. Nothing
+            // matches, so this resolver used to give up and hand ExoPlayer back
+            // the LAN URL it was already holding — which fails EHOSTUNREACH and
+            // surfaces as an infinite loading spinner with no error.
+            //
+            // The URI is already known to be a Samo stream URL, so with exactly
+            // one Samo server mirrored there is no ambiguity about which server
+            // it belongs to; refreshQueueItem below re-homes it onto that
+            // server's current address. With several mirrored we genuinely
+            // cannot tell them apart by path alone, so the old behaviour stands.
+            ?: mirrored.singleOrNull()?.also {
+                Log.i(TAG, "re-homing a stale stream URI onto the mirrored server")
+            }
         if (connection == null) {
             // No mirrored credentials for this server (fresh install, JS hasn't
             // pushed yet). Use the URI's existing token — it may still be valid.

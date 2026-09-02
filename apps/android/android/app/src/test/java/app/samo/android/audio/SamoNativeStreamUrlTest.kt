@@ -1,6 +1,7 @@
 package app.samo.android.audio
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 /**
@@ -232,5 +233,77 @@ class SamoNativeStreamUrlTest {
                 "t",
             ),
         )
+    }
+
+    // ---- rehomeUrl -------------------------------------------------------
+    //
+    // The regression these lock in: a queue built on the LAN names 192.168.x,
+    // and replaceStreamToken rebuilds a URL from its EXISTING authority — so it
+    // refreshes the credential while faithfully preserving a host that is
+    // unreachable the moment the phone leaves the network. The symptom is
+    // playback that sits loading forever with no error, because the token mint
+    // against the remote serverUrl succeeded and only the stream URL was wrong.
+
+    @Test
+    fun `rehomeUrl repoints a LAN url at the remote server`() {
+        val homed =
+            SamoNativeStreamUrl.rehomeUrl(
+                "http://192.168.1.10:6969/api/v1/music/tracks/tr_1/stream?stream_token=abc",
+                "https://samo.example.com",
+            )
+        assertEquals(
+            "https://samo.example.com/api/v1/music/tracks/tr_1/stream?stream_token=abc",
+            homed,
+        )
+    }
+
+    @Test
+    fun `rehomeUrl preserves every query parameter`() {
+        // An audiobook stream carries the file id and offset in the query.
+        // Dropping them would resume the wrong file at the wrong second.
+        val homed =
+            SamoNativeStreamUrl.rehomeUrl(
+                "http://192.168.1.10:6969/api/v1/audiobooks/bk_1/stream" +
+                    "?mediaFileId=mf_9&offsetSeconds=229&stream_token=abc",
+                "https://samo.example.com",
+            )
+        assertEquals(
+            "https://samo.example.com/api/v1/audiobooks/bk_1/stream" +
+                "?mediaFileId=mf_9&offsetSeconds=229&stream_token=abc",
+            homed,
+        )
+    }
+
+    @Test
+    fun `rehomeUrl returns null when the url is already on the target host`() {
+        // Null means "nothing to do" so callers keep their original string
+        // rather than paying a rebuild on every refresh.
+        assertNull(
+            SamoNativeStreamUrl.rehomeUrl(
+                "https://samo.example.com/api/v1/music/tracks/tr_1/stream?stream_token=abc",
+                "https://samo.example.com",
+            ),
+        )
+    }
+
+    @Test
+    fun `rehomeUrl tolerates a trailing slash on the server url`() {
+        val homed =
+            SamoNativeStreamUrl.rehomeUrl(
+                "http://192.168.1.10:6969/api/v1/music/tracks/tr_1/stream",
+                "https://samo.example.com/",
+            )
+        assertEquals(
+            "https://samo.example.com/api/v1/music/tracks/tr_1/stream",
+            homed,
+        )
+    }
+
+    @Test
+    fun `rehomeUrl returns null on missing or unparseable input`() {
+        assertNull(SamoNativeStreamUrl.rehomeUrl(null, "https://samo.example.com"))
+        assertNull(SamoNativeStreamUrl.rehomeUrl("http://192.168.1.10/x", null))
+        assertNull(SamoNativeStreamUrl.rehomeUrl("", "https://samo.example.com"))
+        assertNull(SamoNativeStreamUrl.rehomeUrl("not a url at all", "https://samo.example.com"))
     }
 }

@@ -55,10 +55,17 @@
     border-radius: var(--theme-radius-md);
 }
 
+/*
+ * Width comes from the column, not from the window. `max-width: 20vw` capped
+ * every line at a fifth of the viewport regardless of how much room the left
+ * column actually had, so a track title was clipped with a hundred-odd pixels
+ * of empty bar sitting next to it — and the cap kept shrinking as the window
+ * did, on top of the column already shrinking.
+ */
 .line-item {
     display: inline-block;
     width: 100%;
-    max-width: 20vw;
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;

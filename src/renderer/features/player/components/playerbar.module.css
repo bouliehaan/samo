@@ -3,15 +3,27 @@
     height: 100%;
 }
 
+/*
+ * Three plain `1fr` columns handed each third of the window out whether or not
+ * what lived there fitted, and `overflow: hidden` then sliced whatever spilled
+ * — the outermost transport button, the leftmost control icon — down the
+ * middle. The transport cluster and the control cluster are both rows of
+ * fixed-size buttons, so each column carries a `min-content` floor and cannot
+ * be squeezed below what it holds.
+ *
+ * The now-playing column is the one shock absorber: it is the only column that
+ * can lose width harmlessly (its text ellipsises, its cover has its own floor),
+ * so it yields first and the other two stay equal — which is what keeps the
+ * transport optically centred on the window for as long as there is room.
+ *
+ * There is no narrow variant here: `useIsMobile` swaps in the mobile playerbar
+ * at 768px, so a `width < 768px` rule in this file could never match.
+ */
 .controls-grid {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) minmax(min-content, 1fr) minmax(min-content, 1fr);
     gap: 1rem;
     height: 100%;
-
-    @media (width < 768px) {
-        grid-template-columns: minmax(0, 0.5fr) minmax(0, 1fr) minmax(0, 0.5fr);
-    }
 }
 
 .right-grid-item {

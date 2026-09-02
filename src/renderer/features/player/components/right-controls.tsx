@@ -1,7 +1,9 @@
 import { t } from 'i18next';
 import isElectron from 'is-electron';
-import { useCallback, useEffect, useState, WheelEvent } from 'react';
+import { type CSSProperties, useCallback, useEffect, useState, WheelEvent } from 'react';
 import { useTranslation } from 'react-i18next';
+
+import styles from './right-controls.module.css';
 
 import { QualityBadge } from '/@/renderer/components/quality-badge/quality-badge';
 import { PopoverPlayQueue } from '/@/renderer/features/now-playing/components/popover-play-queue';
@@ -79,11 +81,23 @@ export const RightControls = () => {
     useFavoriteHotkeys();
 
     return (
-        <Flex align="flex-end" direction="column" h="100%" px="1rem" py="0.5rem">
-            <Group h="calc(100% / 3)">
+        <Flex
+            className={styles.rightControlsContainer}
+            direction="column"
+            h="100%"
+            px="1rem"
+            py="0.5rem"
+        >
+            <Group h="calc(100% / 3)" justify="flex-end">
                 <AutoDJButton />
             </Group>
-            <Group align="center" gap="xs" wrap="nowrap">
+            <Group
+                align="center"
+                className={styles.controlsRow}
+                gap="xs"
+                justify="flex-end"
+                wrap="nowrap"
+            >
                 {(source === 'music' || source == null) && (
                     <QualityBadge player profile={formatProfile} />
                 )}
@@ -380,6 +394,7 @@ const VolumeButton = () => {
             />
             {!isMinWidth ? (
                 <CustomPlayerbarSlider
+                    className={styles.volumeSlider}
                     max={100}
                     min={0}
                     onChange={handleVolumeSlider}
@@ -388,8 +403,13 @@ const VolumeButton = () => {
                     }}
                     onWheel={handleVolumeWheel}
                     size={6}
+                    // The configured width is a ceiling, not a fixed size. As
+                    // `width` it was also the slider's smallest reportable
+                    // size, which put it into the control cluster's
+                    // `min-content` floor — so the bar would rather clip the
+                    // track title than narrow the volume bar by a pixel.
+                    style={{ '--volume-width': `${volumeWidth}px` } as CSSProperties}
                     value={sliderValue}
-                    w={volumeWidth}
                 />
             ) : null}
         </>

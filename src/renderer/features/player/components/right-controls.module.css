@@ -1,0 +1,29 @@
+/*
+ * The rows stretch to the column rather than hugging their own content.
+ * `align-items: flex-end` sized each row to what was in it and hung it off the
+ * right edge, so the cluster never saw the column narrowing — it overflowed
+ * leftwards and `.right-grid-item`'s `overflow: hidden` sliced the outermost
+ * control in half. Stretched rows are the thing that lets the controls below
+ * respond to the space they actually have.
+ */
+.right-controls-container {
+    align-items: stretch;
+}
+
+.controls-row {
+    min-width: 0;
+}
+
+.controls-row > * {
+    flex: 0 0 auto;
+}
+
+/*
+ * Volume is the one elastic control in the cluster: it gives up width so the
+ * buttons never have to, down to a floor where it is still worth dragging.
+ */
+.controls-row > .volume-slider {
+    flex: 0 1 var(--volume-width, 70px);
+    min-width: 2.5rem;
+    max-width: var(--volume-width, 70px);
+}

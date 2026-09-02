@@ -10,6 +10,7 @@ import {
     useCallback,
     useEffect,
     useMemo,
+    useRef,
     useState,
 } from 'react';
 
@@ -174,6 +175,49 @@ export function BaseImage({
         [onLoad],
     );
 
+    const imageElementRef = useRef<HTMLImageElement>(null);
+    const renderedSrc =
+        samoDirectSrc && !directImageFailed ? samoDirectSrc : nativeImage.displaySrc;
+
+    // `load` alone is not enough to end the fade-in, and when it does not
+    // arrive the artwork stays at `opacity: 0` — decoded, laid out, and
+    // invisible. Two ways it goes missing:
+    //
+    //   - `load` does not bubble, so React attaches it to the element during
+    //     commit; an image already in the memory cache can finish before that
+    //     and the event is simply gone.
+    //   - React reuses the same <img> node across renders. When the reveal is
+    //     re-armed on a node that already holds this `src` — a new cache key, a
+    //     debounced request settling back onto the URL that is already there —
+    //     the browser has nothing left to load and fires nothing.
+    //
+    // Asking the element what it already has covers everything that finished
+    // before this ran; the listener covers everything that finishes after.
+    // Between the two there is no window for the event to fall through, which
+    // is the guarantee React's own `onLoad` cannot make.
+    useEffect(() => {
+        if (imageRevealed) {
+            return;
+        }
+
+        const element = imageElementRef.current;
+
+        if (!element) {
+            return;
+        }
+
+        if (element.complete && element.naturalWidth > 0) {
+            setImageRevealed(true);
+            return;
+        }
+
+        const reveal = () => setImageRevealed(true);
+
+        element.addEventListener('load', reveal);
+
+        return () => element.removeEventListener('load', reveal);
+    }, [imageRevealed, renderedSrc]);
+
     // Determine image fade classes
     const imageLoadClasses = isInSessionCache
         ? {} // Already cached — show instantly, no transition
@@ -217,6 +261,7 @@ export function BaseImage({
                     onLoad={handleImageLoad}
                     src={samoDirectSrc}
                     {...props}
+                    ref={imageElementRef}
                 />
             ) : nativeImage.displaySrc ? (
                 <img
@@ -230,6 +275,7 @@ export function BaseImage({
                     onLoad={handleImageLoad}
                     src={nativeImage.displaySrc}
                     {...props}
+                    ref={imageElementRef}
                 />
             ) : !src && !samoDirectSrc ? (
                 <ImageUnloader className={className} icon={unloaderIcon} />

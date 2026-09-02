@@ -153,15 +153,34 @@ internal object SamoNativeStreamUrl {
         return when (val mint = mintStreamToken(serverUrl, bearer)) {
             is MintResult.Success -> {
                 val refreshed = HashMap(item)
-                refreshed["url"] = replaceStreamToken(url, mint.token)
+                // Re-home before substituting the token.
+                //
+                // replaceStreamToken rebuilds the URL from its existing
+                // authority, so it refreshes the credential while faithfully
+                // preserving a host that may no longer be reachable. A queue
+                // built on the LAN names 192.168.x; carry the phone onto mobile
+                // data or a guest network and the token is minted against the
+                // REMOTE serverUrl (that part already worked) while the URL
+                // ExoPlayer opens still points at the LAN — so playback sits
+                // there loading forever against an unroutable address, with no
+                // error to show for it.
+                //
+                // rehomeUrl was written for precisely this case — its own
+                // comment names "a mirrored queue item" — but was only ever
+                // wired into SamoDownloadWorker. serverUrl is the authoritative
+                // current endpoint, so every URL on the item follows it.
+                val homedUrl = rehomeUrl(url, serverUrl) ?: url
+                refreshed["url"] = replaceStreamToken(homedUrl, mint.token)
                 item.optionalString("castUrl")?.let { castUrl ->
                     if (isSamoStreamUrl(castUrl)) {
-                        refreshed["castUrl"] = replaceStreamToken(castUrl, mint.token)
+                        val homedCastUrl = rehomeUrl(castUrl, serverUrl) ?: castUrl
+                        refreshed["castUrl"] = replaceStreamToken(homedCastUrl, mint.token)
                     }
                 }
                 item.optionalString("artworkUrl")?.let { artworkUrl ->
                     if (isSamoStreamUrl(artworkUrl)) {
-                        refreshed["artworkUrl"] = replaceStreamToken(artworkUrl, mint.token)
+                        val homedArtworkUrl = rehomeUrl(artworkUrl, serverUrl) ?: artworkUrl
+                        refreshed["artworkUrl"] = replaceStreamToken(homedArtworkUrl, mint.token)
                     }
                 }
                 RefreshResult.Ready(refreshed)
