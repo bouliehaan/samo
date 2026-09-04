@@ -18,8 +18,8 @@ Grab a build from **[Releases](https://github.com/bouliehaan/samo/releases/lates
 You need a [samo-server](https://github.com/bouliehaan/samo-server) on your
 network — the app finds it by itself on first run.
 
-Unlike the rest of the samo repos, this one is not a container. It is an app you
-install on a device.
+Unlike the rest of samo, this one is not a container — it is an app you install
+on a device.
 
 **Android** — `Samo-<version>-android.apk`. Sideload it; your phone will ask you
 to allow installs from whatever you downloaded it with.
@@ -32,8 +32,8 @@ it damaged. Clear the quarantine flag after dragging it to Applications:
 xattr -dr com.apple.quarantine /Applications/Samo.app
 ```
 
-**Windows and Linux** — no published build yet. Build one yourself:
-`pnpm run package:win` / `pnpm run package:linux`.
+**Windows and Linux** — no published build yet. Building one is in
+[docs/DEVELOPING.md](docs/DEVELOPING.md).
 
 ## Status
 
@@ -48,38 +48,10 @@ Honest state of things, so nobody installs this expecting a finished product:
 A personal project developed in the open. No stability promise and no migration
 guarantee between versions.
 
-## Building it yourself
+## Contributing
 
-Node 20+ and [pnpm](https://pnpm.io). For Android, JDK 17 and the Android SDK —
-Android Studio's bundled JDK works, the `android` scripts point at it.
-
-```bash
-pnpm install
-pnpm dev                              # desktop, in development
-pnpm run package:mac                  # package for the current platform
-
-cd apps/android && pnpm run android   # debug build onto a connected device
-cd apps/android && pnpm run android:release   # release APK
-```
-
-Gates, all of which should be green before a change lands:
-
-```bash
-pnpm run lint                            # typecheck + ESLint + Stylelint
-pnpm test
-cd apps/android && pnpm run verify       # typecheck + lint for Android
-```
-
-## Layout
-
-```
-src/            Desktop app (Electron: main, preload, renderer, shared)
-apps/android/   Android app (React Native + Expo, bare workflow)
-packages/core/  @samo/core — server client and media mapping shared by both
-```
-
-Both clients talk to the same `@samo/core`, so server behaviour is defined once
-and they inherit it together.
+Building it from source, the gates, and how the two clients share one core:
+[docs/DEVELOPING.md](docs/DEVELOPING.md).
 
 ## Design notes
 
