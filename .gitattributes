@@ -1,4 +1,7 @@
-*       text    eol=lf
+# text=auto, never a bare `text`: a bare `text` forces eol conversion on every
+# path, so any binary without an explicit rule below gets its CRLF pairs
+# rewritten on staging. text=auto skips files git detects as binary.
+*       text=auto       eol=lf
 *.exe   binary
 *.png   binary
 *.jpg   binary
@@ -31,3 +34,6 @@
 *.ttf   binary
 *.woff  binary
 *.woff2 binary
+
+# shipped native executables that carry no extension
+resources/bin/darwin/*/mpv     binary
