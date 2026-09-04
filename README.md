@@ -1,10 +1,10 @@
-# Samo
+# samo
 
 A self-hosted listening client for music, audiobooks, podcasts, and radio — one library, one queue, one history, on the desktop and on Android.
 
-Samo is the client half of a pair. The server half is [samo-server](https://github.com/bouliehaan/samo-server) — a native media server, not a wrapper around other servers: the four media kinds are first-class domains that share playback state, recents, and browsing, instead of being stapled together in the client.
+samo is the client half of a pair. The server half is [samo-server](https://github.com/bouliehaan/samo-server) — a native media server, not a wrapper around other servers: the four media kinds are first-class domains that share playback state, recents, and browsing, instead of being stapled together in the client.
 
-Samo began as a fork of [Feishin](https://github.com/jeffvli/feishin) and keeps its GPL-3.0 licence. See [Credits](#credits).
+samo began as a fork of [Feishin](https://github.com/jeffvli/feishin) and keeps its GPL-3.0 licence. See [Credits](#credits).
 
 ## Status
 
@@ -13,8 +13,8 @@ Honest state of things, so nobody installs this expecting a finished product:
 | Part | State |
 |------|-------|
 | **Android app** | The most actively developed surface. Native ExoPlayer engine, offline downloads, Chromecast, on-device catalog mirror. |
-| **`@samo/core`** | Samo-only. Shared server client, playback and media-detail mapping, covered by tests. |
-| **Desktop (Electron)** | Samo-only. Single API controller, no multi-backend abstraction. |
+| **`@samo/core`** | samo-only. Shared server client, playback and media-detail mapping, covered by tests. |
+| **Desktop (Electron)** | samo-only. Single API controller, no multi-backend abstraction. |
 
 This is a personal project developed in the open. There is no stability promise and no migration guarantee between versions yet.
 
@@ -99,7 +99,7 @@ Some of the reasoning behind the client is written down rather than left in comm
 
 ## Credits
 
-Samo is a fork of **[Feishin](https://github.com/jeffvli/feishin)** by [Jeff Vialpando (jeffvli)](https://github.com/jeffvli), and would not exist without it. The desktop app still carries a great deal of Feishin's architecture and code.
+samo began as a fork of **[Feishin](https://github.com/jeffvli/feishin)** by [Jeff Vialpando (jeffvli)](https://github.com/jeffvli), and would not exist without it. The desktop app still carries a great deal of Feishin's architecture and code.
 
 Bundled typefaces:
 

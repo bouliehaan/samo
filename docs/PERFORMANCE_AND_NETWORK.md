@@ -1,4 +1,4 @@
-# Performance & network (Samo mobile)
+# Performance & network (samo mobile)
 
 Where the Android client spends time, and what it does about it. Changes live in
 **`@samo/core`** wherever the desktop benefits too.
@@ -9,7 +9,7 @@ Where the Android client spends time, and what it does about it. Changes live in
 Android services (home-content, media-detail, search-content)
     → @samo/core/mobile (loadMobileHomeContent*, loadMobileMediaDetail, search*)
         → server-http (getFetch → requestJson)
-            → Samo Server /api/v1
+            → samo Server /api/v1
 ```
 
 **Caching is client-side, not HTTP cache:**

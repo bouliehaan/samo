@@ -1,6 +1,6 @@
 # Bundled macOS MPV
 
-Samo macOS release builds bundle MPV so desktop music playback does not depend on Homebrew or any user-installed binary.
+samo macOS release builds bundle MPV so desktop music playback does not depend on Homebrew or any user-installed binary.
 
 Current bundled version: `mpv v0.41.0` from the official `mpv-player/mpv` GitHub release.
 
