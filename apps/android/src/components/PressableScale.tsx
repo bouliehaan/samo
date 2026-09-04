@@ -82,7 +82,15 @@ const PressHighlight = ({
     pressed: SharedValue<number>;
     radius?: number;
 }) => {
-    const highlightStyle = useAnimatedStyle(() => ({ opacity: pressed.value }));
+    // CLAMPED, because `pressed` now travels past 1 during a long-press
+    // wind-up (see `anticipation` in theme/motion.ts). Unclamped, the highlight
+    // would sit pinned at full opacity through the hold AND through the first
+    // stretch of the release, so it would appear to hang before fading. That is
+    // worst exactly where it matters most: a list row has scaleTo/dimTo of 1,
+    // so this fill is the ONLY response it makes to a finger.
+    const highlightStyle = useAnimatedStyle(() => ({
+        opacity: Math.min(1, pressed.value),
+    }));
     return (
         <Reanimated.View
             pointerEvents="none"
