@@ -94,6 +94,7 @@ Some of the reasoning behind the client is written down rather than left in comm
 
 - [`docs/ANDROID_ARCHITECTURE_STATUS.md`](docs/ANDROID_ARCHITECTURE_STATUS.md) — the Android layering: module stores, module-function handlers, self-subscribing hosts.
 - [`docs/PERFORMANCE_AND_NETWORK.md`](docs/PERFORMANCE_AND_NETWORK.md) — where the app spends time and what it does about it.
+- [`docs/MOTION_PRINCIPLES.md`](docs/MOTION_PRINCIPLES.md) — Disney's twelve principles, how each one maps to a screen, and where each lives in the code.
 - [`apps/android/src/theme/motion.ts`](apps/android/src/theme/motion.ts) — the motion vocabulary and the constraints every animation is written against.
 - [`apps/android/src/theme/choreography.ts`](apps/android/src/theme/choreography.ts) — how multi-part surfaces enter.
 

@@ -1,7 +1,7 @@
 import { Easing } from 'react-native-reanimated';
 
 /**
- * Samo motion tokens — the ONE place a duration, spring, or easing is spelled
+ * samo motion tokens — the ONE place a duration, spring, or easing is spelled
  * out, exactly as tokens.ts is the one place a typeface is.
  *
  * The app already learned this lesson with type (three literal sweeps to swap a
@@ -9,6 +9,9 @@ import { Easing } from 'react-native-reanimated';
  * chances for two adjacent surfaces to disagree, and disagreeing motion is the
  * thing a user actually feels as "cheap" — the detail page arriving at one
  * speed and the sheet over it at another reads as two apps stapled together.
+ *
+ * The principles behind these tokens are written up in docs/MOTION_PRINCIPLES.md —
+ * Disney's twelve, mapped to a screen. Read that before adding a new token.
  *
  * THE 60FPS CONTRACT — every animation in this app must satisfy all four:
  *
