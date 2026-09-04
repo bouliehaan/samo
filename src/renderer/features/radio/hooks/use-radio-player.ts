@@ -190,7 +190,7 @@ export const useRadioStore = createWithEqualityFn<RadioStore>((set, get) => ({
                     radioStreamUrl: newStreamUrl,
                     serverId: nextStationArt.serverId,
                     subtitle: parseSamoChannelIdFromStreamUrl(newStreamUrl)
-                        ? 'Radio • Samo channel'
+                        ? 'Radio • samo channel'
                         : 'Radio • Internet station',
                     title: newStationName ?? 'Radio station',
                 });
@@ -347,7 +347,7 @@ export const useRadioMetadata = () => {
             return;
         }
 
-        // A Samo channel is a raw encoder pipe with no ICY frames in it — the
+        // A samo channel is a raw encoder pipe with no ICY frames in it — the
         // only place its now-playing exists is the server, which is also what
         // makes every listener's agree. Reading it here rather than sniffing
         // the stream is the difference between a channel that says what is on

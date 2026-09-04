@@ -371,7 +371,7 @@ export const FullScreenPlayer = memo(({
     const activeItem = playbackState.status !== 'idle' ? playbackState.item : null;
     const displayItem: MobilePlayableAudio | null = activeItem ?? lastPlayedItem;
     const canSkipPlayback = Boolean(displayItem && displayItem.source !== 'radio');
-    // A Samo channel is the one radio source with programming of its own, so it
+    // A samo channel is the one radio source with programming of its own, so it
     // is the one where PREV and NEXT still mean something. They are not local
     // moves: there is one encoder and every listener is on the same second, so
     // these ask the STATION to move on and everybody tuned in hears it. An

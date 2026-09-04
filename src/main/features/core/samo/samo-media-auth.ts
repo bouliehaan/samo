@@ -1,12 +1,12 @@
 import { session } from 'electron';
 
 /**
- * Authenticate renderer-issued Samo media requests with a header instead of a
+ * Authenticate renderer-issued samo media requests with a header instead of a
  * `stream_token` query parameter.
  *
  * An `<img>` cannot carry an `Authorization` header, so the display path used to
  * append a stream token to every artwork URL. That authenticates fine, but the
- * token is *part of the URL*, and Samo's tokens are in-process and short-lived
+ * token is *part of the URL*, and samo's tokens are in-process and short-lived
  * (`internal/users/streamtokens.go` holds them in a map with a 30 minute TTL and
  * drops them on restart). Every re-mint therefore produced a brand new URL for
  * unchanged bytes, and Chromium's disk cache — which the server explicitly opts
@@ -49,7 +49,7 @@ const install = () => {
 
     // Electron keeps a single `onBeforeSendHeaders` listener per session, so
     // re-registering replaces the previous one rather than stacking. Scope the
-    // URL filter to the known Samo origins: a catch-all would run this callback
+    // URL filter to the known samo origins: a catch-all would run this callback
     // for every request the app makes, and it would risk attaching the
     // credential to a host that has no business seeing it.
     if (origins.length === 0) {
@@ -83,7 +83,7 @@ const install = () => {
 };
 
 /**
- * Teach the session how to authenticate one Samo server. Safe to call on every
+ * Teach the session how to authenticate one samo server. Safe to call on every
  * auth pass; it only touches the session when the origin set actually changes.
  */
 export const registerSamoMediaCredential = (url: string, credential: string): void => {

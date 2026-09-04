@@ -38,7 +38,7 @@ export const SamoRadioRemotePopover = memo(() => {
     const isActive = playing.length > 0;
     const tooltip = isActive
         ? `Playing on ${playing.length === 1 ? playing[0].name : `${playing.length} devices`}`
-        : 'Samo Radio';
+        : 'samo Radio';
 
     return (
         <Popover
@@ -68,7 +68,7 @@ export const SamoRadioRemotePopover = memo(() => {
             <Popover.Dropdown>
                 <div className={styles.container}>
                     <Text className={styles.title} fw={700}>
-                        Samo Radio
+                        samo Radio
                     </Text>
                     <div className={styles.devices}>
                         {devices.map((device) => (

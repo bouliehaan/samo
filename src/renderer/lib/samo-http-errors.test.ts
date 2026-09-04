@@ -16,7 +16,7 @@ describe('samo-http-errors', () => {
             // Exactly what `ipcRenderer.invoke` delivers once it has flattened a
             // main-process Error to its message string.
             const ipcError = new Error(
-                "Error invoking remote method 'samo-get-user-info': Error: Failed to reach Samo server (401)",
+                "Error invoking remote method 'samo-get-user-info': Error: Failed to reach samo server (401)",
             );
             expect(httpStatusFromError(ipcError)).toBe(401);
         });
@@ -38,7 +38,7 @@ describe('samo-http-errors', () => {
             // matched the words "forbidden"/"unauthorized", so a real 401 arriving
             // through IPC never matched and saved-password re-auth never ran.
             const ipcError = new Error(
-                `Error invoking remote method 'samo-get-user-info': Error: Failed to reach Samo server (${status})`,
+                `Error invoking remote method 'samo-get-user-info': Error: Failed to reach samo server (${status})`,
             );
             expect(isAuthFailure(ipcError)).toBe(true);
         });

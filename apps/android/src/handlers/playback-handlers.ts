@@ -112,7 +112,7 @@ export const handlePlayMediaTrack = async (
         if (detail.type === MobileMediaDetailType.AUDIOBOOK) {
             const targetBookSeconds = track.startSeconds ?? 0;
 
-            // Samo audiobooks: build a real multi-file ExoPlayer queue from
+            // samo audiobooks: build a real multi-file ExoPlayer queue from
             // the per-file manifest. Each file streams WHOLE (the player
             // seeks locally), so -15s / Previous / chapter jumps are instant
             // local seeks and there is no stream-restart-to-go-back anymore.
@@ -207,7 +207,7 @@ export const handlePlayMediaTrack = async (
     // is owned by ONE place — playQueuedItem's bounded
     // refreshPlayableResumeFromServerBounded — which runs AFTER the tap has
     // painted. The serial server read this used to do in front of every
-    // Samo podcast tap was the remaining "tap looks dead on a slow server"
+    // samo podcast tap was the remaining "tap looks dead on a slow server"
     // path in this handler.
     const trackToPlay = track;
     const progressAuth = serverConnection ?? undefined;
@@ -334,7 +334,7 @@ export const handleStartAudiobook = async (
         current.status === 'idle' ? current : { ...current, message: 'Loading audiobook…' },
     );
 
-    // LOCAL FIRST. The mirror holds every Samo audiobook's chapters + file
+    // LOCAL FIRST. The mirror holds every samo audiobook's chapters + file
     // manifest, so a book tap should never wait on the network before
     // sound. Order: in-memory cache → synchronous SQLite mirror read → fs
     // cache → downloaded-files synthesis → network as the LAST resort
@@ -442,7 +442,7 @@ export const handleStartAudiobook = async (
     const baseTrack = detail.tracks[chapterIndex] ?? detail.tracks[0];
 
     // For resume, override the chapter's startSeconds with the user's actual
-    // position so the Samo audiobook playback path seeds
+    // position so the samo audiobook playback path seeds
     // initialPositionSeconds correctly inside playQueuedItem.
     const trackToPlay: MobileMediaTrack =
         resumeSeconds > 0 && baseTrack ? { ...baseTrack, startSeconds: resumeSeconds } : baseTrack;

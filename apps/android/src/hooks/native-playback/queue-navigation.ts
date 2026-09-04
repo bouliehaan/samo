@@ -204,7 +204,7 @@ export const catchUpQueueAfterForeground = async (ctx: NativePlaybackContext): P
 
         // We woke up to a queue with a next item but native is in ENDED.
         // That means native auto-advance (which Kotlin always owns now)
-        // failed — most likely a Samo token mint that couldn't complete
+        // failed — most likely a samo token mint that couldn't complete
         // while the device was offline, or the recovery layer parked
         // playback. JS, now awake with fresh auth, retries the advance.
         if (queue.index + 1 < queue.items.length) {

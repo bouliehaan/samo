@@ -17,7 +17,7 @@ import {
 
 // Cover IDENTITY → finished ramp. Keyed on the canonical (stream-token
 // stripped) URL, exactly like the artwork cache and expo-image's cacheKey:
-// Samo rotates the token in every artwork URL roughly every 25 minutes, so a
+// samo rotates the token in every artwork URL roughly every 25 minutes, so a
 // raw-URL key made this cache miss on EVERY track after every rotation. Each
 // miss is a full cover download + bitmap decode + Palette pass (getColors is
 // native work kicked off the JS thread) plus a visible ramp crossfade — a

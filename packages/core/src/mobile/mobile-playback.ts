@@ -44,7 +44,7 @@ export interface MobilePlayableAudio {
     artist?: string;
     artistId?: string;
     artworkUrl?: string;
-    /** Samo metadata `images[].id` for display-time URL rebuild. */
+    /** samo metadata `images[].id` for display-time URL rebuild. */
     artworkImageId?: string;
     /**
      * Mime type to advertise to the Chromecast receiver, when it differs
@@ -81,14 +81,14 @@ export interface MobilePlayableAudio {
     id: string;
     isLive?: boolean;
     /**
-     * Samo channel id, when the station being listened to is one of Samo's own
+     * samo channel id, when the station being listened to is one of samo's own
      * programmed broadcasts rather than a relayed internet stream. Separate
      * from [radioStationId] because the two are different catalogs with
      * different now-playing endpoints, and an id from one means nothing to the
      * other.
      */
     radioChannelId?: string;
-    /** Samo internet-radio station id for metadata refresh while playing. */
+    /** samo internet-radio station id for metadata refresh while playing. */
     radioStationId?: string;
     /** Station display name when [title] is ICY track metadata. */
     radioStationName?: string;
@@ -105,16 +105,16 @@ export interface MobilePlayableAudio {
     quality: MobilePlaybackQuality;
     /**
      * Android native queue auto-advance: bearer token for minting a fresh
-     * `stream_token` without waking JS (Samo servers only).
+     * `stream_token` without waking JS (samo servers only).
      */
     serverBearerToken?: string;
     /**
-     * Android native progress sync: the Samo playback API target kind for
+     * Android native progress sync: the samo playback API target kind for
      * this item. The native progress writer (SamoProgressSync.kt) PATCHes
      * `/api/v1/playback/{kind}/{samoProgressTargetId}` every ~20s while
      * playing, on track change, and on pause/stop. JS doesn't need to keep
      * a foreground poll alive — the foreground service runs the timer.
-     * Samo servers only; unset for radio + non-Samo sources.
+     * samo servers only; unset for radio + non-samo sources.
      */
     samoProgressKind?: 'music-track' | 'audiobook' | 'podcast-episode';
     /**
@@ -125,13 +125,13 @@ export interface MobilePlayableAudio {
      */
     samoProgressTargetId?: string;
     /**
-     * When this item is being played as part of a Samo music playlist, the
+     * When this item is being played as part of a samo music playlist, the
      * playlist id for the per-playlist scrobble/lastPlayedAt writes the
      * native progress sync fires alongside the per-track writes.
      */
     samoPlaylistId?: string;
     source: PlaybackSource;
-    /** Samo server base URL paired with [serverBearerToken]. */
+    /** samo server base URL paired with [serverBearerToken]. */
     serverUrl?: string;
     subtitle?: string;
     timelineSegments?: MobilePlaybackSegment[];
@@ -212,7 +212,7 @@ export const mimeFromAudioFileExt = (rawExt: string | undefined): null | string 
     }
 };
 // ---------------------------------------------------------------------------
-// Samo native playback builders
+// samo native playback builders
 // ---------------------------------------------------------------------------
 
 /** Matches `podcast:<showId>:<episodeId>` and legacy `podcast-episode:<episodeId>`. */
@@ -379,7 +379,7 @@ export const buildAudiobookTimelineSegments = (
 };
 
 /**
- * A Samo audiobook's underlying files as the client needs them for playback:
+ * A samo audiobook's underlying files as the client needs them for playback:
  * the per-file id (used as `mediaFileId` when streaming the file whole) and the
  * file's start position on the book-global timeline.
  */
@@ -399,7 +399,7 @@ export interface SamoAudiobookFilePlayback {
 }
 
 /**
- * Normalize a Samo audiobook's `audioFiles[]` into the ordered, offset-stamped
+ * Normalize a samo audiobook's `audioFiles[]` into the ordered, offset-stamped
  * list the multi-file queue is built from. Files arrive already sorted and
  * offset-stamped by the server; this just defends against missing fields and
  * back-fills offsets by accumulating durations if the server omitted them.
@@ -484,7 +484,7 @@ export const pickSamoAudiobookFileIndexForBookTime = (
 };
 
 /**
- * Build a Samo audiobook as a multi-file ExoPlayer queue — one playable per
+ * Build a samo audiobook as a multi-file ExoPlayer queue — one playable per
  * underlying file.
  *
  * This is the heart of the audiobook rework. The server now serves each file
@@ -618,7 +618,7 @@ export const buildSamoAudiobookQueueFromFiles = (
 };
 
 /**
- * Per-file playback id for a Samo audiobook. The audiobook id stays parseable
+ * Per-file playback id for a samo audiobook. The audiobook id stays parseable
  * (parseSamoAudiobookIdFromPlaybackId) so progress sync still keys on the book;
  * the trailing file id disambiguates queue items.
  */
@@ -664,7 +664,7 @@ export const buildSamoAudiobookPlayback = (
 };
 
 /**
- * Samo podcast episodes stream WHOLE and the player owns seeking (mirrors the
+ * samo podcast episodes stream WHOLE and the player owns seeking (mirrors the
  * audiobook model). Resume is the in-file [initialPositionSeconds] the client
  * seeks to after play — NOT a server byte offset. The old model embedded
  * `offsetSeconds` in the URL so the server truncated the body and native pos 0
@@ -846,7 +846,7 @@ export const buildSamoChannelPlaybackId = (
 ): string => `${getServerConnectionKey(authentication)}:channel:${channelId}`;
 
 /**
- * Tune in to one of Samo's own channels.
+ * Tune in to one of samo's own channels.
  *
  * Everything a station needs and nothing a track has: no duration, no resume
  * position, no progress reporting. `isLive` is what tells the player to draw a
@@ -898,7 +898,7 @@ export const buildSamoChannelPlayback = (
 };
 
 /**
- * Mint or reuse a Samo stream token before building a playback URL. Used
+ * Mint or reuse a samo stream token before building a playback URL. Used
  * before queueing a track so the URL embedded in `MobilePlayableAudio` is
  * authenticated for the next 25 minutes — long enough for the player to
  * start without a refresh round-trip.

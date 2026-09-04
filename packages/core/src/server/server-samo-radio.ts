@@ -1,8 +1,8 @@
-// samo-radio: Samo's own audio outputs.
+// samo-radio: samo's own audio outputs.
 //
 // A samo-radio device is a headless player wired into a physical socket on the
 // machine running the server — normally its line-out. Clients never talk to one
-// directly: every call here goes to Samo, which forwards it to the device over
+// directly: every call here goes to samo, which forwards it to the device over
 // its local control API. That is what makes "play it on the stereo" work from a
 // phone that is not even on the same network.
 
@@ -79,9 +79,9 @@ export interface SamoRadioDevice {
     lastError?: string;
     lastSeenAt?: string;
     name: string;
-    /** False until Samo has given the device a token; it can play nothing. */
+    /** False until samo has given the device a token; it can play nothing. */
     paired: boolean;
-    /** Absent when Samo could not reach the device — see lastError. */
+    /** Absent when samo could not reach the device — see lastError. */
     state?: SamoRadioState;
     streamBaseUrl?: string;
 }
@@ -135,7 +135,7 @@ const devicePath = (deviceId: string, suffix = ''): string =>
 /**
  * List the devices this server can play to.
  *
- * Samo asks every device for its live state as part of answering, so this is
+ * samo asks every device for its live state as part of answering, so this is
  * the one call a client needs to render an output picker.
  */
 export const listSamoRadioDevices = async (
@@ -191,7 +191,7 @@ export const playToSamoRadioDevice = async (
 /**
  * Tune a device to a station — its resting state.
  *
- * A station is either a Samo channel or an internet radio station from the
+ * A station is either a samo channel or an internet radio station from the
  * catalog. They are the same thing from the device's side: an endless live
  * source it sits on until asked for something else. Only the id space differs,
  * which is why the kind travels with the id.
@@ -277,20 +277,20 @@ export const setSamoRadioDeviceVolume = async (
 export const isSamoRadioDeviceUsable = (device: SamoRadioDevice): boolean =>
     Boolean(device.enabled && device.paired);
 
-/** True when Samo could actually reach the device just now. */
+/** True when samo could actually reach the device just now. */
 export const isSamoRadioDeviceOnline = (device: SamoRadioDevice): boolean =>
     Boolean(device.state);
 
 /**
  * A device that can be played to right now — registered, switched on, holding a
- * token, AND answering (Samo attaches a state snapshot only for devices it just
+ * token, AND answering (samo attaches a state snapshot only for devices it just
  * reached).
  *
  * This is the single gate for whether a client offers samo-radio at all. A
  * registered-but-unpaired or unreachable device is not an output the user
  * actually has: every surface built on it — a control panel, a picker row, a
  * "send this there" menu entry — could only fail on tap. Pairing and
- * troubleshooting live in Samo's own web UI, which is where a device in that
+ * troubleshooting live in samo's own web UI, which is where a device in that
  * state is fixed.
  */
 export const isSamoRadioDeviceConnected = (device: SamoRadioDevice): boolean =>
@@ -305,12 +305,12 @@ export const isSamoRadioDeviceConnected = (device: SamoRadioDevice): boolean =>
  * - `queue`  — the device advances its own queue.
  * - `channel`— there is no queue to advance; the commands ask the STATION to
  *   move its programming on, which every listener hears. Only a programmed
- *   channel has programming: skipping is a scheduling decision Samo makes.
+ *   channel has programming: skipping is a scheduling decision samo makes.
  * - `none`   — an internet station is somebody else's stream with nothing to
  *   skip to (the device refuses), or nothing is playing at all.
  *
  * A missing `kind` reads as a channel rather than a station: it is only absent
- * on devices predating the field, and those are Samo channels — the same
+ * on devices predating the field, and those are samo channels — the same
  * reading the web panel takes.
  */
 export type SamoRadioTransportKind = 'channel' | 'none' | 'queue';
@@ -328,7 +328,7 @@ export const samoRadioTransportKind = (state: SamoRadioState): SamoRadioTranspor
 /**
  * One line describing what a device is doing, for a picker row.
  *
- * Reachability is checked before playback state: a device Samo cannot talk to
+ * Reachability is checked before playback state: a device samo cannot talk to
  * has no state at all, and showing the last thing it played would be a lie.
  */
 export const describeSamoRadioDevice = (device: SamoRadioDevice): string => {

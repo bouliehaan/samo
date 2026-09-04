@@ -15,7 +15,7 @@ export type SamoChannelAuth = {
  * it, opening the stream — needs the same three fields off the same server, and
  * each of those surfaces used to rebuild them from its own ternary. One copy,
  * so "is this server one that has channels at all" is answered the same way
- * everywhere: a non-Samo backend, or a Samo one with no credential yet, simply
+ * everywhere: a non-samo backend, or a samo one with no credential yet, simply
  * has none, and every caller reads that as nothing to offer.
  */
 export const samoChannelAuth = (

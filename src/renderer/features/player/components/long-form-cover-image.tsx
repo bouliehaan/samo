@@ -23,7 +23,7 @@ interface LongFormCoverImageProps {
 }
 
 /**
- * Cover-art image for Samo long-form media (audiobooks + podcasts).
+ * Cover-art image for samo long-form media (audiobooks + podcasts).
  * Artwork is authenticated by the bearer the main process attaches, so the URL
  * itself stays clean and cacheable; falls back to an icon when there is no art.
  */

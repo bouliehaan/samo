@@ -22,7 +22,7 @@ import { toast } from '/@/shared/components/toast/toast';
 export interface SamoChannelTransport {
     /** The command in flight anywhere in the app, so no surface fires a second. */
     busy: null | SamoChannelCommand;
-    /** True only while a Samo channel is on and the server can be asked. */
+    /** True only while a samo channel is on and the server can be asked. */
     isChannel: boolean;
     previous: () => void;
     skip: () => void;

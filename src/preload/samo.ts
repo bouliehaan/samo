@@ -74,4 +74,4 @@ export const samo = {
     subscribeCatalogEvents,
 };
 
-export type Samo = typeof samo;
+export type samo = typeof samo;

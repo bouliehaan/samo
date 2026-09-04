@@ -66,7 +66,7 @@ const RadioListItem = ({ station }: RadioListItemProps) => {
     const detailLine = isChannel
         ? [station.nowPlaying?.artist, station.nowPlaying?.title].filter(Boolean).join(' — ') ||
           station.description?.trim() ||
-          'Samo channel'
+          'samo channel'
         : station.streamUrl;
 
     const handleClick = () => {

@@ -64,7 +64,7 @@ export interface LongFormPodcastEpisode {
         duration?: number;
         mimeType?: string;
     };
-    /** Samo per-user completion (wire field from server progress overlay). */
+    /** samo per-user completion (wire field from server progress overlay). */
     completed?: boolean;
     description?: string;
     duration?: number;

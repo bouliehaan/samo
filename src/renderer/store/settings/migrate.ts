@@ -390,7 +390,7 @@ export const createSettingsMigrate =
         }
 
         if (version <= 37) {
-            // Folder browsing was never implemented against Samo — the page only
+            // Folder browsing was never implemented against samo — the page only
             // ever rendered its error boundary. Drop the stale sidebar entry so
             // existing installs don't keep a dead nav destination.
             state.general.sidebarItems = state.general.sidebarItems.filter(

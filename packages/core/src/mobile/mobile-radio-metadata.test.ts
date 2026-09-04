@@ -175,7 +175,7 @@ describe('resolveSamoChannelPlaybackDisplay', () => {
         // Never "Internet radio": a station nobody can find anywhere else must
         // not be labelled as somebody's stream off the web.
         expect(resolveSamoChannelPlaybackDisplay({ name: 'Jake' }).playerSubtitle).toBe(
-            'Samo channel',
+            'samo channel',
         );
         expect(resolveSamoChannelPlaybackDisplay(jake).playerSubtitle).toBe("Jake's own station");
     });

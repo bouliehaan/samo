@@ -3,7 +3,7 @@ import { type MobileQualityProfile } from '@samo/core/mobile';
 import { type ImageSourcePropType } from 'react-native';
 
 /**
- * Quality badge asset map. Each PNG is a 1024x1024 square with the Samo
+ * Quality badge asset map. Each PNG is a 1024x1024 square with the samo
  * "ultra premium" hi-res mark stamped with a specific bit-depth /
  * sample-rate combination. Required statically so Metro bundles every
  * combination — pickQualityBadgeAsset() returns the asset for the exact

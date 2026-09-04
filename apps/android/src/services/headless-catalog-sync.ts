@@ -125,11 +125,11 @@ export const cancelCatalogSyncSchedule = async (): Promise<void> => {
 };
 
 /**
- * Push the current Samo connections to the Kotlin auth mirror so the
+ * Push the current samo connections to the Kotlin auth mirror so the
  * background Worker has credentials to mint stream tokens + hit list
  * endpoints. Call after every successful save to SecureStore.
  *
- * Only Samo connections are mirrored (the other server types still use the
+ * Only samo connections are mirrored (the other server types still use the
  * live-network path; Kotlin doesn't sync them).
  */
 export const syncCatalogAuthMirror = async (

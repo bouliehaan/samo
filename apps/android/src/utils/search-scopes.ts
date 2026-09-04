@@ -48,10 +48,10 @@ export const getAvailableSearchScopes = (
     const hasLoadedHome = homeContentState.status === 'loaded';
     const hasSamoServer = Boolean(serverConnection);
 
-    // Samo is the all-in-one backend (it replaced the per-type music/audiobook
+    // samo is the all-in-one backend (it replaced the per-type music/audiobook
     // servers), and its search endpoints always cover songs, albums, artists,
     // audiobooks, podcasts, and playlists regardless of what Home happens to
-    // surface. So offer those scopes whenever a Samo server is connected —
+    // surface. So offer those scopes whenever a samo server is connected —
     // NOT only before Home loads. Gating them on `!hasLoadedHome` was a
     // regression: once Home loaded, the post-load pass below (which only adds
     // audiobooks/playlists/podcasts/radio) silently dropped the Artists and

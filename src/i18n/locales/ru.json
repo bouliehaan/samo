@@ -827,7 +827,7 @@
         "exportImportSettings_control_title": "импорт/экспорт настроек",
         "exportImportSettings_destructiveWarning": "Импорт настроек полностью заменит ваши текущие настройки. Убедитесь, что все данные выше верны, перед тем как нажать кнопку «Импорт»!",
         "exportImportSettings_importBtn": "Импорт настроек",
-        "exportImportSettings_importModalTitle": "Импорт настроек Samo",
+        "exportImportSettings_importModalTitle": "Импорт настроек samo",
         "exportImportSettings_importSuccess": "Настройки успешно импортированы!",
         "exportImportSettings_notValidJSON": "Некорректный JSON-файл",
         "exportImportSettings_offendingKeyError": "Неверный ключ \"{{offendingKey}}\": {{reason}}",

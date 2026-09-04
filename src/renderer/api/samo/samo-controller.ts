@@ -91,10 +91,10 @@ import {
     SortOrder,
 } from '/@/shared/types/domain-types';
 
-// Electron routes Samo HTTP through main-process IPC to avoid renderer CORS limits.
+// Electron routes samo HTTP through main-process IPC to avoid renderer CORS limits.
 const browserFetch = samoFetch;
 
-// Some Samo endpoints page in chunks of 500 to avoid pulling enormous lists
+// Some samo endpoints page in chunks of 500 to avoid pulling enormous lists
 // at once. Mirrors the Android `mobile-home` collection loaders.
 const SAMO_PAGE_SIZE = 500;
 
@@ -662,13 +662,13 @@ export const SamoController: InternalControllerEndpoint = {
     authenticate: async (url, body) => {
         const result = isElectron()
             ? await window.api.samo.authenticate({
-                  deviceLabel: 'Samo desktop',
+                  deviceLabel: 'samo desktop',
                   password: body.password,
                   url,
                   username: body.username,
               })
             : await authenticateSamo({
-                  deviceLabel: 'Samo desktop',
+                  deviceLabel: 'samo desktop',
                   fetch: browserFetch,
                   password: body.password,
                   url,
@@ -744,7 +744,7 @@ export const SamoController: InternalControllerEndpoint = {
     },
 
     deleteInternetRadioStation: async () => {
-        throw new Error('Internet radio station deletion is not wired for Samo yet.');
+        throw new Error('Internet radio station deletion is not wired for samo yet.');
     },
 
     deletePlaylist: async ({ apiClientProps, query }) => {
@@ -1143,7 +1143,7 @@ export const SamoController: InternalControllerEndpoint = {
         const server = apiClientProps.server;
         if (!server) throw new Error('No server');
         const auth = samoAuthentication(server);
-        // Samo's own channels and the relayed internet stations are one list to
+        // samo's own channels and the relayed internet stations are one list to
         // a listener — both are things you tune to — so they arrive together.
         // Channels lead: there are a handful of them against a directory of
         // everything else, and they are the ones somebody set up on purpose.
@@ -1172,7 +1172,7 @@ export const SamoController: InternalControllerEndpoint = {
         if (!server) {
             return { items: [], startIndex: 0, totalRecordCount: 0 };
         }
-        // Samo libraries are admin-managed. Surface them as music folders so
+        // samo libraries are admin-managed. Surface them as music folders so
         // the renderer's multi-folder filter UI can scope queries. Falls back
         // to a single empty selection if the call fails.
         try {
@@ -1236,7 +1236,7 @@ export const SamoController: InternalControllerEndpoint = {
         let normalized = samoItemsOf(response).map((playlist) =>
             samoNormalize.playlist(playlist, server),
         );
-        // Samo has no rules-based smart playlists; its equivalent of "not a
+        // samo has no rules-based smart playlists; its equivalent of "not a
         // user-editable playlist" is the server-managed system playlist (the
         // explo "Explore" queue). The add-to-playlist surfaces pass this flag
         // to list only playlists the user can actually add to — the server
@@ -1273,7 +1273,7 @@ export const SamoController: InternalControllerEndpoint = {
         // Paged to exhaustion, not one capped page — and on this endpoint that
         // is a data-integrity requirement, not a completeness nicety. What this
         // returns becomes the edit-mode list, and saving a reordering PATCHes
-        // that list back as the playlist's ENTIRE contents (Samo replaces
+        // that list back as the playlist's ENTIRE contents (samo replaces
         // `trackIds` wholesale). A single limit=500 page therefore did not
         // truncate the view of a 600-track playlist, it truncated the playlist
         // — every save deleted the last 100 tracks. `addToPlaylist` and
@@ -1517,7 +1517,7 @@ export const SamoController: InternalControllerEndpoint = {
         if (!server) return null;
         const auth = samoAuthentication(server);
 
-        // Pause / unpause / start / timeupdate all collapse to a Samo
+        // Pause / unpause / start / timeupdate all collapse to a samo
         // playback PATCH. We treat any non-`submission` event as a position
         // update; `submission=true` increments the play count.
         await patchSamoPlayback(browserFetch, auth, 'music-track', query.id, {
@@ -1582,7 +1582,7 @@ export const SamoController: InternalControllerEndpoint = {
             },
         );
         if (!response.ok) {
-            throw new Error(`Samo search failed (${response.status})`);
+            throw new Error(`samo search failed (${response.status})`);
         }
         const body = (await response.json()) as {
             albums?: SamoMusicAlbum[];
@@ -1610,7 +1610,7 @@ export const SamoController: InternalControllerEndpoint = {
     },
 
     updateInternetRadioStation: async () => {
-        throw new Error('Internet radio station updates are not wired for Samo yet.');
+        throw new Error('Internet radio station updates are not wired for samo yet.');
     },
 
     updatePlaylist: async ({ apiClientProps, body, query }) => {

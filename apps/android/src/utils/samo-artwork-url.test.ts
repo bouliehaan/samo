@@ -20,7 +20,7 @@ vi.mock('../services/persisted-server', () => ({
 import { resolveSamoItemArtworkSourceForDisplay } from './samo-artwork-url';
 
 /**
- * A bare string is a source with no headers, so handing one a Samo /api/v1/
+ * A bare string is a source with no headers, so handing one a samo /api/v1/
  * URL is a request that can only 401. It used to do exactly that on every tile
  * that mounted before the connection resolved — measured through samo-proxy as
  * covers going 401 and the same URLs returning 200 about 120ms later, once the
@@ -33,7 +33,7 @@ const REMOTE_URL = 'https://cdn.example.com/podcasts/cover.jpg';
 const samoSource = { id: 'src-1', type: ServerType.SAMO, url: 'https://music.example.com' };
 
 describe('resolveSamoItemArtworkSourceForDisplay', () => {
-    it('withholds a Samo media URL when there is no connection to authenticate it', () => {
+    it('withholds a samo media URL when there is no connection to authenticate it', () => {
         expect(
             resolveSamoItemArtworkSourceForDisplay(
                 { artworkUrl: SAMO_URL, source: samoSource },
@@ -42,7 +42,7 @@ describe('resolveSamoItemArtworkSourceForDisplay', () => {
         ).toBeUndefined();
     });
 
-    it('still hands over a non-Samo URL, which needs no bearer', () => {
+    it('still hands over a non-samo URL, which needs no bearer', () => {
         expect(
             resolveSamoItemArtworkSourceForDisplay(
                 { artworkUrl: REMOTE_URL, source: samoSource },

@@ -433,7 +433,7 @@ const RADIO_LIST_FILTERS: Array<{ defaultOrder: SortOrder; name: string; value: 
     },
 ];
 
-/** Samo list pages sort client-side today — these are the shared sort options. */
+/** samo list pages sort client-side today — these are the shared sort options. */
 const ALBUM_ARTIST_LIST_FILTERS = ARTIST_LIST_FILTERS;
 const PLAYLIST_SONG_LIST_FILTERS = CLIENT_SIDE_SONG_FILTERS;
 

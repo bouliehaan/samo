@@ -105,7 +105,7 @@ export const CollapsedSidebar = () => {
                             component={Flex}
                             icon={
                                 <img
-                                    alt="Samo"
+                                    alt="samo"
                                     src={samoLogo}
                                     style={{ height: 40, objectFit: 'contain', width: 40 }}
                                 />

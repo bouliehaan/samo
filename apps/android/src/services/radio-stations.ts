@@ -44,7 +44,7 @@ const addSamoRadioStation = async ({
     if (!station.id) {
         return {
             imageUploaded: false,
-            warning: 'Station was added, but Samo did not return an id for thumbnail upload.',
+            warning: 'Station was added, but samo did not return an id for thumbnail upload.',
         };
     }
 

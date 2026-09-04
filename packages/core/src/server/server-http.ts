@@ -9,7 +9,7 @@ export type SamoFetchInit = {
     signal?: AbortSignal;
 };
 
-/** Default per-request timeout for Samo REST calls. */
+/** Default per-request timeout for samo REST calls. */
 export const DEFAULT_SAMO_REQUEST_TIMEOUT_MS = 30_000;
 
 /**

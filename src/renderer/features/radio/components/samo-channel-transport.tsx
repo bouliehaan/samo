@@ -8,7 +8,7 @@ import { ActionIcon } from '/@/shared/components/action-icon/action-icon';
 /**
  * Programme controls for the channel that is on.
  *
- * Renders nothing unless a Samo channel is playing: an internet station has no
+ * Renders nothing unless a samo channel is playing: an internet station has no
  * programming of its own to move, and a row of dead buttons under the artwork
  * would be worse than no row at all.
  *

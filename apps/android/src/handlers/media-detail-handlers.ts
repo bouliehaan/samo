@@ -207,9 +207,9 @@ export const loadDetailWithCache = async (
     // Layer 1: in-memory cache — instant.
     let cached = mediaDetailCache.get(cacheKey);
 
-    // Layer 1.5: local SQLite catalog — instant, authoritative for Samo, and
+    // Layer 1.5: local SQLite catalog — instant, authoritative for samo, and
     // works offline. The entire library is mirrored on-device, so this makes
-    // *every* Samo detail open instant, not just recently-viewed ones.
+    // *every* samo detail open instant, not just recently-viewed ones.
     //
     // Refused while this item is stale: the mirror is only as current as the
     // last sync, so for an item edited since then it holds exactly the
@@ -263,7 +263,7 @@ export const loadDetailWithCache = async (
             }
         });
         // Mirror (or memory) hit — DONE. The mirror is the source of truth
-        // for Samo details; freshness is the sync engine's job, not a
+        // for samo details; freshness is the sync engine's job, not a
         // per-open network refresh. The old steady-state refetch here cost
         // a server round-trip on EVERY detail open just to re-confirm what
         // the mirror already knew.

@@ -1,7 +1,7 @@
 import { AppThemeConfiguration } from '/@/shared/themes/app-theme-types';
 
 /**
- * Samo dark — the monochrome flagship, mirroring the Android design tokens
+ * samo dark — the monochrome flagship, mirroring the Android design tokens
  * (`apps/android/src/theme/tokens.ts`): a considered near-black cool blue-grey
  * base with an elevation ladder stacked above it, and a cool brushed-silver
  * accent used sparingly as a hallmark — never warm gold.

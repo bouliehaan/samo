@@ -57,7 +57,7 @@ export const updateMobilePlaylistMetadata = async ({
         return;
     }
 
-    throw new Error('Editing playlists is only available for Samo servers.');
+    throw new Error('Editing playlists is only available for samo servers.');
 };
 
 export interface ReplaceMobilePlaylistTracksInput {
@@ -83,7 +83,7 @@ export const replaceMobilePlaylistTracks = async ({
         return;
     }
 
-    throw new Error('Editing playlists is only available for Samo servers.');
+    throw new Error('Editing playlists is only available for samo servers.');
 };
 
 export interface UploadMobilePlaylistCoverInput {
@@ -102,7 +102,7 @@ export const uploadMobilePlaylistCover = async ({
     playlistId,
 }: UploadMobilePlaylistCoverInput): Promise<void> => {
     if (authentication.type !== ServerType.SAMO) {
-        throw new Error('Playlist cover upload is only supported on Samo servers.');
+        throw new Error('Playlist cover upload is only supported on samo servers.');
     }
 
     await uploadSamoMusicPlaylistCover(
@@ -132,14 +132,14 @@ export const deleteMobilePlaylist = async ({
         return;
     }
 
-    throw new Error('Deleting playlists is only available for Samo servers.');
+    throw new Error('Deleting playlists is only available for samo servers.');
 };
 
 /**
  * The playlist's CURRENT track ids, in playlist order, straight from the
  * server.
  *
- * Every membership edit is a read-modify-write, because Samo's playlist API
+ * Every membership edit is a read-modify-write, because samo's playlist API
  * takes the whole `trackIds` list rather than a delta. That makes the list this
  * returns the base of a destructive write, so it has to be both complete and
  * fresh:
@@ -202,7 +202,7 @@ export const removeMobileTracksFromPlaylist = async ({
     }
 
     if (authentication.type !== ServerType.SAMO) {
-        throw new Error('Editing playlists is only available for Samo servers.');
+        throw new Error('Editing playlists is only available for samo servers.');
     }
 
     const request = getFetch(fetcher);

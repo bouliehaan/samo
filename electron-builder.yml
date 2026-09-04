@@ -1,5 +1,5 @@
 appId: org.bouliehaan.samo
-productName: Samo
+productName: samo
 artifactName: ${productName}-${version}-${os}-${arch}.${ext}
 electronVersion: 39.8.6
 directories:
@@ -73,7 +73,7 @@ mac:
     gatekeeperAssess: false
     notarize: false
     extendInfo:
-        NSLocalNetworkUsageDescription: 'Local network is necessary for accessing servers hosted on the same system as Samo'
+        NSLocalNetworkUsageDescription: 'Local network is necessary for accessing servers hosted on the same system as samo'
 
 dmg:
     contents: [{ x: 130, y: 220 }, { x: 410, y: 220, type: link, path: /Applications }]

@@ -109,7 +109,7 @@ export function BaseImage({
         (!enableViewport || isInSessionCache || inViewport || hasLoadedInInstance),
     );
 
-    // Samo media URLs go straight into <img>. They no longer carry a stream
+    // samo media URLs go straight into <img>. They no longer carry a stream
     // token — the main process attaches the bearer to these requests — and a
     // plain <img> is what lets Chromium's disk cache serve the same cover on
     // the next launch instead of re-fetching it into a per-session blob.

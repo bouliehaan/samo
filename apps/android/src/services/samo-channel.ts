@@ -27,7 +27,7 @@ import {
 } from '../state/samo-channel';
 
 /**
- * Moving a Samo channel's programming on, from the phone that is listening.
+ * Moving a samo channel's programming on, from the phone that is listening.
  *
  * A channel has no queue and no position: one encoder, every listener on the
  * same second, a scheduler deciding what airs next. So PREV and NEXT here are

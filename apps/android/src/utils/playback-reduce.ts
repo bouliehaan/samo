@@ -82,7 +82,7 @@ export const reducePlaybackStateFromEvent = (
     // every live metadata update on the very next position tick.
     //
     // A station's now-playing is written onto `current.item` between ticks by
-    // the metadata sync — polled from the server for a Samo channel, read off
+    // the metadata sync — polled from the server for a samo channel, read off
     // the ICY frames for an internet station. The snapshot is only re-stamped
     // when the TRACK changes, so on a live stream it stays frozen at whatever
     // was airing when the stream was opened, and this line put it back roughly

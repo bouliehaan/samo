@@ -9,10 +9,10 @@ import { useSamoRadioDevices } from '/@/renderer/store/samo-radio.store';
 import { TextTitle } from '/@/shared/components/text-title/text-title';
 
 /**
- * Samo's own audio outputs, on the Radio page.
+ * samo's own audio outputs, on the Radio page.
  *
  * Renders nothing at all when there is no device to control — on a server
- * without one, or a non-Samo backend, an empty "Samo Radio" heading would be a
+ * without one, or a non-samo backend, an empty "samo Radio" heading would be a
  * permanent piece of furniture explaining a feature you do not have.
  */
 export const SamoRadioPanel = memo(() => {
@@ -31,7 +31,7 @@ export const SamoRadioPanel = memo(() => {
     return (
         <section className={styles.panel}>
             <TextTitle fw={700} isNoSelect order={2}>
-                Samo Radio
+                samo Radio
             </TextTitle>
             <div className={styles.devices}>
                 {devices.map((device) => (

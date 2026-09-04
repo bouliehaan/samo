@@ -32,7 +32,7 @@ const fileDurationSeconds = (file: { durationMs?: number; durationSeconds?: numb
 };
 
 /**
- * Ordered, offset-stamped file manifest for a Samo audiobook. The server already
+ * Ordered, offset-stamped file manifest for a samo audiobook. The server already
  * sorts files and stamps `startOffsetSeconds`; this defends against missing
  * fields and back-fills offsets by accumulating durations when absent.
  */
@@ -120,7 +120,7 @@ const STREAM_OFFSET_QUERY_KEYS = ['progressSeconds', 'offsetSeconds', 'at'] as c
 
 /**
  * Book-global seconds baked into a stream URL's resume query. Audiobooks no
- * longer use this (they stream whole files and seek locally), but Samo PODCAST
+ * longer use this (they stream whole files and seek locally), but samo PODCAST
  * streams still resume via an `offsetSeconds` byte offset, so the podcast web
  * player reads its stream origin from here.
  */

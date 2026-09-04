@@ -78,7 +78,7 @@ export interface DownloadEntry {
     id: string;
     localUri?: string;
     progress?: number;
-    /** Auth context for worker-side token freshness (Samo entries only). */
+    /** Auth context for worker-side token freshness (samo entries only). */
     serverBearer?: string;
     serverUrl?: string;
     sourceUrl: string;
@@ -317,7 +317,7 @@ const enqueueSamoPodcastDownload = async (
     try {
         streamToken = await ensureSamoStreamToken(samoAuth);
     } catch (error) {
-        androidLog.error('Failed to mint Samo stream token for podcast download', {
+        androidLog.error('Failed to mint samo stream token for podcast download', {
             error,
             sourceId: samoAuth.url,
         });
@@ -382,7 +382,7 @@ const enqueueSamoSinglePodcastEpisode = async (
     try {
         streamToken = await ensureSamoStreamToken(samoAuth);
     } catch (error) {
-        androidLog.error('Failed to mint Samo stream token for single podcast episode download', {
+        androidLog.error('Failed to mint samo stream token for single podcast episode download', {
             error,
             sourceId: samoAuth.url,
         });
@@ -420,7 +420,7 @@ const enqueueAudiobookDownload = async (
     detail: MobileMediaDetail,
     authentication: ServerAuthenticationResult | null,
 ): Promise<{ enqueued: number; reason?: string; skipped: number }> => {
-    // Samo audiobooks download per media file straight off the whole-file
+    // samo audiobooks download per media file straight off the whole-file
     // stream route — the same per-file manifest playback uses, so offline
     // queue building (getOfflineAudiobookFiles → buildOfflineAudiobookPlayable)
     // and resolveLocalPlayback agree on identity by construction. trackId is
@@ -449,7 +449,7 @@ const enqueueAudiobookDownload = async (
     try {
         streamToken = await ensureSamoStreamToken(auth);
     } catch (error) {
-        androidLog.error('Failed to mint Samo stream token for audiobook download', {
+        androidLog.error('Failed to mint samo stream token for audiobook download', {
             error,
             sourceId: auth.url,
         });

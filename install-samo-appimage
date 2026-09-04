@@ -6,7 +6,7 @@ if [ "$#" -lt 1 ]; then
     echo "Usage: $0 <installation-directory> <option>"
     echo "Options:"
     echo "  wayland-native   Enable native Wayland support"
-    echo "  remove           Remove Samo AppImage and desktop entries"
+    echo "  remove           Remove samo AppImage and desktop entries"
     exit 1
 fi
 
@@ -46,18 +46,18 @@ if [ "${arg}" = "remove" ]; then
 		"${localShareIcons}/64x64/apps/org.bouliehaan.samo.png" \
 		"${localShareIcons}/32x32/apps/org.bouliehaan.samo.png" \
 		"${localShare}/applications/org.bouliehaan.samo.desktop" \
-		"${dir}/Samo-linux-${arch}.AppImage"
+		"${dir}/samo-linux-${arch}.AppImage"
 	exit 0
 fi
 
 curl --fail -L --create-dirs --write-out '%{filename_effective}\n' \
-	-o "${dir}/Samo-linux-${arch}.AppImage" "https://github.com/jeffvli/samo/releases/latest/download/Samo-linux-${arch}.AppImage" \
-	-o "${localShareIcons}/512x512/apps/org.bouliehaan.samo.png" 'https://github.com/jeffvli/samo/blob/development/assets/icons/512x512.png?raw=true' \
-	-o "${localShareIcons}/256x256/apps/org.bouliehaan.samo.png" 'https://github.com/jeffvli/samo/blob/development/assets/icons/256x256.png?raw=true' \
-	-o "${localShareIcons}/128x128/apps/org.bouliehaan.samo.png" 'https://github.com/jeffvli/samo/blob/development/assets/icons/128x128.png?raw=true' \
-	-o "${localShareIcons}/64x64/apps/org.bouliehaan.samo.png" 'https://github.com/jeffvli/samo/blob/development/assets/icons/64x64.png?raw=true' \
-	-o "${localShareIcons}/32x32/apps/org.bouliehaan.samo.png" 'https://github.com/jeffvli/samo/blob/development/assets/icons/32x32.png?raw=true'
-chmod -v u+x "${dir}/Samo-linux-${arch}.AppImage"
+	-o "${dir}/samo-linux-${arch}.AppImage" "https://github.com/bouliehaan/samo/releases/latest/download/samo-linux-${arch}.AppImage" \
+	-o "${localShareIcons}/512x512/apps/org.bouliehaan.samo.png" 'https://github.com/bouliehaan/samo/blob/development/assets/icons/512x512.png?raw=true' \
+	-o "${localShareIcons}/256x256/apps/org.bouliehaan.samo.png" 'https://github.com/bouliehaan/samo/blob/development/assets/icons/256x256.png?raw=true' \
+	-o "${localShareIcons}/128x128/apps/org.bouliehaan.samo.png" 'https://github.com/bouliehaan/samo/blob/development/assets/icons/128x128.png?raw=true' \
+	-o "${localShareIcons}/64x64/apps/org.bouliehaan.samo.png" 'https://github.com/bouliehaan/samo/blob/development/assets/icons/64x64.png?raw=true' \
+	-o "${localShareIcons}/32x32/apps/org.bouliehaan.samo.png" 'https://github.com/bouliehaan/samo/blob/development/assets/icons/32x32.png?raw=true'
+chmod -v u+x "${dir}/samo-linux-${arch}.AppImage"
 
 waylandFlags=""
 if [ "${arg}" = "wayland-native" ]; then
@@ -74,6 +74,6 @@ fi
 
 mkdir -pv "${localShare}/applications"
 
-export SAMO_DESKTOP_EXECUTABLE="${dir}/Samo-linux-${arch}.AppImage"
+export SAMO_DESKTOP_EXECUTABLE="${dir}/samo-linux-${arch}.AppImage"
 export SAMO_DESKTOP_ARGS="${sandboxFlag} ${waylandFlags}"
 curl --fail https://raw.githubusercontent.com/jeffvli/samo/refs/heads/development/samo.desktop.tmpl | envsubst > "${localShare}/applications/org.jeffvli.samo.desktop"

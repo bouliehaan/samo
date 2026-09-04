@@ -2,15 +2,15 @@ import { adaptNativeFetch, getFetch, type SamoFetch } from '@samo/core/server';
 import isElectron from 'is-electron';
 
 /**
- * Samo API calls from the Electron renderer hit CORS/webSecurity limits when
- * using window.fetch, even though main-process auth works. Route Samo HTTP
+ * samo API calls from the Electron renderer hit CORS/webSecurity limits when
+ * using window.fetch, even though main-process auth works. Route samo HTTP
  * through IPC (Node fetch) in desktop builds, same as authenticate.
  */
 export const createSamoFetch = (): SamoFetch => {
     if (isElectron()) {
         return getFetch(
             adaptNativeFetch(async (url, init) => {
-                // `getFetch` has already stamped X-Samo-Client into these —
+                // `getFetch` has already stamped X-samo-Client into these —
                 // the id the server echoes on catalog-change events, so this
                 // window can tell its own writes from another device's.
                 const serializedHeaders: Record<string, string> = {};

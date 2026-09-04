@@ -89,7 +89,7 @@ export const warnIfMultipleAudiblePlaybackElements = () => {
     if (signature === lastDuplicateWarningSignature) return;
     lastDuplicateWarningSignature = signature;
 
-    logFn.warn('[Samo playback] Multiple registered Web playback audio elements are playing.', {
+    logFn.warn('[samo playback] Multiple registered Web playback audio elements are playing.', {
         category: LogCategory.PLAYER,
         meta: {
             duplicates: duplicates.map(([audio, registration]) =>

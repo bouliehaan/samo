@@ -16,7 +16,7 @@ import { useCurrentServerWithCredential } from '/@/renderer/store';
  * The URL the audio element actually opens, which is not always the URL the
  * station is known by.
  *
- * Samo's own channels are authenticated, and an `<audio>` element cannot send
+ * samo's own channels are authenticated, and an `<audio>` element cannot send
  * an Authorization header — the only way in is a `stream_token` in the query.
  * That token belongs HERE and nowhere else: it lives about half an hour, while
  * the station's URL is written into recents, into the restored session, and
@@ -25,7 +25,7 @@ import { useCurrentServerWithCredential } from '/@/renderer/store';
  * persisted copies come back from a restart already dead.
  *
  * Internet stations pass straight through: they are somebody else's address and
- * carry no Samo auth at all.
+ * carry no samo auth at all.
  */
 
 /** Enough attempts to mint past a dead token, few enough to never spin. */

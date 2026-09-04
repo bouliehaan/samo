@@ -52,7 +52,7 @@ export const CenterControls = () => {
     const isRadioActive = useIsRadioActive();
     const { id: currentSongId } = usePlayerSongProperties(['id']) ?? {};
     const shouldShowRadioControls = isRadioActive && currentSongId === undefined;
-    // A Samo channel is the one radio source with programming of its own, so it
+    // A samo channel is the one radio source with programming of its own, so it
     // is the one where PREV and NEXT still mean something — they ask the
     // station to move on. An internet station keeps them greyed out.
     const { isChannel } = useSamoChannelTransport();

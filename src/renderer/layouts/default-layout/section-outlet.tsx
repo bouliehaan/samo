@@ -11,7 +11,7 @@ import { AppRoute } from '/@/renderer/router/routes';
  *
  * Switching sections used to unmount the whole page and build it again, and the
  * expensive part was never the data — react-query had it cached — it was the
- * artwork. Samo serves original files, so a 3000×3000 cover is decoded to paint
+ * artwork. samo serves original files, so a 3000×3000 cover is decoded to paint
  * a 48px tile; a section with fifty covers pays that fifty times, and you watch
  * it happen. Measured on a revisit: ~58 image loads, all served from disk cache
  * and all re-decoded.

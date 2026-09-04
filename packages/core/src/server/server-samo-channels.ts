@@ -1,6 +1,6 @@
-// Samo channels: the stations Samo programmes and streams itself.
+// samo channels: the stations samo programmes and streams itself.
 //
-// A channel is not a URL Samo relays (that is an internet radio station) and
+// A channel is not a URL samo relays (that is an internet radio station) and
 // not a loop it assembles on request (that is a programmed station under
 // `/radio`). It is a continuous broadcast: one encoder running 24/7, every
 // listener hearing the same second of audio, with a scheduler deciding what
@@ -33,7 +33,7 @@ export interface SamoChannelAiring {
 }
 
 /**
- * A Samo channel — one of the programmed 24/7 stations.
+ * A samo channel — one of the programmed 24/7 stations.
  *
  * `enabled` is the off switch: a disabled channel has no encoder running, so
  * it is not something to offer a listener. `nowPlaying` rides along on the list
@@ -224,7 +224,7 @@ export const previousSamoChannel = async (
  *
  * Deliberately the `/api/v1` form rather than the bare `/channels/…` one the
  * server also serves. Both are the same audio behind the same auth, but every
- * client convention for a Samo stream — re-homing a URL minted on the LAN onto
+ * client convention for a samo stream — re-homing a URL minted on the LAN onto
  * the remote address, swapping in a fresh stream token, re-minting after a
  * 401 — keys on `/api/v1/` being in the path. A station somebody leaves on all
  * evening outlives several token lifetimes, so it has to be a URL those
@@ -244,7 +244,7 @@ export const getSamoChannelStreamUrl = (
 /**
  * A channel's artwork URL, or undefined on a server too old to have any.
  *
- * There is only one shape to handle — a cover id from Samo's own store — so
+ * There is only one shape to handle — a cover id from samo's own store — so
  * this is shorter than the internet-station resolver, which also has to cope
  * with logos hotlinked from whoever runs the stream.
  */

@@ -206,7 +206,7 @@ export const SamoRadioDeviceControls = memo(
         //
         // Not folded into the device poll on purpose. The device knows what the
         // channel told it is on; whether that file sits in a drop folder the
-        // weekly run empties is a question only Samo can answer, and its answer
+        // weekly run empties is a question only samo can answer, and its answer
         // changes exactly when the song does — asking on every tick would
         // double this panel's request rate to re-learn the same thing about the
         // same track.
@@ -270,7 +270,7 @@ export const SamoRadioDeviceControls = memo(
             }
         }, [isKeeping, keepableTrackId, queryClient]);
 
-        // Only devices Samo can reach are ever in the store, so a card without a
+        // Only devices samo can reach are ever in the store, so a card without a
         // state snapshot is one that dropped off between a poll and this render
         // — it is already on its way out of the list. Nothing to draw, and
         // certainly not a row of controls that would all fail.

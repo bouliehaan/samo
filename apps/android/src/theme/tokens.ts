@@ -1,5 +1,5 @@
 /**
- * Samo design tokens.
+ * samo design tokens.
  *
  * Premium-dark system: a considered near-black BASE with a ladder of elevated
  * surfaces stacked above it, so the UI reads as physical layers instead of a

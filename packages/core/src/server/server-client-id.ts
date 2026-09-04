@@ -1,7 +1,7 @@
 /**
  * This client's identity on samo's catalog-change stream.
  *
- * Sent as `X-Samo-Client` on every Samo request and echoed back on the
+ * Sent as `X-samo-Client` on every samo request and echoed back on the
  * catalog-change events those requests cause, so a client can ignore the
  * notification for its own write — it has already applied that change locally,
  * precisely and synchronously, in the mutation that made it. Acting on the echo
@@ -22,7 +22,7 @@ const generated = `${Math.random().toString(36).slice(2, 10)}${Math.random()
 
 let clientId = generated;
 
-export const SAMO_CLIENT_HEADER = 'X-Samo-Client';
+export const SAMO_CLIENT_HEADER = 'X-samo-Client';
 
 export const getSamoClientId = (): string => clientId;
 

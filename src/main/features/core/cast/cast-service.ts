@@ -350,7 +350,7 @@ const describeConnectError = (error: unknown): Error => {
     const code = (error as NodeJS.ErrnoException | null)?.code ?? '';
     if (BLOCKED_ERROR_CODES.has(code)) {
         return new Error(
-            'Could not reach that Chromecast. Check that it is powered on and that Samo is allowed to access devices on your local network.',
+            'Could not reach that Chromecast. Check that it is powered on and that samo is allowed to access devices on your local network.',
         );
     }
     return error instanceof Error ? error : new Error('Chromecast connection failed.');

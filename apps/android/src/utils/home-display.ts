@@ -261,7 +261,7 @@ const resolvedArtworkItems = new WeakMap<
  *
  * An item that DOES carry `artworkImageId` is returned untouched, and that is
  * load-bearing rather than an optimization. The resolved URL embeds the
- * current `stream_token`, which Samo rotates (~25 min, and on every re-auth),
+ * current `stream_token`, which samo rotates (~25 min, and on every re-auth),
  * so stamping it onto every item made every item a NEW object on every
  * derive — differing from its predecessor in exactly one field, the token.
  * That was the entire reason Home's derive was expensive: hundreds of

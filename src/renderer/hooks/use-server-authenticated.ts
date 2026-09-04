@@ -287,7 +287,7 @@ export const useServerAuthenticated = () => {
                     },
                 });
 
-                // For Samo, keep the saved server usable even if validation fails transiently.
+                // For samo, keep the saved server usable even if validation fails transiently.
                 if (serverWithAuth.type === ServerType.SAMO && serverWithAuth.credential) {
                     logFn.warn(logMsg[LogCategory.SYSTEM].serverAuthenticationFailed, {
                         category: LogCategory.SYSTEM,

@@ -127,7 +127,7 @@ export type Album = {
     originalYear: number;
     participants: null | Record<string, RelatedArtist[]>;
     playCount: null | number;
-    /** Populated for Samo albums, for hi-res badges. */
+    /** Populated for samo albums, for hi-res badges. */
     qualityProfile?: QualityBadgeProfile;
     recordLabels: string[];
     releaseDate: null | PartialIsoDateString;
@@ -245,7 +245,7 @@ export type Playlist = {
     id: string;
     imageId: null | string;
     imageUrl: null | string;
-    /** Server-managed playlist (e.g. the Samo explo "Explore" queue): the
+    /** Server-managed playlist (e.g. the samo explo "Explore" queue): the
      *  server re-derives its name/membership, so clients must not offer
      *  edit/delete/add-to for it (the server refuses with a 403 anyway). */
     isSystem?: boolean;
@@ -762,13 +762,13 @@ export type InternetRadioStation = {
     imageId?: null | string;
     imageUrl?: null | string;
     /**
-     * Which kind of station this is. `channel` is one of Samo's own 24/7
+     * Which kind of station this is. `channel` is one of samo's own 24/7
      * broadcasts; absent or `internet` is a stream from the outside world that
-     * Samo only relays.
+     * samo only relays.
      *
      * It exists because the two differ in what you can DO with them: a channel
      * has no upstream URL to show, nothing to edit here (it is programmed on
-     * the server), and its now-playing comes from Samo rather than from ICY
+     * the server), and its now-playing comes from samo rather than from ICY
      * frames in the stream.
      */
     kind?: 'channel' | 'internet';

@@ -28,7 +28,7 @@ const execFileAsync = promisify(execFile);
  * graph the visualizer analyses. The previous answer was `getDisplayMedia`,
  * but Electron's `audio: 'loopback'` is Windows-only — on macOS system audio
  * can only be obtained attached to a live ScreenCaptureKit capture of the
- * whole display. That is why Samo used to ask for Screen Recording, and why a
+ * whole display. That is why samo used to ask for Screen Recording, and why a
  * full-display capture ran the whole time the visualizer was open.
  *
  * Asking mpv for the numbers costs neither. The graph and its escaping live in

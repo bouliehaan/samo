@@ -154,7 +154,7 @@ export const mergePreparedQueueItem = (
         : rest;
 };
 
-/** Reload Samo/ABS long-form progress before starting a stream URL (URLs do not carry position). */
+/** Reload samo/ABS long-form progress before starting a stream URL (URLs do not carry position). */
 export const refreshPlayableResumeFromServer = async (
     item: MobilePlayableAudio,
     serverConnection: ServerAuthenticationResult | null,
@@ -286,7 +286,7 @@ export const shouldAutoRecoverPlayback = (source: MobilePlayableAudio['source'] 
  * without it. The overlay is a nicety (cross-device resume); the tap is the
  * job. An unbounded wait here is what made episode taps look completely dead
  * while the server was slow — and the queued-up dead taps then replayed in a
- * burst once it recovered. 4s was tuned assuming a LAN box; a Samo Server
+ * burst once it recovered. 4s was tuned assuming a LAN box; a samo Server
  * reached over the internet (Cloudflare Tunnel) can legitimately take longer
  * than that to answer, which silently dropped the resume position far more
  * often than a slow-but-healthy server should. 8s matches the interactive

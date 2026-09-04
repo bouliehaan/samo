@@ -196,7 +196,7 @@ const LoginRoute = () => {
 
     const isSubmitDisabled = !form.values.username || !form.values.password;
     const serverIcon = SamoIcon;
-    const serverDisplayName = 'Samo';
+    const serverDisplayName = 'samo';
 
     return (
         <AnimatedPage>

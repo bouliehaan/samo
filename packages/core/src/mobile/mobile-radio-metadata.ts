@@ -376,7 +376,7 @@ export const resolveSamoInternetRadioPlaybackDisplay = (
         tags: station.tags,
     });
 
-/** What a Samo channel says it is airing, in the shape every station uses. */
+/** What a samo channel says it is airing, in the shape every station uses. */
 export const samoChannelNowPlayingLine = (
     airing: SamoChannelAiring | null | undefined,
 ): RadioNowPlaying | undefined => {
@@ -391,14 +391,14 @@ export const samoChannelNowPlayingLine = (
 };
 
 /** What a channel is called on screen when it needs naming as a kind. */
-export const SAMO_CHANNEL_LABEL = 'Samo channel';
+export const SAMO_CHANNEL_LABEL = 'samo channel';
 
 /**
  * How a channel presents itself while it is playing.
  *
  * A channel that is not announcing anything falls back to naming what it is,
  * rather than to "Internet radio": a listener looking at a station they cannot
- * find anywhere else should be told it is Samo's own, not mislabelled as
+ * find anywhere else should be told it is samo's own, not mislabelled as
  * somebody's stream off the web.
  */
 export const resolveSamoChannelPlaybackDisplay = (
@@ -433,7 +433,7 @@ export const parseSamoChannelPlaybackId = (playbackId: string): string | undefin
 /**
  * The station id behind a PROGRAMMED radio playback id.
  *
- * Samo has two kinds of station and they are separate catalogs: an internet
+ * samo has two kinds of station and they are separate catalogs: an internet
  * station is a URL samo relays, a programmed one is a schedule samo streams
  * itself. Their ids collide freely, so anything resolving a station by id has
  * to know which of the two it is holding — which is exactly what the two

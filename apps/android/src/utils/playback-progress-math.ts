@@ -31,7 +31,7 @@ export const getPlayerPositionMsForPlaybackProgress = (
     item: Pick<MobilePlayableAudio, 'progressOffsetSeconds'> | undefined,
 ): number => Math.max(0, (absoluteSeconds - (item?.progressOffsetSeconds ?? 0)) * 1000);
 
-/** Resume position encoded in the Samo stream URL (podcasts + audiobooks). */
+/** Resume position encoded in the samo stream URL (podcasts + audiobooks). */
 export const getPlayableStreamResumeSeconds = (item: MobilePlayableAudio): number =>
     Math.max(0, Math.floor(item.progressOffsetSeconds ?? item.initialPositionSeconds ?? 0));
 

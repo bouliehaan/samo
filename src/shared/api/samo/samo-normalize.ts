@@ -38,9 +38,9 @@ import {
     type Song,
 } from '/@/shared/types/domain-types';
 
-// Map Samo's native `/api/v1/*` response shapes 1:1 into the renderer's
+// Map samo's native `/api/v1/*` response shapes 1:1 into the renderer's
 // internal types. These are NOT translations between server backends — they
-// are just data binding for the UI components. Samo's field names appear
+// are just data binding for the UI components. samo's field names appear
 // directly on the wire and we slot them into the well-known internal types.
 
 const toStoredImageUrl = (url: string | undefined): null | string => url ?? null;
@@ -90,7 +90,7 @@ const buildArtistList = (
 };
 
 // Map the artistmeta "Similar Artists" rail. A ref that matches a local catalog
-// artist becomes a navigable RelatedArtist (real id + Samo cover); one that does
+// artist becomes a navigable RelatedArtist (real id + samo cover); one that does
 // not (`external`) keeps the provider image and gets a synthetic id so the
 // carousel's keys stay unique. getItemNavigationPath only links real ids, but a
 // synthetic id is still a valid (unowned) route guarded by the router error
@@ -144,7 +144,7 @@ const joinNames = (refs: SamoMusicArtistRef[] | undefined): string => {
 };
 
 /**
- * Samo ships parallel `albumArtistIds[]` + `albumArtistNames[]` arrays
+ * samo ships parallel `albumArtistIds[]` + `albumArtistNames[]` arrays
  * rather than a single `[{id, name}]` shape — collapse them into the
  * structural refs the renderer's normalizers already understand.
  */
@@ -446,7 +446,7 @@ export const normalizeSamoInternetRadioStation = (
 };
 
 /**
- * A Samo channel, as a station in the radio list.
+ * A samo channel, as a station in the radio list.
  *
  * `streamUrl` is deliberately built WITHOUT a stream token. It is the station's
  * identity here — compared to decide which row is playing, written into recents

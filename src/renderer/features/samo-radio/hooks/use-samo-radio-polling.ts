@@ -37,7 +37,7 @@ const IDLE_INTERVAL_MS = 30000;
 /**
  * Where the poll settles on a server that keeps saying no.
  *
- * Most Samo servers have samo-radio switched off, and that answer arrives as an
+ * Most samo servers have samo-radio switched off, and that answer arrives as an
  * error rather than an empty list — so without this the app would ask a server
  * that has never had a device, twice a minute, forever.
  */
@@ -56,7 +56,7 @@ const isHidden = () => typeof document !== 'undefined' && document.visibilitySta
 /**
  * Re-read the server's devices.
  *
- * A failed request is NOT an empty device list. The desktop reaches Samo over
+ * A failed request is NOT an empty device list. The desktop reaches samo over
  * whatever network it is on — and over a tunnel from outside the house — so one
  * timed-out poll would otherwise blank the panel and strip "play on the stereo"
  * out of every menu mid-listen. The last good snapshot stands until a request

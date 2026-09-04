@@ -3,7 +3,7 @@ import { net } from 'electron';
 /**
  * The renderer's link to samo's live catalog-change stream.
  *
- * This lives in the main process for the same reason every other Samo call
+ * This lives in the main process for the same reason every other samo call
  * does: the renderer cannot reach the server directly (CORS/webSecurity), so
  * it proxies through IPC. The difference is that this response never ends — it
  * is Server-Sent Events — and the existing `samo-request` bridge buffers a

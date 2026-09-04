@@ -26,7 +26,7 @@ const CHANNEL_METADATA_POLL_MS = 5000;
  * The two kinds of station answer differently, and that is the whole shape of
  * this file. An internet station ANNOUNCES over ICY, in frames interleaved
  * with the audio, so the phone already has the answer the moment it changes —
- * it only has to listen to the stream it is playing. A Samo channel is a raw
+ * it only has to listen to the stream it is playing. A samo channel is a raw
  * encoder pipe with no frames in it at all, so the only place its now-playing
  * exists is the server, which is also what makes every listener's agree.
  *

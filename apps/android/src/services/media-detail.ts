@@ -333,8 +333,8 @@ export const loadAndroidMediaTrackPlayback = async (
     }
 
     // Music tracks always arrive with a valid `track.playback` (built by the
-    // Samo mappers / synthesizeMusicPlayback), audiobooks-with-files are served
-    // by the queue path above, and podcasts are handled just above — so a Samo
+    // samo mappers / synthesizeMusicPlayback), audiobooks-with-files are served
+    // by the queue path above, and podcasts are handled just above — so a samo
     // track that reaches here has no playable representation.
     throw new Error('This track cannot be played.');
 };

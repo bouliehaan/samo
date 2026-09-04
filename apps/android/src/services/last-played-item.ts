@@ -8,7 +8,7 @@ import { safeParseJson } from '../utils/json';
 // `samo.android.last-played-item.v2`). The JS write was best-effort and
 // occasionally dropped: a bundle reload during dev, a hard-restart from the
 // quick settings tile, or a process kill before the write flushed would all
-// leave the file behind with stale contents — surfacing as "I closed Samo
+// leave the file behind with stale contents — surfacing as "I closed samo
 // and it forgot what I was listening to."
 //
 // Native SharedPreferences gives us a synchronous-write-back store that

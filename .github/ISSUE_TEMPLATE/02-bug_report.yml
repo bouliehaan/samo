@@ -23,7 +23,7 @@ body:
     - type: input
       id: server-version
       attributes:
-          label: Samo Server version
+          label: samo server version
           description: Which version of samo-server are you running?
           placeholder: ex. v0.1.0
       validations:

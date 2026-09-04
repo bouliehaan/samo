@@ -10,7 +10,7 @@ describe('addDefaultHttpScheme', () => {
         expect(addDefaultHttpScheme('http://192.168.1.5:6969')).toBe('http://192.168.1.5:6969');
     });
 
-    it('defaults a real hostname to https — Samo Server never terminates TLS itself, so anything reachable by hostname is behind something that does', () => {
+    it('defaults a real hostname to https — samo Server never terminates TLS itself, so anything reachable by hostname is behind something that does', () => {
         expect(addDefaultHttpScheme('samo.example.com')).toBe(
             'https://samo.example.com',
         );

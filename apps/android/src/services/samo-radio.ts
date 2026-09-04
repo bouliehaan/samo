@@ -44,7 +44,7 @@ import {
 /**
  * samo-radio from the phone's side.
  *
- * Every call goes to Samo, which forwards it to the device — so this works over
+ * Every call goes to samo, which forwards it to the device — so this works over
  * the tunnel from anywhere, and the phone never needs to be on the same network
  * as the stereo. The functions read the active server connection at call time
  * rather than taking it as an argument, because they are called from event
@@ -53,7 +53,7 @@ import {
 
 const connection = () => {
     const { serverConnection } = getAuthSession();
-    // Only Samo servers have samo-radio. On any other backend the picker simply
+    // Only samo servers have samo-radio. On any other backend the picker simply
     // shows no devices rather than erroring.
     if (!serverConnection || serverConnection.type !== ServerType.SAMO) {
         return null;
@@ -65,10 +65,10 @@ const connection = () => {
  * Re-read the server's devices into the store.
  *
  * Only CONNECTED devices are kept. Every surface built on this list is an
- * actionable one, and a device Samo cannot reach — or has never paired with —
- * can do nothing but fail on tap; pairing is fixed in Samo's web UI, not here.
+ * actionable one, and a device samo cannot reach — or has never paired with —
+ * can do nothing but fail on tap; pairing is fixed in samo's web UI, not here.
  *
- * A failed request is NOT an empty device list. The phone talks to Samo over
+ * A failed request is NOT an empty device list. The phone talks to samo over
  * whatever network it happens to be on, so one timed-out poll would otherwise
  * blank the control panel and strip "Send to samo-radio" out of every menu
  * mid-listen. The last good snapshot stands until a request actually succeeds
@@ -170,7 +170,7 @@ export const refreshSamoRadioDeviceState = async (deviceId: string): Promise<voi
  *
  * Deliberately not part of the device poll. The device reports what the channel
  * TOLD it is on; whether that track sits in a drop folder is a question only
- * Samo can answer, and it only changes when the song does.
+ * samo can answer, and it only changes when the song does.
  */
 export const fetchSamoRadioKeepableTrackId = async (
     channelId: string,
@@ -201,7 +201,7 @@ export const keepSamoRadioAiringTrack = async (
 ): Promise<SamoExploKeepResponse> => {
     const authentication = connection();
     if (!authentication) {
-        throw new Error('Connect to a Samo server first.');
+        throw new Error('Connect to a samo server first.');
     }
     return keepMobileExploTracks({ authentication, trackIds: [trackId] });
 };
@@ -214,7 +214,7 @@ export const keepSamoRadioAiringTrack = async (
  * together rather than making you know which kind a station is before you can
  * find it. Each carries its kind, because the two id spaces are separate.
  *
- * Read straight from Samo rather than through the device: the phone is already
+ * Read straight from samo rather than through the device: the phone is already
  * talking to the server, and one round trip answers for every device.
  */
 export const refreshSamoRadioStations = async (
@@ -255,7 +255,7 @@ export const refreshSamoRadioStations = async (
 const requireConnection = () => {
     const authentication = connection();
     if (!authentication) {
-        throw new Error('Connect to a Samo server first.');
+        throw new Error('Connect to a samo server first.');
     }
     return authentication;
 };
@@ -358,7 +358,7 @@ export const samoRadioStationRefForPlayable = (
 };
 
 /**
- * True when the connected Samo server is the one that issued this item.
+ * True when the connected samo server is the one that issued this item.
  *
  * The ownership gate for anything named by a bare catalog id. Ids are only
  * meaningful on the server that minted them, so an item from a server the phone

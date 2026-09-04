@@ -11,9 +11,9 @@ import { ipcMain, net } from 'electron';
 import { subscribeSamoCatalogEvents, unsubscribeSamoCatalogEvents } from './samo-events';
 import { clearSamoMediaCredential, registerSamoMediaCredential } from './samo-media-auth';
 
-// Route ALL desktop Samo traffic through Electron's `net.fetch` (Chromium's
+// Route ALL desktop samo traffic through Electron's `net.fetch` (Chromium's
 // network stack), NOT Node's global `fetch` (undici). The renderer already
-// proxies every Samo call here via IPC, so this one client governs auth,
+// proxies every samo call here via IPC, so this one client governs auth,
 // health, catalog AND progress sync. undici was the cause of "server
 // unavailable" / "TypeError: fetch failed" even when the server loads fine in
 // a browser: undici ignores the app's `ignore-certificate-errors` switch,

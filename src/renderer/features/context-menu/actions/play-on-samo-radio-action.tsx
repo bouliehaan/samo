@@ -21,7 +21,7 @@ import { logFn } from '/@/shared/utils/logger';
 /**
  * "Play on the stereo" for anything in the catalog.
  *
- * The device is sent ids, never audio: Samo resolves each one to a stream URL
+ * The device is sent ids, never audio: samo resolves each one to a stream URL
  * on its side and the device pulls it directly. So most things do not have to
  * be fetched to be *sent* — but an album does, because samo-radio has no album
  * type. Albums, playlists and artists are expanded into their tracks here;
@@ -167,7 +167,7 @@ export const PlayOnSamoRadioAction = ({
         <ContextMenu.Submenu>
             <ContextMenu.SubmenuTarget>
                 <ContextMenu.Item leftIcon="radio" rightIcon="arrowRightS">
-                    Play on Samo Radio
+                    Play on samo Radio
                 </ContextMenu.Item>
             </ContextMenu.SubmenuTarget>
             <ContextMenu.SubmenuContent>

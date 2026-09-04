@@ -85,7 +85,7 @@ export function useAndroidPlaybackControls(options: {
     const seekGenerationRef = useRef(0);
 
     /**
-     * Seek a multi-file Samo audiobook to a book-global position. With whole-file
+     * Seek a multi-file samo audiobook to a book-global position. With whole-file
      * serving this is a LOCAL seek when the target lands in the file already
      * playing, or a queue step (play the target file from its in-file offset)
      * when it crosses a file boundary. Returns true when it handled the seek.
@@ -243,7 +243,7 @@ export function useAndroidPlaybackControls(options: {
                 return;
             }
 
-            // For a Samo audiobook the seek bar is book-global. Route it through the
+            // For a samo audiobook the seek bar is book-global. Route it through the
             // queue resolver so it lands in the right file and seeks locally.
             if (bookTargetSeconds !== undefined) {
                 if (await seekSamoAudiobookToBookSeconds(bookTargetSeconds)) {
@@ -439,7 +439,7 @@ export function useAndroidPlaybackControls(options: {
 
             const item = playbackState.item;
 
-            // Samo audiobooks: skip relative to the BOOK position, then resolve
+            // samo audiobooks: skip relative to the BOOK position, then resolve
             // through the queue so a -15 that crosses back into the previous file
             // works (it steps the queue and seeks locally — no stream restart).
             if (isSamoAudiobookPlayback(item)) {

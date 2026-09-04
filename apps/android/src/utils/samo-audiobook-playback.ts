@@ -10,7 +10,7 @@ export const isMp3PlayableAudio = (item: MobilePlayableAudio): boolean => {
 };
 
 /**
- * A Samo audiobook served as VBR MP3 cannot be seeked accurately by the player:
+ * A samo audiobook served as VBR MP3 cannot be seeked accurately by the player:
  * its Xing seek table only resolves to ~1% of the file (minutes on a long book),
  * so seeks land mid-sentence. Such a seek must instead reload the file
  * pre-positioned at the exact second via the server's frame-accurate

@@ -11,7 +11,7 @@ const everySection = availableNavSections({ hasLongFormServer: true, hasMusicSer
 const activeOn = (pathname: string) => activeNavSectionId(pathname, everySection);
 
 describe('availableNavSections', () => {
-    it('offers every section when Samo is connected', () => {
+    it('offers every section when samo is connected', () => {
         expect(everySection.map((section) => section.id)).toEqual([
             'music',
             'podcasts',

@@ -8,12 +8,12 @@ import { type ServerAuthenticationKind, type ServerAuthenticationResult } from '
 import { ServerType } from './server-types';
 
 // ---------------------------------------------------------------------------
-// Native Samo `/api/v1/*` types
+// Native samo `/api/v1/*` types
 // ---------------------------------------------------------------------------
 //
 // These are 1:1 with the JSON the server emits. We do not reshape, flatten, or
 // alias. Field names match `server_docs/api.md` and `api-integration.md` —
-// when a future Samo Server release adds a field, we add the property here.
+// when a future samo Server release adds a field, we add the property here.
 
 export interface SamoSetupStatus {
     currentStep?: 'admin' | 'done' | 'libraries' | 'scan';
@@ -583,7 +583,7 @@ export interface SamoPodcastEpisode {
     name?: string;
     /** Per-user playback (wire field name on podcast episode payloads). */
     progress?: SamoPlaybackState;
-    /** Legacy alias; prefer `progress` from the Samo API. */
+    /** Legacy alias; prefer `progress` from the samo API. */
     playback?: SamoPlaybackState;
     podcastId?: string;
     podcastTitle?: string;
@@ -711,7 +711,7 @@ const encodeQueryComponent = (value: string): string =>
 /**
  * Origin for a server base URL, parsed ONCE per distinct URL.
  *
- * `new URL()` cost real frames: every Samo URL used to construct one (often
+ * `new URL()` cost real frames: every samo URL used to construct one (often
  * several), and Home alone builds ~900 artwork URLs per derive — on device
  * that measured 0.11ms per construction, i.e. most of a ~900ms synchronous
  * block, repeated on every re-derive. Since every API path here is ABSOLUTE,
@@ -741,7 +741,7 @@ export const getSamoApiUrl = (
 ) => {
     const baseUrl = normalizeBaseUrl(server.url);
     if (!baseUrl) {
-        throw new Error('Samo server URL is not configured');
+        throw new Error('samo server URL is not configured');
     }
 
     const apiPath = path.startsWith('/api/v1')
@@ -841,7 +841,7 @@ export const samoSend = async <T>(
 // ---------------------------------------------------------------------------
 
 export const authenticateSamo = async ({
-    deviceLabel = 'Samo client',
+    deviceLabel = 'samo client',
     fetch: fetcher,
     password,
     url,
@@ -876,7 +876,7 @@ export const authenticateSamo = async ({
         const setup = await getSamoSetupStatus(request, baseUrl).catch(() => undefined);
         if (setup?.needsSetup) {
             throw new Error(
-                `Samo Server setup is not finished yet. Open ${baseUrl}/setup first.`,
+                `samo Server setup is not finished yet. Open ${baseUrl}/setup first.`,
             );
         }
         throw error;
@@ -884,7 +884,7 @@ export const authenticateSamo = async ({
     const loginToken = login.token;
 
     if (!loginToken) {
-        throw new Error('Samo Server did not return an auth token');
+        throw new Error('samo Server did not return an auth token');
     }
 
     let token = loginToken;
@@ -914,11 +914,11 @@ export const authenticateSamo = async ({
     return {
         capabilities,
         credential: token,
-        details: `Samo Server: ${formatServerCapabilities(capabilities)}`,
+        details: `samo Server: ${formatServerCapabilities(capabilities)}`,
         isAdmin: login.user?.role === 'admin',
         kind: 'samo-token' as ServerAuthenticationKind,
         serverId: login.serverId,
-        title: `Samo: ${login.user?.displayName ?? resolvedUsername}`,
+        title: `samo: ${login.user?.displayName ?? resolvedUsername}`,
         type: ServerType.SAMO,
         url: baseUrl,
         userId: login.user?.id,
@@ -1999,7 +1999,7 @@ export interface SamoPlaybackPatch {
     touchLastPositionAt?: boolean;
 }
 
-/** Samo podcast/audiobook rows use `progress`; music entities use `playback`. */
+/** samo podcast/audiobook rows use `progress`; music entities use `playback`. */
 export const samoUserPlaybackState = (
     entity: { playback?: SamoPlaybackState; progress?: SamoPlaybackState } | undefined,
 ): SamoPlaybackState | undefined => entity?.progress ?? entity?.playback;
@@ -2234,7 +2234,7 @@ const resolveSamoImageUrl = (
 };
 
 /**
- * Re-home a Samo media URL onto the connected origin, and attach a stream token
+ * Re-home a samo media URL onto the connected origin, and attach a stream token
  * IF one was supplied.
  *
  * These are two separate jobs and only one of them is optional. Re-homing is
@@ -2323,7 +2323,7 @@ export const isSamoApiMediaUrl = (url: string): boolean => {
     }
 };
 
-/** Ensure Samo media/cover URLs include a stream token for unauthenticated image loaders. */
+/** Ensure samo media/cover URLs include a stream token for unauthenticated image loaders. */
 export const finalizeSamoMediaUrl = (
     authentication: Pick<ServerAuthenticationResult, 'url'>,
     url: string | undefined,

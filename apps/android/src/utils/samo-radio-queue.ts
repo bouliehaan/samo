@@ -28,7 +28,7 @@ export type SamoRadioQueueEntry = Pick<MobilePlayableAudio, 'id' | 'source'> & {
 /**
  * A channel the device should be TUNED to, rather than an item to queue.
  *
- * A Samo channel is a broadcast: there is no copy of it to hand a device and no
+ * A samo channel is a broadcast: there is no copy of it to hand a device and no
  * position in it to start from, so the device joins it where it already is.
  * That is a different call from a queue send (`/play` with `mode: channel`),
  * which is why this returns a station ref and not an item ref — the two are not
@@ -64,7 +64,7 @@ export const samoRadioStationRefFromPlayable = (
  * playback-queue-store never carry them. Reading them here mapped every queue
  * to nothing and made "play to samo-radio" a silent no-op.
  *
- * Returns null for anything the server cannot resolve by id — a non-Samo
+ * Returns null for anything the server cannot resolve by id — a non-samo
  * backend, a local file with no catalog row — and the caller drops it rather
  * than sending the device something it cannot fetch.
  */

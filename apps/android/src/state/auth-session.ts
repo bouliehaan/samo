@@ -14,7 +14,7 @@ export type AuthSessionState = {
     bootResolved: boolean;
     // Drives the first-run onboarding overlay. True while the user has no server
     // (or one whose saved session expired) AND through the post-connect sync
-    // step, so the celebratory flow stays mounted until "Enter Samo" is tapped.
+    // step, so the celebratory flow stays mounted until "Enter samo" is tapped.
     onboardingActive: boolean;
     password: string;
     serverConnection: ServerAuthenticationResult | null;

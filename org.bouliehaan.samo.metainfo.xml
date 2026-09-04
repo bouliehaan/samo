@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <component type="desktop-application">
   <id>org.bouliehaan.samo</id>
-  <name>Samo</name>
+  <name>samo</name>
   <summary>Self-hosted music, audiobook, podcast and radio player</summary>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>GPL-3.0-only</project_license>
   <content_rating type="oars-1.1"/>
   <description>
-    <p>A modern, cross-platform client for Samo Server: music, audiobooks, podcasts and radio in one library.</p>
+    <p>A modern, cross-platform client for samo server: music, audiobooks, podcasts and radio in one library.</p>
     <p>Features</p>
     <ul>
       <li>MPV player backend</li>

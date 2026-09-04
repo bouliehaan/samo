@@ -32,7 +32,7 @@ export const syncWithServer = async (): Promise<{ message?: string; ok: boolean 
     try {
         // Three coordinated calls per sync. Loading home content first so
         // the rest of the app's view of the libraries is fresh, then
-        // re-mirroring the Samo catalog. Audiobook/podcast progress writes
+        // re-mirroring the samo catalog. Audiobook/podcast progress writes
         // are owned by the native Kotlin sync (SamoProgressSync), so JS no
         // longer pushes them here.
         //

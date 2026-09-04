@@ -148,7 +148,7 @@ export const buildOfflinePodcastEpisodePlayable = (
     return {
         artworkUrl: track.artworkUrl ?? detail.artworkUrl,
         castMimeType: mimeFromCastUri(localUri),
-        // Samo episode source URLs are self-authenticating (stream_token in the
+        // samo episode source URLs are self-authenticating (stream_token in the
         // query), so the cast leg can use the original URL as-is.
         castUrl: sourceUrl,
         contentSourceId: detail.source.id,

@@ -126,7 +126,7 @@ export const runAndroidSearch = async (
         return;
     }
 
-    // 1. Instant on-device results from the local catalog (Samo sources only).
+    // 1. Instant on-device results from the local catalog (samo sources only).
     let local: MobileSearchResults | null = null;
     if (authentication) {
         local = await searchCatalogResults(authentication, trimmedQuery, userRecents);
@@ -149,7 +149,7 @@ export const runAndroidSearch = async (
         return;
     }
 
-    // 2. Authoritative search across EVERY server (Samo + any others). Samo's
+    // 2. Authoritative search across EVERY server (samo + any others). samo's
     //    /music/search covers the whole library, so this fills in everything the
     //    local mirror is missing. Merging dedupes by id and re-ranks the union.
     const serverState = await loadAndroidSearchResults(

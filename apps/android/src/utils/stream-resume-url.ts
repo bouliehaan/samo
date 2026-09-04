@@ -1,4 +1,4 @@
-/** True when the Samo stream URL encodes a non-zero resume offset (server-side byte/range skip). */
+/** True when the samo stream URL encodes a non-zero resume offset (server-side byte/range skip). */
 export const streamUrlHasEmbeddedResume = (url: string | undefined): boolean => {
     if (!url) {
         return false;

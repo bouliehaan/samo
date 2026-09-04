@@ -129,18 +129,18 @@ export interface MobileHomeItem {
      * surface in the Recently Added row anyway).
      */
     addedAt?: number;
-    /** Epoch ms from server playback overlay (Samo). */
+    /** Epoch ms from server playback overlay (samo). */
     lastPlayedAt?: number;
     playCount?: number;
     artworkUrl?: string;
     /**
-     * Samo-only — `images[].id` from catalog metadata (`cover_*` / `image_*`).
+     * samo-only — `images[].id` from catalog metadata (`cover_*` / `image_*`).
      * Lets tiles rebuild the image URL at display time without persisting
      * expiring stream tokens in list payloads.
      */
     artworkImageId?: string;
     /**
-     * Lightweight summary text for audiobook authors / podcast hosts. Samo's
+     * Lightweight summary text for audiobook authors / podcast hosts. samo's
      * audiobook items carry rich contributor records; we surface the joined
      * display string here so tiles can render "Author — Narrator" without
      * needing a detail fetch. Undefined for non-spoken-word items.
@@ -793,7 +793,7 @@ const samoInternetRadioToHomeItem = (
 };
 
 /**
- * A Samo channel as a station on the Radio shelf.
+ * A samo channel as a station on the Radio shelf.
  *
  * It sits alongside the internet stations because that is what it is to a
  * listener: a thing you tune to and leave on. The only thing marking it out is
@@ -1791,9 +1791,9 @@ export type MobileFullCollectionVariant =
 export interface MobileFullCollectionInput {
     authentication: ServerAuthenticationResult | null;
     fetch?: SamoFetch;
-    // Incremental ("delta") sync watermark for Samo sources: only items
+    // Incremental ("delta") sync watermark for samo sources: only items
     // changed at/after this point are returned. Pass SamoSyncManifest.serverTime
-    // (RFC3339) or unix milliseconds. Non-Samo sources ignore it.
+    // (RFC3339) or unix milliseconds. Non-samo sources ignore it.
     updatedSince?: number | string;
     variant: MobileFullCollectionVariant;
 }

@@ -1,6 +1,6 @@
 import { nativeGetSyncStates } from './catalog-native';
 
-// Tracks the sync status of each Samo source's local mirror and exposes it
+// Tracks the sync status of each samo source's local mirror and exposes it
 // reactively so the Settings "Local library" panel can render live progress.
 // Kotlin OWNS the `catalog_sync_state` table (SamoCatalogSync writes it); this
 // store is a read-only in-memory mirror hydrated from the native bridge on

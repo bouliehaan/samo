@@ -255,7 +255,7 @@
         "font": "Fonte",
         "font_description": "Define a fonte a ser usada na aplicação",
         "fontType": "Tipo de fonte",
-        "fontType_description": "Fonte interna escolhe uma das fontes fornecidas pelo Samo. Fonte do sistema permite selecionar qualquer fonte disponível no seu sistema operacional. Personalizada permite que você forneça sua própria fonte",
+        "fontType_description": "Fonte interna escolhe uma das fontes fornecidas pelo samo. Fonte do sistema permite selecionar qualquer fonte disponível no seu sistema operacional. Personalizada permite que você forneça sua própria fonte",
         "fontType_optionBuiltIn": "Fonte interna",
         "fontType_optionCustom": "Fonte customizada",
         "fontType_optionSystem": "Fonte do sistema",

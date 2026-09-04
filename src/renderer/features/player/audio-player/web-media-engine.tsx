@@ -47,7 +47,7 @@ export interface WebMediaEngineProps {
      */
     streamDurationSeconds?: number;
     /**
-     * When the stream URL starts at a book-global offset (Samo `progressSeconds`),
+     * When the stream URL starts at a book-global offset (samo `progressSeconds`),
      * player time 0 is that offset — add this to progress and subtract on seek.
      */
     streamOffsetSeconds?: number;

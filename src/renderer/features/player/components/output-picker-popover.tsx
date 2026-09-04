@@ -47,8 +47,8 @@ const getCastEmptyMessage = (status: ReturnType<typeof getDesktopCastSnapshot>['
     if (status === 'blocked') {
         // The OS is refusing the subnet outright, so scanning harder cannot help.
         return window.api?.utils?.isMacOS?.()
-            ? 'Samo cannot reach your local network. Turn Samo on under Privacy & Security → Local Network.'
-            : 'Samo cannot reach your local network. Allow it through your firewall.';
+            ? 'samo cannot reach your local network. Turn samo on under Privacy & Security → Local Network.'
+            : 'samo cannot reach your local network. Allow it through your firewall.';
     }
     if (status === 'unavailable') {
         return 'Chromecast is unavailable. Check your network connection and restart the app.';
@@ -399,7 +399,7 @@ const OutputPickerContent = memo(
                     {samoRadioDevices.length > 0 ? (
                         <>
                             <Text className={styles.sectionLabel} mt="sm" size="sm">
-                                Samo Radio
+                                samo Radio
                             </Text>
                             {samoRadioDevices.map((device) => {
                                 const isSending = selectingId === device.id;

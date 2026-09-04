@@ -6,7 +6,7 @@ import {
 import { create } from 'zustand';
 
 /**
- * What this app knows about Samo's own audio outputs.
+ * What this app knows about samo's own audio outputs.
  *
  * Three surfaces need the same answer — the Radio page's panel, the playerbar
  * remote, and the "play on…" entry in every context menu — and they ask at
@@ -132,7 +132,7 @@ export const useSamoRadioTargets = () => useSamoRadioStore((state) => state.targ
  * Whether samo-radio exists at all right now.
  *
  * The single gate for whether a surface is offered: the playerbar icon mounts
- * on this, so a server with no device (or a non-Samo backend) never grows a
+ * on this, so a server with no device (or a non-samo backend) never grows a
  * control that could only fail on click.
  */
 export const useHasSamoRadioDevice = () => useSamoRadioStore((state) => state.devices.length > 0);

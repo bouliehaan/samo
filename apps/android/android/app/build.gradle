@@ -168,7 +168,7 @@ android {
         // checked in. Release builds used to be signed with the DEBUG key
         // above, whose private half ships inside every copy of the Android
         // SDK — anyone could have signed an APK that installs as an update
-        // over an installed Samo, and a published build could never be
+        // over an installed samo, and a published build could never be
         // migrated to a proper key without users uninstalling first. That is
         // why no APK was attached to earlier releases.
         //

@@ -7,7 +7,7 @@ declare const self: ServiceWorkerGlobalScope;
 const url = new URL(location.toString());
 const version = url.searchParams.get('version');
 const prod = url.searchParams.get('prod') === 'true';
-const cacheName = `Samo-remote-${version}`;
+const cacheName = `samo-remote-${version}`;
 
 const resourcesToCache = ['./', './remote.js', './samologo.svg', './samologo.png'];
 

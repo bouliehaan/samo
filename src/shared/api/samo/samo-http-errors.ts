@@ -1,5 +1,5 @@
 /**
- * Shared HTTP-failure vocabulary for the Samo client paths.
+ * Shared HTTP-failure vocabulary for the samo client paths.
  *
  * The desktop reaches the server two ways — through Electron IPC (main process)
  * and through `browserFetch` (renderer/remote). Those paths used to fail with
@@ -33,7 +33,7 @@ export class SamoHttpError extends Error {
     readonly response: { status: number };
 
     constructor(status: number, message?: string) {
-        super(message ?? `Samo server request failed (${status})`);
+        super(message ?? `samo server request failed (${status})`);
         this.name = 'SamoHttpError';
         this.response = { status };
     }

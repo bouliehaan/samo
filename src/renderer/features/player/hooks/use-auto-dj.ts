@@ -99,11 +99,11 @@ export const useAutoDJ = () => {
                     const albumArtist = properties.song?.albumArtists?.[0];
 
                     const hasMusicFolder = server?.musicFolderId && server.musicFolderId.length > 0;
-                    // Samo's similar-songs endpoint can't be scoped to a music folder,
+                    // samo's similar-songs endpoint can't be scoped to a music folder,
                     // so skip it entirely when one is selected.
                     const trySimilarSongs = !hasMusicFolder;
 
-                    // Tier 1: the server's own similar-songs endpoint. Samo's controller
+                    // Tier 1: the server's own similar-songs endpoint. samo's controller
                     // still stubs this to [], so it contributes nothing today and the
                     // artist tiers below carry the whole result.
                     if (trySimilarSongs) {

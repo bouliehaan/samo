@@ -21,7 +21,7 @@ const auth = {
     url: 'https://music.example',
 };
 
-describe('Samo artwork URLs', () => {
+describe('samo artwork URLs', () => {
     it('uses the playlist cover endpoint for multi-image playlist art', () => {
         const url = resolveSamoPlaylistArtworkUrl(auth, {
             id: 'playlist 1',
@@ -162,7 +162,7 @@ const buildViaUrlObject = (
     return url.toString();
 };
 
-describe('Samo URL building', () => {
+describe('samo URL building', () => {
     const cases: Array<[string, string, Record<string, boolean | number | string | undefined>?]> = [
         ['no query', '/api/v1/media/images/cover_a/image', undefined],
         ['a stream token', '/api/v1/media/images/cover_a/image', { stream_token: 'smt_abc123' }],
@@ -426,7 +426,7 @@ describe('findSamoExploPlaylist', () => {
 });
 
 describe('withSamoImageWidth', () => {
-    it('asks for a width on Samo media URLs', () => {
+    it('asks for a width on samo media URLs', () => {
         expect(
             withSamoImageWidth('https://music.example/api/v1/media/images/cover_a/image', 300),
         ).toBe('https://music.example/api/v1/media/images/cover_a/image?width=300');
@@ -438,7 +438,7 @@ describe('withSamoImageWidth', () => {
         ).toBe('https://music.example/api/v1/media/images/cover_a/image?x=1&width=300');
     });
 
-    it('leaves non-Samo URLs alone', () => {
+    it('leaves non-samo URLs alone', () => {
         // Podcast art is routinely a third-party CDN URL that knows nothing
         // about this parameter; adding one would only break its cache key.
         const remote = 'https://cdn.example/artwork/3000x3000.jpg';

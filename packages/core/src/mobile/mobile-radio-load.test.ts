@@ -92,7 +92,7 @@ describe('loadMobileRadioForServers', () => {
         expect(result.items.map((item) => item.title)).toEqual(['Radio Paradise']);
     });
 
-    it('lists a Samo channel as a station, ahead of the relayed ones', async () => {
+    it('lists a samo channel as a station, ahead of the relayed ones', async () => {
         const result = await loadMobileRadioForServers({
             authentication: auth,
             fetch: fakeFetch({
@@ -151,7 +151,7 @@ describe('loadMobileRadioForServers', () => {
             }),
         });
 
-        expect(result.items.map((item) => item.subtitle)).toEqual(['Samo channel']);
+        expect(result.items.map((item) => item.subtitle)).toEqual(['samo channel']);
     });
 
     it('is silent when there is no radio-capable server at all', async () => {

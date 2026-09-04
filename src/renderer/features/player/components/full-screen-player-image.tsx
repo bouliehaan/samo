@@ -418,7 +418,7 @@ export const FullScreenPlayerImage = () => {
                         {currentSong?.album}
                     </Text>
                 )}
-                {/* A Samo channel is the one radio source with programming of
+                {/* A samo channel is the one radio source with programming of
                     its own, so it is the one that can be moved on from here.
                     Renders nothing for an internet station. */}
                 {isRadioMode ? <SamoChannelTransport /> : null}

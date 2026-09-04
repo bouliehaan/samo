@@ -162,13 +162,13 @@ export interface MobileMediaDetailPodcastFeed {
 export interface MobileMediaDetail {
     appearsOnItems?: MobileHomeItem[];
     artworkUrl?: string;
-    /** Samo metadata `images[].id` for display-time URL rebuild. */
+    /** samo metadata `images[].id` for display-time URL rebuild. */
     artworkImageId?: string;
     /**
-     * Audiobook-only (Samo) — the book's underlying files as the per-file
+     * Audiobook-only (samo) — the book's underlying files as the per-file
      * manifest the multi-file playback queue is built from. Each entry knows its
      * book-global start offset so the player can map book-time to (file,
-     * file-time) and seek locally. Undefined for non-Samo or non-audiobook
+     * file-time) and seek locally. Undefined for non-samo or non-audiobook
      * details.
      */
     audiobookFiles?: SamoAudiobookFilePlayback[];
@@ -179,7 +179,7 @@ export interface MobileMediaDetail {
     biography?: string;
     /**
      * Audiobook-only — bookmarks the current user has saved against this book.
-     * Populated when the server type is `samo` (Samo native bookmarks). Other
+     * Populated when the server type is `samo` (samo native bookmarks). Other
      * server types leave it undefined.
      */
     bookmarks?: MobileMediaDetailBookmark[];
@@ -265,8 +265,8 @@ export interface MobileMediaDetail {
     tracks: MobileMediaTrack[];
     type: MobileMediaDetailType;
     /**
-     * Release/publication year for albums (Samo `releaseYear`) and audiobooks
-     * (Samo `book.publishedYear`). Surfaced as the dedicated hero year line; the
+     * Release/publication year for albums (samo `releaseYear`) and audiobooks
+     * (samo `book.publishedYear`). Surfaced as the dedicated hero year line; the
      * detail screen filters the same value out of `metadataLines` to avoid
      * showing it twice. Undefined for types/items without a known year.
      */
@@ -287,7 +287,7 @@ export interface MobileMediaTrack {
     artist?: string;
     artistId?: string;
     artworkUrl?: string;
-    /** Samo metadata `images[].id` for display-time URL rebuild. */
+    /** samo metadata `images[].id` for display-time URL rebuild. */
     artworkImageId?: string;
     /**
      * Long-form show notes. Podcast episodes only — the feed's own episode
@@ -337,7 +337,7 @@ export const getMobileMediaDetailErrorMessage = (error: unknown) => {
 };
 
 // ---------------------------------------------------------------------------
-// Samo native detail loaders
+// samo native detail loaders
 // ---------------------------------------------------------------------------
 
 const samoChaptersToBookmarks = (
@@ -497,7 +497,7 @@ const loadSamoAlbumTracks = async (
 };
 
 /**
- * Enumerate every music track on a Samo server as normalized
+ * Enumerate every music track on a samo server as normalized
  * {@link MobileMediaTrack}s. Used by the Android local-cache sync to mirror the
  * whole track table in one pass; album track lists are then derived on-device by
  * grouping on `albumId` rather than fetching each album individually.
@@ -1157,7 +1157,7 @@ const loadSamoMediaDetail = async (
  * `playback` (stream URL, quality, mime) — comes from the ONE canonical
  * mapper. The coexistence-era Kotlin payload omitted `playback` entirely,
  * which sent every mirror-served album tap down the legacy ABS fallback
- * (a POST the Samo server answers with 405).
+ * (a POST the samo server answers with 405).
  */
 export interface SamoRawTrackEnvelope {
     $samoRawTrack: 1;
@@ -1365,7 +1365,7 @@ export const createMobilePlaylist = async ({
         };
     }
 
-    throw new Error('Creating playlists is only available for Samo servers.');
+    throw new Error('Creating playlists is only available for samo servers.');
 };
 
 export const addMobileTracksToPlaylist = async ({
@@ -1383,7 +1383,7 @@ export const addMobileTracksToPlaylist = async ({
     const request = getFetch(fetcher);
 
     if (authentication.type === ServerType.SAMO) {
-        // Samo's playlist update API replaces the trackIds list wholesale, so
+        // samo's playlist update API replaces the trackIds list wholesale, so
         // load the current track set and append.
         //
         // Exhaustively, and that matters more here than on a read path: the
@@ -1416,5 +1416,5 @@ export const addMobileTracksToPlaylist = async ({
         return;
     }
 
-    throw new Error('Adding tracks to playlists is only available for Samo servers.');
+    throw new Error('Adding tracks to playlists is only available for samo servers.');
 };

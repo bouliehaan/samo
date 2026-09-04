@@ -36,7 +36,7 @@ const isSamoApiMediaUrl = (url: string): boolean => {
 };
 
 /**
- * True for a Samo `/api/v1/…` media URL that carries NO stream token. Such a
+ * True for a samo `/api/v1/…` media URL that carries NO stream token. Such a
  * URL 401s for any fetcher that can't attach the Bearer header — notably the
  * native notification artwork loader. Callers should withhold the URL (or
  * mint first) rather than hand it to a header-less consumer.
@@ -232,11 +232,11 @@ export const resolveSamoItemArtworkSourceForDisplay = (
     // did their own (three per item, plus two redundant token finalizes).
     const auth = findServerAuthenticationForSource(serverConnection, source);
     if (!auth) {
-        // Non-Samo source: the stored URL is all there is, and it needs no
+        // Non-samo source: the stored URL is all there is, and it needs no
         // bearer — hand it over.
         //
         // NOT-YET-CONNECTED is a different case wearing the same clothes, and
-        // handing the URL over there is a request that cannot succeed. A Samo
+        // handing the URL over there is a request that cannot succeed. A samo
         // /api/v1/ media URL with no stream token 401s for any consumer that
         // cannot attach the Bearer header, which is exactly what a bare string
         // source is. The tile then loaded a second time once the connection
@@ -359,7 +359,7 @@ export const resolveNativeArtworkUrl = (
  * Native MediaSession / lock-screen artwork can't send Bearer headers — embed
  * a fresh stream token (or absolute URL) before handing art to ExoPlayer.
  *
- * Queue items keep the stream URL they were built with. Samo stream tokens
+ * Queue items keep the stream URL they were built with. samo stream tokens
  * expire after ~30 minutes, so each track start must rewrite `url` (and
  * `castUrl` when present) with a current token or auto-advance dies mid-queue.
  */

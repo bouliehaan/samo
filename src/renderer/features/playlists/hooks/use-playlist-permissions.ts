@@ -5,7 +5,7 @@ import { Playlist } from '/@/shared/types/domain-types';
  * Whether this client may write to every one of these playlists.
  *
  * Two rules, both of which have to hold. A public playlist somebody else owns
- * needs the editPublic permission. A server-managed playlist (the Samo
+ * needs the editPublic permission. A server-managed playlist (the samo
  * "Explore" queue) is off limits to everyone: the server re-derives its name
  * and membership on every reconcile pass, so an edit could not stick — it
  * refuses with a 403 rather than accept a write it is about to revert.

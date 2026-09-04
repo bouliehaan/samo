@@ -238,7 +238,7 @@ export const RadioScreen = memo(({
                     // so and this copy would contradict it.
                     <Text style={[styles.mutedText, styles.radioEmptyText]}>
                         {!radioManageConnections
-                            ? 'Connect a Samo server to add radio stations from Android.'
+                            ? 'Connect a samo server to add radio stations from Android.'
                             : 'No server-backed radio stations returned.'}
                     </Text>
                 )}
@@ -452,7 +452,7 @@ const AddRadioStationModal = ({
                     <Text style={styles.actionSheetTitle}>Add Radio Station</Text>
                     {!serverConnection ? (
                         <Text style={styles.mutedText}>
-                            Connect a Samo server to add radio stations from Android.
+                            Connect a samo server to add radio stations from Android.
                         </Text>
                     ) : (
                         <ScrollView

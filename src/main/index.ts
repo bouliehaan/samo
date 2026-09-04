@@ -581,7 +581,7 @@ async function createWindow(first = true): Promise<void> {
     menuBuilder = new MenuBuilder(mainWindow);
     rebuildMainMenu();
 
-    // Samo never captures the screen. Nothing in the renderer calls
+    // samo never captures the screen. Nothing in the renderer calls
     // getDisplayMedia any more — this handler exists so that stays true even if
     // something later does, or if injected content tries.
     //
@@ -589,7 +589,7 @@ async function createWindow(first = true): Promise<void> {
     // only way to get samples for it was system audio. Electron's
     // `audio: 'loopback'` is Windows-only, so on macOS that audio could only be
     // obtained by attaching it to a live ScreenCaptureKit capture of the whole
-    // display — which is why Samo asked for Screen Recording, and why a
+    // display — which is why samo asked for Screen Recording, and why a
     // full-screen capture ran for as long as the visualizer was open. The
     // visualizer now reads the Web Audio graph and is simply unavailable under
     // mpv. See use-is-visualizer-available.ts.

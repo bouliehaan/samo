@@ -216,7 +216,7 @@ export const NowPlayingMetadataSync = memo(() => {
                     serverConnectionRef.current,
                     authForToken ? getCachedSamoStreamToken(authForToken) : undefined,
                 ) ?? state.item.artworkUrl;
-            // Never push a Samo artwork URL the notification's header-less
+            // Never push a samo artwork URL the notification's header-less
             // fetch can only 401 on — that overwrites native's fresh artwork
             // with a grey tile. Two ways to be that URL: it carries NO stream
             // token at all, or the JS token cache has gone stale during a long
@@ -227,7 +227,7 @@ export const NowPlayingMetadataSync = memo(() => {
             // background so the NEXT push carries a live token again.
             let artworkUrl = resolvedArtworkUrl;
             if (isSamoMediaUrlMissingStreamToken(resolvedArtworkUrl)) {
-                // A Samo /api/v1 artwork URL with no stream token is one the
+                // A samo /api/v1 artwork URL with no stream token is one the
                 // notification's header-less fetch can only 401 on, and pushing
                 // it would overwrite native's own fresh artwork with a grey
                 // tile. Omit the field (native keeps what it has, re-derived at

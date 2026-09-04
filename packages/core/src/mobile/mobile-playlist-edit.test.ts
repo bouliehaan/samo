@@ -20,7 +20,7 @@ interface Recorded {
 }
 
 /**
- * A server holding `trackIds` in playlist order, paginated exactly like Samo's:
+ * A server holding `trackIds` in playlist order, paginated exactly like samo's:
  * `GET /tracks` answers a `{ items, total }` window, `PATCH` replaces the list.
  */
 const buildServer = (

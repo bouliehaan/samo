@@ -87,7 +87,7 @@ const checkSamoHealth = async (
     const setup = await getSamoSetupStatus(fetcher, baseUrl);
 
     if (setup.needsSetup) {
-        throw new ServerHealthResponseError('Samo Server setup is not finished.', 503);
+        throw new ServerHealthResponseError('samo Server setup is not finished.', 503);
     }
 
     const response = await fetcher(`${baseUrl}/api/v1/users/me`, {
@@ -95,14 +95,14 @@ const checkSamoHealth = async (
         method: 'GET',
     });
 
-    assertOkResponse(response, 'Samo Server user check');
+    assertOkResponse(response, 'samo Server user check');
 
     const capabilities = getSamoCapabilities();
 
     return {
         ...authentication,
         capabilities,
-        details: `Samo Server: ${formatServerCapabilities(capabilities)}`,
+        details: `samo Server: ${formatServerCapabilities(capabilities)}`,
         url: baseUrl,
     };
 };

@@ -47,7 +47,7 @@ else
 fi
 
 echo
-echo "==> Installed packages matching Samo:"
+echo "==> Installed packages matching samo:"
 adb shell pm list packages | grep -i samo || true
 
 echo

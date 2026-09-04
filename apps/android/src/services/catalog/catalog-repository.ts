@@ -10,7 +10,7 @@ import {
     nativeSearch,
 } from './catalog-native';
 
-// Read API for the local Samo library mirror. The database itself is owned
+// Read API for the local samo library mirror. The database itself is owned
 // end-to-end by Kotlin (sync writes, FTS index, the reader connection); this
 // layer forwards queries over the SamoCatalogQuery bridge and parses the raw
 // row payloads back into the exact mobile types the screens consume. There is

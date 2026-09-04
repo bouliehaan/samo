@@ -229,7 +229,7 @@ const resolveOfflinePlayable = (item: MobilePlayableAudio): MobilePlayableAudio 
     };
 };
 
-/** Samo stream token auth in the query string — Chromecast cannot use httpHeaders. */
+/** samo stream token auth in the query string — Chromecast cannot use httpHeaders. */
 const hasSelfAuthenticatingStreamUrl = (url: string) =>
     /[?&]streamToken=/i.test(url);
 
@@ -275,7 +275,7 @@ export const playAndroidAudio = async (
             ? undefined
             : bridgedSource.subtitle;
 
-    // When a self-authenticating castUrl is provided (Samo stream token in URL
+    // When a self-authenticating castUrl is provided (samo stream token in URL
     // params, or ABS `?token=…`), the cast leg doesn't need the headers the
     // local ExoPlayer uses. Forwarding them would trip the native guard
     // since the default Chromecast receiver can't send custom headers.
@@ -525,7 +525,7 @@ export interface AndroidNavigationRequestEvent {
  * Fires when the user taps Previous / Next on the notification, lock screen,
  * or hits a Bluetooth media-button. SamoForwardingPlayer surfaces these
  * commands as always-available so the buttons actually appear in the system
- * UI, but Samo's queue lives in JavaScript — this event lets the React side
+ * UI, but samo's queue lives in JavaScript — this event lets the React side
  * step the queue and call playAndroidAudio with the new track.
  */
 export const subscribeToAndroidNavigationRequests = (

@@ -8,7 +8,7 @@ import type { AndroidQueuePlaylistOrigin } from '../../state/playback-queue-stor
 export type PlaybackSnapshot = { item: MobilePlayableAudio; sessionId: string };
 
 export type AndroidPlayItemOptions = {
-    /** Samo audiobook: open stream at this book-global second (skips server resume overlay). */
+    /** samo audiobook: open stream at this book-global second (skips server resume overlay). */
     bookStartSeconds?: number;
     /** Started from a playlist this user may edit — see AndroidQueuePlaylistOrigin. */
     editablePlaylist?: AndroidQueuePlaylistOrigin;

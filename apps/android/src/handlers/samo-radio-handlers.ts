@@ -83,7 +83,7 @@ const dispatchToDevice = async (
 /**
  * Tune the device to a station instead of handing it a queue.
  *
- * A Samo channel has no copy to send and no position to start from: the device
+ * A samo channel has no copy to send and no position to start from: the device
  * joins the broadcast where it already is. Same feedback as a send, because
  * from the user's side it is the same gesture and the same outcome — that thing
  * is now playing over there.

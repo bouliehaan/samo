@@ -154,7 +154,7 @@ export const ensureSamoStreamToken = async (
         );
 
         if (!response.token) {
-            throw new Error('Samo Server did not return a stream token');
+            throw new Error('samo Server did not return a stream token');
         }
 
         const entry: SamoStreamTokenEntry = {
@@ -183,7 +183,7 @@ export const ensureSamoStreamToken = async (
 };
 
 /**
- * Build a fetchable image request for Samo `/api/v1/...` media URLs.
+ * Build a fetchable image request for samo `/api/v1/...` media URLs.
  *
  * The URL is re-homed onto the connected origin but carries NO stream token.
  * The bearer header authenticates every media route on its own, and a token in
@@ -227,7 +227,7 @@ export const buildSamoAuthenticatedImageRequest = (
  * The server treats the width as advisory, snapping it to a fixed ladder and
  * falling back to the original whenever it cannot do better (a format it has no
  * decoder for, art already smaller than the request). So this is safe to send
- * to any Samo server: one too old to know the parameter simply ignores it.
+ * to any samo server: one too old to know the parameter simply ignores it.
  */
 export const withSamoImageWidth = (url: string, width?: number): string => {
     if (!url || !width || !Number.isFinite(width) || width <= 0) {

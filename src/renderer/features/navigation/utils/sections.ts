@@ -11,7 +11,7 @@ import { AppRoute } from '/@/renderer/router/routes';
 
 export interface NavSection {
     id: NavSectionId;
-    /** True when this section needs Samo's long-form catalog behind it. */
+    /** True when this section needs samo's long-form catalog behind it. */
     ifLongFormServer?: boolean;
     /** True when this section needs a music server behind it. */
     ifMusicServer?: boolean;

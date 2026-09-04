@@ -37,7 +37,7 @@ type SyncStatus =
     | { kind: 'running' }
     | { kind: 'success' };
 
-/** A Samo source whose on-device mirror is surfaced in the Local library panel. */
+/** A samo source whose on-device mirror is surfaced in the Local library panel. */
 export interface CatalogSourceSummary {
     id: string;
     title: string;
@@ -307,7 +307,7 @@ export const SettingsScreen = ({
                     </Text>
                     <Text style={styles.settingsRowSubtitle}>
                         {serverCount === 0
-                            ? 'Connect a Samo server or radio source'
+                            ? 'Connect a samo server or radio source'
                             : `${serverCount} connected`}
                     </Text>
                 </View>

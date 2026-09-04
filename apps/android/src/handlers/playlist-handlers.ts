@@ -51,7 +51,7 @@ import {
 export const handleDeletePlaylistForItem = (item: AndroidRecentContentSourceItem): void => {
     const auth = findAuthForSource(item.source?.id);
     if (!auth) {
-        setContextMenuFeedback('Deleting playlists is only available for Samo servers.');
+        setContextMenuFeedback('Deleting playlists is only available for samo servers.');
         return;
     }
     Alert.alert('Delete playlist', `Delete "${item.title}"? This cannot be undone.`, [
@@ -127,7 +127,7 @@ export const handleDeletePlaylistForItem = (item: AndroidRecentContentSourceItem
  *
  * The row disappears before the network is touched, and comes back if the
  * server refuses. Membership edits go through a read-modify-write against the
- * server's current list (Samo's playlist API takes the whole list, not a
+ * server's current list (samo's playlist API takes the whole list, not a
  * delta), so committing first would leave the user watching a spinner through
  * two round trips to delete one row — while the outcome is already known: the
  * track goes, everything else stays. The optimistic write is a plain list
@@ -314,7 +314,7 @@ export const handleOpenCreatePlaylistStandalone = (): void => {
     const auth = getAuthSession().serverConnection;
 
     if (!auth) {
-        Alert.alert('No music server', 'Connect a Samo server to create playlists.');
+        Alert.alert('No music server', 'Connect a samo server to create playlists.');
         return;
     }
 

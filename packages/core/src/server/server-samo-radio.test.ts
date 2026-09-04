@@ -63,7 +63,7 @@ describe('samoRadioTransportKind', () => {
         ).toBe('channel');
     });
 
-    // Only absent on devices predating the field, and those are Samo channels.
+    // Only absent on devices predating the field, and those are samo channels.
     it('reads a channel with no kind as programmed', () => {
         expect(samoRadioTransportKind(state({ channel: { id: 'chan_1' }, mode: 'channel' }))).toBe(
             'channel',

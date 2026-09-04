@@ -2,7 +2,7 @@
 // pulls in native FileSystem) so the canonicalization logic stays unit-testable.
 
 // Query params that rotate per-request (auth) but do NOT identify a different
-// image. Samo embeds a `stream_token` that the server rotates ~every 25 min; if
+// image. samo embeds a `stream_token` that the server rotates ~every 25 min; if
 // it stayed in the cache key, every cover would peek-miss after each rotation
 // and be re-downloaded/re-decoded — the exact source of the periodic art flash.
 export const VOLATILE_ARTWORK_PARAMS = ['stream_token'];

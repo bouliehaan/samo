@@ -57,7 +57,7 @@ export const RadioListContent = () => {
         <Suspense fallback={<GridPageSkeleton />}>
             <ScrollArea>
                 <Stack gap="xl" p="md">
-                    {/* Samo's own outputs sit above the stations, because they
+                    {/* samo's own outputs sit above the stations, because they
                         are the thing on this page you act on rather than browse
                         — and because "what is the stereo playing" is the
                         question you came here with. It draws nothing when there

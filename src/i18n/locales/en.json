@@ -249,8 +249,8 @@
         "noAudiobooksFound": "no audiobooks found",
         "noEpisodesAvailable": "no episodes available",
         "noPodcastsFound": "no podcasts found",
-        "noServerForAudiobooks": "add a Samo server to browse audiobooks",
-        "noServerForPodcasts": "add a Samo server to browse podcasts",
+        "noServerForAudiobooks": "add a samo server to browse audiobooks",
+        "noServerForPodcasts": "add a samo server to browse podcasts",
         "podcastNotFound": "podcast not found",
         "rssFeedLinkFailed": "failed to link RSS feed"
     },

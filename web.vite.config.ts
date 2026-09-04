@@ -106,7 +106,7 @@ export default defineConfig({
                         type: 'image/png',
                     },
                 ],
-                name: 'Samo',
+                name: 'samo',
                 orientation: 'portrait',
                 screenshots: [
                     {
@@ -117,7 +117,7 @@ export default defineConfig({
                         type: 'image/webp',
                     },
                 ],
-                short_name: 'Samo',
+                short_name: 'samo',
                 start_url: '/',
                 theme_color: '#1E003D',
             },

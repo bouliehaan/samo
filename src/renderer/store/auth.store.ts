@@ -87,7 +87,7 @@ export const getConfiguredMusicServer = (state: AuthState) => {
     );
 };
 
-/** Samo serves music + audiobooks + podcasts from one connection (like mobile). */
+/** samo serves music + audiobooks + podcasts from one connection (like mobile). */
 export const getLongFormMediaServer = (state: AuthState): null | ServerListItemWithCredential => {
     const musicServer = getConfiguredMusicServer(state);
 

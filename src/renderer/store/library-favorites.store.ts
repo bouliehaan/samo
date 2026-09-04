@@ -8,7 +8,7 @@ import { identityPersistMigrate, PERSIST_VERSION_INITIAL } from '/@/renderer/sto
 // "favorite" concept for (long-form books/podcasts, playlists), or where we
 // deliberately keep them client-side (radio stations) so the home page surfaces
 // what *this user* cares about rather than the entire library. Music album /
-// artist / song favorites are server-side and go through the Samo API.
+// artist / song favorites are server-side and go through the samo API.
 
 export type LibraryFavoriteType = 'audiobook' | 'playlist' | 'podcast' | 'radio';
 

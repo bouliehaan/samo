@@ -2,7 +2,7 @@ import { DEFAULT_SERVER_URL } from './app-constants';
 
 export { DEFAULT_SERVER_URL };
 
-// Samo Server itself never terminates TLS (see samo-server's plain
+// samo Server itself never terminates TLS (see samo-server's plain
 // `http.Server`), so a bare LAN address genuinely only ever speaks HTTP. But
 // once a server is reachable through anything else — a real hostname behind
 // a Cloudflare Tunnel, a reverse proxy, whatever — that something else is

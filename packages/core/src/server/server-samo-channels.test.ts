@@ -14,7 +14,7 @@ import {
 const auth = testServerAuthentication({ url: 'https://music.example.com' });
 
 describe('getSamoChannelStreamUrl', () => {
-    it('builds the API form, which is what makes a channel an ordinary Samo stream', () => {
+    it('builds the API form, which is what makes a channel an ordinary samo stream', () => {
         // The `/api/v1/` prefix is load-bearing, not cosmetic: re-homing, token
         // refresh and 401 recovery all decide what they are looking at by
         // finding it in the path. The bare `/channels/…` route the server also

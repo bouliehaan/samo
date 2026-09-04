@@ -300,7 +300,7 @@ function ShellChromeControls() {
                             type="button"
                         >
                             <img
-                                alt="Samo"
+                                alt="samo"
                                 className={styles['chrome-shell-logo']}
                                 src={samoLogoUrl}
                             />

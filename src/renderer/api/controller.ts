@@ -86,13 +86,13 @@ export const controller = new Proxy({} as GeneralController, {
             ) => {
                 const result = isElectron()
                     ? await window.api.samo.authenticate({
-                          deviceLabel: 'Samo desktop',
+                          deviceLabel: 'samo desktop',
                           password: body.password,
                           url,
                           username: body.username,
                       })
                     : await authenticateServerConnection({
-                          deviceLabel: 'Samo desktop',
+                          deviceLabel: 'samo desktop',
                           password: body.password,
                           type: ServerType.SAMO,
                           url,

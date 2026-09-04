@@ -506,7 +506,7 @@ const DiscoverStep = ({
             <Text style={subheadingStyle}>
                 {hasResults
                     ? 'Tap a server below to connect, or enter an address by hand.'
-                    : 'Make sure this device is on the same Wi‑Fi network as your Samo server.'}
+                    : 'Make sure this device is on the same Wi‑Fi network as your samo server.'}
             </Text>
 
             <View style={{ gap: 12, marginTop: 28 }}>

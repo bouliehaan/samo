@@ -115,7 +115,7 @@ export const ArtworkImage = ({
         // The same withholding the resolver does, for the paths that never
         // reach it: no contentSource to resolve against, or connections that
         // have not loaded yet. A bare string source carries no headers, so a
-        // Samo /api/v1/ URL without a stream token is a request that can only
+        // samo /api/v1/ URL without a stream token is a request that can only
         // 401 and then be retried once auth lands.
         if (isSamoMediaUrlMissingStreamToken(uri)) {
             return undefined;

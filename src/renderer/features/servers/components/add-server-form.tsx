@@ -72,7 +72,7 @@ export const AddServerForm = ({ onCancel, onSubmitSuccess }: AddServerFormProps)
     const form = useForm({
         initialValues: {
             legacyAuth: isLegacyAuth(),
-            name: (localSettings ? localSettings.env.SERVER_NAME : window.SERVER_NAME) || 'Samo',
+            name: (localSettings ? localSettings.env.SERVER_NAME : window.SERVER_NAME) || 'samo',
             password: '',
             preferInstantMix: undefined,
             preferRemoteUrl: false,
@@ -272,7 +272,7 @@ export const AddServerForm = ({ onCancel, onSubmitSuccess }: AddServerFormProps)
                                 style={{ cursor: 'pointer' }}
                             >
                                 <Text fw={700}>{server.name}</Text>
-                                <Text>Samo server at {server.url}</Text>
+                                <Text>samo server at {server.url}</Text>
                             </div>
                         </Group>
                     </Paper>

@@ -101,7 +101,7 @@ function ServerSelector() {
         <>
             {Object.keys(serverList).map((serverId) => {
                 const server = serverList[serverId];
-                // Samo sessions do not expire client-side; the server answers
+                // samo sessions do not expire client-side; the server answers
                 // 401 and the auth layer handles it. Kept as a named constant
                 // so the branch below still reads as a decision.
                 const isSessionExpired = false;

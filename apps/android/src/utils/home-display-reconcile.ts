@@ -12,7 +12,7 @@ import { canonicalArtworkKey } from './artwork-canonical';
 
 /**
  * Value-equality for two display items that treats a rotated cover-art token as
- * "no change". Samo rotates the `stream_token` in every resolved artwork URL
+ * "no change". samo rotates the `stream_token` in every resolved artwork URL
  * (~25 min, and on every re-auth), so the SAME tile gets a brand-new
  * `artworkUrl` string each time `serverConnection` refreshes. Comparing those
  * strings literally makes every tile look "changed" → a fresh object → a full

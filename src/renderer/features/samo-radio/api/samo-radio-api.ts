@@ -2,7 +2,7 @@
 //
 // A samo-radio device is a headless player wired into a physical socket — the
 // server's own line-out, or a Pi in another room. The desktop never talks to one
-// directly: every call here goes to Samo, which forwards it over the device's
+// directly: every call here goes to samo, which forwards it over the device's
 // local control API. That is what makes "put it on the stereo" work from a
 // laptop that is not even on the same network.
 //
@@ -37,9 +37,9 @@ import { samoFetch } from '/@/renderer/api/samo/samo-fetch';
 import { getLongFormMediaServer, useAuthStore } from '/@/renderer/store/auth.store';
 
 /**
- * The connected Samo server, or null.
+ * The connected samo server, or null.
  *
- * samo-radio needs a long-form Samo server. With none connected, every surface
+ * samo-radio needs a long-form samo server. With none connected, every surface
  * built on this simply finds no devices rather than erroring.
  */
 export const getSamoRadioServer = () => getLongFormMediaServer(useAuthStore.getState());
@@ -58,17 +58,17 @@ const connection = () => {
 const requireConnection = () => {
     const authentication = connection();
     if (!authentication) {
-        throw new Error('Connect to a Samo server first.');
+        throw new Error('Connect to a samo server first.');
     }
     return authentication;
 };
 
 /**
- * Every device Samo can actually reach right now.
+ * Every device samo can actually reach right now.
  *
  * Only CONNECTED devices come back. Every surface built on this list is an
  * actionable one, and a device that is unpaired or unreachable can do nothing
- * but fail on click; pairing is fixed in Samo's own web UI, not here.
+ * but fail on click; pairing is fixed in samo's own web UI, not here.
  */
 export const fetchConnectedSamoRadioDevices = async (
     signal?: AbortSignal,

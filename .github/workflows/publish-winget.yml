@@ -16,5 +16,5 @@ jobs:
       - uses: vedantmgoyal9/winget-releaser@main
         with:
           identifier: bouliehaan.Samo
-          installers-regex: 'Samo-*-win-(x64|arm64)\.exe'
+          installers-regex: 'samo-*-win-(x64|arm64)\.exe'
           token: ${{ secrets.WINGET_ACC_TOKEN }}

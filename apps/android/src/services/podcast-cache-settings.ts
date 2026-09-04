@@ -13,7 +13,7 @@ import {
  * Admin-facing podcast cache controls for the Settings screen: how many newest
  * episodes the server keeps warm per show (prewarm), the on-disk size cap, and
  * a "clear everything" escape hatch. Thin wrappers over the core server client
- * bound to the active Samo connection.
+ * bound to the active samo connection.
  */
 export interface PodcastCacheState {
     episodeCount: number;

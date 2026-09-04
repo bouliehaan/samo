@@ -36,7 +36,7 @@ describe('isMp3PlayableAudio', () => {
 });
 
 describe('shouldServerSeekAudiobookMp3', () => {
-    it('routes a Samo MP3 audiobook to the server seek', () => {
+    it('routes a samo MP3 audiobook to the server seek', () => {
         expect(shouldServerSeekAudiobookMp3(makeItem())).toBe(true);
     });
     it('also routes multi-file MP3 rips (same book-absolute position shape)', () => {

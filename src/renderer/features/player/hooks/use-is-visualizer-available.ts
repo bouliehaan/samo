@@ -30,7 +30,7 @@ export function useIsMpvVisualizer(): boolean {
  * mpv (see main/features/core/player/visualizer-tap.ts) — which needs a fifo,
  * and so is not available on Windows.
  *
- * Samo used to bridge that gap with `getDisplayMedia`. On macOS Electron has
+ * samo used to bridge that gap with `getDisplayMedia`. On macOS Electron has
  * no audio-only loopback, so system audio only arrives attached to a live
  * ScreenCaptureKit capture of the whole display: the visualizer cost a Screen
  * Recording permission and a running screen capture. Asking mpv for the

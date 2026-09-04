@@ -41,10 +41,10 @@ import {
 const HOME_SECTION_ITEM_LIMIT = 24;
 
 /**
- * Local-first reads against the on-device SQLite catalog. The whole Samo library
+ * Local-first reads against the on-device SQLite catalog. The whole samo library
  * is mirrored on-device (Phases 1-2), so these let every browse/detail/search
- * surface render instantly for Samo sources. Each helper returns null/empty for
- * non-Samo sources and swallows DB errors so callers fall through to the network cleanly.
+ * surface render instantly for samo sources. Each helper returns null/empty for
+ * non-samo sources and swallows DB errors so callers fall through to the network cleanly.
  */
 
 /** Maps a home/search item type to the catalog detail type, or undefined when
@@ -91,7 +91,7 @@ const hydrateDetailPayload = (
 /**
  * Best-effort playback synthesis for LEGACY mirror track rows (written before
  * the raw-track envelope, without a `playback` object). Without one, a music
- * tap used to fall through to the legacy ABS fallback — a POST the Samo
+ * tap used to fall through to the legacy ABS fallback — a POST the samo
  * server answers with 405. Quality is honest-unknown here; rows regain full
  * fidelity (real container/mime from the file metadata) when the v4 sync
  * rewrites them as raw envelopes.
@@ -211,11 +211,11 @@ const hydrateCatalogPodcastEpisodes = (
 };
 
 /**
- * Instant detail for a Samo item straight from the catalog. Albums are
+ * Instant detail for a samo item straight from the catalog. Albums are
  * reconstructed from the tapped item's metadata + the stored album track rows
  * (sync stores album *tracks* under getTracks but no album *detail* row); every
  * other type returns its stored MobileMediaDetail payload. Returns null for
- * non-Samo sources, unknown types, or a cold/empty catalog so the caller can
+ * non-samo sources, unknown types, or a cold/empty catalog so the caller can
  * fall back to the fs cache + network.
  */
 export const loadCatalogMediaDetail = async (
@@ -356,8 +356,8 @@ export const loadCatalogMediaDetail = async (
 };
 
 /**
- * Instant full-collection items for a Samo source from the catalog, or null when
- * the source isn't Samo / the catalog has no rows for that type yet.
+ * Instant full-collection items for a samo source from the catalog, or null when
+ * the source isn't samo / the catalog has no rows for that type yet.
  */
 export const loadCatalogCollection = async (
     authentication: ServerAuthenticationResult,
@@ -503,7 +503,7 @@ const recentlyAddedFromMirror = async (
  * and the server-curated live sections the caller fetched are interleaved in
  * the canonical order. All shelf queries fan out in parallel on the native
  * reader's background thread — the JS thread only assembles the results.
- * Returns null when no Samo source has local rows yet (fresh install before
+ * Returns null when no samo source has local rows yet (fresh install before
  * the first sync lands).
  */
 export const buildCatalogHomeContent = async (
@@ -682,7 +682,7 @@ export const searchLocal = async (
 /**
  * Fast local-catalog lookup for a single artist home item by id. Used by the
  * full-screen player to resolve the artist's photo (artworkUrl/artworkImageId)
- * without a network round-trip. Returns null for non-Samo sources or a cache
+ * without a network round-trip. Returns null for non-samo sources or a cache
  * miss (artist not yet synced).
  */
 export const loadArtistHomeItemById = async (
