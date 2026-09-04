@@ -15,6 +15,7 @@ import { type ServerAuthenticationResult } from '@samo/core/server';
 
 import { ArtworkImage } from './ArtworkImage';
 import { ClearGlyph } from './Glyphs';
+import { arcSprings } from '../theme/arc';
 import { OPEN_SPRING, SCREEN_WIDTH } from '../theme/layout';
 import { styles } from '../theme/styles';
 import { colors, spacing } from '../theme/tokens';
@@ -62,10 +63,15 @@ export const ArtworkZoomModal = memo(({
     const displayUri = artworkSourceUri(resolvedSource) ?? uri;
 
     const resetZoom = useCallback(() => {
+        // Both axes on one spring draws a straight diagonal back to centre —
+        // the one path nothing physical takes. arcSprings gives the axis with
+        // further to go the faster spring, so the image curves home. See
+        // theme/arc.ts.
+        const back = arcSprings(translateX.value, translateY.value);
         scale.value = withSpring(1, OPEN_SPRING);
         savedScale.value = 1;
-        translateX.value = withSpring(0, OPEN_SPRING);
-        translateY.value = withSpring(0, OPEN_SPRING);
+        translateX.value = withSpring(0, back.x);
+        translateY.value = withSpring(0, back.y);
         savedTranslateX.value = 0;
         savedTranslateY.value = 0;
     }, [savedScale, savedTranslateX, savedTranslateY, scale, translateX, translateY]);
@@ -99,9 +105,11 @@ export const ArtworkZoomModal = memo(({
                 .onEnd(() => {
                     'worklet';
                     if (scale.value <= 1.04) {
+                        // Same arc as resetZoom — see theme/arc.ts.
+                        const back = arcSprings(translateX.value, translateY.value);
                         scale.value = withSpring(1, OPEN_SPRING);
-                        translateX.value = withSpring(0, OPEN_SPRING);
-                        translateY.value = withSpring(0, OPEN_SPRING);
+                        translateX.value = withSpring(0, back.x);
+                        translateY.value = withSpring(0, back.y);
                         savedScale.value = 1;
                         savedTranslateX.value = 0;
                         savedTranslateY.value = 0;

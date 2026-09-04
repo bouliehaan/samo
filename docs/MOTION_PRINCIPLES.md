@@ -7,8 +7,8 @@ decoration and it does not ship.
 Most of them were already being followed before they were written down — the tokens
 in [`theme/motion.ts`](../apps/android/src/theme/motion.ts) and the staging in
 [`theme/choreography.ts`](../apps/android/src/theme/choreography.ts) arrived at them
-from first principles. This document names them, says where each one lives, and is
-honest about the one that is still missing.
+from first principles. This document names them, says where each one lives, and is honest
+about what each one cost. As of 2026-09-04 all twelve are implemented.
 
 The twelve are Thomas and Johnston's, from *The Illusion of Life* (1981). They are
 about drawn characters; a screen is not a character. The translation is what matters,
@@ -38,14 +38,25 @@ fill carries the whole response, because deforming one row would deform the colu
 
 *A movement is preceded by a small preparation in the opposite direction.*
 
-**In samo:** partial, and deliberately restrained. `durations.press` (90ms) is the
-anticipation beat — the control commits before the screen arrives, so the press *is*
-the wind-up for the transition that follows. `springs.release` (stiffness 320, faster
-than `settle`) makes the release read as stored tension letting go.
+**In samo:** `anticipation` in `motion.ts`, wired into `PressableScale`.
 
-**Deliberately not extended further.** True anticipation on a UI element — pulling back
-before moving forward — costs latency on the exact frames where a tap needs confirming.
-Principle 6 wins that argument. Anticipation here lives in the press state, and stops.
+A long press holds the finger down for 500ms, and the surface used to spend all of it
+frozen at full press depth saying nothing. It now keeps loading across that window —
+`pressed` travels past 1 to `anticipation.peak` (1.35) over `holdMs` (420ms), reaching
+the peak and going **still** before the menu fires, so the release reads as caused by
+the wind-up rather than coincident with it.
+
+Because the press styles are linear in `pressed` (`scale: 1 - pressed * (1 - scaleTo)`),
+this extends the depth that already exists rather than introducing a second scale to keep
+in sync. At the tile preset it is the difference between a 4% and a 5.4% sink — near the
+floor of what the eye registers, because it must read as *loading*, not as *more pressing*.
+
+**It is confined to the held gesture, and that is the principle applied rather than
+obeyed.** Winding up before a **tap** would spend the opening frames moving away from what
+the user asked for — the exact frames where a tap gets confirmed. Principle 6 wins that
+argument, which is why `emphasized` is ease-out and `durations.press` is 90ms. A long press
+has no such conflict: the finger is already committed, and the wait was dead air. It also
+answers "did my long-press register?" with no extra chrome.
 
 ## 3. Staging
 
@@ -108,23 +119,30 @@ the clock happened to be travelling when their window opened.
 
 *Living things move on curved paths. Only machinery travels in straight lines.*
 
-**Status: NOT IMPLEMENTED. This is the real gap.**
+**In samo:** `theme/arc.ts`, wired into `ArtworkZoomModal`.
 
-Everything in samo currently moves on a single axis — `translateY` plus opacity. That is
-a defensible default (see the 60fps contract: `transform` and `opacity` only), and a
-straight line is the right choice for a surface entering from an edge. But it means no
-motion in the app arcs, and the places where it would earn its keep are specific:
+The rule everywhere else still holds: single-axis motion travels straight, and bending a
+sheet rising from the bottom edge would read as drift, not life. Arc earns its keep the
+moment something moves **diagonally** — and there, both axes on one spring draws a
+perfectly straight diagonal, the one path nothing physical takes. Zoomed artwork returning
+to centre did exactly that.
 
-- an element that moves **diagonally** between two positions (a tile expanding into a
-  detail hero) currently travels a straight diagonal, which is the one case that reads
-  as mechanical
-- a sheet dismissed by a **fling** should follow the throw's direction, not snap to
-  vertical
+**An arc is two eased channels, not a path.** The 60fps contract permits only `transform`
+and `opacity`, so rather than sampling a parametric curve every frame, the two axes get
+*different* springs — `ARC_LEAD_SPRING` (stiffness 300) and `ARC_TRAIL_SPRING` (210). While
+x is most of the way home and y has barely started, the point is off the straight line
+between start and end, and that displacement **is** the arc.
 
-Both are expressible as `translateX`/`translateY` driven from one clock with different
-easing per axis, which stays inside the 60fps contract — an arc is two eased channels,
-not a path. Unimplemented because nothing in the app does shared-element transitions yet;
-revisit when one does, not before.
+**The axis with further to travel leads.** That is how a thrown object behaves — it commits
+to the direction it was thrown and the smaller component resolves late — so the bow always
+opens the same way relative to the motion, and two dismissals from opposite corners feel
+like one physics rather than two animations. Ties go to x, deterministically, because a
+45° throw has no dominant axis and a float coin flip is worse than a consistent answer.
+
+The two springs are kept within 2× stiffness of each other on purpose, and the trail is
+never underdamped relative to the lead. Push them apart and it stops reading as one object
+on a curved path and becomes two things landing near each other; underdamp the trail and
+the curve turns into a bounce. Both are pinned by tests in `theme/arc.test.ts`.
 
 ## 8. Secondary action
 
@@ -135,8 +153,21 @@ sheet itself rises on `springs.sheet` — two motions, one event, and the scrim 
 deliberately a *timing* while the sheet is a *spring* so the backdrop never competes for
 attention with the thing arriving.
 
-**The rule when adding more:** a secondary action must be on a different property and a
-different curve from the primary. Two things easing identically read as one thing.
+**The rule, now written into `motion.ts`:** a secondary action must differ from its primary
+in **both property and curve**.
+
+- Different **property**, so the two are not the same gesture drawn twice. The scrim moves
+  `opacity`; the sheet moves `transform`.
+- Different **curve**, so they cannot phase-lock. The scrim is a `timing` and the sheet is a
+  `spring` — one has a fixed duration, the other resolves out of its own velocity, so they
+  never arrive on the same frame however the surface is dismissed.
+
+Share either and the eye fuses them into one flat event, which is worse than having no
+secondary action at all: the supporting motion becomes cost that makes the primary read as
+heavier than it is.
+
+There is deliberately **no token** for this. It is a constraint on how the existing tokens
+are combined, and a `secondary` object would be a value nothing reads pretending to be a rule.
 
 ## 9. Timing
 

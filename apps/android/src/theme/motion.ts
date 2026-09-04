@@ -175,3 +175,68 @@ export const timings = {
     state: { duration: durations.state, easing: easings.emphasized },
     press: { duration: durations.press, easing: easings.emphasized },
 } as const;
+
+/**
+ * Anticipation — Disney's second principle. See docs/MOTION_PRINCIPLES.md.
+ *
+ * A movement is preceded by a small preparation, and the preparation is what
+ * tells you the movement is coming.
+ *
+ * THIS IS DELIBERATELY CONFINED TO THE HELD GESTURE, and the reason is timing,
+ * not taste. Winding up before a TAP would spend the opening frames moving away
+ * from the thing the user asked for, and those are the exact frames where a tap
+ * gets confirmed — principle 6 wins that argument every time, which is why
+ * `emphasized` is ease-out and why `durations.press` is 90ms.
+ *
+ * A long-press has no such conflict. The finger is already down and committed,
+ * and the 500ms before it fires is dead air the surface currently spends frozen
+ * at full press depth, telling the user nothing. Continuing to compress across
+ * that window turns the wait into a wind-up: the surface visibly loads, and the
+ * menu firing is the release. It also answers "did my long-press register?"
+ * without a single extra pixel of chrome.
+ */
+export const anticipation = {
+    /**
+     * How far `pressed` travels PAST 1 while the finger is held.
+     *
+     * The press styles are linear in `pressed` (`scale: 1 - pressed*(1-scaleTo)`),
+     * so this extrapolates the existing depth rather than introducing a second
+     * scale to keep in sync. At the tile preset's 0.96 it is the difference
+     * between a 4% and a 5.4% sink — deliberately near the floor of what the eye
+     * registers, because this must read as the object loading under a held
+     * finger and never as the object continuing to be pressed.
+     */
+    peak: 1.35,
+    /**
+     * The wind-up's duration. Shorter than LONG_PRESS_MS (500) on purpose, so
+     * the surface is fully loaded and momentarily STILL before the menu fires.
+     * Arriving at the peak on the same frame the menu opens reads as a
+     * coincidence; arriving early and holding reads as cause and effect.
+     */
+    holdMs: 420,
+} as const;
+
+/**
+ * Secondary action — Disney's eighth principle. See docs/MOTION_PRINCIPLES.md.
+ *
+ * A supporting motion that reinforces the main one without competing with it:
+ * a sheet rises (primary) while its scrim fades up behind it (secondary).
+ *
+ * THE RULE, and it is the whole principle in one line: a secondary action must
+ * differ from its primary in BOTH property and curve.
+ *
+ * - Different PROPERTY, so the two are not the same gesture drawn twice. The
+ *   scrim moves `opacity`; the sheet moves `transform`.
+ * - Different CURVE, so they cannot phase-lock. The scrim is a `timing`
+ *   (`timings.scrim`) and the sheet is a `spring` (`springs.sheet`) — one has a
+ *   fixed duration, the other resolves out of its own velocity, so they never
+ *   arrive on the same frame no matter how the surface is dismissed.
+ *
+ * Share either and the eye fuses them into one flat event, which is worse than
+ * having no secondary action at all: the supporting motion is then just extra
+ * cost that makes the primary read as heavier than it is.
+ *
+ * Already satisfied by the sheet/scrim pair above; there is no token here on
+ * purpose. This is a constraint on how you COMBINE the existing tokens, and a
+ * `secondary` object would be a value nothing reads pretending to be a rule.
+ */

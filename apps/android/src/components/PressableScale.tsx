@@ -18,7 +18,7 @@ import Reanimated, {
     withTiming,
 } from 'react-native-reanimated';
 
-import { springs, timings } from '../theme/motion';
+import { anticipation, easings, springs, timings } from '../theme/motion';
 
 /**
  * The press-in delay, in ms — the window in which a touch is still allowed to
@@ -241,9 +241,23 @@ export const PressableScale = ({
                 longPressed.value = false;
                 // The whole point: this line runs on the UI thread, on the
                 // frame the finger lands, with no JS round trip in front of it.
-                pressed.value = scrollSafe
-                    ? withDelay(PRESS_IN_DELAY_MS, withTiming(1, timings.press))
+                // Press in, then — only where a long-press exists — keep
+                // loading past 1 across the hold. `anticipation.peak` extends
+                // the SAME linear depth the styles already read, so there is no
+                // second scale to keep in sync, and a tap never sees it because
+                // a tap lifts long before `anticipation.holdMs` elapses.
+                const pressIn = hasLongPress
+                    ? withSequence(
+                          withTiming(1, timings.press),
+                          withTiming(anticipation.peak, {
+                              duration: anticipation.holdMs,
+                              easing: easings.standard,
+                          }),
+                      )
                     : withTiming(1, timings.press);
+                pressed.value = scrollSafe
+                    ? withDelay(PRESS_IN_DELAY_MS, pressIn)
+                    : pressIn;
                 runOnJS(invokePressIn)();
             })
             .onTouchesMove((event) => {
