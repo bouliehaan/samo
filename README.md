@@ -6,6 +6,21 @@ samo is the client half of a pair. The server half is [samo-server](https://gith
 
 samo began as a fork of [Feishin](https://github.com/jeffvli/feishin) and keeps its GPL-3.0 licence. See [Credits](#credits).
 
+## Screens
+
+Android — the most actively developed surface, shot on the phone it gets used on.
+
+| Home | Playlist | Now playing | Radio |
+|:----:|:--------:|:-----------:|:-----:|
+| <img src="docs/screenshots/android-home.png" width="200" alt="Home: music, podcasts and audiobooks in one library"> | <img src="docs/screenshots/android-detail.png" width="200" alt="Playlist detail with cover, title and track list"> | <img src="docs/screenshots/android-player.png" width="200" alt="Now playing with source quality shown"> | <img src="docs/screenshots/android-radio.png" width="200" alt="Radio: samo-radio devices and internet stations"> |
+
+Entrances are staged rather than uniform — the heavy element leads and the lighter ones
+attached to it lag, then catch up. See [`docs/MOTION_PRINCIPLES.md`](docs/MOTION_PRINCIPLES.md).
+
+<p align="center">
+  <img src="docs/screenshots/motion.gif" width="240" alt="Opening a playlist: the cover lands first, the subtitle and buttons catch up a beat later">
+</p>
+
 ## Status
 
 Honest state of things, so nobody installs this expecting a finished product:
