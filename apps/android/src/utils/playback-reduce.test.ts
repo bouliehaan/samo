@@ -187,3 +187,89 @@ describe('reducePlaybackStateFromEvent — track-start anchor (music Next at 0:5
         expect(state?.pendingSeekTargetMs).toBeUndefined();
     });
 });
+
+describe('reducePlaybackStateFromEvent — live station metadata', () => {
+    it('keeps the now-playing the metadata sync wrote, rather than the snapshot it was opened with', () => {
+        // A live station's snapshot is stamped when the stream opens and is
+        // never re-stamped while it plays — the item id does not change when
+        // the station moves on. The now-playing line is written onto the
+        // playing item instead, so adopting the snapshot on every position
+        // tick pinned the display to whatever was airing at tune-in.
+        const opened = { ...makeItem('chan', 'radio'), title: 'Car Talk' };
+        const airing = { ...makeItem('chan', 'radio'), title: "Stavvy's World" };
+        const current = makeState({ item: airing, positionMs: 1_000 });
+        const event = makeEvent({ positionMs: 30_000, source: { id: 'chan' } });
+
+        const next = reducePlaybackStateFromEvent(current, event, {
+            item: opened,
+            sessionId: 'sessB',
+        });
+
+        expect(next.status === 'idle' ? undefined : next.item.title).toBe("Stavvy's World");
+    });
+
+    it('still adopts the snapshot when the track genuinely changed', () => {
+        // The id is what says "different item", and there the snapshot is the
+        // one that knows — this is the native auto-advance path.
+        const current = makeState({ item: makeItem('A'), positionMs: 170_000 });
+        const event = makeEvent({ positionMs: 500, source: { id: 'B' } });
+
+        const next = reducePlaybackStateFromEvent(current, event, {
+            item: makeItem('B'),
+            sessionId: 'sessB',
+        });
+
+        expect(next.status === 'idle' ? undefined : next.item.id).toBe('B');
+    });
+});
+
+describe('reducePlaybackStateFromEvent — observed delivery format', () => {
+    const opus = { bitRate: null, channelCount: 2, codec: 'audio/opus', sampleRate: 48_000 };
+
+    it('adopts the format the engine reports', () => {
+        const next = reducePlaybackStateFromEvent(
+            makeState(),
+            makeEvent({ decodedFormat: opus }),
+            null,
+        );
+
+        expect(next.status !== 'idle' && next.decodedFormat).toEqual(opus);
+    });
+
+    it('keeps the previous object identity when the format has not changed', () => {
+        // Native re-sends the format on every emit. A fresh identity here would
+        // mark the state dirty on each position tick and re-render the player.
+        const current = makeState({ decodedFormat: opus });
+        const next = reducePlaybackStateFromEvent(
+            current,
+            makeEvent({ decodedFormat: { ...opus } }),
+            null,
+        );
+
+        expect(next.status !== 'idle' && next.decodedFormat).toBe(
+            current.status !== 'idle' ? current.decodedFormat : undefined,
+        );
+    });
+
+    it('drops the outgoing track format when the track changes and none is reported', () => {
+        const next = reducePlaybackStateFromEvent(
+            makeState({ decodedFormat: opus }),
+            makeEvent({ source: { id: 'C' } }),
+            { item: makeItem('C'), sessionId: 'sessB' },
+        );
+
+        expect(next.status !== 'idle' && next.decodedFormat).toBeUndefined();
+    });
+
+    it('holds the format across a tick on the same track that reports none', () => {
+        // The cast path reports no decoded format at all; a same-track tick
+        // must not be read as "the delivery changed".
+        const next = reducePlaybackStateFromEvent(
+            makeState({ decodedFormat: opus }),
+            makeEvent(),
+            null,
+        );
+
+        expect(next.status !== 'idle' && next.decodedFormat).toEqual(opus);
+    });
+});

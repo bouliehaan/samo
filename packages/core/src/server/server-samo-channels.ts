@@ -13,7 +13,13 @@
 
 import { type ServerAuthenticationResult } from './server-auth';
 import { type SamoFetch } from './server-http';
-import { getSamoApiUrl, getSamoExtractedCoverUrl, pickSamoCatalogImageId, samoGet } from './server-samo';
+import {
+    getSamoApiUrl,
+    getSamoExtractedCoverUrl,
+    pickSamoCatalogImageId,
+    samoGet,
+    samoSend,
+} from './server-samo';
 
 type Auth = Pick<ServerAuthenticationResult, 'credential' | 'url'>;
 
@@ -131,6 +137,86 @@ export const getSamoChannelNowPlaying = async (
     return samoGet<SamoChannelNowPlaying>(fetcher, authentication, channelPath(channelId, '/now'), {
         signal: options?.signal,
     });
+};
+
+/**
+ * How far past the programming a skip reaches.
+ *
+ * `item` drops what is on and lets the scheduler pick again — "not this one".
+ * `kind` steps off the whole medium for a few hours — "not talk right now, put
+ * some music on". The server also answers to the older name `source` for the
+ * second; nothing new should send it.
+ */
+export type SamoChannelSkipScope = 'item' | 'kind';
+
+/**
+ * How long to wait after a skip before re-reading what is on.
+ *
+ * A skip's own response describes the programme being skipped, not its
+ * replacement: the server has to pass over the item, run the whole scheduling
+ * decision again and start the next one before `/now` says anything new. A
+ * readout refreshed on the reply shows the outgoing item and makes the button
+ * look broken. Every surface that skips waits this long before asking again.
+ */
+export const SAMO_CHANNEL_SKIP_SETTLE_MS = 1200;
+
+/**
+ * Move the channel's programming on.
+ *
+ * This is a change to the STATION, not a local seek: there is one encoder and
+ * every listener hears the same second, so a skip is heard by all of them. The
+ * server treats it as a listener action rather than administration — anyone
+ * tuned in is allowed to decide they are not in the mood.
+ *
+ * False means nothing was airing to skip, which happens on a channel with no
+ * listeners: its encoder is not running, and the scheduler picks fresh the
+ * moment somebody tunes in. Not an error, and not something to report as one.
+ *
+ * A caller that is ALSO listening has a second half to do. Between the encoder
+ * and the speakers sit the server's listener queue, a socket and the audio
+ * element's own buffer — several seconds fetched before the skip that would
+ * otherwise play out in full afterwards, making the button look ignored. The
+ * fix is to reopen the stream, which costs nothing on a source that is live and
+ * endless. {@link previousSamoChannel} needs the same treatment.
+ */
+export const skipSamoChannel = async (
+    fetcher: SamoFetch,
+    authentication: Auth,
+    channelId: string,
+    scope: SamoChannelSkipScope = 'item',
+): Promise<boolean> => {
+    const response = await samoSend<{ skipped?: boolean }>(
+        fetcher,
+        authentication,
+        'POST',
+        channelPath(channelId, '/skip'),
+        undefined,
+        scope === 'kind' ? { query: { scope: 'kind' } } : undefined,
+    );
+
+    return response?.skipped ?? false;
+};
+
+/**
+ * Re-air the item before this one.
+ *
+ * A live pipe has no back-buffer to rewind into, so "previous" is the station's
+ * decision too: it puts the last thing it played back on from the top. False
+ * means there was nothing to go back to.
+ */
+export const previousSamoChannel = async (
+    fetcher: SamoFetch,
+    authentication: Auth,
+    channelId: string,
+): Promise<boolean> => {
+    const response = await samoSend<{ moved?: boolean }>(
+        fetcher,
+        authentication,
+        'POST',
+        channelPath(channelId, '/previous'),
+    );
+
+    return response?.moved ?? false;
 };
 
 /**

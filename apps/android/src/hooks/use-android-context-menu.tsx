@@ -59,6 +59,7 @@ import {
     handleOpenCreatePlaylistForCollection,
     handleOpenCreatePlaylistForSong,
     handleRemoveTrackFromPlaylist,
+    handleRemoveTrackFromQueuePlaylist,
 } from '../handlers/playlist-handlers';
 import {
     canAppendToPlaybackQueue,
@@ -129,6 +130,7 @@ export const mediaContextMenuApi: MediaContextMenuApi = {
             setContextMenuTarget({
                 fromExplo: openOptions?.fromExplo,
                 kind: 'song',
+                queuePlaylist: openOptions?.queuePlaylist,
                 removeFromHomeKey,
                 source: item.source,
                 suppressDownloadAction: openOptions?.suppressDownloadAction,
@@ -414,23 +416,30 @@ export function useAndroidContextMenu(): AndroidContextMenuSurface {
             // below the navigational actions is deliberate: nothing lands on it
             // while reaching for Go to Album.
             //
-            // The detail the menu was opened against IS the qualifier. It is
-            // set only by the detail-page rows (a long-press on Home, in search
-            // or in the queue has no containing playlist to remove from), and
-            // `isMobilePlaylistDetailEditable` narrows that to a playlist this
-            // user is actually allowed to write — not somebody else's, and not
-            // a server-managed one, both of which would 403 on commit. The
-            // player's queue-origin fallback deliberately does NOT feed this
-            // one: removing a track from a playlist you are only listening to
-            // is not an action the player should be offering.
-            if (detail && isMobilePlaylistDetailEditable(detail)) {
-                const playlistDetail = detail;
+            // Two ways to name the containing playlist, and only two. A
+            // detail-page row hands over the detail itself, narrowed by
+            // `isMobilePlaylistDetailEditable` to a playlist this user may
+            // actually write — not somebody else's, and not the server-managed
+            // Explore drop, both of which would 403 on commit. The fullscreen
+            // player has no detail page, so it reports what its queue was
+            // started from, already narrowed by that same test at play time and
+            // already checked against the playing track's membership. Anywhere
+            // else — Home, search, the queue sheet — there is no containing
+            // playlist and the action stays absent.
+            const queuePlaylist = contextMenuTarget.queuePlaylist;
+            const removeFromPlaylist =
+                detail && isMobilePlaylistDetailEditable(detail)
+                    ? () => handleRemoveTrackFromPlaylist(track, detail)
+                    : queuePlaylist
+                      ? () => handleRemoveTrackFromQueuePlaylist(track, queuePlaylist)
+                      : null;
+            if (removeFromPlaylist) {
                 menuActions.push({
                     destructive: true,
                     icon: <PlaylistRemoveGlyph color={DESTRUCTIVE_TINT} />,
                     id: 'remove-from-playlist',
                     label: 'Remove from Playlist',
-                    onPress: () => handleRemoveTrackFromPlaylist(track, playlistDetail),
+                    onPress: removeFromPlaylist,
                 });
             }
 

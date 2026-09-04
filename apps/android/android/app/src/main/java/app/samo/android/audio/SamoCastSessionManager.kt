@@ -38,6 +38,7 @@ internal interface SamoAudioCastHost {
   var currentMediaItem: MediaItem?
   var currentHlsFallbackAttempted: Boolean
   var currentAudioTrackConfig: androidx.media3.exoplayer.audio.AudioSink.AudioTrackConfig?
+  var currentDecodedFormat: SamoDecodedAudioFormat?
   var currentBitPerfectTruth: SamoBitPerfectTruth
   val boundService: SamoPlaybackService?
   fun emit(eventName: String, event: WritableMap)

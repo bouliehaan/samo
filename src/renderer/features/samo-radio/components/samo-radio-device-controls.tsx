@@ -1,4 +1,5 @@
 import {
+    SAMO_CHANNEL_SKIP_SETTLE_MS,
     type SamoRadioCommand,
     type SamoRadioDevice,
     type SamoRadioState,
@@ -31,18 +32,6 @@ import { Slider } from '/@/shared/components/slider/slider';
 import { Spinner } from '/@/shared/components/spinner/spinner';
 import { Text } from '/@/shared/components/text/text';
 import { toast } from '/@/shared/components/toast/toast';
-
-/**
- * How long to wait before re-reading state after skipping on a channel.
- *
- * A channel skip is a request to the STATION, not a local seek: the device
- * forwards it, throws away the seconds of audio it had already pulled down the
- * pipe, and only then does the channel report what is now airing. The command's
- * own response still describes the programme being skipped, so without this the
- * readout keeps showing it and the button looks broken. Same wait the phone and
- * the web panel use.
- */
-const CHANNEL_SKIP_SETTLE_MS = 1200;
 
 const formatClock = (seconds: number): string => {
     const total = Math.max(0, Math.floor(seconds || 0));
@@ -168,7 +157,7 @@ export const SamoRadioDeviceControls = memo(
 
                 // On a channel the transport commands are asking the station to
                 // move on, and its answer arrives after the command's own reply
-                // — see CHANNEL_SKIP_SETTLE_MS.
+                // — see SAMO_CHANNEL_SKIP_SETTLE_MS.
                 if (
                     transport === 'channel' &&
                     (command === 'next' || command === 'next-kind' || command === 'previous')
@@ -178,7 +167,7 @@ export const SamoRadioDeviceControls = memo(
                     }
                     settleTimerRef.current = setTimeout(() => {
                         void refreshSamoRadioDeviceState(device.id);
-                    }, CHANNEL_SKIP_SETTLE_MS);
+                    }, SAMO_CHANNEL_SKIP_SETTLE_MS);
                 }
             },
             [device.id, runCommand, transport],

@@ -232,8 +232,25 @@ export const resolveSamoItemArtworkSourceForDisplay = (
     // did their own (three per item, plus two redundant token finalizes).
     const auth = findServerAuthenticationForSource(serverConnection, source);
     if (!auth) {
-        // Non-Samo (or not-yet-connected) source: the stored URL is all there is.
-        return item.artworkUrl;
+        // Non-Samo source: the stored URL is all there is, and it needs no
+        // bearer — hand it over.
+        //
+        // NOT-YET-CONNECTED is a different case wearing the same clothes, and
+        // handing the URL over there is a request that cannot succeed. A Samo
+        // /api/v1/ media URL with no stream token 401s for any consumer that
+        // cannot attach the Bearer header, which is exactly what a bare string
+        // source is. The tile then loaded a second time once the connection
+        // resolved — measured through samo-proxy as three covers going 401 and
+        // the same three URLs returning 200 about 120ms later. On the Android
+        // client's no-reuse connection pool each of those wasted attempts is a
+        // full TCP + TLS handshake.
+        //
+        // Withholding it renders the neutral tile the caller already shows
+        // while artwork resolves, and the memo recomputes into a real source
+        // the moment auth lands. Same one-frame placeholder, one request.
+        return isSamoMediaUrlMissingStreamToken(item.artworkUrl)
+            ? undefined
+            : item.artworkUrl;
     }
 
     const bearer = getSamoBearerToken(auth);

@@ -21,11 +21,13 @@ import android.media.AudioFormat as PlatformAudioFormat
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
+import androidx.media3.common.Format
 import androidx.media3.common.Metadata
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.TrackSelectionParameters
+import androidx.media3.common.Tracks
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.audio.AudioSink
@@ -299,6 +301,17 @@ internal class SamoAudioEngine(
     SamoCatalogDb.warm(reactContext)
   }
   override var currentAudioTrackConfig: AudioSink.AudioTrackConfig? = null
+  override var currentDecodedFormat: SamoDecodedAudioFormat? = null
+  /**
+   * The format the USB bit-perfect mixer was last negotiated FOR.
+   *
+   * Separate from [currentDecodedFormat] on purpose. The displayed format is
+   * cleared on every track change so the player never labels a new track with
+   * the previous one's delivery; the negotiated format is not, so a queue whose
+   * tracks all arrive in the same format re-negotiates the DAC once rather than
+   * clearing and re-requesting its mixer between every song.
+   */
+  private var mixerNegotiatedForFormat: SamoDecodedAudioFormat? = null
   override var currentBitPerfectTruth = SamoBitPerfectTruth.unknown()
   override var currentCastSource: SamoCastSource? = null
   override var currentHlsFallbackAttempted = false
@@ -637,6 +650,10 @@ internal class SamoAudioEngine(
       currentServerUrl = source.getOptionalString("serverUrl")
       currentBearerToken = source.getOptionalString("serverBearerToken")
       currentAudioTrackConfig = null
+      // A new stream is about to open: nothing has been observed of it yet,
+      // and the last track's delivery must not be reported as this one's.
+      currentDecodedFormat = null
+      mixerNegotiatedForFormat = null
       currentHlsFallbackAttempted = mimeType == MimeTypes.APPLICATION_M3U8
       currentMediaItem = mediaItem
       currentQuality = quality
@@ -905,6 +922,8 @@ internal class SamoAudioEngine(
         currentServerUrl = null
         currentBearerToken = null
         currentAudioTrackConfig = null
+        currentDecodedFormat = null
+        mixerNegotiatedForFormat = null
         currentCastSource = null
         currentHlsFallbackAttempted = false
         currentMediaItem = null
@@ -1146,6 +1165,8 @@ internal class SamoAudioEngine(
       binder.clearOnInvalidate()
       playerListenersInstalledOn = null
       currentAudioTrackConfig = null
+      currentDecodedFormat = null
+      mixerNegotiatedForFormat = null
       currentCastSource = null
       currentHlsFallbackAttempted = false
       currentMediaItem = null
@@ -1157,6 +1178,38 @@ internal class SamoAudioEngine(
   }
 
 
+
+  /**
+   * The selected audio track's format, reduced to the four facts the player
+   * surface and the bit-perfect evaluator need.
+   *
+   * `bitrate` is converted to kbps to match the unit the catalog reports in,
+   * and is left null when the container declares none — Ogg/Opus carries no
+   * bitrate in its headers, and a guessed number here would be the same
+   * category of lie as the one this whole path exists to remove.
+   */
+  private fun readDecodedAudioFormat(tracks: Tracks): SamoDecodedAudioFormat? {
+    for (group in tracks.groups) {
+      if (group.type != C.TRACK_TYPE_AUDIO || !group.isSelected) continue
+      for (index in 0 until group.length) {
+        if (!group.isTrackSelected(index)) continue
+        val format = group.getTrackFormat(index)
+        val bitsPerSecond = when {
+          format.bitrate != Format.NO_VALUE && format.bitrate > 0 -> format.bitrate
+          format.averageBitrate != Format.NO_VALUE && format.averageBitrate > 0 ->
+            format.averageBitrate
+          else -> null
+        }
+        return SamoDecodedAudioFormat(
+          bitrate = bitsPerSecond?.let { it / 1000 },
+          channelCount = format.channelCount.takeIf { it != Format.NO_VALUE && it > 0 },
+          codec = format.sampleMimeType,
+          sampleRate = format.sampleRate.takeIf { it != Format.NO_VALUE && it > 0 },
+        )
+      }
+    }
+    return null
+  }
 
   override fun installListenersIfNeeded(player: ExoPlayer) {
     if (playerListenersInstalledOn === player) {
@@ -1242,6 +1295,58 @@ internal class SamoAudioEngine(
           return
         }
         emitState(getCurrentStatus(player))
+      }
+
+      /**
+       * The format the player is ACTUALLY decoding, as opposed to the one the
+       * catalog said this track would be.
+       *
+       * Everything upstream of here describes a file on the server's disk: the
+       * scanner measured it, the catalog stored it, and the queue item carries
+       * it. Nothing in that chain can see what happened to the bytes on the way
+       * out of the house, so a stream re-encoded in transit — lossless folded
+       * down to a lossy codec to survive a slow uplink, most obviously — was
+       * still being reported as the original file, at the original bitrate,
+       * over a path labelled direct. This callback is the first point in the
+       * app where the real answer exists.
+       *
+       * Fires once per prepared item, on the main thread, and is attributed to
+       * the track being played by construction — which is why the delivered
+       * format is read here rather than from the loader or the response
+       * headers, both of which also run for items that are merely being
+       * pre-buffered and would land against the wrong song.
+       */
+      override fun onTracksChanged(tracks: Tracks) {
+        if (isCastActive()) return
+
+        val decoded = readDecodedAudioFormat(tracks)
+        if (decoded == currentDecodedFormat) return
+        currentDecodedFormat = decoded
+
+        // Re-negotiate the DAC only when the format we are feeding it actually
+        // changed. The mixer request made at play/transition time was built
+        // from the catalog's claim, before any stream had opened; if what
+        // arrived disagrees, that request is for audio that is never coming.
+        val service = binder.boundService
+        if (decoded != null && decoded != mixerNegotiatedForFormat && service != null) {
+          mixerNegotiatedForFormat = decoded
+          SamoBitPerfect.clearPreferredMixerAttributes(reactContext, service)
+          currentBitPerfectTruth = buildBitPerfectTruth(
+            audioTrackConfig = currentAudioTrackConfig,
+            quality = currentQuality,
+            requestPreferredMixer = true,
+            service = service,
+          )
+        } else {
+          currentBitPerfectTruth = buildBitPerfectTruth(
+            audioTrackConfig = currentAudioTrackConfig,
+            quality = currentQuality,
+            requestPreferredMixer = false,
+            service = service,
+          )
+        }
+
+        emitState()
       }
 
       /**
@@ -1403,6 +1508,12 @@ internal class SamoAudioEngine(
         // first track's format. (No-op for same-format tracks / non-USB output.)
         val mixerService = binder.boundService
         currentQuality = SamoBridgeMapCopier.toWritableMap(HashMap(newItem)).getSourceQuality()
+        // Nothing has been decoded of the incoming track yet. Drop the outgoing
+        // track's observed format so the player cannot label this one with it;
+        // onTracksChanged refills it a moment later. `mixerNegotiatedForFormat`
+        // is deliberately left alone — a queue that keeps arriving in the same
+        // format should not clear and re-request the DAC's mixer per song.
+        currentDecodedFormat = null
         if (mixerService != null) {
           SamoBitPerfect.clearPreferredMixerAttributes(reactContext, mixerService)
           currentBitPerfectTruth = buildBitPerfectTruth(
@@ -1957,7 +2068,8 @@ internal class SamoAudioEngine(
     quality: SamoAudioSourceQuality
   ): Boolean {
     if (service.preferredMixerDevice != null) return true
-    val sourceFormat = SamoBitPerfect.buildSourcePcmFormat(quality) ?: return false
+    val sourceFormat =
+      SamoBitPerfect.buildSourcePcmFormat(quality, currentDecodedFormat) ?: return false
     return SamoBitPerfect.getSupportedBitPerfectUsbMixerAttributes(reactContext, sourceFormat) != null
   }
 
@@ -2046,6 +2158,17 @@ internal class SamoAudioEngine(
     // with the player forced to REPEAT_MODE_OFF while the setting persists.
     map.putString("repeatMode", repeatModeLabel())
     map.putMap("bitPerfect", SamoBitPerfect.getBitPerfectTruthMap(currentBitPerfectTruth))
+    // Absent until the stream opens, and absent on the cast path (the receiver
+    // decodes, not us). JS treats absence as "not observed yet" and falls back
+    // to the catalog's description rather than inventing one.
+    currentDecodedFormat?.let { decoded ->
+      val decodedMap = Arguments.createMap()
+      decoded.bitrate?.let { decodedMap.putInt("bitRate", it) }
+      decoded.channelCount?.let { decodedMap.putInt("channelCount", it) }
+      decodedMap.putString("codec", decoded.codec)
+      decoded.sampleRate?.let { decodedMap.putInt("sampleRate", it) }
+      map.putMap("decodedFormat", decodedMap)
+    }
 
     if (source != null) {
       val sourceMap = Arguments.createMap()
@@ -2105,6 +2228,10 @@ internal class SamoAudioEngine(
       reactContext,
       audioTrackConfig = audioTrackConfig,
       quality = quality,
+      // Read from the field rather than taken as a parameter: this is the one
+      // funnel every caller already goes through, so the observed format cannot
+      // be left out of a call site the way an extra argument could be.
+      decodedFormat = currentDecodedFormat,
       requestPreferredMixer = requestPreferredMixer,
       service = service,
       previousUsbMixerRequested = currentBitPerfectTruth.usbBitPerfectMixerRequested,
@@ -2170,6 +2297,8 @@ internal class SamoAudioEngine(
     installListenersIfNeeded(resolvedPlayer)
     clearPreferredMixerAttributes(service)
     currentAudioTrackConfig = null
+    currentDecodedFormat = null
+    mixerNegotiatedForFormat = null
     currentHlsFallbackAttempted = mimeType == MimeTypes.APPLICATION_M3U8
     currentMediaItem = mediaItem
     currentQuality = quality

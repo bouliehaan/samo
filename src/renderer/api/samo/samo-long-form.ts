@@ -1,6 +1,6 @@
 import { buildMobilePodcastFeedEpisodes } from '@samo/core/mobile';
 import {
-    collectSamoPages,
+    collectSamoPagesCapped,
     ensureSamoStreamToken,
     getCachedSamoStreamToken,
     getSamoAudiobookStreamUrl,
@@ -207,7 +207,9 @@ export const listSamoAudiobookLibraryItems = async (
     server: ServerListItemWithCredential,
 ): Promise<SamoBackedLibraryItem[]> => {
     const auth = samoAuth(server);
-    const audiobooks = await collectSamoPages(
+    // A library listing is rendered, never written back, so a ceiling stop is
+    // a short grid rather than a lost row. Said by name via the capped variant.
+    const { items: audiobooks } = await collectSamoPagesCapped(
         LONG_FORM_PAGE_SIZE,
         LONG_FORM_LIBRARY_CEILING,
         (offset) => listSamoAudiobooks(browserFetch, auth, { limit: LONG_FORM_PAGE_SIZE, offset }),
@@ -222,17 +224,19 @@ const listAllSamoPodcastEpisodes = async (
     server: ServerListItemWithCredential,
     showId: string,
 ): Promise<SamoPodcastEpisode[]> =>
-    collectSamoPages(LONG_FORM_PAGE_SIZE, PODCAST_EPISODE_CEILING, (offset) =>
+    collectSamoPagesCapped(LONG_FORM_PAGE_SIZE, PODCAST_EPISODE_CEILING, (offset) =>
         samoExtras.getPodcastEpisodes(server, showId, { limit: LONG_FORM_PAGE_SIZE, offset }),
-    );
+    ).then((collection) => collection.items);
 
 export const listSamoPodcastLibraryItems = async (
     server: ServerListItemWithCredential,
     options?: { includeEpisodes?: boolean },
 ): Promise<SamoBackedLibraryItem[]> => {
     const auth = samoAuth(server);
-    const shows = await collectSamoPages(LONG_FORM_PAGE_SIZE, LONG_FORM_LIBRARY_CEILING, (offset) =>
-        listSamoPodcasts(browserFetch, auth, { limit: LONG_FORM_PAGE_SIZE, offset }),
+    const { items: shows } = await collectSamoPagesCapped(
+        LONG_FORM_PAGE_SIZE,
+        LONG_FORM_LIBRARY_CEILING,
+        (offset) => listSamoPodcasts(browserFetch, auth, { limit: LONG_FORM_PAGE_SIZE, offset }),
     );
 
     // The Podcasts grid and sidebar only render show summaries (cover, title,

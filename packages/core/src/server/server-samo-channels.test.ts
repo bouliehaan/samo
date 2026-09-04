@@ -6,7 +6,9 @@ import {
     getSamoChannelStreamUrl,
     listSamoChannels,
     parseSamoChannelIdFromStreamUrl,
+    previousSamoChannel,
     resolveSamoChannelArtworkUrl,
+    skipSamoChannel,
 } from './server-samo-channels';
 
 const auth = testServerAuthentication({ url: 'https://music.example.com' });
@@ -96,5 +98,75 @@ describe('listSamoChannels', () => {
         );
 
         expect(channels.map((channel) => channel.id)).toEqual(['jake']);
+    });
+});
+
+describe('skipSamoChannel', () => {
+    const recording = (body: unknown) => {
+        const calls: { method: string | undefined; url: string }[] = [];
+        const fetcher = (async (url: string, init?: { method?: string }) => {
+            calls.push({ method: init?.method, url });
+            return { json: async () => body, ok: true, status: 200 };
+        }) as SamoFetch;
+        return { calls, fetcher };
+    };
+
+    it('asks the station to move on, without naming a scope for the default', async () => {
+        // `item` is the server's own default. Sending it explicitly would work,
+        // but leaving it off keeps the common request the plain one.
+        const { calls, fetcher } = recording({ scope: 'item', skipped: true });
+
+        await expect(skipSamoChannel(fetcher, auth, 'jake')).resolves.toBe(true);
+        expect(calls).toEqual([
+            { method: 'POST', url: 'https://music.example.com/api/v1/channels/jake/skip' },
+        ]);
+    });
+
+    it('names the scope when stepping off the whole medium', async () => {
+        const { calls, fetcher } = recording({ scope: 'kind', skipped: true });
+
+        await expect(skipSamoChannel(fetcher, auth, 'jake', 'kind')).resolves.toBe(true);
+        expect(calls[0].url).toBe('https://music.example.com/api/v1/channels/jake/skip?scope=kind');
+    });
+
+    it('reports a channel with nothing airing as not skipped', async () => {
+        // Nobody is listening, so no encoder is running and there was nothing
+        // to skip. A caller must not reopen its stream on the strength of this.
+        const { fetcher } = recording({ scope: 'item', skipped: false });
+
+        await expect(skipSamoChannel(fetcher, auth, 'jake')).resolves.toBe(false);
+    });
+
+    it('escapes an id that needs it', async () => {
+        const { calls, fetcher } = recording({ skipped: true });
+
+        await skipSamoChannel(fetcher, auth, 'late night/jazz');
+        expect(calls[0].url).toBe(
+            'https://music.example.com/api/v1/channels/late%20night%2Fjazz/skip',
+        );
+    });
+});
+
+describe('previousSamoChannel', () => {
+    const answering = (body: unknown) => {
+        const calls: string[] = [];
+        const fetcher = (async (url: string) => {
+            calls.push(url);
+            return { json: async () => body, ok: true, status: 200 };
+        }) as SamoFetch;
+        return { calls, fetcher };
+    };
+
+    it('asks the station to re-air the item before this one', async () => {
+        const { calls, fetcher } = answering({ moved: true });
+
+        await expect(previousSamoChannel(fetcher, auth, 'jake')).resolves.toBe(true);
+        expect(calls).toEqual(['https://music.example.com/api/v1/channels/jake/previous']);
+    });
+
+    it('reports that nothing moved when there is nothing to go back to', async () => {
+        const { fetcher } = answering({ moved: false });
+
+        await expect(previousSamoChannel(fetcher, auth, 'jake')).resolves.toBe(false);
     });
 });

@@ -3,12 +3,15 @@ import { type ServerAuthenticationResult } from '@samo/core/server';
 import { type MutableRefObject } from 'react';
 
 import type { PlaybackProgressContext } from '../../services/playback-progress';
+import type { AndroidQueuePlaylistOrigin } from '../../state/playback-queue-store';
 
 export type PlaybackSnapshot = { item: MobilePlayableAudio; sessionId: string };
 
 export type AndroidPlayItemOptions = {
     /** Samo audiobook: open stream at this book-global second (skips server resume overlay). */
     bookStartSeconds?: number;
+    /** Started from a playlist this user may edit — see AndroidQueuePlaylistOrigin. */
+    editablePlaylist?: AndroidQueuePlaylistOrigin;
     /** Started from the Explore drop playlist — see AndroidPlaybackQueue. */
     isExploPlaylist?: boolean;
     omitTrackRecentlyPlayed?: boolean;

@@ -349,6 +349,67 @@ describe('findSamoExploPlaylist', () => {
         expect(await findSamoExploPlaylist(fetcher, auth)).toBeUndefined();
     });
 
+    it('keeps paging until it finds the system playlist', async () => {
+        // The account has more playlists than one page holds and the
+        // server-managed one is not in the first page. A single capped read
+        // used to return undefined here, and Explore vanished from every home
+        // screen with no error and no empty state to notice.
+        const requested: string[] = [];
+        const page = (offset: number) => {
+            const items = Array.from({ length: 200 }, (_unused, index) => ({
+                id: `p${offset + index}`,
+                name: `Playlist ${offset + index}`,
+            }));
+            if (offset === 200) {
+                items[57] = { id: 'explo', name: 'Explo', system: true } as never;
+            }
+            return { items, limit: 200, offset, total: 640 };
+        };
+
+        const fetcher: SamoFetch = async (url) => {
+            requested.push(url);
+            const offset = Number(new URL(url).searchParams.get('offset') ?? 0);
+            const body = JSON.stringify(page(offset));
+            return {
+                json: async () => JSON.parse(body) as unknown,
+                ok: true,
+                status: 200,
+                text: async () => body,
+            };
+        };
+
+        const explo = await findSamoExploPlaylist(fetcher, auth);
+
+        expect(explo?.id).toBe('explo');
+        // Stops at the page that matched rather than walking all 640.
+        expect(requested).toHaveLength(2);
+    });
+
+    it('stops at the reported total instead of paging forever', async () => {
+        let calls = 0;
+        const fetcher: SamoFetch = async () => {
+            calls += 1;
+            const body = JSON.stringify({
+                items: Array.from({ length: 200 }, (_unused, index) => ({
+                    id: `p${index}`,
+                    name: `Playlist ${index}`,
+                })),
+                limit: 200,
+                offset: 0,
+                total: 200,
+            });
+            return {
+                json: async () => JSON.parse(body) as unknown,
+                ok: true,
+                status: 200,
+                text: async () => body,
+            };
+        };
+
+        expect(await findSamoExploPlaylist(fetcher, auth)).toBeUndefined();
+        expect(calls).toBe(1);
+    });
+
     it('recognizes the playlist by the system flag, not its name', async () => {
         // A user's own playlist literally named "Explo" must NOT be treated as
         // the server-managed one - otherwise a home card would open the wrong

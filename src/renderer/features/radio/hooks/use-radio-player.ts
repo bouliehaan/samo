@@ -1,9 +1,5 @@
 import { samoChannelNowPlayingLine } from '@samo/core/mobile';
-import {
-    getSamoChannelNowPlaying,
-    parseSamoChannelIdFromStreamUrl,
-    ServerType,
-} from '@samo/core/server';
+import { getSamoChannelNowPlaying, parseSamoChannelIdFromStreamUrl } from '@samo/core/server';
 import IcecastMetadataStats from 'icecast-metadata-stats';
 import isElectron from 'is-electron';
 import React, { useEffect } from 'react';
@@ -11,6 +7,10 @@ import { createWithEqualityFn } from 'zustand/traditional';
 
 import { samoFetch } from '/@/renderer/api/samo/samo-fetch';
 import { usePlayerEvents } from '/@/renderer/features/player/audio-player/hooks/use-player-events';
+import {
+    samoChannelAuth,
+    type SamoChannelAuth,
+} from '/@/renderer/features/radio/utils/samo-channel-auth';
 import { useCurrentServerWithCredential, usePlayerStoreBase } from '/@/renderer/store';
 import { useLastPlaybackSessionStore } from '/@/renderer/store/last-playback-session.store';
 import { recordRecentItem } from '/@/renderer/store/play-history.store';
@@ -35,6 +35,25 @@ export interface RadioMetadata {
     title: null | string;
 }
 
+/**
+ * What a channel is airing, as the one line the player shows.
+ *
+ * The poll and the nudge after a skip both go through here so they can never
+ * disagree about how an airing becomes a title and an artist — the skip is the
+ * moment the two are most obviously side by side.
+ */
+export const readSamoChannelLine = async (
+    auth: SamoChannelAuth,
+    channelId: string,
+): Promise<null | RadioMetadata> => {
+    const now = await getSamoChannelNowPlaying(samoFetch, auth, channelId);
+    const line = samoChannelNowPlayingLine(now.current);
+    return line ? { artist: line.artist ?? null, title: line.title ?? null } : null;
+};
+
+/** Which way a channel's programming is being moved. */
+export type SamoChannelCommand = 'kind' | 'previous' | 'skip';
+
 interface RadioStore {
     actions: {
         pause: () => void;
@@ -43,16 +62,35 @@ interface RadioStore {
             stationName?: string,
             stationArt?: null | RadioCurrentStationArt,
         ) => void;
+        reopenStream: () => void;
+        setChannelCommand: (channelCommand: null | SamoChannelCommand) => void;
         setCurrentStreamUrl: (currentStreamUrl: null | string) => void;
         setIsPlaying: (isPlaying: boolean) => void;
         setMetadata: (metadata: null | RadioMetadata) => void;
         setStationName: (stationName: null | string) => void;
         stop: () => void;
     };
+    /**
+     * The programme command in flight against the channel, if any.
+     *
+     * Shared rather than kept per button: the full-screen player and the
+     * playerbar are two views of one station, and two skips racing each other
+     * would move the programming twice for one intent.
+     */
+    channelCommand: null | SamoChannelCommand;
     currentStationArt: null | RadioCurrentStationArt;
     currentStreamUrl: null | string;
     isPlaying: boolean;
     metadata: null | RadioMetadata;
+    /**
+     * How many times the current station has been asked to reconnect.
+     *
+     * The station's URL never changes, so this counter is what the audio
+     * element is given to tell one open from the next — see `withReopenMark`
+     * in use-radio-playback-url. Only the channel transport bumps it, and only
+     * after the server has agreed to move the programming on.
+     */
+    reopen: number;
     stationName: null | string;
 }
 
@@ -117,10 +155,17 @@ export const useRadioStore = createWithEqualityFn<RadioStore>((set, get) => ({
             // the same URL and returns at the guard, as it was always meant to.
             // A zustand updater has to be pure for that to be true.
             set({
+                // A command aimed at the outgoing station has nothing to do
+                // with this one.
+                channelCommand: isSwitchingStation ? null : currentState.channelCommand,
                 currentStationArt: nextStationArt,
                 currentStreamUrl: newStreamUrl,
                 isPlaying: true,
                 metadata: nextMetadata,
+                // A different station opens its own first connection; carrying
+                // the outgoing one's count over would put a stale mark in a URL
+                // nothing has reopened yet.
+                reopen: isSwitchingStation ? 0 : currentState.reopen,
                 stationName: newStationName,
             });
 
@@ -160,6 +205,16 @@ export const useRadioStore = createWithEqualityFn<RadioStore>((set, get) => ({
                 });
             }
         },
+        /**
+         * Open the stream again, throwing away everything already buffered.
+         *
+         * Only meaningful right after the server has moved a channel on: the
+         * audio still in flight is the item that was skipped, and playing it
+         * out is what makes the button look ignored. A live channel has no
+         * position to lose by reconnecting.
+         */
+        reopenStream: () => set((state) => ({ reopen: state.reopen + 1 })),
+        setChannelCommand: (channelCommand) => set({ channelCommand }),
         setCurrentStreamUrl: (currentStreamUrl) => set({ currentStreamUrl }),
         setIsPlaying: (isPlaying) => set({ isPlaying }),
         setMetadata: (metadata) => {
@@ -181,10 +236,12 @@ export const useRadioStore = createWithEqualityFn<RadioStore>((set, get) => ({
         setStationName: (stationName) => set({ stationName }),
         stop: () => {
             set({
+                channelCommand: null,
                 currentStationArt: null,
                 currentStreamUrl: null,
                 isPlaying: false,
                 metadata: null,
+                reopen: 0,
                 stationName: null,
             });
 
@@ -192,10 +249,12 @@ export const useRadioStore = createWithEqualityFn<RadioStore>((set, get) => ({
             usePlayerStoreBase.getState().mediaStop();
         },
     },
+    channelCommand: null,
     currentStationArt: null,
     currentStreamUrl: null,
     isPlaying: false,
     metadata: null,
+    reopen: 0,
     stationName: null,
 }));
 
@@ -207,10 +266,12 @@ usePlaybackOwnerStore.subscribe(
     (source) => {
         if (source !== 'radio') {
             useRadioStore.setState({
+                channelCommand: null,
                 currentStationArt: null,
                 currentStreamUrl: null,
                 isPlaying: false,
                 metadata: null,
+                reopen: 0,
                 stationName: null,
             });
         }
@@ -292,22 +353,16 @@ export const useRadioMetadata = () => {
         // the stream is the difference between a channel that says what is on
         // and one that shows its own name forever.
         const channelId = parseSamoChannelIdFromStreamUrl(currentStreamUrl);
-        const auth =
-            server?.type === ServerType.SAMO && server.url && server.credential
-                ? { credential: server.credential, type: ServerType.SAMO as const, url: server.url }
-                : null;
+        const auth = samoChannelAuth(server);
 
         if (channelId && auth) {
             let stopped = false;
 
             const pollChannel = async () => {
                 try {
-                    const now = await getSamoChannelNowPlaying(samoFetch, auth, channelId);
+                    const line = await readSamoChannelLine(auth, channelId);
                     if (stopped) return;
-                    const line = samoChannelNowPlayingLine(now.current);
-                    setMetadata(
-                        line ? { artist: line.artist ?? null, title: line.title ?? null } : null,
-                    );
+                    setMetadata(line);
                 } catch {
                     // A failed poll says nothing about the audio, which is
                     // still arriving — leave the last line up.

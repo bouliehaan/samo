@@ -1,3 +1,4 @@
+import { type DeliveredAudioFormat } from '@samo/core/audio-quality';
 import { type MobilePlayableAudio } from '@samo/core/mobile';
 import { type ServerAuthenticationResult } from '@samo/core/server';
 
@@ -33,6 +34,14 @@ export interface AndroidNativePlaybackEvent {
         deviceName?: string;
         isConnected: boolean;
     };
+    /**
+     * The format the engine is ACTUALLY decoding, once a stream has opened.
+     *
+     * Absent until then, and absent on the cast path where the receiver does
+     * the decoding — in both cases the consumer falls back to the catalog's
+     * description of the file rather than asserting one.
+     */
+    decodedFormat?: DeliveredAudioFormat;
     durationMs?: number;
     isPlaying?: boolean;
     message?: string;

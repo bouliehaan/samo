@@ -15,25 +15,32 @@ import { styles } from '../theme/styles';
  * being cheap.
  */
 export const PlayerIconButton = ({
+    accessibilityHint,
     accessibilityLabel,
     children,
     compact,
+    onLongPress,
     onPress,
     primary,
     tint,
 }: {
+    /** Says what a long press does, for the control that has one. */
+    accessibilityHint?: string;
     accessibilityLabel: string;
     children: ReactNode;
     compact?: boolean;
+    onLongPress?: () => void;
     onPress: () => void;
     primary?: boolean;
     tint?: string;
 }) => (
     <PressableScale
         {...presses.control}
+        accessibilityHint={accessibilityHint}
         accessibilityLabel={accessibilityLabel}
         accessibilityRole="button"
         chrome
+        onLongPress={onLongPress}
         onPress={onPress}
         style={[
             styles.playerControlButton,

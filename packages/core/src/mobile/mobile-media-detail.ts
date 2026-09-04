@@ -41,7 +41,7 @@ import {
     samoItemsOf,
     samoPlaylistHasCoverGrid,
 } from '../server/server-samo';
-import { collectSamoPages } from '../server/server-samo-pagination';
+import { collectSamoPagesCapped } from '../server/server-samo-pagination';
 import { ensureSamoStreamToken } from '../server/server-samo-stream-token';
 import { ServerType } from '../server/server-types';
 import {
@@ -765,9 +765,13 @@ const listAllSamoPlaylistTracks = async (
     fetcher: SamoFetch,
     id: string,
 ): Promise<SamoMusicTrack[]> =>
-    collectSamoPages(500, 50_000, (offset) =>
+    // Capped, not complete: this feeds the detail VIEW. Membership edits read
+    // through listMobilePlaylistTrackIds, which refuses a partial list because
+    // it writes the result back. Do not swap this for the throwing variant
+    // without checking that nothing downstream PATCHes it.
+    collectSamoPagesCapped(500, 50_000, (offset) =>
         listSamoMusicPlaylistTracks(fetcher, authentication, id, { limit: 500, offset }),
-    );
+    ).then((collection) => collection.items);
 
 const loadSamoPlaylistDetail = async (
     authentication: ServerAuthenticationResult,
@@ -982,9 +986,10 @@ const listAllSamoPodcastEpisodes = async (
     fetcher: SamoFetch,
     showId: string,
 ): Promise<SamoPodcastEpisode[]> =>
-    collectSamoPages(500, 50_000, (offset) =>
+    // Display only — an episode list is never written back.
+    collectSamoPagesCapped(500, 50_000, (offset) =>
         listSamoPodcastEpisodes(fetcher, authentication, showId, { limit: 500, offset }),
-    );
+    ).then((collection) => collection.items);
 
 const loadSamoPodcastDetail = async (
     authentication: ServerAuthenticationResult,

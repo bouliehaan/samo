@@ -1,6 +1,7 @@
 import {
     buildSamoAudiobookQueueFromFiles,
     isMobileExploPlaylistDetail,
+    isMobilePlaylistDetailEditable,
     type MobileHomeItem,
     MobileHomeItemType,
     type MobileMediaDetail,
@@ -52,11 +53,29 @@ const playlistPlaybackOptions = (
 ): AndroidPlayItemOptions => ({
     // Asked here, of the detail, because this is the last place that HAS one:
     // the queue outlives the page it was started from, and the fullscreen
-    // player's menu needs to know whether these tracks are Explore drops.
+    // player's menu needs to know whether these tracks are Explore drops — and,
+    // below, which playlist they can be removed from.
     isExploPlaylist: isMobileExploPlaylistDetail(detail),
     omitTrackRecentlyPlayed: detail.type === MobileMediaDetailType.PLAYLIST,
     shuffled,
     ...(detail.type === MobileMediaDetailType.PLAYLIST ? { samoPlaylistId: detail.id } : {}),
+    // Editability is settled HERE, against the real detail, so no later surface
+    // has to guess at it: someone else's playlist and the server-managed
+    // Explore drop both fail this and simply never carry the stamp.
+    ...(isMobilePlaylistDetailEditable(detail)
+        ? {
+              editablePlaylist: {
+                  id: detail.id,
+                  sourceId: detail.source.id,
+                  title: detail.title,
+                  // The WHOLE playlist, not just the tracks being queued: a
+                  // filtered play (search-within-playlist, a Hi-Fi filter)
+                  // queues a subset, and every one of those is still a member.
+                  // Appended Up Next tracks are what this has to exclude.
+                  trackIds: detail.tracks.map((track) => track.id),
+              },
+          }
+        : {}),
 });
 
 export const handlePlayMediaTrack = async (

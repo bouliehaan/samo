@@ -108,7 +108,7 @@ export const HomeContent = ({
         }
         return allSections
             .map((section) => {
-                if (section.pending) {
+                if (section.pending || section.ignoresHiddenItems) {
                     return section;
                 }
                 const items = section.items.filter(

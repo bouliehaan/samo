@@ -472,20 +472,24 @@ const useHomeExploPlaylist = () => {
  * home section's "if empty, render null" convention. Opens through the exact
  * same playlist detail route as any other playlist; there's nothing special
  * about the Explo playlist once you're inside it.
+ *
+ * Deliberately NOT hideable, and deliberately not reading `useHiddenHomeKeys`.
+ * A hidden key is `type:server:id`, so this section and the Explo tile in the
+ * Playlists shelf below share one — and this section used to honour it. "Remove
+ * from home" on the duplicate playlist tile (a reasonable thing to want: it is
+ * already featured above) therefore deleted the whole Explore section from
+ * every page it appears on, permanently, with no undo anywhere in the UI and
+ * nothing on screen to suggest what had happened. Explore is a section like
+ * Radio Stations or Podcasts, and sections are not card-hideable; only the
+ * tiles inside them are.
  */
 export const HomeExploSection = () => {
     const navigate = useNavigate();
     const playlistQuery = useHomeExploPlaylist();
-    const hiddenKeys = useHiddenHomeKeys();
 
     const playlist = playlistQuery.data;
-    const isHidden =
-        playlist &&
-        hiddenKeys.has(
-            hiddenHomeItemKey({ id: playlist.id, serverId: playlist._serverId, type: 'playlist' }),
-        );
 
-    if (!playlist || isHidden || !playlist.songCount) return null;
+    if (!playlist || !playlist.songCount) return null;
 
     const open = () =>
         navigate(generatePath(AppRoute.PLAYLISTS_DETAIL_SONGS, { playlistId: playlist.id }));
@@ -496,11 +500,6 @@ export const HomeExploSection = () => {
 
         ContextMenuController.call({
             cmd: {
-                homeItemKey: hiddenHomeItemKey({
-                    id: playlist.id,
-                    serverId: playlist._serverId,
-                    type: 'playlist',
-                }),
                 items: [playlist],
                 type: LibraryItem.PLAYLIST,
             },

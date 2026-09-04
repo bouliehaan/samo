@@ -24,6 +24,13 @@ export interface BuildAudioQualityBadgeItemsOptions {
     sampleRate?: null | number;
     transcodeBitrate?: null | number;
     transcodeFormat?: null | string;
+    /**
+     * Sample rate of the stream that actually ARRIVED, when it differs from the
+     * source file's. Only set by callers that can observe the live decoder; a
+     * caller describing a catalog row leaves it undefined and the transcoded
+     * badge keeps the shape it has always had.
+     */
+    transcodeSampleRate?: null | number;
 }
 
 const PREMIUM_QUALITY_CONTAINERS = new Set([
@@ -218,10 +225,25 @@ export const buildAudioQualityBadgeItems = ({
     sampleRate: sourceSampleRate,
     transcodeBitrate,
     transcodeFormat,
+    transcodeSampleRate,
 }: BuildAudioQualityBadgeItemsOptions) => {
     const isTranscoded = deliveryKind === 'transcoded';
     const rawContainer = isTranscoded ? transcodeFormat : sourceContainer;
-    const container = formatContainer(rawContainer);
+    const sourceContainerLabel = formatContainer(sourceContainer);
+    const deliveredContainerLabel = formatContainer(rawContainer);
+    // `FLAC -> OPUS` rather than a bare `OPUS`: on a transcoded path the two
+    // facts a listener wants are what they own and what actually reached them.
+    // Naming only the delivered codec reads like the library itself is lossy.
+    // Falls back to the single label whenever the source container is unknown
+    // or already matches, so a caller that knows nothing about the source (the
+    // desktop transcode settings path) is unaffected.
+    const container =
+        isTranscoded &&
+        sourceContainerLabel &&
+        deliveredContainerLabel &&
+        sourceContainerLabel !== deliveredContainerLabel
+            ? `${sourceContainerLabel} \u2192 ${deliveredContainerLabel}`
+            : deliveredContainerLabel;
     const isPremiumQualityDirect = !isTranscoded && isPremiumQualityContainer(rawContainer);
     const bitDepth = isPremiumQualityDirect ? formatBitDepth(sourceBitDepth, compact) : null;
     const sampleRate = isPremiumQualityDirect ? formatSampleRate(sourceSampleRate, compact) : null;
@@ -282,14 +304,151 @@ export const buildAudioQualityBadgeItems = ({
     }
 
     if (isTranscoded) {
-        items.push(
-            bitRate
-                ? { label: bitRate, tone: 'transcoded' }
-                : { label: 'Unknown bitrate', tone: 'unknown' },
-        );
+        // The delivered stream's own sample rate, when the caller could observe
+        // it. This is the second half of the collapsed pill's flip view, and it
+        // is the only number on a transcoded path that is measured rather than
+        // claimed.
+        // Never compact: this item stands alone rather than being joined to a
+        // bit depth as `16/44.1`, and a bare "48" says nothing.
+        const deliveredSampleRate = formatSampleRate(transcodeSampleRate);
+        if (deliveredSampleRate) {
+            items.push({ label: deliveredSampleRate, tone: 'transcoded' });
+        }
+        if (bitRate) {
+            items.push({ label: bitRate, tone: 'transcoded' });
+        } else if (!deliveredSampleRate) {
+            // Nothing measured and nothing declared — say so rather than
+            // silently dropping the slot.
+            items.push({ label: 'Unknown bitrate', tone: 'unknown' });
+        }
     } else if (bitRate) {
         items.push({ label: bitRate, tone: detailTone });
     }
 
     return items;
+};
+
+/**
+ * What a container extension tells you about the codec inside it.
+ *
+ * Deliberately partial. `m4a`, `m4b`, `mp4`, `ogg`, `oga`, `mka` and `webm` are
+ * absent because they are envelopes, not codecs: an `.m4a` holds AAC or ALAC,
+ * an `.ogg` holds Vorbis or Opus or FLAC. Leaving them unmapped makes
+ * `resolveDeliveredAudioQuality` decline to guess, which is the whole point —
+ * an ALAC file in an M4A container decoding as ALAC must never be mistaken for
+ * a transcode just because the extension and the codec spell different words.
+ */
+const CONTAINER_CODEC_FAMILY: Record<string, string> = {
+    aac: 'aac',
+    aif: 'pcm',
+    aiff: 'pcm',
+    alac: 'alac',
+    ape: 'ape',
+    dff: 'dsd',
+    dsf: 'dsd',
+    flac: 'flac',
+    mp3: 'mp3',
+    opus: 'opus',
+    shn: 'shorten',
+    wav: 'pcm',
+    wma: 'wma',
+    wv: 'wavpack',
+};
+
+/** Decoder mime (already normalized) to the same family space. */
+const DELIVERED_CODEC_FAMILY: Record<string, string> = {
+    'mp4a-latm': 'aac',
+    aac: 'aac',
+    alac: 'alac',
+    flac: 'flac',
+    mp3: 'mp3',
+    opus: 'opus',
+    raw: 'pcm',
+    vorbis: 'vorbis',
+    wav: 'pcm',
+};
+
+const LOSSY_CODEC_FAMILIES = new Set(['aac', 'mp3', 'opus', 'vorbis', 'wma']);
+
+/** The format a player is actually decoding, as observed at playback time. */
+export interface DeliveredAudioFormat {
+    bitRate?: null | number;
+    channelCount?: null | number;
+    /** Decoder input mime, e.g. `audio/opus`. Null until the stream opens. */
+    codec?: null | string;
+    sampleRate?: null | number;
+}
+
+export interface DeliveredAudioQualityInput {
+    bitDepth?: null | number;
+    bitRate?: null | number;
+    container?: null | string;
+    deliveryKind: AudioDeliveryKind;
+    sampleRate?: null | number;
+}
+
+export type DeliveredAudioQuality = DeliveredAudioQualityInput & {
+    transcodeBitrate?: null | number;
+    transcodeFormat?: null | string;
+    transcodeSampleRate?: null | number;
+};
+
+/**
+ * Reconcile what the catalog CLAIMS a track is against what the player is
+ * actually decoding, and describe the delivery that really happened.
+ *
+ * The catalog row describes a file on the server's disk. That is the right
+ * answer for a track listing and the wrong answer for a player: anything
+ * between the disk and the speaker — an edge that re-encodes lossless audio to
+ * survive a slow uplink, most obviously — makes the two diverge, and until
+ * something compares them the player reports the disk and calls it direct.
+ *
+ * Returns the source untouched when nothing has been observed yet (`delivered`
+ * absent, or its codec still unknown during pre-roll), so a caller can pass
+ * this through unconditionally and get the catalog's answer as the placeholder.
+ *
+ * A transcode is declared on either of two independent signals:
+ *   - the codec families disagree, when BOTH are unambiguously known; or
+ *   - a lossless source arrived in a lossy codec, which is the shape every
+ *     bandwidth-driven re-encode takes and is decidable even when the source
+ *     container does not name its codec.
+ */
+export const resolveDeliveredAudioQuality = (
+    source: DeliveredAudioQualityInput,
+    delivered?: DeliveredAudioFormat | null,
+): DeliveredAudioQuality => {
+    const deliveredKey = normalizeContainerKey(delivered?.codec);
+    if (!deliveredKey) {
+        return source;
+    }
+
+    const deliveredFamily = DELIVERED_CODEC_FAMILY[deliveredKey] ?? deliveredKey;
+    const sourceFamily = CONTAINER_CODEC_FAMILY[normalizeContainerKey(source.container)];
+
+    const familiesDisagree = sourceFamily !== undefined && sourceFamily !== deliveredFamily;
+    const losslessBecameLossy =
+        isPremiumQualityContainer(source.container) && LOSSY_CODEC_FAMILIES.has(deliveredFamily);
+
+    if (!familiesDisagree && !losslessBecameLossy) {
+        // The file arrived as promised. Take the decoder's sample rate only to
+        // fill a gap the catalog left — a downloaded file whose row never
+        // carried one, say. A populated catalog value is not overwritten:
+        // this path is direct by definition, so the two agree.
+        return {
+            ...source,
+            sampleRate: source.sampleRate ?? delivered?.sampleRate ?? null,
+        };
+    }
+
+    return {
+        ...source,
+        deliveryKind: 'transcoded',
+        // Every number below is measured off the live decoder. `bitRate` is
+        // frequently absent — Ogg/Opus does not declare one — and stays null
+        // rather than inheriting the source file's, which is exactly the lie
+        // this function exists to stop.
+        transcodeBitrate: delivered?.bitRate ?? null,
+        transcodeFormat: deliveredFamily,
+        transcodeSampleRate: delivered?.sampleRate ?? null,
+    };
 };

@@ -391,35 +391,59 @@ export const createMpv = async (data: {
         throw error;
     }
 
+    // Whether mpv currently has something loaded. `pause` is a live property even
+    // while mpv sits idle, so its value only describes playback once a file is in.
+    let hasLoadedFile = false;
+
     mpv.on('status', (status) => {
         if (status.property === 'playlist-pos') {
             // mpv uses playlist-pos = -1 when nothing is playing (ended, cleared, load failure, etc).
             if (status.value === -1) {
+                hasLoadedFile = false;
                 mpv?.pause();
                 return;
             }
+
+            hasLoadedFile = true;
 
             // In our 2-item queue model, playlist-pos should normally be 0.
             // When mpv auto-advances to the next track it becomes > 0 (typically 1).
             if (typeof status.value === 'number' && status.value > 0) {
                 getMainWindow()?.webContents.send('renderer-player-auto-next');
             }
-        }
-    });
 
-    // Automatically updates the play button when the player is playing
-    mpv.on('resumed', () => {
-        getMainWindow()?.webContents.send('renderer-player-play');
+            return;
+        }
+
+        // Keep the renderer's play/pause state honest no matter who moved it.
+        //
+        // mpv owns the macOS media keys: --input-media-keys defaults to yes and the
+        // binary registers MPRemoteCommandCenter, which is what both keyboard transport
+        // keys and Bluetooth headset buttons go through — so they reach mpv before
+        // Electron's globalShortcut ever sees them, and mpv pauses itself behind the
+        // renderer's back. Without this the store stays PLAYING: the button keeps
+        // showing pause and the interpolating playback clock keeps advancing lyrics
+        // while the seekbar, fed by timeposition anchors that have stopped, freezes.
+        //
+        // The property is the only channel for this. mpv removed its `pause`/`unpause`
+        // events in 0.33, so node-mpv's `paused`/`resumed` events can never fire.
+        if (status.property === 'pause') {
+            // Suppress mpv's idle default: the observe replays it once at startup, and
+            // the playlist-pos = -1 branch above pauses an emptied player. Neither is a
+            // statement about playback, and echoing them would stop the renderer.
+            if (!hasLoadedFile) {
+                return;
+            }
+
+            getMainWindow()?.webContents.send(
+                status.value ? 'renderer-player-pause' : 'renderer-player-play',
+            );
+        }
     });
 
     // Automatically updates the play button when the player is stopped
     mpv.on('stopped', () => {
         getMainWindow()?.webContents.send('renderer-player-stop');
-    });
-
-    // Automatically updates the play button when the player is paused
-    mpv.on('paused', () => {
-        getMainWindow()?.webContents.send('renderer-player-pause');
     });
 
     // Event output every interval set by time_update, used to update the current time

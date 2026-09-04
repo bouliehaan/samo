@@ -460,6 +460,20 @@ export const playerStyles = StyleSheet.create({
     fullPlayerMarqueeText: {
         flexShrink: 0,
     },
+    /**
+     * What the station is doing, under the transport that asked it.
+     *
+     * Muted rather than accent: unlike the sleep countdown it sits beside, this
+     * is a line about something already in motion — and half of what it says is
+     * a failure, which the accent colour would read as a status worth keeping.
+     */
+    fullPlayerChannelNotice: {
+        color: 'rgba(245, 245, 245, 0.58)',
+        fontSize: 12,
+        fontWeight: '600',
+        marginTop: spacing.xs,
+        textAlign: 'center',
+    },
     fullPlayerSleepLabel: {
         color: colors.accent,
         fontSize: 12,

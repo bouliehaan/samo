@@ -3,14 +3,14 @@ import {
     ensureSamoStreamToken,
     getCachedSamoStreamToken,
     parseSamoChannelIdFromStreamUrl,
-    ServerType,
     withSamoStreamToken,
 } from '@samo/core/server';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { samoFetch } from '/@/renderer/api/samo/samo-fetch';
+import { useRadioStore } from '/@/renderer/features/radio/hooks/use-radio-player';
+import { samoChannelAuth } from '/@/renderer/features/radio/utils/samo-channel-auth';
 import { useCurrentServerWithCredential } from '/@/renderer/store';
-import { ServerListItemWithCredential } from '/@/shared/types/domain-types';
 
 /**
  * The URL the audio element actually opens, which is not always the URL the
@@ -31,16 +31,40 @@ import { ServerListItemWithCredential } from '/@/shared/types/domain-types';
 /** Enough attempts to mint past a dead token, few enough to never spin. */
 const MAX_TOKEN_RETRIES = 2;
 
-const samoAuth = (server: null | ServerListItemWithCredential | undefined) =>
-    server?.type === ServerType.SAMO && server.url && server.credential
-        ? { credential: server.credential, type: ServerType.SAMO as const, url: server.url }
-        : null;
+/**
+ * Mark a channel URL so a reopen is a different URL from the one already loaded.
+ *
+ * Skipping a channel is a decision the server makes, but the seconds already in
+ * flight — its listener queue, the socket, the audio element's own buffer —
+ * still hold the thing being skipped, and they would play out in full
+ * afterwards. Dropping them means opening the connection again, and the only
+ * handle React gives us on that is the `url` prop: an identical string is not a
+ * change, so nothing reloads.
+ *
+ * A counter in the query is what makes the string differ. The server reads only
+ * the path and `stream_token` off a listen URL and ignores the rest, and a
+ * channel is live and endless, so there is nothing to lose by reconnecting.
+ * Never applied to an internet station: that is somebody else's address, it has
+ * no programming to skip, and nothing should be appended to it.
+ */
+const withReopenMark = (url: string, reopen: number): string => {
+    if (reopen <= 0) {
+        return url;
+    }
+
+    const target = new URL(url);
+    target.searchParams.set('reopen', String(reopen));
+    return target.toString();
+};
 
 export const useRadioPlaybackUrl = (
     streamUrl: null | string,
 ): { onStreamError: () => void; url: null | string } => {
     const server = useCurrentServerWithCredential();
-    const auth = useMemo(() => samoAuth(server), [server]);
+    const auth = useMemo(() => samoChannelAuth(server), [server]);
+    // Bumped by the transport when it has just moved the channel's programming
+    // on — see `withReopenMark`.
+    const reopen = useRadioStore((state) => state.reopen);
     // Bumped when a stream fails to open, after throwing the failed token away.
     const [attempt, setAttempt] = useState(0);
     const attemptsRef = useRef(0);
@@ -67,7 +91,7 @@ export const useRadioPlaybackUrl = (
         // already and never waits on the network here.
         const cached = getCachedSamoStreamToken(auth);
         if (cached) {
-            setResolved(withSamoStreamToken(streamUrl, cached));
+            setResolved(withReopenMark(withSamoStreamToken(streamUrl, cached), reopen));
             return;
         }
 
@@ -78,16 +102,21 @@ export const useRadioPlaybackUrl = (
                 // No token is not a reason to play nothing: the request gets
                 // refused and surfaces as a stream error, which reads better
                 // than a station that silently never starts.
-                setResolved(token ? withSamoStreamToken(streamUrl, token) : streamUrl);
+                setResolved(
+                    withReopenMark(
+                        token ? withSamoStreamToken(streamUrl, token) : streamUrl,
+                        reopen,
+                    ),
+                );
             })
             .catch(() => {
-                if (!cancelled) setResolved(streamUrl);
+                if (!cancelled) setResolved(withReopenMark(streamUrl, reopen));
             });
 
         return () => {
             cancelled = true;
         };
-    }, [attempt, auth, streamUrl]);
+    }, [attempt, auth, reopen, streamUrl]);
 
     /**
      * A channel that fails to open has usually outlived its token — a station

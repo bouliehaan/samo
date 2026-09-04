@@ -697,6 +697,7 @@ export const getHomeDisplaySections = (
     // below, since there's only ever the one card.
     if (exploItems.length > 0) {
         displaySections.push({
+            ignoresHiddenItems: true,
             items: exploItems,
             key: MobileHomeSectionId.EXPLO,
             title: 'New from Explore',

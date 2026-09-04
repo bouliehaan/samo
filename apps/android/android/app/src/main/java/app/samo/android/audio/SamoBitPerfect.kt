@@ -13,6 +13,25 @@ import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.WritableMap
 
 internal object SamoBitPerfect {
+  /**
+   * Codec markers that mean the audio reaching the decoder has already been
+   * through a lossy encoder. Matched as substrings of the decoder's input mime
+   * because the same codec is spelled several ways (`audio/mp4a-latm`,
+   * `audio/aac`) and because a container prefix may ride along.
+   *
+   * Bit-perfect is a claim about delivering the file's own samples untouched.
+   * Once anything upstream has re-encoded them the claim is finished, however
+   * capable the DAC is and whatever the catalog says the file was.
+   */
+  private val LOSSY_CODEC_MARKERS =
+    listOf("mp4a", "aac", "mpeg", "mp3", "opus", "vorbis", "wma", "ac3")
+
+  /** True when the stream actually arriving is a lossy encode. */
+  fun isLossyDelivery(decodedFormat: SamoDecodedAudioFormat?): Boolean {
+    val codec = decodedFormat?.codec?.trim()?.lowercase() ?: return false
+    return LOSSY_CODEC_MARKERS.any { codec.contains(it) }
+  }
+
   fun getBitPerfectTruthMap(truth: SamoBitPerfectTruth): WritableMap {
     val map = Arguments.createMap()
     val evidence = Arguments.createArray()
@@ -39,6 +58,7 @@ internal object SamoBitPerfect {
     context: Context,
     audioTrackConfig: AudioSink.AudioTrackConfig?,
     quality: SamoAudioSourceQuality?,
+    decodedFormat: SamoDecodedAudioFormat?,
     requestPreferredMixer: Boolean,
     service: SamoPlaybackService?,
     previousUsbMixerRequested: Boolean
@@ -52,7 +72,12 @@ internal object SamoBitPerfect {
       )
     }
 
-    val sourceFormat = buildSourcePcmFormat(quality)
+    // A lossy arrival makes every calculation below moot, and one of them has
+    // a side effect: requestBitPerfectUsbMixer reconfigures the DAC. Left
+    // ungated it would configure the hardware for the catalog's 24/96 while a
+    // 48 kHz lossy stream is what actually plays.
+    val lossyDelivery = isLossyDelivery(decodedFormat)
+    val sourceFormat = if (lossyDelivery) null else buildSourcePcmFormat(quality, decodedFormat)
     val platformAttributes = getPlatformAudioAttributes()
     val directSupport = sourceFormat?.let { getDirectPlaybackSupport(it, platformAttributes) } ?: 0
     val directOffloadSupported =
@@ -74,7 +99,9 @@ internal object SamoBitPerfect {
       previousUsbMixerRequested
     }
     val outputMatchesSource =
-      audioTrackConfig != null && outputConfigMatchesSource(audioTrackConfig, quality)
+      !lossyDelivery &&
+        audioTrackConfig != null &&
+        outputConfigMatchesSource(audioTrackConfig, quality, decodedFormat)
     val offloadedPlaybackActive = audioTrackConfig?.offload == true
 
     if (quality.losslessRequired) {
@@ -89,10 +116,30 @@ internal object SamoBitPerfect {
       evidence.add("Server transcode is not requested.")
     }
 
-    if (sourceFormat == null) {
+    // What the decoder is being handed, which is the only statement here made
+    // about the audio rather than about the catalog row describing it.
+    when {
+      decodedFormat?.codec == null ->
+        evidence.add("The delivered stream format has not been observed yet.")
+      lossyDelivery ->
+        evidence.add(
+          "The stream arrived as ${decodedFormat.codec}, a lossy encode; " +
+            "bit-perfect is impossible regardless of the source file."
+        )
+      else ->
+        evidence.add("The stream arrived as ${decodedFormat.codec}, matching a lossless path.")
+    }
+
+    if (lossyDelivery) {
+      evidence.add("No PCM target was negotiated: the delivered stream is lossy.")
+    } else if (sourceFormat == null) {
       evidence.add("Source sample rate, bit depth, or channel count is missing; route cannot be proven.")
     } else {
-      evidence.add("Source PCM target is ${quality.bitDepth}-bit/${quality.sampleRate} Hz/${quality.channelCount}ch.")
+      evidence.add(
+        "PCM target is ${quality.bitDepth}-bit/" +
+          "${decodedFormat?.sampleRate ?: quality.sampleRate} Hz/" +
+          "${decodedFormat?.channelCount ?: quality.channelCount}ch."
+      )
     }
 
     if (directPcmSupported) {
@@ -124,6 +171,9 @@ internal object SamoBitPerfect {
     val activeClaim = when {
       !quality.losslessRequired -> "not-bit-perfect"
       quality.serverTranscodeRequested -> "not-bit-perfect"
+      // Observed, not declared. Nothing in the request said a transcode would
+      // happen — an edge between the server and the phone did it anyway.
+      lossyDelivery -> "not-bit-perfect"
       usbMixerRequested && outputMatchesSource -> "bit-perfect-active"
       offloadedPlaybackActive && (directOffloadSupported || directOffloadGaplessSupported) ->
         "bit-perfect-active"
@@ -189,10 +239,27 @@ internal object SamoBitPerfect {
     }
   }
 
-  fun buildSourcePcmFormat(quality: SamoAudioSourceQuality): PlatformAudioFormat? {
+  /**
+   * The PCM target to negotiate with the output device.
+   *
+   * Sample rate and channel count come from the DECODER when it has told us
+   * what it is decoding, and from the catalog only until then: the catalog
+   * describes a file on the server, and it is the wrong thing to configure
+   * hardware against whenever those two have diverged. Bit depth stays the
+   * catalog's, since a compressed lossless stream does not carry one and on a
+   * genuinely direct path the two agree by definition.
+   *
+   * [decodedFormat] is a required parameter rather than an optional one so a
+   * new caller cannot quietly re-introduce the catalog-only behaviour; pass
+   * null explicitly to mean "nothing observed yet".
+   */
+  fun buildSourcePcmFormat(
+    quality: SamoAudioSourceQuality,
+    decodedFormat: SamoDecodedAudioFormat?
+  ): PlatformAudioFormat? {
     val bitDepth = quality.bitDepth ?: return null
-    val channelCount = quality.channelCount ?: return null
-    val sampleRate = quality.sampleRate ?: return null
+    val channelCount = decodedFormat?.channelCount ?: quality.channelCount ?: return null
+    val sampleRate = decodedFormat?.sampleRate ?: quality.sampleRate ?: return null
     val channelMask = getChannelMask(channelCount) ?: return null
     val encoding = getPcmEncoding(bitDepth) ?: return null
 
@@ -225,11 +292,14 @@ internal object SamoBitPerfect {
 
   fun outputConfigMatchesSource(
     audioTrackConfig: AudioSink.AudioTrackConfig,
-    quality: SamoAudioSourceQuality
+    quality: SamoAudioSourceQuality,
+    decodedFormat: SamoDecodedAudioFormat?
   ): Boolean {
     val sourceEncoding = quality.bitDepth?.let { getPcmEncoding(it) } ?: return false
-    val sourceSampleRate = quality.sampleRate ?: return false
-    val sourceChannelMask = quality.channelCount?.let { getChannelMask(it) } ?: return false
+    val sourceSampleRate = decodedFormat?.sampleRate ?: quality.sampleRate ?: return false
+    val sourceChannelMask =
+      (decodedFormat?.channelCount ?: quality.channelCount)?.let { getChannelMask(it) }
+        ?: return false
 
     return audioTrackConfig.sampleRate == sourceSampleRate &&
       audioTrackConfig.channelConfig == sourceChannelMask &&

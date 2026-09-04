@@ -30,9 +30,14 @@ import { Platform } from '/@/shared/types/types';
  * Everything music, on one page.
  *
  * The browse half of what used to be Home: the shelves that are about the music
- * library rather than about what you were just doing. Home keeps the second
- * half, so nothing is on both — a section repeated across two pages teaches you
- * that neither is the real one.
+ * library rather than about what you were just doing. Home keeps the half that
+ * is about you.
+ *
+ * Three sections are deliberately on both — Explore, Playlists, Recently Added.
+ * The rule is not "never repeat", it is "repeat only what you reach for two
+ * different ways": each of these is both something you go looking for by name
+ * and something you browse into. Explore especially: it is a dated drop, and a
+ * dated thing that is only one tab away is a dated thing nobody sees.
  */
 
 const MusicRecentlyAddedAlbums = ({

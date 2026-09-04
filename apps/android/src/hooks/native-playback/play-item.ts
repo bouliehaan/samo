@@ -124,12 +124,34 @@ export const playQueuedItem = async (
         setAppSessionIsShuffled(playOptions.shuffled);
     }
 
+    // Where the queue CAME FROM is a fact about the queue, not about one play
+    // call — but it used to be re-derived from `playOptions` on every play, so
+    // every entry point that merely steps the queue it is already on (a tap in
+    // Up Next, the JS Next fallback, a reconnect or Doze restart) silently
+    // erased it: the playlist scrobble stopped and the Explore actions vanished
+    // mid-listen. Handing back the live queue's own items array IS the "same
+    // queue" signal — a genuinely new context builds a new array and states its
+    // own origin.
+    const liveQueue = getPlaybackQueue();
+    const queueOrigin =
+        liveQueue && liveQueue.items === playableQueueItems
+            ? {
+                  editablePlaylist: liveQueue.editablePlaylist,
+                  isExploPlaylist: liveQueue.isExploPlaylist,
+                  omitTrackRecentlyPlayed: liveQueue.omitTrackRecentlyPlayed,
+                  samoPlaylistId: liveQueue.samoPlaylistId,
+              }
+            : {
+                  editablePlaylist: playOptions?.editablePlaylist,
+                  isExploPlaylist: playOptions?.isExploPlaylist,
+                  omitTrackRecentlyPlayed: playOptions?.omitTrackRecentlyPlayed,
+                  samoPlaylistId: playOptions?.samoPlaylistId,
+              };
+
     setPlaybackQueue({
+        ...queueOrigin,
         index: nextQueueIndex,
-        isExploPlaylist: playOptions?.isExploPlaylist,
         items: playableQueueItems,
-        omitTrackRecentlyPlayed: playOptions?.omitTrackRecentlyPlayed,
-        samoPlaylistId: playOptions?.samoPlaylistId,
     });
     // Deliberately NO syncAndroidNativePlaybackQueue here: the play()
     // payload below carries the full queue atomically. A pre-play sync
@@ -246,11 +268,9 @@ export const playQueuedItem = async (
             : playableQueueItems;
     if (queueItemsForSession !== playableQueueItems) {
         setPlaybackQueue({
+            ...queueOrigin,
             index: nextQueueIndex,
-            isExploPlaylist: playOptions?.isExploPlaylist,
             items: queueItemsForSession,
-            omitTrackRecentlyPlayed: playOptions?.omitTrackRecentlyPlayed,
-            samoPlaylistId: playOptions?.samoPlaylistId,
         });
     }
 
@@ -285,7 +305,7 @@ export const playQueuedItem = async (
             ? {
                   index: nextQueueIndex,
                   items: queueItemsForSession,
-                  samoPlaylistId: playOptions?.samoPlaylistId,
+                  samoPlaylistId: queueOrigin.samoPlaylistId,
               }
             : undefined;
 

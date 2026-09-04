@@ -1334,13 +1334,53 @@ export const keepSamoExploTracks = async (
     });
 };
 
+/** How many playlists one scan page asks for while hunting the system playlist. */
+const EXPLO_SCAN_PAGE_SIZE = 200;
+
+/** Runaway guard for a server that never returns a short page. Not a product limit. */
+const EXPLO_SCAN_CEILING = 10_000;
+
+/**
+ * The server-managed "Explo" playlist (the weekly untagged-drop auto-playlist),
+ * or undefined when the server has not built one yet.
+ *
+ * Recognized by the `system` flag, never by name — a user's own playlist called
+ * "Explo" is not this one, and opening the wrong playlist from the home card is
+ * worse than showing no card.
+ *
+ * This PAGES rather than reading one capped page. `/music/playlists` has no
+ * `system` filter and returns the catalog's own slice order, so the system
+ * playlist sits wherever it happens to sit; the old single `limit: 100` read
+ * found it only while the account had fewer than 100 playlists, and past that
+ * Explore silently vanished from every home screen at once. There is no error
+ * in that failure and no empty state — the section just stops existing — which
+ * is precisely why it went unnoticed. The walk stops at the first match, so the
+ * common case is still exactly one request.
+ */
 export const findSamoExploPlaylist = async (
     fetcher: SamoFetch,
     authentication: Pick<ServerAuthenticationResult, 'credential' | 'url'>,
     signal?: AbortSignal,
 ): Promise<SamoMusicPlaylist | undefined> => {
-    const page = await listSamoMusicPlaylists(fetcher, authentication, { limit: 100, signal });
-    return (page.items ?? []).find((playlist) => playlist.system);
+    for (let offset = 0; offset < EXPLO_SCAN_CEILING; offset += EXPLO_SCAN_PAGE_SIZE) {
+        const page = await listSamoMusicPlaylists(fetcher, authentication, {
+            limit: EXPLO_SCAN_PAGE_SIZE,
+            offset,
+            signal,
+        });
+        const items = samoItemsOf(page);
+
+        const found = items.find((playlist) => playlist.system);
+        if (found) return found;
+
+        // A short page is the end of the list whatever the envelope claims.
+        if (items.length < EXPLO_SCAN_PAGE_SIZE) return undefined;
+
+        const total = samoTotalOf(page);
+        if (total !== undefined && offset + items.length >= total) return undefined;
+    }
+
+    return undefined;
 };
 
 export const listSamoMusicPlaylistTracks = async (

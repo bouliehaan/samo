@@ -1,3 +1,4 @@
+import { type DeliveredAudioFormat } from '@samo/core/audio-quality';
 import { type MobilePlayableAudio } from '@samo/core/mobile';
 
 import { type AndroidNativePlaybackEvent } from '../services/audio-playback';
@@ -9,6 +10,23 @@ import {
     PLAYBACK_PENDING_SEEK_TARGET_TOLERANCE_MS,
     resolvePlaybackProgressFromEvent,
 } from './playback-time';
+
+/**
+ * Structural equality for an observed format.
+ *
+ * Used to keep the PREVIOUS object identity when nothing about the delivery has
+ * changed. Native re-sends the format on every status emit, so comparing by
+ * reference would mark the state dirty on each position tick and re-render the
+ * player roughly once a second for no reason.
+ */
+const sameDeliveredAudioFormat = (
+    left: DeliveredAudioFormat | undefined,
+    right: DeliveredAudioFormat | undefined,
+) =>
+    left?.bitRate === right?.bitRate &&
+    left?.channelCount === right?.channelCount &&
+    left?.codec === right?.codec &&
+    left?.sampleRate === right?.sampleRate;
 
 export interface PlaybackEventSnapshot {
     item: MobilePlayableAudio;
@@ -59,7 +77,22 @@ export const reducePlaybackStateFromEvent = (
         return current;
     }
 
-    const activeItem = snapshot?.item ?? current.item;
+    // The snapshot says WHICH item is playing. It is NOT the authority on how
+    // that item currently reads, and adopting it wholesale here threw away
+    // every live metadata update on the very next position tick.
+    //
+    // A station's now-playing is written onto `current.item` between ticks by
+    // the metadata sync — polled from the server for a Samo channel, read off
+    // the ICY frames for an internet station. The snapshot is only re-stamped
+    // when the TRACK changes, so on a live stream it stays frozen at whatever
+    // was airing when the stream was opened, and this line put it back roughly
+    // once a second. Visible as a channel that never stops showing the
+    // programme it was tuned to, however many times the station has moved on.
+    //
+    // Same id means the same item, so the fresher copy wins; a different id is
+    // a real track change and the snapshot is the one that knows about it.
+    const activeItem =
+        snapshot?.item && snapshot.item.id !== current.item.id ? snapshot.item : current.item;
 
     // Foreign-event guard (single-owner discipline for the reducer).
     //
@@ -104,6 +137,21 @@ export const reducePlaybackStateFromEvent = (
     // target sample lands or the grace expires.
     const now = (options.now ?? Date.now)();
     const trackChanged = activeItem.id !== current.item.id;
+
+    // The observed format belongs to the track that was decoded. When the track
+    // changes and the incoming event has not yet observed the new stream, the
+    // outgoing track's format must be dropped rather than carried forward —
+    // holding it would be the same kind of stale claim this field exists to
+    // replace. Native clears it on transition as well; doing it here too means
+    // the reducer is correct on its own, including on the cast path, which
+    // reports no decoded format at all.
+    const nextDecodedFormat = event.decodedFormat
+        ? sameDeliveredAudioFormat(event.decodedFormat, current.decodedFormat)
+            ? current.decodedFormat
+            : event.decodedFormat
+        : trackChanged
+          ? undefined
+          : current.decodedFormat;
     let nextPositionMs = progress.positionMs;
     let nextPendingSeekTargetMs = current.pendingSeekTargetMs;
     let nextPendingSeekAtMs = current.pendingSeekAtMs;
@@ -158,6 +206,7 @@ export const reducePlaybackStateFromEvent = (
         nextDurationMs === current.durationMs &&
         nextMessage === current.message &&
         nextBitPerfect === current.bitPerfect &&
+        nextDecodedFormat === current.decodedFormat &&
         nextSessionId === current.sessionId &&
         nextPendingSeekTargetMs === current.pendingSeekTargetMs &&
         nextPendingSeekAtMs === current.pendingSeekAtMs &&
@@ -169,6 +218,7 @@ export const reducePlaybackStateFromEvent = (
     return {
         ...current,
         bitPerfect: nextBitPerfect,
+        decodedFormat: nextDecodedFormat,
         durationMs: nextDurationMs,
         item: activeItem,
         message: nextMessage,

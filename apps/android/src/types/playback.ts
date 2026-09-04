@@ -1,3 +1,4 @@
+import { type DeliveredAudioFormat } from '@samo/core/audio-quality';
 import { type MobilePlayableAudio } from '@samo/core/mobile';
 
 import {
@@ -13,6 +14,8 @@ export type AndroidPlaybackStatus =
 export type AndroidPlaybackState =
     | {
           bitPerfect?: AndroidPlaybackTruth;
+          /** What the engine is really decoding; undefined until observed. */
+          decodedFormat?: DeliveredAudioFormat;
           deviceInfo?: AndroidAudioDeviceInfo;
           durationMs?: number;
           item: MobilePlayableAudio;

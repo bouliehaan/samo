@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { collectSamoPages } from './server-samo-pagination';
+import {
+    collectSamoPages,
+    collectSamoPagesCapped,
+    SamoPageCeilingError,
+} from './server-samo-pagination';
 
 /**
  * Builds a fake paginated endpoint over a fixed list, recording every offset it
@@ -66,10 +70,11 @@ describe('collectSamoPages', () => {
             };
         };
 
-        const collected = await collectSamoPages(500, 2000, fetchPage);
+        const { items: collected, truncated } = await collectSamoPagesCapped(500, 2000, fetchPage);
 
-        expect(offsets).toEqual([0, 500, 1000, 1500]);
+        expect(offsets.sort((a, b) => a - b)).toEqual([0, 500, 1000, 1500]);
         expect(collected).toHaveLength(2000);
+        expect(truncated).toBe(true);
     });
 
     it('stops at the hard ceiling when a server never returns a short page', async () => {
@@ -81,10 +86,11 @@ describe('collectSamoPages', () => {
             return { items: Array.from({ length: 500 }, (_, index) => `item-${offset + index}`) };
         };
 
-        const collected = await collectSamoPages(500, 1500, fetchPage);
+        const { items: collected, truncated } = await collectSamoPagesCapped(500, 1500, fetchPage);
 
         expect(offsets).toEqual([0, 500, 1000]);
         expect(collected).toHaveLength(1500);
+        expect(truncated).toBe(true);
     });
 
     it('accepts a bare array response and treats its length as the total', async () => {
@@ -109,5 +115,64 @@ describe('collectSamoPages', () => {
         const collected = await collectSamoPages(500, 50_000, fetchPage);
 
         expect(collected).toEqual(items);
+    });
+});
+
+describe('collectSamoPages refuses to truncate', () => {
+    // The bug this guards: samo's playlist API replaces `trackIds` wholesale, so
+    // a short read written back is a delete. A 25,000-track playlist edited on a
+    // client with a 20,000 ceiling silently lost 5,000 tracks and reported
+    // success. Throwing is the only return value a caller cannot ignore.
+    it('throws rather than return a partial list when the total exceeds the ceiling', async () => {
+        const fetchPage = async (offset: number) => ({
+            items: Array.from({ length: 500 }, (_, index) => `item-${offset + index}`),
+            total: 25_000,
+        });
+
+        await expect(collectSamoPages(500, 20_000, fetchPage)).rejects.toBeInstanceOf(
+            SamoPageCeilingError,
+        );
+    });
+
+    it('throws when a server never returns a short page and never reports a total', async () => {
+        const fetchPage = async (offset: number) => ({
+            items: Array.from({ length: 500 }, (_, index) => `item-${offset + index}`),
+        });
+
+        await expect(collectSamoPages(500, 1500, fetchPage)).rejects.toBeInstanceOf(
+            SamoPageCeilingError,
+        );
+    });
+
+    it('returns the whole list when it fits under the ceiling', async () => {
+        const fetchPage = async (offset: number) => ({
+            items: Array.from({ length: Math.max(0, Math.min(500, 1200 - offset)) }, (_, index) =>
+                String(offset + index),
+            ),
+            total: 1200,
+        });
+
+        await expect(collectSamoPages(500, 20_000, fetchPage)).resolves.toHaveLength(1200);
+    });
+
+    it('never runs more than the concurrency limit of requests at once', async () => {
+        let inFlight = 0;
+        let peak = 0;
+        const fetchPage = async (offset: number) => {
+            inFlight += 1;
+            peak = Math.max(peak, inFlight);
+            await new Promise((resolve) => setTimeout(resolve, 1));
+            inFlight -= 1;
+            return {
+                items: Array.from({ length: 500 }, (_, index) => String(offset + index)),
+                total: 20_000,
+            };
+        };
+
+        await collectSamoPages(500, 50_000, fetchPage);
+
+        // 40 pages remain after the first. Unbounded, that was 40 simultaneous
+        // requests from a phone through the tunnel.
+        expect(peak).toBeLessThanOrEqual(6);
     });
 });

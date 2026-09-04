@@ -1,0 +1,12 @@
+.transport {
+    display: flex;
+    gap: 0.75rem;
+    align-items: center;
+    justify-content: center;
+}
+
+.busy {
+    /* Held at the pressed weight until the station answers, so the row does not
+       flicker between two shades on a fast skip. */
+    opacity: 0.55;
+}

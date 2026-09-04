@@ -6,6 +6,7 @@ import { NativeScrollArea } from '/@/renderer/components/native-scroll-area/nati
 import { AlbumInfiniteCarousel } from '/@/renderer/features/albums/components/album-infinite-carousel';
 import { HomeContinueListening } from '/@/renderer/features/home/components/home-continue-listening';
 import {
+    HomeExploSection,
     HomeFavoriteAudiobooks,
     HomeFavoritePlaylists,
 } from '/@/renderer/features/home/components/home-media-sections';
@@ -57,17 +58,22 @@ const HomeRecentlyAddedAlbums = ({
  * Where you left off, across every kind of media.
  *
  * The library-browse shelves moved to Music when the section pills arrived —
- * albums, artists, explore, discover, rediscover. What stays is the part that
- * is about you rather than about the library: what you were listening to, your
- * playlists, the shows with new episodes, the stations you keep coming back to.
+ * albums, artists, discover, rediscover. What stays is the part that is about
+ * you rather than about the library: what you were listening to, this week's
+ * Explore drop, your playlists, the shows with new episodes, the stations you
+ * keep coming back to.
  *
- * Playlists and Recently Added appear here AND on Music on purpose. Both are a
- * thing you reach for by name and a thing you browse, and Home without them is
- * not a page about what you listen to. Recently Added in particular is the one
- * library shelf that is genuinely about you: it answers "what is new since I
- * was last here", which is a Home question, and it is the section the phone's
- * Home leads with — desktop dropping it was the two ends disagreeing about what
- * Home means. It stays last here, which is where it sat before the move.
+ * Explore, Playlists and Recently Added appear here AND on Music on purpose.
+ * Each is both a thing you reach for by name and a thing you browse, and Home
+ * without them is not a page about what you listen to. Explore is dated, not
+ * browsed — a week's drop that is stale by the next one — so burying it one tab
+ * away is the same as deleting it; it sits directly under Continue Listening,
+ * above the shelf of playlists, which is where it sat before the move. Recently
+ * Added is the one library shelf that is genuinely about you: it answers "what
+ * is new since I was last here", which is a Home question, and it is the
+ * section the phone's Home leads with — desktop dropping it was the two ends
+ * disagreeing about what Home means. It stays last here, which is where it sat
+ * before the move.
  */
 const HomeRoute = () => {
     const { t } = useTranslation();
@@ -100,6 +106,7 @@ const HomeRoute = () => {
                         ref={containerQuery.ref}
                     >
                         <HomeContinueListening containerQuery={containerQuery} />
+                        <HomeExploSection />
                         <HomeFavoritePlaylists containerQuery={containerQuery} />
                         <HomeRadioStations />
                         <HomePodcastFeedSection containerQuery={containerQuery} />

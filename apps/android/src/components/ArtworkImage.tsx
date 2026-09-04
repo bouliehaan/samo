@@ -16,7 +16,10 @@ import { peekArtworkLocalUri, subscribeArtworkIndex } from '../services/artwork-
 import { canonicalArtworkKey } from '../utils/artwork-canonical';
 import { styles } from '../theme/styles';
 import { colors } from '../theme/tokens';
-import { resolveSamoItemArtworkSourceForDisplay } from '../utils/samo-artwork-url';
+import {
+    isSamoMediaUrlMissingStreamToken,
+    resolveSamoItemArtworkSourceForDisplay,
+} from '../utils/samo-artwork-url';
 
 /**
  * Artwork tile backed by expo-image so cover art decodes and recycles like a
@@ -109,6 +112,14 @@ export const ArtworkImage = ({
             }
         }
 
+        // The same withholding the resolver does, for the paths that never
+        // reach it: no contentSource to resolve against, or connections that
+        // have not loaded yet. A bare string source carries no headers, so a
+        // Samo /api/v1/ URL without a stream token is a request that can only
+        // 401 and then be retried once auth lands.
+        if (isSamoMediaUrlMissingStreamToken(uri)) {
+            return undefined;
+        }
         return uri;
     }, [artworkImageId, contentSource, resolvedConnections, source, uri]);
     const remoteUri =

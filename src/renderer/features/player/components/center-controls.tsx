@@ -13,6 +13,7 @@ import {
     useRadioControls,
     useRadioPlayer,
 } from '/@/renderer/features/radio/hooks/use-radio-player';
+import { useSamoChannelTransport } from '/@/renderer/features/radio/hooks/use-samo-channel-transport';
 import {
     useButtonSize,
     usePlayerRepeat,
@@ -51,6 +52,10 @@ export const CenterControls = () => {
     const isRadioActive = useIsRadioActive();
     const { id: currentSongId } = usePlayerSongProperties(['id']) ?? {};
     const shouldShowRadioControls = isRadioActive && currentSongId === undefined;
+    // A Samo channel is the one radio source with programming of its own, so it
+    // is the one where PREV and NEXT still mean something — they ask the
+    // station to move on. An internet station keeps them greyed out.
+    const { isChannel } = useSamoChannelTransport();
 
     if (shouldShowRadioControls) {
         return (
@@ -59,11 +64,11 @@ export const CenterControls = () => {
                     <div className={styles.buttonsContainer}>
                         <RadioStopButton />
                         <ShuffleButton disabled={shouldShowRadioControls} />
-                        <PreviousButton disabled={shouldShowRadioControls} />
+                        <PreviousButton disabled={!isChannel} />
                         {skip?.enabled && <SkipBackwardButton disabled={shouldShowRadioControls} />}
                         <RadioCenterPlayButton />
                         {skip?.enabled && <SkipForwardButton disabled={shouldShowRadioControls} />}
-                        <NextButton disabled={shouldShowRadioControls} />
+                        <NextButton disabled={!isChannel} />
                         <RepeatButton disabled={shouldShowRadioControls} />
                         <ShuffleAllButton disabled={shouldShowRadioControls} />
                     </div>
@@ -183,9 +188,11 @@ const PreviousButton = ({ disabled }: { disabled?: boolean }) => {
     const source = usePlaybackSource();
     const { seekToPreviousChapter } = useAudiobookActions();
     const { seekToPreviousEpisode } = usePodcastActions();
+    const channel = useSamoChannelTransport();
 
     const isAudiobookMode = source === 'audiobook';
     const isPodcastMode = source === 'podcast';
+    const isChannelMode = source === 'radio' && channel.isChannel;
 
     let handleClick: () => Promise<void> | void;
     let tooltipLabel: string;
@@ -200,6 +207,11 @@ const PreviousButton = ({ disabled }: { disabled?: boolean }) => {
         tooltipLabel =
             t('player.previous', { context: 'episode', postProcess: 'sentenceCase' }) ||
             'Previous episode';
+    } else if (isChannelMode) {
+        // A live pipe has no back-buffer to rewind into, so going back is the
+        // station's decision: it re-airs the item before this one from the top.
+        handleClick = channel.previous;
+        tooltipLabel = 'Back a programme on this station';
     } else {
         handleClick = mediaPrevious;
         tooltipLabel = t('player.previous', { postProcess: 'sentenceCase' });
@@ -207,7 +219,7 @@ const PreviousButton = ({ disabled }: { disabled?: boolean }) => {
 
     return (
         <PlayerButton
-            disabled={disabled}
+            disabled={disabled || (isChannelMode && channel.busy !== null)}
             icon={<Icon fill="default" icon="mediaPrevious" size={buttonSize} />}
             onClick={handleClick}
             tooltip={{
@@ -409,9 +421,11 @@ const NextButton = ({ disabled }: { disabled?: boolean }) => {
     const source = usePlaybackSource();
     const { seekToNextChapter } = useAudiobookActions();
     const { seekToNextEpisode } = usePodcastActions();
+    const channel = useSamoChannelTransport();
 
     const isAudiobookMode = source === 'audiobook';
     const isPodcastMode = source === 'podcast';
+    const isChannelMode = source === 'radio' && channel.isChannel;
 
     let handleClick: () => Promise<void> | void;
     let tooltipLabel: string;
@@ -424,6 +438,11 @@ const NextButton = ({ disabled }: { disabled?: boolean }) => {
         handleClick = () => seekToNextEpisode();
         tooltipLabel =
             t('player.next', { context: 'episode', postProcess: 'sentenceCase' }) || 'Next episode';
+    } else if (isChannelMode) {
+        // There is no next item to move to — one encoder, every listener on the
+        // same second — so this asks the station to move its programming on.
+        handleClick = channel.skip;
+        tooltipLabel = 'Skip what this station is airing';
     } else {
         handleClick = mediaNext;
         tooltipLabel = t('player.next', { postProcess: 'sentenceCase' });
@@ -431,7 +450,7 @@ const NextButton = ({ disabled }: { disabled?: boolean }) => {
 
     return (
         <PlayerButton
-            disabled={disabled}
+            disabled={disabled || (isChannelMode && channel.busy !== null)}
             icon={<Icon fill="default" icon="mediaNext" size={buttonSize} />}
             onClick={handleClick}
             tooltip={{

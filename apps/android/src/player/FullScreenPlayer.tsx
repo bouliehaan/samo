@@ -1,4 +1,7 @@
-import { buildAudioQualityBadgeItems } from '@samo/core/audio-quality';
+import {
+    buildAudioQualityBadgeItems,
+    resolveDeliveredAudioQuality,
+} from '@samo/core/audio-quality';
 import { type MobilePlayableAudio, type MobileHomeItem, LONG_FORM_RELATIVE_SKIP_SECONDS } from '@samo/core/mobile';
 import { type ServerAuthenticationResult } from '@samo/core/server';
 import { type ComponentProps, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -31,11 +34,17 @@ import { SegmentedSeekBar } from '../components/SegmentedSeekBar';
 import { useMediaContextMenu } from '../contexts/media-context-menu';
 import { type AndroidCastState } from '../services/audio-playback';
 import {
+    previousSamoChannelProgramme,
+    samoChannelIdForPlayback,
+    skipSamoChannelProgramme,
+} from '../services/samo-channel';
+import {
     loadArtistHomeItemById,
     loadArtistHomeItemByName,
 } from '../services/catalog/catalog-reads';
 import { getPlaybackQueue } from '../state/playback-queue-store';
 import { useAndroidPlaybackPositionMs } from '../state/playback-store';
+import { useSamoChannelSelector } from '../state/samo-channel';
 import { getPlayerPositionMsForPlaybackProgress } from '../utils/playback-progress-math';
 import { type AndroidPlaybackState } from '../types/playback';
 import {
@@ -362,6 +371,16 @@ export const FullScreenPlayer = memo(({
     const activeItem = playbackState.status !== 'idle' ? playbackState.item : null;
     const displayItem: MobilePlayableAudio | null = activeItem ?? lastPlayedItem;
     const canSkipPlayback = Boolean(displayItem && displayItem.source !== 'radio');
+    // A Samo channel is the one radio source with programming of its own, so it
+    // is the one where PREV and NEXT still mean something. They are not local
+    // moves: there is one encoder and every listener is on the same second, so
+    // these ask the STATION to move on and everybody tuned in hears it. An
+    // internet station is somebody else's stream with nothing to skip to, and
+    // keeps the bare play/pause it has always had.
+    const isSamoChannel = samoChannelIdForPlayback(displayItem) !== null;
+    // Held above the early return, as every hook here must be.
+    const channelCommand = useSamoChannelSelector((state) => state.command);
+    const channelNotice = useSamoChannelSelector((state) => state.notice);
 
     // Collapsed quality pill toggle state — flip between quality-spec and bitrate/path view.
     const [qualityPillFlipped, setQualityPillFlipped] = useState(false);
@@ -454,8 +473,24 @@ export const FullScreenPlayer = memo(({
             // add) are still offered for the track you are actually listening
             // to. Read at open time, not subscribed — the menu is built from
             // this one snapshot.
+            const queue = getPlaybackQueue();
+            // Remove from Playlist needs all three to hold, and asking here is
+            // the only place they can all be asked: the queue was started from
+            // a playlist this user may write (stamped at play time, since the
+            // player never sees a detail), this is a music track, and the track
+            // is one of that playlist's own rather than something appended to
+            // Up Next while it played. `menuItem.id` is the catalog track id —
+            // the same id space the playlist's membership is listed in.
+            const editablePlaylist = queue?.editablePlaylist;
+            const queuePlaylist =
+                editablePlaylist &&
+                item.source === 'music' &&
+                editablePlaylist.trackIds.includes(menuItem.id)
+                    ? editablePlaylist
+                    : undefined;
             contextMenu.openForItem(menuItem, {
-                fromExplo: getPlaybackQueue()?.isExploPlaylist === true,
+                fromExplo: queue?.isExploPlaylist === true,
+                queuePlaylist,
                 suppressQueueAction: true,
             });
         }
@@ -543,9 +578,21 @@ export const FullScreenPlayer = memo(({
           );
     const displayTitle = display.lines[0] || display.title || displayItem.title || 'Unknown title';
     const isMusicSource = displayItem.source === 'music';
+    // What the engine is really decoding, when it has got far enough to know.
+    // Undefined while idle (`displayItem` is then the last-played item, whose
+    // stream is long closed) and during pre-roll.
+    const decodedFormat =
+        playbackState.status !== 'idle' ? playbackState.decodedFormat : undefined;
+    // The badge describes the stream that ARRIVED, not the catalog row that
+    // described the file. Those agree on a LAN stream and on a downloaded copy;
+    // they part company the moment something between the server and the phone
+    // re-encodes the audio, and until this call existed the player reported the
+    // file and labelled the path direct regardless. `resolveDeliveredAudioQuality`
+    // returns the catalog's own answer untouched whenever nothing has been
+    // observed, so this is safe to apply unconditionally.
     const qualityItems = isMusicSource
         ? buildAudioQualityBadgeItems({
-              ...displayItem.quality,
+              ...resolveDeliveredAudioQuality(displayItem.quality, decodedFormat),
               compact: true,
               mode: 'detail',
           })
@@ -598,15 +645,22 @@ export const FullScreenPlayer = memo(({
             };
         }
 
-        // Transcoded
+        // Transcoded. The headline is the format item, which on this path names
+        // both ends of the trade (`FLAC \u2192 OPUS`) — what is on the server and
+        // what actually got here. Everything measured off the live stream goes
+        // behind the flip alongside the path, matching how the lossless pill
+        // hides its bitrate there.
         if (pathItem?.tone === 'transcoded') {
-            const viewA = formatItem
-                ? `${formatItem.label}\u00a0|\u00a0${bitrateItem?.label ?? ''}`
-                : bitrateItem?.label ?? 'TRANSCODED';
+            const measured = qualityItems
+                .slice(2)
+                .map((item) => item.label)
+                .join('\u00a0|\u00a0');
             return {
-                canToggle: false,
-                labelA: viewA,
-                labelB: '',
+                canToggle: measured.length > 0,
+                labelA: formatItem?.label ?? 'TRANSCODED',
+                labelB: measured
+                    ? `${measured}\u00a0|\u00a0${pathItem.label.toUpperCase()}`
+                    : '',
                 tone: 'transcoded' as const,
             };
         }
@@ -626,12 +680,48 @@ export const FullScreenPlayer = memo(({
     const isLongFormSource =
         displayItem.source === 'audiobook' || displayItem.source === 'podcast';
     const showShuffleControl = !isLongFormSource && displayItem.source !== 'radio';
-    const showSkipControls = displayItem.source !== 'radio';
+    const showSkipControls = displayItem.source !== 'radio' || isSamoChannel;
     const showLongFormSkip = Boolean(onSkipBySeconds) && isLongFormSource;
     // Music parks Sleep in the bottom bar (like long-form) so the main
     // controls read shuffle | prev | play | next | repeat.
     const showSleepInBottomBar = isLongFormSource || isMusicSource;
     const showCastInMainControls = displayItem.source === 'radio';
+    // On a channel these go to the STATION rather than to the queue transport,
+    // which knows nothing about programming and has no queue here to step.
+    const handlePrevious = isSamoChannel
+        ? () => {
+              triggerImpact('light');
+              void previousSamoChannelProgramme();
+          }
+        : onPrevious;
+    const handleNext = isSamoChannel
+        ? () => {
+              triggerImpact('light');
+              void skipSamoChannelProgramme();
+          }
+        : onNext;
+    // "Not this kind of thing" behind a hold rather than a fourth button: it is
+    // the rarer of the two skips, and the transport row is already the widest
+    // thing on this screen. Same action, same words, as the one in the Radio
+    // tab's own overflow.
+    const handleSkipKind = isSamoChannel
+        ? () => {
+              triggerImpact('medium');
+              void skipSamoChannelProgramme('kind');
+          }
+        : undefined;
+    // One line for both halves of a station request: what it is doing, then
+    // why it did not work. Both belong under the buttons that asked.
+    const channelStatusLine = isSamoChannel
+        ? (channelNotice ??
+          (channelCommand
+              ? channelCommand === 'previous'
+                  ? 'Going back…'
+                  : channelCommand === 'kind'
+                    ? 'Finding something else…'
+                    : 'Skipping…'
+              : null))
+        : null;
     const castButton = (
         <Pressable
             accessibilityLabel={
@@ -908,7 +998,12 @@ export const FullScreenPlayer = memo(({
                             castButton
                         ) : null}
                         {showSkipControls ? (
-                            <PlayerIconButton accessibilityLabel="Previous" onPress={onPrevious}>
+                            <PlayerIconButton
+                                accessibilityLabel={
+                                    isSamoChannel ? 'Back to the previous programme' : 'Previous'
+                                }
+                                onPress={handlePrevious}
+                            >
                                 <TrackSkipGlyph color={colors.text} direction={-1} size={24} />
                             </PlayerIconButton>
                         ) : (
@@ -964,7 +1059,18 @@ export const FullScreenPlayer = memo(({
                             </PlayerIconButton>
                         ) : null}
                         {showSkipControls ? (
-                            <PlayerIconButton accessibilityLabel="Next" onPress={onNext}>
+                            <PlayerIconButton
+                                accessibilityHint={
+                                    isSamoChannel
+                                        ? 'Press and hold to skip this kind of thing'
+                                        : undefined
+                                }
+                                accessibilityLabel={
+                                    isSamoChannel ? 'Skip what the station is playing' : 'Next'
+                                }
+                                onLongPress={handleSkipKind}
+                                onPress={handleNext}
+                            >
                                 <TrackSkipGlyph color={colors.text} direction={1} size={24} />
                             </PlayerIconButton>
                         ) : (
@@ -1004,6 +1110,10 @@ export const FullScreenPlayer = memo(({
                         ) : null}
                     </View>
                 </View>
+
+                {channelStatusLine ? (
+                    <Text style={styles.fullPlayerChannelNotice}>{channelStatusLine}</Text>
+                ) : null}
 
                 {sleepTimer.secondsLeft !== null && sleepTimer.secondsLeft !== -1 && (
                     <Text style={styles.fullPlayerSleepLabel}>

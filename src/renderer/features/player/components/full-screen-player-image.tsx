@@ -16,6 +16,7 @@ import { useItemImageUrl } from '/@/renderer/components/item-image/item-image';
 import { QualityBadge } from '/@/renderer/components/quality-badge/quality-badge';
 import { AudioPathBadge } from '/@/renderer/features/player/components/audio-path-badge';
 import { LongFormPlayerArtwork } from '/@/renderer/features/player/components/long-form-player-artwork';
+import { SamoChannelTransport } from '/@/renderer/features/radio/components/samo-channel-transport';
 import {
     useIsRadioActive,
     useRadioPlayer,
@@ -417,6 +418,10 @@ export const FullScreenPlayerImage = () => {
                         {currentSong?.album}
                     </Text>
                 )}
+                {/* A Samo channel is the one radio source with programming of
+                    its own, so it is the one that can be moved on from here.
+                    Renders nothing for an internet station. */}
+                {isRadioMode ? <SamoChannelTransport /> : null}
                 {!isNonMusicMode && (
                     <>
                         {showAudioPathBadge && <AudioPathBadge song={currentSong} />}

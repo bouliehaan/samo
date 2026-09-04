@@ -25,6 +25,10 @@ import {
 import { setHomeContentState } from '../state/app-navigation';
 import { getAuthSession } from '../state/auth-session';
 import {
+    type AndroidQueuePlaylistOrigin,
+    forgetPlaybackQueuePlaylistTrack,
+} from '../state/playback-queue-store';
+import {
     getMediaOverlays,
     setContextMenuFeedback,
     setContextMenuTarget,
@@ -113,7 +117,13 @@ export const handleDeletePlaylistForItem = (item: AndroidRecentContentSourceItem
 };
 
 /**
- * Long-press a track inside a playlist → Remove from Playlist.
+ * Remove one track from one playlist, wherever the ask came from.
+ *
+ * Takes the playlist's identity rather than its detail because the fullscreen
+ * player has no detail to give — it carries the same three facts on the queue
+ * instead (see AndroidQueuePlaylistOrigin). Editability is the caller's to
+ * establish: a detail-page row asks the detail, the player relies on the stamp
+ * only existing for playlists that passed the same test at play time.
  *
  * The row disappears before the network is touched, and comes back if the
  * server refuses. Membership edits go through a read-modify-write against the
@@ -127,16 +137,11 @@ export const handleDeletePlaylistForItem = (item: AndroidRecentContentSourceItem
  * why the catalog sync is kicked on success — the same contract every other
  * playlist mutation here runs on.
  */
-export const handleRemoveTrackFromPlaylist = (
+const removeTrackFromPlaylistTarget = (
     track: MobileMediaTrack,
-    detail: MobileMediaDetail,
+    playlist: { id: string; sourceId: string; title: string },
 ): void => {
-    if (!isMobilePlaylistDetailEditable(detail)) {
-        setContextMenuFeedback('This playlist cannot be edited.');
-        return;
-    }
-
-    const auth = findAuthForSource(detail.source.id);
+    const auth = findAuthForSource(playlist.sourceId);
     if (!auth) {
         setContextMenuFeedback('The server for this playlist is no longer connected.');
         return;
@@ -144,7 +149,7 @@ export const handleRemoveTrackFromPlaylist = (
 
     Alert.alert(
         'Remove from playlist',
-        `Remove "${track.title}" from "${detail.title}"?`,
+        `Remove "${track.title}" from "${playlist.title}"?`,
         [
             { style: 'cancel', text: 'Cancel' },
             {
@@ -154,7 +159,7 @@ export const handleRemoveTrackFromPlaylist = (
                     setContextMenuTarget(null);
                     setContextMenuFeedback(null);
 
-                    const previous = updateLoadedMediaDetail(detail.id, (current) => {
+                    const previous = updateLoadedMediaDetail(playlist.id, (current) => {
                         const tracks = current.tracks.filter(
                             (candidate) => candidate.id !== track.id,
                         );
@@ -167,7 +172,7 @@ export const handleRemoveTrackFromPlaylist = (
                         try {
                             await removeMobileTracksFromPlaylist({
                                 authentication: auth,
-                                playlistId: detail.id,
+                                playlistId: playlist.id,
                                 songIds: [track.id],
                             });
                             // The splice above only reached the copies held in
@@ -176,11 +181,21 @@ export const handleRemoveTrackFromPlaylist = (
                             // detail is marked provisional — without this, one
                             // LRU eviction is enough for the removed row to
                             // come back.
-                            invalidateMediaDetail(detail);
+                            invalidateMediaDetail({
+                                id: playlist.id,
+                                source: { id: playlist.sourceId },
+                                type: MobileMediaDetailType.PLAYLIST,
+                            });
+                            // A queue playing this playlist keeps the track
+                            // loaded — removing it edits membership, not what
+                            // is playing — so the queue's own record of who
+                            // belongs has to lose it too, or the player would
+                            // go on offering to remove it again.
+                            forgetPlaybackQueuePlaylistTrack(playlist.id, track.id);
                             void triggerCatalogSyncNow();
                         } catch (error) {
                             if (previous) {
-                                updateLoadedMediaDetail(detail.id, () => previous);
+                                updateLoadedMediaDetail(playlist.id, () => previous);
                             }
                             Alert.alert(
                                 'Remove from playlist',
@@ -194,6 +209,34 @@ export const handleRemoveTrackFromPlaylist = (
             },
         ],
     );
+};
+
+/** Long-press a track inside a playlist detail → Remove from Playlist. */
+export const handleRemoveTrackFromPlaylist = (
+    track: MobileMediaTrack,
+    detail: MobileMediaDetail,
+): void => {
+    if (!isMobilePlaylistDetailEditable(detail)) {
+        setContextMenuFeedback('This playlist cannot be edited.');
+        return;
+    }
+    removeTrackFromPlaylistTarget(track, {
+        id: detail.id,
+        sourceId: detail.source.id,
+        title: detail.title,
+    });
+};
+
+/**
+ * The fullscreen player's Remove from Playlist, acting on the playlist the
+ * QUEUE was started from — the player has no detail page behind it, and the
+ * track it is playing is the one the user is looking at.
+ */
+export const handleRemoveTrackFromQueuePlaylist = (
+    track: MobileMediaTrack,
+    playlist: AndroidQueuePlaylistOrigin,
+): void => {
+    removeTrackFromPlaylistTarget(track, playlist);
 };
 
 export const handleOpenAddToPlaylistForSong = (

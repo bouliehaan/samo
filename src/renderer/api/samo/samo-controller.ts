@@ -3,6 +3,8 @@ import type { SamoExploKeepResponse } from '@samo/core/server';
 import {
     authenticateSamo,
     buildSamoAuthenticatedImageRequest,
+    collectSamoPages,
+    collectSamoPagesCapped,
     createSamoAudiobookBookmark,
     createSamoInternetRadioStation,
     createSamoMusicPlaylist,
@@ -95,7 +97,13 @@ const browserFetch = samoFetch;
 // Some Samo endpoints page in chunks of 500 to avoid pulling enormous lists
 // at once. Mirrors the Android `mobile-home` collection loaders.
 const SAMO_PAGE_SIZE = 500;
-const SAMO_MAX_PAGES = 40;
+
+// The runaway guard, matching the one the Android client uses. It has to match:
+// this file used to carry its own paginator with a ceiling of 20,000 (500 x 40)
+// while packages/core used 50,000, so a 25,000-track playlist edited here was
+// silently written back 5,000 tracks shorter than the same edit made on the
+// phone. Truncation on a wholesale-replace API is a delete, not a short view.
+const SAMO_PAGE_CEILING = 50_000;
 
 /** One playlist play-count bump per playlist queue context (first scrobbled track). */
 let activePlaylistScrobbleId: null | string = null;
@@ -598,24 +606,30 @@ export const fetchSamoUnplayedHomeAlbums = async (
     );
 };
 
-const fetchAllPages = async <T>(
+// Both helpers below delegate to the shared paginator in @samo/core rather
+// than reimplementing one here. Which of the two you pick is the whole safety
+// property: `fetchEveryPage` throws rather than hand back a partial list, and
+// is what every read-modify-write must use; `fetchPagesCapped` is for listings
+// that are rendered and never saved.
+
+/** Every page, or an error. For any result that gets written back. */
+const fetchEveryPage = <T>(
+    loader: (input: { limit: number; offset: number }) => Promise<SamoPaginatedResponse<T>>,
+): Promise<T[]> =>
+    collectSamoPages<T>(SAMO_PAGE_SIZE, SAMO_PAGE_CEILING, (offset) =>
+        loader({ limit: SAMO_PAGE_SIZE, offset }),
+    );
+
+/** Up to the ceiling, for listings that are displayed rather than saved. */
+const fetchPagesCapped = async <T>(
     loader: (input: { limit: number; offset: number }) => Promise<SamoPaginatedResponse<T>>,
 ): Promise<T[]> => {
-    const all: T[] = [];
-    for (let page = 0; page < SAMO_MAX_PAGES; page += 1) {
-        const response = await loader({
-            limit: SAMO_PAGE_SIZE,
-            offset: page * SAMO_PAGE_SIZE,
-        });
-        const batch = samoItemsOf(response);
-        if (batch.length === 0) break;
-        all.push(...batch);
-        if (typeof response.total === 'number') {
-            if (all.length >= response.total) break;
-        }
-        if (batch.length < SAMO_PAGE_SIZE) break;
-    }
-    return all;
+    const collection = await collectSamoPagesCapped<T>(
+        SAMO_PAGE_SIZE,
+        SAMO_PAGE_CEILING,
+        (offset) => loader({ limit: SAMO_PAGE_SIZE, offset }),
+    );
+    return collection.items;
 };
 
 // Typed as the complete contract (not Partial) so a missing endpoint is a
@@ -627,13 +641,19 @@ export const SamoController: InternalControllerEndpoint = {
         const auth = samoAuthentication(server);
         // Wholesale `trackIds` replace again — read every page or the append
         // truncates the playlist to the first one.
-        const current = await fetchAllPages<SamoMusicTrack>((input) =>
+        const current = await fetchEveryPage<SamoMusicTrack>((input) =>
             listSamoMusicPlaylistTracks(browserFetch, auth, query.id, input),
         );
         const existing = current.map((track) => track.id).filter(Boolean) as string[];
+        // Set membership, not Array.includes: this runs once per added song
+        // against the playlist's ENTIRE track list, which the ceiling allows to
+        // be 50,000 long.
+        const seen = new Set(existing);
         const merged = [...existing];
         for (const id of body.songId) {
-            if (!merged.includes(id)) merged.push(id);
+            if (seen.has(id)) continue;
+            seen.add(id);
+            merged.push(id);
         }
         await updateSamoMusicPlaylist(browserFetch, auth, query.id, { trackIds: merged });
         return null;
@@ -807,7 +827,7 @@ export const SamoController: InternalControllerEndpoint = {
             };
         }
 
-        const all = await fetchAllPages<SamoMusicArtist>((input) =>
+        const all = await fetchPagesCapped<SamoMusicArtist>((input) =>
             listSamoMusicArtists(browserFetch, auth, input),
         );
 
@@ -841,7 +861,7 @@ export const SamoController: InternalControllerEndpoint = {
         const server = apiClientProps.server;
         if (!server) return 0;
         const auth = samoAuthentication(server);
-        const all = await fetchAllPages<SamoMusicArtist>((input) =>
+        const all = await fetchPagesCapped<SamoMusicArtist>((input) =>
             listSamoMusicArtists(browserFetch, auth, input),
         );
         let filtered = all;
@@ -935,7 +955,7 @@ export const SamoController: InternalControllerEndpoint = {
                 albums = samoItemsOf(response);
                 preserveSortOrder = true;
             } else {
-                albums = await fetchAllPages<SamoMusicAlbum>((input) =>
+                albums = await fetchPagesCapped<SamoMusicAlbum>((input) =>
                     listSamoMusicAlbums(browserFetch, auth, input),
                 );
             }
@@ -975,7 +995,7 @@ export const SamoController: InternalControllerEndpoint = {
         const server = apiClientProps.server;
         if (!server) return 0;
         const auth = samoAuthentication(server);
-        const all = await fetchAllPages<SamoMusicAlbum>((input) =>
+        const all = await fetchPagesCapped<SamoMusicAlbum>((input) =>
             listSamoMusicAlbums(browserFetch, auth, input),
         );
         if (query.searchTerm) {
@@ -1001,7 +1021,7 @@ export const SamoController: InternalControllerEndpoint = {
         const server = apiClientProps.server;
         if (!server) throw new Error('No server');
         const auth = samoAuthentication(server);
-        const all = await fetchAllPages<SamoMusicArtist>((input) =>
+        const all = await fetchPagesCapped<SamoMusicArtist>((input) =>
             listSamoMusicArtists(browserFetch, auth, input),
         );
 
@@ -1032,7 +1052,7 @@ export const SamoController: InternalControllerEndpoint = {
         const server = apiClientProps.server;
         if (!server) return 0;
         const auth = samoAuthentication(server);
-        const all = await fetchAllPages<SamoMusicArtist>((input) =>
+        const all = await fetchPagesCapped<SamoMusicArtist>((input) =>
             listSamoMusicArtists(browserFetch, auth, input),
         );
         return all.length;
@@ -1258,7 +1278,7 @@ export const SamoController: InternalControllerEndpoint = {
         // truncate the view of a 600-track playlist, it truncated the playlist
         // — every save deleted the last 100 tracks. `addToPlaylist` and
         // `removeFromPlaylist` below already page for exactly this reason.
-        const tracks = await fetchAllPages<SamoMusicTrack>((input) =>
+        const tracks = await fetchEveryPage<SamoMusicTrack>((input) =>
             listSamoMusicPlaylistTracks(browserFetch, auth, query.id, input),
         );
         const items: Song[] = tracks.map((track, index) =>
@@ -1469,7 +1489,7 @@ export const SamoController: InternalControllerEndpoint = {
         // The PATCH replaces `trackIds` wholesale, so the read has to cover the
         // whole playlist — a single capped page would silently drop every track
         // past it.
-        const current = await fetchAllPages<SamoMusicTrack>((input) =>
+        const current = await fetchEveryPage<SamoMusicTrack>((input) =>
             listSamoMusicPlaylistTracks(browserFetch, auth, query.id, input),
         );
         const ids = current.map((track) => track.id).filter(Boolean) as string[];
