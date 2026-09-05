@@ -36,3 +36,8 @@ dev.log
 # Nothing here is shared: committing it just churns the tree between machines.
 .expo/
 apps/*/.expo/
+
+# Maintainer tooling: deploy.sh ships a worktree to my dev boxes, commit.sh is
+# the gate before anything goes public. They live on my machine, not in the
+# repo — nobody cloning this can use them.
+*.sh
