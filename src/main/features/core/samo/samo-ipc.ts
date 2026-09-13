@@ -156,6 +156,7 @@ export const registerSamoIpcHandlers = () => {
                 body?: string;
                 headers?: Record<string, string>;
                 method?: string;
+                timeoutMs?: number;
                 url: string;
             },
         ): Promise<{
@@ -170,6 +171,7 @@ export const registerSamoIpcHandlers = () => {
                     body: data.body,
                     headers: data.headers,
                     method: data.method,
+                    timeoutMs: data.timeoutMs,
                 }),
             );
 

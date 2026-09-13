@@ -21,6 +21,8 @@ const request = (payload: {
     body?: string;
     headers?: Record<string, string>;
     method?: string;
+    /** This call's own deadline; the main process's timeout layer honours it. */
+    timeoutMs?: number;
     url: string;
 }): Promise<{
     body: string;

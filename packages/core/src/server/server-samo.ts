@@ -826,13 +826,14 @@ export const samoSend = async <T>(
     method: 'DELETE' | 'PATCH' | 'POST' | 'PUT',
     path: string,
     body?: unknown,
-    options?: { query?: SamoRequestOptions['query']; signal?: AbortSignal },
+    options?: { query?: SamoRequestOptions['query']; signal?: AbortSignal; timeoutMs?: number },
 ): Promise<T> => {
     return requestJson<T>(fetcher, getSamoApiUrl(authentication, path, options?.query), {
         body: body !== undefined ? JSON.stringify(body) : undefined,
         headers: jsonHeaders(getSamoBearerToken(authentication)),
         method,
         signal: options?.signal,
+        timeoutMs: options?.timeoutMs,
     });
 };
 
@@ -1314,6 +1315,28 @@ export interface SamoExploKeepResponse {
 }
 
 /**
+ * How long the server may legitimately take over a keep, from what it does.
+ *
+ * It copies every track — an ffmpeg remux of the whole file, which is I/O
+ * bound and can run to seconds for a large lossless file on a busy disk —
+ * kicks off a scan of the folders it wrote to, and then waits up to thirty
+ * seconds for that scan to catalogue the copies so it can answer with their
+ * library ids (explo/keep.go, resolveKeptTrackIDs). The default request
+ * budget is thirty seconds: the same number, with nothing left over for the
+ * copy or the trip. A keep that had done everything right was cut off at the
+ * client, reported as a failure, and answered "already in your library" on
+ * the retry — the server had finished; nobody had waited for it to say so.
+ *
+ * So: the scanner wait, a margin for the copy and the round trip, and a per
+ * track allowance for a batch selected out of the Explore playlist.
+ */
+const EXPLO_KEEP_BASE_TIMEOUT_MS = 45_000;
+const EXPLO_KEEP_PER_TRACK_MS = 5_000;
+
+export const exploKeepTimeoutMs = (trackCount: number): number =>
+    EXPLO_KEEP_BASE_TIMEOUT_MS + Math.max(0, trackCount) * EXPLO_KEEP_PER_TRACK_MS;
+
+/**
  * Copies explo drops into the music library proper.
  *
  * The drop folder is emptied by every weekly rotation, so this is how a track
@@ -1329,9 +1352,14 @@ export const keepSamoExploTracks = async (
     authentication: Pick<ServerAuthenticationResult, 'credential' | 'url'>,
     trackIds: string[],
 ): Promise<SamoExploKeepResponse> => {
-    return samoSend<SamoExploKeepResponse>(fetcher, authentication, 'POST', '/explo/keep', {
-        trackIds,
-    });
+    return samoSend<SamoExploKeepResponse>(
+        fetcher,
+        authentication,
+        'POST',
+        '/explo/keep',
+        { trackIds },
+        { timeoutMs: exploKeepTimeoutMs(trackIds.length) },
+    );
 };
 
 /** How many playlists one scan page asks for while hunting the system playlist. */
@@ -1473,15 +1501,23 @@ export const uploadSamoMusicPlaylistCover = async (
     return response.json() as Promise<SamoMusicPlaylist>;
 };
 
+/**
+ * `/music/search` takes one page — `limit` + `offset` — and applies it to
+ * artists, albums, tracks and playlists alike; there is no per-entity paging
+ * on the wire. A limit of 0 (or none) is the server's default page of 50, not
+ * an empty one, so a caller that wants nothing of a type has to drop it
+ * itself.
+ */
 export const searchSamoMusic = async (
     fetcher: SamoFetch,
     authentication: Pick<ServerAuthenticationResult, 'credential' | 'url'>,
     query: string,
-    options?: { limit?: number; signal?: AbortSignal },
+    options?: { limit?: number; offset?: number; signal?: AbortSignal },
 ): Promise<SamoMusicSearchResponse> => {
     return samoGet<SamoMusicSearchResponse>(fetcher, authentication, '/music/search', {
         query: {
             limit: options?.limit,
+            offset: options?.offset,
             q: query,
         },
         signal: options?.signal,

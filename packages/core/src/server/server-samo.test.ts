@@ -2,15 +2,18 @@ import { describe, expect, it } from 'vitest';
 
 import { type SamoFetch } from './server-http';
 import {
+    exploKeepTimeoutMs,
     finalizeSamoMediaUrl,
     findSamoExploPlaylist,
     getSamoApiUrl,
     getSamoAudiobookStreamUrl,
     getSamoMetadataImageUrl,
     getSamoMusicTrackStreamUrl,
+    keepSamoExploTracks,
     resolveSamoPlaylistArtworkUrl,
     samoPlaylistCoverVersion,
     samoPlaylistHasCoverGrid,
+    searchSamoMusic,
 } from './server-samo';
 import { buildSamoAuthenticatedImageRequest, withSamoImageWidth } from './server-samo-stream-token';
 import { ServerType } from './server-types';
@@ -310,6 +313,59 @@ const jsonFetch = (data: unknown, capture?: (url: string) => void): SamoFetch =>
         };
     };
 };
+
+describe('keepSamoExploTracks', () => {
+    // The server waits up to 30s for its scanner before answering a keep, so
+    // the default 30s budget is where it is still legitimately working. The
+    // call carries a deadline of its own, sized from what the server does,
+    // and one that grows with the batch.
+    it('asks for more than the default request budget, per track', async () => {
+        const calls: { init?: { method?: string; timeoutMs?: number }; url: string }[] = [];
+        const fetcher: SamoFetch = async (url, init) => {
+            calls.push({ init, url });
+            return {
+                json: async () => ({ alreadyInLibrary: 0, failed: 0, kept: 1, results: [] }),
+                ok: true,
+                status: 200,
+            };
+        };
+
+        await keepSamoExploTracks(fetcher, auth, ['track-1']);
+
+        expect(calls).toHaveLength(1);
+        expect(calls[0].url).toBe('https://music.example/api/v1/explo/keep');
+        expect(calls[0].init?.method).toBe('POST');
+        expect(calls[0].init?.timeoutMs).toBe(exploKeepTimeoutMs(1));
+        expect(exploKeepTimeoutMs(1)).toBeGreaterThan(30_000);
+        expect(exploKeepTimeoutMs(20)).toBeGreaterThan(exploKeepTimeoutMs(1));
+    });
+});
+
+describe('searchSamoMusic', () => {
+    it('puts the page on the wire as limit and offset', async () => {
+        let requested = '';
+        const fetcher = jsonFetch({ albums: [], artists: [], tracks: [] }, (url) => {
+            requested = url;
+        });
+
+        await searchSamoMusic(fetcher, auth, 'nils frahm', { limit: 4, offset: 8 });
+
+        expect(requested).toBe(
+            'https://music.example/api/v1/music/search?limit=4&offset=8&q=nils+frahm',
+        );
+    });
+
+    it('omits the page when none is given', async () => {
+        let requested = '';
+        const fetcher = jsonFetch({}, (url) => {
+            requested = url;
+        });
+
+        await searchSamoMusic(fetcher, auth, 'nils');
+
+        expect(requested).toBe('https://music.example/api/v1/music/search?q=nils');
+    });
+});
 
 describe('findSamoExploPlaylist', () => {
     it('returns the system-managed playlist and queries the playlists endpoint', async () => {

@@ -60,6 +60,7 @@ import {
     type SamoMusicArtist,
     type SamoMusicTrack,
     type SamoPaginatedResponse,
+    searchSamoMusic,
     type ServerListItemWithCredentialCore,
     updateSamoMusicPlaylist,
     withSamoImageWidth,
@@ -67,6 +68,7 @@ import {
 import isElectron from 'is-electron';
 
 import { samoFetch } from '/@/renderer/api/samo/samo-fetch';
+import { type SamoSearchEntity, samoSearchPages } from '/@/renderer/api/samo/samo-search-pages';
 import { usePlayerStoreBase } from '/@/renderer/store/player.store';
 import { SamoHttpError } from '/@/shared/api/samo/samo-http-errors';
 import { samoNormalize } from '/@/shared/api/samo/samo-normalize';
@@ -1574,28 +1576,33 @@ export const SamoController: InternalControllerEndpoint = {
             return { albumArtists: [], albums: [], songs: [] };
         }
         const auth = samoAuthentication(server);
-        const response = await browserFetch(
-            getSamoApiUrl(auth, '/music/search', { limit: query.songLimit, q: query.query }),
-            {
-                headers: { Authorization: `Bearer ${server.credential}` },
-                method: 'GET',
-            },
+        const term = query.query;
+
+        // One request per server page the query needs — see samoSearchPages.
+        // The palette's per-entity pages and the unified search each need one.
+        const pages = await Promise.all(
+            samoSearchPages(query).map(async (page) => ({
+                entities: page.entities,
+                result: await searchSamoMusic(browserFetch, auth, term, {
+                    limit: page.limit,
+                    offset: page.offset,
+                    signal: apiClientProps.signal,
+                }),
+            })),
         );
-        if (!response.ok) {
-            throw new Error(`samo search failed (${response.status})`);
-        }
-        const body = (await response.json()) as {
-            albums?: SamoMusicAlbum[];
-            artists?: SamoMusicArtist[];
-            tracks?: SamoMusicTrack[];
-        };
+        const pageFor = (entity: SamoSearchEntity) =>
+            pages.find((page) => page.entities.includes(entity))?.result;
 
         return {
-            albumArtists: (body.artists ?? []).map(
+            albumArtists: (pageFor('albumArtists')?.artists ?? []).map(
                 (artist) => samoNormalize.albumArtist(artist, server) as AlbumArtist,
             ),
-            albums: (body.albums ?? []).map((album) => samoNormalize.album(album, server)),
-            songs: (body.tracks ?? []).map((track) => samoNormalize.song(track, server)),
+            albums: (pageFor('albums')?.albums ?? []).map((album) =>
+                samoNormalize.album(album, server),
+            ),
+            songs: (pageFor('songs')?.tracks ?? []).map((track) =>
+                samoNormalize.song(track, server),
+            ),
         };
     },
 

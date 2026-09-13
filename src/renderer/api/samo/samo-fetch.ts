@@ -1,4 +1,4 @@
-import { adaptNativeFetch, getFetch, type SamoFetch } from '@samo/core/server';
+import { adaptNativeFetch, getFetch, type SamoFetch, type SamoFetchInit } from '@samo/core/server';
 import isElectron from 'is-electron';
 
 /**
@@ -9,7 +9,11 @@ import isElectron from 'is-electron';
 export const createSamoFetch = (): SamoFetch => {
     if (isElectron()) {
         return getFetch(
-            adaptNativeFetch(async (url, init) => {
+            // `init` is typed to carry a request's own deadline through: the
+            // core stamps it on SamoFetchInit, and this adapter is the one
+            // place it has to be read back out before the call leaves the
+            // renderer.
+            adaptNativeFetch(async (url, init?: Pick<SamoFetchInit, 'timeoutMs'> & RequestInit) => {
                 // `getFetch` has already stamped X-samo-Client into these —
                 // the id the server echoes on catalog-change events, so this
                 // window can tell its own writes from another device's.
@@ -20,10 +24,16 @@ export const createSamoFetch = (): SamoFetch => {
                     });
                 }
 
+                // The main process runs its own timeout layer around the
+                // real fetch, and it is the one that actually cuts a request
+                // off — an abort here never crosses the IPC boundary. So a
+                // call's own deadline goes across with it, or the default
+                // underneath would decide.
                 const result = await window.api.samo.request({
                     body: typeof init?.body === 'string' ? init.body : undefined,
                     headers: serializedHeaders,
                     method: init?.method,
+                    timeoutMs: init?.timeoutMs,
                     url,
                 });
 

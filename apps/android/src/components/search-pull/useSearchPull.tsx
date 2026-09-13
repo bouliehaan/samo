@@ -49,6 +49,9 @@ export const useSearchPull = (tabId: SamoMobileTabId) => {
     const { activePullTab, activeScrollY } = useSearchPullContext();
 
     const scrollableRef = useRef<DrawerScrollable | null>(null);
+    /** The scrollable this hook last held, kept through a detach — so a reveal
+     *  handing the SAME one back can be told from a fresh one. See setScrollable. */
+    const knownScrollableRef = useRef<DrawerScrollable | null>(null);
 
     /** A scroll-to-top asked for before the list existed. See scrollToTop. */
 
@@ -74,20 +77,44 @@ export const useSearchPull = (tabId: SamoMobileTabId) => {
             scrollableRef.current = node;
             if (node) {
                 /*
-                 * A freshly attached scrollable is at the top BY DEFINITION, and
-                 * it will not emit a scroll event to say so — `onScroll` only
-                 * fires once something moves.
+                 * THE SAME SCROLLABLE COMES BACK ON EVERY THAW, STILL SCROLLED.
                  *
-                 * Without this, the offset cached from before the scene was torn
-                 * down (opening a media detail page, for instance) survives the
-                 * remount. The pan then judges "did this drag start at the top?"
-                 * against a stale number, fails itself on every touch, and the
-                 * pull is dead everywhere until the user happens to scroll and
-                 * refresh the value by hand.
+                 * This ref callback does not only run for a fresh list. React
+                 * detaches every ref inside a Suspense boundary when the
+                 * boundary hides its content and re-attaches them when it
+                 * shows it again — which is what `<Freeze>` does to a tab on
+                 * every switch away and back. The native scroll view is not
+                 * remade for that: Fabric keeps it and Android keeps its
+                 * offset, so the page comes back exactly where it was left,
+                 * and `scrollY` — written by the UI thread on every scroll,
+                 * never by anything else — still says so.
+                 *
+                 * Resetting to zero here treated that reveal as a new list at
+                 * the top. Traced on the emulator: leave Radio scrolled to 135,
+                 * come back through two other tabs, and the reveal reset
+                 * `scrollY` to 0 while the view still sat at 135. The page
+                 * shows its card cut off, the pan reads "at the top", and the
+                 * pull that should scroll it back up brings search down over it
+                 * instead — until a scroll event happens to put the real number
+                 * back. That is the whole of "it doesn't stop at the top and I
+                 * can't scroll up".
+                 *
+                 * So zero is written ONLY for a scrollable this hook has never
+                 * held. A genuinely new native list is at the top and will not
+                 * emit a scroll event to say so (`onScroll` only fires once
+                 * something moves), and the value cached from its predecessor
+                 * — a list torn down and remounted around a loading state —
+                 * would otherwise survive into it. The one it has held before
+                 * needs nothing: native is the source of truth for the offset,
+                 * every change to it arrives as a scroll event, and a JS-side
+                 * write is the only way the two can disagree.
                  */
-                scrollY.value = 0;
-                if (activePullTab.value === tabId) {
-                    activeScrollY.value = 0;
+                if (node !== knownScrollableRef.current) {
+                    knownScrollableRef.current = node;
+                    scrollY.value = 0;
+                    if (activePullTab.value === tabId) {
+                        activeScrollY.value = 0;
+                    }
                 }
 
                 // Flush a scroll-to-top that arrived while there was nothing to
@@ -101,7 +128,9 @@ export const useSearchPull = (tabId: SamoMobileTabId) => {
                 }
             } else {
                 // Detaching cancels nothing: the request belongs to the page, and
-                // the next list to attach is the one that should answer it.
+                // the next list to attach is the one that should answer it. Nor
+                // does it forget the list — a detach is what a freeze looks like
+                // from here, and the thaw hands the same list straight back.
             }
         },
         [activePullTab, activeScrollY, scrollY, tabId],

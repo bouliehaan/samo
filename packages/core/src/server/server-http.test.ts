@@ -92,4 +92,78 @@ describe('getFetch', () => {
         expect(result).toBe(errorResponse);
         expect(fetcher).toHaveBeenCalledTimes(1);
     });
+
+    // A call that says how long it needs gets that long, not the default —
+    // and the number rides through to the transport, so a transport that
+    // proxies the call to another timeout layer (the desktop's main process)
+    // can honour the same deadline rather than cutting it off underneath.
+    it('lets a request carry its own deadline past the default', async () => {
+        vi.useFakeTimers();
+        try {
+            const fetcher = vi.fn(
+                (_url: string, init?: { signal?: AbortSignal; timeoutMs?: number }) =>
+                    new Promise<{ json: () => Promise<unknown>; ok: boolean; status: number }>(
+                        (resolve, reject) => {
+                            init?.signal?.addEventListener('abort', () => {
+                                const error = new Error('aborted');
+                                error.name = 'AbortError';
+                                reject(error);
+                            });
+                            setTimeout(
+                                () => resolve({ json: async () => ({}), ok: true, status: 200 }),
+                                40_000,
+                            );
+                        },
+                    ),
+            );
+
+            const wrapped = getFetch(fetcher);
+            const result = wrapped('https://samo.test/api/v1/explo/keep', {
+                method: 'POST',
+                timeoutMs: 60_000,
+            });
+            // Nothing observes a rejection before the answer lands, so a
+            // stray one would surface as an unhandled rejection.
+            const settled = result.then(
+                () => 'answered' as const,
+                (error: Error) => error.message,
+            );
+
+            await vi.advanceTimersByTimeAsync(35_000);
+            expect(fetcher).toHaveBeenCalledTimes(1);
+            expect(fetcher.mock.calls[0][1]?.timeoutMs).toBe(60_000);
+
+            await vi.advanceTimersByTimeAsync(10_000);
+            expect(await settled).toBe('answered');
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('still cuts an ordinary request off at the default', async () => {
+        vi.useFakeTimers();
+        try {
+            const fetcher = vi.fn(
+                (_url: string, init?: { signal?: AbortSignal }) =>
+                    new Promise<never>((_resolve, reject) => {
+                        init?.signal?.addEventListener('abort', () => {
+                            const error = new Error('aborted');
+                            error.name = 'AbortError';
+                            reject(error);
+                        });
+                    }),
+            );
+
+            const wrapped = getFetch(fetcher);
+            const settled = wrapped('https://samo.test/api/v1/podcasts', { method: 'POST' }).then(
+                () => 'answered' as const,
+                (error: Error) => error.message,
+            );
+
+            await vi.advanceTimersByTimeAsync(30_000);
+            expect(await settled).toBe('Request timed out after 30000ms');
+        } finally {
+            vi.useRealTimers();
+        }
+    });
 });

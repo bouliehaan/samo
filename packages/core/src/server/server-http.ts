@@ -7,6 +7,18 @@ export type SamoFetchInit = {
     headers?: Record<string, string>;
     method?: string;
     signal?: AbortSignal;
+    /**
+     * This request's own deadline, replacing DEFAULT_SAMO_REQUEST_TIMEOUT_MS.
+     *
+     * For the few calls that are known to take longer than an ordinary read —
+     * a keep copies files and waits on the scanner — and whose caller can say
+     * how long from what the server does. Rides through to the transport
+     * rather than being consumed here, so a transport that proxies the call
+     * (the desktop hands every samo request to its main process, which runs a
+     * timeout layer of its own) can honour the same number instead of cutting
+     * the request off at the default underneath.
+     */
+    timeoutMs?: number;
 };
 
 /** Default per-request timeout for samo REST calls. */
@@ -77,14 +89,15 @@ export const withRequestTimeout = (
             return fetcher(url, init);
         }
 
+        const deadlineMs = init?.timeoutMs ?? timeoutMs;
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+        const timeoutId = setTimeout(() => controller.abort(), deadlineMs);
 
         try {
             return await fetcher(url, { ...init, signal: controller.signal });
         } catch (error) {
             if (error instanceof Error && error.name === 'AbortError') {
-                throw new Error(`Request timed out after ${timeoutMs}ms`);
+                throw new Error(`Request timed out after ${deadlineMs}ms`);
             }
             throw error;
         } finally {
