@@ -21,15 +21,15 @@ network — the app finds it by itself on first run.
 Unlike the rest of samo, this one is not a container — it is an app you install
 on a device.
 
-**Android** — `Samo-<version>-android.apk`. Sideload it; your phone will ask you
+**Android** — `samo-<version>-android.apk`. Sideload it; your phone will ask you
 to allow installs from whatever you downloaded it with.
 
-**macOS** — `Samo-<version>-mac-arm64.dmg` (Apple silicon) or `-mac-x64.dmg`
+**macOS** — `samo-<version>-mac-arm64.dmg` (Apple silicon) or `-mac-x64.dmg`
 (Intel). The build is ad-hoc signed and not notarised, so Gatekeeper will call
 it damaged. Clear the quarantine flag after dragging it to Applications:
 
 ```bash
-xattr -dr com.apple.quarantine /Applications/Samo.app
+xattr -dr com.apple.quarantine /Applications/samo.app
 ```
 
 **Windows and Linux** — no published build yet. Building one is in

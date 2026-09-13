@@ -2,7 +2,7 @@
   "expo": {
     "name": "samo",
     "slug": "samo-android",
-    "version": "1.2.0",
+    "version": "1.3.0",
     "orientation": "portrait",
     "icon": "../../assets/icons/final2-android-icon.png",
     "newArchEnabled": true,
