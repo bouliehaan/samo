@@ -453,56 +453,70 @@ internal class SamoAudioEngine(
 
   /**
    * Bring ExoPlayer's loaded playlist in line with an edited Up Next queue
-   * (reorder / add-to-queue / play-next / remove) WITHOUT interrupting the
-   * track that's currently playing. Only acts while a multi-item music/podcast
-   * playlist is live — on a new play the player still holds the previous
-   * content so the current id won't match the new queue, and we no-op.
+   * (reorder / play-last / play-next / remove) WITHOUT interrupting the track
+   * that's currently playing. The decision is [SamoPlaylistReconcile.plan]'s;
+   * this applies it. Only acts while a multi-item playlist is live — on a new
+   * play the player still holds the previous content so the current id won't
+   * match the new queue, and the plan is a Skip.
    */
   private fun reconcileExoPlaylistToQueue(newQueue: SamoNativePlaybackQueue?) {
     if (isCastActive()) return
     val player = binder.boundService?.getCurrentPlayer() ?: return
-    if (player.mediaItemCount <= 1) return
-    if (newQueue == null || newQueue.items.size < 2) return
-    if (!newQueue.items.all { val s = it["source"] as? String; s == "music" || s == "podcast" }) {
-      return
-    }
-
-    val currentId = player.currentMediaItem?.mediaId ?: return
-    val newCurrentIndex = newQueue.items.indexOfFirst { (it["id"] as? String) == currentId }
-    if (newCurrentIndex < 0) {
-      // The playing track is no longer in the queue (it was removed). Leave it
-      // playing rather than hard-cutting; the next natural advance lands on
-      // whatever follows in the player's existing list.
-      return
-    }
-    if (newQueue.index != newCurrentIndex) {
-      // The incoming queue does NOT consider the currently-playing item its
-      // current one — this is a context switch (a play() for a different
-      // track is in flight), not an Up-Next edit. Editing the live playlist
-      // and adopting the player's index here would race the pending play()
-      // and could shift which track the new playlist starts on. Leave the
-      // player alone; play() rebuilds everything atomically.
-      return
-    }
-
+    val playerMediaIds = (0 until player.mediaItemCount).map { player.getMediaItemAt(it).mediaId }
     val playerIndex = player.currentMediaItemIndex
-    // Replace the "up next" tail first so items at/below the current index are
-    // untouched while we do it; the currently-playing item is never replaced.
-    val afterItems = newQueue.items.drop(newCurrentIndex + 1).map { buildMusicMediaItem(it) }
-    player.replaceMediaItems(playerIndex + 1, player.mediaItemCount, afterItems)
-    // Then reconcile the "history" head before the current item.
-    val beforeItems = newQueue.items.take(newCurrentIndex).map { buildMusicMediaItem(it) }
-    if (playerIndex > 0) {
-      player.replaceMediaItems(0, playerIndex, beforeItems)
-    } else if (beforeItems.isNotEmpty()) {
-      player.addMediaItems(0, beforeItems)
-    }
 
-    newQueue.index = player.currentMediaItemIndex
-    Log.i(
-      "SamoAudio",
-      "playlist reconciled size=${newQueue.items.size} current=${newQueue.index}",
-    )
+    when (val plan = SamoPlaylistReconcile.plan(playerMediaIds, playerIndex, newQueue)) {
+      is SamoPlaylistReconcile.Plan.Skip -> {
+        if (playerMediaIds.size > 1) {
+          Log.i("SamoAudio", "playlist reconcile skipped: ${plan.reason}")
+        }
+      }
+
+      is SamoPlaylistReconcile.Plan.Rewrite -> {
+        // Replace the "up next" tail first so items at/below the current index
+        // are untouched while we do it; the currently-playing item is never
+        // replaced.
+        val afterItems = plan.after.map { buildMusicMediaItem(it) }
+        player.replaceMediaItems(playerIndex + 1, player.mediaItemCount, afterItems)
+        // Then reconcile the "history" head before the current item.
+        val beforeItems = plan.before.map { buildMusicMediaItem(it) }
+        if (playerIndex > 0) {
+          player.replaceMediaItems(0, playerIndex, beforeItems)
+        } else if (beforeItems.isNotEmpty()) {
+          player.addMediaItems(0, beforeItems)
+        }
+        newQueue?.index = player.currentMediaItemIndex
+        Log.i(
+          "SamoAudio",
+          "playlist reconciled size=${newQueue?.items?.size} current=${newQueue?.index}",
+        )
+      }
+
+      is SamoPlaylistReconcile.Plan.Collapse -> {
+        // The queue holds something the gapless timeline can't (a book, a
+        // station) — or nothing but the playing item. Shrink the player to
+        // what it is playing, exactly the single-item shape such a queue has
+        // from a fresh play: STATE_ENDED → requestQueueAdvanceFromEnded walks
+        // the mirror from `currentIndex`. Removing non-current items never
+        // interrupts playback.
+        if (player.mediaItemCount > playerIndex + 1) {
+          player.removeMediaItems(playerIndex + 1, player.mediaItemCount)
+        }
+        if (playerIndex > 0) {
+          player.removeMediaItems(0, playerIndex)
+        }
+        // A QUEUE index — the one loaded item is at player index 0 whatever
+        // its position in the queue.
+        newQueue?.index = plan.currentIndex
+        // "Repeat all" on a one-item player loops that item forever and the
+        // mirror never sees STATE_ENDED; see effectiveRepeatMode.
+        player.repeatMode = effectiveRepeatMode(currentSource?.source, playerHoldsQueue = false)
+        Log.i(
+          "SamoAudio",
+          "playlist collapsed to current; mirror size=${newQueue?.items?.size} current=${newQueue?.index}",
+        )
+      }
+    }
   }
 
   /**
@@ -673,7 +687,6 @@ internal class SamoAudioEngine(
       )
       currentSessionId = sessionId
       lastAutoAdvanceSessionId = null
-      resolvedPlayer.repeatMode = effectiveRepeatMode(sourceLabel)
       // Music plays as a FULL native playlist: load every queue item so
       // ExoPlayer walks the whole queue itself — advancing track-to-track via
       // onMediaItemTransition with zero JS in the loop, so a locked phone keeps
@@ -693,6 +706,7 @@ internal class SamoAudioEngine(
       // flush may have clobbered the fields through rememberPlaybackPosition.
       lastKnownPlaybackPositionMs = startPositionMs
       lastKnownPlaybackMediaId = mediaId
+      resolvedPlayer.repeatMode = effectiveRepeatMode(sourceLabel, trackPlaylist != null)
       if (trackPlaylist != null) {
         val mediaItems = trackPlaylist.items.map { buildMusicMediaItem(it) }
         resolvedPlayer.setMediaItems(mediaItems, trackPlaylist.index, startPositionMs)
@@ -786,9 +800,24 @@ internal class SamoAudioEngine(
     }
   }
 
-  /** Map a stored Player.REPEAT_MODE_* to the mode the player should actually run. */
-  private fun effectiveRepeatMode(sourceLabel: String?): Int =
-    if (sourceLabel == "music") userRepeatMode else Player.REPEAT_MODE_OFF
+  /**
+   * Map a stored Player.REPEAT_MODE_* to the mode the player should actually
+   * run. Only music repeats at all. And "all" means the QUEUE repeats, which
+   * the player can only do itself while it holds the whole queue as its
+   * playlist. In single-item mode with a multi-item mirror (a queue with a
+   * book or a station in it) the mirror advances at STATE_ENDED — which a
+   * repeating one-item player never reaches: with "all" left on, the loaded
+   * song looped forever and the queue never moved. A lone song with "all" on
+   * (nothing else queued) still loops, as it always has.
+   */
+  private fun effectiveRepeatMode(sourceLabel: String?, playerHoldsQueue: Boolean): Int =
+    when {
+      sourceLabel != "music" -> Player.REPEAT_MODE_OFF
+      userRepeatMode == Player.REPEAT_MODE_ALL &&
+        !playerHoldsQueue &&
+        (nativePlaybackQueue?.items?.size ?: 0) > 1 -> Player.REPEAT_MODE_OFF
+      else -> userRepeatMode
+    }
 
   private fun repeatModeLabel(): String = when (userRepeatMode) {
     Player.REPEAT_MODE_ONE -> "one"
@@ -811,7 +840,8 @@ internal class SamoAudioEngine(
         promise.resolve(getIdleStatusMap())
         return@post
       }
-      resolvedPlayer.repeatMode = effectiveRepeatMode(currentSource?.source)
+      resolvedPlayer.repeatMode =
+        effectiveRepeatMode(currentSource?.source, resolvedPlayer.mediaItemCount > 1)
       promise.resolve(getStatusMap(resolvedPlayer))
     }
   }
@@ -1397,7 +1427,13 @@ internal class SamoAudioEngine(
         if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED) return
 
         val queue = nativePlaybackQueue ?: return
-        val newIndex = player.currentMediaItemIndex
+        // The player's index is a queue index only while the player holds the
+        // queue. In single-item mode (a book in the queue; a playlist collapsed
+        // by an Up Next edit) the one loaded item sits at player index 0
+        // whatever its queue position, and a repeat-one loop must not re-label
+        // it as the queue's first item.
+        val newIndex =
+          if (player.mediaItemCount > 1) player.currentMediaItemIndex else queue.index
         if (newIndex !in queue.items.indices) return
 
         // Captured BEFORE lastKnownPlaybackMediaId is overwritten below — the

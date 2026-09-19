@@ -110,12 +110,23 @@ export const syncPlaybackFromNativeEvent = (
         return;
     }
 
-    const nextIndex = queue.items.findIndex((item) => item.id === sourceId);
+    // Resolve the item by id — but a queue can hold the same track twice
+    // (Play Next on the song that is playing is the everyday way to get one),
+    // and the first occurrence is not necessarily the one native is on. When
+    // the index we hold (just adopted from the event above, or unchanged)
+    // already names this track, it is the answer; only a mismatch falls back
+    // to the first occurrence. Without this the index snapped back to the
+    // earlier copy the moment native advanced onto the later one.
+    const heldIndex = getPlaybackQueue()?.index ?? queue.index;
+    const nextIndex =
+        queue.items[heldIndex]?.id === sourceId
+            ? heldIndex
+            : queue.items.findIndex((item) => item.id === sourceId);
     if (nextIndex < 0) {
         return;
     }
 
-    if (nextIndex !== getPlaybackQueue()?.index) {
+    if (nextIndex !== heldIndex) {
         setPlaybackQueue({
             ...queue,
             index: nextIndex,

@@ -3,6 +3,48 @@ import { type MobilePlayableAudio } from '@samo/core/mobile';
 export const isSamoAudiobookPlayback = (item: MobilePlayableAudio) =>
     item.source === 'audiobook';
 
+/**
+ * Book id of an audiobook queue item, for "same book" tests. Matches the
+ * segment after `:audiobook:` whatever follows it: the streamed per-file form
+ * ends `:file:<mediaFileId>`, the downloaded form `:offline:<ino>`, and core's
+ * parseSamoAudiobookIdFromPlaybackId — anchored to the streamed forms only —
+ * returns nothing for the second. Non-audiobook items have no book.
+ */
+export const getAudiobookQueueItemBookId = (
+    item: Pick<MobilePlayableAudio, 'id' | 'source'>,
+): string | undefined =>
+    item.source === 'audiobook' ? (item.id.match(/:audiobook:([^:]+)/)?.[1] ?? item.id) : undefined;
+
+/**
+ * The contiguous run of queue items that belong to the same book as the item
+ * at `index`, as [start, end). The queue is not the book: since Play Next /
+ * Play Last a book's files can sit between songs, podcast episodes or another
+ * book, and anything that walks "the book's files" must walk only these.
+ * Yields [index, index + 1) for a non-audiobook item and an empty run for an
+ * out-of-range index.
+ */
+export const getAudiobookQueueRun = (
+    queueItems: readonly Pick<MobilePlayableAudio, 'id' | 'source'>[],
+    index: number,
+): { end: number; start: number } => {
+    if (!Number.isInteger(index) || index < 0 || index >= queueItems.length) {
+        return { end: 0, start: 0 };
+    }
+    const bookId = getAudiobookQueueItemBookId(queueItems[index]!);
+    if (bookId === undefined) {
+        return { end: index + 1, start: index };
+    }
+    let start = index;
+    while (start > 0 && getAudiobookQueueItemBookId(queueItems[start - 1]!) === bookId) {
+        start -= 1;
+    }
+    let end = index + 1;
+    while (end < queueItems.length && getAudiobookQueueItemBookId(queueItems[end]!) === bookId) {
+        end += 1;
+    }
+    return { end, start };
+};
+
 /** True when the playable is an MP3 (by reported MIME type). */
 export const isMp3PlayableAudio = (item: MobilePlayableAudio): boolean => {
     const mime = item.mimeType?.toLowerCase() ?? '';
@@ -73,14 +115,22 @@ export interface AudiobookSeekTarget {
 export const resolveAudiobookSeekTarget = (
     queueItems: readonly MobilePlayableAudio[],
     targetBookSeconds: number,
+    currentIndex = 0,
 ): AudiobookSeekTarget => {
     const bookSeconds = Math.max(0, targetBookSeconds);
     if (queueItems.length === 0) {
         return { bookPositionSeconds: bookSeconds, filePositionMs: bookSeconds * 1000, queueIndex: 0 };
     }
 
-    let queueIndex = 0;
-    for (let i = 0; i < queueItems.length; i += 1) {
+    // Only the playing book's own contiguous files are candidates. Scanning
+    // the whole queue by offset put a scrub onto whatever followed the book —
+    // a song carries no offset, reads as "starts at 0", and so "contains" every
+    // book second — the moment a queue held anything after the book.
+    const run = getAudiobookQueueRun(queueItems, currentIndex);
+    const scanStart = run.end > run.start ? run.start : 0;
+    const scanEnd = run.end > run.start ? run.end : queueItems.length;
+    let queueIndex = scanStart;
+    for (let i = scanStart; i < scanEnd; i += 1) {
         if ((queueItems[i]?.progressOffsetSeconds ?? 0) <= bookSeconds) {
             queueIndex = i;
         } else {

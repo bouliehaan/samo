@@ -20,6 +20,7 @@ import {
     PlaylistAddGlyph,
     PlaylistRemoveGlyph,
     QueueAddGlyph,
+    QueueNextGlyph,
     TrashGlyph,
 } from '../components/Glyphs';
 import {
@@ -66,6 +67,8 @@ import {
     handleAddCollectionToQueue,
     handleAddRadioToQueue,
     handleAddTrackToQueue,
+    handlePlayCollectionNext,
+    handlePlayTrackNext,
 } from '../handlers/queue-handlers';
 import {
     canSendItemToSamoRadio,
@@ -256,7 +259,7 @@ export function useAndroidContextMenu(): AndroidContextMenuSurface {
             // (each keeps its own resume/progress context). Only radio is excluded
             // because a live stream has no place in an Up Next list. Previously
             // this was hard-gated to 'music', which is why long-pressing a podcast
-            // episode (source 'podcast') offered no Add to Queue at all.
+            // episode (source 'podcast') offered no queue action at all.
             const canQueueTrack =
                 canAppendToQueue &&
                 !contextMenuTarget.suppressQueueAction &&
@@ -320,17 +323,27 @@ export function useAndroidContextMenu(): AndroidContextMenuSurface {
                     },
                 });
             }
+            // Play Next then Play Last, in that order everywhere: the pair is
+            // "hear this soon" / "hear this eventually", and with a long queue
+            // Play Next is the one that gets used. `detail` rides along so a
+            // chapter row on a book's page queues the BOOK from that chapter.
             if (canQueueTrack) {
+                menuActions.push({
+                    icon: <QueueNextGlyph color={colors.text} />,
+                    id: 'play-next',
+                    label: 'Play Next',
+                    onPress: () => void handlePlayTrackNext(track, detail),
+                });
                 menuActions.push({
                     icon: <QueueAddGlyph color={colors.text} />,
                     id: 'queue',
-                    label: 'Add to Queue',
-                    onPress: () => handleAddTrackToQueue(track),
+                    label: 'Play Last',
+                    onPress: () => void handleAddTrackToQueue(track, detail),
                 });
             }
-            // Next to Add to Queue: both answer "not now / not here", and a
-            // live station is as sendable as a track — the device plays it,
-            // the phone's own queue is what cannot hold one.
+            // Next to the queue actions: all three answer "not now / not
+            // here", and a live station is as sendable as a track — the device
+            // plays it, the phone's own queue is what cannot hold one.
             if (canSendTrackToSamoRadio(track)) {
                 pushSamoRadioActions((device) => void handleSendTrackToSamoRadio(track, device));
             }
@@ -468,9 +481,15 @@ export function useAndroidContextMenu(): AndroidContextMenuSurface {
         if (contextMenuTarget.kind === 'audiobook') {
             if (canAppendToQueue && !suppressQueue) {
                 menuActions.push({
+                    icon: <QueueNextGlyph color={colors.text} />,
+                    id: 'play-next',
+                    label: 'Play Next',
+                    onPress: () => void handlePlayCollectionNext(item),
+                });
+                menuActions.push({
                     icon: <QueueAddGlyph color={colors.text} />,
                     id: 'queue',
-                    label: 'Add to Queue',
+                    label: 'Play Last',
                     onPress: () => void handleAddCollectionToQueue(item),
                 });
             }
@@ -517,16 +536,17 @@ export function useAndroidContextMenu(): AndroidContextMenuSurface {
                 });
             }
         } else if (contextMenuTarget.kind === 'radio') {
-            // A live station can't sit mid-queue, but it CAN be queued at the tail
-            // to take over when the current podcast/audiobook (and anything after
-            // it) finishes — the fall-asleep handoff. Only offered when something
-            // queueable is already playing (canAppendToQueue is false while
-            // radio itself is the active item).
+            // A live station can't sit mid-queue — so no Play Next — but it CAN
+            // be queued at the tail to take over when the current
+            // podcast/audiobook (and anything after it) finishes: the
+            // fall-asleep handoff, which is exactly what Play Last says. Only
+            // offered when something queueable is already playing
+            // (canAppendToQueue is false while radio itself is the active item).
             if (canAppendToQueue && !suppressQueue) {
                 menuActions.push({
                     icon: <QueueAddGlyph color={colors.text} />,
                     id: 'queue',
-                    label: 'Add to Queue',
+                    label: 'Play Last',
                     onPress: () => handleAddRadioToQueue(item),
                 });
             }
@@ -553,9 +573,15 @@ export function useAndroidContextMenu(): AndroidContextMenuSurface {
             const collectionKind = contextMenuTarget.kind;
             if (canAppendToQueue && !suppressQueue) {
                 menuActions.push({
+                    icon: <QueueNextGlyph color={colors.text} />,
+                    id: 'play-next',
+                    label: 'Play Next',
+                    onPress: () => void handlePlayCollectionNext(item),
+                });
+                menuActions.push({
                     icon: <QueueAddGlyph color={colors.text} />,
                     id: 'queue',
-                    label: 'Add to Queue',
+                    label: 'Play Last',
                     onPress: () => void handleAddCollectionToQueue(item),
                 });
             }

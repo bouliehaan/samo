@@ -10,7 +10,7 @@ import {
     type MobileSearchItem,
 } from '@samo/core/mobile';
 import { resolveLongFormResumeSeconds } from '@samo/core/playback';
-import { ensureSamoStreamToken } from '@samo/core/server';
+import { ensureSamoStreamToken, type ServerAuthenticationResult } from '@samo/core/server';
 
 import { loadCurrentPlaybackProgressBounded } from '../services/playback-progress';
 import { loadMirrorMediaDetailIfFresh } from '../services/media-detail-freshness';
@@ -323,6 +323,45 @@ export const handlePlayMediaTrack = async (
     }
 };
 
+/**
+ * Where a book should pick up: the server's saved position, or the native
+ * local resume cache when the server read fails. Shared by the tap-to-play
+ * path and the queue enqueue path so "the book resumes where you left off"
+ * is decided in exactly one place.
+ *
+ * Bounded: a user is mid-tap. The unbounded read gave a sick server 30s to
+ * answer before the book would start; 4s then falling back to the item's own
+ * resume data matches playQueuedItem's budget.
+ */
+export const resolveAudiobookResumeSeconds = async (
+    auth: ServerAuthenticationResult,
+    detail: MobileMediaDetail,
+): Promise<number> => {
+    const progress = await loadCurrentPlaybackProgressBounded(auth, detail.id);
+    // `detail.durationSeconds` is the BOOK-GLOBAL timeline the saved position is
+    // measured against — the per-chapter durations are not.
+    const resumeSeconds = resolveLongFormResumeSeconds({
+        completed: progress?.isFinished,
+        durationSeconds: detail.durationSeconds,
+        progressSeconds: progress?.currentTimeSeconds,
+    });
+    if (resumeSeconds > 0 || progress) {
+        return resumeSeconds;
+    }
+    // Flaky LAN: the bounded server read can transiently fail (null), which
+    // would seed the queue at 0 and lose the spot. Fall back to the native
+    // local resume cache, same as refreshPlayableResumeFromServer does.
+    const cached = await getNativeResumeProgress('audiobook', detail.id);
+    if (!cached) {
+        return resumeSeconds;
+    }
+    return resolveLongFormResumeSeconds({
+        completed: cached.completed,
+        durationSeconds: detail.durationSeconds,
+        progressSeconds: cached.progressSeconds,
+    });
+};
+
 export const handleStartAudiobook = async (
     item: MobileHomeItem | MobileSearchItem,
 ): Promise<void> => {
@@ -400,32 +439,8 @@ export const handleStartAudiobook = async (
         return;
     }
 
-    // Bounded: a user is mid-tap. The unbounded read gave a sick server
-    // 30s to answer before the book would start; 4s then falling back to
-    // the item's own resume data matches playQueuedItem's budget.
-    const progress = await loadCurrentPlaybackProgressBounded(auth, detail.id);
+    const resumeSeconds = await resolveAudiobookResumeSeconds(auth, detail);
     if (!isCurrentRequest()) return;
-    // `detail.durationSeconds` is the BOOK-GLOBAL timeline the saved position is
-    // measured against — the per-chapter durations below are not.
-    let resumeSeconds = resolveLongFormResumeSeconds({
-        completed: progress?.isFinished,
-        durationSeconds: detail.durationSeconds,
-        progressSeconds: progress?.currentTimeSeconds,
-    });
-    // Flaky LAN: the bounded server read can transiently fail (null), which
-    // would seed the queue at 0 and lose the spot. Fall back to the native
-    // local resume cache, same as refreshPlayableResumeFromServer does.
-    if (resumeSeconds <= 0 && !progress) {
-        const cached = await getNativeResumeProgress('audiobook', detail.id);
-        if (!isCurrentRequest()) return;
-        if (cached) {
-            resumeSeconds = resolveLongFormResumeSeconds({
-                completed: cached.completed,
-                durationSeconds: detail.durationSeconds,
-                progressSeconds: cached.progressSeconds,
-            });
-        }
-    }
     const chapterIndex =
         resumeSeconds > 0
             ? Math.max(

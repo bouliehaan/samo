@@ -422,45 +422,62 @@ export const PlusGlyph = ({ color, size = 20 }: { color: string; size?: number }
     );
 };
 
-export const QueueAddGlyph = ({ color }: { color: string }) => {
-    return (
-        <View style={{ height: 18, justifyContent: 'space-between', width: 20 }}>
-            <View style={{ backgroundColor: color, borderRadius: 1, height: 2, width: 18 }} />
-            <View style={{ backgroundColor: color, borderRadius: 1, height: 2, width: 18 }} />
-            <View
-                style={{
-                    alignItems: 'center',
-                    flexDirection: 'row',
-                    justifyContent: 'space-between',
-                }}
-            >
-                <View style={{ backgroundColor: color, borderRadius: 1, height: 2, width: 8 }} />
-                <View style={{ height: 10, position: 'relative', width: 10 }}>
-                    <View
-                        style={{
-                            backgroundColor: color,
-                            height: 2,
-                            left: 0,
-                            position: 'absolute',
-                            top: 4,
-                            width: 10,
-                        }}
-                    />
-                    <View
-                        style={{
-                            backgroundColor: color,
-                            height: 10,
-                            left: 4,
-                            position: 'absolute',
-                            top: 0,
-                            width: 2,
-                        }}
-                    />
-                </View>
+/**
+ * A three-line list with a plus on one of its short lines: on the TOP line for
+ * Play Next (insert right after what is playing), on the BOTTOM line for Play
+ * Last (append). Same glyph, one variable, so the pair reads as a pair.
+ */
+const QueueInsertGlyph = ({ color, at }: { at: 'bottom' | 'top'; color: string }) => {
+    const fullLine = <View style={{ backgroundColor: color, borderRadius: 1, height: 2, width: 18 }} />;
+    const markedLine = (
+        <View
+            style={{
+                alignItems: 'center',
+                flexDirection: 'row',
+                justifyContent: 'space-between',
+            }}
+        >
+            <View style={{ backgroundColor: color, borderRadius: 1, height: 2, width: 8 }} />
+            <View style={{ height: 10, position: 'relative', width: 10 }}>
+                <View
+                    style={{
+                        backgroundColor: color,
+                        height: 2,
+                        left: 0,
+                        position: 'absolute',
+                        top: 4,
+                        width: 10,
+                    }}
+                />
+                <View
+                    style={{
+                        backgroundColor: color,
+                        height: 10,
+                        left: 4,
+                        position: 'absolute',
+                        top: 0,
+                        width: 2,
+                    }}
+                />
             </View>
         </View>
     );
+    return (
+        <View style={{ height: 18, justifyContent: 'space-between', width: 20 }}>
+            {at === 'top' ? markedLine : fullLine}
+            {fullLine}
+            {at === 'bottom' ? markedLine : fullLine}
+        </View>
+    );
 };
+
+export const QueueAddGlyph = ({ color }: { color: string }) => (
+    <QueueInsertGlyph at="bottom" color={color} />
+);
+
+export const QueueNextGlyph = ({ color }: { color: string }) => (
+    <QueueInsertGlyph at="top" color={color} />
+);
 
 export const PersonGlyph = ({ color }: { color: string }) => {
     return (

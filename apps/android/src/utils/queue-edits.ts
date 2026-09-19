@@ -1,4 +1,5 @@
 import { type AndroidPlaybackQueue } from '../state/playback-queue-store';
+import { getAudiobookQueueItemBookId } from './samo-audiobook-playback';
 
 /**
  * Pure queue-edit operations for the Up Next sheet.
@@ -80,5 +81,56 @@ export const moveQueueUpNextItem = (
     return {
         ...queue,
         items,
+    };
+};
+
+export type QueueInsertPlacement = 'end' | 'next';
+
+/**
+ * Where "Play Next" lands: right after the now-playing item — unless that item
+ * is one FILE of a multi-file audiobook, in which case after the book's last
+ * file. A book is one continuous work; "play this next" while chapter 4 is on
+ * means after the book, never between chapters 4 and 5. Only the contiguous
+ * run of the same book counts, so a book the user already split by dragging
+ * rows around is left as they arranged it.
+ */
+export const findPlayNextInsertIndex = (
+    queue: Pick<AndroidPlaybackQueue, 'index' | 'items'>,
+): number => {
+    const { index, items } = queue;
+    if (!Number.isInteger(index) || index < 0 || index >= items.length) {
+        return items.length;
+    }
+    let insertAt = index + 1;
+    const bookId = getAudiobookQueueItemBookId(items[index]!);
+    if (bookId !== undefined) {
+        while (insertAt < items.length && getAudiobookQueueItemBookId(items[insertAt]!) === bookId) {
+            insertAt += 1;
+        }
+    }
+    return insertAt;
+};
+
+/**
+ * Insert `items` as one ordered block: at the Play Next slot, or at the end
+ * (Play Last). `index` never moves — the now-playing item stays where it is —
+ * which is the contract `reconcileExoPlaylistToQueue` reads as an Up Next edit
+ * rather than a context switch. Queue metadata (playlist origin, Explore flag)
+ * is preserved: the origin describes where the queue STARTED, and appended
+ * strangers are excluded from it by `editablePlaylist.trackIds`, not by
+ * dropping the origin.
+ */
+export const insertQueueItems = (
+    queue: AndroidPlaybackQueue,
+    items: readonly AndroidPlaybackQueue['items'][number][],
+    placement: QueueInsertPlacement,
+): AndroidPlaybackQueue => {
+    if (items.length === 0) {
+        return queue;
+    }
+    const insertAt = placement === 'next' ? findPlayNextInsertIndex(queue) : queue.items.length;
+    return {
+        ...queue,
+        items: [...queue.items.slice(0, insertAt), ...items, ...queue.items.slice(insertAt)],
     };
 };

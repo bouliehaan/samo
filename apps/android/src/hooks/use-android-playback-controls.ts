@@ -97,7 +97,7 @@ export function useAndroidPlaybackControls(options: {
             if (!queue || queue.items.length === 0) {
                 return false;
             }
-            const target = resolveAudiobookSeekTarget(queue.items, targetBookSeconds);
+            const target = resolveAudiobookSeekTarget(queue.items, targetBookSeconds, queue.index);
             const fileItem = queue.items[target.queueIndex];
             if (!fileItem) {
                 return false;

@@ -3,6 +3,8 @@ import { ServerType } from '@samo/core/server';
 import { type MobilePlayableAudio } from '@samo/core/mobile';
 
 import {
+    getAudiobookQueueItemBookId,
+    getAudiobookQueueRun,
     getSamoBookPositionSeconds,
     getSamoFileBookSpanSeconds,
     getSamoFilePositionMs,
@@ -81,5 +83,90 @@ describe('book-time <-> file-time round trip (multi-file)', () => {
     it('reports the file span so a cross-file target can be told apart', () => {
         const span = getSamoFileBookSpanSeconds(file);
         expect(span).toEqual({ endSeconds: 2400, startSeconds: 1800 });
+    });
+});
+
+const song = (id: string): MobilePlayableAudio =>
+    ({ id: `samo:https://s.example:music:${id}`, source: 'music', title: id }) as unknown as MobilePlayableAudio;
+
+/** File `n` of a 4 x 600 s book, streamed or downloaded. */
+const bookFile = (
+    book: string,
+    n: number,
+    form: 'file' | 'offline' = 'file',
+): MobilePlayableAudio =>
+    makeItem({
+        durationSeconds: 600,
+        id: `samo:https://s.example:audiobook:${book}:${form}:f${n}`,
+        progressOffsetSeconds: (n - 1) * 600,
+        timelineDurationSeconds: 2400,
+    });
+
+describe('getAudiobookQueueItemBookId', () => {
+    it('reads the book id from the streamed and the downloaded per-file forms', () => {
+        expect(getAudiobookQueueItemBookId(bookFile('b1', 2))).toBe('b1');
+        expect(getAudiobookQueueItemBookId(bookFile('b1', 2, 'offline'))).toBe('b1');
+    });
+
+    it('is undefined for anything that is not an audiobook', () => {
+        expect(getAudiobookQueueItemBookId(song('m1'))).toBeUndefined();
+    });
+});
+
+describe('getAudiobookQueueRun', () => {
+    // song, book A (f1..f4), book B (f1), song
+    const items = [
+        song('m1'),
+        bookFile('A', 1),
+        bookFile('A', 2),
+        bookFile('A', 3),
+        bookFile('A', 4),
+        bookFile('B', 1),
+        song('m2'),
+    ];
+
+    it('spans the playing book and nothing else', () => {
+        expect(getAudiobookQueueRun(items, 2)).toEqual({ end: 5, start: 1 });
+        expect(getAudiobookQueueRun(items, 4)).toEqual({ end: 5, start: 1 });
+        expect(getAudiobookQueueRun(items, 5)).toEqual({ end: 6, start: 5 });
+    });
+
+    it('is just the item for a song', () => {
+        expect(getAudiobookQueueRun(items, 0)).toEqual({ end: 1, start: 0 });
+    });
+
+    it('is empty for an out-of-range index', () => {
+        expect(getAudiobookQueueRun(items, 9)).toEqual({ end: 0, start: 0 });
+    });
+});
+
+describe('resolveAudiobookSeekTarget (book inside a mixed queue)', () => {
+    // Play Next of a book into a music queue: songs after the book.
+    const items = [song('m1'), bookFile('A', 1), bookFile('A', 2), bookFile('A', 3), song('m2')];
+
+    it('lands a forward scrub on the book file that holds it, not the song after the book', () => {
+        // Playing file 1 (queue index 1); scrub to 25:00 = file 3 at 5:00.
+        const target = resolveAudiobookSeekTarget(items, 1500, 1);
+        expect(target.queueIndex).toBe(3);
+        expect(target.filePositionMs).toBe(300_000);
+    });
+
+    it('lands a backward scrub on an earlier file of the same book', () => {
+        const target = resolveAudiobookSeekTarget(items, 30, 3);
+        expect(target.queueIndex).toBe(1);
+        expect(target.filePositionMs).toBe(30_000);
+    });
+
+    it('never leaves the book for a target past its end', () => {
+        const target = resolveAudiobookSeekTarget(items, 99_999, 2);
+        expect(target.queueIndex).toBe(3);
+    });
+
+    it('clamps to the first queued file when the target is before it (book resumed mid-way)', () => {
+        // Play Next of a half-read book queues only the files from the resume file on.
+        const tail = [song('m1'), bookFile('A', 3), bookFile('A', 4)];
+        const target = resolveAudiobookSeekTarget(tail, 100, 1);
+        expect(target.queueIndex).toBe(1);
+        expect(target.filePositionMs).toBe(0);
     });
 });
