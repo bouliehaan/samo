@@ -21,7 +21,7 @@ class SamoCatalogSyncWorker(
             val connections = SamoAuthMirror.loadSamo(applicationContext)
             val connection = connections.firstOrNull()
             if (connection == null) {
-                Log.i(TAG, "catalog sync (source=$source) — no Samo connections, skipping")
+                Log.i(TAG, "catalog sync (source=$source) — no samo connections, skipping")
                 return Result.success()
             }
             // Before syncing, not after: the rebuild wants the catalog quiet,
@@ -62,7 +62,7 @@ class SamoCatalogSyncWorker(
         }
 
         val notification = NotificationCompat.Builder(applicationContext, channelId)
-            .setContentTitle("Samo Sync")
+            .setContentTitle("samo sync")
             .setContentText("Syncing library catalog...")
             .setSmallIcon(android.R.drawable.ic_popup_sync)
             .setOngoing(true)

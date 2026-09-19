@@ -144,7 +144,7 @@ class SamoMediaNotificationProvider(
             // previous android.R.drawable.ic_media_play was being mistaken for
             // an action button next to the real prev/play/next ones below).
             .setSmallIcon(app.samo.android.R.drawable.ic_notification_samo)
-            .setContentTitle(title.ifEmpty { "Samo" })
+            .setContentTitle(title.ifEmpty { "samo" })
             .setContentText(artist)
             // Stay ongoing while a session is alive — NOT just while actively
             // playing. Tying this to isPlaying made the notification flip to

@@ -212,7 +212,13 @@ const normalizeAuthenticationResult = (value: unknown): null | ServerAuthenticat
         kind,
         serverId: serverId || undefined,
         serverVersion: typeof value.serverVersion === 'string' ? value.serverVersion : undefined,
-        title: value.title,
+        // Sessions saved before 2026-09-04 carry the title the login of the
+        // day wrote, `Samo: <name>`, and a saved session is never re-titled:
+        // the health check hands the stored title straight back. The name is
+        // lowercase (docs/NAMING.md), so the prefix is fixed here, where old
+        // sessions are already brought up to date, rather than by asking
+        // everyone to sign in again.
+        title: value.title.replace(/^Samo: /, 'samo: '),
         type,
         url,
         userId: typeof value.userId === 'string' ? value.userId : undefined,

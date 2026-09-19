@@ -408,7 +408,7 @@ class SamoPlaybackService : MediaSessionService() {
             // placeholder doesn't flash a system play triangle for the frame
             // before Media3 swaps in the proper MediaStyle card.
             .setSmallIcon(app.samo.android.R.drawable.ic_notification_samo)
-            .setContentTitle("Samo")
+            .setContentTitle("samo")
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setOngoing(true)
             .setShowWhen(false)

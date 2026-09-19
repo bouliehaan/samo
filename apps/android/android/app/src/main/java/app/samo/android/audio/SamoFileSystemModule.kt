@@ -172,7 +172,7 @@ class SamoFileSystemModule(
             } finally {
                 connection?.disconnect()
                 activeDownloadCancels.remove(downloadId)
-                SamoDownloadService.finish(reactContext)
+                SamoDownloadService.finish()
             }
         }
     }

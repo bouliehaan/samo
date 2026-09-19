@@ -79,7 +79,7 @@ internal object SamoResolvingDataSource {
         if (connection == null) {
             // No mirrored credentials for this server (fresh install, JS hasn't
             // pushed yet). Use the URI's existing token — it may still be valid.
-            Log.w(TAG, "no mirrored Samo credentials for music stream; using existing token")
+            Log.w(TAG, "no mirrored samo credentials for music stream; using existing token")
             return dataSpec
         }
 

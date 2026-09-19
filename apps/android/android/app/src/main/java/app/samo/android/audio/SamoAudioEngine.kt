@@ -538,7 +538,7 @@ internal class SamoAudioEngine(
       serverUrl = item["serverUrl"] as? String,
       bearer = item["serverBearerToken"] as? String,
     )
-    val title = (item["title"] as? String) ?: "Samo"
+    val title = (item["title"] as? String) ?: "samo"
     val subtitle = item["subtitle"] as? String
     val artworkUrl = item["artworkUrl"] as? String
     val mimeType = getMediaItemMimeType(url, item["mimeType"] as? String)
@@ -575,7 +575,7 @@ internal class SamoAudioEngine(
       return
     }
     val sessionId = source.getOptionalString("sessionId") ?: UUID.randomUUID().toString()
-    val title = source.getOptionalString("title") ?: "Samo"
+    val title = source.getOptionalString("title") ?: "samo"
     val subtitle = source.getOptionalString("subtitle")
     val artworkUrl = source.getOptionalString("artworkUrl")
     val mediaId = source.getOptionalString("id") ?: sessionId
@@ -1052,7 +1052,7 @@ internal class SamoAudioEngine(
       }
 
       val previousSource = currentSource
-      val title = metadata.getOptionalString("title") ?: previousSource?.title ?: "Samo"
+      val title = metadata.getOptionalString("title") ?: previousSource?.title ?: "samo"
       val subtitle = metadata.getOptionalString("subtitle") ?: previousSource?.subtitle
       val artworkUrl = metadata.getOptionalString("artworkUrl") ?: previousSource?.artworkUrl
       val mediaId =
@@ -1512,7 +1512,7 @@ internal class SamoAudioEngine(
           id = (newItem["id"] as? String) ?: (currentSessionId ?: ""),
           source = newItem["source"] as? String,
           subtitle = newItem["subtitle"] as? String,
-          title = (newItem["title"] as? String) ?: "Samo",
+          title = (newItem["title"] as? String) ?: "samo",
         )
         lastKnownPlaybackPositionMs = 0L
         lastKnownPlaybackMediaId = mediaItem?.mediaId
@@ -2177,7 +2177,7 @@ internal class SamoAudioEngine(
               id = playerMediaId,
               source = item["source"] as? String,
               subtitle = item["subtitle"] as? String,
-              title = (item["title"] as? String) ?: "Samo",
+              title = (item["title"] as? String) ?: "samo",
             )
           } ?: snapshot
       } else {

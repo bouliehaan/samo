@@ -122,6 +122,36 @@ describe('parseServerAuthentication', () => {
         expect(authentication?.connectionKey).toBe('samo:https://music.example.com');
     });
 
+    it('lowercases the title prefix a pre-2026-09-04 login wrote', () => {
+        const stale = {
+            capabilities: {},
+            credential: 'token',
+            kind: ServerAuthenticationKind.SAMO_TOKEN,
+            title: 'Samo: jake',
+            type: 'samo',
+            url: 'https://music.example.com',
+            username: 'jake',
+        };
+
+        const { authentication } = parseServerAuthentication(stale);
+
+        expect(authentication?.title).toBe('samo: jake');
+    });
+
+    it('leaves a title that is not our old prefix alone', () => {
+        const { authentication } = parseServerAuthentication({
+            capabilities: {},
+            credential: 'token',
+            kind: ServerAuthenticationKind.SAMO_TOKEN,
+            title: 'Samos Basement',
+            type: 'samo',
+            url: 'https://music.example.com',
+            username: 'jake',
+        });
+
+        expect(authentication?.title).toBe('Samos Basement');
+    });
+
     it('does not adopt a stored identity as the key for an existing session', () => {
         const upgraded = {
             capabilities: {},

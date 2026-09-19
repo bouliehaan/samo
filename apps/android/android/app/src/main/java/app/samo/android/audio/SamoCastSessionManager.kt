@@ -291,7 +291,7 @@ internal class SamoCastSessionManager(
     }
 
     val sessionId = source.getOptionalString("sessionId") ?: UUID.randomUUID().toString()
-    val title = source.getOptionalString("title") ?: "Samo"
+    val title = source.getOptionalString("title") ?: "samo"
     val subtitle = source.getOptionalString("subtitle")
     val artworkUrl = source.getOptionalString("artworkUrl")
     val mediaId = source.getOptionalString("id") ?: sessionId

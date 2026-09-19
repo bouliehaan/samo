@@ -77,8 +77,12 @@ internal class SamoDownloadWorker(
             }
 
             SamoDownloads.beginTransfer(applicationContext, entryId)
-            SamoDownloadService.begin(applicationContext)
             return try {
+                // Inside the try, so the finish() below is unconditional. The
+                // anchor's count is its whole idea of whether anything is
+                // happening, and a begin() that escaped without its finish()
+                // is how the download card came to outlive every download.
+                SamoDownloadService.begin(applicationContext)
                 withContext(Dispatchers.IO) {
                     runTransfer(entry)
                 }
@@ -143,7 +147,7 @@ internal class SamoDownloadWorker(
                 // or by hand — resumes instead of refetching what we hold.
                 if (runAttemptCount >= 2) Result.failure() else Result.retry()
             } finally {
-                SamoDownloadService.finish(applicationContext)
+                SamoDownloadService.finish()
             }
         } finally {
             SamoDownloads.transferSlots.release()
