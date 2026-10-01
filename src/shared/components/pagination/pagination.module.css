@@ -3,32 +3,30 @@
 }
 
 .control {
+    font-weight: 650;
     color: var(--theme-colors-foreground);
-    background-color: var(--theme-colors-surface);
+    background: color-mix(in srgb, var(--theme-colors-foreground) 8%, transparent);
     border: none;
-    transition:
-        background 0.2s ease-in-out,
-        color 0.2s ease-in-out;
+    border-radius: 999px;
 
-    &[data-active] {
-        color: var(--theme-colors-primary-contrast);
-        background-color: var(--theme-colors-primary-filled);
+    &:hover:not(:disabled) {
+        background: color-mix(in srgb, var(--theme-colors-foreground) 14%, transparent);
     }
 
-    &[data-dots] {
-        background-color: transparent;
+    &[data-active],
+    &[data-active]:hover {
+        color: var(--theme-colors-background);
+        background: var(--theme-colors-foreground);
     }
 
-    &:hover {
-        background-color: lighten(var(--theme-colors-surface), 10%);
+    &[data-dots],
+    &[data-dots]:hover {
+        background: transparent;
+    }
 
-        &[data-active] {
-            background-color: darken(var(--theme-colors-primary-filled), 10%);
-        }
-
-        &[data-dots] {
-            background-color: transparent;
-        }
+    &:focus-visible {
+        outline: 2px solid var(--theme-colors-primary-filled);
+        outline-offset: 2px;
     }
 }
 

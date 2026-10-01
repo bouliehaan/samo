@@ -979,8 +979,18 @@ export const StarGlyph = ({ color, filled }: { color: string; filled: boolean })
     );
 };
 
-export const TabIcon = ({ active, id }: { active: boolean; id: SamoMobileTabId }) => {
-    const color = active ? colors.text : colors.muted;
+export const TabIcon = ({
+    active,
+    color: colorOverride,
+    id,
+}: {
+    active: boolean;
+    /** Ink for a surface the active/inactive pair does not suit (the TV's
+     *  focused rail pill is light). */
+    color?: string;
+    id: SamoMobileTabId;
+}) => {
+    const color = colorOverride ?? (active ? colors.text : colors.muted);
 
     if (id === 'home') {
         return (

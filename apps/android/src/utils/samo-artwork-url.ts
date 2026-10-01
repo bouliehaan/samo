@@ -282,6 +282,18 @@ const resolveArtworkSourceUncached = (
     bearer: string | undefined,
     serverConnection: ServerAuthenticationResult | null,
 ): SamoArtworkImageSource | undefined => {
+    // Legacy mirror rows and merged recents can still carry the first album's
+    // image ID alongside a playlist cover URL. The playlist URL must win.
+    if (
+        item.artworkUrl &&
+        /\/api\/v1\/music\/playlists\/[^/]+\/cover(?:[?#]|$)/.test(item.artworkUrl)
+    ) {
+        return resolveSamoArtworkImageSourceForDisplay(
+            item.artworkUrl,
+            item.source,
+            serverConnection,
+        );
+    }
     if (item.artworkImageId) {
         // Built straight from the id, so the route is by construction
         // `/api/v1/…` and already homed on the connected origin — nothing to

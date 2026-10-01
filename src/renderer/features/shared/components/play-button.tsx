@@ -21,6 +21,7 @@ export const DefaultPlayButton = forwardRef<HTMLButtonElement, DefaultPlayButton
     ({ className, variant = 'filled', ...props }, ref) => {
         return (
             <ActionIcon
+                aria-label={t('player.play', { postProcess: 'sentenceCase' })}
                 className={clsx(styles.textButton, className, {
                     [styles.unthemed]: variant !== 'filled',
                 })}

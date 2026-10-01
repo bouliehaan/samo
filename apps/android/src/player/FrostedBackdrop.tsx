@@ -84,7 +84,10 @@ const RAMP_CROSSFADE_MS = 420;
  * changes read as the light in the room shifting, never a hard repaint (the
  * flicker that got the original extraction pass removed).
  */
-export const FrostedBackdrop = memo(({ artworkUrl }: { artworkUrl?: string }) => {
+export const FrostedBackdrop = memo(({ artworkUrl, reducedMotion = false }: {
+    artworkUrl?: string;
+    reducedMotion?: boolean;
+}) => {
     const [ramps, setRamps] = useState<{ current: string[]; previous: string[] }>({
         current: NEUTRAL_RAMP,
         previous: NEUTRAL_RAMP,
@@ -102,7 +105,7 @@ export const FrostedBackdrop = memo(({ artworkUrl }: { artworkUrl?: string }) =>
             currentRampRef.current = ramp;
             fadeProgress.setValue(0);
             Animated.timing(fadeProgress, {
-                duration: RAMP_CROSSFADE_MS,
+                duration: reducedMotion ? 0 : RAMP_CROSSFADE_MS,
                 toValue: 1,
                 useNativeDriver: true,
             }).start();
@@ -127,7 +130,7 @@ export const FrostedBackdrop = memo(({ artworkUrl }: { artworkUrl?: string }) =>
         return () => {
             isStale = true;
         };
-    }, [artworkUrl, fadeProgress]);
+    }, [artworkUrl, fadeProgress, reducedMotion]);
 
     return (
         <View pointerEvents="none" style={StyleSheet.absoluteFill}>

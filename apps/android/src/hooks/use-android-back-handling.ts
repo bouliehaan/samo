@@ -16,8 +16,9 @@ import {
  * press time from the module store, so it needs no subscriptions and never
  * re-registers.
  */
-export const useAndroidBackHandling = (): void => {
+export const useAndroidBackHandling = (enabled = true): void => {
     useEffect(() => {
+        if (!enabled) return;
         const handler = BackHandler.addEventListener('hardwareBackPress', () => {
             const state = getAppNavigation();
 
@@ -61,5 +62,5 @@ export const useAndroidBackHandling = (): void => {
         });
 
         return () => handler.remove();
-    }, []);
+    }, [enabled]);
 };

@@ -22,7 +22,7 @@ export const RefreshButton = ({ loading, onClick, ...props }: RefreshButtonProps
                 label: t('common.refresh', { postProcess: 'sentenceCase' }),
                 ...props.tooltip,
             }}
-            variant="subtle"
+            variant="toolbar"
             {...props}
         />
     );

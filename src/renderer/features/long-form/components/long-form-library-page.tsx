@@ -1,4 +1,4 @@
-import { type ReactNode, useState } from 'react';
+import { type ReactNode, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { LongFormMediaKind } from './long-form-card';
@@ -62,6 +62,7 @@ export const LongFormLibraryPage = ({
     toSearchText,
 }: LongFormLibraryPageProps) => {
     const { t } = useTranslation();
+    const scrollRef = useRef<HTMLDivElement>(null);
     const [searchQuery, setSearchQuery] = useState('');
     const filteredItems = useFilteredLongFormItems(items, searchQuery, toSearchText);
     const isSearching = searchQuery.trim().length > 0;
@@ -69,11 +70,13 @@ export const LongFormLibraryPage = ({
     if (!server) {
         return (
             <AnimatedPage>
-                <div className={styles.page}>
-                    <TextTitle fw={700} order={1}>
-                        {title}
-                    </TextTitle>
-                    <Text isMuted>{noServerLabel}</Text>
+                <div className={styles.page} ref={scrollRef}>
+                    <div className={styles.content}>
+                        <TextTitle fw={700} order={1}>
+                            {title}
+                        </TextTitle>
+                        <Text isMuted>{noServerLabel}</Text>
+                    </div>
                 </div>
             </AnimatedPage>
         );
@@ -82,11 +85,13 @@ export const LongFormLibraryPage = ({
     if (isLoading) {
         return (
             <AnimatedPage>
-                <div className={styles.page}>
-                    <TextTitle fw={700} order={1}>
-                        {title}
-                    </TextTitle>
-                    <GridPageSkeleton />
+                <div className={styles.page} ref={scrollRef}>
+                    <div className={styles.content}>
+                        <TextTitle fw={700} order={1}>
+                            {title}
+                        </TextTitle>
+                        <GridPageSkeleton />
+                    </div>
                 </div>
             </AnimatedPage>
         );
@@ -95,11 +100,13 @@ export const LongFormLibraryPage = ({
     if (!items.length) {
         return (
             <AnimatedPage>
-                <div className={styles.page}>
-                    <TextTitle fw={700} order={1}>
-                        {title}
-                    </TextTitle>
-                    <Text isMuted>{emptyLabel}</Text>
+                <div className={styles.page} ref={scrollRef}>
+                    <div className={styles.content}>
+                        <TextTitle fw={700} order={1}>
+                            {title}
+                        </TextTitle>
+                        <Text isMuted>{emptyLabel}</Text>
+                    </div>
                 </div>
             </AnimatedPage>
         );
@@ -107,42 +114,45 @@ export const LongFormLibraryPage = ({
 
     return (
         <AnimatedPage>
-            <div className={styles.page}>
-                <div className={styles.header}>
-                    <TextTitle fw={700} order={1}>
-                        {title}
-                    </TextTitle>
-                    <TextInput
-                        aria-label={searchPlaceholder}
-                        className={styles.search}
-                        onChange={(event) => setSearchQuery(event.currentTarget.value)}
-                        placeholder={searchPlaceholder}
-                        value={searchQuery}
-                    />
-                </div>
+            <div className={styles.page} ref={scrollRef}>
+                <div className={styles.content}>
+                    <div className={styles.header}>
+                        <TextTitle fw={700} order={1}>
+                            {title}
+                        </TextTitle>
+                        <TextInput
+                            aria-label={searchPlaceholder}
+                            className={styles.search}
+                            onChange={(event) => setSearchQuery(event.currentTarget.value)}
+                            placeholder={searchPlaceholder}
+                            value={searchQuery}
+                        />
+                    </div>
 
-                {isSearching ? null : sections}
+                    {isSearching ? null : sections}
 
-                {!filteredItems.length ? (
-                    <Text isMuted>{t('common.noResults', { postProcess: 'sentenceCase' })}</Text>
-                ) : (
-                    <>
-                        {isSearching ? null : (
-                            <TextTitle fw={700} isNoSelect order={2}>
-                                {gridLabel}
-                            </TextTitle>
-                        )}
-                        <div className={styles.grid}>
+                    {!filteredItems.length ? (
+                        <Text isMuted>
+                            {t('common.noResults', { postProcess: 'sentenceCase' })}
+                        </Text>
+                    ) : (
+                        <>
+                            {isSearching ? null : (
+                                <TextTitle fw={700} isNoSelect order={2}>
+                                    {gridLabel}
+                                </TextTitle>
+                            )}
                             <LongFormGrid
                                 describe={describe}
                                 items={filteredItems}
                                 kind={kind}
                                 onOpen={onOpen}
+                                scrollRef={scrollRef}
                                 server={server}
                             />
-                        </div>
-                    </>
-                )}
+                        </>
+                    )}
+                </div>
             </div>
         </AnimatedPage>
     );

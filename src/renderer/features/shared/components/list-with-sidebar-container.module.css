@@ -22,12 +22,12 @@
 }
 
 @container (min-width: $mantine-breakpoint-xs) {
-    .container[data-sidebar-open='true'] .sidebar-container {
+    .container[data-sidebar-open='true'] .sidebar-container:not(:empty) {
         display: block;
     }
 
     @container (min-width: $mantine-breakpoint-lg) {
-        .container[data-use-breakpoint='true'] .sidebar-container {
+        .container[data-use-breakpoint='true'] .sidebar-container:not(:empty) {
             display: block;
         }
     }

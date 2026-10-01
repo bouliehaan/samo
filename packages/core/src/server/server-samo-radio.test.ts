@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
     isSamoRadioDeviceConnected,
+    resolveSamoRadioArtworkUrl,
     type SamoRadioDevice,
     type SamoRadioState,
     samoRadioTransportKind,
@@ -78,5 +79,54 @@ describe('samoRadioTransportKind', () => {
             ),
         ).toBe('none');
         expect(samoRadioTransportKind(state({ mode: 'idle' }))).toBe('none');
+    });
+});
+
+describe('resolveSamoRadioArtworkUrl', () => {
+    const auth = { url: 'https://music.example' };
+
+    it('pictures what is airing on a channel, homed on the address the client connected with', () => {
+        // The device reports the show's cover as a path relative to samo; it
+        // has no idea the phone reached samo through a tunnel.
+        expect(
+            resolveSamoRadioArtworkUrl(
+                auth,
+                state({
+                    channel: {
+                        artworkUrl: '/api/v1/podcasts/shows/podcast_1/cover',
+                        id: 'channel_1',
+                        title: 'Mother Plants Might Not Be Necessary Anymore',
+                    },
+                    item: {
+                        artworkUrl: '/api/v1/channels/channel_1/cover',
+                        ref: 'channel:channel_1',
+                        streamUrl: 'http://127.0.0.1:6969/channels/channel_1/stream',
+                        title: 'Jake Channel',
+                    },
+                    mode: 'channel',
+                }),
+            ),
+        ).toBe('https://music.example/api/v1/podcasts/shows/podcast_1/cover');
+    });
+
+    it('falls back to the queued item off a channel, and leaves a remote picture alone', () => {
+        expect(
+            resolveSamoRadioArtworkUrl(
+                auth,
+                state({
+                    item: {
+                        artworkUrl: 'https://cdn.example/cover.jpg',
+                        ref: 'track:track_1',
+                        streamUrl: 'https://music.example/api/v1/music/tracks/track_1/stream',
+                        title: 'Float On',
+                    },
+                    mode: 'queue',
+                }),
+            ),
+        ).toBe('https://cdn.example/cover.jpg');
+    });
+
+    it('has nothing to show for a device on standby', () => {
+        expect(resolveSamoRadioArtworkUrl(auth, state())).toBeUndefined();
     });
 });

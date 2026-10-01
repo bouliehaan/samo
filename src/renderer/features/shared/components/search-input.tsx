@@ -1,17 +1,11 @@
-import {
-    ChangeEvent,
-    CSSProperties,
-    KeyboardEvent,
-    useEffect,
-    useMemo,
-    useRef,
-    useState,
-} from 'react';
+import { ChangeEvent, KeyboardEvent, useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { shallow } from 'zustand/shallow';
+
+import styles from './search-input.module.css';
 
 import { useSettingsStore } from '/@/renderer/store';
 import { ActionIcon, ActionIconProps } from '/@/shared/components/action-icon/action-icon';
-import { Box } from '/@/shared/components/box/box';
 import { Icon } from '/@/shared/components/icon/icon';
 import { TextInput, TextInputProps } from '/@/shared/components/text-input/text-input';
 import { useHotkeys } from '/@/shared/hooks/use-hotkeys';
@@ -26,15 +20,31 @@ interface SearchInputProps extends TextInputProps {
 
 export const SearchInput = ({
     buttonProps,
+    defaultValue,
     enableHotkey = true,
     fillContainer = false,
     inputProps,
     onChange,
+    value,
     ...props
 }: SearchInputProps) => {
+    const { t } = useTranslation();
     const ref = useRef<HTMLInputElement>(null);
+    const buttonRef = useRef<HTMLButtonElement>(null);
     const binding = useSettingsStore((state) => state.hotkeys.bindings.localSearch, shallow);
     const [isInputMode, setIsInputMode] = useState(false);
+    const [localValue, setLocalValue] = useState(String(defaultValue ?? ''));
+    const searchValue = value ?? localValue;
+    const expanded = isInputMode || Boolean(searchValue);
+    const searchLabel = t('common.search', { postProcess: 'sentenceCase' });
+
+    useEffect(() => {
+        if (isInputMode) ref.current?.focus();
+    }, [isInputMode]);
+
+    useEffect(() => {
+        if (!defaultValue && value === undefined) setLocalValue('');
+    }, [defaultValue, value]);
 
     useHotkeys([
         [
@@ -42,134 +52,84 @@ export const SearchInput = ({
             () => {
                 if (enableHotkey) {
                     setIsInputMode(true);
-                    ref?.current?.focus();
-                    ref?.current?.select();
+                    ref.current?.focus();
+                    ref.current?.select();
                 }
             },
         ],
     ]);
 
-    const handleEscape = (e: KeyboardEvent<HTMLInputElement>) => {
-        if (e.code === 'Escape') {
-            onChange?.({ target: { value: '' } } as ChangeEvent<HTMLInputElement>);
-            if (ref.current) {
-                ref.current.value = '';
-                ref.current.blur();
-            }
+    const handleChange = (event: ChangeEvent<HTMLInputElement>) => {
+        setLocalValue(event.target.value);
+        onChange?.(event);
+    };
+
+    const clear = () => {
+        setLocalValue('');
+        onChange?.({ target: { value: '' } } as ChangeEvent<HTMLInputElement>);
+    };
+
+    const handleEscape = (event: KeyboardEvent<HTMLInputElement>) => {
+        if (event.key === 'Escape') {
+            event.stopPropagation();
+            clear();
             setIsInputMode(false);
+            buttonRef.current?.focus();
         }
     };
-
-    const handleClear = () => {
-        if (ref.current) {
-            ref.current.value = '';
-            ref.current.focus();
-            onChange?.({ target: { value: '' } } as ChangeEvent<HTMLInputElement>);
-        }
-    };
-
-    const timeoutRef = useRef<NodeJS.Timeout | null>(null);
-
-    useEffect(() => {
-        return () => {
-            if (timeoutRef.current) {
-                clearTimeout(timeoutRef.current);
-            }
-        };
-    }, []);
-
-    const handleButtonClick = () => {
-        setIsInputMode(true);
-        if (timeoutRef.current) {
-            clearTimeout(timeoutRef.current);
-        }
-        timeoutRef.current = setTimeout(() => {
-            ref?.current?.focus();
-            timeoutRef.current = null;
-        }, 0);
-    };
-
-    const handleBlur = () => {
-        const hasValue = props.value || ref.current?.value;
-        if (!hasValue) {
-            setIsInputMode(false);
-        }
-    };
-
-    const hasValue = props.value || ref.current?.value;
-    const shouldShowInput = isInputMode || hasValue;
-    const shouldExpand = isInputMode || hasValue;
-
-    const containerStyle: CSSProperties = useMemo(
-        () => ({
-            display: 'inline-flex',
-            overflow: 'hidden',
-            position: 'relative',
-            transition: 'width 0.3s ease-in-out',
-            ...(fillContainer
-                ? {
-                      flex: '1 1 0',
-                      minWidth: 0,
-                      width: shouldExpand ? '100%' : '36px',
-                  }
-                : {
-                      width: shouldExpand ? '200px' : '36px',
-                  }),
-        }),
-        [fillContainer, shouldExpand],
-    );
-
-    const buttonStyle: CSSProperties = useMemo(
-        () => ({
-            left: 0,
-            opacity: shouldShowInput ? 0 : 1,
-            pointerEvents: shouldShowInput ? 'none' : 'auto',
-            position: 'absolute',
-            top: 0,
-            transition: 'opacity 0.2s ease-in-out',
-            zIndex: 10,
-        }),
-        [shouldShowInput],
-    );
-
-    const inputStyle: CSSProperties = useMemo(
-        () => ({
-            opacity: shouldShowInput ? 1 : 0,
-            transition: 'opacity 0.2s ease-in-out',
-            width: '100%',
-        }),
-        [shouldShowInput],
-    );
 
     return (
-        <Box style={containerStyle}>
-            <TextInput
-                leftSection={<Icon icon="search" />}
-                maw={fillContainer ? '100%' : '20dvw'}
-                {...inputProps}
-                onBlur={handleBlur}
-                onChange={onChange}
-                onFocus={() => setIsInputMode(true)}
-                onKeyDown={handleEscape}
-                ref={ref}
-                size="sm"
-                style={inputStyle}
-                {...props}
-                rightSection={
-                    ref.current?.value ? (
-                        <ActionIcon icon="x" onClick={handleClear} variant="transparent" />
-                    ) : null
-                }
-            />
+        <div
+            className={styles.container}
+            data-expanded={expanded || undefined}
+            data-fill={fillContainer || undefined}
+        >
+            <div className={styles.inputContainer} hidden={!expanded}>
+                <TextInput
+                    aria-label={searchLabel}
+                    classNames={{ input: styles.input }}
+                    leftSection={<Icon icon="search" size="sm" />}
+                    placeholder={searchLabel}
+                    {...inputProps}
+                    {...props}
+                    onBlur={() => setIsInputMode(false)}
+                    onChange={handleChange}
+                    onFocus={() => setIsInputMode(true)}
+                    onKeyDown={handleEscape}
+                    ref={ref}
+                    rightSection={
+                        searchValue ? (
+                            <ActionIcon
+                                icon="x"
+                                onClick={() => {
+                                    clear();
+                                    ref.current?.focus();
+                                }}
+                                size="compact-xs"
+                                tooltip={{
+                                    label: t('common.clear', { postProcess: 'sentenceCase' }),
+                                }}
+                                variant="transparent"
+                            />
+                        ) : null
+                    }
+                    size="sm"
+                    value={searchValue}
+                />
+            </div>
             <ActionIcon
                 {...buttonProps}
+                aria-hidden={expanded}
+                className={styles.trigger}
+                data-hidden={expanded || undefined}
                 icon="search"
                 iconProps={{ size: 'lg' }}
-                onClick={handleButtonClick}
-                style={buttonStyle}
-                tooltip={{ label: 'Search' }}
-                variant="subtle"
+                onClick={() => setIsInputMode(true)}
+                ref={buttonRef}
+                tabIndex={expanded ? -1 : 0}
+                tooltip={{ label: searchLabel }}
+                variant="toolbar"
             />
-        </Box>
+        </div>
     );
 };

@@ -1,4 +1,4 @@
-import { type MobileHomeItem, MobileHomeItemType } from '@samo/core/mobile';
+import { type MobileHomeItem } from '@samo/core/mobile';
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 
@@ -26,20 +26,11 @@ import {
     type LibrarySort,
     type MediaTypeCollectionKey,
 } from '../types/library-tab';
-import { getContentItemKey } from '../utils/content-item';
-import { isPodcastEpisodeHomeItem } from '../utils/context-menu-infer';
-import {
-    getContentItemProgress,
-    getHomeDisplaySections,
-    getUniqueHomeItems,
-    withResolvedArtwork,
-} from '../utils/home-display';
-import { getLibraryMediaType } from '../utils/library-display';
+import { getHomeDisplaySections } from '../utils/home-display';
+import { buildMediaTypeGridItems, buildMediaTypeShelves } from '../utils/media-type-shelves';
 import { EmptyServerBackedScreen } from './EmptyServerBackedScreen';
 import { HomeDisplayRow } from './home/HomeDisplayRow';
 import { HomeFilterGrid } from './home/HomeFilterGrid';
-
-const SHELF_ITEM_LIMIT = 12;
 
 /** Stable empty reference — the collection selector runs on every store read,
  *  so it must never hand back a fresh array. */
@@ -120,26 +111,9 @@ export const MediaTypeGridScreen = memo(function MediaTypeGridScreen({
         return computed;
     }, [loadedContent, recentItems, serverConnection]);
 
-    // The full Shows/Books catalog for the grid. The mirror collection leads so
-    // it sets the order; the shelf items ride along behind it to cover the
-    // window before the read lands (and offline, where they're all there is).
-    // For podcasts: only PODCAST-type items (not episodes) so the grid is
-    // purely a show browser — episodes appear in the shelves above only.
+    // The full Shows/Books catalog for the grid — see buildMediaTypeGridItems.
     const gridItems = useMemo(
-        () =>
-            getUniqueHomeItems(
-                [
-                    ...collectionItems,
-                    ...sections
-                        .filter((section) => !section.pending)
-                        .flatMap((section) => section.items),
-                ].filter((item) => {
-                    if (mediaType === 'podcasts') {
-                        return item.type === MobileHomeItemType.PODCAST;
-                    }
-                    return getLibraryMediaType(item) === mediaType;
-                }),
-            ),
+        () => buildMediaTypeGridItems(mediaType, collectionItems, sections),
         [collectionItems, mediaType, sections],
     );
 
@@ -154,122 +128,18 @@ export const MediaTypeGridScreen = memo(function MediaTypeGridScreen({
         return gridItems;
     }, [audiobookSort, gridItems, mediaType]);
 
-    const shelves = useMemo((): HomeDisplaySection[] => {
-        const shelfList: HomeDisplaySection[] = [];
-        const gridItemsByKey = new Map(gridItems.map((item) => [getContentItemKey(item), item]));
-
-        if (mediaType === 'podcasts') {
-            const feedItems =
-                sections.find((section) => section.key === 'podcast-feed' && !section.pending)
-                    ?.items ?? [];
-            // Unfinished EPISODES — recents first (freshly resolved artwork),
-            // then anything in-progress from the feed window.
-            const continueItems = getUniqueHomeItems(
-                [
-                    ...withResolvedArtwork(
-                        recentItems
-                            .map((recent) => recent.item)
-                            .filter(isPodcastEpisodeHomeItem),
-                        serverConnection,
-                    ),
-                    ...feedItems,
-                ].filter((item) => getContentItemProgress(item) !== undefined),
-            ).slice(0, SHELF_ITEM_LIMIT);
-            if (continueItems.length > 0) {
-                shelfList.push({
-                    items: continueItems,
-                    key: 'podcasts-tab-continue',
-                    title: 'Continue Listening',
-                    variant: 'continue',
-                });
-            }
-            if (feedItems.length > 0) {
-                shelfList.push({
-                    items: feedItems,
-                    key: 'podcasts-tab-new-episodes',
-                    title: 'New Episodes',
-                    variant: 'podcast-feed',
-                });
-            }
-            // SHOWS the user has recently listened to, in recency order. A
-            // played EPISODE counts for its show too (containerId → show), so
-            // listening from New Episodes lands the show down here.
-            const showsById = new Map(gridItems.map((item) => [item.id, item]));
-            const seenShowIds = new Set<string>();
-            const recentShows: typeof gridItems = [];
-            for (const recent of recentItems) {
-                const showId =
-                    recent.item.type === MobileHomeItemType.PODCAST
-                        ? recent.item.id
-                        : isPodcastEpisodeHomeItem(recent.item)
-                          ? recent.item.containerId
-                          : undefined;
-                if (!showId || seenShowIds.has(showId)) {
-                    continue;
-                }
-                seenShowIds.add(showId);
-                const show = showsById.get(showId);
-                if (show) {
-                    recentShows.push(show);
-                }
-                if (recentShows.length >= SHELF_ITEM_LIMIT) {
-                    break;
-                }
-            }
-            if (recentShows.length > 0) {
-                shelfList.push({
-                    items: recentShows,
-                    key: 'podcasts-tab-recently-played',
-                    title: 'Recently Played',
-                    variant: 'podcast',
-                });
-            }
-            return shelfList;
-        }
-
-        // Audiobooks: unfinished books up top. Progress comes from the
-        // SERVER's audiobooks listing (the mirror stores none) — graft it
-        // onto the mirror-derived grid items by id.
-        const serverProgressById = new Map(serverAudiobooks.map((item) => [item.id, item]));
-        const continueBooks = gridItems
-            .map((item) => {
-                const serverItem = serverProgressById.get(item.id);
-                return serverItem
-                    ? {
-                          ...item,
-                          completionState: serverItem.completionState,
-                          durationSeconds:
-                              ('durationSeconds' in item ? item.durationSeconds : undefined) ??
-                              serverItem.durationSeconds,
-                          progressSeconds: serverItem.progressSeconds,
-                      }
-                    : item;
-            })
-            .filter((item) => getContentItemProgress(item) !== undefined)
-            .slice(0, SHELF_ITEM_LIMIT);
-        if (continueBooks.length > 0) {
-            shelfList.push({
-                items: continueBooks,
-                key: 'audiobooks-tab-continue',
-                title: 'Continue Listening',
-                variant: 'continue',
-            });
-        }
-        const recentBooks = recentItems
-            .filter((recent) => recent.item.type === MobileHomeItemType.AUDIOBOOK)
-            .map((recent) => gridItemsByKey.get(getContentItemKey(recent.item)))
-            .filter((item): item is NonNullable<typeof item> => item != null)
-            .slice(0, SHELF_ITEM_LIMIT);
-        if (recentBooks.length > 0) {
-            shelfList.push({
-                items: recentBooks,
-                key: 'audiobooks-tab-recently-played',
-                title: 'Recently Played',
-                variant: 'book',
-            });
-        }
-        return shelfList;
-    }, [gridItems, mediaType, recentItems, sections, serverAudiobooks, serverConnection]);
+    const shelves = useMemo(
+        () =>
+            buildMediaTypeShelves({
+                gridItems,
+                homeSections: sections,
+                mediaType,
+                recentItems,
+                serverAudiobooks,
+                serverConnection,
+            }),
+        [gridItems, mediaType, recentItems, sections, serverAudiobooks, serverConnection],
+    );
 
     const tabTitle = mediaType === 'podcasts' ? 'Podcasts' : 'Audiobooks';
 

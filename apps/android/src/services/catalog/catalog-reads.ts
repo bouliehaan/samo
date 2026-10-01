@@ -282,18 +282,16 @@ export const loadCatalogMediaDetail = async (
             }
             // Mapped through the shared core mapper rather than read field by
             // field, so ownership/system rules have exactly one definition.
-            // Only the metadata is taken from it: its own `tracks` are empty by
-            // construction (the sync strips `children.tracks` from the stored
-            // bundle precisely because they live in the rows above), and the
-            // identity fields stay with the tile for the same reason the album
-            // branch keeps them — the tile holds the artwork already on screen.
+            // Use its current artwork as well: the launching tile can be an old
+            // recent with a single album cover. Tracks live in the rows above;
+            // the sync deliberately strips them from the detail bundle.
             const playlistDetail =
                 isPlaylist && playlistRow
                     ? hydrateDetailPayload(playlistRow, source, serverConnection)
                     : null;
             return {
-                artworkImageId: item.artworkImageId,
-                artworkUrl: item.artworkUrl,
+                artworkImageId: playlistDetail ? playlistDetail.artworkImageId : item.artworkImageId,
+                artworkUrl: playlistDetail?.artworkUrl ?? item.artworkUrl,
                 id: item.id,
                 metadataLines: playlistDetail?.metadataLines,
                 playlistMeta: playlistDetail?.playlistMeta,
@@ -440,7 +438,8 @@ const CATALOG_HOME_SECTIONS: CatalogHomeSectionSpec[] = [
 /** Server-curated sections fetched live and interleaved by the assembler. */
 export interface HomeLiveSections {
     discover: MobileHomeItem[];
-    explo: MobileHomeItem[];
+    heroes: MobileHomeItem[];
+    heroesLoaded?: boolean;
     podcastFeed: MobileHomeItem[];
     radio: MobileHomeItem[];
 }
@@ -556,7 +555,10 @@ export const buildCatalogHomeContent = async (
     pushMirror(MobileHomeSectionId.AUDIOBOOKS);
     pushMirror(MobileHomeSectionId.PODCASTS);
     pushMirror(MobileHomeSectionId.PLAYLISTS);
-    pushLive(MobileHomeSectionId.EXPLO, 'New from Explore', live?.explo);
+    // Presence distinguishes a settled empty ranking from the first live fetch.
+    if (live?.heroesLoaded || live?.heroes.length) {
+        sections.push({ id: MobileHomeSectionId.HEROES, items: live.heroes, title: '' });
+    }
     pushLive(MobileHomeSectionId.RADIO, 'Radio', live?.radio);
 
     if (sections.length === 0) {

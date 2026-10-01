@@ -5,8 +5,8 @@ import { useGridCarouselContainerQuery } from '/@/renderer/components/grid-carou
 import { NativeScrollArea } from '/@/renderer/components/native-scroll-area/native-scroll-area';
 import { AlbumInfiniteCarousel } from '/@/renderer/features/albums/components/album-infinite-carousel';
 import { HomeContinueListening } from '/@/renderer/features/home/components/home-continue-listening';
+import { HomeHeroStrip } from '/@/renderer/features/home/components/home-hero-strip';
 import {
-    HomeExploSection,
     HomeFavoriteAudiobooks,
     HomeFavoritePlaylists,
 } from '/@/renderer/features/home/components/home-media-sections';
@@ -67,8 +67,9 @@ const HomeRecentlyAddedAlbums = ({
  * Each is both a thing you reach for by name and a thing you browse, and Home
  * without them is not a page about what you listen to. Explore is dated, not
  * browsed — a week's drop that is stale by the next one — so burying it one tab
- * away is the same as deleting it; it sits directly under Continue Listening,
- * above the shelf of playlists, which is where it sat before the move. Recently
+ * away is the same as deleting it; it is the hero, first on the page, above
+ * even Continue Listening: the one thing here that is new since you last
+ * looked, and the one thing that expires. Recently
  * Added is the one library shelf that is genuinely about you: it answers "what
  * is new since I was last here", which is a Home question, and it is the
  * section the phone's Home leads with — desktop dropping it was the two ends
@@ -105,10 +106,10 @@ const HomeRoute = () => {
                         px="2rem"
                         ref={containerQuery.ref}
                     >
+                        <HomeHeroStrip />
                         <HomeContinueListening containerQuery={containerQuery} />
-                        <HomeExploSection />
                         <HomeFavoritePlaylists containerQuery={containerQuery} />
-                        <HomeRadioStations />
+                        <HomeRadioStations containerQuery={containerQuery} />
                         <HomePodcastFeedSection containerQuery={containerQuery} />
                         <HomeFavoriteAudiobooks containerQuery={containerQuery} />
                         <HomeRecentlyAddedAlbums containerQuery={containerQuery} />

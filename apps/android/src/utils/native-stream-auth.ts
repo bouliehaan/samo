@@ -76,8 +76,12 @@ export const attachNativeStreamCredentials = (
 
     const progressTarget = deriveSamoProgressTarget(item);
 
+    // The token itself, not just that there is one. A queue can outlive its
+    // session (disconnect, then sign in again), and the token it was stamped
+    // with was revoked on the way out; keeping it would park every item on a
+    // 401 the moment it needs a fresh stream token.
     const credentialsMatch =
-        item.serverUrl === auth.url && Boolean(item.serverBearerToken);
+        item.serverUrl === auth.url && item.serverBearerToken === getSamoBearerToken(auth);
     const progressMatch =
         item.samoProgressKind === progressTarget?.kind &&
         item.samoProgressTargetId === progressTarget?.targetId;

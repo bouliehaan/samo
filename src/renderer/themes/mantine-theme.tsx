@@ -58,8 +58,8 @@ const mantineTheme: MantineThemeOverride = createTheme({
         }),
     },
     cursorType: 'pointer',
-    defaultRadius: 'sm',
-    focusRing: 'never',
+    defaultRadius: 'md',
+    focusRing: 'auto',
     fontFamily: 'var(--theme-content-font-family)',
     fontSizes: {
         '2xl': rem('20px'),
@@ -110,8 +110,8 @@ const mantineTheme: MantineThemeOverride = createTheme({
     primaryShade: { dark: 5, light: 9 },
     radius: {
         lg: rem('12px'),
-        md: rem('5px'),
-        sm: rem('3px'),
+        md: rem('8px'),
+        sm: rem('6px'),
         xl: rem('16px'),
         xs: rem('3px'),
     },

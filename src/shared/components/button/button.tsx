@@ -25,6 +25,7 @@ type ExtendedButtonVariant =
     | 'state-info'
     | 'state-success'
     | 'state-warning'
+    | 'toolbar'
     | ButtonVariant;
 
 export const _Button = forwardRef<HTMLButtonElement, ButtonProps>(

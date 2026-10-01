@@ -138,7 +138,7 @@ internal class SamoAudioEngine(
   }
   private val outputRoutes = SamoOutputRoutes(reactContext, mainHandler)
   private val networkMonitor = SamoNetworkMonitor(reactContext, mainHandler)
-  private val recovery = SamoPlaybackRecovery(mainHandler, networkMonitor, this)
+  private val recovery = SamoPlaybackRecovery(reactContext, mainHandler, networkMonitor, this)
   private lateinit var castManager: SamoCastSessionManager
 
   override val boundService: SamoPlaybackService?
@@ -199,12 +199,11 @@ internal class SamoAudioEngine(
   private val artworkFreshenRunnable = object : Runnable {
     override fun run() {
       if (!artworkFreshenActive) return
-      val serverUrl = currentServerUrl
-      val bearer = currentBearerToken
-      if (!serverUrl.isNullOrBlank() && !bearer.isNullOrBlank() && !isCastActive()) {
-        SamoNativeStreamUrl.ensureFreshTokenAsync(serverUrl, bearer) { ok ->
-          if (ok) {
-            mainHandler.post { freshenCurrentArtworkFromCache() }
+      val claim = currentCredentialClaim
+      if (claim != null && !isCastActive()) {
+        SamoNativeStreamUrl.ensureFreshTokenAsync(reactContext, claim) { session ->
+          if (session != null) {
+            mainHandler.post { freshenCurrentArtworkFromCache(session) }
           }
         }
       }
@@ -224,7 +223,7 @@ internal class SamoAudioEngine(
   /** Substitute a live token into the CURRENT item's artwork URI and republish
    *  its metadata — the same replaceMediaItem pattern the transition handler
    *  uses, applied periodically for items that outlive the token TTL. */
-  private fun freshenCurrentArtworkFromCache() {
+  private fun freshenCurrentArtworkFromCache(session: SamoSessionCredentials.Resolution.Usable) {
     val player = binder.boundService?.getCurrentPlayer() ?: return
     val mediaItem = player.currentMediaItem ?: return
     val staleArtworkUrl =
@@ -233,8 +232,8 @@ internal class SamoAudioEngine(
         ?: return
     val freshened = SamoNativeStreamUrl.freshenUrlTokenFromCache(
       staleArtworkUrl,
-      currentServerUrl,
-      currentBearerToken,
+      session.serverUrl,
+      session.credential,
     ) ?: return
 
     currentSource = currentSource?.copy(artworkUrl = freshened)
@@ -299,6 +298,9 @@ internal class SamoAudioEngine(
     // PROPER / Phase 5 query doesn't pay the open cost. No-op when the JS-side
     // catalog hasn't created the file yet (fresh install with no Samo source).
     SamoCatalogDb.warm(reactContext)
+    // Load the session snapshot now rather than on the first track
+    // transition, which resolves it on the main thread.
+    SamoAuthMirror.sessions(reactContext)
   }
   override var currentAudioTrackConfig: AudioSink.AudioTrackConfig? = null
   override var currentDecodedFormat: SamoDecodedAudioFormat? = null
@@ -325,8 +327,7 @@ internal class SamoAudioEngine(
   /** True while playLocally is mid-teardown/load — see rememberPlaybackPosition. */
   private var playerLoadInFlight = false
   override var lastKnownPlaybackMediaId: String? = null
-  override var currentServerUrl: String? = null
-  override var currentBearerToken: String? = null
+  override var currentCredentialClaim: SamoSessionCredentials.Claim? = null
   /** Engine-level recovery state. Overrides the player's ExoPlayer-derived
    *  status when set to anything other than Normal — that's how new states
    *  like "waiting_for_network" / "stale_auth" reach JS without polluting the
@@ -535,8 +536,7 @@ internal class SamoAudioEngine(
     SamoDirectStreamFallback.register(
       directUrl = url,
       proxyUrl = item["serverStreamUrl"] as? String,
-      serverUrl = item["serverUrl"] as? String,
-      bearer = item["serverBearerToken"] as? String,
+      claim = item.samoCredentialClaim(),
     )
     val title = (item["title"] as? String) ?: "samo"
     val subtitle = item["subtitle"] as? String
@@ -584,8 +584,7 @@ internal class SamoAudioEngine(
     SamoDirectStreamFallback.register(
       directUrl = url,
       proxyUrl = source.getOptionalString("serverStreamUrl"),
-      serverUrl = source.getOptionalString("serverUrl"),
-      bearer = source.getOptionalString("serverBearerToken"),
+      claim = source.samoCredentialClaim(),
     )
     val mimeType = getMediaItemMimeType(url, source.getOptionalString("mimeType"))
     val requestHeaders = source.getHttpHeaders()
@@ -661,8 +660,7 @@ internal class SamoAudioEngine(
       SamoBitPerfect.clearPreferredMixerAttributes(reactContext, service)
       recovery.cancelPendingRetry()
       engineMode = SamoPlaybackRecovery.Mode.Normal
-      currentServerUrl = source.getOptionalString("serverUrl")
-      currentBearerToken = source.getOptionalString("serverBearerToken")
+      currentCredentialClaim = source.samoCredentialClaim()
       currentAudioTrackConfig = null
       // A new stream is about to open: nothing has been observed of it yet,
       // and the last track's delivery must not be reported as this one's.
@@ -949,8 +947,7 @@ internal class SamoAudioEngine(
         SamoBitPerfect.clearPreferredMixerAttributes(reactContext, service)
         recovery.cancelPendingRetry()
         engineMode = SamoPlaybackRecovery.Mode.Normal
-        currentServerUrl = null
-        currentBearerToken = null
+        currentCredentialClaim = null
         currentAudioTrackConfig = null
         currentDecodedFormat = null
         mixerNegotiatedForFormat = null
@@ -1469,8 +1466,7 @@ internal class SamoAudioEngine(
         // (shouldAcceptPlaybackEvent / syncPlaybackFromNativeEvent).
         queue.index = newIndex
         val newItem = queue.items[newIndex]
-        currentServerUrl = newItem["serverUrl"] as? String
-        currentBearerToken = newItem["serverBearerToken"] as? String
+        currentCredentialClaim = newItem.samoCredentialClaim()
         currentMediaItem = mediaItem
 
         // Notification artwork freshness. The artwork URL on the queue item
@@ -1481,10 +1477,14 @@ internal class SamoAudioEngine(
         // SamoResolvingDataSource, so the token cache is warm: substitute the
         // fresh token synchronously (no network) and push it into the
         // MediaItem metadata the notification provider reads.
+        // The cache is keyed by the session that minted it, which is the one
+        // the device holds now, not whatever the item was stamped with.
+        val session = SamoSessionCredentials.resolve(reactContext, newItem.samoCredentialClaim())
+          as? SamoSessionCredentials.Resolution.Usable
         val freshArtworkUrl = SamoNativeStreamUrl.freshenUrlTokenFromCache(
           newItem["artworkUrl"] as? String,
-          currentServerUrl,
-          currentBearerToken,
+          session?.serverUrl,
+          session?.credential,
         )
         if (freshArtworkUrl != null) {
           newItem["artworkUrl"] = freshArtworkUrl

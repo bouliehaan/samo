@@ -1,74 +1,119 @@
+.radio-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 12rem), 1fr));
+    gap: 1.75rem 1.25rem;
+}
+
 .radio-item {
-    cursor: pointer;
-    border-left: 3px solid transparent;
-    transition: background-color 0.15s ease;
+    position: relative;
+    min-width: 0;
+    background: transparent;
 }
 
-.radio-item:hover {
-    @mixin dark {
-        background-color: lighten(var(--theme-colors-surface), 1%);
-    }
-
-    @mixin light {
-        background-color: darken(var(--theme-colors-surface), 1%);
-    }
-}
-
-.radio-item-active {
-    border-left: 3px solid var(--theme-colors-primary);
+.radio-item-content {
+    flex-direction: column;
 }
 
 .radio-item-button {
     all: unset;
-    box-sizing: border-box;
     display: block;
-    flex: 1;
     width: 100%;
     min-width: 0;
-    text-align: left;
     cursor: pointer;
 }
 
+.radio-item-button:focus-visible {
+    outline: 2px solid var(--theme-colors-primary-filled);
+    outline-offset: 5px;
+    border-radius: var(--theme-radius-md);
+}
+
 .thumbnail {
-    flex-shrink: 0;
-    width: 3rem;
-    height: 3rem;
+    position: relative;
+    width: 100%;
+    aspect-ratio: 1;
     overflow: hidden;
-    border-radius: var(--mantine-radius-md);
+    background: var(--theme-colors-surface);
+    border-radius: var(--theme-radius-md);
 }
 
 .image-container {
-    width: 3rem;
-    height: 3rem;
+    width: 100%;
+    height: 100%;
+}
+
+.image-container img {
+    object-fit: cover;
 }
 
 .meta {
-    flex: 1;
     min-width: 0;
+    padding-top: 0.75rem;
 }
 
+.name,
 .meta-line {
-    display: block;
-    max-width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 
-.radio-item-link {
-    color: inherit;
-    text-decoration: underline;
+.radio-item-active .name {
+    color: var(--theme-colors-primary-filled);
+}
+
+.play-overlay {
+    position: absolute;
+    right: 0.75rem;
+    bottom: 0.75rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.75rem;
+    height: 2.75rem;
+    color: #151515;
+    background: #fff;
+    border-radius: 50%;
+    box-shadow: 0 4px 16px rgb(0 0 0 / 25%);
+    opacity: 0;
+    transform: translateY(5px);
+    transition:
+        opacity 0.15s ease,
+        transform 0.15s ease;
 }
 
 .radio-item-actions {
-    flex-shrink: 0;
-    pointer-events: none;
+    position: absolute;
+    top: 0.5rem;
+    right: 0.5rem;
+    padding: 0.2rem;
+    background: var(--theme-colors-surface);
+    border-radius: 999px;
     opacity: 0;
     transition: opacity 0.15s ease;
 }
 
+.radio-item:hover .play-overlay,
+.radio-item:focus-within .play-overlay,
+.radio-item-active .play-overlay {
+    opacity: 1;
+    transform: translateY(0);
+}
+
 .radio-item:hover .radio-item-actions,
 .radio-item:focus-within .radio-item-actions {
-    pointer-events: auto;
     opacity: 1;
+}
+
+.empty-state {
+    padding-block: 3rem;
+    background: transparent;
+}
+
+@media (hover: none) {
+    .play-overlay,
+    .radio-item-actions {
+        opacity: 1;
+        transform: none;
+    }
 }

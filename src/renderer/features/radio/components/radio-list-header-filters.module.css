@@ -1,0 +1,40 @@
+.toolbar {
+    display: flex;
+    flex-shrink: 0;
+    gap: 1rem;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.75rem 1.5rem 1rem;
+}
+
+.filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.pill {
+    padding: 0.5rem 0.9rem;
+    font: inherit;
+    font-size: 0.8125rem;
+    font-weight: 650;
+    color: var(--theme-colors-foreground);
+    cursor: pointer;
+    background: color-mix(in srgb, var(--theme-colors-foreground) 8%, transparent);
+    border: 0;
+    border-radius: 999px;
+}
+
+.pill:hover {
+    background: color-mix(in srgb, var(--theme-colors-foreground) 14%, transparent);
+}
+
+.pill.active {
+    color: var(--theme-colors-background);
+    background: var(--theme-colors-foreground);
+}
+
+.pill:focus-visible {
+    outline: 2px solid var(--theme-colors-primary-filled);
+    outline-offset: 3px;
+}

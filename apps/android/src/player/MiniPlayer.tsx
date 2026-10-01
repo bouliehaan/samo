@@ -1,11 +1,10 @@
-import { memo, useMemo, useState } from 'react';
+import { memo, useMemo } from 'react';
 import { ActivityIndicator, type GestureResponderEvent, Pressable, Text, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Reanimated, {
     interpolate,
     runOnJS,
     type SharedValue,
-    useAnimatedReaction,
     useAnimatedStyle,
     withSpring,
     withTiming,
@@ -32,7 +31,9 @@ export const MiniPlayer = memo(({
     artworkImageId,
     artworkUrl,
     contentSource,
+    isFullPlayerOpen,
     lastPlayedItem,
+    onCancelGesture,
     onOpenFullPlayer,
     onTogglePlayback,
     playbackState,
@@ -43,7 +44,9 @@ export const MiniPlayer = memo(({
     artworkImageId?: string;
     artworkUrl: string | undefined;
     contentSource?: import('@samo/core/mobile').MobileContentSource;
+    isFullPlayerOpen: boolean;
     lastPlayedItem: MobilePlayableAudio | null;
+    onCancelGesture: () => void;
     onOpenFullPlayer: () => void;
     onTogglePlayback: () => void;
     playbackState: AndroidPlaybackState;
@@ -51,16 +54,6 @@ export const MiniPlayer = memo(({
     reducedMotion: boolean;
     serverConnection: ServerAuthenticationResult | null;
 }) => {
-    const [isMiniInteractive, setIsMiniInteractive] = useState(true);
-    useAnimatedReaction(
-        () => playerProgress.value < 0.08,
-        (interactive, previous) => {
-            if (interactive !== previous) {
-                runOnJS(setIsMiniInteractive)(interactive);
-            }
-        },
-    );
-
     const miniAnimatedStyle = useAnimatedStyle(() => ({
         opacity: interpolate(playerProgress.value, [0, 0.2], [1, 0], 'clamp'),
     }));
@@ -69,6 +62,7 @@ export const MiniPlayer = memo(({
     const miniDragGesture = useMemo(
         () =>
             Gesture.Pan()
+                .enabled(!isFullPlayerOpen)
                 .activeOffsetY(-8)
                 .failOffsetX([-20, 20])
                 .onChange((event) => {
@@ -80,8 +74,12 @@ export const MiniPlayer = memo(({
                     const next = -event.translationY / PLAYER_EXPANSION_DISTANCE;
                     playerProgress.value = next > 1 ? 1 : next;
                 })
-                .onEnd((event) => {
+                .onEnd((event, success) => {
                     'worklet';
+                    if (!success) {
+                        runOnJS(onCancelGesture)();
+                        return;
+                    }
                     const shouldCommit =
                         event.translationY < -PLAYER_EXPANSION_DISTANCE * 0.24 ||
                         event.velocityY < -760;
@@ -105,7 +103,14 @@ export const MiniPlayer = memo(({
                               });
                     }
                 }),
-        [onOpenFullPlayer, playerProgress, reducedMotion, settleSpring],
+        [
+            isFullPlayerOpen,
+            onCancelGesture,
+            onOpenFullPlayer,
+            playerProgress,
+            reducedMotion,
+            settleSpring,
+        ],
     );
 
     const isActive = playbackState.status !== 'idle';
@@ -142,70 +147,74 @@ export const MiniPlayer = memo(({
 
     return (
         <GestureDetector gesture={miniDragGesture}>
-            <Reanimated.View
-                pointerEvents={isMiniInteractive ? 'auto' : 'none'}
-                style={[styles.miniPlayer, miniAnimatedStyle]}
+            <View
+                accessibilityElementsHidden={isFullPlayerOpen}
+                importantForAccessibility={isFullPlayerOpen ? 'no-hide-descendants' : 'auto'}
+                pointerEvents={isFullPlayerOpen ? 'none' : 'auto'}
+                style={[styles.miniPlayer, { opacity: isFullPlayerOpen ? 0 : 1 }]}
             >
-                <Pressable
-                    accessibilityRole="button"
-                    onPress={onOpenFullPlayer}
-                    style={styles.miniPlayerTouchable}
-                >
-                    <View style={styles.miniPlayerArtworkContainer}>
-                        {artworkUrl || artworkImageId ? (
-                            <ArtworkImage
-                                artworkImageId={artworkImageId}
-                                contentSource={contentSource}
-                                fallbackStyle={styles.miniPlayerArtworkFallback}
-                                letter={title.slice(0, 1)}
-                                serverConnection={serverConnection}
-                                style={styles.miniPlayerArtwork}
-                                transition={200}
-                                uri={artworkUrl}
-                            />
-                        ) : (
-                            <View style={styles.miniPlayerArtworkFallback}>
-                                {title ? (
-                                    <Text style={styles.miniPlayerArtworkLetter}>
-                                        {title.slice(0, 1)}
-                                    </Text>
-                                ) : null}
-                            </View>
-                        )}
-                    </View>
-                    <View style={styles.miniPlayerText}>
-                        <Text numberOfLines={1} style={styles.miniPlayerTitle}>
-                            {metadataLines[0] || title || 'Nothing playing'}
-                        </Text>
-                        {metadataLines.slice(1).map((line) => (
-                            <Text
-                                key={line}
-                                numberOfLines={1}
-                                style={styles.miniPlayerSubtitle}
-                            >
-                                {line}
-                            </Text>
-                        ))}
-                    </View>
-                    <QualityBadge player profile={miniBadgeProfile} />
+                <Reanimated.View style={miniAnimatedStyle}>
                     <Pressable
-                        accessibilityLabel={isBusy ? 'Loading' : isPlaying ? 'Pause' : 'Play'}
                         accessibilityRole="button"
-                        onPress={handlePlayPress}
-                        style={styles.miniPlayerPlayButton}
+                        onPress={onOpenFullPlayer}
+                        style={styles.miniPlayerTouchable}
                     >
-                        {isBusy ? (
-                            <ActivityIndicator color={colors.text} size="small" />
-                        ) : (
-                            <PlayPauseGlyph
-                                color={colors.text}
-                                isPlaying={isPlaying}
-                                size={24}
-                            />
-                        )}
+                        <View style={styles.miniPlayerArtworkContainer}>
+                            {artworkUrl || artworkImageId ? (
+                                <ArtworkImage
+                                    artworkImageId={artworkImageId}
+                                    contentSource={contentSource}
+                                    fallbackStyle={styles.miniPlayerArtworkFallback}
+                                    letter={title.slice(0, 1)}
+                                    serverConnection={serverConnection}
+                                    style={styles.miniPlayerArtwork}
+                                    transition={200}
+                                    uri={artworkUrl}
+                                />
+                            ) : (
+                                <View style={styles.miniPlayerArtworkFallback}>
+                                    {title ? (
+                                        <Text style={styles.miniPlayerArtworkLetter}>
+                                            {title.slice(0, 1)}
+                                        </Text>
+                                    ) : null}
+                                </View>
+                            )}
+                        </View>
+                        <View style={styles.miniPlayerText}>
+                            <Text numberOfLines={1} style={styles.miniPlayerTitle}>
+                                {metadataLines[0] || title || 'Nothing playing'}
+                            </Text>
+                            {metadataLines.slice(1).map((line) => (
+                                <Text
+                                    key={line}
+                                    numberOfLines={1}
+                                    style={styles.miniPlayerSubtitle}
+                                >
+                                    {line}
+                                </Text>
+                            ))}
+                        </View>
+                        <QualityBadge player profile={miniBadgeProfile} />
+                        <Pressable
+                            accessibilityLabel={isBusy ? 'Loading' : isPlaying ? 'Pause' : 'Play'}
+                            accessibilityRole="button"
+                            onPress={handlePlayPress}
+                            style={styles.miniPlayerPlayButton}
+                        >
+                            {isBusy ? (
+                                <ActivityIndicator color={colors.text} size="small" />
+                            ) : (
+                                <PlayPauseGlyph
+                                    color={colors.text}
+                                    isPlaying={isPlaying}
+                                    size={24}
+                                />
+                            )}
+                        </Pressable>
                     </Pressable>
-                </Pressable>
-            </Reanimated.View>
+                </Reanimated.View>
+            </View>
         </GestureDetector>
     );
 });

@@ -98,7 +98,7 @@ export const LibraryHeader = forwardRef(
             const imageId = item.imageId;
             const itemType = item.type as LibraryItem;
 
-            if (!imageId || !itemType) {
+            if ((!imageId && !item.imageUrl) || !itemType) {
                 return;
             }
 
@@ -185,7 +185,7 @@ export const LibraryHeader = forwardRef(
                             fetchPriority="high"
                             id={item.imageId}
                             itemType={item.type as LibraryItem}
-                            src={imageUrl || ''}
+                            src={item.imageUrl || imageUrl || ''}
                             type="header"
                         />
                         {imageOverlay && (
@@ -211,7 +211,7 @@ export const LibraryHeader = forwardRef(
                             fetchPriority="high"
                             id={item.imageId}
                             itemType={item.type as LibraryItem}
-                            src={imageUrl || ''}
+                            src={item.imageUrl || imageUrl || ''}
                             type="header"
                         />
                         {imageOverlay && (

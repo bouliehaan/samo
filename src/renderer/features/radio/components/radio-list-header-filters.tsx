@@ -1,47 +1,58 @@
-import { MouseEvent } from 'react';
+import clsx from 'clsx';
 import { useTranslation } from 'react-i18next';
 
-import { openCreateRadioStationModal } from '/@/renderer/features/radio/components/create-radio-station-form';
-import { ListSortByDropdown } from '/@/renderer/features/shared/components/list-sort-by-dropdown';
-import { ListSortOrderToggleButton } from '/@/renderer/features/shared/components/list-sort-order-toggle-button';
-import { useCurrentServer, usePermissions } from '/@/renderer/store';
-import { Button } from '/@/shared/components/button/button';
-import { Divider } from '/@/shared/components/divider/divider';
-import { Flex } from '/@/shared/components/flex/flex';
-import { Group } from '/@/shared/components/group/group';
-import { LibraryItem, RadioListSort, SortOrder } from '/@/shared/types/domain-types';
-import { ItemListKey } from '/@/shared/types/types';
+import styles from './radio-list-header-filters.module.css';
 
-export const RadioListHeaderFilters = () => {
+import { openCreateRadioStationModal } from '/@/renderer/features/radio/components/create-radio-station-form';
+import { useCurrentServer, usePermissions } from '/@/renderer/store';
+import { ActionIcon } from '/@/shared/components/action-icon/action-icon';
+
+export type RadioFilter = 'all' | 'channels' | 'favorites' | 'internet';
+
+const filters: { id: RadioFilter; label: string }[] = [
+    { id: 'all', label: 'All' },
+    { id: 'favorites', label: 'Favorites' },
+    { id: 'channels', label: 'samo channels' },
+    { id: 'internet', label: 'Internet radio' },
+];
+
+export const RadioListHeaderFilters = ({
+    filter,
+    onChange,
+}: {
+    filter: RadioFilter;
+    onChange: (filter: RadioFilter) => void;
+}) => {
     const { t } = useTranslation();
     const server = useCurrentServer();
     const permissions = usePermissions();
 
-    const handleCreateRadioStationModal = (e: MouseEvent<HTMLButtonElement>) => {
-        openCreateRadioStationModal(server, e);
-    };
-
     return (
-        <Flex justify="space-between">
-            <Group gap="sm" w="100%">
-                <ListSortByDropdown
-                    defaultSortByValue={RadioListSort.NAME}
-                    itemType={LibraryItem.RADIO_STATION}
-                    listKey={ItemListKey.RADIO}
-                />
-                <Divider orientation="vertical" />
-                <ListSortOrderToggleButton
-                    defaultSortOrder={SortOrder.ASC}
-                    listKey={ItemListKey.RADIO}
-                />
-            </Group>
+        <div className={styles.toolbar}>
+            <div aria-label="Filter radio stations" className={styles.filters} role="group">
+                {filters.map(({ id, label }) => (
+                    <button
+                        aria-pressed={filter === id}
+                        className={clsx(styles.pill, filter === id && styles.active)}
+                        key={id}
+                        onClick={() => onChange(id)}
+                        type="button"
+                    >
+                        {label}
+                    </button>
+                ))}
+            </div>
             {permissions.radio.create && (
-                <Group gap="sm" wrap="nowrap">
-                    <Button onClick={handleCreateRadioStationModal} variant="subtle">
-                        {t('action.createRadioStation', { postProcess: 'sentenceCase' })}
-                    </Button>
-                </Group>
+                <ActionIcon
+                    aria-label="Add radio station"
+                    icon="plus"
+                    onClick={(event) => openCreateRadioStationModal(server, event)}
+                    tooltip={{
+                        label: t('action.createRadioStation', { postProcess: 'sentenceCase' }),
+                    }}
+                    variant="subtle"
+                />
             )}
-        </Flex>
+        </div>
     );
 };

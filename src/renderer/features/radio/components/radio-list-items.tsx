@@ -1,3 +1,4 @@
+import { formatRadioNowPlayingLine, isRedundantRadioStationLabel } from '@samo/core/mobile';
 import clsx from 'clsx';
 import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -21,6 +22,7 @@ import { ActionIcon } from '/@/shared/components/action-icon/action-icon';
 import { Box } from '/@/shared/components/box/box';
 import { Flex } from '/@/shared/components/flex/flex';
 import { Group } from '/@/shared/components/group/group';
+import { Icon } from '/@/shared/components/icon/icon';
 import { closeAllModals, ConfirmModal, openModal } from '/@/shared/components/modal/modal';
 import { Paper } from '/@/shared/components/paper/paper';
 import { Stack } from '/@/shared/components/stack/stack';
@@ -34,7 +36,18 @@ interface RadioListItemProps {
 
 interface RadioListItemsProps {
     data: InternetRadioStation[];
+    isFiltered?: boolean;
 }
+
+const stationDetail = (station: InternetRadioStation, fallback: string) => {
+    const nowPlaying = formatRadioNowPlayingLine(station.nowPlaying);
+
+    return (
+        [nowPlaying, station.description?.trim()].find(
+            (line) => line && !isRedundantRadioStationLabel(station.name, line),
+        ) || fallback
+    );
+};
 
 const RadioListItem = ({ station }: RadioListItemProps) => {
     const { t } = useTranslation();
@@ -61,13 +74,10 @@ const RadioListItem = ({ station }: RadioListItemProps) => {
     // upstream address to show or edit, and deleting one from a station list
     // would be deleting a station somebody built.
     const isChannel = station.kind === 'channel';
-    // What it is airing beats what it is: a station that says "Miles Davis —
-    // So What" is doing the job a list of names cannot.
-    const detailLine = isChannel
-        ? [station.nowPlaying?.artist, station.nowPlaying?.title].filter(Boolean).join(' — ') ||
-          station.description?.trim() ||
-          'samo channel'
-        : station.streamUrl;
+    // The relay URL is an implementation detail: it is noisy, often internal,
+    // and tells a listener nothing useful. What a station is airing is the
+    // useful second line; its description and kind are honest fallbacks.
+    const detailLine = stationDetail(station, isChannel ? 'samo channel' : 'Internet radio');
 
     const handleClick = () => {
         if (stationIsPlaying) {
@@ -148,45 +158,49 @@ const RadioListItem = ({ station }: RadioListItemProps) => {
                 className={clsx(styles['radio-item'], {
                     [styles['radio-item-active']]: isCurrentStation,
                 })}
-                p="md"
+                p={0}
             >
-                <Flex align="center" gap="md" justify="space-between" wrap="nowrap">
+                <Flex className={styles['radio-item-content']} wrap="nowrap">
                     <button
+                        aria-label={
+                            stationIsPlaying ? `Stop ${station.name}` : `Play ${station.name}`
+                        }
                         className={styles['radio-item-button']}
                         onClick={handleClick}
                         type="button"
                     >
-                        <Group align="center" gap="md" wrap="nowrap">
-                            <Box className={styles.thumbnail}>
-                                <ItemImage
-                                    enableViewport={false}
-                                    id={station.imageId ?? undefined}
-                                    imageContainerProps={{
-                                        className: styles['image-container'],
-                                    }}
-                                    itemType={LibraryItem.RADIO_STATION}
-                                    serverId={server?.id}
-                                    src={station.imageUrl ?? ''}
-                                    type="table"
+                        <Box className={styles.thumbnail}>
+                            <ItemImage
+                                alt={station.name}
+                                enableViewport={false}
+                                id={station.imageId ?? undefined}
+                                imageContainerProps={{
+                                    className: styles['image-container'],
+                                }}
+                                itemType={LibraryItem.RADIO_STATION}
+                                serverId={server?.id}
+                                src={station.imageUrl ?? ''}
+                                type="itemCard"
+                            />
+                            <span aria-hidden="true" className={styles['play-overlay']}>
+                                <Icon
+                                    icon={stationIsPlaying ? 'mediaStop' : 'mediaPlay'}
+                                    size="lg"
                                 />
-                            </Box>
-                            <Stack className={styles.meta} gap={4}>
-                                <Text fw={500} size="md">
-                                    {station.name}
-                                </Text>
-                                <Text className={styles['meta-line']} isMuted size="sm">
-                                    {detailLine}
-                                </Text>
-                                {station.homepageUrl ? (
-                                    <Text className={styles['meta-line']} isMuted size="sm">
-                                        {station.homepageUrl}
-                                    </Text>
-                                ) : null}
-                            </Stack>
-                        </Group>
+                            </span>
+                        </Box>
+                        <Stack className={styles.meta} gap={4}>
+                            <Text className={styles.name} fw={650} size="md">
+                                {station.name}
+                            </Text>
+                            <Text className={styles['meta-line']} isMuted size="sm">
+                                {detailLine}
+                            </Text>
+                        </Stack>
                     </button>
                     <Group className={styles['radio-item-actions']} gap="xs">
                         <ActionIcon
+                            aria-label={isFavorite ? 'Remove favorite' : 'Add favorite'}
                             icon="favorite"
                             iconProps={
                                 isFavorite ? { color: 'primary', fill: 'primary' } : undefined
@@ -200,6 +214,7 @@ const RadioListItem = ({ station }: RadioListItemProps) => {
                         />
                         {permissions.radio.edit && !isChannel && (
                             <ActionIcon
+                                aria-label={`Edit ${station.name}`}
                                 icon="edit"
                                 onClick={handleEditClick}
                                 size="sm"
@@ -211,6 +226,7 @@ const RadioListItem = ({ station }: RadioListItemProps) => {
                         )}
                         {permissions.radio.delete && !isChannel && (
                             <ActionIcon
+                                aria-label={`Delete ${station.name}`}
                                 icon="delete"
                                 iconProps={{ color: 'error' }}
                                 onClick={handleDeleteClick}
@@ -228,11 +244,28 @@ const RadioListItem = ({ station }: RadioListItemProps) => {
     );
 };
 
-export const RadioListItems = ({ data }: RadioListItemsProps) => {
+export const RadioListItems = ({ data, isFiltered }: RadioListItemsProps) => {
     const items = useMemo(
         () => data.map((station) => <RadioListItem key={station.id} station={station} />),
         [data],
     );
 
-    return <Stack gap="sm">{items}</Stack>;
+    if (data.length === 0) {
+        return (
+            <Paper className={styles['empty-state']} p="xl">
+                <Stack align="center" gap="xs">
+                    <Text fw={650} size="lg">
+                        {isFiltered ? 'No matching stations' : 'No radio stations yet'}
+                    </Text>
+                    <Text isMuted style={{ textAlign: 'center' }}>
+                        {isFiltered
+                            ? 'Try another filter or search.'
+                            : 'Add a station to start listening here.'}
+                    </Text>
+                </Stack>
+            </Paper>
+        );
+    }
+
+    return <div className={styles['radio-list']}>{items}</div>;
 };

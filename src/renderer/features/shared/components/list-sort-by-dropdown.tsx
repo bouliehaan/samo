@@ -4,6 +4,7 @@ import i18n from '/@/i18n/i18n';
 import { useSortByFilter } from '/@/renderer/features/shared/hooks/use-sort-by-filter';
 import { Button } from '/@/shared/components/button/button';
 import { DropdownMenu } from '/@/shared/components/dropdown-menu/dropdown-menu';
+import { Icon } from '/@/shared/components/icon/icon';
 import {
     AlbumListSort,
     ArtistListSort,
@@ -46,17 +47,26 @@ export const ListSortByDropdown = ({
     };
 
     return (
-        <DropdownMenu disabled={disabled} position="bottom-start">
+        <DropdownMenu disabled={disabled} position="bottom-start" width={240}>
             <DropdownMenu.Target>
                 {target ? (
                     target
                 ) : (
-                    <Button disabled={disabled} variant="subtle">
+                    <Button
+                        aria-label={`${i18n.t('common.sort', { postProcess: 'sentenceCase' })}: ${sortByLabel}`}
+                        disabled={disabled}
+                        leftSection={<Icon icon="sort" size="sm" />}
+                        rightSection={<Icon icon="arrowDownS" size="sm" />}
+                        variant="toolbar"
+                    >
                         {sortByLabel}
                     </Button>
                 )}
             </DropdownMenu.Target>
             <DropdownMenu.Dropdown>
+                <DropdownMenu.Label>
+                    {i18n.t('common.sort', { postProcess: 'sentenceCase' })}
+                </DropdownMenu.Label>
                 {availableFilters.map((f) => (
                     <DropdownMenu.Item
                         isSelected={f.value === sortBy}
@@ -98,17 +108,26 @@ export const ListSortByDropdownControlled = ({
     };
 
     return (
-        <DropdownMenu disabled={disabled} position="bottom-start">
+        <DropdownMenu disabled={disabled} position="bottom-start" width={240}>
             <DropdownMenu.Target>
                 {target ? (
                     target
                 ) : (
-                    <Button disabled={disabled} variant="subtle">
+                    <Button
+                        aria-label={`${i18n.t('common.sort', { postProcess: 'sentenceCase' })}: ${sortByLabel}`}
+                        disabled={disabled}
+                        leftSection={<Icon icon="sort" size="sm" />}
+                        rightSection={<Icon icon="arrowDownS" size="sm" />}
+                        variant="toolbar"
+                    >
                         {sortByLabel}
                     </Button>
                 )}
             </DropdownMenu.Target>
             <DropdownMenu.Dropdown>
+                <DropdownMenu.Label>
+                    {i18n.t('common.sort', { postProcess: 'sentenceCase' })}
+                </DropdownMenu.Label>
                 {availableFilters.map((f) => (
                     <DropdownMenu.Item
                         isSelected={f.value === sortBy}

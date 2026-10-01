@@ -6,10 +6,7 @@ import { generatePath, Link, useNavigate } from 'react-router';
 import styles from './home-sections.module.css';
 
 import { api } from '/@/renderer/api';
-import {
-    fetchSamoDiscoveryHomeTracks,
-    fetchSamoExploPlaylist,
-} from '/@/renderer/api/samo/samo-controller';
+import { fetchSamoDiscoveryHomeTracks } from '/@/renderer/api/samo/samo-controller';
 import {
     GridCarousel,
     useGridCarouselContainerQuery,
@@ -18,6 +15,7 @@ import itemCardControlsStyles from '/@/renderer/components/item-card/item-card-c
 import { ItemImage } from '/@/renderer/components/item-image/item-image';
 import { AlbumInfiniteCarousel } from '/@/renderer/features/albums/components/album-infinite-carousel';
 import { ContextMenuController } from '/@/renderer/features/context-menu/context-menu-controller';
+import { HomeTile } from '/@/renderer/features/home/components/home-tile';
 import { longFormQueries } from '/@/renderer/features/long-form/api/long-form-queries';
 import { LongFormCoverImage } from '/@/renderer/features/player/components/long-form-cover-image';
 import { usePlayer } from '/@/renderer/features/player/context/player-context';
@@ -43,7 +41,7 @@ import {
     useFavoritePlaylistIds,
     useLibraryFavoritesActions,
 } from '/@/renderer/store/library-favorites.store';
-import { formatDateRelative, formatDurationStringShort } from '/@/renderer/utils/format';
+import { formatDateRelative } from '/@/renderer/utils/format';
 import { Button } from '/@/shared/components/button/button';
 import { Icon } from '/@/shared/components/icon/icon';
 import { TextTitle } from '/@/shared/components/text-title/text-title';
@@ -131,9 +129,6 @@ const HomeHeader = ({ title, to }: { title: string; to?: string }) => (
         ) : null}
     </div>
 );
-
-const getSongSubtitle = (song: Song) =>
-    [song.artistName, song.album].filter(Boolean).join(' - ') || 'Track';
 
 const getCountText = (count: null | number | undefined, label: string) => {
     if (typeof count !== 'number') return undefined;
@@ -271,18 +266,25 @@ export const HomeFavoritePlaylists = ({
     const hiddenKeys = useHiddenHomeKeys();
     const playlists = useMemo(() => {
         const allPlaylists = playlistsQuery.data?.items ?? [];
-        return sortPlaylistsByLastPlayed(allPlaylists, localPlaylistPlayedAt)
-            .filter(
-                (playlist) =>
-                    !hiddenKeys.has(
-                        hiddenHomeItemKey({
-                            id: playlist.id,
-                            serverId: playlist._serverId,
-                            type: 'playlist',
-                        }),
-                    ),
-            )
-            .slice(0, SHELF_LIMIT);
+        return (
+            sortPlaylistsByLastPlayed(allPlaylists, localPlaylistPlayedAt)
+                // The server's Explore playlist is the hero directly above this
+                // shelf; a second tile for it here showed the same cover twice on
+                // one screen, and hiding that tile used to take the hero with it
+                // (both hang off one `playlist:server:id` hidden key).
+                .filter((playlist) => !playlist.isSystem)
+                .filter(
+                    (playlist) =>
+                        !hiddenKeys.has(
+                            hiddenHomeItemKey({
+                                id: playlist.id,
+                                serverId: playlist._serverId,
+                                type: 'playlist',
+                            }),
+                        ),
+                )
+                .slice(0, SHELF_LIMIT)
+        );
     }, [hiddenKeys, localPlaylistPlayedAt, playlistsQuery.data?.items]);
 
     if (!playlists.length) return null;
@@ -357,20 +359,8 @@ const PlaylistCard = ({
     };
 
     return (
-        <div
-            className={styles.mediaCard}
-            onClick={onClick}
-            onContextMenu={openContextMenu}
-            onKeyDown={(event) => {
-                if (event.key === 'Enter' || event.key === ' ') {
-                    event.preventDefault();
-                    onClick();
-                }
-            }}
-            role="button"
-            tabIndex={0}
-        >
-            <div className={styles.mediaArt}>
+        <HomeTile
+            art={
                 <ItemImage
                     alt={playlist.name}
                     enableViewport={false}
@@ -381,37 +371,20 @@ const PlaylistCard = ({
                     src={playlist.imageUrl}
                     type="itemCard"
                 />
-                <span className={styles.badge}>
+            }
+            badge={
+                <>
                     <Icon icon="playlist" size="0.78rem" />
                     Playlist
-                </span>
-                <span className={styles.playlistControls}>
-                    <PlayButton
-                        classNames={clsx(
-                            itemCardControlsStyles.playButton,
-                            itemCardControlsStyles.primary,
-                            styles['playlist-primary-control'],
-                        )}
-                        fill
-                        onClick={(event) => {
-                            event.preventDefault();
-                            event.stopPropagation();
-                            onPlay(Play.NOW);
-                        }}
-                    />
-                    <PlayButton
-                        classNames={clsx(
-                            itemCardControlsStyles.playButton,
-                            itemCardControlsStyles.secondary,
-                            itemCardControlsStyles.right,
-                            styles['playlist-secondary-control'],
-                        )}
+                </>
+            }
+            controls={
+                <>
+                    <TilePlayButton onPlay={() => onPlay(Play.NOW)} />
+                    <TilePlayButton
                         icon="mediaShuffle"
-                        onClick={(event) => {
-                            event.preventDefault();
-                            event.stopPropagation();
-                            onPlay(Play.SHUFFLE);
-                        }}
+                        onPlay={() => onPlay(Play.SHUFFLE)}
+                        secondary
                     />
                     <button
                         className={clsx(
@@ -428,120 +401,184 @@ const PlaylistCard = ({
                     >
                         <Icon icon="favorite" size="lg" />
                     </button>
-                    <button
-                        className={clsx(styles.overlayBtn, styles.overlayOptions)}
-                        onClick={openContextMenu}
-                        type="button"
-                    >
-                        <Icon icon="ellipsisHorizontal" size="lg" />
-                    </button>
-                </span>
-            </div>
-            <Text className={styles.title} fw={650} size="sm">
-                {playlist.name}
-            </Text>
-            <Text className={styles.subtitle} isMuted size="sm">
-                {getCountText(playlist.songCount, 'track') ?? 'Playlist'}
-            </Text>
-        </div>
+                    <TileOptionsButton onClick={openContextMenu} />
+                </>
+            }
+            onClick={onClick}
+            onContextMenu={openContextMenu}
+            subtitle={getCountText(playlist.songCount, 'track') ?? 'Playlist'}
+            title={playlist.name}
+        />
     );
 };
 
-const useHomeExploPlaylist = () => {
-    const serverId = useCurrentServerId();
+/**
+ * The play control on a tile. A tile with one control centres it; a tile with
+ * a primary and a secondary (play + shuffle) sits them side by side.
+ */
+const TilePlayButton = ({
+    centered,
+    icon,
+    onPlay,
+    secondary,
+}: {
+    centered?: boolean;
+    icon?: 'mediaShuffle';
+    onPlay: () => void;
+    secondary?: boolean;
+}) => (
+    <PlayButton
+        classNames={clsx(
+            itemCardControlsStyles.playButton,
+            secondary ? itemCardControlsStyles.secondary : itemCardControlsStyles.primary,
+            secondary && itemCardControlsStyles.right,
+            secondary && styles.playlistSecondaryControl,
+            !secondary && (centered ? styles.centeredControl : styles.playlistPrimaryControl),
+        )}
+        fill={!secondary}
+        icon={icon}
+        onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onPlay();
+        }}
+    />
+);
 
-    return useQuery({
-        enabled: Boolean(serverId),
-        queryFn: async ({ signal }) => {
-            const samoServer = getServerById(serverId);
-            if (!samoServer) {
-                return undefined;
-            }
-
-            return fetchSamoExploPlaylist(samoServer, signal);
-        },
-        queryKey: ['home', 'explo', 'playlist', serverId],
-        staleTime: 1000 * 60 * 5,
-    });
-};
+const TileOptionsButton = ({ onClick }: { onClick: (event: React.MouseEvent) => void }) => (
+    <button
+        className={clsx(styles.overlayBtn, styles.overlayOptions)}
+        onClick={onClick}
+        type="button"
+    >
+        <Icon icon="ellipsisHorizontal" size="lg" />
+    </button>
+);
 
 /**
- * Featured card for the server-managed "Explo" playlist (weekly untagged-drop
- * auto-playlist). Renders nothing until the server has processed at least one
- * drop with tracks in it — no placeholder/loading card, matching every other
- * home section's "if empty, render null" convention. Opens through the exact
- * same playlist detail route as any other playlist; there's nothing special
- * about the Explo playlist once you're inside it.
- *
- * Deliberately NOT hideable, and deliberately not reading `useHiddenHomeKeys`.
- * A hidden key is `type:server:id`, so this section and the Explo tile in the
- * Playlists shelf below share one — and this section used to honour it. "Remove
- * from home" on the duplicate playlist tile (a reasonable thing to want: it is
- * already featured above) therefore deleted the whole Explore section from
- * every page it appears on, permanently, with no undo anywhere in the UI and
- * nothing on screen to suggest what had happened. Explore is a section like
- * Radio Stations or Podcasts, and sections are not card-hideable; only the
- * tiles inside them are.
+ * A track as a tile: its cover, its name, its artist. Clicking it plays it,
+ * as the row it replaced did; the hover play button is the same action made
+ * visible. Its menu carries "Remove from home" through the same key the rows
+ * used, so anything hidden before stays hidden.
  */
-export const HomeExploSection = () => {
-    const navigate = useNavigate();
-    const playlistQuery = useHomeExploPlaylist();
+const SongCard = ({ song, subtitle }: { song: Song; subtitle?: string }) => {
+    const player = usePlayer();
+    const play = () => player.addToQueueByData([song], Play.NOW);
 
-    const playlist = playlistQuery.data;
-
-    if (!playlist || !playlist.songCount) return null;
-
-    const open = () =>
-        navigate(generatePath(AppRoute.PLAYLISTS_DETAIL_SONGS, { playlistId: playlist.id }));
-
-    const handleContextMenu = (event: React.MouseEvent<HTMLButtonElement>) => {
+    const openContextMenu = (event: React.MouseEvent) => {
         event.preventDefault();
         event.stopPropagation();
-
         ContextMenuController.call({
             cmd: {
-                items: [playlist],
-                type: LibraryItem.PLAYLIST,
+                homeItemKey: hiddenHomeItemKey({
+                    id: song.id,
+                    serverId: song._serverId,
+                    type: 'song',
+                }),
+                items: [song],
+                type: LibraryItem.SONG,
             },
             event,
         });
     };
 
     return (
-        <section className={styles.section}>
-            <HomeHeader title="Fresh from Explore" />
-            <button
-                className={clsx(styles.featureCard, styles.featureCardAccent)}
-                onClick={open}
-                onContextMenu={handleContextMenu}
-                type="button"
-            >
-                <div className={styles.featureArt}>
-                    <ItemImage
-                        alt={playlist.name}
-                        enableViewport={false}
-                        id={playlist.imageId ?? playlist.id}
-                        imageContainerProps={{ className: styles.imageContainer }}
-                        itemType={LibraryItem.PLAYLIST}
-                        serverId={playlist._serverId}
-                        src={playlist.imageUrl}
-                        type="itemCard"
+        <HomeTile
+            art={
+                <ItemImage
+                    alt={song.name}
+                    enableViewport={false}
+                    id={song.imageId}
+                    imageContainerProps={{ className: styles.imageContainer }}
+                    itemType={LibraryItem.SONG}
+                    serverId={song._serverId}
+                    src={song.imageUrl}
+                    type="itemCard"
+                />
+            }
+            controls={
+                <>
+                    <TilePlayButton centered onPlay={play} />
+                    <TileOptionsButton onClick={openContextMenu} />
+                </>
+            }
+            onClick={play}
+            onContextMenu={openContextMenu}
+            subtitle={subtitle ?? song.artistName ?? 'Track'}
+            title={song.name}
+        />
+    );
+};
+
+const AlbumCard = ({ album, subtitle }: { album: Album; subtitle: string }) => {
+    const navigate = useNavigate();
+    const player = usePlayer();
+
+    const openContextMenu = (event: React.MouseEvent) => {
+        event.preventDefault();
+        event.stopPropagation();
+        ContextMenuController.call({
+            cmd: {
+                homeItemKey: hiddenHomeItemKey({
+                    id: album.id,
+                    serverId: album._serverId,
+                    type: 'album',
+                }),
+                items: [album],
+                type: LibraryItem.ALBUM,
+            },
+            event,
+        });
+    };
+
+    return (
+        <HomeTile
+            art={
+                <ItemImage
+                    alt={album.name}
+                    enableViewport={false}
+                    id={album.imageId}
+                    imageContainerProps={{ className: styles.imageContainer }}
+                    itemType={LibraryItem.ALBUM}
+                    serverId={album._serverId}
+                    src={album.imageUrl}
+                    type="itemCard"
+                />
+            }
+            controls={
+                <>
+                    <TilePlayButton
+                        onPlay={() =>
+                            player.addToQueueByFetch(
+                                album._serverId,
+                                [album.id],
+                                LibraryItem.ALBUM,
+                                Play.NOW,
+                            )
+                        }
                     />
-                </div>
-                <div className={styles.trackMeta}>
-                    <span className={styles.featureBadge}>EXPLORE</span>
-                    <Text className={styles.title} fw={750} size="lg">
-                        {playlist.name}
-                    </Text>
-                    <Text className={styles.subtitle} isMuted size="sm">
-                        This week&apos;s unrecognized tracks, freshly identified
-                    </Text>
-                    <Text className={styles.tertiary} isMuted size="sm">
-                        {getCountText(playlist.songCount, 'track') ?? 'Playlist'}
-                    </Text>
-                </div>
-            </button>
-        </section>
+                    <TilePlayButton
+                        icon="mediaShuffle"
+                        onPlay={() =>
+                            player.addToQueueByFetch(
+                                album._serverId,
+                                [album.id],
+                                LibraryItem.ALBUM,
+                                Play.SHUFFLE,
+                            )
+                        }
+                        secondary
+                    />
+                    <TileOptionsButton onClick={openContextMenu} />
+                </>
+            }
+            onClick={() =>
+                navigate(generatePath(AppRoute.LIBRARY_ALBUMS_DETAIL, { albumId: album.id }))
+            }
+            onContextMenu={openContextMenu}
+            subtitle={subtitle}
+            title={album.name}
+        />
     );
 };
 
@@ -642,7 +679,11 @@ const ArtistCard = ({ artist, onClick }: { artist: AlbumArtist; onClick: () => v
     </button>
 );
 
-export const HomeFavoriteTracks = () => {
+export const HomeFavoriteTracks = ({
+    containerQuery,
+}: {
+    containerQuery?: ReturnType<typeof useGridCarouselContainerQuery>;
+}) => {
     const songsQuery = useHomeMostPlayedSongs();
     const hiddenKeys = useHiddenHomeKeys();
     const songs = (songsQuery.data ?? [])
@@ -657,283 +698,68 @@ export const HomeFavoriteTracks = () => {
     if (!songs.length) return null;
 
     return (
-        <section className={styles.section}>
-            <HomeHeader title="Tracks" to={AppRoute.LIBRARY_SONGS} />
-            <div className={styles.trackList}>
-                {songs.map((song) => (
-                    <TrackRow key={song.id} song={song} />
-                ))}
-            </div>
-        </section>
+        <GridCarousel
+            cards={songs.map((song) => ({ content: <SongCard song={song} />, id: song.id }))}
+            containerQuery={containerQuery}
+            hasNextPage={false}
+            onNextPage={() => {}}
+            onPrevPage={() => {}}
+            rowCount={1}
+            title={<HomeHeader title="Tracks" to={AppRoute.LIBRARY_SONGS} />}
+        />
     );
 };
 
-const TrackRow = ({ song, subtitle }: { song: Song; subtitle?: string }) => {
-    const player = usePlayer();
-
-    return (
-        <button
-            className={styles.trackRow}
-            onClick={() => player.addToQueueByData([song], Play.NOW)}
-            onContextMenu={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-
-                ContextMenuController.call({
-                    cmd: {
-                        homeItemKey: hiddenHomeItemKey({
-                            id: song.id,
-                            serverId: song._serverId,
-                            type: 'song',
-                        }),
-                        items: [song],
-                        type: LibraryItem.SONG,
-                    },
-                    event,
-                });
-            }}
-            type="button"
-        >
-            <div className={styles.trackThumb}>
-                <ItemImage
-                    alt={song.name}
-                    enableViewport={false}
-                    id={song.imageId}
-                    imageContainerProps={{ className: styles.imageContainer }}
-                    itemType={LibraryItem.SONG}
-                    serverId={song._serverId}
-                    src={song.imageUrl}
-                    type="itemCard"
-                />
-            </div>
-            <div className={styles.trackMeta}>
-                <Text className={styles.title} fw={650} size="sm">
-                    {song.name}
-                </Text>
-                <Text className={styles.subtitle} isMuted size="sm">
-                    {subtitle ?? getSongSubtitle(song)}
-                </Text>
-            </div>
-            <Text className={styles.trackExtra} size="xs">
-                {formatDurationStringShort(song.duration)}
-            </Text>
-        </button>
-    );
-};
-
-const DiscoveryTrackRow = ({ song }: { song: Song }) => (
-    <TrackRow
-        song={song}
-        subtitle={`${getSongSubtitle(song)} · ${getUnplayedDiscoverySubtitle(song)}`}
-    />
-);
-
-export const HomeRediscoverySection = () => {
+export const HomeRediscoverySection = ({
+    containerQuery,
+}: {
+    containerQuery?: ReturnType<typeof useGridCarouselContainerQuery>;
+}) => {
     const albumsQuery = useAlbums(AlbumListSort.RECENTLY_PLAYED, SortOrder.ASC, undefined, {
         enabled: true,
     });
     const hiddenKeys = useHiddenHomeKeys();
-    const albums = (albumsQuery.data?.items ?? []).filter(
-        (album) =>
-            Boolean(album.lastPlayedAt) &&
-            (album.playCount ?? 0) > 0 &&
-            !hiddenKeys.has(
-                hiddenHomeItemKey({
-                    id: album.id,
-                    serverId: album._serverId,
-                    type: 'album',
-                }),
-            ),
-    );
+    const albums = (albumsQuery.data?.items ?? [])
+        .filter(
+            (album) =>
+                Boolean(album.lastPlayedAt) &&
+                (album.playCount ?? 0) > 0 &&
+                !hiddenKeys.has(
+                    hiddenHomeItemKey({
+                        id: album.id,
+                        serverId: album._serverId,
+                        type: 'album',
+                    }),
+                ),
+        )
+        .slice(0, SHELF_LIMIT);
 
     if (!albums.length) return null;
 
-    const feature = albums[0];
-    const support = albums.slice(1, 6) as Array<Album | Song>;
-
     return (
-        <section className={styles.section}>
-            <HomeHeader title="Haven't Listened in a Long Time" />
-            <div className={styles.editorial}>
-                <RediscoveryFeature item={feature} />
-                <div className={styles.supportList}>
-                    {support.map((item) => (
-                        <RediscoverySupport item={item} key={item.id} />
-                    ))}
-                </div>
-            </div>
-        </section>
+        <GridCarousel
+            cards={albums.map((album) => ({
+                content: <AlbumCard album={album} subtitle={getRediscoveryCopy(album)} />,
+                id: album.id,
+            }))}
+            containerQuery={containerQuery}
+            hasNextPage={false}
+            onNextPage={() => {}}
+            onPrevPage={() => {}}
+            rowCount={1}
+            title={<HomeHeader title="Haven't Listened in a Long Time" />}
+        />
     );
 };
 
-const getRediscoveryCopy = (item: Album | Song) => {
-    if (item.lastPlayedAt) return `Last played ${formatDateRelative(item.lastPlayedAt)}`;
-    if (item.playCount) return `You played this ${item.playCount} times`;
-    return 'Rediscover this from your library';
-};
-
-const RediscoveryFeature = ({ item }: { item: Album | Song }) => {
-    const navigate = useNavigate();
-    const player = usePlayer();
-    const isSong = item._itemType === LibraryItem.SONG;
-    const title = item.name;
-    const subtitle = isSong ? getSongSubtitle(item as Song) : (item as Album).albumArtistName;
-
-    const open = () => {
-        if (isSong) {
-            player.addToQueueByData([item as Song], Play.NOW);
-            return;
-        }
-
-        navigate(generatePath(AppRoute.LIBRARY_ALBUMS_DETAIL, { albumId: item.id }));
-    };
-
-    const handleContextMenu = (event: React.MouseEvent<HTMLButtonElement>) => {
-        event.preventDefault();
-        event.stopPropagation();
-
-        if (isSong) {
-            ContextMenuController.call({
-                cmd: {
-                    homeItemKey: hiddenHomeItemKey({
-                        id: item.id,
-                        serverId: item._serverId,
-                        type: 'song',
-                    }),
-                    items: [item as Song],
-                    type: LibraryItem.SONG,
-                },
-                event,
-            });
-        } else {
-            ContextMenuController.call({
-                cmd: {
-                    homeItemKey: hiddenHomeItemKey({
-                        id: item.id,
-                        serverId: item._serverId,
-                        type: 'album',
-                    }),
-                    items: [item as Album],
-                    type: LibraryItem.ALBUM,
-                },
-                event,
-            });
-        }
-    };
-
-    return (
-        <button
-            className={styles.featureCard}
-            onClick={open}
-            onContextMenu={handleContextMenu}
-            type="button"
-        >
-            <div className={styles.featureArt}>
-                <ItemImage
-                    alt={title}
-                    enableViewport={false}
-                    id={item.imageId}
-                    imageContainerProps={{ className: styles.imageContainer }}
-                    itemType={isSong ? LibraryItem.SONG : LibraryItem.ALBUM}
-                    serverId={item._serverId}
-                    src={item.imageUrl}
-                    type="itemCard"
-                />
-            </div>
-            <div className={styles.trackMeta}>
-                <Text isMuted size="sm">
-                    Rediscover this
-                </Text>
-                <Text className={styles.title} fw={750} size="lg">
-                    {title}
-                </Text>
-                <Text className={styles.subtitle} isMuted size="sm">
-                    {subtitle}
-                </Text>
-                <Text className={styles.tertiary} isMuted size="sm">
-                    {getRediscoveryCopy(item)}
-                </Text>
-            </div>
-        </button>
-    );
-};
-
-const RediscoverySupport = ({ item }: { item: Album | Song }) => {
-    const player = usePlayer();
-    const navigate = useNavigate();
-    const isSong = item._itemType === LibraryItem.SONG;
-
-    const open = () => {
-        if (isSong) {
-            player.addToQueueByData([item as Song], Play.NOW);
-            return;
-        }
-
-        navigate(generatePath(AppRoute.LIBRARY_ALBUMS_DETAIL, { albumId: item.id }));
-    };
-
-    const handleContextMenu = (event: React.MouseEvent<HTMLButtonElement>) => {
-        event.preventDefault();
-        event.stopPropagation();
-
-        if (isSong) {
-            ContextMenuController.call({
-                cmd: {
-                    homeItemKey: hiddenHomeItemKey({
-                        id: item.id,
-                        serverId: item._serverId,
-                        type: 'song',
-                    }),
-                    items: [item as Song],
-                    type: LibraryItem.SONG,
-                },
-                event,
-            });
-        } else {
-            ContextMenuController.call({
-                cmd: {
-                    homeItemKey: hiddenHomeItemKey({
-                        id: item.id,
-                        serverId: item._serverId,
-                        type: 'album',
-                    }),
-                    items: [item as Album],
-                    type: LibraryItem.ALBUM,
-                },
-                event,
-            });
-        }
-    };
-
-    return (
-        <button
-            className={styles.discoveryCard}
-            onClick={open}
-            onContextMenu={handleContextMenu}
-            type="button"
-        >
-            <div className={styles.trackThumb}>
-                <ItemImage
-                    alt={item.name}
-                    enableViewport={false}
-                    id={item.imageId}
-                    imageContainerProps={{ className: styles.imageContainer }}
-                    itemType={isSong ? LibraryItem.SONG : LibraryItem.ALBUM}
-                    serverId={item._serverId}
-                    src={item.imageUrl}
-                    type="itemCard"
-                />
-            </div>
-            <div className={styles.trackMeta}>
-                <Text className={styles.title} fw={650} size="sm">
-                    {item.name}
-                </Text>
-                <Text className={styles.subtitle} isMuted size="sm">
-                    {getRediscoveryCopy(item)}
-                </Text>
-            </div>
-        </button>
-    );
+const getRediscoveryCopy = (album: Album) => {
+    const who = album.albumArtistName;
+    const when = album.lastPlayedAt
+        ? `Last played ${formatDateRelative(album.lastPlayedAt)}`
+        : album.playCount
+          ? `Played ${album.playCount} times`
+          : 'Rediscover this';
+    return who ? `${who} · ${when}` : when;
 };
 
 const useHomeDiscoverySongs = (discoverySeed: string) => {
@@ -1034,7 +860,11 @@ export const HomeAlbumsSection = ({
     );
 };
 
-export const HomeDiscoverSection = () => {
+export const HomeDiscoverSection = ({
+    containerQuery,
+}: {
+    containerQuery?: ReturnType<typeof useGridCarouselContainerQuery>;
+}) => {
     const [discoverySeed] = useState(() => `${Date.now()}:${Math.random()}`);
     const songsQuery = useHomeDiscoverySongs(discoverySeed);
     const hiddenKeys = useHiddenHomeKeys();
@@ -1060,14 +890,25 @@ export const HomeDiscoverSection = () => {
     }
 
     return (
-        <section className={styles.section}>
-            <HomeHeader title="Discover" to={AppRoute.LIBRARY_SONGS} />
-            <div className={styles.discoveryGrid}>
-                {songs.map((song) => (
-                    <DiscoveryTrackRow key={song.id} song={song} />
-                ))}
-            </div>
-        </section>
+        <GridCarousel
+            cards={songs.map((song) => ({
+                content: (
+                    <SongCard
+                        song={song}
+                        subtitle={[song.artistName, getUnplayedDiscoverySubtitle(song)]
+                            .filter(Boolean)
+                            .join(' · ')}
+                    />
+                ),
+                id: song.id,
+            }))}
+            containerQuery={containerQuery}
+            hasNextPage={false}
+            onNextPage={() => {}}
+            onPrevPage={() => {}}
+            rowCount={1}
+            title={<HomeHeader title="Discover" to={AppRoute.LIBRARY_SONGS} />}
+        />
     );
 };
 

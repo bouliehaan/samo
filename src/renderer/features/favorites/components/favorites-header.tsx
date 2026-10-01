@@ -159,5 +159,5 @@ export const FavoritesHeader = ({ itemType }: FavoritesHeaderProps) => {
 };
 
 const PlayButton = ({ itemType, query }: { itemType: LibraryItem; query: Record<string, any> }) => {
-    return <LibraryHeaderBar.PlayButton itemType={itemType} listQuery={query} variant="filled" />;
+    return <LibraryHeaderBar.PlayButton itemType={itemType} listQuery={query} variant="default" />;
 };

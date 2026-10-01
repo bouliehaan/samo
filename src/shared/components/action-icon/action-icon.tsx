@@ -58,6 +58,7 @@ const _ActionIcon = forwardRef<HTMLButtonElement, ActionIconProps>(
         const compactSize = isCompactSize(size) ? (size as string) : undefined;
 
         const actionIconProps: ActionIconProps & { 'data-size'?: string } = {
+            'aria-label': typeof tooltip?.label === 'string' ? tooltip.label : undefined,
             classNames: memoizedClassNames,
             size: mantineSize,
             variant,

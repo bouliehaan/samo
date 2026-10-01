@@ -97,4 +97,13 @@ class SamoStreamTokenCacheTest {
         assertNull(SamoStreamTokenCache.parseExpiresAtMs(""))
         assertNull(SamoStreamTokenCache.parseExpiresAtMs("not-a-date"))
     }
+
+    @Test
+    fun `signing out drops the tokens minted from the session that ended`() {
+        SamoStreamTokenCache.put("https://samo", "revoked", "tok-old", clockMs + 30 * 60_000L)
+        SamoStreamTokenCache.put("https://samo", "fresh", "tok-new", clockMs + 30 * 60_000L)
+        SamoStreamTokenCache.retainBearers(setOf("fresh"))
+        assertNull(SamoStreamTokenCache.get("https://samo", "revoked"))
+        assertEquals("tok-new", SamoStreamTokenCache.get("https://samo", "fresh"))
+    }
 }

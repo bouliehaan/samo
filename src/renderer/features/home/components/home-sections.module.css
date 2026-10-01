@@ -164,145 +164,22 @@
     transform: translateY(-1px);
 }
 
-.track-list {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0.45rem var(--theme-spacing-md);
-}
-
-.track-row,
-.discovery-card {
-    display: grid;
-    grid-template-columns: 3.25rem minmax(0, 1fr) auto;
-    gap: 0.75rem;
-    align-items: center;
-    min-width: 0;
-    min-height: 4rem;
-    padding: 0.45rem;
-    color: inherit;
-    text-align: left;
-    cursor: pointer;
-    background: color-mix(in srgb, var(--theme-colors-surface) 88%, transparent);
-    border: 1px solid color-mix(in srgb, var(--theme-colors-border) 58%, transparent);
-    border-radius: var(--theme-radius-sm);
-    transition:
-        background-color 150ms ease,
-        border-color 150ms ease,
-        transform 150ms ease;
-}
-
-.track-row:hover,
-.discovery-card:hover {
-    background: color-mix(in srgb, var(--theme-colors-surface) 94%, white 3%);
-    border-color: color-mix(in srgb, var(--theme-colors-primary-filled) 34%, transparent);
-    transform: translateY(-1px);
-}
-
-.track-thumb {
-    width: 3.25rem;
-    height: 3.25rem;
-    overflow: hidden;
-    background: var(--theme-colors-background);
-    border-radius: 0.4rem;
-}
-
-.track-meta {
-    min-width: 0;
-}
-
-.track-extra {
-    justify-self: end;
-    color: var(--theme-colors-dimmed);
-    white-space: nowrap;
-}
-
-.editorial {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: var(--theme-spacing-md);
-}
-
-.feature-card {
-    display: grid;
-    grid-template-columns: minmax(8rem, 12rem) minmax(0, 1fr);
-    gap: var(--theme-spacing-md);
-    align-items: center;
-    min-width: 0;
-    padding: var(--theme-spacing-md);
-    color: inherit;
-    text-align: left;
-    cursor: pointer;
-    background: color-mix(in srgb, var(--theme-colors-surface) 90%, transparent);
-    border: 1px solid color-mix(in srgb, var(--theme-colors-border) 58%, transparent);
-    border-radius: var(--theme-radius-sm);
-}
-
-.feature-card:hover {
-    border-color: color-mix(in srgb, var(--theme-colors-primary-filled) 34%, transparent);
-}
-
-.feature-card-accent {
-    background: linear-gradient(
-        135deg,
-        color-mix(in srgb, var(--theme-colors-primary-filled) 10%, transparent),
-        color-mix(in srgb, var(--theme-colors-surface) 90%, transparent) 60%
-    );
-    border-color: color-mix(in srgb, var(--theme-colors-primary-filled) 28%, transparent);
-}
-
-.feature-card-accent:hover {
-    border-color: color-mix(in srgb, var(--theme-colors-primary-filled) 50%, transparent);
-}
-
-.feature-badge {
-    width: fit-content;
-    padding: 0.12rem 0.42rem;
-    font-size: 0.64rem;
-    font-weight: 800;
-    line-height: 1;
-    color: color-mix(in srgb, var(--theme-colors-primary-filled) 92%, white 8%);
-    letter-spacing: 0.02em;
-    background: color-mix(in srgb, var(--theme-colors-primary-filled) 14%, transparent);
-    border: 1px solid color-mix(in srgb, var(--theme-colors-primary-filled) 30%, transparent);
-    border-radius: 999px;
-}
-
-.feature-art {
-    aspect-ratio: 1;
-    overflow: hidden;
-    background: var(--theme-colors-background);
-    border-radius: var(--theme-radius-sm);
-}
-
-.support-list {
-    display: grid;
-    gap: 0.5rem;
-}
-
-.discovery-grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0.5rem var(--theme-spacing-md);
-}
-
-@media (width <= 780px) {
-    .track-list,
-    .editorial,
-    .discovery-grid {
-        grid-template-columns: 1fr;
-    }
-
-    .feature-card {
-        grid-template-columns: 5rem minmax(0, 1fr);
-    }
-}
-
 .playlist-primary-control {
     left: 34% !important;
 }
 
 .playlist-secondary-control {
     left: 68% !important;
+}
+
+/* A tile with a single control (a track, a station) centres it. */
+.centered-control {
+    left: 50% !important;
+}
+
+/* Something is playing from this tile: keep its art lit as if hovered. */
+.media-card-active .media-art {
+    border-color: color-mix(in srgb, var(--theme-colors-primary-filled) 70%, transparent);
 }
 
 .overlay-btn {

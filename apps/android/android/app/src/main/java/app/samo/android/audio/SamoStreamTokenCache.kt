@@ -25,13 +25,15 @@ internal object SamoStreamTokenCache {
 
     internal data class Entry(val token: String, val expiresAtMs: Long)
 
-    private val entries = HashMap<String, Entry>()
+    private data class Key(val serverUrl: String, val bearer: String)
+
+    private val entries = HashMap<Key, Entry>()
     private val lock = Any()
 
     /** Test seam; production uses the wall clock. */
     internal var now: () -> Long = { System.currentTimeMillis() }
 
-    private fun key(serverUrl: String, bearer: String) = "$serverUrl|$bearer"
+    private fun key(serverUrl: String, bearer: String) = Key(serverUrl, bearer)
 
     fun get(serverUrl: String, bearer: String): String? {
         synchronized(lock) {
@@ -63,6 +65,18 @@ internal object SamoStreamTokenCache {
     fun clear() {
         synchronized(lock) {
             entries.clear()
+        }
+    }
+
+    /**
+     * Forget every token minted from a bearer the device no longer holds. A
+     * stream token is the session it was minted from, carried in a URL; once
+     * the user ends that session it is not something to go on presenting
+     * until it happens to expire.
+     */
+    fun retainBearers(bearers: Set<String>) {
+        synchronized(lock) {
+            entries.keys.removeAll { it.bearer !in bearers }
         }
     }
 

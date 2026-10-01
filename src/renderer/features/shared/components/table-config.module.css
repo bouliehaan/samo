@@ -51,3 +51,10 @@
     content: '';
     background-color: var(--theme-colors-primary);
 }
+
+.controls {
+    gap: 2px;
+    padding: 2px;
+    background: color-mix(in srgb, var(--theme-colors-foreground) 5%, transparent);
+    border-radius: 999px;
+}

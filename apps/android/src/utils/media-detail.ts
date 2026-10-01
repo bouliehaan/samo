@@ -1,4 +1,4 @@
-import { MobileMediaDetailType, type MobileMediaTrack } from '@samo/core/mobile';
+import { type MobileMediaDetail, MobileMediaDetailType, type MobileMediaTrack } from '@samo/core/mobile';
 
 import { SCREEN_HEIGHT } from '../theme/layout';
 
@@ -9,6 +9,15 @@ export const getDetailTypeLabel = (type: MobileMediaDetailType) => {
     if (type === MobileMediaDetailType.ARTIST) return 'Artist';
     return 'Album';
 };
+
+/**
+ * A detail's tracks in the order its page shows them before anyone touches a
+ * sort. Server playlists arrive oldest-entry-first, and a playlist opens (and
+ * plays) newest entry first, so the tracks just added are the ones you land
+ * on. Everything else keeps its authored order.
+ */
+export const getDefaultDetailTrackOrder = (detail: MobileMediaDetail): MobileMediaTrack[] =>
+    detail.type === MobileMediaDetailType.PLAYLIST ? [...detail.tracks].reverse() : detail.tracks;
 
 export type PlaylistTrackFilter = 'all' | 'hifi';
 export type PlaylistTrackSort = 'artist' | 'order' | 'title';

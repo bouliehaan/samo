@@ -110,16 +110,9 @@ export const TabBar = memo(function TabBar({
     const activeTab = useAppNavigationSelector((state) => state.activeTab);
     const reducedMotion = useReducedMotionPreference();
 
-    // Hit-testability must track what is ON SCREEN, not navigation state.
-    // `isFullPlayerOpen` deliberately lags the close spring (the gesture
-    // dismiss flips it from the spring's onFinish, and an interrupted spring
-    // never flips it at all), so a bar gated on that state stays
-    // pointerEvents:'none' for hundreds of ms — or forever — after it LOOKS
-    // tappable again. Taps then sail through the glass into whatever is
-    // scrolled beneath the dock (the "tapping Home selected the radio card
-    // under it" bug). Gate on the live animated progress instead: dead the
-    // moment the player card starts rising, alive the moment the dock is
-    // visually at rest — and self-healing if the open state ever sticks.
+    // Keep the tab bar disabled until the closing card actually clears it.
+    // Navigation commits closed at the start of dismissal, while the card
+    // continues animating over these controls for a few frames.
     const [isSunk, setIsSunk] = useState(false);
     useAnimatedReaction(
         () => playerProgress.value > 0.02,

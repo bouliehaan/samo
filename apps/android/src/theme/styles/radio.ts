@@ -1,50 +1,89 @@
 import { StyleSheet } from 'react-native';
 import { HOME_EDGE_PADDING, PAGE_TOP_INSET } from '../layout';
-import { colors, fonts, spacing } from '../tokens';
+import { colors, elevation, fonts, radii, spacing } from '../tokens';
 
 /** Radio tab: station grid, hero, add-station sheet. */
 export const radioStyles = StyleSheet.create({
     // samo-radio: the server's own audio output, remoted onto the phone. It
     // sits above the station grid because it is a status readout first — you
     // look at it to see what the stereo is doing — and controls second.
+    // The same card as the Explore hero — a wash of the airing picture behind
+    // everything, the picture itself as a sleeve on the right, eyebrow, title
+    // and meta in the same faces — because it IS the same kind of thing: the
+    // one card on the page that is about a single, live, changing subject.
     samoRadioPanel: {
-        backgroundColor: colors.surface,
+        backgroundColor: colors.panel,
         borderColor: 'rgba(255,255,255,0.08)',
+        borderRadius: radii.md,
         borderWidth: 1,
         gap: 6,
         marginBottom: spacing.md,
+        // The backdrop is a full-bleed image; without this it paints past the
+        // rounded corners as a square.
+        overflow: 'hidden',
         // No horizontal margin: radioScrollContent already pads to
         // HOME_EDGE_PADDING, and adding it again inset the panel twice as far
         // as every station tile below it.
         padding: spacing.md,
     },
+    /** The airing picture again, blurred to a wash — the card's only colour. */
+    samoRadioBackdrop: {
+        ...StyleSheet.absoluteFill,
+        opacity: 0.9,
+    },
+    /** Darkens the wash enough for text and controls, densest behind them. */
+    samoRadioScrim: {
+        ...StyleSheet.absoluteFill,
+    },
     samoRadioHead: {
         alignItems: 'center',
         flexDirection: 'row',
-        justifyContent: 'space-between',
+        gap: spacing.md,
+        marginBottom: 6,
     },
+    samoRadioCopy: {
+        flex: 1,
+        minWidth: 0,
+    },
+    /** Device and status on one line: "CROSLEY · PLAYING". */
     samoRadioEyebrow: {
         color: colors.accent,
-        fontFamily: fonts.mono,
-        fontSize: 12,
-        letterSpacing: 1,
-    },
-    samoRadioStatus: {
-        color: colors.muted,
-        fontFamily: fonts.mono,
-        fontSize: 11,
-        letterSpacing: 1,
+        fontFamily: fonts.monoBold,
+        fontSize: 10,
+        letterSpacing: 1.4,
+        lineHeight: 14,
+        marginBottom: 6,
+        textTransform: 'uppercase',
     },
     samoRadioTitle: {
         color: colors.text,
-        fontSize: 17,
-        fontWeight: '700',
+        fontFamily: fonts.heading,
+        fontSize: 22,
+        letterSpacing: -0.4,
+        lineHeight: 26,
     },
     /** Subtitle, clock and queue position on one line — see `describeMeta`. */
     samoRadioMeta: {
         color: colors.muted,
         fontFamily: fonts.mono,
         fontSize: 12,
+        lineHeight: 16,
+        marginTop: 5,
+    },
+    /** The airing picture, sharp, as one sleeve beside the copy. */
+    samoRadioSleeve: {
+        ...elevation.card,
+        backgroundColor: colors.surface,
+        borderColor: 'rgba(255, 255, 255, 0.12)',
+        borderRadius: radii.sm,
+        borderWidth: StyleSheet.hairlineWidth,
+        height: 84,
+        overflow: 'hidden',
+        width: 84,
+    },
+    samoRadioSleeveArt: {
+        height: '100%',
+        width: '100%',
     },
     /** Transport left, the two openers pushed right by the spacer between.
      *  The negative inset is optical, not layout: a 40dp round button carries
@@ -66,8 +105,9 @@ export const radioStyles = StyleSheet.create({
      *  controls would have occupied, so the absence reads as explained rather
      *  than as the feature having quietly vanished. */
     samoRadioUnreachable: {
-        backgroundColor: colors.surface,
+        backgroundColor: colors.panel,
         borderColor: 'rgba(255,255,255,0.08)',
+        borderRadius: radii.md,
         borderWidth: 1,
         gap: 6,
         marginBottom: spacing.md,

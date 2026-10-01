@@ -1,10 +1,9 @@
 import { StyleSheet } from 'react-native';
 import {
-    EXPLORE_HERO_ARTWORK,
-    EXPLORE_HERO_HEIGHT,
-    EXPLORE_HERO_PADDING,
+    HOME_HERO_PADDING,
     HOME_COMPACT_OFFSET,
     HOME_EDGE_PADDING,
+    SCREEN_WIDTH,
     HOME_MEDIA_SUBTITLE_ROW_HEIGHT,
     HOME_MEDIA_TILE_CHROME,
     HOME_MEDIA_TILE_CHROME_COMPACT,
@@ -463,8 +462,7 @@ export const homeStyles = StyleSheet.create({
         width: HOME_PRIMARY_TILE,
     },
     mediaTilePodcast: {
-        minHeight:
-            HOME_PRIMARY_TILE - HOME_ROUNDED_OFFSET + HOME_MEDIA_TILE_CHROME,
+        minHeight: HOME_PRIMARY_TILE - HOME_ROUNDED_OFFSET + HOME_MEDIA_TILE_CHROME,
         width: HOME_PRIMARY_TILE - HOME_ROUNDED_OFFSET,
     },
     mediaTileWide: {
@@ -476,71 +474,62 @@ export const homeStyles = StyleSheet.create({
         padding: 12,
         width: 320,
     },
-    /**
-     * The Explore drop's featured card. The section is a SINGLE playlist, so
-     * it is not a carousel — a 320pt tile stranded in a full-width row was the
-     * whole reason this shelf read as broken. It spans the page instead, and
-     * takes its colour from its own cover: the artwork again as a blurred,
-     * scrimmed backdrop, with the sharp cover sat on top of it.
-     */
-    exploreHero: {
-        borderColor: 'rgba(255, 255, 255, 0.08)',
+    homeHero: {
+        backgroundColor: colors.panel,
+        borderColor: colors.borderStrong,
         borderRadius: radii.md,
         borderWidth: 1,
-        height: EXPLORE_HERO_HEIGHT,
-        // The backdrop is a full-bleed image; without this it paints past the
-        // rounded corners as a square.
         overflow: 'hidden',
     },
-    exploreHeroArtwork: {
-        backgroundColor: colors.surface,
-        // A hairline, not a shadow: the card clips its children (the backdrop
-        // is full-bleed), so a drop shadow would be cut off at the corners.
-        borderColor: 'rgba(255, 255, 255, 0.14)',
+    homeHeroBody: {
+        flex: 1,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+        padding: HOME_HERO_PADDING,
+    },
+    homeHeroNoticeArt: {
+        width: 56,
+        height: 56,
         borderRadius: radii.sm,
-        borderWidth: StyleSheet.hairlineWidth,
-        height: EXPLORE_HERO_ARTWORK,
-        width: EXPLORE_HERO_ARTWORK,
     },
-    /** Same cover, blurred to a wash — the card's only source of colour. */
-    exploreHeroBackdrop: {
-        ...StyleSheet.absoluteFill,
+    homeHeroCopy: {
+        flex: 1,
+        justifyContent: 'center',
+        paddingRight: 60,
     },
-    exploreHeroEyebrow: {
+    homeHeroEyebrow: {
         color: colors.accent,
         fontFamily: fonts.mono,
         fontSize: 10,
-        letterSpacing: 1.4,
+        letterSpacing: 0.8,
+        lineHeight: 14,
         marginBottom: 6,
         textTransform: 'uppercase',
     },
-    exploreHeroRow: {
-        alignItems: 'center',
-        flexDirection: 'row',
-        gap: spacing.md,
-        padding: EXPLORE_HERO_PADDING,
-    },
-    /** Darkens the blur enough for text, densest behind the copy column. */
-    exploreHeroScrim: {
-        ...StyleSheet.absoluteFill,
-    },
-    exploreHeroSubtitle: {
-        color: colors.muted,
-        fontFamily: fonts.mono,
-        fontSize: 12,
-        lineHeight: 16,
-        marginTop: 5,
-    },
-    exploreHeroText: {
-        flex: 1,
-        minWidth: 0,
-    },
-    exploreHeroTitle: {
+    homeHeroTitle: {
         color: colors.text,
         fontFamily: fonts.heading,
-        fontSize: 24,
-        letterSpacing: -0.5,
-        lineHeight: 28,
+        fontSize: 17,
+        letterSpacing: -0.3,
+        lineHeight: 21,
+    },
+    homeHeroSubtitle: {
+        color: colors.muted,
+        fontSize: 13,
+        lineHeight: 18,
+        marginTop: 6,
+    },
+    homeHeroAction: {
+        alignItems: 'center',
+        backgroundColor: colors.text,
+        borderRadius: radii.pill,
+        top: HOME_HERO_PADDING,
+        height: 48,
+        justifyContent: 'center',
+        position: 'absolute',
+        right: HOME_HERO_PADDING,
+        width: 48,
     },
     mediaTitle: {
         color: colors.text,

@@ -51,6 +51,28 @@ describe('resolveSamoItemArtworkSourceForDisplay', () => {
         ).toBe(REMOTE_URL);
     });
 
+    it('preserves a playlist grid when a legacy row also carries the first album image id', () => {
+        const auth: ServerAuthenticationResult = {
+            capabilities: getDefaultServerCapabilities(),
+            credential: 'test-token',
+            details: 'test server',
+            kind: ServerAuthenticationKind.SAMO_TOKEN,
+            title: 'Test Server',
+            type: ServerType.SAMO,
+            url: 'https://music.example.com',
+            username: 'tester',
+        };
+        const url = `${auth.url}/api/v1/music/playlists/pl1/cover?artwork=2&v=123`;
+        expect(resolveSamoItemArtworkSourceForDisplay({
+            artworkImageId: 'cover_first_album',
+            artworkUrl: url,
+            source: samoSource,
+        }, auth)).toEqual({
+            headers: { Authorization: 'Bearer test-token' },
+            uri: url,
+        });
+    });
+
     it('attaches the bearer once the connection resolves', () => {
         const auth: ServerAuthenticationResult = {
             capabilities: getDefaultServerCapabilities(),

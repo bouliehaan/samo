@@ -19,4 +19,9 @@
 .hidden {
     visibility: hidden;
     pointer-events: none;
+
+    /* Headers and scrollbar widgets set visibility: visible themselves.
+     * Composite the whole inactive pane away without changing its geometry;
+     * inert on the pane also prevents descendants from restoring input. */
+    opacity: 0;
 }

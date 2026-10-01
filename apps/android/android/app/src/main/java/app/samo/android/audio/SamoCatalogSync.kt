@@ -42,7 +42,9 @@ internal object SamoCatalogSync {
     // rows written under v4 can never show a release year or a credits line,
     // and a delta only rewrites albums the server reports as changed. One
     // forced re-enumerate backfills the whole library.
-    private const val SYNC_LOGIC_VERSION = 5
+    // v6: rewrite playlist rows to use the versioned playlist cover endpoint
+    // without a single album image ID overriding the generated collage.
+    private const val SYNC_LOGIC_VERSION = 6
 
     /** Concurrent detail fetches per batch (network-bound; writes stay serial). */
     private const val DETAIL_FETCH_CONCURRENCY = 4

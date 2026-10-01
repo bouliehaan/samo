@@ -94,7 +94,7 @@ export const SaveAsCollectionButton = ({ fullWidth, itemType }: SaveAsCollection
     }, []);
 
     return (
-        <Popover onClose={handlers.close} opened={isOpen} width="target">
+        <Popover onClose={handlers.close} opened={isOpen} width={300}>
             <Popover.Target>
                 {fullWidth ? (
                     <Button fullWidth onClick={handleOpen} variant="default">
@@ -112,7 +112,7 @@ export const SaveAsCollectionButton = ({ fullWidth, itemType }: SaveAsCollection
                                 postProcess: 'sentenceCase',
                             }),
                         }}
-                        variant="subtle"
+                        variant="toolbar"
                     />
                 )}
             </Popover.Target>
@@ -133,7 +133,7 @@ export const SaveAsCollectionButton = ({ fullWidth, itemType }: SaveAsCollection
                                             key={collection.id}
                                             onClick={() => handleOverrideExisting(collection)}
                                             type="button"
-                                            variant="subtle"
+                                            variant="toolbar"
                                         >
                                             <Text className={styles['row-name']} size="sm">
                                                 {collection.name}
@@ -145,7 +145,7 @@ export const SaveAsCollectionButton = ({ fullWidth, itemType }: SaveAsCollection
                         </div>
                         <TextInput autoFocus maxLength={128} {...form.getInputProps('name')} />
                         <Group gap="xs" justify="flex-end">
-                            <Button onClick={handlers.close} type="button" variant="subtle">
+                            <Button onClick={handlers.close} type="button" variant="toolbar">
                                 {t('common.cancel', { postProcess: 'sentenceCase' })}
                             </Button>
                             <Button type="submit" variant="filled">

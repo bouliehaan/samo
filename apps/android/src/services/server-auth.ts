@@ -2,6 +2,7 @@ import {
     adaptNativeFetch,
     authenticateServerConnection,
     getServerAuthenticationErrorMessage,
+    isRetryableTransportError,
     type SamoFetch,
     type ServerAuthenticationInput,
     type ServerAuthenticationResult,
@@ -24,16 +25,6 @@ export type ServerAuthInput = ServerAuthenticationInput;
 const AUTH_REQUEST_TIMEOUT_MS = 8_000;
 const AUTH_RETRY_DELAY_MS = 750;
 const AUTH_MAX_RETRIES = 2;
-
-const isTransportError = (error: unknown): boolean => {
-    if (!(error instanceof Error)) {
-        return false;
-    }
-    // RN's fetch surfaces connection failures as TypeError("Network request
-    // failed"). HTTP-status failures happen a layer above (requestJson) and
-    // never reach this check — a 401 must NOT be retried.
-    return error.name === 'TypeError' || error.message.startsWith('Request timed out');
-};
 
 const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
@@ -65,9 +56,14 @@ const buildAuthFetcher = (onRetry?: () => void): SamoFetch => {
             try {
                 return await nativeFetch(url, { ...init, signal: controller.signal });
             } catch (error) {
-                // Our own deadline fired (not the caller's 30s cap).
-                const timedOut = controller.signal.aborted && callerSignal?.aborted !== true;
-                const retryable = timedOut || isTransportError(error);
+                // Our own deadline fired (not the caller's 30s cap). A caller
+                // that aborted wants no retry, and expo/fetch reports its abort
+                // exactly like a dropped connection, so the signal decides.
+                // HTTP-status failures happen a layer above (requestJson) and
+                // never reach here: a 401 is never retried.
+                const callerAborted = callerSignal?.aborted === true;
+                const timedOut = controller.signal.aborted && !callerAborted;
+                const retryable = !callerAborted && (timedOut || isRetryableTransportError(error));
                 if (!retryable || attempt >= AUTH_MAX_RETRIES) {
                     throw timedOut
                         ? new Error(`Request timed out after ${AUTH_REQUEST_TIMEOUT_MS}ms`)

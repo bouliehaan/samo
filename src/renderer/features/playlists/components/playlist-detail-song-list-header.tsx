@@ -73,7 +73,9 @@ export const PlaylistDetailSongListHeader = () => {
 
     const imageUrl = useItemImageUrl({
         id: detailQuery?.data?.imageId || undefined,
+        imageUrl: detailQuery?.data?.imageUrl,
         itemType: LibraryItem.PLAYLIST,
+        serverId: detailQuery?.data?._serverId,
         type: 'header',
     });
 
@@ -155,7 +157,7 @@ export const PlaylistDetailSongListHeader = () => {
                                     onClick={() =>
                                         openUpdatePlaylistModal({ playlist: detailQuery.data })
                                     }
-                                    variant="default"
+                                    variant="toolbar"
                                 >
                                     {t('action.editPlaylist', { postProcess: 'titleCase' })}
                                 </Button>

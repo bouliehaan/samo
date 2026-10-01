@@ -112,12 +112,14 @@ export const MINI_PLAYER_RADIUS = 34;
 // clock) and left an inset-tall strip of the parked shell peeking at the
 // screen's bottom edge.
 export const FULL_PLAYER_EXPANDED_TOP = 0;
-export const FULL_PLAYER_PADDING_TOP = Platform.OS === 'android' ? 42 : 24;
-export const FULL_PLAYER_PADDING_BOTTOM = 28;
+export const FULL_PLAYER_PADDING_TOP = STATUS_BAR_INSET + 8;
+export const FULL_PLAYER_PADDING_BOTTOM = Math.max(
+    24,
+    (initialWindowMetrics?.insets.bottom ?? 0) + 16,
+);
 // Match the absolute miniplayer (`bottom: MINI_PLAYER_BOTTOM`) so the
 // expanding shell lands on the same pixel row at progress 0.
-export const MINI_PLAYER_COLLAPSED_TOP =
-    SCREEN_HEIGHT - MINI_PLAYER_BOTTOM - MINI_PLAYER_HEIGHT;
+export const MINI_PLAYER_COLLAPSED_TOP = SCREEN_HEIGHT - MINI_PLAYER_BOTTOM - MINI_PLAYER_HEIGHT;
 export const PLAYER_EXPANSION_DISTANCE = MINI_PLAYER_COLLAPSED_TOP - FULL_PLAYER_EXPANDED_TOP;
 export const FULL_PLAYER_ARTWORK_SIZE = Math.min(SCREEN_WIDTH - 64, SCREEN_HEIGHT * 0.42);
 
@@ -161,8 +163,7 @@ export const FULL_PLAYER_HERO_TOP =
     Math.max(0, FULL_PLAYER_ARTWORK_WELL / 2) +
     FULL_PLAYER_HERO_SHADOW_OFFSET;
 
-export const FULL_PLAYER_HERO_LEFT =
-    (SCREEN_WIDTH - FULL_PLAYER_ARTWORK_SIZE) / 2;
+export const FULL_PLAYER_HERO_LEFT = (SCREEN_WIDTH - FULL_PLAYER_ARTWORK_SIZE) / 2;
 
 // Default settle spring for sheets/queue. Player open/close use player-motion springs.
 export const OPEN_SPRING = { damping: 26, mass: 0.9, stiffness: 220 } as const;
@@ -240,14 +241,13 @@ export const HOME_MEDIA_ROW_HEIGHT_ARTIST =
 export const HOME_MEDIA_ROW_HEIGHT_ROUNDED =
     HOME_PRIMARY_TILE - HOME_ROUNDED_OFFSET + HOME_MEDIA_TILE_CHROME;
 export const HOME_MEDIA_ROW_HEIGHT_WIDE = 136;
-/**
- * The Explore drop's featured card. It is the only home shelf that is a single
- * item, so it is not a carousel at all — it spans the full content width like
- * a hero (`HomeExploreHero`), and this is its exact height.
- */
-export const EXPLORE_HERO_PADDING = 14;
-export const EXPLORE_HERO_ARTWORK = 112;
-export const EXPLORE_HERO_HEIGHT = EXPLORE_HERO_ARTWORK + EXPLORE_HERO_PADDING * 2;
+/** Compact hero: cover and copy, followed by one primary action. */
+export const HOME_HERO_PADDING = spacing.md;
+/** Estimate only; cards grow to accommodate longer titles and larger type. */
+export const HOME_HERO_HEIGHT = 132;
+/** Minimum card height grows with large type; announcements have no loading placeholder. */
+export const getHomeHeroHeight = (fontScale: number): number =>
+    HOME_HERO_HEIGHT + Math.max(0, fontScale - 1) * 100;
 export const HOME_ROW_INITIAL_ITEMS = 6;
 export const HOME_ROW_RENDER_BATCH = 6;
 export const HOME_ROW_WINDOW_SIZE = 5;
@@ -265,9 +265,9 @@ export const getHomeRowItemLength = (variant: HomeDisplaySection['variant']): nu
         case 'podcast-feed':
         case 'radio':
             return HOME_PRIMARY_TILE - HOME_ROUNDED_OFFSET + HOME_TILE_GAP;
-        // The Explore hero spans the page, so its "stride" is the whole
-        // content width — nothing ever scrolls beside it.
-        case 'explo':
+        // A hero card spans the page, so the strip's stride is the whole
+        // content width — it pages, it does not scroll.
+        case 'heroes':
             return SCREEN_WIDTH - HOME_EDGE_PADDING * 2;
         case 'continue':
         case 'wide':
@@ -302,8 +302,8 @@ export const getHomeSectionRowHeight = (
         case 'podcast-feed':
             singleHeight = HOME_MEDIA_ROW_HEIGHT_ROUNDED + HOME_MEDIA_PROGRESS_CHROME;
             break;
-        case 'explo':
-            singleHeight = EXPLORE_HERO_HEIGHT;
+        case 'heroes':
+            singleHeight = HOME_HERO_HEIGHT;
             break;
         case 'continue':
         case 'wide':

@@ -32,8 +32,8 @@ internal object SamoDirectStreamFallback {
 
     internal data class Entry(
         val proxyUrl: String,
-        val serverUrl: String?,
-        val bearer: String?,
+        /** Which session the proxy leg belongs to, resolved when it is used. */
+        val claim: SamoSessionCredentials.Claim,
     )
 
     // Small LRU keyed by the exact direct URL set on the MediaItem — DataSpec
@@ -45,32 +45,38 @@ internal object SamoDirectStreamFallback {
     }
 
     @Synchronized
-    fun register(directUrl: String?, proxyUrl: String?, serverUrl: String?, bearer: String?) {
+    fun register(directUrl: String?, proxyUrl: String?, claim: SamoSessionCredentials.Claim) {
         if (directUrl.isNullOrBlank() || proxyUrl.isNullOrBlank() || directUrl == proxyUrl) {
             return
         }
-        entries[directUrl] = Entry(proxyUrl, serverUrl, bearer)
+        entries[directUrl] = Entry(proxyUrl, claim)
     }
 
     @Synchronized
     internal fun lookup(url: String): Entry? = entries[url]
 
-    /** Fresh-token proxy URL for a fallback open; the stale-token URL if minting fails. */
-    private fun mintProxyUrl(context: Context, entry: Entry): String {
-        val serverUrl = entry.serverUrl
-        val bearer = entry.bearer
-        if (serverUrl.isNullOrBlank() || bearer.isNullOrBlank()) {
-            return entry.proxyUrl
-        }
+    /**
+     * Fresh-token proxy URL for a fallback open; the stale-token URL if minting
+     * fails. Null when the device holds no session for the server at all —
+     * then there is no fallback, only the failure the direct open already had.
+     */
+    private fun mintProxyUrl(context: Context, entry: Entry): String? {
         val item = HashMap<String, Any?>().apply {
             put("url", entry.proxyUrl)
-            put("serverUrl", serverUrl)
-            put("serverBearerToken", bearer)
+            put("contentSourceId", entry.claim.connectionKey)
+            put("serverUrl", entry.claim.serverUrl)
+            put("serverBearerToken", entry.claim.credential)
         }
         return when (val result = SamoNativeStreamUrl.refreshQueueItem(context, item)) {
             is SamoNativeStreamUrl.RefreshResult.Ready ->
                 (result.item["url"] as? String) ?: entry.proxyUrl
-            else -> entry.proxyUrl
+            is SamoNativeStreamUrl.RefreshResult.MintFailed ->
+                if (result.reason == SamoNativeStreamUrl.MintFailureReason.SignedOut) {
+                    null
+                } else {
+                    entry.proxyUrl
+                }
+            is SamoNativeStreamUrl.RefreshResult.NotApplicable -> entry.proxyUrl
         }
     }
 
@@ -99,6 +105,7 @@ internal object SamoDirectStreamFallback {
                 primary.open(dataSpec)
             } catch (error: IOException) {
                 val entry = lookup(dataSpec.uri.toString()) ?: throw error
+                val proxyUrl = mintProxyUrl(context, entry) ?: throw error
                 Log.w(
                     TAG,
                     "direct stream open failed (${error.message}); retrying via server proxy",
@@ -109,7 +116,7 @@ internal object SamoDirectStreamFallback {
                 }
                 fallback = proxySource
                 active = proxySource
-                proxySource.open(dataSpec.withUri(Uri.parse(mintProxyUrl(context, entry))))
+                proxySource.open(dataSpec.withUri(Uri.parse(proxyUrl)))
             }
         }
 

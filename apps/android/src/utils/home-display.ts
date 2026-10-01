@@ -21,6 +21,7 @@ import {
 import { type HomeDisplaySection, type HomeFilter } from '../types/home';
 import { type ViewAllVariant } from '../types/view-all';
 import { type LibraryMediaType } from '../types/library-display';
+import { isOfflineNow } from '../state/network-state';
 import { getHomeLayoutHint } from '../services/home-layout-hint';
 import { traceSync } from '../services/jank-trace';
 import { reconcileHomeDisplaySections } from './home-display-reconcile';
@@ -90,7 +91,7 @@ export const filterHomeDisplaySections = (
     const musicVariants: HomeDisplaySection['variant'][] = [
         'album',
         'artist',
-        'explo',
+        'heroes',
         'playlist',
         'wide',
     ];
@@ -102,10 +103,7 @@ export const filterHomeDisplaySections = (
     // Recents is mixed-type — keep the section but drop any items that don't
     // belong in the active filter, so picking "Music" actually scrubs
     // podcasts/audiobooks/radio out of the Recently Played strip.
-    const itemBelongsTo = (
-        item: AndroidRecentContentSourceItem,
-        bucket: HomeFilter,
-    ): boolean => {
+    const itemBelongsTo = (item: AndroidRecentContentSourceItem, bucket: HomeFilter): boolean => {
         const type = item.type;
         switch (bucket) {
             case 'all':
@@ -126,14 +124,10 @@ export const filterHomeDisplaySections = (
                 );
             case 'audiobooks':
                 return (
-                    type === MobileHomeItemType.AUDIOBOOK ||
-                    type === MobileSearchItemType.AUDIOBOOK
+                    type === MobileHomeItemType.AUDIOBOOK || type === MobileSearchItemType.AUDIOBOOK
                 );
             case 'radio':
-                return (
-                    type === MobileHomeItemType.RADIO ||
-                    type === MobileSearchItemType.RADIO
-                );
+                return type === MobileHomeItemType.RADIO || type === MobileSearchItemType.RADIO;
         }
     };
     const filterRecentsItems = (section: HomeDisplaySection) => {
@@ -190,13 +184,36 @@ export const filterHomeDisplaySections = (
     return sections;
 };
 
+/**
+ * Drop user-hidden items ("Remove from Home"). Preserves object identity when
+ * nothing is hidden (the common case) and for shelves with no hidden items, so
+ * memoized tiles/rows downstream don't needlessly re-render.
+ */
+export const withoutHiddenHomeItems = (
+    sections: HomeDisplaySection[],
+    hiddenKeys: ReadonlySet<string>,
+): HomeDisplaySection[] => {
+    if (hiddenKeys.size === 0) {
+        return sections;
+    }
+    return sections
+        .map((section) => {
+            if (section.pending || section.ignoresHiddenItems) {
+                return section;
+            }
+            const items = section.items.filter((item) => !hiddenKeys.has(getContentItemKey(item)));
+            return items.length === section.items.length ? section : { ...section, items };
+        })
+        .filter((section) => section.pending || section.items.length > 0);
+};
+
 export const getAvailableHomeFilters = (sections: HomeDisplaySection[]) => {
     const variants = new Set(sections.map((s) => s.variant));
     const hasMusicContent =
         variants.has('album') ||
         variants.has('artist') ||
         variants.has('playlist') ||
-        variants.has('explo');
+        variants.has('heroes');
     const hasPodcastContent = variants.has('podcast') || variants.has('podcast-feed');
     const hasAudiobookContent = variants.has('book');
     const hasRadioContent = variants.has('radio');
@@ -288,12 +305,9 @@ export const withResolvedArtwork = <T extends AndroidRecentContentSourceItem>(
         }
 
         const imageSource = resolveSamoItemArtworkSourceForDisplay(item, serverConnection);
-        const artworkUrl =
-            typeof imageSource === 'string' ? imageSource : imageSource?.uri;
+        const artworkUrl = typeof imageSource === 'string' ? imageSource : imageSource?.uri;
         const resolved =
-            !artworkUrl || artworkUrl === item.artworkUrl
-                ? item
-                : ({ ...item, artworkUrl } as T);
+            !artworkUrl || artworkUrl === item.artworkUrl ? item : ({ ...item, artworkUrl } as T);
 
         resolvedArtworkItems.set(item, { generation, resolved });
         changed ||= resolved !== item;
@@ -355,10 +369,7 @@ export const dedupeHomeItemsPreservingOrder = <T extends AndroidRecentContentSou
     for (const item of items) {
         const key = getRecentContentItemKey(item);
         const existing = mergedByKey.get(key);
-        mergedByKey.set(
-            key,
-            existing ? (mergeContentItemSignals(existing, item) as T) : item,
-        );
+        mergedByKey.set(key, existing ? (mergeContentItemSignals(existing, item) as T) : item);
     }
 
     const emitted = new Set<string>();
@@ -431,8 +442,8 @@ export const getViewAllVariant = (
         case 'continue':
         case 'podcast-feed':
             return 'podcast-feed';
-        // Explo is a single featured card (one playlist) — nothing to view all.
-        case 'explo':
+        // The hero strip is the server's ranked few — nothing to view all.
+        case 'heroes':
         case 'radio':
         case 'recents':
         case 'wide':
@@ -478,8 +489,7 @@ export const getContentItemProgress = (item: AndroidRecentContentSourceItem) => 
     }
 
     const durationSeconds = item.playback?.durationSeconds ?? homeItem?.durationSeconds;
-    const positionSeconds =
-        item.playback?.initialPositionSeconds ?? homeItem?.progressSeconds ?? 0;
+    const positionSeconds = item.playback?.initialPositionSeconds ?? homeItem?.progressSeconds ?? 0;
 
     if (!durationSeconds || positionSeconds <= 0) {
         return undefined;
@@ -539,36 +549,38 @@ export const getHomeDisplaySections = (
             }
         }
     }
-    const recentDisplayItems = traceSync('home.recents', () => withResolvedArtwork(
-        dedupeRecentDisplayItems(
-            recentItems.flatMap((recentItem) => {
-                if (
-                    !isEligibleRecentlyPlayedSurfaceItem(recentItem.item, {
-                        directSong: recentItem.directSong,
-                    }) ||
-                    !getLibraryMediaType(recentItem.item)
-                ) {
-                    return [];
-                }
-                const fresh = freshItemsByKey.get(recentItem.key);
-                if (!fresh) {
-                    return [recentItem.item];
-                }
+    const recentDisplayItems = traceSync('home.recents', () =>
+        withResolvedArtwork(
+            dedupeRecentDisplayItems(
+                recentItems.flatMap((recentItem) => {
+                    if (
+                        !isEligibleRecentlyPlayedSurfaceItem(recentItem.item, {
+                            directSong: recentItem.directSong,
+                        }) ||
+                        !getLibraryMediaType(recentItem.item)
+                    ) {
+                        return [];
+                    }
+                    const fresh = freshItemsByKey.get(recentItem.key);
+                    if (!fresh) {
+                        return [recentItem.item];
+                    }
 
-                return [
-                    {
-                        ...recentItem.item,
-                        ...fresh,
-                        artworkUrl: fresh.artworkUrl ?? recentItem.item.artworkUrl,
-                        isHiRes: fresh.isHiRes ?? recentItem.item.isHiRes,
-                        playback: fresh.playback ?? recentItem.item.playback,
-                        qualityProfile: fresh.qualityProfile ?? recentItem.item.qualityProfile,
-                    },
-                ];
-            }),
+                    return [
+                        {
+                            ...recentItem.item,
+                            ...fresh,
+                            artworkUrl: fresh.artworkUrl ?? recentItem.item.artworkUrl,
+                            isHiRes: fresh.isHiRes ?? recentItem.item.isHiRes,
+                            playback: fresh.playback ?? recentItem.item.playback,
+                            qualityProfile: fresh.qualityProfile ?? recentItem.item.qualityProfile,
+                        },
+                    ];
+                }),
+            ),
+            serverConnection,
         ),
-        serverConnection,
-    ));
+    );
     const seenAlbumCanonicalKeys = collectAlbumCanonicalKeys(recentDisplayItems);
     const recentlyAddedItems = buildRecentlyAddedHeroRow(sectionsById, seenAlbumCanonicalKeys);
     for (const item of recentlyAddedItems) {
@@ -612,9 +624,11 @@ export const getHomeDisplaySections = (
     const playlistItems = sortHomeItemsByLastPlayed(
         getHomeItemsForSection(sectionsById, MobileHomeSectionId.PLAYLISTS, recentItems),
     );
-    // Server-managed "system" playlist — at most one item, so nothing to
-    // dedupe/sort beyond what the core layer already produced.
-    const exploItems = sectionsById.get(MobileHomeSectionId.EXPLO)?.items ?? [];
+    // The server's ranked hero cards — already ordered; nothing to dedupe or
+    // sort beyond what the core layer produced.
+    const heroItems = isOfflineNow()
+        ? []
+        : (sectionsById.get(MobileHomeSectionId.HEROES)?.items ?? []);
     const discoverItems = filterItemsExcludingAlbumCanonicalKeys(
         sectionsById.get(MobileHomeSectionId.DISCOVER)?.items ?? [],
         seenAlbumCanonicalKeys,
@@ -651,12 +665,22 @@ export const getHomeDisplaySections = (
         });
     }
 
+    // Only confirmed fresh updates reserve space above the personal shelves.
+    if (heroItems.length > 0) {
+        displaySections.push({
+            ignoresHiddenItems: true,
+            items: heroItems.slice(0, 1),
+            key: MobileHomeSectionId.HEROES,
+            title: '',
+            variant: 'heroes',
+        });
+    }
+
     if (recentDisplayItems.length >= RECENTLY_PLAYED_MIN_ITEMS) {
         displaySections.push({
             items: recentDisplayItems.slice(0, RECENTLY_PLAYED_ROW_LIMIT),
             key: 'recents',
-            rowCount: 2,
-            title: '',
+            title: 'Recents',
             variant: 'recents',
         });
     }
@@ -680,28 +704,14 @@ export const getHomeDisplaySections = (
     }
 
     // Newest items each server has, interleaved across categories so albums,
-    // audiobooks, and podcasts all get a turn. Keep it under Recently Played
-    // because the user asked for listening history to lead Home.
+    // audiobooks, and podcasts all get a turn. Under Recents: what you were
+    // playing outranks what the server has just acquired.
     if (recentlyAddedItems.length > 0) {
         displaySections.push({
             items: recentlyAddedItems,
             key: 'recently-added-to-server',
             title: 'Recently Added',
             variant: 'recents',
-        });
-    }
-
-    // Featured single-card row for the server-managed Explo drop playlist.
-    // Deliberately sits high (right under Recently Added) since it's fresh,
-    // curated content — not rotated for freshness like the library shelves
-    // below, since there's only ever the one card.
-    if (exploItems.length > 0) {
-        displaySections.push({
-            ignoresHiddenItems: true,
-            items: exploItems,
-            key: MobileHomeSectionId.EXPLO,
-            title: 'New from Explore',
-            variant: 'explo',
         });
     }
 
@@ -741,11 +751,16 @@ export const getHomeDisplaySections = (
         });
     }
 
-    // The Explore queue already has its own featured card above — drop it from
-    // the generic shelf so it doesn't appear on Home twice. (It stays in the
-    // Library playlist list, where completeness beats curation.)
-    const exploPlaylistIds = new Set(exploItems.map((item) => item.id));
-    const shelfPlaylistItems = playlistItems.filter((item) => !exploPlaylistIds.has(item.id));
+    // A playlist with a hero card above — the Explore drop, a season — is
+    // dropped from the generic shelf so it doesn't appear on Home twice. (It
+    // stays in the Library playlist list, where completeness beats curation.)
+    const heroPlaylistIds = new Set(
+        heroItems
+            .slice(0, 1)
+            .filter((item) => item.type === MobileHomeItemType.PLAYLIST)
+            .map((item) => item.id),
+    );
+    const shelfPlaylistItems = playlistItems.filter((item) => !heroPlaylistIds.has(item.id));
     if (shelfPlaylistItems.length > 0) {
         displaySections.push({
             items: rotateForFreshness(shelfPlaylistItems, 5).slice(0, 16),

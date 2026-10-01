@@ -8,7 +8,7 @@
 
 import { type ServerAuthenticationResult } from './server-auth';
 import { type SamoFetch } from './server-http';
-import { samoGet, samoSend } from './server-samo';
+import { absoluteSamoMediaUrl, samoGet, samoSend } from './server-samo';
 
 export type SamoRadioStatus = 'buffering' | 'error' | 'idle' | 'paused' | 'playing';
 export type SamoRadioMode = 'channel' | 'idle' | 'queue';
@@ -28,6 +28,12 @@ export interface SamoRadioItem {
 /** The tuned channel, plus whatever it is airing right now. */
 export interface SamoRadioChannelState {
     artist?: string;
+    /**
+     * The picture of what is AIRING, not of the station it came through:
+     * the episode's show, the track's album. Absolute when hosted elsewhere,
+     * otherwise a samo-relative path — see `resolveSamoRadioArtworkUrl`.
+     */
+    artworkUrl?: string;
     id: string;
     /** Which kind of station is tuned; absent on older devices. */
     kind?: SamoRadioStationKind;
@@ -295,6 +301,24 @@ export const isSamoRadioDeviceOnline = (device: SamoRadioDevice): boolean =>
  */
 export const isSamoRadioDeviceConnected = (device: SamoRadioDevice): boolean =>
     isSamoRadioDeviceUsable(device) && isSamoRadioDeviceOnline(device);
+
+/**
+ * The picture of what a device is playing, as a URL this client can load.
+ *
+ * On a channel that is the airing item's art — the show, the album — rather
+ * than the channel's own tile; off a channel it is the queued item's. The
+ * device reports samo-hosted art as a path relative to the server, because
+ * the device does not know what address the phone reached samo on; the
+ * address the caller connected with is the only one that is right.
+ */
+export const resolveSamoRadioArtworkUrl = (
+    authentication: Pick<ServerAuthenticationResult, 'url'>,
+    state: Pick<SamoRadioState, 'channel' | 'item'>,
+    streamToken?: string,
+): string | undefined => {
+    const raw = state.channel?.artworkUrl || state.item?.artworkUrl;
+    return raw ? absoluteSamoMediaUrl(authentication, raw, streamToken) : undefined;
+};
 
 /**
  * What "next" and "previous" would do to whatever the device is playing.

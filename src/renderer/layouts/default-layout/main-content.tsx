@@ -1,6 +1,6 @@
 import clsx from 'clsx';
 import { motion } from 'motion/react';
-import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { shallow } from 'zustand/shallow';
 
@@ -11,7 +11,6 @@ import { ExpandedListContainer } from '/@/renderer/components/item-list/expanded
 import { ExpandedListItem } from '/@/renderer/components/item-list/expanded-list-item';
 import { SectionPills } from '/@/renderer/features/navigation/components/section-pills';
 import { GlobalSearchBar } from '/@/renderer/features/search/components/global-search-bar';
-import { RouteFallback } from '/@/renderer/features/shared/components/page-skeletons/route-fallback';
 import { AppMenu } from '/@/renderer/features/titlebar/components/app-menu';
 import { FullScreenOverlay } from '/@/renderer/layouts/default-layout/full-screen-overlay';
 import { FullScreenVisualizerOverlay } from '/@/renderer/layouts/default-layout/full-screen-visualizer-overlay';
@@ -255,9 +254,7 @@ function MainContentBody() {
     return (
         <div className={styles.mainContentBody}>
             <div className={styles.mainContentBodyScroll}>
-                <Suspense fallback={<RouteFallback />}>
-                    <SectionOutlet />
-                </Suspense>
+                <SectionOutlet />
             </div>
             <GlobalExpandedPanel />
         </div>

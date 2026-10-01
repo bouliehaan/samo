@@ -87,6 +87,8 @@ export interface DownloadEntry {
     totalBytes?: number;
     trackId: string;
     trackSubtitle?: string;
+    /** Queued, but the device holds no session for its server; resumes on sign-in. */
+    waitingForSignIn?: boolean;
 }
 
 // ---------- Native bridge ----------

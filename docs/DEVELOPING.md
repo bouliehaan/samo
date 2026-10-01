@@ -30,9 +30,12 @@ cd apps/android && pnpm run verify       # typecheck + lint for Android
 
 ```
 src/            Desktop app (Electron: main, preload, renderer, shared)
-apps/android/   Android app (React Native + Expo, bare workflow)
+apps/android/   Android phone + TV app (React Native + Expo, bare workflow)
 packages/core/  @samo/core — server client and media mapping shared by both
 ```
 
 Both clients talk to the same `@samo/core`, so server behaviour is defined once
 and they inherit it together.
+
+Android TV shares the Android runtime and uses a separate remote-operated UI.
+See [the TV foundation](ANDROID_TV.md) for architecture, builds, and device checks.

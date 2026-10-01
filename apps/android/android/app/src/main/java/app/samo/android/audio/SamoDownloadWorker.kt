@@ -76,6 +76,18 @@ internal class SamoDownloadWorker(
                 return Result.success()
             }
 
+            // Send with the session the device holds NOW for this entry's
+            // server, never the token it was queued with: disconnect and sign
+            // in again, and that token was revoked on the way out. Signed out
+            // of the server, there is nothing to send with, so the entry waits
+            // for a sign-in rather than failing, and keeps its bytes.
+            val session = SamoSessionCredentials.resolve(applicationContext, entry.credentialClaim)
+                as? SamoSessionCredentials.Resolution.Usable
+            if (session == null) {
+                SamoDownloads.markWaitingForSignIn(applicationContext, entryId, rejectedCredential = null)
+                return Result.success()
+            }
+
             SamoDownloads.beginTransfer(applicationContext, entryId)
             return try {
                 // Inside the try, so the finish() below is unconditional. The
@@ -84,8 +96,18 @@ internal class SamoDownloadWorker(
                 // is how the download card came to outlive every download.
                 SamoDownloadService.begin(applicationContext)
                 withContext(Dispatchers.IO) {
-                    runTransfer(entry)
+                    runTransfer(entry, session)
                 }
+            } catch (error: SessionRejectedException) {
+                // The server refused the token the device holds for it. Nothing
+                // will work until the user signs in again, so wait for that
+                // instead of spending the entry's retries and landing in Failed.
+                SamoDownloads.markWaitingForSignIn(
+                    applicationContext,
+                    entryId,
+                    rejectedCredential = session.credential,
+                )
+                Result.success()
             } catch (error: TransferCanceledException) {
                 SamoDownloads.markCanceled(applicationContext, entryId)
                 Result.success()
@@ -154,7 +176,10 @@ internal class SamoDownloadWorker(
         }
     }
 
-    private suspend fun runTransfer(entry: SamoDownloads.Entry): Result {
+    private suspend fun runTransfer(
+        entry: SamoDownloads.Entry,
+        session: SamoSessionCredentials.Resolution.Usable,
+    ): Result {
         val destination = SamoDownloads.localFileForEntry(applicationContext, entry)
         val partial = File(destination.absolutePath + ".part")
         destination.parentFile?.mkdirs()
@@ -173,7 +198,7 @@ internal class SamoDownloadWorker(
 
         var connection: HttpURLConnection? = null
         try {
-            val stream = openStream(entry, startFrom, partial)
+            val stream = openStream(entry, session, startFrom, partial)
             connection = stream.connection
             val totalBytes = stream.totalBytes
             var writtenBytes = stream.resumeFrom
@@ -274,6 +299,7 @@ internal class SamoDownloadWorker(
      */
     private fun openStream(
         entry: SamoDownloads.Entry,
+        session: SamoSessionCredentials.Resolution.Usable,
         startFrom: Long,
         partial: File,
     ): OpenStream {
@@ -281,7 +307,7 @@ internal class SamoDownloadWorker(
         var forceFreshToken = false
         var restarted = startFrom <= 0L
         while (true) {
-            val connection = openWithFreshToken(entry, forceFreshToken, resumeFrom)
+            val connection = openWithFreshToken(entry, session, forceFreshToken, resumeFrom)
             val decision = try {
                 SamoDownloadResume.decide(
                     responseCode = connection.responseCode,
@@ -331,46 +357,30 @@ internal class SamoDownloadWorker(
         }
     }
 
-    /** Re-resolve the entry URL with a live stream token (when the entry
-     *  carries its auth context), then open the connection. */
+    /** Open the entry's URL on [session]'s address with a live stream token
+     *  minted from [session]. */
     private fun openWithFreshToken(
         entry: SamoDownloads.Entry,
+        session: SamoSessionCredentials.Resolution.Usable,
         forceFresh: Boolean,
         resumeFrom: Long,
     ): HttpURLConnection {
-        var url = entry.sourceUrl
-        var serverUrl = entry.serverUrl
-        var bearer = entry.serverBearer
-        val mirror = SamoAuthMirror.loadSamo(applicationContext)
-        if (serverUrl.isNullOrBlank() || bearer.isNullOrBlank()) {
-            // Entries enqueued before auth context rode along (or whose JS
-            // caller had none): recover it from the auth mirror by host
-            // match — the same fallback the player's resolving data source
-            // uses. Without this, retrying a legacy entry replays its stale
-            // minted-at-enqueue token straight into another 401.
-            val connection = mirror.firstOrNull { entry.sourceUrl.startsWith(it.url) }
-            if (connection != null) {
-                serverUrl = connection.url
-                bearer = connection.credential
-            }
-        } else if (mirror.none { it.url == serverUrl }) {
-            // The address this entry was queued against is no longer one the
-            // app uses — the server moved, or we left the LAN and are now
-            // reaching it through its remote address. A queued download can
-            // easily outlive the network it was queued on, and retrying it
-            // against a dead origin just burns the retry budget, so re-home it
-            // onto whichever address currently holds the same credential.
-            val connection = mirror.firstOrNull { it.credential == bearer } ?: mirror.firstOrNull()
-            if (connection != null) {
-                url = SamoNativeStreamUrl.rehomeUrl(url, connection.url) ?: url
-                serverUrl = connection.url
-                bearer = connection.credential
-            }
-        }
-        if (!serverUrl.isNullOrBlank() && !bearer.isNullOrBlank()) {
-            if (SamoNativeStreamUrl.ensureFreshTokenBlocking(serverUrl, bearer, forceFresh)) {
-                SamoNativeStreamUrl.freshenUrlTokenFromCache(url, serverUrl, bearer)?.let { url = it }
-            }
+        // A queued download can easily outlive the network it was queued on:
+        // the server moved, or we left the LAN and now reach it through its
+        // remote address. Retrying against a dead origin just burns the retry
+        // budget, so the URL follows the session to wherever it is now.
+        var url = SamoNativeStreamUrl.rehomeUrl(entry.sourceUrl, session.serverUrl) ?: entry.sourceUrl
+        when (
+            SamoNativeStreamUrl.ensureFreshTokenBlocking(session.serverUrl, session.credential, forceFresh)
+        ) {
+            null ->
+                SamoNativeStreamUrl.freshenUrlTokenFromCache(url, session.serverUrl, session.credential)
+                    ?.let { url = it }
+            SamoNativeStreamUrl.MintFailureReason.Auth -> throw SessionRejectedException()
+            // Unreachable or erroring: try the URL as it stands. Its own token
+            // may still be good, and a request that fails for real lands in
+            // the usual failure handling.
+            else -> Unit
         }
         return (URL(url).openConnection() as HttpURLConnection).apply {
             connectTimeout = 15_000
@@ -432,6 +442,9 @@ internal class SamoDownloadWorker(
     )
 
     private class TransferCanceledException : RuntimeException("canceled")
+
+    /** The server refused the token the device holds for it. */
+    private class SessionRejectedException : RuntimeException("session rejected")
 
     private class TransferInterruptedException(
         val bytesWritten: Long,

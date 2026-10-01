@@ -1,17 +1,15 @@
-/*
- * The page scrolls; the grid inside it does not stretch to fit.
- *
- * The grid is virtualized, which means it needs a definite height to measure
- * against — it cannot be "as tall as its contents". So it gets a generous fixed
- * block (below) and the shelves above it ride in the page's own scroll.
- */
+/* The page owns vertical scrolling for both shelves and the virtualized catalog. */
 .page {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+}
+
+.content {
     display: flex;
     flex-direction: column;
     gap: var(--theme-spacing-lg);
-    min-height: 0;
     padding: 2rem 2rem 3rem;
-    overflow-y: auto;
 }
 
 .header {
@@ -23,14 +21,4 @@
 
 .search {
     max-width: 32rem;
-}
-
-/*
- * Tall enough to be the main event rather than a letterbox under the shelves,
- * and capped so it cannot push its own scrollbar off the bottom of the window.
- */
-.grid {
-    flex: 0 0 auto;
-    height: clamp(30rem, 72vh, 64rem);
-    min-height: 0;
 }

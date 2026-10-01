@@ -2,14 +2,9 @@ import { lazy, Suspense, useMemo } from 'react';
 
 import { useListContext } from '/@/renderer/context/list-context';
 import { useAlbumListFilters } from '/@/renderer/features/albums/hooks/use-album-list-filters';
-import { ListFilters, ListFiltersTitle } from '/@/renderer/features/shared/components/list-filters';
-import { ListWithSidebarContainer } from '/@/renderer/features/shared/components/list-with-sidebar-container';
 import { GridPageSkeleton } from '/@/renderer/features/shared/components/page-skeletons/page-skeletons';
-import { SaveAsCollectionButton } from '/@/renderer/features/shared/components/save-as-collection-button';
 import { ItemListSettings, useCurrentServer, useListSettings } from '/@/renderer/store';
-import { ScrollArea } from '/@/shared/components/scroll-area/scroll-area';
-import { Stack } from '/@/shared/components/stack/stack';
-import { AlbumListQuery, LibraryItem } from '/@/shared/types/domain-types';
+import { AlbumListQuery } from '/@/shared/types/domain-types';
 import { ItemListKey, ListDisplayType, ListPaginationType } from '/@/shared/types/types';
 
 const AlbumListInfiniteGrid = lazy(() =>
@@ -48,29 +43,8 @@ const AlbumListPaginatedDetail = lazy(() =>
     })),
 );
 
-const AlbumListFilters = () => {
-    return (
-        <ListWithSidebarContainer.SidebarPortal>
-            <Stack h="100%" style={{ minHeight: 0 }}>
-                <ListFiltersTitle itemType={LibraryItem.ALBUM} />
-                <ScrollArea style={{ flex: 1, minHeight: 0 }}>
-                    <ListFilters itemType={LibraryItem.ALBUM} />
-                </ScrollArea>
-                <Stack p="sm">
-                    <SaveAsCollectionButton fullWidth itemType={LibraryItem.ALBUM} />
-                </Stack>
-            </Stack>
-        </ListWithSidebarContainer.SidebarPortal>
-    );
-};
-
 export const AlbumListContent = () => {
-    return (
-        <>
-            <AlbumListFilters />
-            <AlbumListSuspenseContainer />
-        </>
-    );
+    return <AlbumListSuspenseContainer />;
 };
 
 const AlbumListSuspenseContainer = () => {

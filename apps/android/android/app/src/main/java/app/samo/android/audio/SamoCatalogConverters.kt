@@ -225,40 +225,19 @@ internal object SamoCatalogConverters {
             trackCount > 0 -> "$trackCount tracks"
             else -> ownerName
         }
-        val images = playlist.optJSONArray("images")
-        // A playlist with >1 cover renders the server-composited 2x2 grid at
-        // /music/playlists/{id}/cover. The JS display resolver
-        // (resolveSamoItemArtworkSourceForDisplay) prefers artworkImageId over
-        // artworkUrl, so emitting a single first-cover id here would override the
-        // grid with one cover. Drop the id for grid playlists. Kotlin twin of the
-        // JS mapper fix in packages/core (samoPlaylistHasCoverGrid).
-        val hasCoverGrid = images != null && images.length() > 1
-        val artworkImageId = if (hasCoverGrid) null else pickSamoImageId(images)
-        // The grid is composited from the playlist's first four track covers at
-        // request time and served `immutable, max-age=1y` behind a FIXED URL, so
-        // adding a track changes the image at an address every cache has been
-        // told will never change. `updatedAt` moves on every write to the
-        // playlist, so stamping it gives a changed grid a new address and leaves
-        // an unchanged one on the bytes it already has. Kotlin twin of
-        // samoPlaylistCoverVersion in packages/core — the two must agree, or the
-        // mirror-backed surfaces and the network-backed ones would cache the
-        // same grid under two URLs.
+        // Use the playlist endpoint even when the sync snapshot has one or no
+        // images. The server selects custom art or generates the current grid.
         val coverVersion = toEpochMs(playlist.optString("updatedAt").nullIfBlank())?.toString()
         val playlistCoverUrl = SamoNativeStreamUrl.buildStreamUrl(
             serverUrl,
             "/music/playlists/${encode(id)}/cover",
             streamToken.orEmpty(),
-            if (coverVersion != null) mapOf("v" to coverVersion) else emptyMap(),
+            mapOf("artwork" to "2") + (if (coverVersion != null) mapOf("v" to coverVersion) else emptyMap()),
         )
-        val artworkUrl =
-            if (hasCoverGrid) {
-                playlistCoverUrl
-            } else {
-                resolveSamoImageUrl(serverUrl, images, streamToken)
-            } ?: playlistCoverUrl
+        val artworkUrl = playlistCoverUrl
 
         val payload = JSONObject()
-            .putNotNull("artworkImageId", artworkImageId)
+            .putNotNull("artworkImageId", null)
             .putNotNull("artworkUrl", artworkUrl)
             .put("id", id)
             .putNotNull("lastPlayedAt", playback?.let { toEpochMs(it.optString("lastPlayedAt").nullIfBlank()) })
@@ -281,7 +260,7 @@ internal object SamoCatalogConverters {
             durationSeconds = null,
             containerId = null,
             artworkUrl = artworkUrl,
-            artworkImageId = artworkImageId,
+            artworkImageId = null,
             qualityProfile = null,
             isHiRes = 0L,
             payload = payload.toString(),
@@ -723,38 +702,30 @@ internal object SamoCatalogConverters {
         return resolveSamoImageUrl(serverUrl, JSONArray().put(image), streamToken)
     }
 
+    /**
+     * Put [streamToken] on a Samo media URL, homed on [serverUrl]. The Kotlin
+     * twin of JS `appendSamoStreamTokenToUrl`: a URL on the server's own origin,
+     * or an `/api/v1/` path shipped under a scan-time host, is Samo's and gets
+     * the token. Anything else belongs to someone else (a feed's artwork, a
+     * podcast CDN) and is returned untouched: a stream token in a third party's
+     * URL is a credential in that third party's logs.
+     */
     private fun appendStreamTokenIfApiUrl(serverUrl: String, url: String, streamToken: String?): String {
         if (streamToken.isNullOrBlank()) return url
         return try {
             val parsed = java.net.URL(url)
-            // Rewrite to the configured server host when the URL points at
-            // /api/v1/… (server-shipped absolute URLs may use the loopback
-            // hostname from scan time). Match JS appendSamoStreamTokenToUrl.
             val base = java.net.URL(serverUrl)
-            val effectiveHostPath =
-                if (parsed.path.contains("/api/v1/")) "${base.protocol}://${base.authority}${parsed.path}"
-                else url
+            val sameOrigin = parsed.protocol == base.protocol && parsed.authority == base.authority
+            if (!sameOrigin && !parsed.path.contains("/api/v1/")) return url
 
-            val builder = StringBuilder(effectiveHostPath)
             // Strip any existing stream_token query, then append the new one.
             val existingQuery = parsed.query
                 ?.split("&")
                 ?.filter { it.isNotBlank() && !it.startsWith("stream_token=") }
                 ?.joinToString("&")
                 .orEmpty()
-            val sep = if (builder.contains('?')) '&' else '?'
-            // builder already contains the URL up to (but not including)
-            // query — strip what we appended for the host-rewrite case.
             val finalBuilder = StringBuilder()
-            // Reconstruct: protocol/authority/path (without query) +
-            // existingQuery + stream_token
-            finalBuilder.append(parsed.protocol).append("://")
-            if (parsed.path.contains("/api/v1/")) {
-                finalBuilder.append(base.authority)
-            } else {
-                finalBuilder.append(parsed.authority)
-            }
-            finalBuilder.append(parsed.path)
+            finalBuilder.append(base.protocol).append("://").append(base.authority).append(parsed.path)
             if (existingQuery.isNotEmpty()) {
                 finalBuilder.append('?').append(existingQuery)
                 finalBuilder.append('&')

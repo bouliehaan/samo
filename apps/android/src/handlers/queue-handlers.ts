@@ -17,21 +17,28 @@ import {
     getRecentContentItemKey,
 } from '../services/recent-content';
 import { getAuthSession } from '../state/auth-session';
+import { getPlaybackBridge } from '../state/playback-bridge';
 import { isOfflineNow } from '../state/network-state';
 import { setContextMenuFeedback } from '../state/media-overlays';
 import { getPlaybackQueue, setPlaybackQueue } from '../state/playback-queue-store';
 import { getAndroidPlaybackState } from '../state/playback-store';
+import { buildCollectionQueueItems } from '../utils/collection-queue';
 import { buildDownloadedMusicDetail } from '../utils/offline-music-detail';
 import {
     audiobookFilesTimelineDurationSeconds,
     buildAudiobookFilePlaybackQueue,
     buildOfflineAudiobookPlayable,
 } from '../utils/offline-playback';
+import { getDefaultDetailTrackOrder } from '../utils/media-detail';
 import { rememberMediaDetail } from '../utils/media-detail-cache';
 import { withResumePosition } from '../utils/playback-resume';
 import { insertQueueItems, type QueueInsertPlacement } from '../utils/queue-edits';
 import { mediaDetailCache } from './handler-state';
-import { resolveAudiobookResumeSeconds } from './playback-handlers';
+import {
+    handlePlayMediaTrack,
+    handleShuffleDetailTracks,
+    resolveAudiobookResumeSeconds,
+} from './playback-handlers';
 
 /** True when the Up Next queue can take more items — something sequential is
  *  active (radio is a live stream with no queue). Pure so render code can
@@ -287,6 +294,7 @@ export const handleAddRadioToQueue = (item: AndroidRecentContentSourceItem): voi
 const enqueueCollection = async (
     item: AndroidRecentContentSourceItem,
     placement: QueueInsertPlacement,
+    shuffled = false,
 ): Promise<void> => {
     if (
         item.type !== MobileHomeItemType.ALBUM &&
@@ -311,20 +319,67 @@ const enqueueCollection = async (
         return;
     }
 
-    // Every sequential playable, in the collection's own order, as one block.
-    // Radio is never collection-backed, but the guard keeps the engine's
-    // invariant (no live stream in the queue).
-    const playables = detail.tracks.flatMap((track) =>
-        track.playback && track.playback.source !== 'radio' ? [track.playback] : [],
-    );
+    const playables = buildCollectionQueueItems(detail, shuffled);
     const added = enqueuePlayableItems(playables, placement);
     if (added > 0) {
         setContextMenuFeedback(placementFeedback(placement, added, false));
     }
 };
 
-export const handleAddCollectionToQueue = (item: AndroidRecentContentSourceItem): Promise<void> =>
-    enqueueCollection(item, 'end');
+export const handleAddCollectionToQueue = (
+    item: AndroidRecentContentSourceItem,
+    options?: { shuffled?: boolean },
+): Promise<void> => enqueueCollection(item, 'end', options?.shuffled);
 
-export const handlePlayCollectionNext = (item: AndroidRecentContentSourceItem): Promise<void> =>
-    enqueueCollection(item, 'next');
+export const handlePlayCollectionNext = (
+    item: AndroidRecentContentSourceItem,
+    options?: { shuffled?: boolean },
+): Promise<void> => enqueueCollection(item, 'next', options?.shuffled);
+
+/**
+ * Play a whole album or playlist from a tile, now — what the detail page's
+ * own play and shuffle buttons do, without opening the page first. Goes
+ * through the detail so the queue carries everything that page's queue would:
+ * the playlist id, whether it is the Explore drop, whether it can be edited.
+ * A playlist starts from its newest entry, which is the order its page shows.
+ */
+export const handlePlayCollectionNow = async (
+    item: AndroidRecentContentSourceItem,
+    options?: { shuffled?: boolean },
+): Promise<void> => {
+    if (item.type !== MobileHomeItemType.ALBUM && item.type !== MobileHomeItemType.PLAYLIST) {
+        return;
+    }
+    const detail = await loadDetailForContextAction(item);
+    if (!detail) {
+        return;
+    }
+    if (options?.shuffled) {
+        await handleShuffleDetailTracks(detail);
+        return;
+    }
+    const tracks = getDefaultDetailTrackOrder(detail);
+    const index = tracks.findIndex((track) => track.playback && track.playback.source !== 'radio');
+    if (index === -1) {
+        return;
+    }
+    await handlePlayMediaTrack(detail, tracks[index]!, index, tracks);
+};
+
+/**
+ * Jump to one item of the current queue — a tap on an Up Next row. The same
+ * native queue step the lock screen uses; a full JS restart only as the
+ * fallback when native cannot step (a queue it does not mirror).
+ */
+export const handlePlayQueueIndex = async (index: number): Promise<void> => {
+    const currentQueue = getPlaybackQueue();
+    const item = currentQueue?.items[index];
+    if (!currentQueue || !item) {
+        return;
+    }
+    const bridge = getPlaybackBridge();
+    if (await bridge.playQueueIndexNatively(index)) {
+        return;
+    }
+    await bridge.playQueuedItem(item, currentQueue.items, index);
+};

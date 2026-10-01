@@ -1,7 +1,7 @@
 import { useSelectFilter } from '/@/renderer/features/shared/hooks/use-select-filter';
 import { Button } from '/@/shared/components/button/button';
 import { DropdownMenu } from '/@/shared/components/dropdown-menu/dropdown-menu';
-import { Select } from '/@/shared/components/select/select';
+import { Icon } from '/@/shared/components/icon/icon';
 import { ItemListKey } from '/@/shared/types/types';
 
 export type SelectOption = string | { label: string; value: string };
@@ -44,17 +44,15 @@ export const ListSelectFilter = ({ data, filterKey, listKey }: ListSelectFilterP
     const selectedLabel = selectedOption ? getOptionLabel(selectedOption) : '—';
 
     return (
-        <Select
-            data={selectData}
-            onChange={(value) => handleSetValue(value ?? '')}
-            value={value ?? ''}
-        />
-    );
-
-    return (
         <DropdownMenu position="bottom-start">
             <DropdownMenu.Target>
-                <Button variant="subtle">{selectedLabel}</Button>
+                <Button
+                    data-active={Boolean(value) || undefined}
+                    rightSection={<Icon icon="arrowDownS" size="sm" />}
+                    variant="toolbar"
+                >
+                    {selectedLabel}
+                </Button>
             </DropdownMenu.Target>
             <DropdownMenu.Dropdown>
                 {selectData.map((option) => {

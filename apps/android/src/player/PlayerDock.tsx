@@ -6,14 +6,16 @@ import { type SharedValue, withSpring, withTiming } from 'react-native-reanimate
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { useReducedMotionPreference } from '../hooks/use-reduced-motion-preference';
 import { handleGoToArtistForTrack } from '../handlers/media-detail-handlers';
+import { handlePlayQueueIndex } from '../handlers/queue-handlers';
 import {
+    getAppNavigation,
     setIsFullPlayerOpen,
     useAppNavigationSelector,
 } from '../state/app-navigation';
 import { useAppSessionSelector } from '../state/app-session';
 import { useAuthSessionSelector } from '../state/auth-session';
 import { getPlaybackBridge } from '../state/playback-bridge';
-import { getPlaybackQueue, usePlaybackQueue } from '../state/playback-queue-store';
+import { usePlaybackQueue } from '../state/playback-queue-store';
 import {
     selectActiveAndroidPlaybackItem,
     useAndroidPlaybackState,
@@ -42,25 +44,7 @@ const handlePlayerSkipBySeconds = (offsetSeconds: number) =>
 const handleTogglePlayback = () => void getPlaybackBridge().togglePlayback();
 const handleToggleShuffle = () => getPlaybackBridge().toggleShuffle();
 const handleCycleRepeatMode = () => getPlaybackBridge().cycleRepeatMode();
-const handlePlayerPlayQueueIndex = (index: number) => {
-    const currentQueue = getPlaybackQueue();
-    if (!currentQueue) {
-        return;
-    }
-    const item = currentQueue.items[index];
-    if (!item) {
-        return;
-    }
-    void (async () => {
-        // Same native queue step the lock screen uses; full JS restart
-        // only as fallback.
-        const bridge = getPlaybackBridge();
-        if (await bridge.playQueueIndexNatively(index)) {
-            return;
-        }
-        await bridge.playQueuedItem(item, currentQueue.items, index);
-    })();
-};
+const handlePlayerPlayQueueIndex = (index: number) => void handlePlayQueueIndex(index);
 
 /**
  * The player chrome: mini player, fullscreen player, and the output picker.
@@ -91,27 +75,14 @@ export const PlayerDock = memo(function PlayerDock({
         const closeSpring = reducedMotion ? REDUCED_MOTION_SPRING : PLAYER_CLOSE_SPRING;
         if (isFullPlayerOpen) {
             playerProgress.value = withSpring(1, openSpring);
-        } else if (playerProgress.value > 0.001) {
-            // Gesture dismiss already animates playerProgress to 0 and calls
-            // onClose from the spring onFinish callback — avoid restarting the
-            // close motion.
+        } else {
+            // Always reconcile a closed destination, including interrupted
+            // gestures. Avoid synchronously reading the UI value on JS.
             playerProgress.value = reducedMotion
                 ? withTiming(0, { duration: 0 })
                 : withSpring(0, closeSpring);
         }
     }, [isFullPlayerOpen, playerProgress, reducedMotion]);
-
-    useEffect(() => {
-        // Close fullscreen only on the navigation EDGE — when the detail starts
-        // loading. Watching just the status (not isFullPlayerOpen) means this
-        // doesn't fire when the user opens the fullscreen player on a page
-        // that's already showing a loaded detail. That was the bug: tapping
-        // the MiniPlayer on an album/artist/playlist page set isFullPlayerOpen
-        // true → this effect ran → and immediately set it false.
-        if (mediaDetailStatus === 'loading') {
-            setIsFullPlayerOpen(false);
-        }
-    }, [mediaDetailStatus]);
 
     // Single canonical URL for the currently-playing track's artwork. The
     // MiniPlayer, FullScreenPlayer, and album-essence color extractor all
@@ -142,25 +113,42 @@ export const PlayerDock = memo(function PlayerDock({
     );
 
     const handleOpenFullPlayer = useCallback(() => {
-        // Kick the expand spring on the UI thread NOW so the card starts
-        // moving on the next frame instead of waiting for the re-render the
-        // state flip schedules. The open effect above re-targets the same
-        // spring once `isFullPlayerOpen` commits, which is a no-op.
+        setIsFullPlayerOpen(true);
         playerProgress.value = withSpring(
             1,
             reducedMotion ? REDUCED_MOTION_SPRING : PLAYER_OPEN_SPRING,
         );
-        setIsFullPlayerOpen(true);
     }, [playerProgress, reducedMotion]);
     const handleCloseFullPlayer = useCallback(() => {
-        // Mirror of open: begin collapsing immediately rather than after the
-        // re-render the state flip schedules.
-        playerProgress.value = withSpring(
-            0,
-            reducedMotion ? REDUCED_MOTION_SPRING : PLAYER_CLOSE_SPRING,
-        );
+        // Closing is a navigation decision, not an animation completion event.
+        // Even if a spring is cancelled, back/dismiss must release the player.
         setIsFullPlayerOpen(false);
+        playerProgress.value = reducedMotion
+            ? withTiming(0, { duration: 0 })
+            : withSpring(0, PLAYER_CLOSE_SPRING);
     }, [playerProgress, reducedMotion]);
+    const handleCancelPlayerGesture = useCallback(() => {
+        const open = getAppNavigation().isFullPlayerOpen;
+        playerProgress.value = withSpring(
+            open ? 1 : 0,
+            reducedMotion
+                ? REDUCED_MOTION_SPRING
+                : open
+                  ? PLAYER_OPEN_SPRING
+                  : PLAYER_CLOSE_SPRING,
+        );
+    }, [playerProgress, reducedMotion]);
+
+    useEffect(() => {
+        // Only close on the navigation edge. A loaded playlist must still let
+        // the user open the player. Also retract an uncommitted swipe preview,
+        // whose navigation flag is already false and would not trigger the
+        // isFullPlayerOpen effect above.
+        if (mediaDetailStatus === 'loading') {
+            handleCloseFullPlayer();
+        }
+    }, [handleCloseFullPlayer, mediaDetailStatus]);
+
     const handleOpenOutputPicker = useCallback(() => setOutputPickerVisible(true), []);
     const handleCloseOutputPicker = useCallback(() => setOutputPickerVisible(false), []);
     const handleGoToArtist = useCallback(
@@ -192,7 +180,9 @@ export const PlayerDock = memo(function PlayerDock({
                     artworkImageId={playbackItem?.artworkImageId}
                     artworkUrl={currentHighResArtworkUrl}
                     contentSource={playbackContentSource}
+                    isFullPlayerOpen={isFullPlayerOpen}
                     lastPlayedItem={lastPlayedItem}
+                    onCancelGesture={handleCancelPlayerGesture}
                     onOpenFullPlayer={handleOpenFullPlayer}
                     onTogglePlayback={handleTogglePlayback}
                     playerProgress={playerProgress}
@@ -211,7 +201,7 @@ export const PlayerDock = memo(function PlayerDock({
                         <Pressable
                             accessibilityRole="button"
                             onPress={() => {
-                                setIsFullPlayerOpen(false);
+                                handleCloseFullPlayer();
                                 retry();
                             }}
                             style={styles.errorBoundaryButton}
@@ -229,6 +219,7 @@ export const PlayerDock = memo(function PlayerDock({
                     contentSource={playbackContentSource}
                     isShuffled={isShuffled}
                     lastPlayedItem={lastPlayedItem}
+                    onCancelGesture={handleCancelPlayerGesture}
                     onClose={handleCloseFullPlayer}
                     onCycleRepeatMode={handleCycleRepeatMode}
                     onGoToArtist={handleGoToArtist}

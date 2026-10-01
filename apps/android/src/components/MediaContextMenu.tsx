@@ -1,5 +1,5 @@
 import { type ReactNode } from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { Pressable, ScrollView, Text, View } from 'react-native';
 
 import { type MobileContentSource } from '@samo/core/mobile';
 
@@ -82,7 +82,7 @@ export const MediaContextMenu = ({
                 </View>
             </View>
             <View style={styles.mediaContextDivider} />
-            <View style={styles.mediaContextActions}>
+            <ScrollView style={styles.mediaContextActions}>
                 {actions.length === 0 ? (
                     <Text style={styles.mediaContextEmpty}>No actions available.</Text>
                 ) : (
@@ -116,7 +116,7 @@ export const MediaContextMenu = ({
                         </Pressable>
                     ))
                 )}
-            </View>
+            </ScrollView>
             {feedback ? <Text style={styles.mediaContextFeedback}>{feedback}</Text> : null}
         </MotionSheet>
     );

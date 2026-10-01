@@ -1,4 +1,41 @@
 .root {
+    &[data-variant='toolbar'] {
+        flex-shrink: 0;
+        font-size: var(--theme-font-size-sm);
+        font-weight: 650;
+        color: var(--theme-colors-foreground);
+        background: color-mix(in srgb, var(--theme-colors-foreground) 8%, transparent);
+        border: 1px solid transparent;
+        border-radius: 999px;
+        transition:
+            color 120ms ease,
+            background-color 120ms ease;
+
+        &:hover:not(:disabled, [data-disabled='true']),
+        &[data-expanded='true'] {
+            background: color-mix(in srgb, var(--theme-colors-foreground) 14%, transparent);
+        }
+
+        &[data-active='true'] {
+            color: var(--theme-colors-background);
+            background: var(--theme-colors-foreground);
+        }
+
+        &:focus-visible {
+            outline: 2px solid var(--theme-colors-primary-filled);
+            outline-offset: 2px;
+        }
+
+        &:disabled,
+        &[data-disabled='true'] {
+            opacity: 0.4;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            transition: none;
+        }
+    }
+
     --ai-size-xs: calc(1.875rem * var(--mantine-scale));
     --ai-size-sm: calc(2.25rem * var(--mantine-scale));
     --ai-size-md: calc(2.625rem * var(--mantine-scale));

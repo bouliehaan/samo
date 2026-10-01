@@ -38,7 +38,7 @@ export interface HomeDisplaySection {
         | 'artist'
         | 'book'
         | 'continue'
-        | 'explo'
+        | 'heroes'
         | 'playlist'
         | 'podcast'
         | 'podcast-feed'

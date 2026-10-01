@@ -18,7 +18,7 @@ export const SettingsButton = ({ ...props }: SettingsButtonProps) => {
                 label: t('common.configure', { postProcess: 'sentenceCase' }),
                 ...props.tooltip,
             }}
-            variant="subtle"
+            variant="toolbar"
             {...props}
         />
     );

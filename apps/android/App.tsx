@@ -18,6 +18,7 @@ import Reanimated, { useAnimatedStyle, useSharedValue } from 'react-native-reani
 import { ensureSamoStreamToken, ServerType } from '@samo/core/server';
 
 import samoLogo from './assets/samo-logo.png';
+import { TvApp } from './src/tv/TvApp';
 import { AppOverlays } from './src/components/AppOverlays';
 import { BottomChromeBackdrop } from './src/components/BottomChromeBackdrop';
 import { ErrorBoundary } from './src/components/ErrorBoundary';
@@ -213,7 +214,7 @@ export default function App() {
         state.homeContentState.status === 'loaded' ? state.homeContentState.content.loadedAt : 0,
     );
 
-    useAndroidBackHandling();
+    useAndroidBackHandling(!Platform.isTV);
 
     // Unified animation source for the MiniPlayer ↔ FullScreenPlayer transition.
     // 0 = miniplayer visible, 1 = fullscreen visible. The dock, tab bar, and
@@ -488,7 +489,7 @@ export default function App() {
     // silently never shows up. Request once on boot; declined permissions
     // simply mean no notification.
     useEffect(() => {
-        if (Platform.OS !== 'android' || Platform.Version < 33) return;
+        if (Platform.OS !== 'android' || Platform.isTV || Platform.Version < 33) return;
         void PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS).catch(
             () => undefined,
         );
@@ -504,7 +505,13 @@ export default function App() {
                 {!fontsLoaded ? null : (
                     <ServerConnectionsContext.Provider value={serverConnection}>
                         <MediaContextMenuContext.Provider value={mediaContextMenuApi}>
-                            <View style={styles.safeArea}>
+                            {Platform.isTV ? (
+                                <View style={styles.safeArea}>
+                                    <StatusBar hidden />
+                                    <NowPlayingMetadataSync />
+                                    <TvApp />
+                                </View>
+                            ) : <View style={styles.safeArea}>
                                 {/* The app draws UNDER the status bar. SDK 57
                                 dropped `translucent`/`backgroundColor` from
                                 expo-status-bar because Android is now always
@@ -652,7 +659,7 @@ export default function App() {
                                 </KeyboardProvider>
                                 <AppOverlays />
                                 <OnboardingGate />
-                            </View>
+                            </View>}
                         </MediaContextMenuContext.Provider>
                     </ServerConnectionsContext.Provider>
                 )}

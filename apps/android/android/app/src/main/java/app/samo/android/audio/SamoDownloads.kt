@@ -214,7 +214,23 @@ internal object SamoDownloads {
         // clear. Reset on completion and on a retry the user asked for.
         val recoveryAttempts: Int = 0,
         val lastFailureAt: Long? = null,
+        // Parked because the device holds no usable session for this entry's
+        // server: signed out of it, or the server refused the token it holds.
+        // Only ever true on a Queued row. The pump leaves it alone, and the
+        // next session for its server puts it back in the queue — see
+        // [markWaitingForSignIn] and [resumeWaitingForSignIn].
+        val waitingForSignIn: Boolean = false,
     ) {
+        /** Which session this entry's transfer belongs to. Resolved when it
+         *  runs, never taken from [serverBearer] — see [SamoSessionCredentials]. */
+        val credentialClaim: SamoSessionCredentials.Claim
+            get() = SamoSessionCredentials.Claim(
+                connectionKey = collection.sourceId,
+                serverUrl = serverUrl,
+                credential = serverBearer,
+                resourceUrl = sourceUrl,
+            )
+
         fun toJson(): JSONObject = JSONObject()
             .put("id", id)
             .put("trackId", trackId)
@@ -238,6 +254,7 @@ internal object SamoDownloads {
                 if (!failureRecoverable) obj.put("failureRecoverable", false)
                 if (recoveryAttempts > 0) obj.put("recoveryAttempts", recoveryAttempts)
                 lastFailureAt?.let { obj.put("lastFailureAt", it) }
+                if (waitingForSignIn) obj.put("waitingForSignIn", true)
             }
 
         fun toMap(): WritableMap = Arguments.createMap().apply {
@@ -256,6 +273,7 @@ internal object SamoDownloads {
             progress?.let { putDouble("progress", it) }
             completedAt?.let { putDouble("completedAt", it.toDouble()) }
             errorMessage?.let { putString("errorMessage", it) }
+            if (waitingForSignIn) putBoolean("waitingForSignIn", true)
         }
 
         companion object {
@@ -286,6 +304,7 @@ internal object SamoDownloads {
                 failureRecoverable = json.optBoolean("failureRecoverable", true),
                 recoveryAttempts = json.optInt("recoveryAttempts", 0),
                 lastFailureAt = json.optLongOrNull("lastFailureAt"),
+                waitingForSignIn = json.optBoolean("waitingForSignIn", false),
             )
         }
     }
@@ -346,6 +365,7 @@ internal object SamoDownloads {
                 scheduleNotify()
             }
             pumpQueueInternal(appContext)
+            resumeWaitingInternal(appContext)
             // Heal what broke while we were gone, then keep healing on the
             // clock. Inline rather than as a one-shot work request because we
             // are already on the IO thread with the registry loaded, and the
@@ -383,6 +403,7 @@ internal object SamoDownloads {
                 failureRecoverable = true,
                 recoveryAttempts = 0,
                 lastFailureAt = null,
+                waitingForSignIn = false,
             )
             userRetired.remove(entry.id)
             registry.add(entry)
@@ -416,6 +437,7 @@ internal object SamoDownloads {
                     status = Status.Canceled,
                     progress = null,
                     canceledByUser = true,
+                    waitingForSignIn = false,
                 )
                 progressGate.remove(id)
                 deletePartialFor(appContext, current)
@@ -485,6 +507,7 @@ internal object SamoDownloads {
                 failureRecoverable = true,
                 recoveryAttempts = 0,
                 lastFailureAt = null,
+                waitingForSignIn = false,
             )
             schedulePersist(appContext)
             scheduleNotify()
@@ -521,6 +544,89 @@ internal object SamoDownloads {
                 schedulePersist(appContext)
                 scheduleNotify()
             }
+        }
+    }
+
+    /**
+     * The device's sessions just changed ([SamoSessionCredentials.onSessionsChanged]).
+     * Rows parked for want of a session go back in the queue the moment their
+     * server has one again. And since every transfer reads the session afresh
+     * when it opens ([SamoDownloadWorker]), a new session is exactly when a
+     * row that broke on a dead token may work again, so the recovery sweep
+     * runs now rather than at its next pass. Same policy, so only the rows
+     * that sweep would take.
+     */
+    fun resumeWaitingForSignIn(context: Context) {
+        val appContext = context.applicationContext
+        runOnIo {
+            resumeWaitingInternal(appContext)
+            sweepRecoverableInternal(appContext)
+        }
+    }
+
+    /**
+     * Parks an entry whose server the device holds no usable session for:
+     * signed out of it ([rejectedCredential] null), or the server refused the
+     * token it holds ([rejectedCredential]). Nothing it could send would
+     * work, so it keeps its place and its bytes and waits for the next
+     * session instead of spending retries on its way to Failed.
+     */
+    internal fun markWaitingForSignIn(context: Context, id: String, rejectedCredential: String?) {
+        val appContext = context.applicationContext
+        runOnIo {
+            ensureLoaded(appContext)
+            val index = registry.indexOfFirst { it.id == id }
+            if (index < 0) return@runOnIo
+            val current = registry[index]
+            // A cancel or remove that landed meanwhile wins outright. Failed is
+            // not terminal here: it is how a transient error hands the row to
+            // WorkManager's own retry, and that retry is what just found no session.
+            if (current.status == Status.Completed || current.status == Status.Canceled) return@runOnIo
+            progressGate.remove(id)
+            // A session may have arrived between the worker's look and this
+            // one, and its resume pass may already have run. Re-check here, on
+            // the registry's own thread, so the row cannot park just after the
+            // only event that would have woken it.
+            val usable = SamoSessionCredentials.resolve(appContext, current.credentialClaim)
+                as? SamoSessionCredentials.Resolution.Usable
+            if (usable != null && usable.credential != rejectedCredential) {
+                registry[index] = current.copy(status = Status.Queued, waitingForSignIn = false)
+                scheduleWork(appContext, id, ExistingWorkPolicy.APPEND_OR_REPLACE)
+            } else {
+                registry[index] = current.copy(
+                    status = Status.Queued,
+                    errorMessage = null,
+                    waitingForSignIn = true,
+                )
+                Log.i(TAG, "waiting for sign-in id=$id")
+            }
+            schedulePersist(appContext)
+            scheduleNotify()
+        }
+    }
+
+    private fun resumeWaitingInternal(appContext: Context) {
+        ensureLoaded(appContext)
+        val sessions = SamoAuthMirror.sessions(appContext)
+        var resumed = 0
+        for (i in registry.indices) {
+            val entry = registry[i]
+            if (!entry.waitingForSignIn || entry.status != Status.Queued) continue
+            if (SamoSessionCredentials.resolve(entry.credentialClaim, sessions)
+                    !is SamoSessionCredentials.Resolution.Usable
+            ) {
+                continue
+            }
+            registry[i] = entry.copy(waitingForSignIn = false)
+            // Appended rather than kept: the worker that parked this row may
+            // not have finished yet, and KEEP would drop the request behind it.
+            scheduleWork(appContext, entry.id, ExistingWorkPolicy.APPEND_OR_REPLACE)
+            resumed++
+        }
+        if (resumed > 0) {
+            Log.i(TAG, "resumed $resumed download(s) that were waiting for sign-in")
+            schedulePersist(appContext)
+            scheduleNotify()
         }
     }
 
@@ -611,6 +717,7 @@ internal object SamoDownloads {
                 // is the only thing that says anything about the next try.
                 recoveryAttempts = entry.recoveryAttempts + 1,
                 lastFailureAt = now,
+                waitingForSignIn = false,
             )
             scheduleWork(appContext, entry.id)
         }
@@ -689,6 +796,7 @@ internal object SamoDownloads {
             registry[index] = registry[index].copy(
                 status = Status.Downloading,
                 errorMessage = null,
+                waitingForSignIn = false,
             )
             val active = registry.count { it.status == Status.Downloading }
             Log.i(TAG, "transfer start id=$id active=$active")
@@ -753,6 +861,7 @@ internal object SamoDownloads {
                 failureRecoverable = true,
                 recoveryAttempts = 0,
                 lastFailureAt = null,
+                waitingForSignIn = false,
             )
             progressGate.remove(id)
             schedulePersist(appContext)
@@ -779,6 +888,7 @@ internal object SamoDownloads {
                 errorMessage = message,
                 failureRecoverable = recoverable,
                 lastFailureAt = System.currentTimeMillis(),
+                waitingForSignIn = false,
             )
             progressGate.remove(id)
             schedulePersist(appContext)
@@ -801,6 +911,7 @@ internal object SamoDownloads {
                     status = Status.Canceled,
                     progress = null,
                     canceledByUser = true,
+                    waitingForSignIn = false,
                 )
                 deletePartialFor(appContext, registry[index])
                 schedulePersist(appContext)
@@ -1008,13 +1119,19 @@ internal object SamoDownloads {
         // work name shared per entry. All we need here is to make sure every
         // queued entry has a work request pending.
         for (entry in registry) {
-            if (entry.status == Status.Queued) {
+            // A parked row would only resolve to no session again and park
+            // itself again; the next session for its server wakes it.
+            if (entry.status == Status.Queued && !entry.waitingForSignIn) {
                 scheduleWork(appContext, entry.id)
             }
         }
     }
 
-    private fun scheduleWork(context: Context, id: String) {
+    private fun scheduleWork(
+        context: Context,
+        id: String,
+        policy: ExistingWorkPolicy = ExistingWorkPolicy.KEEP,
+    ) {
         val appContext = context.applicationContext
         val request = OneTimeWorkRequestBuilder<SamoDownloadWorker>()
             .setConstraints(
@@ -1031,7 +1148,7 @@ internal object SamoDownloads {
             .build()
         WorkManager.getInstance(appContext).enqueueUniqueWork(
             workName(id),
-            ExistingWorkPolicy.KEEP,
+            policy,
             request,
         )
     }

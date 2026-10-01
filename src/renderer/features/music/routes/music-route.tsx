@@ -3,10 +3,10 @@ import { Suspense, useRef } from 'react';
 import { useGridCarouselContainerQuery } from '/@/renderer/components/grid-carousel/grid-carousel-v2';
 import { NativeScrollArea } from '/@/renderer/components/native-scroll-area/native-scroll-area';
 import { AlbumInfiniteCarousel } from '/@/renderer/features/albums/components/album-infinite-carousel';
+import { HomeHeroStrip } from '/@/renderer/features/home/components/home-hero-strip';
 import {
     HomeAlbumsSection,
     HomeDiscoverSection,
-    HomeExploSection,
     HomeFavoriteArtists,
     HomeFavoritePlaylists,
     HomeFavoriteTracks,
@@ -37,7 +37,8 @@ import { Platform } from '/@/shared/types/types';
  * The rule is not "never repeat", it is "repeat only what you reach for two
  * different ways": each of these is both something you go looking for by name
  * and something you browse into. Explore especially: it is a dated drop, and a
- * dated thing that is only one tab away is a dated thing nobody sees.
+ * dated thing that is only one tab away is a dated thing nobody sees — so it
+ * is the hero at the top here too, above the library links.
  */
 
 const MusicRecentlyAddedAlbums = ({
@@ -89,15 +90,15 @@ const MusicRoute = () => {
                         px="2rem"
                         ref={containerQuery.ref}
                     >
+                        <HomeHeroStrip />
                         <MusicLibraryLinks />
-                        <HomeExploSection />
                         <HomeFavoritePlaylists containerQuery={containerQuery} />
                         <MusicRecentlyAddedAlbums containerQuery={containerQuery} />
                         <HomeFavoriteArtists containerQuery={containerQuery} />
                         <HomeAlbumsSection containerQuery={containerQuery} />
-                        <HomeFavoriteTracks />
-                        <HomeDiscoverSection />
-                        <HomeRediscoverySection />
+                        <HomeFavoriteTracks containerQuery={containerQuery} />
+                        <HomeDiscoverSection containerQuery={containerQuery} />
+                        <HomeRediscoverySection containerQuery={containerQuery} />
                     </Stack>
                 </LibraryContainer>
             </NativeScrollArea>

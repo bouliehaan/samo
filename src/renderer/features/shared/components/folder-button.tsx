@@ -11,9 +11,9 @@ export const FolderButton = ({ isActive, ...props }: FolderButtonProps) => {
 
     return (
         <ActionIcon
+            data-active={isActive || undefined}
             icon="folder"
             iconProps={{
-                color: isActive ? 'primary' : undefined,
                 size: 'lg',
                 ...props.iconProps,
             }}
@@ -21,7 +21,7 @@ export const FolderButton = ({ isActive, ...props }: FolderButtonProps) => {
                 label: t('entity.folder', { count: 1, postProcess: 'sentenceCase' }),
                 ...props.tooltip,
             }}
-            variant="subtle"
+            variant="toolbar"
             {...props}
         />
     );

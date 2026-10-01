@@ -12,7 +12,7 @@ import org.junit.Test
 /**
  * Locks playlist artwork resolution in the native catalog-mirror converter.
  *
- * The server composites a 2x2 grid at `/music/playlists/{id}/cover` whenever a
+ * The server composites a 2x2 grid at `/music/playlists/{id}/cover?artwork=2` whenever a
  * playlist carries more than one cover. The JS display resolver
  * (`resolveSamoItemArtworkSourceForDisplay`) prefers `artworkImageId` over
  * `artworkUrl`, so a grid playlist must NOT carry a single first-cover image id
@@ -52,7 +52,7 @@ class SamoCatalogConvertersTest {
         val binding = convert(playlistJson("cover_a", "cover_b", "cover_c", "cover_d"))
 
         assertEquals(
-            "https://music.samo.app/api/v1/music/playlists/pl1/cover?stream_token=t",
+            "https://music.samo.app/api/v1/music/playlists/pl1/cover?artwork=2&stream_token=t",
             binding.artworkUrl,
         )
         assertNull(binding.artworkImageId)
@@ -67,18 +67,18 @@ class SamoCatalogConvertersTest {
     fun `two covers (the grid floor) still use the grid endpoint`() {
         val binding = convert(playlistJson("cover_a", "cover_b"))
 
-        assertTrue(binding.artworkUrl!!.endsWith("/music/playlists/pl1/cover?stream_token=t"))
+        assertTrue(binding.artworkUrl!!.endsWith("/music/playlists/pl1/cover?artwork=2&stream_token=t"))
         assertNull(binding.artworkImageId)
     }
 
     @Test
-    fun `single-cover playlist keeps its image id and resolves the single image`() {
+    fun `single-cover playlist uses the playlist endpoint without an overriding image id`() {
         val binding = convert(playlistJson("cover_a"))
 
-        assertEquals("cover_a", binding.artworkImageId)
+        assertNull(binding.artworkImageId)
         assertTrue(
-            "expected a /media/images/ URL, got ${binding.artworkUrl}",
-            binding.artworkUrl!!.contains("/media/images/cover_a/image"),
+            "expected a playlist cover URL, got ${binding.artworkUrl}",
+            binding.artworkUrl!!.contains("/music/playlists/pl1/cover?artwork=2"),
         )
     }
 
@@ -86,7 +86,7 @@ class SamoCatalogConvertersTest {
     fun `playlist with no covers falls back to the grid endpoint with no image id`() {
         val binding = convert(playlistJson())
 
-        assertTrue(binding.artworkUrl!!.endsWith("/music/playlists/pl1/cover?stream_token=t"))
+        assertTrue(binding.artworkUrl!!.endsWith("/music/playlists/pl1/cover?artwork=2&stream_token=t"))
         assertNull(binding.artworkImageId)
     }
 
@@ -106,7 +106,7 @@ class SamoCatalogConvertersTest {
         val binding = convert(playlist)
 
         assertEquals(
-            "https://music.samo.app/api/v1/music/playlists/pl1/cover?v=1782864000000&stream_token=t",
+            "https://music.samo.app/api/v1/music/playlists/pl1/cover?artwork=2&v=1782864000000&stream_token=t",
             binding.artworkUrl,
         )
     }
@@ -135,7 +135,7 @@ class SamoCatalogConvertersTest {
         val absent = convert(playlistJson("cover_a", "cover_b"))
 
         assertEquals(
-            "https://music.samo.app/api/v1/music/playlists/pl1/cover?stream_token=t",
+            "https://music.samo.app/api/v1/music/playlists/pl1/cover?artwork=2&stream_token=t",
             unparseable.artworkUrl,
         )
         assertEquals(absent.artworkUrl, unparseable.artworkUrl)

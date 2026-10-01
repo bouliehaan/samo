@@ -10,7 +10,6 @@ import { ListSortByDropdown } from '/@/renderer/features/shared/components/list-
 import { ListSortOrderToggleButton } from '/@/renderer/features/shared/components/list-sort-order-toggle-button';
 import { FILTER_KEYS } from '/@/renderer/features/shared/utils';
 import { useCurrentServer } from '/@/renderer/store';
-import { Divider } from '/@/shared/components/divider/divider';
 import { Flex } from '/@/shared/components/flex/flex';
 import { Group } from '/@/shared/components/group/group';
 import { ArtistListSort, LibraryItem, SortOrder } from '/@/shared/types/domain-types';
@@ -22,31 +21,28 @@ export const ArtistListHeaderFilters = () => {
     const rolesQuery = useQuery(sharedQueries.roles({ query: {}, serverId: server.id }));
 
     return (
-        <Flex justify="space-between">
-            <Group gap="sm" w="100%">
+        <Flex align="center" gap="sm" justify="space-between" wrap="wrap">
+            <Group gap="xs" style={{ flex: '1 1 auto', minWidth: 0 }}>
                 <ListSortByDropdown
                     defaultSortByValue={ArtistListSort.NAME}
                     itemType={LibraryItem.ARTIST}
                     listKey={ItemListKey.ARTIST}
                 />
-                <Divider orientation="vertical" />
+
                 <ListSortOrderToggleButton
                     defaultSortOrder={SortOrder.ASC}
                     listKey={ItemListKey.ARTIST}
                 />
                 {rolesQuery.data && rolesQuery.data.length > 0 && (
-                    <>
-                        <Divider orientation="vertical" />
-                        <ListSelectFilter
-                            data={rolesQuery.data}
-                            filterKey={FILTER_KEYS.ARTIST.ROLE}
-                            listKey={ItemListKey.ARTIST}
-                        />
-                    </>
+                    <ListSelectFilter
+                        data={rolesQuery.data}
+                        filterKey={FILTER_KEYS.ARTIST.ROLE}
+                        listKey={ItemListKey.ARTIST}
+                    />
                 )}
                 <ListRefreshButton listKey={ItemListKey.ARTIST} />
             </Group>
-            <Group gap="sm" wrap="nowrap">
+            <Group gap="xs" wrap="wrap">
                 <ListDisplayTypeToggleButton listKey={ItemListKey.ARTIST} />
                 <ListConfigMenu
                     listKey={ItemListKey.ARTIST}

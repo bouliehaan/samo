@@ -96,7 +96,12 @@ export const withRequestTimeout = (
         try {
             return await fetcher(url, { ...init, signal: controller.signal });
         } catch (error) {
-            if (error instanceof Error && error.name === 'AbortError') {
+            // Ask the signal, not the error. Each fetch words an abort its own
+            // way: browsers throw an AbortError, but expo/fetch (Android's
+            // global fetch since Expo SDK 57) throws a plain Error, and
+            // checking the name turned every Android timeout into an opaque
+            // "fetch failed: Fetch request has been canceled".
+            if (controller.signal.aborted) {
                 throw new Error(`Request timed out after ${deadlineMs}ms`);
             }
             throw error;
@@ -109,15 +114,29 @@ export const withRequestTimeout = (
 /** One retry, 500ms backoff — matches docs/PERFORMANCE_AND_NETWORK.md's P0. */
 const RETRY_DELAY_MS = 500;
 
-const isRetryableTransportError = (error: unknown): boolean => {
+/**
+ * True for a request that got no HTTP answer at all — the connection failed
+ * (DNS, refused, dropped mid-request) or withRequestTimeout's deadline passed —
+ * so sending it again may well work. Neither means the request was invalid.
+ *
+ * Every fetch reports a dead connection differently. Browsers and React
+ * Native's own polyfill throw a TypeError. expo/fetch, which Expo installs as
+ * the global fetch from SDK 57 on, throws its FetchError: a plain Error whose
+ * message always begins "fetch failed". Recognising only the TypeError meant
+ * that on Android nothing had been retried since that upgrade.
+ *
+ * expo/fetch reports an abort the same way, so a caller holding an AbortSignal
+ * must ask the signal before retrying; the error cannot say.
+ */
+export const isRetryableTransportError = (error: unknown): boolean => {
     if (!(error instanceof Error)) {
         return false;
     }
-    // TypeError is how RN/browser fetch surfaces a real connection failure
-    // (DNS, refused, dropped mid-request). The timeout message is
-    // withRequestTimeout's own AbortError, rethrown with this text below.
-    // Neither means the request was invalid — both are worth one retry.
-    return error.name === 'TypeError' || error.message.startsWith('Request timed out');
+    return (
+        error.name === 'TypeError' ||
+        error.message.startsWith('fetch failed') ||
+        error.message.startsWith('Request timed out')
+    );
 };
 
 /**

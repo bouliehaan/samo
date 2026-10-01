@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { getFetch, normalizeBaseUrl } from './server-http';
+import {
+    getFetch,
+    isRetryableTransportError,
+    normalizeBaseUrl,
+    SamoHttpError,
+} from './server-http';
 
 describe('normalizeBaseUrl', () => {
     it('trims whitespace and trailing slashes', () => {
@@ -43,6 +48,25 @@ describe('getFetch', () => {
 
         const wrapped = getFetch(fetcher);
         const result = await wrapped('https://samo.test/api/v1/podcasts');
+
+        expect(result).toBe(okResponse);
+        expect(fetcher).toHaveBeenCalledTimes(2);
+    });
+
+    // expo/fetch, Android's global fetch since Expo SDK 57, reports a dead
+    // connection as a plain Error rather than a TypeError.
+    it('retries after expo/fetch reports a connection that failed', async () => {
+        const okResponse = { json: async () => ({}), ok: true, status: 200 };
+        const fetcher = vi
+            .fn()
+            .mockRejectedValueOnce(
+                new Error(
+                    'fetch failed: java.net.ConnectException: Failed to connect to /10.0.2.2:6970',
+                ),
+            )
+            .mockResolvedValueOnce(okResponse);
+
+        const result = await getFetch(fetcher)('https://samo.test/api/v1/podcasts');
 
         expect(result).toBe(okResponse);
         expect(fetcher).toHaveBeenCalledTimes(2);
@@ -165,5 +189,50 @@ describe('getFetch', () => {
         } finally {
             vi.useRealTimers();
         }
+    });
+
+    // expo/fetch rejects an aborted request with a plain Error, not an
+    // AbortError; the deadline is still a deadline.
+    it('names its own deadline whatever the fetch calls the abort', async () => {
+        vi.useFakeTimers();
+        try {
+            const fetcher = vi.fn(
+                (_url: string, init?: { signal?: AbortSignal }) =>
+                    new Promise<never>((_resolve, reject) => {
+                        init?.signal?.addEventListener('abort', () =>
+                            reject(new Error('fetch failed: Fetch request has been canceled')),
+                        );
+                    }),
+            );
+
+            const settled = getFetch(fetcher)('https://samo.test/api/v1/podcasts', {
+                method: 'POST',
+            }).then(
+                () => 'answered' as const,
+                (error: Error) => error.message,
+            );
+
+            await vi.advanceTimersByTimeAsync(30_000);
+            expect(await settled).toBe('Request timed out after 30000ms');
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+});
+
+describe('isRetryableTransportError', () => {
+    it('recognises a dead connection from every fetch in use, and nothing else', () => {
+        expect(isRetryableTransportError(new TypeError('Network request failed'))).toBe(true);
+        expect(
+            isRetryableTransportError(
+                new Error('fetch failed: java.net.UnknownHostException: samo.local'),
+            ),
+        ).toBe(true);
+        expect(isRetryableTransportError(new Error('Request timed out after 10000ms'))).toBe(true);
+        expect(isRetryableTransportError(new SamoHttpError(503, 'Request failed (503)'))).toBe(
+            false,
+        );
+        expect(isRetryableTransportError(new Error('Invalid JSON response from x'))).toBe(false);
+        expect(isRetryableTransportError('fetch failed')).toBe(false);
     });
 });

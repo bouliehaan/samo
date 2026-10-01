@@ -32,7 +32,7 @@ export const DisplayTypeToggleButton = ({
                       ? t('table.config.view.detail', { postProcess: 'sentenceCase' })
                       : t('table.config.view.table', { postProcess: 'sentenceCase' }),
             }}
-            variant="subtle"
+            variant="toolbar"
             {...buttonProps}
         />
     );

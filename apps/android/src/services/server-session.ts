@@ -1,5 +1,7 @@
 import {
+    getFetch,
     reconcileServerAuthentication,
+    revokeSamoCredential,
     type ServerAuthenticationResult,
     ServerConnectionHealthStatus,
     ServerType,
@@ -245,50 +247,79 @@ export const connectServer = async (): Promise<void> => {
     setAuthState(nextAuthState);
 
     if (nextAuthState.status === 'connected') {
-        // Carry the existing key forward when this is a server the device
-        // already knows. Without it, the first login after a server starts
-        // issuing identities would re-key the connection and strand the
-        // catalog mirror, downloads and progress already on disk.
-        const previousConnection = await loadPersistedServerAuth();
-        const nextConnection = reconcileServerAuthentication(
-            nextAuthState.result,
-            previousConnection,
-        );
-        const nextConnectionKey = getPersistedServerAuthKey(nextConnection);
-
-        setServerConnection(nextConnection);
-        setServerHealthByKey((current) => ({
-            ...current,
-            [nextConnectionKey]: createConnectedServerHealthStatus(nextConnection),
-        }));
-        // A successful login is proof of reachability — record it so the app
-        // doesn't sit in offline mode until the next probe round, and file the
-        // address that worked into its local/remote slot so network settings
-        // opens pre-filled rather than empty.
-        setServerReachability('reachable');
-        await ensureEndpointProfileForConnection(nextConnection);
-        closeMediaDetail();
-        setPassword('');
-        setServerUrl(DEFAULT_SERVER_URL);
-        setUsername('');
-        setSearchState({ status: 'idle' });
-        setActiveUtilityScreen('initial-sync');
-        await savePersistedServerAuths([nextConnection]);
-        await loadHomeForConnection(nextConnection);
-
-        // Kick off the on-device library mirror for the just-added source.
-        // The Kotlin engine runs it (savePersistedServerAuths above already
-        // pushed the auth mirror it reads); progress streams into the
-        // Settings "Local library" panel and the post-sync bridge warms
-        // the cover-art cache when it finishes.
-        void triggerCatalogSyncNow();
+        await acceptServerAuthentication(nextAuthState.result);
     }
+};
+
+/**
+ * Revoke a token this device is done with, on the server that issued it, so it
+ * stops working instead of living on in the account's token list.
+ *
+ * Fired, never awaited: leaving a server must not wait on that server. When it
+ * cannot be reached the token outlives the session, as every token used to.
+ * Nothing retries later, because that would mean keeping the secret the user
+ * just asked this device to forget.
+ */
+const retireCredential = (authentication: ServerAuthenticationResult): void => {
+    void revokeSamoCredential(getFetch(), authentication);
+};
+
+/** Shared completion path for password login and approved device pairing. */
+export const acceptServerAuthentication = async (
+    authentication: ServerAuthenticationResult,
+): Promise<void> => {
+    setAuthState({ status: 'connected', result: authentication });
+    // Carry the existing key forward when this is a server the device
+    // already knows. Without it, the first login after a server starts
+    // issuing identities would re-key the connection and strand the
+    // catalog mirror, downloads and progress already on disk.
+    const previousConnection = await loadPersistedServerAuth();
+    const nextConnection = reconcileServerAuthentication(authentication, previousConnection);
+    const nextConnectionKey = getPersistedServerAuthKey(nextConnection);
+
+    setServerConnection(nextConnection);
+    setServerHealthByKey((current) => ({
+        ...current,
+        [nextConnectionKey]: createConnectedServerHealthStatus(nextConnection),
+    }));
+    // A successful login is proof of reachability — record it so the app
+    // doesn't sit in offline mode until the next probe round, and file the
+    // address that worked into its local/remote slot so network settings
+    // opens pre-filled rather than empty.
+    setServerReachability('reachable');
+    await ensureEndpointProfileForConnection(nextConnection);
+    closeMediaDetail();
+    setPassword('');
+    setServerUrl(DEFAULT_SERVER_URL);
+    setUsername('');
+    setSearchState({ status: 'idle' });
+    setActiveUtilityScreen('initial-sync');
+    await savePersistedServerAuths([nextConnection]);
+    // Signing in over a live session (Add Server while connected, or the same
+    // server again) replaces its token here, the same way disconnecting drops
+    // one, so it is retired the same way.
+    if (previousConnection && previousConnection.credential !== nextConnection.credential) {
+        retireCredential(previousConnection);
+    }
+    await loadHomeForConnection(nextConnection);
+
+    // Kick off the on-device library mirror for the just-added source.
+    // The Kotlin engine runs it (savePersistedServerAuths above already
+    // pushed the auth mirror it reads); progress streams into the
+    // Settings "Local library" panel and the post-sync bridge warms
+    // the cover-art cache when it finishes.
+    void triggerCatalogSyncNow();
 };
 
 export const disconnectServer = async (
     authentication: ServerAuthenticationResult,
 ): Promise<void> => {
     const removedConnectionKey = getPersistedServerAuthKey(authentication);
+
+    // Sign out on the server first, while this is still the session's live
+    // address, and without waiting: everything below is local and must finish
+    // whether or not the server ever answers.
+    retireCredential(authentication);
 
     // Stop warming cover art for a server the user is leaving. A full-library
     // warm runs for minutes, so without this a disconnect kept downloading from

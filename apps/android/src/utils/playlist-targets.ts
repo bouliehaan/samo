@@ -16,12 +16,14 @@ export const getPlaylistTargetsForRoot = (
     // The server-managed Explore queue is not an add-to target: the server
     // re-derives its membership every reconcile pass (and refuses client
     // edits with a 403). The mirror-backed playlist rows don't carry the
-    // `system` flag, but the live-fetched EXPLO section's item id IS the
-    // system playlist's id — use it as the exclusion list.
+    // `system` flag, but the live-fetched HEROES section's Explore card IS
+    // the system playlist — use its id as the exclusion list. Only that
+    // card: a season card is one of the user's own playlists.
     const systemPlaylistIds = new Set(
         sections
-            .find((section) => section.id === MobileHomeSectionId.EXPLO)
-            ?.items.map((item) => item.id) ?? [],
+            .find((section) => section.id === MobileHomeSectionId.HEROES)
+            ?.items.filter((item) => item.hero?.kind === 'explore')
+            .map((item) => item.id) ?? [],
     );
     return (
         playlistSection?.items.filter(

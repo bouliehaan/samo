@@ -39,7 +39,6 @@ import {
     resolveSamoPodcastArtworkUrl,
     resolveSamoPodcastEpisodeArtworkUrl,
     samoItemsOf,
-    samoPlaylistHasCoverGrid,
 } from '../server/server-samo';
 import { collectSamoPagesCapped } from '../server/server-samo-pagination';
 import { ensureSamoStreamToken } from '../server/server-samo-stream-token';
@@ -800,12 +799,8 @@ export const mapSamoPlaylistDetail = (
 
     return {
         artworkUrl: resolveSamoPlaylistArtworkUrl(authentication, playlist, streamToken),
-        // A grid playlist (>1 cover) renders the server-composited 2x2 at
-        // artworkUrl; a single first-cover imageId here would make the display
-        // resolver prefer that one cover and lose the grid.
-        artworkImageId: samoPlaylistHasCoverGrid(playlist)
-            ? undefined
-            : pickSamoImageId(playlist.images),
+        // Playlist artwork is resolved by its cover endpoint, never one source image.
+        artworkImageId: undefined,
         id: playlist.id,
         metadataLines: playlist.description ? [playlist.description] : undefined,
         playlistMeta: {

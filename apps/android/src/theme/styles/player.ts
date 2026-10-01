@@ -1,6 +1,5 @@
 import { Platform, StyleSheet } from 'react-native';
 import {
-    FULL_PLAYER_ARTWORK_SIZE,
     FULL_PLAYER_EXPANDED_TOP,
     FULL_PLAYER_PADDING_BOTTOM,
     FULL_PLAYER_PADDING_TOP,
@@ -168,48 +167,21 @@ export const playerStyles = StyleSheet.create({
         minHeight: 0,
         overflow: 'hidden',
     },
-    fullPlayerArtwork: {
-        borderRadius: 4,
-        height: '100%',
-        width: '100%',
-    },
     fullPlayerArtworkFallback: {
         alignItems: 'center',
         backgroundColor: 'rgba(255, 255, 255, 0.07)',
         borderColor: 'rgba(255, 255, 255, 0.12)',
-        borderRadius: 4,
+        borderRadius: 0,
         borderWidth: 1,
         height: '100%',
         justifyContent: 'center',
         width: '100%',
     },
-    fullPlayerArtworkLetter: {
-        color: colors.accent,
-        fontSize: 72,
-        fontWeight: '900',
-    },
-    fullPlayerArtworkShadow: {
-        aspectRatio: 1,
-        backgroundColor: 'rgba(0, 0, 0, 0.08)',
-        borderRadius: 4,
-        elevation: 12,
-        flexShrink: 1,
-        height: FULL_PLAYER_ARTWORK_SIZE,
-        shadowColor: '#000000',
-        shadowOffset: { height: 14, width: 0 },
-        shadowOpacity: 0.26,
-        shadowRadius: 22,
-        transform: [{ translateY: 8 }],
-        width: FULL_PLAYER_ARTWORK_SIZE,
-    },
     fullPlayerArtworkWrap: {
         alignItems: 'center',
         flex: 1,
         justifyContent: 'center',
-    },
-    fullPlayerArtworkHeroSlot: {
-        alignItems: 'center',
-        justifyContent: 'center',
+        minHeight: 0,
     },
     fullPlayerBg: {
         backgroundColor: '#000000',
@@ -233,9 +205,9 @@ export const playerStyles = StyleSheet.create({
     },
     fullPlayerBottomBarButton: {
         alignItems: 'center',
-        height: 40,
+        height: 48,
         justifyContent: 'center',
-        width: 40,
+        width: 44,
     },
     fullPlayerCastButton: {
         bottom: 0,
@@ -247,12 +219,8 @@ export const playerStyles = StyleSheet.create({
         top: 0,
         width: 40,
     },
-    fullPlayerBottomBarSpacer: {
-        flex: 1,
-    },
     fullPlayerCastStatus: {
         color: colors.accent,
-        flex: 1,
         fontSize: 12,
         fontWeight: '700',
         marginHorizontal: spacing.sm,
@@ -286,17 +254,17 @@ export const playerStyles = StyleSheet.create({
         alignItems: 'center',
         flex: 1,
         flexDirection: 'row',
-        gap: 16,
+        gap: 0,
         minWidth: 0,
     },
     fullPlayerControlSideLeft: {
-        justifyContent: 'flex-end',
+        justifyContent: 'space-between',
     },
     fullPlayerControlSideRight: {
-        justifyContent: 'flex-start',
+        justifyContent: 'space-between',
     },
     fullPlayerControlSideLongForm: {
-        gap: 14,
+        gap: 0,
     },
     longFormSkipLabel: {
         color: colors.text,
@@ -307,7 +275,7 @@ export const playerStyles = StyleSheet.create({
     fullPlayerControls: {
         alignItems: 'center',
         flexDirection: 'row',
-        marginTop: 28,
+        marginTop: 12,
     },
     fullPlayerDragHandle: {
         alignItems: 'center',
@@ -334,14 +302,33 @@ export const playerStyles = StyleSheet.create({
     },
     fullPlayerHeaderButton: {
         alignItems: 'center',
-        backgroundColor: 'rgba(255, 255, 255, 0.08)',
+        backgroundColor: 'transparent',
         borderRadius: 999,
         height: 44,
         justifyContent: 'center',
         width: 44,
     },
-    fullPlayerHeaderSpacer: {
+    fullPlayerHeaderLabel: {
+        color: 'rgba(255,255,255,0.65)',
         flex: 1,
+        fontFamily: fonts.body,
+        fontSize: 11,
+        fontWeight: '600',
+        letterSpacing: 1.8,
+        marginLeft: 12,
+    },
+    fullPlayerQueueButton: {
+        alignItems: 'center',
+        flex: 1,
+        gap: 8,
+        justifyContent: 'center',
+        minHeight: 48,
+    },
+    fullPlayerQueueLabel: {
+        color: 'rgba(255,255,255,0.7)',
+        fontFamily: fonts.body,
+        fontSize: 13,
+        fontWeight: '600',
     },
     /** Circular artist photo button that replaces the down-caret on music tracks. */
     fullPlayerArtistAvatarButton: {
@@ -376,11 +363,11 @@ export const playerStyles = StyleSheet.create({
     },
     fullPlayerMetadata: {
         alignItems: 'stretch',
-        marginTop: spacing.lg,
+        marginTop: 24,
         paddingHorizontal: 0,
     },
     fullPlayerProgress: {
-        marginTop: 22,
+        marginTop: 26,
     },
     fullPlayerQualityRow: {
         marginTop: spacing.sm,
@@ -391,15 +378,15 @@ export const playerStyles = StyleSheet.create({
         alignSelf: 'flex-start',
         backgroundColor: 'rgba(255, 255, 255, 0.06)',
         borderColor: 'rgba(255, 255, 255, 0.1)',
-        borderRadius: 6,
-        borderWidth: 1,
+        borderRadius: 999,
+        borderWidth: 0,
         flexDirection: 'row',
         marginTop: spacing.sm,
-        paddingHorizontal: 10,
-        paddingVertical: 5,
+        paddingHorizontal: 12,
+        paddingVertical: 7,
     },
     fullPlayerCollapsedPillDirect: {
-        backgroundColor: 'rgba(232, 213, 176, 0.08)',
+        backgroundColor: 'rgba(255, 255, 255, 0.09)',
         borderColor: 'rgba(232, 213, 176, 0.22)',
     },
     fullPlayerCollapsedPillTranscoded: {
@@ -407,16 +394,16 @@ export const playerStyles = StyleSheet.create({
         borderColor: 'rgba(180, 160, 120, 0.16)',
     },
     fullPlayerCollapsedPillTappable: {
-        paddingRight: 7,
+        paddingRight: 12,
     },
     fullPlayerCollapsedPillText: {
         color: 'rgba(245, 245, 245, 0.72)',
         fontFamily: fonts.monoBold,
-        fontSize: 12,
+        fontSize: 11,
         letterSpacing: 0.4,
     },
     fullPlayerCollapsedPillTextDirect: {
-        color: 'rgba(232, 213, 176, 0.92)',
+        color: 'rgba(255, 255, 255, 0.85)',
     },
     fullPlayerCollapsedPillChevron: {
         color: 'rgba(245, 245, 245, 0.38)',
@@ -482,18 +469,19 @@ export const playerStyles = StyleSheet.create({
         textAlign: 'center',
     },
     fullPlayerSubtitle: {
-        color: 'rgba(245, 245, 245, 0.58)',
-        fontSize: 18,
-        fontFamily: fonts.mono,
-        fontWeight: '500',
-        lineHeight: 23,
+        color: 'rgba(245, 245, 245, 0.7)',
+        fontSize: 20,
+        fontFamily: fonts.body,
+        fontWeight: '400',
+        lineHeight: 26,
         marginTop: 4,
         textAlign: 'left',
     },
     fullPlayerTime: {
         color: 'rgba(245, 245, 245, 0.58)',
         fontSize: 13,
-        fontWeight: '600',
+        fontWeight: '400',
+        fontVariant: ['tabular-nums'],
     },
     fullPlayerTimeRight: {
         textAlign: 'right',
@@ -505,11 +493,11 @@ export const playerStyles = StyleSheet.create({
     },
     fullPlayerTitle: {
         color: '#ffffff',
-        fontSize: 24,
-        fontFamily: fonts.mono,
+        fontSize: 28,
+        fontFamily: fonts.body,
         fontWeight: '700',
-        letterSpacing: 0,
-        lineHeight: 30,
+        letterSpacing: -0.5,
+        lineHeight: 35,
         textAlign: 'left',
     },
     miniPlayer: {
@@ -530,9 +518,10 @@ export const playerStyles = StyleSheet.create({
         overflow: 'hidden',
         position: 'absolute',
         right: 0,
-        // Above the expanding shell and scroll content; no elevation — that
-        // draws an Android drop shadow which broke the seam with the tab bar.
-        zIndex: 10001,
+        // Keep the full player's opaque card above the mini player. Its fade
+        // is decorative: a stale opacity update must never paint mini controls
+        // over an expanded player. No elevation, to avoid a dock shadow.
+        zIndex: 9999,
     },
     miniPlayerArtwork: {
         borderRadius: 10,
@@ -606,9 +595,9 @@ export const playerStyles = StyleSheet.create({
     playerControlButton: {
         alignItems: 'center',
         borderRadius: 999,
-        height: 56,
+        height: 48,
         justifyContent: 'center',
-        width: 56,
+        width: 44,
     },
     playerControlButtonCompact: {
         height: 52,
@@ -627,7 +616,7 @@ export const playerStyles = StyleSheet.create({
         alignItems: 'center',
         height: 88,
         justifyContent: 'center',
-        marginHorizontal: 12,
+        marginHorizontal: Math.max(4, Math.min(20, (SCREEN_WIDTH - 312) / 2)),
         width: 88,
     },
     /** Thin dimming layer over the home content while the player rises —
@@ -640,7 +629,7 @@ export const playerStyles = StyleSheet.create({
         position: 'absolute',
         right: 0,
         top: 0,
-        // Above page + tab bar (zIndex 10), below mini (10000) and full (9999).
+        // Above page content, below mini (9999), full player and tabs (10000).
         zIndex: 9000,
     },
     queueChapterNumber: {
@@ -859,10 +848,10 @@ export const playerStyles = StyleSheet.create({
         paddingRight: spacing.sm,
     },
     seekSegment: {
-        backgroundColor: 'rgba(255, 255, 255, 0.25)',
+        backgroundColor: 'rgba(255, 255, 255, 0.22)',
         borderRadius: 999,
         flexBasis: 0,
-        height: 6,
+        height: 4,
         overflow: 'hidden',
     },
     seekSegmentFill: {
@@ -885,13 +874,13 @@ export const playerStyles = StyleSheet.create({
     },
     seekThumb: {
         borderRadius: 999,
-        bottom: -3,
+        height: 10,
         // Anchored at 0 and moved with translateX, so the thumb never dirties
         // layout as it travels. See thumbAnimatedStyle in SegmentedSeekBar.
         left: 0,
         position: 'absolute',
-        top: -3,
-        width: 5,
+        top: 2,
+        width: 10,
     },
     segment: {
         alignItems: 'center',
@@ -922,7 +911,7 @@ export const playerStyles = StyleSheet.create({
         alignItems: 'stretch',
         flexDirection: 'row',
         height: 14,
-        paddingVertical: 4,
+        paddingVertical: 5,
     },
     segmentLabel: {
         color: colors.muted,

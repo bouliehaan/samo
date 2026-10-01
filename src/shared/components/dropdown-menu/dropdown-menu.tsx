@@ -12,6 +12,7 @@ import { ReactNode } from 'react';
 
 import styles from './dropdown-menu.module.css';
 
+import { Icon } from '/@/shared/components/icon/icon';
 import { createPolymorphicComponent } from '/@/shared/utils/create-polymorphic-component';
 
 export interface MenuItemProps extends MantineMenuItemProps {
@@ -74,9 +75,12 @@ const MenuLabel = ({ children, ...props }: MenuLabelProps) => {
 const pMenuItem = ({ children, isDanger, isSelected, ...props }: MenuItemProps) => {
     return (
         <MantineMenu.Item
+            aria-checked={isSelected}
             className={clsx(styles['menu-item'], {
                 [styles.selected]: isSelected,
             })}
+            rightSection={isSelected ? <Icon icon="check" size="sm" /> : undefined}
+            role={isSelected === undefined ? undefined : 'menuitemradio'}
             {...props}
         >
             <span

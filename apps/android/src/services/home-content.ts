@@ -1,4 +1,8 @@
-import { type MobileHomeContent, type MobileHomeItem } from '@samo/core/mobile';
+import {
+    type MobileHomeContent,
+    type MobileHomeItem,
+    MobileHomeSectionId,
+} from '@samo/core/mobile';
 
 import { getContentItemKey } from '../utils/content-item';
 import { traceSync } from './jank-trace';
@@ -41,12 +45,7 @@ const deepEqual = (a: unknown, b: unknown): boolean => {
         if (!Object.prototype.hasOwnProperty.call(b, key)) {
             return false;
         }
-        if (
-            !deepEqual(
-                (a as Record<string, unknown>)[key],
-                (b as Record<string, unknown>)[key],
-            )
-        ) {
+        if (!deepEqual((a as Record<string, unknown>)[key], (b as Record<string, unknown>)[key])) {
             return false;
         }
     }
@@ -85,7 +84,6 @@ const reconcileHomeContentInner = (
     next: MobileHomeContent,
     options?: { prune?: boolean },
 ): MobileHomeContent => {
-
     // Mid-sync the on-device mirror can briefly read THIN — a shelf that's
     // really still there returns zero rows and drops out of `next`. Applying
     // that verbatim blanks the shelf, then the next derive refills it: a visible
@@ -101,9 +99,7 @@ const reconcileHomeContentInner = (
             previousItemsByKey.set(getContentItemKey(item), item);
         }
     }
-    const previousSectionsById = new Map(
-        previous.sections.map((section) => [section.id, section]),
-    );
+    const previousSectionsById = new Map(previous.sections.map((section) => [section.id, section]));
 
     const reconciledNext = next.sections.map((section) => {
         const items = section.items.map((item) => {
@@ -129,6 +125,11 @@ const reconcileHomeContentInner = (
         // Re-insert each populated previous shelf missing from `next` at the
         // index it held before, so a transient thin read can't make it disappear.
         previous.sections.forEach((previousSection, previousIndex) => {
+            // Heroes are live recommendations. An empty successful ranking
+            // must remove them, even when mirror shelves stay additive.
+            if (previousSection.id === MobileHomeSectionId.HEROES) {
+                return;
+            }
             if (previousSection.items.length > 0 && !nextSectionIds.has(previousSection.id)) {
                 merged.splice(Math.min(previousIndex, merged.length), 0, previousSection);
             }

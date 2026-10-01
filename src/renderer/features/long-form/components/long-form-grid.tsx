@@ -1,11 +1,8 @@
-import { ReactElement, useMemo } from 'react';
-import AutoSizer from 'react-virtualized-auto-sizer';
-import { List, RowComponentProps } from 'react-window-v2';
+import { CSSProperties, RefObject, useEffect, useMemo, useRef, useState } from 'react';
 
 import { LongFormCard, LongFormMediaKind } from './long-form-card';
 import styles from './long-form-grid.module.css';
 
-import { virtualListStyle } from '/@/renderer/utils/virtual-list-style';
 import { LongFormLibraryItem } from '/@/shared/api/long-form-types';
 import { ServerListItemWithCredential } from '/@/shared/types/domain-types';
 
@@ -26,28 +23,22 @@ interface LongFormGridProps {
     items: LongFormLibraryItem[];
     kind: LongFormMediaKind;
     onOpen: (item: LongFormLibraryItem) => void;
+    scrollRef: RefObject<HTMLDivElement | null>;
     server: null | ServerListItemWithCredential | undefined;
 }
 
 interface RowData {
     columnCount: number;
     describe: LongFormGridProps['describe'];
+    index: number;
     items: LongFormLibraryItem[];
     kind: LongFormMediaKind;
     onOpen: LongFormGridProps['onOpen'];
     server: LongFormGridProps['server'];
+    style: CSSProperties;
 }
 
-const GridRow = ({
-    columnCount,
-    describe,
-    index,
-    items,
-    kind,
-    onOpen,
-    server,
-    style,
-}: RowComponentProps<RowData>) => {
+const GridRow = ({ columnCount, describe, index, items, kind, onOpen, server, style }: RowData) => {
     const start = index * columnCount;
     const rowItems = items.slice(start, start + columnCount);
 
@@ -75,42 +66,83 @@ const GridRow = ({
     );
 };
 
-/**
- * Virtualized library grid for long-form items.
- *
- * The previous audiobook/podcast grids rendered every tile in the library at
- * once. Tiles are cover-bearing, and cover decode is the expensive part of a
- * dense grid, so an unvirtualized grid pays for the whole library up front
- * regardless of what is on screen.
- */
-export const LongFormGrid = ({ describe, items, kind, onOpen, server }: LongFormGridProps) => {
+/** Virtualize against the page viewport so shelves and catalog share one scrollbar. */
+export const LongFormGrid = ({
+    describe,
+    items,
+    kind,
+    onOpen,
+    scrollRef,
+    server,
+}: LongFormGridProps) => {
+    const gridRef = useRef<HTMLDivElement>(null);
+    const [viewport, setViewport] = useState({ height: 0, top: 0, width: 0 });
+
+    useEffect(() => {
+        const grid = gridRef.current;
+        const page = scrollRef.current;
+        if (!grid || !page) return;
+
+        const measure = () => {
+            const next = {
+                height: page.clientHeight,
+                top:
+                    page.getBoundingClientRect().top +
+                    page.clientTop -
+                    grid.getBoundingClientRect().top,
+                width: grid.clientWidth,
+            };
+            setViewport((previous) =>
+                previous.height === next.height &&
+                previous.top === next.top &&
+                previous.width === next.width
+                    ? previous
+                    : next,
+            );
+        };
+        const observer = new ResizeObserver(measure);
+        observer.observe(page);
+        observer.observe(grid);
+        // Shelf content can arrive asynchronously and change the grid's offset.
+        if (grid.parentElement) observer.observe(grid.parentElement);
+        page.addEventListener('scroll', measure, { passive: true });
+        measure();
+
+        return () => {
+            observer.disconnect();
+            page.removeEventListener('scroll', measure);
+        };
+    }, [items, scrollRef]);
+
+    const columnCount = Math.max(1, Math.floor((viewport.width + GAP) / (MIN_TILE_WIDTH + GAP)));
+    const tileWidth = (viewport.width - GAP * (columnCount - 1)) / columnCount;
+    const rowHeight = Math.round(tileWidth + TEXT_BLOCK_HEIGHT + GAP);
+    const rowCount = Math.ceil(items.length / columnCount);
+    const start = Math.min(rowCount, Math.max(0, Math.floor(viewport.top / rowHeight) - 2));
+    const end = Math.min(
+        rowCount,
+        Math.max(start, Math.ceil((viewport.top + viewport.height) / rowHeight) + 2),
+    );
+
     return (
-        <div className={styles.container}>
-            <AutoSizer>
-                {({ height, width }) => {
-                    if (!height || !width) return null;
-
-                    const columnCount = Math.max(
-                        1,
-                        Math.floor((width + GAP) / (MIN_TILE_WIDTH + GAP)),
-                    );
-                    const tileWidth = (width - GAP * (columnCount - 1)) / columnCount;
-                    const rowHeight = Math.round(tileWidth + TEXT_BLOCK_HEIGHT + GAP);
-                    const rowCount = Math.ceil(items.length / columnCount);
-
+        <div className={styles.container} ref={gridRef} style={{ height: rowCount * rowHeight }}>
+            {viewport.width > 0 &&
+                Array.from({ length: end - start }, (_, offset) => {
+                    const index = start + offset;
                     return (
-                        <List
-                            rowComponent={
-                                GridRow as (props: RowComponentProps<RowData>) => ReactElement
-                            }
-                            rowCount={rowCount}
-                            rowHeight={rowHeight}
-                            rowProps={{ columnCount, describe, items, kind, onOpen, server }}
-                            style={virtualListStyle(height, width)}
+                        <GridRow
+                            columnCount={columnCount}
+                            describe={describe}
+                            index={index}
+                            items={items}
+                            key={index}
+                            kind={kind}
+                            onOpen={onOpen}
+                            server={server}
+                            style={{ height: rowHeight, top: index * rowHeight }}
                         />
                     );
-                }}
-            </AutoSizer>
+                })}
         </div>
     );
 };

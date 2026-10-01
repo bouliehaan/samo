@@ -1,6 +1,6 @@
 import { SAMO_MOBILE_TABS, type SamoMobileTabId } from '@samo/core/navigation';
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
-import { View } from 'react-native';
+import { AppState, View } from 'react-native';
 
 import { handleAddRadioStation } from '../handlers/info-handlers';
 import {
@@ -17,12 +17,10 @@ import { MediaTypeGridScreen } from '../screens/MediaTypeGridScreen';
 import { PlaylistsScreen } from '../screens/PlaylistsScreen';
 import { RadioScreen } from '../screens/RadioScreen';
 import { triggerCatalogSyncNow } from '../services/headless-catalog-sync';
-import { loadHomeForConnection } from '../services/home-flow';
+import { beginHomeHeroVisit } from '../services/home-hero-visit';
+import { loadHomeForConnection, refreshHomeHeroes } from '../services/home-flow';
 import { ServerType } from '@samo/core/server';
-import {
-    setActiveUtilityScreen,
-    useAppNavigationSelector,
-} from '../state/app-navigation';
+import { setActiveUtilityScreen, useAppNavigationSelector } from '../state/app-navigation';
 import { useTabRefresh } from '../state/tab-reselect';
 import { useAuthSessionSelector } from '../state/auth-session';
 import { durations } from '../theme/motion';
@@ -48,6 +46,30 @@ const MIN_REFRESH_VISIBLE_MS = 650;
 const HomeTabScene = memo(function HomeTabScene() {
     const serverConnection = useAuthSessionSelector((state) => state.serverConnection);
     const [isRefreshingHome, setIsRefreshingHome] = useState(false);
+    const isHomeActive = useAppNavigationSelector((state) => state.activeTab === 'home');
+
+    useEffect(() => {
+        if (!isHomeActive || !serverConnection) return;
+        const refresh = () => {
+            if (AppState.currentState === 'active') void refreshHomeHeroes();
+        };
+        refresh();
+        const timer = setInterval(refresh, 60_000);
+        let backgroundAt: number | null = null;
+        const subscription = AppState.addEventListener('change', (state) => {
+            if (state === 'background') backgroundAt = Date.now();
+            if (state === 'active') {
+                if (backgroundAt !== null && Date.now() - backgroundAt >= 30_000)
+                    beginHomeHeroVisit();
+                backgroundAt = null;
+                refresh();
+            }
+        });
+        return () => {
+            clearInterval(timer);
+            subscription.remove();
+        };
+    }, [isHomeActive, serverConnection]);
 
     // A ref rather than `isRefreshingHome`: that is render state, so two presses
     // in the same frame would both read it as false and stack a catalog sync and

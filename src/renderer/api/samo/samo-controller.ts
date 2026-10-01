@@ -11,7 +11,6 @@ import {
     deleteSamoBookmark,
     deleteSamoMusicPlaylist,
     ensureSamoStreamToken,
-    findSamoExploPlaylist,
     getCachedSamoStreamToken,
     getSamoApiUrl,
     getSamoAudiobook,
@@ -30,6 +29,7 @@ import {
     getSamoMusicTrack,
     getSamoMusicTrackStreamUrl,
     getSamoPodcastCoverUrl,
+    getSamoPodcastEpisode,
     getSamoPodcastEpisodeStreamUrl,
     getSamoPodcastShow,
     keepSamoExploTracks,
@@ -37,6 +37,7 @@ import {
     listSamoAudiobooks,
     listSamoBookmarks,
     listSamoChannels,
+    listSamoHomeHeroes,
     listSamoInternetRadioStations,
     listSamoMusicAlbums,
     listSamoMusicAlbumTracks,
@@ -54,12 +55,16 @@ import {
     resolveSamoAlbumArtworkUrl,
     resolveSamoArtistArtworkUrl,
     resolveSamoAudiobookArtworkUrl,
+    resolveSamoHeroSleeveUrl,
     resolveSamoPodcastArtworkUrl,
+    type SamoHomeHeroAction,
+    type SamoHomeHeroKind,
     samoItemsOf,
     type SamoMusicAlbum,
     type SamoMusicArtist,
     type SamoMusicTrack,
     type SamoPaginatedResponse,
+    type SamoPodcastEpisode,
     searchSamoMusic,
     type ServerListItemWithCredentialCore,
     updateSamoMusicPlaylist,
@@ -570,13 +575,83 @@ export const keepExploTracks = async (
     return keepSamoExploTracks(browserFetch, samoAuthentication(server), trackIds);
 };
 
-export const fetchSamoExploPlaylist = async (
+/**
+ * One card Home leads with, with the thing it targets already fetched: the
+ * playlist to play and open, or the episode to play. The copy is the
+ * server's, verbatim — both clients say the same thing about the same drop.
+ */
+export interface HomeHero {
+    target: { type: string; id: string };
+    album?: Album;
+    audiobookId?: string;
+    action: SamoHomeHeroAction;
+    episode?: SamoPodcastEpisode;
+    eyebrow: string;
+    id: string;
+    kind: SamoHomeHeroKind;
+    meta?: string;
+    playlist?: Playlist;
+    sleeves: HomeHeroSleeve[];
+    subtitle?: string;
+    title: string;
+}
+
+/** One cover in a hero's fan, resolved the way any tile's artwork is. */
+export interface HomeHeroSleeve {
+    imageId?: string;
+    imageUrl?: string;
+}
+
+/**
+ * The cards Home leads with, ranked by the server — see `/home/heroes`. Each
+ * card's target is fetched here so the hero can play and open it through the
+ * ordinary playlist and podcast paths; a card whose target cannot be fetched
+ * is dropped rather than shown dead.
+ */
+export const fetchSamoHomeHeroes = async (
     server: ServerListItemWithCredentialCore,
     signal?: AbortSignal,
-): Promise<Playlist | undefined> => {
+    options?: { session?: string; seen?: string[] },
+): Promise<HomeHero[]> => {
     const auth = samoAuthentication(server);
-    const playlist = await findSamoExploPlaylist(browserFetch, auth, signal);
-    return playlist ? samoNormalize.playlist(playlist, server) : undefined;
+    const { items } = await listSamoHomeHeroes(browserFetch, auth, { signal, ...options });
+    for (const hero of items) {
+            const base = {
+                target: hero.target,
+                action: hero.action,
+                eyebrow: hero.eyebrow,
+                id: hero.id,
+                kind: hero.kind,
+                meta: hero.meta,
+                sleeves: (hero.sleeves ?? []).map((sleeve) => ({
+                    imageId: sleeve.id,
+                    imageUrl: resolveSamoHeroSleeveUrl(auth, sleeve),
+                })),
+                subtitle: hero.subtitle,
+                title: hero.title,
+            };
+            try {
+                if (hero.target.type === 'playlist') {
+                    const playlist = await getSamoMusicPlaylist(browserFetch, auth, hero.target.id);
+                    return [{ ...base, playlist: samoNormalize.playlist(playlist, server) }];
+                }
+                if (hero.target.type === 'album') {
+                    const album = await getSamoMusicAlbum(browserFetch, auth, hero.target.id);
+                    return [{ ...base, album: samoNormalize.album(album, server) }];
+                }
+                if (hero.target.type === 'audiobook') {
+                    await getSamoAudiobook(browserFetch, auth, hero.target.id);
+                    return [{ ...base, audiobookId: hero.target.id }];
+                }
+                if (hero.target.type === 'episode') {
+                    const episode = await getSamoPodcastEpisode(browserFetch, auth, hero.target.id);
+                    return [{ ...base, episode }];
+                }
+            } catch {
+                // The card's target is gone or unreadable — see the doc comment.
+            }
+    }
+    return [];
 };
 
 /** Home discovery queue: unplayed tracks with a recent/older mix (server-side). */

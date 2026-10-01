@@ -32,7 +32,7 @@ export const OrderToggleButton = ({
                         ? t('common.ascending', { postProcess: 'sentenceCase' })
                         : t('common.descending', { postProcess: 'sentenceCase' }),
             }}
-            variant="subtle"
+            variant="toolbar"
             {...buttonProps}
         />
     );

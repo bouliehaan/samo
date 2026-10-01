@@ -1,5 +1,6 @@
 package app.samo.android.audio
 
+import android.content.Context
 import android.net.Uri
 import android.os.Handler
 import android.util.Log
@@ -40,6 +41,7 @@ import androidx.media3.exoplayer.ExoPlayer
  * sees.
  */
 internal class SamoPlaybackRecovery(
+    private val context: Context,
     private val mainHandler: Handler,
     private val networkMonitor: SamoNetworkMonitor,
     private val host: Host,
@@ -74,9 +76,10 @@ internal class SamoPlaybackRecovery(
          *  another's recovery resume. */
         var lastKnownPlaybackMediaId: String?
 
-        /** Credentials needed to mint a fresh stream token for the current item. */
-        val currentServerUrl: String?
-        val currentBearerToken: String?
+        /** Which session the current item's stream belongs to. Resolved when
+         *  a fresh stream token is minted, never used as the bearer itself —
+         *  see [SamoSessionCredentials]. */
+        val currentCredentialClaim: SamoSessionCredentials.Claim?
 
         /** Apply a recovery mode transition to the engine. The engine routes
          *  this through its own state machine and pushes the right status
@@ -230,18 +233,17 @@ internal class SamoPlaybackRecovery(
             return true
         }
         val sourceUrl = item.localConfiguration?.uri?.toString() ?: return false
-        val serverUrl = host.currentServerUrl
-        val bearer = host.currentBearerToken
-        if (serverUrl.isNullOrBlank() || bearer.isNullOrBlank()) {
-            // No bearer in the descriptor — we can't mint here. Surface so JS
-            // can refresh and reissue play().
+        val claim = host.currentCredentialClaim
+        if (claim == null) {
+            // Nothing says which server this came from — we can't mint here.
+            // Surface so JS can refresh and reissue play().
             parkRecovery(Mode.StaleAuth)
             return true
         }
 
         authRefreshInFlight = true
         host.applyRecoveryMode(Mode.Recovering)
-        SamoNativeStreamUrl.refreshUrlAuthAsync(sourceUrl, serverUrl, bearer) { result ->
+        SamoNativeStreamUrl.refreshUrlAuthAsync(context, sourceUrl, claim) { result ->
             mainHandler.post {
                 authRefreshInFlight = false
                 if (host.currentMediaItem !== item) {
@@ -282,9 +284,14 @@ internal class SamoPlaybackRecovery(
                                 Log.w("SamoAudio", "bearer rejected during auth refresh")
                                 parkRecovery(Mode.StaleAuth)
                             }
-                            SamoNativeStreamUrl.MintFailureReason.Server,
-                            SamoNativeStreamUrl.MintFailureReason.MissingCredentials,
-                            -> {
+                            SamoNativeStreamUrl.MintFailureReason.SignedOut -> {
+                                // Signed out of this item's server: there is no
+                                // session to mint with, and the one it was
+                                // stamped with is not ours to present any more.
+                                Log.w("SamoAudio", "no session for the current item's server")
+                                parkRecovery(Mode.StaleAuth)
+                            }
+                            SamoNativeStreamUrl.MintFailureReason.Server -> {
                                 parkRecovery(Mode.Error)
                             }
                         }

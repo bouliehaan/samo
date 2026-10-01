@@ -584,6 +584,18 @@ export function useAndroidContextMenu(): AndroidContextMenuSurface {
                     label: 'Play Last',
                     onPress: () => void handleAddCollectionToQueue(item),
                 });
+                menuActions.push({
+                    icon: <QueueNextGlyph color={colors.text} />,
+                    id: 'play-next-shuffled',
+                    label: 'Play Next (Shuffled)',
+                    onPress: () => void handlePlayCollectionNext(item, { shuffled: true }),
+                });
+                menuActions.push({
+                    icon: <QueueAddGlyph color={colors.text} />,
+                    id: 'queue-shuffled',
+                    label: 'Play Last (Shuffled)',
+                    onPress: () => void handleAddCollectionToQueue(item, { shuffled: true }),
+                });
             }
             if (canSendItemToSamoRadio(item, collectionKind)) {
                 pushSamoRadioActions(

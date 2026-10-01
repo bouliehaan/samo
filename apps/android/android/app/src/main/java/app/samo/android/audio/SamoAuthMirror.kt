@@ -26,6 +26,13 @@ import java.io.File
  * Phase 1/2-LITE queue payload already crosses (queue items carry the
  * bearer token unencrypted so SamoNativeStreamUrl can mint fresh tokens
  * for auto-advance). Storing it here for the BG sync is no worse.
+ *
+ * It is also native's only answer to "which sessions does this device hold
+ * right now?", which everything that stored a credential for later asks
+ * before using it ([SamoSessionCredentials]). That makes a missing file mean
+ * something: JS writes the mirror on every sign-in and on every launch that
+ * has a session, and deletes it on every sign-out, so no file is signed out,
+ * not "unknown".
  */
 internal object SamoAuthMirror {
     private const val TAG = "SamoAuthMirror"
@@ -55,40 +62,72 @@ internal object SamoAuthMirror {
             ?: "$type:${url.trimEnd('/')}"
     }
 
-    /**
-     * Load the mirrored connections from disk. Returns an empty list when the
-     * mirror file is missing (fresh install, JS hasn't pushed yet) or unreadable.
-     */
-    fun load(context: Context): List<Connection> {
-        val file = File(context.filesDir, FILE_NAME)
-        if (!file.exists()) return emptyList()
-        return try {
-            val text = file.readText()
-            val array = JSONArray(text)
-            (0 until array.length()).mapNotNull { i ->
-                val obj = array.optJSONObject(i) ?: return@mapNotNull null
-                val type = obj.optString("type").takeIf { it.isNotBlank() }
-                    ?: return@mapNotNull null
-                val url = obj.optString("url").takeIf { it.isNotBlank() }
-                    ?: return@mapNotNull null
-                val credential = obj.optString("credential")
-                    ?: return@mapNotNull null
-                val nd = obj.optString("ndCredential").takeIf { it.isNotBlank() }
-                val connectionKey = obj.optString("connectionKey").takeIf { it.isNotBlank() }
-                Connection(type, url, credential, nd, connectionKey)
-            }
-        } catch (error: JSONException) {
-            Log.w(TAG, "auth mirror is malformed", error)
-            emptyList()
-        } catch (error: Throwable) {
-            Log.w(TAG, "auth mirror read failed", error)
-            emptyList()
+    /** The Samo sessions the device holds, as far as it can tell. */
+    sealed interface Sessions {
+        /** Every Samo session the device holds. Empty when it is signed out. */
+        data class Known(val connections: List<Connection>) : Sessions
+
+        /**
+         * A mirror exists but cannot be read, so the device cannot say which
+         * sessions it holds — the one state in which a record's own copy of
+         * its credential is still worth trying.
+         */
+        object Unreadable : Sessions
+    }
+
+    // Read on every stream open, progress write and download attempt, from
+    // the main thread as often as not, so it is served from memory. Only this
+    // process writes the file, and every write goes through [adopt].
+    @Volatile private var snapshot: Sessions? = null
+    private val snapshotLock = Any()
+
+    fun sessions(context: Context): Sessions {
+        snapshot?.let { return it }
+        return synchronized(snapshotLock) {
+            snapshot ?: readSessions(context).also { snapshot = it }
         }
     }
 
-    /** Filter the loaded connections to just Samo. */
+    /** The Samo connections the device holds; empty when signed out or unreadable. */
     fun loadSamo(context: Context): List<Connection> =
-        load(context).filter { it.type == "samo" }
+        (sessions(context) as? Sessions.Known)?.connections.orEmpty()
+
+    private fun readSessions(context: Context): Sessions {
+        val file = File(context.filesDir, FILE_NAME)
+        if (!file.exists()) return Sessions.Known(emptyList())
+        val text = try {
+            file.readText()
+        } catch (error: Exception) {
+            Log.w(TAG, "auth mirror read failed", error)
+            return Sessions.Unreadable
+        }
+        return parse(text).also { parsed ->
+            if (parsed is Sessions.Unreadable) Log.w(TAG, "auth mirror is malformed")
+        }
+    }
+
+    /** The mirror file's contents as sessions. Samo rows only; a row that
+     *  cannot authenticate anything is not a session. */
+    internal fun parse(text: String): Sessions {
+        val array = try {
+            JSONArray(text)
+        } catch (_: JSONException) {
+            return Sessions.Unreadable
+        }
+        val connections = (0 until array.length()).mapNotNull { i ->
+            val obj = array.optJSONObject(i) ?: return@mapNotNull null
+            val type = obj.optString("type").takeIf { it.isNotBlank() }
+                ?: return@mapNotNull null
+            val url = obj.optString("url").takeIf { it.isNotBlank() }
+                ?: return@mapNotNull null
+            val credential = obj.optString("credential").takeIf { it.isNotBlank() }
+                ?: return@mapNotNull null
+            val nd = obj.optString("ndCredential").takeIf { it.isNotBlank() }
+            val connectionKey = obj.optString("connectionKey").takeIf { it.isNotBlank() }
+            Connection(type, url, credential, nd, connectionKey)
+        }.filter { it.type == "samo" }
+        return Sessions.Known(connections)
+    }
 
     private fun saveJson(context: Context, jsonText: String) {
         val target = File(context.filesDir, FILE_NAME)
@@ -121,11 +160,21 @@ internal object SamoAuthMirror {
             }
             array.put(obj)
         }
-        saveJson(context, array.toString())
+        val text = array.toString()
+        saveJson(context, text)
+        adopt(context, parse(text))
     }
 
     internal fun clear(context: Context) {
         File(context.filesDir, FILE_NAME).delete()
+        adopt(context, Sessions.Known(emptyList()))
+    }
+
+    /** Make [sessions] the answer from now on, and let everything holding a
+     *  record for some server re-check it against the new one. */
+    private fun adopt(context: Context, sessions: Sessions) {
+        synchronized(snapshotLock) { snapshot = sessions }
+        SamoSessionCredentials.onSessionsChanged(context.applicationContext, sessions)
     }
 }
 

@@ -115,7 +115,7 @@ const PlayButton = () => {
         <LibraryHeaderBar.PlayButton
             itemType={LibraryItem.ALBUM}
             listQuery={mergedQuery}
-            variant="filled"
+            variant="default"
         />
     );
 };

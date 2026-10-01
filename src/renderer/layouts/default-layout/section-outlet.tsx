@@ -1,9 +1,10 @@
 import clsx from 'clsx';
-import { createContext, type ReactNode, useContext, useRef } from 'react';
+import { createContext, type ReactNode, Suspense, useContext, useRef } from 'react';
 import { useLocation, useOutlet } from 'react-router';
 
 import styles from './section-outlet.module.css';
 
+import { RouteFallback } from '/@/renderer/features/shared/components/page-skeletons/route-fallback';
 import { AppRoute } from '/@/renderer/router/routes';
 
 /**
@@ -68,15 +69,19 @@ export const SectionOutlet = () => {
                     <div
                         aria-hidden={isVisible ? undefined : true}
                         className={clsx(styles.pane, !isVisible && styles.hidden)}
+                        inert={!isVisible}
                         key={path}
                     >
                         <PaneVisibleContext.Provider value={isVisible}>
-                            {node}
+                            {/* Loading another route must not suspend mounted panes: doing so
+                                reconnects their layout effects and can leave Motion pages at
+                                opacity: 0 when revisited. Keep loading local to each pane. */}
+                            <Suspense fallback={<RouteFallback />}>{node}</Suspense>
                         </PaneVisibleContext.Provider>
                     </div>
                 );
             })}
-            {isCachedSection ? null : outlet}
+            {isCachedSection ? null : <Suspense fallback={<RouteFallback />}>{outlet}</Suspense>}
         </>
     );
 };

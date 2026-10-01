@@ -7,8 +7,9 @@
     border-radius: 9px;
     transition: background-color 130ms ease;
 
-    &:hover {
-        background: color-mix(in srgb, var(--theme-colors-primary-filled) 18%, transparent);
+    &:hover,
+    &[data-hovered] {
+        background: color-mix(in srgb, var(--theme-colors-foreground) 10%, transparent);
     }
 }
 
@@ -18,23 +19,21 @@
 
 .menu-item-label {
     margin-right: var(--theme-spacing-md);
-    margin-left: var(--theme-spacing-md);
+    margin-left: 0;
     font-size: var(--theme-font-size-sm);
-    color: var(--theme-colors-surfaceforeground);
+    color: var(--theme-colors-foreground);
 }
 
 .selected {
-    &::before {
-        position: absolute;
-        top: 50%;
-        left: 3px;
-        width: 3px;
-        height: 45%;
-        content: '';
-        background-color: var(--theme-colors-primary-filled);
-        border-radius: var(--theme-radius-xl);
-        transform: translateY(-50%);
-    }
+    font-weight: 650;
+    background: color-mix(in srgb, var(--theme-colors-foreground) 6%, transparent);
+}
+
+.menu-label {
+    padding: 8px 11px;
+    font-size: var(--theme-font-size-xs);
+    font-weight: 650;
+    color: var(--theme-colors-foreground-muted);
 }
 
 .menu-item-label-danger {

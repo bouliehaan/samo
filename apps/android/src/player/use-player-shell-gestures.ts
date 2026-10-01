@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Gesture } from 'react-native-gesture-handler';
 import {
     interpolate,
@@ -23,7 +23,7 @@ import {
 import { logSeekGesture, SEEK_GESTURE_DEBUG } from '../utils/seek-debug';
 
 /**
- * The full player's shell gesture system: one vertical pan that opens/dismisses
+ * The full player's shell gesture system: one vertical pan that dismisses
  * the player or raises/lowers the queue sheet (mode-switched per drag), plus a
  * horizontal swipe for track skip, composed to run simultaneously. Owns the
  * queue sheet's progress value and its derived styles/interactivity.
@@ -31,6 +31,7 @@ import { logSeekGesture, SEEK_GESTURE_DEBUG } from '../utils/seek-debug';
 export function usePlayerShellGestures({
     canSkipPlayback,
     closeSpring,
+    onCancelGesture,
     onClose,
     onNext,
     onPrevious,
@@ -38,9 +39,11 @@ export function usePlayerShellGestures({
     playerProgress,
     reducedMotion,
     settleSpring,
+    visible,
 }: {
     canSkipPlayback: boolean;
     closeSpring: WithSpringConfig;
+    onCancelGesture: () => void;
     onClose: () => void;
     onNext: () => void;
     onPrevious: () => void;
@@ -48,6 +51,7 @@ export function usePlayerShellGestures({
     playerProgress: SharedValue<number>;
     reducedMotion: boolean;
     settleSpring: WithSpringConfig;
+    visible: boolean;
 }) {
     // Queue sheet position: 0 = hidden below the screen, 1 = fully expanded.
     // Driven by the same vertical-drag gesture that handles player dismiss,
@@ -56,11 +60,12 @@ export function usePlayerShellGestures({
     const dragMode = useSharedValue<'player' | 'queue'>('player');
     const dragStartQueue = useSharedValue(0);
 
-    // One vertical pan on the shell: drag up from the dock opens the panel;
-    // drag down dismisses; upward while open can raise the queue sheet.
+    // Expansion belongs to the mini player. The full shell only handles
+    // dismiss/queue gestures once navigation has committed the open state.
     const dragGesture = useMemo(
         () =>
             Gesture.Pan()
+                .enabled(visible)
                 .activeOffsetY([-8, 10])
                 .failOffsetX([-28, 28])
                 .onStart(() => {
@@ -98,8 +103,13 @@ export function usePlayerShellGestures({
                     const next = 1 - dragFraction;
                     playerProgress.value = next > 1 ? 1 : next < 0 ? 0 : next;
                 })
-                .onEnd((event) => {
+                .onEnd((event, success) => {
                     'worklet';
+                    if (!success) {
+                        queueProgress.value = withSpring(0, settleSpring);
+                        runOnJS(onCancelGesture)();
+                        return;
+                    }
                     if (dragMode.value === 'queue') {
                         // Safety net: the player sits fully docked behind the
                         // queue sheet, so guarantee it lands at 1 no matter how
@@ -125,22 +135,14 @@ export function usePlayerShellGestures({
                         event.translationY > DISMISS_DISTANCE ||
                         (event.velocityY > DISMISS_VELOCITY && event.translationY > 40);
                     if (shouldDismiss) {
-                        const onFinish = (finished?: boolean) => {
-                            'worklet';
-                            if (finished) {
-                                runOnJS(onClose)();
-                            }
-                        };
                         playerProgress.value = reducedMotion
-                            ? withTiming(0, { duration: 0 }, onFinish)
-                            : withSpring(
-                                  0,
-                                  {
-                                      ...closeSpring,
-                                      velocity: -event.velocityY / PLAYER_EXPANSION_DISTANCE,
-                                  },
-                                  onFinish,
-                              );
+                            ? withTiming(0, { duration: 0 })
+                            : withSpring(0, {
+                                  ...closeSpring,
+                                  velocity: -event.velocityY / PLAYER_EXPANSION_DISTANCE,
+                              });
+                        // Commit dismissal even if this spring is interrupted.
+                        runOnJS(onClose)();
                         return;
                     }
                     playerProgress.value = withSpring(1, {
@@ -152,12 +154,14 @@ export function usePlayerShellGestures({
             closeSpring,
             dragMode,
             dragStartQueue,
+            onCancelGesture,
             onClose,
             openSpring,
             playerProgress,
             queueProgress,
             reducedMotion,
             settleSpring,
+            visible,
         ],
     );
 
@@ -167,7 +171,7 @@ export function usePlayerShellGestures({
     const skipGesture = useMemo(
         () =>
             Gesture.Pan()
-                .enabled(canSkipPlayback)
+                .enabled(visible && canSkipPlayback)
                 .activeOffsetX([-30, 30])
                 .failOffsetY([-30, 30])
                 .onStart(() => {
@@ -176,15 +180,16 @@ export function usePlayerShellGestures({
                         runOnJS(logSeekGesture)('player:skip:activate');
                     }
                 })
-                .onEnd((event) => {
+                .onEnd((event, success) => {
                     'worklet';
+                    if (!success) return;
                     if (event.translationX < -80 || event.velocityX < -700) {
                         runOnJS(onNext)();
                     } else if (event.translationX > 80 || event.velocityX > 700) {
                         runOnJS(onPrevious)();
                     }
                 }),
-        [canSkipPlayback, onNext, onPrevious],
+        [canSkipPlayback, onNext, onPrevious, visible],
     );
 
     const playerGesture = useMemo(
@@ -206,13 +211,13 @@ export function usePlayerShellGestures({
     // of the screen; a separate dimming backdrop fades in alongside it so the
     // player content underneath visibly recedes.
     const queueBackdropStyle = useAnimatedStyle(() => ({
-        opacity: interpolate(queueProgress.value, [0, 1], [0, 0.55], 'clamp'),
+        opacity: visible ? interpolate(queueProgress.value, [0, 1], [0, 0.55], 'clamp') : 0,
     }));
     const queueSheetStyle = useAnimatedStyle(() => ({
         transform: [
             {
                 translateY: interpolate(
-                    queueProgress.value,
+                    visible ? queueProgress.value : 0,
                     [0, 1],
                     [QUEUE_SHEET_HEIGHT, 0],
                     'clamp',
@@ -225,8 +230,13 @@ export function usePlayerShellGestures({
     // interactive when the queue is closed (an invisible Pressable at opacity 0
     // would otherwise swallow taps).
     const [isQueueInteractive, setIsQueueInteractive] = useState(false);
+    useEffect(() => {
+        // This overlay is a sibling of the full player; sliding the player away
+        // does not remove its queue backdrop. Reset it on every close.
+        if (!visible) queueProgress.value = 0;
+    }, [queueProgress, visible]);
     useAnimatedReaction(
-        () => queueProgress.value > 0.05,
+        () => visible && queueProgress.value > 0.05,
         (open, previous) => {
             if (open !== previous) {
                 runOnJS(setIsQueueInteractive)(open);
@@ -234,13 +244,18 @@ export function usePlayerShellGestures({
         },
     );
 
+    const openQueue = useCallback(() => {
+        queueProgress.value = reducedMotion ? withTiming(1, { duration: 0 }) : withSpring(1, settleSpring);
+    }, [queueProgress, reducedMotion, settleSpring]);
+
     const closeQueue = useCallback(() => {
         queueProgress.value = withSpring(0, settleSpring);
     }, [queueProgress, settleSpring]);
 
     return {
         closeQueue,
-        isQueueInteractive,
+        isQueueInteractive: visible && isQueueInteractive,
+        openQueue,
         playerGesture,
         queueBackdropStyle,
         queueProgress,

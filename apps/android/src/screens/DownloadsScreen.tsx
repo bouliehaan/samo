@@ -50,7 +50,7 @@ const getDownloadStatusLabel = (entry: DownloadEntry): string => {
     if (entry.status === 'completed') {
         return formatBytes(entry.totalBytes ?? entry.bytesDownloaded) || 'Saved';
     }
-    if (entry.status === 'queued') return 'Queued';
+    if (entry.status === 'queued') return entry.waitingForSignIn ? 'Waiting for sign-in' : 'Queued';
     if (entry.status === 'canceled') return 'Canceled';
     return entry.errorMessage ? `Failed: ${entry.errorMessage}` : 'Failed';
 };

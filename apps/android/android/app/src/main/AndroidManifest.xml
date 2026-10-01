@@ -1,4 +1,12 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <!-- One APK serves touch devices and televisions. -->
+  <uses-feature android:name="android.software.leanback" android:required="false"/>
+  <uses-feature android:name="android.hardware.touchscreen" android:required="false"/>
+  <uses-feature android:name="android.hardware.faketouch" android:required="false"/>
+  <uses-feature android:name="android.hardware.location" android:required="false"/>
+  <uses-feature android:name="android.hardware.location.gps" android:required="false"/>
+  <uses-feature android:name="android.hardware.location.network" android:required="false"/>
+  <uses-feature android:name="android.hardware.wifi" android:required="false"/>
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
@@ -42,10 +50,11 @@
       </intent-filter>
     </service>
     <service android:name=".audio.SamoDownloadService" android:exported="false" android:foregroundServiceType="dataSync"/>
-    <activity android:name=".MainActivity" android:configChanges="keyboard|keyboardHidden|orientation|screenSize|screenLayout|uiMode" android:launchMode="singleTask" android:screenOrientation="portrait" android:windowSoftInputMode="adjustResize" android:theme="@style/Theme.App.SplashScreen" android:exported="true">
+    <activity android:name=".MainActivity" android:banner="@drawable/tv_banner" android:configChanges="keyboard|keyboardHidden|orientation|screenSize|screenLayout|uiMode" android:launchMode="singleTask" android:screenOrientation="unspecified" android:windowSoftInputMode="adjustResize" android:theme="@style/Theme.App.SplashScreen" android:exported="true">
       <intent-filter>
         <action android:name="android.intent.action.MAIN"/>
         <category android:name="android.intent.category.LAUNCHER"/>
+        <category android:name="android.intent.category.LEANBACK_LAUNCHER"/>
       </intent-filter>
     </activity>
   </application>

@@ -2,18 +2,22 @@ import { useTranslation } from 'react-i18next';
 
 import { PageHeader } from '/@/renderer/components/page-header/page-header';
 import { useListContext } from '/@/renderer/context/list-context';
-import { RadioListHeaderFilters } from '/@/renderer/features/radio/components/radio-list-header-filters';
-import { FilterBar } from '/@/renderer/features/shared/components/filter-bar';
+import {
+    type RadioFilter,
+    RadioListHeaderFilters,
+} from '/@/renderer/features/radio/components/radio-list-header-filters';
 import { LibraryHeaderBar } from '/@/renderer/features/shared/components/library-header-bar';
 import { ListSearchInput } from '/@/renderer/features/shared/components/list-search-input';
 import { Group } from '/@/shared/components/group/group';
 import { Stack } from '/@/shared/components/stack/stack';
 
 interface RadioListHeaderProps {
+    filter: RadioFilter;
+    onFilterChange: (filter: RadioFilter) => void;
     title?: string;
 }
 
-export const RadioListHeader = ({ title }: RadioListHeaderProps) => {
+export const RadioListHeader = ({ filter, onFilterChange, title }: RadioListHeaderProps) => {
     const { t } = useTranslation();
 
     const { itemCount } = useListContext();
@@ -32,9 +36,7 @@ export const RadioListHeader = ({ title }: RadioListHeaderProps) => {
                     <ListSearchInput />
                 </Group>
             </PageHeader>
-            <FilterBar>
-                <RadioListHeaderFilters />
-            </FilterBar>
+            <RadioListHeaderFilters filter={filter} onChange={onFilterChange} />
         </Stack>
     );
 };

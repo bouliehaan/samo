@@ -482,18 +482,44 @@ internal object SamoProgressSync {
     }
 
     /**
-     * Replay journaled writes left unsent by a previous process. Runs on
-     * [writeExecutor] via [bindPersistence], before any live write. Play-count
-     * increments are NEVER replayed: patchPlayback isn't idempotent for them and
-     * the crashed write may already have been applied server-side. Position and
-     * completed ARE idempotent (last-writer-wins), so replaying them is safe.
+     * The device's sessions just changed ([SamoSessionCredentials.onSessionsChanged]):
+     * writes the journal still holds get another attempt now, each sent with
+     * the session the device holds for its server today rather than the bearer
+     * it was journaled with. Signing in again after a disconnect is exactly
+     * when that bearer died. A write for a server the device is signed out of
+     * stays journaled for a later sign-in.
      */
-    private fun replayPending() {
+    fun replayPendingWrites(sessions: SamoAuthMirror.Sessions) {
+        writeExecutor.execute { replayPending(sessions) }
+    }
+
+    /**
+     * Replay journaled writes left unsent: by a previous process, run on
+     * [writeExecutor] via [bindPersistence] before any live write, with each
+     * write's own bearer ([sessions] null); or after [replayPendingWrites].
+     * Play-count increments are NEVER replayed: patchPlayback isn't idempotent
+     * for them and the crashed write may already have been applied
+     * server-side. Position and completed ARE idempotent (last-writer-wins),
+     * so replaying them is safe.
+     */
+    private fun replayPending(sessions: SamoAuthMirror.Sessions? = null) {
         val j = journal ?: return
         val pendings = j.pending()
         if (pendings.isEmpty()) return
-        Log.i(TAG, "Replaying ${pendings.size} pending progress write(s) from a previous session")
+        Log.i(TAG, "Replaying ${pendings.size} pending progress write(s)")
         for (p in pendings) {
+            val serverUrl: String
+            val bearer: String
+            if (sessions == null) {
+                serverUrl = p.serverUrl
+                bearer = p.bearer
+            } else {
+                val claim = SamoSessionCredentials.Claim(serverUrl = p.serverUrl, credential = p.bearer)
+                val session = SamoSessionCredentials.resolve(claim, sessions)
+                    as? SamoSessionCredentials.Resolution.Usable ?: continue
+                serverUrl = session.serverUrl
+                bearer = session.credential
+            }
             val patch = SamoServerClient.PlaybackPatch(
                 progressSeconds = p.progressSeconds,
                 completed = p.completed,
@@ -501,7 +527,7 @@ internal object SamoProgressSync {
                 touchLastPositionAt = p.touchLastPositionAt,
                 incrementPlayCount = false,
             )
-            attemptOnce(p.serverUrl, p.bearer, p.kind, p.targetId, patch, "replay", attempt = 0, stampMs = p.updatedAtMs)
+            attemptOnce(serverUrl, bearer, p.kind, p.targetId, patch, "replay", attempt = 0, stampMs = p.updatedAtMs)
         }
     }
 

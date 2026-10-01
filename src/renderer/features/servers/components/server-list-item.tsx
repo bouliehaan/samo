@@ -2,9 +2,10 @@ import isElectron from 'is-electron';
 import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { retireSamoCredential } from '/@/renderer/api/samo/samo-sign-out';
 import { EditServerForm } from '/@/renderer/features/servers/components/edit-server-form';
 import { ServerSection } from '/@/renderer/features/servers/components/server-section';
-import { useAuthStoreActions } from '/@/renderer/store';
+import { getServerById, useAuthStoreActions } from '/@/renderer/store';
 import { Button, TimeoutButton } from '/@/shared/components/button/button';
 import { Divider } from '/@/shared/components/divider/divider';
 import { Group } from '/@/shared/components/group/group';
@@ -28,8 +29,11 @@ export const ServerListItem = ({ server }: ServerListItemProps) => {
     const { deleteServer } = useAuthStoreActions();
 
     const handleDeleteServer = () => {
+        // Read before deleting: the list item carries no credential, the store does.
+        const removed = getServerById(server.id);
         deleteServer(server.id);
         localSettings?.passwordRemove(server.id);
+        retireSamoCredential(removed);
     };
 
     const handleEdit = useCallback(() => {

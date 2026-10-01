@@ -748,7 +748,13 @@ export const LibrarySidebar = () => {
                         isCurrentAudiobook ||
                         isCurrentPodcast) &&
                         playerIsPlaying),
-                isSelected: isSelectedRoute(location.pathname, routeTarget),
+                // Radio stations share one browse route. Treating that route as
+                // an item route selected every station in the sidebar at once;
+                // the playing marker above is the meaningful active state.
+                isSelected:
+                    item.mediaType === 'radio'
+                        ? false
+                        : isSelectedRoute(location.pathname, routeTarget),
                 mediaType: item.mediaType,
                 onClick: () => openRecentItem(item),
                 onContextMenu,

@@ -20,12 +20,12 @@ import { useHiddenHomeKeys } from '../../state/hidden-home';
 import { styles } from '../../theme/styles';
 import { spacing } from '../../theme/tokens';
 import { type HomeDisplaySection, type HomeFilter } from '../../types/home';
-import { getContentItemKey } from '../../utils/content-item';
 import {
     filterHomeDisplaySections,
     getAvailableHomeFilters,
     getHomeDisplaySections,
     getUniqueHomeItems,
+    withoutHiddenHomeItems,
 } from '../../utils/home-display';
 import { getLibraryMediaType } from '../../utils/library-display';
 import { useSearchPull } from '../../components/search-pull/useSearchPull';
@@ -102,22 +102,10 @@ export const HomeContent = ({
     // nothing is hidden (the common case) and for shelves with no hidden items,
     // so the memoized tiles/rows don't needlessly re-render.
     const hiddenKeys = useHiddenHomeKeys();
-    const visibleSections = useMemo(() => {
-        if (hiddenKeys.size === 0) {
-            return allSections;
-        }
-        return allSections
-            .map((section) => {
-                if (section.pending || section.ignoresHiddenItems) {
-                    return section;
-                }
-                const items = section.items.filter(
-                    (item) => !hiddenKeys.has(getContentItemKey(item)),
-                );
-                return items.length === section.items.length ? section : { ...section, items };
-            })
-            .filter((section) => section.pending || section.items.length > 0);
-    }, [allSections, hiddenKeys]);
+    const visibleSections = useMemo(
+        () => withoutHiddenHomeItems(allSections, hiddenKeys),
+        [allSections, hiddenKeys],
+    );
     // The pill highlight follows `activeFilter` (urgent — taps feel instant), but
     // the expensive section/grid rebuild follows a DEFERRED copy so it renders at
     // low priority instead of blocking the tap. Switching filters re-renders the

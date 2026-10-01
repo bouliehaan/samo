@@ -44,8 +44,8 @@ export const HomeMediaTile = memo(({
     const isPodcast = sectionVariant === 'podcast' || sectionVariant === 'podcast-feed';
     const isRadioSection = sectionVariant === 'radio';
     const isRecent = sectionVariant === 'recents';
-    // 'explo' never reaches a tile — that shelf is a single full-width hero
-    // (HomeExploreHero), not a carousel.
+    // 'heroes' never reaches a tile — that strip pages full-width hero cards
+    // (HomeHeroStrip), it is not a carousel.
     const isWide = sectionVariant === 'wide' || isContinue;
     const isRadio = item.type === MobileHomeItemType.RADIO;
     // An artist tile rendered inside a Recents/mixed row must still

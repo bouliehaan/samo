@@ -24,7 +24,7 @@ import {
     useSettingsStore,
     useSettingsStoreActions,
 } from '/@/renderer/store';
-import { ActionIcon, ActionIconGroup } from '/@/shared/components/action-icon/action-icon';
+import { ActionIcon } from '/@/shared/components/action-icon/action-icon';
 import { Badge } from '/@/shared/components/badge/badge';
 import { Checkbox } from '/@/shared/components/checkbox/checkbox';
 import { Divider } from '/@/shared/components/divider/divider';
@@ -584,7 +584,7 @@ const GridRowItem = memo(
                     />
                 </Group>
                 <Group wrap="nowrap">
-                    <ActionIconGroup className={styles.group}>
+                    <Group className={styles.controls} gap={2} wrap="nowrap">
                         <ActionIcon
                             icon="arrowUp"
                             iconProps={{ size: 'md' }}
@@ -595,7 +595,7 @@ const GridRowItem = memo(
                                     postProcess: 'sentenceCase',
                                 }),
                             }}
-                            variant="subtle"
+                            variant="toolbar"
                         />
                         <ActionIcon
                             icon="arrowDown"
@@ -607,11 +607,13 @@ const GridRowItem = memo(
                                     postProcess: 'sentenceCase',
                                 }),
                             }}
-                            variant="subtle"
+                            variant="toolbar"
                         />
-                    </ActionIconGroup>
-                    <ActionIconGroup className={styles.group}>
+                    </Group>
+                    <Group className={styles.controls} gap={2} wrap="nowrap">
                         <ActionIcon
+                            aria-pressed={item.align === 'start'}
+                            data-active={item.align === 'start' || undefined}
                             icon="alignLeft"
                             iconProps={{ size: 'md' }}
                             onClick={() => handleAlignLeft(item)}
@@ -621,9 +623,11 @@ const GridRowItem = memo(
                                     postProcess: 'sentenceCase',
                                 }),
                             }}
-                            variant={item.align === 'start' ? 'filled' : 'subtle'}
+                            variant="toolbar"
                         />
                         <ActionIcon
+                            aria-pressed={item.align === 'center'}
+                            data-active={item.align === 'center' || undefined}
                             icon="alignCenter"
                             iconProps={{ size: 'md' }}
                             onClick={() => handleAlignCenter(item)}
@@ -633,9 +637,11 @@ const GridRowItem = memo(
                                     postProcess: 'sentenceCase',
                                 }),
                             }}
-                            variant={item.align === 'center' ? 'filled' : 'subtle'}
+                            variant="toolbar"
                         />
                         <ActionIcon
+                            aria-pressed={item.align === 'end'}
+                            data-active={item.align === 'end' || undefined}
                             icon="alignRight"
                             iconProps={{ size: 'md' }}
                             onClick={() => handleAlignRight(item)}
@@ -645,9 +651,9 @@ const GridRowItem = memo(
                                     postProcess: 'sentenceCase',
                                 }),
                             }}
-                            variant={item.align === 'end' ? 'filled' : 'subtle'}
+                            variant="toolbar"
                         />
-                    </ActionIconGroup>
+                    </Group>
                 </Group>
             </div>
         );

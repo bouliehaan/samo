@@ -11,9 +11,9 @@ export const FilterButton = ({ isActive, onClick, ...props }: FilterButtonProps)
 
     return (
         <ActionIcon
+            data-active={isActive || undefined}
             icon="filter"
             iconProps={{
-                fill: isActive ? 'primary' : undefined,
                 size: 'lg',
                 ...props.iconProps,
             }}
@@ -22,7 +22,7 @@ export const FilterButton = ({ isActive, onClick, ...props }: FilterButtonProps)
                 label: t('common.filters', { count: 2, postProcess: 'sentenceCase' }),
                 ...props.tooltip,
             }}
-            variant="subtle"
+            variant="toolbar"
             {...props}
         />
     );

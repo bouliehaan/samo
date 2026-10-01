@@ -1,6 +1,5 @@
 import {
     loadMobileDiscoveryForServers,
-    loadMobileExploForServers,
     loadMobilePodcastFeedForServers,
     loadMobileRadioForServers,
 } from '@samo/core/mobile';
@@ -17,12 +16,10 @@ import {
 import { buildCatalogHomeContent, type HomeLiveSections } from './catalog/catalog-reads';
 import { reconcileHomeContent } from './home-content';
 import { traceAsync } from './jank-trace';
+import { homeHeroAccountKey, loadHomeHeroRecommendation } from './home-hero-visit';
 import { saveHomeLayoutHint } from './home-layout-hint';
 import { buildHomeLoadKey, dedupeInFlight } from './in-flight-requests';
-import {
-    loadPersistedRecentContentItems,
-    savePersistedRecentContentItems,
-} from './recent-content';
+import { loadPersistedRecentContentItems, savePersistedRecentContentItems } from './recent-content';
 import { describeReachFailure, refreshSamoRadioDevices } from './samo-radio';
 import { samoRadioReachFor, setSamoRadioReach } from '../state/samo-radio';
 import { mergeServerRecentlyPlayedIntoRecents } from './recent-content-sync';
@@ -35,6 +32,19 @@ let lastHomeLiveSections: HomeLiveSections | null = null;
 
 // Increments per load so a stale response can't clobber a newer one.
 let homeLoadRequestId = 0;
+let liveAccountKey: string | null = null;
+
+// Both the first mirror paint and the later session validation load belong to
+// the same account. Register it before either read so validation cannot blank
+// an already usable Home and force all its covers to mount a second time.
+const selectHomeAccount = (authentication: ServerAuthenticationResult | null): void => {
+    const accountKey = authentication ? homeHeroAccountKey(authentication) : null;
+    if (accountKey === liveAccountKey) return;
+    homeLoadRequestId += 1;
+    lastHomeLiveSections = null;
+    liveAccountKey = accountKey;
+    setHomeContentState({ status: authentication ? 'loading' : 'idle' });
+};
 
 /** Re-derive Home from the mirror + last-known live sections. The shelf reads
  *  run on the native reader's background thread (off the JS thread), so this
@@ -47,10 +57,12 @@ export const refreshHomeFromMirror = async (options?: {
     if (!serverConnection) {
         return;
     }
+    selectHomeAccount(serverConnection);
+    const requestId = homeLoadRequestId;
     const content = await traceAsync('home.deriveFromMirror', () =>
         buildCatalogHomeContent(serverConnection, lastHomeLiveSections),
     );
-    if (!content) {
+    if (!content || requestId !== homeLoadRequestId) {
         return;
     }
     // Only the post-sync refresh is authoritative enough to PRUNE a deleted
@@ -106,14 +118,14 @@ export const loadHomeRadioSection = async (
         lastHomeLiveSections = {
             ...(lastHomeLiveSections ?? {
                 discover: [],
-                explo: [],
+                heroes: [],
                 podcastFeed: [],
                 radio: [],
             }),
             radio: radio.items,
         };
         const assembled = await buildCatalogHomeContent(authentication, lastHomeLiveSections);
-        if (assembled) {
+        if (assembled && requestId === homeLoadRequestId) {
             setHomeContentState((current) => ({
                 content:
                     current.status === 'loaded'
@@ -125,9 +137,52 @@ export const loadHomeRadioSection = async (
     });
 };
 
+/** Refresh recommendations without reloading the library or showing a spinner. */
+export const refreshHomeHeroes = async (): Promise<void> => {
+    const authentication = getAuthSession().serverConnection;
+    if (!authentication || isOfflineNow()) return;
+    const requestId = homeLoadRequestId;
+    await dedupeInFlight(buildHomeLoadKey([authentication]) + '-heroes', async () => {
+        try {
+            const heroes = await loadHomeHeroRecommendation(authentication);
+            if (
+                requestId !== homeLoadRequestId ||
+                getAuthSession().serverConnection !== authentication
+            )
+                return;
+            lastHomeLiveSections = {
+                discover: [],
+                podcastFeed: [],
+                radio: [],
+                ...lastHomeLiveSections,
+                heroes,
+                heroesLoaded: true,
+            };
+            await refreshHomeFromMirror();
+        } catch {
+            // An announcement needs live evidence; stale cards should not linger offline.
+            if (
+                requestId === homeLoadRequestId &&
+                getAuthSession().serverConnection === authentication
+            ) {
+                lastHomeLiveSections = {
+                    discover: [],
+                    podcastFeed: [],
+                    radio: [],
+                    ...lastHomeLiveSections,
+                    heroes: [],
+                    heroesLoaded: true,
+                };
+                await refreshHomeFromMirror();
+            }
+        }
+    });
+};
+
 export const loadHomeForConnection = async (
     authentication: null | ServerAuthenticationResult,
 ): Promise<void> => {
+    selectHomeAccount(authentication);
     const requestId = (homeLoadRequestId += 1);
 
     // Whether this server has a samo-radio, answered once per connection
@@ -149,6 +204,7 @@ export const loadHomeForConnection = async (
     // sections. A cold mirror (fresh install mid-first-sync) shows the
     // loading state until the sync-completed event re-derives.
     const mirrorContent = await buildCatalogHomeContent(authentication, lastHomeLiveSections);
+    if (requestId !== homeLoadRequestId) return;
     setHomeContentState((current) => {
         if (mirrorContent) {
             return {
@@ -177,20 +233,19 @@ export const loadHomeForConnection = async (
     const live = await dedupeInFlight(
         buildHomeLoadKey(authentication ? [authentication] : []),
         async (): Promise<HomeLiveSections> => {
-            const [discover, podcastFeed, explo] = await Promise.all([
+            const [discover, podcastFeed, heroes] = await Promise.all([
                 loadMobileDiscoveryForServers({
                     authentication: authentication ?? null,
                 }).catch(() => []),
                 loadMobilePodcastFeedForServers({
                     authentication: authentication ?? null,
                 }).catch(() => []),
-                loadMobileExploForServers({
-                    authentication: authentication ?? null,
-                }).catch(() => []),
+                loadHomeHeroRecommendation(authentication).catch(() => []),
             ]);
             return {
                 discover,
-                explo,
+                heroes,
+                heroesLoaded: true,
                 podcastFeed,
                 radio: lastHomeLiveSections?.radio ?? [],
             };
@@ -209,16 +264,9 @@ export const loadHomeForConnection = async (
         podcastFeed: live.podcastFeed.length,
         rediscover: live.discover.length,
     });
-    if (
-        live.discover.length > 0 ||
-        live.podcastFeed.length > 0 ||
-        live.explo.length > 0 ||
-        live.radio.length > 0
-    ) {
-        lastHomeLiveSections = live;
-    }
+    lastHomeLiveSections = live;
     const assembled = await buildCatalogHomeContent(authentication, lastHomeLiveSections);
-    if (!assembled) {
+    if (!assembled || requestId !== homeLoadRequestId) {
         return;
     }
     setHomeContentState((current) => ({

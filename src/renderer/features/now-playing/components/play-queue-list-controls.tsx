@@ -14,7 +14,6 @@ import { SearchInput } from '/@/renderer/features/shared/components/search-input
 import { usePlayerStoreBase } from '/@/renderer/store';
 import { ActionIcon } from '/@/shared/components/action-icon/action-icon';
 import { Box } from '/@/shared/components/box/box';
-import { Divider } from '/@/shared/components/divider/divider';
 import { Group } from '/@/shared/components/group/group';
 import { ItemListKey, ListDisplayType } from '/@/shared/types/types';
 
@@ -39,14 +38,12 @@ export const PlayQueueListControls = ({
             justify="flex-start"
             px="md"
             py="xs"
-            style={{ borderBottom: '1px solid var(--theme-colors-border)' }}
             w="100%"
             wrap="nowrap"
         >
             <Group gap="xs" style={{ flexShrink: 0 }} wrap="nowrap">
                 <QueuePlaybackIcons tableRef={tableRef} />
             </Group>
-            <Divider h="60%" orientation="vertical" style={{ alignSelf: 'center' }} />
             <Box style={{ display: 'flex', flex: 1, minWidth: 0 }}>
                 <SearchInput
                     enableHotkey={false}
@@ -55,7 +52,6 @@ export const PlayQueueListControls = ({
                     value={searchTerm}
                 />
             </Box>
-            <Divider h="60%" orientation="vertical" style={{ alignSelf: 'center' }} />
             <Box style={{ flexShrink: 0 }}>
                 <ListConfigMenu
                     displayTypes={[
@@ -102,21 +98,21 @@ const QueuePlaybackIcons = ({ tableRef }: { tableRef: RefObject<ItemListHandle |
                 iconProps={{ size: 'lg' }}
                 onClick={handleShuffleQueue}
                 tooltip={{ label: t('player.shuffle', { postProcess: 'sentenceCase' }) }}
-                variant="subtle"
+                variant="toolbar"
             />
             <ActionIcon
                 icon="x"
                 iconProps={{ size: 'lg' }}
                 onClick={handleClearQueue}
                 tooltip={{ label: t('action.clearQueue', { postProcess: 'sentenceCase' }) }}
-                variant="subtle"
+                variant="toolbar"
             />
             <ActionIcon
                 icon="goToItem"
                 iconProps={{ size: 'lg' }}
                 onClick={handleJumpToCurrent}
                 tooltip={{ label: t('action.goToCurrent', { postProcess: 'sentenceCase' }) }}
-                variant="subtle"
+                variant="toolbar"
             />
         </>
     );

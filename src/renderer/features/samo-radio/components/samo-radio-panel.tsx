@@ -6,7 +6,6 @@ import { SamoRadioDeviceControls } from '/@/renderer/features/samo-radio/compone
 import { useSamoRadioPolling } from '/@/renderer/features/samo-radio/hooks/use-samo-radio-polling';
 import { useIsPaneVisible } from '/@/renderer/layouts/default-layout/section-outlet';
 import { useSamoRadioDevices } from '/@/renderer/store/samo-radio.store';
-import { TextTitle } from '/@/shared/components/text-title/text-title';
 
 /**
  * samo's own audio outputs, on the Radio page.
@@ -29,10 +28,13 @@ export const SamoRadioPanel = memo(() => {
     }
 
     return (
-        <section className={styles.panel}>
-            <TextTitle fw={700} isNoSelect order={2}>
-                samo Radio
-            </TextTitle>
+        <details className={styles.panel}>
+            <summary className={styles.summary}>
+                samo radio
+                <span className={styles.names}>
+                    {devices.map((device) => device.name).join(', ')}
+                </span>
+            </summary>
             <div className={styles.devices}>
                 {devices.map((device) => (
                     <div className={styles.device} key={device.id}>
@@ -40,7 +42,7 @@ export const SamoRadioPanel = memo(() => {
                     </div>
                 ))}
             </div>
-        </section>
+        </details>
     );
 });
 

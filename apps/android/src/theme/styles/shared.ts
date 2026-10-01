@@ -346,6 +346,8 @@ export const sharedStyles = StyleSheet.create({
         borderBottomWidth: 0,
     },
     mediaContextActions: {
+        flexGrow: 0,
+        flexShrink: 1,
         marginTop: 4,
         paddingBottom: 4,
     },
@@ -452,6 +454,7 @@ export const sharedStyles = StyleSheet.create({
         elevation: 18,
         marginBottom: 28,
         marginHorizontal: 12,
+        maxHeight: '85%',
         overflow: 'hidden',
         shadowColor: '#000',
         shadowOffset: { height: 12, width: 0 },

@@ -80,7 +80,7 @@ const AlbumPlayButton = () => {
         <LibraryHeaderBar.PlayButton
             itemType={LibraryItem.ALBUM}
             listQuery={mergedQuery}
-            variant="filled"
+            variant="default"
         />
     );
 };
@@ -100,7 +100,7 @@ const SongPlayButton = () => {
         <LibraryHeaderBar.PlayButton
             itemType={LibraryItem.SONG}
             listQuery={mergedQuery}
-            variant="filled"
+            variant="default"
         />
     );
 };

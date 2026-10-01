@@ -63,7 +63,7 @@ const HeaderPlayButton = ({
     listQuery,
     onBeforePlay,
     songs,
-    variant = 'filled',
+    variant = 'default',
     ...props
 }: HeaderPlayButtonProps) => {
     const serverId = useCurrentServerId();
@@ -129,7 +129,7 @@ const HeaderPlayButton = ({
 
 const Title = ({ children, order = 1 }: TitleProps) => {
     return (
-        <TextTitle fw={700} order={order as any} overflow="hidden">
+        <TextTitle className={styles.title} fw={700} order={order as any} overflow="hidden">
             {children}
         </TextTitle>
     );
@@ -140,7 +140,11 @@ interface HeaderBadgeProps extends BadgeProps {
 }
 
 const HeaderBadge = ({ children, isLoading, ...props }: HeaderBadgeProps) => {
-    return <Badge {...props}>{isLoading ? <Spinner /> : children}</Badge>;
+    return (
+        <Badge className={styles.count} {...props}>
+            {isLoading ? <Spinner /> : children}
+        </Badge>
+    );
 };
 
 export const LibraryHeaderBar = Object.assign(memo(LibraryHeaderBarComponent), {

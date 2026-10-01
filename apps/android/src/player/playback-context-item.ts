@@ -10,7 +10,9 @@ import {
 } from '@samo/core/mobile';
 import { type ServerAuthenticationResult } from '@samo/core/server';
 
+import { type MediaContextMenuApi } from '../contexts/media-context-menu';
 import { getPersistedServerAuthKey } from '../services/persisted-server';
+import { getPlaybackQueue } from '../state/playback-queue-store';
 
 /**
  * Map the currently-playing audio back to a catalog item the media context
@@ -95,4 +97,47 @@ export const buildPlaybackContextItem = (
     }
 
     return null;
+};
+
+/**
+ * The long-press menu for what is playing — the full player's "more" button,
+ * on the phone and the TV alike.
+ *
+ * The queue stands in for the detail page the player doesn't have, so
+ * Explore's Keep in Library (and its copy-first playlist add) are still offered
+ * for the track you are actually listening to. Read at open time, not
+ * subscribed — the menu is built from this one snapshot.
+ */
+export const openPlaybackContextMenu = (
+    openForItem: MediaContextMenuApi['openForItem'],
+    item: MobilePlayableAudio | null,
+    serverConnection: ServerAuthenticationResult | null,
+): void => {
+    if (!item) {
+        return;
+    }
+    const menuItem = buildPlaybackContextItem(item, serverConnection);
+    if (!menuItem) {
+        return;
+    }
+    const queue = getPlaybackQueue();
+    // Remove from Playlist needs all three to hold, and asking here is the only
+    // place they can all be asked: the queue was started from a playlist this
+    // user may write (stamped at play time, since the player never sees a
+    // detail), this is a music track, and the track is one of that playlist's
+    // own rather than something appended to Up Next while it played.
+    // `menuItem.id` is the catalog track id — the same id space the playlist's
+    // membership is listed in.
+    const editablePlaylist = queue?.editablePlaylist;
+    const queuePlaylist =
+        editablePlaylist &&
+        item.source === 'music' &&
+        editablePlaylist.trackIds.includes(menuItem.id)
+            ? editablePlaylist
+            : undefined;
+    openForItem(menuItem, {
+        fromExplo: queue?.isExploPlaylist === true,
+        queuePlaylist,
+        suppressQueueAction: true,
+    });
 };

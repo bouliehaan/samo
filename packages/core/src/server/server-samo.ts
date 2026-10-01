@@ -331,7 +331,8 @@ export interface SamoMusicTrack {
 export interface SamoMusicPlaylist {
     createdAt?: string;
     description?: string;
-    duration?: number;
+    /** Sum of the tracks' durations, in seconds (the server sends `durationSeconds`, never `duration`). */
+    durationSeconds?: number;
     id: string;
     images?: SamoImage[];
     name: string;
@@ -841,6 +842,47 @@ export const samoSend = async <T>(
 // Authentication
 // ---------------------------------------------------------------------------
 
+/** A revoke runs in the background of a sign-in or sign-out, so it gets a
+ *  shorter leash than an ordinary request. */
+const SAMO_REVOKE_TIMEOUT_MS = 10_000;
+
+/**
+ * Sign out on the server: revoke the token `authentication` holds, so a
+ * credential this device is done with stops working instead of living on in
+ * the account's token list.
+ *
+ * Never throws, and callers do not wait on it: leaving a server must not
+ * depend on that server answering. Resolves true when the server revoked the
+ * token, and false when it could not be reached, predates the route (404) or
+ * refused (403 for the install's shared SAMO_API_TOKEN, which every legacy
+ * client uses, so no one client may retire it).
+ *
+ * Revokes by presenting the token itself. A client never learns its token's
+ * id, and the server identifies the token from the bearer (samo-server's
+ * revokeCurrentUserToken).
+ */
+export const revokeSamoCredential = async (
+    fetcher: SamoFetch,
+    authentication: Pick<ServerAuthenticationResult, 'credential' | 'url'>,
+): Promise<boolean> => {
+    if (!authentication.credential) {
+        return false;
+    }
+    try {
+        await samoSend<unknown>(
+            fetcher,
+            authentication,
+            'DELETE',
+            '/users/me/tokens/current',
+            undefined,
+            { timeoutMs: SAMO_REVOKE_TIMEOUT_MS },
+        );
+        return true;
+    } catch {
+        return false;
+    }
+};
+
 export const authenticateSamo = async ({
     deviceLabel = 'samo client',
     fetch: fetcher,
@@ -909,14 +951,46 @@ export const authenticateSamo = async ({
         // eslint-disable-next-line no-console -- deliberate auth fallback diagnostic
         console.warn('Failed to mint device token, falling back to login token', error);
     }
-    const resolvedUsername = login.user?.username ?? username;
+    // The login token was only ever the key to mint the device token. Once the
+    // device token replaces it, revoke it, or every sign-in leaves one more
+    // live credential on the account that no device holds. Not awaited: the
+    // sign-in has already succeeded.
+    if (token !== loginToken) {
+        void revokeSamoCredential(request, { credential: loginToken, url: baseUrl });
+    }
+    return samoAuthenticationFromLogin({ baseUrl, credential: token, login, username });
+};
+
+/**
+ * The session a samo sign-in establishes, built from the server's login body.
+ *
+ * Every way in ends here: a password login (whose credential is the device
+ * token it mints afterwards) and an approved TV pairing (whose approval is a
+ * login body). One constructor, so a TV that paired and a phone that typed a
+ * password can never describe the same server differently.
+ */
+export const samoAuthenticationFromLogin = ({
+    baseUrl,
+    credential,
+    login,
+    username,
+}: {
+    baseUrl: string;
+    credential: string;
+    login: SamoLoginResponse;
+    /** The name the person typed, for a body that does not name its user. */
+    username?: string;
+}): ServerAuthenticationResult => {
+    const resolvedUsername = login.user?.username ?? username ?? '';
     const capabilities = getSamoCapabilities();
 
     return {
         capabilities,
-        credential: token,
+        credential,
         details: `samo Server: ${formatServerCapabilities(capabilities)}`,
         isAdmin: login.user?.role === 'admin',
+        // A cast rather than the enum: server-auth imports this module, so a
+        // runtime import back would be circular.
         kind: 'samo-token' as ServerAuthenticationKind,
         serverId: login.serverId,
         title: `samo: ${login.user?.displayName ?? resolvedUsername}`,
@@ -2164,6 +2238,8 @@ export const getSamoMusicPlaylistCoverUrl = (
     version?: string,
 ) =>
     getSamoApiUrl(authentication, `/music/playlists/${encodeSamoId(playlistId)}/cover`, {
+        // Discard single-cover fallbacks cached as immutable by older servers.
+        artwork: 2,
         stream_token: streamToken,
         v: version,
     });
@@ -2250,10 +2326,22 @@ export const resolveSamoArtworkImageId = (
 };
 
 /**
- * Resolve a single image record to a URL the client can render. Picks the
- * absolute URL when the server already shipped one (remote provider),
- * otherwise routes through the right `/api/v1/media/...` endpoint based
- * on the ID prefix (`cover_*` extracted, `image_*` raw catalog image).
+ * Resolve a single image record to a URL the client can render.
+ *
+ * An image with an `id` is served by the server itself, and that is always
+ * the address to use: the server has the bytes, the `?width=` ladder applies,
+ * and the request carries the caller's own auth over a route the device can
+ * reach. The `url` on such a record is provenance — where the server fetched
+ * the cover from (Cover Art Archive, iTunes, Deezer for an Explore drop) —
+ * and it used to win here, so both clients went to the third party for art
+ * the server already held: a full-size 500px image for an 80px thumbnail,
+ * from a host that redirects and stalls, on every render. That is the blank
+ * thumbnail on some Explore tracks that looked like the server had no art.
+ *
+ * Preferring the id is safe even for a record the server has not downloaded
+ * yet: its image route redirects to the remote URL itself in that case
+ * (`serveCatalogImage`). Only a record with no id at all resolves remotely
+ * from here.
  */
 const resolveSamoImageUrl = (
     authentication: Pick<ServerAuthenticationResult, 'url'>,
@@ -2261,11 +2349,11 @@ const resolveSamoImageUrl = (
     streamToken?: string,
 ): string | undefined => {
     if (!image) return undefined;
-    if (isAbsoluteUrl(image.url)) return image.url;
-    if (isAbsoluteUrl(image.sourceUrl)) return image.sourceUrl;
     if (image.id) {
         return getSamoMetadataImageUrl(authentication, image.id, streamToken);
     }
+    if (isAbsoluteUrl(image.url)) return image.url;
+    if (isAbsoluteUrl(image.sourceUrl)) return image.sourceUrl;
     return undefined;
 };
 
@@ -2360,6 +2448,24 @@ export const isSamoApiMediaUrl = (url: string): boolean => {
 };
 
 /** Ensure samo media/cover URLs include a stream token for unauthenticated image loaders. */
+/**
+ * A media address the server gave as one of its own paths, made loadable.
+ *
+ * Some responses name a picture the way the server sees it — `/api/v1/...`,
+ * relative — because the server does not know which of its addresses this
+ * client reached it on. The address the caller connected with is the only one
+ * that is right, so the path is homed on it here; an absolute URL is left
+ * alone apart from the usual re-homing of samo's own.
+ */
+export const absoluteSamoMediaUrl = (
+    authentication: Pick<ServerAuthenticationResult, 'url'>,
+    raw: string,
+    streamToken?: string,
+): string | undefined => {
+    const absolute = /^https?:\/\//i.test(raw) ? raw : getSamoApiUrl(authentication, raw);
+    return finalizeSamoMediaUrl(authentication, absolute, streamToken);
+};
+
 export const finalizeSamoMediaUrl = (
     authentication: Pick<ServerAuthenticationResult, 'url'>,
     url: string | undefined,
@@ -2455,33 +2561,15 @@ export const resolveSamoArtistArtworkUrl = (
     return undefined;
 };
 
-/**
- * A playlist with more than one cover gets a server-composited 2x2 grid at
- * `/music/playlists/{id}/cover`. Callers that carry a *single* `imageId`
- * alongside the artwork URL (the mobile mappers) must drop it when this is
- * true, or the single first cover would override the grid. Single source of
- * truth for the grid threshold — keep it aligned with the resolver below.
- */
-export const samoPlaylistHasCoverGrid = (
-    playlist: Pick<SamoMusicPlaylist, 'images'>,
-): boolean => (playlist.images?.length ?? 0) > 1;
+/** Whether the metadata snapshot includes multiple cover sources. Rendering
+ * always uses the playlist endpoint regardless of this snapshot. */
+export const samoPlaylistHasCoverGrid = (playlist: Pick<SamoMusicPlaylist, 'images'>): boolean =>
+    (playlist.images?.length ?? 0) > 1;
 
 /**
- * Cache-busting stamp for a playlist's cover URL.
- *
- * `/music/playlists/{id}/cover` is a FIXED address whose bytes are not fixed.
- * The server composites the 2x2 grid from the playlist's first four track
- * covers at request time, then serves it as
- * `Cache-Control: public, max-age=31536000, immutable`. So adding a track
- * changes the image behind a URL every client has been promised will never
- * change, and the old grid stays on screen until somebody clears an HTTP cache
- * by hand — which was the last thing on the desktop still relying on a
- * full cache wipe at every sync.
- *
- * `updatedAt` moves on every write to the playlist — tracks, order, name,
- * an uploaded cover — so folding it into the URL gives a changed playlist a new
- * address and leaves an unchanged one on the bytes it already has. A server too
- * old to send `updatedAt` behaves exactly as before: no stamp, no bust.
+ * Version the playlist URL when its membership, order, or uploaded art changes.
+ * This also invalidates native image caches that do not revalidate HTTP entries.
+ * Servers predating updatedAt omit the stamp.
  */
 export const samoPlaylistCoverVersion = (
     playlist: Pick<SamoMusicPlaylist, 'updatedAt'>,
@@ -2509,20 +2597,10 @@ export const resolveSamoPlaylistArtworkUrl = (
 ): string | undefined => {
     const version = samoPlaylistCoverVersion(playlist);
 
-    if (samoPlaylistHasCoverGrid(playlist) && playlist.id) {
-        return finalizeSamoCoverUrl(
-            authentication,
-            getSamoMusicPlaylistCoverUrl(authentication, playlist.id, streamToken, version),
-            streamToken,
-        );
-    }
-
-    // No stamp on this branch: a metadata image id names its own bytes, so the
-    // id changes when the art does and `immutable` is the truth there.
-    const fromImage = resolveSamoImageUrl(authentication, pickImage(playlist.images), streamToken);
-    if (fromImage) {
-        return finalizeSamoCoverUrl(authentication, fromImage, streamToken);
-    }
+    // The server owns custom art, album fallbacks, and the generated grid.
+    // A list/detail response may carry only one (or no) image even when the
+    // current playlist has enough covers for a grid. Never freeze that snapshot
+    // into a single-image URL on the client.
     if (playlist.id) {
         return finalizeSamoCoverUrl(
             authentication,
@@ -2530,7 +2608,11 @@ export const resolveSamoPlaylistArtworkUrl = (
             streamToken,
         );
     }
-    return undefined;
+    return finalizeSamoCoverUrl(
+        authentication,
+        resolveSamoImageUrl(authentication, pickImage(playlist.images), streamToken),
+        streamToken,
+    );
 };
 
 export const resolveSamoStationArtworkUrl = (

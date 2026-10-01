@@ -38,14 +38,19 @@ describe('mapSamoPlaylistDetail artwork', () => {
         expect(detail.type).toBe(MobileMediaDetailType.PLAYLIST);
         // The grid cover endpoint — NOT /media/images/<first>/image — must win,
         // so the display resolver can't prefer a single cover over the grid.
-        expect(detail.artworkUrl).toBe('https://music.example/api/v1/music/playlists/pl1/cover');
+        expect(detail.artworkUrl).toBe(
+            'https://music.example/api/v1/music/playlists/pl1/cover?artwork=2',
+        );
         expect(detail.artworkImageId).toBeUndefined();
     });
 
-    it('keeps the single image id when the playlist has only one cover', () => {
+    it('uses the playlist endpoint even when the snapshot has only one cover', () => {
         const detail = mapSamoPlaylistDetail(auth, undefined, playlist([{ id: 'cover_a' }]), []);
 
-        expect(detail.artworkImageId).toBe('cover_a');
+        expect(detail.artworkImageId).toBeUndefined();
+        expect(detail.artworkUrl).toBe(
+            'https://music.example/api/v1/music/playlists/pl1/cover?artwork=2',
+        );
     });
 
     it('falls a playlist track with no embedded art back to its own album cover', () => {

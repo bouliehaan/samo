@@ -75,3 +75,22 @@ describe('reconcileHomeContent never-deload guard', () => {
         expect(result).toBe(previous);
     });
 });
+
+describe('hero refreshes', () => {
+    it('removes the last expired hero while preserving a thin mirror shelf', () => {
+        const previous = makeContent([
+            { id: 'heroes', itemIds: ['episode'] },
+            { id: 'albums', itemIds: ['album'] },
+        ]);
+        const result = reconcileHomeContent(previous, makeContent([]));
+        expect(result.sections.map((section) => section.id)).toEqual(['albums']);
+    });
+
+    it('applies the new ranking and removes played candidates', () => {
+        const previous = makeContent([{ id: 'heroes', itemIds: ['explore', 'episode', 'played'] }]);
+        const next = makeContent([{ id: 'heroes', itemIds: ['episode', 'explore'] }]);
+        const result = reconcileHomeContent(previous, next);
+        expect(result.sections[0]!.items.map((item) => item.id)).toEqual(['episode', 'explore']);
+        expect(result.sections[0]!.items[0]).toBe(previous.sections[0]!.items[1]);
+    });
+});

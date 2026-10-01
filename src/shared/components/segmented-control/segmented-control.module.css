@@ -1,16 +1,32 @@
 .root {
-    background: var(--theme-colors-surface);
+    gap: 4px;
+    padding: 4px;
+    background: color-mix(in srgb, var(--theme-colors-foreground) 6%, transparent);
+    border-radius: 999px;
+}
+
+.control {
+    border: 0;
+
+    &::before {
+        display: none;
+    }
 }
 
 .label {
-    &[data-active='true'] {
-        @mixin dark {
-            background-color: lighten(var(--theme-colors-surface), 10%);
-        }
+    font-weight: 650;
+    color: var(--theme-colors-foreground-muted);
+    border-radius: 999px;
 
-        @mixin light {
-            background-color: darken(var(--theme-colors-surface), 10%);
-        }
+    &:hover:not([data-disabled]) {
+        color: var(--theme-colors-foreground);
+        background: color-mix(in srgb, var(--theme-colors-foreground) 8%, transparent);
+    }
+
+    &[data-active='true'],
+    &[data-active='true']:hover {
+        color: var(--theme-colors-background);
+        background: var(--theme-colors-foreground);
     }
 }
 

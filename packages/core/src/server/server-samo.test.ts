@@ -10,6 +10,7 @@ import {
     getSamoMetadataImageUrl,
     getSamoMusicTrackStreamUrl,
     keepSamoExploTracks,
+    resolveSamoAlbumArtworkUrl,
     resolveSamoPlaylistArtworkUrl,
     samoPlaylistCoverVersion,
     samoPlaylistHasCoverGrid,
@@ -31,7 +32,9 @@ describe('samo artwork URLs', () => {
             images: [{ id: 'cover_a' }, { id: 'cover_b' }],
         });
 
-        expect(url).toBe('https://music.example/api/v1/music/playlists/playlist%201/cover');
+        expect(url).toBe(
+            'https://music.example/api/v1/music/playlists/playlist%201/cover?artwork=2',
+        );
     });
 
     it('stamps the playlist cover URL with updatedAt as epoch millis', () => {
@@ -47,7 +50,7 @@ describe('samo artwork URLs', () => {
         });
 
         expect(url).toBe(
-            'https://music.example/api/v1/music/playlists/playlist%201/cover?v=1782864000000',
+            'https://music.example/api/v1/music/playlists/playlist%201/cover?artwork=2&v=1782864000000',
         );
     });
 
@@ -91,18 +94,45 @@ describe('samo artwork URLs', () => {
                 images: [{ id: 'a' }, { id: 'b' }],
                 updatedAt: 'whenever',
             }),
-        ).toBe('https://music.example/api/v1/music/playlists/pl/cover');
+        ).toBe('https://music.example/api/v1/music/playlists/pl/cover?artwork=2');
     });
 
-    it('does not stamp a single-cover playlist, whose image id already names its bytes', () => {
+    it('serves a stored cover from the server even when the record names where it came from', () => {
+        // An Explore drop's cover is fetched from Cover Art Archive / iTunes /
+        // Deezer and stored under an id; the record keeps the provider URL as
+        // provenance. The server address is the one to render: it has the
+        // bytes, resizes on `?width=`, and is reachable from wherever the
+        // device is. Going to the provider was a full-size third-party fetch
+        // for every thumbnail, and blank art whenever it stalled.
+        const url = resolveSamoAlbumArtworkUrl(auth, {
+            id: 'album-1',
+            images: [
+                {
+                    id: 'cover_a',
+                    url: 'https://coverartarchive.org/release-group/abc/front-500',
+                },
+            ],
+        });
+
+        expect(url).toBe('https://music.example/api/v1/media/images/cover_a/image');
+    });
+
+    it('falls back to the provider URL only for a record the server never stored', () => {
+        const url = resolveSamoAlbumArtworkUrl(auth, {
+            images: [{ url: 'https://coverartarchive.org/release-group/abc/front-500' }],
+        });
+
+        expect(url).toBe('https://coverartarchive.org/release-group/abc/front-500');
+    });
+
+    it('uses the versioned playlist endpoint even for a single-image snapshot', () => {
         const url = resolveSamoPlaylistArtworkUrl(auth, {
             id: 'pl',
             images: [{ id: 'cover_a' }],
             updatedAt: '2026-07-01T00:00:00Z',
         });
 
-        expect(url).not.toContain('v=');
-        expect(url).toContain('cover_a');
+        expect(url).toContain('/music/playlists/pl/cover?artwork=2&v=1782864000000');
     });
 
     it('survives the width and stream-token passes that run over it afterwards', () => {

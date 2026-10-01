@@ -1,11 +1,7 @@
-import {
-    buildAudioQualityBadgeItems,
-    resolveDeliveredAudioQuality,
-} from '@samo/core/audio-quality';
 import { type MobilePlayableAudio, type MobileHomeItem, LONG_FORM_RELATIVE_SKIP_SECONDS } from '@samo/core/mobile';
 import { type ServerAuthenticationResult } from '@samo/core/server';
 import { type ComponentProps, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Animated, Easing, Pressable, Text, View } from 'react-native';
+import { ActivityIndicator, Animated, Easing, type LayoutRectangle, Pressable, Text, View } from 'react-native';
 import { GestureDetector } from 'react-native-gesture-handler';
 import Reanimated, {
     interpolate,
@@ -13,8 +9,6 @@ import Reanimated, {
     type SharedValue,
     useAnimatedReaction,
     useAnimatedStyle,
-    withSpring,
-    withTiming,
 } from 'react-native-reanimated';
 
 import { ArtworkImage } from '../components/ArtworkImage';
@@ -42,7 +36,6 @@ import {
     loadArtistHomeItemById,
     loadArtistHomeItemByName,
 } from '../services/catalog/catalog-reads';
-import { getPlaybackQueue } from '../state/playback-queue-store';
 import { useAndroidPlaybackPositionMs } from '../state/playback-store';
 import { useSamoChannelSelector } from '../state/samo-channel';
 import { getPlayerPositionMsForPlaybackProgress } from '../utils/playback-progress-math';
@@ -68,9 +61,12 @@ import { colors } from '../theme/tokens';
 import { usePlaybackBusy } from '../hooks/use-playback-busy';
 import { peekArtworkLocalUri } from '../services/artwork-cache';
 import { resolveSamoItemArtworkSourceForDisplay } from '../utils/samo-artwork-url';
+import { getPlayerArtworkMode, savePlayerArtworkMode } from '../services/player-preferences';
 import { FrostedBackdrop } from './FrostedBackdrop';
-import { buildPlaybackContextItem } from './playback-context-item';
+import { PlayerArtwork } from './PlayerArtwork';
+import { openPlaybackContextMenu } from './playback-context-item';
 import { PlayerIconButton } from './PlayerIconButton';
+import { getPlayerQualityItems, getPlayerQualityPill } from './quality-pill';
 import {
     PLAYER_CLOSE_SPRING,
     PLAYER_OPEN_SPRING,
@@ -288,7 +284,7 @@ const PlayerProgressBlock = memo(({
                 positionMs={positionMs}
                 segments={segments}
                 sessionKey={sessionKey}
-                tint={colors.accent}
+                tint="#ffffff"
             />
             <View style={styles.fullPlayerTimeRow}>
                 <Text style={styles.fullPlayerTime}>
@@ -311,6 +307,7 @@ export const FullScreenPlayer = memo(({
     castState,
     isShuffled,
     lastPlayedItem,
+    onCancelGesture,
     onClose,
     onCycleRepeatMode,
     onGoToArtist,
@@ -339,6 +336,7 @@ export const FullScreenPlayer = memo(({
     castState: AndroidCastState;
     isShuffled: boolean;
     lastPlayedItem: MobilePlayableAudio | null;
+    onCancelGesture: () => void;
     onClose: () => void;
     onCycleRepeatMode: () => void;
     /** Called when the user taps the artist avatar — closes player + navigates
@@ -361,6 +359,14 @@ export const FullScreenPlayer = memo(({
     serverConnection: ServerAuthenticationResult | null;
     visible: boolean;
 }) => {
+    const [artworkMode, setArtworkMode] = useState(getPlayerArtworkMode);
+    const [artworkFrame, setArtworkFrame] = useState<LayoutRectangle>({ x: 0, y: 0, width: 0, height: 0 });
+    const toggleArtworkMode = useCallback(() => {
+        const next = getPlayerArtworkMode() === 'framed' ? 'immersive' : 'framed';
+        savePlayerArtworkMode(next);
+        setArtworkMode(next);
+        triggerImpact('light');
+    }, []);
     const [sleepMenuVisible, setSleepMenuVisible] = useState(false);
     const [isArtworkZoomOpen, setIsArtworkZoomOpen] = useState(false);
     // Collapsed shell is invisible but was still above the tab bar (zIndex 10000).
@@ -448,57 +454,21 @@ export const FullScreenPlayer = memo(({
     const closeSpring = reducedMotion ? REDUCED_MOTION_SPRING : PLAYER_CLOSE_SPRING;
     const settleSpring = reducedMotion ? REDUCED_MOTION_SPRING : OPEN_SPRING;
     const dismissPlayer = useCallback(() => {
-        // Animate closed first; flip parent state only once the motion finishes
-        // so tab chrome and visible stay in sync with what the user sees.
-        const onFinish = (finished?: boolean) => {
-            'worklet';
-            if (finished) {
-                runOnJS(onClose)();
-            }
-        };
-        playerProgress.value = reducedMotion
-            ? withTiming(0, { duration: 0 }, onFinish)
-            : withSpring(0, closeSpring, onFinish);
-    }, [closeSpring, onClose, playerProgress, reducedMotion]);
+        onClose();
+    }, [onClose]);
 
     const openFullscreenContextMenu = useCallback(() => {
-        const item = playbackState.status !== 'idle' ? playbackState.item : lastPlayedItem;
-        if (!item) {
-            return;
-        }
-        const menuItem = buildPlaybackContextItem(item, serverConnection);
-        if (menuItem) {
-            // The queue stands in for the detail page the player doesn't
-            // have, so Explore's Keep in Library (and its copy-first playlist
-            // add) are still offered for the track you are actually listening
-            // to. Read at open time, not subscribed — the menu is built from
-            // this one snapshot.
-            const queue = getPlaybackQueue();
-            // Remove from Playlist needs all three to hold, and asking here is
-            // the only place they can all be asked: the queue was started from
-            // a playlist this user may write (stamped at play time, since the
-            // player never sees a detail), this is a music track, and the track
-            // is one of that playlist's own rather than something appended to
-            // Up Next while it played. `menuItem.id` is the catalog track id —
-            // the same id space the playlist's membership is listed in.
-            const editablePlaylist = queue?.editablePlaylist;
-            const queuePlaylist =
-                editablePlaylist &&
-                item.source === 'music' &&
-                editablePlaylist.trackIds.includes(menuItem.id)
-                    ? editablePlaylist
-                    : undefined;
-            contextMenu.openForItem(menuItem, {
-                fromExplo: queue?.isExploPlaylist === true,
-                queuePlaylist,
-                suppressQueueAction: true,
-            });
-        }
+        openPlaybackContextMenu(
+            contextMenu.openForItem,
+            playbackState.status !== 'idle' ? playbackState.item : lastPlayedItem,
+            serverConnection,
+        );
     }, [contextMenu, lastPlayedItem, playbackState, serverConnection]);
 
     const {
         closeQueue,
         isQueueInteractive,
+        openQueue,
         playerGesture,
         queueBackdropStyle,
         queueProgress,
@@ -507,6 +477,7 @@ export const FullScreenPlayer = memo(({
     } = usePlayerShellGestures({
         canSkipPlayback,
         closeSpring,
+        onCancelGesture,
         onClose,
         onNext,
         onPrevious,
@@ -514,6 +485,7 @@ export const FullScreenPlayer = memo(({
         playerProgress,
         reducedMotion,
         settleSpring,
+        visible,
     });
 
     // One solid card sliding up over the app. The shell is laid out once at full
@@ -583,99 +555,10 @@ export const FullScreenPlayer = memo(({
     // stream is long closed) and during pre-roll.
     const decodedFormat =
         playbackState.status !== 'idle' ? playbackState.decodedFormat : undefined;
-    // The badge describes the stream that ARRIVED, not the catalog row that
-    // described the file. Those agree on a LAN stream and on a downloaded copy;
-    // they part company the moment something between the server and the phone
-    // re-encodes the audio, and until this call existed the player reported the
-    // file and labelled the path direct regardless. `resolveDeliveredAudioQuality`
-    // returns the catalog's own answer untouched whenever nothing has been
-    // observed, so this is safe to apply unconditionally.
-    const qualityItems = isMusicSource
-        ? buildAudioQualityBadgeItems({
-              ...resolveDeliveredAudioQuality(displayItem.quality, decodedFormat),
-              compact: true,
-              mode: 'detail',
-          })
-        : [];
-
-    // Collapsed quality pill: derive the two views from qualityItems.
-    // items[0] = path (DIRECT/Transcoded), items[1] = format (FLAC/MP3),
-    // items[2..] = bit-depth, sample-rate, or bitrate.
     // Plain derivation, NOT useMemo: it sits below the `!displayItem` early
-    // return (a rules-of-hooks violation), and qualityItems is a fresh array
-    // every render so memoizing on it could never hit anyway.
-    const collapsedPill = (() => {
-        if (qualityItems.length === 0) return null;
-        const pathItem = qualityItems[0];
-        const formatItem = qualityItems[1];
-        const bitrateItem = qualityItems[qualityItems.length - 1];
-
-        // HI-RES direct (bit-depth present, direct tone)
-        const isHiRes = qualityItems.some(
-            (q) => q.tone === 'direct' && q.label.includes('/'),
-        );
-
-        if (isHiRes) {
-            // Find the bd/sr spec item (e.g. "16/44.1")
-            const specItem = qualityItems.find(
-                (q) => q.tone === 'direct' && q.label.includes('/'),
-            );
-            const viewA = specItem ? `HI-RES\u00a0|\u00a0${specItem.label}` : 'HI-RES';
-            const viewB = `${bitrateItem?.label ?? ''}\u00a0|\u00a0${pathItem?.label ?? ''}`;
-            return {
-                canToggle: true,
-                labelA: viewA,
-                labelB: viewB,
-                tone: 'direct' as const,
-            };
-        }
-
-        // Lossless direct without explicit bit depth (e.g. FLAC)
-        const isLosslessDirect = pathItem?.tone === 'direct' || formatItem?.tone === 'direct';
-        if (isLosslessDirect && formatItem) {
-            const viewA = `LOSSLESS\u00a0|\u00a0${formatItem.label}`;
-            const viewB = bitrateItem && bitrateItem !== formatItem
-                ? `${bitrateItem.label}\u00a0|\u00a0${pathItem?.label ?? ''}`
-                : pathItem?.label ?? '';
-            return {
-                canToggle: bitrateItem !== formatItem,
-                labelA: viewA,
-                labelB: viewB,
-                tone: 'direct' as const,
-            };
-        }
-
-        // Transcoded. The headline is the format item, which on this path names
-        // both ends of the trade (`FLAC \u2192 OPUS`) — what is on the server and
-        // what actually got here. Everything measured off the live stream goes
-        // behind the flip alongside the path, matching how the lossless pill
-        // hides its bitrate there.
-        if (pathItem?.tone === 'transcoded') {
-            const measured = qualityItems
-                .slice(2)
-                .map((item) => item.label)
-                .join('\u00a0|\u00a0');
-            return {
-                canToggle: measured.length > 0,
-                labelA: formatItem?.label ?? 'TRANSCODED',
-                labelB: measured
-                    ? `${measured}\u00a0|\u00a0${pathItem.label.toUpperCase()}`
-                    : '',
-                tone: 'transcoded' as const,
-            };
-        }
-
-        // Lossy/unknown — show format + bitrate, no toggle
-        const viewA = formatItem && bitrateItem && bitrateItem !== formatItem
-            ? `${formatItem.label}\u00a0|\u00a0${bitrateItem.label}`
-            : (formatItem ?? bitrateItem)?.label ?? '';
-        return {
-            canToggle: false,
-            labelA: viewA,
-            labelB: '',
-            tone: 'neutral' as const,
-        };
-    })();
+    // return (a rules-of-hooks violation), and the items are a fresh array
+    // every render so memoizing on them could never hit anyway.
+    const collapsedPill = getPlayerQualityPill(getPlayerQualityItems(displayItem, decodedFormat));
 
     const isLongFormSource =
         displayItem.source === 'audiobook' || displayItem.source === 'podcast';
@@ -791,22 +674,43 @@ export const FullScreenPlayer = memo(({
         <>
         <GestureDetector gesture={playerGesture}>
         <Reanimated.View
-            pointerEvents={isShellInteractive ? 'auto' : 'none'}
+            pointerEvents={visible || isShellInteractive ? 'auto' : 'none'}
             style={[
                 styles.fullPlayer,
                 playerAnimatedStyle,
             ]}
         >
-            <FrostedBackdrop artworkUrl={paletteArtworkUrl} />
+            <FrostedBackdrop artworkUrl={paletteArtworkUrl} reducedMotion={reducedMotion} />
+            <PlayerArtwork
+                artworkImageId={artworkImageId}
+                contentSource={contentSource}
+                fallbackStyle={styles.fullPlayerArtworkFallback}
+                frame={artworkFrame}
+                immersive={artworkMode === 'immersive' && Boolean(artworkUrl || artworkImageId)}
+                letter={displayTitle.slice(0, 1)}
+                reducedMotion={reducedMotion}
+                serverConnection={serverConnection}
+                transition={reducedMotion ? 0 : 280}
+                uri={artworkUrl}
+            />
 
             <Reanimated.View style={styles.fullPlayerExpandedPanel}>
             <View style={styles.fullPlayerContent}>
             <View style={styles.fullPlayerHeader}>
+                <Pressable
+                    accessibilityLabel="Close player"
+                    accessibilityRole="button"
+                    onPress={dismissPlayer}
+                    style={styles.fullPlayerHeaderButton}
+                >
+                    <DownCaretGlyph color={colors.text} />
+                </Pressable>
+                <Text style={styles.fullPlayerHeaderLabel}>NOW PLAYING</Text>
                 {isMusicSource && (displayItem.artistId || artistItem) ? (
                     // Artist avatar — tappable to navigate to artist page.
                     <Pressable
                         accessibilityLabel={
-                            artistItem
+                            onGoToArtist && (displayItem.artistId || artistItem?.id)
                                 ? `Go to ${displayItem.artist ?? 'artist'} page`
                                 : 'Close player'
                         }
@@ -839,17 +743,7 @@ export const FullScreenPlayer = memo(({
                             </View>
                         )}
                     </Pressable>
-                ) : (
-                    <Pressable
-                        accessibilityLabel="Close player"
-                        accessibilityRole="button"
-                        onPress={dismissPlayer}
-                        style={styles.fullPlayerHeaderButton}
-                    >
-                        <DownCaretGlyph color={colors.text} />
-                    </Pressable>
-                )}
-                <View style={styles.fullPlayerHeaderSpacer} />
+                ) : null}
                 <Pressable
                     accessibilityLabel="More options"
                     accessibilityRole="button"
@@ -860,34 +754,20 @@ export const FullScreenPlayer = memo(({
                 </Pressable>
             </View>
 
-            <View style={styles.fullPlayerArtworkWrap}>
-                <Pressable
-                    accessibilityLabel={`Open ${displayTitle} artwork`}
-                    accessibilityRole="button"
-                    disabled={!artworkUrl && !artworkImageId}
-                    onPress={() => setIsArtworkZoomOpen(true)}
-                    style={styles.fullPlayerArtworkShadow}
-                >
-                    {artworkUrl || artworkImageId ? (
-                        <ArtworkImage
-                            artworkImageId={artworkImageId}
-                            contentSource={contentSource}
-                            fallbackStyle={styles.fullPlayerArtworkFallback}
-                            letter={displayTitle.slice(0, 1)}
-                            serverConnection={serverConnection}
-                            style={styles.fullPlayerArtwork}
-                            transition={280}
-                            uri={artworkUrl}
-                        />
-                    ) : (
-                        <View style={styles.fullPlayerArtworkFallback}>
-                            <Text style={styles.fullPlayerArtworkLetter}>
-                                {displayTitle.slice(0, 1)}
-                            </Text>
-                        </View>
-                    )}
-                </Pressable>
-            </View>
+            <Pressable
+                accessibilityHint="Tap to switch artwork style. Press and hold to view the artwork."
+                accessibilityLabel={artworkMode === 'framed' ? 'Use immersive artwork' : 'Use framed artwork'}
+                accessibilityRole="button"
+                disabled={!artworkUrl && !artworkImageId}
+                onLayout={({ nativeEvent: { layout } }) => setArtworkFrame((previous) =>
+                    previous.x === layout.x && previous.y === layout.y &&
+                    previous.width === layout.width && previous.height === layout.height
+                        ? previous : layout
+                )}
+                onLongPress={() => setIsArtworkZoomOpen(true)}
+                onPress={toggleArtworkMode}
+                style={styles.fullPlayerArtworkWrap}
+            />
 
             {/* Bottom stack — revealed by the growing shell clip, fixed layout. */}
             <View
@@ -1004,7 +884,7 @@ export const FullScreenPlayer = memo(({
                                 }
                                 onPress={handlePrevious}
                             >
-                                <TrackSkipGlyph color={colors.text} direction={-1} size={24} />
+                                <TrackSkipGlyph color={colors.text} direction={-1} size={28} />
                             </PlayerIconButton>
                         ) : (
                             <View style={styles.playerControlButtonSpacer} />
@@ -1027,12 +907,13 @@ export const FullScreenPlayer = memo(({
                             accessibilityLabel={isBusy ? 'Loading' : isPlaying ? 'Pause' : 'Play'}
                             onPress={onTogglePlayback}
                             primary
+                            tint="#ffffff"
                         >
                             {isBusy ? (
-                                <ActivityIndicator color={colors.text} size="small" />
+                                <ActivityIndicator color="#101114" size="small" />
                             ) : (
                                 <PlayPauseGlyph
-                                    color={colors.text}
+                                    color="#101114"
                                     isPlaying={isPlaying}
                                     size={FULL_PLAYER_PLAY_GLYPH_SIZE}
                                 />
@@ -1071,7 +952,7 @@ export const FullScreenPlayer = memo(({
                                 onLongPress={handleSkipKind}
                                 onPress={handleNext}
                             >
-                                <TrackSkipGlyph color={colors.text} direction={1} size={24} />
+                                <TrackSkipGlyph color={colors.text} direction={1} size={28} />
                             </PlayerIconButton>
                         ) : (
                             <View style={styles.playerControlButtonSpacer} />
@@ -1125,13 +1006,22 @@ export const FullScreenPlayer = memo(({
                 {(!showCastInMainControls || castState.isConnected || showSleepInBottomBar) ? (
                     <View style={styles.fullPlayerBottomBar}>
                         {!showCastInMainControls ? castButton : null}
-                        {castState.isConnected ? (
-                            <Text numberOfLines={1} style={styles.fullPlayerCastStatus}>
-                                Casting to {castState.deviceName ?? 'Chromecast'}
+                        <Pressable
+                            accessibilityLabel={displayItem.source === 'audiobook' ? 'Open chapters' : 'Open Up Next queue'}
+                            accessibilityRole="button"
+                            onPress={openQueue}
+                            style={styles.fullPlayerQueueButton}
+                        >
+                            <View style={styles.fullPlayerDragPill} />
+                            <Text style={styles.fullPlayerQueueLabel}>
+                                {displayItem.source === 'audiobook' ? 'Chapters' : 'Up next'}
                             </Text>
-                        ) : (
-                            <View style={styles.fullPlayerBottomBarSpacer} />
-                        )}
+                            {castState.isConnected ? (
+                                <Text numberOfLines={1} style={styles.fullPlayerCastStatus}>
+                                    Casting to {castState.deviceName ?? 'Chromecast'}
+                                </Text>
+                            ) : null}
+                        </Pressable>
                         {showSleepInBottomBar ? sleepTimerButton : null}
                     </View>
                 ) : null}

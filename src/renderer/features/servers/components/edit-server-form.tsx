@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 
 import i18n from '/@/i18n/i18n';
 import { api } from '/@/renderer/api';
+import { retireSamoCredential } from '/@/renderer/api/samo/samo-sign-out';
 import { queryClient } from '/@/renderer/lib/react-query';
 import { getServerById, useAuthStoreActions } from '/@/renderer/store';
 import { Checkbox } from '/@/shared/components/checkbox/checkbox';
@@ -163,7 +164,17 @@ export const EditServerForm = ({ isUpdate, onCancel, password, server }: EditSer
                 }
             }
 
+            const replaced = getServerById(server.id);
             updateServer(server.id, serverItem);
+            if (replaced && replaced.credential !== serverItem.credential) {
+                // Signing in again replaced this server's token; revoke the old
+                // one. It belongs to the server that issued it, so it goes to
+                // the new address only when that is provably the same server:
+                // an address is often edited because the old one stopped working.
+                const sameServer =
+                    Boolean(replaced.serverId) && replaced.serverId === data?.serverId;
+                retireSamoCredential(sameServer ? { ...replaced, url: serverItem.url } : replaced);
+            }
             toast.success({
                 message: t('form.updateServer.title', { postProcess: 'sentenceCase' }),
             });

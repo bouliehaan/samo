@@ -15,7 +15,7 @@ import { styles } from '../../theme/styles';
 import { type HomeDisplaySection } from '../../types/home';
 import { getContentItemKey } from '../../utils/content-item';
 import { getViewAllVariant } from '../../utils/home-display';
-import { HomeExploreHero } from './HomeExploreHero';
+import { HomeHeroStrip } from './HomeHeroStrip';
 import { HomeMediaTile } from './HomeMediaTile';
 import { FLASH_LIST_MAINTAIN_POSITION_DISABLED } from './shared';
 
@@ -192,9 +192,9 @@ export const HomeDisplayRow = memo(({
                     ) : null}
                 </View>
             ) : null}
-            {section.variant === 'explo' && section.items[0] ? (
-                <HomeExploreHero
-                    item={section.items[0]}
+            {section.variant === 'heroes' && section.items.length > 0 ? (
+                <HomeHeroStrip
+                    items={section.items}
                     onPrefetchItem={onPrefetchItem}
                     onSelectItem={onSelectItem}
                     serverConnection={serverConnection}

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Outlined launcher wordmark: 320×180 at xhdpi, independent of runtime fonts. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="160dp" android:height="90dp"
+    android:viewportWidth="320" android:viewportHeight="180">
+    <path android:fillColor="#0e0f13" android:pathData="M0,0 H320 V180 H0 Z" />
+    <path android:fillColor="@android:color/transparent" android:strokeColor="#f4f6f9"
+        android:strokeWidth="8" android:strokeLineCap="round" android:strokeLineJoin="round"
+        android:pathData="M94,72 C88,64 62,63 61,77 C60,92 94,83 94,100 C94,115 68,115 60,107 M139,72 C118,54 103,75 107,94 C110,114 128,115 139,100 M139,69 V111 M157,111 V69 M157,82 C157,63 185,61 185,82 V111 M185,82 C185,63 213,61 213,82 V111 M263,89 C263,58 230,58 230,89 C230,121 263,121 263,89 Z" />
+</vector>

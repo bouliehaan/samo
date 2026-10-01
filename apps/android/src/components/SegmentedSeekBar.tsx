@@ -24,7 +24,7 @@ import {
     getVisibleSeekSegments,
 } from '../utils/playback-time';
 
-const SEEK_THUMB_WIDTH = 5;
+const SEEK_THUMB_WIDTH = 10;
 // Once the engine's reported position lands within this of the committed seek,
 // drop the local override and follow live playback again (the native poll is
 // coarse — up to ~1s — so the tolerance has to absorb a whole poll step).

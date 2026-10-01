@@ -51,9 +51,7 @@ const SkeletonPulseContext = createContext<SharedValue<number> | null>(null);
 
 export const SkeletonPulseProvider = ({ children }: { children: React.ReactNode }) => {
     const pulse = useSkeletonPulse();
-    return (
-        <SkeletonPulseContext.Provider value={pulse}>{children}</SkeletonPulseContext.Provider>
-    );
+    return <SkeletonPulseContext.Provider value={pulse}>{children}</SkeletonPulseContext.Provider>;
 };
 
 /**
@@ -115,7 +113,10 @@ export const SkeletonTrackRow = () => {
             {/* Text Blocks */}
             <View style={styles.trackText}>
                 {/* Title */}
-                <SkeletonBlock style={{ width: '60%', height: 16, marginBottom: 6 }} borderRadius={4} />
+                <SkeletonBlock
+                    style={{ width: '60%', height: 16, marginBottom: 6 }}
+                    borderRadius={4}
+                />
                 {/* Subtitle */}
                 <SkeletonBlock style={{ width: '40%', height: 12 }} borderRadius={3} />
             </View>
@@ -133,7 +134,10 @@ export const SkeletonTile = () => {
     return (
         <View style={styles.viewAllTilePlaceholder}>
             {/* Main square image */}
-            <SkeletonBlock style={{ width: '100%', aspectRatio: 1, marginBottom: 8 }} borderRadius={10} />
+            <SkeletonBlock
+                style={{ width: '100%', aspectRatio: 1, marginBottom: 8 }}
+                borderRadius={10}
+            />
             {/* Text lines */}
             <SkeletonBlock style={{ width: '80%', height: 14, marginBottom: 4 }} borderRadius={3} />
             <SkeletonBlock style={{ width: '50%', height: 12 }} borderRadius={3} />
@@ -276,7 +280,10 @@ const HomeSkeletonTile = ({ variant }: { variant: HomeSkeletonVariant }) => {
                 />
             ) : null}
             {variant === 'podcast-feed' ? (
-                <SkeletonBlock style={{ height: 3, marginTop: 6, width: '100%' }} borderRadius={2} />
+                <SkeletonBlock
+                    style={{ height: 3, marginTop: 6, width: '100%' }}
+                    borderRadius={2}
+                />
             ) : null}
         </View>
     );
@@ -293,6 +300,8 @@ const HomeSkeletonRowContent = ({
     title?: string;
     variant: HomeSkeletonVariant;
 }) => {
+    // Announcements reserve no space until a fresh update is confirmed.
+    if (variant === 'heroes') return null;
     const rowHeight = getHomeSectionRowHeight(variant, 1);
     return (
         <View style={styles.homeSection}>

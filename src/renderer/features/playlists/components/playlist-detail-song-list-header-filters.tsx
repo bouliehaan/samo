@@ -14,7 +14,6 @@ import { useListContext } from '/@/renderer/context/list-context';
 import { ContextMenuController } from '/@/renderer/features/context-menu/context-menu-controller';
 import { playlistsQueries } from '/@/renderer/features/playlists/api/playlists-api';
 import { ClientSideSongFilters } from '/@/renderer/features/playlists/components/client-side-song-filters';
-import { openUpdatePlaylistModal } from '/@/renderer/features/playlists/components/update-playlist-modal';
 import { useCanModifyPlaylists } from '/@/renderer/features/playlists/hooks/use-playlist-permissions';
 import { usePlaylistSongListFilters } from '/@/renderer/features/playlists/hooks/use-playlist-song-list-filters';
 import { FilterButton } from '/@/renderer/features/shared/components/filter-button';
@@ -37,7 +36,6 @@ import {
 } from '/@/renderer/store';
 import { ActionIcon } from '/@/shared/components/action-icon/action-icon';
 import { Button } from '/@/shared/components/button/button';
-import { Divider } from '/@/shared/components/divider/divider';
 import { Flex } from '/@/shared/components/flex/flex';
 import { Group } from '/@/shared/components/group/group';
 import { Icon } from '/@/shared/components/icon/icon';
@@ -93,12 +91,12 @@ const PlaylistSongListFiltersModal = () => {
                                 <ActionIcon
                                     icon={isSidebarOpen ? 'unpin' : 'pin'}
                                     onClick={handlePin}
-                                    variant="subtle"
+                                    variant="toolbar"
                                 />
                             )}
                             {t('common.filters', { postProcess: 'sentenceCase' })}
                         </Group>
-                        <Button onClick={clear} size="compact-sm" variant="subtle">
+                        <Button onClick={clear} size="compact-sm" variant="toolbar">
                             {t('common.reset', { postProcess: 'sentenceCase' })}
                         </Button>
                     </Group>
@@ -164,45 +162,35 @@ export const PlaylistDetailSongListHeaderFilters = () => {
     }, [listData]);
 
     return (
-        <Flex justify="space-between">
-            <Group gap="sm" w="100%">
+        <Flex align="center" gap="sm" justify="space-between" wrap="wrap">
+            <Group gap="xs" style={{ flex: '1 1 auto', minWidth: 0 }}>
                 <Button
                     disabled={isEditMode}
                     leftSection={<Icon icon="arrowLeftRight" />}
                     onClick={handleToggleDisplayMode}
-                    variant="subtle"
+                    variant="toolbar"
                 >
                     {toggleChoice}
                 </Button>
-                <Divider orientation="vertical" />
+
                 <ListSortByDropdown
                     defaultSortByValue={SongListSort.ID}
                     disabled={isEditMode}
                     itemType={LibraryItem.PLAYLIST_SONG}
                     listKey={ItemListKey.PLAYLIST_SONG}
                 />
-                <Divider orientation="vertical" />
+
                 <ListSortOrderToggleButton
                     defaultSortOrder={SortOrder.ASC}
                     disabled={isEditMode}
                     listKey={ItemListKey.PLAYLIST_SONG}
                 />
-                <Divider orientation="vertical" />
+
                 <PlaylistSongListFiltersModal />
                 <ListRefreshButton disabled={isEditMode} listKey={listKey} />
-                {canModifyPlaylist && detailQuery.data ? (
-                    <Button
-                        leftSection={<Icon icon="edit" />}
-                        onClick={() => openUpdatePlaylistModal({ playlist: detailQuery.data })}
-                        size="compact-sm"
-                        variant="subtle"
-                    >
-                        {t('action.editPlaylist', { postProcess: 'titleCase' })}
-                    </Button>
-                ) : null}
                 <MoreButton onClick={handleMore} />
             </Group>
-            <Group gap="sm" wrap="nowrap">
+            <Group gap="xs" wrap="wrap">
                 <SaveAndReplaceButton mode={mode} songIds={tracks} />
                 {/* Entering edit mode leads to a trackIds PATCH, which a
                     server-managed playlist refuses — so don't open the door.
@@ -212,8 +200,7 @@ export const PlaylistDetailSongListHeaderFilters = () => {
                 {canModifyPlaylist || isEditMode ? (
                     <Button
                         onClick={() => setMode?.(mode === 'edit' ? 'view' : 'edit')}
-                        uppercase
-                        variant={mode === 'edit' ? 'state-error' : 'subtle'}
+                        variant={mode === 'edit' ? 'default' : 'toolbar'}
                     >
                         {mode === 'edit'
                             ? t('common.cancel', { postProcess: 'titleCase' })
@@ -226,10 +213,13 @@ export const PlaylistDetailSongListHeaderFilters = () => {
                     })}
                 >
                     <ActionIcon
+                        aria-label={t(`common.${collapsed ? 'expand' : 'collapse'}`, {
+                            postProcess: 'sentenceCase',
+                        })}
                         icon={collapsed ? 'arrowDownS' : 'arrowUpS'}
                         iconProps={{ size: 'xl' }}
                         onClick={() => setCollapsed((prev) => !prev)}
-                        variant="subtle"
+                        variant="toolbar"
                     />
                 </Tooltip>
                 <ListDisplayTypeToggleButton enableDetail={isAlbumMode} listKey={listKey} />
@@ -294,7 +284,7 @@ const SaveAndReplaceButton = ({ mode, songIds }: { mode?: 'edit' | 'view'; songI
             leftSection={<Icon color="error" icon="save" />}
             onClick={handleOpenModal}
             size="sm"
-            variant="subtle"
+            variant="toolbar"
         >
             {t('common.saveAndReplace', { postProcess: 'titleCase' })}
         </Button>
