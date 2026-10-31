@@ -39,6 +39,9 @@ The TV screens include:
   sending to a connected samo-radio. Details also expose Play and Shuffle.
 - Full-screen Now Playing opens when playback starts and focuses Play/Pause.
   It includes previous/next, seeking with Left/Right, shuffle, repeat, and Up Next.
+- The TV stays on while samo plays, the way it does for live TV: no screensaver
+  and no sleep. Pausing, the end of the queue, or a sleep timer hand it back to
+  its own idle timers (`tv/tv-screen-awake.ts`, `SamoScreenAwake.kt`).
 - Radio stations and samo-radio device controls: pause/resume, skip, volume,
   tuning, return to station, standby, and keeping an eligible airing track.
 - A compact glyph rail and the samo S in the top-right corner.
@@ -79,7 +82,8 @@ Controls use native Android spatial focus. MainActivity forwards TV key events
 on `samoTvKey`; select is completed in JS on release, so a held OK opens a menu
 without also clicking the item. Native key-repeat timing handles Android's hold
 threshold, with a timer fallback for remotes that do not repeat. Text inputs,
-the IME, and media-session keys retain native handling. Every
+the IME, and media-session keys retain native handling; a text field's arrows
+are still reported, so leaving it counts as the person's move. Every
 button and field has a visible focus border and accessibility label. The
 covered browse surface stays mounted but hidden, retaining scroll position and
 filter and focus state. Back closes the menu, player, detail, or View All in
@@ -92,8 +96,19 @@ keyboard's Next key, since an open keyboard owns the D-pad.
 `defaultFocus`, so a control that arrives late (a discovered server, a loaded
 row) still gets it; once they move, their control is kept and restored when the
 surface is shown again, such as closing a detail returns to the tile that
-opened it. Three things make that harder than it looks, and each has already
-cost a bug:
+opened it. A detail page beneath a nested one keeps its place too (Back from an
+album returns to the artist's album tile, from Go to Album to the track). A
+placement is owed only until the person presses an arrow: one still waiting
+for its control (a detail loading) is dropped rather than pulling focus back.
+Home starts on the hero's action, else the first cover.
+
+The rail and the content are each a `SamoTvFocusZone`, a native view that
+D-pad focus leaves only through the invisible guide on the seam between them;
+Up and Down never leave either side. The guide hands focus on to the content's
+remembered control or the rail's current page.
+
+Five things make all of that harder than it looks, and each has already cost a
+bug:
 
 - **`hasTVPreferredFocus` is sticky under Fabric.** `setNativeProps` values are
   kept on the node and re-applied with every later update, each time as a fresh
@@ -105,6 +120,16 @@ cost a bug:
 - **Android moves focus by itself** when a focused view is hidden or removed,
   through the same `onFocus` a D-pad press uses. A move only counts as the
   person's once the scope's own placement has landed.
+- **It usually parks that focus on the seam guide**, the first focusable view
+  left in the hierarchy. Opening or closing any detail does this. Read as a
+  crossing, it sent focus to the rail while the detail placed its own, and the
+  later of the two won. A crossing is now only a guide focus with a Left or
+  Right press still landing; parked focus goes back to the side it belongs on,
+  or waits on the rail's current page while a detail loads or after it fails.
+- **Focus search is global geometry.** Up from a page's top row found the
+  nearest rail icon, and Left from near the top edge found Search before the
+  screen-tall guide, which is scored from its centre. The zones route every
+  exit through the guide instead.
 - **A covered surface ignores focus events.** Its controls only receive focus
   while Android clears it away from them; recording that would send Back to
   wherever Android happened to put it. The scope learns it is covered in a

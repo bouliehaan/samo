@@ -173,7 +173,7 @@ internal object SamoCatalogConverters {
                     streamToken.orEmpty(),
                 )
         val albumCount = artist.optInt("albumCount")
-        val subtitle = if (albumCount > 0) "$albumCount albums" else null
+        val subtitle = if (albumCount > 0) countLabel(albumCount, "album") else null
 
         val payload = JSONObject()
             .putNotNull("addedAt", toEpochMs(artist.optString("addedAt").nullIfBlank()))
@@ -222,7 +222,7 @@ internal object SamoCatalogConverters {
         val trackCount = playlist.optInt("trackCount")
         val ownerName = playlist.optString("ownerName").nullIfBlank()
         val subtitle = when {
-            trackCount > 0 -> "$trackCount tracks"
+            trackCount > 0 -> countLabel(trackCount, "track")
             else -> ownerName
         }
         // Use the playlist endpoint even when the sync snapshot has one or no
@@ -754,6 +754,10 @@ internal object SamoCatalogConverters {
     }
 
     private fun encode(id: String): String = SamoNativeStreamUrl.encodeSamoId(id)
+
+    /** "1 album", "12 albums", as @samo/core's formatMobileCount writes it. */
+    private fun countLabel(count: Int, noun: String): String =
+        if (count == 1) "$count $noun" else "$count ${noun}s"
 }
 
 // -----------------------------------------------------------------------

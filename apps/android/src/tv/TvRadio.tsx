@@ -10,7 +10,7 @@ import { type HomeDisplaySection } from '../types/home';
 import { TvShelf } from './TvCollections';
 import { TvButton, TvFocusScope, TvPressable } from './TvControls';
 import { TvTransportButton } from './TvPlayer';
-import { tvStyles as s } from './tv-styles';
+import { TV_SCROLL_EDGE, tvStyles as s } from './tv-styles';
 import { tvDisplayText } from './tv-text';
 
 export type TvRadioPanelSelection = { deviceId: string; kind: 'tune' | 'options' };
@@ -40,20 +40,19 @@ function RadioDevice({ device }: { device: SamoRadioDevice }) {
                 />
                 <View style={s.radioCopy}>
                     <Text style={s.playerEyebrow}>
-                        {radio.state?.item
-                            ? radio.onChannel
-                                ? 'On air'
-                                : 'Now playing'
-                            : 'Ready when you are'}
+                        {radio.state?.item ? (radio.onChannel ? 'On air' : 'Now playing') : 'Idle'}
                     </Text>
                     <Text numberOfLines={2} style={s.radioTitle}>
-                        {tvDisplayText(radio.now?.title) || 'Connecting…'}
+                        {tvDisplayText(radio.now?.title) ||
+                            (radio.state ? 'Nothing playing' : 'Connecting…')}
                     </Text>
-                    <Text numberOfLines={2} style={s.radioMeta}>
-                        {radio.state?.item
-                            ? tvDisplayText(radio.meta)
-                            : 'Choose a station to fill the room.'}
-                    </Text>
+                    {radio.state ? (
+                        <Text numberOfLines={2} style={s.radioMeta}>
+                            {radio.state.item
+                                ? tvDisplayText(radio.meta)
+                                : 'Choose a station to start it.'}
+                        </Text>
+                    ) : null}
                     <Text numberOfLines={1} style={s.radioStatus}>
                         {radio.busyCommand
                             ? 'Updating…'
@@ -189,9 +188,10 @@ export function TvRadioContent({ sections }: { sections: HomeDisplaySection[] })
             ))}
             {!devices.length && !stations.length ? (
                 <View style={s.radioNotice}>
-                    <Text style={s.sectionTitle}>A room full of sound.</Text>
+                    <Text style={s.sectionTitle}>No stations yet</Text>
                     <Text style={s.emptyText}>
-                        Your stations and connected samo-radio devices will appear here.
+                        Add stations from samo on your phone or computer. A samo-radio on your
+                        network shows up here too.
                     </Text>
                 </View>
             ) : null}
@@ -201,16 +201,27 @@ export function TvRadioContent({ sections }: { sections: HomeDisplaySection[] })
 
 export function TvRadio({ active, sections }: { active: boolean; sections: HomeDisplaySection[] }) {
     const firstDevice = useSamoRadioSelector((state) => state.devices[0]?.id);
+    const stationCount = sections
+        .filter((section) => section.variant === 'radio')
+        .reduce((count, section) => count + section.items.length, 0);
     return (
         <TvFocusScope
             active={active}
             defaultFocus={firstDevice ? `radio:${firstDevice}:toggle` : 'radio:first'}
             name="page:radio"
         >
-            <ScrollView contentContainerStyle={s.pageScroll} showsVerticalScrollIndicator={false}>
+            <ScrollView
+                contentContainerStyle={s.pageScroll}
+                fadingEdgeLength={{ start: 0, end: TV_SCROLL_EDGE }}
+                showsVerticalScrollIndicator={false}
+            >
                 <View style={s.radioPageHeader}>
                     <Text style={s.pageTitle}>Radio</Text>
-                    <Text style={s.muted}>Good sound. Everywhere.</Text>
+                    {stationCount ? (
+                        <Text style={s.muted}>
+                            {stationCount} {stationCount === 1 ? 'station' : 'stations'}
+                        </Text>
+                    ) : null}
                 </View>
                 <TvRadioContent sections={sections} />
             </ScrollView>

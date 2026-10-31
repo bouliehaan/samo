@@ -22,7 +22,7 @@ import { type HomeDisplaySection, type HomeFilter } from '../types/home';
 import { type ViewAllVariant } from '../types/view-all';
 import { type LibraryMediaType } from '../types/library-display';
 import { isOfflineNow } from '../state/network-state';
-import { getHomeLayoutHint } from '../services/home-layout-hint';
+import { getHomeLayoutHint, type HomeLayoutHint } from '../services/home-layout-hint';
 import { traceSync } from '../services/jank-trace';
 import { reconcileHomeDisplaySections } from './home-display-reconcile';
 import { clamp } from './math';
@@ -520,6 +520,26 @@ export const rotateForFreshness = <T>(items: T[], salt: number): T[] => {
     return offset === 0 ? items : [...items.slice(offset), ...items.slice(0, offset)];
 };
 
+/**
+ * Whether this Home's live shelves (Podcast Feed, Rediscover, the hero ranking)
+ * have answered. They arrive in one fetch, and the hero section is present
+ * once it has — even when the ranking is empty.
+ */
+export const hasHomeLiveAnswered = (sections: MobileHomeSection[]): boolean =>
+    sections.some((section) => section.id === MobileHomeSectionId.HEROES);
+
+/**
+ * What the next cold boot should reserve: the live shelves as Home showed
+ * them, not as the server sent them. Rediscover drops tracks from albums
+ * already on Home and needs four to show at all, so a server count would
+ * reserve a slot the shelf never fills.
+ */
+export const getHomeLayoutHintFromDisplay = (sections: HomeDisplaySection[]): HomeLayoutHint => {
+    const shown = (key: string) =>
+        sections.find((section) => section.key === key && !section.pending)?.items.length ?? 0;
+    return { podcastFeed: shown('podcast-feed'), rediscover: shown('rediscover') };
+};
+
 export const getHomeDisplaySections = (
     sections: MobileHomeSection[],
     recentItems: AndroidRecentContentItem[],
@@ -637,18 +657,21 @@ export const getHomeDisplaySections = (
     // Reserve sized skeleton slots for the network-gated shelves so their late
     // arrival fills in place instead of inserting mid-page (the Podcast-Feed
     // "loads in a beat later and shoves everything down" flash). Signal:
-    // persisted hint primary (last launch's counts), mirror-derived fallback on
-    // a first-ever launch (has podcasts → a feed is coming). Once a live load
-    // resolves, the hint is rewritten — a genuinely-empty feed writes 0 and the
-    // reservation clears on the next render.
+    // persisted hint primary (what the last launch showed), mirror-derived
+    // fallback on a first-ever launch (has podcasts → a feed is coming).
+    // Only until the live fetch answers: after that a reservation is a
+    // skeleton nothing will ever fill.
+    const awaitingLive = !hasHomeLiveAnswered(sections) && !isOfflineNow();
     const layoutHint = getHomeLayoutHint();
     const reservePodcastFeed =
+        awaitingLive &&
         podcastFeedItems.length === 0 &&
         (layoutHint ? layoutHint.podcastFeed > 0 : podcastItems.length > 0);
     // Rediscover sits at the bottom (low-harm insert), so only the precise hint
     // reserves it — never the broad "has albums" fallback that could leave a
     // stray bottom skeleton on a first launch with no Discover content.
-    const reserveRediscover = discoverItems.length < 4 && (layoutHint?.rediscover ?? 0) > 0;
+    const reserveRediscover =
+        awaitingLive && discoverItems.length < 4 && (layoutHint?.rediscover ?? 0) > 0;
 
     // Only present while offline (see use-visible-home-content), and first when
     // it is: with no network, "what is already on this phone" is the only thing

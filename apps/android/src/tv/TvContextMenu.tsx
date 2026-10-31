@@ -9,17 +9,7 @@ import { playOnTv, runTvAction, selectTvItem } from './tv-actions';
 import { TvFocusScope, TvPressable } from './TvControls';
 import { tvStyles as s } from './tv-styles';
 
-// These phone actions open touch-only secondary sheets. Only mount actions
-// with a TV destination; the playback, queue, favorite and device handlers are shared.
-const PHONE_SHEETS = new Set([
-    'book-info',
-    'create-playlist',
-    'delete-playlist',
-    'episode-info',
-    'playlist',
-    'podcast-info',
-    'stream-info',
-]);
+type TvMenuAction = { destructive?: boolean; id: string; label: string; onPress: () => void };
 
 export function TvContextMenu() {
     const menu = useAndroidContextMenu();
@@ -47,14 +37,21 @@ export function TvContextMenu() {
                 playOnTv(() => getPlaybackBridge().handlePlayItem(target.track.playback!));
         } else if (target.kind !== 'artist' && target.kind !== 'podcast') selectTvItem(target.item);
     };
-    const canPlay = target.kind !== 'artist' && target.kind !== 'podcast';
-    const actions = [
+    // A tile's OK opens its page, so the menu is where a TV plays it. Not
+    // for what is already queued (the player, Up Next): playing that "now"
+    // would replace the queue it is part of. Nor on the item's own page
+    // (opened without "Open"), whose Play and Shuffle sit beside the menu.
+    const canPlay =
+        !target.suppressQueueAction &&
+        !target.suppressOpenAction &&
+        target.kind !== 'artist' &&
+        target.kind !== 'podcast';
+    const canShuffle = canPlay && (target.kind === 'playlist' || target.kind === 'album');
+    const actions: TvMenuAction[] = [
         ...(canPlay ? [{ id: 'tv-play', label: 'Play now', onPress: () => play() }] : []),
-        ...(target.kind === 'playlist' || target.kind === 'album'
-            ? [{ id: 'tv-shuffle', label: 'Shuffle', onPress: () => play(true) }]
-            : []),
+        ...(canShuffle ? [{ id: 'tv-shuffle', label: 'Shuffle', onPress: () => play(true) }] : []),
         ...menu.actions
-            .filter((action) => !PHONE_SHEETS.has(action.id))
+            .filter((action) => !action.phoneOnly)
             .map((action) => ({
                 ...action,
                 onPress: () => {
@@ -71,10 +68,9 @@ export function TvContextMenu() {
                     runTvAction(action.onPress);
                 },
             })),
-        { id: 'close', label: 'Close', onPress: menu.onClose },
     ];
     return (
-        <TvFocusScope defaultFocus={`menu:${actions[0].id}`} name="menu" zone="menu">
+        <TvFocusScope defaultFocus={`menu:${actions[0]?.id}`} name="menu" zone="menu">
             <View style={s.menuBackdrop}>
                 <View style={s.menuPanel}>
                     <View style={s.menuHeader}>
@@ -111,7 +107,13 @@ export function TvContextMenu() {
                                 focusedStyle={s.menuItemFocused}
                             >
                                 {(focused) => (
-                                    <Text style={[s.menuLabel, focused && s.trackInkFocused]}>
+                                    <Text
+                                        style={[
+                                            s.menuLabel,
+                                            action.destructive && s.menuLabelDestructive,
+                                            focused && s.trackInkFocused,
+                                        ]}
+                                    >
                                         {action.label}
                                     </Text>
                                 )}

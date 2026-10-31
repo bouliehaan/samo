@@ -143,6 +143,7 @@ interface SamoAudioNativeModule {
         route: Pick<AndroidMediaOutputRoute, 'deviceId' | 'kind' | 'routeId'>,
     ) => Promise<AndroidMediaOutputState>;
     setRepeatMode: (mode: AndroidRepeatMode) => Promise<AndroidNativePlaybackEvent>;
+    setScreenAwake: (held: boolean) => void;
     setSleepTimer: (seconds: number) => Promise<AndroidNativePlaybackEvent>;
     cancelSleepTimer: () => Promise<AndroidNativePlaybackEvent>;
     setPlaybackQueue: (queue: {
@@ -453,6 +454,11 @@ export const getAndroidCastState = async () => {
     }
 
     return samoAudio.getCastState();
+};
+
+/** Keeps the activity's window on while a program plays (SamoScreenAwake.kt). */
+export const setAndroidScreenAwake = (held: boolean) => {
+    samoAudio?.setScreenAwake(held);
 };
 
 export const getAndroidOutputRoutes = async () => {

@@ -1,6 +1,6 @@
 import { MobileHomeItemType } from '@samo/core/mobile';
 import { memo, useCallback, useRef } from 'react';
-import { Animated, Easing, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 
 import { ArtworkImage } from '../components/ArtworkImage';
 import { ChevronRightGlyph } from '../components/Glyphs';
@@ -12,32 +12,26 @@ import { colors } from '../theme/tokens';
 import { type HomeDisplaySection } from '../types/home';
 import { getContentItemProgress } from '../utils/home-display';
 import { selectTvItem } from './tv-actions';
-import { TvPressable } from './TvControls';
+import { type TvFocusPin, TvPressable } from './TvControls';
 import { tvStyles as s } from './tv-styles';
 
-/** The lift a focused cover gets: enough to read from the sofa, not a jump. */
-const FOCUS_SCALE = 1.08;
-const FOCUS_MS = 140;
-
 /**
- * A cover that rises when focused. Driven natively — the scale never waits on
- * the JS thread, so the D-pad feels the same however busy the app is.
+ * Keep focus feedback on the artwork itself. A transformed tile changes its
+ * hit geometry and is clipped at shelf edges on inexpensive TV hardware;
+ * the phone app's quiet border is clearer and does not make neighboring art
+ * jump when the D-pad moves.
  */
-const useFocusLift = () => {
-    const scale = useRef(new Animated.Value(1)).current;
+const useFocusLift = (onFocus?: () => void) => {
     const onFocusChange = useCallback(
         (focused: boolean) => {
-            Animated.timing(scale, {
-                duration: FOCUS_MS,
-                easing: Easing.out(Easing.cubic),
-                toValue: focused ? FOCUS_SCALE : 1,
-                useNativeDriver: true,
-            }).start();
+            if (focused) onFocus?.();
         },
-        [scale],
+        [onFocus],
     );
-    return { liftStyle: { transform: [{ scale }] }, onFocusChange };
+    return { onFocusChange };
 };
+
+const END_OF_ROW: TvFocusPin = { right: true };
 
 const openMenuFor = (item: AndroidRecentContentSourceItem, allowRemoveFromHome?: boolean) =>
     mediaContextMenuApi.openForItem(item, { allowRemoveFromHome });
@@ -50,14 +44,21 @@ export const TvTile = memo(function TvTile({
     allowRemoveFromHome,
     focusId,
     item,
+    last = false,
+    onFocus,
     variant,
 }: {
     allowRemoveFromHome?: boolean;
     focusId: string;
     item: AndroidRecentContentSourceItem;
+    /** The end of its row: Right stops here rather than finding a cover in
+     *  another row further over. */
+    last?: boolean;
+    /** Beyond the lift: what focus arriving here should also do. */
+    onFocus?: () => void;
     variant: HomeDisplaySection['variant'];
 }) {
-    const { liftStyle, onFocusChange } = useFocusLift();
+    const { onFocusChange } = useFocusLift(onFocus);
     const isWide = variant === 'wide' || variant === 'continue';
     const isArtist = item.type === MobileHomeItemType.ARTIST;
     const isRadio = variant === 'radio';
@@ -74,25 +75,24 @@ export const TvTile = memo(function TvTile({
             onFocusChange={onFocusChange}
             onLongPress={() => openMenuFor(item, allowRemoveFromHome)}
             onPress={() => selectTvItem(item)}
+            pin={last ? END_OF_ROW : undefined}
             style={isWide ? s.tileWide : s.tile}
+            focusedStyle={isWide ? s.tileWideFocused : undefined}
         >
             {(focused) => (
                 <>
-                    <Animated.View style={liftStyle}>
-                        <ArtworkImage
-                            artworkImageId={item.artworkImageId}
-                            contentSource={item.source}
-                            letter={item.title.slice(0, 1)}
-                            style={[s.tileArt, isWide && s.tileArtWide, isArtist && s.tileArtRound]}
-                            uri={item.artworkUrl}
-                        />
-                        {focused ? (
-                            <View
-                                pointerEvents="none"
-                                style={[s.tileRing, isArtist && s.tileRingRound]}
-                            />
-                        ) : null}
-                    </Animated.View>
+                    <ArtworkImage
+                        artworkImageId={item.artworkImageId}
+                        contentSource={item.source}
+                        letter={item.title.slice(0, 1)}
+                        style={[
+                            s.tileArt,
+                            isWide && s.tileArtWide,
+                            isArtist && s.tileArtRound,
+                            focused && s.tileArtFocused,
+                        ]}
+                        uri={item.artworkUrl}
+                    />
                     <View style={[s.tileMeta, isWide ? s.tileTextWide : s.tileText]}>
                         <View style={s.tileMetaText}>
                             <Text
@@ -139,23 +139,21 @@ export const TvViewAllTile = memo(function TvViewAllTile({
     focusId: string;
     section: HomeDisplaySection;
 }) {
-    const { liftStyle, onFocusChange } = useFocusLift();
+    const { onFocusChange } = useFocusLift();
     return (
         <TvPressable
             id={focusId}
             label={`View all ${section.title}`}
             onFocusChange={onFocusChange}
             onPress={() => handleOpenViewAll(section)}
+            pin={END_OF_ROW}
             style={s.tile}
         >
             {(focused) => (
-                <Animated.View style={liftStyle}>
-                    <View style={s.viewAllArt}>
-                        <Text style={s.viewAllText}>View All</Text>
-                        <ChevronRightGlyph color={colors.muted} />
-                    </View>
-                    {focused ? <View pointerEvents="none" style={s.tileRing} /> : null}
-                </Animated.View>
+                <View style={[s.viewAllArt, focused && s.viewAllArtFocused]}>
+                    <Text style={s.viewAllText}>View All</Text>
+                    <ChevronRightGlyph color={focused ? colors.text : colors.muted} />
+                </View>
             )}
         </TvPressable>
     );

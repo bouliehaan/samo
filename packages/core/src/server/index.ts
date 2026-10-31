@@ -1,6 +1,7 @@
 export * from './server-auth';
 export * from './server-capabilities';
 export * from './server-client-id';
+export * from './server-device-pairing';
 export * from './server-endpoint';
 export * from './server-health';
 export * from './server-http';
@@ -12,4 +13,3 @@ export * from './server-samo-radio';
 export * from './server-samo-stream-token';
 export * from './server-session';
 export * from './server-types';
-export * from './server-device-pairing';

@@ -21,12 +21,16 @@ class MainActivity : ReactActivity() {
   override fun dispatchKeyEvent(event: KeyEvent): Boolean {
     val isTv = (resources.configuration.uiMode and Configuration.UI_MODE_TYPE_MASK) ==
       Configuration.UI_MODE_TYPE_TELEVISION
-    // Text fields and the IME keep Android's normal key handling. Media keys
-    // also pass through to the MediaSession, including while backgrounded.
-    if (isTv && currentFocus !is EditText) {
+    // A text field keeps Android's own OK, which opens the keyboard (whose
+    // key-up then never reaches this window, so it is not reported either).
+    // Its arrows are reported: only that tells JS focus leaving a field is
+    // the person's move. Media keys pass through to the MediaSession,
+    // including while backgrounded.
+    if (isTv) {
+      val editing = currentFocus is EditText
       val key = when (event.keyCode) {
-        KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> "select"
-        KeyEvent.KEYCODE_MENU -> "menu"
+        KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER -> if (editing) null else "select"
+        KeyEvent.KEYCODE_MENU -> if (editing) null else "menu"
         KeyEvent.KEYCODE_DPAD_LEFT -> "left"
         KeyEvent.KEYCODE_DPAD_RIGHT -> "right"
         KeyEvent.KEYCODE_DPAD_UP -> "up"
@@ -68,6 +72,12 @@ class MainActivity : ReactActivity() {
     // system will hand over the IME animation. Without this the window is resized
     // FOR us and controlWindowInsetsAnimation has nothing to give.
     WindowCompat.setDecorFitsSystemWindows(window, false)
+    SamoScreenAwake.attach(window)
+  }
+
+  override fun onDestroy() {
+    SamoScreenAwake.detach(window)
+    super.onDestroy()
   }
 
   /**

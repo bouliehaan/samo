@@ -1,11 +1,13 @@
 package app.samo.android.audio
 
+import app.samo.android.SamoScreenAwake
 import com.facebook.react.bridge.LifecycleEventListener
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
 import com.facebook.react.bridge.ReadableMap
+import com.facebook.react.bridge.UiThreadUtil
 
 class SamoAudioModule(
   reactContext: ReactApplicationContext
@@ -88,6 +90,11 @@ class SamoAudioModule(
 
   @ReactMethod
   fun getCastState(promise: Promise) = engine.getCastState(promise)
+
+  @ReactMethod
+  fun setScreenAwake(held: Boolean) {
+    UiThreadUtil.runOnUiThread { SamoScreenAwake.setHeld(held) }
+  }
 
   override fun invalidate() {
     engine.invalidate()

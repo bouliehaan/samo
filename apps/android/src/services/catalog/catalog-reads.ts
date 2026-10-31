@@ -331,6 +331,10 @@ export const loadCatalogMediaDetail = async (
             return {
                 artworkImageId: item.artworkImageId,
                 artworkUrl: item.artworkUrl,
+                // What the network detail reads off the album, counted from
+                // its tracks: without it a two-disc album lists 1–6 twice
+                // with no Disc headers between them.
+                discCount: new Set(tracks.map((track) => track.discNumber ?? 1)).size,
                 id: item.id,
                 metadataLines: buildAlbumMetadataLines(album.genres, album.recordLabel),
                 qualityProfile: item.qualityProfile,

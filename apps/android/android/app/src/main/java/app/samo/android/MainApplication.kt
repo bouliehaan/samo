@@ -6,6 +6,7 @@ import android.content.res.Configuration
 import android.util.Log
 import app.samo.android.audio.SamoAudioPackage
 import app.samo.android.ime.SamoImeControlPackage
+import app.samo.android.tv.SamoTvPackage
 import com.facebook.react.PackageList
 import com.google.android.gms.cast.framework.CastContext
 import com.facebook.react.ReactApplication
@@ -23,7 +24,7 @@ import expo.modules.ExpoReactHostFactory
 class MainApplication : Application(), ReactApplication {
 
   /**
-   * The autolinked packages plus Samo's own two. Declared once and read by both
+   * The autolinked packages plus Samo's own. Declared once and read by both
    * hosts below: SDK 57 removed `ReactNativeHostWrapper`, so the new-architecture
    * `reactHost` is now built from a package LIST rather than by wrapping the
    * legacy host, and the two would silently drift if each built its own.
@@ -34,6 +35,7 @@ class MainApplication : Application(), ReactApplication {
       // add(MyReactNativePackage())
       add(SamoAudioPackage())
       add(SamoImeControlPackage())
+      add(SamoTvPackage())
     }
 
   override val reactNativeHost: ReactNativeHost =

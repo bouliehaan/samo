@@ -293,6 +293,7 @@ export function useAndroidContextMenu(): AndroidContextMenuSurface {
                 menuActions.push({
                     icon: <BookInfoGlyph color={colors.text} />,
                     id: 'episode-info',
+                    phoneOnly: true,
                     label: 'Episode Information',
                     onPress: () => {
                         const showItem = episodeDetail
@@ -351,6 +352,7 @@ export function useAndroidContextMenu(): AndroidContextMenuSurface {
                 menuActions.push({
                     icon: <PlaylistAddGlyph color={colors.text} />,
                     id: 'playlist',
+                    phoneOnly: true,
                     label: 'Add to Playlist',
                     onPress: () =>
                         handleOpenAddToPlaylistForSong(track, source.id, isFromExplo),
@@ -358,6 +360,7 @@ export function useAndroidContextMenu(): AndroidContextMenuSurface {
                 menuActions.push({
                     icon: <PlaylistAddGlyph color={colors.text} />,
                     id: 'create-playlist',
+                    phoneOnly: true,
                     label: 'Create Playlist',
                     onPress: () => handleOpenCreatePlaylistForSong(track, source.id),
                 });
@@ -501,6 +504,7 @@ export function useAndroidContextMenu(): AndroidContextMenuSurface {
             menuActions.push({
                 icon: <BookInfoGlyph color={colors.text} />,
                 id: 'book-info',
+                phoneOnly: true,
                 label: 'Book Information',
                 onPress: () => void handleOpenBookInfo(item, 'audiobook'),
             });
@@ -524,6 +528,7 @@ export function useAndroidContextMenu(): AndroidContextMenuSurface {
             menuActions.push({
                 icon: <BookInfoGlyph color={colors.text} />,
                 id: 'podcast-info',
+                phoneOnly: true,
                 label: 'Podcast Info',
                 onPress: () => void handleOpenBookInfo(item, 'podcast'),
             });
@@ -562,6 +567,7 @@ export function useAndroidContextMenu(): AndroidContextMenuSurface {
             menuActions.push({
                 icon: <BookInfoGlyph color={colors.text} />,
                 id: 'stream-info',
+                phoneOnly: true,
                 label: 'Stream Information',
                 onPress: () => handleOpenStreamInfo(item),
             });
@@ -606,6 +612,7 @@ export function useAndroidContextMenu(): AndroidContextMenuSurface {
                 menuActions.push({
                     icon: <PlaylistAddGlyph color={colors.text} />,
                     id: 'add-collection-to-playlist',
+                    phoneOnly: true,
                     label: 'Add to Playlist',
                     onPress: () => handleOpenAddToPlaylistForCollection(item),
                 });
@@ -613,6 +620,7 @@ export function useAndroidContextMenu(): AndroidContextMenuSurface {
                     menuActions.push({
                         icon: <PlaylistAddGlyph color={colors.text} />,
                         id: 'create-collection-playlist',
+                        phoneOnly: true,
                         label: 'Create Playlist',
                         onPress: () => handleOpenCreatePlaylistForCollection(item),
                     });

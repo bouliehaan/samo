@@ -8,13 +8,13 @@ samo is the client half of a pair. The server half is
 where the four media kinds are first-class domains that share playback state,
 recents and browsing — not stapled together in the client.
 
-| Home | Playlist | Now playing | Radio |
-|:----:|:--------:|:-----------:|:-----:|
+|                                                        Home  |                                                      Playlist |                                               Now playing |                                                      Radio  |
+|:-------------------------------------------------------------------------------------------------------------------:|:------------------------------------------------------------------------------------------------------------------:|:-------------------------------------------------------------------------------------------------------:|:----------------------------------------------------------------------------------------------------------------:|
 | <img src="docs/screenshots/android-home.png" width="200" alt="Home: music, podcasts and audiobooks in one library"> | <img src="docs/screenshots/android-detail.png" width="200" alt="Playlist detail with cover, title and track list"> | <img src="docs/screenshots/android-player.png" width="200" alt="Now playing with source quality shown"> | <img src="docs/screenshots/android-radio.png" width="200" alt="Radio: samo-radio devices and internet stations"> |
 
 ## Install
 
-Grab a build from **[Releases](https://github.com/bouliehaan/samo/releases/latest)**.
+Grab a build from [**Releases**](https://github.com/bouliehaan/samo/releases/latest).
 You need a [samo-server](https://github.com/bouliehaan/samo-server) on your
 network — the app finds it by itself on first run.
 
@@ -39,11 +39,11 @@ xattr -dr com.apple.quarantine /Applications/samo.app
 
 Honest state of things, so nobody installs this expecting a finished product:
 
-| Part | State |
-|------|-------|
-| **Android app** | The most actively developed surface. Native ExoPlayer engine, offline downloads, Chromecast, on-device catalog mirror. |
-| **Desktop (Electron)** | samo-only, single API controller. Works, gets less attention. |
-| **`@samo/core`** | Shared server client, playback and media-detail mapping, covered by tests. |
+| Part                   | State                                                                                                                  |
+|------------------------|------------------------------------------------------------------------------------------------------------------------|
+| **Android app**        | The most actively developed surface. Native ExoPlayer engine, offline downloads, Chromecast, on-device catalog mirror. |
+| **Desktop (Electron)** | samo-only, single API controller. Works, gets less attention.                                                          |
+| **`@samo/core`**       | Shared server client, playback and media-detail mapping, covered by tests.                                             |
 
 A personal project developed in the open. No stability promise and no migration
 guarantee between versions.
@@ -59,7 +59,7 @@ Entrances are staged rather than uniform — the heavy element leads and the
 lighter ones attached to it lag, then catch up.
 
 <p align="center">
-  <img src="docs/screenshots/motion.gif" width="240" alt="Opening a playlist: the cover lands first, the subtitle and buttons catch up a beat later">
+<img src="docs/screenshots/motion.gif" width="240" alt="Opening a playlist: the cover lands first, the subtitle and buttons catch up a beat later">
 </p>
 
 - [`docs/MOTION_PRINCIPLES.md`](docs/MOTION_PRINCIPLES.md) — Disney's twelve principles, how each maps to a screen, and where each lives in the code.
@@ -69,7 +69,7 @@ lighter ones attached to it lag, then catch up.
 
 ## Credits
 
-samo began as a fork of **[Feishin](https://github.com/jeffvli/feishin)** by
+samo began as a fork of [**Feishin**](https://github.com/jeffvli/feishin) by
 [Jeff Vialpando (jeffvli)](https://github.com/jeffvli), and would not exist
 without it. The desktop app still carries a great deal of Feishin's architecture
 and code.

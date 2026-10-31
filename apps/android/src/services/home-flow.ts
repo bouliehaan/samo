@@ -17,7 +17,6 @@ import { buildCatalogHomeContent, type HomeLiveSections } from './catalog/catalo
 import { reconcileHomeContent } from './home-content';
 import { traceAsync } from './jank-trace';
 import { homeHeroAccountKey, loadHomeHeroRecommendation } from './home-hero-visit';
-import { saveHomeLayoutHint } from './home-layout-hint';
 import { buildHomeLoadKey, dedupeInFlight } from './in-flight-requests';
 import { loadPersistedRecentContentItems, savePersistedRecentContentItems } from './recent-content';
 import { describeReachFailure, refreshSamoRadioDevices } from './samo-radio';
@@ -256,14 +255,6 @@ export const loadHomeForConnection = async (
     if (requestId !== homeLoadRequestId) {
         return;
     }
-    // Record which live shelves had content so the NEXT cold boot can
-    // reserve their slots before the fetch returns (a genuinely-empty
-    // shelf writes 0, which clears any stale reservation). One
-    // fire-and-forget call — no new state, no effect.
-    saveHomeLayoutHint({
-        podcastFeed: live.podcastFeed.length,
-        rediscover: live.discover.length,
-    });
     lastHomeLiveSections = live;
     const assembled = await buildCatalogHomeContent(authentication, lastHomeLiveSections);
     if (!assembled || requestId !== homeLoadRequestId) {

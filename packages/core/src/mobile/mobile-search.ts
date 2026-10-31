@@ -23,6 +23,7 @@ import {
     getMobileContentSource,
     type MobileContentSource,
 } from './mobile-content-source';
+import { formatMobileCount } from './mobile-count';
 import {
     buildSamoMusicPlayback,
     type MobilePlayableAudio,
@@ -387,7 +388,7 @@ const samoArtistToSearchItem = (
         artworkUrl: resolveSamoArtistArtworkUrl(authentication, artist, streamToken),
         id: artist.id,
         source,
-        subtitle: artist.albumCount ? `${artist.albumCount} albums` : undefined,
+        subtitle: artist.albumCount ? formatMobileCount(artist.albumCount, 'album') : undefined,
         title: artist.name,
         type: MobileSearchItemType.ARTIST,
     };
@@ -460,7 +461,9 @@ const samoPodcastToSearchItem = (
         artworkUrl: resolveSamoPodcastArtworkUrl(authentication, podcast, streamToken),
         id: podcast.id,
         source,
-        subtitle: inner?.episodeCount ? `${inner.episodeCount} episodes` : inner?.author,
+        subtitle: inner?.episodeCount
+            ? formatMobileCount(inner.episodeCount, 'episode')
+            : inner?.author,
         title,
         type: MobileSearchItemType.PODCAST,
     };

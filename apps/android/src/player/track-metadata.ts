@@ -86,6 +86,8 @@ export const getTrackMetadataItems = (
     track: MobileMediaTrack,
     qualityLabels: string[],
     includeTimestamp: boolean,
+    /** Off for a row that sets a track's length apart in a column of its own. */
+    includeDuration = true,
 ) => {
     const items: string[] = [];
     const isPodcastEpisode = detail.type === MobileMediaDetailType.PODCAST;
@@ -131,7 +133,7 @@ export const getTrackMetadataItems = (
     if (includeTimestamp) {
         pushUniqueTrackMetadata(items, formatTrackTimestamp(track.startSeconds));
     }
-    if (!isPodcastEpisode) {
+    if (!isPodcastEpisode && includeDuration) {
         // Episodes carry their length above, in the shape a feed reads in.
         pushUniqueTrackMetadata(items, formatTrackDuration(track.durationSeconds));
     }

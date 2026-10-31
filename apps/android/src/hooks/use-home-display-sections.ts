@@ -1,10 +1,15 @@
-import { useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 
 import { type AndroidHomeContentState } from '../services/home-content';
+import { saveHomeLayoutHint } from '../services/home-layout-hint';
 import { type AndroidRecentContentItem } from '../services/recent-content';
 import { useAuthSessionSelector } from '../state/auth-session';
 import { type HomeDisplaySection } from '../types/home';
-import { getHomeDisplaySections } from '../utils/home-display';
+import {
+    getHomeDisplaySections,
+    getHomeLayoutHintFromDisplay,
+    hasHomeLiveAnswered,
+} from '../utils/home-display';
 import { useVisibleHomeContentState } from './use-visible-home-content';
 import { useVisibleRecentItems } from './use-visible-recent-items';
 
@@ -45,6 +50,13 @@ export const useHomeDisplaySections = (): HomeDisplaySectionsResult => {
         previousSectionsRef.current = computed;
         return computed;
     }, [loadedContent, recentItems, serverConnection]);
+    const liveAnswered = loadedContent !== null && hasHomeLiveAnswered(loadedContent.sections);
+    useEffect(() => {
+        // What this Home showed of its live shelves, for the next cold boot
+        // to reserve. Only once they have answered: before that, the
+        // reservation itself is on screen.
+        if (liveAnswered) saveHomeLayoutHint(getHomeLayoutHintFromDisplay(sections));
+    }, [liveAnswered, sections]);
     return useMemo(
         () => ({ homeContentState, recentItems, sections }),
         [homeContentState, recentItems, sections],

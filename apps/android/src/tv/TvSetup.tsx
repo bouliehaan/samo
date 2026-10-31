@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { BackHandler, ScrollView, Text, View } from 'react-native';
+import { BackHandler, Image, ScrollView, Text, View } from 'react-native';
+import samoLogo from '../../assets/samo-logo.png';
 import { normalizeBaseUrl } from '@samo/core/server';
 
 import { useServerDiscovery, type DiscoveredServer } from '../hooks/use-server-discovery';
@@ -324,8 +325,13 @@ export function TvSetup({ run }: { run: TvRunAction }) {
     return (
         <View style={s.setup}>
             <View style={s.setupIntro}>
+                <Image
+                    accessible={false}
+                    resizeMode="contain"
+                    source={samoLogo}
+                    style={s.setupLogo}
+                />
                 <Text style={s.brand}>samo</Text>
-                <Text style={s.heading}>{'Your library,\non the big screen.'}</Text>
             </View>
             <ScrollView
                 keyboardShouldPersistTaps="handled"
@@ -345,24 +351,31 @@ export function TvSetup({ run }: { run: TvRunAction }) {
 export function TvSettings({ run }: { run: TvRunAction }) {
     const connection = useAuthSessionSelector((state) => state.serverConnection);
     return (
-        <ScrollView contentContainerStyle={s.scroll}>
-            <Text style={s.heading}>Settings</Text>
-            <Text style={s.text}>Connected to your samo server</Text>
-            <Text style={s.muted}>
-                Use the directional buttons to move, the center button to select, and Back to
-                return. Playback continues when you leave a page.
-            </Text>
-            <View style={s.row}>
-                <TvButton
-                    id="sign-out"
-                    label="Disconnect server"
-                    onPress={() =>
-                        run(async () => {
-                            if (connection) await disconnectServer(connection);
-                        })
-                    }
-                />
-            </View>
-        </ScrollView>
+        <View style={s.scroll}>
+            <Text style={s.pageTitle}>Settings</Text>
+            {connection ? (
+                <View style={s.settingsPanel}>
+                    <Text style={s.eyebrow}>Server</Text>
+                    <Text style={s.sectionTitle}>{displayAddress(connection.url)}</Text>
+                    <Text style={s.settingsDetail}>
+                        {[
+                            `Signed in as ${connection.username}`,
+                            connection.serverVersion
+                                ? `samo server ${connection.serverVersion}`
+                                : undefined,
+                        ]
+                            .filter(Boolean)
+                            .join(' · ')}
+                    </Text>
+                    <View style={s.row}>
+                        <TvButton
+                            id="sign-out"
+                            label="Disconnect"
+                            onPress={() => run(() => disconnectServer(connection))}
+                        />
+                    </View>
+                </View>
+            ) : null}
+        </View>
     );
 }

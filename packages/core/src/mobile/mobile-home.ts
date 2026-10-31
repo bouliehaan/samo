@@ -58,6 +58,7 @@ import {
 import { ServerType } from '../server/server-types';
 import { homeAnnouncementKey, isFreshHomeAnnouncement } from './mobile-home-announcements';
 import { getMobileContentSource, type MobileContentSource } from './mobile-content-source';
+import { formatMobileCount } from './mobile-count';
 import {
     buildSamoChannelPlayback,
     buildSamoInternetRadioPlayback,
@@ -454,7 +455,7 @@ const samoArtistToHomeItem = (
         lastPlayedAt: toEpochMs(artist.playback?.lastPlayedAt),
         playCount: artist.playback?.playCount,
         source,
-        subtitle: artist.albumCount ? `${artist.albumCount} albums` : undefined,
+        subtitle: artist.albumCount ? formatMobileCount(artist.albumCount, 'album') : undefined,
         title: artist.name,
         type: MobileHomeItemType.ARTIST,
     };
@@ -477,7 +478,7 @@ const samoPlaylistToHomeItem = (
         playCount: playlist.playback?.playCount,
         source,
         subtitle: playlist.trackCount
-            ? `${playlist.trackCount} tracks`
+            ? formatMobileCount(playlist.trackCount, 'track')
             : (playlist.ownerName ?? undefined),
         title: playlist.name,
         type: MobileHomeItemType.PLAYLIST,
@@ -784,7 +785,7 @@ const samoPodcastToHomeItem = (
         id: podcast.id,
         source,
         subtitle: inner?.episodeCount
-            ? `${inner.episodeCount} episodes`
+            ? formatMobileCount(inner.episodeCount, 'episode')
             : inner?.author || (podcast as any).author,
         title,
         type: MobileHomeItemType.PODCAST,

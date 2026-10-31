@@ -1,7 +1,6 @@
 import { MobileHomeSectionId } from '@samo/core/mobile';
-import { useEffect, useMemo, useState } from 'react';
-import { BackHandler, Image, Pressable, Text, View } from 'react-native';
-import samoLogo from '../../assets/samo-logo.png';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { BackHandler, findNodeHandle, Text, View } from 'react-native';
 import { useHomeDisplaySections } from '../hooks/use-home-display-sections';
 import { useSamoRadioPolling } from '../hooks/use-samo-radio-device';
 import {
@@ -26,17 +25,61 @@ import {
 } from './tv-actions';
 import { TvCollectionPage, TvSearch, TvViewAll } from './TvBrowse';
 import { TvContextMenu } from './TvContextMenu';
-import { enterTvScope, TvFocusScope } from './TvControls';
+import { enterTvScope, focusTvControl, TvFocusGuide, TvFocusScope } from './TvControls';
 import { TvDetail } from './TvDetail';
-import { getTvLastZone, setTvPlacementZone } from './tv-focus';
+import { TvFocusZone } from './TvFocusZone';
+import {
+    getTvBackZone,
+    getTvLastZone,
+    isTvSidewaysMove,
+    noteTvKeyDown,
+    setTvPlacementZone,
+    shouldTvZoneTakeFocus,
+} from './tv-focus';
 import { TvHomePage } from './TvHome';
 import { installTvKeys } from './tv-keys';
 import { getTvBackAction, selectTvPage, type TvPage } from './tv-navigation';
 import { TvPlayer } from './TvPlayer';
 import { TvRadio, TvRadioPanel, TvRadioPanelContext, type TvRadioPanelSelection } from './TvRadio';
 import { TvRail } from './TvRail';
+import { installTvScreenAwake } from './tv-screen-awake';
 import { TvSettings, TvSetup } from './TvSetup';
 import { tvStyles as s } from './tv-styles';
+
+/** Whether focus is on the seam guide now, rather than passing through. */
+let guideHolding = false;
+
+/** Focus reaching the seam guide between the rail and the content. */
+const handleGuideFocus = (): void => {
+    guideHolding = true;
+    if (isTvSidewaysMove()) {
+        // The person crossing: on to the other side, where they were there.
+        if (getTvLastZone() !== 'rail') focusTvRail();
+        // A page with nothing to focus yet hands it back to the rail item.
+        else if (!enterTvScope(getTvContentScope())) enterTvScope('rail');
+        return;
+    }
+    // Android parking focus because the control holding it went away. The
+    // side it belongs on places it; never send it across.
+    if (!shouldTvZoneTakeFocus('content')) {
+        focusTvRail();
+        return;
+    }
+    if (enterTvScope(getTvContentScope())) return;
+    // A surface mounted in the same commit registers its controls a moment
+    // after Android parks focus, so look again once they are in.
+    requestAnimationFrame(() => {
+        if (!guideHolding || enterTvScope(getTvContentScope())) return;
+        // Nothing there (a detail still loading, or one that failed): show
+        // focus on the rail's current page meanwhile. It still belongs to the
+        // content, whose placement claims it when its control arrives.
+        focusTvControl('rail', `rail:${selectTvPage(getAppNavigation())}`);
+    });
+};
+
+const handleGuideBlur = (): void => {
+    guideHolding = false;
+};
 
 export function TvApp() {
     const authReady = useAuthSessionSelector(
@@ -79,9 +122,15 @@ export function TvApp() {
     const toast = useTvToast();
     const [radioPanel, setRadioPanel] = useState<TvRadioPanelSelection | null>(null);
     const [visited, setVisited] = useState<ReadonlySet<TvPage>>(new Set(['home']));
+    // The seam guide's native tag: the gate both sides send sideways moves to.
+    const [guideTag, setGuideTag] = useState<number | undefined>(undefined);
+    const guideRef = useCallback((guide: View | null) => {
+        setGuideTag(guide ? (findNodeHandle(guide) ?? undefined) : undefined);
+    }, []);
     useSamoRadioPolling(authReady);
     useEffect(() => {
         installTvKeys();
+        installTvScreenAwake();
     }, []);
     useEffect(() => {
         if (authReady) setOnboardingActive(false);
@@ -91,6 +140,10 @@ export function TvApp() {
     }, [page]);
     useEffect(() => {
         const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+            // Back is a press too (one the key bridge leaves to Android): an
+            // arrow before it that moved nothing must not be read into the
+            // focus Back is about to cause.
+            noteTvKeyDown('back');
             if (!authReady) return false;
             if (radioPanel) {
                 setTvPlacementZone('content');
@@ -104,7 +157,7 @@ export function TvApp() {
                 page: selectTvPage(nav),
                 playerOpen: nav.isFullPlayerOpen,
                 viewAllOpen: nav.activeUtilityScreen === 'view-all',
-                zone: getTvLastZone(),
+                zone: getTvBackZone(),
             });
             if (action === 'close-menu') setContextMenuTarget(null);
             else if (action === 'close-player') closeTvPlayer();
@@ -129,7 +182,7 @@ export function TvApp() {
                 {authReady ? (
                     <>
                         <View style={[s.fill, playerOpen && s.hidden]}>
-                            <View style={s.content}>
+                            <TvFocusZone covered={covered} gateLeft={guideTag} style={s.content}>
                                 {[...new Set([page, ...visited])].map((destination) => {
                                     const active = baseActive && page === destination;
                                     return (
@@ -178,24 +231,15 @@ export function TvApp() {
                                         <TvDetail active={!covered} />
                                     </View>
                                 ) : null}
-                            </View>
-                            <Pressable
-                                accessibilityLabel="Move between navigation and content"
+                            </TvFocusZone>
+                            <TvFocusGuide
                                 focusable={!covered}
+                                onBlur={handleGuideBlur}
+                                onFocus={handleGuideFocus}
+                                ref={guideRef}
                                 style={s.guide}
-                                onFocus={() => {
-                                    if (getTvLastZone() === 'rail')
-                                        enterTvScope(getTvContentScope());
-                                    else focusTvRail();
-                                }}
                             />
-                            <TvRail active={!covered} />
-                            <Image
-                                source={samoLogo}
-                                style={s.cornerLogo}
-                                resizeMode="contain"
-                                accessible={false}
-                            />
+                            <TvRail active={!covered} gate={guideTag} />
                         </View>
                         {playerOpen ? <TvPlayer active={!menuOpen} /> : null}
                         {menuOpen ? <TvContextMenu /> : null}

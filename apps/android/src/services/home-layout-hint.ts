@@ -45,6 +45,9 @@ export const loadHomeLayoutHint = async (): Promise<HomeLayoutHint | null> => {
 
 /** Update the cache synchronously (so the next render sees it) and persist. */
 export const saveHomeLayoutHint = (hint: HomeLayoutHint): void => {
+    if (cached?.podcastFeed === hint.podcastFeed && cached.rediscover === hint.rediscover) {
+        return;
+    }
     cached = hint;
     void fsSetItem(HOME_LAYOUT_HINT_KEY, JSON.stringify(hint));
 };

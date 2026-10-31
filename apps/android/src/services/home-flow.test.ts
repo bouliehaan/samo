@@ -30,7 +30,6 @@ vi.mock('./home-hero-visit', () => ({
         `${auth.serverId}:${auth.userId}`,
     loadHomeHeroRecommendation: vi.fn(),
 }));
-vi.mock('./home-layout-hint', () => ({ saveHomeLayoutHint: vi.fn() }));
 vi.mock('./samo-radio', () => ({ describeReachFailure: vi.fn(), refreshSamoRadioDevices: vi.fn() }));
 vi.mock('./recent-content', () => ({
     loadPersistedRecentContentItems: vi.fn(),

@@ -1,6 +1,6 @@
 import { AppState, DeviceEventEmitter } from 'react-native';
 
-import { clearTvPlacementRequest, getTvFocusedControl } from './tv-focus';
+import { getTvFocusedControl, noteTvKeyDown } from './tv-focus';
 
 /**
  * MainActivity forwards TV remote keys on samoTvKey. Android owns directional
@@ -55,10 +55,9 @@ const handleKeyEvent = (event: {
     }
     const action = event.eventKeyAction === 0 ? 'down' : 'up';
     const repeat = action === 'down' && held.has(key);
-    if (action === 'down' && !repeat && ['down', 'left', 'right', 'up'].includes(key)) {
-        clearTvPlacementRequest();
-    }
     if (action === 'down') {
+        // Repeats included: a held arrow moves focus on every one.
+        noteTvKeyDown(key);
         held.add(key);
     } else {
         held.delete(key);

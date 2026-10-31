@@ -1,4 +1,5 @@
 export * from './mobile-content-source';
+export * from './mobile-count';
 export * from './mobile-home';
 export * from './mobile-home-announcements';
 export * from './mobile-media-detail';

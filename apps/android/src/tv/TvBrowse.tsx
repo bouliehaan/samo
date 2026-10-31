@@ -3,7 +3,7 @@ import {
     type MobileHomeItem,
     type MobileSearchItem,
 } from '@samo/core/mobile';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ScrollView, Text, View } from 'react-native';
 import { handleSearch, handleSearchOverlayQuery } from '../handlers/search-handlers';
 import { subscribeCatalogSyncCompleted } from '../services/catalog/catalog-sync-events';
@@ -17,7 +17,8 @@ import { type HomeDisplaySection } from '../types/home';
 import { runTvAction, tvPageScope } from './tv-actions';
 import { getTvGridFocusId, TvGrid, TvShelf } from './TvCollections';
 import { TvFocusScope, TvTextInput } from './TvControls';
-import { tvStyles as s } from './tv-styles';
+import { didTvFocusArriveUp } from './tv-focus';
+import { TV_SCROLL_EDGE, tvStyles as s } from './tv-styles';
 
 export type TvMediaItem = MobileHomeItem | MobileSearchItem;
 export type TvRunAction = (action: () => void | Promise<unknown>) => void;
@@ -79,16 +80,21 @@ export function TvCollectionPage({
                                   ? 'Audiobooks'
                                   : 'Playlists'}
                         </Text>
-                        <Text style={s.muted}>
-                            {items.length
-                                ? `${items.length} in your library`
-                                : state.status === 'error'
-                                  ? state.message
-                                  : state.status === 'loading'
-                                    ? 'Loading…'
-                                    : 'Nothing here yet'}
-                        </Text>
+                        {items.length ? (
+                            <Text style={s.muted}>{items.length} in your library</Text>
+                        ) : null}
                     </View>
+                }
+                footer={
+                    items.length ? null : state.status === 'error' ? (
+                        <Text style={s.error}>{state.message}</Text>
+                    ) : (
+                        <Text style={s.emptyText}>
+                            {state.status === 'loading'
+                                ? 'Loading…'
+                                : `No ${page} in your library yet.`}
+                        </Text>
+                    )
                 }
             />
         </TvFocusScope>
@@ -98,33 +104,59 @@ export function TvCollectionPage({
 export function TvSearch({ active }: { active: boolean }) {
     const query = useAppNavigationSelector((state) => state.searchOverlayQuery);
     const state = useAppNavigationSelector((state) => state.searchState);
+    const scroll = useRef<ScrollView>(null);
+    // Back up to the field from the results: the whole header, not just the
+    // field at the edge margin with the title cut off above it.
+    const revealTop = useCallback(() => {
+        if (didTvFocusArriveUp()) scroll.current?.scrollTo({ animated: true, y: 0 });
+    }, []);
     return (
         <TvFocusScope active={active} defaultFocus="search-query" name={tvPageScope('search')}>
-            <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={s.pageScroll}>
+            <ScrollView
+                contentContainerStyle={s.pageScroll}
+                fadingEdgeLength={{ start: 0, end: TV_SCROLL_EDGE }}
+                keyboardShouldPersistTaps="handled"
+                ref={scroll}
+            >
                 <Text style={s.pageTitle}>Search</Text>
                 <TvTextInput
                     id="search-query"
                     label="Search your library"
+                    onFocus={revealTop}
+                    placeholder="Artists, albums, songs, books, podcasts"
                     value={query}
                     onChangeText={handleSearchOverlayQuery}
                     returnKeyType="search"
                     onSubmitEditing={() => runTvAction(() => handleSearch(query))}
                 />
-                {state.status === 'loading' ? <Text style={s.emptyText}>Searching…</Text> : null}
-                {state.status === 'error' ? <Text style={s.error}>{state.message}</Text> : null}
-                {state.status === 'loaded'
-                    ? state.results.sections.map((section) => (
-                          <TvShelf
-                              key={section.id}
-                              section={{
-                                  key: `search:${section.id}`,
-                                  title: section.title,
-                                  items: section.items,
-                                  variant: 'album',
-                              }}
-                          />
-                      ))
-                    : null}
+                <View style={s.searchResults}>
+                    {state.status === 'loading' ? (
+                        <Text style={s.emptyText}>Searching…</Text>
+                    ) : null}
+                    {state.status === 'error' ? <Text style={s.error}>{state.message}</Text> : null}
+                    {state.status === 'loaded' && state.results.sections.length === 0 ? (
+                        <View style={s.searchEmpty}>
+                            <Text style={s.emptyTitle}>No matches</Text>
+                            <Text style={s.emptyText}>
+                                Nothing in your library matches “{state.query}”. Try another title,
+                                artist, or album.
+                            </Text>
+                        </View>
+                    ) : null}
+                    {state.status === 'loaded'
+                        ? state.results.sections.map((section) => (
+                              <TvShelf
+                                  key={section.id}
+                                  section={{
+                                      key: `search:${section.id}`,
+                                      title: section.title,
+                                      items: section.items,
+                                      variant: 'album',
+                                  }}
+                              />
+                          ))
+                        : null}
+                </View>
             </ScrollView>
         </TvFocusScope>
     );

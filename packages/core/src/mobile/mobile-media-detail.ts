@@ -47,6 +47,7 @@ import {
     getMobileContentSource,
     type MobileContentSource,
 } from './mobile-content-source';
+import { formatMobileCount } from './mobile-count';
 import {
     type MobileHomeItem,
     MobileHomeItemType,
@@ -733,8 +734,8 @@ export const mapSamoArtistDetail = (
     );
 
     const metadataLines: string[] = [];
-    if (artist.albumCount) metadataLines.push(`${artist.albumCount} albums`);
-    if (artist.trackCount) metadataLines.push(`${artist.trackCount} tracks`);
+    if (artist.albumCount) metadataLines.push(formatMobileCount(artist.albumCount, 'album'));
+    if (artist.trackCount) metadataLines.push(formatMobileCount(artist.trackCount, 'track'));
     if (artist.country) metadataLines.push(artist.country);
 
     return {
@@ -818,7 +819,7 @@ export const mapSamoPlaylistDetail = (
         source: getMobileContentSource(authentication),
         subtitle:
             playlist.ownerName ??
-            (playlist.trackCount ? `${playlist.trackCount} tracks` : undefined),
+            (playlist.trackCount ? formatMobileCount(playlist.trackCount, 'track') : undefined),
         title: playlist.name,
         tracks,
         type: MobileMediaDetailType.PLAYLIST,
@@ -1097,7 +1098,8 @@ export const mapSamoPodcastDetail = (
     if (showMeta?.author) metadataLines.push(showMeta.author);
     if (showMeta?.categories && showMeta.categories.length > 0)
         metadataLines.push(showMeta.categories.join(', '));
-    if (showMeta?.episodeCount) metadataLines.push(`${showMeta.episodeCount} episodes`);
+    if (showMeta?.episodeCount)
+        metadataLines.push(formatMobileCount(showMeta.episodeCount, 'episode'));
 
     return {
         artworkImageId,
@@ -1353,7 +1355,7 @@ export const createMobilePlaylist = async ({
             id: playlist.id,
             source,
             subtitle: playlist.trackCount
-                ? `${playlist.trackCount} tracks`
+                ? formatMobileCount(playlist.trackCount, 'track')
                 : playlist.ownerName ?? undefined,
             title: playlist.name,
             type: MobileHomeItemType.PLAYLIST,

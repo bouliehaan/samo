@@ -581,10 +581,9 @@ export const keepExploTracks = async (
  * server's, verbatim — both clients say the same thing about the same drop.
  */
 export interface HomeHero {
-    target: { type: string; id: string };
+    action: SamoHomeHeroAction;
     album?: Album;
     audiobookId?: string;
-    action: SamoHomeHeroAction;
     episode?: SamoPodcastEpisode;
     eyebrow: string;
     id: string;
@@ -593,6 +592,7 @@ export interface HomeHero {
     playlist?: Playlist;
     sleeves: HomeHeroSleeve[];
     subtitle?: string;
+    target: { id: string; type: string };
     title: string;
 }
 
@@ -611,45 +611,45 @@ export interface HomeHeroSleeve {
 export const fetchSamoHomeHeroes = async (
     server: ServerListItemWithCredentialCore,
     signal?: AbortSignal,
-    options?: { session?: string; seen?: string[] },
+    options?: { seen?: string[]; session?: string },
 ): Promise<HomeHero[]> => {
     const auth = samoAuthentication(server);
     const { items } = await listSamoHomeHeroes(browserFetch, auth, { signal, ...options });
     for (const hero of items) {
-            const base = {
-                target: hero.target,
-                action: hero.action,
-                eyebrow: hero.eyebrow,
-                id: hero.id,
-                kind: hero.kind,
-                meta: hero.meta,
-                sleeves: (hero.sleeves ?? []).map((sleeve) => ({
-                    imageId: sleeve.id,
-                    imageUrl: resolveSamoHeroSleeveUrl(auth, sleeve),
-                })),
-                subtitle: hero.subtitle,
-                title: hero.title,
-            };
-            try {
-                if (hero.target.type === 'playlist') {
-                    const playlist = await getSamoMusicPlaylist(browserFetch, auth, hero.target.id);
-                    return [{ ...base, playlist: samoNormalize.playlist(playlist, server) }];
-                }
-                if (hero.target.type === 'album') {
-                    const album = await getSamoMusicAlbum(browserFetch, auth, hero.target.id);
-                    return [{ ...base, album: samoNormalize.album(album, server) }];
-                }
-                if (hero.target.type === 'audiobook') {
-                    await getSamoAudiobook(browserFetch, auth, hero.target.id);
-                    return [{ ...base, audiobookId: hero.target.id }];
-                }
-                if (hero.target.type === 'episode') {
-                    const episode = await getSamoPodcastEpisode(browserFetch, auth, hero.target.id);
-                    return [{ ...base, episode }];
-                }
-            } catch {
-                // The card's target is gone or unreadable — see the doc comment.
+        const base = {
+            action: hero.action,
+            eyebrow: hero.eyebrow,
+            id: hero.id,
+            kind: hero.kind,
+            meta: hero.meta,
+            sleeves: (hero.sleeves ?? []).map((sleeve) => ({
+                imageId: sleeve.id,
+                imageUrl: resolveSamoHeroSleeveUrl(auth, sleeve),
+            })),
+            subtitle: hero.subtitle,
+            target: hero.target,
+            title: hero.title,
+        };
+        try {
+            if (hero.target.type === 'playlist') {
+                const playlist = await getSamoMusicPlaylist(browserFetch, auth, hero.target.id);
+                return [{ ...base, playlist: samoNormalize.playlist(playlist, server) }];
             }
+            if (hero.target.type === 'album') {
+                const album = await getSamoMusicAlbum(browserFetch, auth, hero.target.id);
+                return [{ ...base, album: samoNormalize.album(album, server) }];
+            }
+            if (hero.target.type === 'audiobook') {
+                await getSamoAudiobook(browserFetch, auth, hero.target.id);
+                return [{ ...base, audiobookId: hero.target.id }];
+            }
+            if (hero.target.type === 'episode') {
+                const episode = await getSamoPodcastEpisode(browserFetch, auth, hero.target.id);
+                return [{ ...base, episode }];
+            }
+        } catch {
+            // The card's target is gone or unreadable — see the doc comment.
+        }
     }
     return [];
 };
@@ -978,6 +978,11 @@ export const SamoController: InternalControllerEndpoint = {
 
         let albums: SamoMusicAlbum[];
         let preserveSortOrder = false;
+        // Set when the server did the paging: `albums` is then one page, not
+        // the library, and only the server knows how many there are. Reading
+        // the page as the whole list told the sidebar a 3000-album library
+        // held 500, and it pruned every recent album past the first page.
+        let serverPage: null | { startIndex: number; total: null | number } = null;
 
         if (query.favorite) {
             const browse = await getSamoMusicBrowse(browserFetch, auth, 'favorites', {
@@ -1031,6 +1036,7 @@ export const SamoController: InternalControllerEndpoint = {
                 });
                 albums = samoItemsOf(response);
                 preserveSortOrder = true;
+                serverPage = { startIndex: query.startIndex ?? 0, total: response.total ?? null };
             } else {
                 albums = await fetchPagesCapped<SamoMusicAlbum>((input) =>
                     listSamoMusicAlbums(browserFetch, auth, input),
@@ -1059,6 +1065,18 @@ export const SamoController: InternalControllerEndpoint = {
         const sorted = preserveSortOrder
             ? filtered
             : sortAlbums(filtered, query.sortBy, query.sortOrder);
+
+        if (serverPage) {
+            // Already offset by the server; slicing again would skip ahead.
+            // A year filter thins the page, and then the server's total no
+            // longer counts what is shown, so it is unknown.
+            return {
+                items: sorted.map((album) => samoNormalize.album(album, server)),
+                startIndex: serverPage.startIndex,
+                totalRecordCount: filtered.length === albums.length ? serverPage.total : null,
+            };
+        }
+
         const page = paginate(sorted, query.startIndex, query.limit);
 
         return {
@@ -1599,8 +1617,9 @@ export const SamoController: InternalControllerEndpoint = {
         // update; `submission=true` increments the play count.
         await patchSamoPlayback(browserFetch, auth, 'music-track', query.id, {
             ...(query.submission ? { incrementPlayCount: true } : {}),
+            // use-scrobble sends Jellyfin ticks (seconds * 1e7); samo stores seconds.
             ...(typeof query.position === 'number'
-                ? { progressSeconds: Math.round(query.position) }
+                ? { progressSeconds: Math.round(query.position / 1e7) }
                 : {}),
             touchLastPlayedAt: query.submission || query.event === 'start',
             touchLastPositionAt: true,

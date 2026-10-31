@@ -57,17 +57,26 @@ const selectToast = (state: TvToast): TvToast => state;
 
 export const useTvToast = (): TvToast => useStoreSelector(subscribeToast, getToast, selectToast);
 
-/** Run a handler; a failure becomes a toast rather than a silent nothing. */
+const showTvFailure = (reason: unknown): void => {
+    showTvToast(
+        reason instanceof Error && reason.message
+            ? reason.message
+            : 'Something went wrong. Please try again.',
+    );
+};
+
+/**
+ * Run a handler; a failure becomes a toast rather than a silent nothing.
+ * Started at once, not on a later tick, so what it sets in motion (playback
+ * loading, a page opening) lands with the press — and the player `playOnTv`
+ * opens next already has the item it is loading to show.
+ */
 export const runTvAction = (action: () => unknown): void => {
-    void Promise.resolve()
-        .then(action)
-        .catch((reason: unknown) => {
-            showTvToast(
-                reason instanceof Error && reason.message
-                    ? reason.message
-                    : 'Something went wrong. Please try again.',
-            );
-        });
+    try {
+        void Promise.resolve(action()).catch(showTvFailure);
+    } catch (reason) {
+        showTvFailure(reason);
+    }
 };
 
 export const openTvPlayer = (): void => setIsFullPlayerOpen(true);

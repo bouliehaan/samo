@@ -9,6 +9,7 @@ import {
     useRef,
     useState,
     type ReactNode,
+    type Ref,
 } from 'react';
 import {
     findNodeHandle,
@@ -21,7 +22,13 @@ import {
     type ViewStyle,
 } from 'react-native';
 
-import { noteTvBlur, noteTvFocus, shouldTvZoneTakeFocus, type TvZone } from './tv-focus';
+import {
+    getTvMoveCount,
+    noteTvBlur,
+    noteTvFocus,
+    shouldTvZoneTakeFocus,
+    type TvZone,
+} from './tv-focus';
 import { takeTvLongPressClick } from './tv-keys';
 import { resolveTvFocus } from './tv-navigation';
 import { tvStyles as s } from './tv-styles';
@@ -30,15 +37,37 @@ import { tvStyles as s } from './tv-styles';
  *  request that has not landed. Each kind of control knows its own way. */
 type FocusTarget = { release: () => void; take: () => void };
 
+/**
+ * Whether focus is still where a scope put it — on one of its controls, with
+ * no choice of the person's there — and so should move on to a control that
+ * becomes the default, or mounts as it, after the fact.
+ */
+const followsDefault = (state: {
+    active: boolean;
+    choice: string | null;
+    defaultFocus: string;
+    focused: string | null;
+}): boolean =>
+    state.active &&
+    state.choice === null &&
+    state.focused !== null &&
+    state.focused !== state.defaultFocus;
+
+/** Where the person was in a scope, kept outside it (see `memory`). */
+export type TvFocusMemory = { choice: string | null };
+
 type FocusScopeApi = {
     active: boolean;
-    /** Move focus to this scope's remembered control, or its default. */
-    enter: () => void;
+    /** Move focus to this scope's remembered control, or its default —
+     *  if it has any control to move it to, which it answers. */
+    enter: () => boolean;
     /** Move focus on the person's behalf, as a keyboard's Next key does. */
     focus: (id: string) => void;
     forget: (id: string) => void;
     register: (id: string, target: FocusTarget) => () => void;
-    remember: (id: string) => void;
+    /** Note focus arriving on a control here. Whether it counts as focus at
+     *  all: a covered surface's controls only get it in passing. */
+    remember: (id: string) => boolean;
     retryPlacement: () => void;
     zone: TvZone;
 };
@@ -46,12 +75,9 @@ type FocusScopeApi = {
 const FocusScopeContext = createContext<FocusScopeApi | null>(null);
 const scopesByName = new Map<string, FocusScopeApi>();
 
-/** Send focus into a named scope — its remembered control, else its default. */
-export const enterTvScope = (name: string): boolean => {
-    const scope = scopesByName.get(name);
-    scope?.enter();
-    return scope !== undefined;
-};
+/** Send focus into a named scope — its remembered control, else its default.
+ *  Whether there was anything there to take it. */
+export const enterTvScope = (name: string): boolean => scopesByName.get(name)?.enter() ?? false;
 
 /** Move focus to one control of a named scope. */
 export const focusTvControl = (scopeName: string, id: string): void => {
@@ -71,7 +97,12 @@ export const focusTvControl = (scopeName: string, id: string): void => {
  * What it places is the person's last choice in it when that is still there,
  * else `defaultFocus`, else the first control registered. So closing a detail
  * returns to the tile that opened it, and a control that arrives late (a
- * discovered server, a row that loads) still receives focus.
+ * discovered server, a row that loads) still receives focus: until the person
+ * moves here, focus follows `defaultFocus` as it changes and as it mounts.
+ *
+ * A placement is owed only until the person moves. One still waiting for its
+ * control when they press an arrow — a detail loading while they head back
+ * to the rail — is dropped, so focus never jumps out from under them.
  *
  * Telling the person's moves from Android's is the subtle part. Android moves
  * focus by itself whenever the focused view is hidden or removed, and those
@@ -84,6 +115,7 @@ export function TvFocusScope({
     children,
     defaultFocus,
     forceInitialFocus = false,
+    memory,
     name,
     zone = 'content',
 }: {
@@ -96,6 +128,10 @@ export function TvFocusScope({
     /** Newly opened details own focus even if hiding the old page made Android
      * temporarily move it to the rail. Later returns still restore the zone. */
     forceInitialFocus?: boolean;
+    /** Keeps the person's choice beyond this scope's life: read as it mounts,
+     *  written as they move. For a surface that is unmounted and then shown
+     *  again, as a detail page is beneath a nested one. */
+    memory?: TvFocusMemory;
     /** For `enterTvScope` / `focusTvControl`. */
     name?: string;
     zone?: TvZone;
@@ -105,7 +141,7 @@ export function TvFocusScope({
         active,
         autoPlace,
         /** The control the person last moved to here. */
-        choice: null as string | null,
+        choice: memory?.choice ?? null,
         defaultFocus,
         /** The control focused here now, as focus events tell it. */
         focused: null as string | null,
@@ -116,7 +152,23 @@ export function TvFocusScope({
         placing: null as string | null,
         /** This scope owes focus a placement. */
         wantsPlacement: false,
+        /** The person's move count when the placement became owed. */
+        owedAt: 0,
     });
+    const memoryRef = useRef(memory);
+    memoryRef.current = memory;
+    const choose = useCallback((id: string | null) => {
+        scope.current.choice = id;
+        if (memoryRef.current) memoryRef.current.choice = id;
+    }, []);
+
+    /** Owe focus a placement (or stop owing one), as of the person's latest move. */
+    const owe = useCallback((wanted: boolean) => {
+        const state = scope.current;
+        state.attempts = 0;
+        state.owedAt = getTvMoveCount();
+        state.wantsPlacement = wanted;
+    }, []);
 
     const settle = useCallback(() => {
         const state = scope.current;
@@ -126,6 +178,13 @@ export function TvFocusScope({
         state.frame = requestAnimationFrame(() => {
             state.frame = null;
             if (!state.active || !state.wantsPlacement) return;
+            if (state.owedAt !== getTvMoveCount()) {
+                // They moved since: wherever they put focus stands.
+                state.wantsPlacement = false;
+                if (state.placing !== null) targets.current.get(state.placing)?.release();
+                state.placing = null;
+                return;
+            }
             const id = resolveTvFocus(
                 [...targets.current.keys()],
                 state.choice,
@@ -161,7 +220,9 @@ export function TvFocusScope({
     const register = useCallback(
         (id: string, target: FocusTarget) => {
             targets.current.set(id, target);
-            if (scope.current.wantsPlacement) settle();
+            const state = scope.current;
+            if (id === state.defaultFocus && followsDefault(state)) owe(true);
+            if (state.wantsPlacement) settle();
             return () => {
                 targets.current.delete(id);
                 const state = scope.current;
@@ -170,29 +231,30 @@ export function TvFocusScope({
                     // Removed while it held focus: Android is about to move
                     // focus somewhere of its own choosing. Place it here
                     // instead — from the default, since the choice is gone.
-                    if (state.choice === id) state.choice = null;
+                    if (state.choice === id) choose(null);
                     state.focused = null;
-                    state.wantsPlacement = state.active;
+                    owe(state.active);
                     settle();
                 }
             };
         },
-        [settle],
+        [choose, owe, settle],
     );
 
     const remember = useCallback((id: string) => {
         const state = scope.current;
         // Covered, this surface only receives focus while Android clears it
         // off the controls being hidden, never because someone chose one.
-        if (!state.active) return;
+        if (!state.active) return false;
         state.focused = id;
         if (id === state.placing) {
             state.placing = null;
             state.wantsPlacement = false;
-            return;
+        } else if (!state.wantsPlacement) {
+            choose(id);
         }
-        if (!state.wantsPlacement) state.choice = id;
-    }, []);
+        return true;
+    }, [choose]);
 
     const forget = useCallback((id: string) => {
         const state = scope.current;
@@ -200,18 +262,21 @@ export function TvFocusScope({
     }, []);
 
     const enter = useCallback(() => {
-        scope.current.attempts = 0;
-        scope.current.wantsPlacement = scope.current.active;
+        // Nothing here yet: a surface owes itself a placement when it is
+        // shown, so this would only pull focus in later, long after asked.
+        if (targets.current.size === 0) return false;
+        owe(scope.current.active);
         settle();
-    }, [settle]);
+        return true;
+    }, [owe, settle]);
 
     const focus = useCallback(
         (id: string) => {
             // Their move, made through something other than the D-pad.
-            scope.current.choice = id;
+            choose(id);
             enter();
         },
-        [enter],
+        [choose, enter],
     );
 
     // A layout effect so `active` is current during the commit that hides this
@@ -219,6 +284,7 @@ export function TvFocusScope({
     useLayoutEffect(() => {
         const state = scope.current;
         const wasActive = state.active;
+        const defaultChanged = state.defaultFocus !== defaultFocus;
         state.active = active;
         state.autoPlace = autoPlace;
         state.defaultFocus = defaultFocus;
@@ -230,11 +296,14 @@ export function TvFocusScope({
             state.focused = null;
             state.wantsPlacement = false;
         } else if (active && !wasActive) {
-            state.attempts = 0;
-            state.wantsPlacement = autoPlace && shouldTvZoneTakeFocus(zone);
+            owe(autoPlace && shouldTvZoneTakeFocus(zone));
+            settle();
+        } else if (defaultChanged && followsDefault(state) && targets.current.has(defaultFocus)) {
+            // A new default not mounted yet is placed by `register` when it is.
+            owe(true);
             settle();
         }
-    }, [active, autoPlace, defaultFocus, settle, zone]);
+    }, [active, autoPlace, defaultFocus, owe, settle, zone]);
 
     // Shown from the first render: place once the controls arrive.
     useLayoutEffect(() => {
@@ -243,11 +312,11 @@ export function TvFocusScope({
             scope.current.autoPlace &&
             (forceInitialFocus || shouldTvZoneTakeFocus(zone))
         ) {
-            scope.current.wantsPlacement = true;
+            owe(true);
             settle();
         }
         // Mount only: later showings are the effect above.
-    }, [settle]);
+    }, [owe, settle]);
 
     useEffect(
         () => () => {
@@ -355,7 +424,10 @@ export const TvPressable = memo(function TvPressable({
     const handleFocus = useCallback(() => {
         release();
         setFocused(true);
-        scope?.remember(id);
+        // Covered, a control only receives focus while Android clears it away
+        // to whatever covers it: not the person's doing, and nothing for Back,
+        // OK or the placement zone to act on.
+        if (scope && !scope.remember(id)) return;
         noteTvFocus({
             id,
             onPress: () => latest.current.onPress(),
@@ -411,8 +483,10 @@ export const TvPressable = memo(function TvPressable({
 export function TvButton({
     children,
     disabled,
+    focusedStyle,
     id,
     label,
+    onFocus,
     onLongPress,
     onPress,
     pin,
@@ -422,8 +496,10 @@ export function TvButton({
 }: {
     children?: ReactNode | ((focused: boolean) => ReactNode);
     disabled?: boolean;
+    focusedStyle?: StyleProp<ViewStyle>;
     id: string;
     label: string;
+    onFocus?: () => void;
     onLongPress?: () => void;
     onPress: () => void;
     pin?: TvFocusPin;
@@ -434,9 +510,10 @@ export function TvButton({
     return (
         <TvPressable
             disabled={disabled}
-            focusedStyle={s.buttonFocused}
+            focusedStyle={focusedStyle ?? s.buttonFocused}
             id={id}
             label={label}
+            onFocusChange={onFocus ? (focused) => focused && onFocus() : undefined}
             onLongPress={onLongPress}
             onPress={onPress}
             pin={pin}
@@ -469,6 +546,8 @@ export function TvTextInput({
     id,
     label,
     next,
+    onBlur,
+    onFocus,
     ...props
 }: TextInputProps & {
     id: string;
@@ -480,13 +559,28 @@ export function TvTextInput({
     const scope = useContext(FocusScopeContext);
     const ref = useRef<TextInput>(null);
     const [focused, setFocused] = useState(false);
+    // Whether the field really has focus, as its own events say.
+    const hasFocus = useRef(false);
     const register = scope?.register;
     useEffect(() => {
         if (!ref.current || props.editable === false || !register) return;
         // A text field's focus() is a one-off command, so there is nothing to
         // withdraw. (On a TV it focuses the field; the keyboard opens when the
         // field is selected.)
-        return register(id, { release: () => undefined, take: () => ref.current?.focus() });
+        return register(id, {
+            release: () => undefined,
+            take: () => {
+                const field = ref.current;
+                if (!field || hasFocus.current) return;
+                // React Native counts a field focused when focus() is asked
+                // for, not when it lands, and ignores focus() on a field it
+                // counts focused. One asked for in the commit that shows the
+                // field's page lands before the field can take it, and would
+                // leave every later attempt ignored.
+                if (field.isFocused()) TextInput.State.blurTextInput(field);
+                field.focus();
+            },
+        });
     }, [register, id, props.editable]);
     const zone = scope?.zone ?? 'content';
     return (
@@ -504,15 +598,18 @@ export function TvTextInput({
                 accessibilityLabel={label}
                 autoCapitalize="none"
                 autoCorrect={false}
-                onFocus={() => {
+                onFocus={(event) => {
+                    hasFocus.current = true;
                     setFocused(true);
-                    scope?.remember(id);
-                    noteTvFocus({ id, zone });
+                    if (!scope || scope.remember(id)) noteTvFocus({ id, zone });
+                    onFocus?.(event);
                 }}
-                onBlur={() => {
+                onBlur={(event) => {
+                    hasFocus.current = false;
                     setFocused(false);
                     scope?.forget(id);
                     noteTvBlur(id);
+                    onBlur?.(event);
                 }}
                 placeholderTextColor={s.placeholder.color}
                 style={[s.input, focused && s.inputFocused]}
@@ -523,26 +620,38 @@ export function TvTextInput({
 
 /**
  * An invisible, full-height focus target on the seam between the rail and the
- * content. It is always the nearest thing across that seam, so every sideways
- * move between the two lands here first — and it hands focus on: into the
+ * content. Every sideways move out of either side lands here first (each side
+ * is a `TvFocusZone` with this as its gate), and it hands focus on: into the
  * content's remembered control when arriving from the rail, and to the rail's
  * current page when arriving from the content. That is how both directions
  * return to where the person was, instead of wherever Android's geometry
  * happens to land.
+ *
+ * Android also parks focus here by itself, when the control holding it is
+ * hidden or removed (a page hidden for a detail, a detail closed on Back).
+ * `onFocus` must tell that apart from a crossing (`isTvSidewaysMove`).
  */
 export function TvFocusGuide({
+    focusable,
+    onBlur,
     onFocus,
+    ref,
     style,
 }: {
+    focusable: boolean;
+    onBlur: () => void;
     onFocus: () => void;
+    ref?: Ref<View>;
     style: StyleProp<ViewStyle>;
 }) {
     return (
-        <View
+        <Pressable
             accessible={false}
-            focusable
+            focusable={focusable}
             importantForAccessibility="no"
+            onBlur={onBlur}
             onFocus={onFocus}
+            ref={ref}
             style={style}
         />
     );

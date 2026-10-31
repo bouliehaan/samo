@@ -186,4 +186,10 @@ class SamoCatalogConvertersTest {
         assertFalse(fromMissingField.has("hiddenFromRecentlyAdded"))
         assertFalse(fromExplicitFalse.has("hiddenFromRecentlyAdded"))
     }
+
+    @Test
+    fun `a one-track playlist reads in the singular`() {
+        assertEquals("1 track", convert(playlistJson("cover_a").put("trackCount", 1)).subtitle)
+        assertEquals("12 tracks", convert(playlistJson("cover_a")).subtitle)
+    }
 }

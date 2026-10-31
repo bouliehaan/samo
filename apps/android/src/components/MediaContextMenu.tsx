@@ -15,6 +15,10 @@ export interface MediaContextMenuAction {
     id: string;
     label: string;
     onPress: () => void;
+    /** Opens a sheet only the phone presents (a picker, an information page).
+     *  The TV has no sheets, so it leaves these out rather than offer a press
+     *  that shows nothing. */
+    phoneOnly?: boolean;
 }
 
 export const MediaContextMenu = ({

@@ -33,9 +33,27 @@ let lastZone: TvZone | null = null;
 let placementZone: Extract<TvZone, 'content' | 'rail'> = 'content';
 let requestedZone: Extract<TvZone, 'content' | 'rail'> | null = null;
 
+type TvArrow = 'down' | 'left' | 'right' | 'up';
+
+/** The person's D-pad moves so far. A placement owed from before the latest
+ *  one has been overtaken: they already put focus where they want it. */
+let moves = 0;
+/** An arrow press whose focus move has not landed on a control yet. A Left
+ *  or Right one is the only way focus reaches the rail/content seam on the
+ *  person's behalf. */
+let pendingMove: TvArrow | null = null;
+/** The arrow that brought focus to the control holding it, if one did —
+ *  rather than Android parking it there, or a placement. */
+let arrivedBy: TvArrow | null = null;
+
+const isArrow = (key: string): key is TvArrow =>
+    key === 'down' || key === 'left' || key === 'right' || key === 'up';
+
 export const noteTvFocus = (control: FocusedControl): void => {
     focused = control;
     lastZone = control.zone;
+    arrivedBy = pendingMove;
+    pendingMove = null;
     if (control.zone === 'content' || control.zone === 'rail') {
         // Hiding the old surface can make Android briefly focus the rail.
         // That automatic move must not overwrite an explicit navigation intent.
@@ -48,12 +66,46 @@ export const noteTvFocus = (control: FocusedControl): void => {
 export const setTvPlacementZone = (zone: Extract<TvZone, 'content' | 'rail'>): void => {
     placementZone = zone;
     requestedZone = zone;
+    pendingMove = null;
 };
 
-/** A deliberate D-pad move takes precedence over any pending placement. */
-export const clearTvPlacementRequest = (): void => {
-    requestedZone = null;
+/**
+ * A remote key going down, as it arrives — before Android moves focus for it.
+ * An arrow is a deliberate move, which takes precedence over any pending
+ * placement.
+ */
+export const noteTvKeyDown = (key: string): void => {
+    if (isArrow(key)) {
+        moves += 1;
+        requestedZone = null;
+        pendingMove = key;
+    } else {
+        pendingMove = null;
+    }
 };
+
+export const getTvMoveCount = (): number => moves;
+
+/**
+ * Which side of the rail the person is on, as Back understands it: where
+ * focus belongs, not where it happens to be. While a detail is still loading
+ * (or failed to), focus waits on the rail, but Back should close the detail.
+ */
+export const getTvBackZone = (): TvZone | null =>
+    lastZone === 'content' || lastZone === 'rail' ? placementZone : lastZone;
+
+/** Whether focus arriving now is the person crossing sideways, rather than
+ *  Android putting it somewhere because the control holding it went away. */
+export const isTvSidewaysMove = (): boolean => pendingMove === 'left' || pendingMove === 'right';
+
+/**
+ * Whether the person pressed Up to reach the control focus has just arrived
+ * on. A list that brings its header back into view for such a control must
+ * not do it for focus Android parks there in passing (closing the player
+ * parks it on a page's first control): that scroll would land after the
+ * page's own placement, and leave the placed control off screen.
+ */
+export const didTvFocusArriveUp = (): boolean => arrivedBy === 'up';
 
 /** Whether a surface in `zone` should take focus as it is shown. Overlays
  *  (the player, a menu) always do; the rail and the content only when focus
