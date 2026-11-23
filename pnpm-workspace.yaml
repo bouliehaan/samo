@@ -3,3 +3,28 @@ packages:
   - apps/*
   - packages/*
 nodeLinker: hoisted
+
+# pnpm 11+ reads these only from here; the "pnpm" and "resolutions" fields in
+# package.json are ignored.
+
+# Only these dependencies may run install scripts. Everything else is denied
+# explicitly, because an unlisted one fails the install (strictDepBuilds).
+allowBuilds:
+  electron: true
+  esbuild: true
+  # Skipped under pnpm 10 as well. abstract-socket is rebuilt for Electron by
+  # electron-builder's install-app-deps; the other two are not needed here.
+  abstract-socket: false
+  electron-winstaller: false
+  protobufjs: false
+
+overrides:
+  react-router: 7.14.0
+  xml2js: 0.5.0
+  castv2>protobufjs: ^7.6.6
+
+patchedDependencies:
+  react-native-image-colors@2.6.0: patches/react-native-image-colors@2.6.0.patch
+  react-native-linear-gradient@2.8.3: patches/react-native-linear-gradient@2.8.3.patch
+  expo-blur@57.0.2: patches/expo-blur@57.0.2.patch
+  react-native-reanimated@4.5.0: patches/react-native-reanimated@4.5.0.patch

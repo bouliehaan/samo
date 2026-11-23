@@ -27,9 +27,9 @@
         "build:remote": "vite build --config remote.vite.config.ts",
         "build:web": "vite build --config web.vite.config.ts",
         "check:mpv:mac": "node ./scripts/check-mpv-bundle.mjs",
-        "dev": "electron-vite dev",
+        "dev": "install-electron && electron-vite dev",
         "dev:remote": "vite dev --config remote.vite.config.ts",
-        "dev:watch": "electron-vite dev --watch",
+        "dev:watch": "install-electron && electron-vite dev --watch",
         "i18next": "i18next -c src/i18n/i18next-parser.config.js",
         "postinstall": "electron-builder install-app-deps",
         "lint": "pnpm run typecheck && pnpm run lint-code && pnpm run lint-styles",
@@ -63,7 +63,7 @@
         "publish:win-arm64": "pnpm run build && electron-builder --publish always --win --arm64",
         "publish:win-arm64:alpha": "pnpm run build && electron-builder --config electron-builder-alpha.yml --publish always --win --arm64",
         "publish:win-arm64:beta": "pnpm run build && electron-builder --config electron-builder-beta.yml --publish always --win --arm64",
-        "start": "electron-vite preview",
+        "start": "install-electron && electron-vite preview",
         "test": "vitest run",
         "test:watch": "vitest",
         "typecheck": "pnpm run typecheck:core && pnpm run typecheck:node && pnpm run typecheck:web",
@@ -73,10 +73,6 @@
         "version": "pnpm version --no-git-tag-version",
         "postversion": "node ./scripts/update-app-stream.mjs"
     },
-    "resolutions": {
-        "react-router": "7.14.0",
-        "xml2js": "0.5.0"
-    },
     "dependencies": {
         "@electron-toolkit/preload": "^3.0.2",
         "@electron-toolkit/utils": "^4.0.0",
@@ -85,14 +81,14 @@
         "electron-localshortcut": "^3.2.1",
         "electron-log": "^5.4.3",
         "electron-store": "^8.2.0",
-        "electron-updater": "^6.8.3",
+        "electron-updater": "^6.8.11",
         "fuse.js": "^7.2.0",
         "lodash": "^4.18.1",
         "mpris-service": "^2.1.2",
         "node-mpv": "github:jeffvli/Node-MPV#32b4d64395289ad710c41d481d2707a7acfc228f",
         "semver": "^7.7.4",
         "source-map-support": "^0.5.21",
-        "ws": "^8.20.0"
+        "ws": "^8.23.0"
     },
     "devDependencies": {
         "@atlaskit/pragmatic-drag-and-drop": "1.7.7",
@@ -131,8 +127,8 @@
         "cross-env": "^10.1.0",
         "dayjs": "^1.11.20",
         "dompurify": "^3.3.3",
-        "electron": "^39.8.6",
-        "electron-builder": "^26.8.2",
+        "electron": "^45.4.1",
+        "electron-builder": "^26.18.0",
         "electron-debug": "^3.2.0",
         "electron-devtools-installer": "^4.0.0",
         "electron-vite": "^4.0.1",
@@ -183,18 +179,6 @@
         "wavesurfer.js": "^7.12.5",
         "zod": "^3.25.76",
         "zustand": "^5.0.12"
-    },
-    "pnpm": {
-        "onlyBuiltDependencies": [
-            "electron",
-            "esbuild"
-        ],
-        "patchedDependencies": {
-            "react-native-image-colors@2.6.0": "patches/react-native-image-colors@2.6.0.patch",
-            "react-native-linear-gradient@2.8.3": "patches/react-native-linear-gradient@2.8.3.patch",
-            "expo-blur@57.0.2": "patches/expo-blur@57.0.2.patch",
-            "react-native-reanimated@4.5.0": "patches/react-native-reanimated@4.5.0.patch"
-        }
     },
     "productName": "samo"
 }

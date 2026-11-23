@@ -1,7 +1,7 @@
 appId: org.bouliehaan.samo
 productName: samo
 artifactName: ${productName}-${version}-${os}-${arch}.${ext}
-electronVersion: 39.8.6
+electronVersion: 45.4.1
 directories:
     buildResources: assets
 files:
